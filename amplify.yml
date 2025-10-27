@@ -1,0 +1,28 @@
+version: 1
+backend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+        - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
+    build:
+      commands:
+        - npx ampx generate outputs --branch $AWS_BRANCH --app-id $AWS_APP_ID
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - nvm use 18
+        - npm ci
+    build:
+      commands:
+        - echo "Building frontend..."
+        # Add your frontend build commands here if needed
+  artifacts:
+    baseDirectory: /
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+

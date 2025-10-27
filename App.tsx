@@ -1,20 +1,20 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Button } from '@/components/ui/button';
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
+    <View className="flex-1 bg-white items-center justify-center gap-4">
+      <Button onPress={() => console.log('Primary pressed')}>
+        Primary Button
+      </Button>
+      <Button variant="secondary" onPress={() => console.log('Secondary pressed')}>
+        Secondary Button
+      </Button>
+      <Button variant="outline" onPress={() => console.log('Outline pressed')}>
+        Outline Button
+      </Button>
       <StatusBar style="auto" />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

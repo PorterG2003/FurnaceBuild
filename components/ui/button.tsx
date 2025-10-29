@@ -18,16 +18,17 @@ export function Button({
   return (
     <TouchableOpacity
       className={cn(
-        'items-center justify-center rounded-md font-semibold',
+        'items-center justify-center rounded-xl font-instrument-medium',
         {
-          'bg-primary text-primary-foreground': variant === 'default',
+          'bg-brand-orange text-white': variant === 'default' && !props.disabled,
+          'bg-brand-orange/50 text-white/70': variant === 'default' && props.disabled,
           'bg-secondary text-secondary-foreground': variant === 'secondary',
           'border border-input bg-transparent': variant === 'outline',
         },
         {
-          'px-4 py-2': size === 'default',
-          'px-3 py-1.5': size === 'sm',
-          'px-8 py-3': size === 'lg',
+          'px-6 py-3': size === 'default',
+          'px-4 py-2': size === 'sm',
+          'px-8 py-4': size === 'lg',
         },
         className
       )}
@@ -36,7 +37,7 @@ export function Button({
     >
       <Text
         className={cn(
-          'font-semibold',
+          'font-instrument-medium',
           {
             'text-white': variant === 'default',
             'text-black': variant === 'secondary',

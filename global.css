@@ -2,3 +2,65 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Font CSS Variables for web compatibility */
+:root {
+  --font-instrument: 'Instrument Sans', system-ui, sans-serif;
+  --font-inter: 'Inter', system-ui, sans-serif;
+}
+
+/* Override Amplify UI default blue colors */
+[class*="amplify-button"] {
+  background-color: #F3440D !important;
+  border-color: #F3440D !important;
+}
+
+[class*="amplify-button"]:hover {
+  background-color: #D63B0B !important;
+}
+
+[class*="amplify-button"].amplify-button--link {
+  color: #F3440D !important;
+}
+
+[class*="amplify-button"].amplify-button--link:hover {
+  color: #D63B0B !important;
+}
+
+/* Override input focus colors */
+[class*="amplify-input"]:focus,
+[class*="amplify-select"]:focus,
+[class*="amplify-textfield"]:focus {
+  border-color: #F3440D !important;
+  box-shadow: 0 0 0 1px #F3440D !important;
+}
+
+/* Override checkbox and radio colors */
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  background-color: #F3440D !important;
+  border-color: #F3440D !important;
+}
+
+/* Global TextInput focus override for React Native */
+input:focus,
+textarea:focus,
+[data-testid*="input"]:focus {
+  outline: none !important;
+  border-color: #FF4D00 !important;
+  box-shadow: none !important;
+}
+
+/* Override any blue focus rings */
+*:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Specific override for React Native TextInput */
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus {
+  border-color: #FF4D00 !important;
+  outline: none !important;
+  box-shadow: none !important;
+}

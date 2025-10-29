@@ -1,17 +1,8 @@
 import { Stack } from 'expo-router';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
-import { useEffect } from 'react';
-import { useRouter } from 'expo-router';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 export default function MainLayout() {
-  const { user } = useAuthenticator();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!user) {
-      router.replace('/(auth)/');
-    }
-  }, [user]);
+  const { isAuthenticated } = useAuthGuard();
 
   return (
     <Stack

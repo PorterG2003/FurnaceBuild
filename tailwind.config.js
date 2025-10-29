@@ -6,13 +6,26 @@ module.exports = {
     "./app/**/*.{js,jsx,ts,tsx}",
   ],
   presets: [require("nativewind/preset")],
+  darkMode: false,
+  corePlugins: {
+    // Disable dark mode plugin entirely
+    darkMode: false,
+  },
   theme: {
     extend: {
       fontFamily: {
-        'manrope': ['Manrope_400Regular', 'system-ui', 'sans-serif'],
-        'manrope-medium': ['Manrope_500Medium', 'system-ui', 'sans-serif'],
-        'manrope-semibold': ['Manrope_600SemiBold', 'system-ui', 'sans-serif'],
-        'manrope-bold': ['Manrope_700Bold', 'system-ui', 'sans-serif'],
+        'instrument': ['InstrumentSans_400Regular', 'system-ui', 'sans-serif'],
+        'instrument-medium': ['InstrumentSans_500Medium', 'system-ui', 'sans-serif'],
+        'instrument-semibold': ['InstrumentSans_600SemiBold', 'system-ui', 'sans-serif'],
+        'instrument-bold': ['InstrumentSans_700Bold', 'system-ui', 'sans-serif'],
+        'instrument-italic': ['InstrumentSans_400Regular_Italic', 'system-ui', 'sans-serif'],
+        'instrument-medium-italic': ['InstrumentSans_500Medium_Italic', 'system-ui', 'sans-serif'],
+        'instrument-semibold-italic': ['InstrumentSans_600SemiBold_Italic', 'system-ui', 'sans-serif'],
+        'instrument-bold-italic': ['InstrumentSans_700Bold_Italic', 'system-ui', 'sans-serif'],
+        'inter': ['Inter_400Regular', 'system-ui', 'sans-serif'],
+        'inter-medium': ['Inter_500Medium', 'system-ui', 'sans-serif'],
+        'inter-semibold': ['Inter_600SemiBold', 'system-ui', 'sans-serif'],
+        'inter-bold': ['Inter_700Bold', 'system-ui', 'sans-serif'],
       },
       colors: {
         brand: {

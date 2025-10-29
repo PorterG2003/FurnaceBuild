@@ -1,14 +1,18 @@
-import { Slot } from 'expo-router';
-import { Authenticator } from '@aws-amplify/ui-react-native';
-import { Amplify } from 'aws-amplify';
-  import outputs from '../../amplify_outputs.json';
-
-Amplify.configure(outputs);
+import { Stack } from 'expo-router';
+import { useAuthGuard } from '@/hooks/useAuthGuard';
 
 export default function AuthLayout() {
+  const { isAuthenticated } = useAuthGuard();
+
+  // The auth guard handles redirects automatically
+  // If user is authenticated, they'll be redirected to main app
+  // If user is not authenticated, they can access auth pages
+
   return (
-    <Authenticator.Provider>
-      <Slot />
-    </Authenticator.Provider>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+      }}
+    />
   );
 }

@@ -1,23 +1,29 @@
-import { View, Text } from 'react-native';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
-import { Button } from '@/components/ui/button';
+import { View, useWindowDimensions } from 'react-native';
+import Svg, { Defs, Pattern, Circle, Rect } from 'react-native-svg';
+import { NavBar } from '@/components/ui/NavBar';
 
-export default function Home() {
-  const { signOut, user } = useAuthenticator();
-
+export default function Dashboard() {
+  const { width, height } = useWindowDimensions();
+  
   return (
-    <View className="flex-1 bg-white items-center justify-center gap-4 px-4">
-      <Text className="text-2xl font-bold text-center">
-        Welcome to FurnaceBuild!
-      </Text>
-      {user && (
-        <Text className="text-lg text-gray-600">
-          Logged in as: {user.username}
-        </Text>
-      )}
-      <Button onPress={signOut} variant="outline">
-        Sign Out
-      </Button>
+    <View className="flex-1 bg-[#121212] flex-row">
+      {/* Navigation Sidebar */}
+      <NavBar />
+      
+      {/* Main Content Area */}
+      <View className="flex-1 relative">
+        {/* Grid dot background */}
+        <View className="absolute inset-0">
+          <Svg width={width} height={height}>
+            <Defs>
+              <Pattern id="dot-pattern" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+                <Circle cx="10" cy="10" r="1" fill="#2A2A2A" />
+              </Pattern>
+            </Defs>
+            <Rect width="100%" height="100%" fill="url(#dot-pattern)" />
+          </Svg>
+        </View>
+      </View>
     </View>
   );
 }

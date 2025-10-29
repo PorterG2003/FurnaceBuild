@@ -1,15 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { signIn } from 'aws-amplify/auth';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/FormCard';
 
-export function SignInForm() {
+interface SignInFormProps {
+  onGoToSignUp: () => void;
+  onGoToForgotPassword: () => void;
+}
+
+export function SignInForm({ onGoToSignUp, onGoToForgotPassword }: SignInFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const { submitForm, toSignUp, toForgotPassword } = useAuthenticator();
+  const [success, setSuccess] = useState('');
+
+  // Log current state
+  console.log('🔐 SignInForm - Current state:', { email, isLoading, error, success });
+
+  const handleForgotPassword = () => {
+    console.log('🔐 Forgot password clicked');
+    onGoToForgotPassword();
+  };
+
+  const handleSignUp = () => {
+    console.log('📝 Sign up clicked');
+    onGoToSignUp();
+  };
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -19,36 +37,59 @@ export function SignInForm() {
 
     setIsLoading(true);
     setError('');
+    setSuccess('');
+
+    console.log('🔐 Attempting sign in with email:', email);
 
     try {
-      await submitForm({ username: email, password });
-    } catch (err) {
-      setError('Invalid email or password');
-      console.error('Sign in error:', err);
-    } finally {
+      console.log('🔐 Calling AWS Amplify signIn API...');
+      const { isSignedIn } = await signIn({
+        username: email,
+        password: password,
+      });
+
+      console.log('🔐 Sign in result:', { isSignedIn });
+
+      if (isSignedIn) {
+        setSuccess('Sign in successful! Redirecting...');
+        setIsLoading(false);
+        // The auth guard will handle the redirect
+      } else {
+        setError('Sign in failed. Please try again.');
+        setIsLoading(false);
+      }
+      
+    } catch (err: any) {
+      console.error('🔐 Sign in error:', err);
+      console.error('🔐 Error details:', JSON.stringify(err, null, 2));
+      
+      // More specific error handling
+      if (err.name === 'UserNotFoundException') {
+        setError('No account found with this email');
+      } else if (err.name === 'NotAuthorizedException') {
+        setError('Incorrect password');
+      } else if (err.name === 'UserNotConfirmedException') {
+        setError('Please verify your email before signing in');
+      } else if (err.name === 'InvalidParameterException') {
+        setError('Please check your email format');
+      } else {
+        setError(`Sign in failed: ${err.message}`);
+      }
       setIsLoading(false);
     }
   };
 
   return (
     <FormCard>
-      <Text className="text-3xl font-manrope-bold mb-2 text-center text-white">
+      <Text className="text-3xl font-instrument-semibold mb-2 text-center text-white">
         Welcome Back
       </Text>
-      <Text className="text-center text-gray-300 mb-8 font-manrope">
+      <Text className="text-center text-gray-300 mb-8 font-instrument">
         Sign in to your account to continue
       </Text>
 
-      {error ? (
-        <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
-          <Text className="text-red-400 text-center font-manrope-medium text-sm">
-            {error}
-          </Text>
-        </View>
-      ) : null}
-
       <View className="mb-4">
-        <Text className="text-sm font-manrope-medium mb-2 text-gray-300">Email</Text>
+        <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Email</Text>
         <TextInput
           value={email}
           onChangeText={setEmail}
@@ -69,7 +110,7 @@ export function SignInForm() {
       </View>
 
       <View className="mb-4">
-        <Text className="text-sm font-manrope-medium mb-2 text-gray-300">Password</Text>
+        <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Password</Text>
         <TextInput
           value={password}
           onChangeText={setPassword}
@@ -88,8 +129,24 @@ export function SignInForm() {
         />
       </View>
 
-      <Pressable onPress={toForgotPassword} className="mb-6">
-        <Text className="text-right text-brand-orange font-manrope-medium">
+      {error ? (
+        <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
+          <Text className="text-red-400 text-center font-instrument-medium text-sm">
+            {error}
+          </Text>
+        </View>
+      ) : null}
+
+      {success ? (
+        <View className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-xl">
+          <Text className="text-green-400 text-center font-instrument-medium text-sm">
+            {success}
+          </Text>
+        </View>
+      ) : null}
+
+      <Pressable onPress={handleForgotPassword} className="mb-6">
+        <Text className="text-right text-brand-orange font-instrument-medium">
           Forgot Password?
         </Text>
       </Pressable>
@@ -99,9 +156,9 @@ export function SignInForm() {
       </Button>
 
       <View className="flex-row justify-center items-center">
-          <Text className="text-gray-300 font-manrope">Don't have an account? </Text>
-        <Pressable onPress={toSignUp}>
-          <Text className="text-brand-orange font-manrope-medium">Sign Up</Text>
+          <Text className="text-gray-300 font-instrument">Don't have an account? </Text>
+        <Pressable onPress={handleSignUp}>
+          <Text className="text-brand-orange font-instrument-medium">Sign Up</Text>
         </Pressable>
       </View>
     </FormCard>

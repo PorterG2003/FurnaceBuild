@@ -4,7 +4,11 @@ import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/FormCard';
 
-export function ForgotPasswordForm() {
+interface ForgotPasswordFormProps {
+  onBackToSignIn: () => void;
+}
+
+export function ForgotPasswordForm({ onBackToSignIn }: ForgotPasswordFormProps) {
   const [email, setEmail] = useState('');
   const { submitForm, toSignIn } = useAuthenticator();
 
@@ -14,22 +18,30 @@ export function ForgotPasswordForm() {
 
   return (
     <FormCard>
-      <Text className="text-3xl font-manrope-bold mb-2 text-center text-gray-900">
+      <Text className="text-3xl font-instrument-semibold mb-2 text-center text-white">
         Reset Password
       </Text>
-      <Text className="text-center text-gray-700 mb-8 font-manrope">
+      <Text className="text-center text-gray-300 mb-8 font-instrument">
         Enter your email to receive a password reset code
       </Text>
 
       <View className="mb-6">
-        <Text className="text-sm font-manrope-medium mb-2 text-gray-700">Email</Text>
+        <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Email</Text>
         <TextInput
           value={email}
           onChangeText={setEmail}
           placeholder="Enter your email"
           autoCapitalize="none"
           keyboardType="email-address"
-          className="border border-gray-300 rounded-lg px-4 py-3 bg-white text-base"
+          className="border border-white/30 rounded-xl px-4 py-4 bg-white/5 backdrop-blur-sm text-base text-white placeholder-gray-300 focus:border-brand-orange focus:ring-0 focus:bg-white/10"
+          style={{
+            borderColor: '#FFFFFF4D',
+            backgroundColor: '#FFFFFF0D',
+            color: '#FFFFFF',
+            borderWidth: 1,
+          }}
+          selectionColor="#FF4D00"
+          underlineColorAndroid="transparent"
           autoComplete="email"
         />
       </View>
@@ -38,11 +50,11 @@ export function ForgotPasswordForm() {
         Send Reset Code
       </Button>
 
-        <Pressable onPress={toSignIn}>
-          <Text className="text-center text-brand-orange font-manrope-medium">
-            Back to Sign In
-          </Text>
-        </Pressable>
+                <Pressable onPress={onBackToSignIn}>
+                  <Text className="text-center text-brand-orange font-instrument-medium">
+                    Back to Sign In
+                  </Text>
+                </Pressable>
     </FormCard>
   );
 }

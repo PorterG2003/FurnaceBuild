@@ -18,7 +18,7 @@ export function Button({
   return (
     <TouchableOpacity
       className={cn(
-        'items-center justify-center rounded-xl font-manrope-medium',
+        'items-center justify-center rounded-xl font-instrument-medium',
         {
           'bg-brand-orange text-white': variant === 'default' && !props.disabled,
           'bg-brand-orange/50 text-white/70': variant === 'default' && props.disabled,
@@ -37,7 +37,7 @@ export function Button({
     >
       <Text
         className={cn(
-          'font-manrope-medium',
+          'font-instrument-medium',
           {
             'text-white': variant === 'default',
             'text-black': variant === 'secondary',

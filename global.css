@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Font CSS Variables for web compatibility */
+:root {
+  --font-instrument: 'Instrument Sans', system-ui, sans-serif;
+  --font-inter: 'Inter', system-ui, sans-serif;
+}
+
 /* Override Amplify UI default blue colors */
 [class*="amplify-button"] {
   background-color: #F3440D !important;

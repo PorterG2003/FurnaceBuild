@@ -1,7 +1,9 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { useRouter, usePathname } from 'expo-router';
 import { SvgXml } from 'react-native-svg';
+import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon } from 'react-native-heroicons/outline';
 
 const furnaceLogo = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
@@ -27,6 +29,19 @@ const furnaceLogo = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 
 export function NavBar() {
   const { signOut, user } = useAuthenticator();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const navItems = [
+    { label: 'Campaigns', path: '/campaigns', icon: DocumentTextIcon },
+  ];
+
+  const isActive = (path: string) => {
+    if (path === '/campaigns') {
+      return pathname === '/campaigns' || pathname === '/';
+    }
+    return pathname === path;
+  };
 
   return (
     <View className="bg-[#1A1A1A] border-r border-[#2A2A2A] w-56 h-full px-4 py-6">
@@ -40,30 +55,74 @@ export function NavBar() {
           <View className="mt-4 h-px bg-[#2A2A2A]" />
         </View>
 
-        {/* User Info */}
-        {user && (
-          <View className="mb-8">
-            <Text className="text-gray-400 font-instrument text-xs uppercase tracking-wide mb-2">
-              User
-            </Text>
-            <Text className="text-gray-300 font-instrument text-sm">
-              {user.username}
-            </Text>
-          </View>
-        )}
+        {/* Navigation Links */}
+        <View className="mb-6">
+          {navItems.map((item) => {
+            const active = isActive(item.path);
+            return (
+              <Pressable
+                key={item.path}
+                onPress={() => router.push(item.path)}
+                className={`px-2 py-2 mb-2 rounded-lg border ${
+                  active
+                    ? 'bg-[rgba(243,68,13,0.15)] border-brand-orange'
+                    : 'bg-[rgba(42,42,42,0.6)] border-[#3A3A3A]'
+                }`}
+              >
+                <View className="flex-row items-center">
+                  {item.icon && (
+                    <View className="mr-3">
+                      <item.icon size={20} color="#ffffff" />
+                    </View>
+                  )}
+                  <Text className="text-white font-instrument text-sm">
+                    {item.label}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
 
-        {/* Spacer to push sign out to bottom */}
+        {/* Spacer to push account section to bottom */}
         <View className="flex-1" />
 
-        {/* Sign Out Button */}
-        <Pressable 
-          onPress={signOut}
-          className="px-4 py-3 bg-brand-orange rounded-lg"
-        >
-          <Text className="text-white font-instrument-medium text-sm text-center">
-            Sign Out
-          </Text>
-        </Pressable>
+        {/* Account Section */}
+        {user && (
+          <View>
+            {/* Divider */}
+            <View className="h-px bg-[#2A2A2A] mb-4" />
+
+            {/* Settings Button */}
+            <Pressable
+              onPress={() => router.push('/account')}
+              className={`${pathname === '/account' 
+                ? 'bg-[rgba(243,68,13,0.15)] border-brand-orange' 
+                : 'bg-[rgba(42,42,42,0.6)] border-[#3A3A3A]'
+              } border rounded-lg px-2 py-2 mb-2`}
+            >
+              <View className="flex-row items-center">
+                <Cog6ToothIcon size={20} color="#ffffff" />
+                <Text className="text-white font-instrument text-sm ml-3">
+                  Settings
+                </Text>
+              </View>
+            </Pressable>
+
+            {/* Sign Out Button */}
+            <Pressable 
+              onPress={signOut}
+              className="bg-brand-orange rounded-lg border border-[rgba(248,81,2,0.3)] px-2 py-2"
+            >
+              <View className="flex-row items-center">
+                <ArrowRightOnRectangleIcon size={20} color="#ffffff" />
+                <Text className="text-white font-instrument text-sm ml-3">
+                  Sign Out
+                </Text>
+              </View>
+            </Pressable>
+          </View>
+        )}
       </View>
     </View>
   );

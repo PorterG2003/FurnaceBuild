@@ -3,7 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { SvgXml } from 'react-native-svg';
-import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon } from 'react-native-heroicons/outline';
+import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon } from 'react-native-heroicons/outline';
 
 const furnaceLogo = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
@@ -34,6 +34,7 @@ export function NavBar() {
 
   const navItems = [
     { label: 'Campaigns', path: '/campaigns', icon: DocumentTextIcon },
+    { label: 'Master Inbox', path: '/inbox', icon: InboxIcon },
   ];
 
   const isActive = (path: string) => {

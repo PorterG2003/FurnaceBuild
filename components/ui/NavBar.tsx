@@ -1,11 +1,12 @@
-import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, Pressable, Platform } from 'react-native';
+import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from 'react-native-reanimated';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { SvgXml } from 'react-native-svg';
 import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon } from 'react-native-heroicons/outline';
 
-const furnaceLogo = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+const furnaceLogoFull = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg height="100%" stroke-miterlimit="10" style="fill-rule:nonzero;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;" version="1.1" viewBox="0 0 1584 396" width="100%" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">
 <defs/>
@@ -27,10 +28,79 @@ const furnaceLogo = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 </g>
 </svg>`;
 
+// Icon-only version (cropped to just the flame icon)
+const furnaceLogoIcon = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg height="100%" stroke-miterlimit="10" style="fill-rule:nonzero;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;" version="1.1" viewBox="270 0 150 396" width="100%" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">
+<defs/>
+<g id="Layer-1">
+<g opacity="1">
+<path d="M390.215 87.1396C390.579 87.1396 393.453 90.7627 394.511 92.5787C394.808 93.0827 395.107 93.5869 395.416 94.1062C400.811 103.418 402.472 113.099 400.308 123.637C398.646 129.854 396.092 134.94 391.877 139.798C391.35 140.415 391.35 140.415 390.811 141.043C387.632 144.491 383.967 146.733 379.929 149.009C378.393 149.878 376.866 150.761 375.338 151.646C372.25 153.436 369.156 155.218 366.061 156.997C363.026 158.744 359.99 160.496 356.956 162.247C353.341 164.334 349.725 166.419 346.109 168.503C339.707 172.192 333.315 175.896 326.939 179.632C323.643 181.558 320.326 183.443 316.992 185.303C304.725 192.155 293.651 198.805 288.223 212.411C288.019 213.145 287.824 213.883 287.668 214.629C287.303 214.629 274.054 191.532 277.449 177.664C282.017 162.639 291.984 155.669 305.057 148.483C308.498 146.59 311.894 144.629 315.28 142.639C320.1 139.811 324.94 137.021 329.796 134.255C334.673 131.477 339.537 128.675 344.38 125.837C348.724 123.292 353.088 120.788 357.476 118.319C359.521 117.166 361.565 116.011 363.608 114.855C364.283 114.473 364.283 114.473 364.971 114.084C375.34 108.193 386.002 101.57 389.66 89.4607C389.857 88.6898 390.045 87.917 390.215 87.1396Z" fill="#f85102" fill-rule="nonzero" opacity="1" stroke="none"/>
+<path d="M392.986 153.656C393.352 153.656 399.176 161.064 401.084 168.57C402.884 174.894 402.467 182.468 400.191 188.577C400.037 189.028 399.883 189.479 399.724 189.943C395.54 201.358 388.196 207.41 377.957 213.171C376.279 214.118 374.611 215.083 372.944 216.05C370.522 217.455 368.099 218.854 365.672 220.248C363.202 221.665 360.734 223.087 358.27 224.514C357.368 225.036 357.368 225.036 356.446 225.568C355.244 226.265 354.04 226.961 352.836 227.657C349.925 229.339 347.006 231.003 344.067 232.634C338.123 235.931 332.385 239.26 327.024 243.453C326.33 243.974 326.33 243.974 325.623 244.507C320.226 248.871 316.754 255.15 314.829 261.745C314.463 261.745 311.592 257.913 310.533 255.994C310.235 255.458 309.936 254.923 309.628 254.371C304.072 244.277 302.125 234.375 305.196 223.096C309.032 210.458 318.715 203.34 329.83 197.134C330.509 196.75 331.19 196.367 331.869 195.982C332.914 195.391 333.961 194.8 335.008 194.21C338.539 192.22 342.05 190.192 345.559 188.161C349.85 185.682 354.144 183.207 358.446 180.747C358.909 180.482 359.373 180.216 359.85 179.943C362.384 178.494 364.927 177.064 367.483 175.652C373.141 172.519 378.578 169.448 383.562 165.296C383.966 164.982 384.369 164.667 384.787 164.343C388.195 161.58 392.227 157.977 392.986 153.656Z" fill="#f33203" fill-rule="nonzero" opacity="1" stroke="none"/>
+<path d="M381.899 230.149C386.251 233.942 387.017 240.811 387.442 246.224C388.098 257.058 384.327 266.379 377.327 274.562C373.279 278.919 368.331 281.648 363.237 284.598C359.868 286.565 356.707 288.719 353.63 291.123C353.269 291.392 352.908 291.663 352.535 291.94C347.341 296.037 343.81 302.577 341.99 308.86C341.624 308.86 328.739 285.9 332.257 271.731C336.704 255.647 348.785 249.08 362.409 241.353C367.212 238.629 371.986 235.853 376.751 233.062C377.268 232.758 377.785 232.456 378.318 232.143C378.771 231.878 379.225 231.612 379.69 231.338C380.415 230.92 381.151 230.523 381.899 230.149Z" fill="#ea1b04" fill-rule="nonzero" opacity="1" stroke="none"/>
+</g>
+</g>
+</svg>`;
+
+// Module-level variable to persist expanded state across route changes and remounts
+let persistedExpandedState = false;
+
 export function NavBar() {
   const { signOut, user } = useAuthenticator();
   const router = useRouter();
   const pathname = usePathname();
+  // Use persisted state, but allow local state to control animations
+  const [isExpanded, setIsExpanded] = useState(persistedExpandedState);
+
+  // Animated width values: collapsed = 56px (square buttons), expanded = 224px
+  // Padding values: px-2 = 8px, px-4 = 16px
+  // Initialize to match persisted expanded state
+  const width = useSharedValue(persistedExpandedState ? 224 : 56);
+  const paddingHorizontal = useSharedValue(persistedExpandedState ? 16 : 8);
+
+  // Track if this is a route change (no animation) vs user interaction (with animation)
+  const isRouteChangeRef = useRef(false);
+
+  // Ensure state and animated values stay in sync with persisted value on route changes
+  useEffect(() => {
+    if (isExpanded !== persistedExpandedState) {
+      isRouteChangeRef.current = true;
+      setIsExpanded(persistedExpandedState);
+    }
+  }, [pathname, isExpanded]);
+
+  // Animate based on isExpanded state, but skip animation on route changes
+  useEffect(() => {
+    const targetWidth = isExpanded ? 224 : 56;
+    const targetPadding = isExpanded ? 16 : 8;
+    
+    if (isRouteChangeRef.current) {
+      // Route change: set immediately without animation
+      width.value = targetWidth;
+      paddingHorizontal.value = targetPadding;
+      isRouteChangeRef.current = false;
+    } else {
+      // User interaction: animate smoothly with easing
+      const animationConfig = {
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+      };
+      width.value = withTiming(targetWidth, animationConfig);
+      paddingHorizontal.value = withTiming(targetPadding, animationConfig);
+    }
+  }, [isExpanded, width, paddingHorizontal]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      width: width.value,
+      paddingLeft: paddingHorizontal.value,
+      paddingRight: paddingHorizontal.value,
+      paddingVertical: 24, // py-6 = 24px (1.5rem)
+      backgroundColor: '#1A1A1A',
+      borderRightWidth: 1,
+      borderRightColor: '#2A2A2A',
+    };
+  });
 
   const navItems = [
     { label: 'Campaigns', path: '/campaigns', icon: DocumentTextIcon },
@@ -44,13 +114,37 @@ export function NavBar() {
     return pathname === path;
   };
 
+  const mouseProps = Platform.OS === 'web' ? {
+    onMouseEnter: () => {
+      persistedExpandedState = true;
+      setIsExpanded(true);
+    },
+    onMouseLeave: () => {
+      persistedExpandedState = false;
+      setIsExpanded(false);
+    },
+  } : {};
+
   return (
-    <View className="bg-[#1A1A1A] border-r border-[#2A2A2A] w-56 h-full px-4 py-6">
+    <Animated.View 
+      className="bg-[#1A1A1A] border-r border-[#2A2A2A] h-full py-6 overflow-hidden"
+      style={animatedStyle}
+      {...(mouseProps as any)}
+    >
       <View className="flex-col h-full">
         {/* Logo/Brand */}
         <View className="mb-6">
-          <View style={{ marginTop: -8, marginBottom: -5, marginLeft: -20 }}>
-            <SvgXml xml={furnaceLogo} width={180} height={45} />
+          <View className={isExpanded ? '' : 'items-center'}>
+            <View style={isExpanded 
+              ? { marginTop: -8, marginBottom: -5, marginLeft: -20 }
+              : { marginTop: -8, marginBottom: -5 }
+            }>
+              <SvgXml 
+                xml={isExpanded ? furnaceLogoFull : furnaceLogoIcon} 
+                width={isExpanded ? 180 : 40} 
+                height={isExpanded ? 45 : 45} 
+              />
+            </View>
           </View>
           {/* Divider */}
           <View className="mt-4 h-px bg-[#2A2A2A]" />
@@ -64,21 +158,25 @@ export function NavBar() {
               <Pressable
                 key={item.path}
                 onPress={() => router.push(item.path)}
-                className={`px-2 py-2 mb-2 rounded-lg border ${
+                className={`py-2 mb-2 rounded-lg border ${
+                  isExpanded ? 'px-2' : 'px-0'
+                } ${
                   active
                     ? 'bg-[rgba(243,68,13,0.15)] border-brand-orange'
                     : 'bg-[rgba(42,42,42,0.6)] border-[#3A3A3A]'
                 }`}
               >
-                <View className="flex-row items-center">
+                <View className={`flex-row items-center ${isExpanded ? '' : 'justify-center'}`} style={{ flexShrink: 0 }}>
                   {item.icon && (
-                    <View className="mr-3">
+                    <View className={isExpanded ? 'mr-3' : ''}>
                       <item.icon size={20} color="#ffffff" />
                     </View>
                   )}
-                  <Text className="text-white font-instrument text-sm">
-                    {item.label}
-                  </Text>
+                  {isExpanded && (
+                    <Text className="text-white font-instrument text-sm" numberOfLines={1} ellipsizeMode="tail">
+                      {item.label}
+                    </Text>
+                  )}
                 </View>
               </Pressable>
             );
@@ -100,31 +198,39 @@ export function NavBar() {
               className={`${pathname === '/account' 
                 ? 'bg-[rgba(243,68,13,0.15)] border-brand-orange' 
                 : 'bg-[rgba(42,42,42,0.6)] border-[#3A3A3A]'
-              } border rounded-lg px-2 py-2 mb-2`}
+              } border rounded-lg py-2 mb-2 ${isExpanded ? 'px-2' : 'px-0'}`}
             >
-              <View className="flex-row items-center">
-                <Cog6ToothIcon size={20} color="#ffffff" />
-                <Text className="text-white font-instrument text-sm ml-3">
-                  Settings
-                </Text>
+              <View className={`flex-row items-center ${isExpanded ? '' : 'justify-center'}`} style={{ flexShrink: 0 }}>
+                <View className={isExpanded ? 'mr-3' : ''}>
+                  <Cog6ToothIcon size={20} color="#ffffff" />
+                </View>
+                {isExpanded && (
+                  <Text className="text-white font-instrument text-sm" numberOfLines={1} ellipsizeMode="tail">
+                    Settings
+                  </Text>
+                )}
               </View>
             </Pressable>
 
             {/* Sign Out Button */}
             <Pressable 
               onPress={signOut}
-              className="bg-brand-orange rounded-lg border border-[rgba(248,81,2,0.3)] px-2 py-2"
+              className={`bg-brand-orange rounded-lg border border-[rgba(248,81,2,0.3)] py-2 ${isExpanded ? 'px-2' : 'px-0'}`}
             >
-              <View className="flex-row items-center">
-                <ArrowRightOnRectangleIcon size={20} color="#ffffff" />
-                <Text className="text-white font-instrument text-sm ml-3">
-                  Sign Out
-                </Text>
+              <View className={`flex-row items-center ${isExpanded ? '' : 'justify-center'}`} style={{ flexShrink: 0 }}>
+                <View className={isExpanded ? 'mr-3' : ''}>
+                  <ArrowRightOnRectangleIcon size={20} color="#ffffff" />
+                </View>
+                {isExpanded && (
+                  <Text className="text-white font-instrument text-sm" numberOfLines={1} ellipsizeMode="tail">
+                    Sign Out
+                  </Text>
+                )}
               </View>
             </Pressable>
           </View>
         )}
       </View>
-    </View>
+    </Animated.View>
   );
 }

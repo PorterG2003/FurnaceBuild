@@ -64,3 +64,117 @@ input[type="password"]:focus {
   outline: none !important;
   box-shadow: none !important;
 }
+
+/* React Flow node styling overrides - remove only React Flow's default wrapper styling */
+.react-flow__node {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Remove React Flow's default node wrapper styling - let our inline styles handle the appearance */
+.react-flow__node-default,
+.react-flow__node-input,
+.react-flow__node-output {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+/* React Flow Controls styling - match app design */
+.react-flow__controls {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.react-flow__controls-button {
+  background: #1A1A1A !important;
+  border: 1px solid #2A2A2A !important;
+  color: #FFFFFF !important;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.2s ease !important;
+  margin-bottom: 6px !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+}
+
+.react-flow__controls-button:hover {
+  background: #2A2A2A !important;
+  border-color: #F3440D !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 8px rgba(243, 68, 13, 0.3) !important;
+}
+
+.react-flow__controls-button:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 4px rgba(243, 68, 13, 0.2) !important;
+}
+
+.react-flow__controls-button svg {
+  fill: #FFFFFF !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* React Flow MiniMap styling - match app design */
+.react-flow__minimap {
+  background: #1A1A1A !important;
+  border: 1px solid #2A2A2A !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(243, 68, 13, 0.1) !important;
+  stroke: #F3440D !important;
+  stroke-width: 2 !important;
+}
+
+.react-flow__minimap-node {
+  fill: #2A2A2A !important;
+  stroke: #3A3A3A !important;
+}
+
+/* React Flow Edge styling */
+.react-flow__edge-path {
+  stroke: #3A3A3A !important;
+  stroke-width: 2 !important;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #F3440D !important;
+  stroke-width: 3 !important;
+}
+
+.react-flow__edge.selected .react-flow__edge-path:hover {
+  stroke: #F3440D !important;
+}
+
+/* Breadcrumb hover effects */
+@media (hover: hover) {
+  button:has(> .breadcrumb-link:hover),
+  [role="button"]:has(> .breadcrumb-link:hover),
+  .breadcrumb-link:hover {
+    color: #FFFFFF !important;
+    background-color: rgba(42, 42, 42, 0.5) !important;
+  }
+}
+
+/* For web platform, add hover styles */
+@media (min-width: 1px) {
+  /* Web-specific hover styles will be applied via inline styles or platform-specific CSS */
+}
+
+/* Hide React Flow watermark/attribution */
+.react-flow__attribution {
+  display: none !important;
+}

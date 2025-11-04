@@ -1,9 +1,21 @@
-import { View, useWindowDimensions } from 'react-native';
-import Svg, { Defs, Pattern, Circle, Rect } from 'react-native-svg';
+import { useEffect } from 'react';
+import { View } from 'react-native';
 import { NavBar } from '@/components/ui/NavBar';
+import { Background } from '@/components/ui/Background';
+import { useBackground } from '@/contexts/BackgroundContext';
 
 export default function Dashboard() {
-  const { width, height } = useWindowDimensions();
+  const { setVariant } = useBackground();
+
+  useEffect(() => {
+    // Set dotted background for dashboard
+    setVariant('dots');
+    
+    // Cleanup: reset to solid when leaving
+    return () => {
+      setVariant('solid');
+    };
+  }, [setVariant]);
   
   return (
     <View className="flex-1 bg-[#121212] flex-row">
@@ -12,17 +24,7 @@ export default function Dashboard() {
       
       {/* Main Content Area */}
       <View className="flex-1 relative">
-        {/* Grid dot background */}
-        <View className="absolute inset-0">
-          <Svg width={width} height={height}>
-            <Defs>
-              <Pattern id="dot-pattern" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-                <Circle cx="10" cy="10" r="1" fill="#2A2A2A" />
-              </Pattern>
-            </Defs>
-            <Rect width="100%" height="100%" fill="url(#dot-pattern)" />
-          </Svg>
-        </View>
+        <Background />
       </View>
     </View>
   );

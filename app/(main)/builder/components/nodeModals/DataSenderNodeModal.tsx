@@ -18,7 +18,7 @@ interface DataSenderNodeModalProps {
   };
 }
 
-export function DataSenderNodeModal({
+function DataSenderNodeModal({
   visible,
   onClose,
   onSave,
@@ -137,4 +137,7 @@ export function DataSenderNodeModal({
     </BaseModal>
   );
 }
+
+export { DataSenderNodeModal };
+export default DataSenderNodeModal;
 

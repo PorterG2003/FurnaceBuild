@@ -1,5 +1,5 @@
 import { BaseNode } from './BaseNode';
-import { nodeIcons } from './nodeTypes';
+import { nodeIcons } from './nodeMetadata';
 
 interface EmailNodeData {
   label?: string;
@@ -14,7 +14,7 @@ interface EmailNodeProps {
   id?: string;
 }
 
-export function EmailNode({ data, selected, id }: EmailNodeProps) {
+function EmailNode({ data, selected, id }: EmailNodeProps) {
   const displayLabel = data.label || 'Send Email';
   const IconComponent = nodeIcons.email;
   
@@ -40,4 +40,7 @@ export function EmailNode({ data, selected, id }: EmailNodeProps) {
     </BaseNode>
   );
 }
+
+export { EmailNode };
+export default EmailNode;
 

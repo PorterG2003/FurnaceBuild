@@ -1,5 +1,5 @@
 import { BaseNode } from './BaseNode';
-import { nodeIcons } from './nodeTypes';
+import { nodeIcons } from './nodeMetadata';
 
 interface LeadSourceNodeData {
   label?: string;
@@ -12,7 +12,7 @@ interface LeadSourceNodeProps {
   id?: string;
 }
 
-export function LeadSourceNode({ data, selected, id }: LeadSourceNodeProps) {
+function LeadSourceNode({ data, selected, id }: LeadSourceNodeProps) {
   const displayLabel = data.label || 'Lead Bucket';
   const IconComponent = nodeIcons.leadSource;
   
@@ -37,4 +37,7 @@ export function LeadSourceNode({ data, selected, id }: LeadSourceNodeProps) {
     </BaseNode>
   );
 }
+
+export { LeadSourceNode };
+export default LeadSourceNode;
 

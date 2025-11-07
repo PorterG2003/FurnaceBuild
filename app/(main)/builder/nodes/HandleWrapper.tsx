@@ -13,4 +13,7 @@ if (typeof window !== 'undefined') {
 }
 
 export { Handle };
+export default function HandleWrapper() {
+  return null;
+}
 

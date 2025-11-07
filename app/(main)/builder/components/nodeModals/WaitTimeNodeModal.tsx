@@ -18,7 +18,7 @@ interface WaitTimeNodeModalProps {
   };
 }
 
-export function WaitTimeNodeModal({
+function WaitTimeNodeModal({
   visible,
   onClose,
   onSave,
@@ -149,4 +149,7 @@ export function WaitTimeNodeModal({
     </BaseModal>
   );
 }
+
+export { WaitTimeNodeModal };
+export default WaitTimeNodeModal;
 

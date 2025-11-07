@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Platform } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from 'react-native-reanimated';
 import { PlusIcon } from 'react-native-heroicons/outline';
-import { nodeTypeMetadata, nodeIcons } from '../nodes/nodeTypes';
+import { nodeTypeMetadata, nodeIcons } from '../nodes/nodeMetadata';
 
 interface NodeSidebarProps {
   onAddNode: (nodeType: string) => void;
@@ -24,7 +24,7 @@ const categories = {
 // Module-level variable to persist expanded state
 let persistedExpandedState = true; // Start expanded by default
 
-export function NodeSidebar({ onAddNode }: NodeSidebarProps) {
+function NodeSidebar({ onAddNode }: NodeSidebarProps) {
   const [isExpanded, setIsExpanded] = useState(persistedExpandedState);
   
   // Animated width values: collapsed = 56px (same as NavBar), expanded = 280px
@@ -158,7 +158,7 @@ export function NodeSidebar({ onAddNode }: NodeSidebarProps) {
                 const metadata = nodeTypeMetadata[nodeType as keyof typeof nodeTypeMetadata];
                 if (!metadata) return null;
 
-                const IconComponent = nodeIcons[nodeType];
+                const IconComponent = nodeIcons[nodeType as keyof typeof nodeIcons];
                 
                 return (
                   <Pressable
@@ -247,4 +247,7 @@ export function NodeSidebar({ onAddNode }: NodeSidebarProps) {
     </Animated.View>
   );
 }
+
+export { NodeSidebar };
+export default NodeSidebar;
 

@@ -6,11 +6,7 @@ module.exports = {
     "./app/**/*.{js,jsx,ts,tsx}",
   ],
   presets: [require("nativewind/preset")],
-  darkMode: false,
-  corePlugins: {
-    // Disable dark mode plugin entirely
-    darkMode: false,
-  },
+  darkMode: 'class',
   theme: {
     extend: {
       fontFamily: {

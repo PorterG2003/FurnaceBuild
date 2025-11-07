@@ -15,38 +15,29 @@ function AuthContent() {
   const [authState, setAuthState] = useState<AuthState>('signIn');
   const [signUpData, setSignUpData] = useState<{ email: string; password: string } | null>(null);
 
-  // Log current auth state
-  console.log('🔐 AuthContent - Current state:', authState);
-
   const handleSignUpSuccess = (email: string, password: string) => {
-    console.log('🔐 Sign up successful, moving to verification');
     setSignUpData({ email, password });
     setAuthState('confirmSignUp');
   };
 
   const handleVerificationSuccess = () => {
-    console.log('🔐 Verification successful, redirecting to main app');
     router.replace('/');
   };
 
   const handleBackToSignIn = () => {
-    console.log('🔐 Back to sign in');
     setAuthState('signIn');
     setSignUpData(null);
   };
 
   const handleGoToSignUp = () => {
-    console.log('🔐 Go to sign up');
     setAuthState('signUp');
   };
 
   const handleGoToForgotPassword = () => {
-    console.log('🔐 Go to forgot password');
     setAuthState('forgotPassword');
   };
 
   const handleBackToSignInFromForgot = () => {
-    console.log('🔐 Back to sign in from forgot password');
     setAuthState('signIn');
   };
 

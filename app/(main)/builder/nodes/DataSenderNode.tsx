@@ -1,5 +1,5 @@
 import { BaseNode } from './BaseNode';
-import { nodeIcons } from './nodeTypes';
+import { nodeIcons } from './nodeMetadata';
 
 interface DataSenderNodeData {
   label?: string;
@@ -13,7 +13,7 @@ interface DataSenderNodeProps {
   id?: string;
 }
 
-export function DataSenderNode({ data, selected, id }: DataSenderNodeProps) {
+function DataSenderNode({ data, selected, id }: DataSenderNodeProps) {
   const displayLabel = data.label || 'Data Sender';
   const IconComponent = nodeIcons.dataSender;
   
@@ -41,4 +41,7 @@ export function DataSenderNode({ data, selected, id }: DataSenderNodeProps) {
     </BaseNode>
   );
 }
+
+export { DataSenderNode };
+export default DataSenderNode;
 

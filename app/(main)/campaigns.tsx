@@ -155,7 +155,10 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
   };
 
   const handleEdit = () => {
-    router.push(`/builder/${campaign.id}`);
+    router.push({
+      pathname: '/builder',
+      params: { campaignId: campaign.id },
+    });
   };
 
   return (
@@ -264,7 +267,10 @@ export default function CampaignsPage() {
       });
       await loadCampaigns();
       // Navigate to builder after successful creation
-      router.push(`/builder/${newCampaign.id}`);
+      router.push({
+        pathname: '/builder',
+        params: { campaignId: newCampaign.id },
+      });
     } finally {
       setIsCreating(false);
     }

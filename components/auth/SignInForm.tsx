@@ -16,16 +16,11 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword }: SignInFormPro
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Log current state
-  console.log('🔐 SignInForm - Current state:', { email, isLoading, error, success });
-
   const handleForgotPassword = () => {
-    console.log('🔐 Forgot password clicked');
     onGoToForgotPassword();
   };
 
   const handleSignUp = () => {
-    console.log('📝 Sign up clicked');
     onGoToSignUp();
   };
 
@@ -39,16 +34,11 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword }: SignInFormPro
     setError('');
     setSuccess('');
 
-    console.log('🔐 Attempting sign in with email:', email);
-
     try {
-      console.log('🔐 Calling AWS Amplify signIn API...');
       const { isSignedIn } = await signIn({
         username: email,
         password: password,
       });
-
-      console.log('🔐 Sign in result:', { isSignedIn });
 
       if (isSignedIn) {
         setSuccess('Sign in successful! Redirecting...');
@@ -60,9 +50,6 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword }: SignInFormPro
       }
       
     } catch (err: any) {
-      console.error('🔐 Sign in error:', err);
-      console.error('🔐 Error details:', JSON.stringify(err, null, 2));
-      
       // More specific error handling
       if (err.name === 'UserNotFoundException') {
         setError('No account found with this email');

@@ -20,7 +20,7 @@ interface EmailNodeModalProps {
   };
 }
 
-export function EmailNodeModal({
+function EmailNodeModal({
   visible,
   onClose,
   onSave,
@@ -164,4 +164,7 @@ export function EmailNodeModal({
     </BaseModal>
   );
 }
+
+export { EmailNodeModal };
+export default EmailNodeModal;
 

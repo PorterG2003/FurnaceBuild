@@ -2,7 +2,7 @@ import { useEffect, useCallback, useState } from 'react';
 import { View, Platform, Text } from 'react-native';
 import { NavBar } from '@/components/ui/NavBar';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { getCampaignById } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import { nodeTypes } from './nodes/nodeTypes';
@@ -195,13 +195,18 @@ function FlowEditor({ onEditNode }: FlowEditorProps) {
 
 export default function BuilderPage() {
   const { campaignId } = useLocalSearchParams<{ campaignId: string }>();
+  const router = useRouter();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [editingNode, setEditingNode] = useState<{ id: string; type: string; data: any } | null>(null);
 
   useEffect(() => {
-    console.log('Builder page mounted, campaignId:', campaignId);
-    console.log('React Flow loaded:', !!ReactFlow);
+    if (!campaignId) {
+      router.replace('/campaigns');
+    }
+  }, [campaignId, router]);
+
+  useEffect(() => {
 
     // Fetch campaign data
     const loadCampaign = async () => {
@@ -220,6 +225,17 @@ export default function BuilderPage() {
 
     loadCampaign();
   }, [campaignId]);
+
+  if (!campaignId) {
+    return (
+      <View className="flex-1 bg-[#121212] flex-row">
+        <NavBar />
+        <View className="flex-1 items-center justify-center">
+          <Text className="text-gray-300 font-instrument">Redirecting…</Text>
+        </View>
+      </View>
+    );
+  }
 
   // React Flow only works on web
   if (Platform.OS !== 'web') {
@@ -329,12 +345,21 @@ export default function BuilderPage() {
         const ModalComponent = nodeModalRegistry[editingNode.type];
         if (!ModalComponent) return null;
         
+        // For Lead Bucket node, pass campaign and bucket IDs
+        const modalData = editingNode.type === 'leadSource' 
+          ? {
+              ...editingNode.data,
+              campaignId: campaignId,
+              bucketId: editingNode.data?.bucketId || campaign?.bucket_id,
+            }
+          : editingNode.data;
+        
         return (
           <ModalComponent
             visible={!!editingNode}
             onClose={handleCloseModal}
             onSave={handleSaveNode}
-            initialData={editingNode.data}
+            initialData={modalData}
           />
         );
       })()}

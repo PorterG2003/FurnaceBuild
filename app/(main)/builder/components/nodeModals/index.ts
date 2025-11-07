@@ -21,3 +21,8 @@ export const nodeModalRegistry: Record<string, React.ComponentType<any>> = {
   dataSender: DataSenderNodeModal,
 };
 
+// Default export for Expo Router
+export default function NodeModalsIndex() {
+  return null;
+}
+

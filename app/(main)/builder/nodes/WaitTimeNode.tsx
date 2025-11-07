@@ -1,5 +1,5 @@
 import { BaseNode } from './BaseNode';
-import { nodeIcons } from './nodeTypes';
+import { nodeIcons } from './nodeMetadata';
 
 interface WaitTimeNodeData {
   label?: string;
@@ -13,7 +13,7 @@ interface WaitTimeNodeProps {
   id?: string;
 }
 
-export function WaitTimeNode({ data, selected, id }: WaitTimeNodeProps) {
+function WaitTimeNode({ data, selected, id }: WaitTimeNodeProps) {
   const displayLabel = data.label || 'Wait Time';
   const IconComponent = nodeIcons.waitTime;
   
@@ -42,4 +42,7 @@ export function WaitTimeNode({ data, selected, id }: WaitTimeNodeProps) {
     </BaseNode>
   );
 }
+
+export { WaitTimeNode };
+export default WaitTimeNode;
 

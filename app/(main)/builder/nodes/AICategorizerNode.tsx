@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Handle } from './HandleWrapper';
-import { nodeIcons } from './nodeTypes';
+import { nodeIcons } from './nodeMetadata';
 
 interface AICategorizerNodeData {
   label?: string;
@@ -175,4 +175,6 @@ export function AICategorizerNode({ data, selected, id }: AICategorizerNodeProps
     </div>
   );
 }
+
+export default AICategorizerNode;
 

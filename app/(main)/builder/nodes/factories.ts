@@ -93,6 +93,11 @@ export function createAICategorizerNode(
   };
 }
 
+// Default export for Expo Router
+export default function FactoriesIndex() {
+  return null;
+}
+
 export function createDataSenderNode(
   position: { x: number; y: number },
   data?: {

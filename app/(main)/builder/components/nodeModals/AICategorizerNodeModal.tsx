@@ -156,3 +156,5 @@ export function AICategorizerNodeModal({
   );
 }
 
+export default AICategorizerNodeModal;
+

@@ -29,7 +29,7 @@ const PencilIcon = ({ size = 16, color = '#ffffff' }: { size?: number; color?: s
   </svg>
 );
 
-export function BaseNode({ 
+function BaseNode({ 
   label, 
   handles = { source: true, target: true },
   children,
@@ -147,4 +147,7 @@ export function BaseNode({
     </div>
   );
 }
+
+export { BaseNode };
+export default BaseNode;
 

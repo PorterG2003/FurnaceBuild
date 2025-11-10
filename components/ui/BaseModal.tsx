@@ -1,4 +1,4 @@
-import { Modal, Pressable, View, Text, TouchableOpacity } from 'react-native';
+import { Modal, Pressable, View, Text, ScrollView } from 'react-native';
 import { XMarkIcon } from 'react-native-heroicons/outline';
 
 interface BaseModalProps {
@@ -8,7 +8,8 @@ interface BaseModalProps {
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  maxHeight?: number;
 }
 
 const maxWidthClasses = {
@@ -16,6 +17,7 @@ const maxWidthClasses = {
   md: 'max-w-md',
   lg: 'max-w-lg',
   xl: 'max-w-xl',
+  '2xl': 'max-w-2xl',
 };
 
 export function BaseModal({
@@ -26,6 +28,7 @@ export function BaseModal({
   children,
   footer,
   maxWidth = 'md',
+  maxHeight,
 }: BaseModalProps) {
   return (
     <Modal
@@ -42,7 +45,10 @@ export function BaseModal({
           style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}
           onPress={(e) => e.stopPropagation()}
         >
-          <View className={`bg-[#1A1A1A] rounded-2xl border border-[#2A2A2A] w-full ${maxWidthClasses[maxWidth]}`}>
+          <View
+            className={`bg-[#1A1A1A] rounded-2xl border border-[#2A2A2A] w-full ${maxWidthClasses[maxWidth]}`}
+            style={maxHeight ? { maxHeight, minHeight: 320 } : {}}
+          >
             {/* Header */}
             <View className="flex-row items-start justify-between p-6 border-b border-[#2A2A2A]">
               <View className="flex-1 mr-4">
@@ -64,8 +70,22 @@ export function BaseModal({
             </View>
 
             {/* Content */}
-            <View className="p-6">
+            <View
+              className="p-6"
+              style={maxHeight ? { flexGrow: 1, flexShrink: 1, minHeight: 0 } : undefined}
+            >
+              {maxHeight ? (
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ paddingBottom: footer ? 12 : 0 }}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator
+                >
               {children}
+                </ScrollView>
+              ) : (
+                children
+              )}
             </View>
 
             {/* Footer */}

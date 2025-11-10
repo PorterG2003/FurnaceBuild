@@ -350,7 +350,7 @@ export default function BuilderPage() {
           ? {
               ...editingNode.data,
               campaignId: campaignId,
-              bucketId: editingNode.data?.bucketId || campaign?.bucket_id,
+              bucketId: campaign?.bucket_id || editingNode.data?.bucketId,
             }
           : editingNode.data;
         

@@ -35,23 +35,27 @@ export function Button({
       activeOpacity={0.8}
       {...props}
     >
-      <Text
-        className={cn(
-          'font-instrument-medium',
-          {
-            'text-white': variant === 'default',
-            'text-black': variant === 'secondary',
-            'text-foreground': variant === 'outline',
-          },
-          {
-            'text-base': size === 'default',
-            'text-sm': size === 'sm',
-            'text-lg': size === 'lg',
-          }
-        )}
-      >
-        {children}
-      </Text>
+      {React.isValidElement(children) && children.type !== Text ? (
+        children
+      ) : (
+        <Text
+          className={cn(
+            'font-instrument-medium',
+            {
+              'text-white': variant === 'default',
+              'text-black': variant === 'secondary',
+              'text-foreground': variant === 'outline',
+            },
+            {
+              'text-base': size === 'default',
+              'text-sm': size === 'sm',
+              'text-lg': size === 'lg',
+            }
+          )}
+        >
+          {children}
+        </Text>
+      )}
     </TouchableOpacity>
   );
 }

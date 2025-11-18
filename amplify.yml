@@ -17,10 +17,9 @@ frontend:
         - npm ci
     build:
       commands:
-        - echo "Building frontend..."
-        # Add your frontend build commands here if needed
+        - npx expo export:web
   artifacts:
-    baseDirectory: /
+    baseDirectory: web-build
     files:
       - '**/*'
   cache:

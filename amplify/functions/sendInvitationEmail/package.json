@@ -1,0 +1,10 @@
+{
+  "type": "module",
+  "dependencies": {
+    "resend": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145"
+  }
+}
+

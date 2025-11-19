@@ -8,7 +8,7 @@ import { useRouter } from 'expo-router';
 import { getCampaigns, createCampaign, deleteCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import { useBackground } from '@/contexts/BackgroundContext';
-import { PlusIcon, TrashIcon, PencilIcon } from 'react-native-heroicons/outline';
+import { PlusIcon, TrashIcon, PencilIcon, ChartBarIcon } from 'react-native-heroicons/outline';
 
 interface CreateCampaignModalProps {
   visible: boolean;
@@ -161,6 +161,13 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
     });
   };
 
+  const handleInsights = () => {
+    router.push({
+      pathname: '/campaigns/[id]',
+      params: { id: campaign.id },
+    });
+  };
+
   return (
     <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
       <View className="flex-row items-start justify-between">
@@ -192,6 +199,12 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
           </View>
         ) : (
           <View className="flex-row gap-2">
+            <Pressable
+              onPress={handleInsights}
+              className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+            >
+              <ChartBarIcon size={18} color="#f85102" />
+            </Pressable>
             <Pressable
               onPress={handleEdit}
               className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"

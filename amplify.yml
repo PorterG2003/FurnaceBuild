@@ -18,6 +18,13 @@ frontend:
         - npm ci
     build:
       commands:
+        - |
+          if [ -n "$EXPO_PUBLIC_SUPABASE_URL" ]; then
+            echo "EXPO_PUBLIC_SUPABASE_URL=$EXPO_PUBLIC_SUPABASE_URL" >> .env
+          fi
+          if [ -n "$EXPO_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=$EXPO_PUBLIC_SUPABASE_ANON_KEY" >> .env
+          fi
         - npx expo export --platform web --output-dir web-build
   artifacts:
     baseDirectory: web-build

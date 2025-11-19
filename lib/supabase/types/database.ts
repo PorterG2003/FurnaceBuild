@@ -20,6 +20,55 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      account_users: {
+        Row: {
+          id: string;
+          account_id: string;
+          user_id: string;
+          is_owner: boolean;
+          role: 'owner' | 'admin' | 'member';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          user_id: string;
+          is_owner?: boolean;
+          role?: 'owner' | 'admin' | 'member';
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          user_id?: string;
+          is_owner?: boolean;
+          role?: 'owner' | 'admin' | 'member';
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      accounts: {
+        Row: {
+          id: string;
+          name: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       campaigns: {
         Row: {
           id: string;
@@ -165,6 +214,64 @@ export interface Database {
           processing_at?: string | null;
           completed_at?: string | null;
           updated_at?: string;
+        };
+      };
+      users: {
+        Row: {
+          id: string;
+          external_id: string;
+          email: string;
+          name: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          external_id: string;
+          email: string;
+          name?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          external_id?: string;
+          email?: string;
+          name?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      invitations: {
+        Row: {
+          id: string;
+          account_id: string;
+          email: string;
+          invited_by_user_id: string;
+          status: 'pending' | 'accepted' | 'declined' | 'expired';
+          created_at: string;
+          updated_at: string;
+          expires_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          email: string;
+          invited_by_user_id: string;
+          status?: 'pending' | 'accepted' | 'declined' | 'expired';
+          created_at?: string;
+          updated_at?: string;
+          expires_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          email?: string;
+          invited_by_user_id?: string;
+          status?: 'pending' | 'accepted' | 'declined' | 'expired';
+          created_at?: string;
+          updated_at?: string;
+          expires_at?: string | null;
         };
       };
     };

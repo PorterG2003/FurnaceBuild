@@ -2,28 +2,15 @@ import { useState, useEffect } from 'react';
 import { View, Text, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { NavBar } from '@/components/ui/NavBar';
-import { Background } from '@/components/ui/Background';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
-import { useBackground } from '@/contexts/BackgroundContext';
 import { getCampaignById } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 
 export default function CampaignPage() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { setVariant } = useBackground();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    // Set solid background for campaign page
-    setVariant('solid');
-    
-    // Cleanup: reset to solid when leaving
-    return () => {
-      setVariant('solid');
-    };
-  }, [setVariant]);
 
   useEffect(() => {
     const loadCampaign = async () => {
@@ -49,8 +36,6 @@ export default function CampaignPage() {
       
       {/* Main Content Area */}
       <View className="flex-1 relative">
-        <Background />
-
         {/* Header with Breadcrumb */}
         <View 
           style={{

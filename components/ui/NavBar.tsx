@@ -4,7 +4,7 @@ import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from '
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { SvgXml } from 'react-native-svg';
-import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon } from 'react-native-heroicons/outline';
+import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon, EnvelopeIcon } from 'react-native-heroicons/outline';
 
 const furnaceLogoFull = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
@@ -105,11 +105,15 @@ export function NavBar() {
   const navItems = [
     { label: 'Campaigns', path: '/campaigns', icon: DocumentTextIcon },
     { label: 'Master Inbox', path: '/inbox', icon: InboxIcon },
+    { label: 'Senders', path: '/senders', icon: EnvelopeIcon },
   ];
 
   const isActive = (path: string) => {
     if (path === '/campaigns') {
       return pathname === '/campaigns' || pathname === '/';
+    }
+    if (path === '/senders') {
+      return pathname === '/senders' || pathname?.startsWith('/senders/');
     }
     return pathname === path;
   };

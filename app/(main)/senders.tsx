@@ -1,24 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
 import { NavBar } from '@/components/ui/NavBar';
-import { Background } from '@/components/ui/Background';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
-import { useBackground } from '@/contexts/BackgroundContext';
 
 export default function SendersPage() {
   const { user } = useAuthenticator();
-  const { setVariant } = useBackground();
   const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    // Set solid background for senders page
-    setVariant('solid');
-    
-    // Cleanup: reset to solid when leaving
-    return () => {
-      setVariant('solid');
-    };
-  }, [setVariant]);
 
   return (
     <View className="flex-1 bg-[#121212] flex-row">
@@ -26,8 +13,6 @@ export default function SendersPage() {
       
       {/* Main Content Area */}
       <View className="flex-1 relative">
-        <Background />
-
         {/* Content */}
         <ScrollView
           className="flex-1"

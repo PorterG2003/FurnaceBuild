@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TextInput, Modal, Pressable, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { NavBar } from '@/components/ui/NavBar';
-import { Background } from '@/components/ui/Background';
 import { Button } from '@/components/ui/button';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter } from 'expo-router';
 import { getCampaigns, createCampaign, deleteCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
-import { useBackground } from '@/contexts/BackgroundContext';
 import { PlusIcon, TrashIcon, PencilIcon, ChartBarIcon } from 'react-native-heroicons/outline';
 
 interface CreateCampaignModalProps {
@@ -228,7 +226,6 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
 export default function CampaignsPage() {
   const { user } = useAuthenticator();
   const router = useRouter();
-  const { setVariant } = useBackground();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -255,16 +252,6 @@ export default function CampaignsPage() {
   useEffect(() => {
     loadCampaigns();
   }, [user?.userId]);
-
-  useEffect(() => {
-    // Set solid background for campaigns page
-    setVariant('solid');
-    
-    // Cleanup: reset to solid when leaving
-    return () => {
-      setVariant('solid');
-    };
-  }, [setVariant]);
 
   const handleCreateCampaign = async (name: string) => {
     if (!user?.userId) {
@@ -308,8 +295,6 @@ export default function CampaignsPage() {
       
       {/* Main Content Area */}
       <View className="flex-1 relative">
-        <Background />
-
         {/* Content */}
         <ScrollView
           className="flex-1"

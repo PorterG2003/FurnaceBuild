@@ -10,8 +10,11 @@ import {
   View,
 } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
-import { NavBar } from '@/components/ui/NavBar';
+import { PageLayout } from '@/components/ui/PageLayout';
 import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/Alert';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { ConfirmDeleteModal } from '@/components/ui/ConfirmDeleteModal';
 import { PlayIcon, TrashIcon } from 'react-native-heroicons/outline';
@@ -505,15 +508,7 @@ export default function SendersPage() {
   };
 
   return (
-    <View className="flex-1 bg-[#121212] flex-row">
-      <NavBar />
-      
-      <View className="flex-1 relative">
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{ padding: 24 }}
-          showsVerticalScrollIndicator={false}
-        >
+    <PageLayout>
           {/* Header */}
           <View className="mb-6 flex-row items-center justify-between">
             <View>
@@ -530,21 +525,8 @@ export default function SendersPage() {
           </View>
 
           {/* Messages */}
-          {error && (
-            <View className="mb-4 p-4 bg-red-500/20 border border-red-500/30 rounded-xl">
-              <Text className="text-red-400 text-center font-instrument-medium">
-                {error}
-              </Text>
-            </View>
-          )}
-
-          {success && (
-            <View className="mb-4 p-4 bg-green-500/20 border border-green-500/30 rounded-xl">
-              <Text className="text-green-400 text-center font-instrument-medium">
-                {success}
-              </Text>
-            </View>
-          )}
+          {error && <Alert variant="error" message={error} />}
+          {success && <Alert variant="success" message={success} />}
 
           {/* Bulk Actions Bar - Shows when items are selected */}
           {selectedMailboxes.size > 0 && (
@@ -587,25 +569,15 @@ export default function SendersPage() {
 
           {/* Loading State */}
           {isLoading ? (
-            <View className="items-center justify-center py-20">
-              <ActivityIndicator size="large" color="#f85102" />
-              <Text className="text-gray-400 font-instrument mt-4">
-                Loading mailboxes...
-              </Text>
-            </View>
+            <LoadingState message="Loading mailboxes..." />
           ) : mailboxes.length === 0 ? (
             /* Empty State */
-            <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-8 items-center">
-              <Text className="text-white font-instrument-semibold text-xl mb-2">
-                No Mailboxes Connected
-              </Text>
-              <Text className="text-gray-400 font-instrument text-center mb-6">
-                Connect your first mailbox to start sending and receiving emails
-              </Text>
-              <Button onPress={() => setShowConnectModal(true)}>
-                Connect Your First Mailbox
-              </Button>
-            </View>
+            <EmptyState
+              title="No Mailboxes Connected"
+              description="Connect your first mailbox to start sending and receiving emails"
+              actionText="Connect Your First Mailbox"
+              onAction={() => setShowConnectModal(true)}
+            />
           ) : (
             /* Mailboxes Table */
             <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
@@ -724,8 +696,6 @@ export default function SendersPage() {
               })}
             </View>
           )}
-        </ScrollView>
-      </View>
 
       {/* Connect Mailbox Modal - Same as inbox.tsx */}
       <Modal
@@ -1192,6 +1162,6 @@ export default function SendersPage() {
         itemName={mailboxToDelete?.display_name || mailboxToDelete?.email_address}
         isLoading={deleting}
       />
-    </View>
+    </PageLayout>
   );
 }

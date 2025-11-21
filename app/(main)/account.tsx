@@ -9,8 +9,9 @@ import {
   View,
 } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
-import { NavBar } from '@/components/ui/NavBar';
+import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
+import { LoadingState, Alert } from '@/components/ui/feedback';
 import {
   AccountMembership,
   addUserToAccount,
@@ -439,16 +440,14 @@ export default function AccountPage() {
 
   const isOwner = membership?.membership.is_owner ?? false;
   return (
-    <View className="flex-1 bg-[#121212] flex-row">
-      <NavBar />
-      <View className="flex-1">
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{
-            paddingBottom: 48,
-            flexGrow: 1,
-          }}
-        >
+    <PageLayout contentPadding={0} scrollable={false}>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          paddingBottom: 48,
+          flexGrow: 1,
+        }}
+      >
           {/* Header */}
           <View 
             style={{
@@ -471,16 +470,9 @@ export default function AccountPage() {
           <View className="p-6 items-center">
             <View className="w-full max-w-2xl">
           {isLoading ? (
-            <View className="flex-1 items-center justify-center mt-20">
-              <ActivityIndicator size="large" color="#f33203" />
-              <Text className="text-gray-400 mt-4">Loading account details...</Text>
-            </View>
+            <LoadingState message="Loading account details..." color="#f33203" />
           ) : loadError ? (
-            <View className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6">
-              <Text className="text-red-300 text-base font-instrument-medium">
-                {loadError}
-              </Text>
-            </View>
+            <Alert variant="error" message={loadError} />
           ) : (
             <>
               <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
@@ -810,8 +802,7 @@ export default function AccountPage() {
             </View>
           </View>
         </ScrollView>
-      </View>
-    </View>
+    </PageLayout>
   );
 }
 

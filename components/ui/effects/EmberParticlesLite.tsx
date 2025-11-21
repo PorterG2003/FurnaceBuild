@@ -23,7 +23,7 @@ type Particle = {
   windStrength: number; // how much wind affects this particle
 };
 
-export default function EmberParticlesLite({ 
+export function EmberParticlesLite({ 
   density = "low", 
   maxOpacity = 0.06 
 }: Props) {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Logo } from './Logo';
+import { Logo } from '../branding';
 
 interface FormCardProps {
   children: React.ReactNode;

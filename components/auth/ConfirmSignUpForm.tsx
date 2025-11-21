@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
 import { confirmSignUp, signIn } from 'aws-amplify/auth';
 import { Button } from '@/components/ui/button';
-import { FormCard } from '@/components/ui/FormCard';
+import { FormCard } from '@/components/ui/forms';
 
 interface ConfirmSignUpFormProps {
   email: string;

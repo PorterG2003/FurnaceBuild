@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
-import { BaseModal } from '@/components/ui/BaseModal';
+import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { TrashIcon } from 'react-native-heroicons/outline';
 

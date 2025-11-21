@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TextInput, Modal, Pressable, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { NavBar } from '@/components/ui/NavBar';
+import { View, Text, TextInput, Pressable, TouchableOpacity } from 'react-native';
+import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
+import { Alert, LoadingState, EmptyState } from '@/components/ui/feedback';
+import { BaseModal } from '@/components/ui/modals';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter } from 'expo-router';
 import { getCampaigns, createCampaign, deleteCampaign } from '@/lib/supabase/services/campaigns';
@@ -42,89 +44,72 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
   };
 
   return (
-    <Modal
+    <BaseModal
       visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={handleClose}
-    >
-      <Pressable
-        style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
-        onPress={handleClose}
-      >
-        <Pressable
-          style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}
-          onPress={(e) => e.stopPropagation()}
-        >
-          <View className="bg-[#1A1A1A] rounded-2xl border border-[#2A2A2A] p-6 w-full max-w-md">
-            <Text className="text-2xl font-instrument-semibold mb-2 text-white">
-              Create New Campaign
-            </Text>
-            <Text className="text-gray-400 mb-6 font-instrument text-sm">
-              Give your campaign a name to get started
-            </Text>
-
-            <View className="mb-4">
-              <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Campaign Name</Text>
-              <TextInput
-                value={name}
-                onChangeText={(text) => {
-                  setName(text);
-                  setError('');
-                }}
-                placeholder="Enter campaign name"
-                placeholderTextColor="#666"
-                className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
-                style={{
-                  borderColor: '#FFFFFF4D',
-                  backgroundColor: '#FFFFFF0D',
-                  color: '#FFFFFF',
-                  borderWidth: 1,
-                }}
-                selectionColor="#FF4D00"
-                underlineColorAndroid="transparent"
-                autoFocus
-              />
-            </View>
-
-            {error ? (
-              <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
-                <Text className="text-red-400 text-center font-instrument-medium text-sm">
-                  {error}
-                </Text>
-              </View>
-            ) : null}
-
-            <View className="flex-row gap-3">
-              <View className="flex-1">
-                <TouchableOpacity
-                  onPress={handleClose}
-                  disabled={isLoading}
-                  className="border border-[#3A3A3A] rounded-xl px-6 py-3 items-center justify-center"
-                  style={{
-                    borderWidth: 1,
-                    borderColor: '#3A3A3A',
-                    opacity: isLoading ? 0.5 : 1,
-                  }}
-                >
-                  <Text className="text-white font-instrument-medium text-base">
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <View className="flex-1">
-                <Button
-                  onPress={handleCreate}
-                  disabled={isLoading}
-                >
-                  {isLoading ? 'Creating...' : 'Create Campaign'}
-                </Button>
-              </View>
-            </View>
+      onClose={handleClose}
+      title="Create New Campaign"
+      description="Give your campaign a name to get started"
+      maxWidth="md"
+      footer={
+        <View className="flex-row gap-3">
+          <View className="flex-1">
+            <TouchableOpacity
+              onPress={handleClose}
+              disabled={isLoading}
+              className="border border-[#3A3A3A] rounded-xl px-6 py-3 items-center justify-center"
+              style={{
+                borderWidth: 1,
+                borderColor: '#3A3A3A',
+                opacity: isLoading ? 0.5 : 1,
+              }}
+            >
+              <Text className="text-white font-instrument-medium text-base">
+                Cancel
+              </Text>
+            </TouchableOpacity>
           </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+          <View className="flex-1">
+            <Button
+              onPress={handleCreate}
+              disabled={isLoading}
+            >
+              {isLoading ? 'Creating...' : 'Create Campaign'}
+            </Button>
+          </View>
+        </View>
+      }
+    >
+      <View className="mb-4">
+        <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Campaign Name</Text>
+        <TextInput
+          value={name}
+          onChangeText={(text) => {
+            setName(text);
+            setError('');
+          }}
+          placeholder="Enter campaign name"
+          placeholderTextColor="#666"
+          className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
+          style={{
+            borderColor: '#FFFFFF4D',
+            backgroundColor: '#FFFFFF0D',
+            color: '#FFFFFF',
+            borderWidth: 1,
+          }}
+          selectionColor="#FF4D00"
+          underlineColorAndroid="transparent"
+          autoFocus
+        />
+      </View>
+
+      {error ? (
+        <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
+          <Text className="text-red-400 text-center font-instrument-medium text-sm">
+            {error}
+          </Text>
+        </View>
+      ) : null}
+    </BaseModal>
   );
 }
 
@@ -290,27 +275,48 @@ export default function CampaignsPage() {
   };
 
   return (
-    <View className="flex-1 bg-[#121212] flex-row">
-      <NavBar />
-      
-      {/* Main Content Area */}
-      <View className="flex-1 relative">
-        {/* Content */}
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{ padding: 24 }}
-          showsVerticalScrollIndicator={false}
+    <PageLayout>
+      {/* Header */}
+      <View className="flex-row items-center justify-between mb-6">
+        <View>
+          <Text className="text-3xl font-instrument-semibold text-white mb-2">
+            Campaigns
+          </Text>
+          <Text className="text-gray-400 font-instrument">
+            Manage your marketing campaigns
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => setShowCreateModal(true)}
+          className="bg-brand-orange rounded-xl px-6 py-3 flex-row items-center gap-2"
+          style={{ backgroundColor: '#f85102' }}
         >
-          {/* Header */}
-          <View className="flex-row items-center justify-between mb-6">
-            <View>
-              <Text className="text-3xl font-instrument-semibold text-white mb-2">
-                Campaigns
-              </Text>
-              <Text className="text-gray-400 font-instrument">
-                Manage your marketing campaigns
-              </Text>
-            </View>
+          <PlusIcon size={20} color="#ffffff" />
+          <Text className="text-white font-instrument-medium text-base">
+            New Campaign
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Error Message */}
+      {error && (
+        <Alert
+          variant="error"
+          message={error}
+          actionText="Try again"
+          onAction={loadCampaigns}
+        />
+      )}
+
+      {/* Loading State */}
+      {isLoading ? (
+        <LoadingState message="Loading campaigns..." />
+      ) : campaigns.length === 0 ? (
+        /* Empty State */
+        <EmptyState
+          title="No campaigns yet"
+          description="Create your first campaign to get started with marketing automation"
+          action={
             <Pressable
               onPress={() => setShowCreateModal(true)}
               className="bg-brand-orange rounded-xl px-6 py-3 flex-row items-center gap-2"
@@ -318,73 +324,24 @@ export default function CampaignsPage() {
             >
               <PlusIcon size={20} color="#ffffff" />
               <Text className="text-white font-instrument-medium text-base">
-                New Campaign
+                Create Campaign
               </Text>
             </Pressable>
-          </View>
-
-          {/* Error Message */}
-          {error ? (
-            <View className="mb-4 p-4 bg-red-500/20 border border-red-500/30 rounded-xl">
-              <Text className="text-red-400 font-instrument-medium text-sm">
-                {error}
-              </Text>
-              <Pressable
-                onPress={loadCampaigns}
-                className="mt-2"
-              >
-                <Text className="text-red-300 font-instrument text-sm underline">
-                  Try again
-                </Text>
-              </Pressable>
-            </View>
-          ) : null}
-
-          {/* Loading State */}
-          {isLoading ? (
-            <View className="items-center justify-center py-20">
-              <ActivityIndicator size="large" color="#f85102" />
-              <Text className="text-gray-400 font-instrument mt-4">
-                Loading campaigns...
-              </Text>
-            </View>
-          ) : campaigns.length === 0 ? (
-            /* Empty State */
-            <View className="items-center justify-center py-20">
-              <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-2xl p-8 max-w-md w-full items-center">
-                <Text className="text-white font-instrument-semibold text-xl mb-2">
-                  No campaigns yet
-                </Text>
-                <Text className="text-gray-400 font-instrument text-center mb-6">
-                  Create your first campaign to get started with marketing automation
-                </Text>
-                <Pressable
-                  onPress={() => setShowCreateModal(true)}
-                  className="bg-brand-orange rounded-xl px-6 py-3 flex-row items-center gap-2"
-                  style={{ backgroundColor: '#f85102' }}
-                >
-                  <PlusIcon size={20} color="#ffffff" />
-                  <Text className="text-white font-instrument-medium text-base">
-                    Create Campaign
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          ) : (
-            /* Campaigns List */
-            <View>
-              {campaigns.map((campaign) => (
-                <CampaignCard
-                  key={campaign.id}
-                  campaign={campaign}
-                  onDelete={handleDeleteCampaign}
-                  isDeleting={deletingId === campaign.id}
-                />
-              ))}
-            </View>
-          )}
-        </ScrollView>
-      </View>
+          }
+        />
+      ) : (
+        /* Campaigns List */
+        <View>
+          {campaigns.map((campaign) => (
+            <CampaignCard
+              key={campaign.id}
+              campaign={campaign}
+              onDelete={handleDeleteCampaign}
+              isDeleting={deletingId === campaign.id}
+            />
+          ))}
+        </View>
+      )}
 
       {/* Create Campaign Modal */}
       <CreateCampaignModal
@@ -393,6 +350,6 @@ export default function CampaignsPage() {
         onCreate={handleCreateCampaign}
         isLoading={isCreating}
       />
-    </View>
+    </PageLayout>
   );
 }

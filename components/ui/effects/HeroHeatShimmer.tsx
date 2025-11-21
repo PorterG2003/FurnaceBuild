@@ -17,7 +17,7 @@ type Props = {
 // Tailwind only, no images, no JS, pure SVG/CSS animations.
 // Exposes palette tokens as CSS variables on the root element of the component.
 // Respects prefers-reduced-motion by disabling shimmer animation.
-export default function HeroHeatShimmer({ 
+export function HeroHeatShimmer({ 
   className, 
   children, 
   intensity = "low",

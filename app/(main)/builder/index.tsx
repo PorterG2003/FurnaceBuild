@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
 import { View, Platform, Text } from 'react-native';
-import { NavBar } from '@/components/ui/NavBar';
-import { Breadcrumb } from '@/components/ui/Breadcrumb';
+import { Breadcrumb } from '@/components/ui/layout';
+import { NavBar } from '@/components/ui/layout/NavBar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { getCampaignById, updateCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
@@ -319,33 +319,29 @@ export default function BuilderPage() {
 
   if (!campaignId) {
     return (
-      <View className="flex-1 bg-[#121212] flex-row">
-        <NavBar />
+      <PageLayout scrollable={false}>
         <View className="flex-1 items-center justify-center">
           <Text className="text-gray-300 font-instrument">Redirecting…</Text>
         </View>
-      </View>
+      </PageLayout>
     );
   }
 
   // React Flow only works on web
   if (Platform.OS !== 'web') {
     return (
-      <View className="flex-1 bg-[#121212] flex-row">
-        <NavBar />
-        <View className="flex-1 relative bg-[#121212]">
-          <View className="flex-1 items-center justify-center p-6">
-            <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 max-w-md">
-              <Text className="text-white font-instrument-semibold text-xl mb-2">
-                Builder not available on mobile
-              </Text>
-              <Text className="text-gray-400 font-instrument text-sm">
-                The flow builder is currently only available on web. Please use a web browser to access this feature.
-              </Text>
-            </View>
+      <PageLayout scrollable={false}>
+        <View className="flex-1 items-center justify-center p-6">
+          <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 max-w-md">
+            <Text className="text-white font-instrument-semibold text-xl mb-2">
+              Builder not available on mobile
+            </Text>
+            <Text className="text-gray-400 font-instrument text-sm">
+              The flow builder is currently only available on web. Please use a web browser to access this feature.
+            </Text>
           </View>
         </View>
-      </View>
+      </PageLayout>
     );
   }
 
@@ -393,8 +389,8 @@ export default function BuilderPage() {
     <View className="flex-1 bg-[#121212] flex-row">
       <NavBar />
       
-      {/* Main Content Area - React Flow has its own background */}
-      <View className="flex-1">
+      {/* Main Content Area - React Flow */}
+      <View className="flex-1 relative">
         {/* Header with Breadcrumb */}
         <View 
           style={{

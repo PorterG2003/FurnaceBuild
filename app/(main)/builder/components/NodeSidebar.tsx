@@ -22,7 +22,7 @@ const categories = {
 };
 
 // Module-level variable to persist expanded state
-let persistedExpandedState = true; // Start expanded by default
+let persistedExpandedState = false; // Start collapsed by default
 
 function NodeSidebar({ onAddNode }: NodeSidebarProps) {
   const [isExpanded, setIsExpanded] = useState(persistedExpandedState);

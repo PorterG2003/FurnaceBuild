@@ -34,4 +34,8 @@ export type Invitation = Database['public']['Tables']['invitations']['Row'];
 export type InvitationInsert = Database['public']['Tables']['invitations']['Insert'];
 export type InvitationUpdate = Database['public']['Tables']['invitations']['Update'];
 
+export type Mailbox = Database['public']['Tables']['mailboxes']['Row'];
+export type MailboxInsert = Database['public']['Tables']['mailboxes']['Insert'];
+export type MailboxUpdate = Database['public']['Tables']['mailboxes']['Update'];
+
 

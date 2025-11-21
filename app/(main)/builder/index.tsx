@@ -1,10 +1,11 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
 import { View, Platform, Text } from 'react-native';
 import { NavBar } from '@/components/ui/NavBar';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { getCampaignById } from '@/lib/supabase/services/campaigns';
+import { getCampaignById, updateCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
+import { debounce } from '@/lib/utils/debounce';
 import { nodeTypes } from './nodes/nodeTypes';
 import { NodeSidebar } from './components/NodeSidebar';
 import { nodeModalRegistry } from './components/nodeModals';
@@ -48,11 +49,7 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
   }
 }
 
-// Initial nodes - Lead Bucket will be added automatically if missing
-const initialNodes: any[] = [];
-
-// Initial edges - empty for now, users will connect nodes
-const initialEdges: any[] = [];
+// Note: Initial nodes/edges are now passed as props to FlowEditor
 
 // Factory map for creating nodes
 const nodeFactories: Record<string, (position: { x: number; y: number }) => any> = {
@@ -65,9 +62,12 @@ const nodeFactories: Record<string, (position: { x: number; y: number }) => any>
 
 interface FlowEditorProps {
   onEditNode: (nodeId: string, nodeType: string) => void;
+  initialNodes?: any[];
+  initialEdges?: any[];
+  onFlowChange?: (nodes: any[], edges: any[]) => void;
 }
 
-function FlowEditor({ onEditNode }: FlowEditorProps) {
+function FlowEditor({ onEditNode, initialNodes = [], initialEdges = [], onFlowChange }: FlowEditorProps) {
   if (!useNodesState || !useEdgesState || !addEdge || !ReactFlow || !ReactFlowProvider) {
     return (
       <View className="flex-1 items-center justify-center">
@@ -78,6 +78,37 @@ function FlowEditor({ onEditNode }: FlowEditorProps) {
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  
+  // Track if initial load is complete to avoid saving during initialization
+  const isInitialLoadRef = useRef(true);
+  const hasInitializedRef = useRef(false);
+  
+  // Load initial data when props change (only once)
+  useEffect(() => {
+    if (!hasInitializedRef.current && (initialNodes.length > 0 || initialEdges.length > 0)) {
+      setNodes(initialNodes);
+      setEdges(initialEdges);
+      hasInitializedRef.current = true;
+      isInitialLoadRef.current = true;
+      // Reset flag after a brief delay to allow React Flow to initialize
+      setTimeout(() => {
+        isInitialLoadRef.current = false;
+      }, 500);
+    } else if (!hasInitializedRef.current) {
+      // Even if empty, mark as initialized
+      hasInitializedRef.current = true;
+      setTimeout(() => {
+        isInitialLoadRef.current = false;
+      }, 500);
+    }
+  }, [initialNodes, initialEdges, setNodes, setEdges]);
+  
+  // Notify parent of changes (for saving)
+  useEffect(() => {
+    if (!isInitialLoadRef.current && onFlowChange) {
+      onFlowChange(nodes, edges);
+    }
+  }, [nodes, edges, onFlowChange]);
 
   // Ensure Lead Bucket node exists (only one per campaign) - run once on mount
   useEffect(() => {
@@ -199,6 +230,9 @@ export default function BuilderPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [editingNode, setEditingNode] = useState<{ id: string; type: string; data: any } | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [initialFlowData, setInitialFlowData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
+  const hasLoadedFlowRef = useRef(false);
 
   useEffect(() => {
     if (!campaignId) {
@@ -206,9 +240,8 @@ export default function BuilderPage() {
     }
   }, [campaignId, router]);
 
+  // Load campaign and extract flow_data
   useEffect(() => {
-
-    // Fetch campaign data
     const loadCampaign = async () => {
       if (!campaignId) return;
       
@@ -216,8 +249,34 @@ export default function BuilderPage() {
       try {
         const data = await getCampaignById(campaignId);
         setCampaign(data);
+        
+        // Extract and parse flow_data
+        if (data?.flow_data && !hasLoadedFlowRef.current) {
+          try {
+            const flowData = typeof data.flow_data === 'string' 
+              ? JSON.parse(data.flow_data) 
+              : data.flow_data;
+            
+            if (flowData && typeof flowData === 'object') {
+              const nodes = Array.isArray(flowData.nodes) ? flowData.nodes : [];
+              const edges = Array.isArray(flowData.edges) ? flowData.edges : [];
+              setInitialFlowData({ nodes, edges });
+              hasLoadedFlowRef.current = true;
+            }
+          } catch (error) {
+            console.error('Failed to parse flow_data:', error);
+            // Fallback to empty flow
+            setInitialFlowData({ nodes: [], edges: [] });
+            hasLoadedFlowRef.current = true;
+          }
+        } else if (!data?.flow_data && !hasLoadedFlowRef.current) {
+          // No flow_data exists, start with empty
+          setInitialFlowData({ nodes: [], edges: [] });
+          hasLoadedFlowRef.current = true;
+        }
       } catch (error) {
         console.error('Failed to load campaign:', error);
+        setSaveStatus('error');
       } finally {
         setIsLoading(false);
       }
@@ -225,6 +284,38 @@ export default function BuilderPage() {
 
     loadCampaign();
   }, [campaignId]);
+
+  // Debounced save function
+  const saveFlowData = useMemo(
+    () => debounce(async (nodes: any[], edges: any[]) => {
+      if (!campaignId) return;
+      
+      setSaveStatus('saving');
+      try {
+        await updateCampaign(campaignId, {
+          flow_data: { nodes, edges } as any,
+        });
+        setSaveStatus('saved');
+        // Reset to idle after 2 seconds
+        setTimeout(() => {
+          setSaveStatus('idle');
+        }, 2000);
+      } catch (error) {
+        console.error('Failed to save flow:', error);
+        setSaveStatus('error');
+        // Reset error status after 3 seconds
+        setTimeout(() => {
+          setSaveStatus('idle');
+        }, 3000);
+      }
+    }, 1000), // 1 second debounce
+    [campaignId]
+  );
+
+  // Handle flow changes
+  const handleFlowChange = useCallback((nodes: any[], edges: any[]) => {
+    saveFlowData(nodes, edges);
+  }, [saveFlowData]);
 
   if (!campaignId) {
     return (
@@ -313,6 +404,9 @@ export default function BuilderPage() {
             paddingHorizontal: 24,
             paddingVertical: 16,
             zIndex: 10,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
           }}
         >
           <Breadcrumb
@@ -323,6 +417,50 @@ export default function BuilderPage() {
               },
             ]}
           />
+          {/* Save Status Indicator */}
+          {saveStatus !== 'idle' && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {saveStatus === 'saving' && (
+                <>
+                  <View 
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: '#FBBF24',
+                    }}
+                  />
+                  <Text className="text-gray-400 font-instrument text-sm">Saving...</Text>
+                </>
+              )}
+              {saveStatus === 'saved' && (
+                <>
+                  <View 
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: '#10B981',
+                    }}
+                  />
+                  <Text className="text-gray-400 font-instrument text-sm">Saved</Text>
+                </>
+              )}
+              {saveStatus === 'error' && (
+                <>
+                  <View 
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: '#EF4444',
+                    }}
+                  />
+                  <Text className="text-red-400 font-instrument text-sm">Save failed</Text>
+                </>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Flow Editor */}
@@ -333,7 +471,18 @@ export default function BuilderPage() {
             backgroundColor: 'transparent'
           }}
         >
-          <FlowEditor onEditNode={handleEditNode} />
+          {initialFlowData !== null ? (
+            <FlowEditor 
+              onEditNode={handleEditNode}
+              initialNodes={initialFlowData.nodes}
+              initialEdges={initialFlowData.edges}
+              onFlowChange={handleFlowChange}
+            />
+          ) : (
+            <View className="flex-1 items-center justify-center">
+              <Text className="text-gray-400 font-instrument">Loading flow...</Text>
+            </View>
+          )}
         </View>
       </View>
       

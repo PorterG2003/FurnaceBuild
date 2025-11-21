@@ -1,5 +1,6 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 import { sendInvitationEmail } from '../functions/sendInvitationEmail/resource';
+import { testMailboxConnection } from '../functions/testMailboxConnection/resource';
 
 /*== STEP 1 ===============================================================
 The section below creates a Todo database table with a "content" field. Try
@@ -26,6 +27,25 @@ const schema = a.schema({
     .returns(a.json())
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(sendInvitationEmail)),
+  
+  testMailboxConnection: a
+    .query()
+    .arguments({
+      smtp_host: a.string().required(),
+      smtp_port: a.integer().required(),
+      smtp_username: a.string().required(),
+      smtp_password: a.string().required(),
+      smtp_use_tls: a.boolean().required(),
+      smtp_use_ssl: a.boolean().required(),
+      imap_host: a.string().required(),
+      imap_port: a.integer().required(),
+      imap_username: a.string().required(),
+      imap_password: a.string().required(),
+      imap_use_ssl: a.boolean().required(),
+    })
+    .returns(a.json())
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(testMailboxConnection)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

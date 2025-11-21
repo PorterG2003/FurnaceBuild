@@ -1,0 +1,32 @@
+---
+description: Guidelines for creating UI components and checking for reusable components
+globs: ['**/*.tsx', '**/*.jsx', '**/*.ts']
+alwaysApply: false
+---
+
+# UI Component Development Guidelines
+
+## Component Reusability Check
+
+When working on UI (especially common UI), follow these steps:
+
+1. **Always check for base components and reusable components first**
+   - Check `components/ui/` directory for existing reusable components
+   - Review other component directories for similar patterns
+   - Look for components that might already exist in different contexts
+
+2. **Evaluate if the component should be reusable**
+   - Ask yourself: "Is this a common UI component that should be reusable?"
+   - Consider if this UI pattern might be used in multiple places
+   - Think about future use cases beyond the current implementation
+
+3. **Before creating new components**
+   - If no reusable component exists AND you determine it should be reusable:
+     - **STOP** and ask the user if you should create the component as reusable
+     - Discuss where it should live (e.g., `components/ui/` for common components)
+     - Or confirm if it should be created in the page/context-specific location instead
+
+4. **Documentation**
+   - When creating reusable components, ensure they are well-documented
+   - Include props types/interfaces
+   - Consider adding usage examples if the component is complex

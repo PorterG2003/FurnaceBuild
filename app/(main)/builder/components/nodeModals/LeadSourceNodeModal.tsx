@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, View, Text, TextInput, TouchableOpacity, Platform, Alert } from 'react-native';
-import { BaseModal } from '@/components/ui/BaseModal';
+import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { createLeads, generateGlobalLeadId } from '@/lib/supabase/services/leads';
 import type { LeadInsert } from '@/lib/supabase/types';

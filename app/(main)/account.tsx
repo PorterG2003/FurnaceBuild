@@ -9,10 +9,9 @@ import {
   View,
 } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
-import { PageLayout } from '@/components/ui/PageLayout';
+import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
-import { LoadingState } from '@/components/ui/LoadingState';
-import { Alert } from '@/components/ui/Alert';
+import { LoadingState, Alert } from '@/components/ui/feedback';
 import {
   AccountMembership,
   addUserToAccount,

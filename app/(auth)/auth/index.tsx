@@ -5,8 +5,7 @@ import { SignInForm } from '@/components/auth/SignInForm';
 import { SignUpForm } from '@/components/auth/SignUpForm';
 import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
 import { ConfirmSignUpForm } from '@/components/auth/ConfirmSignUpForm';
-import HeroHeatShimmer from '@/components/ui/HeroHeatShimmer';
-import EmberParticlesLite from '@/components/ui/EmberParticlesLite';
+import { HeroHeatShimmer, EmberParticlesLite } from '@/components/ui/effects';
 
 type AuthState = 'signIn' | 'signUp' | 'confirmSignUp' | 'forgotPassword';
 

@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { PageLayout } from '@/components/ui/PageLayout';
-import { Breadcrumb } from '@/components/ui/Breadcrumb';
-import { LoadingState } from '@/components/ui/LoadingState';
+import { PageLayout, Breadcrumb } from '@/components/ui/layout';
+import { LoadingState } from '@/components/ui/feedback';
 import { getCampaignById } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 

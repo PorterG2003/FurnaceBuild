@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, TouchableOpacity } from 'react-native';
-import { PageLayout } from '@/components/ui/PageLayout';
+import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
-import { Alert } from '@/components/ui/Alert';
-import { LoadingState } from '@/components/ui/LoadingState';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { BaseModal } from '@/components/ui/BaseModal';
+import { Alert, LoadingState, EmptyState } from '@/components/ui/feedback';
+import { BaseModal } from '@/components/ui/modals';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter } from 'expo-router';
 import { getCampaigns, createCampaign, deleteCampaign } from '@/lib/supabase/services/campaigns';

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { Button } from '@/components/ui/button';
-import { FormCard } from '@/components/ui/FormCard';
+import { FormCard } from '@/components/ui/forms';
 
 interface ForgotPasswordFormProps {
   onBackToSignIn: () => void;

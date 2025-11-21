@@ -10,13 +10,11 @@ import {
   View,
 } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
-import { PageLayout } from '@/components/ui/PageLayout';
+import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
-import { Alert } from '@/components/ui/Alert';
-import { LoadingState } from '@/components/ui/LoadingState';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { ConfirmDeleteModal } from '@/components/ui/ConfirmDeleteModal';
+import { Alert, LoadingState, EmptyState } from '@/components/ui/feedback';
+import { ConfirmDeleteModal } from '@/components/ui/modals';
 import { PlayIcon, TrashIcon } from 'react-native-heroicons/outline';
 import { Platform } from 'react-native';
 import {

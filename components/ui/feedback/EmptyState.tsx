@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text } from 'react-native';
-import { Button } from './button';
+import { Button } from '../button';
 
 interface EmptyStateProps {
   /**

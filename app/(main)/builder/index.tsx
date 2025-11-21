@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
 import { View, Platform, Text } from 'react-native';
-import { PageLayout } from '@/components/ui/PageLayout';
-import { Breadcrumb } from '@/components/ui/Breadcrumb';
+import { Breadcrumb } from '@/components/ui/layout';
+import { NavBar } from '@/components/ui/layout/NavBar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { getCampaignById, updateCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
@@ -386,9 +386,11 @@ export default function BuilderPage() {
   };
 
   return (
-    <PageLayout scrollable={false} contentPadding={0}>
-      {/* Main Content Area - React Flow has its own background */}
-      <View className="flex-1">
+    <View className="flex-1 bg-[#121212] flex-row">
+      <NavBar />
+      
+      {/* Main Content Area - React Flow */}
+      <View className="flex-1 relative">
         {/* Header with Breadcrumb */}
         <View 
           style={{
@@ -506,6 +508,6 @@ export default function BuilderPage() {
           />
         );
       })()}
-    </PageLayout>
+    </View>
   );
 }

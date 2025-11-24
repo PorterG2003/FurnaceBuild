@@ -6,50 +6,36 @@ backend:
       commands:
         - npm ci
         - |
-          # Install dependencies for all Amplify functions
-          # This ensures TypeScript can find module types during validation
+          # CRITICAL: Install function dependencies BEFORE ampx runs
+          # Amplify Gen 2's bundler needs these available during synthesis
+          echo "=== Installing function dependencies ==="
           for dir in amplify/functions/*/; do
             if [ -f "$dir/package.json" ]; then
-              echo "=== Installing dependencies for $(basename $dir) ==="
+              func_name=$(basename "$dir")
+              echo "[$func_name] Installing dependencies..."
               cd "$dir"
-              pwd
               if [ -f "package-lock.json" ]; then
-                npm ci
+                npm ci --loglevel=error
               else
-                npm install
+                npm install --loglevel=error
               fi
-              INSTALL_EXIT=$?
-              if [ $INSTALL_EXIT -ne 0 ]; then
-                echo "ERROR: Failed to install dependencies for $(basename $dir) (exit code: $INSTALL_EXIT)"
+              if [ $? -ne 0 ]; then
+                echo "[$func_name] ERROR: Installation failed"
                 exit 1
               fi
-              echo "=== Verifying installation for $(basename $dir) ==="
-              if [ -d "node_modules" ]; then
-                echo "node_modules directory exists"
-                ls -la node_modules/ | head -10
-              else
-                echo "ERROR: node_modules directory NOT found"
-                exit 1
+              # Verify critical packages
+              if [ "$func_name" = "testMailboxConnection" ]; then
+                if [ ! -d "node_modules/nodemailer" ] || [ ! -d "node_modules/imapflow" ]; then
+                  echo "[$func_name] ERROR: Required packages missing"
+                  ls -la node_modules/ 2>/dev/null | grep -E "(nodemailer|imapflow)" || echo "Packages not found"
+                  exit 1
+                fi
+                echo "[$func_name] ✓ Dependencies verified"
               fi
-              if [ -d "node_modules/nodemailer" ]; then
-                echo "✓ nodemailer installed at: $(realpath node_modules/nodemailer)"
-              else
-                echo "✗ ERROR: nodemailer NOT found"
-                exit 1
-              fi
-              if [ -d "node_modules/imapflow" ]; then
-                echo "✓ imapflow installed at: $(realpath node_modules/imapflow)"
-              else
-                echo "✗ ERROR: imapflow NOT found"
-                exit 1
-              fi
-              echo "=== Testing TypeScript resolution from function directory ==="
-              cd "$dir"
-              npx tsc --noEmit --skipLibCheck handler.ts 2>&1 | head -20 || echo "TypeScript check completed"
               cd - > /dev/null
             fi
           done
-        - echo "=== Running ampx pipeline-deploy ==="
+          echo "=== Function dependencies installed ==="
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
     build:
       commands:

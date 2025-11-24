@@ -2,11 +2,11 @@
   "type": "module",
   "dependencies": {
     "nodemailer": "^6.9.8",
-    "imapflow": "^1.0.107"
+    "imapflow": "^1.0.107",
+    "@types/nodemailer": "^6.4.14"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.145",
-    "@types/nodemailer": "^6.4.14",
     "typescript": "^5.0.0"
   }
 }

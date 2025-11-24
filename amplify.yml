@@ -10,32 +10,46 @@ backend:
           # This ensures TypeScript can find module types during validation
           for dir in amplify/functions/*/; do
             if [ -f "$dir/package.json" ]; then
-              echo "Installing dependencies for $(basename $dir)..."
+              echo "=== Installing dependencies for $(basename $dir) ==="
               cd "$dir"
+              pwd
               if [ -f "package-lock.json" ]; then
                 npm ci
               else
                 npm install
               fi
-              if [ $? -ne 0 ]; then
-                echo "Failed to install dependencies for $(basename $dir)"
+              INSTALL_EXIT=$?
+              if [ $INSTALL_EXIT -ne 0 ]; then
+                echo "ERROR: Failed to install dependencies for $(basename $dir) (exit code: $INSTALL_EXIT)"
                 exit 1
               fi
-              echo "Verifying installation for $(basename $dir)..."
-              ls -la node_modules/ | head -5 || echo "node_modules directory not found"
-              if [ -d "node_modules/nodemailer" ]; then
-                echo "✓ nodemailer installed"
+              echo "=== Verifying installation for $(basename $dir) ==="
+              if [ -d "node_modules" ]; then
+                echo "node_modules directory exists"
+                ls -la node_modules/ | head -10
               else
-                echo "✗ nodemailer NOT found"
+                echo "ERROR: node_modules directory NOT found"
+                exit 1
+              fi
+              if [ -d "node_modules/nodemailer" ]; then
+                echo "✓ nodemailer installed at: $(realpath node_modules/nodemailer)"
+              else
+                echo "✗ ERROR: nodemailer NOT found"
+                exit 1
               fi
               if [ -d "node_modules/imapflow" ]; then
-                echo "✓ imapflow installed"
+                echo "✓ imapflow installed at: $(realpath node_modules/imapflow)"
               else
-                echo "✗ imapflow NOT found"
+                echo "✗ ERROR: imapflow NOT found"
+                exit 1
               fi
+              echo "=== Testing TypeScript resolution from function directory ==="
+              cd "$dir"
+              npx tsc --noEmit --skipLibCheck handler.ts 2>&1 | head -20 || echo "TypeScript check completed"
               cd - > /dev/null
             fi
           done
+        - echo "=== Running ampx pipeline-deploy ==="
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
     build:
       commands:

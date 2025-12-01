@@ -5,37 +5,11 @@ backend:
     preBuild:
       commands:
         - npm ci
-        - |
-          # CRITICAL: Install function dependencies BEFORE ampx runs
-          # Amplify Gen 2's bundler needs these available during synthesis
-          echo "=== Installing function dependencies ==="
-          for dir in amplify/functions/*/; do
-            if [ -f "$dir/package.json" ]; then
-              func_name=$(basename "$dir")
-              echo "[$func_name] Installing dependencies..."
-              cd "$dir"
-              if [ -f "package-lock.json" ]; then
-                npm ci --loglevel=error
-              else
-                npm install --loglevel=error
-              fi
-              if [ $? -ne 0 ]; then
-                echo "[$func_name] ERROR: Installation failed"
-                exit 1
-              fi
-              # Verify critical packages
-              if [ "$func_name" = "testMailboxConnection" ]; then
-                if [ ! -d "node_modules/nodemailer" ] || [ ! -d "node_modules/imapflow" ]; then
-                  echo "[$func_name] ERROR: Required packages missing"
-                  ls -la node_modules/ 2>/dev/null | grep -E "(nodemailer|imapflow)" || echo "Packages not found"
-                  exit 1
-                fi
-                echo "[$func_name] ✓ Dependencies verified"
-              fi
-              cd - > /dev/null
-            fi
-          done
-          echo "=== Function dependencies installed ==="
+        - echo "=== Starting function dependency installation ==="
+        - cd amplify/functions/testMailboxConnection && npm install && cd - || (echo "Failed to install testMailboxConnection dependencies" && exit 1)
+        - echo "=== Verifying testMailboxConnection dependencies ==="
+        - ls -la amplify/functions/testMailboxConnection/node_modules/ | grep -E "(nodemailer|imapflow)" || (echo "Dependencies not found" && exit 1)
+        - echo "=== Function dependencies installed successfully ==="
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
     build:
       commands:

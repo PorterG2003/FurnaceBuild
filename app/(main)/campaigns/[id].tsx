@@ -46,8 +46,8 @@ export default function CampaignPage() {
         <Breadcrumb
           items={[
             { label: 'Campaigns', href: '/campaigns' },
-            { 
-              label: isLoading ? 'Loading...' : campaign?.name || 'Campaign'                                                                         
+            {
+              label: isLoading ? 'Loading...' : campaign?.name || 'Campaign'
             },
           ]}
         />

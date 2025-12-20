@@ -17,7 +17,7 @@ export function createEmailNode(
     label?: string;
     subject?: string;
     template?: string;
-    recipients?: string[];
+    mailboxId?: string;
   }
 ): Node {
   return {
@@ -27,7 +27,7 @@ export function createEmailNode(
       label: data?.label || 'Send Email',
       subject: data?.subject || '',
       template: data?.template || '',
-      recipients: data?.recipients || [],
+      mailboxId: data?.mailboxId || '',
     },
     position,
   };

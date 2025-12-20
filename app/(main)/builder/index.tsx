@@ -201,6 +201,15 @@ function FlowEditor({ onEditNode, initialNodes = [], initialEdges = [], onFlowCh
     (window as any).__reactFlowGetNodes = () => nodes;
   }, [setNodes, nodes]);
 
+  // Handle node clicks to open edit modal
+  const handleNodeClick = useCallback((event: any, node: any) => {
+    // Only trigger edit on click (not drag)
+    // React Flow will handle dragging separately
+    if (node && node.type) {
+      onEditNode(node.id, node.type);
+    }
+  }, [onEditNode]);
+
   return (
     <ReactFlowProvider>
       <ReactFlow
@@ -209,6 +218,7 @@ function FlowEditor({ onEditNode, initialNodes = [], initialEdges = [], onFlowCh
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodeClick={handleNodeClick}
         nodeTypes={nodeTypes}
         fitView
         style={{ width: '100%', height: '100%' }}
@@ -491,13 +501,19 @@ export default function BuilderPage() {
         if (!ModalComponent) return null;
         
         // For Lead Bucket node, pass campaign and bucket IDs
-        const modalData = editingNode.type === 'leadSource' 
-          ? {
-              ...editingNode.data,
-              campaignId: campaignId,
-              bucketId: campaign?.bucket_id || editingNode.data?.bucketId,
-            }
-          : editingNode.data;
+        let modalData = editingNode.data;
+        if (editingNode.type === 'leadSource') {
+          modalData = {
+            ...editingNode.data,
+            campaignId: campaignId,
+            bucketId: campaign?.bucket_id || editingNode.data?.bucketId,
+          };
+        } else if (editingNode.type === 'email') {
+          modalData = {
+            ...editingNode.data,
+            campaignId: campaignId,
+          };
+        }
         
         return (
           <ModalComponent

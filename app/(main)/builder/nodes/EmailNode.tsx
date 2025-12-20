@@ -5,7 +5,7 @@ interface EmailNodeData {
   label?: string;
   subject?: string;
   template?: string;
-  recipients?: string[];
+  mailboxId?: string;
 }
 
 interface EmailNodeProps {

@@ -101,7 +101,6 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
           autoFocus
         />
       </View>
-
       {error ? (
         <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
           <Text className="text-red-400 text-center font-instrument-medium text-sm">
@@ -297,17 +296,15 @@ export default function CampaignsPage() {
           </Text>
         </Pressable>
       </View>
-
       {/* Error Message */}
-      {error && (
+      {error ? (
         <Alert
           variant="error"
           message={error}
           actionText="Try again"
           onAction={loadCampaigns}
         />
-      )}
-
+      ) : null}
       {/* Loading State */}
       {isLoading ? (
         <LoadingState message="Loading campaigns..." />
@@ -342,7 +339,6 @@ export default function CampaignsPage() {
           ))}
         </View>
       )}
-
       {/* Create Campaign Modal */}
       <CreateCampaignModal
         visible={showCreateModal}

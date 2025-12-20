@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, View, Text, TextInput, TouchableOpacity, Platform, Alert } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
-import { createLeads, generateGlobalLeadId } from '@/lib/supabase/services/leads';
-import type { LeadInsert } from '@/lib/supabase/types';
+import { createLeads, generateGlobalLeadId, getLeads } from '@/lib/supabase/services/leads';
+import type { LeadInsert, Lead } from '@/lib/supabase/types';
 
 interface LeadSourceNodeModalProps {
   visible: boolean;
@@ -153,6 +153,8 @@ function LeadSourceNodeModal({
   const [isImportWizardOpen, setIsImportWizardOpen] = useState(false);
   const [tabContainerWidth, setTabContainerWidth] = useState(0);
   const tabIndicator = useRef(new Animated.Value(0)).current;
+  const [dbLeads, setDbLeads] = useState<Lead[]>([]);
+  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
 
   const activeTabIndex = useMemo(() => {
     const index = leadSourceTabs.findIndex(tab => tab.id === activeTab);
@@ -189,8 +191,74 @@ function LeadSourceNodeModal({
 
   const previewRows = useMemo(() => csvRows.slice(0, 3), [csvRows]);
 
+  // Fetch leads from database when modal opens and Insights tab is active
+  useEffect(() => {
+    if (visible && activeTab === 'insights' && initialData?.campaignId) {
+      const fetchLeads = async () => {
+        setIsLoadingLeads(true);
+        try {
+          const filters: { campaignId?: string; bucketId?: string } = {
+            campaignId: initialData.campaignId,
+          };
+          
+          // If bucketId is available, filter by bucket; otherwise get all campaign leads
+          if (initialData.bucketId) {
+            filters.bucketId = initialData.bucketId;
+          }
+          
+          const leads = await getLeads(filters);
+          setDbLeads(leads);
+        } catch (error) {
+          console.error('Failed to fetch leads for insights:', error);
+          setDbLeads([]);
+        } finally {
+          setIsLoadingLeads(false);
+        }
+      };
+      
+      fetchLeads();
+    }
+  }, [visible, activeTab, initialData?.campaignId, initialData?.bucketId]);
+
+  // Convert database leads to the format needed for insights
+  const leadsForInsights = useMemo(() => {
+    if (dbLeads.length === 0) {
+      return csvRows; // Fallback to CSV rows if no DB leads
+    }
+    
+    // Convert Lead objects to Record<string, string> format
+    return dbLeads.map(lead => {
+      const record: Record<string, string> = {};
+      
+      // Map all lead fields from database schema
+      if (lead.email) record.email = lead.email;
+      if (lead.name) record.name = lead.name;
+      if (lead.first_name) record.first_name = lead.first_name;
+      if (lead.last_name) record.last_name = lead.last_name;
+      if (lead.company_name) record.company_name = lead.company_name;
+      if (lead.website) record.website = lead.website;
+      if (lead.linkedin_url) record.linkedin_url = lead.linkedin_url;
+      if (lead.company_linkedin_url) record.company_linkedin_url = lead.company_linkedin_url;
+      if (lead.source) record.source = lead.source;
+      if (lead.status) record.status = lead.status;
+      
+      // Add any custom lead data if it exists
+      if (lead.custom_lead_data && typeof lead.custom_lead_data === 'object') {
+        Object.entries(lead.custom_lead_data).forEach(([key, value]) => {
+          if (value !== null && value !== undefined) {
+            record[key] = String(value);
+          }
+        });
+      }
+      
+      return record;
+    });
+  }, [dbLeads, csvRows]);
+
   const insightSummary = useMemo(() => {
-    if (!csvRows.length) {
+    const dataToAnalyze = leadsForInsights.length > 0 ? leadsForInsights : csvRows;
+    
+    if (!dataToAnalyze.length) {
       return {
         totalRows: 0,
         fields: [] as Array<{ field: string; percentage: number }>,
@@ -199,7 +267,7 @@ function LeadSourceNodeModal({
     }
 
     const fieldCounts = new Map<string, number>();
-    csvRows.forEach(row => {
+    dataToAnalyze.forEach(row => {
       Object.entries(row).forEach(([field, value]) => {
         if ((value ?? '').toString().trim()) {
           fieldCounts.set(field, (fieldCounts.get(field) || 0) + 1);
@@ -207,7 +275,7 @@ function LeadSourceNodeModal({
       });
     });
 
-    const totalRows = csvRows.length;
+    const totalRows = dataToAnalyze.length;
     const fields = Array.from(fieldCounts.entries())
       .map(([field, count]) => ({
         field,
@@ -219,9 +287,9 @@ function LeadSourceNodeModal({
     return {
       totalRows,
       fields,
-      examples: csvRows.slice(0, 3),
+      examples: dataToAnalyze.slice(0, 3),
     };
-  }, [csvRows]);
+  }, [leadsForInsights, csvRows]);
 
   const endpointUrl = useMemo(() => {
     const bucketSegment = initialData?.bucketId ?? 'your-bucket-id';
@@ -1007,23 +1075,29 @@ function LeadSourceNodeModal({
 
   const renderInsightsTab = () => (
     <View className="gap-4">
-      {insightSummary.totalRows === 0 ? (
+      {isLoadingLeads ? (
         <View className="p-4 border border-white/10 rounded-xl bg-white/5">
           <Text className="text-sm text-gray-300">
-            Import leads to see quick insights.
+            Loading insights...
+          </Text>
+        </View>
+      ) : insightSummary.totalRows === 0 ? (
+        <View className="p-4 border border-white/10 rounded-xl bg-white/5">
+          <Text className="text-sm text-gray-300">
+            No leads found for this campaign.
           </Text>
           <Text className="text-xs text-gray-400 mt-2">
-            Upload a CSV or use the API endpoint to populate sample data.
+            Import leads via CSV or use the API endpoint to populate data.
           </Text>
         </View>
       ) : (
         <>
           <View className="p-4 border border-white/10 rounded-xl bg-white/5">
             <Text className="text-sm text-white font-instrument-medium">
-              {insightSummary.totalRows} lead{insightSummary.totalRows === 1 ? '' : 's'} imported in latest upload
+              {insightSummary.totalRows} lead{insightSummary.totalRows === 1 ? '' : 's'} {dbLeads.length > 0 ? 'in campaign' : 'imported in latest upload'}
             </Text>
             <Text className="text-xs text-gray-400 mt-2">
-              Showing field coverage across imported records.
+              Showing field coverage across {dbLeads.length > 0 ? 'all' : 'imported'} records.
             </Text>
           </View>
 

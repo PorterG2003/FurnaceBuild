@@ -32,7 +32,6 @@ export function PageLayout({
   return (
     <View className="flex-1 bg-[#121212] flex-row">
       <NavBar />
-      
       {/* Main Content Area */}
       <View className={`flex-1 relative ${contentClassName || ''}`}>
         {scrollable ? (

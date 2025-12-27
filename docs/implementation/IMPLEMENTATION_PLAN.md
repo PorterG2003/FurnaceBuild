@@ -66,20 +66,6 @@ This document outlines the step-by-step plan to implement the scalable email inf
 
 **Note**: Since the app is not in production use, we will delete the `lead_states` table entirely rather than migrating from it.
 
-### 1.6 Add Campaign Schedule
-**Purpose**: Define when campaigns are active (when emails can be sent)
-
-**Tasks**:
-- Add `schedule` JSONB column to `campaigns` table:
-  - Structure: `{timezone: string, start_hour: number, end_hour: number, days_of_week: number[] | null}`
-  - Default: `null` (campaign runs 24/7)
-  - Examples:
-    - Business hours: `{timezone: "America/New_York", start_hour: 9, end_hour: 17, days_of_week: [1,2,3,4,5]}`
-    - 24/7: `null`
-    - Weekdays only: `{timezone: "UTC", start_hour: 0, end_hour: 24, days_of_week: [1,2,3,4,5]}`
-- Add index if needed: `(schedule)` for querying campaigns with schedules
-- Migration: Set all existing campaigns to `null` (24/7, no restrictions)
-
 ### 1.2 Create Message Jobs Table
 **Purpose**: Concrete send actions created by scheduler
 
@@ -123,19 +109,34 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - `created_at`
 - Indexes: `(campaign_id, event_type, created_at)`, `(enrollment_id, event_type)`
 
-### 1.5 Create Throttle/Rate Limit Tables
-**Purpose**: Track per-mailbox, per-domain, per-tenant caps
+### 1.5 Create Mailbox Throttle Table
+**Purpose**: Track per-mailbox rate limits and caps
 
 **Tasks**:
 - Create `mailbox_throttles` table:
-  - `mailbox_id`, `date` (date)
-  - `sent_count`, `hourly_sent`, `last_sent_at`
-  - `daily_limit`, `hourly_limit`, `min_gap_seconds`
-- Create `domain_throttles` table (aggregate per domain):
-  - `domain` (extracted from mailbox email)
-  - `date`, `sent_count`, `daily_limit`
-- Create `tenant_throttles` table:
-  - `account_id`, `date`, `sent_count`, `daily_limit`
+  - `mailbox_id` (FK to `mailboxes.id`), `date` (date)
+  - `sent_count` (emails sent today)
+  - `hourly_sent` (array or JSONB tracking hourly counts, reset hourly)
+  - `last_sent_at` (timestamp of last send for min-gap enforcement)
+  - `daily_limit` (default: based on mailbox provider/Gmail limits, ~50-200/day)
+  - `hourly_limit` (default: ~10/hour for Gmail)
+  - `min_gap_seconds` (minimum time between sends from this mailbox, default: 180s)
+- Indexes: `(mailbox_id, date)` for fast lookups
+- **Note**: Domain and tenant throttles skipped for now. Gmail limits are per-mailbox (not per-domain), and tenant limits only needed if you have pricing tiers/usage-based billing.
+
+### 1.6 Add Campaign Schedule
+**Purpose**: Define when campaigns are active (when emails can be sent)
+
+**Tasks**:
+- Add `schedule` JSONB column to `campaigns` table:
+  - Structure: `{timezone: string, start_hour: number, end_hour: number, days_of_week: number[] | null}`
+  - Default: `null` (campaign runs 24/7)
+  - Examples:
+    - Business hours: `{timezone: "America/New_York", start_hour: 9, end_hour: 17, days_of_week: [1,2,3,4,5]}`
+    - 24/7: `null`
+    - Weekdays only: `{timezone: "UTC", start_hour: 0, end_hour: 24, days_of_week: [1,2,3,4,5]}`
+- Add index if needed: `(schedule)` for querying campaigns with schedules
+- Migration: Set all existing campaigns to `null` (24/7, no restrictions)
 
 ---
 
@@ -257,11 +258,10 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - For each message:
     1. Load `message_job` + related data from Supabase
     2. **Reserve job atomically**:
-       - Check mailbox throttle (daily/hourly/min-gap)
-       - Check domain throttle
-       - Check tenant throttle
+       - Check mailbox throttle (daily/hourly/min-gap limits)
        - Update `message_jobs.status = 'reserved'` with `reserved_at`
-       - Update throttle counters
+       - Update mailbox throttle counters (increment sent_count, update last_sent_at)
+       - If throttle limit reached, mark job for retry/reschedule
     3. Generate MIME message:
        - Load template from `nodes.node_data`
        - Merge lead data
@@ -403,17 +403,21 @@ This document outlines the step-by-step plan to implement the scalable email inf
   ```sql
   -- Pseudocode:
   -- 1. SELECT FOR UPDATE message_job (lock it)
-  -- 2. Check all throttles (mailbox, domain, tenant)
-  -- 3. If all pass:
+  -- 2. Check mailbox throttle:
+  --    - Query mailbox_throttles for mailbox_id + today's date
+  --    - Check: sent_count < daily_limit
+  --    - Check: hourly_sent[hour] < hourly_limit
+  --    - Check: NOW() - last_sent_at >= min_gap_seconds
+  -- 3. If all checks pass:
   --    - Update message_job.status = 'reserved'
-  --    - Update throttle counters
+  --    - Update mailbox_throttles: increment sent_count, update hourly_sent, set last_sent_at
   --    - Return success
-  -- 4. If any fail:
-  --    - Return failure reason
-  --    - Optionally reschedule job
+  -- 4. If any check fails:
+  --    - Return failure reason (which limit was hit)
+  --    - Optionally calculate next available time and reschedule job
   ```
-- Handle concurrent access with row-level locking
-- Return detailed failure reasons for logging
+- Handle concurrent access with row-level locking (SELECT FOR UPDATE)
+- Return detailed failure reasons for logging (daily_limit_hit, hourly_limit_hit, min_gap_not_met)
 
 ### 4.2 Jitter & Randomization
 **Purpose**: Avoid pattern fingerprints

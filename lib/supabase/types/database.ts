@@ -166,56 +166,8 @@ export interface Database {
           updated_at?: string;
         };
       };
-      lead_states: {
-        Row: {
-          id: string;
-          lead_id: string;
-          campaign_id: string;
-          node_id: string;
-          node_type: 'leadSource' | 'email' | 'waitTime' | 'aiCategorizer' | 'dataSender';
-          status: 'schrodinger' | 'queued' | 'processing' | 'processed' | 'failed' | 'success' | 'trimmed';
-          parent_state_id: string | null;
-          execution_data: Json | null;
-          error_message: string | null;
-          entered_at: string | null;
-          queued_at: string | null;
-          processing_at: string | null;
-          completed_at: string | null;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          lead_id: string;
-          campaign_id: string;
-          node_id: string;
-          node_type: 'leadSource' | 'email' | 'waitTime' | 'aiCategorizer' | 'dataSender';
-          status?: 'schrodinger' | 'queued' | 'processing' | 'processed' | 'failed' | 'success' | 'trimmed';
-          parent_state_id?: string | null;
-          execution_data?: Json | null;
-          error_message?: string | null;
-          entered_at?: string | null;
-          queued_at?: string | null;
-          processing_at?: string | null;
-          completed_at?: string | null;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          lead_id?: string;
-          campaign_id?: string;
-          node_id?: string;
-          node_type?: 'leadSource' | 'email' | 'waitTime' | 'aiCategorizer' | 'dataSender';
-          status?: 'schrodinger' | 'queued' | 'processing' | 'processed' | 'failed' | 'success' | 'trimmed';
-          parent_state_id?: string | null;
-          execution_data?: Json | null;
-          error_message?: string | null;
-          entered_at?: string | null;
-          queued_at?: string | null;
-          processing_at?: string | null;
-          completed_at?: string | null;
-          updated_at?: string;
-        };
-      };
+      // lead_states removed - replaced by enrollments
+      // lead_states: { ... }
       users: {
         Row: {
           id: string;

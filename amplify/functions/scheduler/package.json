@@ -1,0 +1,14 @@
+{
+  "name": "scheduler",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.0.0",
+    "@supabase/supabase-js": "^2.77.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "typescript": "^5.9.3"
+  }
+}
+

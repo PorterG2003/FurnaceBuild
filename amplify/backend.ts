@@ -1,5 +1,6 @@
 import { defineBackend } from '@aws-amplify/backend';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { sendInvitationEmail } from './functions/sendInvitationEmail/resource';
@@ -30,3 +31,14 @@ const sqsPolicyStatement = new iam.PolicyStatement({
 });
 
 schedulerLambda.addToRolePolicy(sqsPolicyStatement);
+
+// Create ECR repository for send worker Docker images
+const sendWorkerRepo = new ecr.Repository(backend.stack, 'SendWorkerRepo', {
+  repositoryName: 'furnace/send-worker',
+  imageScanOnPush: true,
+  lifecycleRules: [
+    {
+      maxImageCount: 10, // Keep last 10 images
+    },
+  ],
+});

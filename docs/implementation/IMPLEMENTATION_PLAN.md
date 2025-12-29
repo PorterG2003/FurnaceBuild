@@ -138,6 +138,54 @@ This document outlines the step-by-step plan to implement the scalable email inf
 - Add index if needed: `(schedule)` for querying campaigns with schedules
 - Migration: Set all existing campaigns to `null` (24/7, no restrictions)
 
+### 1.7 Create Email Threads and Messages Tables
+**Purpose**: Store full email conversations for inbox UI (only for campaign replies)
+
+**Tasks**:
+- Create `email_threads` table:
+  - `id`, `account_id` (FK to `accounts.id` - **for efficient owner filtering**)
+  - `campaign_id` (FK), `lead_id` (FK), `enrollment_id` (FK)
+  - `message_job_id` (FK to `message_jobs` - the original sent email that started the thread)
+  - `mailbox_id` (FK to `mailboxes.id` - the mailbox that sent the original email)
+  - `subject` (thread subject, from original email)
+  - `participants` (TEXT[] - array of email addresses in the conversation)
+  - `last_message_at` (timestamp of most recent message)
+  - `message_count` (integer - number of messages in thread)
+  - `has_reply` (BOOLEAN - **true if thread has at least one received message/reply, false if only sent**)
+  - `created_at`, `updated_at`
+  - Indexes:
+    - `(account_id, has_reply, last_message_at DESC)` - **Critical: Efficient inbox query filter**
+    - `(campaign_id)`, `(lead_id)`, `(enrollment_id)`, `(message_job_id)`, `(mailbox_id)`
+    - `(account_id, last_message_at DESC)` - For all threads (with or without replies)
+- Create `email_messages` table:
+  - `id`, `thread_id` (FK to `email_threads`)
+  - `message_job_id` (FK to `message_jobs` - NULL for received messages, set for sent messages)
+  - `direction` ('sent' | 'received')
+  - `from_email`, `from_name`, `to_email`, `to_name`
+  - `subject`, `body_text`, `body_html` (full email content)
+  - `message_id` (IMAP Message-ID header), `in_reply_to`, `references` (for threading)
+  - `received_at` (timestamp from IMAP or sent_at for sent messages), `read_at` (when user marked as read)
+  - `headers` (JSONB - full email headers for debugging)
+  - `attachments` (JSONB - array of attachment metadata: `{filename, content_type, size, imap_uid}`)
+  - `created_at`, `updated_at`
+  - Indexes: `(thread_id, received_at)`, `(message_job_id)`, `(message_id)` (for reply matching), `(in_reply_to)`
+- **Query Pattern for Inbox UI**:
+  ```sql
+  -- Efficient query: Get threads with replies for an account
+  SELECT * FROM email_threads 
+  WHERE account_id = $1 AND has_reply = true 
+  ORDER BY last_message_at DESC;
+  
+  -- Get messages for a thread
+  SELECT * FROM email_messages 
+  WHERE thread_id = $1 
+  ORDER BY received_at ASC;
+  ```
+- **Note**: 
+  - Only store messages that are replies to campaign emails (filtered by matching `message_jobs`). This keeps storage focused on campaign conversations, not all mailbox emails.
+  - `account_id` is derived from `mailbox_id` (mailboxes belong to accounts) for efficient filtering without joins.
+  - `has_reply` flag is set to `true` when the first received message is added, allowing efficient filtering of threads with replies.
+
 ---
 
 ## Phase 2: AWS Infrastructure Setup
@@ -283,7 +331,25 @@ This document outlines the step-by-step plan to implement the scalable email inf
        - `message_jobs.status = 'sent'`
        - Store `provider_message_id` (Message-ID header), `sent_at`
        - Optionally update campaign stats (increment sent_count) - synchronous
-    6. Write to `events` table (synchronous):
+    6. **Create email thread and message** (for inbox UI):
+       - Create or find `email_thread` for this `message_job_id`
+       - If thread doesn't exist, create it:
+         - `account_id` = from `message_job.mailbox_id` → `mailboxes.account_id` (for efficient filtering)
+         - `campaign_id`, `lead_id`, `enrollment_id` from `message_job`
+         - `message_job_id` = current job
+         - `mailbox_id` = from `message_job.mailbox_id`
+         - `subject` from `message_data`
+         - `participants` = [mailbox email, lead email]
+         - `has_reply` = `false` (no replies yet - thread will only show in inbox after first reply)
+       - Create `email_message` record:
+         - `thread_id`, `message_job_id` (link to sent job)
+         - `direction` = 'sent'
+         - `from_email`, `from_name` from mailbox
+         - `to_email`, `to_name` from lead
+         - `subject`, `body_text`, `body_html` from `message_data`
+         - `message_id` = `provider_message_id`
+         - `received_at` = `sent_at`
+    7. Write to `events` table (synchronous):
        - `{event_type: 'sent', message_job_id, campaign_id, lead_id, ...}`
 - Error handling:
   - Temporary failures → retry with exponential backoff
@@ -332,7 +398,7 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - On success → reset `smtp_error_count`
 
 ### 3.4 Inbox Checker Implementation
-**Purpose**: Detect replies, bounces, unsubscribes via IMAP (scheduled task)
+**Purpose**: Detect replies, bounces, unsubscribes via IMAP and store full email conversations (scheduled task)
 
 **Tasks**:
 - Scheduled task (CloudWatch → Lambda or ECS Scheduled Task):
@@ -342,7 +408,11 @@ This document outlines the step-by-step plan to implement the scalable email inf
     1. Connect via IMAP using `mailboxes.imap_*` credentials
     2. Query for recent messages (since `last_synced_at`)
     3. For each message:
-       - Parse headers: `In-Reply-To`, `References`, `Message-ID`
+       - **Fetch full message content** (not just headers):
+         - Body (text and HTML)
+         - All headers (for threading and debugging)
+         - Attachments metadata (filename, size, content-type)
+       - Parse headers: `In-Reply-To`, `References`, `Message-ID`, `From`, `To`, `Subject`
        - Check if it's a reply:
          - `In-Reply-To` header matches a `message_job.provider_message_id`
          - Or `References` header contains our `Message-ID`
@@ -355,6 +425,27 @@ This document outlines the step-by-step plan to implement the scalable email inf
          - Subject/body contains "unsubscribe"
     4. For replies:
        - Find `message_job` by matching `provider_message_id` with `In-Reply-To` or `References`
+       - **Create or update email thread**:
+         - Check if `email_thread` exists for this `message_job_id`
+         - If not, create new thread:
+           - `account_id` = from `message_job.mailbox_id` → `mailboxes.account_id` (for efficient filtering)
+           - `campaign_id`, `lead_id`, `enrollment_id` from `message_job`
+           - `message_job_id` = original sent email
+           - `mailbox_id` = from `message_job.mailbox_id`
+           - `subject` from original email (or reply if original missing)
+           - `participants` = array of all email addresses in conversation
+           - `has_reply` = `true` (this is a reply, so thread has replies)
+         - If exists, update `last_message_at`, increment `message_count`, and set `has_reply = true` (if not already set)
+       - **Create `email_message` record**:
+         - `thread_id` (link to thread)
+         - `message_job_id` = NULL (this is a received message)
+         - `direction` = 'received'
+         - `from_email`, `from_name`, `to_email`, `to_name` (parsed from headers)
+         - `subject`, `body_text`, `body_html` (full content from IMAP)
+         - `message_id`, `in_reply_to`, `references` (for threading)
+         - `received_at` (from IMAP date header)
+         - `headers` (JSONB - all headers for debugging)
+         - `attachments` (JSONB - attachment metadata)
        - Update `enrollment.state = 'stopped'` (synchronous)
        - Write to `events` table: `{event_type: 'replied', message_job_id, enrollment_id, ...}`
     5. For bounces:
@@ -362,14 +453,29 @@ This document outlines the step-by-step plan to implement the scalable email inf
        - Find corresponding `lead` and mark as suppressed
        - Update `enrollment.state = 'stopped'` (synchronous)
        - Write to `events` table: `{event_type: 'bounced', message_job_id, enrollment_id, ...}`
+       - **Note**: Bounces are not stored in email_threads (only replies)
     6. Update `mailboxes.last_synced_at`
+- **Store sent emails in threads** (when send worker sends email):
+  - After successfully sending email (Phase 3.2):
+    - Create or find `email_thread` for this `message_job_id`
+    - If thread doesn't exist, create it (first message in thread)
+    - Create `email_message` record:
+      - `thread_id`, `message_job_id` (link to sent job)
+      - `direction` = 'sent'
+      - `from_email`, `from_name` from mailbox
+      - `to_email`, `to_name` from lead
+      - `subject`, `body_text`, `body_html` from `message_data`
+      - `message_id` = `provider_message_id`
+      - `received_at` = `sent_at` (timestamp when sent)
 - Error handling:
   - IMAP connection failures → log error, continue to next mailbox (retry on next scheduled run)
   - Authentication errors → mark mailbox as error, notify user, continue
   - Rate limits → log, continue (retry on next run)
+  - Message fetch failures → log, skip message, continue
 - Optimizations:
   - Process mailboxes in parallel (if using ECS, can run multiple tasks)
   - Cache `Message-ID` lookups for faster reply detection
+  - Only fetch full message content for replies (not all messages)
   - Consider IMAP IDLE (push notifications) later if needed
 - **Note**: Using scheduled tasks instead of `inbox_queue` for simplicity. See QUEUE_DECISION_ANALYSIS.md
 

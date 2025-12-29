@@ -71,14 +71,46 @@ npm run dev
 
 ## Docker
 
-### Build Image
+### Build and Push to ECR
+
+**Important:** Always run `npm install` in the `workers/send-worker` directory first to update `package-lock.json` after adding dependencies.
+
+From repository root:
+```bash
+# 1. Install dependencies (updates package-lock.json)
+cd workers/send-worker
+npm install
+cd ../..
+
+# 2. Build and push to ECR
+./workers/send-worker/push-to-ecr.sh
+```
+
+Or from the `workers/send-worker` directory:
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Build and push (must be run from repo root)
+cd ../..
+./workers/send-worker/push-to-ecr.sh
+```
+
+The script will:
+- Get the ECR repository URI
+- Log in to ECR
+- Build the Docker image
+- Tag it as `latest`
+- Push it to ECR
+
+### Build Image Locally (for testing)
 
 From repository root:
 ```bash
 docker build -f workers/send-worker/Dockerfile -t furnace/send-worker:latest .
 ```
 
-### Run Container
+### Run Container Locally
 
 ```bash
 docker run --rm \
@@ -136,6 +168,10 @@ The script will:
 
 - `SUPABASE_URL` (required): Supabase project URL
 - `SUPABASE_SERVICE_KEY` (required): Service role key (bypasses RLS)
+  - Can be provided directly, or fetched from Parameter Store if `SUPABASE_SERVICE_KEY_PARAM_PATH` is set
+- `SUPABASE_SERVICE_KEY_PARAM_PATH` (optional): SSM Parameter Store path to fetch `SUPABASE_SERVICE_KEY` from
+  - Example: `/amplify/furnacebuild/porter-sandbox-387f79dcc1/SUPABASE_SERVICE_KEY`
+  - If set, the worker will fetch the secret from Parameter Store at startup
 - `SEND_QUEUE_URL` (required): SQS queue URL
 - `AWS_REGION` (optional): AWS region, defaults to `us-west-2`
 
@@ -146,11 +182,11 @@ See [docs/implementation/PHASE2.6_DOCKER_IMAGES_ECR.md](../../docs/implementatio
 ## Development Workflow
 
 1. **Make code changes** in `src/`
-2. **Build TypeScript**: `npm run build`
-3. **Test locally** (optional): `npm start` (requires env vars)
-4. **Build Docker image**: `docker build -f workers/send-worker/Dockerfile -t furnace/send-worker:latest .`
-5. **Push to ECR**: `./push-to-ecr.sh`
-6. **Deploy to ECS** (Phase 2.3): Update ECS service to use new image
+2. **Install/update dependencies** (if you added any): `cd workers/send-worker && npm install`
+3. **Build TypeScript**: `npm run build`
+4. **Test locally** (optional): `npm start` (requires env vars)
+5. **Build and push Docker image**: From repo root, run `./workers/send-worker/push-to-ecr.sh`
+6. **Deploy to ECS** (Phase 2.3): ECS will automatically use the new `latest` image on next task start
 
 ## Troubleshooting
 

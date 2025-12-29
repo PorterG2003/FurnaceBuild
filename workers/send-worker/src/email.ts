@@ -1,6 +1,6 @@
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
-import type { Mailbox, MessageJob, Lead } from './types';
+import type { Mailbox, MessageJob, Lead } from './types.js';
 
 /**
  * Create SMTP transporter for a mailbox

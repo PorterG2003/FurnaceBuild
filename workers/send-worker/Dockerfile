@@ -24,7 +24,9 @@ WORKDIR /app
 
 # Copy package files
 COPY workers/send-worker/package*.json ./
-COPY workers/send-worker/dist ./dist
+
+# Copy built dist folder from builder stage (not from host)
+COPY --from=builder /app/workers/send-worker/dist ./dist
 
 # Install production dependencies only
 RUN npm ci --production && npm cache clean --force

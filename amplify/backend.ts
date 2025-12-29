@@ -12,6 +12,7 @@ import { data } from './data/resource';
 import { sendInvitationEmail } from './functions/sendInvitationEmail/resource';
 import { scheduler } from './functions/scheduler/resource';
 import { sendTestMessage } from './functions/sendTestMessage/resource';
+import { inboxChecker } from './functions/inboxChecker/resource';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -22,6 +23,7 @@ const backend = defineBackend({
   sendInvitationEmail,
   scheduler,
   sendTestMessage,
+  inboxChecker,
 });
 
 // Grant scheduler Lambda permission to send messages to SQS queue

@@ -1,7 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { QueueClient } from './queue';
-import { createTransporter, sendEmail, mergeTemplate } from './email';
-import type { MessageJob, Mailbox, Lead, SQSMessage } from './types';
+import { QueueClient } from './queue.js';
+import { createTransporter, sendEmail, mergeTemplate } from './email.js';
+import type { MessageJob, Mailbox, Lead, SQSMessage } from './types.js';
 
 export interface WorkerConfig {
   supabase: SupabaseClient;
@@ -96,18 +96,31 @@ export class SendWorker {
       const subject = mergeTemplate(nodeConfig.subject || '', lead);
       const emailBody = mergeTemplate(nodeConfig.body || '', lead);
 
-      // 5. Create SMTP transporter
-      const transporter = createTransporter(mailbox);
+      // Check if this is a test mode job (skip SMTP sending)
+      const skipSmtp = (messageJob.message_data as any)?.skip_smtp === true;
+      let providerMessageId: string;
 
-      // 6. Send email
-      const providerMessageId = await sendEmail(
-        transporter,
-        mailbox,
-        messageJob,
-        lead,
-        subject,
-        emailBody
-      );
+      if (skipSmtp) {
+        // Test mode: Skip SMTP sending, generate fake message ID
+        console.log(`[TEST MODE] Processing message job ${message_job_id} (SMTP sending skipped)`);
+        providerMessageId = `test-${Date.now()}-${Math.random().toString(36).substring(2, 15)}@furnace.test`;
+      } else {
+        // Production mode: Send via SMTP
+        console.log(`Sending email via SMTP for message job ${message_job_id}`);
+        // 5. Create SMTP transporter
+        const transporter = createTransporter(mailbox);
+
+        // 6. Send email
+        providerMessageId = await sendEmail(
+          transporter,
+          mailbox,
+          messageJob,
+          lead,
+          subject,
+          emailBody
+        );
+        console.log(`Email sent successfully for message job ${message_job_id} (provider_message_id: ${providerMessageId})`);
+      }
 
       // 7. Update message_job status
       await this.supabase
@@ -131,10 +144,15 @@ export class SendWorker {
           event_data: {
             provider_message_id: providerMessageId,
             sent_at: new Date().toISOString(),
+            test_mode: skipSmtp, // Mark as test mode in event data
           },
         });
 
-      console.log(`Successfully sent email for message job ${message_job_id}`);
+      if (skipSmtp) {
+        console.log(`[TEST MODE] Successfully processed message job ${message_job_id} (no email sent)`);
+      } else {
+        console.log(`Successfully processed message job ${message_job_id}`);
+      }
 
       // 9. Delete message from queue
       if (receiptHandle) {

@@ -6,12 +6,15 @@ import { defineFunction, secret } from '@aws-amplify/backend';
  * Runs periodically (every 1 minute) to evaluate enrollments and create message_jobs.
  * Uses Amplify's built-in scheduling feature - automatically creates EventBridge rule.
  * 
- * Environment variables/secrets to set:
- * - EXPO_PUBLIC_SUPABASE_URL: Set as secret using: npx ampx sandbox secret set EXPO_PUBLIC_SUPABASE_URL
- *   (Same URL as client-side, can reuse the value)
- * - SUPABASE_SERVICE_KEY: Set as secret using: npx ampx sandbox secret set SUPABASE_SERVICE_KEY
- *   (⚠️ This is the SERVICE ROLE KEY, not the anon key - needed for server-side admin operations)
- * - SEND_QUEUE_URL: Set as secret using: npx ampx sandbox secret set SEND_QUEUE_URL
+ * Environment variables/secrets:
+ * - EXPO_PUBLIC_SUPABASE_URL: Environment variable (public URL, not sensitive)
+ *   Set via: npx ampx sandbox secret set EXPO_PUBLIC_SUPABASE_URL
+ *   (Note: Using secret() for convenience, but value is not sensitive)
+ * - SEND_QUEUE_URL: Environment variable (public URL, not sensitive)
+ *   Set via: npx ampx sandbox secret set SEND_QUEUE_URL
+ *   (Note: Using secret() for convenience, but value is not sensitive)
+ * - SUPABASE_SERVICE_KEY: Secret (⚠️ SERVICE ROLE KEY with admin privileges - MUST be secret)
+ *   Set via: npx ampx sandbox secret set SUPABASE_SERVICE_KEY
  * 
  * Note: AWS_REGION is automatically available in Lambda runtime as process.env.AWS_REGION
  * and should NOT be set manually (it's a reserved environment variable).
@@ -35,11 +38,11 @@ export const scheduler = defineFunction({
   // Automatically creates EventBridge rule and grants Lambda invocation permissions
   schedule: 'every 1m',
   environment: {
-    // Use same names as client-side for consistency
+    // Environment variables (not sensitive, but using secret() for centralized management)
     EXPO_PUBLIC_SUPABASE_URL: secret('EXPO_PUBLIC_SUPABASE_URL'),
-    // Service role key (NOT anon key) - needed for admin operations
-    SUPABASE_SERVICE_KEY: secret('SUPABASE_SERVICE_KEY'),
     SEND_QUEUE_URL: secret('SEND_QUEUE_URL'),
+    // Secret (sensitive - MUST use secrets)
+    SUPABASE_SERVICE_KEY: secret('SUPABASE_SERVICE_KEY'),
     // AWS_REGION is automatically set by Lambda runtime - don't set it manually
   },
 });

@@ -30,14 +30,22 @@ echo "Logging in to ECR..."
 aws ecr get-login-password --region "$REGION" | \
   docker login --username AWS --password-stdin "$REPO_URI"
 
-# Build image (from repo root)
+# Set up buildx builder if it doesn't exist
 echo ""
-echo "Building Docker image..."
-docker build \
+echo "Setting up Docker buildx builder..."
+docker buildx create --use --name multiarch-builder 2>/dev/null || docker buildx use multiarch-builder
+
+# Build image (from repo root)
+# IMPORTANT: Build for linux/amd64 platform (ECS Fargate requirement)
+echo ""
+echo "Building Docker image for linux/amd64 platform..."
+docker buildx build \
+  --platform linux/amd64 \
   -f workers/send-worker/Dockerfile \
   -t "$REPO_NAME:$IMAGE_TAG" \
   -t "$REPO_URI:$IMAGE_TAG" \
   -t "$REPO_URI:latest" \
+  --load \
   .
 
 # Push image

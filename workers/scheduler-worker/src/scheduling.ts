@@ -170,12 +170,47 @@ export function applyJitter(
 }
 
 /**
+ * Calculate when an enrollment should run next (for wait nodes)
+ * 
+ * This function:
+ * 1. Starts with a base time (usually NOW() + wait duration)
+ * 2. Applies campaign schedule constraints (timezone, hours, days)
+ * 3. Does NOT apply jitter (wait times should be exact)
+ * 
+ * @param baseTime - Base time to schedule from (usually current time + wait duration)
+ * @param schedule - Campaign schedule configuration (null if no schedule)
+ * @returns ISO string of next run time
+ */
+export function calculateNextRunAt(
+  baseTime: Date,
+  schedule: CampaignSchedule | null
+): string {
+  let nextRunTime = new Date(baseTime);
+
+  // Apply campaign schedule if it exists
+  if (schedule) {
+    if (isWithinSchedule(nextRunTime, schedule)) {
+      // Already within schedule, use as-is
+    } else {
+      // Outside schedule, calculate next allowed time
+      nextRunTime = calculateNextAllowedTime(baseTime, schedule);
+    }
+  }
+
+  // NO JITTER - wait times should be exact
+  return nextRunTime.toISOString();
+}
+
+/**
  * Calculate when a message should be scheduled to send
  * 
  * This function:
  * 1. Starts with a base time (usually NOW())
  * 2. Applies campaign schedule constraints (timezone, hours, days)
  * 3. Applies jitter (random delay to avoid patterns)
+ * 
+ * Jitter is applied to EMAIL sends to avoid patterns (e.g., all emails at 9:00 AM).
+ * Jitter is NOT applied to wait nodes - they should wait the exact duration.
  * 
  * @param baseTime - Base time to schedule from (usually current time)
  * @param schedule - Campaign schedule configuration (null if no schedule)
@@ -199,7 +234,7 @@ export function calculateScheduledAt(
     }
   }
 
-  // Apply jitter
+  // Apply jitter (only for email sends, not for wait nodes)
   scheduledTime = applyJitter(scheduledTime, baseTime, jitterPercentage);
 
   return scheduledTime.toISOString();

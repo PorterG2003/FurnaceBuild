@@ -28,11 +28,10 @@ This document outlines the step-by-step plan to implement the scalable email inf
 - `mailboxes` → SMTP credentials already exist, may need enhancements for connection pooling/management
 
 ### ❌ Not Yet Implemented
-- AWS infrastructure (SQS, ECS, Lambda, CloudWatch Scheduler)
+- Scheduler workers (ECS) - **Currently Lambda exists, needs migration to ECS**
 - SMTP integration (connection pooling, error handling)
-- Scheduling plane (flow evaluation + job creation)
-- Execution plane (send workers)
-- Inbound processing (reply detection via IMAP)
+- Flow evaluation engine (scheduling logic) - **Basic placeholder exists in Lambda**
+- Inbound processing (full IMAP reply detection) - **Infrastructure done, logic pending**
 - Event processing (state transitions, analytics)
 - Pacing/throttling logic
 
@@ -202,42 +201,49 @@ This document outlines the step-by-step plan to implement the scalable email inf
 
 **Note**: We are starting simple and only using `send_queue`. `event_queue` and `inbox_queue` are skipped for now (see QUEUE_DECISION_ANALYSIS.md for rationale). Events are processed synchronously, and inbox checking uses scheduled tasks instead.
 
-### 2.2 CloudWatch Scheduler + Lambda
-**Purpose**: Periodic scheduler tick to evaluate flows
+### 2.2 Scheduler Workers (ECS Fargate)
+**Purpose**: Continuously evaluate flows and create message jobs
 
 **Tasks**:
-- Create CloudWatch Event Rule (every 30-60 seconds)
-- Create `scheduler-lambda` function:
-  - Query Supabase for `enrollments` where `next_run_at <= NOW()` and `state = 'active'`
-  - For each enrollment:
-    - Load flow graph from `campaigns.flow_data` or `nodes` table
-    - Evaluate current position, find next node(s)
-    - Apply campaign schedule, jitter, pacing rules
-    - Create `message_jobs` for send actions
-    - Update `enrollment.next_run_at` for wait/branch nodes
-    - Push `message_job_id` to `send_queue`
-  - Handle errors, retries, logging
-- Set Lambda timeout (5-15 minutes depending on batch size)
-- Configure IAM role with Supabase and SQS permissions
+- Create `scheduler-worker` ECS service (similar to send-worker):
+  - Task definition: Docker image with scheduler worker code
+  - Desired count: Start with 2, auto-scaling based on enrollment count
+  - Environment variables: Supabase URL/key, SQS queue URL, AWS region
+  - IAM role: Supabase access, SQS write (to push message_jobs), CloudWatch logs
+  - Health checks, logging configuration
+- Worker continuously polls Supabase for `enrollments` where `next_run_at <= NOW()` and `state = 'active'`
+- For each enrollment:
+  - Load flow graph from `campaigns.flow_data` or `nodes` table
+  - Evaluate current position, find next node(s)
+  - Apply campaign schedule, jitter, pacing rules
+  - Create `message_jobs` for send actions
+  - Update `enrollment.next_run_at` for wait/branch nodes
+  - Push `message_job_id` to `send_queue`
+- Auto-scaling: Scale based on enrollment count metric (CloudWatch custom metric)
+- **Note**: Replaces the initial Lambda scheduler implementation. Lambda had timeout limits and couldn't scale. ECS workers provide continuous processing and auto-scaling.
 
 ### 2.3 ECS Fargate Cluster & Services
 **Purpose**: Scalable worker services
 
 **Tasks**:
-- Create ECS Cluster (Fargate)
-- Create `send-workers` service:
+- Create ECS Cluster (Fargate) - **Already done in Phase 2.3** ✅
+- Create `send-workers` service - **Already done in Phase 2.3** ✅
   - Task definition: Docker image with send worker code
   - Desired count: Start with 2-5, auto-scaling based on queue depth
   - Environment variables: Supabase URL/key, SQS queue URL, AWS region
   - IAM role: SQS read, Supabase access, CloudWatch logs
   - Health checks, logging configuration
-- **Note**: No `inbox-workers` or `event-workers` ECS services needed. Inbox checking uses scheduled tasks (Phase 2.5), and events are processed synchronously (Phase 3.5).
+- Create `scheduler-workers` service (Phase 2.2):
+  - Reuses same ECS cluster
+  - Similar structure to send-workers but polls database instead of SQS
+  - Auto-scales based on enrollment count (not queue depth)
+- **Note**: No `inbox-workers` or `event-workers` ECS services needed. Inbox checking uses scheduled Lambda tasks (Phase 2.4), and events are processed synchronously (Phase 3.5).
 
 ### 2.6 Docker Images
 **Purpose**: Containerized worker applications
 
 **Tasks**:
-- Create `send-worker` Dockerfile:
+- Create `send-worker` Dockerfile - **Already done in Phase 2.6** ✅
   - Base: Node.js or Python
   - Install dependencies:
     - SMTP client library (e.g., `nodemailer` for Node.js, `smtplib` for Python)
@@ -245,9 +251,13 @@ This document outlines the step-by-step plan to implement the scalable email inf
     - Supabase client
     - AWS SDK (SQS, Secrets Manager if using)
   - Entrypoint: Long-running process that polls SQS `send_queue`
+- Create `scheduler-worker` Dockerfile (Phase 2.2):
+  - Similar structure to send-worker
+  - Entrypoint: Long-running process that polls Supabase database
+  - Install dependencies: Supabase client, AWS SDK (SQS for pushing jobs, SSM for secrets)
 - Build and push to ECR (Elastic Container Registry)
 - Set up CI/CD for image builds
-- **Note**: No `inbox-worker` Docker image needed - inbox checking uses Lambda or scheduled ECS task
+- **Note**: No `inbox-worker` Docker image needed - inbox checking uses Lambda (Phase 2.4)
 
 ### 2.4 Inbox Checker (Scheduled Task)
 **Purpose**: Periodically check mailboxes for replies/bounces
@@ -283,6 +293,10 @@ This document outlines the step-by-step plan to implement the scalable email inf
 **Purpose**: Turn flow graphs into concrete jobs
 
 **Tasks**:
+- **Migrate from Lambda to ECS workers** (Phase 2.2):
+  - Existing Lambda scheduler (`amplify/functions/scheduler/`) will be replaced
+  - Move logic to `workers/scheduler-worker/` ECS service
+  - Workers continuously poll database instead of scheduled runs
 - Implement flow traversal logic:
   - Load flow from `campaigns.flow_data` or `nodes` + edges
   - Traverse edges from current node
@@ -294,7 +308,9 @@ This document outlines the step-by-step plan to implement the scalable email inf
     - Campaign schedule (when campaign is active/running)
     - Jitter (randomized delays)
     - Per-tenant pacing rules
-- Update `schedule_next_node_job()` function in Supabase
+- Implement mailbox selection and load balancing:
+  - Round-robin distribution of leads across mailboxes
+  - Account-to-mailbox relationship resolution
 - Unit tests for flow traversal edge cases
 
 ### 3.2 Send Worker Implementation
@@ -534,7 +550,7 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - Base delay + random jitter (e.g., 30s ± 10s)
   - Per-mailbox min-gap + jitter
   - Avoid synchronized "top of hour" flushes
-- Implement in scheduler Lambda (when calculating `next_run_at`)
+- Implement in scheduler workers (when calculating `next_run_at`)
 - Store jitter configuration per account/tenant
 
 ### 4.3 Campaign Schedule
@@ -548,7 +564,7 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - `days_of_week` (array of 0-6, where 0=Sunday, 6=Saturday, null = all days)
   - Example: `{timezone: "America/New_York", start_hour: 9, end_hour: 17, days_of_week: [1,2,3,4,5]}`
   - Default: `null` (campaign runs 24/7, no restrictions)
-- Implement schedule checking in scheduler:
+- Implement schedule checking in scheduler workers:
   - When calculating `next_run_at` for email nodes, check if campaign schedule allows sending
   - If outside schedule, calculate next allowed time within schedule
   - Handle timezone conversions (convert campaign schedule timezone to UTC)
@@ -659,14 +675,14 @@ This document outlines the step-by-step plan to implement the scalable email inf
 
 ## Implementation Order (Recommended)
 
-1. **Phase 1**: Database schema evolution (foundation)
-2. **Phase 2.1-2.2**: SQS send_queue + Scheduler Lambda (core infrastructure)
-3. **Phase 3.1**: Flow evaluation engine (scheduling logic)
-4. **Phase 3.3**: SMTP integration (connection pooling, error handling)
-5. **Phase 2.3, 2.6**: ECS + Docker images (execution plane)
-6. **Phase 3.2**: Send worker implementation (execution)
+1. **Phase 1**: Database schema evolution (foundation) ✅
+2. **Phase 2.1**: SQS send_queue ✅
+3. **Phase 2.3, 2.6**: ECS + Docker images (execution plane) ✅
+4. **Phase 3.2**: Send worker implementation (execution) ✅
+5. **Phase 2.2, 3.1**: Scheduler workers + Flow evaluation engine (migrate from Lambda to ECS)
+6. **Phase 3.3**: SMTP integration (connection pooling, error handling)
 7. **Phase 4**: Pacing & throttling (safety)
-8. **Phase 2.4, 3.4**: Inbox checker (scheduled task, IMAP reply detection)
+8. **Phase 2.4, 3.4**: Inbox checker (scheduled Lambda, IMAP reply detection) ✅ (infrastructure done)
 9. **Phase 3.5**: Event processing (synchronous, inline)
 10. **Phase 5**: Monitoring (observability)
 11. **Phase 6-7**: Testing & rollout (validation)
@@ -699,9 +715,9 @@ This document outlines the step-by-step plan to implement the scalable email inf
 - **Consider FIFO**: Only if strict ordering required (usually not needed)
 
 ### Scaling Strategy
-- **Scheduler Lambda**: Single instance (CloudWatch rule)
+- **Scheduler Workers**: Auto-scale based on enrollment count metric (1-20 workers, scales when count > 100)
 - **Send Workers**: Auto-scale based on `send_queue` depth (target: ~70% queue utilization)
-- **Inbox Workers**: Low count (1-2), scale based on mailbox count
+- **Inbox Checker**: Lambda scheduled task (runs every 5 minutes, no scaling needed)
 
 ### Error Handling
 - **SMTP 4xx (Temporary)**: Retry with exponential backoff (max 3 retries)

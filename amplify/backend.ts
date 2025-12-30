@@ -7,12 +7,13 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { sendInvitationEmail } from './functions/sendInvitationEmail/resource';
-import { scheduler } from './functions/scheduler/resource';
 import { sendTestMessage } from './functions/sendTestMessage/resource';
 import { inboxChecker } from './functions/inboxChecker/resource';
+import { enrollmentMetric } from './functions/enrollmentMetric/resource';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -21,15 +22,13 @@ const backend = defineBackend({
   auth,
   data,
   sendInvitationEmail,
-  scheduler,
   sendTestMessage,
   inboxChecker,
+  enrollmentMetric,
 });
 
-// Grant scheduler Lambda permission to send messages to SQS queue
+// Grant sendTestMessage Lambda permission to send messages to SQS queue
 // Queue ARN: arn:aws:sqs:us-west-2:686255981838:furnace-send-queue
-const schedulerLambda = backend.scheduler.resources.lambda;
-
 const sqsPolicyStatement = new iam.PolicyStatement({
   sid: 'AllowSendMessageToSendQueue',
   actions: [
@@ -39,10 +38,6 @@ const sqsPolicyStatement = new iam.PolicyStatement({
   ],
   resources: ['arn:aws:sqs:us-west-2:686255981838:furnace-send-queue'],
 });
-
-schedulerLambda.addToRolePolicy(sqsPolicyStatement);
-
-// Grant sendTestMessage Lambda permission to send messages to SQS queue
 const sendTestMessageLambda = backend.sendTestMessage.resources.lambda;
 sendTestMessageLambda.addToRolePolicy(sqsPolicyStatement);
 
@@ -272,3 +267,139 @@ scaling.scaleOnMetric('QueueDepth', {
     { lower: 500, change: +5 },  // Scale up aggressively if > 500 messages
   ],
 });
+
+// ============================================
+// ECS Service for Scheduler Workers
+// ============================================
+
+// Create ECR repository for scheduler worker Docker images
+const schedulerWorkerRepo = new ecr.Repository(backend.stack, 'SchedulerWorkerRepo', {
+  repositoryName: 'furnace/scheduler-worker',
+  imageScanOnPush: true,
+  lifecycleRules: [
+    {
+      maxImageCount: 10, // Keep last 10 images
+    },
+  ],
+});
+
+// Create CloudWatch Log Group for scheduler worker
+const schedulerWorkerLogGroup = new logs.LogGroup(backend.stack, 'SchedulerWorkerLogGroup', {
+  logGroupName: '/ecs/furnace/scheduler-worker',
+  retention: logs.RetentionDays.ONE_WEEK,
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
+});
+
+// Create IAM task role for scheduler worker (for application permissions)
+const schedulerWorkerTaskRole = new iam.Role(backend.stack, 'SchedulerWorkerTaskRole', {
+  assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+  description: 'Role for ECS scheduler worker tasks',
+});
+
+// Grant SQS write permissions (to push message_jobs to send_queue)
+schedulerWorkerTaskRole.addToPolicy(new iam.PolicyStatement({
+  sid: 'AllowSQSAccess',
+  actions: [
+    'sqs:SendMessage',
+    'sqs:GetQueueUrl',
+    'sqs:GetQueueAttributes',
+  ],
+  resources: [sendQueue.queueArn],
+}));
+
+// Grant CloudWatch Logs permissions
+schedulerWorkerTaskRole.addToPolicy(new iam.PolicyStatement({
+  sid: 'AllowCloudWatchLogs',
+  actions: [
+    'logs:CreateLogStream',
+    'logs:PutLogEvents',
+  ],
+  resources: [schedulerWorkerLogGroup.logGroupArn + ':*'],
+}));
+
+// Grant SSM Parameter Store read permissions (for SUPABASE_SERVICE_KEY secret)
+schedulerWorkerTaskRole.addToPolicy(new iam.PolicyStatement({
+  sid: 'AllowSSMParameterAccess',
+  actions: [
+    'ssm:GetParameters',
+    'ssm:GetParameter',
+  ],
+  resources: [
+    // Grant access to all Amplify parameters (broader than needed, but ensures access)
+    `arn:aws:ssm:${cdk.Stack.of(backend.stack).region}:${cdk.Stack.of(backend.stack).account}:parameter/amplify/*`,
+  ],
+}));
+
+// Create Fargate Task Definition for scheduler worker
+const schedulerWorkerTaskDefinition = new ecs.FargateTaskDefinition(backend.stack, 'SchedulerWorkerTaskDef', {
+  memoryLimitMiB: 1024, // 1 GB
+  cpu: 512, // 0.5 vCPU
+  taskRole: schedulerWorkerTaskRole,
+  executionRole: taskExecutionRole, // Reuse execution role from send worker
+});
+
+// Add container to scheduler worker task definition
+const schedulerWorkerContainer = schedulerWorkerTaskDefinition.addContainer('scheduler-worker', {
+  image: ecs.ContainerImage.fromEcrRepository(schedulerWorkerRepo, 'latest'),
+  logging: ecs.LogDrivers.awsLogs({
+    streamPrefix: 'scheduler-worker',
+    logGroup: schedulerWorkerLogGroup,
+  }),
+  environment: {
+    AWS_REGION: awsRegion,
+    // Environment variables (not sensitive - public URLs)
+    SUPABASE_URL: supabaseUrl,
+    SEND_QUEUE_URL: sendQueueUrl,
+    // Parameter path for SUPABASE_SERVICE_KEY - worker will fetch from Parameter Store at startup
+    SUPABASE_SERVICE_KEY_PARAM_PATH: supabaseServiceKeyParamPath,
+  },
+});
+
+// Create ECS Service for scheduler worker
+const schedulerWorkerService = new ecs.FargateService(backend.stack, 'SchedulerWorkerService', {
+  cluster: cluster, // Reuse same cluster as send workers
+  taskDefinition: schedulerWorkerTaskDefinition,
+  desiredCount: 2, // Start with 2 tasks
+  assignPublicIp: true, // Needed for Supabase access (using public subnets, no NAT Gateway)
+  vpcSubnets: {
+    subnetType: ec2.SubnetType.PUBLIC, // Public subnets for internet access
+  },
+  healthCheckGracePeriod: cdk.Duration.seconds(60),
+});
+
+// Auto-scaling based on enrollment count (will be configured after enrollment metric Lambda is created)
+// Note: Auto-scaling requires a CloudWatch custom metric, which will be published by enrollmentMetric Lambda
+// For now, we'll add the auto-scaling configuration but it will need the metric to be created first
+const schedulerScaling = schedulerWorkerService.autoScaleTaskCount({
+  minCapacity: 1,
+  maxCapacity: 20,
+});
+
+// Configure auto-scaling based on enrollment count metric
+// The metric is published by enrollmentMetric Lambda every minute
+const enrollmentCountMetric = new cloudwatch.Metric({
+  namespace: 'Furnace/Scheduler',
+  metricName: 'EnrollmentsReadyToProcess',
+  statistic: 'Average',
+  period: cdk.Duration.minutes(1),
+});
+
+schedulerScaling.scaleOnMetric('EnrollmentCount', {
+  metric: enrollmentCountMetric,
+  scalingSteps: [
+    { upper: 10, change: -1 },   // Scale down if < 10 enrollments
+    { lower: 50, change: +1 },   // Scale up if > 50 enrollments
+    { lower: 100, change: +2 },  // Scale up more if > 100 enrollments
+    { lower: 500, change: +5 },  // Scale up aggressively if > 500 enrollments
+  ],
+});
+
+// Grant enrollmentMetric Lambda permission to publish CloudWatch metrics
+const enrollmentMetricLambda = backend.enrollmentMetric.resources.lambda;
+enrollmentMetricLambda.addToRolePolicy(new iam.PolicyStatement({
+  sid: 'AllowCloudWatchPutMetricData',
+  actions: [
+    'cloudwatch:PutMetricData',
+  ],
+  resources: ['*'], // PutMetricData requires '*' resource
+}));

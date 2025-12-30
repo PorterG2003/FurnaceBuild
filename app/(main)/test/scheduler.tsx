@@ -74,6 +74,7 @@ function createFlowTemplate(template: FlowTemplate): { nodes: any[]; edges: any[
               label: 'Wait 1 Day',
               duration: 1,
               unit: 'days',
+              wait_duration_seconds: 86400, // 1 day in seconds
             },
           },
           {
@@ -121,6 +122,7 @@ function createFlowTemplate(template: FlowTemplate): { nodes: any[]; edges: any[
               label: 'Wait 2 Days',
               duration: 2,
               unit: 'days',
+              wait_duration_seconds: 172800, // 2 days in seconds
             },
           },
           {
@@ -131,6 +133,7 @@ function createFlowTemplate(template: FlowTemplate): { nodes: any[]; edges: any[
               label: 'Wait 1 Day',
               duration: 1,
               unit: 'days',
+              wait_duration_seconds: 86400, // 1 day in seconds
             },
           },
           {
@@ -170,6 +173,17 @@ export default function TestSchedulerPage() {
   const [leadEmail, setLeadEmail] = useState('test-lead@example.com');
   const [leadName, setLeadName] = useState('Test Lead');
   const [campaignName, setCampaignName] = useState('Test Scheduler Campaign');
+  
+  // Schedule configuration
+  const [enableSchedule, setEnableSchedule] = useState(false);
+  const [scheduleTimezone, setScheduleTimezone] = useState('America/New_York');
+  const [scheduleStartHour, setScheduleStartHour] = useState(9);
+  const [scheduleEndHour, setScheduleEndHour] = useState(17);
+  const [scheduleDays, setScheduleDays] = useState<number[]>([1, 2, 3, 4, 5]); // Mon-Fri
+  
+  // Jitter configuration
+  const [enableJitter, setEnableJitter] = useState(true);
+  const [jitterPercentage, setJitterPercentage] = useState('10');
 
   // Results
   const [campaignId, setCampaignId] = useState<string | null>(null);
@@ -364,15 +378,35 @@ export default function TestSchedulerPage() {
       // 4. Create campaign with selected flow template
       updateStep('campaign', 'loading', 'Creating campaign with flow...');
       const flowData = createFlowTemplate(selectedFlow);
-      const campaign = await createCampaign({
+      
+      // Build schedule if enabled
+      const schedule = enableSchedule ? {
+        timezone: scheduleTimezone,
+        start_hour: scheduleStartHour,
+        end_hour: scheduleEndHour,
+        days_of_week: scheduleDays,
+      } : null;
+      
+      // Build campaign data with schedule and jitter
+      const campaignData: any = {
         name: campaignName,
         owner_id: userProfile.id,
         organization_id: null,
         status: 'running',
         flow_data: flowData,
-      });
+      };
+      
+      if (schedule) {
+        campaignData.schedule = schedule;
+      }
+      
+      if (enableJitter && jitterPercentage) {
+        campaignData.jitter_percentage = parseFloat(jitterPercentage);
+      }
+      
+      const campaign = await createCampaign(campaignData);
       setCampaignId(campaign.id);
-      updateStep('campaign', 'success', `Campaign created`);
+      updateStep('campaign', 'success', `Campaign created${schedule ? ' (with schedule)' : ''}${enableJitter ? ` (jitter: ${jitterPercentage}%)` : ''}`);
 
       // 5. Create nodes from flow data
       updateStep('nodes', 'loading', 'Creating flow nodes...');
@@ -623,6 +657,162 @@ export default function TestSchedulerPage() {
             />
           </View>
 
+          {/* Schedule Configuration */}
+          <View className="mb-6">
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-gray-300 font-instrument-medium text-sm">Enable Schedule</Text>
+              <Pressable
+                onPress={() => setEnableSchedule(!enableSchedule)}
+                className={`w-12 h-6 rounded-full flex-row items-center ${
+                  enableSchedule ? 'bg-brand-orange' : 'bg-[#2A2A2A]'
+                }`}
+                style={enableSchedule ? { backgroundColor: '#f85102' } : undefined}
+              >
+                <View
+                  className={`w-5 h-5 rounded-full bg-white ${
+                    enableSchedule ? 'ml-auto mr-1' : 'ml-1'
+                  }`}
+                />
+              </Pressable>
+            </View>
+            
+            {enableSchedule && (
+              <View className="bg-[#121212] rounded-lg p-4 gap-4 mt-2">
+                <View>
+                  <Text className="text-gray-400 font-instrument text-xs mb-2">Timezone</Text>
+                  <TextInput
+                    value={scheduleTimezone}
+                    onChangeText={setScheduleTimezone}
+                    placeholder="America/New_York"
+                    placeholderTextColor="#6b7280"
+                    className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg px-3 py-2 text-white font-instrument text-sm"
+                  />
+                </View>
+                <View className="flex-row gap-3">
+                  <View className="flex-1">
+                    <Text className="text-gray-400 font-instrument text-xs mb-2">Start Hour</Text>
+                    <TextInput
+                      value={scheduleStartHour.toString()}
+                      onChangeText={(text) => {
+                        const num = parseInt(text);
+                        if (!isNaN(num) && num >= 0 && num <= 23) {
+                          setScheduleStartHour(num);
+                        }
+                      }}
+                      keyboardType="numeric"
+                      placeholder="9"
+                      placeholderTextColor="#6b7280"
+                      className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg px-3 py-2 text-white font-instrument text-sm"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-gray-400 font-instrument text-xs mb-2">End Hour</Text>
+                    <TextInput
+                      value={scheduleEndHour.toString()}
+                      onChangeText={(text) => {
+                        const num = parseInt(text);
+                        if (!isNaN(num) && num >= 0 && num <= 23) {
+                          setScheduleEndHour(num);
+                        }
+                      }}
+                      keyboardType="numeric"
+                      placeholder="17"
+                      placeholderTextColor="#6b7280"
+                      className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg px-3 py-2 text-white font-instrument text-sm"
+                    />
+                  </View>
+                </View>
+                <View>
+                  <Text className="text-gray-400 font-instrument text-xs mb-2">Days of Week</Text>
+                  <View className="flex-row gap-2 flex-wrap">
+                    {[
+                      { value: 0, label: 'Sun' },
+                      { value: 1, label: 'Mon' },
+                      { value: 2, label: 'Tue' },
+                      { value: 3, label: 'Wed' },
+                      { value: 4, label: 'Thu' },
+                      { value: 5, label: 'Fri' },
+                      { value: 6, label: 'Sat' },
+                    ].map((day) => (
+                      <Pressable
+                        key={day.value}
+                        onPress={() => {
+                          if (scheduleDays.includes(day.value)) {
+                            setScheduleDays(scheduleDays.filter(d => d !== day.value));
+                          } else {
+                            setScheduleDays([...scheduleDays, day.value].sort());
+                          }
+                        }}
+                        className={`px-3 py-2 rounded-lg ${
+                          scheduleDays.includes(day.value)
+                            ? 'bg-brand-orange'
+                            : 'bg-[#1A1A1A] border border-[#2A2A2A]'
+                        }`}
+                        style={
+                          scheduleDays.includes(day.value)
+                            ? { backgroundColor: '#f85102' }
+                            : undefined
+                        }
+                      >
+                        <Text
+                          className={`font-instrument-medium text-xs ${
+                            scheduleDays.includes(day.value) ? 'text-white' : 'text-gray-400'
+                          }`}
+                        >
+                          {day.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
+
+          {/* Jitter Configuration */}
+          <View className="mb-6">
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-gray-300 font-instrument-medium text-sm">Enable Jitter</Text>
+              <Pressable
+                onPress={() => setEnableJitter(!enableJitter)}
+                className={`w-12 h-6 rounded-full flex-row items-center ${
+                  enableJitter ? 'bg-brand-orange' : 'bg-[#2A2A2A]'
+                }`}
+                style={enableJitter ? { backgroundColor: '#f85102' } : undefined}
+              >
+                <View
+                  className={`w-5 h-5 rounded-full bg-white ${
+                    enableJitter ? 'ml-auto mr-1' : 'ml-1'
+                  }`}
+                />
+              </Pressable>
+            </View>
+            
+            {enableJitter && (
+              <View className="bg-[#121212] rounded-lg p-4 mt-2">
+                <Text className="text-gray-400 font-instrument text-xs mb-2">Jitter Percentage (0-100)</Text>
+                <TextInput
+                  value={jitterPercentage}
+                  onChangeText={(text) => {
+                    const num = parseFloat(text);
+                    if (!isNaN(num) && num >= 0 && num <= 100) {
+                      setJitterPercentage(text);
+                    } else if (text === '') {
+                      setJitterPercentage('');
+                    }
+                  }}
+                  keyboardType="numeric"
+                  placeholder="10"
+                  placeholderTextColor="#6b7280"
+                  className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg px-3 py-2 text-white font-instrument text-sm"
+                />
+                <Text className="text-gray-500 font-instrument text-xs mt-2">
+                  Random delay up to {jitterPercentage || '10'}% of wait time
+                </Text>
+              </View>
+            )}
+          </View>
+
           <View className="flex-row gap-3">
             <Pressable
               onPress={handleBack}
@@ -856,6 +1046,11 @@ export default function TestSchedulerPage() {
                           <Text className="text-gray-500 font-instrument text-xs">
                             Scheduled: {new Date(job.scheduled_at).toLocaleString()}
                           </Text>
+                          {job.scheduled_at && (
+                            <Text className="text-gray-500 font-instrument text-xs">
+                              (UTC: {new Date(job.scheduled_at).toISOString()})
+                            </Text>
+                          )}
                           {job.sent_at && (
                             <Text className="text-gray-500 font-instrument text-xs">
                               Sent: {new Date(job.sent_at).toLocaleString()}

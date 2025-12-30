@@ -163,12 +163,11 @@ export class SchedulerWorker {
           this.mailboxRotationIndex++;
           
         } else if (node.node_type === 'waitTime' || node.node_type === 'wait') {
-          // Handle waitTime node with schedule and jitter
+          // Handle waitTime node with schedule (NO JITTER - wait times should be exact)
           await handleWaitTimeNode(
             enrollment,
             node,
             campaign.schedule,
-            jitterPercentage,
             this.supabase
           );
         } else if (node.node_type === 'aiCategorizer') {

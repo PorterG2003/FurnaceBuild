@@ -16,15 +16,14 @@ export async function handleEmailNode(
   campaign: any,
   accountId: string,
   rotationIndex: number,
+  jitterPercentage: number,
   supabase: SupabaseClient,
   sqs: SQSClient,
   sendQueueUrl: string
 ): Promise<MessageJob> {
   // 1. Calculate scheduled_at (respects campaign schedule, jitter, etc.)
   // Use current time as base, apply schedule and jitter
-  // TODO: Load jitter_percentage from account config (Task 3.1-11)
   const baseTime = new Date();
-  const jitterPercentage = 10; // Default jitter, will be loaded from account config later
   const scheduledAt = calculateScheduledAt(baseTime, campaign.schedule, jitterPercentage);
   
   // 2. Load lead data (for template variables later)

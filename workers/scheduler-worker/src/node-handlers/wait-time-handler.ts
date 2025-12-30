@@ -26,7 +26,10 @@ export async function handleWaitTimeNode(
                                0;
 
   if (waitDurationSeconds <= 0) {
-    throw new Error(`Invalid wait duration for node ${node.id}: ${waitDurationSeconds} seconds`);
+    const error = `Invalid wait duration for node ${node.id} (enrollment ${enrollment.id}): ${waitDurationSeconds} seconds`;
+    console.error(error);
+    // TODO: Send to Slack error reporting channel - Invalid wait duration configuration
+    throw new Error(error);
   }
 
   // 2. Calculate base next_run_at = NOW() + wait_duration_seconds
@@ -34,7 +37,16 @@ export async function handleWaitTimeNode(
   const baseNextRunAt = new Date(baseTime.getTime() + waitDurationSeconds * 1000);
 
   // 3. Apply campaign schedule and jitter using calculateScheduledAt
-  const nextRunAt = calculateScheduledAt(baseNextRunAt, schedule, jitterPercentage);
+  let nextRunAt: string;
+  try {
+    nextRunAt = calculateScheduledAt(baseNextRunAt, schedule, jitterPercentage);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error calculating scheduled time for wait node ${node.id} (enrollment ${enrollment.id}):`, errorMessage);
+    // TODO: Send to Slack error reporting channel - Schedule calculation error
+    // Fallback: Use base time + wait duration (no schedule/jitter)
+    nextRunAt = baseNextRunAt.toISOString();
+  }
 
   // 4. Update enrollment
   const { error } = await supabase

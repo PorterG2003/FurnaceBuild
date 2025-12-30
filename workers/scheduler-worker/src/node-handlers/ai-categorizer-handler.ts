@@ -25,7 +25,9 @@ export async function handleAICategorizerNode(
   const prompt = node.node_data?.prompt || '';
 
   if (categories.length === 0) {
-    console.warn(`AICategorizer node ${node.id} has no categories defined`);
+    const warning = `AICategorizer node ${node.id} (enrollment ${enrollment.id}) has no categories defined`;
+    console.warn(warning);
+    // TODO: Send to Slack error reporting channel - AICategorizer misconfiguration (warning)
     return null;
   }
 
@@ -42,7 +44,9 @@ export async function handleAICategorizerNode(
   });
 
   if (!matchingEdge) {
-    console.warn(`No edge found for category "${selectedCategory}" from AICategorizer node ${node.id}`);
+    const warning = `No edge found for category "${selectedCategory}" from AICategorizer node ${node.id} (enrollment ${enrollment.id})`;
+    console.warn(warning);
+    // TODO: Send to Slack error reporting channel - AICategorizer edge mismatch (warning)
     // Fallback: Use first edge from this node
     const firstEdge = edges.find((edge: any) => edge.source === node.flow_node_id);
     if (firstEdge) {

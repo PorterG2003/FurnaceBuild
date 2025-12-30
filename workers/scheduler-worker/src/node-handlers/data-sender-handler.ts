@@ -47,7 +47,10 @@ export async function handleDataSenderNode(
     .eq('id', enrollment.id);
 
   if (error) {
-    throw new Error(`Failed to update enrollment ${enrollment.id}: ${error.message}`);
+    const errorMsg = `Failed to update enrollment ${enrollment.id} after DataSender node ${node.id}: ${error.message}`;
+    console.error(errorMsg);
+    // TODO: Send to Slack error reporting channel - DataSender enrollment update error
+    throw new Error(errorMsg);
   }
 }
 

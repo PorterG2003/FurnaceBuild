@@ -57,7 +57,14 @@ export class SchedulerWorker {
           await this.sleep(this.databaseClient.getPollInterval());
         }
       } catch (error) {
-        console.error('Error in scheduler worker main loop:', error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        console.error('Error in scheduler worker main loop:', errorMessage);
+        if (errorStack) {
+          console.error('Stack trace:', errorStack);
+        }
+        // TODO: Send to Slack error reporting channel - Worker main loop error (critical)
+        // This indicates a fatal error that stopped the worker loop
         // Wait before retrying
         await this.sleep(5000);
       }
@@ -104,7 +111,8 @@ export class SchedulerWorker {
         .single();
 
       if (accountError) {
-        console.warn(`Account ${campaign.account_id} not found, using default jitter: ${accountError?.message}`);
+        console.warn(`Account ${campaign.account_id} not found for campaign ${enrollment.campaign_id}, using default jitter: ${accountError?.message}`);
+        // TODO: Send to Slack error reporting channel - Missing account (warning, not critical)
       }
 
       // Determine jitter: campaign > account > default (10%)
@@ -241,7 +249,32 @@ export class SchedulerWorker {
         }
       }
     } catch (error) {
-      console.error(`Error processing enrollment ${enrollment.id}:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      console.error(`Error processing enrollment ${enrollment.id}:`, errorMessage);
+      if (errorStack) {
+        console.error('Stack trace:', errorStack);
+      }
+
+      // TODO: Send error to Slack error reporting channel
+      // - Include: enrollment_id, campaign_id, error message, stack trace
+      // - Categorize errors (critical vs. recoverable)
+      // - Rate limit to avoid spam
+
+      // Try to update enrollment state to indicate error (don't fail if this fails)
+      try {
+        await this.supabase
+          .from('enrollments')
+          .update({
+            state: 'stopped', // Stop enrollment on error to prevent infinite retries
+            next_run_at: new Date(Date.now() + 3600000).toISOString(), // Retry in 1 hour
+          })
+          .eq('id', enrollment.id);
+      } catch (updateError) {
+        console.error(`Failed to update enrollment ${enrollment.id} after error:`, updateError);
+      }
+
       // Continue with next enrollment (don't stop worker)
     }
   }

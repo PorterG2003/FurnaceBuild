@@ -34,14 +34,20 @@ export async function handleEmailNode(
     .single();
   
   if (leadError || !lead) {
-    throw new Error(`Lead ${enrollment.lead_id} not found: ${leadError?.message}`);
+    const error = `Lead ${enrollment.lead_id} not found for enrollment ${enrollment.id}: ${leadError?.message || 'Lead not found'}`;
+    console.error(error);
+    // TODO: Send to Slack error reporting channel - Missing lead data
+    throw new Error(error);
   }
   
   // 3. Select mailbox using round-robin (load balancing)
   const mailbox = await selectMailbox(accountId, supabase, rotationIndex);
   
   if (!mailbox) {
-    throw new Error(`No available mailbox found for account ${accountId}`);
+    const error = `No available mailbox found for account ${accountId} (campaign ${enrollment.campaign_id}, enrollment ${enrollment.id})`;
+    console.error(error);
+    // TODO: Send to Slack error reporting channel - No mailboxes available (critical)
+    throw new Error(error);
   }
   
   // 4. Create message_job
@@ -75,21 +81,41 @@ export async function handleEmailNode(
   }
   
   // 5. Push to SQS
-  const sqsResponse = await sqs.send(new SendMessageCommand({
-    QueueUrl: sendQueueUrl,
-    MessageBody: JSON.stringify({
-      message_job_id: messageJob.id,
-      enrollment_id: enrollment.id,
-      campaign_id: enrollment.campaign_id,
-    }),
-  }));
+  try {
+    const sqsResponse = await sqs.send(new SendMessageCommand({
+      QueueUrl: sendQueueUrl,
+      MessageBody: JSON.stringify({
+        message_job_id: messageJob.id,
+        enrollment_id: enrollment.id,
+        campaign_id: enrollment.campaign_id,
+      }),
+    }));
 
-  // 6. Update message_job with SQS message ID for tracking
-  await supabase
-    .from('message_jobs')
-    .update({ sqs_message_id: sqsResponse.MessageId })
-    .eq('id', messageJob.id);
-  
-  return messageJob as MessageJob;
+    // 6. Update message_job with SQS message ID for tracking
+    await supabase
+      .from('message_jobs')
+      .update({ sqs_message_id: sqsResponse.MessageId })
+      .eq('id', messageJob.id);
+
+    return messageJob as MessageJob;
+  } catch (sqsError) {
+    const errorMessage = sqsError instanceof Error ? sqsError.message : String(sqsError);
+    console.error(`Failed to send message to SQS for message_job ${messageJob.id}:`, errorMessage);
+    // TODO: Send to Slack error reporting channel - SQS send failure (critical)
+    
+    // Try to update message_job status to failed
+    try {
+      await supabase
+        .from('message_jobs')
+        .update({
+          status: 'failed',
+          error_message: `SQS send failed: ${errorMessage}`,
+        })
+        .eq('id', messageJob.id);
+    } catch (updateError) {
+      console.error(`Failed to update message_job ${messageJob.id} after SQS error:`, updateError);
+    }
+    
+    throw new Error(`SQS send failed: ${errorMessage}`);
+  }
 }
-

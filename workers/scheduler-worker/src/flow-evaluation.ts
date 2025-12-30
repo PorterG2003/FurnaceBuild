@@ -35,8 +35,18 @@ export async function evaluateFlow(
   flowData: any,
   supabase: SupabaseClient
 ): Promise<DatabaseNode[]> {
-  if (!flowData || !flowData.edges) {
-    console.warn(`Invalid flow_data for enrollment ${enrollment.id}`);
+  // Validate flow_data structure
+  if (!flowData) {
+    const error = `Invalid flow_data: flow_data is null or undefined for enrollment ${enrollment.id}`;
+    console.error(error);
+    // TODO: Send to Slack error reporting channel - Invalid flow data
+    return [];
+  }
+
+  if (!flowData.edges || !Array.isArray(flowData.edges)) {
+    const error = `Invalid flow_data: edges array is missing or invalid for enrollment ${enrollment.id}`;
+    console.error(error);
+    // TODO: Send to Slack error reporting channel - Invalid flow edges
     return [];
   }
 
@@ -91,7 +101,10 @@ export async function evaluateFlow(
     .single();
 
   if (currentNodeError || !currentNode) {
-    console.error(`Current node ${enrollment.current_node_id} not found: ${currentNodeError?.message}`);
+    const error = `Current node ${enrollment.current_node_id} not found for enrollment ${enrollment.id}: ${currentNodeError?.message || 'Node not found'}`;
+    console.error(error);
+    // TODO: Send to Slack error reporting channel - Missing node in database
+    // This indicates data inconsistency (node_id exists in enrollment but not in nodes table)
     return [];
   }
 

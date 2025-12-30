@@ -77,10 +77,10 @@ export class SchedulerWorker {
    */
   private async processEnrollment(enrollment: Enrollment): Promise<void> {
     try {
-      // 1. Load campaign and flow graph
+      // 1. Load campaign and flow graph (including account_id)
       const { data: campaign, error: campaignError } = await this.supabase
         .from('campaigns')
-        .select('flow_data, schedule, owner_id')
+        .select('flow_data, schedule, owner_id, account_id')
         .eq('id', enrollment.campaign_id)
         .single();
 
@@ -88,7 +88,12 @@ export class SchedulerWorker {
         throw new Error(`Campaign ${enrollment.campaign_id} not found: ${campaignError?.message}`);
       }
 
-      // 2. Evaluate flow - find next node(s)
+      // 2. Validate account_id exists
+      if (!campaign.account_id) {
+        throw new Error(`Campaign ${enrollment.campaign_id} has no account_id. Campaigns must be associated with an account.`);
+      }
+
+      // 3. Evaluate flow - find next node(s)
       const nextNodes = evaluateFlow(enrollment, campaign.flow_data);
       
       if (nextNodes.length === 0) {
@@ -100,7 +105,7 @@ export class SchedulerWorker {
         return;
       }
 
-      // 3. Process each next node
+      // 4. Process each next node
       for (const node of nextNodes) {
         if (node.type === 'email') {
           // Create message_job and push to SQS
@@ -108,6 +113,8 @@ export class SchedulerWorker {
             enrollment,
             node,
             campaign,
+            campaign.account_id,
+            this.mailboxRotationIndex,
             this.supabase,
             this.sqs,
             this.sendQueueUrl

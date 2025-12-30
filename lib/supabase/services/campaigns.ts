@@ -1,5 +1,6 @@
 import { supabase } from '../client';
-import type { Campaign, CampaignInsert, CampaignUpdate, Database } from '../types';
+import type { Campaign, CampaignInsert, CampaignUpdate } from '../types';
+import { getAccountMembershipsForUser, getUserByExternalId } from './users';
 
 /**
  * Campaign service for database operations
@@ -65,12 +66,36 @@ export async function getCampaignById(id: string): Promise<Campaign | null> {
 
 /**
  * Create a new campaign
+ * Automatically sets account_id based on owner_id if not provided
  */
 export async function createCampaign(campaign: CampaignInsert): Promise<Campaign> {
+  // If account_id is not provided, look it up from owner_id
+  let accountId = campaign.account_id;
+  
+  if (!accountId && campaign.owner_id) {
+    try {
+      // Get user by external_id (Cognito user ID)
+      const user = await getUserByExternalId(campaign.owner_id);
+      if (user) {
+        // Get user's account memberships
+        const memberships = await getAccountMembershipsForUser(user.id);
+        // Use primary account (owner account, or first one)
+        const primaryMembership = memberships.find(m => m.membership.is_owner) || memberships[0];
+        if (primaryMembership) {
+          accountId = primaryMembership.account.id;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to auto-resolve account_id for campaign:', error);
+      // Continue without account_id - it can be set later
+    }
+  }
+
   const { data, error } = await supabase
     .from('campaigns')
     .insert({
       ...campaign,
+      account_id: accountId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })

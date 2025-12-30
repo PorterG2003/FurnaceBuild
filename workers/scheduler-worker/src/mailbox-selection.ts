@@ -2,32 +2,41 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import type { Mailbox } from './types.js';
 
 /**
- * Select a mailbox for sending (load balancing)
- * Placeholder implementation - will be enhanced in Phase 3.1 with round-robin
+ * Select a mailbox for sending using round-robin load balancing
+ * 
+ * Loads available mailboxes for the campaign's account and selects one
+ * using round-robin distribution based on rotationIndex.
+ * 
+ * @param accountId - Account ID to load mailboxes for
+ * @param supabase - Supabase client
+ * @param rotationIndex - Current rotation index for round-robin (incremented per enrollment)
+ * @returns Selected mailbox or null if none available
  */
 export async function selectMailbox(
-  campaignId: string,
+  accountId: string,
   supabase: SupabaseClient,
   rotationIndex: number = 0
 ): Promise<Mailbox | null> {
-  // Placeholder implementation
-  // This should:
-  // - Load available mailboxes for campaign/account
-  // - Implement load balancing / round-robin
-  // - Consider mailbox throttles
-  
+  // Load available mailboxes for account
   const { data: mailboxes, error } = await supabase
     .from('mailboxes')
     .select('*')
+    .eq('account_id', accountId)
     .eq('smtp_status', 'active')
     .eq('status', 'connected')
-    .limit(10); // Get multiple for round-robin (will be implemented in Phase 3.1)
+    .order('created_at', { ascending: true }); // Consistent ordering for round-robin
   
-  if (error || !mailboxes || mailboxes.length === 0) {
-    throw new Error(`No available mailboxes: ${error?.message}`);
+  if (error) {
+    console.error('Error loading mailboxes:', error);
+    return null;
   }
   
-  // Simple round-robin (will be enhanced in Phase 3.1)
+  if (!mailboxes || mailboxes.length === 0) {
+    console.warn(`No available mailboxes for account ${accountId}`);
+    return null;
+  }
+  
+  // Round-robin selection: rotate through available mailboxes
   const selectedIndex = rotationIndex % mailboxes.length;
   return mailboxes[selectedIndex] as Mailbox;
 }

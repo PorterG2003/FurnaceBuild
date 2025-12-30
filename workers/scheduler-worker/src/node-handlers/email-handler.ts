@@ -14,6 +14,8 @@ export async function handleEmailNode(
   enrollment: Enrollment,
   node: any,
   campaign: any,
+  accountId: string,
+  rotationIndex: number,
   supabase: SupabaseClient,
   sqs: SQSClient,
   sendQueueUrl: string
@@ -32,11 +34,11 @@ export async function handleEmailNode(
     throw new Error(`Lead ${enrollment.lead_id} not found: ${leadError?.message}`);
   }
   
-  // 3. Select mailbox (load balancing logic)
-  const mailbox = await selectMailbox(enrollment.campaign_id, supabase);
+  // 3. Select mailbox using round-robin (load balancing)
+  const mailbox = await selectMailbox(accountId, supabase, rotationIndex);
   
   if (!mailbox) {
-    throw new Error('No available mailbox found for campaign');
+    throw new Error(`No available mailbox found for account ${accountId}`);
   }
   
   // 4. Create message_job

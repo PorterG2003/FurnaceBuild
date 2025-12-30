@@ -75,6 +75,7 @@ export interface Database {
           name: string;
           owner_id: string;
           organization_id: string | null;
+          account_id: string | null;
           locked: boolean;
           flow_data: Json | null;
           bucket_id: string;
@@ -87,6 +88,7 @@ export interface Database {
           name: string;
           owner_id: string;
           organization_id?: string | null;
+          account_id?: string | null;
           locked?: boolean;
           flow_data?: Json | null;
           bucket_id?: string;
@@ -99,6 +101,7 @@ export interface Database {
           name?: string;
           owner_id?: string;
           organization_id?: string | null;
+          account_id?: string | null;
           locked?: boolean;
           flow_data?: Json | null;
           bucket_id?: string;

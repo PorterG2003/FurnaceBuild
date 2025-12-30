@@ -53,18 +53,21 @@ export interface Database {
         Row: {
           id: string;
           name: string;
+          jitter_percentage: number;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
           name: string;
+          jitter_percentage?: number;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           name?: string;
+          jitter_percentage?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -76,6 +79,7 @@ export interface Database {
           owner_id: string;
           organization_id: string | null;
           account_id: string | null;
+          jitter_percentage: number | null;
           locked: boolean;
           flow_data: Json | null;
           bucket_id: string;
@@ -89,6 +93,7 @@ export interface Database {
           owner_id: string;
           organization_id?: string | null;
           account_id?: string | null;
+          jitter_percentage?: number | null;
           locked?: boolean;
           flow_data?: Json | null;
           bucket_id?: string;
@@ -102,6 +107,7 @@ export interface Database {
           owner_id?: string;
           organization_id?: string | null;
           account_id?: string | null;
+          jitter_percentage?: number | null;
           locked?: boolean;
           flow_data?: Json | null;
           bucket_id?: string;

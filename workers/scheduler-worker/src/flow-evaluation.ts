@@ -118,6 +118,18 @@ export async function evaluateFlow(
     return [];
   }
 
-  return (nextNodes || []) as DatabaseNode[];
+  // Filter out leadSource nodes (they should only be entry points, not in traversal)
+  const filteredNodes = (nextNodes || []).filter(
+    (node: any) => node.node_type !== 'leadSource'
+  ) as DatabaseNode[];
+
+  // Log warning if leadSource nodes were filtered out
+  if (filteredNodes.length < (nextNodes || []).length) {
+    console.warn(
+      `Filtered out ${(nextNodes || []).length - filteredNodes.length} leadSource node(s) from traversal for enrollment ${enrollment.id}`
+    );
+  }
+
+  return filteredNodes;
 }
 

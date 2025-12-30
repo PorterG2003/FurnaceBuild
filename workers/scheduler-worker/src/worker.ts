@@ -80,10 +80,10 @@ export class SchedulerWorker {
    */
   private async processEnrollment(enrollment: Enrollment): Promise<void> {
     try {
-      // 1. Load campaign and flow graph (including account_id)
+      // 1. Load campaign and flow graph (including account_id and jitter_percentage)
       const { data: campaign, error: campaignError } = await this.supabase
         .from('campaigns')
-        .select('flow_data, schedule, owner_id, account_id')
+        .select('flow_data, schedule, owner_id, account_id, jitter_percentage')
         .eq('id', enrollment.campaign_id)
         .single();
 
@@ -95,6 +95,22 @@ export class SchedulerWorker {
       if (!campaign.account_id) {
         throw new Error(`Campaign ${enrollment.campaign_id} has no account_id. Campaigns must be associated with an account.`);
       }
+
+      // 2.5. Load account jitter configuration
+      const { data: account, error: accountError } = await this.supabase
+        .from('accounts')
+        .select('jitter_percentage')
+        .eq('id', campaign.account_id)
+        .single();
+
+      if (accountError) {
+        console.warn(`Account ${campaign.account_id} not found, using default jitter: ${accountError?.message}`);
+      }
+
+      // Determine jitter: campaign > account > default (10%)
+      const jitterPercentage = campaign.jitter_percentage ?? 
+                                account?.jitter_percentage ?? 
+                                10.0; // Default 10%
 
       // 3. Evaluate flow - find next node(s) (loads from database)
       const nextNodes = await evaluateFlow(
@@ -123,6 +139,7 @@ export class SchedulerWorker {
             campaign,
             campaign.account_id,
             this.mailboxRotationIndex,
+            jitterPercentage,
             this.supabase,
             this.sqs,
             this.sendQueueUrl
@@ -139,8 +156,6 @@ export class SchedulerWorker {
           
         } else if (node.node_type === 'waitTime' || node.node_type === 'wait') {
           // Handle waitTime node with schedule and jitter
-          // TODO: Load jitter_percentage from account config (Task 3.1-11)
-          const jitterPercentage = 10; // Default jitter, will be loaded from account config later
           await handleWaitTimeNode(
             enrollment,
             node,

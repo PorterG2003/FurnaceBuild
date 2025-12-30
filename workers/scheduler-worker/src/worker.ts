@@ -4,6 +4,8 @@ import { DatabaseClient } from './database.js';
 import { evaluateFlow } from './flow-evaluation.js';
 import { handleEmailNode } from './node-handlers/email-handler.js';
 import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
+import { handleAICategorizerNode } from './node-handlers/ai-categorizer-handler.js';
+import { handleDataSenderNode } from './node-handlers/data-sender-handler.js';
 import type { Enrollment } from './types.js';
 
 export interface WorkerConfig {
@@ -146,12 +148,80 @@ export class SchedulerWorker {
             jitterPercentage,
             this.supabase
           );
-        } else {
-          // Handle other node types (branch, conditional, etc.)
-          // For now, just update current_node_id
+        } else if (node.node_type === 'aiCategorizer') {
+          // Handle AICategorizer node (branching logic)
+          const selectedFlowNodeId = await handleAICategorizerNode(
+            enrollment,
+            node,
+            campaign.flow_data,
+            this.supabase
+          );
+
+          if (selectedFlowNodeId) {
+            // Load the selected node from database
+            const { data: selectedNode, error: selectedNodeError } = await this.supabase
+              .from('nodes')
+              .select('*')
+              .eq('campaign_id', enrollment.campaign_id)
+              .eq('flow_node_id', selectedFlowNodeId)
+              .single();
+
+            if (selectedNodeError || !selectedNode) {
+              console.error(`Selected node ${selectedFlowNodeId} not found: ${selectedNodeError?.message}`);
+              // Update enrollment to AICategorizer node and set next_run_at for retry
+              await this.supabase
+                .from('enrollments')
+                .update({
+                  current_node_id: node.id,
+                  next_run_at: new Date(Date.now() + 60000).toISOString(), // Retry in 1 minute
+                })
+                .eq('id', enrollment.id);
+            } else {
+              // Update enrollment to AICategorizer node, then process the selected node
+              await this.supabase
+                .from('enrollments')
+                .update({ current_node_id: node.id })
+                .eq('id', enrollment.id);
+
+              // Set next_run_at to process the selected node immediately
+              await this.supabase
+                .from('enrollments')
+                .update({
+                  current_node_id: selectedNode.id,
+                  next_run_at: new Date().toISOString(),
+                })
+                .eq('id', enrollment.id);
+            }
+          } else {
+            // No category selected, update enrollment and set next_run_at for retry
+            await this.supabase
+              .from('enrollments')
+              .update({
+                current_node_id: node.id,
+                next_run_at: new Date(Date.now() + 60000).toISOString(), // Retry in 1 minute
+              })
+              .eq('id', enrollment.id);
+          }
+        } else if (node.node_type === 'dataSender') {
+          // Handle DataSender node (placeholder)
+          await handleDataSenderNode(enrollment, node, this.supabase);
+        } else if (node.node_type === 'leadSource') {
+          // LeadSource is an entry point, not a traversal node
+          // If we encounter it during traversal, mark flow as complete (cycle detected)
+          console.warn(`LeadSource node encountered during traversal for enrollment ${enrollment.id} - marking as completed`);
           await this.supabase
             .from('enrollments')
-            .update({ current_node_id: node.id })
+            .update({ state: 'completed' })
+            .eq('id', enrollment.id);
+        } else {
+          // Handle other node types (unknown types)
+          // For now, just update current_node_id and set next_run_at to process immediately
+          await this.supabase
+            .from('enrollments')
+            .update({
+              current_node_id: node.id,
+              next_run_at: new Date().toISOString(),
+            })
             .eq('id', enrollment.id);
         }
       }

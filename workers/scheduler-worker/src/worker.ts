@@ -3,6 +3,7 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { DatabaseClient } from './database.js';
 import { evaluateFlow } from './flow-evaluation.js';
 import { handleEmailNode } from './node-handlers/email-handler.js';
+import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
 import type { Enrollment } from './types.js';
 
 export interface WorkerConfig {
@@ -93,8 +94,13 @@ export class SchedulerWorker {
         throw new Error(`Campaign ${enrollment.campaign_id} has no account_id. Campaigns must be associated with an account.`);
       }
 
-      // 3. Evaluate flow - find next node(s)
-      const nextNodes = evaluateFlow(enrollment, campaign.flow_data);
+      // 3. Evaluate flow - find next node(s) (loads from database)
+      const nextNodes = await evaluateFlow(
+        enrollment,
+        enrollment.campaign_id,
+        campaign.flow_data,
+        this.supabase
+      );
       
       if (nextNodes.length === 0) {
         // No next nodes - mark enrollment as completed
@@ -107,7 +113,7 @@ export class SchedulerWorker {
 
       // 4. Process each next node
       for (const node of nextNodes) {
-        if (node.type === 'email') {
+        if (node.node_type === 'email') {
           // Create message_job and push to SQS
           await handleEmailNode(
             enrollment,
@@ -129,18 +135,17 @@ export class SchedulerWorker {
           // Increment mailbox rotation index for next enrollment
           this.mailboxRotationIndex++;
           
-        } else if (node.type === 'waitTime' || node.type === 'wait') {
-          // Update enrollment.next_run_at for wait nodes
-          const waitDuration = node.data?.wait_duration_seconds || node.data?.duration_seconds || 0;
-          const nextRunAt = new Date(Date.now() + waitDuration * 1000).toISOString();
-          
-          await this.supabase
-            .from('enrollments')
-            .update({
-              next_run_at: nextRunAt,
-              current_node_id: node.id,
-            })
-            .eq('id', enrollment.id);
+        } else if (node.node_type === 'waitTime' || node.node_type === 'wait') {
+          // Handle waitTime node with schedule and jitter
+          // TODO: Load jitter_percentage from account config (Task 3.1-11)
+          const jitterPercentage = 10; // Default jitter, will be loaded from account config later
+          await handleWaitTimeNode(
+            enrollment,
+            node,
+            campaign.schedule,
+            jitterPercentage,
+            this.supabase
+          );
         } else {
           // Handle other node types (branch, conditional, etc.)
           // For now, just update current_node_id

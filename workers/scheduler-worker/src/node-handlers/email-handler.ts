@@ -21,7 +21,11 @@ export async function handleEmailNode(
   sendQueueUrl: string
 ): Promise<MessageJob> {
   // 1. Calculate scheduled_at (respects campaign schedule, jitter, etc.)
-  const scheduledAt = calculateScheduledAt(enrollment, campaign.schedule);
+  // Use current time as base, apply schedule and jitter
+  // TODO: Load jitter_percentage from account config (Task 3.1-11)
+  const baseTime = new Date();
+  const jitterPercentage = 10; // Default jitter, will be loaded from account config later
+  const scheduledAt = calculateScheduledAt(baseTime, campaign.schedule, jitterPercentage);
   
   // 2. Load lead data (for template variables later)
   const { data: lead, error: leadError } = await supabase
@@ -54,7 +58,7 @@ export async function handleEmailNode(
       scheduled_at: scheduledAt,
       message_data: {
         // Template data will be filled by send worker
-        node_config: node.data || {},
+        node_config: node.node_data || {},
         lead_data: {
           email: lead.email,
           name: lead.name,

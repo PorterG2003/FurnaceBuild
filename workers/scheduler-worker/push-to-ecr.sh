@@ -5,6 +5,11 @@
 
 set -e
 
+# Add Docker's bin directory to PATH for credential helper (macOS)
+if [ -d "/Applications/Docker.app/Contents/Resources/bin" ]; then
+  export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+fi
+
 REGION="us-west-2"
 REPO_NAME="furnace/scheduler-worker"
 IMAGE_TAG="${1:-latest}"

@@ -86,9 +86,15 @@ export async function createCampaign(campaign: CampaignInsert): Promise<Campaign
         }
       }
     } catch (error) {
-      console.warn('Failed to auto-resolve account_id for campaign:', error);
-      // Continue without account_id - it can be set later
+      console.error('Failed to auto-resolve account_id for campaign:', error);
+      // Throw error - account_id is required for scheduler to work
+      throw new Error(`Failed to resolve account_id for campaign owner ${campaign.owner_id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+  
+  // Ensure account_id is set
+  if (!accountId) {
+    throw new Error('Campaign must have an account_id. Provide account_id directly or ensure owner_id has an associated account.');
   }
 
   const { data, error } = await supabase

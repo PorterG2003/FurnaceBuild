@@ -46,12 +46,27 @@ export class SchedulerWorker {
         const enrollments = await this.databaseClient.poll();
 
         if (enrollments.length > 0) {
-          console.log(`Found ${enrollments.length} enrollments ready to process`);
+          console.log(`[SCHEDULER] Found ${enrollments.length} enrollment(s) ready to process`);
+          enrollments.forEach(e => {
+            console.log(`[SCHEDULER] Enrollment: ${e.id} | State: ${e.state} | Current Node: ${e.current_node_id?.substring(0, 8) || 'null'} | Next Run: ${e.next_run_at}`);
+          });
 
           // Process enrollments in parallel (with concurrency limit if needed)
-          await Promise.all(
+          const results = await Promise.allSettled(
             enrollments.map(enrollment => this.processEnrollment(enrollment))
           );
+          
+          // Log results
+          const successful = results.filter(r => r.status === 'fulfilled').length;
+          const failed = results.filter(r => r.status === 'rejected').length;
+          console.log(`[SCHEDULER] Processed ${enrollments.length} enrollment(s): ${successful} successful, ${failed} failed`);
+          
+          // Log any failures
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              console.error(`[SCHEDULER] Failed to process enrollment ${enrollments[index].id}:`, result.reason);
+            }
+          });
         } else {
           // No enrollments ready - wait before next poll
           await this.sleep(this.databaseClient.getPollInterval());
@@ -86,8 +101,12 @@ export class SchedulerWorker {
    * Migrated from Lambda handler
    */
   private async processEnrollment(enrollment: Enrollment): Promise<void> {
+    const enrollmentId = enrollment.id.substring(0, 8);
+    console.log(`[ENROLLMENT ${enrollment.id}] Starting processing... (state: ${enrollment.state}, current_node: ${enrollment.current_node_id?.substring(0, 8) || 'null'})`);
+    
     try {
       // 1. Load campaign and flow graph (including account_id and jitter_percentage)
+      console.log(`[ENROLLMENT ${enrollmentId}] Loading campaign ${enrollment.campaign_id.substring(0, 8)}...`);
       const { data: campaign, error: campaignError } = await this.supabase
         .from('campaigns')
         .select('flow_data, schedule, owner_id, account_id, jitter_percentage')
@@ -97,6 +116,7 @@ export class SchedulerWorker {
       if (campaignError || !campaign) {
         throw new Error(`Campaign ${enrollment.campaign_id} not found: ${campaignError?.message}`);
       }
+      console.log(`[ENROLLMENT ${enrollmentId}] Campaign loaded. Account ID: ${campaign.account_id?.substring(0, 8) || 'MISSING'}`);
 
       // 2. Validate account_id exists
       if (!campaign.account_id) {
@@ -121,6 +141,7 @@ export class SchedulerWorker {
                                 10.0; // Default 10%
 
       // 3. Evaluate flow - find next node(s) (loads from database)
+      console.log(`[ENROLLMENT ${enrollmentId}] Evaluating flow. Current node: ${enrollment.current_node_id?.substring(0, 8) || 'null (entry point)'}`);
       const nextNodes = await evaluateFlow(
         enrollment,
         enrollment.campaign_id,
@@ -128,8 +149,14 @@ export class SchedulerWorker {
         this.supabase
       );
       
+      console.log(`[ENROLLMENT ${enrollmentId}] Flow evaluation complete. Found ${nextNodes.length} next node(s)`);
+      if (nextNodes.length > 0) {
+        console.log(`[ENROLLMENT ${enrollmentId}] Next nodes: ${nextNodes.map(n => `${n.node_type}(${n.id.substring(0, 8)})`).join(', ')}`);
+      }
+      
       if (nextNodes.length === 0) {
         // No next nodes - mark enrollment as completed
+        console.log(`[ENROLLMENT ${enrollmentId}] No next nodes found. Marking enrollment as completed.`);
         await this.supabase
           .from('enrollments')
           .update({ state: 'completed' })
@@ -138,10 +165,14 @@ export class SchedulerWorker {
       }
 
       // 4. Process each next node
+      console.log(`[ENROLLMENT ${enrollmentId}] Processing ${nextNodes.length} node(s)...`);
       for (const node of nextNodes) {
+        console.log(`[ENROLLMENT ${enrollmentId}] Processing node: ${node.node_type} (${node.id.substring(0, 8)})`);
+        
         if (node.node_type === 'email') {
+          console.log(`[ENROLLMENT ${enrollmentId}] Handling email node...`);
           // Create message_job and push to SQS
-          await handleEmailNode(
+          const messageJob = await handleEmailNode(
             enrollment,
             node,
             campaign,
@@ -153,16 +184,21 @@ export class SchedulerWorker {
             this.sendQueueUrl
           );
           
+          console.log(`[ENROLLMENT ${enrollmentId}] Email node processed. Message job created: ${messageJob.id.substring(0, 8)}`);
+          
           // Update enrollment.current_node_id
           await this.supabase
             .from('enrollments')
             .update({ current_node_id: node.id })
             .eq('id', enrollment.id);
           
+          console.log(`[ENROLLMENT ${enrollmentId}] Updated current_node_id to ${node.id.substring(0, 8)}`);
+          
           // Increment mailbox rotation index for next enrollment
           this.mailboxRotationIndex++;
           
         } else if (node.node_type === 'waitTime' || node.node_type === 'wait') {
+          console.log(`[ENROLLMENT ${enrollmentId}] Handling waitTime node...`);
           // Handle waitTime node with schedule (NO JITTER - wait times should be exact)
           await handleWaitTimeNode(
             enrollment,
@@ -170,7 +206,9 @@ export class SchedulerWorker {
             campaign.schedule,
             this.supabase
           );
+          console.log(`[ENROLLMENT ${enrollmentId}] WaitTime node processed. Updated next_run_at.`);
         } else if (node.node_type === 'aiCategorizer') {
+          console.log(`[ENROLLMENT ${enrollmentId}] Handling AICategorizer node...`);
           // Handle AICategorizer node (branching logic)
           const selectedFlowNodeId = await handleAICategorizerNode(
             enrollment,
@@ -178,6 +216,7 @@ export class SchedulerWorker {
             campaign.flow_data,
             this.supabase
           );
+          console.log(`[ENROLLMENT ${enrollmentId}] AICategorizer selected flow node: ${selectedFlowNodeId || 'none'}`);
 
           if (selectedFlowNodeId) {
             // Load the selected node from database
@@ -225,18 +264,21 @@ export class SchedulerWorker {
               .eq('id', enrollment.id);
           }
         } else if (node.node_type === 'dataSender') {
+          console.log(`[ENROLLMENT ${enrollmentId}] Handling DataSender node...`);
           // Handle DataSender node (placeholder)
           await handleDataSenderNode(enrollment, node, this.supabase);
+          console.log(`[ENROLLMENT ${enrollmentId}] DataSender node processed.`);
         } else if (node.node_type === 'leadSource') {
           // LeadSource is an entry point, not a traversal node
           // If we encounter it during traversal, mark flow as complete (cycle detected)
-          console.warn(`LeadSource node encountered during traversal for enrollment ${enrollment.id} - marking as completed`);
+          console.warn(`[ENROLLMENT ${enrollmentId}] LeadSource node encountered during traversal - marking as completed`);
           await this.supabase
             .from('enrollments')
             .update({ state: 'completed' })
             .eq('id', enrollment.id);
         } else {
           // Handle other node types (unknown types)
+          console.warn(`[ENROLLMENT ${enrollmentId}] Unknown node type '${node.node_type}'. Updating current_node_id and continuing.`);
           // For now, just update current_node_id and set next_run_at to process immediately
           await this.supabase
             .from('enrollments')

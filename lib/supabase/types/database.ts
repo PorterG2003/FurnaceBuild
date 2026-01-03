@@ -53,18 +53,21 @@ export interface Database {
         Row: {
           id: string;
           name: string;
+          jitter_percentage: number;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
           name: string;
+          jitter_percentage?: number;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           name?: string;
+          jitter_percentage?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -75,6 +78,8 @@ export interface Database {
           name: string;
           owner_id: string;
           organization_id: string | null;
+          account_id: string | null;
+          jitter_percentage: number | null;
           locked: boolean;
           flow_data: Json | null;
           bucket_id: string;
@@ -87,6 +92,8 @@ export interface Database {
           name: string;
           owner_id: string;
           organization_id?: string | null;
+          account_id?: string | null;
+          jitter_percentage?: number | null;
           locked?: boolean;
           flow_data?: Json | null;
           bucket_id?: string;
@@ -99,6 +106,8 @@ export interface Database {
           name?: string;
           owner_id?: string;
           organization_id?: string | null;
+          account_id?: string | null;
+          jitter_percentage?: number | null;
           locked?: boolean;
           flow_data?: Json | null;
           bucket_id?: string;
@@ -166,56 +175,8 @@ export interface Database {
           updated_at?: string;
         };
       };
-      lead_states: {
-        Row: {
-          id: string;
-          lead_id: string;
-          campaign_id: string;
-          node_id: string;
-          node_type: 'leadSource' | 'email' | 'waitTime' | 'aiCategorizer' | 'dataSender';
-          status: 'schrodinger' | 'queued' | 'processing' | 'processed' | 'failed' | 'success' | 'trimmed';
-          parent_state_id: string | null;
-          execution_data: Json | null;
-          error_message: string | null;
-          entered_at: string | null;
-          queued_at: string | null;
-          processing_at: string | null;
-          completed_at: string | null;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          lead_id: string;
-          campaign_id: string;
-          node_id: string;
-          node_type: 'leadSource' | 'email' | 'waitTime' | 'aiCategorizer' | 'dataSender';
-          status?: 'schrodinger' | 'queued' | 'processing' | 'processed' | 'failed' | 'success' | 'trimmed';
-          parent_state_id?: string | null;
-          execution_data?: Json | null;
-          error_message?: string | null;
-          entered_at?: string | null;
-          queued_at?: string | null;
-          processing_at?: string | null;
-          completed_at?: string | null;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          lead_id?: string;
-          campaign_id?: string;
-          node_id?: string;
-          node_type?: 'leadSource' | 'email' | 'waitTime' | 'aiCategorizer' | 'dataSender';
-          status?: 'schrodinger' | 'queued' | 'processing' | 'processed' | 'failed' | 'success' | 'trimmed';
-          parent_state_id?: string | null;
-          execution_data?: Json | null;
-          error_message?: string | null;
-          entered_at?: string | null;
-          queued_at?: string | null;
-          processing_at?: string | null;
-          completed_at?: string | null;
-          updated_at?: string;
-        };
-      };
+      // lead_states removed - replaced by enrollments
+      // lead_states: { ... }
       users: {
         Row: {
           id: string;

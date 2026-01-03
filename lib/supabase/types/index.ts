@@ -22,9 +22,10 @@ export type Lead = Database['public']['Tables']['leads']['Row'];
 export type LeadInsert = Database['public']['Tables']['leads']['Insert'];
 export type LeadUpdate = Database['public']['Tables']['leads']['Update'];
 
-export type LeadState = Database['public']['Tables']['lead_states']['Row'];
-export type LeadStateInsert = Database['public']['Tables']['lead_states']['Insert'];
-export type LeadStateUpdate = Database['public']['Tables']['lead_states']['Update'];
+// lead_states removed - replaced by enrollments
+// export type LeadState = Database['public']['Tables']['lead_states']['Row'];
+// export type LeadStateInsert = Database['public']['Tables']['lead_states']['Insert'];
+// export type LeadStateUpdate = Database['public']['Tables']['lead_states']['Update'];
 
 export type User = Database['public']['Tables']['users']['Row'];
 export type UserInsert = Database['public']['Tables']['users']['Insert'];

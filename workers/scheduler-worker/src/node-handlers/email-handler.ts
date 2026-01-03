@@ -1,5 +1,4 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import type { Enrollment, MessageJob, Lead, Mailbox } from '../types.js';
 import { calculateScheduledAt } from '../scheduling.js';
 import { selectMailbox } from '../mailbox-selection.js';
@@ -7,8 +6,8 @@ import { selectMailbox } from '../mailbox-selection.js';
 // Note: rotationIndex will be passed from worker in Phase 3.1
 
 /**
- * Handle email node: create message_job and push to SQS
- * Migrated from Lambda handler
+ * Handle email node: create message_job in database
+ * Send workers will poll database directly using claim_message_jobs_ready RPC function
  */
 export async function handleEmailNode(
   enrollment: Enrollment,
@@ -17,9 +16,7 @@ export async function handleEmailNode(
   accountId: string,
   rotationIndex: number,
   jitterPercentage: number,
-  supabase: SupabaseClient,
-  sqs: SQSClient,
-  sendQueueUrl: string
+  supabase: SupabaseClient
 ): Promise<MessageJob> {
   // 1. Calculate scheduled_at (respects campaign schedule, jitter, etc.)
   // Use current time as base, apply schedule and jitter
@@ -80,42 +77,8 @@ export async function handleEmailNode(
     throw new Error(`Failed to create message_job: ${jobError?.message}`);
   }
   
-  // 5. Push to SQS
-  try {
-    const sqsResponse = await sqs.send(new SendMessageCommand({
-      QueueUrl: sendQueueUrl,
-      MessageBody: JSON.stringify({
-        message_job_id: messageJob.id,
-        enrollment_id: enrollment.id,
-        campaign_id: enrollment.campaign_id,
-      }),
-    }));
-
-    // 6. Update message_job with SQS message ID for tracking
-    await supabase
-      .from('message_jobs')
-      .update({ sqs_message_id: sqsResponse.MessageId })
-      .eq('id', messageJob.id);
-
-    return messageJob as MessageJob;
-  } catch (sqsError) {
-    const errorMessage = sqsError instanceof Error ? sqsError.message : String(sqsError);
-    console.error(`Failed to send message to SQS for message_job ${messageJob.id}:`, errorMessage);
-    // TODO: Send to Slack error reporting channel - SQS send failure (critical)
-    
-    // Try to update message_job status to failed
-    try {
-      await supabase
-        .from('message_jobs')
-        .update({
-          status: 'failed',
-          error_message: `SQS send failed: ${errorMessage}`,
-        })
-        .eq('id', messageJob.id);
-    } catch (updateError) {
-      console.error(`Failed to update message_job ${messageJob.id} after SQS error:`, updateError);
-    }
-    
-    throw new Error(`SQS send failed: ${errorMessage}`);
-  }
+  // 5. Message job created - send workers will poll database directly using claim_message_jobs_ready RPC function
+  // No SQS push needed - jobs are polled directly from database
+  
+  return messageJob as MessageJob;
 }

@@ -1,7 +1,6 @@
 import { createSupabaseClient } from './supabase.js';
 import { DatabaseClient } from './database.js';
 import { SchedulerWorker } from './worker.js';
-import { SQSClient } from '@aws-sdk/client-sqs';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 
 /**
@@ -34,7 +33,6 @@ async function fetchSecretFromParameterStore(
  * Environment variables required:
  * - SUPABASE_URL: Supabase project URL
  * - SUPABASE_SERVICE_KEY: Service role key (or SUPABASE_SERVICE_KEY_PARAM_PATH to fetch from Parameter Store)
- * - SEND_QUEUE_URL: SQS queue URL
  * - AWS_REGION: AWS region (defaults to us-west-2)
  */
 async function main() {
@@ -43,13 +41,10 @@ async function main() {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseServiceKeyParamPath = process.env.SUPABASE_SERVICE_KEY_PARAM_PATH;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-    const sendQueueUrl = process.env.SEND_QUEUE_URL;
     const awsRegion = process.env.AWS_REGION || 'us-west-2';
 
-    if (!supabaseUrl || !sendQueueUrl) {
-      throw new Error(
-        'Missing required environment variables: SUPABASE_URL or SEND_QUEUE_URL'
-      );
+    if (!supabaseUrl) {
+      throw new Error('Missing required environment variable: SUPABASE_URL');
     }
 
     // Fetch SUPABASE_SERVICE_KEY from Parameter Store if path is provided
@@ -68,12 +63,10 @@ async function main() {
     }
 
     console.log('Initializing scheduler worker...');
-    console.log(`Queue URL: ${sendQueueUrl}`);
     console.log(`AWS Region: ${awsRegion}`);
 
     // Initialize clients
     const supabase = createSupabaseClient();
-    const sqs = new SQSClient({ region: awsRegion });
     const databaseClient = new DatabaseClient({
       supabase,
       batchSize: 100,
@@ -84,8 +77,6 @@ async function main() {
     const worker = new SchedulerWorker({
       supabase,
       databaseClient,
-      sqs,
-      sendQueueUrl,
     });
 
     // Handle graceful shutdown

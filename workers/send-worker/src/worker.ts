@@ -1,21 +1,23 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { QueueClient } from './queue.js';
+import { DatabaseClient } from './database.js';
 import { createTransporter, sendEmail, mergeTemplate } from './email.js';
-import type { MessageJob, Mailbox, Lead, SQSMessage } from './types.js';
+import type { MessageJob, Mailbox, Lead } from './types.js';
 
 export interface WorkerConfig {
   supabase: SupabaseClient;
-  queueClient: QueueClient;
+  databaseClient: DatabaseClient;
 }
 
 export class SendWorker {
   private supabase: SupabaseClient;
-  private queueClient: QueueClient;
+  private databaseClient: DatabaseClient;
   private running: boolean = false;
+  private consecutiveEmptyPolls: number = 0;
+  private readonly maxEmptyPolls: number = 10;
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
-    this.queueClient = config.queueClient;
+    this.databaseClient = config.databaseClient;
   }
 
   /**
@@ -27,22 +29,55 @@ export class SendWorker {
 
     while (this.running) {
       try {
-        // Poll queue for messages
-        const messages = await this.queueClient.poll();
+        // Poll database for message jobs ready to send
+        const messageJobs = await this.databaseClient.poll();
 
-        if (messages.length > 0) {
-          console.log(`Received ${messages.length} messages from queue`);
+        if (messageJobs.length > 0) {
+          this.consecutiveEmptyPolls = 0;
+          console.log(`[SEND WORKER] Found ${messageJobs.length} message job(s) ready to send`);
 
-          // Process messages in parallel (with concurrency limit if needed)
-          await Promise.all(
-            messages.map(msg => this.processMessage(msg))
+          // Process jobs in parallel (with concurrency limit if needed)
+          const results = await Promise.allSettled(
+            messageJobs.map(job => this.processMessageJob(job))
           );
+
+          // Log results
+          const successful = results.filter(r => r.status === 'fulfilled').length;
+          const failed = results.filter(r => r.status === 'rejected').length;
+          console.log(`[SEND WORKER] Processed ${messageJobs.length} job(s): ${successful} successful, ${failed} failed`);
+
+          // Log any failures
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              console.error(`[SEND WORKER] Failed to process message job ${messageJobs[index].id}:`, result.reason);
+            }
+          });
+        } else {
+          // No jobs found - adaptive polling: increase interval when idle
+          this.consecutiveEmptyPolls++;
+          const pollInterval = this.calculatePollInterval();
+          await this.sleep(pollInterval);
         }
       } catch (error) {
-        console.error('Error in worker main loop:', error);
+        console.error('[SEND WORKER] Error in main loop:', error);
         // Wait before retrying
         await this.sleep(5000);
       }
+    }
+  }
+
+  /**
+   * Calculate poll interval based on consecutive empty polls (adaptive polling)
+   */
+  private calculatePollInterval(): number {
+    if (this.consecutiveEmptyPolls === 0) {
+      return 2000; // 2 seconds when jobs found
+    } else if (this.consecutiveEmptyPolls < 3) {
+      return 5000; // 5 seconds after a few empty polls
+    } else if (this.consecutiveEmptyPolls < 10) {
+      return 10000; // 10 seconds when idle
+    } else {
+      return 30000; // 30 seconds when very idle (exponential backoff)
     }
   }
 
@@ -55,44 +90,29 @@ export class SendWorker {
   }
 
   /**
-   * Process a single message from SQS
+   * Process a single message job (already claimed from database)
    */
-  private async processMessage(sqsMessage: any): Promise<void> {
-    let receiptHandle: string | undefined;
-
+  private async processMessageJob(messageJob: MessageJob): Promise<void> {
     try {
-      // Parse message body
-      const body: SQSMessage = JSON.parse(sqsMessage.Body);
-      receiptHandle = sqsMessage.ReceiptHandle;
+      const message_job_id = messageJob.id;
 
-      const { message_job_id } = body;
+      console.log(`[SEND WORKER] Processing message job: ${message_job_id}`);
 
-      console.log(`Processing message job: ${message_job_id}`);
+      // Job is already claimed (status = 'reserved') and scheduled_at <= NOW() is guaranteed by RPC function
+      // No need to check scheduled_at or load from database again
 
-      // 1. Load message_job from database
-      const messageJob = await this.loadMessageJob(message_job_id);
-
-      if (!messageJob || messageJob.status !== 'pending') {
-        console.log(`Message job ${message_job_id} not found or not pending, skipping`);
-        // Delete message from queue
-        if (receiptHandle) {
-          await this.queueClient.deleteMessage(receiptHandle);
-        }
-        return;
-      }
-
-      // 2. TODO: Reserve job (atomic throttle check)
+      // 1. TODO: Reserve job (atomic throttle check)
       // For now, we'll skip throttling and proceed
       // const reserved = await this.reserveMessageJob(messageJob);
       // if (!reserved) {
-      //   // Throttle limit hit, message will become visible again after visibility timeout
+      //   // Throttle limit hit, mark job for retry/reschedule
       //   return;
       // }
 
-      // 3. Load related data (lead, mailbox, node config)
+      // 2. Load related data (lead, mailbox, node config)
       const { lead, mailbox, nodeConfig } = await this.loadJobData(messageJob);
 
-      // 4. Generate email content from template
+      // 3. Generate email content from template
       const subject = mergeTemplate(nodeConfig.subject || '', lead);
       const emailBody = mergeTemplate(nodeConfig.body || '', lead);
 
@@ -106,11 +126,11 @@ export class SendWorker {
         providerMessageId = `test-${Date.now()}-${Math.random().toString(36).substring(2, 15)}@furnace.test`;
       } else {
         // Production mode: Send via SMTP
-        console.log(`Sending email via SMTP for message job ${message_job_id}`);
-        // 5. Create SMTP transporter
+        console.log(`[SEND WORKER] Sending email via SMTP for message job ${message_job_id}`);
+        // 4. Create SMTP transporter
         const transporter = createTransporter(mailbox);
 
-        // 6. Send email
+        // 5. Send email
         providerMessageId = await sendEmail(
           transporter,
           mailbox,
@@ -119,10 +139,10 @@ export class SendWorker {
           subject,
           emailBody
         );
-        console.log(`Email sent successfully for message job ${message_job_id} (provider_message_id: ${providerMessageId})`);
+        console.log(`[SEND WORKER] Email sent successfully for message job ${message_job_id} (provider_message_id: ${providerMessageId})`);
       }
 
-      // 7. Update message_job status
+      // 6. Update message_job status
       await this.supabase
         .from('message_jobs')
         .update({
@@ -132,7 +152,7 @@ export class SendWorker {
         })
         .eq('id', message_job_id);
 
-      // 8. Create event record
+      // 7. Create event record
       await this.supabase
         .from('events')
         .insert({
@@ -151,38 +171,15 @@ export class SendWorker {
       if (skipSmtp) {
         console.log(`[TEST MODE] Successfully processed message job ${message_job_id} (no email sent)`);
       } else {
-        console.log(`Successfully processed message job ${message_job_id}`);
-      }
-
-      // 9. Delete message from queue
-      if (receiptHandle) {
-        await this.queueClient.deleteMessage(receiptHandle);
+        console.log(`[SEND WORKER] Successfully processed message job ${message_job_id}`);
       }
 
     } catch (error) {
-      console.error('Error processing message:', error);
-      // Message will become visible again after visibility timeout
+      console.error(`[SEND WORKER] Error processing message job ${messageJob.id}:`, error);
       // TODO: Implement retry logic with exponential backoff
-      // TODO: Move to DLQ after max retries
+      // TODO: Mark job as failed after max retries
+      throw error; // Re-throw to be caught by Promise.allSettled
     }
-  }
-
-  /**
-   * Load message job from database
-   */
-  private async loadMessageJob(messageJobId: string): Promise<MessageJob | null> {
-    const { data, error } = await this.supabase
-      .from('message_jobs')
-      .select('*')
-      .eq('id', messageJobId)
-      .single();
-
-    if (error) {
-      console.error('Error loading message job:', error);
-      return null;
-    }
-
-    return data as MessageJob;
   }
 
   /**

@@ -78,7 +78,8 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - `error_message`, `retry_count`
   - `message_data` (JSONB: subject, body, template vars)
 - Indexes: `(status, scheduled_at)` WHERE `status = 'pending'`
-- Add SQS message ID tracking column
+- **[OLD - SQS Approach]**: Add SQS message ID tracking column (`sqs_message_id`)
+- **[NEW - Database Polling]**: No SQS message ID needed - jobs are polled directly from database
 
 ### 1.3 Enhance Mailboxes for SMTP Operations
 **Purpose**: Optimize SMTP credential storage and add connection management fields
@@ -190,6 +191,8 @@ This document outlines the step-by-step plan to implement the scalable email inf
 ## Phase 2: AWS Infrastructure Setup
 
 ### 2.1 SQS Queues
+**[OLD - SQS Approach - NO LONGER USED]**
+
 **Purpose**: Decouple scheduling from execution, buffer spikes
 
 **Tasks**:
@@ -201,6 +204,21 @@ This document outlines the step-by-step plan to implement the scalable email inf
 
 **Note**: We are starting simple and only using `send_queue`. `event_queue` and `inbox_queue` are skipped for now (see QUEUE_DECISION_ANALYSIS.md for rationale). Events are processed synchronously, and inbox checking uses scheduled tasks instead.
 
+**[NEW - Database Polling Approach]**
+
+**Purpose**: Send workers poll database directly (no SQS queue needed)
+
+**Tasks**:
+- **[REMOVED]**: No SQS `send_queue` needed
+- Send workers poll database using RPC function: `claim_message_jobs_ready`
+- Benefits:
+  - No per-request charges ($0 vs $1-5/month)
+  - Simpler infrastructure (no queue setup/maintenance)
+  - Built-in scheduling (WHERE clause handles `scheduled_at <= NOW()`)
+  - Consistent with scheduler worker pattern
+  - More efficient (direct query with index, no queue overhead)
+- See `MESSAGE_JOB_POLLING_COST_ANALYSIS.md` for detailed cost comparison
+
 ### 2.2 Scheduler Workers (ECS Fargate)
 **Purpose**: Continuously evaluate flows and create message jobs
 
@@ -208,8 +226,10 @@ This document outlines the step-by-step plan to implement the scalable email inf
 - Create `scheduler-worker` ECS service (similar to send-worker):
   - Task definition: Docker image with scheduler worker code
   - Desired count: Start with 2, auto-scaling based on enrollment count
-  - Environment variables: Supabase URL/key, SQS queue URL, AWS region
-  - IAM role: Supabase access, SQS write (to push message_jobs), CloudWatch logs
+  - **[OLD - SQS Approach]**: Environment variables: Supabase URL/key, SQS queue URL, AWS region
+  - **[NEW - Database Polling]**: Environment variables: Supabase URL/key, AWS region (no SQS queue URL needed)
+  - **[OLD - SQS Approach]**: IAM role: Supabase access, SQS write (to push message_jobs), CloudWatch logs
+  - **[NEW - Database Polling]**: IAM role: Supabase access, CloudWatch logs (no SQS permissions needed)
   - Health checks, logging configuration
 - Worker continuously polls Supabase for `enrollments` where `next_run_at <= NOW()` and `state = 'active'`
 - For each enrollment:
@@ -218,7 +238,8 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - Apply campaign schedule, jitter, pacing rules
   - Create `message_jobs` for send actions
   - Update `enrollment.next_run_at` for wait/branch nodes
-  - Push `message_job_id` to `send_queue`
+  - **[OLD - SQS Approach]**: Push `message_job_id` to `send_queue`
+  - **[NEW - Database Polling]**: No SQS push - message jobs are created in database, send workers poll directly
 - Auto-scaling: Scale based on enrollment count metric (CloudWatch custom metric)
 - **Note**: Replaces the initial Lambda scheduler implementation. Lambda had timeout limits and couldn't scale. ECS workers provide continuous processing and auto-scaling.
 
@@ -229,9 +250,12 @@ This document outlines the step-by-step plan to implement the scalable email inf
 - Create ECS Cluster (Fargate) - **Already done in Phase 2.3** ✅
 - Create `send-workers` service - **Already done in Phase 2.3** ✅
   - Task definition: Docker image with send worker code
-  - Desired count: Start with 2-5, auto-scaling based on queue depth
-  - Environment variables: Supabase URL/key, SQS queue URL, AWS region
-  - IAM role: SQS read, Supabase access, CloudWatch logs
+  - **[OLD - SQS Approach]**: Desired count: Start with 2-5, auto-scaling based on queue depth
+  - **[NEW - Database Polling]**: Desired count: Start with 2-5, auto-scaling based on pending message job count (custom CloudWatch metric)
+  - **[OLD - SQS Approach]**: Environment variables: Supabase URL/key, SQS queue URL, AWS region
+  - **[NEW - Database Polling]**: Environment variables: Supabase URL/key, AWS region (no SQS queue URL needed)
+  - **[OLD - SQS Approach]**: IAM role: SQS read, Supabase access, CloudWatch logs
+  - **[NEW - Database Polling]**: IAM role: Supabase access, CloudWatch logs (no SQS permissions needed)
   - Health checks, logging configuration
 - Create `scheduler-workers` service (Phase 2.2):
   - Reuses same ECS cluster
@@ -249,8 +273,10 @@ This document outlines the step-by-step plan to implement the scalable email inf
     - SMTP client library (e.g., `nodemailer` for Node.js, `smtplib` for Python)
     - MIME encoding library
     - Supabase client
-    - AWS SDK (SQS, Secrets Manager if using)
-  - Entrypoint: Long-running process that polls SQS `send_queue`
+    - **[OLD - SQS Approach]**: AWS SDK (SQS, Secrets Manager if using)
+    - **[NEW - Database Polling]**: AWS SDK (Secrets Manager if using, no SQS needed)
+  - **[OLD - SQS Approach]**: Entrypoint: Long-running process that polls SQS `send_queue`
+  - **[NEW - Database Polling]**: Entrypoint: Long-running process that polls database using `claim_message_jobs_ready` RPC function
 - Create `scheduler-worker` Dockerfile (Phase 2.2):
   - Similar structure to send-worker
   - Entrypoint: Long-running process that polls Supabase database
@@ -317,10 +343,20 @@ This document outlines the step-by-step plan to implement the scalable email inf
 **Purpose**: Execute message jobs with pacing
 
 **Tasks**:
-- Worker main loop:
+- **[OLD - SQS Approach]**: Worker main loop:
   - Poll `send_queue` (long polling)
   - For each message:
-    1. Load `message_job` + related data from Supabase
+    1. Load `message_job` + related data from Supabase (by message_job_id from SQS message)
+
+- **[NEW - Database Polling Approach]**: Worker main loop:
+  - Poll database using `claim_message_jobs_ready` RPC function:
+    - Query: `WHERE status = 'pending' AND scheduled_at <= NOW()`
+    - Uses atomic UPDATE with FOR UPDATE SKIP LOCKED (prevents duplicate processing)
+    - Batch size: 50-100 jobs per poll
+    - Adaptive polling: 1-2s when jobs found, 5-10s when idle, exponential backoff up to 30s
+    - Returns claimed message jobs directly (no separate load step needed)
+  - For each claimed message job:
+    1. Message job data already loaded from RPC function (or load full details if RPC returns IDs only)
     2. **Reserve job atomically**:
        - Check mailbox throttle (daily/hourly/min-gap limits)
        - Update `message_jobs.status = 'reserved'` with `reserved_at`
@@ -370,8 +406,14 @@ This document outlines the step-by-step plan to implement the scalable email inf
 - Error handling:
   - Temporary failures → retry with exponential backoff
   - Permanent failures → mark as failed, write event to `events` table
-- Implement atomic reservation function in Supabase (PL/pgSQL)
+- **[OLD - SQS Approach]**: Implement atomic reservation function in Supabase (PL/pgSQL) - separate from claiming
+- **[NEW - Database Polling]**: Implement `claim_message_jobs_ready` RPC function (similar to `claim_enrollments_ready`):
+  - Atomic UPDATE with FOR UPDATE SKIP LOCKED
+  - Claims jobs where `status = 'pending' AND scheduled_at <= NOW()`
+  - Sets status to 'reserved' and returns claimed jobs
+  - Ensures no duplicate processing (database-level guarantee)
 - **Note**: Events are processed synchronously (no `event_queue`). See QUEUE_DECISION_ANALYSIS.md
+- **Note**: See `MESSAGE_JOB_POLLING_COST_ANALYSIS.md` for cost comparison and optimization strategies
 
 ### 3.3 SMTP Integration & Connection Management
 **Purpose**: Send emails via SMTP with proper connection pooling and error handling
@@ -518,10 +560,16 @@ This document outlines the step-by-step plan to implement the scalable email inf
 ## Phase 4: Pacing & Throttling
 
 ### 4.1 Atomic Reservation Function
-**Purpose**: Prevent race conditions when multiple workers reserve jobs
+**Purpose**: Prevent race conditions when multiple workers reserve jobs (throttle checking)
 
 **Tasks**:
-- Create Supabase function `reserve_message_job()`:
+- **[NEW - Database Polling]**: Create Supabase function `claim_message_jobs_ready()` (similar to `claim_enrollments_ready`):
+  - Atomic UPDATE with FOR UPDATE SKIP LOCKED
+  - Claims jobs where `status = 'pending' AND scheduled_at <= NOW()`
+  - Sets status to 'reserved' and returns claimed jobs
+  - Prevents duplicate processing (database-level guarantee)
+  - Batch size parameter (50-100 jobs per call)
+- Create Supabase function `reserve_message_job()` (throttle checking - called after claiming):
   ```sql
   -- Pseudocode:
   -- 1. SELECT FOR UPDATE message_job (lock it)
@@ -676,7 +724,8 @@ This document outlines the step-by-step plan to implement the scalable email inf
 ## Implementation Order (Recommended)
 
 1. **Phase 1**: Database schema evolution (foundation) ✅
-2. **Phase 2.1**: SQS send_queue ✅
+2. **[OLD - SQS Approach]**: **Phase 2.1**: SQS send_queue ✅ (NO LONGER NEEDED - replaced by database polling)
+2. **[NEW - Database Polling]**: **Phase 2.1**: Create `claim_message_jobs_ready` RPC function (atomic database polling)
 3. **Phase 2.3, 2.6**: ECS + Docker images (execution plane) ✅
 4. **Phase 3.2**: Send worker implementation (execution) ✅
 5. **Phase 2.2, 3.1**: Scheduler workers + Flow evaluation engine (migrate from Lambda to ECS)
@@ -709,14 +758,26 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - Proper SMTP error code classification critical (4xx vs 5xx)
 
 ### Queue Strategy
-- **send_queue**: Standard queue (order not critical, need throughput) - **Required**
+- **[OLD - SQS Approach]**: **send_queue**: Standard queue (order not critical, need throughput) - **Required**
+- **[NEW - Database Polling]**: **send_queue**: **NO LONGER NEEDED** - Send workers poll database directly using `claim_message_jobs_ready` RPC function
 - **event_queue**: Skipped - events processed synchronously (see QUEUE_DECISION_ANALYSIS.md)
 - **inbox_queue**: Skipped - inbox checking uses scheduled tasks (see QUEUE_DECISION_ANALYSIS.md)
-- **Consider FIFO**: Only if strict ordering required (usually not needed)
+- **[OLD - SQS Approach]**: **Consider FIFO**: Only if strict ordering required (usually not needed)
+- **[NEW - Database Polling]**: **Benefits of database polling**:
+  - No per-request charges ($0 vs $1-5/month for SQS)
+  - Built-in scheduling (WHERE clause handles `scheduled_at <= NOW()`)
+  - Atomic claiming prevents duplicates (FOR UPDATE SKIP LOCKED)
+  - Consistent pattern with scheduler worker
+  - Simpler infrastructure (no queue setup/maintenance)
+  - See `MESSAGE_JOB_POLLING_COST_ANALYSIS.md` for details
 
 ### Scaling Strategy
 - **Scheduler Workers**: Auto-scale based on enrollment count metric (1-20 workers, scales when count > 100)
-- **Send Workers**: Auto-scale based on `send_queue` depth (target: ~70% queue utilization)
+- **[OLD - SQS Approach]**: **Send Workers**: Auto-scale based on `send_queue` depth (target: ~70% queue utilization)
+- **[NEW - Database Polling]**: **Send Workers**: Auto-scale based on pending message job count (custom CloudWatch metric: COUNT of `message_jobs` WHERE `status = 'pending' AND scheduled_at <= NOW()`)
+  - Target: Keep pending jobs low (< 1000 jobs)
+  - Scale up when pending jobs > 500
+  - Scale down when pending jobs < 100
 - **Inbox Checker**: Lambda scheduled task (runs every 5 minutes, no scaling needed)
 
 ### Error Handling

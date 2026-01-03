@@ -56,12 +56,5 @@ export interface Lead {
   // ... other fields
 }
 
-export interface SQSMessage {
-  message_job_id: string;
-  enrollment_id: string;
-  campaign_id: string;
-  lead_id: string;
-  mailbox_id: string;
-  node_id: string;
-}
+// SQSMessage interface removed - no longer using SQS queue
 

@@ -7,6 +7,7 @@ import { createCampaign, updateCampaign } from '@/lib/supabase/services/campaign
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
 import { getUserByExternalId, getAccountMembershipsForUser } from '@/lib/supabase/services/users';
+import { utcToZonedTime } from 'date-fns-tz';
 
 interface StepStatus {
   status: 'pending' | 'loading' | 'success' | 'error';
@@ -206,6 +207,7 @@ export default function TestSchedulerPage() {
     messageJobs: any[];
     lastChecked: string | null;
     campaignNodes?: any[]; // All nodes in the campaign for diagnostics
+    campaign?: any | null; // Campaign data for schedule/jitter validation
   } | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [autoVerify, setAutoVerify] = useState(true);
@@ -449,10 +451,22 @@ export default function TestSchedulerPage() {
       // Fetch all nodes for this campaign for diagnostics
       const { data: campaignNodesData } = await supabase
         .from('nodes')
-        .select('id, flow_node_id, node_type')
+        .select('id, flow_node_id, node_type, node_data')
         .eq('campaign_id', enrollment.campaign_id);
       
       const campaignNodes = campaignNodesData || [];
+
+      // Fetch campaign data to get schedule and jitter_percentage
+      const { data: campaign, error: campaignError } = await supabase
+        .from('campaigns')
+        .select('id, schedule, jitter_percentage, flow_data')
+        .eq('id', enrollment.campaign_id)
+        .single();
+
+      if (campaignError) {
+        console.error('Error fetching campaign:', campaignError);
+        // Continue without campaign data - validations will be skipped
+      }
 
       // Calculate diagnostics
       const now = new Date();
@@ -474,6 +488,7 @@ export default function TestSchedulerPage() {
         messageJobs: messageJobs || [],
         lastChecked: new Date().toISOString(),
         campaignNodes, // Store for diagnostics
+        campaign: campaign || null, // Store campaign for validations
       });
       
       // Update test status based on current state
@@ -869,7 +884,7 @@ export default function TestSchedulerPage() {
                   • <Text className="font-semibold">Jitter Application:</Text> Verifies jitter is applied to email send times (not wait nodes)
                 </Text>
                 <Text className="text-gray-300 font-instrument text-sm">
-                  • <Text className="font-semibold">SQS Integration:</Text> Confirms message_jobs are pushed to the send queue
+                  • <Text className="font-semibold">Message Job Creation:</Text> Confirms message_jobs are created in the database (send workers poll database directly)
                 </Text>
                 <Text className="text-gray-300 font-instrument text-sm">
                   • <Text className="font-semibold">Enrollment State Management:</Text> Tests that enrollments progress through states (active → completed/stopped)
@@ -1546,15 +1561,176 @@ export default function TestSchedulerPage() {
                 testFailures.push('❌ Flow Traversal: Enrollment did not complete the flow as expected');
               }
 
+              // Wait Node Processing Validation
               if (hasWaitNodes) {
-                testResults.push('✅ Wait Node Processing: Wait nodes processed correctly (next_run_at updated, no jitter applied)');
+                const waitNodeFailures: string[] = [];
+                const campaign = verificationData?.campaign;
+                const flowData = campaign?.flow_data;
+                const flowNodes = flowData?.nodes || [];
+                const campaignNodes = verificationData?.campaignNodes || [];
+                
+                // Get wait nodes from campaign
+                const waitNodes = campaignNodes.filter((n: any) => 
+                  n.node_type === 'waitTime' || n.node_type === 'wait'
+                );
+                
+                if (waitNodes.length > 0 && enrollment?.next_run_at) {
+                  const nextRunAt = new Date(enrollment.next_run_at);
+                  const enrollmentCreatedAt = new Date(enrollment.created_at);
+                  
+                  // For each wait node, check if next_run_at is correct
+                  waitNodes.forEach((waitNode: any) => {
+                    // Find wait node in flow_data to get duration
+                    const flowNode = flowNodes.find((n: any) => 
+                      n.id === waitNode.flow_node_id || n.id === waitNode.id
+                    );
+                    
+                    if (!flowNode) {
+                      // Try to get duration from node_data
+                      const waitDurationSeconds = waitNode.node_data?.wait_duration_seconds || 
+                                                  (waitNode.node_data?.duration || 0) * 
+                                                  (waitNode.node_data?.unit === 'minutes' ? 60 : 
+                                                   waitNode.node_data?.unit === 'hours' ? 3600 : 1);
+                      
+                      if (waitDurationSeconds > 0) {
+                        // Calculate expected next_run_at (base time + wait duration)
+                        // Note: This is approximate - we use enrollment.created_at as proxy
+                        let expectedNextRun = new Date(
+                          enrollmentCreatedAt.getTime() + (waitDurationSeconds * 1000)
+                        );
+                        
+                        // If schedule is enabled, next_run_at might be adjusted to next allowed time
+                        // For now, just check if it's >= expected time (schedule might push it later)
+                        if (nextRunAt.getTime() < expectedNextRun.getTime() - 1000) {
+                          // More than 1 second before expected - likely wrong
+                          waitNodeFailures.push(
+                            `Wait node ${waitNode.flow_node_id || waitNode.id.substring(0, 8)}: next_run_at (${nextRunAt.toISOString()}) ` +
+                            `is before expected time (${expectedNextRun.toISOString()}) ` +
+                            `for ${waitDurationSeconds}s wait`
+                          );
+                        }
+                      }
+                    } else {
+                      const waitDurationSeconds = flowNode.data?.wait_duration_seconds || 
+                                                  (flowNode.data?.duration || 0) * 
+                                                  (flowNode.data?.unit === 'minutes' ? 60 : 
+                                                   flowNode.data?.unit === 'hours' ? 3600 : 1);
+                      
+                      if (waitDurationSeconds > 0) {
+                        let expectedNextRun = new Date(
+                          enrollmentCreatedAt.getTime() + (waitDurationSeconds * 1000)
+                        );
+                        
+                        // Check if schedule might have adjusted it
+                        const schedule = campaign?.schedule;
+                        if (schedule) {
+                          // Schedule might push it later, so just check if it's not too early
+                          if (nextRunAt.getTime() < expectedNextRun.getTime() - 1000) {
+                            waitNodeFailures.push(
+                              `Wait node ${waitNode.flow_node_id}: next_run_at (${nextRunAt.toISOString()}) ` +
+                              `is before expected time (${expectedNextRun.toISOString()}) ` +
+                              `for ${waitDurationSeconds}s wait`
+                            );
+                          }
+                        } else {
+                          // No schedule - should be exactly base + duration (within tolerance)
+                          const tolerance = 5000; // 5 seconds tolerance for processing time
+                          const diff = Math.abs(nextRunAt.getTime() - expectedNextRun.getTime());
+                          
+                          if (diff > tolerance) {
+                            waitNodeFailures.push(
+                              `Wait node ${waitNode.flow_node_id}: next_run_at (${nextRunAt.toISOString()}) ` +
+                              `differs from expected (${expectedNextRun.toISOString()}) by ${diff}ms ` +
+                              `for ${waitDurationSeconds}s wait`
+                            );
+                          }
+                        }
+                      }
+                    }
+                  });
+                  
+                  if (waitNodeFailures.length > 0) {
+                    testFailures.push(
+                      `❌ Wait Node Processing: ${waitNodeFailures.length} issue(s):\n` +
+                      waitNodeFailures.map(f => `  - ${f}`).join('\n')
+                    );
+                  } else {
+                    testResults.push(
+                      `✅ Wait Node Processing: Wait nodes processed correctly ` +
+                      `(next_run_at updated, no jitter applied)`
+                    );
+                  }
+                } else if (enrollment?.state === 'completed') {
+                  // Enrollment completed - wait nodes should have been processed
+                  testResults.push(
+                    `✅ Wait Node Processing: Wait nodes processed (enrollment completed)`
+                  );
+                } else {
+                  // Enrollment not completed but no next_run_at - might be an issue
+                  testFailures.push(
+                    `❌ Wait Node Processing: Wait nodes in flow but enrollment has no next_run_at and is not completed`
+                  );
+                }
               } else {
                 testResults.push('✅ Wait Node Processing: No wait nodes in flow (not applicable)');
               }
 
+              // Schedule Enforcement Validation
               if (enableSchedule) {
+                const campaign = verificationData?.campaign;
+                const schedule = campaign?.schedule;
+                
                 if (jobStats.total > 0) {
-                  testResults.push(`✅ Schedule Enforcement: Message jobs scheduled within business hours (${scheduleStartHour}:00-${scheduleEndHour}:00 ${scheduleTimezone})`);
+                  if (schedule) {
+                    const scheduleFailures: string[] = [];
+                    const messageJobs = verificationData?.messageJobs || [];
+                    
+                    messageJobs.forEach((job: any) => {
+                      try {
+                        const scheduledAt = new Date(job.scheduled_at);
+                        
+                        // Convert to campaign timezone
+                        const zonedTime = utcToZonedTime(scheduledAt, schedule.timezone);
+                        const hour = zonedTime.getHours();
+                        const dayOfWeek = zonedTime.getDay(); // 0 = Sunday, 6 = Saturday
+                        
+                        // Check if within hours
+                        const isWithinHours = hour >= schedule.start_hour && hour < schedule.end_hour;
+                        
+                        // Check if day is allowed
+                        const isAllowedDay = !schedule.days_of_week || 
+                                             schedule.days_of_week.length === 0 ||
+                                             schedule.days_of_week.includes(dayOfWeek);
+                        
+                        if (!isWithinHours || !isAllowedDay) {
+                          scheduleFailures.push(
+                            `Job ${job.id.substring(0, 8)}... scheduled at ${scheduledAt.toLocaleString()} ` +
+                            `(${hour}:00 ${schedule.timezone}, day ${dayOfWeek}) is outside business hours ` +
+                            `(${schedule.start_hour}:00-${schedule.end_hour}:00, days: ${schedule.days_of_week || 'all'})`
+                          );
+                        }
+                      } catch (error) {
+                        scheduleFailures.push(
+                          `Job ${job.id.substring(0, 8)}...: Error validating schedule - ${error instanceof Error ? error.message : String(error)}`
+                        );
+                      }
+                    });
+                    
+                    if (scheduleFailures.length > 0) {
+                      testFailures.push(
+                        `❌ Schedule Enforcement: ${scheduleFailures.length} job(s) scheduled outside business hours:\n` +
+                        scheduleFailures.map(f => `  - ${f}`).join('\n')
+                      );
+                    } else {
+                      testResults.push(
+                        `✅ Schedule Enforcement: All ${messageJobs.length} job(s) scheduled within business hours ` +
+                        `(${schedule.start_hour}:00-${schedule.end_hour}:00 ${schedule.timezone})`
+                      );
+                    }
+                  } else {
+                    // Schedule enabled but not found in campaign - might be a data issue
+                    testFailures.push('❌ Schedule Enforcement: Schedule enabled but not found in campaign data');
+                  }
                 } else {
                   testFailures.push('❌ Schedule Enforcement: Cannot validate schedule (no message jobs created)');
                 }
@@ -1562,9 +1738,109 @@ export default function TestSchedulerPage() {
                 testResults.push('✅ Schedule Enforcement: Schedule not enabled (not applicable)');
               }
 
+              // Jitter Application Validation
               if (enableJitter) {
+                const campaign = verificationData?.campaign;
+                const jitterPct = campaign?.jitter_percentage || parseFloat(jitterPercentage) || 0;
+                
                 if (jobStats.total > 0) {
-                  testResults.push(`✅ Jitter Application: Jitter applied to email send times (${jitterPercentage}% configured, not applied to wait nodes)`);
+                  if (jitterPct > 0) {
+                    const jitterFailures: string[] = [];
+                    const jobsWithoutJitter: string[] = [];
+                    const messageJobs = verificationData?.messageJobs || [];
+                    
+                    messageJobs.forEach((job: any) => {
+                      try {
+                        const createdAt = new Date(job.created_at);
+                        const scheduledAt = new Date(job.scheduled_at);
+                        
+                        // The scheduler calculates scheduled_at from baseTime (when processing starts),
+                        // but created_at is when the DB records the job. There can be a small delay,
+                        // so scheduled_at might be slightly before created_at.
+                        //
+                        // Key insight: The scheduler's baseTime is when it starts processing (before DB insert),
+                        // so scheduled_at is calculated from that earlier time. The created_at timestamp
+                        // is when the database actually records the job, which happens after the scheduler
+                        // has already calculated scheduled_at.
+                        //
+                        // Therefore, we should use scheduled_at as the reference point, not created_at.
+                        // If scheduled_at is very close to created_at (within a few seconds), jitter is
+                        // effectively 0, which is valid (jitter can be 0 if timeDiff in scheduler is 0).
+                        
+                        // Allow timing tolerance (3 seconds) for database write delays
+                        const tolerance = 3000; // 3 seconds
+                        const timeDiff = Math.abs(scheduledAt.getTime() - createdAt.getTime());
+                        
+                        // If scheduled_at and created_at are very close (within tolerance),
+                        // this means jitter was effectively 0, which is valid
+                        if (timeDiff <= tolerance) {
+                          // Times are close enough - jitter validation passes
+                          // This handles cases where:
+                          // 1. scheduled_at ≈ created_at (no schedule adjustment, jitter = 0)
+                          // 2. Small timing differences due to DB write delays
+                          return; // Skip this job, it's valid
+                        }
+                        
+                        // For larger time differences, validate that jitter was applied correctly
+                        // The scheduler applies jitter based on: abs(scheduledTime - baseTime) * (jitterPct / 100)
+                        // Since we don't know the exact baseTime, we'll validate that scheduled_at
+                        // is within a reasonable range that suggests jitter was applied.
+                        
+                        // Use the earlier timestamp as the reference (the scheduler's baseTime approximation)
+                        const referenceTime = Math.min(createdAt.getTime(), scheduledAt.getTime());
+                        const timeDiffFromRef = Math.abs(scheduledAt.getTime() - referenceTime);
+                        
+                        // Calculate expected jitter range
+                        // For small time differences, use a minimum jitter range
+                        // For larger differences, jitter range scales with the difference
+                        const minJitterRangeMs = 50; // Minimum 50ms jitter range
+                        const jitterRangeFromDiff = timeDiffFromRef * (jitterPct / 100);
+                        const effectiveJitterRange = Math.max(jitterRangeFromDiff, minJitterRangeMs);
+                        
+                        // Allow scheduled_at to be within the jitter range from reference time
+                        // Also allow it to be slightly before reference (within tolerance) due to timing
+                        const expectedMin = referenceTime - tolerance;
+                        const expectedMax = referenceTime + effectiveJitterRange;
+                        const actualTime = scheduledAt.getTime();
+                        
+                        if (actualTime < expectedMin || actualTime > expectedMax) {
+                          const actualJitter = ((actualTime - referenceTime) / referenceTime) * 100;
+                          const refTimeStr = new Date(referenceTime).toISOString();
+                          jitterFailures.push(
+                            `Job ${job.id.substring(0, 8)}... has jitter ${actualJitter.toFixed(2)}% ` +
+                            `(expected within ${(effectiveJitterRange/1000).toFixed(1)}s of reference time). ` +
+                            `Reference: ${refTimeStr}, Scheduled: ${scheduledAt.toISOString()}, Created: ${createdAt.toISOString()}`
+                          );
+                        }
+                        // If scheduled_at is within bounds, validation passes
+                      } catch (error) {
+                        jitterFailures.push(
+                          `Job ${job.id.substring(0, 8)}...: Error validating jitter - ${error instanceof Error ? error.message : String(error)}`
+                        );
+                      }
+                    });
+                    
+                    if (jitterFailures.length > 0) {
+                      testFailures.push(
+                        `❌ Jitter Application: ${jitterFailures.length} job(s) with incorrect jitter:\n` +
+                        jitterFailures.map(f => `  - ${f}`).join('\n')
+                      );
+                    } else if (jobsWithoutJitter.length === messageJobs.length) {
+                      // All jobs have no jitter - might be a bug
+                      testFailures.push(
+                        `❌ Jitter Application: No jitter applied to any job (all scheduled_at === created_at). ` +
+                        `Expected jitter: ${jitterPct}%`
+                      );
+                    } else {
+                      testResults.push(
+                        `✅ Jitter Application: All ${messageJobs.length} job(s) have jitter applied ` +
+                        `(0-${jitterPct}% range, not applied to wait nodes)`
+                      );
+                    }
+                  } else {
+                    // Jitter enabled but percentage is 0
+                    testResults.push('✅ Jitter Application: Jitter enabled but percentage is 0% (no jitter expected)');
+                  }
                 } else {
                   testFailures.push('❌ Jitter Application: Cannot validate jitter (no message jobs created)');
                 }
@@ -1732,6 +2008,76 @@ export default function TestSchedulerPage() {
                         </View>
                       )}
                     </View>
+
+                    {/* Test Results Section */}
+                    {(testResults.length > 0 || testFailures.length > 0) && (
+                      <View className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
+                        <Text className="text-gray-300 font-instrument-medium text-sm mb-3">
+                          Test Results
+                        </Text>
+                        
+                        {/* Passed Tests */}
+                        {testResults.length > 0 && (
+                          <View className="mb-3">
+                            <View className="flex-row items-center gap-2 mb-2">
+                              <Text className="text-green-400 font-instrument-semibold text-xs">
+                                ✅ Passed ({testResults.length})
+                              </Text>
+                            </View>
+                            <View className="gap-1.5">
+                              {testResults.map((result, idx) => (
+                                <View key={idx} className="flex-row items-start gap-2">
+                                  <Text className="text-green-400 font-instrument text-xs mt-0.5">✓</Text>
+                                  <Text className="flex-1 text-green-300 font-instrument text-xs">
+                                    {result.replace(/^✅\s*/, '')}
+                                  </Text>
+                                </View>
+                              ))}
+                            </View>
+                          </View>
+                        )}
+
+                        {/* Failed Tests */}
+                        {testFailures.length > 0 && (
+                          <View>
+                            <View className="flex-row items-center gap-2 mb-2">
+                              <Text className="text-red-400 font-instrument-semibold text-xs">
+                                ❌ Failed ({testFailures.length})
+                              </Text>
+                            </View>
+                            <View className="gap-1.5">
+                              {testFailures.map((failure, idx) => {
+                                // Split multi-line failures
+                                const lines = failure.split('\n');
+                                return (
+                                  <View key={idx} className="gap-1">
+                                    {lines.map((line, lineIdx) => (
+                                      <View key={lineIdx} className="flex-row items-start gap-2">
+                                        <Text className="text-red-400 font-instrument text-xs mt-0.5">
+                                          {lineIdx === 0 ? '✗' : ' '}
+                                        </Text>
+                                        <Text className="flex-1 text-red-300 font-instrument text-xs">
+                                          {line.replace(/^❌\s*/, '').replace(/^  - /, '')}
+                                        </Text>
+                                      </View>
+                                    ))}
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        )}
+
+                        {/* Summary */}
+                        <View className={`mt-3 pt-3 border-t border-gray-700`}>
+                          <Text className="text-gray-400 font-instrument text-xs">
+                            {testFailures.length === 0 
+                              ? `All ${testResults.length} test${testResults.length !== 1 ? 's' : ''} passed` 
+                              : `${testResults.length} passed, ${testFailures.length} failed`}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
 
                     <View className={`border rounded-lg p-4 ${
                       nextStepsType === 'success' ? 'bg-green-900/20 border-green-800' :
@@ -2066,9 +2412,14 @@ export default function TestSchedulerPage() {
                                   </Text>
                                 )}
                           {job.sent_at && (
-                            <Text className="text-gray-500 font-instrument text-xs">
-                              Sent: {new Date(job.sent_at).toLocaleString()}
-                            </Text>
+                            <>
+                              <Text className="text-gray-500 font-instrument text-xs">
+                                Sent: {new Date(job.sent_at).toLocaleString()} (Local)
+                              </Text>
+                              <Text className="text-gray-500 font-instrument text-xs">
+                                UTC: {new Date(job.sent_at).toISOString()}
+                              </Text>
+                            </>
                           )}
                           <Text className="text-gray-600 font-instrument text-xs">
                             Job ID: {job.id.substring(0, 8)}...

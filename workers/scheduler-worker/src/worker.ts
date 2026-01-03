@@ -1,5 +1,4 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { SQSClient } from '@aws-sdk/client-sqs';
 import { DatabaseClient } from './database.js';
 import { evaluateFlow } from './flow-evaluation.js';
 import { handleEmailNode } from './node-handlers/email-handler.js';
@@ -11,8 +10,6 @@ import type { Enrollment } from './types.js';
 export interface WorkerConfig {
   supabase: SupabaseClient;
   databaseClient: DatabaseClient;
-  sqs: SQSClient;
-  sendQueueUrl: string;
 }
 
 /**
@@ -21,16 +18,12 @@ export interface WorkerConfig {
 export class SchedulerWorker {
   private supabase: SupabaseClient;
   private databaseClient: DatabaseClient;
-  private sqs: SQSClient;
-  private sendQueueUrl: string;
   private running: boolean = false;
   private mailboxRotationIndex: number = 0; // For round-robin mailbox selection
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
     this.databaseClient = config.databaseClient;
-    this.sqs = config.sqs;
-    this.sendQueueUrl = config.sendQueueUrl;
   }
 
   /**
@@ -171,7 +164,7 @@ export class SchedulerWorker {
         
         if (node.node_type === 'email') {
           console.log(`[ENROLLMENT ${enrollmentId}] Handling email node...`);
-          // Create message_job and push to SQS
+          // Create message_job (send workers will poll database directly)
           const messageJob = await handleEmailNode(
             enrollment,
             node,
@@ -179,9 +172,7 @@ export class SchedulerWorker {
             campaign.account_id,
             this.mailboxRotationIndex,
             jitterPercentage,
-            this.supabase,
-            this.sqs,
-            this.sendQueueUrl
+            this.supabase
           );
           
           console.log(`[ENROLLMENT ${enrollmentId}] Email node processed. Message job created: ${messageJob.id.substring(0, 8)}`);

@@ -7,163 +7,10 @@ import { createCampaign, updateCampaign } from '@/lib/supabase/services/campaign
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
 import { getUserByExternalId, getAccountMembershipsForUser } from '@/lib/supabase/services/users';
-import { utcToZonedTime } from 'date-fns-tz';
-
-interface StepStatus {
-  status: 'pending' | 'loading' | 'success' | 'error';
-  message?: string;
-}
-
-type WizardStep = 'flow' | 'lead' | 'processing' | 'complete';
-
-type FlowTemplate = 'simple-email' | 'email-wait-email' | 'email-wait-wait-email' | 'custom';
-
-const ALLOWED_EMAIL = 'porter@getfurnace.io';
-
-/**
- * Creates flow data structure for different templates
- * 
- * NOTE: These are simplified test templates for testing the scheduler worker.
- * Production flows are created via the flow builder UI and may have different structures.
- * The database trigger `sync_campaign_nodes()` will automatically sync these to the `nodes` table.
- */
-function createFlowTemplate(template: FlowTemplate): { nodes: any[]; edges: any[] } {
-  switch (template) {
-    case 'simple-email':
-      return {
-        nodes: [
-          {
-            id: 'leadSource-1',
-            type: 'leadSource',
-            position: { x: 0, y: 0 },
-            data: { label: 'Lead Source' },
-          },
-          {
-            id: 'email-1',
-            type: 'email',
-            position: { x: 200, y: 0 },
-            data: {
-              label: 'Initial Email',
-              subject: 'Welcome to Our Campaign',
-              body: 'Hello {{name}},\n\nWelcome to our campaign!',
-            },
-          },
-        ],
-        edges: [{ id: 'e1-2', source: 'leadSource-1', target: 'email-1' }],
-      };
-
-    case 'email-wait-email':
-      return {
-        nodes: [
-          {
-            id: 'leadSource-1',
-            type: 'leadSource',
-            position: { x: 0, y: 0 },
-            data: { label: 'Lead Source' },
-          },
-          {
-            id: 'email-1',
-            type: 'email',
-            position: { x: 200, y: 0 },
-            data: {
-              label: 'Initial Email',
-              subject: 'Welcome Email',
-              body: 'Hello {{name}},\n\nThis is the first email.',
-            },
-          },
-          {
-            id: 'waitTime-1',
-            type: 'waitTime',
-            position: { x: 400, y: 0 },
-            data: {
-              label: 'Wait 2 Minutes (Test)',
-              duration: 2,
-              unit: 'minutes',
-              wait_duration_seconds: 120, // 2 minutes in seconds (for testing)
-            },
-          },
-          {
-            id: 'email-2',
-            type: 'email',
-            position: { x: 600, y: 0 },
-            data: {
-              label: 'Follow-up Email',
-              subject: 'Follow-up Email',
-              body: 'Hello {{name}},\n\nThis is a follow-up email after 2 minutes.',
-            },
-          },
-        ],
-        edges: [
-          { id: 'e1-2', source: 'leadSource-1', target: 'email-1' },
-          { id: 'e2-3', source: 'email-1', target: 'waitTime-1' },
-          { id: 'e3-4', source: 'waitTime-1', target: 'email-2' },
-        ],
-      };
-
-    case 'email-wait-wait-email':
-      return {
-        nodes: [
-          {
-            id: 'leadSource-1',
-            type: 'leadSource',
-            position: { x: 0, y: 0 },
-            data: { label: 'Lead Source' },
-          },
-          {
-            id: 'email-1',
-            type: 'email',
-            position: { x: 200, y: 0 },
-            data: {
-              label: 'Email 1',
-              subject: 'First Email',
-              body: 'Hello {{name}},\n\nFirst email.',
-            },
-          },
-          {
-            id: 'waitTime-1',
-            type: 'waitTime',
-            position: { x: 400, y: 0 },
-            data: {
-              label: 'Wait 3 Minutes (Test)',
-              duration: 3,
-              unit: 'minutes',
-              wait_duration_seconds: 180, // 3 minutes in seconds (for testing)
-            },
-          },
-          {
-            id: 'waitTime-2',
-            type: 'waitTime',
-            position: { x: 600, y: 0 },
-            data: {
-              label: 'Wait 2 Minutes (Test)',
-              duration: 2,
-              unit: 'minutes',
-              wait_duration_seconds: 120, // 2 minutes in seconds (for testing)
-            },
-          },
-          {
-            id: 'email-2',
-            type: 'email',
-            position: { x: 800, y: 0 },
-            data: {
-              label: 'Final Email',
-              subject: 'Final Email',
-              body: 'Hello {{name}},\n\nThis is the final email after multiple waits.',
-            },
-          },
-        ],
-        edges: [
-          { id: 'e1-2', source: 'leadSource-1', target: 'email-1' },
-          { id: 'e2-3', source: 'email-1', target: 'waitTime-1' },
-          { id: 'e3-4', source: 'waitTime-1', target: 'waitTime-2' },
-          { id: 'e4-5', source: 'waitTime-2', target: 'email-2' },
-        ],
-      };
-
-    default:
-      return { nodes: [], edges: [] };
-  }
-}
+import type { StepStatus, WizardStep, FlowTemplate, TestStatus, ActiveTab } from '@/lib/test/scheduler/types';
+import { ALLOWED_EMAIL } from '@/lib/test/scheduler/constants';
+import { createFlowTemplate } from '@/lib/test/scheduler/flow-templates';
+import { validateTest } from '@/lib/test/scheduler/validation';
 
 export default function TestSchedulerPage() {
   const { user } = useAuthenticator();
@@ -502,10 +349,13 @@ export default function TestSchedulerPage() {
       } else if (enrollment.state === 'stopped' && (!messageJobs || messageJobs.length === 0)) {
         setTestStatus('error');
         setWaitingForScheduler(false);
+      } else if (!enrollmentReady && enrollment.next_run_at) {
+        // Waiting for next_run_at (wait nodes, etc.)
+        // Check this BEFORE checking messageJobs to handle cases where all jobs are sent but enrollment is waiting
+        setTestStatus('waiting');
       } else if (messageJobs && messageJobs.length > 0) {
         // Scheduler has processed - check if flow is complete
-        // For now, if we have message jobs, consider it "running"
-        // TODO: Could be smarter about detecting completion based on flow structure
+        // If we have message jobs and enrollment is ready (not waiting), consider it "running"
         setTestStatus('running');
         setWaitingForScheduler(false);
         if (enrollmentTimeout) {
@@ -522,9 +372,6 @@ export default function TestSchedulerPage() {
         } else {
           setTestStatus('processing'); // Still within expected time
         }
-      } else if (!enrollmentReady && enrollment.next_run_at) {
-        // Waiting for next_run_at
-        setTestStatus('waiting');
       } else {
         setTestStatus('processing');
       }
@@ -1401,6 +1248,13 @@ export default function TestSchedulerPage() {
 
           {/* Tab Content */}
           {(() => {
+            // GENERAL LOG: Confirm logging is working
+            console.warn('🔍 [TEST VALIDATION] ===== STARTING TEST VALIDATION =====', {
+              timestamp: new Date().toISOString(),
+              testStatus,
+              hasVerificationData: !!verificationData,
+            });
+            
             // Calculate shared data for all tabs
             const messageJobs = verificationData?.messageJobs || [];
             const jobStats = {
@@ -1416,6 +1270,15 @@ export default function TestSchedulerPage() {
             const emailNodeCount = dbNodeTypes.filter((t: string) => t === 'email').length;
             const expectedMessageJobCount = emailNodeCount;
             const enrollment = verificationData?.enrollment;
+            
+            console.warn('🔍 [TEST VALIDATION] Calculated shared data:', {
+              jobStats,
+              hasWaitNodes,
+              hasEmailNodes,
+              emailNodeCount,
+              expectedMessageJobCount,
+              enrollmentState: enrollment?.state,
+            });
 
             // Calculate description and concerns
             let description = '';
@@ -1462,6 +1325,14 @@ export default function TestSchedulerPage() {
             const testFailures: string[] = [];
 
             if (testStatus === 'complete') {
+              console.warn('🔍 [TEST VALIDATION] ===== STARTING COMPLETE STATUS VALIDATION =====', {
+                testStatus,
+                enrollmentState: enrollment?.state,
+                jobStatsTotal: jobStats.total,
+                hasWaitNodes,
+                hasEmailNodes,
+              });
+              
               if (jobStats.total > 0 || enrollment?.state === 'completed') {
                 testResults.push('✅ Entry Point Detection: Enrollment started from correct entry point (leadSource node)');
               } else {
@@ -1574,80 +1445,81 @@ export default function TestSchedulerPage() {
                   n.node_type === 'waitTime' || n.node_type === 'wait'
                 );
                 
+                // DEBUG LOGGING
+                console.warn('[WAIT NODE VALIDATION] Starting validation:', {
+                  enrollmentState: enrollment?.state,
+                  current_node_id: enrollment?.current_node_id?.substring(0, 8),
+                  next_run_at: enrollment?.next_run_at,
+                  updated_at: enrollment?.updated_at,
+                  created_at: enrollment?.created_at,
+                  waitNodesCount: waitNodes.length,
+                  waitNodesIds: waitNodes.map((n: any) => n.flow_node_id || n.id.substring(0, 8)),
+                });
+                
                 if (waitNodes.length > 0 && enrollment?.next_run_at) {
                   const nextRunAt = new Date(enrollment.next_run_at);
-                  const enrollmentCreatedAt = new Date(enrollment.created_at);
                   
-                  // For each wait node, check if next_run_at is correct
-                  waitNodes.forEach((waitNode: any) => {
+                  // Only validate the wait node that matches current_node_id (the one that set next_run_at)
+                  // If current_node_id is a wait node, validate it. Otherwise, enrollment might be at a different node.
+                  const currentWaitNode = enrollment.current_node_id 
+                    ? waitNodes.find((n: any) => n.id === enrollment.current_node_id)
+                    : null;
+                  
+                  console.warn('[WAIT NODE VALIDATION] Current wait node check:', {
+                    current_node_id: enrollment.current_node_id?.substring(0, 8),
+                    currentWaitNodeFound: !!currentWaitNode,
+                    currentWaitNodeId: currentWaitNode?.flow_node_id || currentWaitNode?.id.substring(0, 8),
+                  });
+                  
+                  if (currentWaitNode) {
                     // Find wait node in flow_data to get duration
                     const flowNode = flowNodes.find((n: any) => 
-                      n.id === waitNode.flow_node_id || n.id === waitNode.id
+                      n.id === currentWaitNode.flow_node_id || n.id === currentWaitNode.id
                     );
                     
-                    if (!flowNode) {
-                      // Try to get duration from node_data
-                      const waitDurationSeconds = waitNode.node_data?.wait_duration_seconds || 
-                                                  (waitNode.node_data?.duration || 0) * 
-                                                  (waitNode.node_data?.unit === 'minutes' ? 60 : 
-                                                   waitNode.node_data?.unit === 'hours' ? 3600 : 1);
+                    const waitDurationSeconds = flowNode?.data?.wait_duration_seconds || 
+                                                currentWaitNode.node_data?.wait_duration_seconds || 
+                                                (flowNode?.data?.duration || currentWaitNode.node_data?.duration || 0) * 
+                                                ((flowNode?.data?.unit || currentWaitNode.node_data?.unit) === 'minutes' ? 60 : 
+                                                 (flowNode?.data?.unit || currentWaitNode.node_data?.unit) === 'hours' ? 3600 : 1);
+                    
+                    if (waitDurationSeconds > 0) {
+                      // Calculate expected next_run_at from enrollment.updated_at (when enrollment was last processed)
+                      // This matches the wait node handler logic which uses enrollment.updated_at as base
+                      const enrollmentUpdatedAt = new Date(enrollment.updated_at);
+                      let expectedNextRun = new Date(
+                        enrollmentUpdatedAt.getTime() + (waitDurationSeconds * 1000)
+                      );
                       
-                      if (waitDurationSeconds > 0) {
-                        // Calculate expected next_run_at (base time + wait duration)
-                        // Note: This is approximate - we use enrollment.created_at as proxy
-                        let expectedNextRun = new Date(
-                          enrollmentCreatedAt.getTime() + (waitDurationSeconds * 1000)
-                        );
-                        
-                        // If schedule is enabled, next_run_at might be adjusted to next allowed time
-                        // For now, just check if it's >= expected time (schedule might push it later)
+                      // Check if schedule might have adjusted it
+                      const schedule = campaign?.schedule;
+                      if (schedule) {
+                        // Schedule might push it later, so just check if it's not too early
                         if (nextRunAt.getTime() < expectedNextRun.getTime() - 1000) {
-                          // More than 1 second before expected - likely wrong
                           waitNodeFailures.push(
-                            `Wait node ${waitNode.flow_node_id || waitNode.id.substring(0, 8)}: next_run_at (${nextRunAt.toISOString()}) ` +
+                            `Wait node ${currentWaitNode.flow_node_id || currentWaitNode.id.substring(0, 8)}: next_run_at (${nextRunAt.toISOString()}) ` +
                             `is before expected time (${expectedNextRun.toISOString()}) ` +
                             `for ${waitDurationSeconds}s wait`
                           );
                         }
-                      }
-                    } else {
-                      const waitDurationSeconds = flowNode.data?.wait_duration_seconds || 
-                                                  (flowNode.data?.duration || 0) * 
-                                                  (flowNode.data?.unit === 'minutes' ? 60 : 
-                                                   flowNode.data?.unit === 'hours' ? 3600 : 1);
-                      
-                      if (waitDurationSeconds > 0) {
-                        let expectedNextRun = new Date(
-                          enrollmentCreatedAt.getTime() + (waitDurationSeconds * 1000)
-                        );
+                      } else {
+                        // No schedule - should be exactly base + duration (within tolerance)
+                        const tolerance = 5000; // 5 seconds tolerance for processing time
+                        const diff = Math.abs(nextRunAt.getTime() - expectedNextRun.getTime());
                         
-                        // Check if schedule might have adjusted it
-                        const schedule = campaign?.schedule;
-                        if (schedule) {
-                          // Schedule might push it later, so just check if it's not too early
-                          if (nextRunAt.getTime() < expectedNextRun.getTime() - 1000) {
-                            waitNodeFailures.push(
-                              `Wait node ${waitNode.flow_node_id}: next_run_at (${nextRunAt.toISOString()}) ` +
-                              `is before expected time (${expectedNextRun.toISOString()}) ` +
-                              `for ${waitDurationSeconds}s wait`
-                            );
-                          }
-                        } else {
-                          // No schedule - should be exactly base + duration (within tolerance)
-                          const tolerance = 5000; // 5 seconds tolerance for processing time
-                          const diff = Math.abs(nextRunAt.getTime() - expectedNextRun.getTime());
-                          
-                          if (diff > tolerance) {
-                            waitNodeFailures.push(
-                              `Wait node ${waitNode.flow_node_id}: next_run_at (${nextRunAt.toISOString()}) ` +
-                              `differs from expected (${expectedNextRun.toISOString()}) by ${diff}ms ` +
-                              `for ${waitDurationSeconds}s wait`
-                            );
-                          }
+                        if (diff > tolerance) {
+                          waitNodeFailures.push(
+                            `Wait node ${currentWaitNode.flow_node_id || currentWaitNode.id.substring(0, 8)}: next_run_at (${nextRunAt.toISOString()}) ` +
+                            `differs from expected (${expectedNextRun.toISOString()}) by ${diff}ms ` +
+                            `for ${waitDurationSeconds}s wait`
+                          );
                         }
                       }
                     }
-                  });
+                  } else if (enrollment.current_node_id) {
+                    // Current node is not a wait node - might be at an email node or completed
+                    // This is fine - wait nodes might have already been processed
+                  }
                   
                   if (waitNodeFailures.length > 0) {
                     testFailures.push(
@@ -1662,15 +1534,25 @@ export default function TestSchedulerPage() {
                   }
                 } else if (enrollment?.state === 'completed') {
                   // Enrollment completed - wait nodes should have been processed
+                  console.warn('[WAIT NODE VALIDATION] Enrollment completed, skipping validation');
                   testResults.push(
                     `✅ Wait Node Processing: Wait nodes processed (enrollment completed)`
                   );
                 } else {
                   // Enrollment not completed but no next_run_at - might be an issue
+                  console.warn('[WAIT NODE VALIDATION] No next_run_at and not completed:', {
+                    enrollmentState: enrollment?.state,
+                    hasNextRunAt: !!enrollment?.next_run_at,
+                  });
                   testFailures.push(
                     `❌ Wait Node Processing: Wait nodes in flow but enrollment has no next_run_at and is not completed`
                   );
                 }
+                
+                console.warn('[WAIT NODE VALIDATION] Final result:', {
+                  failuresCount: waitNodeFailures.length,
+                  failures: waitNodeFailures,
+                });
               } else {
                 testResults.push('✅ Wait Node Processing: No wait nodes in flow (not applicable)');
               }
@@ -2072,7 +1954,9 @@ export default function TestSchedulerPage() {
                         <View className={`mt-3 pt-3 border-t border-gray-700`}>
                           <Text className="text-gray-400 font-instrument text-xs">
                             {testFailures.length === 0 
-                              ? `All ${testResults.length} test${testResults.length !== 1 ? 's' : ''} passed` 
+                              ? (testStatus === 'complete' 
+                                  ? `All ${testResults.length} test${testResults.length !== 1 ? 's' : ''} passed`
+                                  : `${testResults.length} test${testResults.length !== 1 ? 's' : ''} passed so far`)
                               : `${testResults.length} passed, ${testFailures.length} failed`}
                           </Text>
                         </View>
@@ -2413,9 +2297,9 @@ export default function TestSchedulerPage() {
                                 )}
                           {job.sent_at && (
                             <>
-                              <Text className="text-gray-500 font-instrument text-xs">
+                            <Text className="text-gray-500 font-instrument text-xs">
                                 Sent: {new Date(job.sent_at).toLocaleString()} (Local)
-                              </Text>
+                            </Text>
                               <Text className="text-gray-500 font-instrument text-xs">
                                 UTC: {new Date(job.sent_at).toISOString()}
                               </Text>
@@ -2535,6 +2419,9 @@ export default function TestSchedulerPage() {
                   className={`rounded-lg px-3 py-2 ${
                     autoVerify ? 'bg-green-600' : 'bg-[#2A2A2A]'
                   }`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Auto verify: ${autoVerify ? 'ON' : 'OFF'}`}
+                  accessibilityState={{ checked: autoVerify }}
                 >
                   <Text
                     className={`font-instrument-medium text-xs ${
@@ -2549,6 +2436,9 @@ export default function TestSchedulerPage() {
                   disabled={verifying}
                   className="bg-brand-orange rounded-lg px-4 py-2"
                   style={{ backgroundColor: '#f85102', opacity: verifying ? 0.5 : 1 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Verify test"
+                  accessibilityState={{ disabled: verifying }}
                 >
                   {verifying ? (
                     <ActivityIndicator size="small" color="#fff" />

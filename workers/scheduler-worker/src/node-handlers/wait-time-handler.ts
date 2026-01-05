@@ -33,8 +33,10 @@ export async function handleWaitTimeNode(
     throw new Error(error);
   }
 
-  // 2. Calculate base next_run_at = NOW() + wait_duration_seconds
-  const baseTime = new Date();
+  // 2. Calculate base next_run_at from enrollment's updated_at (when enrollment was claimed/processed)
+  // This ensures sequential wait nodes build on each other correctly
+  // Use updated_at as it reflects when the enrollment was last processed
+  const baseTime = new Date(enrollment.updated_at);
   const baseNextRunAt = new Date(baseTime.getTime() + waitDurationSeconds * 1000);
 
   // 3. Apply campaign schedule (NO JITTER - wait times should be exact)

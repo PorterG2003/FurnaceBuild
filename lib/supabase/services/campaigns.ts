@@ -120,6 +120,109 @@ export async function createCampaign(campaign: CampaignInsert): Promise<Campaign
 }
 
 /**
+ * Assign mailboxes to a campaign
+ * Replaces any existing mailbox assignments
+ */
+export async function assignMailboxesToCampaign(
+  campaignId: string,
+  mailboxIds: string[]
+): Promise<void> {
+  // Delete existing assignments
+  const { error: deleteError } = await supabase
+    .from('campaign_mailboxes')
+    .delete()
+    .eq('campaign_id', campaignId);
+
+  if (deleteError) {
+    throw new Error(`Failed to remove existing mailbox assignments: ${deleteError.message}`);
+  }
+
+  // Insert new assignments
+  if (mailboxIds.length > 0) {
+    const assignments = mailboxIds.map(mailboxId => ({
+      campaign_id: campaignId,
+      mailbox_id: mailboxId,
+    }));
+
+    const { error: insertError } = await supabase
+      .from('campaign_mailboxes')
+      .insert(assignments);
+
+    if (insertError) {
+      throw new Error(`Failed to assign mailboxes to campaign: ${insertError.message}`);
+    }
+  }
+}
+
+/**
+ * Get mailboxes assigned to a campaign
+ */
+export async function getCampaignMailboxes(campaignId: string): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('campaign_mailboxes')
+    .select(`
+      mailbox:mailboxes(*)
+    `)
+    .eq('campaign_id', campaignId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch campaign mailboxes: ${error.message}`);
+  }
+
+  return (data || []).map((item: any) => item.mailbox);
+}
+
+/**
+ * Get test campaigns for a user
+ * Returns campaigns that have test mailboxes OR test leads (email pattern @furnace.test)
+ */
+export async function getTestCampaigns(userId: string): Promise<Campaign[]> {
+  // Get all campaigns for the user first
+  const allCampaigns = await getCampaigns({ ownerId: userId });
+  
+  if (allCampaigns.length === 0) {
+    return [];
+  }
+
+  const campaignIds = allCampaigns.map(c => c.id);
+  const testCampaignIds = new Set<string>();
+
+  // Check campaigns with test mailboxes
+  const { data: mailboxData, error: mailboxError } = await supabase
+    .from('campaign_mailboxes')
+    .select('campaign_id, mailboxes!inner(email_address)')
+    .in('campaign_id', campaignIds);
+
+  if (!mailboxError && mailboxData) {
+    mailboxData.forEach((item: any) => {
+      if (item.mailboxes?.email_address?.endsWith('@furnace.test')) {
+        testCampaignIds.add(item.campaign_id);
+      }
+    });
+  }
+
+  // Check campaigns with test leads
+  const { data: leadsData, error: leadsError } = await supabase
+    .from('leads')
+    .select('campaign_id, email')
+    .in('campaign_id', campaignIds);
+
+  if (!leadsError && leadsData) {
+    leadsData.forEach((lead: any) => {
+      if (lead.email?.endsWith('@furnace.test')) {
+        testCampaignIds.add(lead.campaign_id);
+      }
+    });
+  }
+
+  // Return test campaigns, sorted by created_at descending
+  return allCampaigns
+    .filter(c => testCampaignIds.has(c.id))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+/**
  * Update a campaign
  */
 export async function updateCampaign(

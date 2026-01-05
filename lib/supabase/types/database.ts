@@ -82,8 +82,10 @@ export interface Database {
           jitter_percentage: number | null;
           locked: boolean;
           flow_data: Json | null;
+          schedule: Json | null;
           bucket_id: string;
           status: 'draft' | 'running' | 'paused' | 'stopped';
+          sending_interval_seconds: number;
           created_at: string;
           updated_at: string;
         };
@@ -96,8 +98,10 @@ export interface Database {
           jitter_percentage?: number | null;
           locked?: boolean;
           flow_data?: Json | null;
+          schedule?: Json | null;
           bucket_id?: string;
           status?: 'draft' | 'running' | 'paused' | 'stopped';
+          sending_interval_seconds?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -110,8 +114,10 @@ export interface Database {
           jitter_percentage?: number | null;
           locked?: boolean;
           flow_data?: Json | null;
+          schedule?: Json | null;
           bucket_id?: string;
           status?: 'draft' | 'running' | 'paused' | 'stopped';
+          sending_interval_seconds?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -171,6 +177,7 @@ export interface Database {
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
           status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
+          mailbox_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };

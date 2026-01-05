@@ -22,6 +22,8 @@ export interface Campaign {
   };
   schedule: CampaignSchedule | null;
   owner_id: string;
+  sending_interval_seconds: number;
+  created_at: string;
 }
 
 export interface CampaignSchedule {
@@ -58,6 +60,7 @@ export interface Lead {
   name: string;
   first_name?: string;
   last_name?: string;
+  mailbox_id: string | null;
   [key: string]: any;
 }
 

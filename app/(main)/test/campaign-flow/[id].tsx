@@ -3,11 +3,15 @@ import { View, Text, ActivityIndicator, ScrollView, Pressable } from 'react-nati
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PageLayout } from '@/components/ui/layout';
 import { ProgressDial } from '@/components/ui/progress-dial';
+import { FlowDiagram } from '@/lib/test/campaign-flow/components/FlowDiagram';
+import { LeadsTable, type Lead } from '@/lib/test/campaign-flow/components/LeadsTable';
+import { isWithinSchedule } from '@/lib/test/campaign-flow/utils';
 import { getCampaignById } from '@/lib/supabase/services/campaigns';
 import { getCampaignMailboxes } from '@/lib/supabase/services/campaigns';
 import { supabase } from '@/lib/supabase/client';
 import type { Campaign } from '@/lib/supabase/types';
 import { format } from 'date-fns';
+import { utcToZonedTime } from 'date-fns-tz';
 
 export default function TestCampaignViewPage() {
   const router = useRouter();
@@ -22,6 +26,8 @@ export default function TestCampaignViewPage() {
   const [leadsCompleted, setLeadsCompleted] = useState<number>(0);
   const [leadsInProgress, setLeadsInProgress] = useState<number>(0);
   const [leadsNotStarted, setLeadsNotStarted] = useState<number>(0);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leadsLoading, setLeadsLoading] = useState(true);
 
   useEffect(() => {
     if (!id) {
@@ -68,7 +74,7 @@ export default function TestCampaignViewPage() {
         // Load enrollment progress stats
         const { data: enrollments, error: enrollmentsError } = await supabase
           .from('enrollments')
-          .select('state')
+          .select('state, lead_id, current_node_id')
           .eq('campaign_id', id);
 
         if (!enrollmentsError && enrollments && leadsCount !== null) {
@@ -82,6 +88,44 @@ export default function TestCampaignViewPage() {
           setLeadsInProgress(inProgress);
           setLeadsNotStarted(notStarted);
         }
+
+        // Load leads with enrollment data
+        setLeadsLoading(true);
+        const { data: leadsData, error: leadsError } = await supabase
+          .from('leads')
+          .select('id, email, name, created_at')
+          .eq('campaign_id', id)
+          .like('email', '%@furnace.test')
+          .order('created_at', { ascending: false });
+
+        if (!leadsError && leadsData) {
+          // Create a map of lead_id to enrollment state
+          const enrollmentMap = new Map<string, { state: 'active' | 'completed' | null; current_node_id: string | null }>();
+          if (enrollments) {
+            enrollments.forEach((enrollment: any) => {
+              enrollmentMap.set(enrollment.lead_id, {
+                state: enrollment.state as 'active' | 'completed' | null,
+                current_node_id: enrollment.current_node_id,
+              });
+            });
+          }
+
+          // Combine leads with enrollment data
+          const leadsWithEnrollment: Lead[] = leadsData.map((lead) => {
+            const enrollment = enrollmentMap.get(lead.id);
+            return {
+              id: lead.id,
+              email: lead.email || '',
+              name: lead.name,
+              enrollment_state: enrollment?.state || null,
+              enrollment_current_node_id: enrollment?.current_node_id || null,
+              created_at: lead.created_at,
+            };
+          });
+
+          setLeads(leadsWithEnrollment);
+        }
+        setLeadsLoading(false);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error';
         setError(errorMessage);
@@ -128,6 +172,14 @@ export default function TestCampaignViewPage() {
 
   const schedule = (campaign.schedule as any) || null;
   const flowData = campaign.flow_data as any;
+  
+  // Check if current time is within schedule
+  const scheduleActive = schedule ? isWithinSchedule(schedule) : true; // Default to active if no schedule
+  
+  // Get current time in schedule timezone (24-hour format)
+  const currentTimeInTimezone = schedule
+    ? format(utcToZonedTime(new Date(), schedule.timezone), 'HH:mm')
+    : null;
 
   return (
     <PageLayout>
@@ -150,139 +202,175 @@ export default function TestCampaignViewPage() {
       </View>
 
       <ScrollView>
-        {/* Status Badge */}
-        <View className="mb-6">
-          <View
-            className="self-start px-4 py-2 rounded-lg"
-            style={{
-              backgroundColor:
-                campaign.status === 'running'
-                  ? '#10b98120'
-                  : campaign.status === 'paused'
-                    ? '#f59e0b20'
-                    : '#6b728020',
-            }}
-          >
-            <Text
-              className="text-sm font-instrument-semibold uppercase"
+        {/* Combined Details Card */}
+        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 mb-4">
+          {/* Header with Status */}
+          <View className="flex-row items-center justify-between mb-6">
+            <Text className="text-lg font-instrument-semibold text-white">Campaign Overview</Text>
+            <View
+              className="px-3 py-1 rounded-lg"
               style={{
-                color:
+                backgroundColor:
                   campaign.status === 'running'
-                    ? '#10b981'
+                    ? '#10b98120'
                     : campaign.status === 'paused'
-                      ? '#f59e0b'
-                      : '#6b7280',
+                      ? '#f59e0b20'
+                      : '#6b728020',
               }}
             >
-              {campaign.status}
-            </Text>
-          </View>
-        </View>
-
-        {/* Campaign Info Card */}
-        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 mb-4">
-          <Text className="text-lg font-instrument-semibold text-white mb-4">Campaign Details</Text>
-
-          <View className="gap-4">
-            <View>
-              <Text className="text-gray-400 font-instrument text-xs mb-1">Created</Text>
-              <Text className="text-white font-instrument text-sm">
-                {format(new Date(campaign.created_at), 'MMM d, yyyy h:mm a')}
+              <Text
+                className="text-xs font-instrument-semibold uppercase"
+                style={{
+                  color:
+                    campaign.status === 'running'
+                      ? '#10b981'
+                      : campaign.status === 'paused'
+                        ? '#f59e0b'
+                        : '#6b7280',
+                }}
+              >
+                {campaign.status}
               </Text>
             </View>
+          </View>
 
-            {schedule && (
-              <View>
-                <Text className="text-gray-400 font-instrument text-xs mb-1">Schedule</Text>
-                <Text className="text-white font-instrument text-sm">
-                  {schedule.timezone && `${schedule.timezone} • `}
-                  {schedule.start_hour !== undefined && schedule.end_hour !== undefined
-                    ? `${schedule.start_hour.toString().padStart(2, '0')}:${(schedule.start_minute || 0).toString().padStart(2, '0')} - ${schedule.end_hour.toString().padStart(2, '0')}:${(schedule.end_minute || 0).toString().padStart(2, '0')}`
-                    : '24/7'}
-                  {schedule.days_of_week && schedule.days_of_week.length > 0 && (
-                    <Text className="text-gray-400">
-                      {' • '}
-                      {schedule.days_of_week.length === 7
-                        ? 'Every day'
-                        : schedule.days_of_week.length === 5 &&
-                            schedule.days_of_week.every((d: number) => [1, 2, 3, 4, 5].includes(d))
-                          ? 'Weekdays'
-                          : `${schedule.days_of_week.length} day(s)`}
+          {/* Main Content Grid */}
+          <View className="gap-6">
+            {/* Top Row: Details and Statistics */}
+            <View className="flex-row gap-6">
+              {/* Left: Campaign Details */}
+              <View className="flex-1 gap-3">
+                <View>
+                  <Text className="text-gray-400 font-instrument text-xs mb-1">Created</Text>
+                  <Text className="text-white font-instrument text-sm">
+                    {format(new Date(campaign.created_at), 'MMM d, yyyy h:mm a')}
+                  </Text>
+                </View>
+
+                {schedule && (
+                  <View>
+                    <Text className="text-gray-400 font-instrument text-xs mb-1">Schedule</Text>
+                    <View className="flex-row items-center gap-2 mb-1">
+                      <View
+                        className="px-2 py-0.5 rounded"
+                        style={{
+                          backgroundColor: scheduleActive ? '#10b98120' : '#6b728020',
+                        }}
+                      >
+                        <Text
+                          className="text-xs font-instrument-semibold"
+                          style={{
+                            color: scheduleActive ? '#10b981' : '#6b7280',
+                          }}
+                        >
+                          {scheduleActive ? 'Active' : 'Inactive'}
+                        </Text>
+                      </View>
+                      {currentTimeInTimezone && (
+                        <Text className="text-gray-500 font-instrument text-xs">
+                          Current: {currentTimeInTimezone}
+                        </Text>
+                      )}
+                    </View>
+                    <Text className="text-white font-instrument text-sm">
+                      {schedule.timezone && `${schedule.timezone} • `}
+                      {schedule.start_hour !== undefined && schedule.end_hour !== undefined
+                        ? `${schedule.start_hour.toString().padStart(2, '0')}:${(schedule.start_minute || 0).toString().padStart(2, '0')} - ${schedule.end_hour.toString().padStart(2, '0')}:${(schedule.end_minute || 0).toString().padStart(2, '0')}`
+                        : '24/7'}
+                      {schedule.days_of_week && schedule.days_of_week.length > 0 && (
+                        <Text className="text-gray-400">
+                          {' • '}
+                          {schedule.days_of_week.length === 7
+                            ? 'Every day'
+                            : schedule.days_of_week.length === 5 &&
+                                schedule.days_of_week.every((d: number) => [1, 2, 3, 4, 5].includes(d))
+                              ? 'Weekdays'
+                              : `${schedule.days_of_week.length} day(s)`}
+                        </Text>
+                      )}
                     </Text>
-                  )}
-                </Text>
-              </View>
-            )}
+                  </View>
+                )}
 
-            {campaign.jitter_percentage !== null && campaign.jitter_percentage !== undefined && (
-              <View>
-                <Text className="text-gray-400 font-instrument text-xs mb-1">Jitter</Text>
-                <Text className="text-white font-instrument text-sm">
-                  {campaign.jitter_percentage}%
-                </Text>
-              </View>
-            )}
+                {campaign.jitter_percentage !== null && campaign.jitter_percentage !== undefined && (
+                  <View>
+                    <Text className="text-gray-400 font-instrument text-xs mb-1">Jitter</Text>
+                    <Text className="text-white font-instrument text-sm">
+                      {campaign.jitter_percentage}%
+                    </Text>
+                  </View>
+                )}
 
-            {flowData && flowData.nodes && (
-              <View>
-                <Text className="text-gray-400 font-instrument text-xs mb-1">Flow Nodes</Text>
-                <Text className="text-white font-instrument text-sm">
-                  {flowData.nodes.filter((n: any) => n.type !== 'leadSource').length} node(s)
-                </Text>
+                {flowData && flowData.nodes && (
+                  <View>
+                    <Text className="text-gray-400 font-instrument text-xs mb-1">Flow Nodes</Text>
+                    <Text className="text-white font-instrument text-sm">
+                      {flowData.nodes.filter((n: any) => n.type !== 'leadSource').length} node(s)
+                    </Text>
+                  </View>
+                )}
               </View>
-            )}
+
+              {/* Right: Statistics */}
+              <View className="flex-1 gap-3">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-gray-400 font-instrument text-xs">Test Mailboxes</Text>
+                  <Text className="text-white font-instrument-semibold text-sm">{mailboxCount}</Text>
+                </View>
+
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-gray-400 font-instrument text-xs">Test Leads</Text>
+                  <Text className="text-white font-instrument-semibold text-sm">{leadCount}</Text>
+                </View>
+
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-gray-400 font-instrument text-xs">Total Enrollments</Text>
+                  <Text className="text-white font-instrument-semibold text-sm">{enrollmentCount}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Bottom Row: Progress Dials */}
+            <View className="pt-4 border-t border-[#2A2A2A]">
+              <Text className="text-gray-400 font-instrument text-xs mb-4 text-center">Lead Progress</Text>
+              <View className="flex-row flex-wrap justify-around gap-4">
+                <ProgressDial
+                  value={leadsNotStarted}
+                  total={leadCount}
+                  label="Not Started"
+                  color="#6b7280"
+                  size={90}
+                />
+                <ProgressDial
+                  value={leadsInProgress}
+                  total={leadCount}
+                  label="In Progress"
+                  color="#3b82f6"
+                  size={90}
+                />
+                <ProgressDial
+                  value={leadsCompleted}
+                  total={leadCount}
+                  label="Completed"
+                  color="#10b981"
+                  size={90}
+                />
+              </View>
+            </View>
           </View>
         </View>
 
-        {/* Progress Card */}
-        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 mb-4">
-          <Text className="text-lg font-instrument-semibold text-white mb-6">Progress</Text>
-
-          <View className="flex-row flex-wrap justify-around gap-6">
-            <ProgressDial
-              value={leadsNotStarted}
-              total={leadCount}
-              label="Not Started"
-              color="#6b7280"
-              size={100}
-            />
-            <ProgressDial
-              value={leadsInProgress}
-              total={leadCount}
-              label="In Progress"
-              color="#3b82f6"
-              size={100}
-            />
-            <ProgressDial
-              value={leadsCompleted}
-              total={leadCount}
-              label="Completed"
-              color="#10b981"
-              size={100}
-            />
+        {/* Flow Diagram Card */}
+        {flowData && flowData.nodes && flowData.edges && (
+          <View className="mb-4">
+            <Text className="text-lg font-instrument-semibold text-white mb-4">Campaign Flow</Text>
+            <FlowDiagram nodes={flowData.nodes} edges={flowData.edges} />
           </View>
-        </View>
+        )}
 
-        {/* Statistics Card */}
-        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 mb-4">
-          <Text className="text-lg font-instrument-semibold text-white mb-4">Statistics</Text>
-
-          <View className="gap-4">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-gray-400 font-instrument text-sm">Test Mailboxes</Text>
-              <Text className="text-white font-instrument-semibold text-sm">{mailboxCount}</Text>
-            </View>
-
-            <View className="flex-row items-center justify-between">
-              <Text className="text-gray-400 font-instrument text-sm">Test Leads</Text>
-              <Text className="text-white font-instrument-semibold text-sm">{leadCount}</Text>
-            </View>
-
-            <View className="flex-row items-center justify-between">
-              <Text className="text-gray-400 font-instrument text-sm">Total Enrollments</Text>
-              <Text className="text-white font-instrument-semibold text-sm">{enrollmentCount}</Text>
-            </View>
-          </View>
+        {/* Leads Table Card */}
+        <View className="mb-4">
+          <LeadsTable leads={leads} loading={leadsLoading} />
         </View>
       </ScrollView>
     </PageLayout>

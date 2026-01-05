@@ -152,6 +152,26 @@ export class SendWorker {
         })
         .eq('id', message_job_id);
 
+      // 6b. Update enrollment to trigger scheduler re-evaluation
+      // This allows the scheduler to pick up the enrollment immediately and proceed to next node
+      try {
+        const { error: enrollmentError } = await this.supabase
+          .from('enrollments')
+          .update({ next_run_at: new Date().toISOString() })
+          .eq('id', messageJob.enrollment_id)
+          .eq('state', 'active'); // Only update active enrollments
+        
+        if (enrollmentError) {
+          // Log error but don't fail the send (email is already sent)
+          console.error(`[SEND WORKER] Failed to update enrollment ${messageJob.enrollment_id} next_run_at:`, enrollmentError);
+        } else {
+          console.log(`[SEND WORKER] Updated enrollment ${messageJob.enrollment_id} next_run_at to trigger scheduler re-evaluation`);
+        }
+      } catch (error) {
+        // Log error but don't fail the send
+        console.error(`[SEND WORKER] Error updating enrollment ${messageJob.enrollment_id}:`, error);
+      }
+
       // 7. Create event record
       await this.supabase
         .from('events')

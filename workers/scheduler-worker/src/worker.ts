@@ -102,7 +102,7 @@ export class SchedulerWorker {
       console.log(`[ENROLLMENT ${enrollmentId}] Loading campaign ${enrollment.campaign_id.substring(0, 8)}...`);
       const { data: campaign, error: campaignError } = await this.supabase
         .from('campaigns')
-        .select('flow_data, schedule, owner_id, account_id, jitter_percentage')
+        .select('id, flow_data, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at')
         .eq('id', enrollment.campaign_id)
         .single();
 

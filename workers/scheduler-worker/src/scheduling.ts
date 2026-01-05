@@ -1,4 +1,5 @@
 import { toZonedTime, fromZonedTime, format } from 'date-fns-tz';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CampaignSchedule } from './types.js';
 
 /**
@@ -238,5 +239,194 @@ export function calculateScheduledAt(
   scheduledTime = applyJitter(scheduledTime, baseTime, jitterPercentage);
 
   return scheduledTime.toISOString();
+}
+
+/**
+ * Find the most recent schedule start time
+ * Returns the most recent time when the schedule window started
+ * For example, if schedule is 9 AM - 5 PM and current time is 2 PM:
+ * - Most recent schedule start = 9 AM today
+ */
+function findMostRecentScheduleStart(currentTime: Date, schedule: CampaignSchedule): Date {
+  try {
+    // Validate schedule structure
+    if (!schedule.timezone || typeof schedule.start_hour !== 'number') {
+      console.error('Invalid schedule structure:', schedule);
+      return currentTime; // Fallback to current time
+    }
+
+    const scheduleStartHour = schedule.start_hour || 0;
+    const scheduleStartMinute = 0; // Schedule doesn't have start_minute in current schema
+
+    // Convert current time to schedule timezone
+    const tz = schedule.timezone || 'UTC';
+    const currentInTz = toZonedTime(currentTime, tz);
+
+    // Create date for today at schedule start time
+    const todayStart = new Date(currentInTz);
+    todayStart.setHours(scheduleStartHour, scheduleStartMinute, 0, 0);
+
+    // If today's start is in the past or equal, use it
+    if (todayStart <= currentInTz) {
+      return fromZonedTime(todayStart, tz);
+    } else {
+      // Use yesterday's start (or previous matching day if days_of_week specified)
+      const yesterdayStart = new Date(todayStart);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+      
+      // If days_of_week is specified, find the most recent matching day
+      if (schedule.days_of_week && schedule.days_of_week.length > 0) {
+        const sortedDays = [...schedule.days_of_week].sort((a, b) => b - a); // Descending
+        const currentDay = currentInTz.getDay();
+        
+        // Find the most recent matching day
+        let mostRecentDay = sortedDays.find(day => day <= currentDay);
+        if (!mostRecentDay) {
+          // No day found this week, use last day of previous week
+          mostRecentDay = sortedDays[0];
+          yesterdayStart.setDate(yesterdayStart.getDate() - (currentDay - mostRecentDay + 7));
+        } else {
+          yesterdayStart.setDate(yesterdayStart.getDate() - (currentDay - mostRecentDay));
+        }
+      }
+      
+      return fromZonedTime(yesterdayStart, tz);
+    }
+  } catch (error) {
+    console.error('Error finding most recent schedule start:', error);
+    return currentTime; // Fallback to current time
+  }
+}
+
+/**
+ * Calculate the next base time for scheduling a message from this mailbox
+ * 
+ * This function uses a slot-based approach:
+ * - If no schedule: (roundDown((Current time - Campaign start time) / interval) * interval) + interval
+ * - If schedule: (roundDown((Current time - Most recent schedule start) / interval) * interval) + interval
+ * 
+ * Then enforces mailbox minimum gap to prevent scheduling too many messages too close together.
+ * 
+ * @param campaignId - Campaign ID
+ * @param mailboxId - Mailbox ID
+ * @param currentTime - Current time
+ * @param campaignSchedule - Campaign schedule (null if no schedule)
+ * @param supabase - Supabase client
+ * @returns Next base time for scheduling
+ */
+export async function calculateNextMailboxSendTime(
+  campaignId: string,
+  mailboxId: string,
+  currentTime: Date,
+  campaignSchedule: CampaignSchedule | null,
+  supabase: SupabaseClient
+): Promise<Date> {
+  // Step 1: Load Campaign Interval and Start Time
+  const { data: campaign, error: campaignError } = await supabase
+    .from('campaigns')
+    .select('sending_interval_seconds, created_at')
+    .eq('id', campaignId)
+    .single();
+
+  if (campaignError || !campaign) {
+    throw new Error(`Campaign ${campaignId} not found: ${campaignError?.message || 'Campaign not found'}`);
+  }
+
+  const intervalSeconds = campaign.sending_interval_seconds;
+  const campaignStartTime = new Date(campaign.created_at);
+
+  // Step 2: Validate Interval Exists
+  if (!intervalSeconds || intervalSeconds <= 0) {
+    throw new Error(`Campaign ${campaignId} does not have a valid sending_interval_seconds configured`);
+  }
+
+  // Step 3: Calculate Campaign Interval Base Time (Slot-Based)
+  let campaignIntervalBaseTime: Date;
+
+  if (!campaignSchedule) {
+    // No schedule constraints - calculate slot from campaign start time
+    // Formula: (roundDown((Current time - Campaign start time) / interval) * interval) + interval
+    const timeSinceStart = currentTime.getTime() - campaignStartTime.getTime();
+    const intervalsElapsed = Math.floor(timeSinceStart / (intervalSeconds * 1000));
+    const nextSlotTime = campaignStartTime.getTime() + ((intervalsElapsed + 1) * intervalSeconds * 1000);
+    campaignIntervalBaseTime = new Date(nextSlotTime);
+  } else {
+    // Campaign has schedule constraints - calculate slot from most recent schedule start
+    const mostRecentScheduleStart = findMostRecentScheduleStart(currentTime, campaignSchedule);
+    
+    // Calculate slot-based time
+    const timeSinceScheduleStart = currentTime.getTime() - mostRecentScheduleStart.getTime();
+    const intervalsElapsed = Math.floor(timeSinceScheduleStart / (intervalSeconds * 1000));
+    const nextSlotTime = mostRecentScheduleStart.getTime() + ((intervalsElapsed + 1) * intervalSeconds * 1000);
+    const slotBasedTime = new Date(nextSlotTime);
+    
+    // Ensure the slot-based time is within the current schedule window
+    // If it's outside, find the next allowed time in schedule
+    try {
+      campaignIntervalBaseTime = calculateNextAllowedTime(slotBasedTime, campaignSchedule);
+    } catch (error) {
+      throw new Error(`Failed to calculate next allowed time for schedule: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // Step 4: Query Mailbox Minimum Gap
+  const { data: throttle, error: throttleError } = await supabase
+    .from('mailbox_throttles')
+    .select('min_gap_seconds')
+    .eq('mailbox_id', mailboxId)
+    .eq('date', new Date().toISOString().split('T')[0]) // Today's date
+    .maybeSingle();
+
+  if (throttleError) {
+    throw new Error(`Failed to query mailbox throttle for mailbox ${mailboxId}: ${throttleError.message}`);
+  }
+
+  // Get minimum gap (default to 180 seconds if not configured)
+  const minGapSeconds = throttle?.min_gap_seconds ?? 180;
+
+  // Step 5: Query Last Mailbox Scheduled Time (For Minimum Gap Enforcement)
+  const { data: lastJob, error: queryError } = await supabase
+    .from('message_jobs')
+    .select('scheduled_at')
+    .eq('campaign_id', campaignId)
+    .eq('mailbox_id', mailboxId)
+    .in('status', ['pending', 'reserved', 'sending', 'sent']) // Count scheduled and sent messages
+    .order('scheduled_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (queryError) {
+    throw new Error(`Failed to query last scheduled time for mailbox ${mailboxId} in campaign ${campaignId}: ${queryError.message}`);
+  }
+
+  const lastScheduledTime = lastJob?.scheduled_at ? new Date(lastJob.scheduled_at) : null;
+
+  // Step 6: Calculate Minimum Time (Mailbox Gap Enforcement)
+  let mailboxMinTime: Date;
+
+  if (!lastScheduledTime) {
+    // No previous scheduled messages from this mailbox - use campaign interval base time
+    mailboxMinTime = campaignIntervalBaseTime;
+  } else {
+    // Previous scheduled messages exist from this mailbox - must wait at least min_gap_seconds after last scheduled time
+    mailboxMinTime = new Date(lastScheduledTime.getTime() + (minGapSeconds * 1000));
+    
+    // Ensure mailboxMinTime is not in the past (shouldn't happen - indicates data inconsistency)
+    if (mailboxMinTime < currentTime) {
+      throw new Error(`Calculated mailboxMinTime (${mailboxMinTime}) is in the past. Last scheduled: ${lastScheduledTime}, Min gap: ${minGapSeconds}s, Current: ${currentTime}`);
+    }
+  }
+
+  // Step 7: Calculate Final Base Time
+  // Use whichever is later: campaign interval base time or mailbox minimum gap time
+  let baseTime = campaignIntervalBaseTime > mailboxMinTime ? campaignIntervalBaseTime : mailboxMinTime;
+
+  // Final validation: ensure baseTime is not in the past
+  // If calculated time is in the past, use currentTime instead
+  if (baseTime < currentTime) {
+    baseTime = currentTime;
+  }
+
+  return baseTime;
 }
 

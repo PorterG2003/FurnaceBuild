@@ -1,2 +1,2 @@
-export const ALLOWED_EMAIL = 'porter@furnace.build';
+export const ALLOWED_EMAIL = 'porter@getfurnace.io';
 

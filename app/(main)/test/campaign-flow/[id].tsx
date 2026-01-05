@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ActivityIndicator, ScrollView, Pressable } from 'react-native';
+import { View, Text, ActivityIndicator, ScrollView, Pressable, TextInput } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PageLayout } from '@/components/ui/layout';
 import { ProgressDial } from '@/components/ui/progress-dial';
 import { FlowDiagram } from '@/lib/test/campaign-flow/components/FlowDiagram';
 import { LeadsTable, type Lead } from '@/lib/test/campaign-flow/components/LeadsTable';
 import { isWithinSchedule } from '@/lib/test/campaign-flow/utils';
-import { getCampaignById } from '@/lib/supabase/services/campaigns';
+import { getCampaignById, updateCampaign } from '@/lib/supabase/services/campaigns';
 import { getCampaignMailboxes } from '@/lib/supabase/services/campaigns';
 import { supabase } from '@/lib/supabase/client';
 import type { Campaign } from '@/lib/supabase/types';
 import { format } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
+import { PencilIcon, CheckIcon, XMarkIcon } from 'react-native-heroicons/outline';
 
 export default function TestCampaignViewPage() {
   const router = useRouter();
@@ -28,6 +29,9 @@ export default function TestCampaignViewPage() {
   const [leadsNotStarted, setLeadsNotStarted] = useState<number>(0);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(true);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [savingName, setSavingName] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -49,6 +53,7 @@ export default function TestCampaignViewPage() {
           return;
         }
         setCampaign(campaignData);
+        setEditedName(campaignData.name || '');
 
         // Load mailboxes
         const mailboxes = await getCampaignMailboxes(id);
@@ -153,7 +158,7 @@ export default function TestCampaignViewPage() {
       <PageLayout>
         <View className="mb-6">
           <Pressable
-            onPress={() => router.back()}
+            onPress={() => router.push('/test/campaigns' as any)}
             className="mb-4 px-4 py-2 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg self-start"
             accessibilityRole="button"
             accessibilityLabel="Back"
@@ -186,16 +191,80 @@ export default function TestCampaignViewPage() {
       {/* Header */}
       <View className="mb-6">
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => router.push('/test/campaigns' as any)}
           className="mb-4 px-4 py-2 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg self-start"
           accessibilityRole="button"
           accessibilityLabel="Back"
         >
           <Text className="text-gray-300 font-instrument text-sm">← Back</Text>
         </Pressable>
-        <Text className="text-2xl font-instrument-semibold text-white mb-1">
-          {campaign.name || 'Unnamed Campaign'}
-        </Text>
+        
+        {/* Campaign Name Editor */}
+        {isEditingName ? (
+          <View className="flex-row items-center gap-2 mb-2">
+            <TextInput
+              value={editedName}
+              onChangeText={setEditedName}
+              placeholder="Campaign name"
+              placeholderTextColor="#6b7280"
+              className="flex-1 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg px-4 py-3 text-white font-instrument text-2xl font-instrument-semibold"
+              autoFocus
+              editable={!savingName}
+            />
+            <Pressable
+              onPress={async () => {
+                if (!campaign || !editedName.trim()) return;
+                try {
+                  setSavingName(true);
+                  const updated = await updateCampaign(campaign.id, { name: editedName.trim() });
+                  setCampaign(updated);
+                  setIsEditingName(false);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Failed to update campaign name');
+                } finally {
+                  setSavingName(false);
+                }
+              }}
+              disabled={savingName || !editedName.trim()}
+              className="px-4 py-3 bg-brand-orange rounded-lg"
+              style={{ backgroundColor: savingName || !editedName.trim() ? '#6b7280' : '#f85102' }}
+              accessibilityRole="button"
+              accessibilityLabel="Save name"
+            >
+              <CheckIcon size={20} color="#ffffff" />
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setEditedName(campaign?.name || '');
+                setIsEditingName(false);
+              }}
+              disabled={savingName}
+              className="px-4 py-3 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg"
+              accessibilityRole="button"
+              accessibilityLabel="Cancel editing"
+            >
+              <XMarkIcon size={20} color="#ffffff" />
+            </Pressable>
+          </View>
+        ) : (
+          <View className="flex-row items-center gap-3 mb-2">
+            <Text className="text-2xl font-instrument-semibold text-white flex-1">
+              {campaign.name || 'Unnamed Campaign'}
+            </Text>
+            <Pressable
+              onPress={() => {
+                setEditedName(campaign?.name || '');
+                setIsEditingName(true);
+              }}
+              className="px-3 py-2 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg"
+              accessibilityRole="button"
+              accessibilityLabel="Edit campaign name"
+            >
+              <PencilIcon size={18} color="#9ca3af" />
+            </Pressable>
+          </View>
+        )}
+        
         <Text className="text-gray-400 font-instrument text-sm">
           Test Campaign Overview
         </Text>

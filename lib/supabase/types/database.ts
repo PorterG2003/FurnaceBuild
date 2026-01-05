@@ -82,6 +82,7 @@ export interface Database {
           jitter_percentage: number | null;
           locked: boolean;
           flow_data: Json | null;
+          schedule: Json | null;
           bucket_id: string;
           status: 'draft' | 'running' | 'paused' | 'stopped';
           created_at: string;
@@ -96,6 +97,7 @@ export interface Database {
           jitter_percentage?: number | null;
           locked?: boolean;
           flow_data?: Json | null;
+          schedule?: Json | null;
           bucket_id?: string;
           status?: 'draft' | 'running' | 'paused' | 'stopped';
           created_at?: string;
@@ -110,6 +112,7 @@ export interface Database {
           jitter_percentage?: number | null;
           locked?: boolean;
           flow_data?: Json | null;
+          schedule?: Json | null;
           bucket_id?: string;
           status?: 'draft' | 'running' | 'paused' | 'stopped';
           created_at?: string;

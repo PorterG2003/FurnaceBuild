@@ -135,20 +135,29 @@ export class SchedulerWorker {
 
       // 3. Evaluate flow - find next node(s) (loads from database)
       console.log(`[ENROLLMENT ${enrollmentId}] Evaluating flow. Current node: ${enrollment.current_node_id?.substring(0, 8) || 'null (entry point)'}`);
-      const nextNodes = await evaluateFlow(
+      const evaluationResult = await evaluateFlow(
         enrollment,
         enrollment.campaign_id,
         campaign.flow_data,
         this.supabase
       );
       
+      const nextNodes = evaluationResult.nodes;
       console.log(`[ENROLLMENT ${enrollmentId}] Flow evaluation complete. Found ${nextNodes.length} next node(s)`);
       if (nextNodes.length > 0) {
         console.log(`[ENROLLMENT ${enrollmentId}] Next nodes: ${nextNodes.map(n => `${n.node_type}(${n.id.substring(0, 8)})`).join(', ')}`);
       }
       
       if (nextNodes.length === 0) {
-        // No next nodes - mark enrollment as completed
+        // No next nodes - check if this is because we're waiting for email to be sent
+        if (evaluationResult.waitingForEmail) {
+          // Waiting for email to be sent - don't mark as completed
+          // Send worker will update next_run_at when email is sent, triggering re-evaluation
+          console.log(`[ENROLLMENT ${enrollmentId}] No next nodes, but waiting for email to be sent. Will re-evaluate when email is sent.`);
+          return;
+        }
+        
+        // No next nodes and not waiting for email - flow is complete
         console.log(`[ENROLLMENT ${enrollmentId}] No next nodes found. Marking enrollment as completed.`);
         await this.supabase
           .from('enrollments')

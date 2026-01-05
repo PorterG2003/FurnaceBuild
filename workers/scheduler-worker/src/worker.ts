@@ -169,7 +169,6 @@ export class SchedulerWorker {
             enrollment,
             node,
             campaign,
-            campaign.account_id,
             this.mailboxRotationIndex,
             jitterPercentage,
             this.supabase

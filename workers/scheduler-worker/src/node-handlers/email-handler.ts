@@ -13,7 +13,6 @@ export async function handleEmailNode(
   enrollment: Enrollment,
   node: any,
   campaign: any,
-  accountId: string,
   rotationIndex: number,
   jitterPercentage: number,
   supabase: SupabaseClient
@@ -38,10 +37,11 @@ export async function handleEmailNode(
   }
   
   // 3. Select mailbox using round-robin (load balancing)
-  const mailbox = await selectMailbox(accountId, supabase, rotationIndex);
+  // Uses campaign-assigned mailboxes via campaign_mailboxes junction table
+  const mailbox = await selectMailbox(enrollment.campaign_id, supabase, rotationIndex);
   
   if (!mailbox) {
-    const error = `No available mailbox found for account ${accountId} (campaign ${enrollment.campaign_id}, enrollment ${enrollment.id})`;
+    const error = `No available mailbox found for campaign ${enrollment.campaign_id} (enrollment ${enrollment.id}). Campaign must have at least one mailbox assigned.`;
     console.error(error);
     // TODO: Send to Slack error reporting channel - No mailboxes available (critical)
     throw new Error(error);

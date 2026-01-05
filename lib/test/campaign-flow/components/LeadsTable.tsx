@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
 import { ChevronUpIcon, ChevronDownIcon, MagnifyingGlassIcon } from 'react-native-heroicons/outline';
+import { LeadActivityModal } from './LeadActivityModal';
 
 export interface Lead {
   id: string;
@@ -14,16 +15,18 @@ export interface Lead {
 interface LeadsTableProps {
   leads: Lead[];
   loading?: boolean;
+  campaignId: string;
 }
 
 type SortField = 'email' | 'name' | 'state' | 'created_at';
 type SortDirection = 'asc' | 'desc';
 
-export function LeadsTable({ leads, loading }: LeadsTableProps) {
+export function LeadsTable({ leads, loading, campaignId }: LeadsTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const itemsPerPage = 20;
 
   // Filter leads based on search query
@@ -202,9 +205,10 @@ export function LeadsTable({ leads, loading }: LeadsTableProps) {
         ) : (
           <View className="gap-3">
             {paginatedLeads.map((lead) => (
-              <View
+              <Pressable
                 key={lead.id}
-                className="flex-row items-center bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-4 py-3"
+                onPress={() => setSelectedLead(lead)}
+                className="flex-row items-center bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-4 py-3 active:opacity-80 active:border-[#3A3A3A]"
               >
                 <View className="flex-1 pr-4">
                   <Text className="text-white font-instrument text-sm" numberOfLines={1}>
@@ -224,11 +228,23 @@ export function LeadsTable({ leads, loading }: LeadsTableProps) {
                     {new Date(lead.created_at).toLocaleDateString()}
                   </Text>
                 </View>
-              </View>
+              </Pressable>
             ))}
           </View>
         )}
       </View>
+
+      {/* Activity Modal */}
+      {selectedLead && (
+        <LeadActivityModal
+          visible={!!selectedLead}
+          onClose={() => setSelectedLead(null)}
+          leadId={selectedLead.id}
+          campaignId={campaignId}
+          leadEmail={selectedLead.email}
+          leadName={selectedLead.name}
+        />
+      )}
 
       {/* Pagination */}
       <View className="flex-row items-center justify-between mt-6 pt-4 border-t border-[#2A2A2A]">

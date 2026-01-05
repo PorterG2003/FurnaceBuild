@@ -370,7 +370,7 @@ export default function TestCampaignViewPage() {
 
         {/* Leads Table Card */}
         <View className="mb-4">
-          <LeadsTable leads={leads} loading={leadsLoading} />
+          <LeadsTable leads={leads} loading={leadsLoading} campaignId={id} />
         </View>
       </ScrollView>
     </PageLayout>

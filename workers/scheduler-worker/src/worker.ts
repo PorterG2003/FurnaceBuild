@@ -23,6 +23,7 @@ export class SchedulerWorker {
   private mailboxRotationIndex: number = 0; // For round-robin mailbox selection
   private intervalMaintenanceTimer?: ReturnType<typeof setInterval>;
   private staleLockCleanupTimer?: ReturnType<typeof setInterval>;
+  private processedIntervalCheckTimer?: ReturnType<typeof setInterval>;
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
@@ -41,6 +42,9 @@ export class SchedulerWorker {
     
     // Start stale lock cleanup (runs every 5 minutes)
     this.startStaleLockCleanup();
+    
+    // Start processed interval check (runs every minute)
+    this.startProcessedIntervalCheck();
 
     console.log('Scheduler worker started. Polling database...');
 
@@ -105,6 +109,9 @@ export class SchedulerWorker {
     if (this.staleLockCleanupTimer) {
       clearInterval(this.staleLockCleanupTimer);
     }
+    if (this.processedIntervalCheckTimer) {
+      clearInterval(this.processedIntervalCheckTimer);
+    }
   }
 
   /**
@@ -143,6 +150,28 @@ export class SchedulerWorker {
         console.error('[STALE LOCK CLEANUP] Error:', error);
       }
     }, 300000); // 5 minutes
+  }
+
+  /**
+   * Start processed interval check background task
+   */
+  private startProcessedIntervalCheck(): void {
+    // Run every minute to check for completed intervals
+    this.processedIntervalCheckTimer = setInterval(async () => {
+      try {
+        const { data, error } = await this.supabase.rpc('check_and_update_processed_intervals', {
+          p_campaign_id: null // Check all campaigns
+        });
+        
+        if (error) {
+          console.error('[PROCESSED INTERVAL CHECK] Error:', error);
+        } else if (data > 0) {
+          console.log(`[PROCESSED INTERVAL CHECK] Updated ${data} processed interval(s)`);
+        }
+      } catch (error) {
+        console.error('[PROCESSED INTERVAL CHECK] Error:', error);
+      }
+    }, 60000); // 1 minute
   }
 
   /**

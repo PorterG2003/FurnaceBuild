@@ -169,18 +169,18 @@ export async function handleEmailNode(
   const workerId = process.env.WORKER_ID || 'scheduler';
   const { data: result, error: assignError } = await supabase
     .rpc('assign_message_job_to_interval', {
-      p_enrollment_id: enrollment.id,
-      p_campaign_id: enrollment.campaign_id,
-      p_lead_id: enrollment.lead_id,
-      p_mailbox_id: mailbox.id,
-      p_node_id: node.id,
-      p_message_data: {
-        node_config: node.node_data || {},
-        lead_data: {
-          email: lead.email,
-          name: lead.name,
-          first_name: lead.first_name,
-          last_name: lead.last_name,
+    p_enrollment_id: enrollment.id,
+    p_campaign_id: enrollment.campaign_id,
+    p_lead_id: enrollment.lead_id,
+    p_mailbox_id: mailbox.id,
+    p_node_id: node.id,
+    p_message_data: {
+      node_config: node.node_data || {},
+      lead_data: {
+        email: lead.email,
+        name: lead.name,
+        first_name: lead.first_name,
+        last_name: lead.last_name,
         },
       },
       p_jitter_percentage: jitterPercentage,

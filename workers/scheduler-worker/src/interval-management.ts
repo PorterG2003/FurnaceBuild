@@ -19,9 +19,10 @@ export async function maintainCampaignIntervals(
   supabase: SupabaseClient
 ): Promise<void> {
   // Get all active campaigns with sending_interval_seconds
+  // Also get last_processed_interval_end for sequential processing
   const { data: campaigns, error } = await supabase
     .from('campaigns')
-    .select('id, sending_interval_seconds, created_at, schedule')
+    .select('id, sending_interval_seconds, created_at, schedule, last_processed_interval_end')
     .not('sending_interval_seconds', 'is', null);
   
   if (error) {
@@ -42,6 +43,7 @@ export async function maintainCampaignIntervals(
         campaign.sending_interval_seconds,
         campaign.created_at,
         campaign.schedule as CampaignSchedule | null,
+        campaign.last_processed_interval_end,
         MIN_INTERVALS_AHEAD,
         supabase
       );
@@ -53,12 +55,14 @@ export async function maintainCampaignIntervals(
 
 /**
  * Ensure a campaign has enough intervals ahead
+ * Respects last_processed_interval_end for sequential processing
  */
 async function ensureCampaignIntervals(
   campaignId: string,
   intervalSeconds: number,
   campaignStartTime: string,
   schedule: CampaignSchedule | null,
+  lastProcessedIntervalEnd: string | null,
   minIntervalsAhead: number,
   supabase: SupabaseClient
 ): Promise<void> {
@@ -76,13 +80,31 @@ async function ensureCampaignIntervals(
   }
   
   const now = new Date();
-  const latestEnd = latestInterval 
-    ? new Date(latestInterval.interval_end)
-    : new Date(campaignStartTime);
   
-  // Calculate how many intervals we have ahead
+  // Determine where to start creating intervals from:
+  // 1. Latest interval end (if exists)
+  // 2. Last processed interval end (if exists) - for sequential processing
+  // 3. Campaign start time (if no intervals exist)
+  // 4. Current time (don't create past intervals)
+  // Use the maximum of these to ensure we create intervals after all of them
+  const candidateStarts: Date[] = [now];
+  
+  if (latestInterval) {
+    candidateStarts.push(new Date(latestInterval.interval_end));
+  }
+  
+  if (lastProcessedIntervalEnd) {
+    candidateStarts.push(new Date(lastProcessedIntervalEnd));
+  }
+  
+  candidateStarts.push(new Date(campaignStartTime));
+  
+  // Use the maximum (latest) time as the starting point
+  const startFrom = new Date(Math.max(...candidateStarts.map(d => d.getTime())));
+  
+  // Calculate how many intervals we have ahead from the start point
   const intervalsAhead = Math.floor(
-    (latestEnd.getTime() - now.getTime()) / (intervalSeconds * 1000)
+    (startFrom.getTime() - now.getTime()) / (intervalSeconds * 1000)
   );
   
   if (intervalsAhead >= minIntervalsAhead) {
@@ -92,10 +114,10 @@ async function ensureCampaignIntervals(
   // Calculate how many intervals to create
   const intervalsToCreate = minIntervalsAhead - intervalsAhead + 5; // Add buffer
   
-  // Create intervals
+  // Create intervals starting from the calculated start point
   await createCampaignIntervals(
     campaignId,
-    latestEnd,
+    startFrom,
     intervalsToCreate,
     intervalSeconds,
     schedule,

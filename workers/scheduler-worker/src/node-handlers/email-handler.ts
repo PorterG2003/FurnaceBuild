@@ -1,16 +1,17 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { Enrollment, MessageJob, Lead, Mailbox, Campaign } from '../types.js';
-import { calculateScheduledAt, calculateNextMailboxSendTime } from '../scheduling.js';
 import { selectMailbox } from '../mailbox-selection.js';
 
 /**
- * Handle email node: create message_job in database
+ * Handle email node: create message_job using campaign intervals
  * 
  * This function:
- * 1. Checks if lead has mailbox assigned (for consistency)
- * 2. If not assigned, assigns mailbox via round-robin (atomic update)
- * 3. Calculates base time using slot-based interval calculation
- * 4. Creates message_job atomically using slot-based function
+ * 1. Assigns mailbox to lead (if needed)
+ * 2. Calls atomic assign_message_job_to_interval function which:
+ *    - Locks next available campaign interval
+ *    - Checks if mailbox already has job in interval
+ *    - Creates message_job if needed
+ *    - Releases interval lock
  */
 export async function handleEmailNode(
   enrollment: Enrollment,
@@ -69,24 +70,42 @@ export async function handleEmailNode(
     }
 
     // Atomically assign mailbox to lead
+    // NOTE: Must use .is() for NULL checks, not .eq() - .eq(null) converts to string "null" causing PostgreSQL errors
     const { data: updatedLead, error: updateError } = await supabase
       .from('leads')
       .update({ mailbox_id: selectedMailbox.id })
       .eq('id', enrollment.lead_id)
-      .eq('mailbox_id', null) // Only update if still NULL (atomic check)
+      .is('mailbox_id', null) // Only update if still NULL (atomic check)
       .select()
       .single();
 
     if (updateError || !updatedLead) {
       // Another worker already assigned - reload lead to get assigned mailbox
+      // Log the update error for debugging
+      if (updateError) {
+        console.error(`[MAILBOX ASSIGNMENT] Update failed for lead ${enrollment.lead_id}:`, updateError.message);
+      }
+      
       const { data: reloadedLead, error: reloadError } = await supabase
         .from('leads')
         .select('*')
         .eq('id', enrollment.lead_id)
         .single();
 
-      if (reloadError || !reloadedLead || !reloadedLead.mailbox_id) {
-        throw new Error(`Failed to assign or retrieve mailbox for lead ${enrollment.lead_id}: ${updateError?.message || reloadError?.message}`);
+      if (reloadError) {
+        console.error(`[MAILBOX ASSIGNMENT] Reload failed for lead ${enrollment.lead_id}:`, reloadError.message);
+        throw new Error(`Failed to reload lead ${enrollment.lead_id} after race condition: ${reloadError.message}`);
+      }
+
+      if (!reloadedLead) {
+        throw new Error(`Lead ${enrollment.lead_id} not found after race condition`);
+      }
+
+      if (!reloadedLead.mailbox_id) {
+        // This shouldn't happen if the atomic update worked correctly
+        // But if it does, we need to handle it
+        console.error(`[MAILBOX ASSIGNMENT] Lead ${enrollment.lead_id} still has NULL mailbox_id after race condition. Update error: ${updateError?.message || 'No error'}`);
+        throw new Error(`Failed to assign mailbox for lead ${enrollment.lead_id}: mailbox_id is still NULL after race condition. This may indicate a database consistency issue.`);
       }
 
       // Get the assigned mailbox
@@ -144,67 +163,59 @@ export async function handleEmailNode(
     console.log(`[MAILBOX CONSISTENCY] Using assigned mailbox ${mailbox.id} for lead ${enrollment.lead_id} (subsequent email)`);
   }
 
-  // 3. Calculate base time using slot-based interval calculation
-  const currentTime = new Date();
-  const baseTime = await calculateNextMailboxSendTime(
-    enrollment.campaign_id,
-    mailbox.id,
-    currentTime,
-    campaign.schedule,
-    supabase
-  );
-
-  // 4. Calculate scheduled_at (applies schedule constraints and jitter)
-  const scheduledAt = calculateScheduledAt(baseTime, campaign.schedule, jitterPercentage);
-
-  // 5. Create message_job atomically using slot-based function
-  const { data: result, error: jobError } = await supabase.rpc('create_message_job_if_slot_available', {
-    p_enrollment_id: enrollment.id,
-    p_campaign_id: enrollment.campaign_id,
-    p_lead_id: enrollment.lead_id,
-    p_mailbox_id: mailbox.id,
-    p_node_id: node.id,
-    p_scheduled_at: scheduledAt,
-    p_message_data: {
-      // Template data will be filled by send worker
-      node_config: node.node_data || {},
-      lead_data: {
-        email: lead.email,
-        name: lead.name,
-        first_name: lead.first_name,
-        last_name: lead.last_name,
-        // Add other lead fields as needed
+  // 3. Atomically assign message_job to interval
+  // This function: locks interval, checks mailbox, creates job, releases lock
+  // All in a single atomic transaction
+  const workerId = process.env.WORKER_ID || 'scheduler';
+  const { data: result, error: assignError } = await supabase
+    .rpc('assign_message_job_to_interval', {
+      p_enrollment_id: enrollment.id,
+      p_campaign_id: enrollment.campaign_id,
+      p_lead_id: enrollment.lead_id,
+      p_mailbox_id: mailbox.id,
+      p_node_id: node.id,
+      p_message_data: {
+        node_config: node.node_data || {},
+        lead_data: {
+          email: lead.email,
+          name: lead.name,
+          first_name: lead.first_name,
+          last_name: lead.last_name,
+        },
       },
-    },
-    p_campaign_interval_seconds: campaign.sending_interval_seconds,
-  });
+      p_jitter_percentage: jitterPercentage,
+      p_worker_id: workerId
+    });
 
-  if (jobError || !result || result.length === 0) {
-    throw new Error(`Failed to create message_job: ${jobError?.message}`);
+  if (assignError) {
+    throw new Error(`Failed to assign message_job to interval: ${assignError.message}`);
   }
 
-  const messageJobResult = result[0] as any; // RPC function returns table with is_new_job field
-
-  if (!messageJobResult.is_new_job) {
-    // Slot was already taken - another enrollment scheduled at this slot
-    // This is expected behavior - log for monitoring but don't error
-    console.log(`[SLOT TAKEN] Mailbox ${mailbox.id} slot at ${messageJobResult.scheduled_at} already has a job. Using existing job.`);
+  if (!result || result.length === 0) {
+    throw new Error(`No available intervals for campaign ${enrollment.campaign_id}. Interval maintenance may not be running.`);
   }
 
-  // Extract message job (without is_new_job field) for return
+  const jobResult = result[0] as any;
+
+  if (!jobResult.is_new_job) {
+    console.log(`[MAILBOX ASSIGNMENT] Mailbox ${mailbox.id} already has job in interval ${jobResult.interval_id}. Using existing job.`);
+  }
+
+  // Extract message job (without is_new_job field)
   const messageJob: MessageJob = {
-    id: messageJobResult.id,
-    enrollment_id: messageJobResult.enrollment_id,
-    campaign_id: messageJobResult.campaign_id,
-    lead_id: messageJobResult.lead_id,
-    mailbox_id: messageJobResult.mailbox_id,
-    node_id: messageJobResult.node_id,
-    status: messageJobResult.status,
-    scheduled_at: messageJobResult.scheduled_at,
-    message_data: messageJobResult.message_data,
+    id: jobResult.id,
+    enrollment_id: jobResult.enrollment_id,
+    campaign_id: jobResult.campaign_id,
+    lead_id: jobResult.lead_id,
+    mailbox_id: jobResult.mailbox_id,
+    node_id: jobResult.node_id,
+    interval_id: jobResult.interval_id,
+    status: jobResult.status,
+    scheduled_at: jobResult.scheduled_at,
+    message_data: jobResult.message_data,
   };
 
-  // 6. Message job created - send workers will poll database directly using claim_message_jobs_ready RPC function
+  // 4. Message job created - send workers will poll database directly using claim_message_jobs_ready RPC function
   // No SQS push needed - jobs are polled directly from database
   
   return messageJob;

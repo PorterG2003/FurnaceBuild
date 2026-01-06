@@ -5,6 +5,7 @@ import { handleEmailNode } from './node-handlers/email-handler.js';
 import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
 import { handleAICategorizerNode } from './node-handlers/ai-categorizer-handler.js';
 import { handleDataSenderNode } from './node-handlers/data-sender-handler.js';
+import { maintainCampaignIntervals } from './interval-management.js';
 import type { Enrollment } from './types.js';
 
 export interface WorkerConfig {
@@ -20,6 +21,8 @@ export class SchedulerWorker {
   private databaseClient: DatabaseClient;
   private running: boolean = false;
   private mailboxRotationIndex: number = 0; // For round-robin mailbox selection
+  private intervalMaintenanceTimer?: ReturnType<typeof setInterval>;
+  private staleLockCleanupTimer?: ReturnType<typeof setInterval>;
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
@@ -31,6 +34,14 @@ export class SchedulerWorker {
    */
   async start(): Promise<void> {
     this.running = true;
+    console.log('Scheduler worker starting...');
+
+    // Start interval maintenance (runs every minute)
+    this.startIntervalMaintenance();
+    
+    // Start stale lock cleanup (runs every 5 minutes)
+    this.startStaleLockCleanup();
+
     console.log('Scheduler worker started. Polling database...');
 
     while (this.running) {
@@ -87,6 +98,51 @@ export class SchedulerWorker {
   stop(): void {
     console.log('Stopping scheduler worker...');
     this.running = false;
+    
+    if (this.intervalMaintenanceTimer) {
+      clearInterval(this.intervalMaintenanceTimer);
+    }
+    if (this.staleLockCleanupTimer) {
+      clearInterval(this.staleLockCleanupTimer);
+    }
+  }
+
+  /**
+   * Start interval maintenance background task
+   */
+  private startIntervalMaintenance(): void {
+    // Run immediately, then every minute
+    maintainCampaignIntervals(this.supabase).catch(err => {
+      console.error('[INTERVAL MAINTENANCE] Error:', err);
+    });
+
+    this.intervalMaintenanceTimer = setInterval(() => {
+      maintainCampaignIntervals(this.supabase).catch(err => {
+        console.error('[INTERVAL MAINTENANCE] Error:', err);
+      });
+    }, 60000); // 1 minute
+  }
+
+  /**
+   * Start stale lock cleanup background task
+   */
+  private startStaleLockCleanup(): void {
+    // Run every 5 minutes
+    this.staleLockCleanupTimer = setInterval(async () => {
+      try {
+        const { data, error } = await this.supabase.rpc('cleanup_stale_interval_locks', {
+          p_lock_timeout_minutes: 5
+        });
+        
+        if (error) {
+          console.error('[STALE LOCK CLEANUP] Error:', error);
+        } else if (data > 0) {
+          console.log(`[STALE LOCK CLEANUP] Released ${data} stale locks`);
+        }
+      } catch (error) {
+        console.error('[STALE LOCK CLEANUP] Error:', error);
+      }
+    }, 300000); // 5 minutes
   }
 
   /**

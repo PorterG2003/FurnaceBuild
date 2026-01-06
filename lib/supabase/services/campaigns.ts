@@ -265,6 +265,87 @@ export async function deleteCampaign(id: string): Promise<void> {
 }
 
 /**
+ * Delete a test campaign and all associated test data
+ * This function:
+ * 1. Deletes test mailboxes that are ONLY used by this campaign
+ * 2. Deletes the campaign (which cascades to: leads, enrollments, message_jobs, events, nodes, campaign_mailboxes, email_threads)
+ */
+export async function deleteTestCampaign(campaignId: string): Promise<void> {
+  // Verify campaign exists
+  const campaign = await getCampaignById(campaignId);
+  if (!campaign) {
+    throw new Error(`Campaign ${campaignId} not found`);
+  }
+
+  // Get all mailboxes assigned to this campaign
+  const { data: campaignMailboxes, error: cmError } = await supabase
+    .from('campaign_mailboxes')
+    .select('mailbox_id, mailboxes!inner(email_address)')
+    .eq('campaign_id', campaignId);
+
+  if (cmError) {
+    throw new Error(`Failed to fetch campaign mailboxes: ${cmError.message}`);
+  }
+
+  // Find test mailboxes (email ends with @furnace.test)
+  const testMailboxIds: string[] = [];
+  if (campaignMailboxes) {
+    for (const item of campaignMailboxes) {
+      const mailbox = (item as any).mailboxes;
+      if (mailbox?.email_address?.endsWith('@furnace.test')) {
+        testMailboxIds.push((item as any).mailbox_id);
+      }
+    }
+  }
+
+  // For each test mailbox, check if it's used by other campaigns
+  // If it's only used by this campaign, delete it
+  for (const mailboxId of testMailboxIds) {
+    const { data: otherCampaigns, error: ocError } = await supabase
+      .from('campaign_mailboxes')
+      .select('campaign_id')
+      .eq('mailbox_id', mailboxId)
+      .neq('campaign_id', campaignId);
+
+    if (ocError) {
+      console.error(`Failed to check mailbox ${mailboxId} usage:`, ocError);
+      // Continue with deletion - worst case we keep an orphaned test mailbox
+      continue;
+    }
+
+    // If mailbox is only used by this campaign, delete it
+    if (!otherCampaigns || otherCampaigns.length === 0) {
+      const { error: deleteError } = await supabase
+        .from('mailboxes')
+        .delete()
+        .eq('id', mailboxId);
+
+      if (deleteError) {
+        console.error(`Failed to delete test mailbox ${mailboxId}:`, deleteError);
+        // Continue - the campaign_mailboxes relationship will still be deleted via cascade
+      }
+    }
+  }
+
+  // Delete the campaign - this will cascade delete:
+  // - campaign_mailboxes (junction table)
+  // - leads (with campaign_id)
+  // - enrollments (with campaign_id)
+  // - message_jobs (with campaign_id)
+  // - events (with campaign_id)
+  // - nodes (with campaign_id)
+  // - email_threads (with campaign_id)
+  const { error: deleteError } = await supabase
+    .from('campaigns')
+    .delete()
+    .eq('id', campaignId);
+
+  if (deleteError) {
+    throw new Error(`Failed to delete campaign: ${deleteError.message}`);
+  }
+}
+
+/**
  * Check if a user owns a campaign (for authorization)
  */
 export async function isCampaignOwner(

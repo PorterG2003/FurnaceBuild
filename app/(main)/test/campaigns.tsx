@@ -3,8 +3,9 @@ import { View, Text, ActivityIndicator, Pressable, ScrollView } from 'react-nati
 import { useRouter } from 'expo-router';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { PageLayout } from '@/components/ui/layout';
+import { ConfirmDeleteModal } from '@/components/ui/modals/ConfirmDeleteModal';
 import { getUserByExternalId } from '@/lib/supabase/services/users';
-import { getTestCampaigns } from '@/lib/supabase/services/campaigns';
+import { getTestCampaigns, deleteTestCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import { TrashIcon, ArrowRightIcon } from 'react-native-heroicons/outline';
 import { format } from 'date-fns';
@@ -15,6 +16,9 @@ export default function TestCampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [testCampaigns, setTestCampaigns] = useState<Campaign[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [campaignToDelete, setCampaignToDelete] = useState<Campaign | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadTestCampaigns = useCallback(async () => {
     if (!user?.userId) {
@@ -52,9 +56,35 @@ export default function TestCampaignsPage() {
     router.push(`/test/campaign-flow/${campaignId}` as any);
   };
 
-  const handleDeleteCampaign = async (campaignId: string) => {
-    // TODO: Implement delete functionality
-    console.log('Delete campaign:', campaignId);
+  const handleDeleteClick = (campaign: Campaign) => {
+    setCampaignToDelete(campaign);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!campaignToDelete) return;
+
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      await deleteTestCampaign(campaignToDelete.id);
+      // Reload campaigns after successful deletion
+      await loadTestCampaigns();
+      setShowDeleteModal(false);
+      setCampaignToDelete(null);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete test campaign';
+      setError(errorMessage);
+      console.error('Error deleting test campaign:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setShowDeleteModal(false);
+    setCampaignToDelete(null);
   };
 
   if (loading) {
@@ -71,23 +101,25 @@ export default function TestCampaignsPage() {
   return (
     <PageLayout>
       {/* Header */}
-      <View className="mb-6">
-        <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-2xl font-instrument-semibold text-white">
-            Test Campaigns
-          </Text>
+      <View className="mb-4">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-1">
+            <Text className="text-xl font-instrument-semibold text-white mb-1">
+              Test Campaigns
+            </Text>
+            <Text className="text-gray-400 font-instrument text-xs">
+              View and manage your test campaigns
+            </Text>
+          </View>
           <Pressable
             onPress={() => router.back()}
-            className="px-4 py-2 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg"
+            className="px-3 py-1.5 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg"
             accessibilityRole="button"
             accessibilityLabel="Back"
           >
-            <Text className="text-gray-300 font-instrument text-sm">Back</Text>
+            <Text className="text-gray-300 font-instrument text-xs">Back</Text>
           </Pressable>
         </View>
-        <Text className="text-gray-400 font-instrument text-sm">
-          View and manage your test campaigns
-        </Text>
       </View>
 
       {error && (
@@ -118,24 +150,21 @@ export default function TestCampaignsPage() {
         </View>
       ) : (
         <ScrollView>
-          <View className="gap-4">
+          <View className="gap-2">
             {testCampaigns.map((campaign) => (
               <View
                 key={campaign.id}
-                className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6"
+                className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-3"
               >
-                <View className="flex-row items-start justify-between mb-4">
-                  <View className="flex-1">
-                    <Text className="text-white font-instrument-semibold text-lg mb-2">
-                      {campaign.name || 'Unnamed Campaign'}
-                    </Text>
-                    <Text className="text-gray-400 font-instrument text-sm">
-                      Created {format(new Date(campaign.created_at), 'MMM d, yyyy h:mm a')}
-                    </Text>
-                    {campaign.status && (
-                      <View className="mt-2">
+                <View className="flex-row items-center justify-between mb-2">
+                  <View className="flex-1 mr-3">
+                    <View className="flex-row items-center gap-2 mb-1">
+                      <Text className="text-white font-instrument-semibold text-base flex-1">
+                        {campaign.name || 'Unnamed Campaign'}
+                      </Text>
+                      {campaign.status && (
                         <View
-                          className="self-start px-3 py-1 rounded-md"
+                          className="px-2 py-0.5 rounded"
                           style={{
                             backgroundColor:
                               campaign.status === 'running'
@@ -146,7 +175,7 @@ export default function TestCampaignsPage() {
                           }}
                         >
                           <Text
-                            className="text-xs font-instrument-semibold uppercase"
+                            className="text-[10px] font-instrument-semibold uppercase"
                             style={{
                               color:
                                 campaign.status === 'running'
@@ -159,29 +188,32 @@ export default function TestCampaignsPage() {
                             {campaign.status}
                           </Text>
                         </View>
-                      </View>
-                    )}
+                      )}
+                    </View>
+                    <Text className="text-gray-400 font-instrument text-xs">
+                      {format(new Date(campaign.created_at), 'MMM d, yyyy h:mm a')}
+                    </Text>
                   </View>
                 </View>
 
-                <View className="flex-row gap-3 mt-4">
+                <View className="flex-row gap-2">
                   <Pressable
                     onPress={() => handleViewCampaign(campaign.id)}
-                    className="flex-1 bg-brand-orange rounded-lg px-4 py-3 flex-row items-center justify-center gap-2"
+                    className="flex-1 bg-brand-orange rounded-lg px-3 py-2 flex-row items-center justify-center gap-1.5"
                     style={{ backgroundColor: '#f85102' }}
                     accessibilityRole="button"
                     accessibilityLabel={`View campaign ${campaign.name}`}
                   >
-                    <Text className="text-white font-instrument-semibold text-sm">View</Text>
-                    <ArrowRightIcon size={16} color="#fff" />
+                    <Text className="text-white font-instrument-semibold text-xs">View</Text>
+                    <ArrowRightIcon size={14} color="#fff" />
                   </Pressable>
                   <Pressable
-                    onPress={() => handleDeleteCampaign(campaign.id)}
-                    className="px-4 py-3 bg-[#2A2A2A] border border-red-800/50 rounded-lg"
+                    onPress={() => handleDeleteClick(campaign)}
+                    className="px-3 py-2 bg-[#2A2A2A] border border-red-800/50 rounded-lg"
                     accessibilityRole="button"
                     accessibilityLabel={`Delete campaign ${campaign.name}`}
                   >
-                    <TrashIcon size={18} color="#ef4444" />
+                    <TrashIcon size={16} color="#ef4444" />
                   </Pressable>
                 </View>
               </View>
@@ -189,6 +221,20 @@ export default function TestCampaignsPage() {
           </View>
         </ScrollView>
       )}
+
+      <ConfirmDeleteModal
+        visible={showDeleteModal}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Test Campaign"
+        itemName={campaignToDelete?.name || 'this test campaign'}
+        description="This will permanently delete the test campaign and all associated data including test mailboxes, leads, enrollments, and message jobs. This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        isLoading={isDeleting}
+        requireConfirmation={true}
+        confirmationText={campaignToDelete?.name || 'DELETE'}
+      />
     </PageLayout>
   );
 }

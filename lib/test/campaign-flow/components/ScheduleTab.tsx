@@ -11,6 +11,13 @@ interface MessageJob {
   scheduled_at: string;
   reserved_at: string | null;
   sent_at: string | null;
+  interval_id: string | null;
+  interval: {
+    id: string;
+    interval_start: string;
+    interval_end: string;
+    status: 'available' | 'locked' | 'scheduled' | 'completed';
+  } | null;
   lead: {
     email: string | null;
     name: string | null;
@@ -73,6 +80,7 @@ export function ScheduleTab({ campaignId }: ScheduleTabProps) {
             scheduled_at,
             reserved_at,
             sent_at,
+            interval_id,
             message_data,
             error_message,
             retry_count,
@@ -86,6 +94,12 @@ export function ScheduleTab({ campaignId }: ScheduleTabProps) {
             node:nodes (
               id,
               node_data
+            ),
+            interval:campaign_intervals (
+              id,
+              interval_start,
+              interval_end,
+              status
             )
           `)
           .eq('campaign_id', campaignId);
@@ -296,6 +310,35 @@ export function ScheduleTab({ campaignId }: ScheduleTabProps) {
           )}
         </View>
       ),
+    },
+    {
+      key: 'interval',
+      label: 'Interval',
+      minWidth: 200,
+      flex: 1,
+      sortable: true,
+      sortValue: (item) => {
+        if (item.type === 'message_job' && item.interval) {
+          return new Date(item.interval.interval_start).getTime();
+        }
+        // Null values should be sorted last (maximum)
+        return Number.MAX_SAFE_INTEGER;
+      },
+      render: (item) => {
+        if (item.type === 'message_job' && item.interval) {
+          return (
+            <View>
+              <Text className="text-white font-instrument text-sm" numberOfLines={1}>
+                {format(new Date(item.interval.interval_start), 'h:mm a')} - {format(new Date(item.interval.interval_end), 'h:mm a')}
+              </Text>
+              <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
+                {item.interval.status}
+              </Text>
+            </View>
+          );
+        }
+        return <Text className="text-gray-500 font-instrument text-sm">—</Text>;
+      },
     },
     {
       key: 'status',

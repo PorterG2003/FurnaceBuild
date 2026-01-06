@@ -117,12 +117,17 @@ export class SendWorker {
       const emailBody = mergeTemplate(nodeConfig.body || '', lead);
 
       // Check if this is a test mode job (skip SMTP sending)
-      const skipSmtp = (messageJob.message_data as any)?.skip_smtp === true;
+      // Test mailboxes are identified by @furnace.test email domain
+      const isTestMailbox = mailbox.email_address.endsWith('@furnace.test');
+      const skipSmtp = isTestMailbox || (messageJob.message_data as any)?.skip_smtp === true;
       let providerMessageId: string;
 
       if (skipSmtp) {
         // Test mode: Skip SMTP sending, generate fake message ID
-        console.log(`[TEST MODE] Processing message job ${message_job_id} (SMTP sending skipped)`);
+        const testReason = isTestMailbox 
+          ? `test mailbox detected (${mailbox.email_address})`
+          : 'skip_smtp flag set';
+        console.log(`[TEST MODE] Processing message job ${message_job_id} (SMTP sending skipped - ${testReason})`);
         providerMessageId = `test-${Date.now()}-${Math.random().toString(36).substring(2, 15)}@furnace.test`;
       } else {
         // Production mode: Send via SMTP
@@ -196,9 +201,29 @@ export class SendWorker {
 
     } catch (error) {
       console.error(`[SEND WORKER] Error processing message job ${messageJob.id}:`, error);
-      // TODO: Implement retry logic with exponential backoff
-      // TODO: Mark job as failed after max retries
-      throw error; // Re-throw to be caught by Promise.allSettled
+      
+      // Mark job as failed with error message
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : String(error);
+      
+      try {
+        await this.supabase
+          .from('message_jobs')
+          .update({
+            status: 'failed',
+            error_message: errorMessage,
+          })
+          .eq('id', messageJob.id);
+        
+        console.log(`[SEND WORKER] Marked message job ${messageJob.id} as failed`);
+      } catch (updateError) {
+        // Log but don't throw - we've already logged the original error
+        console.error(`[SEND WORKER] Failed to update message job ${messageJob.id} status to failed:`, updateError);
+      }
+      
+      // Re-throw to be caught by Promise.allSettled in the main loop
+      throw error;
     }
   }
 

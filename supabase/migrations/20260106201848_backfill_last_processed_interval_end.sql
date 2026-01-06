@@ -6,7 +6,7 @@
 
 UPDATE campaigns c
 SET last_processed_interval_end = (
-  SELECT MAX(ci.interval_end)
+  SELECT MAX(ci.interval_time)
   FROM campaign_intervals ci
   WHERE ci.campaign_id = c.id
     AND ci.status = 'scheduled'
@@ -19,5 +19,5 @@ WHERE EXISTS (
 );
 
 COMMENT ON COLUMN campaigns.last_processed_interval_end IS 
-  'The end time of the last processed interval for this campaign. Intervals with start >= this value can be processed. NULL means no intervals processed yet (first interval can be any available interval).';
+  'The interval_time of the last processed interval for this campaign. Intervals with interval_time >= this value can be processed. NULL means no intervals processed yet (first interval can be any available interval).';
 

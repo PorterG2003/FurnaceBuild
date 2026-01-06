@@ -4,8 +4,7 @@ import type { CampaignSchedule } from './types.js';
 export interface CampaignInterval {
   id: string;
   campaign_id: string;
-  interval_start: string;
-  interval_end: string;
+  interval_time: string;
   status: 'available' | 'locked' | 'scheduled' | 'completed';
 }
 
@@ -69,9 +68,9 @@ async function ensureCampaignIntervals(
   // Get latest interval for this campaign
   const { data: latestInterval, error: latestError } = await supabase
     .from('campaign_intervals')
-    .select('interval_end')
+    .select('interval_time')
     .eq('campaign_id', campaignId)
-    .order('interval_end', { ascending: false })
+    .order('interval_time', { ascending: false })
     .limit(1)
     .maybeSingle();
   
@@ -82,7 +81,7 @@ async function ensureCampaignIntervals(
   const now = new Date();
   
   // Determine where to start creating intervals from:
-  // 1. Latest interval end (if exists)
+  // 1. Latest interval time (if exists) + interval_seconds
   // 2. Last processed interval end (if exists) - for sequential processing
   // 3. Campaign start time (if no intervals exist)
   // 4. Current time (don't create past intervals)
@@ -90,7 +89,8 @@ async function ensureCampaignIntervals(
   const candidateStarts: Date[] = [now];
   
   if (latestInterval) {
-    candidateStarts.push(new Date(latestInterval.interval_end));
+    // Next interval should be interval_seconds after the latest
+    candidateStarts.push(new Date(new Date(latestInterval.interval_time).getTime() + (intervalSeconds * 1000)));
   }
   
   if (lastProcessedIntervalEnd) {
@@ -137,39 +137,31 @@ async function createCampaignIntervals(
   supabase: SupabaseClient
 ): Promise<void> {
   const intervals = [];
-  let currentStart = new Date(startFrom);
+  let currentTime = new Date(startFrom);
   
   for (let i = 0; i < count; i++) {
-    // Calculate interval boundaries
-    let intervalStart = new Date(currentStart);
-    let intervalEnd = new Date(currentStart.getTime() + (intervalSeconds * 1000));
+    // Calculate interval time (singular time, not a range)
+    let intervalTime = new Date(currentTime);
     
     // Apply schedule constraints if needed
-    if (schedule) {
-      const adjusted = adjustIntervalForSchedule(
-        intervalStart,
-        intervalEnd,
-        schedule
-      );
-      intervalStart = adjusted.start;
-      intervalEnd = adjusted.end;
-    }
+    // TODO: Implement schedule constraint logic
+    // For now, intervals are created at regular intervals
     
     intervals.push({
       campaign_id: campaignId,
-      interval_start: intervalStart.toISOString(),
-      interval_end: intervalEnd.toISOString(),
+      interval_time: intervalTime.toISOString(),
       status: 'available'
     });
     
-    currentStart = intervalEnd;
+    // Next interval is interval_seconds later
+    currentTime = new Date(currentTime.getTime() + (intervalSeconds * 1000));
   }
   
   // Insert intervals (ignore conflicts for idempotency)
   const { error } = await supabase
     .from('campaign_intervals')
     .upsert(intervals, {
-      onConflict: 'campaign_id,interval_start',
+      onConflict: 'campaign_id,interval_time',
       ignoreDuplicates: true
     });
   
@@ -181,17 +173,16 @@ async function createCampaignIntervals(
 }
 
 /**
- * Adjust interval boundaries to fit within schedule
+ * Adjust interval time to fit within schedule
  * TODO: Implement schedule constraint logic
  */
-function adjustIntervalForSchedule(
-  start: Date,
-  end: Date,
+function adjustIntervalTime(
+  time: Date,
   schedule: CampaignSchedule
-): { start: Date, end: Date } {
+): Date {
   // TODO: Implement schedule constraint logic
   // For now, return as-is
   // In future: adjust to fit within schedule windows
-  return { start, end };
+  return time;
 }
 

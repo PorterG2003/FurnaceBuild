@@ -14,8 +14,7 @@ interface MessageJob {
   interval_id: string | null;
   interval: {
     id: string;
-    interval_start: string;
-    interval_end: string;
+    interval_time: string;
     status: 'available' | 'locked' | 'scheduled' | 'completed';
   } | null;
   lead: {
@@ -97,8 +96,7 @@ export function ScheduleTab({ campaignId }: ScheduleTabProps) {
             ),
             interval:campaign_intervals (
               id,
-              interval_start,
-              interval_end,
+              interval_time,
               status
             )
           `)
@@ -319,7 +317,7 @@ export function ScheduleTab({ campaignId }: ScheduleTabProps) {
       sortable: true,
       sortValue: (item) => {
         if (item.type === 'message_job' && item.interval) {
-          return new Date(item.interval.interval_start).getTime();
+          return new Date(item.interval.interval_time).getTime();
         }
         // Null values should be sorted last (maximum)
         return Number.MAX_SAFE_INTEGER;
@@ -329,7 +327,7 @@ export function ScheduleTab({ campaignId }: ScheduleTabProps) {
           return (
             <View>
               <Text className="text-white font-instrument text-sm" numberOfLines={1}>
-                {format(new Date(item.interval.interval_start), 'h:mm a')} - {format(new Date(item.interval.interval_end), 'h:mm a')}
+                {format(new Date(item.interval.interval_time), 'h:mm a')}
               </Text>
               <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
                 {item.interval.status}

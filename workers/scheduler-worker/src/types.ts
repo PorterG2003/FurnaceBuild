@@ -49,6 +49,7 @@ export interface MessageJob {
   lead_id: string;
   mailbox_id: string;
   node_id: string;
+  interval_id?: string | null;
   status: string;
   scheduled_at: string;
   message_data: Record<string, any>;

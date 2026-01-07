@@ -117,7 +117,7 @@ export class SendWorker {
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
       const { data: throttle, error: throttleError } = await this.supabase
         .from('mailbox_throttles')
-        .select('last_sent_at, min_gap_seconds')
+        .select('last_sent_at, min_gap_seconds, sent_count')
         .eq('mailbox_id', messageJob.mailbox_id)
         .eq('date', today)
         .maybeSingle();
@@ -198,6 +198,35 @@ export class SendWorker {
           provider_message_id: providerMessageId,
         })
         .eq('id', message_job_id);
+
+      // 6a. Update mailbox_throttles last_sent_at (for min gap enforcement)
+      // This ensures the next send from this mailbox will check the correct last_sent_at
+      try {
+        const sentAt = new Date().toISOString();
+        const newSentCount = (throttle?.sent_count ?? 0) + 1;
+        
+        const { error: throttleUpdateError } = await this.supabase
+          .from('mailbox_throttles')
+          .upsert({
+            mailbox_id: messageJob.mailbox_id,
+            date: today,
+            last_sent_at: sentAt,
+            sent_count: newSentCount,
+          }, {
+            onConflict: 'mailbox_id,date',
+            ignoreDuplicates: false,
+          });
+        
+        if (throttleUpdateError) {
+          // Log error but don't fail the send (email is already sent)
+          console.error(`[SEND WORKER] Failed to update mailbox_throttles for mailbox ${messageJob.mailbox_id}:`, throttleUpdateError);
+        } else {
+          console.log(`[SEND WORKER] Updated mailbox_throttles for mailbox ${messageJob.mailbox_id}: last_sent_at=${sentAt}, sent_count=${newSentCount}`);
+        }
+      } catch (error) {
+        // Log error but don't fail the send
+        console.error(`[SEND WORKER] Error updating mailbox_throttles for mailbox ${messageJob.mailbox_id}:`, error);
+      }
 
       // 6b. Update enrollment to trigger scheduler re-evaluation
       // This allows the scheduler to pick up the enrollment immediately and proceed to next node

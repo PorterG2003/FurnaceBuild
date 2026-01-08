@@ -374,6 +374,17 @@ export class SchedulerWorker {
         }
       }
     } catch (error) {
+      // Check if this is a normal deferral (e.g., no intervals available)
+      // These are expected and handled gracefully - don't log as errors
+      const isDeferral = (error as any)?.isDeferral === true;
+      
+      if (isDeferral) {
+        // Normal deferral - enrollment already updated in handleEmailNode
+        // Just continue to next enrollment without logging
+        return;
+      }
+
+      // Real error - log and handle
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
       
@@ -387,33 +398,16 @@ export class SchedulerWorker {
       // - Categorize errors (critical vs. recoverable)
       // - Rate limit to avoid spam
 
-      // Check if this is a recoverable "No available intervals" error
-      // These should be retried (intervals may become available soon)
-      const isRecoverableIntervalError = errorMessage.includes('No available intervals');
-
       // Try to update enrollment state to indicate error (don't fail if this fails)
       try {
-        if (isRecoverableIntervalError) {
-          // Recoverable error: keep enrollment active and retry in 5 minutes
-          // This allows the enrollment to be picked up again once intervals become available
-          console.log(`[ENROLLMENT ${enrollment.id.substring(0, 8)}] Recoverable interval error - will retry in 5 minutes`);
-          await this.supabase
-            .from('enrollments')
-            .update({
-              state: 'active', // Keep active for retry
-              next_run_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // Retry in 5 minutes
-            })
-            .eq('id', enrollment.id);
-        } else {
-          // Fatal error: stop enrollment to prevent infinite retries
-          await this.supabase
-            .from('enrollments')
-            .update({
-              state: 'stopped', // Stop enrollment on error to prevent infinite retries
-              next_run_at: new Date(Date.now() + 3600000).toISOString(), // Retry in 1 hour
-            })
-            .eq('id', enrollment.id);
-        }
+        // Fatal error: stop enrollment to prevent infinite retries
+        await this.supabase
+          .from('enrollments')
+          .update({
+            state: 'stopped', // Stop enrollment on error to prevent infinite retries
+            next_run_at: new Date(Date.now() + 3600000).toISOString(), // Retry in 1 hour
+          })
+          .eq('id', enrollment.id);
       } catch (updateError) {
         console.error(`Failed to update enrollment ${enrollment.id} after error:`, updateError);
       }

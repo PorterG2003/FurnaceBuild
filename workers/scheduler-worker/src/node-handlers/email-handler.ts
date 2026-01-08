@@ -332,9 +332,29 @@ export async function handleEmailNode(
   }
 
   if (!result || result.length === 0) {
-    // Re-diagnose after failed assignment to see what changed
-    await diagnoseIntervalAvailability(enrollment.campaign_id, mailbox.id, supabase);
-    throw new Error(`No available intervals for campaign ${enrollment.campaign_id}. Interval maintenance may not be running.`);
+    // No intervals available - this is expected and normal
+    // Interval maintenance runs every minute, so intervals may temporarily be exhausted
+    // between maintenance cycles. This is not an error condition.
+    
+    // Update enrollment to retry in 5 minutes
+    const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    
+    await supabase
+      .from('enrollments')
+      .update({
+        next_run_at: retryAt,
+      })
+      .eq('id', enrollment.id)
+      .eq('state', 'active'); // Only update active enrollments
+    
+    console.log(`[INTERVAL ASSIGNMENT] No intervals available for campaign ${enrollment.campaign_id.substring(0, 8)}. Enrollment will retry at ${retryAt}`);
+    
+    // Throw a specific error type that indicates this is a normal deferral (not a real error)
+    // The caller will handle this silently without logging it as an error
+    const deferError: any = new Error('DEFER_ENROLLMENT');
+    deferError.isDeferral = true;
+    deferError.retryAt = retryAt;
+    throw deferError;
   }
 
   console.log(`[INTERVAL ASSIGNMENT] Successfully assigned job to interval ${result[0].interval_id}`);

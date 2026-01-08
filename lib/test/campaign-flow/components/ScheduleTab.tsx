@@ -56,9 +56,10 @@ type ScheduleItem = MessageJob | Enrollment;
 
 interface ScheduleTabProps {
   campaignId: string;
+  refreshTrigger?: number; // When this changes, reload data
 }
 
-export function ScheduleTab({ campaignId }: ScheduleTabProps) {
+export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
   const [messageJobs, setMessageJobs] = useState<MessageJob[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,7 +151,7 @@ export function ScheduleTab({ campaignId }: ScheduleTabProps) {
     if (campaignId) {
       loadScheduleData();
     }
-  }, [campaignId]);
+  }, [campaignId, refreshTrigger]); // Reload when campaignId or refreshTrigger changes
 
   // Combine and sort by time (scheduled_at for jobs, next_run_at for enrollments)
   const scheduleItems = useMemo(() => {

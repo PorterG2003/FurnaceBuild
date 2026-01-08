@@ -68,43 +68,43 @@ BEGIN
     RETURN;
   END IF;
   
-  -- Step 0.5: Find the FIRST available/scheduled interval after last processed
-  -- This is the ONLY interval we should be assigning to
-  SELECT ci.id INTO v_first_available_interval_id
-  FROM campaign_intervals ci
-  WHERE ci.campaign_id = p_campaign_id
-    AND ci.interval_time > NOW() -- Only future intervals
-    AND (
-      v_last_processed_time IS NULL 
-      OR ci.interval_time > v_last_processed_time
-    )
-    AND ci.status IN ('available', 'scheduled') -- Not completed or locked
-  ORDER BY ci.interval_time ASC
-  LIMIT 1;
-  
-  -- If no available interval found, return empty
-  IF v_first_available_interval_id IS NULL THEN
-    RETURN;
-  END IF;
-  
-  -- Step 1: Try to lock the FIRST available interval
-  -- Only lock if this mailbox doesn't already have a job in it
+  -- Step 1: Atomically lock the FIRST available/scheduled interval
+  -- This ensures we only assign to ONE interval at a time (strict sequential processing)
+  -- Key: ORDER BY interval_time ASC LIMIT 1 ensures we get the FIRST interval
   UPDATE campaign_intervals
   SET 
     status = 'locked',
     locked_at = NOW(),
     locked_by = p_worker_id,
     updated_at = NOW()
-  WHERE campaign_intervals.id = v_first_available_interval_id
-    AND campaign_intervals.status IN ('available', 'scheduled') -- Re-check status
-    AND NOT EXISTS (
-      -- Check if this specific mailbox already has a job in this interval
-      SELECT 1
-      FROM message_jobs mj
-      WHERE mj.interval_id = v_first_available_interval_id
-        AND mj.mailbox_id = p_mailbox_id
-        AND mj.status IN ('pending', 'reserved', 'sending', 'sent', 'failed')
-    )
+  WHERE campaign_intervals.id = (
+    SELECT ci.id
+    FROM campaign_intervals ci
+    WHERE ci.campaign_id = p_campaign_id
+      AND ci.interval_time > NOW() -- Only future intervals
+      -- Sequential check: only allow intervals AFTER last processed
+      AND (
+        v_last_processed_time IS NULL 
+        OR ci.interval_time > v_last_processed_time
+      )
+      AND (
+        ci.status = 'available' -- New interval, no jobs yet
+        OR (
+          ci.status = 'scheduled' -- Has some jobs, check if this mailbox already has a job
+          AND NOT EXISTS (
+            -- Check if this specific mailbox already has a job in this interval
+            SELECT 1
+            FROM message_jobs mj
+            WHERE mj.interval_id = ci.id
+              AND mj.mailbox_id = p_mailbox_id
+              AND mj.status IN ('pending', 'reserved', 'sending', 'sent', 'failed')
+          )
+        )
+      )
+    ORDER BY ci.interval_time ASC -- FIRST interval only
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED -- Prevent concurrent locks
+  )
   RETURNING 
     campaign_intervals.id,
     campaign_intervals.interval_time

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, Text, ActivityIndicator, ScrollView, Pressable, TextInput } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PageLayout } from '@/components/ui/layout';
@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabase/client';
 import type { Campaign } from '@/lib/supabase/types';
 import { format } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
-import { PencilIcon, CheckIcon, XMarkIcon } from 'react-native-heroicons/outline';
+import { PencilIcon, CheckIcon, XMarkIcon, ArrowPathIcon } from 'react-native-heroicons/outline';
 
 export default function TestCampaignViewPage() {
   const router = useRouter();
@@ -35,6 +35,8 @@ export default function TestCampaignViewPage() {
   const [editedName, setEditedName] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('details');
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const tabs: Tab[] = [
     { id: 'details', label: 'Details' },
@@ -42,114 +44,127 @@ export default function TestCampaignViewPage() {
     { id: 'schedule', label: 'Schedule' },
   ];
 
-  useEffect(() => {
+  const loadCampaignData = useCallback(async (isRefresh = false) => {
     if (!id) {
       setError('Campaign ID is required');
       setLoading(false);
       return;
     }
 
-    const loadCampaignData = async () => {
-      try {
+    try {
+      // Only show full page loader on initial load, not on refresh
+      if (!isRefresh) {
         setLoading(true);
-        setError(null);
-
-        // Load campaign
-        const campaignData = await getCampaignById(id);
-        if (!campaignData) {
-          setError('Campaign not found');
-          setLoading(false);
-          return;
-        }
-        setCampaign(campaignData);
-        setEditedName(campaignData.name || '');
-
-        // Load mailboxes
-        const mailboxes = await getCampaignMailboxes(id);
-        setMailboxCount(mailboxes.length);
-
-        // Load leads count
-        const { count: leadsCount } = await supabase
-          .from('leads')
-          .select('*', { count: 'exact', head: true })
-          .eq('campaign_id', id)
-          .like('email', '%@furnace.test');
-
-        setLeadCount(leadsCount || 0);
-
-        // Load enrollments count and progress stats
-        const { count: enrollmentsCount } = await supabase
-          .from('enrollments')
-          .select('*', { count: 'exact', head: true })
-          .eq('campaign_id', id);
-
-        setEnrollmentCount(enrollmentsCount || 0);
-
-        // Load enrollment progress stats
-        const { data: enrollments, error: enrollmentsError } = await supabase
-          .from('enrollments')
-          .select('state, lead_id, current_node_id')
-          .eq('campaign_id', id);
-
-        if (!enrollmentsError && enrollments && leadsCount !== null) {
-          const started = enrollments.length; // All enrollments are "started"
-          const completed = enrollments.filter(e => e.state === 'completed').length;
-          const inProgress = enrollments.filter(e => e.state === 'active').length;
-          const notStarted = Math.max(0, leadsCount - started); // Leads without enrollments
-
-          setLeadsStarted(started);
-          setLeadsCompleted(completed);
-          setLeadsInProgress(inProgress);
-          setLeadsNotStarted(notStarted);
-        }
-
-        // Load leads with enrollment data
-        setLeadsLoading(true);
-        const { data: leadsData, error: leadsError } = await supabase
-          .from('leads')
-          .select('id, email, name, created_at')
-          .eq('campaign_id', id)
-          .like('email', '%@furnace.test')
-          .order('created_at', { ascending: false });
-
-        if (!leadsError && leadsData) {
-          // Create a map of lead_id to enrollment state
-          const enrollmentMap = new Map<string, { state: 'active' | 'completed' | null; current_node_id: string | null }>();
-          if (enrollments) {
-            enrollments.forEach((enrollment: any) => {
-              enrollmentMap.set(enrollment.lead_id, {
-                state: enrollment.state as 'active' | 'completed' | null,
-                current_node_id: enrollment.current_node_id,
-              });
-            });
-          }
-
-          // Combine leads with enrollment data
-          const leadsWithEnrollment: Lead[] = leadsData.map((lead) => {
-            const enrollment = enrollmentMap.get(lead.id);
-            return {
-              id: lead.id,
-              email: lead.email || '',
-              name: lead.name,
-              enrollment_state: enrollment?.state || null,
-              enrollment_current_node_id: enrollment?.current_node_id || null,
-              created_at: lead.created_at,
-            };
-          });
-
-          setLeads(leadsWithEnrollment);
-        }
-        setLeadsLoading(false);
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-        setError(errorMessage);
-      } finally {
-        setLoading(false);
       }
-    };
+      setError(null);
 
-    loadCampaignData();
+      // Load campaign
+      const campaignData = await getCampaignById(id);
+      if (!campaignData) {
+        setError('Campaign not found');
+        setLoading(false);
+        return;
+      }
+      setCampaign(campaignData);
+      setEditedName(campaignData.name || '');
+
+      // Load mailboxes
+      const mailboxes = await getCampaignMailboxes(id);
+      setMailboxCount(mailboxes.length);
+
+      // Load leads count
+      const { count: leadsCount } = await supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('campaign_id', id)
+        .like('email', '%@furnace.test');
+
+      setLeadCount(leadsCount || 0);
+
+      // Load enrollments count and progress stats
+      const { count: enrollmentsCount } = await supabase
+        .from('enrollments')
+        .select('*', { count: 'exact', head: true })
+        .eq('campaign_id', id);
+
+      setEnrollmentCount(enrollmentsCount || 0);
+
+      // Load enrollment progress stats
+      const { data: enrollments, error: enrollmentsError } = await supabase
+        .from('enrollments')
+        .select('state, lead_id, current_node_id')
+        .eq('campaign_id', id);
+
+      if (!enrollmentsError && enrollments && leadsCount !== null) {
+        const started = enrollments.length; // All enrollments are "started"
+        const completed = enrollments.filter(e => e.state === 'completed').length;
+        const inProgress = enrollments.filter(e => e.state === 'active').length;
+        const notStarted = Math.max(0, leadsCount - started); // Leads without enrollments
+
+        setLeadsStarted(started);
+        setLeadsCompleted(completed);
+        setLeadsInProgress(inProgress);
+        setLeadsNotStarted(notStarted);
+      }
+
+      // Load leads with enrollment data
+      setLeadsLoading(true);
+      const { data: leadsData, error: leadsError } = await supabase
+        .from('leads')
+        .select('id, email, name, created_at')
+        .eq('campaign_id', id)
+        .like('email', '%@furnace.test')
+        .order('created_at', { ascending: false });
+
+      if (!leadsError && leadsData) {
+        // Create a map of lead_id to enrollment state
+        const enrollmentMap = new Map<string, { state: 'active' | 'completed' | null; current_node_id: string | null }>();
+        if (enrollments) {
+          enrollments.forEach((enrollment: any) => {
+            enrollmentMap.set(enrollment.lead_id, {
+              state: enrollment.state as 'active' | 'completed' | null,
+              current_node_id: enrollment.current_node_id,
+            });
+          });
+        }
+
+        // Combine leads with enrollment data
+        const leadsWithEnrollment: Lead[] = leadsData.map((lead) => {
+          const enrollment = enrollmentMap.get(lead.id);
+          return {
+            id: lead.id,
+            email: lead.email || '',
+            name: lead.name,
+            enrollment_state: enrollment?.state || null,
+            enrollment_current_node_id: enrollment?.current_node_id || null,
+            created_at: lead.created_at,
+          };
+        });
+
+        setLeads(leadsWithEnrollment);
+      }
+      setLeadsLoading(false);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    loadCampaignData();
+  }, [loadCampaignData]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadCampaignData(true); // Pass true to indicate this is a refresh
+      setRefreshKey(prev => prev + 1); // Increment refresh key to trigger child component refreshes
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -199,14 +214,33 @@ export default function TestCampaignViewPage() {
     <PageLayout>
       {/* Header */}
       <View className="mb-6">
-        <Pressable
-          onPress={() => router.push('/test/campaigns' as any)}
-          className="mb-4 px-4 py-2 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg self-start"
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-        >
-          <Text className="text-gray-300 font-instrument text-sm">← Back</Text>
-        </Pressable>
+        <View className="flex-row items-center gap-2 mb-4">
+          <Pressable
+            onPress={() => router.push('/test/campaigns' as any)}
+            className="px-4 py-2 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg"
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <Text className="text-gray-300 font-instrument text-sm">← Back</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleRefresh}
+            disabled={refreshing || loading}
+            className="px-4 py-2 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg flex-row items-center gap-2"
+            style={{ opacity: refreshing || loading ? 0.5 : 1 }}
+            accessibilityRole="button"
+            accessibilityLabel="Refresh campaign data"
+          >
+            <ArrowPathIcon 
+              size={16} 
+              color="#9ca3af" 
+              style={{ transform: [{ rotate: refreshing ? '180deg' : '0deg' }] }}
+            />
+            <Text className="text-gray-300 font-instrument text-sm">
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </Text>
+          </Pressable>
+        </View>
         
         {/* Campaign Name Editor */}
         {isEditingName ? (
@@ -464,7 +498,7 @@ export default function TestCampaignViewPage() {
         {/* Schedule Tab */}
         {activeTab === 'schedule' && (
           <View className="mb-4">
-            <ScheduleTab campaignId={id} />
+            <ScheduleTab campaignId={id} refreshTrigger={refreshKey} />
           </View>
         )}
       </ScrollView>

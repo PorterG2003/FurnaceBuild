@@ -1,11 +1,11 @@
 -- Diagnostic query to check if intervals are already processed
 -- Replace the campaign_id with your actual campaign_id
 
--- Step 1: Check campaign's last_processed_interval_end
+-- Step 1: Check campaign's last_completed_interval_time
 SELECT 
   id,
   name,
-  last_processed_interval_end,
+  last_completed_interval_time,
   sending_interval_seconds,
   (SELECT COUNT(*) FROM campaign_mailboxes WHERE campaign_id = campaigns.id) as total_mailboxes
 FROM campaigns
@@ -18,11 +18,11 @@ SELECT
   ci.status as interval_status,
   ci.locked_at,
   ci.locked_by,
-  -- Compare with last_processed_interval_end
-  (SELECT last_processed_interval_end FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') as last_processed,
+  -- Compare with last_completed_interval_time
+  (SELECT last_completed_interval_time FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') as last_processed,
   CASE 
-    WHEN (SELECT last_processed_interval_end FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') IS NULL THEN 'NO_PROCESSED_YET'
-    WHEN ci.interval_time <= (SELECT last_processed_interval_end FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') THEN 'ALREADY_PROCESSED'
+    WHEN (SELECT last_completed_interval_time FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') IS NULL THEN 'NO_PROCESSED_YET'
+    WHEN ci.interval_time <= (SELECT last_completed_interval_time FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') THEN 'ALREADY_PROCESSED'
     ELSE 'NOT_PROCESSED'
   END as processed_status,
   -- Job statistics
@@ -42,8 +42,8 @@ SELECT
       AND COUNT(DISTINCT mj.mailbox_id) FILTER (WHERE mj.status IN ('sent', 'failed')) = 
           (SELECT COUNT(*) FROM campaign_mailboxes WHERE campaign_id = '683a9d74-211b-4825-8670-a0fba37be8ac')
       AND (
-        (SELECT last_processed_interval_end FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') IS NULL
-        OR ci.interval_time > (SELECT last_processed_interval_end FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac')
+        (SELECT last_completed_interval_time FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') IS NULL
+        OR ci.interval_time > (SELECT last_completed_interval_time FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac')
       )
     THEN 'SHOULD_BE_PROCESSED'
     WHEN ci.status = 'completed' THEN 'ALREADY_MARKED_COMPLETED'
@@ -128,8 +128,8 @@ INNER JOIN message_jobs mj ON mj.interval_id = ci.id
 WHERE ci.campaign_id = '683a9d74-211b-4825-8670-a0fba37be8ac'
   AND ci.status = 'scheduled'
   AND (
-    (SELECT last_processed_interval_end FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') IS NULL
-    OR ci.interval_time > (SELECT last_processed_interval_end FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac')
+    (SELECT last_completed_interval_time FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') IS NULL
+    OR ci.interval_time > (SELECT last_completed_interval_time FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac')
   )
 GROUP BY ci.id, ci.interval_time, ci.status
 HAVING COUNT(DISTINCT mj.mailbox_id) FILTER (

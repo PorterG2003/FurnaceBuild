@@ -3,6 +3,140 @@ import type { Enrollment, MessageJob, Lead, Mailbox, Campaign } from '../types.j
 import { selectMailbox } from '../mailbox-selection.js';
 
 /**
+ * Diagnostic function to log interval availability details
+ */
+async function diagnoseIntervalAvailability(
+  campaignId: string,
+  mailboxId: string,
+  supabase: SupabaseClient
+): Promise<void> {
+  const now = new Date().toISOString();
+  
+  // Get campaign info
+  const { data: campaign, error: campaignError } = await supabase
+    .from('campaigns')
+    .select('id, last_completed_interval_time, sending_interval_seconds')
+    .eq('id', campaignId)
+    .single();
+
+  if (campaignError) {
+    console.error(`[INTERVAL DIAGNOSTIC] Failed to load campaign: ${campaignError.message}`);
+    return;
+  }
+
+  // Get all intervals for this campaign
+  const { data: intervals, error: intervalsError } = await supabase
+    .from('campaign_intervals')
+    .select('id, interval_time, status, locked_at, locked_by')
+    .eq('campaign_id', campaignId)
+    .order('interval_time', { ascending: true })
+    .limit(50); // Get first 50 to see what's available
+
+  if (intervalsError) {
+    console.error(`[INTERVAL DIAGNOSTIC] Failed to load intervals: ${intervalsError.message}`);
+    return;
+  }
+
+  // Get mailbox jobs in intervals
+  const { data: mailboxJobs, error: jobsError } = await supabase
+    .from('message_jobs')
+    .select('id, interval_id, status, scheduled_at')
+    .eq('mailbox_id', mailboxId)
+    .eq('campaign_id', campaignId)
+    .in('status', ['pending', 'reserved', 'sending', 'sent', 'failed'])
+    .limit(20);
+
+  if (jobsError) {
+    console.error(`[INTERVAL DIAGNOSTIC] Failed to load mailbox jobs: ${jobsError.message}`);
+  }
+
+  // Count intervals by status
+  const statusCounts = {
+    available: 0,
+    locked: 0,
+    scheduled: 0,
+    completed: 0,
+  };
+
+  const futureIntervals = intervals?.filter(i => new Date(i.interval_time) > new Date(now)) || [];
+  // Only check FUTURE intervals - past ones don't block (they'll be excluded from sequential check)
+  const incompleteBeforeFirst = intervals?.filter(i => {
+    if (!futureIntervals.length) return false;
+    const firstFuture = futureIntervals[0];
+    const intervalTime = new Date(i.interval_time);
+    const nowTime = new Date(now);
+    // Only consider incomplete intervals that are:
+    // 1. Before the first future interval
+    // 2. In the future (>= NOW) - past intervals don't block
+    // 3. Not completed
+    return intervalTime < new Date(firstFuture.interval_time) 
+      && intervalTime >= nowTime 
+      && i.status !== 'completed';
+  }) || [];
+
+  intervals?.forEach(i => {
+    if (i.status in statusCounts) {
+      statusCounts[i.status as keyof typeof statusCounts]++;
+    }
+  });
+
+  console.log(`[INTERVAL DIAGNOSTIC] Campaign ${campaignId.substring(0, 8)}:`);
+  console.log(`  - Last completed interval time: ${campaign?.last_completed_interval_time || 'NULL'}`);
+  console.log(`  - Sending interval seconds: ${campaign?.sending_interval_seconds}`);
+  console.log(`  - Total intervals found: ${intervals?.length || 0}`);
+  console.log(`  - Status breakdown:`, statusCounts);
+  console.log(`  - Future intervals (>${now}): ${futureIntervals.length}`);
+  console.log(`  - Incomplete intervals before first future: ${incompleteBeforeFirst.length}`);
+  
+  if (incompleteBeforeFirst.length > 0) {
+    console.log(`  - BLOCKING: Found ${incompleteBeforeFirst.length} incomplete FUTURE interval(s) before first future interval:`);
+    incompleteBeforeFirst.slice(0, 3).forEach(i => {
+      console.log(`    * ${i.interval_time} - status: ${i.status} ${i.locked_at ? `(locked at ${i.locked_at} by ${i.locked_by})` : ''}`);
+    });
+  } else {
+    // Check if there are past incomplete intervals (shouldn't block but good to know)
+    const pastIncomplete = intervals?.filter(i => {
+      const intervalTime = new Date(i.interval_time);
+      return intervalTime < new Date(now) && i.status !== 'completed';
+    }) || [];
+    if (pastIncomplete.length > 0) {
+      console.log(`  - INFO: Found ${pastIncomplete.length} incomplete PAST interval(s) (won't block future assignments):`);
+      pastIncomplete.slice(0, 2).forEach(i => {
+        console.log(`    * ${i.interval_time} - status: ${i.status}`);
+      });
+    }
+  }
+
+  if (futureIntervals.length > 0) {
+    console.log(`  - First 5 future intervals:`);
+    futureIntervals.slice(0, 5).forEach(i => {
+      const hasMailboxJob = mailboxJobs?.some(j => j.interval_id === i.id);
+      console.log(`    * ${i.interval_time} - status: ${i.status} ${hasMailboxJob ? '(mailbox has job)' : ''} ${i.locked_at ? `(locked at ${i.locked_at})` : ''}`);
+    });
+  }
+
+  if (mailboxJobs && mailboxJobs.length > 0) {
+    console.log(`  - Mailbox ${mailboxId.substring(0, 8)} has ${mailboxJobs.length} job(s) in intervals`);
+  }
+
+  // Check if there are any intervals that should be available
+  const shouldBeAvailable = futureIntervals.filter(i => {
+    if (i.status === 'completed') return false;
+    if (i.status === 'available') return true;
+    if (i.status === 'scheduled') {
+      // Check if mailbox already has job
+      return !mailboxJobs?.some(j => j.interval_id === i.id);
+    }
+    return false;
+  });
+
+  console.log(`  - Intervals that SHOULD be available: ${shouldBeAvailable.length}`);
+  if (shouldBeAvailable.length === 0 && futureIntervals.length > 0) {
+    console.log(`  - WARNING: No available intervals despite ${futureIntervals.length} future intervals existing`);
+  }
+}
+
+/**
  * Handle email node: create message_job using campaign intervals
  * 
  * This function:
@@ -163,10 +297,15 @@ export async function handleEmailNode(
     console.log(`[MAILBOX CONSISTENCY] Using assigned mailbox ${mailbox.id} for lead ${enrollment.lead_id} (subsequent email)`);
   }
 
-  // 3. Atomically assign message_job to interval
+  // 3. Diagnose interval availability before attempting assignment
+  await diagnoseIntervalAvailability(enrollment.campaign_id, mailbox.id, supabase);
+
+  // 4. Atomically assign message_job to interval
   // This function: locks interval, checks mailbox, creates job, releases lock
   // All in a single atomic transaction
   const workerId = process.env.WORKER_ID || 'scheduler';
+  console.log(`[INTERVAL ASSIGNMENT] Attempting to assign job for campaign ${enrollment.campaign_id.substring(0, 8)}, mailbox ${mailbox.id.substring(0, 8)}`);
+  
   const { data: result, error: assignError } = await supabase
     .rpc('assign_message_job_to_interval', {
     p_enrollment_id: enrollment.id,
@@ -188,12 +327,17 @@ export async function handleEmailNode(
     });
 
   if (assignError) {
+    console.error(`[INTERVAL ASSIGNMENT] RPC error: ${assignError.message}`);
     throw new Error(`Failed to assign message_job to interval: ${assignError.message}`);
   }
 
   if (!result || result.length === 0) {
+    // Re-diagnose after failed assignment to see what changed
+    await diagnoseIntervalAvailability(enrollment.campaign_id, mailbox.id, supabase);
     throw new Error(`No available intervals for campaign ${enrollment.campaign_id}. Interval maintenance may not be running.`);
   }
+
+  console.log(`[INTERVAL ASSIGNMENT] Successfully assigned job to interval ${result[0].interval_id}`);
 
   const jobResult = result[0] as any;
 

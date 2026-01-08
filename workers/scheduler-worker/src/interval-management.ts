@@ -18,10 +18,10 @@ export async function maintainCampaignIntervals(
   supabase: SupabaseClient
 ): Promise<void> {
   // Get all active campaigns with sending_interval_seconds
-  // Also get last_processed_interval_end for sequential processing
+  // Also get last_completed_interval_time for sequential processing
   const { data: campaigns, error } = await supabase
     .from('campaigns')
-    .select('id, sending_interval_seconds, created_at, schedule, last_processed_interval_end')
+    .select('id, sending_interval_seconds, created_at, schedule, last_completed_interval_time')
     .not('sending_interval_seconds', 'is', null);
   
   if (error) {
@@ -37,12 +37,13 @@ export async function maintainCampaignIntervals(
   
   for (const campaign of campaigns) {
     try {
+      console.log(`[INTERVAL MAINTENANCE] Processing campaign ${campaign.id.substring(0, 8)} (last_completed: ${campaign.last_completed_interval_time || 'NULL'})`);
       await ensureCampaignIntervals(
         campaign.id,
         campaign.sending_interval_seconds,
         campaign.created_at,
         campaign.schedule as CampaignSchedule | null,
-        campaign.last_processed_interval_end,
+        campaign.last_completed_interval_time,
         MIN_INTERVALS_AHEAD,
         supabase
       );
@@ -54,14 +55,14 @@ export async function maintainCampaignIntervals(
 
 /**
  * Ensure a campaign has enough intervals ahead
- * Respects last_processed_interval_end for sequential processing
+ * Respects last_completed_interval_time for sequential processing
  */
 async function ensureCampaignIntervals(
   campaignId: string,
   intervalSeconds: number,
   campaignStartTime: string,
   schedule: CampaignSchedule | null,
-  lastProcessedIntervalEnd: string | null,
+  lastCompletedIntervalTime: string | null,
   minIntervalsAhead: number,
   supabase: SupabaseClient
 ): Promise<void> {
@@ -82,7 +83,7 @@ async function ensureCampaignIntervals(
   
   // Determine where to start creating intervals from:
   // 1. Latest interval time (if exists) + interval_seconds
-  // 2. Last processed interval end (if exists) - for sequential processing
+  // 2. Last completed interval time (if exists) - for sequential processing
   // 3. Campaign start time (if no intervals exist)
   // 4. Current time (don't create past intervals)
   // Use the maximum of these to ensure we create intervals after all of them
@@ -93,8 +94,8 @@ async function ensureCampaignIntervals(
     candidateStarts.push(new Date(new Date(latestInterval.interval_time).getTime() + (intervalSeconds * 1000)));
   }
   
-  if (lastProcessedIntervalEnd) {
-    candidateStarts.push(new Date(lastProcessedIntervalEnd));
+  if (lastCompletedIntervalTime) {
+    candidateStarts.push(new Date(lastCompletedIntervalTime));
   }
   
   candidateStarts.push(new Date(campaignStartTime));
@@ -108,11 +109,14 @@ async function ensureCampaignIntervals(
   );
   
   if (intervalsAhead >= minIntervalsAhead) {
+    console.log(`[INTERVAL MAINTENANCE] Campaign ${campaignId.substring(0, 8)}: Has ${intervalsAhead} intervals ahead (min: ${minIntervalsAhead}), no creation needed`);
     return; // We have enough intervals
   }
   
   // Calculate how many intervals to create
   const intervalsToCreate = minIntervalsAhead - intervalsAhead + 5; // Add buffer
+  
+  console.log(`[INTERVAL MAINTENANCE] Campaign ${campaignId.substring(0, 8)}: Only ${intervalsAhead} intervals ahead (min: ${minIntervalsAhead}), creating ${intervalsToCreate} starting from ${startFrom.toISOString()}`);
   
   // Create intervals starting from the calculated start point
   await createCampaignIntervals(

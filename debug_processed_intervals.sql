@@ -6,7 +6,7 @@ SELECT
   ci.id as interval_id,
   ci.interval_time,
   ci.status as interval_status,
-  (SELECT last_processed_interval_end FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') as last_processed,
+  (SELECT last_completed_interval_time FROM campaigns WHERE id = '683a9d74-211b-4825-8670-a0fba37be8ac') as last_processed,
   -- Count eligible mailboxes
   (SELECT COUNT(*)
    FROM campaign_mailboxes cm

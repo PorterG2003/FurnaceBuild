@@ -65,7 +65,7 @@ export const handler: Schema['sendTestMessage']['functionHandler'] = async (even
         if (response.Successful) {
           totalSent += response.Successful.length;
           const successfulIds = response.Successful
-            .map(m => m.MessageId)
+            .map((m: { MessageId?: string }) => m.MessageId)
             .filter((id): id is string => id !== undefined);
           messageIds.push(...successfulIds);
         }

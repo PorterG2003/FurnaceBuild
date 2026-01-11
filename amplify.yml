@@ -7,8 +7,10 @@ backend:
         - npm ci
         - echo "=== Starting function dependency installation ==="
         - cd amplify/functions/testMailboxConnection && npm install && cd - || (echo "Failed to install testMailboxConnection dependencies" && exit 1)
-        - echo "=== Verifying testMailboxConnection dependencies ==="
-        - ls -la amplify/functions/testMailboxConnection/node_modules/ | grep -E "(nodemailer|imapflow)" || (echo "Dependencies not found" && exit 1)
+        - cd amplify/functions/enrollmentMetric && npm install && cd - || (echo "Failed to install enrollmentMetric dependencies" && exit 1)
+        - cd amplify/functions/sendTestMessage && npm install && cd - || (echo "Failed to install sendTestMessage dependencies" && exit 1)
+        - cd amplify/functions/inboxChecker && npm install && cd - || (echo "Failed to install inboxChecker dependencies" && exit 1)
+        - cd amplify/functions/sendInvitationEmail && npm install && cd - || (echo "Failed to install sendInvitationEmail dependencies" && exit 1)
         - echo "=== Function dependencies installed successfully ==="
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
     build:

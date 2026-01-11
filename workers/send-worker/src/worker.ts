@@ -112,17 +112,64 @@ export class SendWorker {
       // 2. Load related data (lead, mailbox, node config)
       const { lead, mailbox, nodeConfig } = await this.loadJobData(messageJob);
 
+      // 2b. Check minimum gap between sends for this mailbox
+      // This ensures we don't send emails too quickly from the same mailbox
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      const { data: throttle, error: throttleError } = await this.supabase
+        .from('mailbox_throttles')
+        .select('last_sent_at, min_gap_seconds, sent_count')
+        .eq('mailbox_id', messageJob.mailbox_id)
+        .eq('date', today)
+        .maybeSingle();
+
+      if (throttleError) {
+        throw new Error(`Failed to check mailbox throttle for mailbox ${messageJob.mailbox_id}: ${throttleError.message}`);
+      }
+
+      // Get min gap (default to 180 seconds if not configured)
+      const minGapSeconds = throttle?.min_gap_seconds ?? 180;
+
+      // Check if minimum gap is met
+      if (throttle?.last_sent_at) {
+        const lastSentAt = new Date(throttle.last_sent_at);
+        const now = new Date();
+        const timeSinceLastSend = (now.getTime() - lastSentAt.getTime()) / 1000; // seconds
+
+        if (timeSinceLastSend < minGapSeconds) {
+          const remainingSeconds = Math.ceil(minGapSeconds - timeSinceLastSend);
+          const errorMessage = `Minimum gap not met for mailbox ${messageJob.mailbox_id}. Last sent: ${lastSentAt.toISOString()}, Required gap: ${minGapSeconds}s, Time since last send: ${timeSinceLastSend.toFixed(1)}s, Remaining: ${remainingSeconds}s`;
+          
+          console.error(`[SEND WORKER] ${errorMessage}`);
+          
+          // Mark job as failed
+          await this.supabase
+            .from('message_jobs')
+            .update({
+              status: 'failed',
+              error_message: errorMessage,
+            })
+            .eq('id', message_job_id);
+
+          throw new Error(errorMessage);
+        }
+      }
+
       // 3. Generate email content from template
       const subject = mergeTemplate(nodeConfig.subject || '', lead);
       const emailBody = mergeTemplate(nodeConfig.body || '', lead);
 
       // Check if this is a test mode job (skip SMTP sending)
-      const skipSmtp = (messageJob.message_data as any)?.skip_smtp === true;
+      // Test mailboxes are identified by @furnace.test email domain
+      const isTestMailbox = mailbox.email_address.endsWith('@furnace.test');
+      const skipSmtp = isTestMailbox || (messageJob.message_data as any)?.skip_smtp === true;
       let providerMessageId: string;
 
       if (skipSmtp) {
         // Test mode: Skip SMTP sending, generate fake message ID
-        console.log(`[TEST MODE] Processing message job ${message_job_id} (SMTP sending skipped)`);
+        const testReason = isTestMailbox 
+          ? `test mailbox detected (${mailbox.email_address})`
+          : 'skip_smtp flag set';
+        console.log(`[TEST MODE] Processing message job ${message_job_id} (SMTP sending skipped - ${testReason})`);
         providerMessageId = `test-${Date.now()}-${Math.random().toString(36).substring(2, 15)}@furnace.test`;
       } else {
         // Production mode: Send via SMTP
@@ -152,6 +199,35 @@ export class SendWorker {
         })
         .eq('id', message_job_id);
 
+      // 6a. Update mailbox_throttles last_sent_at (for min gap enforcement)
+      // This ensures the next send from this mailbox will check the correct last_sent_at
+      try {
+        const sentAt = new Date().toISOString();
+        const newSentCount = (throttle?.sent_count ?? 0) + 1;
+        
+        const { error: throttleUpdateError } = await this.supabase
+          .from('mailbox_throttles')
+          .upsert({
+            mailbox_id: messageJob.mailbox_id,
+            date: today,
+            last_sent_at: sentAt,
+            sent_count: newSentCount,
+          }, {
+            onConflict: 'mailbox_id,date',
+            ignoreDuplicates: false,
+          });
+        
+        if (throttleUpdateError) {
+          // Log error but don't fail the send (email is already sent)
+          console.error(`[SEND WORKER] Failed to update mailbox_throttles for mailbox ${messageJob.mailbox_id}:`, throttleUpdateError);
+        } else {
+          console.log(`[SEND WORKER] Updated mailbox_throttles for mailbox ${messageJob.mailbox_id}: last_sent_at=${sentAt}, sent_count=${newSentCount}`);
+        }
+      } catch (error) {
+        // Log error but don't fail the send
+        console.error(`[SEND WORKER] Error updating mailbox_throttles for mailbox ${messageJob.mailbox_id}:`, error);
+      }
+
       // 6b. Update enrollment to trigger scheduler re-evaluation
       // This allows the scheduler to pick up the enrollment immediately and proceed to next node
       try {
@@ -170,6 +246,25 @@ export class SendWorker {
       } catch (error) {
         // Log error but don't fail the send
         console.error(`[SEND WORKER] Error updating enrollment ${messageJob.enrollment_id}:`, error);
+      }
+
+      // 6c. Check if interval should be marked as processed (immediate, not waiting for scheduler timer)
+      // This makes interval completion happen immediately instead of waiting up to 1 minute
+      try {
+        const { data: processedCount, error: processedError } = await this.supabase
+          .rpc('check_and_update_processed_intervals', {
+            p_campaign_id: messageJob.campaign_id
+          });
+        
+        if (processedError) {
+          // Log error but don't fail the send (email is already sent)
+          console.error(`[SEND WORKER] Failed to check processed intervals for campaign ${messageJob.campaign_id}:`, processedError);
+        } else if (processedCount && processedCount > 0) {
+          console.log(`[SEND WORKER] Marked ${processedCount} interval(s) as processed for campaign ${messageJob.campaign_id}`);
+        }
+      } catch (error) {
+        // Log error but don't fail the send
+        console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, error);
       }
 
       // 7. Create event record
@@ -196,9 +291,48 @@ export class SendWorker {
 
     } catch (error) {
       console.error(`[SEND WORKER] Error processing message job ${messageJob.id}:`, error);
-      // TODO: Implement retry logic with exponential backoff
-      // TODO: Mark job as failed after max retries
-      throw error; // Re-throw to be caught by Promise.allSettled
+      
+      // Mark job as failed with error message
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : String(error);
+      
+      try {
+        await this.supabase
+          .from('message_jobs')
+          .update({
+            status: 'failed',
+            error_message: errorMessage,
+          })
+          .eq('id', messageJob.id);
+        
+        console.log(`[SEND WORKER] Marked message job ${messageJob.id} as failed`);
+
+        // Check if interval should be marked as processed (immediate, not waiting for scheduler timer)
+        // This makes interval completion happen immediately instead of waiting up to 1 minute
+        try {
+          const { data: processedCount, error: processedError } = await this.supabase
+            .rpc('check_and_update_processed_intervals', {
+              p_campaign_id: messageJob.campaign_id
+            });
+          
+          if (processedError) {
+            // Log error but don't fail (job is already marked as failed)
+            console.error(`[SEND WORKER] Failed to check processed intervals for campaign ${messageJob.campaign_id}:`, processedError);
+          } else if (processedCount && processedCount > 0) {
+            console.log(`[SEND WORKER] Marked ${processedCount} interval(s) as processed for campaign ${messageJob.campaign_id}`);
+          }
+        } catch (processedCheckError) {
+          // Log error but don't fail (job is already marked as failed)
+          console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, processedCheckError);
+        }
+      } catch (updateError) {
+        // Log but don't throw - we've already logged the original error
+        console.error(`[SEND WORKER] Failed to update message job ${messageJob.id} status to failed:`, updateError);
+      }
+      
+      // Re-throw to be caught by Promise.allSettled in the main loop
+      throw error;
     }
   }
 

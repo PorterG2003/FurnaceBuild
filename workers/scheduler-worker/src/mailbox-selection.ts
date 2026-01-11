@@ -52,6 +52,10 @@ export async function selectMailbox(
   
   // Round-robin selection: rotate through available mailboxes
   const selectedIndex = rotationIndex % availableMailboxes.length;
-  return availableMailboxes[selectedIndex] as Mailbox;
+  const selectedMailbox = availableMailboxes[selectedIndex] as Mailbox;
+  
+  console.log(`[MAILBOX DIST] Campaign ${campaignId.substring(0, 8)}: Selected mailbox ${selectedMailbox.id.substring(0, 8)} (index ${selectedIndex}/${availableMailboxes.length}, rotationIndex: ${rotationIndex})`);
+  
+  return selectedMailbox;
 }
 

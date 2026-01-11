@@ -1,10 +1,11 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { DatabaseClient } from './database.js';
 import { evaluateFlow } from './flow-evaluation.js';
-import { handleEmailNode } from './node-handlers/email-handler.js';
 import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
 import { handleAICategorizerNode } from './node-handlers/ai-categorizer-handler.js';
 import { handleDataSenderNode } from './node-handlers/data-sender-handler.js';
+import { maintainCampaignIntervals } from './interval-management.js';
+import { batchAssignIntervalJobs } from './batch-interval-assignment.js';
 import type { Enrollment } from './types.js';
 
 export interface WorkerConfig {
@@ -20,6 +21,10 @@ export class SchedulerWorker {
   private databaseClient: DatabaseClient;
   private running: boolean = false;
   private mailboxRotationIndex: number = 0; // For round-robin mailbox selection
+  private intervalMaintenanceTimer?: ReturnType<typeof setInterval>;
+  private staleLockCleanupTimer?: ReturnType<typeof setInterval>;
+  private processedIntervalCheckTimer?: ReturnType<typeof setInterval>;
+  private batchIntervalAssignmentTimer?: ReturnType<typeof setInterval>;
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
@@ -31,6 +36,20 @@ export class SchedulerWorker {
    */
   async start(): Promise<void> {
     this.running = true;
+    console.log('Scheduler worker starting...');
+
+    // Start interval maintenance (runs every minute)
+    this.startIntervalMaintenance();
+    
+    // Start stale lock cleanup (runs every 5 minutes)
+    this.startStaleLockCleanup();
+    
+    // Start processed interval check (runs every minute)
+    this.startProcessedIntervalCheck();
+    
+    // Start batch interval assignment (runs every 30 seconds)
+    this.startBatchIntervalAssignment();
+
     console.log('Scheduler worker started. Polling database...');
 
     while (this.running) {
@@ -44,15 +63,31 @@ export class SchedulerWorker {
             console.log(`[SCHEDULER] Enrollment: ${e.id} | State: ${e.state} | Current Node: ${e.current_node_id?.substring(0, 8) || 'null'} | Next Run: ${e.next_run_at}`);
           });
 
+          // Log mailbox distribution before processing
+          await this.logMailboxDistribution(enrollments);
+
           // Process enrollments in parallel (with concurrency limit if needed)
+          // Pass rotationIndex based on batch index to ensure proper distribution even with parallel processing
           const results = await Promise.allSettled(
-            enrollments.map(enrollment => this.processEnrollment(enrollment))
+            enrollments.map((enrollment, index) => {
+              // Calculate rotationIndex based on batch index to ensure proper round-robin even with parallel processing
+              // Use current mailboxRotationIndex as base, then increment for each enrollment in batch
+              const rotationIndex = this.mailboxRotationIndex + index;
+              return this.processEnrollment(enrollment, rotationIndex);
+            })
           );
+          
+          // Update mailboxRotationIndex after processing batch
+          // Increment by number of enrollments processed (even if some failed, we want consistent rotation)
+          this.mailboxRotationIndex += enrollments.length;
           
           // Log results
           const successful = results.filter(r => r.status === 'fulfilled').length;
           const failed = results.filter(r => r.status === 'rejected').length;
           console.log(`[SCHEDULER] Processed ${enrollments.length} enrollment(s): ${successful} successful, ${failed} failed`);
+          
+          // Log mailbox distribution after processing
+          await this.logMailboxDistributionAfterProcessing(enrollments, results);
           
           // Log any failures
           results.forEach((result, index) => {
@@ -87,13 +122,235 @@ export class SchedulerWorker {
   stop(): void {
     console.log('Stopping scheduler worker...');
     this.running = false;
+    
+    if (this.intervalMaintenanceTimer) {
+      clearInterval(this.intervalMaintenanceTimer);
+    }
+    if (this.staleLockCleanupTimer) {
+      clearInterval(this.staleLockCleanupTimer);
+    }
+    if (this.processedIntervalCheckTimer) {
+      clearInterval(this.processedIntervalCheckTimer);
+    }
+    if (this.batchIntervalAssignmentTimer) {
+      clearInterval(this.batchIntervalAssignmentTimer);
+    }
+  }
+
+  /**
+   * Start interval maintenance background task
+   */
+  private startIntervalMaintenance(): void {
+    // Run immediately, then every minute
+    maintainCampaignIntervals(this.supabase).catch(err => {
+      console.error('[INTERVAL MAINTENANCE] Error:', err);
+    });
+
+    this.intervalMaintenanceTimer = setInterval(() => {
+      maintainCampaignIntervals(this.supabase).catch(err => {
+        console.error('[INTERVAL MAINTENANCE] Error:', err);
+      });
+    }, 60000); // 1 minute
+  }
+
+  /**
+   * Start stale lock cleanup background task
+   */
+  private startStaleLockCleanup(): void {
+    // Run every 5 minutes
+    this.staleLockCleanupTimer = setInterval(async () => {
+      try {
+        const { data, error } = await this.supabase.rpc('cleanup_stale_interval_locks', {
+          p_lock_timeout_minutes: 5
+        });
+        
+        if (error) {
+          console.error('[STALE LOCK CLEANUP] Error:', error);
+        } else if (data > 0) {
+          console.log(`[STALE LOCK CLEANUP] Released ${data} stale locks`);
+        }
+      } catch (error) {
+        console.error('[STALE LOCK CLEANUP] Error:', error);
+      }
+    }, 300000); // 5 minutes
+  }
+
+  /**
+   * Start processed interval check background task
+   */
+  private startProcessedIntervalCheck(): void {
+    // Run every minute to check for completed intervals
+    this.processedIntervalCheckTimer = setInterval(async () => {
+      try {
+        const { data, error } = await this.supabase.rpc('check_and_update_processed_intervals', {
+          p_campaign_id: null // Check all campaigns
+        });
+        
+        if (error) {
+          console.error('[PROCESSED INTERVAL CHECK] Error:', error);
+        } else if (data > 0) {
+          console.log(`[PROCESSED INTERVAL CHECK] Updated ${data} processed interval(s)`);
+        }
+      } catch (error) {
+        console.error('[PROCESSED INTERVAL CHECK] Error:', error);
+      }
+    }, 60000); // 1 minute
+  }
+
+  /**
+   * Start batch interval assignment background task
+   */
+  private startBatchIntervalAssignment(): void {
+    // Run immediately, then every 30 seconds
+    batchAssignIntervalJobs(this.supabase, this.mailboxRotationIndex).catch(err => {
+      console.error('[BATCH INTERVAL] Error:', err);
+    });
+
+    this.batchIntervalAssignmentTimer = setInterval(() => {
+      batchAssignIntervalJobs(this.supabase, this.mailboxRotationIndex).catch(err => {
+        console.error('[BATCH INTERVAL] Error:', err);
+      });
+    }, 30000); // 30 seconds
+  }
+
+  /**
+   * Log mailbox distribution before processing enrollments
+   */
+  private async logMailboxDistribution(enrollments: Enrollment[]): Promise<void> {
+    if (enrollments.length === 0) return;
+
+    // Group enrollments by campaign (most will be same campaign)
+    const campaignGroups = new Map<string, Enrollment[]>();
+    for (const enrollment of enrollments) {
+      const existing = campaignGroups.get(enrollment.campaign_id) || [];
+      existing.push(enrollment);
+      campaignGroups.set(enrollment.campaign_id, existing);
+    }
+
+    for (const [campaignId, campaignEnrollments] of campaignGroups.entries()) {
+      // Get leads for these enrollments to check mailbox assignments
+      const leadIds = campaignEnrollments.map(e => e.lead_id);
+      const { data: leads } = await this.supabase
+        .from('leads')
+        .select('id, mailbox_id')
+        .in('id', leadIds);
+
+      // Get eligible mailboxes for this campaign
+      const { data: campaignMailboxes } = await this.supabase
+        .from('campaign_mailboxes')
+        .select(`
+          mailbox_id,
+          mailbox:mailboxes!inner(id, status, smtp_status)
+        `)
+        .eq('campaign_id', campaignId);
+
+      const eligibleMailboxes = campaignMailboxes?.filter((cm: any) => 
+        cm.mailbox?.status === 'connected' && cm.mailbox?.smtp_status === 'active'
+      ) || [];
+
+      // Count enrollments per mailbox (existing assignments)
+      const mailboxCounts = new Map<string, number>();
+      let unassignedCount = 0;
+
+      for (const enrollment of campaignEnrollments) {
+        const lead = leads?.find(l => l.id === enrollment.lead_id);
+        if (lead?.mailbox_id) {
+          mailboxCounts.set(lead.mailbox_id, (mailboxCounts.get(lead.mailbox_id) || 0) + 1);
+        } else {
+          unassignedCount++;
+        }
+      }
+
+      console.log(`[MAILBOX DIST] Campaign ${campaignId.substring(0, 8)}: ${campaignEnrollments.length} enrollment(s) ready`);
+      console.log(`[MAILBOX DIST] Eligible mailboxes: ${eligibleMailboxes.length}`);
+      console.log(`[MAILBOX DIST] Enrollments with assigned mailbox: ${campaignEnrollments.length - unassignedCount}, unassigned (will use round-robin): ${unassignedCount}`);
+      
+      // Show distribution
+      const distribution: string[] = [];
+      for (const cm of eligibleMailboxes) {
+        const mailboxId = (cm as any).mailbox?.id || (cm as any).mailbox_id;
+        if (mailboxId) {
+          const count = mailboxCounts.get(mailboxId) || 0;
+          distribution.push(`${mailboxId.substring(0, 8)}:${count}`);
+        }
+      }
+      if (unassignedCount > 0) {
+        distribution.push(`unassigned:${unassignedCount}`);
+      }
+      console.log(`[MAILBOX DIST] Distribution: ${distribution.join(', ')}`);
+    }
+  }
+
+  /**
+   * Log mailbox distribution after processing enrollments
+   */
+  private async logMailboxDistributionAfterProcessing(
+    enrollments: Enrollment[],
+    results: PromiseSettledResult<void>[]
+  ): Promise<void> {
+    if (enrollments.length === 0) return;
+
+    // Group by campaign (with original indices for results mapping)
+    const campaignGroups = new Map<string, { enrollment: Enrollment; originalIndex: number }[]>();
+    for (let i = 0; i < enrollments.length; i++) {
+      const enrollment = enrollments[i];
+      const existing = campaignGroups.get(enrollment.campaign_id) || [];
+      existing.push({ enrollment, originalIndex: i });
+      campaignGroups.set(enrollment.campaign_id, existing);
+    }
+
+    for (const [campaignId, campaignEnrollmentsWithIndex] of campaignGroups.entries()) {
+      const campaignEnrollments = campaignEnrollmentsWithIndex.map(item => item.enrollment);
+      
+      // Get leads to see final mailbox assignments (after processing)
+      const leadIds = campaignEnrollments.map(e => e.lead_id);
+      const { data: leads } = await this.supabase
+        .from('leads')
+        .select('id, mailbox_id')
+        .in('id', leadIds);
+
+      // Count successful vs failed (using original indices)
+      const successfulEnrollments: Enrollment[] = [];
+      const failedEnrollments: Enrollment[] = [];
+      
+      campaignEnrollmentsWithIndex.forEach(({ enrollment, originalIndex }) => {
+        const result = results[originalIndex];
+        if (result.status === 'fulfilled') {
+          successfulEnrollments.push(enrollment);
+        } else {
+          failedEnrollments.push(enrollment);
+        }
+      });
+
+      // Count final mailbox distribution for successful enrollments
+      const mailboxCounts = new Map<string, number>();
+      for (const enrollment of successfulEnrollments) {
+        const lead = leads?.find(l => l.id === enrollment.lead_id);
+        if (lead?.mailbox_id) {
+          mailboxCounts.set(lead.mailbox_id, (mailboxCounts.get(lead.mailbox_id) || 0) + 1);
+        }
+      }
+
+      const distribution: string[] = [];
+      mailboxCounts.forEach((count, mailboxId) => {
+        distribution.push(`${mailboxId.substring(0, 8)}:${count}`);
+      });
+      
+      console.log(`[MAILBOX DIST] After processing: ${successfulEnrollments.length} successful, ${failedEnrollments.length} failed`);
+      if (distribution.length > 0) {
+        console.log(`[MAILBOX DIST] Final distribution: ${distribution.join(', ')}`);
+      }
+    }
   }
 
   /**
    * Process a single enrollment: evaluate flow, create jobs, update state
    * Migrated from Lambda handler
+   * 
+   * @param enrollment - Enrollment to process
+   * @param rotationIndex - Rotation index for mailbox selection (passed from batch processing)
    */
-  private async processEnrollment(enrollment: Enrollment): Promise<void> {
+  private async processEnrollment(enrollment: Enrollment, rotationIndex: number): Promise<void> {
     const enrollmentId = enrollment.id.substring(0, 8);
     console.log(`[ENROLLMENT ${enrollment.id}] Starting processing... (state: ${enrollment.state}, current_node: ${enrollment.current_node_id?.substring(0, 8) || 'null'})`);
     
@@ -173,28 +430,14 @@ export class SchedulerWorker {
         
         if (node.node_type === 'email') {
           console.log(`[ENROLLMENT ${enrollmentId}] Handling email node...`);
-          // Create message_job (send workers will poll database directly)
-          const messageJob = await handleEmailNode(
-            enrollment,
-            node,
-            campaign,
-            this.mailboxRotationIndex,
-            jitterPercentage,
-            this.supabase
-          );
-          
-          console.log(`[ENROLLMENT ${enrollmentId}] Email node processed. Message job created: ${messageJob.id.substring(0, 8)}`);
-          
-          // Update enrollment.current_node_id
+          // Email node: just set current_node_id and stop
+          // Job creation will be handled by batch interval assignment process
           await this.supabase
             .from('enrollments')
             .update({ current_node_id: node.id })
             .eq('id', enrollment.id);
           
-          console.log(`[ENROLLMENT ${enrollmentId}] Updated current_node_id to ${node.id.substring(0, 8)}`);
-          
-          // Increment mailbox rotation index for next enrollment
-          this.mailboxRotationIndex++;
+          console.log(`[ENROLLMENT ${enrollmentId}] Email node reached. Updated current_node_id to ${node.id.substring(0, 8)}. Job will be created by batch process.`);
           
         } else if (node.node_type === 'waitTime' || node.node_type === 'wait') {
           console.log(`[ENROLLMENT ${enrollmentId}] Handling waitTime node...`);
@@ -289,6 +532,17 @@ export class SchedulerWorker {
         }
       }
     } catch (error) {
+      // Check if this is a normal deferral (e.g., no intervals available)
+      // These are expected and handled gracefully - don't log as errors
+      const isDeferral = (error as any)?.isDeferral === true;
+      
+      if (isDeferral) {
+        // Normal deferral - enrollment already updated in handleEmailNode
+        // Just continue to next enrollment without logging
+        return;
+      }
+
+      // Real error - log and handle
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
       
@@ -304,6 +558,7 @@ export class SchedulerWorker {
 
       // Try to update enrollment state to indicate error (don't fail if this fails)
       try {
+        // Fatal error: stop enrollment to prevent infinite retries
         await this.supabase
           .from('enrollments')
           .update({

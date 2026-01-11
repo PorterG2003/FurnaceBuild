@@ -3,6 +3,7 @@ import { View, Text, ActivityIndicator } from 'react-native';
 import { supabase } from '@/lib/supabase/client';
 import { format } from 'date-fns';
 import { DataTable, type TableColumn } from './DataTable';
+import { Tabs, type Tab } from './Tabs';
 
 interface MessageJob {
   id: string;
@@ -64,6 +65,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('emails');
 
   useEffect(() => {
     const loadScheduleData = async () => {
@@ -153,19 +155,21 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     }
   }, [campaignId, refreshTrigger]); // Reload when campaignId or refreshTrigger changes
 
-  // Combine and sort by time (scheduled_at for jobs, next_run_at for enrollments)
-  const scheduleItems = useMemo(() => {
-    const items: ScheduleItem[] = [
-      ...messageJobs,
-      ...enrollments.filter(e => e.next_run_at !== null), // Only show enrollments with next_run_at
-    ];
-
-    return items.sort((a, b) => {
-      const aTime = a.type === 'message_job' ? a.scheduled_at : a.next_run_at || '';
-      const bTime = b.type === 'message_job' ? b.scheduled_at : b.next_run_at || '';
-      return new Date(bTime).getTime() - new Date(aTime).getTime(); // Newest first
+  // Sort message jobs by scheduled_at
+  const sortedMessageJobs = useMemo(() => {
+    return [...messageJobs].sort((a, b) => {
+      return new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime(); // Newest first
     });
-  }, [messageJobs, enrollments]);
+  }, [messageJobs]);
+
+  // Sort enrollments by next_run_at
+  const sortedEnrollments = useMemo(() => {
+    return [...enrollments]
+      .filter(e => e.next_run_at !== null) // Only show enrollments with next_run_at
+      .sort((a, b) => {
+        return new Date(b.next_run_at!).getTime() - new Date(a.next_run_at!).getTime(); // Newest first
+      });
+  }, [enrollments]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -220,18 +224,10 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     );
   }
 
-  if (scheduleItems.length === 0) {
-    return (
-      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-8">
-        <Text className="text-gray-400 font-instrument text-center text-base">
-          No scheduled items found for this campaign
-        </Text>
-        <Text className="text-gray-500 font-instrument text-center text-sm mt-2">
-          Schedule items will appear here once the scheduler creates them
-        </Text>
-      </View>
-    );
-  }
+  const tabs: Tab[] = [
+    { id: 'emails', label: `Emails (${messageJobs.length})` },
+    { id: 'enrollments', label: `Enrollments (${sortedEnrollments.length})` },
+  ];
 
   const getStatusBadge = (status: string) => {
     return (
@@ -249,20 +245,8 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     );
   };
 
-  const columns: TableColumn<ScheduleItem>[] = [
-    {
-      key: 'type',
-      label: 'Type',
-      minWidth: 100,
-      flex: 0,
-      sortable: true,
-      sortValue: (item) => item.type,
-      render: (item) => (
-        <Text className="text-gray-500 font-instrument text-xs uppercase">
-          {item.type === 'message_job' ? 'Email' : 'Enrollment'}
-        </Text>
-      ),
-    },
+  // Columns for Email (Message Job) table
+  const emailColumns: TableColumn<MessageJob>[] = [
     {
       key: 'lead',
       label: 'Lead',
@@ -289,20 +273,13 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       minWidth: 180,
       flex: 1,
       sortable: true,
-      sortValue: (item) => {
-        const time = item.type === 'message_job' ? item.scheduled_at : item.next_run_at || '';
-        return new Date(time).getTime();
-      },
+      sortValue: (item) => new Date(item.scheduled_at).getTime(),
       render: (item) => (
         <View>
           <Text className="text-white font-instrument text-sm" numberOfLines={1}>
-            {item.type === 'message_job'
-              ? format(new Date(item.scheduled_at), 'MMM d, h:mm a')
-              : item.next_run_at
-                ? format(new Date(item.next_run_at), 'MMM d, h:mm a')
-                : '—'}
+            {format(new Date(item.scheduled_at), 'MMM d, h:mm a')}
           </Text>
-          {item.type === 'message_job' && item.sent_at && (
+          {item.sent_at && (
             <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
               Sent: {format(new Date(item.sent_at), 'h:mm a')}
             </Text>
@@ -317,14 +294,13 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       flex: 1,
       sortable: true,
       sortValue: (item) => {
-        if (item.type === 'message_job' && item.interval) {
+        if (item.interval) {
           return new Date(item.interval.interval_time).getTime();
         }
-        // Null values should be sorted last (maximum)
         return Number.MAX_SAFE_INTEGER;
       },
       render: (item) => {
-        if (item.type === 'message_job' && item.interval) {
+        if (item.interval) {
           return (
             <View>
               <Text className="text-white font-instrument text-sm" numberOfLines={1}>
@@ -345,9 +321,8 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       minWidth: 130,
       flex: 0,
       sortable: true,
-      sortValue: (item) => (item.type === 'message_job' ? item.status : item.state),
-      render: (item) =>
-        item.type === 'message_job' ? getStatusBadge(item.status) : getStatusBadge(item.state),
+      sortValue: (item) => item.status,
+      render: (item) => getStatusBadge(item.status),
     },
     {
       key: 'details',
@@ -356,27 +331,80 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       flex: 0,
       render: (item) => (
         <View>
-          {item.type === 'message_job' ? (
-            <>
-              {item.mailbox && (
-                <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
-                  {item.mailbox.email_address}
-                </Text>
-              )}
-              {item.error_message && (
-                <Text className="text-red-400 font-instrument text-xs" numberOfLines={1}>
-                  Error
-                </Text>
-              )}
-            </>
-          ) : (
-            <>
-              {item.node && (
-                <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
-                  {item.node.node_type || '—'}
-                </Text>
-              )}
-            </>
+          {item.mailbox && (
+            <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
+              {item.mailbox.email_address}
+            </Text>
+          )}
+          {item.error_message && (
+            <Text className="text-red-400 font-instrument text-xs" numberOfLines={1}>
+              Error
+            </Text>
+          )}
+        </View>
+      ),
+    },
+  ];
+
+  // Columns for Enrollment table
+  const enrollmentColumns: TableColumn<Enrollment>[] = [
+    {
+      key: 'lead',
+      label: 'Lead',
+      minWidth: 200,
+      flex: 1,
+      sortable: true,
+      sortValue: (item) => item.lead?.email?.toLowerCase() || '',
+      render: (item) => (
+        <View>
+          <Text className="text-white font-instrument text-sm" numberOfLines={1}>
+            {item.lead?.email || 'Unknown'}
+          </Text>
+          {item.lead?.name && (
+            <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
+              {item.lead.name}
+            </Text>
+          )}
+        </View>
+      ),
+    },
+    {
+      key: 'scheduled',
+      label: 'Next Run',
+      minWidth: 180,
+      flex: 1,
+      sortable: true,
+      sortValue: (item) => new Date(item.next_run_at || '').getTime(),
+      render: (item) => (
+        <View>
+          <Text className="text-white font-instrument text-sm" numberOfLines={1}>
+            {item.next_run_at
+              ? format(new Date(item.next_run_at), 'MMM d, h:mm a')
+              : '—'}
+          </Text>
+        </View>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      minWidth: 130,
+      flex: 0,
+      sortable: true,
+      sortValue: (item) => item.state,
+      render: (item) => getStatusBadge(item.state),
+    },
+    {
+      key: 'details',
+      label: 'Node Type',
+      minWidth: 160,
+      flex: 0,
+      render: (item) => (
+        <View>
+          {item.node && (
+            <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
+              {item.node.node_type || '—'}
+            </Text>
           )}
         </View>
       ),
@@ -385,38 +413,41 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
 
   return (
     <View>
-      <View className="flex-row items-center justify-between mb-4">
-        <View />
-        <View className="flex-row gap-4">
-          <View className="flex-row items-center gap-2">
-            <View className="w-2 h-2 rounded-full bg-[#3b82f6]" />
-            <Text className="text-gray-400 font-instrument text-xs">
-              {messageJobs.length} Jobs
-            </Text>
-          </View>
-          <View className="flex-row items-center gap-2">
-            <View className="w-2 h-2 rounded-full bg-[#10b981]" />
-            <Text className="text-gray-400 font-instrument text-xs">
-              {enrollments.filter(e => e.next_run_at).length} Enrollments
-            </Text>
-          </View>
-        </View>
-      </View>
+      <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <DataTable
-        title="Schedule"
-        items={scheduleItems}
-        columns={columns}
-        searchable={true}
-        searchPlaceholder="Search by lead email..."
-        searchFilter={(item, query) => {
-          const email = item.lead?.email?.toLowerCase() || '';
-          const name = item.lead?.name?.toLowerCase() || '';
-          return email.includes(query) || name.includes(query);
-        }}
-        emptyMessage="No scheduled items found for this campaign"
-        getItemKey={(item) => item.id}
-      />
+      {activeTab === 'emails' && (
+        <DataTable
+          title="Email Jobs"
+          items={sortedMessageJobs}
+          columns={emailColumns}
+          searchable={true}
+          searchPlaceholder="Search by lead email..."
+          searchFilter={(item, query) => {
+            const email = item.lead?.email?.toLowerCase() || '';
+            const name = item.lead?.name?.toLowerCase() || '';
+            return email.includes(query) || name.includes(query);
+          }}
+          emptyMessage="No email jobs found for this campaign"
+          getItemKey={(item) => item.id}
+        />
+      )}
+
+      {activeTab === 'enrollments' && (
+        <DataTable
+          title="Enrollments"
+          items={sortedEnrollments}
+          columns={enrollmentColumns}
+          searchable={true}
+          searchPlaceholder="Search by lead email..."
+          searchFilter={(item, query) => {
+            const email = item.lead?.email?.toLowerCase() || '';
+            const name = item.lead?.name?.toLowerCase() || '';
+            return email.includes(query) || name.includes(query);
+          }}
+          emptyMessage="No enrollments found for this campaign"
+          getItemKey={(item) => item.id}
+        />
+      )}
     </View>
   );
 }

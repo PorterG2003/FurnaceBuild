@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { CampaignSchedule } from './types.js';
+import { isWithinSchedule, calculateNextAllowedTime } from './scheduling.js';
 
 export interface CampaignInterval {
   id: string;
@@ -131,6 +132,7 @@ async function ensureCampaignIntervals(
 
 /**
  * Create campaign intervals
+ * Respects campaign schedule - only creates intervals within allowed schedule windows
  */
 async function createCampaignIntervals(
   campaignId: string,
@@ -143,22 +145,51 @@ async function createCampaignIntervals(
   const intervals = [];
   let currentTime = new Date(startFrom);
   
-  for (let i = 0; i < count; i++) {
-    // Calculate interval time (singular time, not a range)
-    let intervalTime = new Date(currentTime);
+  // If schedule exists, start from the next allowed time
+  if (schedule) {
+    currentTime = calculateNextAllowedTime(currentTime, schedule);
+  }
+  
+  // Create intervals, only creating ones that fall within the schedule
+  // Intervals are spaced by intervalSeconds, but we skip ones outside schedule windows
+  let intervalsCreated = 0;
+  const maxAttempts = count * 20; // Prevent infinite loops (e.g., if schedule has no valid days)
+  let attempts = 0;
+  
+  while (intervalsCreated < count && attempts < maxAttempts) {
+    attempts++;
     
-    // Apply schedule constraints if needed
-    // TODO: Implement schedule constraint logic
-    // For now, intervals are created at regular intervals
+    // Check if current time is within schedule
+    if (schedule && !isWithinSchedule(currentTime, schedule)) {
+      // Not within schedule - skip this interval and move to next candidate
+      // Calculate next allowed time, but then continue adding intervalSeconds from there
+      const nextAllowed = calculateNextAllowedTime(currentTime, schedule);
+      // If next allowed time is more than one interval away, we might skip multiple intervals
+      // But we want to maintain spacing, so just move to next interval_seconds candidate
+      currentTime = new Date(currentTime.getTime() + (intervalSeconds * 1000));
+      continue;
+    }
     
+    // Interval is valid (either no schedule or within schedule) - create it
     intervals.push({
       campaign_id: campaignId,
-      interval_time: intervalTime.toISOString(),
+      interval_time: currentTime.toISOString(),
       status: 'available'
     });
     
+    intervalsCreated++;
+    
     // Next interval is interval_seconds later
     currentTime = new Date(currentTime.getTime() + (intervalSeconds * 1000));
+  }
+  
+  if (intervalsCreated < count) {
+    console.warn(`[INTERVAL MAINTENANCE] Campaign ${campaignId.substring(0, 8)}: Only created ${intervalsCreated} of ${count} requested intervals (schedule constraints or max attempts reached)`);
+  }
+  
+  if (intervals.length === 0) {
+    console.warn(`[INTERVAL MAINTENANCE] Campaign ${campaignId.substring(0, 8)}: No intervals created (possibly no valid schedule windows)`);
+    return;
   }
   
   // Insert intervals (ignore conflicts for idempotency)
@@ -174,19 +205,5 @@ async function createCampaignIntervals(
   }
   
   console.log(`[INTERVAL MAINTENANCE] Created ${intervals.length} intervals for campaign ${campaignId.substring(0, 8)}`);
-}
-
-/**
- * Adjust interval time to fit within schedule
- * TODO: Implement schedule constraint logic
- */
-function adjustIntervalTime(
-  time: Date,
-  schedule: CampaignSchedule
-): Date {
-  // TODO: Implement schedule constraint logic
-  // For now, return as-is
-  // In future: adjust to fit within schedule windows
-  return time;
 }
 

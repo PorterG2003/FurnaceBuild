@@ -73,66 +73,100 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
         setLoading(true);
         setError(null);
 
-        // Load message jobs
-        const { data: jobsData, error: jobsError } = await supabase
-          .from('message_jobs')
-          .select(`
-            id,
-            status,
-            scheduled_at,
-            reserved_at,
-            sent_at,
-            interval_id,
-            message_data,
-            error_message,
-            retry_count,
-            lead:leads (
-              email,
-              name
-            ),
-            mailbox:mailboxes (
-              email_address
-            ),
-            node:nodes (
+        // Load message jobs (fetch all in chunks due to 1000 row limit)
+        const jobsData: any[] = [];
+        let jobsOffset = 0;
+        const jobsPageSize = 1000;
+        let jobsHasMore = true;
+        
+        while (jobsHasMore) {
+          const { data: jobsPage, error: jobsError } = await supabase
+            .from('message_jobs')
+            .select(`
               id,
-              node_data
-            ),
-            interval:campaign_intervals (
-              id,
-              interval_time,
-              status
-            )
-          `)
-          .eq('campaign_id', campaignId);
+              status,
+              scheduled_at,
+              reserved_at,
+              sent_at,
+              interval_id,
+              message_data,
+              error_message,
+              retry_count,
+              lead:leads (
+                email,
+                name
+              ),
+              mailbox:mailboxes (
+                email_address
+              ),
+              node:nodes (
+                id,
+                node_data
+              ),
+              interval:campaign_intervals (
+                id,
+                interval_time,
+                status
+              )
+            `)
+            .eq('campaign_id', campaignId)
+            .range(jobsOffset, jobsOffset + jobsPageSize - 1)
+            .order('created_at', { ascending: false });
 
-        if (jobsError) {
-          throw jobsError;
+          if (jobsError) {
+            throw jobsError;
+          }
+
+          if (jobsPage && jobsPage.length > 0) {
+            jobsData.push(...jobsPage);
+            jobsHasMore = jobsPage.length === jobsPageSize;
+            jobsOffset += jobsPageSize;
+          } else {
+            jobsHasMore = false;
+          }
         }
 
-        // Load enrollments
-        const { data: enrollmentsData, error: enrollmentsError } = await supabase
-          .from('enrollments')
-          .select(`
-            id,
-            state,
-            next_run_at,
-            current_node_id,
-            created_at,
-            updated_at,
-            lead:leads (
-              email,
-              name
-            ),
-            node:nodes (
+        // Load enrollments (fetch all in chunks due to 1000 row limit)
+        const enrollmentsData: any[] = [];
+        let enrollmentsOffset = 0;
+        const enrollmentsPageSize = 1000;
+        let enrollmentsHasMore = true;
+        
+        while (enrollmentsHasMore) {
+          const { data: enrollmentsPage, error: enrollmentsError } = await supabase
+            .from('enrollments')
+            .select(`
               id,
-              node_type,
-              node_data
-            )
-          `)
-          .eq('campaign_id', campaignId);
+              state,
+              next_run_at,
+              current_node_id,
+              created_at,
+              updated_at,
+              lead:leads (
+                email,
+                name
+              ),
+              node:nodes (
+                id,
+                node_type,
+                node_data
+              )
+            `)
+            .eq('campaign_id', campaignId)
+            .range(enrollmentsOffset, enrollmentsOffset + enrollmentsPageSize - 1)
+            .order('created_at', { ascending: false });
 
-        if (enrollmentsError) {
-          throw enrollmentsError;
+          if (enrollmentsError) {
+            throw enrollmentsError;
+          }
+
+          if (enrollmentsPage && enrollmentsPage.length > 0) {
+            enrollmentsData.push(...enrollmentsPage);
+            enrollmentsHasMore = enrollmentsPage.length === enrollmentsPageSize;
+            enrollmentsOffset += enrollmentsPageSize;
+          } else {
+            enrollmentsHasMore = false;
+          }
         }
 
         // Add type markers

@@ -203,6 +203,8 @@ export async function handleEmailNode(
       throw new Error(error);
     }
 
+    console.log(`[MAILBOX DIST] Enrollment ${enrollment.id.substring(0, 8)}: Selected mailbox ${selectedMailbox.id.substring(0, 8)} via round-robin (rotationIndex: ${rotationIndex})`);
+
     // Atomically assign mailbox to lead
     // NOTE: Must use .is() for NULL checks, not .eq() - .eq(null) converts to string "null" causing PostgreSQL errors
     const { data: updatedLead, error: updateError } = await supabase
@@ -254,10 +256,10 @@ export async function handleEmailNode(
       }
 
       mailbox = assignedMailbox as Mailbox;
-      console.log(`[MAILBOX ASSIGNMENT] Lead ${enrollment.lead_id} already had mailbox ${mailbox.id} assigned (race condition handled)`);
+      console.log(`[MAILBOX DIST] Enrollment ${enrollment.id.substring(0, 8)}: Using already-assigned mailbox ${mailbox.id.substring(0, 8)} (race condition - another worker assigned first)`);
     } else {
       mailbox = selectedMailbox;
-      console.log(`[MAILBOX ASSIGNMENT] Assigned mailbox ${mailbox.id} to lead ${enrollment.lead_id} (first email)`);
+      console.log(`[MAILBOX DIST] Enrollment ${enrollment.id.substring(0, 8)}: Successfully assigned mailbox ${mailbox.id.substring(0, 8)} to lead (first email)`);
     }
   } else {
     // Subsequent email node - use assigned mailbox
@@ -294,13 +296,103 @@ export async function handleEmailNode(
     }
 
     mailbox = assignedMailbox as Mailbox;
-    console.log(`[MAILBOX CONSISTENCY] Using assigned mailbox ${mailbox.id} for lead ${enrollment.lead_id} (subsequent email)`);
+    console.log(`[MAILBOX DIST] Enrollment ${enrollment.id.substring(0, 8)}: Using already-assigned mailbox ${mailbox.id.substring(0, 8)} (lead already had mailbox)`);
   }
 
   // 3. Diagnose interval availability before attempting assignment
   await diagnoseIntervalAvailability(enrollment.campaign_id, mailbox.id, supabase);
 
-  // 4. Atomically assign message_job to interval
+  // 4. Detailed query to see what intervals would match the assignment criteria
+  const now = new Date().toISOString();
+  const { data: candidateIntervals, error: candidateError } = await supabase
+    .from('campaign_intervals')
+    .select(`
+      id,
+      interval_time,
+      status,
+      locked_at,
+      locked_by
+    `)
+    .eq('campaign_id', enrollment.campaign_id)
+    .gt('interval_time', now)
+    .order('interval_time', { ascending: true })
+    .limit(10);
+
+  if (!candidateError && candidateIntervals) {
+    console.log(`[INTERVAL ASSIGNMENT DEBUG] Found ${candidateIntervals.length} future intervals:`);
+    for (const interval of candidateIntervals) {
+      // Check if this interval would pass the sequential check
+      const { data: blockingIntervals } = await supabase
+        .from('campaign_intervals')
+        .select('id, interval_time, status')
+        .eq('campaign_id', enrollment.campaign_id)
+        .lt('interval_time', interval.interval_time)
+        .gte('interval_time', now)
+        .neq('status', 'completed')
+        .limit(1);
+
+      // Check if mailbox already has job in this interval
+      const { data: existingJob } = await supabase
+        .from('message_jobs')
+        .select('id, status')
+        .eq('interval_id', interval.id)
+        .eq('mailbox_id', mailbox.id)
+        .in('status', ['pending', 'reserved', 'sending', 'sent', 'failed'])
+        .maybeSingle();
+
+      const isBlocked = (blockingIntervals?.length || 0) > 0;
+      const mailboxHasJob = existingJob !== null;
+      const isAssignable = !isBlocked && 
+        (interval.status === 'available' || 
+         (interval.status === 'scheduled' && !mailboxHasJob));
+
+      console.log(`  - ${interval.interval_time} | status: ${interval.status} | blocked: ${isBlocked} | mailbox_has_job: ${mailboxHasJob} | assignable: ${isAssignable}`);
+      if (isBlocked && blockingIntervals && blockingIntervals.length > 0) {
+        console.log(`    └─ BLOCKED by: ${blockingIntervals[0].interval_time} (${blockingIntervals[0].status})`);
+      }
+      if (interval.status === 'scheduled' && mailboxHasJob) {
+        console.log(`    └─ Mailbox already has job: ${existingJob?.id.substring(0, 8)} (${existingJob?.status})`);
+      }
+    }
+  }
+
+  // 5. Check if first interval can be locked (diagnostic)
+  if (candidateIntervals && candidateIntervals.length > 0) {
+    const firstInterval = candidateIntervals[0];
+    if (firstInterval.status === 'scheduled') {
+      // Check if this mailbox already has a job
+      const { data: mailboxJobCheck } = await supabase
+        .from('message_jobs')
+        .select('id, status')
+        .eq('interval_id', firstInterval.id)
+        .eq('mailbox_id', mailbox.id)
+        .in('status', ['pending', 'reserved', 'sending', 'sent', 'failed'])
+        .maybeSingle();
+      
+      // Check if interval is currently locked
+      const { data: intervalStatus } = await supabase
+        .from('campaign_intervals')
+        .select('status, locked_at, locked_by')
+        .eq('id', firstInterval.id)
+        .single();
+      
+      console.log(`[INTERVAL ASSIGNMENT DEBUG] First interval ${firstInterval.interval_time}: status=${intervalStatus?.status}, locked_at=${intervalStatus?.locked_at}, mailbox_has_job=${mailboxJobCheck !== null}`);
+      
+      // Check for blocking intervals
+      const { data: blockingCheck } = await supabase
+        .from('campaign_intervals')
+        .select('id, interval_time, status')
+        .eq('campaign_id', enrollment.campaign_id)
+        .lt('interval_time', firstInterval.interval_time)
+        .gte('interval_time', now)
+        .neq('status', 'completed')
+        .limit(1);
+      
+      console.log(`[INTERVAL ASSIGNMENT DEBUG] Sequential check: ${blockingCheck?.length || 0} blocking interval(s)`);
+    }
+  }
+
+  // 6. Atomically assign message_job to interval
   // This function: locks interval, checks mailbox, creates job, releases lock
   // All in a single atomic transaction
   const workerId = process.env.WORKER_ID || 'scheduler';
@@ -327,11 +419,106 @@ export async function handleEmailNode(
     });
 
   if (assignError) {
-    console.error(`[INTERVAL ASSIGNMENT] RPC error: ${assignError.message}`);
+    console.error(`[INTERVAL ASSIGNMENT] RPC error for enrollment ${enrollment.id.substring(0, 8)}, mailbox ${mailbox.id.substring(0, 8)}: ${assignError.message}`);
     throw new Error(`Failed to assign message_job to interval: ${assignError.message}`);
   }
 
+  console.log(`[INTERVAL ASSIGNMENT] RPC call completed for enrollment ${enrollment.id.substring(0, 8)}, mailbox ${mailbox.id.substring(0, 8)}. Result: ${result?.length || 0} row(s)`);
+
   if (!result || result.length === 0) {
+    // No intervals available - debug why
+    console.log(`[INTERVAL ASSIGNMENT DEBUG] RPC returned empty. Checking why...`);
+    
+    // Query again to see current state (may have changed during RPC call)
+    const { data: intervalsAfter, error: intervalsAfterError } = await supabase
+      .from('campaign_intervals')
+      .select(`
+        id,
+        interval_time,
+        status,
+        locked_at,
+        locked_by
+      `)
+      .eq('campaign_id', enrollment.campaign_id)
+      .gt('interval_time', now)
+      .order('interval_time', { ascending: true })
+      .limit(5);
+
+    if (!intervalsAfterError && intervalsAfter) {
+      console.log(`[INTERVAL ASSIGNMENT DEBUG] After RPC call, ${intervalsAfter.length} future intervals exist:`);
+      for (const interval of intervalsAfter) {
+        // Re-check blocking and mailbox status
+        const { data: blockingAfter } = await supabase
+          .from('campaign_intervals')
+          .select('id, interval_time, status')
+          .eq('campaign_id', enrollment.campaign_id)
+          .lt('interval_time', interval.interval_time)
+          .gte('interval_time', now)
+          .neq('status', 'completed')
+          .limit(1);
+
+        const { data: mailboxJobAfter } = await supabase
+          .from('message_jobs')
+          .select('id, status')
+          .eq('interval_id', interval.id)
+          .eq('mailbox_id', mailbox.id)
+          .in('status', ['pending', 'reserved', 'sending', 'sent', 'failed'])
+          .maybeSingle();
+
+        const blocked = (blockingAfter?.length || 0) > 0;
+        const hasJob = mailboxJobAfter !== null;
+        const assignable = !blocked && 
+          (interval.status === 'available' || 
+           (interval.status === 'scheduled' && !hasJob));
+
+        console.log(`  - ${interval.interval_time} | status: ${interval.status} | locked: ${interval.locked_at ? 'YES' : 'NO'} | blocked: ${blocked} | has_job: ${hasJob} | assignable: ${assignable}`);
+      }
+    }
+
+    // Check total eligible mailboxes to see if all have jobs in first interval
+    const { data: campaignMailboxes } = await supabase
+      .from('campaign_mailboxes')
+      .select(`
+        mailbox_id,
+        mailbox:mailboxes!inner(status, smtp_status)
+      `)
+      .eq('campaign_id', enrollment.campaign_id);
+
+    const eligibleMailboxes = campaignMailboxes?.filter((cm: any) => 
+      cm.mailbox?.status === 'connected' && cm.mailbox?.smtp_status === 'active'
+    ) || [];
+
+    console.log(`[INTERVAL ASSIGNMENT DEBUG] Campaign has ${eligibleMailboxes.length} eligible mailbox(es) (this mailbox: ${mailbox.id.substring(0, 8)})`);
+
+    if (intervalsAfter && intervalsAfter.length > 0) {
+      const firstInterval = intervalsAfter[0];
+      
+      // Get all mailboxes that have jobs in this interval
+      const { data: allMailboxJobs } = await supabase
+        .from('message_jobs')
+        .select('mailbox_id, status')
+        .eq('interval_id', firstInterval.id)
+        .in('status', ['pending', 'reserved', 'sending', 'sent', 'failed']);
+
+      const mailboxIdsWithJobs = new Set(allMailboxJobs?.map(j => j.mailbox_id) || []);
+      const missingMailboxes = eligibleMailboxes.filter((cm: any) => !mailboxIdsWithJobs.has(cm.mailbox_id));
+
+      // Check if first interval is currently locked
+      const { data: firstIntervalStatus } = await supabase
+        .from('campaign_intervals')
+        .select('status, locked_at, locked_by')
+        .eq('id', firstInterval.id)
+        .single();
+
+      console.log(`[INTERVAL ASSIGNMENT DEBUG] First interval ${firstInterval.interval_time} status: ${firstIntervalStatus?.status}, locked: ${firstIntervalStatus?.locked_at ? 'YES by ' + firstIntervalStatus?.locked_by : 'NO'}, has ${mailboxIdsWithJobs.size}/${eligibleMailboxes.length} mailbox jobs`);
+      
+      if (missingMailboxes.length > 0) {
+        console.log(`[INTERVAL ASSIGNMENT DEBUG] ⚠️ First interval missing ${missingMailboxes.length} mailbox assignment(s) - this is why other intervals are blocked`);
+        console.log(`[INTERVAL ASSIGNMENT DEBUG] Missing mailboxes: ${missingMailboxes.map((cm: any) => cm.mailbox_id.substring(0, 8)).join(', ')}`);
+        console.log(`[INTERVAL ASSIGNMENT DEBUG] Current mailbox ${mailbox.id.substring(0, 8)} ${mailboxIdsWithJobs.has(mailbox.id) ? 'HAS' : 'DOES NOT HAVE'} a job in this interval`);
+      }
+    }
+
     // No intervals available - this is expected and normal
     // Interval maintenance runs every minute, so intervals may temporarily be exhausted
     // between maintenance cycles. This is not an error condition.
@@ -357,7 +544,7 @@ export async function handleEmailNode(
     throw deferError;
   }
 
-  console.log(`[INTERVAL ASSIGNMENT] Successfully assigned job to interval ${result[0].interval_id}`);
+  console.log(`[INTERVAL ASSIGNMENT] ✅ Successfully assigned job to interval ${result[0].interval_id} for enrollment ${enrollment.id.substring(0, 8)}, mailbox ${mailbox.id.substring(0, 8)}`);
 
   const jobResult = result[0] as any;
 

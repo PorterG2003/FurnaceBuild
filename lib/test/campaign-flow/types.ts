@@ -9,6 +9,7 @@ export interface ScheduleConfig {
   end_hour: number;
   end_minute: number;
   days_of_week: number[];
+  sending_interval_seconds: number;
 }
 
-export type SchedulePreset = '24/7' | 'business-hours' | 'custom';
+export type SchedulePreset = '24/7' | 'business-hours' | 'weekdays-only' | 'custom';

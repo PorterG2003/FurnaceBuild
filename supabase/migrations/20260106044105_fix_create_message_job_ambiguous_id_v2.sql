@@ -1,43 +1,9 @@
 -- ============================================
--- Migration: Add Sending Interval and Mailbox Consistency
+-- Migration: Fix ambiguous column reference in create_message_job_if_slot_available (v2)
 -- ============================================
--- This migration adds:
--- 1. sending_interval_seconds to campaigns table
--- 2. mailbox_id to leads table
--- 3. create_message_job_if_slot_available function for atomic slot-based job creation
-
--- ============================================
--- 1. ADD sending_interval_seconds TO campaigns
--- ============================================
-
-ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS sending_interval_seconds INTEGER NOT NULL DEFAULT 300;
-
--- Add constraint: interval must be positive
-ALTER TABLE campaigns DROP CONSTRAINT IF EXISTS campaigns_sending_interval_check;
-ALTER TABLE campaigns ADD CONSTRAINT campaigns_sending_interval_check 
-  CHECK (sending_interval_seconds > 0);
-
--- Add comment
-COMMENT ON COLUMN campaigns.sending_interval_seconds IS 'Interval between sends per mailbox (seconds). Campaign with 3 mailboxes and 300s interval = 3 messages every 5 minutes (one per mailbox). Default: 300 (5 minutes).';
-
--- ============================================
--- 2. ADD mailbox_id TO leads
--- ============================================
-
-ALTER TABLE leads ADD COLUMN IF NOT EXISTS mailbox_id UUID REFERENCES mailboxes(id);
-
--- Add index for fast lookups
-CREATE INDEX IF NOT EXISTS idx_leads_mailbox_id ON leads(mailbox_id);
-
--- Add comment
-COMMENT ON COLUMN leads.mailbox_id IS 'Mailbox assigned to this lead for this campaign. Set on first email node via round-robin. Must remain consistent for all subsequent email nodes. NULL before first email node is processed.';
-
--- ============================================
--- 3. CREATE FUNCTION: create_message_job_if_slot_available
--- ============================================
--- Atomically ensures only one message_job per mailbox per interval slot
--- Rounds scheduled_at to slot boundary and checks for existing job
--- Returns existing job if slot is taken, creates new job if slot is available
+-- Fixes: "column reference 'id' is ambiguous" error
+-- Issue: Even with CTE, RETURNING clause columns can be ambiguous with RETURNS TABLE
+-- Solution: Use explicit column aliasing and subquery to completely isolate the INSERT
 
 CREATE OR REPLACE FUNCTION create_message_job_if_slot_available(
   p_enrollment_id UUID,
@@ -67,6 +33,7 @@ DECLARE
   v_slot_time TIMESTAMPTZ;
   v_existing_job_id UUID;
   v_tolerance_seconds INTEGER;
+  v_new_job_id UUID;
 BEGIN
   -- Step 1: Round scheduled_at to slot boundary
   -- Formula: roundDown(scheduled_at / interval) * interval
@@ -81,6 +48,7 @@ BEGIN
   
   -- Step 3: Check if message_job already exists for this mailbox at this slot
   -- Look for jobs with scheduled_at within tolerance of slot_time
+  -- FIX: Qualify column references to avoid ambiguity with RETURNS TABLE columns
   SELECT message_jobs.id INTO v_existing_job_id
   FROM message_jobs
   WHERE message_jobs.mailbox_id = p_mailbox_id
@@ -114,7 +82,7 @@ BEGIN
   
   -- Step 5: Slot is available - insert new message_job
   -- Use the rounded slot_time as scheduled_at (ensures consistency)
-  RETURN QUERY
+  -- Insert and capture the ID, then select back to avoid RETURNING ambiguity
   INSERT INTO message_jobs (
     enrollment_id,
     campaign_id,
@@ -135,22 +103,28 @@ BEGIN
     v_slot_time, -- Use rounded slot_time, not original scheduled_at
     p_message_data
   )
-  RETURNING
-    id,
-    enrollment_id,
-    campaign_id,
-    lead_id,
-    mailbox_id,
-    node_id,
-    status,
-    scheduled_at,
-    message_data,
-    created_at,
-    updated_at,
-    true AS is_new_job;
+  RETURNING message_jobs.id INTO v_new_job_id;
+  
+  -- Step 6: Return the newly created job
+  RETURN QUERY
+  SELECT 
+    mj.id,
+    mj.enrollment_id,
+    mj.campaign_id,
+    mj.lead_id,
+    mj.mailbox_id,
+    mj.node_id,
+    mj.status,
+    mj.scheduled_at,
+    mj.message_data,
+    mj.created_at,
+    mj.updated_at,
+    true AS is_new_job
+  FROM message_jobs mj
+  WHERE mj.id = v_new_job_id;
 END;
 $$ LANGUAGE plpgsql;
 
 -- Add comment
-COMMENT ON FUNCTION create_message_job_if_slot_available IS 'Atomically ensures only one message_job per mailbox per interval slot. Rounds scheduled_at to slot boundary and checks for existing job. Returns existing job if slot is taken, creates new job if slot is available.';
+COMMENT ON FUNCTION create_message_job_if_slot_available IS 'Atomically ensures only one message_job per mailbox per interval slot. Rounds scheduled_at to slot boundary and checks for existing job. Returns existing job if slot is taken, creates new job if slot is available. Fixed ambiguous column reference by using separate INSERT and SELECT.';
 

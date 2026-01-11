@@ -44,6 +44,7 @@ export default function CampaignFlowTestPage() {
     end_hour: 17,
     end_minute: 0,
     days_of_week: [1, 2, 3, 4, 5], // Mon-Fri
+    sending_interval_seconds: 300, // 5 minutes
   });
 
   // Form data - Step 4: Lead Configuration
@@ -193,6 +194,7 @@ export default function CampaignFlowTestPage() {
         status: 'running',
         flow_data: flowData,
         schedule: schedule,
+        sending_interval_seconds: scheduleConfig.sending_interval_seconds,
       };
       
       const campaign = await createCampaign(campaignData);

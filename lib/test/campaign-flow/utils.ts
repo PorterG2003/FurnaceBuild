@@ -38,6 +38,11 @@ export function validateSchedule(schedule: ScheduleConfig): { valid: boolean; er
     return { valid: false, error: `Invalid timezone: ${schedule.timezone}` };
   }
 
+  // Validate sending interval
+  if (!schedule.sending_interval_seconds || schedule.sending_interval_seconds <= 0) {
+    return { valid: false, error: 'Sending interval must be greater than 0 minutes' };
+  }
+
   return { valid: true };
 }
 
@@ -54,6 +59,7 @@ export function applySchedulePreset(preset: SchedulePreset): ScheduleConfig {
         end_hour: 23,
         end_minute: 59,
         days_of_week: [0, 1, 2, 3, 4, 5, 6],
+        sending_interval_seconds: 300,
       };
     case 'business-hours':
       return {
@@ -63,6 +69,17 @@ export function applySchedulePreset(preset: SchedulePreset): ScheduleConfig {
         end_hour: 17,
         end_minute: 0,
         days_of_week: [1, 2, 3, 4, 5],
+        sending_interval_seconds: 300,
+      };
+    case 'weekdays-only':
+      return {
+        timezone: 'America/New_York',
+        start_hour: 0,
+        start_minute: 0,
+        end_hour: 23,
+        end_minute: 59,
+        days_of_week: [1, 2, 3, 4, 5],
+        sending_interval_seconds: 300,
       };
     case 'custom':
       return {
@@ -72,6 +89,7 @@ export function applySchedulePreset(preset: SchedulePreset): ScheduleConfig {
         end_hour: 17,
         end_minute: 0,
         days_of_week: [1, 2, 3, 4, 5],
+        sending_interval_seconds: 300,
       };
     default:
       return {
@@ -81,6 +99,7 @@ export function applySchedulePreset(preset: SchedulePreset): ScheduleConfig {
         end_hour: 17,
         end_minute: 0,
         days_of_week: [1, 2, 3, 4, 5],
+        sending_interval_seconds: 300,
       };
   }
 }

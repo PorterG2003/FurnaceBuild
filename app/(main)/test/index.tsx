@@ -16,7 +16,7 @@ const tests: Test[] = [
   {
     id: 'send-worker',
     name: 'Send Worker Test',
-    description: 'Test the ECS send worker by creating message jobs and sending them to the SQS queue. Supports single and scale testing.',
+    description: 'Test the ECS send worker by creating message jobs in the database. Workers will pick them up automatically via database polling. Supports single and scale testing.',
     route: '/test/worker',
     icon: <EnvelopeIcon size={24} color="#f85102" />,
     category: 'workers',

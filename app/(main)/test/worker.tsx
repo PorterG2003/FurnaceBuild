@@ -7,7 +7,6 @@ import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
 import { getUserByExternalId, getAccountMembershipsForUser } from '@/lib/supabase/services/users';
-import { sendTestMessage } from '@/lib/services/email';
 import { Button } from '@/components/ui/button';
 
 interface StepStatus {
@@ -30,7 +29,6 @@ export default function TestWorkerPage() {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [messageJobId, setMessageJobId] = useState<string | null>(null);
-  const [sqsMessageId, setSqsMessageId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [steps, setSteps] = useState<Record<string, StepStatus>>({});
 
@@ -98,7 +96,6 @@ export default function TestWorkerPage() {
     setLoading(true);
     setError(null);
     setMessageJobId(null);
-    setSqsMessageId(null);
     setSteps({});
 
     try {
@@ -269,30 +266,16 @@ export default function TestWorkerPage() {
       
       updateStep('messageJob', 'success', `Created ${messageJobs.length} message job${messageJobs.length > 1 ? 's' : ''}`);
       setTotalCreated(messageJobs.length);
+      setTotalSent(messageJobs.length);
       
       // Store first message job ID for single test mode
       if (messageJobs.length === 1) {
         setMessageJobId(messageJobs[0].id);
       }
 
-      // 9. Send to SQS
-      updateStep('sqs', 'loading', `Sending ${messageJobs.length} message${messageJobs.length > 1 ? 's' : ''} to SQS queue...`);
-      setSending(true);
-      
-      const messageJobIds = messageJobs.map(job => job.id);
-      const result = await sendTestMessage({ 
-        message_job_ids: messageJobIds.length > 1 ? messageJobIds : undefined,
-        message_job_id: messageJobIds.length === 1 ? messageJobIds[0] : undefined,
-      });
-      
-      if (result.success) {
-        updateStep('sqs', 'success', `Sent ${result.totalSent || 1} message${(result.totalSent || 1) > 1 ? 's' : ''} to SQS`);
-        setSqsMessageId(result.messageId || null);
-        setTotalSent(result.totalSent || 1);
-        setCurrentStep('complete');
-      } else {
-        throw new Error(result.error || 'Failed to send message to SQS');
-      }
+      // Message jobs are now created directly in the database
+      // Send workers will pick them up automatically via database polling
+      setCurrentStep('complete');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setError(errorMessage);
@@ -542,7 +525,7 @@ export default function TestWorkerPage() {
       <View>
         <Text className="text-3xl font-bold text-white mb-2">Processing...</Text>
         <Text className="text-gray-400 text-base">
-          Creating dependencies and sending message to queue.
+          Creating dependencies and message jobs. Send workers will process them automatically.
         </Text>
       </View>
 
@@ -557,7 +540,6 @@ export default function TestWorkerPage() {
           <StepIndicator step="enrollment" label="Enrollment" />
           <StepIndicator step="node" label="Email Node" />
           <StepIndicator step="messageJob" label="Message Job" />
-          <StepIndicator step="sqs" label="Send to SQS" />
         </View>
       )}
 
@@ -585,7 +567,7 @@ export default function TestWorkerPage() {
       <View>
         <Text className="text-3xl font-bold text-white mb-2">✅ Success!</Text>
         <Text className="text-gray-400 text-base">
-          Your test message has been sent to the SQS queue.
+          Message jobs have been created in the database. Send workers will pick them up automatically.
         </Text>
       </View>
 
@@ -595,12 +577,6 @@ export default function TestWorkerPage() {
             <Text className="text-gray-300 text-sm mb-1">Message Job ID:</Text>
             <Text className="text-white font-mono text-sm">{messageJobId}</Text>
           </View>
-          {sqsMessageId && (
-            <View>
-              <Text className="text-gray-300 text-sm mb-1">SQS Message ID:</Text>
-              <Text className="text-white font-mono text-sm">{sqsMessageId}</Text>
-            </View>
-          )}
         </View>
       )}
 
@@ -615,20 +591,7 @@ export default function TestWorkerPage() {
           Look for: "Received X messages", "Processing message job", "Email sent successfully"
         </Text>
 
-        <Text className="text-white font-medium mb-2">2. Check Queue Depth</Text>
-        <Text className="text-gray-300 text-sm mb-1 font-mono bg-gray-900 p-2 rounded">
-          aws sqs get-queue-attributes{'\n'}
-          --queue-url https://sqs.us-west-2.amazonaws.com/686255981838/furnace-send-queue{'\n'}
-          --attribute-names ApproximateNumberOfMessages{'\n'}
-          --region us-west-2
-        </Text>
-        <Text className="text-gray-400 text-xs mb-4">
-          {testMode === 'scale' 
-            ? 'Watch the queue depth decrease as workers process messages. Should scale down as queue empties.'
-            : 'Should be 0 or low if worker is processing messages quickly'}
-        </Text>
-
-        <Text className="text-white font-medium mb-2">3. Check ECS Service Scaling</Text>
+        <Text className="text-white font-medium mb-2">2. Check ECS Service Status</Text>
         <Text className="text-gray-300 text-sm mb-1 font-mono bg-gray-900 p-2 rounded">
           aws ecs describe-services{'\n'}
           --cluster furnace-cluster{'\n'}
@@ -638,9 +601,7 @@ export default function TestWorkerPage() {
           --output table
         </Text>
         <Text className="text-gray-400 text-xs mb-4">
-          {testMode === 'scale' 
-            ? 'Watch runningCount increase as queue depth grows (auto-scaling should kick in around 50+ messages)'
-            : 'Check that tasks are running (runningCount should match desiredCount)'}
+          Check that tasks are running (runningCount should match desiredCount)
         </Text>
 
         <Text className="text-white font-medium mb-2">4. Check Message Job Status (Supabase SQL Editor)</Text>
@@ -672,7 +633,6 @@ export default function TestWorkerPage() {
         onPress={() => {
           setCurrentStep('configure');
           setMessageJobId(null);
-          setSqsMessageId(null);
           setTotalCreated(0);
           setTotalSent(0);
           setSteps({});

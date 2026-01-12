@@ -160,15 +160,10 @@ const supabaseServiceKeyParamPath = stackName.includes('sandbox')
 // Add container to task definition
 // Read environment variables from build environment (set these before running npx ampx sandbox)
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const sendQueueUrl = process.env.SEND_QUEUE_URL;
 const awsRegion = process.env.AWS_REGION || 'us-west-2'; // Default to us-west-2 if not set
 
 if (!supabaseUrl) {
   throw new Error('EXPO_PUBLIC_SUPABASE_URL environment variable is required. Set it before running npx ampx sandbox');
-}
-
-if (!sendQueueUrl) {
-  throw new Error('SEND_QUEUE_URL environment variable is required. Set it before running npx ampx sandbox');
 }
 
 const container = taskDefinition.addContainer('send-worker', {
@@ -182,7 +177,6 @@ const container = taskDefinition.addContainer('send-worker', {
     // Environment variables (not sensitive - public URLs)
     // Values are read from process.env during CDK synthesis
     SUPABASE_URL: supabaseUrl,
-    SEND_QUEUE_URL: sendQueueUrl,
     // Parameter path for SUPABASE_SERVICE_KEY - worker will fetch from Parameter Store at startup
     // This avoids CloudFormation validation issues with hierarchical paths
     SUPABASE_SERVICE_KEY_PARAM_PATH: supabaseServiceKeyParamPath,
@@ -280,7 +274,6 @@ const schedulerWorkerContainer = schedulerWorkerTaskDefinition.addContainer('sch
     AWS_REGION: awsRegion,
     // Environment variables (not sensitive - public URLs)
     SUPABASE_URL: supabaseUrl,
-    SEND_QUEUE_URL: sendQueueUrl,
     // Parameter path for SUPABASE_SERVICE_KEY - worker will fetch from Parameter Store at startup
     SUPABASE_SERVICE_KEY_PARAM_PATH: supabaseServiceKeyParamPath,
   },

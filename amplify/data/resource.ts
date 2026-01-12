@@ -1,7 +1,6 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 import { sendInvitationEmail } from '../functions/sendInvitationEmail/resource';
 import { testMailboxConnection } from '../functions/testMailboxConnection/resource';
-import { sendTestMessage } from '../functions/sendTestMessage/resource';
 
 const schema = a.schema({
   sendInvitationEmail: a
@@ -35,16 +34,6 @@ const schema = a.schema({
     .returns(a.json())
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(testMailboxConnection)),
-  
-  sendTestMessage: a
-    .query()
-    .arguments({
-      message_job_id: a.string(),
-      message_job_ids: a.string().array(),
-    })
-    .returns(a.json())
-    .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.function(sendTestMessage)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

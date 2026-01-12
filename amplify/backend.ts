@@ -5,13 +5,11 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { sendInvitationEmail } from './functions/sendInvitationEmail/resource';
-import { sendTestMessage } from './functions/sendTestMessage/resource';
 import { inboxChecker } from './functions/inboxChecker/resource';
 import { enrollmentMetric } from './functions/enrollmentMetric/resource';
 
@@ -22,38 +20,9 @@ const backend = defineBackend({
   auth,
   data,
   sendInvitationEmail,
-  sendTestMessage,
   inboxChecker,
   enrollmentMetric,
 });
-
-// Grant sendTestMessage Lambda permission to send messages to SQS queue
-// Queue ARN: arn:aws:sqs:us-west-2:686255981838:furnace-send-queue
-const sqsPolicyStatement = new iam.PolicyStatement({
-  sid: 'AllowSendMessageToSendQueue',
-  actions: [
-    'sqs:SendMessage',
-    'sqs:GetQueueUrl',
-    'sqs:GetQueueAttributes',
-  ],
-  resources: ['arn:aws:sqs:us-west-2:686255981838:furnace-send-queue'],
-});
-const sendTestMessageLambda = backend.sendTestMessage.resources.lambda;
-sendTestMessageLambda.addToRolePolicy(sqsPolicyStatement);
-
-// Set SEND_QUEUE_URL environment variable for sendTestMessage Lambda
-// Read from process.env during CDK synthesis (set before running npx ampx sandbox)
-const sendQueueUrlForLambda = process.env.SEND_QUEUE_URL;
-if (sendQueueUrlForLambda) {
-  // Use addPropertyOverride to set the environment variable
-  const cfnFunction = sendTestMessageLambda.node.defaultChild as lambda.CfnFunction;
-  if (cfnFunction) {
-    // Override the SEND_QUEUE_URL environment variable
-    cfnFunction.addPropertyOverride('Environment.Variables.SEND_QUEUE_URL', sendQueueUrlForLambda);
-  }
-} else {
-  console.warn('WARNING: SEND_QUEUE_URL environment variable is not set. Set it before running npx ampx sandbox');
-}
 
 // Create ECR repository for send worker Docker images
 const sendWorkerRepo = new ecr.Repository(backend.stack, 'SendWorkerRepo', {
@@ -90,30 +59,11 @@ const logGroup = new logs.LogGroup(backend.stack, 'SendWorkerLogGroup', {
   removalPolicy: cdk.RemovalPolicy.DESTROY,
 });
 
-// Reference existing SQS queue (already created manually)
-const sendQueue = sqs.Queue.fromQueueArn(
-  backend.stack,
-  'SendQueueRef',
-  'arn:aws:sqs:us-west-2:686255981838:furnace-send-queue'
-);
-
 // Create IAM task role (for application permissions)
 const taskRole = new iam.Role(backend.stack, 'SendWorkerTaskRole', {
   assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
   description: 'Role for ECS send worker tasks',
 });
-
-// Grant SQS permissions
-taskRole.addToPolicy(new iam.PolicyStatement({
-  sid: 'AllowSQSAccess',
-  actions: [
-    'sqs:ReceiveMessage',
-    'sqs:DeleteMessage',
-    'sqs:GetQueueAttributes',
-    'sqs:GetQueueUrl',
-  ],
-  resources: [sendQueue.queueArn],
-}));
 
 // Grant CloudWatch Logs permissions
 taskRole.addToPolicy(new iam.PolicyStatement({
@@ -251,22 +201,12 @@ const service = new ecs.FargateService(backend.stack, 'SendWorkerService', {
   // Note: Logging is configured in the task definition container, not at service level
 });
 
-// Auto-scaling based on SQS queue depth
-const scaling = service.autoScaleTaskCount({
-  minCapacity: 1,
-  maxCapacity: 20,
-});
-
-// Scale based on approximate number of messages in queue
-scaling.scaleOnMetric('QueueDepth', {
-  metric: sendQueue.metricApproximateNumberOfMessagesVisible(),
-  scalingSteps: [
-    { upper: 10, change: -1 },   // Scale down if < 10 messages
-    { lower: 50, change: +1 },   // Scale up if > 50 messages
-    { lower: 100, change: +2 },  // Scale up more if > 100 messages
-    { lower: 500, change: +5 },  // Scale up aggressively if > 500 messages
-  ],
-});
+// Auto-scaling disabled - send workers poll database directly
+// TODO: Implement database-based scaling if needed (e.g., based on pending message_jobs count)
+// const scaling = service.autoScaleTaskCount({
+//   minCapacity: 1,
+//   maxCapacity: 20,
+// });
 
 // ============================================
 // ECS Service for Scheduler Workers
@@ -296,16 +236,7 @@ const schedulerWorkerTaskRole = new iam.Role(backend.stack, 'SchedulerWorkerTask
   description: 'Role for ECS scheduler worker tasks',
 });
 
-// Grant SQS write permissions (to push message_jobs to send_queue)
-schedulerWorkerTaskRole.addToPolicy(new iam.PolicyStatement({
-  sid: 'AllowSQSAccess',
-  actions: [
-    'sqs:SendMessage',
-    'sqs:GetQueueUrl',
-    'sqs:GetQueueAttributes',
-  ],
-  resources: [sendQueue.queueArn],
-}));
+// SQS permissions removed - scheduler workers create message_jobs directly in database
 
 // Grant CloudWatch Logs permissions
 schedulerWorkerTaskRole.addToPolicy(new iam.PolicyStatement({

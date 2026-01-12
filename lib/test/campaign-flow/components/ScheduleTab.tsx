@@ -81,41 +81,41 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
         
         while (jobsHasMore) {
           const { data: jobsPage, error: jobsError } = await supabase
-            .from('message_jobs')
-            .select(`
+          .from('message_jobs')
+          .select(`
+            id,
+            status,
+            scheduled_at,
+            reserved_at,
+            sent_at,
+            interval_id,
+            message_data,
+            error_message,
+            retry_count,
+            lead:leads (
+              email,
+              name
+            ),
+            mailbox:mailboxes (
+              email_address
+            ),
+            node:nodes (
               id,
-              status,
-              scheduled_at,
-              reserved_at,
-              sent_at,
-              interval_id,
-              message_data,
-              error_message,
-              retry_count,
-              lead:leads (
-                email,
-                name
-              ),
-              mailbox:mailboxes (
-                email_address
-              ),
-              node:nodes (
-                id,
-                node_data
-              ),
-              interval:campaign_intervals (
-                id,
-                interval_time,
-                status
-              )
-            `)
+              node_data
+            ),
+            interval:campaign_intervals (
+              id,
+              interval_time,
+              status
+            )
+          `)
             .eq('campaign_id', campaignId)
             .range(jobsOffset, jobsOffset + jobsPageSize - 1)
             .order('created_at', { ascending: false });
 
-          if (jobsError) {
-            throw jobsError;
-          }
+        if (jobsError) {
+          throw jobsError;
+        }
 
           if (jobsPage && jobsPage.length > 0) {
             jobsData.push(...jobsPage);
@@ -134,30 +134,30 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
         
         while (enrollmentsHasMore) {
           const { data: enrollmentsPage, error: enrollmentsError } = await supabase
-            .from('enrollments')
-            .select(`
+          .from('enrollments')
+          .select(`
+            id,
+            state,
+            next_run_at,
+            current_node_id,
+            created_at,
+            updated_at,
+            lead:leads (
+              email,
+              name
+            ),
+            node:nodes (
               id,
-              state,
-              next_run_at,
-              current_node_id,
-              created_at,
-              updated_at,
-              lead:leads (
-                email,
-                name
-              ),
-              node:nodes (
-                id,
-                node_type,
-                node_data
-              )
-            `)
+              node_type,
+              node_data
+            )
+          `)
             .eq('campaign_id', campaignId)
             .range(enrollmentsOffset, enrollmentsOffset + enrollmentsPageSize - 1)
             .order('created_at', { ascending: false });
 
-          if (enrollmentsError) {
-            throw enrollmentsError;
+        if (enrollmentsError) {
+          throw enrollmentsError;
           }
 
           if (enrollmentsPage && enrollmentsPage.length > 0) {
@@ -202,7 +202,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       .filter(e => e.next_run_at !== null) // Only show enrollments with next_run_at
       .sort((a, b) => {
         return new Date(b.next_run_at!).getTime() - new Date(a.next_run_at!).getTime(); // Newest first
-      });
+    });
   }, [enrollments]);
 
   const getStatusColor = (status: string) => {
@@ -365,16 +365,16 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       flex: 0,
       render: (item) => (
         <View>
-          {item.mailbox && (
-            <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
-              {item.mailbox.email_address}
-            </Text>
-          )}
-          {item.error_message && (
-            <Text className="text-red-400 font-instrument text-xs" numberOfLines={1}>
-              Error
-            </Text>
-          )}
+              {item.mailbox && (
+                <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
+                  {item.mailbox.email_address}
+                </Text>
+              )}
+              {item.error_message && (
+                <Text className="text-red-400 font-instrument text-xs" numberOfLines={1}>
+                  Error
+                </Text>
+              )}
         </View>
       ),
     },
@@ -435,10 +435,10 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       flex: 0,
       render: (item) => (
         <View>
-          {item.node && (
-            <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
-              {item.node.node_type || '—'}
-            </Text>
+              {item.node && (
+                <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
+                  {item.node.node_type || '—'}
+                </Text>
           )}
         </View>
       ),
@@ -467,20 +467,20 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       )}
 
       {activeTab === 'enrollments' && (
-        <DataTable
+      <DataTable
           title="Enrollments"
           items={sortedEnrollments}
           columns={enrollmentColumns}
-          searchable={true}
-          searchPlaceholder="Search by lead email..."
-          searchFilter={(item, query) => {
-            const email = item.lead?.email?.toLowerCase() || '';
-            const name = item.lead?.name?.toLowerCase() || '';
-            return email.includes(query) || name.includes(query);
-          }}
+        searchable={true}
+        searchPlaceholder="Search by lead email..."
+        searchFilter={(item, query) => {
+          const email = item.lead?.email?.toLowerCase() || '';
+          const name = item.lead?.name?.toLowerCase() || '';
+          return email.includes(query) || name.includes(query);
+        }}
           emptyMessage="No enrollments found for this campaign"
-          getItemKey={(item) => item.id}
-        />
+        getItemKey={(item) => item.id}
+      />
       )}
     </View>
   );

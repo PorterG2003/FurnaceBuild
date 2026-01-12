@@ -275,7 +275,7 @@ export default function TestWorkerPage() {
 
       // Message jobs are now created directly in the database
       // Send workers will pick them up automatically via database polling
-      setCurrentStep('complete');
+        setCurrentStep('complete');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setError(errorMessage);

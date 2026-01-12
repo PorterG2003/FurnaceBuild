@@ -24,9 +24,15 @@ const backend = defineBackend({
   enrollmentMetric,
 });
 
+// Get stack name for unique resource naming (ECR repos and log groups must be unique per account)
+const stack = cdk.Stack.of(backend.stack);
+const stackName = stack.stackName;
+// Extract a short identifier from stack name (last part after last dash, or use stack ID)
+const stackId = stackName.split('-').pop() || stackName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8);
+
 // Create ECR repository for send worker Docker images
 const sendWorkerRepo = new ecr.Repository(backend.stack, 'SendWorkerRepo', {
-  repositoryName: 'furnace/send-worker',
+  repositoryName: `furnace/send-worker-${stackId}`,
   imageScanOnPush: true,
   lifecycleRules: [
     {
@@ -47,14 +53,14 @@ const vpc = new ec2.Vpc(backend.stack, 'FurnaceVpc', {
 
 // Create ECS Cluster
 const cluster = new ecs.Cluster(backend.stack, 'FurnaceCluster', {
-  clusterName: 'furnace-cluster',
+  clusterName: `furnace-cluster-${stackId}`,
   vpc: vpc,
   containerInsights: true, // Enable CloudWatch Container Insights
 });
 
 // Create CloudWatch Log Group
 const logGroup = new logs.LogGroup(backend.stack, 'SendWorkerLogGroup', {
-  logGroupName: '/ecs/furnace/send-worker',
+  logGroupName: `/ecs/furnace/send-worker-${stackId}`,
   retention: logs.RetentionDays.ONE_WEEK,
   removalPolicy: cdk.RemovalPolicy.DESTROY,
 });
@@ -150,8 +156,6 @@ const taskDefinition = new ecs.FargateTaskDefinition(backend.stack, 'SendWorkerT
 // Determine SUPABASE_SERVICE_KEY parameter path based on environment
 // The worker will fetch this secret from Parameter Store at startup
 // This avoids CloudFormation validation issues with hierarchical paths
-const stack = cdk.Stack.of(backend.stack);
-const stackName = stack.stackName;
 
 const supabaseServiceKeyParamPath = stackName.includes('sandbox')
   ? '/amplify/furnacebuild/porter-sandbox-387f79dcc1/SUPABASE_SERVICE_KEY'
@@ -208,7 +212,7 @@ const service = new ecs.FargateService(backend.stack, 'SendWorkerService', {
 
 // Create ECR repository for scheduler worker Docker images
 const schedulerWorkerRepo = new ecr.Repository(backend.stack, 'SchedulerWorkerRepo', {
-  repositoryName: 'furnace/scheduler-worker',
+  repositoryName: `furnace/scheduler-worker-${stackId}`,
   imageScanOnPush: true,
   lifecycleRules: [
     {
@@ -219,7 +223,7 @@ const schedulerWorkerRepo = new ecr.Repository(backend.stack, 'SchedulerWorkerRe
 
 // Create CloudWatch Log Group for scheduler worker
 const schedulerWorkerLogGroup = new logs.LogGroup(backend.stack, 'SchedulerWorkerLogGroup', {
-  logGroupName: '/ecs/furnace/scheduler-worker',
+  logGroupName: `/ecs/furnace/scheduler-worker-${stackId}`,
   retention: logs.RetentionDays.ONE_WEEK,
   removalPolicy: cdk.RemovalPolicy.DESTROY,
 });

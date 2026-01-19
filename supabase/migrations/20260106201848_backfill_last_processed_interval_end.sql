@@ -6,7 +6,7 @@
 
 UPDATE campaigns c
 SET last_processed_interval_end = (
-  SELECT MAX(ci.interval_time)
+  SELECT MAX(ci.interval_end)
   FROM campaign_intervals ci
   WHERE ci.campaign_id = c.id
     AND ci.status = 'scheduled'

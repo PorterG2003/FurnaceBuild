@@ -83,6 +83,8 @@ export class WorkerStack extends cdk.Stack {
     const vpc = new ec2.Vpc(this, 'FurnaceVpc', {
       maxAzs: 2, // Use 2 availability zones for high availability
       natGateways: 0, // No NAT Gateway - use public subnets (cheaper, ~$32/month savings)
+      enableDnsHostnames: true, // Enable DNS hostnames for public IP resolution
+      enableDnsSupport: true, // Enable VPC DNS resolution (required for Supabase API calls)
     });
 
     // ============================================
@@ -228,6 +230,13 @@ export class WorkerStack extends cdk.Stack {
       },
     });
 
+    // Create security group for workers (allow all outbound, no inbound needed)
+    const workerSecurityGroup = new ec2.SecurityGroup(this, 'WorkerSecurityGroup', {
+      vpc: vpc,
+      description: `Security group for ${environment} workers (send + scheduler)`,
+      allowAllOutbound: true, // Allow all outbound traffic (DNS, HTTPS, SMTP)
+    });
+
     const sendWorkerService = new ecs.FargateService(this, 'SendWorkerService', {
       cluster: cluster,
       taskDefinition: sendWorkerTaskDefinition,
@@ -236,6 +245,7 @@ export class WorkerStack extends cdk.Stack {
       vpcSubnets: {
         subnetType: ec2.SubnetType.PUBLIC, // Public subnets for internet access
       },
+      securityGroups: [workerSecurityGroup], // Use explicit security group
     });
 
     this.sendWorkerService = sendWorkerService;
@@ -272,6 +282,7 @@ export class WorkerStack extends cdk.Stack {
       vpcSubnets: {
         subnetType: ec2.SubnetType.PUBLIC, // Public subnets for internet access
       },
+      securityGroups: [workerSecurityGroup], // Reuse same security group
       healthCheckGracePeriod: cdk.Duration.seconds(60),
     });
 

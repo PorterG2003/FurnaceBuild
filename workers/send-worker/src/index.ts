@@ -21,7 +21,8 @@ async function fetchSecretFromParameterStore(
     if (!response.Parameter?.Value) {
       throw new Error(`Parameter ${parameterPath} has no value`);
     }
-    return response.Parameter.Value;
+    // Trim whitespace and newlines (common when pasting secrets)
+    return response.Parameter.Value.trim();
   } catch (error) {
     throw new Error(`Failed to fetch secret from Parameter Store: ${error}`);
   }
@@ -36,6 +37,11 @@ async function fetchSecretFromParameterStore(
  * - AWS_REGION: AWS region (defaults to us-west-2)
  */
 async function main() {
+  // Log immediately on startup to verify process is running
+  console.log('[STARTUP] Send worker process starting...');
+  console.log('[STARTUP] Node version:', process.version);
+  console.log('[STARTUP] Working directory:', process.cwd());
+  
   try {
     // Validate environment variables
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -96,10 +102,28 @@ async function main() {
     await worker.start();
 
   } catch (error) {
-    console.error('Fatal error:', error);
+    console.error('[FATAL ERROR] Send worker failed to start:', error);
+    if (error instanceof Error) {
+      console.error('[FATAL ERROR] Error message:', error.message);
+      console.error('[FATAL ERROR] Stack trace:', error.stack);
+    }
     process.exit(1);
   }
 }
+
+// Log unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[UNHANDLED REJECTION] Unhandled rejection at:', promise);
+  console.error('[UNHANDLED REJECTION] Reason:', reason);
+  process.exit(1);
+});
+
+// Log uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('[UNCAUGHT EXCEPTION] Uncaught exception:', error);
+  console.error('[UNCAUGHT EXCEPTION] Stack:', error.stack);
+  process.exit(1);
+});
 
 main();
 

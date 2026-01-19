@@ -21,7 +21,8 @@ async function fetchSecretFromParameterStore(
     if (!response.Parameter?.Value) {
       throw new Error(`Parameter ${parameterPath} has no value`);
     }
-    return response.Parameter.Value;
+    // Trim whitespace and newlines (common when pasting secrets)
+    return response.Parameter.Value.trim();
   } catch (error) {
     throw new Error(`Failed to fetch secret from Parameter Store: ${error}`);
   }

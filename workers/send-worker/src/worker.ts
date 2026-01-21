@@ -101,58 +101,33 @@ export class SendWorker {
       // Job is already claimed (status = 'reserved') and scheduled_at <= NOW() is guaranteed by RPC function
       // No need to check scheduled_at or load from database again
 
-      // 1. TODO: Reserve job (atomic throttle check)
-      // For now, we'll skip throttling and proceed
-      // const reserved = await this.reserveMessageJob(messageJob);
-      // if (!reserved) {
-      //   // Throttle limit hit, mark job for retry/reschedule
-      //   return;
-      // }
-
-      // 2. Load related data (lead, mailbox, node config)
+      // 1. Load related data (lead, mailbox, node config)
       const { lead, mailbox, nodeConfig } = await this.loadJobData(messageJob);
 
-      // 2b. Check minimum gap between sends for this mailbox
-      // This ensures we don't send emails too quickly from the same mailbox
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-      const { data: throttle, error: throttleError } = await this.supabase
-        .from('mailbox_throttles')
-        .select('last_sent_at, min_gap_seconds, sent_count')
-        .eq('mailbox_id', messageJob.mailbox_id)
-        .eq('date', today)
-        .maybeSingle();
+      // 2. Atomic throttle check and reservation
+      // This atomically checks throttle limits and updates counters
+      // If throttle fails, job is cancelled by the function
+      const { data: throttleResult, error: throttleError } = await this.supabase
+        .rpc('check_mailbox_throttle_and_reserve', {
+          p_message_job_id: message_job_id
+        })
+        .single();
 
       if (throttleError) {
-        throw new Error(`Failed to check mailbox throttle for mailbox ${messageJob.mailbox_id}: ${throttleError.message}`);
+        throw new Error(`Failed to check mailbox throttle for message job ${message_job_id}: ${throttleError.message}`);
       }
 
-      // Get min gap (default to 180 seconds if not configured)
-      const minGapSeconds = throttle?.min_gap_seconds ?? 180;
+      // Type assertion for RPC result
+      const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
 
-      // Check if minimum gap is met
-      if (throttle?.last_sent_at) {
-        const lastSentAt = new Date(throttle.last_sent_at);
-        const now = new Date();
-        const timeSinceLastSend = (now.getTime() - lastSentAt.getTime()) / 1000; // seconds
-
-        if (timeSinceLastSend < minGapSeconds) {
-          const remainingSeconds = Math.ceil(minGapSeconds - timeSinceLastSend);
-          const errorMessage = `Minimum gap not met for mailbox ${messageJob.mailbox_id}. Last sent: ${lastSentAt.toISOString()}, Required gap: ${minGapSeconds}s, Time since last send: ${timeSinceLastSend.toFixed(1)}s, Remaining: ${remainingSeconds}s`;
-          
-          console.error(`[SEND WORKER] ${errorMessage}`);
-          
-          // Mark job as failed
-          await this.supabase
-            .from('message_jobs')
-            .update({
-              status: 'failed',
-              error_message: errorMessage,
-            })
-            .eq('id', message_job_id);
-
-          throw new Error(errorMessage);
-        }
+      if (!result?.success) {
+        // Throttle check failed - job already cancelled by RPC function
+        const failureReason = result?.failure_reason || 'Unknown throttle failure';
+        console.log(`[SEND WORKER] Throttle check failed for message job ${message_job_id}: ${failureReason}`);
+        return; // Skip this job, continue to next
       }
+
+      // Throttle check passed - proceed with sending
 
       // 3. Generate email content from template
       const subject = mergeTemplate(nodeConfig.subject || '', lead);
@@ -199,34 +174,8 @@ export class SendWorker {
         })
         .eq('id', message_job_id);
 
-      // 6a. Update mailbox_throttles last_sent_at (for min gap enforcement)
-      // This ensures the next send from this mailbox will check the correct last_sent_at
-      try {
-        const sentAt = new Date().toISOString();
-        const newSentCount = (throttle?.sent_count ?? 0) + 1;
-        
-        const { error: throttleUpdateError } = await this.supabase
-          .from('mailbox_throttles')
-          .upsert({
-            mailbox_id: messageJob.mailbox_id,
-            date: today,
-            last_sent_at: sentAt,
-            sent_count: newSentCount,
-          }, {
-            onConflict: 'mailbox_id,date',
-            ignoreDuplicates: false,
-          });
-        
-        if (throttleUpdateError) {
-          // Log error but don't fail the send (email is already sent)
-          console.error(`[SEND WORKER] Failed to update mailbox_throttles for mailbox ${messageJob.mailbox_id}:`, throttleUpdateError);
-        } else {
-          console.log(`[SEND WORKER] Updated mailbox_throttles for mailbox ${messageJob.mailbox_id}: last_sent_at=${sentAt}, sent_count=${newSentCount}`);
-        }
-      } catch (error) {
-        // Log error but don't fail the send
-        console.error(`[SEND WORKER] Error updating mailbox_throttles for mailbox ${messageJob.mailbox_id}:`, error);
-      }
+      // 6a. Throttle counters already updated by check_mailbox_throttle_and_reserve() function
+      // No need to update mailbox_throttles here
 
       // 6b. Update enrollment to trigger scheduler re-evaluation
       // This allows the scheduler to pick up the enrollment immediately and proceed to next node
@@ -377,16 +326,12 @@ export class SendWorker {
   }
 
   /**
-   * TODO: Implement atomic job reservation with throttle checking
+   * @deprecated This method is no longer used. Throttle checking is now done via
+   * the check_mailbox_throttle_and_reserve() RPC function which is called directly
+   * in processMessageJob().
    */
   private async reserveMessageJob(messageJob: MessageJob): Promise<boolean> {
-    // This will call a Supabase function to atomically:
-    // 1. Check throttle limits
-    // 2. Reserve the job (update status to 'reserved')
-    // 3. Update throttle counters
-    // Returns true if reserved, false if throttle limit hit
-    // 
-    // For now, we'll skip this and implement it in Phase 4 (Pacing & Throttling)
+    // Deprecated - not used anymore
     return true;
   }
 

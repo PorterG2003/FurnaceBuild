@@ -8,16 +8,20 @@
 
 ## Overview
 
-Current completion: **~75%**  
+Current completion: **~80%** (updated January 21, 2026)  
 Target completion: **100%** (production ready)
 
-**Remaining Work**: ~25% across 4 main areas:
-1. **Critical Production Gaps** (High Priority) - 3 items
-2. **Feature Completeness** (Medium Priority) - 3 items  
-3. **Observability** (Medium Priority) - 1 item
-4. **Quality Assurance** (Low Priority) - 2 items
+**Completed**:
+- ✅ Phase 1.1: Atomic Job Reservation with Throttle Checking
+- ✅ Phase 2.1: Hourly/Daily Limit Enforcement (included in 1.1)
 
-**Estimated Total Effort**: 2-3 weeks (depending on team size)
+**Remaining Work**: ~20% across 4 main areas:
+1. **Critical Production Gaps** (High Priority) - 2 items remaining (1.2, 1.3)
+2. **Feature Completeness** (Medium Priority) - 2 items remaining (2.2, 2.3)
+3. **Observability** (Medium Priority) - 1 item (3.1)
+4. **Quality Assurance** (Low Priority) - 2 items (4.1, 4.2)
+
+**Estimated Total Effort**: 1.5-2 weeks (depending on team size)
 
 ---
 
@@ -29,8 +33,8 @@ Target completion: **100%** (production ready)
 
 ### 1.1 Atomic Job Reservation with Throttle Checking
 
-**Status**: ⚠️ Partial - Manual throttle checking, race conditions possible  
-**Effort**: 4-6 hours  
+**Status**: ✅ **COMPLETE** - January 21, 2026  
+**Effort**: 4-6 hours (completed)  
 **Dependencies**: None  
 **Approach**: Option B (Simplified) - Separate throttle check function
 
@@ -97,11 +101,12 @@ Target completion: **100%** (production ready)
 - ✅ **Flexible**: Can change throttle logic without touching claim function
 
 **Success Criteria**:
-- ✅ No race conditions when multiple workers process jobs for same mailbox
-- ✅ Throttle limits enforced atomically (daily, hourly, min-gap)
-- ✅ Jobs that fail throttle are cancelled (status = 'cancelled')
-- ✅ Claim function stays simple (no throttle logic)
-- ✅ Clear separation: claim vs. throttle checking
+- ✅ **COMPLETE**: No race conditions when multiple workers process jobs for same mailbox
+- ✅ **COMPLETE**: Throttle limits enforced atomically (daily, hourly, min-gap)
+- ✅ **COMPLETE**: Jobs that fail throttle are cancelled (status = 'cancelled')
+- ✅ **COMPLETE**: Claim function stays simple (no throttle logic)
+- ✅ **COMPLETE**: Clear separation: claim vs. throttle checking
+- ✅ **COMPLETE**: Race condition test UI built and all scenarios passing (min-gap, daily-limit, hourly-limit, mixed)
 
 ---
 
@@ -212,23 +217,23 @@ Target completion: **100%** (production ready)
 
 ### 2.1 Hourly/Daily Limit Enforcement
 
-**Status**: ⚠️ Schema exists, enforcement missing  
+**Status**: ✅ **COMPLETE** - January 21, 2026 (included in 1.1)  
 **Effort**: Already included in 1.1 (no separate work needed)  
 **Dependencies**: 1.1 (Atomic Job Reservation)
 
 **Note**: This is now part of 1.1 - throttle checking in `check_mailbox_throttle_and_reserve()` includes:
-- ✅ Daily limit check: `sent_count < daily_limit`
-- ✅ Hourly limit check: `hourly_sent[current_hour] < hourly_limit`
-- ✅ Min gap check: `NOW() - last_sent_at >= min_gap_seconds`
-- ✅ Throttle counter updates (increment sent_count, update hourly_sent)
+- ✅ **COMPLETE**: Daily limit check: `sent_count < daily_limit`
+- ✅ **COMPLETE**: Hourly limit check: `hourly_sent[current_hour] < hourly_limit`
+- ✅ **COMPLETE**: Min gap check: `NOW() - last_sent_at >= min_gap_seconds`
+- ✅ **COMPLETE**: Throttle counter updates (increment sent_count, update hourly_sent)
 
 **No separate implementation needed** - all throttle enforcement happens in 1.1.
 
 **Success Criteria** (verified as part of 1.1):
-- ✅ Daily limits enforced correctly
-- ✅ Hourly limits enforced correctly
-- ✅ Min gap enforced correctly
-- ✅ Limits reset at appropriate times (daily at midnight, hourly at hour change)
+- ✅ **COMPLETE**: Daily limits enforced correctly
+- ✅ **COMPLETE**: Hourly limits enforced correctly
+- ✅ **COMPLETE**: Min gap enforced correctly
+- ✅ **COMPLETE**: Limits reset at appropriate times (daily at midnight, hourly at hour change)
 
 ---
 
@@ -454,7 +459,7 @@ Target completion: **100%** (production ready)
 **Recommended sequence** (based on dependencies and priority):
 
 ### Week 1: Critical Production Gaps
-1. **Day 1-2**: Atomic Job Reservation (1.1) - **Blocks production**
+1. **Day 1-2**: ✅ **COMPLETE** Atomic Job Reservation (1.1) - **Blocks production**
 2. **Day 3-4**: IMAP Inbox Checker (1.2) - **Feature completeness**
 3. **Day 5**: Connection Pooling (1.3) - **Cost efficiency**
 
@@ -532,4 +537,5 @@ Target completion: **100%** (production ready)
 2. **Prioritize** based on business needs
 3. **Assign** tasks to developers
 4. **Set up** development environment for testing
-5. **Begin** Phase 1.1 (Atomic Job Reservation)
+5. ✅ **COMPLETE** Phase 1.1 (Atomic Job Reservation) - January 21, 2026
+6. **Next**: Begin Phase 1.2 (IMAP Inbox Checker) or Phase 1.3 (Connection Pooling)

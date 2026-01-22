@@ -7,7 +7,7 @@ import { ConfirmDeleteModal } from '@/components/ui/modals/ConfirmDeleteModal';
 import { getUserByExternalId } from '@/lib/supabase/services/users';
 import { getTestCampaigns, deleteTestCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
-import { TrashIcon, ArrowRightIcon } from 'react-native-heroicons/outline';
+import { TrashIcon, ArrowRightIcon, ArrowPathIcon, PlusIcon } from 'react-native-heroicons/outline';
 import { format } from 'date-fns';
 
 export default function TestCampaignsPage() {
@@ -102,7 +102,7 @@ export default function TestCampaignsPage() {
     <PageLayout>
       {/* Header */}
       <View className="mb-4">
-        <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center justify-between mb-3">
           <View className="flex-1">
             <Text className="text-xl font-instrument-semibold text-white mb-1">
               Test Campaigns
@@ -111,15 +111,40 @@ export default function TestCampaignsPage() {
               View and manage your test campaigns
             </Text>
           </View>
-          <Pressable
-            onPress={() => router.back()}
-            className="px-3 py-1.5 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg"
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <Text className="text-gray-300 font-instrument text-xs">Back</Text>
-          </Pressable>
+          <View className="flex-row gap-2">
+            <Pressable
+              onPress={loadTestCampaigns}
+              className="px-3 py-1.5 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg flex-row items-center gap-1.5"
+              accessibilityRole="button"
+              accessibilityLabel="Refresh campaigns"
+            >
+              <ArrowPathIcon size={14} color="#9ca3af" />
+              <Text className="text-gray-300 font-instrument text-xs">Refresh</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.back()}
+              className="px-3 py-1.5 bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg"
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+            >
+              <Text className="text-gray-300 font-instrument text-xs">Back</Text>
+            </Pressable>
+          </View>
         </View>
+        
+        {/* Create Campaign Button */}
+        <Pressable
+          onPress={() => router.push('/test/campaign-flow' as any)}
+          className="bg-brand-orange rounded-lg px-4 py-2.5 flex-row items-center justify-center gap-2"
+          style={{ backgroundColor: '#f85102' }}
+          accessibilityRole="button"
+          accessibilityLabel="Create new test campaign"
+        >
+          <PlusIcon size={16} color="#fff" />
+          <Text className="text-white font-instrument-semibold text-sm">
+            Create Test Campaign
+          </Text>
+        </Pressable>
       </View>
 
       {error && (
@@ -133,28 +158,17 @@ export default function TestCampaignsPage() {
           <Text className="text-gray-400 font-instrument text-center text-base mb-2">
             No test campaigns found
           </Text>
-          <Text className="text-gray-500 font-instrument text-center text-sm">
+          <Text className="text-gray-500 font-instrument text-center text-sm mb-6">
             Create a new test campaign to get started
           </Text>
-          <Pressable
-            onPress={() => router.push('/test/campaign-flow' as any)}
-            className="mt-6 bg-brand-orange rounded-lg px-6 py-3 self-center"
-            style={{ backgroundColor: '#f85102' }}
-            accessibilityRole="button"
-            accessibilityLabel="Create new test campaign"
-          >
-            <Text className="text-white font-instrument-semibold text-base">
-              Create Test Campaign
-            </Text>
-          </Pressable>
         </View>
       ) : (
         <ScrollView>
-          <View className="gap-2">
+          <View className="gap-3">
             {testCampaigns.map((campaign) => (
               <View
                 key={campaign.id}
-                className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-3"
+                className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4"
               >
                 <View className="flex-row items-center justify-between mb-2">
                   <View className="flex-1 mr-3">

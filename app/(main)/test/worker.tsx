@@ -8,6 +8,8 @@ import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
 import { getUserByExternalId, getAccountMembershipsForUser } from '@/lib/supabase/services/users';
 import { Button } from '@/components/ui/button';
+import { Tabs, type Tab } from '@/lib/test/campaign-flow/components/Tabs';
+import { RaceConditionTest } from './worker-race-condition';
 
 interface StepStatus {
   status: 'pending' | 'loading' | 'success' | 'error';
@@ -25,6 +27,7 @@ type WizardStep = 'configure' | 'processing' | 'complete';
  */
 export default function TestWorkerPage() {
   const { user } = useAuthenticator();
+  const [activeTab, setActiveTab] = useState<string>('basic');
   const [currentStep, setCurrentStep] = useState<WizardStep>('configure');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -645,49 +648,65 @@ export default function TestWorkerPage() {
     </View>
   );
 
+  const tabs: Tab[] = [
+    { id: 'basic', label: 'Basic Test' },
+    { id: 'race-condition', label: 'Race Condition Test' },
+  ];
+
   return (
     <PageLayout>
       <ScrollView className="flex-1">
         <View className="space-y-6">
-          {/* Step indicator */}
-          <View className="flex-row items-center justify-center space-x-2 mb-6">
-            <View className={`flex-1 h-1 rounded ${currentStep === 'configure' ? 'bg-blue-600' : 'bg-gray-700'}`} />
-            <View className={`w-8 h-8 rounded-full items-center justify-center ${currentStep === 'configure' ? 'bg-blue-600' : currentStep === 'processing' || currentStep === 'complete' ? 'bg-green-600' : 'bg-gray-700'}`}>
-              <Text className="text-white font-semibold text-sm">1</Text>
-            </View>
-            <View className={`flex-1 h-1 rounded ${currentStep === 'processing' || currentStep === 'complete' ? 'bg-blue-600' : 'bg-gray-700'}`} />
-            <View className={`w-8 h-8 rounded-full items-center justify-center ${currentStep === 'processing' ? 'bg-blue-600' : currentStep === 'complete' ? 'bg-green-600' : 'bg-gray-700'}`}>
-              <Text className="text-white font-semibold text-sm">2</Text>
-            </View>
-            <View className={`flex-1 h-1 rounded ${currentStep === 'complete' ? 'bg-blue-600' : 'bg-gray-700'}`} />
-            <View className={`w-8 h-8 rounded-full items-center justify-center ${currentStep === 'complete' ? 'bg-green-600' : 'bg-gray-700'}`}>
-              <Text className="text-white font-semibold text-sm">3</Text>
-            </View>
-          </View>
+          {/* Tabs */}
+          <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-          {currentStep === 'configure' && renderConfigureStep()}
-          {currentStep === 'processing' && renderProcessingStep()}
-          {currentStep === 'complete' && renderCompleteStep()}
+          {/* Basic Test Tab */}
+          {activeTab === 'basic' && (
+            <>
+              {/* Step indicator */}
+              <View className="flex-row items-center justify-center space-x-2 mb-6">
+                <View className={`flex-1 h-1 rounded ${currentStep === 'configure' ? 'bg-blue-600' : 'bg-gray-700'}`} />
+                <View className={`w-8 h-8 rounded-full items-center justify-center ${currentStep === 'configure' ? 'bg-blue-600' : currentStep === 'processing' || currentStep === 'complete' ? 'bg-green-600' : 'bg-gray-700'}`}>
+                  <Text className="text-white font-semibold text-sm">1</Text>
+                </View>
+                <View className={`flex-1 h-1 rounded ${currentStep === 'processing' || currentStep === 'complete' ? 'bg-blue-600' : 'bg-gray-700'}`} />
+                <View className={`w-8 h-8 rounded-full items-center justify-center ${currentStep === 'processing' ? 'bg-blue-600' : currentStep === 'complete' ? 'bg-green-600' : 'bg-gray-700'}`}>
+                  <Text className="text-white font-semibold text-sm">2</Text>
+                </View>
+                <View className={`flex-1 h-1 rounded ${currentStep === 'complete' ? 'bg-blue-600' : 'bg-gray-700'}`} />
+                <View className={`w-8 h-8 rounded-full items-center justify-center ${currentStep === 'complete' ? 'bg-green-600' : 'bg-gray-700'}`}>
+                  <Text className="text-white font-semibold text-sm">3</Text>
+                </View>
+              </View>
 
-          <View className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
-            <Text className="text-yellow-400 font-semibold mb-2">⚠️ Important</Text>
-            <Text className="text-gray-300 text-sm leading-5">
-              {testMode === 'scale' ? (
-                <>
-                  • Scale tests skip SMTP sending - workers process jobs but don't send real emails{'\n'}
-                  • This allows testing auto-scaling without spamming recipients{'\n'}
-                  • Workers will still update status and create events for verification{'\n'}
-                  • Perfect for testing queue processing and ECS scaling behavior
-                </>
-              ) : (
-                <>
-                  • Make sure your mailbox has valid SMTP credentials{'\n'}
-                  • The test mailbox created here uses placeholder credentials{'\n'}
-                  • Update the mailbox with real SMTP settings before testing
-                </>
-              )}
-            </Text>
-          </View>
+              {currentStep === 'configure' && renderConfigureStep()}
+              {currentStep === 'processing' && renderProcessingStep()}
+              {currentStep === 'complete' && renderCompleteStep()}
+
+              <View className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
+                <Text className="text-yellow-400 font-semibold mb-2">⚠️ Important</Text>
+                <Text className="text-gray-300 text-sm leading-5">
+                  {testMode === 'scale' ? (
+                    <>
+                      • Scale tests skip SMTP sending - workers process jobs but don't send real emails{'\n'}
+                      • This allows testing auto-scaling without spamming recipients{'\n'}
+                      • Workers will still update status and create events for verification{'\n'}
+                      • Perfect for testing queue processing and ECS scaling behavior
+                    </>
+                  ) : (
+                    <>
+                      • Make sure your mailbox has valid SMTP credentials{'\n'}
+                      • The test mailbox created here uses placeholder credentials{'\n'}
+                      • Update the mailbox with real SMTP settings before testing
+                    </>
+                  )}
+                </Text>
+              </View>
+            </>
+          )}
+
+          {/* Race Condition Test Tab */}
+          {activeTab === 'race-condition' && <RaceConditionTest />}
         </View>
       </ScrollView>
     </PageLayout>

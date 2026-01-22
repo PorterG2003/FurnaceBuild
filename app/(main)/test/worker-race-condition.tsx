@@ -58,6 +58,7 @@ export function RaceConditionTest() {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [functionExists, setFunctionExists] = useState<boolean | null>(null);
   const [rpcError, setRpcError] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<Array<{ id: string; status: string; error_message: string | null }>>([]);
 
   // Start polling for status updates
   const startPolling = () => {
@@ -138,6 +139,11 @@ export function RaceConditionTest() {
         .select('id, status, error_message, updated_at')
         .in('id', testJobIds)
         .order('updated_at', { ascending: false });
+      
+      // Store jobs for cancellation reason display
+      if (jobs) {
+        setJobs(jobs);
+      }
 
       if (jobsError) throw jobsError;
 
@@ -269,35 +275,28 @@ export function RaceConditionTest() {
       }
       const account = memberships[0].account;
 
-      // 3. Get or create test mailbox
-      let mailbox;
-      const existingMailboxes = await getMailboxesByUser(userProfile.id);
-      const testMailbox = existingMailboxes.find(m => m.email_address.endsWith('@furnace.test'));
-      
-      if (testMailbox) {
-        mailbox = testMailbox;
-      } else {
-        mailbox = await createMailbox({
-          user_id: userProfile.id,
-          account_id: account.id,
-          email_address: `race-test-${Date.now()}@furnace.test`,
-          display_name: 'Race Condition Test Mailbox',
-          smtp_host: 'smtp.gmail.com',
-          smtp_port: 587,
-          smtp_username: 'test@example.com',
-          smtp_password: 'test-password',
-          smtp_use_tls: true,
-          smtp_use_ssl: false,
-          imap_host: 'imap.gmail.com',
-          imap_port: 993,
-          imap_username: 'test@example.com',
-          imap_password: 'test-password',
-          imap_use_ssl: true,
-          status: 'connected',
-          sync_enabled: false,
-          provider: 'gmail' as any,
-        });
-      }
+      // 3. Create a new mailbox for each test to ensure clean throttle state
+      // This prevents throttle counters from previous tests interfering with new tests
+      const mailbox = await createMailbox({
+        user_id: userProfile.id,
+        account_id: account.id,
+        email_address: `race-test-${scenario}-${Date.now()}@furnace.test`,
+        display_name: `Race Condition Test Mailbox - ${scenario}`,
+        smtp_host: 'smtp.gmail.com',
+        smtp_port: 587,
+        smtp_username: 'test@example.com',
+        smtp_password: 'test-password',
+        smtp_use_tls: true,
+        smtp_use_ssl: false,
+        imap_host: 'imap.gmail.com',
+        imap_port: 993,
+        imap_username: 'test@example.com',
+        imap_password: 'test-password',
+        imap_use_ssl: true,
+        status: 'connected',
+        sync_enabled: false,
+        provider: 'gmail' as any,
+      });
 
       setMailboxId(mailbox.id);
 
@@ -364,7 +363,7 @@ export function RaceConditionTest() {
 
       if (nodeError) throw nodeError;
 
-      // 8. Set up throttle limits
+      // 8. Set up throttle limits with clean state (new mailbox ensures no existing throttle data)
       const today = new Date().toISOString().split('T')[0];
       const currentHour = new Date().getHours();
       
@@ -376,25 +375,33 @@ export function RaceConditionTest() {
         min_gap_seconds: parseInt(minGapSeconds, 10),
         sent_count: 0,
         hourly_sent: {},
+        last_sent_at: null, // Start with no previous send
       };
 
       // Set initial state based on scenario
       if (scenario === 'daily-limit') {
-        throttleData.sent_count = parseInt(dailyLimit, 10) - 1; // One below limit
+        // Set sent_count to one below limit so first job can pass
+        throttleData.sent_count = parseInt(dailyLimit, 10) - 1;
       } else if (scenario === 'hourly-limit') {
+        // Set hourly_sent to one below limit so first job can pass
         throttleData.hourly_sent = { [currentHour.toString()]: parseInt(hourlyLimit, 10) - 1 };
       } else if (scenario === 'mixed') {
+        // Set both daily and hourly to allow 2 jobs, but min gap will cancel the second
+        // For mixed: first job should pass (daily/hourly allow it, last_sent_at is null)
+        // Second job will fail min gap (first job updates last_sent_at)
         throttleData.sent_count = parseInt(dailyLimit, 10) - 2;
         throttleData.hourly_sent = { [currentHour.toString()]: parseInt(hourlyLimit, 10) - 2 };
-        throttleData.last_sent_at = new Date(Date.now() - 30 * 1000).toISOString(); // 30 seconds ago
+        throttleData.last_sent_at = null; // Start with null so first job can pass, then it updates to NOW()
       } else {
-        // min-gap: set last_sent_at to now (will fail min gap check)
-        throttleData.last_sent_at = new Date().toISOString();
+        // min-gap: last_sent_at is null, so first job can pass
+        // Subsequent jobs will be cancelled because first job updates last_sent_at
+        throttleData.last_sent_at = null;
       }
 
+      // Insert throttle data (new mailbox means no existing record, so this is a clean insert)
       const { error: throttleError } = await supabase
         .from('mailbox_throttles')
-        .upsert(throttleData, { onConflict: 'mailbox_id,date' });
+        .insert(throttleData);
 
       if (throttleError) throw throttleError;
 
@@ -655,6 +662,42 @@ export function RaceConditionTest() {
                   </View>
                 ))}
               </View>
+              
+              {/* Show cancellation reasons if any jobs are cancelled */}
+              {jobStatus.cancelled > 0 && jobs.length > 0 && (
+                <View className="mt-4 pt-4 border-t border-white/10">
+                  <Text className="text-sm font-medium mb-2 text-gray-300">Cancellation Reasons</Text>
+                  <View className="space-y-1">
+                    {(() => {
+                      // Get unique error messages from cancelled jobs
+                      const cancelledJobs = jobs.filter(j => j.status === 'cancelled');
+                      const errorReasons = new Map<string, number>();
+                      cancelledJobs.forEach(job => {
+                        const reason = job.error_message || 'No reason provided';
+                        errorReasons.set(reason, (errorReasons.get(reason) || 0) + 1);
+                      });
+                      
+                      if (errorReasons.size === 0) {
+                        return (
+                          <Text className="text-gray-400 text-xs">
+                            No error messages found for cancelled jobs
+                          </Text>
+                        );
+                      }
+                      
+                      return Array.from(errorReasons.entries()).map(([reason, count]) => (
+                        <View key={reason} className="flex-row items-start gap-2 mb-1">
+                          <Text className="text-gray-400 text-xs flex-1 break-words">
+                            {reason}
+                          </Text>
+                          <Text className="text-gray-500 text-xs">({count})</Text>
+                        </View>
+                      ));
+                    })()}
+                  </View>
+                </View>
+              )}
+              
               {totalJobs > 0 && (
                 <View className="mt-4 pt-4 border-t border-white/10">
                   <View className="flex-row items-center justify-between">

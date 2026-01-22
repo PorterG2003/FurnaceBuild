@@ -114,7 +114,23 @@ export class SendWorker {
         .single();
 
       if (throttleError) {
-        throw new Error(`Failed to check mailbox throttle for message job ${message_job_id}: ${throttleError.message}`);
+        // RPC call failed - this could be a function not found error or other issue
+        // Check if job is still in reserved status - if so, mark as failed
+        // If not, it might have been cancelled by another process
+        const { data: currentJob } = await this.supabase
+          .from('message_jobs')
+          .select('status')
+          .eq('id', message_job_id)
+          .single();
+        
+        if (currentJob?.status === 'reserved') {
+          // Job is still reserved, so the RPC call genuinely failed
+          throw new Error(`Failed to check mailbox throttle for message job ${message_job_id}: ${throttleError.message}`);
+        } else {
+          // Job status changed (might be cancelled or processed by another worker)
+          console.log(`[SEND WORKER] Job ${message_job_id} status changed to ${currentJob?.status}, skipping throttle check`);
+          return; // Skip this job, continue to next
+        }
       }
 
       // Type assertion for RPC result

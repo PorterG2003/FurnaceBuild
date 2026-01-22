@@ -42,6 +42,7 @@ BEGIN
   FOR UPDATE;  -- Lock the job row
   
   -- If job not found or not in 'reserved' status, return failure
+  -- Note: We don't cancel the job here because it might have been cancelled/processed by another worker
   IF NOT FOUND THEN
     RETURN QUERY SELECT false, 'Job not found or not in reserved status'::TEXT;
     RETURN;

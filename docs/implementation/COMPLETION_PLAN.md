@@ -112,9 +112,19 @@ Target completion: **100%** (production ready)
 
 ### 1.2 Full IMAP Inbox Checker Implementation
 
-**Status**: ❌ Not Started - Infrastructure exists, logic missing  
-**Effort**: 1-2 days  
-**Dependencies**: None
+**Status**: 📋 **PLANNING** - Detailed plan created (January 21, 2026)  
+**Effort**: 2-3 days (moved to ECS worker for scale)  
+**Dependencies**: None  
+**Architecture**: ECS Fargate worker (replaces Lambda for scale)
+
+**Decision**: Moved from Lambda to ECS worker because:
+- Lambda timeout (5 min) cannot handle 1,000+ mailboxes
+- ECS allows continuous processing with no timeout limits
+- Parallel processing (10 mailboxes at a time per worker)
+- Consistent with existing worker architecture (send-worker, scheduler-worker)
+- Better cost efficiency at scale
+
+**See**: `docs/implementation/IMAP_INBOX_CHECKER_ECS_PLAN.md` for detailed implementation plan
 
 **Tasks**:
 1. Install IMAP library in Lambda:
@@ -239,9 +249,17 @@ Target completion: **100%** (production ready)
 
 ### 2.2 Email Thread Creation from Send Worker
 
-**Status**: ❌ Missing - Threads only created on reply  
-**Effort**: 2-4 hours  
+**Status**: ⏭️ **SKIPPED** - Not needed (January 21, 2026)  
+**Effort**: N/A  
 **Dependencies**: None
+
+**Decision**: Skip this feature. Current design is sufficient:
+- Sent emails are stored in `message_jobs` table (with full content in `message_data` JSONB)
+- Threads are created when IMAP checker finds replies (Phase 1.2)
+- IMAP checker can look up original `message_job` by `provider_message_id` to create thread
+- This avoids data duplication and storage costs
+- Inbox UI only shows threads with replies (current design)
+- If needed later, can query `message_jobs` directly for sent email history
 
 **Tasks**:
 1. Update send worker (`workers/send-worker/src/worker.ts`):
@@ -464,9 +482,9 @@ Target completion: **100%** (production ready)
 3. **Day 5**: Connection Pooling (1.3) - **Cost efficiency**
 
 ### Week 2: Feature Completeness & Observability
-4. **Day 1**: Email Thread Creation (2.2) - **UX improvement** (2.1 already done in 1.1)
-5. **Day 2-3**: Tracking Endpoints (2.3) - **Feature enhancement**
-6. **Day 4-5**: CloudWatch Metrics (3.1) - **Observability**
+4. **Day 1-2**: IMAP Inbox Checker (1.2) - **Feature completeness** (if not done in Week 1)
+5. **Day 3-4**: Tracking Endpoints (2.3) - **Feature enhancement**
+6. **Day 5**: CloudWatch Metrics (3.1) - **Observability**
 
 ### Week 3: Quality Assurance
 7. **Days 1-5**: Unit Tests (4.1)

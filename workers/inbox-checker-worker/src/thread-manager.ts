@@ -15,11 +15,15 @@ export class ThreadManager {
     message: ProcessedMessage
   ): Promise<boolean> {
     // Extract Message-ID from In-Reply-To (remove < > brackets if present)
-    const inReplyToMessageId = message.inReplyTo?.replace(/^<|>$/g, '');
+    const inReplyToRaw = message.inReplyTo?.trim();
+    if (!inReplyToRaw) return false;
+
+    const inReplyToMessageId = inReplyToRaw.replace(/^<|>$/g, '');
     if (!inReplyToMessageId) return false;
 
-    // Find the original message_job by provider_message_id
-    const { data: originalJob, error: jobError } = await this.supabase
+    // Find the original message_job by provider_message_id.
+    // DB may store with or without angle brackets depending on provider.
+    const { data: jobs, error: jobError } = await this.supabase
       .from('message_jobs')
       .select(`
         *,
@@ -28,9 +32,11 @@ export class ThreadManager {
         leads(*),
         mailboxes(account_id, email_address)
       `)
-      .eq('provider_message_id', inReplyToMessageId)
       .eq('status', 'sent')
-      .maybeSingle();
+      .in('provider_message_id', [inReplyToMessageId, `<${inReplyToMessageId}>`])
+      .limit(1);
+
+    const originalJob = Array.isArray(jobs) && jobs.length > 0 ? jobs[0] : null;
 
     if (jobError || !originalJob) {
       return false; // Not a reply to our message

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, TextInput, TouchableOpacity } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { PageLayout } from '@/components/ui/layout';
@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
+import type { Mailbox } from '@/lib/supabase/types';
 import { getUserByExternalId, getAccountMembershipsForUser } from '@/lib/supabase/services/users';
 import { Button } from '@/components/ui/button';
 import { Tabs, type Tab } from '@/lib/test/campaign-flow/components/Tabs';
@@ -36,6 +37,9 @@ export default function TestWorkerPage() {
   const [steps, setSteps] = useState<Record<string, StepStatus>>({});
 
   // Form data
+  const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
+  const [mailboxesLoading, setMailboxesLoading] = useState(true);
+  const [selectedMailboxId, setSelectedMailboxId] = useState<string | null>(null);
   const [testMode, setTestMode] = useState<'single' | 'scale'>('single');
   const [scaleCount, setScaleCount] = useState('100');
   const [recipientEmail, setRecipientEmail] = useState('test-recipient@example.com');
@@ -47,6 +51,44 @@ export default function TestWorkerPage() {
   const [totalCreated, setTotalCreated] = useState(0);
   const [totalSent, setTotalSent] = useState(0);
 
+  // Load user's mailboxes so user can pick one to send from
+  useEffect(() => {
+    if (!user?.userId) {
+      setMailboxesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setMailboxesLoading(true);
+    getUserByExternalId(user.userId)
+      .then((profile) => {
+        if (cancelled || !profile) return [] as Mailbox[];
+        return getMailboxesByUser(profile.id);
+      })
+      .then((list) => {
+        if (cancelled) return;
+        // Exclude test mailboxes — they skip SMTP and won't actually send
+        const realOnly = (list ?? []).filter(
+          (m) =>
+            !m.email_address.endsWith('@furnace.test') &&
+            m.email_address !== 'test@example.com'
+        );
+        setMailboxes(realOnly);
+        setSelectedMailboxId((prev) => {
+          if (prev && realOnly.some((m) => m.id === prev)) return prev;
+          return realOnly[0]?.id ?? null;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setMailboxes([]);
+      })
+      .finally(() => {
+        if (!cancelled) setMailboxesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.userId]);
+
   const updateStep = (step: string, status: StepStatus['status'], message?: string) => {
     setSteps(prev => ({
       ...prev,
@@ -57,6 +99,10 @@ export default function TestWorkerPage() {
   const handleNext = () => {
     if (currentStep === 'configure') {
       // Validate form
+      if (!mailboxesLoading && mailboxes.length > 0 && !selectedMailboxId) {
+        setError('Please select a mailbox to send from');
+        return;
+      }
       if (!recipientEmail || !recipientEmail.includes('@')) {
         setError('Please enter a valid recipient email address');
         return;
@@ -145,35 +191,46 @@ export default function TestWorkerPage() {
       const account = memberships[0].account;
       updateStep('account', 'success', `Account ready`);
 
-      // 4. Get or create mailbox
-      updateStep('mailbox', 'loading', 'Getting or creating mailbox...');
-      const existingMailboxes = await getMailboxesByUser(userProfile.id);
-      let mailbox;
-      if (existingMailboxes && existingMailboxes.length > 0) {
-        mailbox = existingMailboxes[0];
-        updateStep('mailbox', 'success', `Using existing mailbox`);
+      // 4. Resolve mailbox: use selected one, or get/create if none
+      updateStep('mailbox', 'loading', 'Resolving mailbox...');
+      let mailbox: Mailbox | null = null;
+      if (selectedMailboxId) {
+        mailbox = mailboxes.find((m) => m.id === selectedMailboxId) ?? null;
+        if (!mailbox) {
+          const { data } = await supabase.from('mailboxes').select('*').eq('id', selectedMailboxId).single();
+          mailbox = data;
+        }
+      }
+      if (!mailbox) {
+        const existingMailboxes = await getMailboxesByUser(userProfile.id);
+        if (existingMailboxes && existingMailboxes.length > 0) {
+          mailbox = existingMailboxes[0];
+          updateStep('mailbox', 'success', `Using ${mailbox.email_address}`);
+        } else {
+          mailbox = await createMailbox({
+            user_id: userProfile.id,
+            account_id: account.id,
+            email_address: 'test@example.com',
+            display_name: 'Test Mailbox',
+            smtp_host: 'smtp.gmail.com',
+            smtp_port: 587,
+            smtp_username: 'test@example.com',
+            smtp_password: 'test-password',
+            smtp_use_tls: true,
+            smtp_use_ssl: false,
+            imap_host: 'imap.gmail.com',
+            imap_port: 993,
+            imap_username: 'test@example.com',
+            imap_password: 'test-password',
+            imap_use_ssl: true,
+            status: 'connected',
+            sync_enabled: false,
+            provider: 'gmail' as any,
+          });
+          updateStep('mailbox', 'success', `Created test mailbox (⚠️ Update SMTP credentials!)`);
+        }
       } else {
-        mailbox = await createMailbox({
-          user_id: userProfile.id,
-          account_id: account.id,
-          email_address: 'test@example.com',
-          display_name: 'Test Mailbox',
-          smtp_host: 'smtp.gmail.com',
-          smtp_port: 587,
-          smtp_username: 'test@example.com',
-          smtp_password: 'test-password',
-          smtp_use_tls: true,
-          smtp_use_ssl: false,
-          imap_host: 'imap.gmail.com',
-          imap_port: 993,
-          imap_username: 'test@example.com',
-          imap_password: 'test-password',
-          imap_use_ssl: true,
-          status: 'connected',
-          sync_enabled: false,
-          provider: 'gmail' as any,
-        });
-        updateStep('mailbox', 'success', `Created test mailbox (⚠️ Update SMTP credentials!)`);
+        updateStep('mailbox', 'success', `Using ${mailbox.email_address}`);
       }
 
       // 5. Create test lead(s) with custom recipient
@@ -330,11 +387,62 @@ export default function TestWorkerPage() {
       <View>
         <Text className="text-3xl font-bold text-white mb-2">Configure Test Email</Text>
         <Text className="text-gray-400 text-base">
-          Customize the recipient and message content for your test email.
+          Choose a mailbox to send from, then customize the recipient and message.
         </Text>
       </View>
 
       <View className="space-y-4">
+        {/* Send from: mailbox picker */}
+        <View>
+          <Text className="text-sm font-medium mb-2 text-gray-300">Send from *</Text>
+          {mailboxesLoading ? (
+            <View className="border border-white/30 rounded-xl px-4 py-4 bg-white/5 flex-row items-center">
+              <ActivityIndicator size="small" color="#3b82f6" />
+              <Text className="text-gray-400 ml-3">Loading your mailboxes…</Text>
+            </View>
+          ) : mailboxes.length === 0 ? (
+            <View className="border border-amber-500/50 rounded-xl px-4 py-3 bg-amber-500/10">
+              <Text className="text-amber-400 text-sm">
+                No mailboxes yet. Add a mailbox in Settings first, or we’ll create a placeholder for this test.
+              </Text>
+            </View>
+          ) : (
+            <View className="gap-2">
+              {mailboxes.map((m) => (
+                <TouchableOpacity
+                  key={m.id}
+                  onPress={() => {
+                    setSelectedMailboxId(m.id);
+                    setError(null);
+                  }}
+                  className={`rounded-xl border px-4 py-3 ${
+                    selectedMailboxId === m.id
+                      ? 'bg-blue-600/20 border-blue-500'
+                      : 'bg-white/5 border-white/30'
+                  }`}
+                >
+                  <Text
+                    className={`font-medium ${selectedMailboxId === m.id ? 'text-white' : 'text-gray-300'}`}
+                    numberOfLines={1}
+                  >
+                    {m.email_address}
+                  </Text>
+                  {(m.display_name || m.provider) && (
+                    <Text className="text-gray-500 text-xs mt-0.5" numberOfLines={1}>
+                      {[m.display_name, m.provider].filter(Boolean).join(' · ')}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {!mailboxesLoading && mailboxes.length > 0 && (
+            <Text className="text-gray-500 text-xs mt-1">
+              Use this mailbox to test send + inbox checker (reply detection).
+            </Text>
+          )}
+        </View>
+
         {/* Test Mode Selector */}
         <View>
           <Text className="text-sm font-medium mb-2 text-gray-300">Test Mode</Text>

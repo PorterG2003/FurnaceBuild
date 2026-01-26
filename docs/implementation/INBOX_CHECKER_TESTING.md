@@ -357,6 +357,37 @@ WHERE sync_enabled = true
 
 ## Troubleshooting
 
+### Which “status” we mean
+
+We’re talking about the **mailboxes** table, column **`status`** (`mailboxes.status`). Allowed values: `'connected'`, `'disconnected'`, `'error'` (see schema). It’s the mailbox’s connection/health state.
+
+- **Who sets it to `'error'`**  
+  The inbox-checker worker sets **`mailboxes.status`** to `'error'` (and **`mailboxes.error_message`**) when it hits auth or config-style IMAP failures. The worker **never** sets it back to `'connected'`.
+
+- **When does it get reset to `'connected'`?**  
+  Only when something else updates the row:
+  - User runs **“Test connection”** in the Senders UI and it succeeds → that flow sets `mailboxes.status = 'connected'` and clears `error_message`.
+  - User adds/edits the mailbox in Senders and saves → new-connect flow sets `status: 'connected'`.
+  - Manual fix (e.g. SQL or an admin):  
+    `UPDATE mailboxes SET status = 'connected', error_message = NULL WHERE id = '...'`.
+
+- **Effect of `'error'`**  
+  `claim_mailboxes_to_check` only returns rows where `mailboxes.status = 'connected'`. So once the worker has set `status = 'error'`, that mailbox is no longer claimed for IMAP checking until one of the resets above happens.
+
+---
+
+### ENOTFOUND / “getaddrinfo ENOTFOUND imap.…”
+
+DNS can’t resolve the IMAP hostname. Usually this means the mailbox has the wrong **IMAP host** (typo or wrong provider).
+
+- **Example**: `imap.aerosendtitan.com` → not a valid host. For **Titan** use `imap.titan.email` (and SMTP `smtp.titan.email`).
+- **Fix**: In your app’s mailbox/sender settings, set IMAP host to the provider’s real host (e.g. Gmail: `imap.gmail.com`, Titan: `imap.titan.email`, etc.).
+
+**How the worker uses `mailboxes.status` and `mailboxes.error_message`**  
+- **Config-like failures** (e.g. `ENOTFOUND` / bad host): worker sets **`mailboxes.status`** = `'error'` and **`mailboxes.error_message`** = that error. The mailbox is then excluded from `claim_mailboxes_to_check` until you fix the config and something resets `status` (e.g. “Test connection” in Senders, or a manual UPDATE).  
+- **Transient failures** (e.g. `ETIMEDOUT`, `ECONNREFUSED`): worker only updates **`mailboxes.error_message`**; **`mailboxes.status`** is left as-is (usually `'connected'`), so we keep claiming and retrying.  
+- **Auth failures**: worker sets **`mailboxes.status`** = `'error'` and **`mailboxes.error_message`** (same as bad host). Again, only “Test connection” or a manual change will set it back to `'connected'`.
+
 ### Worker Not Processing Mailboxes
 
 1. **Check worker is running**:
@@ -383,7 +414,110 @@ WHERE sync_enabled = true
      );
    ```
 
-### No Replies Detected
+### Debug: Replied to test message but no thread was created
+
+Work through these in order. Replace placeholders with your real IDs.
+
+**Step 1 – Confirm the send and Message-ID**
+
+```sql
+-- Use the message job ID from the test UI, or find the most recent sent job for your mailbox
+SELECT 
+  id,
+  mailbox_id,
+  provider_message_id,
+  status,
+  sent_at,
+  enrollment_id
+FROM message_jobs
+WHERE mailbox_id = '<your-mailbox-id>'
+  AND status = 'sent'
+ORDER BY sent_at DESC
+LIMIT 5;
+```
+
+- `provider_message_id` must be non-null (e.g. `<something@domain>` or `something@domain`).
+- If it’s null, the send worker didn’t record a Message-ID; check send-worker logs.
+
+**Step 2 – Confirm the mailbox is being checked**
+
+```sql
+SELECT 
+  id,
+  email_address,
+  sync_enabled,
+  status,
+  last_synced_at,
+  (last_synced_at > NOW() - INTERVAL '10 minutes') AS synced_recently
+FROM mailboxes
+WHERE id = '<your-mailbox-id>';
+```
+
+- `sync_enabled` must be `true`, `status` `'connected'`.
+- `last_synced_at` should be recent (within the last 10 minutes if the worker is running).
+- If `last_synced_at` is old or null, the mailbox isn’t being claimed/processed. Check that the inbox-checker worker is running and that this mailbox matches the claim criteria.
+
+**Step 3 – Check inbox-checker logs**
+
+```bash
+aws logs tail /ecs/furnace/inbox-checker-worker-dev --since 30m --region us-west-2
+```
+
+Look for:
+
+- `[INBOX CHECKER] Processing mailbox <id>` for your mailbox.
+- `[INBOX CHECKER] Found X new message(s)` — if 0, the reply wasn’t found (see Step 4).
+- `Reply detected and processed` — reply was matched and thread created.
+- `Message ... has In-Reply-To but doesn't match any sent message` — reply had In-Reply-To but lookup by `provider_message_id` failed (see Step 5).
+- Any stack traces or “Error creating email_message” / “Error creating email_thread”.
+
+**Step 4 – Time window and IMAP search**
+
+Replies are only found if they’re in the “since” window:
+
+- After a recent sync: messages **since** `last_synced_at`.
+- First sync for that mailbox: last 7 days.
+
+If the reply landed before that window, the worker won’t see it. Ensure you replied **after** the test send and, if possible, after the mailbox was last synced (or force a resync by setting `last_synced_at` to an older time for that mailbox).
+
+**Step 5 – In-Reply-To vs provider_message_id**
+
+Matching is: reply’s `In-Reply-To` (after stripping `<>`) equals `message_jobs.provider_message_id`. Format mismatches are a common cause of “no thread”:
+
+- Some providers store Message-IDs with angle brackets, others without.
+- The worker now tries both forms when matching (see code). If you still see “doesn’t match any sent message”:
+  - In Step 1, note the **exact** `provider_message_id` (including or excluding `<>`).
+  - When you can, inspect the reply’s raw `In-Reply-To` (e.g. “Show original” in Gmail). It should be the same token, possibly with `<>` around it.
+  - If they differ (e.g. different host, rewritten ID), the provider is rewriting Message-IDs and we’ll need to handle that case explicitly.
+
+**Step 6 – Database and permissions**
+
+If logs show “Reply detected” but no row in `email_threads` / `email_messages`:
+
+- Confirm the `email_threads` and `email_messages` tables exist and match the current schema.
+- Confirm the worker’s Supabase role can `INSERT` into both and that RLS (if any) allows it.
+- Look for “Error creating email_thread” or “Error creating email_message” in the logs and fix the underlying constraint/permission issue.
+
+**Quick “reply match” check**
+
+If you have the message job ID and the reply’s `In-Reply-To` value (e.g. `\<1234567890.abc@furnace.build\>`):
+
+```sql
+-- Replace with the In-Reply-To value from the reply (try with and without < >)
+SELECT id, provider_message_id, status
+FROM message_jobs
+WHERE status = 'sent'
+  AND (
+    provider_message_id = '1234567890.abc@furnace.build'
+    OR provider_message_id = '<1234567890.abc@furnace.build>'
+  );
+```
+
+If this returns no rows, the reply’s In-Reply-To and our stored `provider_message_id` don’t match; use that to track down format/rewriting differences.
+
+---
+
+### No Replies Detected (general)
 
 1. **Verify message was sent**:
    ```sql
@@ -393,12 +527,12 @@ WHERE sync_enabled = true
    ```
 
 2. **Check In-Reply-To header**:
-   - Reply email must have `In-Reply-To` header matching `provider_message_id`
-   - Remove `<` and `>` brackets if present
+   - Reply email must have `In-Reply-To` header matching `provider_message_id` (with or without `<>`).
+   - The worker normalizes angle brackets when matching.
 
 3. **Verify IMAP search is working**:
-   - Check CloudWatch logs for "Found X new message(s)"
-   - Verify messages are being fetched
+   - Check CloudWatch logs for "Found X new message(s)".
+   - Ensure the reply arrived after the mailbox’s `last_synced_at` (or within the first-sync 7-day window).
 
 ### Duplicate Processing
 

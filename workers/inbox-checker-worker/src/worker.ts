@@ -152,22 +152,39 @@ export class InboxCheckerWorker {
       console.log(`[INBOX CHECKER] Mailbox ${mailbox.id} processed: ${replies} replies, ${bounces} bounces, ${unsubscribes} unsubscribes`);
     } catch (error) {
       console.error(`[INBOX CHECKER] Error processing mailbox ${mailbox.id}:`, error);
-      
-      // Mark mailbox as error if authentication failed
-      if (error instanceof Error && (
-        error.message.includes('authentication') ||
-        error.message.includes('login') ||
-        error.message.includes('credentials')
-      )) {
+
+      // Record error_message so the UI can show it. Only set status = 'error' for
+      // failures that look permanent (bad config), so we don't stop checking on
+      // transient network issues.
+      const err = error instanceof Error ? error : new Error(String(error));
+      const code = (err as NodeJS.ErrnoException).code;
+      const isAuthError =
+        err.message.includes('authentication') ||
+        err.message.includes('login') ||
+        err.message.includes('credentials');
+      // ENOTFOUND = wrong hostname → treat as config error, stop claiming
+      const isConfigError = code === 'ENOTFOUND' ||
+        (err.message && err.message.includes('getaddrinfo ENOTFOUND'));
+      // Timeouts/refused might be transient → record but keep status
+      const isTransientError =
+        code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ENETUNREACH';
+
+      const msg = isConfigError
+        ? `IMAP host unreachable: ${err.message} (check IMAP host, e.g. imap.titan.email for Titan)`
+        : err.message;
+
+      if (isAuthError || isConfigError) {
         await this.supabase
           .from('mailboxes')
-          .update({ 
-            status: 'error',
-            error_message: error.message,
-          })
+          .update({ status: 'error', error_message: msg })
+          .eq('id', mailbox.id);
+      } else if (isTransientError) {
+        await this.supabase
+          .from('mailboxes')
+          .update({ error_message: msg })
           .eq('id', mailbox.id);
       }
-      
+
       throw error;
     }
   }

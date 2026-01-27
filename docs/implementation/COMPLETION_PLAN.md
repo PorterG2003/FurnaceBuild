@@ -8,20 +8,22 @@
 
 ## Overview
 
-Current completion: **~80%** (updated January 21, 2026)  
+Current completion: **~90%** (updated January 28, 2026)  
 Target completion: **100%** (production ready)
 
 **Completed**:
-- ✅ Phase 1.1: Atomic Job Reservation with Throttle Checking
+- ✅ Phase 1.1: Atomic Job Reservation with Throttle Checking (January 21, 2026)
+- ✅ Phase 1.2: Full IMAP Inbox Checker Implementation (January 28, 2026)
 - ✅ Phase 2.1: Hourly/Daily Limit Enforcement (included in 1.1)
+- ✅ Phase 2.2: Email Thread Creation (backfilled on reply, January 28, 2026)
 
-**Remaining Work**: ~20% across 4 main areas:
-1. **Critical Production Gaps** (High Priority) - 2 items remaining (1.2, 1.3)
-2. **Feature Completeness** (Medium Priority) - 2 items remaining (2.2, 2.3)
+**Remaining Work**: ~10% across 3 main areas:
+1. **Critical Production Gaps** (High Priority) - 1 item remaining (1.3)
+2. **Feature Completeness** (Medium Priority) - 1 item remaining (2.3)
 3. **Observability** (Medium Priority) - 1 item (3.1)
 4. **Quality Assurance** (Low Priority) - 2 items (4.1, 4.2)
 
-**Estimated Total Effort**: 1.5-2 weeks (depending on team size)
+**Estimated Total Effort**: 3-5 days (depending on team size)
 
 ---
 
@@ -112,8 +114,8 @@ Target completion: **100%** (production ready)
 
 ### 1.2 Full IMAP Inbox Checker Implementation
 
-**Status**: 📋 **PLANNING** - Detailed plan created (January 21, 2026)  
-**Effort**: 2-3 days (moved to ECS worker for scale)  
+**Status**: ✅ **COMPLETE** - January 28, 2026  
+**Effort**: 2-3 days (completed)  
 **Dependencies**: None  
 **Architecture**: ECS Fargate worker (replaces Lambda for scale)
 
@@ -124,49 +126,43 @@ Target completion: **100%** (production ready)
 - Consistent with existing worker architecture (send-worker, scheduler-worker)
 - Better cost efficiency at scale
 
-**See**: `docs/implementation/IMAP_INBOX_CHECKER_ECS_PLAN.md` for detailed implementation plan
+**Implementation Details**:
+- ✅ ECS worker deployed (`workers/inbox-checker-worker/`)
+- ✅ IMAP connection and message fetching via `imapflow` library
+- ✅ Reply detection with `In-Reply-To` and `References` header fallback
+- ✅ Reply-to-reply handling (multi-turn conversations)
+- ✅ Bounce detection (subject/body/from patterns)
+- ✅ Unsubscribe detection (`List-Unsubscribe` header)
+- ✅ Email thread and message creation
+- ✅ Original sent message backfilling (when reply received)
+- ✅ Duplicate message handling
+- ✅ Message-ID normalization (case-insensitive, bracket handling)
+- ✅ Race condition fixes (message_count recalculation)
+- ✅ IMAP UID storage for on-demand attachment fetching
+- ✅ Attachment metadata extraction (filename, type, size, part, imapUid)
 
-**Tasks**:
-1. Install IMAP library in Lambda:
-   - Add `imapflow` to `amplify/functions/inboxChecker/package.json`
-   - Update Lambda deployment
-2. Implement IMAP connection and message fetching:
-   - Connect via IMAP using `mailboxes.imap_*` credentials
-   - Query for messages since `last_synced_at`
-   - Fetch full message content (headers, body text/HTML, attachments metadata)
-3. Implement reply detection:
-   - Parse `In-Reply-To` and `References` headers
-   - Match against `message_jobs.provider_message_id`
-   - Find corresponding `message_job` and `enrollment`
-4. Implement bounce detection:
-   - Subject patterns: "Undelivered", "Delivery Status", "Mail Delivery Failed"
-   - Body patterns: SMTP error codes (550, 551, 552, 553)
-   - From address patterns: "MAILER-DAEMON", "postmaster"
-5. Implement email thread/message creation:
-   - For replies: Create or update `email_thread`, create `email_message` (direction='received')
-   - Update `enrollment.state = 'stopped'` on reply
-   - Update `enrollment.state = 'stopped'` on bounce
-   - Set `has_reply = true` on thread when first reply received
-6. Implement unsubscribe detection:
-   - Check `List-Unsubscribe` header
-   - Check subject/body for "unsubscribe" patterns
-   - Update `enrollment.state = 'stopped'` on unsubscribe
-7. Update `mailboxes.last_synced_at` after processing
-8. Error handling:
-   - IMAP connection failures → log, continue to next mailbox
-   - Authentication errors → mark mailbox as error, notify user
-   - Message fetch failures → log, skip message, continue
+**Recent Enhancements** (January 28, 2026):
+- ✅ References header fallback for Outlook-style threading
+- ✅ Reply-to-reply support (handles complex conversation chains)
+- ✅ Original sent message backfilling (threads now show both sent + received)
+- ✅ Duplicate message prevention
+- ✅ Case-insensitive Message-ID matching (RFC 5322 compliant)
+- ✅ Attachment part identifiers stored for on-demand fetching
 
-**Files to Modify**:
-- `amplify/functions/inboxChecker/handler.ts` (major update)
-- `amplify/functions/inboxChecker/package.json` (add imapflow dependency)
+**Files Created/Modified**:
+- `workers/inbox-checker-worker/` (complete ECS worker implementation)
+- `supabase/migrations/20251229205236_create_email_threads_and_messages.sql`
+- `supabase/migrations/20260128000000_add_imap_uid_for_attachment_fetching.sql`
 
 **Success Criteria**:
-- ✅ Replies detected and enrollment stopped
-- ✅ Bounces detected and enrollment stopped
-- ✅ Email threads created with full conversation
-- ✅ Email messages stored with full content
-- ✅ Handles errors gracefully (doesn't crash on one mailbox failure)
+- ✅ **COMPLETE**: Replies detected and enrollment stopped
+- ✅ **COMPLETE**: Bounces detected and enrollment stopped
+- ✅ **COMPLETE**: Email threads created with full conversation
+- ✅ **COMPLETE**: Email messages stored with full content (sent + received)
+- ✅ **COMPLETE**: Handles errors gracefully (doesn't crash on one mailbox failure)
+- ✅ **COMPLETE**: Reply-to-reply handling (multi-turn conversations)
+- ✅ **COMPLETE**: References header fallback (Outlook compatibility)
+- ✅ **COMPLETE**: Attachment metadata stored for on-demand fetching
 
 ---
 
@@ -249,17 +245,22 @@ Target completion: **100%** (production ready)
 
 ### 2.2 Email Thread Creation from Send Worker
 
-**Status**: ⏭️ **SKIPPED** - Not needed (January 21, 2026)  
-**Effort**: N/A  
-**Dependencies**: None
+**Status**: ✅ **COMPLETE** - January 28, 2026 (via inbox checker backfilling)  
+**Effort**: Included in 1.2  
+**Dependencies**: 1.2 (IMAP Inbox Checker)
 
-**Decision**: Skip this feature. Current design is sufficient:
-- Sent emails are stored in `message_jobs` table (with full content in `message_data` JSONB)
-- Threads are created when IMAP checker finds replies (Phase 1.2)
-- IMAP checker can look up original `message_job` by `provider_message_id` to create thread
-- This avoids data duplication and storage costs
-- Inbox UI only shows threads with replies (current design)
-- If needed later, can query `message_jobs` directly for sent email history
+**Decision**: Threads are created when replies are received, with original sent message backfilled:
+- When inbox checker processes a reply, it creates the thread
+- Original sent message is automatically backfilled into `email_messages` (direction='sent')
+- This avoids storing threads for emails that never get replies (saves storage)
+- Threads show complete conversation (original + all replies)
+- Inbox UI shows threads with replies (current design)
+
+**Implementation**:
+- ✅ Thread created when first reply is received
+- ✅ Original sent message backfilled into `email_messages` table
+- ✅ Reply messages stored with full content
+- ✅ Multi-turn conversations supported (reply-to-reply)
 
 **Tasks**:
 1. Update send worker (`workers/send-worker/src/worker.ts`):
@@ -477,14 +478,13 @@ Target completion: **100%** (production ready)
 **Recommended sequence** (based on dependencies and priority):
 
 ### Week 1: Critical Production Gaps
-1. **Day 1-2**: ✅ **COMPLETE** Atomic Job Reservation (1.1) - **Blocks production**
-2. **Day 3-4**: IMAP Inbox Checker (1.2) - **Feature completeness**
-3. **Day 5**: Connection Pooling (1.3) - **Cost efficiency**
+1. **Day 1-2**: ✅ **COMPLETE** Atomic Job Reservation (1.1) - January 21, 2026
+2. **Day 3-5**: ✅ **COMPLETE** IMAP Inbox Checker (1.2) - January 28, 2026
+3. **Day 6-7**: Connection Pooling (1.3) - **Cost efficiency** (REMAINING)
 
 ### Week 2: Feature Completeness & Observability
-4. **Day 1-2**: IMAP Inbox Checker (1.2) - **Feature completeness** (if not done in Week 1)
-5. **Day 3-4**: Tracking Endpoints (2.3) - **Feature enhancement**
-6. **Day 5**: CloudWatch Metrics (3.1) - **Observability**
+4. **Day 1-2**: Tracking Endpoints (2.3) - **Feature enhancement** (REMAINING)
+5. **Day 3-4**: CloudWatch Metrics (3.1) - **Observability** (REMAINING)
 
 ### Week 3: Quality Assurance
 7. **Days 1-5**: Unit Tests (4.1)
@@ -495,16 +495,16 @@ Target completion: **100%** (production ready)
 ## Dependencies Graph
 
 ```
-1.1 (Atomic Reservation) - includes 2.1 (Hourly/Daily Limits)
+✅ 1.1 (Atomic Reservation) - includes 2.1 (Hourly/Daily Limits) - COMPLETE
 
-1.2 (IMAP Checker) - independent
-1.3 (Connection Pooling) - independent
-2.2 (Email Threads) - independent
-2.3 (Tracking) - independent
-3.1 (Metrics) - independent
+✅ 1.2 (IMAP Checker) - COMPLETE
+⚠️ 1.3 (Connection Pooling) - REMAINING
+✅ 2.2 (Email Threads) - COMPLETE (via 1.2 backfilling)
+⚠️ 2.3 (Tracking) - REMAINING
+⚠️ 3.1 (Metrics) - REMAINING
 
-4.1 (Unit Tests) - independent
-4.2 (Integration Tests) - depends on 4.1
+⚠️ 4.1 (Unit Tests) - REMAINING
+⚠️ 4.2 (Integration Tests) - depends on 4.1 - REMAINING
 ```
 
 ---
@@ -512,10 +512,13 @@ Target completion: **100%** (production ready)
 ## Success Criteria
 
 **Production Ready** when:
-- ✅ All Phase 1 items complete (Critical Production Gaps)
-- ✅ All Phase 2 items complete (Feature Completeness)
-- ✅ Phase 3.1 complete (Observability)
-- ✅ Basic smoke tests pass
+- ✅ Phase 1.1 complete (Atomic Job Reservation) - **DONE**
+- ✅ Phase 1.2 complete (IMAP Inbox Checker) - **DONE**
+- ⚠️ Phase 1.3 complete (Connection Pooling) - **REMAINING** (cost efficiency, not blocking)
+- ✅ Phase 2.2 complete (Email Thread Creation) - **DONE** (via backfilling)
+- ⚠️ Phase 2.3 complete (Tracking Endpoints) - **REMAINING** (nice to have)
+- ⚠️ Phase 3.1 complete (CloudWatch Metrics) - **REMAINING** (observability)
+- ⚠️ Basic smoke tests pass - **REMAINING**
 
 **Fully Complete** when:
 - ✅ All phases complete
@@ -551,9 +554,10 @@ Target completion: **100%** (production ready)
 
 ## Next Steps
 
-1. **Review this plan** with team
-2. **Prioritize** based on business needs
-3. **Assign** tasks to developers
-4. **Set up** development environment for testing
-5. ✅ **COMPLETE** Phase 1.1 (Atomic Job Reservation) - January 21, 2026
-6. **Next**: Begin Phase 1.2 (IMAP Inbox Checker) or Phase 1.3 (Connection Pooling)
+1. ✅ **COMPLETE** Phase 1.1 (Atomic Job Reservation) - January 21, 2026
+2. ✅ **COMPLETE** Phase 1.2 (IMAP Inbox Checker) - January 28, 2026
+3. ✅ **COMPLETE** Phase 2.2 (Email Thread Creation via backfilling) - January 28, 2026
+4. **Next Priority**: Phase 1.3 (Connection Pooling) - **Cost efficiency, performance**
+5. **Then**: Phase 2.3 (Tracking Endpoints) - **Feature enhancement**
+6. **Then**: Phase 3.1 (CloudWatch Metrics) - **Observability**
+7. **Finally**: Phase 4 (Testing) - **Quality assurance**

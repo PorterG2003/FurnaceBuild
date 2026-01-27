@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { DatabaseClient } from './database.js';
-import { createTransporter, sendEmail, mergeTemplate } from './email.js';
+import { sendEmail, mergeTemplate } from './email.js';
+import { SmtpPool } from './smtp-pool.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
 
 export interface WorkerConfig {
@@ -11,6 +12,7 @@ export interface WorkerConfig {
 export class SendWorker {
   private supabase: SupabaseClient;
   private databaseClient: DatabaseClient;
+  private smtpPool: SmtpPool;
   private running: boolean = false;
   private consecutiveEmptyPolls: number = 0;
   private readonly maxEmptyPolls: number = 10;
@@ -18,6 +20,7 @@ export class SendWorker {
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
     this.databaseClient = config.databaseClient;
+    this.smtpPool = new SmtpPool(100); // Cache up to 100 mailboxes
   }
 
   /**
@@ -84,9 +87,11 @@ export class SendWorker {
   /**
    * Stop the worker gracefully
    */
-  stop(): void {
+  async stop(): Promise<void> {
     console.log('Stopping send worker...');
     this.running = false;
+    // Close all SMTP connections
+    await this.smtpPool.closeAll();
   }
 
   /**
@@ -165,19 +170,32 @@ export class SendWorker {
       } else {
         // Production mode: Send via SMTP
         console.log(`[SEND WORKER] Sending email via SMTP for message job ${message_job_id}`);
-        // 4. Create SMTP transporter
-        const transporter = createTransporter(mailbox);
+        // 4. Get SMTP transporter from pool (reuses connection if available)
+        const transporter = await this.smtpPool.getTransporter(mailbox);
 
-        // 5. Send email
-        providerMessageId = await sendEmail(
-          transporter,
-          mailbox,
-          messageJob,
-          lead,
-          subject,
-          emailBody
-        );
-        console.log(`[SEND WORKER] Email sent successfully for message job ${message_job_id} (provider_message_id: ${providerMessageId})`);
+        try {
+          // 5. Send email
+          providerMessageId = await sendEmail(
+            transporter,
+            mailbox,
+            messageJob,
+            lead,
+            subject,
+            emailBody
+          );
+          
+          // Mark message sent (for maxMessages tracking)
+          this.smtpPool.markMessageSent(mailbox.id);
+          
+          console.log(`[SEND WORKER] Email sent successfully for message job ${message_job_id} (provider_message_id: ${providerMessageId})`);
+        } catch (error: any) {
+          // On connection/auth errors, remove transporter from cache so it gets recreated
+          if (error.code === 'EAUTH' || error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+            console.error(`[SEND WORKER] SMTP connection error for mailbox ${mailbox.id}, removing from pool:`, error);
+            this.smtpPool.removeTransporter(mailbox.id);
+          }
+          throw error; // Re-throw to be handled by outer error handling
+        }
       }
 
       // 6. Update message_job status

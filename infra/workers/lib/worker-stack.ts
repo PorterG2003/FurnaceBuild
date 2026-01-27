@@ -28,14 +28,17 @@ export interface WorkerStackProps extends cdk.StackProps {
   desiredCount: {
     sendWorker: number;
     schedulerWorker: number;
+    inboxCheckerWorker: number;
   };
 }
 
 export class WorkerStack extends cdk.Stack {
   public readonly sendWorkerService: ecs.FargateService;
   public readonly schedulerWorkerService: ecs.FargateService;
+  public readonly inboxCheckerWorkerService: ecs.FargateService;
   public readonly sendWorkerRepo: ecr.Repository;
   public readonly schedulerWorkerRepo: ecr.Repository;
+  public readonly inboxCheckerWorkerRepo: ecr.Repository;
 
   constructor(scope: Construct, id: string, props: WorkerStackProps) {
     super(scope, id, props);
@@ -72,8 +75,21 @@ export class WorkerStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // Create ECR repository for inbox checker worker
+    const inboxCheckerWorkerRepo = new ecr.Repository(this, 'InboxCheckerWorkerRepo', {
+      repositoryName: `furnace/inbox-checker-worker-${environment}`,
+      imageScanOnPush: true,
+      lifecycleRules: [
+        {
+          maxImageCount: 10, // Keep last 10 images
+        },
+      ],
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     this.sendWorkerRepo = sendWorkerRepo;
     this.schedulerWorkerRepo = schedulerWorkerRepo;
+    this.inboxCheckerWorkerRepo = inboxCheckerWorkerRepo;
 
     // ============================================
     // VPC & Networking
@@ -109,6 +125,12 @@ export class WorkerStack extends cdk.Stack {
 
     const schedulerWorkerLogGroup = new logs.LogGroup(this, 'SchedulerWorkerLogGroup', {
       logGroupName: `/ecs/furnace/scheduler-worker-${environment}`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const inboxCheckerWorkerLogGroup = new logs.LogGroup(this, 'InboxCheckerWorkerLogGroup', {
+      logGroupName: `/ecs/furnace/inbox-checker-worker-${environment}`,
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
@@ -206,6 +228,34 @@ export class WorkerStack extends cdk.Stack {
       ],
     }));
 
+    // Inbox checker worker task role (for application permissions)
+    const inboxCheckerWorkerTaskRole = new iam.Role(this, 'InboxCheckerWorkerTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      description: `Role for ECS inbox checker worker tasks (${environment})`,
+    });
+
+    // Grant CloudWatch Logs permissions for inbox checker worker
+    inboxCheckerWorkerTaskRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'AllowCloudWatchLogs',
+      actions: [
+        'logs:CreateLogStream',
+        'logs:PutLogEvents',
+      ],
+      resources: [inboxCheckerWorkerLogGroup.logGroupArn + ':*'],
+    }));
+
+    // Grant SSM Parameter Store read permissions for inbox checker worker
+    inboxCheckerWorkerTaskRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'AllowSSMParameterAccess',
+      actions: [
+        'ssm:GetParameters',
+        'ssm:GetParameter',
+      ],
+      resources: [
+        `arn:aws:ssm:${region}:${account}:parameter/amplify/*`,
+      ],
+    }));
+
     // ============================================
     // Send Worker Task Definition & Service
     // ============================================
@@ -289,6 +339,44 @@ export class WorkerStack extends cdk.Stack {
     this.schedulerWorkerService = schedulerWorkerService;
 
     // ============================================
+    // Inbox Checker Worker Task Definition & Service
+    // ============================================
+
+    const inboxCheckerWorkerTaskDefinition = new ecs.FargateTaskDefinition(this, 'InboxCheckerWorkerTaskDef', {
+      memoryLimitMiB: 512, // 512 MB (IMAP connections are lightweight)
+      cpu: 256, // 0.25 vCPU
+      taskRole: inboxCheckerWorkerTaskRole,
+      executionRole: taskExecutionRole, // Reuse execution role
+    });
+
+    const inboxCheckerWorkerContainer = inboxCheckerWorkerTaskDefinition.addContainer('inbox-checker-worker', {
+      image: ecs.ContainerImage.fromEcrRepository(inboxCheckerWorkerRepo, 'latest'),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'inbox-checker-worker',
+        logGroup: inboxCheckerWorkerLogGroup,
+      }),
+      environment: {
+        AWS_REGION: region,
+        SUPABASE_URL: supabaseUrl,
+        SUPABASE_SERVICE_KEY_PARAM_PATH: supabaseServiceKeyParamPath,
+      },
+    });
+
+    const inboxCheckerWorkerService = new ecs.FargateService(this, 'InboxCheckerWorkerService', {
+      cluster: cluster, // Reuse same cluster as other workers
+      taskDefinition: inboxCheckerWorkerTaskDefinition,
+      desiredCount: desiredCount.inboxCheckerWorker,
+      assignPublicIp: true, // Needed for IMAP access (using public subnets, no NAT Gateway)
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PUBLIC, // Public subnets for internet access
+      },
+      securityGroups: [workerSecurityGroup], // Reuse same security group
+      healthCheckGracePeriod: cdk.Duration.seconds(60),
+    });
+
+    this.inboxCheckerWorkerService = inboxCheckerWorkerService;
+
+    // ============================================
     // Outputs
     // ============================================
 
@@ -302,6 +390,12 @@ export class WorkerStack extends cdk.Stack {
       value: schedulerWorkerRepo.repositoryUri,
       description: 'ECR repository URI for scheduler worker',
       exportName: `FurnaceSchedulerWorkerRepo-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'InboxCheckerWorkerRepoUri', {
+      value: inboxCheckerWorkerRepo.repositoryUri,
+      description: 'ECR repository URI for inbox checker worker',
+      exportName: `FurnaceInboxCheckerWorkerRepo-${environment}`,
     });
 
     new cdk.CfnOutput(this, 'ClusterName', {

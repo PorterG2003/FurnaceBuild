@@ -1,6 +1,6 @@
 import { createSupabaseClient } from './supabase.js';
 import { DatabaseClient } from './database.js';
-import { SendWorker } from './worker.js';
+import { InboxCheckerWorker } from './worker.js';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 
 /**
@@ -29,7 +29,7 @@ async function fetchSecretFromParameterStore(
 }
 
 /**
- * Main entry point for send worker
+ * Main entry point for inbox checker worker
  * 
  * Environment variables required:
  * - SUPABASE_URL: Supabase project URL
@@ -38,7 +38,7 @@ async function fetchSecretFromParameterStore(
  */
 async function main() {
   // Log immediately on startup to verify process is running
-  console.log('[STARTUP] Send worker process starting...');
+  console.log('[STARTUP] Inbox checker worker process starting...');
   console.log('[STARTUP] Node version:', process.version);
   console.log('[STARTUP] Working directory:', process.cwd());
   
@@ -68,33 +68,35 @@ async function main() {
       );
     }
 
-    console.log('Initializing send worker...');
+    console.log('Initializing inbox checker worker...');
     console.log(`AWS Region: ${awsRegion}`);
 
     // Initialize clients
     const supabase = createSupabaseClient();
     const databaseClient = new DatabaseClient({
       supabase,
-      batchSize: 100,
-      pollIntervalMs: 2000, // Start with 2 seconds (adaptive polling in worker)
+      batchSize: 50, // Claim 50 mailboxes at a time
+      checkIntervalMinutes: 5, // Check mailboxes every 5 minutes
+      processingTimeoutMinutes: 10, // Timeout after 10 minutes
     });
 
     // Create and start worker
-    const worker = new SendWorker({
+    const worker = new InboxCheckerWorker({
       supabase,
       databaseClient,
+      concurrencyLimit: 10, // Process 10 mailboxes in parallel
     });
 
     // Handle graceful shutdown
-    process.on('SIGTERM', async () => {
+    process.on('SIGTERM', () => {
       console.log('SIGTERM received, shutting down gracefully...');
-      await worker.stop();
+      worker.stop();
       process.exit(0);
     });
 
-    process.on('SIGINT', async () => {
+    process.on('SIGINT', () => {
       console.log('SIGINT received, shutting down gracefully...');
-      await worker.stop();
+      worker.stop();
       process.exit(0);
     });
 
@@ -102,7 +104,7 @@ async function main() {
     await worker.start();
 
   } catch (error) {
-    console.error('[FATAL ERROR] Send worker failed to start:', error);
+    console.error('[FATAL ERROR] Inbox checker worker failed to start:', error);
     if (error instanceof Error) {
       console.error('[FATAL ERROR] Error message:', error.message);
       console.error('[FATAL ERROR] Stack trace:', error.stack);
@@ -126,4 +128,3 @@ process.on('uncaughtException', (error) => {
 });
 
 main();
-

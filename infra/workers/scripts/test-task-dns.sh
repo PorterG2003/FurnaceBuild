@@ -4,7 +4,7 @@
 set -e
 
 ENVIRONMENT="${1:-dev}"
-WORKER_TYPE="${2:-scheduler}"
+WORKER_TYPE="${2:-scheduler}"  # send, scheduler, or inbox-checker
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 CLUSTER_NAME="furnace-cluster-$ENVIRONMENT"
 
@@ -13,13 +13,31 @@ echo "   Environment: $ENVIRONMENT"
 echo "   Worker Type: $WORKER_TYPE"
 echo ""
 
-# Get running task
-SERVICE_NAME=$(aws ecs list-services \
-  --cluster "$CLUSTER_NAME" \
-  --region "$REGION" \
-  --query "serviceArns[?contains(@, 'SchedulerWorker')]" \
-  --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+# Find service by worker type
+if [ "$WORKER_TYPE" = "send" ]; then
+  SERVICE_NAME=$(aws ecs list-services \
+    --cluster "$CLUSTER_NAME" \
+    --region "$REGION" \
+    --query "serviceArns[?contains(@, 'SendWorker')]" \
+    --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+  CONTAINER_NAME="send-worker"
+elif [ "$WORKER_TYPE" = "inbox-checker" ]; then
+  SERVICE_NAME=$(aws ecs list-services \
+    --cluster "$CLUSTER_NAME" \
+    --region "$REGION" \
+    --query "serviceArns[?contains(@, 'InboxCheckerWorker')]" \
+    --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+  CONTAINER_NAME="inbox-checker-worker"
+else
+  SERVICE_NAME=$(aws ecs list-services \
+    --cluster "$CLUSTER_NAME" \
+    --region "$REGION" \
+    --query "serviceArns[?contains(@, 'SchedulerWorker')]" \
+    --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+  CONTAINER_NAME="scheduler-worker"
+fi
 
+# Get running task
 RUNNING_TASK=$(aws ecs list-tasks \
   --cluster "$CLUSTER_NAME" \
   --service-name "$SERVICE_NAME" \
@@ -36,13 +54,6 @@ fi
 TASK_ID=$(echo "$RUNNING_TASK" | awk -F'/' '{print $NF}')
 echo "📋 Testing with task: $TASK_ID"
 echo ""
-
-# Get container name
-if [ "$WORKER_TYPE" = "send" ]; then
-  CONTAINER_NAME="send-worker"
-else
-  CONTAINER_NAME="scheduler-worker"
-fi
 
 echo "🔍 Running DNS tests from container: $CONTAINER_NAME"
 echo ""

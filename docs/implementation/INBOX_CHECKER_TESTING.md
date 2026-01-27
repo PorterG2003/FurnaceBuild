@@ -475,10 +475,12 @@ Look for:
 
 Replies are only found if they’re in the “since” window:
 
-- After a recent sync: messages **since** `last_synced_at`.
-- First sync for that mailbox: last 7 days.
+- **Normal case**: messages **since** `mailboxes.last_synced_at` (the time of the last *successful* sync). The worker uses this value for the IMAP `SINCE` search.
+- **First sync** (`last_synced_at` is null): last 7 days.
 
-If the reply landed before that window, the worker won’t see it. Ensure you replied **after** the test send and, if possible, after the mailbox was last synced (or force a resync by setting `last_synced_at` to an older time for that mailbox).
+The claim uses `imap_claimed_at` for locking and does *not* overwrite `last_synced_at` until the worker finishes. So “since” is always the real previous sync time, not “now”.
+
+If the reply landed before that window, the worker won’t see it. Ensure you replied after the test send. You can force a wider window by setting `last_synced_at` to an older time (or `NULL` for “last 7 days”) for that mailbox, then run the worker again.
 
 **Step 5 – In-Reply-To vs provider_message_id**
 

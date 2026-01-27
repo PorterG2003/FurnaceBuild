@@ -122,6 +122,7 @@ if [ $? -eq 0 ]; then
   echo "   4. Check CloudWatch logs:"
   echo "      aws logs tail /ecs/furnace/send-worker-$ENVIRONMENT --follow --region $REGION"
   echo "      aws logs tail /ecs/furnace/scheduler-worker-$ENVIRONMENT --follow --region $REGION"
+  echo "      aws logs tail /ecs/furnace/inbox-checker-worker-$ENVIRONMENT --follow --region $REGION"
 else
   echo "❌ Failed to set parameter"
   exit 1

@@ -34,18 +34,19 @@ echo "   Environment: $ENVIRONMENT"
 echo "   Cluster: $CLUSTER_NAME"
 echo ""
 
-# Get actual service names from ECS
-SEND_SERVICE_FULL=$(aws ecs list-services \
-  --cluster "$CLUSTER_NAME" \
-  --region "$REGION" \
-  --query "serviceArns[?contains(@, 'SendWorker')]" \
-  --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+# Get actual service names from ECS (--max-items 100 so inbox-checker isn't on a later page)
+LIST_SERVICES_ARGS=(--cluster "$CLUSTER_NAME" --region "$REGION" --max-items 100)
+SEND_SERVICE_FULL=$(aws ecs list-services "${LIST_SERVICES_ARGS[@]}" \
+  --query "serviceArns[?contains(@, 'SendWorker')] | [0]" \
+  --output text 2>/dev/null | awk -F'/' '{print $NF}')
 
-SCHEDULER_SERVICE_FULL=$(aws ecs list-services \
-  --cluster "$CLUSTER_NAME" \
-  --region "$REGION" \
-  --query "serviceArns[?contains(@, 'SchedulerWorker')]" \
-  --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+SCHEDULER_SERVICE_FULL=$(aws ecs list-services "${LIST_SERVICES_ARGS[@]}" \
+  --query "serviceArns[?contains(@, 'SchedulerWorker')] | [0]" \
+  --output text 2>/dev/null | awk -F'/' '{print $NF}')
+
+INBOX_CHECKER_SERVICE_FULL=$(aws ecs list-services "${LIST_SERVICES_ARGS[@]}" \
+  --query "serviceArns[?contains(@, 'InboxCheckerWorker')] | [0]" \
+  --output text 2>/dev/null | awk -F'/' '{print $NF}')
 
 if [ -z "$SEND_SERVICE_FULL" ] || [ "$SEND_SERVICE_FULL" = "None" ]; then
   echo "❌ Error: Could not find SendWorkerService in cluster $CLUSTER_NAME"
@@ -57,26 +58,31 @@ if [ -z "$SCHEDULER_SERVICE_FULL" ] || [ "$SCHEDULER_SERVICE_FULL" = "None" ]; t
   exit 1
 fi
 
+# Inbox checker is optional (may not exist in older deployments)
+if [ -z "$INBOX_CHECKER_SERVICE_FULL" ] || [ "$INBOX_CHECKER_SERVICE_FULL" = "None" ]; then
+  INBOX_CHECKER_SERVICE_FULL=""
+fi
+
+echo "   Found: Send=$SEND_SERVICE_FULL | Scheduler=$SCHEDULER_SERVICE_FULL | InboxChecker=${INBOX_CHECKER_SERVICE_FULL:-<not in cluster>}"
+echo ""
+
 # Function to restart a service
 restart_service() {
   local service_name="$1"
   local service_type="$2"
   
-  echo "🔄 Restarting $service_type..."
+  echo "🔄 Restarting $service_type ($service_name)..."
   
-  aws ecs update-service \
+  if ! aws ecs update-service \
     --cluster "$CLUSTER_NAME" \
     --service "$service_name" \
     --force-new-deployment \
     --region "$REGION" \
-    --output json > /dev/null
-  
-  if [ $? -eq 0 ]; then
-    echo "✅ $service_type restarted (tasks will start with new configuration)"
-  else
+    --output json > /dev/null 2>&1; then
     echo "❌ Failed to restart $service_type"
     exit 1
   fi
+  echo "✅ $service_type restarted (new tasks will roll out)"
 }
 
 # Restart send worker service
@@ -84,6 +90,17 @@ restart_service "$SEND_SERVICE_FULL" "Send Worker Service"
 
 # Restart scheduler worker service
 restart_service "$SCHEDULER_SERVICE_FULL" "Scheduler Worker Service"
+
+# Restart inbox checker worker service (if it exists in cluster)
+if [ -n "$INBOX_CHECKER_SERVICE_FULL" ] && [ "$INBOX_CHECKER_SERVICE_FULL" != "None" ]; then
+  restart_service "$INBOX_CHECKER_SERVICE_FULL" "Inbox Checker Worker Service"
+  DESIRED=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$INBOX_CHECKER_SERVICE_FULL" --region "$REGION" --query 'services[0].desiredCount' --output text 2>/dev/null || echo "?")
+  if [ "$DESIRED" = "0" ]; then
+    echo "   💡 Inbox checker desired count is 0 — no new task will start until you run: npm run scale:$ENVIRONMENT"
+  fi
+else
+  echo "⚠️  Inbox checker service not found in cluster — skipping. (Ensure stack includes inbox-checker and deploy: npm run deploy:$ENVIRONMENT)"
+fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -99,6 +116,9 @@ echo "      aws logs tail /ecs/furnace/send-worker-$ENVIRONMENT --follow --regio
 echo ""
 echo "      # Scheduler worker logs"
 echo "      aws logs tail /ecs/furnace/scheduler-worker-$ENVIRONMENT --follow --region $REGION"
+echo ""
+echo "      # Inbox checker worker logs"
+echo "      aws logs tail /ecs/furnace/inbox-checker-worker-$ENVIRONMENT --follow --region $REGION"
 echo ""
 echo "   3. Look for:"
 echo "      ✅ 'Initializing send worker...' (no errors)"

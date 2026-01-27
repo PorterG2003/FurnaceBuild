@@ -67,6 +67,12 @@ SCHEDULER_SERVICE_FULL=$(aws ecs list-services \
   --query "serviceArns[?contains(@, 'SchedulerWorker')]" \
   --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
 
+INBOX_CHECKER_SERVICE_FULL=$(aws ecs list-services \
+  --cluster "$CLUSTER_NAME" \
+  --region "$REGION" \
+  --query "serviceArns[?contains(@, 'InboxCheckerWorker')]" \
+  --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+
 if [ -z "$SEND_SERVICE_FULL" ] || [ "$SEND_SERVICE_FULL" = "None" ]; then
   echo "❌ SendWorkerService not found in cluster"
   exit 1
@@ -201,9 +207,12 @@ check_service() {
   fi
 }
 
-# Check both services
+# Check all services
 check_service "$SEND_SERVICE_FULL" "Send Worker"
 check_service "$SCHEDULER_SERVICE_FULL" "Scheduler Worker"
+if [ -n "$INBOX_CHECKER_SERVICE_FULL" ] && [ "$INBOX_CHECKER_SERVICE_FULL" != "None" ]; then
+  check_service "$INBOX_CHECKER_SERVICE_FULL" "Inbox Checker Worker"
+fi
 
 # Summary and recommendations
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -248,6 +257,8 @@ echo "4️⃣  CloudWatch Logs"
 echo "   View logs:"
 echo "   aws logs tail /ecs/furnace/send-worker-$ENVIRONMENT --follow --region $REGION"
 echo "   aws logs tail /ecs/furnace/scheduler-worker-$ENVIRONMENT --follow --region $REGION"
+echo "   aws logs tail /ecs/furnace/inbox-checker-worker-$ENVIRONMENT --follow --region $REGION"
+echo "   Or: npm run check:logs -- $ENVIRONMENT <send|scheduler|inbox-checker>"
 echo ""
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

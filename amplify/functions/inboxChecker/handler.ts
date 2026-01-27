@@ -69,17 +69,22 @@ async function fetchNewMessages(
     
     for (const uid of messages) {
       try {
+        // Pass { uid: true } so ImapFlow sends "UID FETCH" not "FETCH" (search returns UIDs).
         const message = await client.fetchOne(uid, {
           source: true,
           uid: true,
           bodyStructure: true,
-        });
+        }, { uid: true });
 
         if (!message) continue;
 
-        // Parse message
-        const parsed = await client.download(uid, message.source);
-        const rawMessage = Buffer.from(parsed.content).toString('utf-8');
+        // Download full RFC822 (part undefined). Options.uid so range is UID not sequence.
+        const parsed = await client.download(uid, undefined, { uid: true });
+        const chunks: Buffer[] = [];
+        for await (const chunk of parsed.content) {
+          chunks.push(Buffer.from(chunk));
+        }
+        const rawMessage = Buffer.concat(chunks).toString('utf-8');
         
         // Simple email parsing (for production, consider using a proper email parser)
         const headers: Record<string, string | string[]> = {};

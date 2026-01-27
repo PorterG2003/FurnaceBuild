@@ -8,22 +8,22 @@
 
 ## Overview
 
-Current completion: **~90%** (updated January 28, 2026)  
+Current completion: **~95%** (updated January 28, 2026)  
 Target completion: **100%** (production ready)
 
 **Completed**:
 - ✅ Phase 1.1: Atomic Job Reservation with Throttle Checking (January 21, 2026)
 - ✅ Phase 1.2: Full IMAP Inbox Checker Implementation (January 28, 2026)
+- ✅ Phase 1.3: Connection Pooling for SMTP (January 28, 2026)
 - ✅ Phase 2.1: Hourly/Daily Limit Enforcement (included in 1.1)
 - ✅ Phase 2.2: Email Thread Creation (backfilled on reply, January 28, 2026)
 
-**Remaining Work**: ~10% across 3 main areas:
-1. **Critical Production Gaps** (High Priority) - 1 item remaining (1.3)
-2. **Feature Completeness** (Medium Priority) - 1 item remaining (2.3)
-3. **Observability** (Medium Priority) - 1 item (3.1)
-4. **Quality Assurance** (Low Priority) - 2 items (4.1, 4.2)
+**Remaining Work**: ~5% across 2 main areas:
+1. **Feature Completeness** (Medium Priority) - 1 item remaining (2.3)
+2. **Observability** (Medium Priority) - 1 item (3.1)
+3. **Quality Assurance** (Low Priority) - 2 items (4.1, 4.2)
 
-**Estimated Total Effort**: 3-5 days (depending on team size)
+**Estimated Total Effort**: 2-3 days (depending on team size)
 
 ---
 
@@ -168,8 +168,8 @@ Target completion: **100%** (production ready)
 
 ### 1.3 Connection Pooling for SMTP
 
-**Status**: ⚠️ Partial - Nodemailer pooling exists but not shared  
-**Effort**: 1-2 days  
+**Status**: ✅ **COMPLETE** - January 28, 2026  
+**Effort**: 1-2 days (completed)  
 **Dependencies**: None
 
 **Tasks**:
@@ -206,12 +206,20 @@ Target completion: **100%** (production ready)
 - `workers/send-worker/src/email.ts` (update createTransporter usage)
 
 **Success Criteria**:
-- ✅ Connections reused across multiple sends from same mailbox (cost efficiency)
-- ✅ LRU cache limits memory usage (50-100 mailboxes max per worker)
-- ✅ Connection health checked before use (if idle > 1 minute)
-- ✅ Connection errors handled gracefully (transporter removed from cache)
-- ✅ Graceful shutdown closes all connections
-- ✅ `maxMessages` limit respected (transporter recreated after limit)
+- ✅ **COMPLETE**: Connections reused across multiple sends from same mailbox (cost efficiency)
+- ✅ **COMPLETE**: LRU cache limits memory usage (100 mailboxes max per worker)
+- ✅ **COMPLETE**: Connection health checked before use (if idle > 1 minute)
+- ✅ **COMPLETE**: Connection errors handled gracefully (transporter removed from cache)
+- ✅ **COMPLETE**: Graceful shutdown closes all connections
+- ✅ **COMPLETE**: `maxMessages` limit respected (transporter recreated after limit)
+
+**Implementation** (January 28, 2026):
+- ✅ Created `SmtpPool` class with LRU cache (max 100 mailboxes)
+- ✅ Connection health verification for idle connections (> 1 minute)
+- ✅ `maxMessages` tracking and transporter recreation
+- ✅ Error handling (removes bad transporters from cache)
+- ✅ Graceful shutdown with `closeAll()` method
+- ✅ Integrated into send worker (replaces `createTransporter` per email)
 
 ---
 
@@ -480,7 +488,7 @@ Target completion: **100%** (production ready)
 ### Week 1: Critical Production Gaps
 1. **Day 1-2**: ✅ **COMPLETE** Atomic Job Reservation (1.1) - January 21, 2026
 2. **Day 3-5**: ✅ **COMPLETE** IMAP Inbox Checker (1.2) - January 28, 2026
-3. **Day 6-7**: Connection Pooling (1.3) - **Cost efficiency** (REMAINING)
+3. **Day 6**: ✅ **COMPLETE** Connection Pooling (1.3) - January 28, 2026
 
 ### Week 2: Feature Completeness & Observability
 4. **Day 1-2**: Tracking Endpoints (2.3) - **Feature enhancement** (REMAINING)
@@ -498,7 +506,7 @@ Target completion: **100%** (production ready)
 ✅ 1.1 (Atomic Reservation) - includes 2.1 (Hourly/Daily Limits) - COMPLETE
 
 ✅ 1.2 (IMAP Checker) - COMPLETE
-⚠️ 1.3 (Connection Pooling) - REMAINING
+✅ 1.3 (Connection Pooling) - COMPLETE
 ✅ 2.2 (Email Threads) - COMPLETE (via 1.2 backfilling)
 ⚠️ 2.3 (Tracking) - REMAINING
 ⚠️ 3.1 (Metrics) - REMAINING
@@ -514,11 +522,11 @@ Target completion: **100%** (production ready)
 **Production Ready** when:
 - ✅ Phase 1.1 complete (Atomic Job Reservation) - **DONE**
 - ✅ Phase 1.2 complete (IMAP Inbox Checker) - **DONE**
-- ⚠️ Phase 1.3 complete (Connection Pooling) - **REMAINING** (cost efficiency, not blocking)
+- ✅ Phase 1.3 complete (Connection Pooling) - **DONE**
 - ✅ Phase 2.2 complete (Email Thread Creation) - **DONE** (via backfilling)
-- ⚠️ Phase 2.3 complete (Tracking Endpoints) - **REMAINING** (nice to have)
-- ⚠️ Phase 3.1 complete (CloudWatch Metrics) - **REMAINING** (observability)
-- ⚠️ Basic smoke tests pass - **REMAINING**
+- ⚠️ Phase 2.3 complete (Tracking Endpoints) - **REMAINING** (nice to have, analytics)
+- ⚠️ Phase 3.1 complete (CloudWatch Metrics) - **REMAINING** (observability, monitoring)
+- ⚠️ Basic smoke tests pass - **REMAINING** (manual testing done, automated tests pending)
 
 **Fully Complete** when:
 - ✅ All phases complete
@@ -556,8 +564,8 @@ Target completion: **100%** (production ready)
 
 1. ✅ **COMPLETE** Phase 1.1 (Atomic Job Reservation) - January 21, 2026
 2. ✅ **COMPLETE** Phase 1.2 (IMAP Inbox Checker) - January 28, 2026
-3. ✅ **COMPLETE** Phase 2.2 (Email Thread Creation via backfilling) - January 28, 2026
-4. **Next Priority**: Phase 1.3 (Connection Pooling) - **Cost efficiency, performance**
-5. **Then**: Phase 2.3 (Tracking Endpoints) - **Feature enhancement**
-6. **Then**: Phase 3.1 (CloudWatch Metrics) - **Observability**
-7. **Finally**: Phase 4 (Testing) - **Quality assurance**
+3. ✅ **COMPLETE** Phase 1.3 (Connection Pooling) - January 28, 2026
+4. ✅ **COMPLETE** Phase 2.2 (Email Thread Creation via backfilling) - January 28, 2026
+5. **Next Priority**: Phase 2.3 (Tracking Endpoints) - **Feature enhancement** (analytics)
+6. **Then**: Phase 3.1 (CloudWatch Metrics) - **Observability** (monitoring)
+7. **Finally**: Phase 4 (Testing) - **Quality assurance** (long-term maintainability)

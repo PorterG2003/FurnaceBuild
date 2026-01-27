@@ -1,0 +1,134 @@
+---
+description: Use project deployment scripts for workers and DB; do not tell the user raw aws/cdk/supabase commands when scripts exist.
+globs: ['infra/workers/**', 'workers/**', 'supabase/**', '**/INBOX_CHECKER*.md', '**/COMPLETION_PLAN.md']
+alwaysApply: false
+---
+
+# Worker & DB Deployment — Use Project Scripts
+
+When giving deployment or runbook steps, **use the project’s scripts and `npm run` commands** from `infra/workers`. Do not substitute raw `aws`, `cdk`, or `supabase` CLI commands unless a script does not exist for that step.
+
+## Where things live
+
+- **Infra and scripts**: `infra/workers/` (CDK stack, `scripts/`, `package.json`).
+- **Workers**: `workers/send-worker/`, `workers/scheduler-worker/`, `workers/inbox-checker-worker/`.
+- **Migrations**: `supabase/migrations/`. Applied via `infra/workers` apply script or `supabase db push` from **project root** if that’s how the project is run.
+
+## infra/workers package.json — what to run
+
+All of these are run from **`infra/workers`** (`cd infra/workers` first) unless noted.
+
+### Database migrations
+
+- **Apply migrations (dev)**  
+  `npm run apply:migrations`  
+  Uses `scripts/apply-migrations.sh`; loads `infra/workers/.env.local` and applies `supabase/migrations/` to the dev Supabase branch.
+
+- If the project instead uses `supabase db push` from the **repo root**, say that explicitly (e.g. “from project root: `supabase db push`”).
+
+### CDK deploy
+
+- **Deploy dev stack**  
+  `npm run deploy:dev`
+
+- **Deploy prod stack**  
+  `npm run deploy:prod`
+
+- **Preview changes**  
+  `npm run diff:dev` / `npm run diff:prod`
+
+### Build and push Docker images (ECR)
+
+Build/push is from **repo root** context; run the npm scripts from **`infra/workers`**:
+
+- **All workers (dev)**  
+  `npm run build:dev`
+
+- **Single worker (dev)**  
+  `npm run build:dev:send`  
+  `npm run build:dev:scheduler`  
+  `npm run build:dev:inbox-checker`
+
+- **Prod**  
+  `npm run build:prod`  
+  `npm run build:prod:send`  
+  `npm run build:prod:scheduler`  
+  `npm run build:prod:inbox-checker`
+
+Under the hood these use `scripts/build-and-push.sh [env] [worker-name|all]`. Images are built for `linux/amd64` and pushed to the right ECR repo per env.
+
+### Scaling ECS services
+
+- **Scale dev**  
+  `npm run scale:dev`  
+  Defaults: send=1, scheduler=1, inbox-checker=1.
+
+- **Scale with counts**  
+  `bash scripts/scale-services.sh dev [send] [scheduler] [inbox-checker]`  
+  Example: `bash scripts/scale-services.sh dev 1 1 1`
+
+- **Scale prod**  
+  `npm run scale:prod`
+
+- **Scale down (both to 0)**  
+  `npm run scale:down:dev`  
+  `npm run scale:down:prod`
+
+### Restart services (force new deployment)
+
+Forces new tasks so they pull the latest image and env/secrets:
+
+- **Restart dev**  
+  `npm run restart:dev`
+
+- **Restart prod**  
+  `npm run restart:prod`
+
+`restart-services.sh` restarts send, scheduler, and inbox-checker (if that service exists in the cluster).
+
+### Checks and ops
+
+- **Stack status**  
+  `npm run check:stack`
+
+- **Service status**  
+  `npm run check:services`
+
+- **Logs**  
+  `npm run check:logs`  
+  Or use `scripts/check-logs.sh` if it wraps log tailing.
+
+- **Secrets**  
+  `npm run set-secret:dev` / `set-secret:prod`  
+  `npm run verify-secret:dev` / `verify-secret:prod`
+
+## Standard “deploy worker changes” flow
+
+When the user has code or config changes for workers (including inbox-checker), give steps in this form:
+
+1. **Migrations** (if any)  
+   From `infra/workers`: `npm run apply:migrations`  
+   Or from project root: `supabase db push` — **only if** that’s the project’s chosen way.
+
+2. **Build and push**  
+   From `infra/workers`:  
+   - All: `npm run build:dev` (or `build:prod`)  
+   - One worker: `npm run build:dev:inbox-checker` (or the relevant worker).
+
+3. **Roll the updated worker(s)**  
+   `npm run restart:dev` (or `npm run restart:prod`).  
+   Restarts send, scheduler, and inbox-checker so new tasks pull the latest image.
+
+4. **Verify**  
+   `npm run check:services` and/or `npm run check:logs` (or the specific log group for that worker).
+
+## When to mention raw CLI
+
+- ECR login when the build script fails with “token expired” or “denied” — then it’s fine to show `aws ecr get-login-password ... | docker login ...` and the PATH fix for `docker-credential-osxkeychain` on macOS.
+- One-off diagnostics (e.g. `aws ecs describe-services`, `aws logs tail`) when no script exists for that exact check.
+- First-time or one-off setup (e.g. bootstrap, env files) if the rule or README says to do it manually.
+
+## Worker-specific details
+
+- **inbox-checker**: ECR repo name per env is `furnace/inbox-checker-worker-{dev|prod}`. Log group: `/ecs/furnace/inbox-checker-worker-{dev|prod}`.
+- **Scale script** argument order: `[env] [send] [scheduler] [inbox-checker]`. Omitted trailing counts default to 1.

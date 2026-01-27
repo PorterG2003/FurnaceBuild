@@ -17,7 +17,7 @@ fi
 
 # Parse arguments
 ENVIRONMENT="${1:-dev}"
-WORKER_TYPE="${2:-send}"  # send or scheduler
+WORKER_TYPE="${2:-send}"  # send, scheduler, or inbox-checker
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 CLUSTER_NAME="furnace-cluster-$ENVIRONMENT"
@@ -34,6 +34,12 @@ if [ "$WORKER_TYPE" = "send" ]; then
     --cluster "$CLUSTER_NAME" \
     --region "$REGION" \
     --query "serviceArns[?contains(@, 'SendWorker')]" \
+    --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+elif [ "$WORKER_TYPE" = "inbox-checker" ]; then
+  SERVICE_NAME=$(aws ecs list-services \
+    --cluster "$CLUSTER_NAME" \
+    --region "$REGION" \
+    --query "serviceArns[?contains(@, 'InboxCheckerWorker')]" \
     --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
 else
   SERVICE_NAME=$(aws ecs list-services \
@@ -172,6 +178,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "💡 To check logs:"
 if [ "$WORKER_TYPE" = "send" ]; then
   echo "   aws logs tail /ecs/furnace/send-worker-$ENVIRONMENT --follow --region $REGION"
+elif [ "$WORKER_TYPE" = "inbox-checker" ]; then
+  echo "   aws logs tail /ecs/furnace/inbox-checker-worker-$ENVIRONMENT --follow --region $REGION"
 else
   echo "   aws logs tail /ecs/furnace/scheduler-worker-$ENVIRONMENT --follow --region $REGION"
 fi

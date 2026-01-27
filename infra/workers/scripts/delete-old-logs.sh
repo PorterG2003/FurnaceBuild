@@ -12,6 +12,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "⚠️  WARNING: This will permanently delete log groups:"
 echo "   - /ecs/furnace/send-worker"
 echo "   - /ecs/furnace/scheduler-worker"
+echo "   - /ecs/furnace/inbox-checker-worker"
 echo ""
 echo "All logs in these groups will be permanently deleted."
 echo "Your new log groups (with -dev/-prod suffix) will NOT be affected."
@@ -29,6 +30,7 @@ echo ""
 LOG_GROUPS=(
   "/ecs/furnace/send-worker"
   "/ecs/furnace/scheduler-worker"
+  "/ecs/furnace/inbox-checker-worker"
 )
 
 for LOG_GROUP in "${LOG_GROUPS[@]}"; do

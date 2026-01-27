@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "@supabase/supabase-js": "^2.77.0"
+    "@supabase/supabase-js": "^2.77.0",
+    "imapflow": "^1.0.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.0",

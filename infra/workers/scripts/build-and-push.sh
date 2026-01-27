@@ -31,9 +31,9 @@ if [ "$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "prod" ]; then
 fi
 
 # Validate worker
-if [ "$WORKER" != "send-worker" ] && [ "$WORKER" != "scheduler-worker" ] && [ "$WORKER" != "all" ]; then
-  echo "❌ Error: Worker must be 'send-worker', 'scheduler-worker', or 'all'"
-  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|all]"
+if [ "$WORKER" != "send-worker" ] && [ "$WORKER" != "scheduler-worker" ] && [ "$WORKER" != "inbox-checker-worker" ] && [ "$WORKER" != "all" ]; then
+  echo "❌ Error: Worker must be 'send-worker', 'scheduler-worker', 'inbox-checker-worker', or 'all'"
+  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|all]"
   exit 1
 fi
 
@@ -54,8 +54,10 @@ get_repo_uri() {
   local output_key
   if [ "$repo_name" = "send-worker" ]; then
     output_key="SendWorkerRepoUri"
-  else
+  elif [ "$repo_name" = "scheduler-worker" ]; then
     output_key="SchedulerWorkerRepoUri"
+  else
+    output_key="InboxCheckerWorkerRepoUri"
   fi
   
   local repo_uri
@@ -97,14 +99,17 @@ build_and_push_worker() {
   echo "   Repository: $repo_uri"
   echo ""
   
-  # Login to ECR (only need to do this once)
-  if [ "$worker_name" = "send-worker" ]; then
-    echo "🔐 Logging in to ECR..."
-    aws ecr get-login-password --region "$REGION" | \
-      docker login --username AWS --password-stdin "$repo_uri" > /dev/null 2>&1
+  # Login to ECR (always login to ensure token is fresh)
+  echo "🔐 Logging in to ECR..."
+  aws ecr get-login-password --region "$REGION" | \
+    docker login --username AWS --password-stdin "$repo_uri" > /dev/null 2>&1
+  if [ $? -eq 0 ]; then
     echo "✅ Logged in to ECR"
-    echo ""
+  else
+    echo "❌ Failed to login to ECR"
+    exit 1
   fi
+  echo ""
   
   # Set up buildx builder if it doesn't exist
   if ! docker buildx ls | grep -q "multiarch-builder"; then
@@ -140,6 +145,7 @@ fi
 if [ "$WORKER" = "all" ]; then
   build_and_push_worker "send-worker"
   build_and_push_worker "scheduler-worker"
+  build_and_push_worker "inbox-checker-worker"
 else
   build_and_push_worker "$WORKER"
 fi

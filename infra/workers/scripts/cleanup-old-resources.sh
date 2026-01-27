@@ -66,7 +66,9 @@ if [ -n "$ALL_REPOS" ] && [ "$ALL_REPOS" != "None" ]; then
     if [[ "$REPO_NAME" == "furnace/send-worker-dev" ]] || \
        [[ "$REPO_NAME" == "furnace/send-worker-prod" ]] || \
        [[ "$REPO_NAME" == "furnace/scheduler-worker-dev" ]] || \
-       [[ "$REPO_NAME" == "furnace/scheduler-worker-prod" ]]; then
+       [[ "$REPO_NAME" == "furnace/scheduler-worker-prod" ]] || \
+       [[ "$REPO_NAME" == "furnace/inbox-checker-worker-dev" ]] || \
+       [[ "$REPO_NAME" == "furnace/inbox-checker-worker-prod" ]]; then
       echo "     ✅ Keeping (new infrastructure)"
     else
       echo "     ⚠️  Possible old repository - review for deletion"

@@ -48,6 +48,7 @@ new WorkerStack(app, 'WorkerStack-Dev', {
   desiredCount: {
     sendWorker: 0, // Start with 0, scale up after pushing Docker images
     schedulerWorker: 0, // Start with 0, scale up after pushing Docker images
+    inboxCheckerWorker: 0, // Start with 0, scale up after pushing Docker images
   },
 });
 
@@ -63,6 +64,7 @@ new WorkerStack(app, 'WorkerStack-Prod', {
   desiredCount: {
     sendWorker: 0, // Start with 0, scale up after pushing Docker images
     schedulerWorker: 0, // Start with 0, scale up after pushing Docker images
+    inboxCheckerWorker: 0, // Start with 0, scale up after pushing Docker images
   },
 });
 

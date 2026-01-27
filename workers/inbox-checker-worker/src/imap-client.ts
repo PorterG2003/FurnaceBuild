@@ -155,18 +155,45 @@ export class ImapClient {
     const bodyHtmlContent = this.extractBodyHtml(bodyText);
 
     // Extract attachments info
-    const attachments: Array<{ filename: string; contentType: string; size: number }> = [];
-    if (message.bodyStructure?.childNodes) {
-      for (const node of message.bodyStructure.childNodes) {
+    // Helper function to recursively extract attachments with part identifiers
+    const extractAttachments = (
+      nodes: any[],
+      parentPart: string = '',
+      depth: number = 0
+    ): Array<{ filename: string; contentType: string; size: number; part: string; imapUid: number }> => {
+      const attachments: Array<{ filename: string; contentType: string; size: number; part: string; imapUid: number }> = [];
+      
+      if (!nodes || !Array.isArray(nodes)) return attachments;
+      
+      nodes.forEach((node, index) => {
+        // Build part identifier (1-based index)
+        const partIndex = index + 1;
+        const part = parentPart ? `${parentPart}.${partIndex}` : `${partIndex}`;
+        
+        // Check if this node is an attachment
         if (node.disposition === 'attachment' || node.disposition === 'inline') {
           attachments.push({
             filename: node.dispositionParameters?.filename || 'attachment',
             contentType: node.contentType || 'application/octet-stream',
             size: node.size || 0,
+            part: part, // MIME part identifier for on-demand fetching
+            imapUid: uid, // Store message UID for on-demand fetching
           });
         }
-      }
-    }
+        
+        // Recursively process child nodes (for nested MIME structures)
+        if (node.childNodes && Array.isArray(node.childNodes)) {
+          const childAttachments = extractAttachments(node.childNodes, part, depth + 1);
+          attachments.push(...childAttachments);
+        }
+      });
+      
+      return attachments;
+    };
+    
+    const attachments = message.bodyStructure?.childNodes 
+      ? extractAttachments(message.bodyStructure.childNodes)
+      : [];
 
     return {
       uid,

@@ -40,7 +40,13 @@ export interface ProcessedMessage {
   bodyHtml: string | null;
   date: Date;
   headers: Record<string, string | string[]>;
-  attachments: Array<{ filename: string; contentType: string; size: number }>;
+  attachments: Array<{ 
+    filename: string; 
+    contentType: string; 
+    size: number;
+    part?: string; // MIME part identifier (e.g., "1", "1.2", "2") for on-demand fetching
+    imapUid?: number; // IMAP UID of the message (for on-demand fetching)
+  }>;
 }
 
 export interface MessageJob {

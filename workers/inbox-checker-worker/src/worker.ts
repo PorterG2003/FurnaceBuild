@@ -87,21 +87,22 @@ export class InboxCheckerWorker {
    */
   private async processMailbox(mailbox: Mailbox): Promise<void> {
     try {
-      console.log(`[INBOX CHECKER] Processing mailbox ${mailbox.id} (${mailbox.email_address})`);
-
-      const lastSyncedAt = mailbox.last_synced_at 
-        ? new Date(mailbox.last_synced_at) 
+      const lastSyncedAt = mailbox.last_synced_at
+        ? new Date(mailbox.last_synced_at)
         : null;
+      console.log(`[INBOX CHECKER] Processing mailbox ${mailbox.id} (${mailbox.email_address}) since=${lastSyncedAt?.toISOString() ?? 'null (first sync)'}`);
 
       // Fetch new messages
       const messages = await this.imapClient.fetchNewMessages(mailbox, lastSyncedAt);
       console.log(`[INBOX CHECKER] Found ${messages.length} new message(s) in mailbox ${mailbox.id}`);
 
       if (messages.length === 0) {
-        // Update last_synced_at even if no messages (to avoid re-checking)
         await this.supabase
           .from('mailboxes')
-          .update({ last_synced_at: new Date().toISOString() })
+          .update({
+            last_synced_at: new Date().toISOString(),
+            imap_claimed_at: null,
+          })
           .eq('id', mailbox.id);
         return;
       }
@@ -143,10 +144,12 @@ export class InboxCheckerWorker {
         }
       }
 
-      // Update last_synced_at after processing
       await this.supabase
         .from('mailboxes')
-        .update({ last_synced_at: new Date().toISOString() })
+        .update({
+          last_synced_at: new Date().toISOString(),
+          imap_claimed_at: null,
+        })
         .eq('id', mailbox.id);
 
       console.log(`[INBOX CHECKER] Mailbox ${mailbox.id} processed: ${replies} replies, ${bounces} bounces, ${unsubscribes} unsubscribes`);

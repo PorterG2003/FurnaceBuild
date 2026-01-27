@@ -27,28 +27,27 @@ export class ImapClient {
       await client.connect();
       await client.mailboxOpen('INBOX');
 
-      // Build search criteria: messages since last_synced_at (or all if never synced)
-      // Use 'unseen' to only get new messages, or 'all' to get all messages since date
+      // Build search criteria: messages since last_synced_at (or last 7 days if never synced)
       let searchCriteria: any;
       if (lastSyncedAt) {
-        // Get all messages since last sync (not just unseen, in case messages were marked as read)
         searchCriteria = { since: lastSyncedAt };
+        console.log(`[IMAP] Searching ${mailbox.email_address} since=${lastSyncedAt.toISOString()}`);
       } else {
-        // First sync: only get recent messages (last 7 days) to avoid processing old emails
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         searchCriteria = { since: sevenDaysAgo };
+        console.log(`[IMAP] Searching ${mailbox.email_address} (first sync) since=${sevenDaysAgo.toISOString()}`);
       }
 
-      // Search for messages
       const messages = await client.search(searchCriteria, { uid: true });
-      
+
       // Handle search result (can be false or number[])
       if (!messages || (Array.isArray(messages) && messages.length === 0)) {
+        console.log(`[IMAP] Search returned 0 UIDs for ${mailbox.email_address}`);
         return [];
       }
 
-      // Ensure messages is an array
       const messageUids: number[] = Array.isArray(messages) ? messages : [];
+      console.log(`[IMAP] Search returned ${messageUids.length} UID(s) for ${mailbox.email_address}`);
       if (messageUids.length === 0) {
         return [];
       }
@@ -58,11 +57,13 @@ export class ImapClient {
       
       for (const uid of messageUids) {
         try {
+          // Pass { uid: true } as options so ImapFlow sends "UID FETCH" not "FETCH".
+          // (search returns UIDs; using them as sequence numbers causes "Invalid messageset".)
           const message = await client.fetchOne(uid, {
             source: true,
             uid: true,
             bodyStructure: true,
-          });
+          }, { uid: true });
 
           if (!message) continue;
 
@@ -93,8 +94,8 @@ export class ImapClient {
     message: any,
     client: ImapFlow
   ): Promise<ProcessedMessage> {
-    // Download raw message
-    const parsed = await client.download(uid, message.source);
+    // Download full RFC822 message (part undefined). Options.uid so range is UID not sequence.
+    const parsed = await client.download(uid, undefined, { uid: true });
     
     // Read the stream content
     const chunks: Buffer[] = [];

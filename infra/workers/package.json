@@ -51,7 +51,9 @@
     "verify-secret:dev": "bash scripts/verify-secret.sh dev",
     "verify-secret:prod": "bash scripts/verify-secret.sh prod",
     "restart:dev": "bash scripts/restart-services.sh dev",
-    "restart:prod": "bash scripts/restart-services.sh prod"
+    "restart:prod": "bash scripts/restart-services.sh prod",
+    "validate": "bash scripts/validate-build.sh",
+    "validate:build": "bash scripts/validate-build.sh"
   },
   "keywords": [
     "cdk",

@@ -11,9 +11,10 @@ High-level explanations of system concepts and how components work together.
 - **[QUEUE_SCHEDULER_OVERVIEW.md](./architecture/QUEUE_SCHEDULER_OVERVIEW.md)** - Queue and scheduler system explained
 
 ### [implementation/](./implementation/)
-Step-by-step implementation plans and guides.
+Step-by-step implementation plans and guides, organized by domain (scheduler, inbox-checker, aws, flow, send-worker, inbox-ui, testing, status). See **[implementation/README.md](./implementation/README.md)** for the full index.
 
-- **[IMPLEMENTATION_PLAN.md](./implementation/IMPLEMENTATION_PLAN.md)** - Complete implementation plan for scalable email infrastructure (AWS + Supabase + SMTP)
+- **[IMPLEMENTATION_PLAN.md](./implementation/status/IMPLEMENTATION_PLAN.md)** - Master plan: scalable email infrastructure (AWS + Supabase + SMTP)
+- **[COMPLETION_PLAN.md](./implementation/status/COMPLETION_PLAN.md)** - Current completion and production-readiness status
 
 ### [decisions/](./decisions/)
 Decision records documenting architectural choices and rationale.

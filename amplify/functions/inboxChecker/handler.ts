@@ -51,23 +51,27 @@ async function fetchNewMessages(
     await client.connect();
     await client.mailboxOpen('INBOX');
 
-    // Build search criteria: messages since last_synced_at (or all if never synced)
-    const searchCriteria: any[] = ['UNSEEN']; // Only unread messages
+    // Build search criteria: messages since last_synced_at (or last 7 days if never synced)
+    let searchCriteria: any;
     if (lastSyncedAt) {
-      searchCriteria.push(['SINCE', lastSyncedAt]);
+      searchCriteria = { since: lastSyncedAt };
+    } else {
+      // First sync: only get recent messages (last 7 days) to avoid processing old emails
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      searchCriteria = { since: sevenDaysAgo };
     }
 
-    // Search for messages
-    const messages = await client.search(searchCriteria, { uid: true });
-    
-    if (messages.length === 0) {
+    // Search for messages (imapflow search() accepts SearchObject; returns false | number[] when uid: true)
+    const searchResult: false | number[] = await client.search(searchCriteria as any, { uid: true });
+    const messageUids: number[] = Array.isArray(searchResult) ? searchResult : [];
+    if (!messageUids.length) {
       return [];
     }
 
     // Fetch message data
     const processedMessages: ProcessedMessage[] = [];
     
-    for (const uid of messages) {
+    for (const uid of messageUids) {
       try {
         // Pass { uid: true } so ImapFlow sends "UID FETCH" not "FETCH" (search returns UIDs).
         const message = await client.fetchOne(uid, {
@@ -127,9 +131,11 @@ async function fetchNewMessages(
         if (message.bodyStructure?.childNodes) {
           for (const node of message.bodyStructure.childNodes) {
             if (node.disposition === 'attachment' || node.disposition === 'inline') {
+              // Type assertion needed - imapflow types don't expose contentType directly
+              const nodeAny = node as any;
               attachments.push({
                 filename: node.dispositionParameters?.filename || 'attachment',
-                contentType: node.contentType || 'application/octet-stream',
+                contentType: nodeAny.contentType || 'application/octet-stream',
                 size: node.size || 0,
               });
             }

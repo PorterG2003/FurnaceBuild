@@ -61,16 +61,10 @@ async function fetchNewMessages(
       searchCriteria = { since: sevenDaysAgo };
     }
 
-    // Search for messages
-    const messages = await client.search(searchCriteria, { uid: true });
-    
-    // Handle search result (can be false or number[])
-    if (!messages || (Array.isArray(messages) && messages.length === 0)) {
-      return [];
-    }
-
-    const messageUids: number[] = Array.isArray(messages) ? messages : [];
-    if (messageUids.length === 0) {
+    // Search for messages (imapflow search() accepts SearchObject; returns false | number[] when uid: true)
+    const searchResult: false | number[] = await client.search(searchCriteria as any, { uid: true });
+    const messageUids: number[] = Array.isArray(searchResult) ? searchResult : [];
+    if (!messageUids.length) {
       return [];
     }
 

@@ -177,7 +177,7 @@ The script will:
 
 ## Architecture
 
-See [docs/implementation/PHASE2.6_DOCKER_IMAGES_ECR.md](../../docs/implementation/PHASE2.6_DOCKER_IMAGES_ECR.md) for detailed architecture and implementation notes.
+See [docs/implementation/aws/PHASE2.6_DOCKER_IMAGES_ECR.md](../../docs/implementation/aws/PHASE2.6_DOCKER_IMAGES_ECR.md) for detailed architecture and implementation notes.
 
 ## Development Workflow
 

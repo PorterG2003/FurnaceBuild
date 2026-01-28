@@ -39,4 +39,10 @@ export type Mailbox = Database['public']['Tables']['mailboxes']['Row'];
 export type MailboxInsert = Database['public']['Tables']['mailboxes']['Insert'];
 export type MailboxUpdate = Database['public']['Tables']['mailboxes']['Update'];
 
+export type EmailThread = Database['public']['Tables']['email_threads']['Row'];
+export type EmailThreadInsert = Database['public']['Tables']['email_threads']['Insert'];
+export type EmailThreadUpdate = Database['public']['Tables']['email_threads']['Update'];
 
+export type EmailMessage = Database['public']['Tables']['email_messages']['Row'];
+export type EmailMessageInsert = Database['public']['Tables']['email_messages']['Insert'];
+export type EmailMessageUpdate = Database['public']['Tables']['email_messages']['Update'];

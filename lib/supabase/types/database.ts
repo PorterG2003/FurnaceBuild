@@ -379,6 +379,7 @@ export interface Database {
           from_name: string | null;
           to_email: string;
           to_name: string | null;
+          cc: string[] | null;
           subject: string;
           body_text: string | null;
           body_html: string | null;
@@ -402,6 +403,7 @@ export interface Database {
           from_name?: string | null;
           to_email: string;
           to_name?: string | null;
+          cc?: string[] | null;
           subject: string;
           body_text?: string | null;
           body_html?: string | null;
@@ -425,6 +427,7 @@ export interface Database {
           from_name?: string | null;
           to_email?: string;
           to_name?: string | null;
+          cc?: string[] | null;
           subject?: string;
           body_text?: string | null;
           body_html?: string | null;

@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { DatabaseClient } from './database.js';
-import { sendEmail, mergeTemplate } from './email.js';
+import { sendEmail, sendReplyEmail, mergeTemplate } from './email.js';
+import type { ReplyEmailOptions } from './email.js';
 import { SmtpPool } from './smtp-pool.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
 
@@ -32,38 +33,48 @@ export class SendWorker {
 
     while (this.running) {
       try {
-        // Poll database for message jobs ready to send
+        // Manual sends (replies, forwards) take priority — poll manual first
+        const manualJobs = await this.databaseClient.pollManual();
+        if (manualJobs.length > 0) {
+          this.consecutiveEmptyPolls = 0;
+          const results = await Promise.allSettled(
+            manualJobs.map(job => this.processMessageJob(job))
+          );
+          results.forEach((r, i) => {
+            if (r.status === 'rejected') {
+              console.error(`[SEND WORKER] Failed manual job ${manualJobs[i].id}:`, r.reason);
+            }
+          });
+          continue;
+        }
+
+        // Then poll campaign jobs
         const messageJobs = await this.databaseClient.poll();
 
         if (messageJobs.length > 0) {
           this.consecutiveEmptyPolls = 0;
           console.log(`[SEND WORKER] Found ${messageJobs.length} message job(s) ready to send`);
 
-          // Process jobs in parallel (with concurrency limit if needed)
           const results = await Promise.allSettled(
             messageJobs.map(job => this.processMessageJob(job))
           );
 
-          // Log results
           const successful = results.filter(r => r.status === 'fulfilled').length;
           const failed = results.filter(r => r.status === 'rejected').length;
           console.log(`[SEND WORKER] Processed ${messageJobs.length} job(s): ${successful} successful, ${failed} failed`);
 
-          // Log any failures
           results.forEach((result, index) => {
             if (result.status === 'rejected') {
               console.error(`[SEND WORKER] Failed to process message job ${messageJobs[index].id}:`, result.reason);
             }
           });
         } else {
-          // No jobs found - adaptive polling: increase interval when idle
           this.consecutiveEmptyPolls++;
           const pollInterval = this.calculatePollInterval();
           await this.sleep(pollInterval);
         }
       } catch (error) {
         console.error('[SEND WORKER] Error in main loop:', error);
-        // Wait before retrying
         await this.sleep(5000);
       }
     }
@@ -98,13 +109,17 @@ export class SendWorker {
    * Process a single message job (already claimed from database)
    */
   private async processMessageJob(messageJob: MessageJob): Promise<void> {
+    const isInboxReply =
+      messageJob.message_type === 'inbox_reply' ||
+      messageJob.message_data?.source === 'inbox_reply';
+    if (isInboxReply) {
+      return this.processInboxReplyJob(messageJob);
+    }
+
     try {
       const message_job_id = messageJob.id;
 
       console.log(`[SEND WORKER] Processing message job: ${message_job_id}`);
-
-      // Job is already claimed (status = 'reserved') and scheduled_at <= NOW() is guaranteed by RPC function
-      // No need to check scheduled_at or load from database again
 
       // 1. Load related data (lead, mailbox, node config)
       const { lead, mailbox, nodeConfig } = await this.loadJobData(messageJob);
@@ -291,23 +306,22 @@ export class SendWorker {
         
         console.log(`[SEND WORKER] Marked message job ${messageJob.id} as failed`);
 
-        // Check if interval should be marked as processed (immediate, not waiting for scheduler timer)
-        // This makes interval completion happen immediately instead of waiting up to 1 minute
-        try {
-          const { data: processedCount, error: processedError } = await this.supabase
-            .rpc('check_and_update_processed_intervals', {
-              p_campaign_id: messageJob.campaign_id
-            });
-          
-          if (processedError) {
-            // Log error but don't fail (job is already marked as failed)
-            console.error(`[SEND WORKER] Failed to check processed intervals for campaign ${messageJob.campaign_id}:`, processedError);
-          } else if (processedCount && processedCount > 0) {
-            console.log(`[SEND WORKER] Marked ${processedCount} interval(s) as processed for campaign ${messageJob.campaign_id}`);
+        // Only update processed intervals for campaign jobs (not inbox reply/forward)
+        const isCampaign = messageJob.message_type !== 'inbox_reply' && messageJob.message_type !== 'inbox_forward' && messageJob.message_data?.source !== 'inbox_reply' && messageJob.message_data?.source !== 'inbox_forward';
+        if (isCampaign) {
+          try {
+            const { data: processedCount, error: processedError } = await this.supabase
+              .rpc('check_and_update_processed_intervals', {
+                p_campaign_id: messageJob.campaign_id
+              });
+            if (processedError) {
+              console.error(`[SEND WORKER] Failed to check processed intervals for campaign ${messageJob.campaign_id}:`, processedError);
+            } else if (processedCount && processedCount > 0) {
+              console.log(`[SEND WORKER] Marked ${processedCount} interval(s) as processed for campaign ${messageJob.campaign_id}`);
+            }
+          } catch (processedCheckError) {
+            console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, processedCheckError);
           }
-        } catch (processedCheckError) {
-          // Log error but don't fail (job is already marked as failed)
-          console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, processedCheckError);
         }
       } catch (updateError) {
         // Log but don't throw - we've already logged the original error
@@ -317,6 +331,155 @@ export class SendWorker {
       // Re-throw to be caught by Promise.allSettled in the main loop
       throw error;
     }
+  }
+
+  /**
+   * Process an inbox reply job: send reply email, insert email_messages, update email_threads.
+   * Does not update enrollment or intervals (flow is irrelevant).
+   */
+  private async processInboxReplyJob(messageJob: MessageJob): Promise<void> {
+    const message_job_id = messageJob.id;
+    const md = messageJob.message_data || {};
+    const threadId = md.thread_id as string | undefined;
+    const inReplyToMessageId = md.in_reply_to_message_id as string | undefined;
+
+    if (!threadId || !inReplyToMessageId) {
+      throw new Error(`Inbox reply job ${message_job_id} missing thread_id or in_reply_to_message_id`);
+    }
+
+    console.log(`[SEND WORKER] Processing inbox reply job: ${message_job_id}`);
+
+    // 1. Load mailbox
+    const { data: mailbox, error: mailboxError } = await this.supabase
+      .from('mailboxes')
+      .select('*')
+      .eq('id', messageJob.mailbox_id)
+      .single();
+    if (mailboxError || !mailbox) {
+      throw new Error(`Failed to load mailbox ${messageJob.mailbox_id}: ${mailboxError?.message}`);
+    }
+
+    // 2. Throttle check (same as campaign)
+    const { data: throttleResult, error: throttleError } = await this.supabase
+      .rpc('check_mailbox_throttle_and_reserve', { p_message_job_id: message_job_id })
+      .single();
+    if (throttleError) {
+      const { data: currentJob } = await this.supabase
+        .from('message_jobs')
+        .select('status')
+        .eq('id', message_job_id)
+        .single();
+      if (currentJob?.status === 'reserved') {
+        throw new Error(`Throttle check failed for reply job ${message_job_id}: ${throttleError.message}`);
+      }
+      return;
+    }
+    const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
+    if (!result?.success) {
+      // Manual sends: do not leave job cancelled; re-queue so it retries when throttle allows
+      console.log(`[SEND WORKER] Throttle check failed for reply job ${message_job_id}: ${result?.failure_reason}. Re-queuing for retry.`);
+      const { error: updateError } = await this.supabase
+        .from('message_jobs')
+        .update({
+          status: 'pending',
+          reserved_at: null,
+          error_message: null,
+        })
+        .eq('id', message_job_id);
+      if (updateError) {
+        console.error(`[SEND WORKER] Failed to re-queue reply job ${message_job_id}:`, updateError);
+      }
+      return;
+    }
+
+    // 3. Send reply via SMTP
+    const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
+    const replyOptions: ReplyEmailOptions = {
+      toEmail: md.to_email || '',
+      toName: md.to_name ?? null,
+      cc: Array.isArray(md.cc) ? md.cc : undefined,
+      subject: md.subject || '(No subject)',
+      bodyText: md.body_text || md.body_html || '',
+      bodyHtml: md.body_html ?? null,
+      inReplyTo: md.in_reply_to ?? null,
+      references: md.message_references ?? null,
+    };
+    let providerMessageId: string;
+    try {
+      providerMessageId = await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, replyOptions);
+      this.smtpPool.markMessageSent(mailbox.id);
+    } catch (err: any) {
+      if (err.code === 'EAUTH' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT') {
+        this.smtpPool.removeTransporter(mailbox.id);
+      }
+      throw err;
+    }
+
+    // 4. Load thread for participants and current counts
+    const { data: thread, error: threadError } = await this.supabase
+      .from('email_threads')
+      .select('participants, message_count')
+      .eq('id', threadId)
+      .single();
+    if (threadError || !thread) {
+      throw new Error(`Failed to load thread ${threadId}: ${threadError?.message}`);
+    }
+
+    const participants = (thread.participants || []) as string[];
+    const toAdd = [replyOptions.toEmail, ...(replyOptions.cc || [])].filter(Boolean);
+    const newParticipants = [...new Set([...participants, ...toAdd])];
+
+    // 5. Insert email_messages (sent reply)
+    const now = new Date().toISOString();
+    const { error: insertError } = await this.supabase
+      .from('email_messages')
+      .insert({
+        thread_id: threadId,
+        message_job_id: message_job_id,
+        direction: 'sent',
+        from_email: mailbox.email_address,
+        from_name: mailbox.display_name,
+        to_email: replyOptions.toEmail,
+        to_name: replyOptions.toName || null,
+        cc: replyOptions.cc && replyOptions.cc.length > 0 ? replyOptions.cc : null,
+        subject: replyOptions.subject,
+        body_text: replyOptions.bodyText,
+        body_html: replyOptions.bodyHtml,
+        message_id: providerMessageId,
+        in_reply_to: replyOptions.inReplyTo,
+        message_references: replyOptions.references,
+        received_at: now,
+      });
+    if (insertError) {
+      throw new Error(`Failed to insert email_messages for reply: ${insertError.message}`);
+    }
+
+    // 6. Update email_threads (last_message_at, message_count, participants)
+    const { error: updateThreadError } = await this.supabase
+      .from('email_threads')
+      .update({
+        last_message_at: now,
+        message_count: (thread.message_count || 0) + 1,
+        participants: newParticipants,
+        updated_at: now,
+      })
+      .eq('id', threadId);
+    if (updateThreadError) {
+      throw new Error(`Failed to update email_threads: ${updateThreadError.message}`);
+    }
+
+    // 7. Mark message_job sent
+    await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'sent',
+        sent_at: now,
+        provider_message_id: providerMessageId,
+        updated_at: now,
+      })
+      .eq('id', message_job_id);
+
+    console.log(`[SEND WORKER] Inbox reply job ${message_job_id} sent successfully`);
   }
 
   /**

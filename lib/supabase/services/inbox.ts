@@ -107,3 +107,119 @@ export async function createReplyJob(params: CreateReplyJobParams): Promise<stri
 
   return data;
 }
+
+export interface MessageJobStatus {
+  id: string;
+  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled';
+  error_message: string | null;
+}
+
+/**
+ * Get message_job status by job ID.
+ * Used to check if a reply job has succeeded or failed.
+ */
+export async function getMessageJobStatus(jobId: string): Promise<MessageJobStatus | null> {
+  const { data, error } = await supabase
+    .from('message_jobs')
+    .select('id, status, error_message')
+    .eq('id', jobId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch message job status: ${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    status: data.status as MessageJobStatus['status'],
+    error_message: data.error_message,
+  };
+}
+
+export interface PendingInboxReplyJob {
+  id: string;
+  thread_id: string;
+  status: 'pending' | 'reserved' | 'sending' | 'failed';
+  error_message: string | null;
+  message_data: {
+    source: 'inbox_reply';
+    thread_id: string;
+    in_reply_to_message_id: string;
+    subject: string;
+    body_text: string;
+    body_html: string;
+    to_email: string;
+    to_name: string;
+    cc: string[];
+  };
+}
+
+/**
+ * Get pending/failed inbox reply jobs for threads in an account.
+ * Used to restore pending replies after page reload.
+ */
+export async function getPendingInboxReplyJobs(
+  accountId: string
+): Promise<PendingInboxReplyJob[]> {
+  // First get all thread IDs for this account
+  const { data: threads, error: threadsError } = await supabase
+    .from('email_threads')
+    .select('id')
+    .eq('account_id', accountId);
+
+  if (threadsError) {
+    throw new Error(`Failed to fetch threads: ${threadsError.message}`);
+  }
+
+  if (!threads || threads.length === 0) {
+    return [];
+  }
+
+  const threadIds = threads.map((t) => t.id);
+
+  // Query message_jobs for inbox_reply jobs that are pending/failed
+  const { data: jobs, error: jobsError } = await supabase
+    .from('message_jobs')
+    .select('id, status, error_message, message_data')
+    .eq('message_type', 'inbox_reply')
+    .in('status', ['pending', 'reserved', 'sending', 'failed']);
+
+  if (jobsError) {
+    throw new Error(`Failed to fetch pending reply jobs: ${jobsError.message}`);
+  }
+
+  if (!jobs) {
+    return [];
+  }
+
+  // Filter to jobs for threads in this account and extract data
+  const pendingJobs: PendingInboxReplyJob[] = [];
+  for (const job of jobs) {
+    const md = job.message_data as any;
+    if (md?.source === 'inbox_reply' && threadIds.includes(md.thread_id)) {
+      pendingJobs.push({
+        id: job.id,
+        thread_id: md.thread_id,
+        status: job.status as PendingInboxReplyJob['status'],
+        error_message: job.error_message,
+        message_data: {
+          source: 'inbox_reply',
+          thread_id: md.thread_id,
+          in_reply_to_message_id: md.in_reply_to_message_id,
+          subject: md.subject || '',
+          body_text: md.body_text || '',
+          body_html: md.body_html || md.body_text || '',
+          to_email: md.to_email || '',
+          to_name: md.to_name || '',
+          cc: Array.isArray(md.cc) ? md.cc : [],
+        },
+      });
+    }
+  }
+
+  return pendingJobs;
+}

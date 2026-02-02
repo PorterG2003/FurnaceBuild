@@ -21,10 +21,12 @@ import {
   getMessagesByThread,
   getUserByExternalId,
   createReplyJob,
+  getMessageJobStatus,
+  getPendingInboxReplyJobs,
 } from '@/lib/supabase/services';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import { getDisplayBody } from '@/lib/email';
-import { ArrowUturnLeftIcon } from 'react-native-heroicons/outline';
+import { ArrowUturnLeftIcon, ArrowPathIcon, ExclamationCircleIcon } from 'react-native-heroicons/outline';
 
 function formatMessageDate(iso: string): string {
   const d = new Date(iso);
@@ -188,9 +190,17 @@ function getInitials(name: string | null, email: string): string {
 function MessageBubble({
   message,
   onReply,
+  isPending,
+  isFailed,
+  errorMessage,
+  onRetry,
 }: {
   message: EmailMessage;
   onReply?: (message: EmailMessage) => void;
+  isPending?: boolean;
+  isFailed?: boolean;
+  errorMessage?: string | null;
+  onRetry?: () => void;
 }) {
   const rawBody = message.body_text ?? message.body_html ?? '';
   const body = getDisplayBody(rawBody, {
@@ -198,63 +208,146 @@ function MessageBubble({
   });
   const sender = message.from_name || message.from_email;
   const isSent = message.direction === 'sent';
-  const canReply = onReply != null;
+  const canReply = onReply != null && !isPending && !isFailed;
+  const showRetry = isFailed && onRetry != null;
+
+  const borderPulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!isPending || isFailed) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(borderPulse, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(borderPulse, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isPending, isFailed, borderPulse]);
+
+  const animatedBorderColor = borderPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#2A2A2A', 'rgba(243, 68, 13, 0.55)'],
+  });
+
+  const cardContent = (
+    <View
+      className="rounded-xl w-[92%] max-w-[92%] overflow-hidden"
+      style={{
+        backgroundColor: isSent ? '#1E1E1E' : '#1A1A1A',
+        borderWidth: isPending || isFailed ? 0 : 1,
+        borderColor: isPending || isFailed ? 'transparent' : '#2A2A2A',
+      }}
+    >
+      {isPending && !isFailed ? (
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderWidth: 2,
+            borderRadius: 12,
+            borderColor: animatedBorderColor,
+          }}
+        />
+      ) : null}
+      {isFailed ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderWidth: 2,
+            borderRadius: 12,
+            borderColor: '#EF4444',
+          }}
+        />
+      ) : null}
+      <View className="px-5 pt-4 pb-3">
+        <View className="flex-row items-center justify-between flex-wrap gap-2">
+          <View className="flex-row items-center flex-1 min-w-0">
+            <View
+              className="w-10 h-10 rounded-full items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: '#2A2A2A' }}
+            >
+              <Text className="text-white font-instrument-semibold text-sm">
+                {getInitials(message.from_name, message.from_email)}
+              </Text>
+            </View>
+            <View className="ml-3 items-start flex-1 min-w-0">
+              <Text className="text-white font-instrument-semibold text-base" numberOfLines={1}>
+                {isSent ? 'You' : sender}
+              </Text>
+              <Text className="text-gray-400 font-instrument text-xs mt-0.5" numberOfLines={1}>
+                {message.from_email}
+              </Text>
+            </View>
+            <Text className="text-gray-500 font-instrument text-xs flex-shrink-0 ml-2">
+              {isFailed ? 'Failed' : isPending ? 'Sending…' : formatMessageDate(message.received_at)}
+            </Text>
+          </View>
+          {showRetry && (
+            <Pressable
+              onPress={onRetry}
+              className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
+              hitSlop={8}
+              style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)' }}
+            >
+              <ArrowPathIcon size={16} color="#EF4444" />
+              <Text className="font-instrument-medium text-sm" style={{ color: '#EF4444' }}>
+                Retry
+              </Text>
+            </Pressable>
+          )}
+          {canReply && (
+            <Pressable
+              onPress={() => onReply(message)}
+              className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
+              hitSlop={8}
+              style={{ backgroundColor: 'rgba(243, 68, 13, 0.12)' }}
+            >
+              <ArrowUturnLeftIcon size={16} color="#F3440D" />
+              <Text className="font-instrument-medium text-sm" style={{ color: '#F3440D' }}>
+                Reply
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+      <View className="mx-5 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }} />
+      <View className="px-5 py-4">
+        {isFailed && errorMessage ? (
+          <View className="mb-3 flex-row items-start gap-2 rounded-lg p-3" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)' }}>
+            <ExclamationCircleIcon size={18} color="#EF4444" style={{ marginTop: 2 }} />
+            <View className="flex-1">
+              <Text className="text-red-400 font-instrument-semibold text-sm mb-1">Failed to send</Text>
+              <Text className="text-red-300 font-instrument text-xs">{errorMessage}</Text>
+            </View>
+          </View>
+        ) : null}
+        <Text className="text-gray-300 font-instrument text-sm leading-6 text-left">
+          {body || '(No content)'}
+        </Text>
+      </View>
+    </View>
+  );
 
   return (
     <View className="mb-4 flex-row justify-center items-center">
-      <View
-        className="rounded-xl w-[92%] max-w-[92%] overflow-hidden"
-        style={{
-          backgroundColor: isSent ? '#1E1E1E' : '#1A1A1A',
-          borderWidth: 1,
-          borderColor: '#2A2A2A',
-        }}
-      >
-        <View className="px-5 pt-4 pb-3">
-          <View className="flex-row items-center justify-between flex-wrap gap-2">
-            <View className="flex-row items-center flex-1 min-w-0">
-              <View
-                className="w-10 h-10 rounded-full items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: '#2A2A2A' }}
-              >
-                <Text className="text-white font-instrument-semibold text-sm">
-                  {getInitials(message.from_name, message.from_email)}
-                </Text>
-              </View>
-              <View className="ml-3 items-start flex-1 min-w-0">
-                <Text className="text-white font-instrument-semibold text-base" numberOfLines={1}>
-                  {isSent ? 'You' : sender}
-                </Text>
-                <Text className="text-gray-400 font-instrument text-xs mt-0.5" numberOfLines={1}>
-                  {message.from_email}
-                </Text>
-              </View>
-              <Text className="text-gray-500 font-instrument text-xs flex-shrink-0 ml-2">
-                {formatMessageDate(message.received_at)}
-              </Text>
-            </View>
-            {canReply && (
-              <Pressable
-                onPress={() => onReply(message)}
-                className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
-                hitSlop={8}
-                style={{ backgroundColor: 'rgba(243, 68, 13, 0.12)' }}
-              >
-                <ArrowUturnLeftIcon size={16} color="#F3440D" />
-                <Text className="font-instrument-medium text-sm" style={{ color: '#F3440D' }}>
-                  Reply
-                </Text>
-              </Pressable>
-            )}
-          </View>
-        </View>
-        <View className="mx-5 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }} />
-        <View className="px-5 py-4">
-          <Text className="text-gray-300 font-instrument text-sm leading-6 text-left">
-            {body || '(No content)'}
-          </Text>
-        </View>
-      </View>
+      {cardContent}
     </View>
   );
 }
@@ -377,6 +470,27 @@ export default function InboxPage() {
 
   const [showThreadSkeleton, setShowThreadSkeleton] = useState(false);
   const [showMessagesSkeleton, setShowMessagesSkeleton] = useState(false);
+
+  type PendingReply = {
+    threadId: string;
+    jobId: string;
+    subject: string;
+    bodyText: string;
+    bodyHtml: string;
+    toEmail: string;
+    toName: string | null;
+    cc: string[];
+    fromEmail: string;
+    receivedAt: string;
+    messageCountWhenPending: number;
+    errorMessage?: string | null;
+    isFailed?: boolean;
+    inReplyToMessageId: string;
+  };
+  const [pendingReply, setPendingReply] = useState<PendingReply | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const messagesScrollViewRef = useRef<ScrollView>(null);
+
   const threadSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
   const messagesSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
 
@@ -421,16 +535,22 @@ export default function InboxPage() {
     }
   }, [accountId, selectedThreadId]);
 
-  const loadMessages = useCallback(async (threadId: string) => {
-    setMessagesError(null);
-    setMessagesLoading(true);
+  const loadMessages = useCallback(async (threadId: string, options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setMessagesError(null);
+      setMessagesLoading(true);
+    }
     try {
       const list = await getMessagesByThread(threadId);
       setMessages(list);
     } catch (err) {
-      setMessagesError(err instanceof Error ? err.message : 'Failed to load messages');
+      if (!options?.silent) {
+        setMessagesError(err instanceof Error ? err.message : 'Failed to load messages');
+      }
     } finally {
-      setMessagesLoading(false);
+      if (!options?.silent) {
+        setMessagesLoading(false);
+      }
     }
   }, []);
 
@@ -456,6 +576,71 @@ export default function InboxPage() {
     };
   }, [externalId]);
 
+  // Restore pending reply from database for the selected thread
+  const restorePendingReply = useCallback(async () => {
+    if (!accountId || !selectedThreadId) return;
+    try {
+      const pendingJobs = await getPendingInboxReplyJobs(accountId);
+      const jobForThread = pendingJobs.find((j) => j.thread_id === selectedThreadId);
+      if (!jobForThread) return;
+
+      // Get fromEmail from sent messages in the thread
+      const threadMessages = await getMessagesByThread(selectedThreadId);
+      const fromEmail = threadMessages.find((m) => m.direction === 'sent')?.from_email ?? '';
+
+      setPendingReply({
+        threadId: jobForThread.thread_id,
+        jobId: jobForThread.id,
+        subject: jobForThread.message_data.subject,
+        bodyText: jobForThread.message_data.body_text,
+        bodyHtml: jobForThread.message_data.body_html,
+        toEmail: jobForThread.message_data.to_email,
+        toName: jobForThread.message_data.to_name || null,
+        cc: jobForThread.message_data.cc || [],
+        fromEmail,
+        receivedAt: new Date().toISOString(), // Use current time for display
+        messageCountWhenPending: threadMessages.length,
+        errorMessage: jobForThread.error_message,
+        isFailed: jobForThread.status === 'failed',
+        inReplyToMessageId: jobForThread.message_data.in_reply_to_message_id,
+      });
+
+      // Start polling for this job
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      const jobIdToPoll = jobForThread.id;
+      pollingIntervalRef.current = setInterval(async () => {
+        loadMessages(selectedThreadId, { silent: true });
+        // Check job status
+        try {
+          const jobStatus = await getMessageJobStatus(jobIdToPoll);
+          if (jobStatus) {
+            if (jobStatus.status === 'failed') {
+              setPendingReply((prev) =>
+                prev && prev.jobId === jobIdToPoll
+                  ? { ...prev, isFailed: true, errorMessage: jobStatus.error_message }
+                  : prev
+              );
+              if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+              }
+            } else if (jobStatus.status === 'sent') {
+              // Job succeeded, clear pending when message appears
+              // (handled by the effect checking messages.length)
+            }
+          }
+        } catch (err) {
+          console.error('Failed to check job status:', err);
+        }
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to restore pending reply:', err);
+    }
+  }, [accountId, selectedThreadId, loadMessages]);
+
   useEffect(() => {
     if (accountId) {
       loadThreads();
@@ -464,6 +649,13 @@ export default function InboxPage() {
       setThreads([]);
     }
   }, [accountId, loadThreads]);
+
+  // Restore pending reply when thread is selected
+  useEffect(() => {
+    if (accountId && selectedThreadId && !threadsLoading) {
+      restorePendingReply();
+    }
+  }, [accountId, selectedThreadId, threadsLoading, restorePendingReply]);
 
   useEffect(() => {
     if (selectedThreadId) {
@@ -529,6 +721,41 @@ export default function InboxPage() {
     }
   }, [messagesLoading, showMessagesSkeleton]);
 
+  // Clear pending reply when thread changes or when sent message appears (polling)
+  useEffect(() => {
+    if (!pendingReply) return;
+    if (selectedThreadId !== pendingReply.threadId) {
+      setPendingReply(null);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      return;
+    }
+    // If failed, don't clear on message count change (user needs to see error)
+    if (!pendingReply.isFailed && messages.length > pendingReply.messageCountWhenPending) {
+      setPendingReply(null);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    }
+  }, [pendingReply, selectedThreadId, messages.length]);
+
+  // Clear polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  const scrollMessagesToEnd = useCallback(() => {
+    messagesScrollViewRef.current?.scrollToEnd({ animated: true });
+  }, []);
+
   const openReplyComposer = useCallback(
     (message: EmailMessage) => {
       if (!selectedThread) return;
@@ -540,7 +767,22 @@ export default function InboxPage() {
       setReplyToName(toName);
       setReplySubject(selectedThread.subject?.startsWith('Re:') ? selectedThread.subject : `Re: ${selectedThread.subject || '(No subject)'}`);
       setReplyBody('');
-      setReplyCc('');
+
+      // Prefill CC from whole thread history (participants), excluding To and our sending identity
+      const ourEmail = messages.find((m) => m.direction === 'sent')?.from_email?.trim().toLowerCase();
+      const toNorm = toEmail.trim().toLowerCase();
+      const ccSeen = new Set<string>();
+      const ccList: string[] = [];
+      for (const p of selectedThread.participants ?? []) {
+        const e = p.trim();
+        if (!e) continue;
+        const n = e.toLowerCase();
+        if (n === toNorm || n === ourEmail || ccSeen.has(n)) continue;
+        ccSeen.add(n);
+        ccList.push(e);
+      }
+      setReplyCc(ccList.join(', '));
+
       setReplyError(null);
       setShowReplyComposer(true);
     },
@@ -571,6 +813,76 @@ export default function InboxPage() {
     }
   }, [showReplyComposer, slideAnim]);
 
+  const retryFailedReply = useCallback(async () => {
+    if (!accountId || !selectedThreadId || !selectedThread || !pendingReply || !pendingReply.isFailed) return;
+    setSendingReply(true);
+    setReplyError(null);
+    try {
+      const jobId = await createReplyJob({
+        accountId,
+        threadId: selectedThreadId,
+        inReplyToMessageId: inReplyToMessageId!,
+        subject: pendingReply.subject,
+        bodyText: pendingReply.bodyText,
+        bodyHtml: pendingReply.bodyText,
+        toEmail: pendingReply.toEmail,
+        toName: null,
+        cc: undefined,
+      });
+      const fromEmail = messages.find((m) => m.direction === 'sent')?.from_email ?? '';
+      const receivedAt = new Date().toISOString();
+      setPendingReply({
+        threadId: selectedThreadId,
+        jobId,
+        subject: pendingReply.subject,
+        bodyText: pendingReply.bodyText,
+        bodyHtml: pendingReply.bodyHtml,
+        toEmail: pendingReply.toEmail,
+        toName: pendingReply.toName,
+        cc: pendingReply.cc,
+        fromEmail,
+        receivedAt,
+        messageCountWhenPending: messages.length,
+        inReplyToMessageId: pendingReply.inReplyToMessageId,
+      });
+      loadMessages(selectedThreadId);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      pollingIntervalRef.current = setInterval(async () => {
+        loadMessages(selectedThreadId, { silent: true });
+        // Check job status for failures
+        try {
+          const jobStatus = await getMessageJobStatus(jobId);
+          if (jobStatus) {
+            if (jobStatus.status === 'failed') {
+              setPendingReply((prev) =>
+                prev && prev.jobId === jobId
+                  ? { ...prev, isFailed: true, errorMessage: jobStatus.error_message }
+                  : prev
+              );
+              if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+              }
+            } else if (jobStatus.status === 'sent') {
+              // Job succeeded, clear pending when message appears
+              // (handled by the effect checking messages.length)
+            }
+          }
+        } catch (err) {
+          // Ignore errors checking job status, continue polling
+          console.error('Failed to check job status:', err);
+        }
+      }, 2000);
+    } catch (err) {
+      setReplyError(err instanceof Error ? err.message : 'Failed to retry reply');
+    } finally {
+      setSendingReply(false);
+    }
+  }, [accountId, selectedThreadId, selectedThread, pendingReply, messages, loadMessages]);
+
   const sendReply = useCallback(async () => {
     if (!accountId || !selectedThreadId || !selectedThread || !inReplyToMessageId) return;
     if (!replyToEmail.trim()) {
@@ -580,7 +892,7 @@ export default function InboxPage() {
     setSendingReply(true);
     setReplyError(null);
     try {
-      await createReplyJob({
+      const jobId = await createReplyJob({
         accountId,
         threadId: selectedThreadId,
         inReplyToMessageId,
@@ -591,14 +903,61 @@ export default function InboxPage() {
         toName: replyToName.trim() || null,
         cc: replyCc.trim() ? replyCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : undefined,
       });
+      const fromEmail = messages.find((m) => m.direction === 'sent')?.from_email ?? '';
+      const receivedAt = new Date().toISOString();
+      const ccArray = replyCc.trim() ? replyCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : [];
+      setPendingReply({
+        threadId: selectedThreadId,
+        jobId,
+        subject: replySubject.trim() || '(No subject)',
+        bodyText: replyBody.trim() || '',
+        bodyHtml: replyBody.trim() || '',
+        toEmail: replyToEmail.trim(),
+        toName: replyToName.trim() || null,
+        cc: ccArray,
+        fromEmail,
+        receivedAt,
+        messageCountWhenPending: messages.length,
+        inReplyToMessageId,
+      });
       closeReplyPanel();
       loadMessages(selectedThreadId);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      pollingIntervalRef.current = setInterval(async () => {
+        loadMessages(selectedThreadId, { silent: true });
+        // Check job status for failures
+        try {
+          const jobStatus = await getMessageJobStatus(jobId);
+          if (jobStatus) {
+            if (jobStatus.status === 'failed') {
+              setPendingReply((prev) =>
+                prev && prev.jobId === jobId
+                  ? { ...prev, isFailed: true, errorMessage: jobStatus.error_message }
+                  : prev
+              );
+              if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+              }
+            } else if (jobStatus.status === 'sent') {
+              // Job succeeded, clear pending when message appears
+              // (handled by the effect checking messages.length)
+            }
+          }
+        } catch (err) {
+          // Ignore errors checking job status, continue polling
+          console.error('Failed to check job status:', err);
+        }
+      }, 2000);
     } catch (err) {
       setReplyError(err instanceof Error ? err.message : 'Failed to send reply');
     } finally {
       setSendingReply(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyBody, replyCc, loadMessages, closeReplyPanel]);
+  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyBody, replyCc, messages, loadMessages, closeReplyPanel]);
 
   return (
     <PageLayout scrollable={false}>
@@ -658,16 +1017,52 @@ export default function InboxPage() {
             <MessageListSkeleton />
           ) : selectedThread ? (
             <>
+              {(() => {
+                const displayMessages: EmailMessage[] =
+                  pendingReply && selectedThreadId === pendingReply.threadId
+                    ? [
+                        ...messages,
+                        {
+                          id: `pending-${pendingReply.jobId}`,
+                          thread_id: selectedThreadId!,
+                          message_job_id: pendingReply.jobId,
+                          direction: 'sent' as const,
+                          from_email: pendingReply.fromEmail,
+                          from_name: null,
+                          to_email: pendingReply.toEmail,
+                          to_name: null,
+                          cc: null,
+                          subject: pendingReply.subject,
+                          body_text: pendingReply.bodyText,
+                          body_html: pendingReply.bodyHtml,
+                          message_id: null,
+                          in_reply_to: null,
+                          message_references: null,
+                          received_at: pendingReply.receivedAt,
+                          read_at: null,
+                          headers: {},
+                          attachments: [],
+                          imap_uid: null,
+                          created_at: pendingReply.receivedAt,
+                          updated_at: pendingReply.receivedAt,
+                        },
+                      ].sort(
+                        (a, b) =>
+                          new Date(a.received_at).getTime() - new Date(b.received_at).getTime()
+                      )
+                    : messages;
+                return (
+                  <>
               <MessagePanelHeader
                 subject={selectedThread.subject ?? ''}
                 prospectEmails={[
                   ...new Set(
-                    messages.filter((m) => m.direction === 'received').map((m) => m.from_email)
+                    displayMessages.filter((m) => m.direction === 'received').map((m) => m.from_email)
                   ),
                 ]}
                 senderEmails={[
                   ...new Set(
-                    messages.filter((m) => m.direction === 'sent').map((m) => m.from_email)
+                    displayMessages.filter((m) => m.direction === 'sent').map((m) => m.from_email)
                   ),
                 ]}
               />
@@ -685,24 +1080,39 @@ export default function InboxPage() {
                 <MessageListSkeleton />
               ) : (
                 <ScrollView
+                  ref={messagesScrollViewRef}
+                  onContentSizeChange={scrollMessagesToEnd}
                   className="flex-1 bg-[#121212]"
                   contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 32 }}
                   showsVerticalScrollIndicator={false}
                 >
-                  {groupMessagesByDate(messages).map((group) => (
+                  {groupMessagesByDate(displayMessages).map((group) => (
                     <View key={group.label}>
                       <DateDivider label={group.label} />
-                      {group.messages.map((message) => (
-                        <MessageBubble
-                          key={message.id}
-                          message={message}
-                          onReply={openReplyComposer}
-                        />
-                      ))}
+                      {group.messages.map((message) => {
+                        const isPendingMessage = message.id.startsWith('pending-');
+                        const pendingInfo = isPendingMessage && pendingReply && selectedThreadId === pendingReply.threadId
+                          ? pendingReply
+                          : null;
+                        return (
+                          <MessageBubble
+                            key={message.id}
+                            message={message}
+                            onReply={openReplyComposer}
+                            isPending={isPendingMessage && !pendingInfo?.isFailed}
+                            isFailed={pendingInfo?.isFailed ?? false}
+                            errorMessage={pendingInfo?.errorMessage}
+                            onRetry={pendingInfo?.isFailed ? retryFailedReply : undefined}
+                          />
+                        );
+                      })}
                     </View>
                   ))}
                 </ScrollView>
               )}
+                  </>
+                );
+              })()}
             </>
           ) : (
             <View className="flex-1 items-center justify-center px-8">
@@ -765,10 +1175,11 @@ export default function InboxPage() {
                       keyboardType="email-address"
                     />
                     <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Cc (optional)</Text>
+                    <Text className="text-gray-500 font-instrument text-xs mb-1">Separate multiple addresses with commas or spaces.</Text>
                     <TextInput
                       value={replyCc}
                       onChangeText={setReplyCc}
-                      placeholder="cc@example.com"
+                      placeholder="cc@example.com, other@example.com"
                       placeholderTextColor="#6B7280"
                       className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
                       style={{ borderWidth: 1 }}

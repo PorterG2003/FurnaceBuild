@@ -376,7 +376,19 @@ export class SendWorker {
     }
     const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
     if (!result?.success) {
-      console.log(`[SEND WORKER] Throttle check failed for reply job ${message_job_id}: ${result?.failure_reason}`);
+      // Manual sends: do not leave job cancelled; re-queue so it retries when throttle allows
+      console.log(`[SEND WORKER] Throttle check failed for reply job ${message_job_id}: ${result?.failure_reason}. Re-queuing for retry.`);
+      const { error: updateError } = await this.supabase
+        .from('message_jobs')
+        .update({
+          status: 'pending',
+          reserved_at: null,
+          error_message: null,
+        })
+        .eq('id', message_job_id);
+      if (updateError) {
+        console.error(`[SEND WORKER] Failed to re-queue reply job ${message_job_id}:`, updateError);
+      }
       return;
     }
 

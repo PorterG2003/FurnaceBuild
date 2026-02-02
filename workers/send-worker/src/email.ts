@@ -79,3 +79,50 @@ export async function sendEmail(
   return info.messageId;
 }
 
+export interface ReplyEmailOptions {
+  toEmail: string;
+  toName?: string | null;
+  cc?: string[];
+  subject: string;
+  bodyText: string;
+  bodyHtml?: string | null;
+  inReplyTo?: string | null;
+  references?: string | null;
+}
+
+/**
+ * Send reply email via SMTP (inbox reply/forward)
+ * Sets In-Reply-To and References for threading.
+ */
+export async function sendReplyEmail(
+  transporter: Transporter,
+  mailbox: Mailbox,
+  job: MessageJob,
+  options: ReplyEmailOptions
+): Promise<string> {
+  const messageId = generateMessageId();
+  const headers: Record<string, string> = {
+    'X-Message-ID': job.id,
+  };
+  if (options.inReplyTo) {
+    headers['In-Reply-To'] = options.inReplyTo;
+  }
+  if (options.references) {
+    headers['References'] = options.references;
+  }
+
+  const mailOptions: nodemailer.SendMailOptions = {
+    from: `"${mailbox.display_name || mailbox.email_address}" <${mailbox.email_address}>`,
+    to: options.toName ? `"${options.toName}" <${options.toEmail}>` : options.toEmail,
+    cc: options.cc && options.cc.length > 0 ? options.cc : undefined,
+    subject: options.subject,
+    text: options.bodyText,
+    html: options.bodyHtml || options.bodyText,
+    messageId,
+    headers,
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+  return info.messageId || messageId;
+}
+

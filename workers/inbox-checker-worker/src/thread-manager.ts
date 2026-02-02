@@ -111,8 +111,30 @@ export class ThreadManager {
     if (foundJob) {
       originalJob = foundJob;
       isReplyToOriginal = true;
-      // Get or create email thread for the original message_job
-      thread = await this.getOrCreateThread(originalJob as MessageJob, mailbox);
+      // Inbox reply/forward jobs don't own a thread — they belong to an existing thread (message_data.thread_id)
+      const md = (foundJob as any).message_data || {};
+      const isInboxReplyOrForward =
+        (foundJob as any).message_type === 'inbox_reply' ||
+        (foundJob as any).message_type === 'inbox_forward' ||
+        md.source === 'inbox_reply' ||
+        md.source === 'inbox_forward';
+      const existingThreadId = md.thread_id;
+
+      if (isInboxReplyOrForward && existingThreadId) {
+        const { data: existingThread, error: threadError } = await this.supabase
+          .from('email_threads')
+          .select('*')
+          .eq('id', existingThreadId)
+          .single();
+        if (threadError || !existingThread) {
+          console.error('[INBOX CHECKER] Inbox reply job references missing thread:', existingThreadId, threadError);
+          return false;
+        }
+        thread = existingThread;
+      } else {
+        // Campaign send: get or create thread by message_job_id
+        thread = await this.getOrCreateThread(originalJob as MessageJob, mailbox);
+      }
     } else {
       // Not a reply to original sent message - check if it's a reply to a received message
       // Check all Message-IDs from In-Reply-To and References against email_messages

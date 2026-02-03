@@ -950,8 +950,8 @@ export default function InboxPage() {
         bodyText: pendingReply.bodyText,
         bodyHtml: pendingReply.bodyText,
         toEmail: pendingReply.toEmail,
-        toName: null,
-        cc: undefined,
+        toName: pendingReply.toName ?? null,
+        cc: pendingReply.cc?.length ? pendingReply.cc : undefined,
       });
       const fromEmail = messages.find((m) => m.direction === 'sent')?.from_email ?? '';
       const receivedAt = new Date().toISOString();

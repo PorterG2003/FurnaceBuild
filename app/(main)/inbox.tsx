@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
   Animated,
   Dimensions,
+  type DimensionValue,
 } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { PageLayout } from '@/components/ui/layout';
@@ -107,6 +108,35 @@ function groupMessagesByDate(messages: EmailMessage[]): { label: string; message
 
 const SKELETON_DELAY_MS = 200;
 const SKELETON_MIN_DISPLAY_MS = 300;
+const STAGGER_DELAY_MS = 60;
+
+/** Wrapper that fades in children with a staggered delay based on index. */
+function StaggeredFadeIn({ index, children }: { index: number; children: ReactNode }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 280,
+        useNativeDriver: true,
+      }).start();
+    }, index * STAGGER_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [index, opacity]);
+  return <Animated.View style={{ opacity }}>{children}</Animated.View>;
+}
+
+/** Per-item width variations (pixels) for a more organic skeleton look. */
+const THREAD_SKELETON_WIDTHS: [number, number, number][] = [
+  [280, 220, 160],
+  [260, 200, 140],
+  [290, 180, 120],
+  [250, 210, 155],
+  [270, 230, 135],
+  [255, 195, 170],
+  [285, 240, 125],
+  [265, 205, 150],
+];
 
 /** Skeleton loading for thread list (left panel). Only shown after 200ms delay. */
 function ThreadListSkeleton() {
@@ -116,14 +146,82 @@ function ThreadListSkeleton() {
       contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 12 }}
       showsVerticalScrollIndicator={false}
     >
-      {[1, 2, 3, 4, 5, 6].map((i) => (
-        <View key={i} className="mx-3 mb-2 rounded-xl border border-[#2A2A2A] px-4 py-3" style={{ borderWidth: 1 }}>
-          <Skeleton className="h-4 mb-2" style={{ width: '85%', borderRadius: 4 }} />
-          <Skeleton className="h-3 mb-2" style={{ width: '65%', borderRadius: 4 }} />
-          <Skeleton className="h-3" style={{ width: '45%', borderRadius: 4 }} />
-        </View>
+      {THREAD_SKELETON_WIDTHS.map(([w1, w2, w3], i) => (
+        <StaggeredFadeIn key={i} index={i}>
+          <View
+            className="mx-3 mb-2 rounded-xl border border-[#2A2A2A] px-4 py-3"
+            style={{ borderWidth: 1 }}
+          >
+            <Skeleton style={{ width: w1, height: 16, borderRadius: 4 }} />
+            <Skeleton style={{ width: w2, height: 12, borderRadius: 4, marginTop: 8 }} />
+            <Skeleton style={{ width: w3, height: 12, borderRadius: 4, marginTop: 8 }} />
+          </View>
+        </StaggeredFadeIn>
       ))}
     </ScrollView>
+  );
+}
+
+/** Body line widths per message card (percentage) for varied skeleton appearance. */
+const MESSAGE_BODY_WIDTHS: DimensionValue[][] = [
+  ['100%', '94%', '78%'],
+  ['98%', '88%', '72%', '55%'],
+  ['100%', '90%', '70%'],
+  ['96%', '82%', '65%'],
+];
+
+function DateDividerSkeleton({ index }: { index: number }) {
+  return (
+    <StaggeredFadeIn index={index}>
+      <View className="py-5 flex-row items-center justify-center px-2">
+        <View className="flex-1 h-px bg-[#2A2A2A]" style={{ maxWidth: 80 }} />
+        <View className="mx-3">
+          <Skeleton style={{ width: 100, height: 24, borderRadius: 12 }} />
+        </View>
+        <View className="flex-1 h-px bg-[#2A2A2A]" style={{ maxWidth: 80 }} />
+      </View>
+    </StaggeredFadeIn>
+  );
+}
+
+function MessageCardSkeleton({
+  bodyWidths,
+  index,
+}: {
+  bodyWidths: DimensionValue[];
+  index: number;
+}) {
+  return (
+    <StaggeredFadeIn index={index}>
+      <View
+        className="mb-4 rounded-xl overflow-hidden border border-[#2A2A2A]"
+        style={{
+          width: '92%',
+          alignSelf: 'center',
+          borderWidth: 1,
+          backgroundColor: '#1A1A1A',
+        }}
+      >
+        <View className="px-5 pt-4 pb-3 flex-row items-center">
+          <Skeleton style={{ width: 40, height: 40, borderRadius: 20 }} />
+          <View className="ml-3 flex-1">
+            <Skeleton className="h-4 mb-1.5" style={{ width: '70%', borderRadius: 4 }} />
+            <Skeleton className="h-3" style={{ width: '52%', borderRadius: 4 }} />
+          </View>
+          <Skeleton className="h-3 flex-shrink-0" style={{ width: 72, borderRadius: 4 }} />
+        </View>
+        <View className="mx-5 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }} />
+        <View className="px-5 py-4">
+          {bodyWidths.map((w, j) => (
+            <Skeleton
+              key={j}
+              className={j < bodyWidths.length - 1 ? 'mb-2' : ''}
+              style={{ width: w, height: 12, borderRadius: 4 }}
+            />
+          ))}
+        </View>
+      </View>
+    </StaggeredFadeIn>
   );
 }
 
@@ -135,27 +233,12 @@ function MessageListSkeleton() {
       contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 32 }}
       showsVerticalScrollIndicator={false}
     >
-      <View className="py-5 flex-row justify-center">
-        <Skeleton style={{ width: 120, height: 24, borderRadius: 12 }} />
-      </View>
-      {[1, 2, 3].map((i) => (
-        <View key={i} className="mb-4 rounded-xl overflow-hidden border border-[#2A2A2A]" style={{ width: '92%', alignSelf: 'center', borderWidth: 1, backgroundColor: '#1A1A1A' }}>
-          <View className="px-5 pt-4 pb-3 flex-row items-center">
-            <Skeleton style={{ width: 40, height: 40, borderRadius: 20 }} />
-            <View className="ml-3 flex-1">
-              <Skeleton className="h-4 mb-1.5" style={{ width: '70%', borderRadius: 4 }} />
-              <Skeleton className="h-3" style={{ width: '50%', borderRadius: 4 }} />
-            </View>
-            <Skeleton className="h-3" style={{ width: 72, borderRadius: 4 }} />
-          </View>
-          <View className="mx-5 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }} />
-          <View className="px-5 py-4">
-            <Skeleton className="h-3 mb-2" style={{ width: '100%', borderRadius: 4 }} />
-            <Skeleton className="h-3 mb-2" style={{ width: '95%', borderRadius: 4 }} />
-            <Skeleton className="h-3" style={{ width: '75%', borderRadius: 4 }} />
-          </View>
-        </View>
-      ))}
+      <DateDividerSkeleton index={0} />
+      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[0]} index={1} />
+      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[1]} index={2} />
+      <DateDividerSkeleton index={3} />
+      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[2]} index={4} />
+      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[3]} index={5} />
     </ScrollView>
   );
 }
@@ -982,7 +1065,7 @@ export default function InboxPage() {
               />
             </View>
           )}
-          {showThreadSkeleton ? (
+          {(threadsLoadingOrNoAccount || showThreadSkeleton) ? (
             <ThreadListSkeleton />
           ) : threads.length === 0 && !threadsError ? (
             <EmptyState
@@ -1013,7 +1096,7 @@ export default function InboxPage() {
 
         {/* Message Panel */}
         <View className="flex-1">
-          {showThreadSkeleton ? (
+          {(threadsLoadingOrNoAccount || showThreadSkeleton) ? (
             <MessageListSkeleton />
           ) : selectedThread ? (
             <>

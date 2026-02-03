@@ -116,6 +116,13 @@ export class SendWorker {
       return this.processInboxReplyJob(messageJob);
     }
 
+    const isInboxForward =
+      messageJob.message_type === 'inbox_forward' ||
+      messageJob.message_data?.source === 'inbox_forward';
+    if (isInboxForward) {
+      return this.processInboxForwardJob(messageJob);
+    }
+
     try {
       const message_job_id = messageJob.id;
 
@@ -480,6 +487,99 @@ export class SendWorker {
       .eq('id', message_job_id);
 
     console.log(`[SEND WORKER] Inbox reply job ${message_job_id} sent successfully`);
+  }
+
+  /**
+   * Process an inbox forward job: send forward email to new recipients.
+   * Forward is send-only (no email_messages insert, no email_threads update).
+   */
+  private async processInboxForwardJob(messageJob: MessageJob): Promise<void> {
+    const message_job_id = messageJob.id;
+    const md = messageJob.message_data || {};
+    const threadId = md.thread_id as string | undefined;
+
+    if (!threadId) {
+      throw new Error(`Inbox forward job ${message_job_id} missing thread_id`);
+    }
+
+    console.log(`[SEND WORKER] Processing inbox forward job: ${message_job_id}`);
+
+    // 1. Load mailbox
+    const { data: mailbox, error: mailboxError } = await this.supabase
+      .from('mailboxes')
+      .select('*')
+      .eq('id', messageJob.mailbox_id)
+      .single();
+    if (mailboxError || !mailbox) {
+      throw new Error(`Failed to load mailbox ${messageJob.mailbox_id}: ${mailboxError?.message}`);
+    }
+
+    // 2. Throttle check (same as reply)
+    const { data: throttleResult, error: throttleError } = await this.supabase
+      .rpc('check_mailbox_throttle_and_reserve', { p_message_job_id: message_job_id })
+      .single();
+    if (throttleError) {
+      const { data: currentJob } = await this.supabase
+        .from('message_jobs')
+        .select('status')
+        .eq('id', message_job_id)
+        .single();
+      if (currentJob?.status === 'reserved') {
+        throw new Error(`Throttle check failed for forward job ${message_job_id}: ${throttleError.message}`);
+      }
+      return;
+    }
+    const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
+    if (!result?.success) {
+      console.log(`[SEND WORKER] Throttle check failed for forward job ${message_job_id}: ${result?.failure_reason}. Re-queuing for retry.`);
+      const { error: updateError } = await this.supabase
+        .from('message_jobs')
+        .update({
+          status: 'pending',
+          reserved_at: null,
+          error_message: null,
+        })
+        .eq('id', message_job_id);
+      if (updateError) {
+        console.error(`[SEND WORKER] Failed to re-queue forward job ${message_job_id}:`, updateError);
+      }
+      return;
+    }
+
+    // 3. Send forward via SMTP (no In-Reply-To/References)
+    const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
+    const forwardOptions: ReplyEmailOptions = {
+      toEmail: md.to_email || '',
+      toName: md.to_name ?? null,
+      cc: Array.isArray(md.cc) ? md.cc : undefined,
+      subject: md.subject || '(No subject)',
+      bodyText: md.body_text || md.body_html || '',
+      bodyHtml: md.body_html ?? null,
+      inReplyTo: null,
+      references: null,
+    };
+    try {
+      await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, forwardOptions);
+      this.smtpPool.markMessageSent(mailbox.id);
+    } catch (err: any) {
+      if (err.code === 'EAUTH' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT') {
+        this.smtpPool.removeTransporter(mailbox.id);
+      }
+      throw err;
+    }
+
+    // 4. Mark message_job sent (no email_messages or email_threads update)
+    const now = new Date().toISOString();
+    await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'sent',
+        sent_at: now,
+        updated_at: now,
+      })
+      .eq('id', message_job_id);
+
+    console.log(`[SEND WORKER] Inbox forward job ${message_job_id} sent successfully`);
   }
 
   /**

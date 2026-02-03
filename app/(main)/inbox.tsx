@@ -22,12 +22,13 @@ import {
   getMessagesByThread,
   getUserByExternalId,
   createReplyJob,
+  createForwardJob,
   getMessageJobStatus,
   getPendingInboxReplyJobs,
 } from '@/lib/supabase/services';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import { getDisplayBody } from '@/lib/email';
-import { ArrowUturnLeftIcon, ArrowPathIcon, ExclamationCircleIcon, MagnifyingGlassIcon } from 'react-native-heroicons/outline';
+import { ArrowUturnLeftIcon, ArrowUturnRightIcon, ArrowPathIcon, ExclamationCircleIcon, MagnifyingGlassIcon, PaperAirplaneIcon } from 'react-native-heroicons/outline';
 
 function formatMessageDate(iso: string): string {
   const d = new Date(iso);
@@ -47,6 +48,24 @@ function formatMessageDate(iso: string): string {
     return d.toLocaleDateString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   }
   return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+}
+
+/** Build quoted block for forwarded message */
+function buildQuotedForwardBlock(message: EmailMessage, threadSubject: string): string {
+  const fromStr = message.from_name
+    ? `"${message.from_name}" <${message.from_email}>`
+    : message.from_email;
+  const dateStr = formatMessageDate(message.received_at);
+  const rawBody = message.body_text ?? message.body_html ?? '';
+  const body = getDisplayBody(rawBody, { format: message.body_text ? 'text' : 'html' });
+  return [
+    '---------- Forwarded message ---------',
+    `From: ${fromStr}`,
+    `Date: ${dateStr}`,
+    `Subject: ${threadSubject || '(No subject)'}`,
+    '',
+    body || '(No content)',
+  ].join('\n');
 }
 
 function formatThreadDate(iso: string): string {
@@ -294,10 +313,11 @@ function getInitials(name: string | null, email: string): string {
   return (local.slice(0, 2) || '?').toUpperCase();
 }
 
-/** Single message bubble: centered card with avatar and Reply in header */
+/** Single message bubble: centered card with avatar and Reply/Forward in header */
 function MessageBubble({
   message,
   onReply,
+  onForward,
   isPending,
   isFailed,
   errorMessage,
@@ -305,6 +325,7 @@ function MessageBubble({
 }: {
   message: EmailMessage;
   onReply?: (message: EmailMessage) => void;
+  onForward?: (message: EmailMessage) => void;
   isPending?: boolean;
   isFailed?: boolean;
   errorMessage?: string | null;
@@ -317,6 +338,7 @@ function MessageBubble({
   const sender = message.from_name || message.from_email;
   const isSent = message.direction === 'sent';
   const canReply = onReply != null && !isPending && !isFailed;
+  const canForward = onForward != null && !isPending && !isFailed;
   const showRetry = isFailed && onRetry != null;
 
   const borderPulse = useRef(new Animated.Value(0)).current;
@@ -430,6 +452,19 @@ function MessageBubble({
               <ArrowUturnLeftIcon size={16} color="#F3440D" />
               <Text className="font-instrument-medium text-sm" style={{ color: '#F3440D' }}>
                 Reply
+              </Text>
+            </Pressable>
+          )}
+          {canForward && (
+            <Pressable
+              onPress={() => onForward(message)}
+              className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
+              hitSlop={8}
+              style={{ backgroundColor: 'rgba(107, 114, 128, 0.2)' }}
+            >
+              <ArrowUturnRightIcon size={16} color="#9CA3AF" />
+              <Text className="font-instrument-medium text-sm text-gray-400">
+                Forward
               </Text>
             </Pressable>
           )}
@@ -564,7 +599,7 @@ export default function InboxPage() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [showReplyComposer, setShowReplyComposer] = useState(false);
+  const [composerMode, setComposerMode] = useState<'reply' | 'forward' | null>(null);
   const [inReplyToMessageId, setInReplyToMessageId] = useState<string | null>(null);
   const [replyToEmail, setReplyToEmail] = useState('');
   const [replyToName, setReplyToName] = useState('');
@@ -573,6 +608,13 @@ export default function InboxPage() {
   const [replyCc, setReplyCc] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
+  const [forwardedMessageId, setForwardedMessageId] = useState<string | null>(null);
+  const [forwardToEmail, setForwardToEmail] = useState('');
+  const [forwardCc, setForwardCc] = useState('');
+  const [forwardSubject, setForwardSubject] = useState('');
+  const [forwardBody, setForwardBody] = useState('');
+  const [sendingForward, setSendingForward] = useState(false);
+  const [forwardError, setForwardError] = useState<string | null>(null);
 
   const [showThreadSkeleton, setShowThreadSkeleton] = useState(false);
   const [showMessagesSkeleton, setShowMessagesSkeleton] = useState(false);
@@ -908,25 +950,41 @@ export default function InboxPage() {
       setReplyCc(ccList.join(', '));
 
       setReplyError(null);
-      setShowReplyComposer(true);
+      setComposerMode('reply');
     },
     [selectedThread, messages]
+  );
+
+  const openForwardComposer = useCallback(
+    (message: EmailMessage) => {
+      if (!selectedThread) return;
+      const subject = selectedThread.subject ?? '(No subject)';
+      const fwdSubject = subject.startsWith('Fwd:') ? subject : `Fwd: ${subject}`;
+      setForwardedMessageId(message.id);
+      setForwardToEmail('');
+      setForwardCc('');
+      setForwardSubject(fwdSubject);
+      setForwardBody('\n\n' + buildQuotedForwardBlock(message, subject));
+      setForwardError(null);
+      setComposerMode('forward');
+    },
+    [selectedThread]
   );
 
   const winWidth = Dimensions.get('window').width;
   const REPLY_PANEL_WIDTH = Math.min(560, Math.max(400, winWidth * 0.42));
   const slideAnim = useRef(new Animated.Value(1)).current;
 
-  const closeReplyPanel = useCallback(() => {
+  const closeComposerPanel = useCallback(() => {
     Animated.timing(slideAnim, {
       toValue: 1,
       duration: 250,
       useNativeDriver: true,
-    }).start(() => setShowReplyComposer(false));
+    }).start(() => setComposerMode(null));
   }, [slideAnim]);
 
   useEffect(() => {
-    if (showReplyComposer) {
+    if (composerMode) {
       slideAnim.setValue(1);
       Animated.spring(slideAnim, {
         toValue: 0,
@@ -935,7 +993,7 @@ export default function InboxPage() {
         friction: 11,
       }).start();
     }
-  }, [showReplyComposer, slideAnim]);
+  }, [composerMode, slideAnim]);
 
   const retryFailedReply = useCallback(async () => {
     if (!accountId || !selectedThreadId || !selectedThread || !pendingReply || !pendingReply.isFailed) return;
@@ -1044,7 +1102,7 @@ export default function InboxPage() {
         messageCountWhenPending: messages.length,
         inReplyToMessageId,
       });
-      closeReplyPanel();
+      closeComposerPanel();
       loadMessages(selectedThreadId);
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
@@ -1081,7 +1139,35 @@ export default function InboxPage() {
     } finally {
       setSendingReply(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyBody, replyCc, messages, loadMessages, closeReplyPanel]);
+  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyBody, replyCc, messages, loadMessages, closeComposerPanel]);
+
+  const sendForward = useCallback(async () => {
+    if (!accountId || !selectedThreadId || !selectedThread || !forwardedMessageId) return;
+    if (!forwardToEmail.trim()) {
+      setForwardError('To is required');
+      return;
+    }
+    setSendingForward(true);
+    setForwardError(null);
+    try {
+      await createForwardJob({
+        accountId,
+        threadId: selectedThreadId,
+        forwardedMessageId,
+        subject: forwardSubject.trim() || '(No subject)',
+        bodyText: forwardBody.trim() || '',
+        bodyHtml: forwardBody.trim() || '',
+        toEmail: forwardToEmail.trim(),
+        toName: null,
+        cc: forwardCc.trim() ? forwardCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : undefined,
+      });
+      closeComposerPanel();
+    } catch (err) {
+      setForwardError(err instanceof Error ? err.message : 'Failed to send forward');
+    } finally {
+      setSendingForward(false);
+    }
+  }, [accountId, selectedThreadId, selectedThread, forwardedMessageId, forwardToEmail, forwardSubject, forwardBody, forwardCc, closeComposerPanel]);
 
   return (
     <PageLayout scrollable={false}>
@@ -1246,6 +1332,7 @@ export default function InboxPage() {
                             key={message.id}
                             message={message}
                             onReply={openReplyComposer}
+                            onForward={openForwardComposer}
                             isPending={isPendingMessage && !pendingInfo?.isFailed}
                             isFailed={pendingInfo?.isFailed ?? false}
                             errorMessage={pendingInfo?.errorMessage}
@@ -1276,8 +1363,8 @@ export default function InboxPage() {
         </View>
         </View>
 
-        {/* Reply composer: right-side panel (slides in, pushes content left) */}
-        {showReplyComposer && (
+        {/* Reply/Forward composer: right-side panel (slides in, pushes content left) */}
+        {composerMode && (
           <Animated.View
             style={{
               width: slideAnim.interpolate({
@@ -1297,71 +1384,147 @@ export default function InboxPage() {
               >
                 <View className="flex-1 p-5">
                   <View className="flex-row justify-between items-center mb-5 pb-3 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
-                    <Text className="text-xl font-instrument-semibold text-white">Reply</Text>
+                    <Text className="text-xl font-instrument-semibold text-white">
+                      {composerMode === 'reply' ? 'Reply' : 'Forward'}
+                    </Text>
                     <Pressable
-                      onPress={closeReplyPanel}
+                      onPress={closeComposerPanel}
                       className="rounded-xl border border-[#3A3A3A] px-4 py-2"
                     >
                       <Text className="text-gray-300 font-instrument-medium text-sm">Cancel</Text>
                     </Pressable>
                   </View>
-                  {replyError && (
-                    <Alert variant="error" message={replyError} className="mb-4" />
+                  {composerMode === 'reply' ? (
+                    <>
+                      {replyError && (
+                        <Alert variant="error" message={replyError} className="mb-4" />
+                      )}
+                      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} className="flex-1 pb-4">
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">To</Text>
+                        <TextInput
+                          value={replyToEmail}
+                          onChangeText={setReplyToEmail}
+                          placeholder="recipient@example.com"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="email-address"
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Cc (optional)</Text>
+                        <Text className="text-gray-500 font-instrument text-xs mb-1">Separate multiple addresses with commas or spaces.</Text>
+                        <TextInput
+                          value={replyCc}
+                          onChangeText={setReplyCc}
+                          placeholder="cc@example.com, other@example.com"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="email-address"
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Subject</Text>
+                        <TextInput
+                          value={replySubject}
+                          onChangeText={setReplySubject}
+                          placeholder="Subject"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Message</Text>
+                        <TextInput
+                          value={replyBody}
+                          onChangeText={setReplyBody}
+                          placeholder="Write your reply…"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-5 min-h-[120px] border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                          multiline
+                          textAlignVertical="top"
+                        />
+                        <Button
+                          onPress={sendReply}
+                          disabled={sendingReply || !replyToEmail.trim()}
+                          className="rounded-xl"
+                        >
+                          <View className="flex-row items-center gap-2">
+                            <Text className="font-instrument-medium text-base text-white">
+                              {sendingReply ? 'Sending…' : 'Send reply'}
+                            </Text>
+                            <PaperAirplaneIcon size={18} color="white" />
+                          </View>
+                        </Button>
+                      </ScrollView>
+                    </>
+                  ) : (
+                    <>
+                      {forwardError && (
+                        <Alert variant="error" message={forwardError} className="mb-4" />
+                      )}
+                      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} className="flex-1 pb-4">
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">To</Text>
+                        <TextInput
+                          value={forwardToEmail}
+                          onChangeText={setForwardToEmail}
+                          placeholder="recipient@example.com"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="email-address"
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Cc (optional)</Text>
+                        <TextInput
+                          value={forwardCc}
+                          onChangeText={setForwardCc}
+                          placeholder="cc@example.com, other@example.com"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="email-address"
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Subject</Text>
+                        <TextInput
+                          value={forwardSubject}
+                          onChangeText={setForwardSubject}
+                          placeholder="Subject"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Message</Text>
+                        <Text className="text-gray-500 font-instrument text-xs mb-1">Add your message above the forwarded content.</Text>
+                        <TextInput
+                          value={forwardBody}
+                          onChangeText={setForwardBody}
+                          placeholder="Write your message…"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-5 min-h-[120px] border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                          multiline
+                          textAlignVertical="top"
+                        />
+                        <Button
+                          onPress={sendForward}
+                          disabled={sendingForward || !forwardToEmail.trim()}
+                          className="rounded-xl"
+                        >
+                          <View className="flex-row items-center gap-2">
+                            <Text className="font-instrument-medium text-base text-white">
+                              {sendingForward ? 'Sending…' : 'Send forward'}
+                            </Text>
+                            <PaperAirplaneIcon size={18} color="white" />
+                          </View>
+                        </Button>
+                      </ScrollView>
+                    </>
                   )}
-                  <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} className="flex-1 pb-4">
-                    <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">To</Text>
-                    <TextInput
-                      value={replyToEmail}
-                      onChangeText={setReplyToEmail}
-                      placeholder="recipient@example.com"
-                      placeholderTextColor="#6B7280"
-                      className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
-                      style={{ borderWidth: 1 }}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      keyboardType="email-address"
-                    />
-                    <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Cc (optional)</Text>
-                    <Text className="text-gray-500 font-instrument text-xs mb-1">Separate multiple addresses with commas or spaces.</Text>
-                    <TextInput
-                      value={replyCc}
-                      onChangeText={setReplyCc}
-                      placeholder="cc@example.com, other@example.com"
-                      placeholderTextColor="#6B7280"
-                      className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
-                      style={{ borderWidth: 1 }}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      keyboardType="email-address"
-                    />
-                    <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Subject</Text>
-                    <TextInput
-                      value={replySubject}
-                      onChangeText={setReplySubject}
-                      placeholder="Subject"
-                      placeholderTextColor="#6B7280"
-                      className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
-                      style={{ borderWidth: 1 }}
-                    />
-                    <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Message</Text>
-                    <TextInput
-                      value={replyBody}
-                      onChangeText={setReplyBody}
-                      placeholder="Write your reply…"
-                      placeholderTextColor="#6B7280"
-                      className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-5 min-h-[120px] border border-[#2A2A2A]"
-                      style={{ borderWidth: 1 }}
-                      multiline
-                      textAlignVertical="top"
-                    />
-                    <Button
-                      onPress={sendReply}
-                      disabled={sendingReply || !replyToEmail.trim()}
-                      className="rounded-xl"
-                    >
-                      {sendingReply ? 'Sending…' : 'Send reply'}
-                    </Button>
-                  </ScrollView>
                 </View>
               </KeyboardAvoidingView>
             </View>

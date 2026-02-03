@@ -571,6 +571,8 @@ export default function InboxPage() {
   const [pendingReply, setPendingReply] = useState<PendingReply | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const messagesScrollViewRef = useRef<ScrollView>(null);
+  const selectedThreadIdRef = useRef(selectedThreadId);
+  selectedThreadIdRef.current = selectedThreadId;
 
   const threadSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
   const messagesSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
@@ -606,15 +608,18 @@ export default function InboxPage() {
       setThreads(list);
       if (list.length === 0) {
         setSelectedThreadId(null);
-      } else if (!selectedThreadId || !list.some((t) => t.id === selectedThreadId)) {
-        setSelectedThreadId(list[0].id);
+      } else {
+        const current = selectedThreadIdRef.current;
+        if (!current || !list.some((t) => t.id === current)) {
+          setSelectedThreadId(list[0].id);
+        }
       }
     } catch (err) {
       setThreadsError(err instanceof Error ? err.message : 'Failed to load conversations');
     } finally {
       setThreadsLoading(false);
     }
-  }, [accountId, selectedThreadId]);
+  }, [accountId]);
 
   const loadMessages = useCallback(async (threadId: string, options?: { silent?: boolean }) => {
     if (!options?.silent) {

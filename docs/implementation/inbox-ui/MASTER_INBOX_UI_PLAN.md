@@ -1,7 +1,7 @@
 # Master Inbox UI — Step-by-Step Implementation Plan
 
 **Last updated**: February 3, 2026  
-**Current progress**: Step 1 and Step 2 complete
+**Current progress**: Steps 1, 2, and 4 complete
 
 ---
 
@@ -14,7 +14,7 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 | 1 | Thread Panel + Message Panel (read-only, real data) | ✅ Done |
 | 2 | Reply support | ✅ Done |
 | 3 | Attachments (receive, then send) | Todo |
-| 4 | Forward support | Todo |
+| 4 | Forward support | Done |
 | 5 | Search and filtering | Todo |
 | 6 | Block list | Todo |
 | 7 | Thread tagging | Todo |
@@ -88,7 +88,7 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 
 ---
 
-## Step 4: Forward support — Todo
+## Step 4: Forward support — Done
 
 **Goal**: Forward a message (or thread) to new recipients.
 

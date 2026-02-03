@@ -79,6 +79,18 @@ export interface CreateReplyJobParams {
   cc?: string[] | null;
 }
 
+export interface CreateForwardJobParams {
+  accountId: string;
+  threadId: string;
+  forwardedMessageId: string;
+  subject: string;
+  bodyText: string;
+  bodyHtml?: string | null;
+  toEmail: string;
+  toName?: string | null;
+  cc?: string[] | null;
+}
+
 /**
  * Create an inbox reply job. The send-worker will pick it up (manual jobs take priority)
  * and send the reply, then insert email_messages and update email_threads.
@@ -103,6 +115,35 @@ export async function createReplyJob(params: CreateReplyJobParams): Promise<stri
 
   if (data == null || typeof data !== 'string') {
     throw new Error('Failed to create reply job: no job id returned');
+  }
+
+  return data;
+}
+
+/**
+ * Create an inbox forward job. The send-worker will pick it up (manual jobs take priority)
+ * and send the forward. Forward is send-only (no email_messages insert).
+ * Returns the new message_job id.
+ */
+export async function createForwardJob(params: CreateForwardJobParams): Promise<string> {
+  const { data, error } = await supabase.rpc('create_inbox_forward_job', {
+    p_account_id: params.accountId,
+    p_thread_id: params.threadId,
+    p_forwarded_message_id: params.forwardedMessageId,
+    p_subject: params.subject,
+    p_body_text: params.bodyText,
+    p_body_html: params.bodyHtml ?? params.bodyText,
+    p_to_email: params.toEmail,
+    p_to_name: params.toName ?? null,
+    p_cc: params.cc && params.cc.length > 0 ? params.cc : null,
+  });
+
+  if (error) {
+    throw new Error(`Failed to create forward job: ${error.message}`);
+  }
+
+  if (data == null || typeof data !== 'string') {
+    throw new Error('Failed to create forward job: no job id returned');
   }
 
   return data;

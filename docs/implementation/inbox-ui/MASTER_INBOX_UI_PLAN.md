@@ -1,7 +1,7 @@
 # Master Inbox UI — Step-by-Step Implementation Plan
 
-**Last updated**: January 28, 2026  
-**Current progress**: Step 1 complete (read-only inbox connected to backend)
+**Last updated**: February 3, 2026  
+**Current progress**: Step 1 and Step 2 complete
 
 ---
 
@@ -12,7 +12,7 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 | Step | Scope | Status |
 |------|--------|--------|
 | 1 | Thread Panel + Message Panel (read-only, real data) | ✅ Done |
-| 2 | Reply support | Todo |
+| 2 | Reply support | ✅ Done |
 | 3 | Attachments (receive, then send) | Todo |
 | 4 | Forward support | Todo |
 | 5 | Search and filtering | Todo |
@@ -55,22 +55,22 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 
 ---
 
-## Step 2: Reply support — Todo
+## Step 2: Reply support — ✅ Done
 
 **Goal**: Compose and send a reply in the same thread with correct In-Reply-To / References.
 
 **Deep dive**: **[INBOX_REPLY.md](./INBOX_REPLY.md)** — Context, caveats, and decisions. **Chosen**: Option B — send-worker, same `message_jobs` table with **message type** (`'campaign'` | `'inbox_reply'` | `'inbox_forward'`); manual jobs claimed first.
 
+### Accomplished
+
 - **Backend**
-  - **Send path**: Reply (and forward) jobs are **message_jobs** with `message_type = 'inbox_reply'`/`'inbox_forward'`; send-worker claims **manual-type jobs first**, then campaign jobs.
-  - Schema: add `message_type` to `message_jobs`; `interval_id = NULL`, `node_id` nullable for reply/forward; `message_data` holds thread_id, in_reply_to_message_id, subject, body, to, cc, headers.
-  - Worker: for reply jobs, skip template merge, send via SMTP (same throttle), insert `email_messages`, update `email_threads`; skip enrollment/interval/event.
-  - Create `email_messages` row (direction = sent) with To + Cc; set `message_id`, `in_reply_to`, `message_references`; link `message_job_id` to the reply job.
-  - Update `email_threads` (last_message_at, message_count, participants).
-- **UI**
-  - Reply action opens composer (inline or modal) with **To + Cc** support.
-  - Prefill to/from/cc (e.g. “Reply to all” from thread), subject (“Re: …”), focus body.
-  - Send calls API (or enqueues job); on success refresh thread/messages (or optimistically add sent message).
+  - Schema: `message_type` on `message_jobs`; `create_inbox_reply_job` RPC; `claim_manual_message_jobs_ready` (manual jobs first).
+  - Send-worker: processes `inbox_reply` jobs, sends via SMTP (same throttle), inserts `email_messages`, updates `email_threads`; skips enrollment/interval/event.
+- **UI** (`app/(main)/inbox.tsx`)
+  - Reply action opens right-side composer panel with To, Cc, Subject, Message.
+  - Prefill: To (from replied-to message), Cc (participants excluding To and self), subject (Re: …).
+  - Send creates reply job via `createReplyJob`; optimistic "Sending…" bubble with pulse; polling until sent; retry on failure.
+
 
 ---
 
@@ -102,8 +102,9 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 
 **Goal**: Search thread subject/participants/body; filter by mailbox, campaign, date range, read/unread.
 
+- **Partial**: Basic client-side thread search (subject/participants) is already in place; full-text and backend filters still todo.
 - **Backend**: Full-text search on `email_threads` (and optionally `email_messages`) or external search later. Add filters to thread list API: `mailbox_id`, `campaign_id`, read/unread, date range. Pagination when filtering.
-- **UI**: Search bar (debounced), filter chips/dropdowns. Thread list updates from list API with params. Optional: URL/state for shareable filters.
+- **UI**: Filter chips/dropdowns for mailbox/campaign/date/read. Thread list updates from list API with params. Optional: URL/state for shareable filters.
 - **Expand**: Create `INBOX_SEARCH_FILTERS.md` when implementing.
 
 ---

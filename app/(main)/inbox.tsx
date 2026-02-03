@@ -143,7 +143,7 @@ function ThreadListSkeleton() {
   return (
     <ScrollView
       className="flex-1"
-      contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 12 }}
+      contentContainerStyle={{ paddingVertical: 8 }}
       showsVerticalScrollIndicator={false}
     >
       {THREAD_SKELETON_WIDTHS.map(([w1, w2, w3], i) => (
@@ -153,7 +153,7 @@ function ThreadListSkeleton() {
             style={{ borderWidth: 1 }}
           >
             <Skeleton style={{ width: w1, height: 16, borderRadius: 4 }} />
-            <Skeleton style={{ width: w2, height: 12, borderRadius: 4, marginTop: 8 }} />
+            <Skeleton style={{ width: w2, height: 12, borderRadius: 4, marginTop: 4 }} />
             <Skeleton style={{ width: w3, height: 12, borderRadius: 4, marginTop: 8 }} />
           </View>
         </StaggeredFadeIn>
@@ -169,6 +169,27 @@ const MESSAGE_BODY_WIDTHS: DimensionValue[][] = [
   ['100%', '90%', '70%'],
   ['96%', '82%', '65%'],
 ];
+
+function MessagePanelHeaderSkeleton() {
+  return (
+    <View
+      className="px-5 py-4 border-b border-[#2A2A2A] bg-[#0D0D0D]"
+      style={{ borderBottomWidth: 1 }}
+    >
+      <Skeleton style={{ width: 240, height: 24, borderRadius: 4 }} />
+      <View className="mt-3 gap-0">
+        <View className="flex-row items-center gap-3 py-1.5">
+          <Skeleton style={{ width: 64, height: 20, borderRadius: 4 }} />
+          <Skeleton style={{ width: 160, height: 16, borderRadius: 4 }} />
+        </View>
+        <View className="flex-row items-center gap-3 py-1.5">
+          <Skeleton style={{ width: 72, height: 20, borderRadius: 4 }} />
+          <Skeleton style={{ width: 140, height: 16, borderRadius: 4 }} />
+        </View>
+      </View>
+    </View>
+  );
+}
 
 function DateDividerSkeleton({ index }: { index: number }) {
   return (
@@ -215,8 +236,12 @@ function MessageCardSkeleton({
           {bodyWidths.map((w, j) => (
             <Skeleton
               key={j}
-              className={j < bodyWidths.length - 1 ? 'mb-2' : ''}
-              style={{ width: w, height: 12, borderRadius: 4 }}
+              style={{
+                width: w,
+                height: 12,
+                borderRadius: 4,
+                marginBottom: j < bodyWidths.length - 1 ? 8 : 0,
+              }}
             />
           ))}
         </View>
@@ -1133,7 +1158,10 @@ export default function InboxPage() {
         {/* Message Panel */}
         <View className="flex-1">
           {(threadsLoadingOrNoAccount || showThreadSkeleton) ? (
-            <MessageListSkeleton />
+            <>
+              <MessagePanelHeaderSkeleton />
+              <MessageListSkeleton />
+            </>
           ) : selectedThread ? (
             <>
               {(() => {

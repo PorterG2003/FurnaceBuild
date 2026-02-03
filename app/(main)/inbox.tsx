@@ -501,15 +501,13 @@ function ThreadItem({
   return (
     <Pressable
       onPress={onSelect}
-      className={`mx-3 mb-2 rounded-xl border px-4 py-3 ${
-        isSelected ? 'bg-[#1A1A1A]' : 'bg-[#121212]'
-      }`}
-      style={{
-        borderWidth: 1,
-        borderColor: isSelected ? '#3A2A22' : '#2A2A2A',
-        borderLeftWidth: isSelected ? 3 : 1,
-        borderLeftColor: isSelected ? '#F3440D' : '#2A2A2A',
-      }}
+      className="mx-3 mb-2 rounded-xl px-4 py-3"
+      style={[
+        { borderWidth: 1 },
+        isSelected
+          ? { backgroundColor: 'rgba(243, 68, 13, 0.14)', borderColor: 'rgba(243, 68, 13, 0.4)' }
+          : { backgroundColor: '#121212', borderColor: '#2A2A2A' },
+      ]}
     >
       <Text
         className="font-instrument-semibold text-base text-white mb-1"

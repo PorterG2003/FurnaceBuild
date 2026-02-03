@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -27,7 +27,7 @@ import {
 } from '@/lib/supabase/services';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import { getDisplayBody } from '@/lib/email';
-import { ArrowUturnLeftIcon, ArrowPathIcon, ExclamationCircleIcon } from 'react-native-heroicons/outline';
+import { ArrowUturnLeftIcon, ArrowPathIcon, ExclamationCircleIcon, MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 
 function formatMessageDate(iso: string): string {
   const d = new Date(iso);
@@ -551,6 +551,7 @@ export default function InboxPage() {
 
   const [showThreadSkeleton, setShowThreadSkeleton] = useState(false);
   const [showMessagesSkeleton, setShowMessagesSkeleton] = useState(false);
+  const [threadSearchQuery, setThreadSearchQuery] = useState('');
 
   type PendingReply = {
     threadId: string;
@@ -579,6 +580,18 @@ export default function InboxPage() {
 
   const selectedThread = threads.find((t) => t.id === selectedThreadId);
   const threadsLoadingOrNoAccount = threadsLoading || !accountId;
+
+  const filteredThreads = useMemo(() => {
+    const q = threadSearchQuery.trim().toLowerCase();
+    if (!q) return threads;
+    return threads.filter((thread) => {
+      const subjectMatch = (thread.subject ?? '').toLowerCase().includes(q);
+      const participantsMatch = (thread.participants ?? []).some((p) =>
+        p.toLowerCase().includes(q)
+      );
+      return subjectMatch || participantsMatch;
+    });
+  }, [threads, threadSearchQuery]);
 
   const handleRefresh = useCallback(async () => {
     if (!accountId) return;
@@ -1052,11 +1065,25 @@ export default function InboxPage() {
         <View style={{ flex: 1, minWidth: 0 }} className="flex-row">
         {/* Threads Panel */}
         <View className="w-96 border-r border-[#2A2A2A] bg-[#0D0D0D]" style={{ borderRightWidth: 1 }}>
-          <View className="px-5 py-5 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
-            <Text className="text-2xl font-instrument-semibold text-white mb-1">Inbox</Text>
-            <Text className="text-gray-400 font-instrument text-sm">
-              {threads.length} conversation{threads.length !== 1 ? 's' : ''} · Replies from prospects
-            </Text>
+          <View className="px-4 py-4 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
+            <View className="flex-row items-center rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-3 py-2.5" style={{ borderWidth: 1 }}>
+              <MagnifyingGlassIcon size={20} color="#6B7280" style={{ marginRight: 10 }} />
+              <TextInput
+                value={threadSearchQuery}
+                onChangeText={setThreadSearchQuery}
+                placeholder="Search conversations…"
+                placeholderTextColor="#6B7280"
+                className="flex-1 text-white font-instrument text-base py-0"
+                style={{ minHeight: 24 }}
+              />
+            </View>
+            {!threadsLoadingOrNoAccount && !showThreadSkeleton && threads.length > 0 && (
+              <Text className="text-gray-500 font-instrument text-xs mt-2">
+                {threadSearchQuery.trim()
+                  ? `${filteredThreads.length} of ${threads.length}`
+                  : `${threads.length} conversation${threads.length !== 1 ? 's' : ''}`}
+              </Text>
+            )}
           </View>
           {threadsError && (
             <View className="px-4 py-3">
@@ -1076,6 +1103,12 @@ export default function InboxPage() {
               description="Replies to your campaign emails will appear here."
               className="flex-1 px-5"
             />
+          ) : filteredThreads.length === 0 ? (
+            <EmptyState
+              title="No matching conversations"
+              description="Try a different search term."
+              className="flex-1 px-5"
+            />
           ) : (
             <ScrollView
               className="flex-1"
@@ -1085,7 +1118,7 @@ export default function InboxPage() {
                 <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
               }
             >
-              {threads.map((thread) => (
+              {filteredThreads.map((thread) => (
                 <ThreadItem
                   key={thread.id}
                   thread={thread}

@@ -29,6 +29,8 @@ import {
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import { getDisplayBody } from '@/lib/email';
 import { ArrowUturnLeftIcon, ArrowUturnRightIcon, ArrowPathIcon, ExclamationCircleIcon, MagnifyingGlassIcon, PaperAirplaneIcon } from 'react-native-heroicons/outline';
+import type { EditorBridge } from '@10play/tentap-editor';
+import { ComposerRichEditor } from '@/components/inbox/ComposerRichEditor';
 
 function formatMessageDate(iso: string): string {
   const d = new Date(iso);
@@ -50,15 +52,30 @@ function formatMessageDate(iso: string): string {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
 }
 
-/** Build quoted block for forwarded message */
-function buildQuotedForwardBlock(message: EmailMessage, threadSubject: string): string {
+/** Escape HTML entities for safe inclusion in HTML email body */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Prefix each line with "> " for plain-text block-quote (fallback for text/plain) */
+function blockQuote(text: string): string {
+  return text.split('\n').map((line) => `> ${line}`).join('\n');
+}
+
+/** Build quoted block for a single message (plain text with "> " prefix) */
+function buildQuotedMessageBlock(message: EmailMessage, threadSubject: string): string {
   const fromStr = message.from_name
     ? `"${message.from_name}" <${message.from_email}>`
     : message.from_email;
   const dateStr = formatMessageDate(message.received_at);
   const rawBody = message.body_text ?? message.body_html ?? '';
   const body = getDisplayBody(rawBody, { format: message.body_text ? 'text' : 'html' });
-  return [
+  const block = [
     '---------- Forwarded message ---------',
     `From: ${fromStr}`,
     `Date: ${dateStr}`,
@@ -66,6 +83,35 @@ function buildQuotedForwardBlock(message: EmailMessage, threadSubject: string): 
     '',
     body || '(No content)',
   ].join('\n');
+  return blockQuote(block);
+}
+
+/** Build quoted block for a single message (HTML with border-left, Gmail-style) */
+function buildQuotedMessageBlockHtml(message: EmailMessage, threadSubject: string): string {
+  const fromStr = message.from_name
+    ? `"${escapeHtml(message.from_name)}" &lt;${escapeHtml(message.from_email)}&gt;`
+    : escapeHtml(message.from_email);
+  const dateStr = escapeHtml(formatMessageDate(message.received_at));
+  const rawBody = message.body_text ?? message.body_html ?? '';
+  const body = getDisplayBody(rawBody, { format: message.body_text ? 'text' : 'html' });
+  const bodyEscaped = escapeHtml(body || '(No content)').replace(/\n/g, '<br>');
+  const header = [
+    '---------- Forwarded message ---------',
+    `From: ${fromStr}`,
+    `Date: ${dateStr}`,
+    `Subject: ${escapeHtml(threadSubject || '(No subject)')}`,
+  ].join('<br>');
+  return `<div style="border-left: 3px solid #ccc; padding-left: 15px; margin: 1em 0; color: #666;"><div style="font-size: 12px; margin-bottom: 8px;">${header}</div><div style="color: #333;">${bodyEscaped}</div></div>`;
+}
+
+/** Build quoted content for forwarding entire thread (plain text) */
+function buildQuotedForwardThread(messages: EmailMessage[], threadSubject: string): string {
+  return messages.map((m) => buildQuotedMessageBlock(m, threadSubject)).join('\n\n');
+}
+
+/** Build quoted content for forwarding entire thread (HTML with block styling) */
+function buildQuotedForwardThreadHtml(messages: EmailMessage[], threadSubject: string): string {
+  return messages.map((m) => buildQuotedMessageBlockHtml(m, threadSubject)).join('');
 }
 
 function formatThreadDate(iso: string): string {
@@ -604,15 +650,14 @@ export default function InboxPage() {
   const [replyToEmail, setReplyToEmail] = useState('');
   const [replyToName, setReplyToName] = useState('');
   const [replySubject, setReplySubject] = useState('');
-  const [replyBody, setReplyBody] = useState('');
   const [replyCc, setReplyCc] = useState('');
+  const composerEditorRef = useRef<EditorBridge | null>(null);
   const [sendingReply, setSendingReply] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
   const [forwardedMessageId, setForwardedMessageId] = useState<string | null>(null);
   const [forwardToEmail, setForwardToEmail] = useState('');
   const [forwardCc, setForwardCc] = useState('');
   const [forwardSubject, setForwardSubject] = useState('');
-  const [forwardBody, setForwardBody] = useState('');
   const [sendingForward, setSendingForward] = useState(false);
   const [forwardError, setForwardError] = useState<string | null>(null);
 
@@ -932,7 +977,6 @@ export default function InboxPage() {
       setReplyToEmail(toEmail);
       setReplyToName(toName);
       setReplySubject(selectedThread.subject?.startsWith('Re:') ? selectedThread.subject : `Re: ${selectedThread.subject || '(No subject)'}`);
-      setReplyBody('');
 
       // Prefill CC from whole thread history (participants), excluding To and our sending identity
       const ourEmail = messages.find((m) => m.direction === 'sent')?.from_email?.trim().toLowerCase();
@@ -956,15 +1000,14 @@ export default function InboxPage() {
   );
 
   const openForwardComposer = useCallback(
-    (message: EmailMessage) => {
+    (_message: EmailMessage) => {
       if (!selectedThread) return;
       const subject = selectedThread.subject ?? '(No subject)';
       const fwdSubject = subject.startsWith('Fwd:') ? subject : `Fwd: ${subject}`;
-      setForwardedMessageId(message.id);
+      setForwardedMessageId(_message.id);
       setForwardToEmail('');
       setForwardCc('');
       setForwardSubject(fwdSubject);
-      setForwardBody('\n\n' + buildQuotedForwardBlock(message, subject));
       setForwardError(null);
       setComposerMode('forward');
     },
@@ -972,7 +1015,7 @@ export default function InboxPage() {
   );
 
   const winWidth = Dimensions.get('window').width;
-  const REPLY_PANEL_WIDTH = Math.min(560, Math.max(400, winWidth * 0.42));
+  const REPLY_PANEL_WIDTH = Math.min(800, Math.max(520, winWidth * 0.58));
   const slideAnim = useRef(new Animated.Value(1)).current;
 
   const closeComposerPanel = useCallback(() => {
@@ -1074,13 +1117,15 @@ export default function InboxPage() {
     setSendingReply(true);
     setReplyError(null);
     try {
+      const bodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
+      const bodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? bodyText;
       const jobId = await createReplyJob({
         accountId,
         threadId: selectedThreadId,
         inReplyToMessageId,
         subject: replySubject.trim() || '(No subject)',
-        bodyText: replyBody.trim() || '',
-        bodyHtml: replyBody.trim() || '',
+        bodyText: bodyText || '',
+        bodyHtml: bodyHtml || '',
         toEmail: replyToEmail.trim(),
         toName: replyToName.trim() || null,
         cc: replyCc.trim() ? replyCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : undefined,
@@ -1092,8 +1137,8 @@ export default function InboxPage() {
         threadId: selectedThreadId,
         jobId,
         subject: replySubject.trim() || '(No subject)',
-        bodyText: replyBody.trim() || '',
-        bodyHtml: replyBody.trim() || '',
+        bodyText: bodyText || '',
+        bodyHtml: bodyHtml || '',
         toEmail: replyToEmail.trim(),
         toName: replyToName.trim() || null,
         cc: ccArray,
@@ -1139,7 +1184,7 @@ export default function InboxPage() {
     } finally {
       setSendingReply(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyBody, replyCc, messages, loadMessages, closeComposerPanel]);
+  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyCc, messages, loadMessages, closeComposerPanel]);
 
   const sendForward = useCallback(async () => {
     if (!accountId || !selectedThreadId || !selectedThread || !forwardedMessageId) return;
@@ -1150,13 +1195,16 @@ export default function InboxPage() {
     setSendingForward(true);
     setForwardError(null);
     try {
+      const bodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
+      const bodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? bodyText;
+
       await createForwardJob({
         accountId,
         threadId: selectedThreadId,
         forwardedMessageId,
         subject: forwardSubject.trim() || '(No subject)',
-        bodyText: forwardBody.trim() || '',
-        bodyHtml: forwardBody.trim() || '',
+        bodyText: bodyText || '',
+        bodyHtml: bodyHtml || bodyText,
         toEmail: forwardToEmail.trim(),
         toName: null,
         cc: forwardCc.trim() ? forwardCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : undefined,
@@ -1167,15 +1215,22 @@ export default function InboxPage() {
     } finally {
       setSendingForward(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, forwardedMessageId, forwardToEmail, forwardSubject, forwardBody, forwardCc, closeComposerPanel]);
+  }, [accountId, selectedThreadId, selectedThread, forwardedMessageId, forwardToEmail, forwardSubject, forwardCc, closeComposerPanel]);
 
   return (
     <PageLayout scrollable={false}>
       <View className="flex-1 flex-row bg-[#121212]">
         {/* Threads + Message content (slides left when reply panel opens) */}
         <View style={{ flex: 1, minWidth: 0 }} className="flex-row">
-        {/* Threads Panel */}
-        <View className="w-96 border-r border-[#2A2A2A] bg-[#0D0D0D]" style={{ borderRightWidth: 1 }}>
+        {/* Threads Panel - collapses when reply/forward panel is open */}
+        <Animated.View
+          className="border-r border-[#2A2A2A] bg-[#0D0D0D]"
+          style={{
+            width: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 384] }),
+            overflow: 'hidden',
+            borderRightWidth: 1,
+          }}
+        >
           <View className="px-4 py-4 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
             <View className="flex-row items-center rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-3 py-2.5" style={{ borderWidth: 1 }}>
               <MagnifyingGlassIcon size={20} color="#6B7280" style={{ marginRight: 10 }} />
@@ -1239,7 +1294,7 @@ export default function InboxPage() {
               ))}
             </ScrollView>
           )}
-        </View>
+        </Animated.View>
 
         {/* Message Panel */}
         <View className="flex-1">
@@ -1435,16 +1490,14 @@ export default function InboxPage() {
                           style={{ borderWidth: 1 }}
                         />
                         <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Message</Text>
-                        <TextInput
-                          value={replyBody}
-                          onChangeText={setReplyBody}
+                        <ComposerRichEditor
+                          key="reply"
+                          initialContent="<p></p>"
                           placeholder="Write your reply…"
-                          placeholderTextColor="#6B7280"
-                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-5 min-h-[120px] border border-[#2A2A2A]"
-                          style={{ borderWidth: 1 }}
-                          multiline
-                          textAlignVertical="top"
+                          editorRef={composerEditorRef}
+                          minHeight={140}
                         />
+                        <View className="mb-5" />
                         <Button
                           onPress={sendReply}
                           disabled={sendingReply || !replyToEmail.trim()}
@@ -1500,16 +1553,14 @@ export default function InboxPage() {
                         />
                         <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Message</Text>
                         <Text className="text-gray-500 font-instrument text-xs mb-1">Add your message above the forwarded content.</Text>
-                        <TextInput
-                          value={forwardBody}
-                          onChangeText={setForwardBody}
+                        <ComposerRichEditor
+                          key="forward"
+                          initialContent={`<p></p>${buildQuotedForwardThreadHtml(messages, selectedThread?.subject ?? '(No subject)')}`}
                           placeholder="Write your message…"
-                          placeholderTextColor="#6B7280"
-                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-5 min-h-[120px] border border-[#2A2A2A]"
-                          style={{ borderWidth: 1 }}
-                          multiline
-                          textAlignVertical="top"
+                          editorRef={composerEditorRef}
+                          minHeight={140}
                         />
+                        <View className="mb-5" />
                         <Button
                           onPress={sendForward}
                           disabled={sendingForward || !forwardToEmail.trim()}

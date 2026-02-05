@@ -1,6 +1,37 @@
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import type { Mailbox, MessageJob, Lead } from './types.js';
+import { randomBytes } from 'crypto';
+
+/**
+ * Convert data URL images in HTML to CID inline attachments.
+ * Extracts img src="data:image/...;base64,..." and replaces with cid:xxx.
+ * Returns processed HTML and attachments array for nodemailer.
+ */
+export function processInlineImagesForEmail(html: string): {
+  html: string;
+  attachments: nodemailer.SendMailOptions['attachments'];
+} {
+  const attachments: nodemailer.SendMailOptions['attachments'] = [];
+
+  const processedHtml = html.replace(
+    /<img([^>]*?)src="(data:image\/([^;]+);base64,([^"]+))"([^>]*)>/gi,
+    (_match, before, _dataUrl, subtype, base64Data, after) => {
+      const ext = subtype.toLowerCase() === 'jpeg' ? 'jpg' : subtype.toLowerCase();
+      const cid = `${randomBytes(8).toString('hex')}@furnace.inline`;
+
+      attachments.push({
+        filename: `image.${ext}`,
+        content: Buffer.from(base64Data, 'base64'),
+        cid,
+      });
+
+      return `<img${before}src="cid:${cid}"${after}>`;
+    }
+  );
+
+  return { html: processedHtml, attachments };
+}
 
 /**
  * Create SMTP transporter for a mailbox
@@ -111,13 +142,17 @@ export async function sendReplyEmail(
     headers['References'] = options.references;
   }
 
+  const bodyHtml = options.bodyHtml || options.bodyText;
+  const { html: processedHtml, attachments } = processInlineImagesForEmail(bodyHtml);
+
   const mailOptions: nodemailer.SendMailOptions = {
     from: `"${mailbox.display_name || mailbox.email_address}" <${mailbox.email_address}>`,
     to: options.toName ? `"${options.toName}" <${options.toEmail}>` : options.toEmail,
     cc: options.cc && options.cc.length > 0 ? options.cc : undefined,
     subject: options.subject,
     text: options.bodyText,
-    html: options.bodyHtml || options.bodyText,
+    html: processedHtml,
+    attachments: attachments && attachments.length > 0 ? attachments : undefined,
     messageId,
     headers,
   };

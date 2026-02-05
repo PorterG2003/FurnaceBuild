@@ -1,9 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extensions/placeholder';
 import type { Editor } from '@tiptap/core';
+import { NodeSelection } from '@tiptap/pm/state';
 import {
   LinkIcon,
   PhotoIcon,
@@ -14,6 +16,7 @@ import {
   DocumentTextIcon,
   ArrowUturnLeftIcon,
   ArrowUturnRightIcon,
+  TrashIcon,
 } from 'react-native-heroicons/outline';
 
 export interface EditorBridge {
@@ -44,20 +47,52 @@ export function ComposerRichEditor({
   const [imagePopoverOpen, setImagePopoverOpen] = useState(false);
   const [headingDropdownOpen, setHeadingDropdownOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
+  const [linkDisplayText, setLinkDisplayText] = useState('');
   const [imageUrl, setImageUrl] = useState('');
-  const linkInputRef = useRef<HTMLInputElement>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const linkUrlInputRef = useRef<HTMLInputElement>(null);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const linkAnchorRef = useRef<HTMLDivElement>(null);
+  const headingAnchorRef = useRef<HTMLDivElement>(null);
+  const imageAnchorRef = useRef<HTMLDivElement>(null);
+
+  const [imageToolbar, setImageToolbar] = useState<{ top: number; left: number; pos: number } | null>(null);
 
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Image.configure({ inline: false }),
+      Image.configure({ inline: false, allowBase64: true }),
       Placeholder.configure({ placeholder }),
     ],
     content: initialContent,
     editorProps: {
       attributes: {
         class: 'composer-editor',
+      },
+      handleDOMEvents: {
+        mouseover: (view, event) => {
+          const target = event.target as HTMLElement;
+          if (target.tagName === 'IMG' && view.dom.contains(target)) {
+            const pos = view.posAtDOM(target, 0);
+            const node = view.state.doc.nodeAt(pos);
+            if (node?.type.name === 'image') {
+              const tr = view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos));
+              view.dispatch(tr);
+            }
+          }
+        },
+      },
+      handleKeyDown: (view, event) => {
+        if (event.key === 'Backspace') {
+          const { selection } = view.state;
+          if (selection instanceof NodeSelection && selection.node.type.name === 'image') {
+            const tr = view.state.tr.deleteSelection();
+            view.dispatch(tr);
+            return true;
+          }
+        }
+        return false;
       },
     },
   });
@@ -82,10 +117,45 @@ export function ComposerRichEditor({
   }, [editor, editorRef]);
 
   useEffect(() => {
-    if (linkPopoverOpen && linkInputRef.current) {
-      const href = editor?.getAttributes('link')?.href ?? '';
+    if (!editor) return;
+    const updateImageToolbar = () => {
+      const { selection } = editor.state;
+      if (selection instanceof NodeSelection && selection.node.type.name === 'image') {
+        const { view } = editor;
+        const dom = view.nodeDOM(selection.from) as HTMLElement | null;
+        if (dom) {
+          const rect = dom.getBoundingClientRect();
+          setImageToolbar({ top: rect.top - 8, left: rect.left, pos: selection.from });
+        } else {
+          setImageToolbar(null);
+        }
+      } else {
+        setImageToolbar(null);
+      }
+    };
+    editor.on('selectionUpdate', updateImageToolbar);
+    updateImageToolbar();
+    return () => {
+      editor.off('selectionUpdate', updateImageToolbar);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (linkPopoverOpen && editor) {
+      const href = editor.getAttributes('link')?.href ?? '';
       setLinkUrl(href);
-      linkInputRef.current.focus();
+      // Get display text: extend to link range if in a link, then get selected text
+      let displayText = '';
+      if (editor.isActive('link')) {
+        editor.chain().focus().extendMarkRange('link').run();
+        const { from, to } = editor.state.selection;
+        displayText = editor.state.doc.textBetween(from, to, '');
+      } else {
+        const { from, to } = editor.state.selection;
+        displayText = editor.state.doc.textBetween(from, to, '');
+      }
+      setLinkDisplayText(displayText);
+      setTimeout(() => linkUrlInputRef.current?.focus(), 0);
     }
   }, [linkPopoverOpen, editor]);
 
@@ -94,6 +164,9 @@ export function ComposerRichEditor({
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       const target = e.target as Node;
+      const el = target as Element;
+      // Don't close when clicking inside a popover (portaled to body, so not in containerRef)
+      if (el.closest?.('[data-composer-popover]')) return;
       // Close popovers when clicking in the editor content (user is done, wants to type)
       if (editorContentRef.current?.contains(target)) {
         setLinkPopoverOpen(false);
@@ -116,19 +189,24 @@ export function ComposerRichEditor({
     const url = linkUrl.trim();
     if (url) {
       const hasProtocol = /^https?:\/\//i.test(url);
-      editor.chain().focus().setLink({ href: hasProtocol ? url : `https://${url}` }).run();
+      const href = hasProtocol ? url : `https://${url}`;
+      const displayText = linkDisplayText.trim() || href;
+      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      editor.chain().focus().insertContent(`<a href="${esc(href)}">${esc(displayText)}</a>`).run();
     }
     setLinkPopoverOpen(false);
     setLinkUrl('');
+    setLinkDisplayText('');
   };
 
   const handleRemoveLink = () => {
     editor?.chain().focus().unsetLink().run();
     setLinkPopoverOpen(false);
     setLinkUrl('');
+    setLinkDisplayText('');
   };
 
-  const handleAddImage = () => {
+  const handleAddImageFromUrl = () => {
     const url = imageUrl.trim();
     if (url && editor) {
       const hasProtocol = /^https?:\/\//i.test(url);
@@ -136,6 +214,25 @@ export function ComposerRichEditor({
     }
     setImagePopoverOpen(false);
     setImageUrl('');
+  };
+
+  const handleAddImageFromFile = (file: File) => {
+    if (!editor) return;
+    const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+    if (file.size > MAX_SIZE) {
+      setImageError(`Image must be under ${MAX_SIZE / 1024 / 1024}MB`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      editor.chain().focus().setImage({ src: dataUrl }).run();
+      setImagePopoverOpen(false);
+      setImageUrl('');
+      setImageError(null);
+    };
+    reader.onerror = () => setImageError('Failed to read file');
+    reader.readAsDataURL(file);
   };
 
   if (!editor) return null;
@@ -174,7 +271,7 @@ export function ComposerRichEditor({
 
         <div className="composer-toolbar-divider" />
 
-        <div style={{ position: 'relative' }}>
+        <div ref={linkAnchorRef} style={{ position: 'relative' }}>
           <ToolbarButton
             onClick={() => setLinkPopoverOpen((o) => !o)}
             active={isLinkActive}
@@ -183,15 +280,19 @@ export function ComposerRichEditor({
             <LinkIcon size={18} color="currentColor" />
           </ToolbarButton>
           {linkPopoverOpen && (
-            <LinkPopover
-              linkUrl={linkUrl}
-              setLinkUrl={setLinkUrl}
-              onSet={handleSetLink}
-              onRemove={handleRemoveLink}
-              onClose={() => setLinkPopoverOpen(false)}
-              inputRef={linkInputRef}
-              hasLink={isLinkActive}
-            />
+            <PortalPopover anchorRef={linkAnchorRef} onClose={() => setLinkPopoverOpen(false)}>
+              <LinkPopover
+                linkDisplayText={linkDisplayText}
+                setLinkDisplayText={setLinkDisplayText}
+                linkUrl={linkUrl}
+                setLinkUrl={setLinkUrl}
+                onSet={handleSetLink}
+                onRemove={handleRemoveLink}
+                onClose={() => setLinkPopoverOpen(false)}
+                urlInputRef={linkUrlInputRef}
+                hasLink={isLinkActive}
+              />
+            </PortalPopover>
           )}
         </div>
 
@@ -204,7 +305,7 @@ export function ComposerRichEditor({
 
         <div className="composer-toolbar-divider" />
 
-        <div style={{ position: 'relative' }}>
+        <div ref={headingAnchorRef} style={{ position: 'relative' }}>
           <ToolbarButton
             onClick={() => setHeadingDropdownOpen((o) => !o)}
             active={currentHeading > 0}
@@ -213,11 +314,13 @@ export function ComposerRichEditor({
             <DocumentTextIcon size={18} color="currentColor" />
           </ToolbarButton>
           {headingDropdownOpen && (
-            <HeadingDropdown
-              editor={editor}
-              currentHeading={currentHeading}
-              onClose={() => setHeadingDropdownOpen(false)}
-            />
+            <PortalPopover anchorRef={headingAnchorRef} onClose={() => setHeadingDropdownOpen(false)}>
+              <HeadingDropdown
+                editor={editor}
+                currentHeading={currentHeading}
+                onClose={() => setHeadingDropdownOpen(false)}
+              />
+            </PortalPopover>
           )}
         </div>
 
@@ -233,17 +336,25 @@ export function ComposerRichEditor({
 
         <div className="composer-toolbar-divider" />
 
-        <div style={{ position: 'relative' }}>
+        <div ref={imageAnchorRef} style={{ position: 'relative' }}>
           <ToolbarButton onClick={() => setImagePopoverOpen((o) => !o)} active={false} title="Insert image">
             <PhotoIcon size={18} color="currentColor" />
           </ToolbarButton>
           {imagePopoverOpen && (
-            <ImagePopover
-              imageUrl={imageUrl}
-              setImageUrl={setImageUrl}
-              onAdd={handleAddImage}
-              onClose={() => setImagePopoverOpen(false)}
-            />
+            <PortalPopover anchorRef={imageAnchorRef} onClose={() => setImagePopoverOpen(false)}>
+              <ImagePopover
+                imageUrl={imageUrl}
+                setImageUrl={setImageUrl}
+                imageError={imageError}
+                onAddFromUrl={handleAddImageFromUrl}
+                onAddFromFile={handleAddImageFromFile}
+                onClose={() => {
+                  setImagePopoverOpen(false);
+                  setImageError(null);
+                }}
+                fileInputRef={imageFileInputRef}
+              />
+            </PortalPopover>
           )}
         </div>
 
@@ -260,6 +371,55 @@ export function ComposerRichEditor({
       <div ref={editorContentRef} className="composer-editor-wrapper" style={{ minHeight: minHeight - 52 }}>
         <EditorContent editor={editor} />
       </div>
+      {imageToolbar && editor && createPortal(
+        <div
+          data-composer-popover
+          className="composer-image-toolbar"
+          style={{
+            position: 'fixed',
+            top: imageToolbar.top - 44,
+            left: imageToolbar.left,
+            zIndex: 9999,
+          }}
+        >
+          <button
+            type="button"
+            className="composer-image-toolbar-btn"
+            onClick={() => editor.chain().focus().setNodeSelection(imageToolbar.pos).updateAttributes('image', { width: 200 }).run()}
+            title="Small"
+          >
+            S
+          </button>
+          <button
+            type="button"
+            className="composer-image-toolbar-btn"
+            onClick={() => editor.chain().focus().setNodeSelection(imageToolbar.pos).updateAttributes('image', { width: 400 }).run()}
+            title="Medium"
+          >
+            M
+          </button>
+          <button
+            type="button"
+            className="composer-image-toolbar-btn"
+            onClick={() => editor.chain().focus().setNodeSelection(imageToolbar.pos).updateAttributes('image', { width: null }).run()}
+            title="Large (original)"
+          >
+            L
+          </button>
+          <button
+            type="button"
+            className="composer-image-toolbar-btn composer-image-toolbar-btn-danger"
+            onClick={() => {
+              editor.chain().focus().setNodeSelection(imageToolbar.pos).deleteSelection().run();
+              setImageToolbar(null);
+            }}
+            title="Delete"
+          >
+            <TrashIcon size={14} color="currentColor" />
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -309,6 +469,51 @@ function OrderedListIcon({ size = ICON_SIZE, color = 'currentColor' }: { size?: 
   );
 }
 
+/** Renders popover content in a portal so it escapes toolbar overflow clipping. */
+function PortalPopover({
+  anchorRef,
+  children,
+}: {
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  dropdown?: boolean;
+  children: React.ReactNode;
+}) {
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+
+  const updatePosition = () => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPosition({ top: rect.bottom + 6, left: rect.left });
+  };
+
+  useLayoutEffect(() => {
+    updatePosition();
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [anchorRef]);
+
+  return createPortal(
+    <div
+      data-composer-popover
+      style={{
+        position: 'fixed',
+        top: position.top,
+        left: position.left,
+        zIndex: 9999,
+      }}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+
 function ToolbarButton({
   onClick,
   active,
@@ -337,36 +542,57 @@ function ToolbarButton({
 }
 
 function LinkPopover({
+  linkDisplayText,
+  setLinkDisplayText,
   linkUrl,
   setLinkUrl,
   onSet,
   onRemove,
   onClose,
-  inputRef,
+  urlInputRef,
   hasLink,
 }: {
+  linkDisplayText: string;
+  setLinkDisplayText: (v: string) => void;
   linkUrl: string;
   setLinkUrl: (v: string) => void;
   onSet: () => void;
   onRemove: () => void;
   onClose: () => void;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  urlInputRef: React.RefObject<HTMLInputElement | null>;
   hasLink: boolean;
 }) {
   return (
     <div className="composer-popover">
-      <input
-        ref={inputRef}
-        type="url"
-        value={linkUrl}
-        onChange={(e) => setLinkUrl(e.target.value)}
-        placeholder="https://example.com"
-        className="composer-popover-input"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') onSet();
-          if (e.key === 'Escape') onClose();
-        }}
-      />
+      <div style={{ marginBottom: 12 }}>
+        <label className="composer-popover-label">Display text</label>
+        <input
+          type="text"
+          value={linkDisplayText}
+          onChange={(e) => setLinkDisplayText(e.target.value)}
+          placeholder="Text to display (optional)"
+          className="composer-popover-input"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') urlInputRef.current?.focus();
+            if (e.key === 'Escape') onClose();
+          }}
+        />
+      </div>
+      <div>
+        <label className="composer-popover-label">URL</label>
+        <input
+          ref={urlInputRef}
+          type="url"
+          value={linkUrl}
+          onChange={(e) => setLinkUrl(e.target.value)}
+          placeholder="https://example.com"
+          className="composer-popover-input"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onSet();
+            if (e.key === 'Escape') onClose();
+          }}
+        />
+      </div>
       <div className="composer-popover-actions">
         <button type="button" className="composer-popover-btn" onClick={onSet}>
           Apply
@@ -387,30 +613,62 @@ function LinkPopover({
 function ImagePopover({
   imageUrl,
   setImageUrl,
-  onAdd,
+  imageError,
+  onAddFromUrl,
+  onAddFromFile,
   onClose,
+  fileInputRef,
 }: {
   imageUrl: string;
   setImageUrl: (v: string) => void;
-  onAdd: () => void;
+  imageError: string | null;
+  onAddFromUrl: () => void;
+  onAddFromFile: (file: File) => void;
   onClose: () => void;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
 }) {
   return (
     <div className="composer-popover">
-      <input
-        type="url"
-        value={imageUrl}
-        onChange={(e) => setImageUrl(e.target.value)}
-        placeholder="https://example.com/image.png"
-        className="composer-popover-input"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') onAdd();
-          if (e.key === 'Escape') onClose();
-        }}
-      />
+      <div style={{ marginBottom: 12 }}>
+        <label className="composer-popover-label">Image URL</label>
+        <input
+          type="url"
+          value={imageUrl}
+          onChange={(e) => setImageUrl(e.target.value)}
+          placeholder="https://example.com/image.png"
+          className="composer-popover-input"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onAddFromUrl();
+            if (e.key === 'Escape') onClose();
+          }}
+        />
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <label className="composer-popover-label">Or upload from computer</label>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="composer-popover-input"
+          style={{ padding: '10px 12px' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              onAddFromFile(file);
+              e.target.value = '';
+            }
+          }}
+        />
+        <div className="composer-popover-hint">Max 2MB. Images are embedded in the email.</div>
+      </div>
+      {imageError && (
+        <div className="composer-popover-error" style={{ marginBottom: 12 }}>
+          {imageError}
+        </div>
+      )}
       <div className="composer-popover-actions">
-        <button type="button" className="composer-popover-btn" onClick={onAdd}>
-          Insert
+        <button type="button" className="composer-popover-btn" onClick={onAddFromUrl}>
+          Insert URL
         </button>
         <button type="button" className="composer-popover-btn composer-popover-btn-ghost" onClick={onClose}>
           Cancel

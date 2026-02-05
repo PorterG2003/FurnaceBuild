@@ -353,6 +353,12 @@ input[type="password"]:focus {
   margin: 0.5em 0;
 }
 
+.composer-editor .ProseMirror-selectednode {
+  outline: 2px solid #F3440D;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
 .composer-editor hr {
   border: none;
   border-top: 1px solid #3A3A3A;
@@ -423,6 +429,45 @@ input[type="password"]:focus {
   flex-shrink: 0;
 }
 
+/* Image hover toolbar - size + delete */
+.composer-image-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  background: #1A1A1A;
+  border: 1px solid #3A3A3A;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.composer-image-toolbar-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #9CA3AF;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.composer-image-toolbar-btn:hover {
+  background: #3A3A3A;
+  color: #FFFFFF;
+}
+
+.composer-image-toolbar-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+}
+
 /* Popovers - match form input styling */
 .composer-popover {
   position: absolute;
@@ -436,6 +481,15 @@ input[type="password"]:focus {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   z-index: 100;
   min-width: 280px;
+}
+
+.composer-popover-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #9CA3AF;
+  margin-bottom: 6px;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
 }
 
 .composer-popover-input {
@@ -458,6 +512,19 @@ input[type="password"]:focus {
 
 .composer-popover-input::placeholder {
   color: #6B7280;
+}
+
+.composer-popover-hint {
+  font-size: 12px;
+  color: #6B7280;
+  margin-top: 6px;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+}
+
+.composer-popover-error {
+  font-size: 13px;
+  color: #EF4444;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
 }
 
 .composer-popover-actions {
@@ -531,4 +598,32 @@ input[type="password"]:focus {
 .composer-popover-dropdown-item.is-active {
   background: #3A3A3A;
   color: #FFFFFF;
+}
+
+/* Inbox message body HTML (plain text + images, links) */
+.message-body-html {
+  color: #D1D5DB;
+  font-size: 14px;
+  line-height: 1.6;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+}
+
+.message-body-html img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+  margin: 0.5em 0;
+}
+
+.message-body-html a {
+  color: #F3440D;
+}
+
+.message-body-html p {
+  margin: 0 0 0.5em 0;
+}
+
+.message-body-html p:last-child {
+  margin-bottom: 0;
 }

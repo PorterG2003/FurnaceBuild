@@ -27,12 +27,81 @@ import {
   createForwardJob,
   getMessageJobStatus,
   getPendingInboxReplyJobs,
+  fetchAttachment,
 } from '@/lib/supabase/services';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import { getDisplayBody } from '@/lib/email';
-import { ArrowUturnLeftIcon, ArrowUturnRightIcon, ArrowPathIcon, ExclamationCircleIcon, MagnifyingGlassIcon, PaperAirplaneIcon } from 'react-native-heroicons/outline';
+import { ArrowUturnLeftIcon, ArrowUturnRightIcon, ArrowPathIcon, ExclamationCircleIcon, MagnifyingGlassIcon, PaperAirplaneIcon, PaperClipIcon } from 'react-native-heroicons/outline';
 import type { EditorBridge } from '@10play/tentap-editor';
 import { ComposerRichEditor } from '@/components/inbox/ComposerRichEditor';
+import { fetchAuthSession } from 'aws-amplify/auth';
+import outputs from '@/amplify_outputs.json';
+
+const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Attachment row with Download button */
+function MessageAttachments({
+  message,
+  onDownload,
+}: {
+  message: EmailMessage;
+  onDownload: (emailMessageId: string, part: string, filename: string) => Promise<void>;
+}) {
+  const attachments = (message.attachments as Array<{ filename?: string; name?: string; size?: number; part?: string; imapUid?: number }> | null) ?? [];
+  if (!Array.isArray(attachments) || attachments.length === 0) return null;
+
+  return (
+    <View className="mt-3 gap-2">
+      {attachments.map((att, i) => {
+        const part = att.part;
+        const canDownload = !!part && (att.imapUid != null || (message as { imap_uid?: number }).imap_uid != null);
+        const filename = att.filename ?? att.name ?? 'attachment';
+        return (
+          <View
+            key={i}
+            className="flex-row items-center justify-between py-2 px-3 rounded-lg"
+            style={{ backgroundColor: '#1A1A1A' }}
+          >
+            <View className="flex-row items-center flex-1 min-w-0 mr-3">
+              <PaperClipIcon size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+              <Text className="text-gray-300 font-instrument text-sm flex-1" numberOfLines={1}>
+                {filename}
+              </Text>
+              {att.size != null && (
+                <Text className="text-gray-500 font-instrument text-xs flex-shrink-0 ml-2">
+                  {formatBytes(att.size)}
+                </Text>
+              )}
+            </View>
+            <Pressable
+              onPress={() => canDownload && onDownload(message.id, String(part), filename)}
+              disabled={!canDownload}
+              className="rounded-lg px-3 py-2"
+              hitSlop={8}
+              style={{
+                backgroundColor: canDownload ? 'rgba(243, 68, 13, 0.12)' : 'rgba(107, 114, 128, 0.15)',
+                opacity: canDownload ? 1 : 0.7,
+              }}
+            >
+              <Text
+                className="font-instrument-medium text-sm"
+                style={{ color: canDownload ? '#F3440D' : '#6B7280' }}
+              >
+                Download
+              </Text>
+            </Pressable>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
 
 /** Strip script tags from HTML for safe rendering. */
 function stripScripts(html: string): string {
@@ -422,6 +491,7 @@ function MessageBubble({
   message,
   onReply,
   onForward,
+  onDownloadAttachment,
   isPending,
   isFailed,
   errorMessage,
@@ -430,6 +500,7 @@ function MessageBubble({
   message: EmailMessage;
   onReply?: (message: EmailMessage) => void;
   onForward?: (message: EmailMessage) => void;
+  onDownloadAttachment?: (emailMessageId: string, part: string, filename: string) => Promise<void>;
   isPending?: boolean;
   isFailed?: boolean;
   errorMessage?: string | null;
@@ -590,6 +661,9 @@ function MessageBubble({
           bodyText={message.body_text}
           displayText={body}
         />
+        {onDownloadAttachment && (
+          <MessageAttachments message={message} onDownload={onDownloadAttachment} />
+        )}
       </View>
     </View>
   );
@@ -1074,6 +1148,38 @@ export default function InboxPage() {
     [selectedThread]
   );
 
+  const handleDownloadAttachment = useCallback(
+    async (emailMessageId: string, part: string, filename: string) => {
+      if (!FETCH_ATTACHMENT_URL) {
+        console.error('Fetch attachment URL not configured');
+        return;
+      }
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
+        if (!token) {
+          console.error('No auth token');
+          return;
+        }
+        const blob = await fetchAttachment(FETCH_ATTACHMENT_URL, token, emailMessageId, part);
+        if (Platform.OS === 'web') {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename || 'attachment';
+          a.click();
+          URL.revokeObjectURL(url);
+        } else {
+          // Native: download not yet implemented (web only for now)
+          // TODO: Add expo-file-system + expo-sharing for native save/share
+        }
+      } catch (err) {
+        console.error('Download attachment failed:', err);
+      }
+    },
+    []
+  );
+
   const winWidth = Dimensions.get('window').width;
   const REPLY_PANEL_WIDTH = Math.min(800, Math.max(520, winWidth * 0.58));
   const slideAnim = useRef(new Animated.Value(1)).current;
@@ -1448,6 +1554,7 @@ export default function InboxPage() {
                             message={message}
                             onReply={openReplyComposer}
                             onForward={openForwardComposer}
+                            onDownloadAttachment={FETCH_ATTACHMENT_URL ? handleDownloadAttachment : undefined}
                             isPending={isPendingMessage && !pendingInfo?.isFailed}
                             isFailed={pendingInfo?.isFailed ?? false}
                             errorMessage={pendingInfo?.errorMessage}

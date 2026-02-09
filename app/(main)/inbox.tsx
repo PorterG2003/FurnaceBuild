@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -11,12 +10,10 @@ import {
   Platform,
   Animated,
   Dimensions,
-  type DimensionValue,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { PageLayout } from '@/components/ui/layout';
-import { EmptyState, Alert, Skeleton } from '@/components/ui/feedback';
+import { EmptyState, Alert } from '@/components/ui/feedback';
 import { Button } from '@/components/ui/button';
 import {
   getAccountMembershipsForUser,
@@ -30,740 +27,26 @@ import {
   fetchAttachment,
 } from '@/lib/supabase/services';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
-import { getDisplayBody } from '@/lib/email';
-import { ArrowUturnLeftIcon, ArrowUturnRightIcon, ArrowPathIcon, ExclamationCircleIcon, MagnifyingGlassIcon, PaperAirplaneIcon, PaperClipIcon } from 'react-native-heroicons/outline';
+import { groupMessagesByDate } from '@/lib/inbox';
+import { buildQuotedForwardThreadHtml } from '@/lib/inbox/quote-utils';
+import { MagnifyingGlassIcon, PaperAirplaneIcon } from 'react-native-heroicons/outline';
 import type { EditorBridge } from '@10play/tentap-editor';
-import { ComposerRichEditor } from '@/components/inbox/ComposerRichEditor';
+import {
+  ComposerRichEditor,
+  DateDivider,
+  MessageBubble,
+  MessagePanelHeader,
+  MessagePanelHeaderSkeleton,
+  MessageListSkeleton,
+  ThreadItem,
+  ThreadListSkeleton,
+  SKELETON_DELAY_MS,
+  SKELETON_MIN_DISPLAY_MS,
+} from '@/components/inbox';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import outputs from '@/amplify_outputs.json';
 
 const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** Attachment row with Download button */
-function MessageAttachments({
-  message,
-  onDownload,
-}: {
-  message: EmailMessage;
-  onDownload: (emailMessageId: string, part: string, filename: string) => Promise<void>;
-}) {
-  const attachments = (message.attachments as Array<{ filename?: string; name?: string; size?: number; part?: string; imapUid?: number }> | null) ?? [];
-  if (!Array.isArray(attachments) || attachments.length === 0) return null;
-
-  return (
-    <View className="mt-3 gap-2">
-      {attachments.map((att, i) => {
-        const part = att.part;
-        const canDownload = !!part && (att.imapUid != null || (message as { imap_uid?: number }).imap_uid != null);
-        const filename = att.filename ?? att.name ?? 'attachment';
-        return (
-          <View
-            key={i}
-            className="flex-row items-center justify-between py-2 px-3 rounded-lg"
-            style={{ backgroundColor: '#1A1A1A' }}
-          >
-            <View className="flex-row items-center flex-1 min-w-0 mr-3">
-              <PaperClipIcon size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
-              <Text className="text-gray-300 font-instrument text-sm flex-1" numberOfLines={1}>
-                {filename}
-              </Text>
-              {att.size != null && (
-                <Text className="text-gray-500 font-instrument text-xs flex-shrink-0 ml-2">
-                  {formatBytes(att.size)}
-                </Text>
-              )}
-            </View>
-            <Pressable
-              onPress={() => canDownload && onDownload(message.id, String(part), filename)}
-              disabled={!canDownload}
-              className="rounded-lg px-3 py-2"
-              hitSlop={8}
-              style={{
-                backgroundColor: canDownload ? 'rgba(243, 68, 13, 0.12)' : 'rgba(107, 114, 128, 0.15)',
-                opacity: canDownload ? 1 : 0.7,
-              }}
-            >
-              <Text
-                className="font-instrument-medium text-sm"
-                style={{ color: canDownload ? '#F3440D' : '#6B7280' }}
-              >
-                Download
-              </Text>
-            </Pressable>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-/** Strip script tags from HTML for safe rendering. */
-function stripScripts(html: string): string {
-  return html.replace(/<script[\s\S]*?<\/script>/gi, '');
-}
-
-/** Renders message body as plain text or HTML (with images) when body_html is present. */
-function MessageBody({
-  bodyHtml,
-  bodyText,
-  displayText,
-}: {
-  bodyHtml?: string | null;
-  bodyText?: string | null;
-  displayText: string;
-}) {
-  const rawHtml = bodyHtml ?? null;
-  const hasHtml = !!rawHtml && rawHtml.trim().length > 0;
-
-  if (hasHtml && Platform.OS === 'web') {
-    const safe = stripScripts(rawHtml!);
-    const wrapped = `<div>${safe}</div>`;
-    return React.createElement('div', {
-      className: 'message-body-html',
-      dangerouslySetInnerHTML: { __html: wrapped },
-    });
-  }
-
-  if (hasHtml && Platform.OS !== 'web') {
-    const safe = stripScripts(rawHtml!);
-    const wrapped = `
-      <!DOCTYPE html>
-      <html>
-        <head><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
-        <body style="margin:0;padding:0;color:#D1D5DB;font-size:14px;line-height:1.6;background:transparent;">
-          <div>${safe}</div>
-          <style>img{max-width:100%;height:auto;border-radius:8px;display:block;margin:0.5em 0;}a{color:#F3440D;}</style>
-        </body>
-      </html>
-    `;
-    return (
-      <WebView
-        source={{ html: wrapped }}
-        scrollEnabled={false}
-        style={{ minHeight: 40, backgroundColor: 'transparent' }}
-        originWhitelist={['*']}
-      />
-    );
-  }
-
-  return (
-    <Text className="text-gray-300 font-instrument text-sm leading-6 text-left">
-      {displayText || '(No content)'}
-    </Text>
-  );
-}
-
-function formatMessageDate(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-  if (dateOnly.getTime() === today.getTime()) {
-    return `Today, ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
-  }
-  if (dateOnly.getTime() === yesterday.getTime()) {
-    return `Yesterday, ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
-  }
-  if (now.getTime() - d.getTime() < 7 * 24 * 60 * 60 * 1000) {
-    return d.toLocaleDateString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-  }
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
-}
-
-/** Escape HTML entities for safe inclusion in HTML email body */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-/** Prefix each line with "> " for plain-text block-quote (fallback for text/plain) */
-function blockQuote(text: string): string {
-  return text.split('\n').map((line) => `> ${line}`).join('\n');
-}
-
-/** Build quoted block for a single message (plain text with "> " prefix) */
-function buildQuotedMessageBlock(message: EmailMessage, threadSubject: string): string {
-  const fromStr = message.from_name
-    ? `"${message.from_name}" <${message.from_email}>`
-    : message.from_email;
-  const dateStr = formatMessageDate(message.received_at);
-  const rawBody = message.body_text ?? message.body_html ?? '';
-  const body = getDisplayBody(rawBody, { format: message.body_text ? 'text' : 'html' });
-  const block = [
-    '---------- Forwarded message ---------',
-    `From: ${fromStr}`,
-    `Date: ${dateStr}`,
-    `Subject: ${threadSubject || '(No subject)'}`,
-    '',
-    body || '(No content)',
-  ].join('\n');
-  return blockQuote(block);
-}
-
-/** Build quoted block for a single message (HTML with border-left, Gmail-style) */
-function buildQuotedMessageBlockHtml(message: EmailMessage, threadSubject: string): string {
-  const fromStr = message.from_name
-    ? `"${escapeHtml(message.from_name)}" &lt;${escapeHtml(message.from_email)}&gt;`
-    : escapeHtml(message.from_email);
-  const dateStr = escapeHtml(formatMessageDate(message.received_at));
-  const rawBody = message.body_text ?? message.body_html ?? '';
-  const body = getDisplayBody(rawBody, { format: message.body_text ? 'text' : 'html' });
-  const bodyEscaped = escapeHtml(body || '(No content)').replace(/\n/g, '<br>');
-  const header = [
-    '---------- Forwarded message ---------',
-    `From: ${fromStr}`,
-    `Date: ${dateStr}`,
-    `Subject: ${escapeHtml(threadSubject || '(No subject)')}`,
-  ].join('<br>');
-  return `<div style="border-left: 3px solid #ccc; padding-left: 15px; margin: 1em 0; color: #666;"><div style="font-size: 12px; margin-bottom: 8px;">${header}</div><div style="color: #333;">${bodyEscaped}</div></div>`;
-}
-
-/** Build quoted content for forwarding entire thread (plain text) */
-function buildQuotedForwardThread(messages: EmailMessage[], threadSubject: string): string {
-  return messages.map((m) => buildQuotedMessageBlock(m, threadSubject)).join('\n\n');
-}
-
-/** Build quoted content for forwarding entire thread (HTML with block styling) */
-function buildQuotedForwardThreadHtml(messages: EmailMessage[], threadSubject: string): string {
-  return messages.map((m) => buildQuotedMessageBlockHtml(m, threadSubject)).join('');
-}
-
-function formatThreadDate(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMins = Math.floor(diffMs / (60 * 1000));
-  const diffHours = Math.floor(diffMs / (60 * 60 * 1000));
-  const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
-/** Date group label for dividers: Today, Yesterday, Mon Jan 27, or Jan 15, 2026 */
-function getDateGroupLabel(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  if (dateOnly.getTime() === today.getTime()) return 'Today';
-  if (dateOnly.getTime() === yesterday.getTime()) return 'Yesterday';
-  if (now.getTime() - d.getTime() < 7 * 24 * 60 * 60 * 1000) {
-    return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-  }
-  return d.toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
-    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-  });
-}
-
-function groupMessagesByDate(messages: EmailMessage[]): { label: string; messages: EmailMessage[] }[] {
-  const groups: { label: string; messages: EmailMessage[] }[] = [];
-  let currentLabel: string | null = null;
-  let currentGroup: EmailMessage[] = [];
-  for (const m of messages) {
-    const label = getDateGroupLabel(m.received_at);
-    if (label !== currentLabel) {
-      if (currentGroup.length > 0) {
-        groups.push({ label: currentLabel!, messages: currentGroup });
-      }
-      currentLabel = label;
-      currentGroup = [m];
-    } else {
-      currentGroup.push(m);
-    }
-  }
-  if (currentGroup.length > 0) {
-    groups.push({ label: currentLabel!, messages: currentGroup });
-  }
-  return groups;
-}
-
-const SKELETON_DELAY_MS = 200;
-const SKELETON_MIN_DISPLAY_MS = 300;
-const STAGGER_DELAY_MS = 60;
-
-/** Wrapper that fades in children with a staggered delay based on index. */
-function StaggeredFadeIn({ index, children }: { index: number; children: ReactNode }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 280,
-        useNativeDriver: true,
-      }).start();
-    }, index * STAGGER_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [index, opacity]);
-  return <Animated.View style={{ opacity }}>{children}</Animated.View>;
-}
-
-/** Per-item width variations (pixels) for a more organic skeleton look. */
-const THREAD_SKELETON_WIDTHS: [number, number, number][] = [
-  [280, 220, 160],
-  [260, 200, 140],
-  [290, 180, 120],
-  [250, 210, 155],
-  [270, 230, 135],
-  [255, 195, 170],
-  [285, 240, 125],
-  [265, 205, 150],
-];
-
-/** Skeleton loading for thread list (left panel). Only shown after 200ms delay. */
-function ThreadListSkeleton() {
-  return (
-    <ScrollView
-      className="flex-1"
-      contentContainerStyle={{ paddingVertical: 8 }}
-      showsVerticalScrollIndicator={false}
-    >
-      {THREAD_SKELETON_WIDTHS.map(([w1, w2, w3], i) => (
-        <StaggeredFadeIn key={i} index={i}>
-          <View
-            className="mx-3 mb-2 rounded-xl border border-[#2A2A2A] px-4 py-3"
-            style={{ borderWidth: 1 }}
-          >
-            <Skeleton style={{ width: w1, height: 16, borderRadius: 4 }} />
-            <Skeleton style={{ width: w2, height: 12, borderRadius: 4, marginTop: 4 }} />
-            <Skeleton style={{ width: w3, height: 12, borderRadius: 4, marginTop: 8 }} />
-          </View>
-        </StaggeredFadeIn>
-      ))}
-    </ScrollView>
-  );
-}
-
-/** Body line widths per message card (percentage) for varied skeleton appearance. */
-const MESSAGE_BODY_WIDTHS: DimensionValue[][] = [
-  ['100%', '94%', '78%'],
-  ['98%', '88%', '72%', '55%'],
-  ['100%', '90%', '70%'],
-  ['96%', '82%', '65%'],
-];
-
-function MessagePanelHeaderSkeleton() {
-  return (
-    <View
-      className="px-5 py-4 border-b border-[#2A2A2A] bg-[#0D0D0D]"
-      style={{ borderBottomWidth: 1 }}
-    >
-      <Skeleton style={{ width: 240, height: 24, borderRadius: 4 }} />
-      <View className="mt-3 gap-0">
-        <View className="flex-row items-center gap-3 py-1.5">
-          <Skeleton style={{ width: 64, height: 20, borderRadius: 4 }} />
-          <Skeleton style={{ width: 160, height: 16, borderRadius: 4 }} />
-        </View>
-        <View className="flex-row items-center gap-3 py-1.5">
-          <Skeleton style={{ width: 72, height: 20, borderRadius: 4 }} />
-          <Skeleton style={{ width: 140, height: 16, borderRadius: 4 }} />
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function DateDividerSkeleton({ index }: { index: number }) {
-  return (
-    <StaggeredFadeIn index={index}>
-      <View className="py-5 flex-row items-center justify-center px-2">
-        <View className="flex-1 h-px bg-[#2A2A2A]" style={{ maxWidth: 80 }} />
-        <View className="mx-3">
-          <Skeleton style={{ width: 100, height: 24, borderRadius: 12 }} />
-        </View>
-        <View className="flex-1 h-px bg-[#2A2A2A]" style={{ maxWidth: 80 }} />
-      </View>
-    </StaggeredFadeIn>
-  );
-}
-
-function MessageCardSkeleton({
-  bodyWidths,
-  index,
-}: {
-  bodyWidths: DimensionValue[];
-  index: number;
-}) {
-  return (
-    <StaggeredFadeIn index={index}>
-      <View
-        className="mb-4 rounded-xl overflow-hidden border border-[#2A2A2A]"
-        style={{
-          width: '92%',
-          alignSelf: 'center',
-          borderWidth: 1,
-          backgroundColor: '#1A1A1A',
-        }}
-      >
-        <View className="px-5 pt-4 pb-3 flex-row items-center">
-          <Skeleton style={{ width: 40, height: 40, borderRadius: 20 }} />
-          <View className="ml-3 flex-1">
-            <Skeleton className="h-4 mb-1.5" style={{ width: '70%', borderRadius: 4 }} />
-            <Skeleton className="h-3" style={{ width: '52%', borderRadius: 4 }} />
-          </View>
-          <Skeleton className="h-3 flex-shrink-0" style={{ width: 72, borderRadius: 4 }} />
-        </View>
-        <View className="mx-5 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }} />
-        <View className="px-5 py-4">
-          {bodyWidths.map((w, j) => (
-            <Skeleton
-              key={j}
-              style={{
-                width: w,
-                height: 12,
-                borderRadius: 4,
-                marginBottom: j < bodyWidths.length - 1 ? 8 : 0,
-              }}
-            />
-          ))}
-        </View>
-      </View>
-    </StaggeredFadeIn>
-  );
-}
-
-/** Skeleton loading for message list (right panel). Only shown after 200ms delay. */
-function MessageListSkeleton() {
-  return (
-    <ScrollView
-      className="flex-1 bg-[#121212]"
-      contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 32 }}
-      showsVerticalScrollIndicator={false}
-    >
-      <DateDividerSkeleton index={0} />
-      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[0]} index={1} />
-      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[1]} index={2} />
-      <DateDividerSkeleton index={3} />
-      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[2]} index={4} />
-      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[3]} index={5} />
-    </ScrollView>
-  );
-}
-
-/** Centered date divider with pill-style label */
-function DateDivider({ label }: { label: string }) {
-  return (
-    <View className="flex-row items-center justify-center py-5 px-2">
-      <View className="flex-1 h-px bg-[#2A2A2A]" style={{ maxWidth: 80 }} />
-      <View className="mx-3 rounded-full bg-[#1A1A1A] border border-[#2A2A2A] px-4 py-1.5">
-        <Text className="text-gray-500 font-instrument-medium text-xs">{label}</Text>
-      </View>
-      <View className="flex-1 h-px bg-[#2A2A2A]" style={{ maxWidth: 80 }} />
-    </View>
-  );
-}
-
-/** Initials from name or email (e.g. "Sarah Johnson" -> "SJ", "sarah@co.com" -> "sa") */
-function getInitials(name: string | null, email: string): string {
-  if (name && name.trim()) {
-    const parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase().slice(0, 2);
-    }
-    return name.slice(0, 2).toUpperCase();
-  }
-  const local = email.split('@')[0] || '';
-  return (local.slice(0, 2) || '?').toUpperCase();
-}
-
-/** Single message bubble: centered card with avatar and Reply/Forward in header */
-function MessageBubble({
-  message,
-  onReply,
-  onForward,
-  onDownloadAttachment,
-  isPending,
-  isFailed,
-  errorMessage,
-  onRetry,
-}: {
-  message: EmailMessage;
-  onReply?: (message: EmailMessage) => void;
-  onForward?: (message: EmailMessage) => void;
-  onDownloadAttachment?: (emailMessageId: string, part: string, filename: string) => Promise<void>;
-  isPending?: boolean;
-  isFailed?: boolean;
-  errorMessage?: string | null;
-  onRetry?: () => void;
-}) {
-  const rawBody = message.body_text ?? message.body_html ?? '';
-  const body = getDisplayBody(rawBody, {
-    format: message.body_text ? 'text' : 'html',
-  });
-  const sender = message.from_name || message.from_email;
-  const isSent = message.direction === 'sent';
-  const canReply = onReply != null && !isPending && !isFailed;
-  const canForward = onForward != null && !isPending && !isFailed;
-  const showRetry = isFailed && onRetry != null;
-
-  const borderPulse = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (!isPending || isFailed) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(borderPulse, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: false,
-        }),
-        Animated.timing(borderPulse, {
-          toValue: 0,
-          duration: 1000,
-          useNativeDriver: false,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isPending, isFailed, borderPulse]);
-
-  const animatedBorderColor = borderPulse.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#2A2A2A', 'rgba(243, 68, 13, 0.55)'],
-  });
-
-  const cardContent = (
-    <View
-      className="rounded-xl w-[92%] max-w-[92%] overflow-hidden"
-      style={{
-        backgroundColor: isSent ? '#1E1E1E' : '#1A1A1A',
-        borderWidth: isPending || isFailed ? 0 : 1,
-        borderColor: isPending || isFailed ? 'transparent' : '#2A2A2A',
-      }}
-    >
-      {isPending && !isFailed ? (
-        <Animated.View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            borderWidth: 2,
-            borderRadius: 12,
-            borderColor: animatedBorderColor,
-          }}
-        />
-      ) : null}
-      {isFailed ? (
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            borderWidth: 2,
-            borderRadius: 12,
-            borderColor: '#EF4444',
-          }}
-        />
-      ) : null}
-      <View className="px-5 pt-4 pb-3">
-        <View className="flex-row items-center justify-between flex-wrap gap-2">
-          <View className="flex-row items-center flex-1 min-w-0">
-            <View
-              className="w-10 h-10 rounded-full items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: '#2A2A2A' }}
-            >
-              <Text className="text-white font-instrument-semibold text-sm">
-                {getInitials(message.from_name, message.from_email)}
-              </Text>
-            </View>
-            <View className="ml-3 items-start flex-1 min-w-0">
-              <Text className="text-white font-instrument-semibold text-base" numberOfLines={1}>
-                {isSent ? 'You' : sender}
-              </Text>
-              <Text className="text-gray-400 font-instrument text-xs mt-0.5" numberOfLines={1}>
-                {message.from_email}
-              </Text>
-            </View>
-            <Text className="text-gray-500 font-instrument text-xs flex-shrink-0 ml-2">
-              {isFailed ? 'Failed' : isPending ? 'Sending…' : formatMessageDate(message.received_at)}
-            </Text>
-          </View>
-          {showRetry && (
-            <Pressable
-              onPress={onRetry}
-              className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
-              hitSlop={8}
-              style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)' }}
-            >
-              <ArrowPathIcon size={16} color="#EF4444" />
-              <Text className="font-instrument-medium text-sm" style={{ color: '#EF4444' }}>
-                Retry
-              </Text>
-            </Pressable>
-          )}
-          {canReply && (
-            <Pressable
-              onPress={() => onReply(message)}
-              className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
-              hitSlop={8}
-              style={{ backgroundColor: 'rgba(243, 68, 13, 0.12)' }}
-            >
-              <ArrowUturnLeftIcon size={16} color="#F3440D" />
-              <Text className="font-instrument-medium text-sm" style={{ color: '#F3440D' }}>
-                Reply
-              </Text>
-            </Pressable>
-          )}
-          {canForward && (
-            <Pressable
-              onPress={() => onForward(message)}
-              className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
-              hitSlop={8}
-              style={{ backgroundColor: 'rgba(107, 114, 128, 0.2)' }}
-            >
-              <ArrowUturnRightIcon size={16} color="#9CA3AF" />
-              <Text className="font-instrument-medium text-sm text-gray-400">
-                Forward
-              </Text>
-            </Pressable>
-          )}
-        </View>
-      </View>
-      <View className="mx-5 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }} />
-      <View className="px-5 py-4">
-        {isFailed && errorMessage ? (
-          <View className="mb-3 flex-row items-start gap-2 rounded-lg p-3" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)' }}>
-            <ExclamationCircleIcon size={18} color="#EF4444" style={{ marginTop: 2 }} />
-            <View className="flex-1">
-              <Text className="text-red-400 font-instrument-semibold text-sm mb-1">Failed to send</Text>
-              <Text className="text-red-300 font-instrument text-xs">{errorMessage}</Text>
-            </View>
-          </View>
-        ) : null}
-        <MessageBody
-          bodyHtml={message.body_html}
-          bodyText={message.body_text}
-          displayText={body}
-        />
-        {onDownloadAttachment && (
-          <MessageAttachments message={message} onDownload={onDownloadAttachment} />
-        )}
-      </View>
-    </View>
-  );
-
-  return (
-    <View className="mb-4 flex-row justify-center items-center">
-      {cardContent}
-    </View>
-  );
-}
-
-/** Sticky header: subject, then prospect(s) vs sender with clear separation */
-function MessagePanelHeader({
-  subject,
-  prospectEmails,
-  senderEmails,
-}: {
-  subject: string;
-  prospectEmails: string[];
-  senderEmails: string[];
-}) {
-  return (
-    <View
-      className="px-5 py-4 border-b border-[#2A2A2A] bg-[#0D0D0D]"
-      style={{ borderBottomWidth: 1 }}
-    >
-      <Text
-        className="text-xl font-instrument-semibold text-white"
-        numberOfLines={1}
-      >
-        {subject || '(No subject)'}
-      </Text>
-      <View className="mt-3 gap-0">
-        {prospectEmails.length > 0 && (
-          <View className="flex-row items-center gap-3 py-1.5">
-            <View className="rounded-md bg-[#1A1A1A] px-2 py-0.5 self-start">
-              <Text className="text-gray-500 font-instrument-medium text-xs">
-                Prospect{prospectEmails.length !== 1 ? 's' : ''}
-              </Text>
-            </View>
-            <Text className="text-gray-300 font-instrument text-sm flex-1" numberOfLines={2}>
-              {prospectEmails.join(', ')}
-            </Text>
-          </View>
-        )}
-        {senderEmails.length > 0 && (
-          <View className="flex-row items-center gap-3 py-1.5">
-            <View className="rounded-md bg-[#1A1A1A] px-2 py-0.5 self-start">
-              <Text className="text-gray-500 font-instrument-medium text-xs">
-                Your email
-              </Text>
-            </View>
-            <Text className="text-gray-300 font-instrument text-sm flex-1" numberOfLines={2}>
-              {senderEmails.join(', ')}
-            </Text>
-          </View>
-        )}
-        {prospectEmails.length === 0 && senderEmails.length === 0 && (
-          <Text className="text-gray-500 font-instrument text-sm py-2">—</Text>
-        )}
-      </View>
-    </View>
-  );
-}
-
-function ThreadItem({
-  thread,
-  isSelected,
-  onSelect,
-}: {
-  thread: EmailThread;
-  isSelected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onSelect}
-      className="mx-3 mb-2 rounded-xl px-4 py-3"
-      style={[
-        { borderWidth: 1 },
-        isSelected
-          ? { backgroundColor: 'rgba(243, 68, 13, 0.14)', borderColor: 'rgba(243, 68, 13, 0.4)' }
-          : { backgroundColor: '#121212', borderColor: '#2A2A2A' },
-      ]}
-    >
-      <Text
-        className="font-instrument-semibold text-base text-white mb-1"
-        numberOfLines={1}
-      >
-        {thread.subject || '(No subject)'}
-      </Text>
-      <Text className="text-gray-400 font-instrument text-sm mb-2" numberOfLines={1}>
-        {thread.participants?.length ? thread.participants.join(', ') : '—'}
-      </Text>
-      <Text className="text-gray-500 font-instrument text-xs">
-        {formatThreadDate(thread.last_message_at)} · {thread.message_count} message{thread.message_count !== 1 ? 's' : ''}
-      </Text>
-    </Pressable>
-  );
-}
 
 export default function InboxPage() {
   const { user } = useAuthenticator();
@@ -1148,20 +431,26 @@ export default function InboxPage() {
     [selectedThread]
   );
 
-  const handleDownloadAttachment = useCallback(
-    async (emailMessageId: string, part: string, filename: string) => {
-      if (!FETCH_ATTACHMENT_URL) {
-        console.error('Fetch attachment URL not configured');
-        return;
-      }
+  const handleFetchAttachmentBlob = useCallback(
+    async (emailMessageId: string, part: string): Promise<Blob | null> => {
+      if (!FETCH_ATTACHMENT_URL) return null;
       try {
         const session = await fetchAuthSession();
         const token = session.tokens?.idToken?.toString();
-        if (!token) {
-          console.error('No auth token');
-          return;
-        }
-        const blob = await fetchAttachment(FETCH_ATTACHMENT_URL, token, emailMessageId, part);
+        if (!token) return null;
+        return await fetchAttachment(FETCH_ATTACHMENT_URL, token, emailMessageId, part);
+      } catch {
+        return null;
+      }
+    },
+    []
+  );
+
+  const handleDownloadAttachment = useCallback(
+    async (emailMessageId: string, part: string, filename: string) => {
+      const blob = await handleFetchAttachmentBlob(emailMessageId, part);
+      if (!blob) return;
+      try {
         if (Platform.OS === 'web') {
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -1177,7 +466,7 @@ export default function InboxPage() {
         console.error('Download attachment failed:', err);
       }
     },
-    []
+    [handleFetchAttachmentBlob]
   );
 
   const winWidth = Dimensions.get('window').width;
@@ -1555,6 +844,7 @@ export default function InboxPage() {
                             onReply={openReplyComposer}
                             onForward={openForwardComposer}
                             onDownloadAttachment={FETCH_ATTACHMENT_URL ? handleDownloadAttachment : undefined}
+                            onFetchAttachmentPreview={FETCH_ATTACHMENT_URL ? handleFetchAttachmentBlob : undefined}
                             isPending={isPendingMessage && !pendingInfo?.isFailed}
                             isFailed={pendingInfo?.isFailed ?? false}
                             errorMessage={pendingInfo?.errorMessage}

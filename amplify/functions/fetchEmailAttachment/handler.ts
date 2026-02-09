@@ -96,12 +96,9 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
   console.log('fetchEmailAttachment invoked'); // Ensures log group is created
   // CORS preflight
   const method = event.requestContext?.http?.method;
+  // OPTIONS preflight - Function URL CORS config adds CORS headers; don't duplicate them here
   if (event.headers?.['access-control-request-method'] || method === 'OPTIONS') {
-    return response(204, '', {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-    });
+    return response(204, '');
   }
 
   const userPoolId = process.env.COGNITO_USER_POOL_ID;
@@ -131,10 +128,10 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
 
   const supabase: SupabaseClient = createClient(supabaseUrl, supabaseSecretKey);
 
-  // 1. Load email_message and thread
+  // 1. Load email_message (mailbox_id comes from thread, not message)
   const { data: emailMessage, error: msgError } = await supabase
     .from('email_messages')
-    .select('id, thread_id, mailbox_id, imap_uid, attachments')
+    .select('id, thread_id, imap_uid, attachments')
     .eq('id', params.emailMessageId)
     .maybeSingle();
 
@@ -152,15 +149,20 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
     return jsonResponse(400, { error: 'Message has no IMAP UID (cannot fetch attachment)' });
   }
 
-  // 2. Load thread and verify account access
+  // 2. Load thread (includes mailbox_id) and verify account access
   const { data: thread, error: threadError } = await supabase
     .from('email_threads')
-    .select('id, account_id')
+    .select('id, account_id, mailbox_id')
     .eq('id', emailMessage.thread_id)
     .maybeSingle();
 
   if (threadError || !thread) {
     return jsonResponse(404, { error: 'Thread not found' });
+  }
+
+  const mailboxId = (thread as { mailbox_id?: string }).mailbox_id;
+  if (!mailboxId) {
+    return jsonResponse(400, { error: 'Thread has no mailbox (cannot fetch attachment)' });
   }
 
   // 3. Find user by external_id (Cognito sub) and check account membership
@@ -195,11 +197,11 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
   const filename = attachment?.filename ?? attachment?.name ?? 'attachment';
   const contentType = attachment?.contentType ?? attachment?.content_type ?? 'application/octet-stream';
 
-  // 5. Load mailbox
+  // 5. Load mailbox (from thread)
   const { data: mailbox, error: mailboxError } = await supabase
     .from('mailboxes')
     .select('id, imap_host, imap_port, imap_use_ssl, imap_username, imap_password')
-    .eq('id', emailMessage.mailbox_id)
+    .eq('id', mailboxId)
     .maybeSingle();
 
   if (mailboxError || !mailbox) {
@@ -236,7 +238,6 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
     return response(200, encoded, {
       'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${safeFilename}"`,
-      'Access-Control-Allow-Origin': '*',
     }, true);
   } catch (imapError) {
     console.error('IMAP fetch error:', imapError);

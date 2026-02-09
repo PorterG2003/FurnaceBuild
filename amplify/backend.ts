@@ -40,6 +40,7 @@ const fetchAttachmentUrl = fetchAttachmentLambda.addFunctionUrl({
     allowedOrigins: ['*'],
     allowedMethods: [lambda.HttpMethod.GET, lambda.HttpMethod.POST],
     allowedHeaders: ['Authorization', 'Content-Type'],
+    exposedHeaders: ['Content-Disposition', 'Content-Type'],
   },
 });
 // With authType NONE, the resource-based policy must explicitly allow public invocation.

@@ -15,7 +15,7 @@ You need to set the following environment variables:
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=your-supabase-project-url
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your-publishable-api-key
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-api-key
 ```
 
 **Getting your keys:**

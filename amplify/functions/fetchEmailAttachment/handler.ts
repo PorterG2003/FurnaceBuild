@@ -107,10 +107,10 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
   const userPoolId = process.env.COGNITO_USER_POOL_ID;
   const clientId = process.env.COGNITO_CLIENT_ID;
   const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
 
-  if (!userPoolId || !clientId || !supabaseUrl || !supabaseServiceKey) {
-    console.error('Missing env: COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, SUPABASE_URL, or SUPABASE_SERVICE_KEY');
+  if (!userPoolId || !clientId || !supabaseUrl || !supabaseSecretKey) {
+    console.error('Missing env: COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, SUPABASE_URL, or SUPABASE_SECRET_KEY');
     return jsonResponse(500, { error: 'Server configuration error' });
   }
 
@@ -129,7 +129,7 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
     return jsonResponse(400, { error: 'Missing email_message_id or part' });
   }
 
-  const supabase: SupabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+  const supabase: SupabaseClient = createClient(supabaseUrl, supabaseSecretKey);
 
   // 1. Load email_message and thread
   const { data: emailMessage, error: msgError } = await supabase

@@ -398,7 +398,7 @@ DNS can’t resolve the IMAP hostname. Usually this means the mailbox has the wr
 2. **Check CloudWatch logs** for errors
 
 3. **Verify database connection**:
-   - Check `SUPABASE_URL` and `SUPABASE_SERVICE_KEY_PARAM_PATH` are set correctly
+   - Check `SUPABASE_URL` and `SUPABASE_SECRET_KEY_PARAM_PATH` are set correctly
    - Verify SSM parameter exists and is accessible
 
 4. **Check mailbox criteria**:

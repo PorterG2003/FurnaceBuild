@@ -72,7 +72,7 @@ No manual setup needed - the schedule is managed via Infrastructure as Code!
 **Fix:** Make sure you've set all secrets:
 ```bash
 npx ampx sandbox secret set EXPO_PUBLIC_SUPABASE_URL
-npx ampx sandbox secret set SUPABASE_SERVICE_KEY
+npx ampx sandbox secret set SUPABASE_SECRET_KEY
 npx ampx sandbox secret set SEND_QUEUE_URL
 ```
 

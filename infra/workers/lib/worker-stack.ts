@@ -18,9 +18,9 @@ export interface WorkerStackProps extends cdk.StackProps {
   supabaseUrl: string;
   
   /**
-   * SSM Parameter Store path for SUPABASE_SERVICE_KEY
+   * SSM Parameter Store path for SUPABASE_SECRET_KEY
    */
-  supabaseServiceKeyParamPath: string;
+  supabaseSecretKeyParamPath: string;
   
   /**
    * Desired task count for workers
@@ -43,7 +43,7 @@ export class WorkerStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: WorkerStackProps) {
     super(scope, id, props);
 
-    const { environment, supabaseUrl, supabaseServiceKeyParamPath, desiredCount } = props;
+    const { environment, supabaseUrl, supabaseSecretKeyParamPath, desiredCount } = props;
     const region = props.env?.region || 'us-west-2';
     const account = props.env?.account;
 
@@ -159,7 +159,7 @@ export class WorkerStack extends cdk.Stack {
       resources: ['*'], // ECR GetAuthorizationToken requires '*' resource
     }));
 
-    // Grant SSM Parameter Store read permissions (for SUPABASE_SERVICE_KEY)
+    // Grant SSM Parameter Store read permissions (for SUPABASE_SECRET_KEY)
     taskExecutionRole.addToPolicy(new iam.PolicyStatement({
       sid: 'AllowSSMParameterAccess',
       actions: [
@@ -276,7 +276,7 @@ export class WorkerStack extends cdk.Stack {
       environment: {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
-        SUPABASE_SERVICE_KEY_PARAM_PATH: supabaseServiceKeyParamPath,
+        SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
       },
     });
 
@@ -320,7 +320,7 @@ export class WorkerStack extends cdk.Stack {
       environment: {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
-        SUPABASE_SERVICE_KEY_PARAM_PATH: supabaseServiceKeyParamPath,
+        SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
       },
     });
 
@@ -358,7 +358,7 @@ export class WorkerStack extends cdk.Stack {
       environment: {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
-        SUPABASE_SERVICE_KEY_PARAM_PATH: supabaseServiceKeyParamPath,
+        SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
       },
     });
 

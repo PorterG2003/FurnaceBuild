@@ -33,33 +33,32 @@ async function fetchSecretFromParameterStore(
  * 
  * Environment variables required:
  * - SUPABASE_URL: Supabase project URL
- * - SUPABASE_SERVICE_KEY: Service role key (or SUPABASE_SERVICE_KEY_PARAM_PATH to fetch from Parameter Store)
+ * - SUPABASE_SECRET_KEY: Supabase Secret Key (or SUPABASE_SECRET_KEY_PARAM_PATH to fetch from Parameter Store)
  * - AWS_REGION: AWS region (defaults to us-west-2)
  */
 async function main() {
   try {
     // Validate environment variables
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseServiceKeyParamPath = process.env.SUPABASE_SERVICE_KEY_PARAM_PATH;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+    const supabaseSecretKeyParamPath = process.env.SUPABASE_SECRET_KEY_PARAM_PATH;
+    const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
     const awsRegion = process.env.AWS_REGION || 'us-west-2';
 
     if (!supabaseUrl) {
       throw new Error('Missing required environment variable: SUPABASE_URL');
     }
 
-    // Fetch SUPABASE_SERVICE_KEY from Parameter Store if path is provided
-    let serviceKey = supabaseServiceKey;
-    if (supabaseServiceKeyParamPath && !serviceKey) {
-      console.log(`Fetching SUPABASE_SERVICE_KEY from Parameter Store: ${supabaseServiceKeyParamPath}`);
-      serviceKey = await fetchSecretFromParameterStore(supabaseServiceKeyParamPath, awsRegion);
-      // Set it as an environment variable for the Supabase client
-      process.env.SUPABASE_SERVICE_KEY = serviceKey;
+    // Fetch SUPABASE_SECRET_KEY from Parameter Store if path is provided
+    let secretKey = supabaseSecretKey;
+    if (supabaseSecretKeyParamPath && !secretKey) {
+      console.log(`Fetching SUPABASE_SECRET_KEY from Parameter Store: ${supabaseSecretKeyParamPath}`);
+      secretKey = await fetchSecretFromParameterStore(supabaseSecretKeyParamPath, awsRegion);
+      process.env.SUPABASE_SECRET_KEY = secretKey;
     }
 
-    if (!serviceKey) {
+    if (!secretKey) {
       throw new Error(
-        'Missing SUPABASE_SERVICE_KEY. Provide either SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_KEY_PARAM_PATH'
+        'Missing SUPABASE_SECRET_KEY. Provide either SUPABASE_SECRET_KEY or SUPABASE_SECRET_KEY_PARAM_PATH'
       );
     }
 

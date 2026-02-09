@@ -178,7 +178,7 @@ This document outlines the steps required to migrate from the existing Lambda-ba
   - Environment variables:
     - `SUPABASE_URL` (from process.env)
     - `SEND_QUEUE_URL` (from process.env)
-    - `SUPABASE_SERVICE_KEY_PARAM_PATH` (Parameter Store path)
+    - `SUPABASE_SECRET_KEY_PARAM_PATH` (Parameter Store path)
     - `AWS_REGION` (from process.env)
   - Logging: CloudWatch Logs with log group
 

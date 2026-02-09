@@ -29,10 +29,10 @@ fi
 
 # Set parameter path based on environment
 if [ "$ENVIRONMENT" = "dev" ]; then
-  PARAM_PATH="/amplify/furnacebuild/dev/SUPABASE_SERVICE_KEY"
+  PARAM_PATH="/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY"
   SUPABASE_URL="${DEV_SUPABASE_URL}"
 else
-  PARAM_PATH="/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SERVICE_KEY"
+  PARAM_PATH="/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY"
   SUPABASE_URL="${PROD_SUPABASE_URL}"
 fi
 

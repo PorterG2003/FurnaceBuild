@@ -10,6 +10,7 @@ backend:
         - cd amplify/functions/enrollmentMetric && npm install && cd - || (echo "Failed to install enrollmentMetric dependencies" && exit 1)
         - cd amplify/functions/inboxChecker && npm install && cd - || (echo "Failed to install inboxChecker dependencies" && exit 1)
         - cd amplify/functions/sendInvitationEmail && npm install && cd - || (echo "Failed to install sendInvitationEmail dependencies" && exit 1)
+        - cd amplify/functions/fetchEmailAttachment && npm install && cd - || (echo "Failed to install fetchEmailAttachment dependencies" && exit 1)
         - echo "=== Function dependencies installed successfully ==="
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
     build:

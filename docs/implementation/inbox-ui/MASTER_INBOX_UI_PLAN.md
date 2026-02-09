@@ -79,12 +79,12 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 **Goal**: View and download attachments on received messages; attach files when sending (reply/forward).
 
 - **Receiving**
-  - Backend: API that, given `email_message_id` (and part/imap_uid), fetches attachment binary using mailbox IMAP (inbox-checker or dedicated attachment-fetch service). Return signed URL or stream.
+  - Backend: Amplify Lambda (Function URL) — fetches attachment via IMAP given `email_message_id` and `part`; returns binary.
   - UI: Show attachment list per message (from `attachments` JSONB); “Download” calls API and opens/saves file.
 - **Sending**
   - Backend: Accept file upload (e.g. Supabase Storage or S3) or base64 in API; send-worker attaches to outgoing email via SMTP. Optionally store attachment metadata on sent `email_messages` row.
   - UI: Composer file picker; show chosen files; send with reply/forward.
-- **Expand**: Create `INBOX_ATTACHMENTS.md` when implementing.
+- **Deep dive**: [INBOX_ATTACHMENTS.md](./INBOX_ATTACHMENTS.md) — Receiving (fetch API, UI), sending (storage strategy, RPC + worker, composer UI).
 
 ---
 

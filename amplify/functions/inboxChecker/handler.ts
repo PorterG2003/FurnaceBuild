@@ -26,7 +26,7 @@ interface ProcessedMessage {
   bodyHtml: string | null;
   date: Date;
   headers: Record<string, string | string[]>;
-  attachments: Array<{ filename: string; contentType: string; size: number }>;
+  attachments: Array<{ filename: string; contentType: string; size: number; part: string; imapUid: number }>;
 }
 
 /**
@@ -126,21 +126,35 @@ async function fetchNewMessages(
         const bodyTextContent = extractBodyText(bodyText);
         const bodyHtmlContent = extractBodyHtml(bodyText);
 
-        // Extract attachments info
-        const attachments: Array<{ filename: string; contentType: string; size: number }> = [];
-        if (message.bodyStructure?.childNodes) {
-          for (const node of message.bodyStructure.childNodes) {
+        // Extract attachments info (with part and imapUid for on-demand fetching)
+        const extractAttachments = (
+          nodes: any[],
+          parentPart = ''
+        ): Array<{ filename: string; contentType: string; size: number; part: string; imapUid: number }> => {
+          const result: Array<{ filename: string; contentType: string; size: number; part: string; imapUid: number }> = [];
+          if (!nodes?.length) return result;
+          nodes.forEach((node, index) => {
+            const partIndex = index + 1;
+            const part = parentPart ? `${parentPart}.${partIndex}` : `${partIndex}`;
             if (node.disposition === 'attachment' || node.disposition === 'inline') {
-              // Type assertion needed - imapflow types don't expose contentType directly
               const nodeAny = node as any;
-              attachments.push({
+              result.push({
                 filename: node.dispositionParameters?.filename || 'attachment',
                 contentType: nodeAny.contentType || 'application/octet-stream',
                 size: node.size || 0,
+                part,
+                imapUid: uid,
               });
             }
-          }
-        }
+            if (node.childNodes?.length) {
+              result.push(...extractAttachments(node.childNodes, part));
+            }
+          });
+          return result;
+        };
+        const attachments = message.bodyStructure?.childNodes
+          ? extractAttachments(message.bodyStructure.childNodes)
+          : [];
 
         processedMessages.push({
           uid,
@@ -446,6 +460,7 @@ async function handleReply(
       received_at: message.date.toISOString(),
       headers: message.headers as any,
       attachments: message.attachments as any,
+      imap_uid: message.uid,
     })
     .select()
     .single();

@@ -50,7 +50,7 @@ Create/update `.env` in project root:
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://<your-new-dev-project-ref>-dev.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<dev-branch-anon-key>
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<dev-branch-publishable-key>
 ```
 
 **For Amplify (Dev Sandbox):**
@@ -58,7 +58,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=<dev-branch-anon-key>
 ```bash
 # Set dev environment variables in Amplify
 npx ampx sandbox secret set EXPO_PUBLIC_SUPABASE_URL=https://<your-new-dev-project-ref>-dev.supabase.co
-npx ampx sandbox secret set EXPO_PUBLIC_SUPABASE_ANON_KEY=<dev-branch-anon-key>
+npx ampx sandbox secret set EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<dev-branch-publishable-key>
 ```
 
 **For Amplify (Production):**
@@ -98,7 +98,7 @@ npm run set-secret:dev
 
 This will:
 - Prompt you for the dev branch **Secret Key** (Service Role Key)
-- Store it in SSM Parameter Store at `/amplify/furnacebuild/dev/SUPABASE_SERVICE_KEY`
+- Store it in SSM Parameter Store at `/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY`
 - The workers will automatically use this when they start
 
 **Verify the secret was set correctly:**
@@ -213,7 +213,7 @@ aws logs tail /ecs/furnace/scheduler-worker-dev --follow --region us-west-2
 
 Look for:
 - ✅ No errors about "Missing SUPABASE_URL"
-- ✅ No errors about "Missing SUPABASE_SERVICE_KEY"
+- ✅ No errors about "Missing SUPABASE_SECRET_KEY"
 - ✅ Successful database connections
 
 ### 7.4 Test Supabase Connection
@@ -287,14 +287,14 @@ PROD_SUPABASE_URL=https://<project-ref>.supabase.co
 
 ### For Workers (Set via SSM - use `npm run set-secret:dev`)
 
-- **Dev**: `/amplify/furnacebuild/dev/SUPABASE_SERVICE_KEY` (Secret Key)
-- **Prod**: `/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SERVICE_KEY` (Secret Key)
+- **Dev**: `/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY` (Secret Key)
+- **Prod**: `/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY` (Secret Key)
 
 ### For Frontend (.env or Amplify)
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://<project-ref>-dev.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 ```
 
 ---

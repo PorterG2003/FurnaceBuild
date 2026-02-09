@@ -14,18 +14,18 @@ export const handler = async (event: any) => {
 
   // Initialize clients
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
   const awsRegion = process.env.AWS_REGION || 'us-west-2';
 
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error('Missing required environment variables: EXPO_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_KEY');
+  if (!supabaseUrl || !supabaseSecretKey) {
+    throw new Error('Missing required environment variables: EXPO_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY');
   }
 
   if (!awsRegion) {
     throw new Error('AWS_REGION is not set in Lambda runtime environment');
   }
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const supabase = createClient(supabaseUrl, supabaseSecretKey);
   const cloudwatch = new CloudWatchClient({ region: awsRegion });
 
   try {

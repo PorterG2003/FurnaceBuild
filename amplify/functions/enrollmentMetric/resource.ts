@@ -9,8 +9,8 @@ import { defineFunction, secret } from '@aws-amplify/backend';
  * Environment variables/secrets:
  * - EXPO_PUBLIC_SUPABASE_URL: Environment variable (public URL, not sensitive)
  *   Set via: npx ampx sandbox secret set EXPO_PUBLIC_SUPABASE_URL
- * - SUPABASE_SERVICE_KEY: Secret (⚠️ SERVICE ROLE KEY with admin privileges - MUST be secret)
- *   Set via: npx ampx sandbox secret set SUPABASE_SERVICE_KEY
+ * - SUPABASE_SECRET_KEY: Secret (Supabase Secret Key - bypasses RLS, MUST be secret)
+ *   Set via: npx ampx sandbox secret set SUPABASE_SECRET_KEY
  * 
  * Note: AWS_REGION is automatically available in Lambda runtime as process.env.AWS_REGION
  * and should NOT be set manually (it's a reserved environment variable).
@@ -30,7 +30,7 @@ export const enrollmentMetric = defineFunction({
     // Environment variables (not sensitive, but using secret() for centralized management)
     EXPO_PUBLIC_SUPABASE_URL: secret('EXPO_PUBLIC_SUPABASE_URL'),
     // Secret (sensitive - MUST use secrets)
-    SUPABASE_SERVICE_KEY: secret('SUPABASE_SERVICE_KEY'),
+    SUPABASE_SECRET_KEY: secret('SUPABASE_SECRET_KEY'),
     // AWS_REGION is automatically set by Lambda runtime - don't set it manually
   },
 });

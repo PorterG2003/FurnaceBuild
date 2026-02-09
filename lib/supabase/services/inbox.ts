@@ -1,6 +1,16 @@
 import { supabase } from '../client';
 import type { EmailThread, EmailMessage } from '../types';
 
+/** Attachment metadata stored on email_messages */
+export interface AttachmentMeta {
+  filename: string;
+  contentType?: string;
+  content_type?: string;
+  size?: number;
+  part?: string;
+  imapUid?: number;
+}
+
 /**
  * List email threads for an account.
  * Ordered by last_message_at descending (newest first).
@@ -263,4 +273,36 @@ export async function getPendingInboxReplyJobs(
   }
 
   return pendingJobs;
+}
+
+/**
+ * Fetch an email attachment from the Lambda Function URL.
+ * Returns the raw bytes as a Blob (web) or ArrayBuffer (for React Native).
+ *
+ * @param functionUrl - Lambda Function URL from amplify_outputs.custom.fetchEmailAttachmentUrl
+ * @param authToken - Cognito ID token (from fetchAuthSession)
+ * @param emailMessageId - email_messages.id
+ * @param part - MIME part identifier (e.g. "1", "1.2")
+ */
+export async function fetchAttachment(
+  functionUrl: string,
+  authToken: string,
+  emailMessageId: string,
+  part: string
+): Promise<Blob> {
+  const res = await fetch(functionUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({ email_message_id: emailMessageId, part }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error || `Failed to fetch attachment: ${res.status}`);
+  }
+
+  return res.blob();
 }

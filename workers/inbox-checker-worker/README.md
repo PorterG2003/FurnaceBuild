@@ -21,7 +21,7 @@ This worker continuously polls the database for mailboxes that need IMAP checkin
 ## Environment Variables
 
 - `SUPABASE_URL`: Supabase project URL
-- `SUPABASE_SERVICE_KEY`: Service role key (or `SUPABASE_SERVICE_KEY_PARAM_PATH` to fetch from Parameter Store)
+- `SUPABASE_SECRET_KEY`: Supabase Secret Key (or `SUPABASE_SECRET_KEY_PARAM_PATH` to fetch from Parameter Store)
 - `AWS_REGION`: AWS region (defaults to us-west-2)
 
 ## Development

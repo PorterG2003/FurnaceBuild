@@ -180,7 +180,7 @@ new WorkerStack(app, 'WorkerStack-Dev', {
   },
   environment: 'dev',
   supabaseUrl: process.env.DEV_SUPABASE_URL!,
-  supabaseServiceKeyParamPath: '/amplify/furnacebuild/porter-sandbox-387f79dcc1/SUPABASE_SERVICE_KEY',
+  supabaseSecretKeyParamPath: '/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY',
   desiredCount: {
     sendWorker: 1,
     schedulerWorker: 1,
@@ -195,7 +195,7 @@ new WorkerStack(app, 'WorkerStack-Prod', {
   },
   environment: 'prod',
   supabaseUrl: process.env.PROD_SUPABASE_URL!,
-  supabaseServiceKeyParamPath: '/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SERVICE_KEY',
+  supabaseSecretKeyParamPath: '/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY',
   desiredCount: {
     sendWorker: 1, // Start with 1, scale to 2 if needed
     schedulerWorker: 1, // Start with 1, scale to 2 if needed
@@ -228,7 +228,7 @@ new WorkerStack(app, 'WorkerStack-Prod', {
 5. **Task Definitions:**
    - Send worker task definition
    - Scheduler worker task definition
-   - Environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY_PARAM_PATH`, `AWS_REGION`
+   - Environment variables: `SUPABASE_URL`, `SUPABASE_SECRET_KEY_PARAM_PATH`, `AWS_REGION`
 
 6. **ECS Services:**
    - Send worker service
@@ -436,11 +436,11 @@ cdk deploy WorkerStack-Prod
 
 **For dev (Amplify sandbox):**
 - Set `EXPO_PUBLIC_SUPABASE_URL` to dev branch URL
-- Set `EXPO_PUBLIC_SUPABASE_ANON_KEY` to dev branch anon key
+- Set `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to dev branch publishable key
 
 **For prod (Amplify production):**
 - Set `EXPO_PUBLIC_SUPABASE_URL` to prod branch URL
-- Set `EXPO_PUBLIC_SUPABASE_ANON_KEY` to prod branch anon key
+- Set `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to prod branch publishable key
 
 **Note:** Amplify environment variables can be set in:
 - Amplify Console → App → Environment variables
@@ -454,7 +454,7 @@ cdk deploy WorkerStack-Prod
 
 **Update Lambda environment variables:**
 - Add `SUPABASE_URL` environment variable per environment
-- Add `SUPABASE_SERVICE_KEY` or use SSM parameter
+- Add `SUPABASE_SECRET_KEY` or use SSM parameter
 
 #### Step 5.3: Test Frontend Connections
 

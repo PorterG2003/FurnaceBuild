@@ -8,18 +8,18 @@ const supabaseUrl =
   process.env.EXPO_PUBLIC_SUPABASE_URL || 
   (Constants.expoConfig?.extra?.supabaseUrl as string);
   
-const supabaseAnonKey = 
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
-  (Constants.expoConfig?.extra?.supabaseAnonKey as string);
+const supabasePublishableKey = 
+  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || 
+  (Constants.expoConfig?.extra?.supabasePublishableKey as string);
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!supabaseUrl || !supabasePublishableKey) {
   throw new Error(
-    'Missing Supabase environment variables. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in .env file or app.json'
+    'Missing Supabase environment variables. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env file or app.json'
   );
 }
 
 // Create Supabase client
-export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase: SupabaseClient = createClient(supabaseUrl, supabasePublishableKey, {
   auth: {
     // We're not using Supabase auth, so disable auto-refresh
     autoRefreshToken: false,

@@ -54,7 +54,7 @@ npm install
 2. Set environment variables:
 ```bash
 export SUPABASE_URL=your-supabase-url
-export SUPABASE_SERVICE_KEY=your-service-key
+export SUPABASE_SECRET_KEY=your-secret-key
 export SEND_QUEUE_URL=https://sqs.us-west-2.amazonaws.com/.../furnace-send-queue
 export AWS_REGION=us-west-2
 ```
@@ -123,17 +123,17 @@ docker push $REPO_URI:latest
 
 - `SUPABASE_URL` (required): Supabase project URL
 - `SEND_QUEUE_URL` (required): SQS queue URL for sending message_jobs
-- `SUPABASE_SERVICE_KEY_PARAM_PATH` (required): SSM Parameter Store path to fetch `SUPABASE_SERVICE_KEY` from
-  - Example: `/amplify/furnacebuild/porter-sandbox-387f79dcc1/SUPABASE_SERVICE_KEY`
+- `SUPABASE_SECRET_KEY_PARAM_PATH` (required): SSM Parameter Store path to fetch `SUPABASE_SECRET_KEY` from
+  - Example: `/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY`
   - If set, the worker will fetch the secret from Parameter Store at startup
 - `AWS_REGION` (optional): AWS region, defaults to `us-west-2`
 
 ### Optional (Local Development)
 
-- `SUPABASE_SERVICE_KEY` (optional): Service role key
-  - Can be provided directly, or fetched from Parameter Store if `SUPABASE_SERVICE_KEY_PARAM_PATH` is set
-  - `SUPABASE_SERVICE_KEY_PARAM_PATH` (optional): SSM Parameter Store path to fetch `SUPABASE_SERVICE_KEY` from
-  - Example: `/amplify/furnacebuild/porter-sandbox-387f79dcc1/SUPABASE_SERVICE_KEY`
+- `SUPABASE_SECRET_KEY` (optional): Supabase Secret Key
+  - Can be provided directly, or fetched from Parameter Store if `SUPABASE_SECRET_KEY_PARAM_PATH` is set
+  - `SUPABASE_SECRET_KEY_PARAM_PATH` (optional): SSM Parameter Store path to fetch `SUPABASE_SECRET_KEY` from
+  - Example: `/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY`
   - If set, the worker will fetch the secret from Parameter Store at startup
 
 ## Architecture
@@ -169,7 +169,7 @@ docker push $REPO_URI:latest
 ### Worker can't connect to Supabase
 
 - Verify `SUPABASE_URL` environment variable is set correctly
-- Check `SUPABASE_SERVICE_KEY_PARAM_PATH` is correct
+- Check `SUPABASE_SECRET_KEY_PARAM_PATH` is correct
 - Ensure IAM task role has `ssm:GetParameter` permissions
 - Check CloudWatch logs: `/ecs/furnace/scheduler-worker`
 

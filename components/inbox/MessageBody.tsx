@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Text, View, Platform, Pressable } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { EllipsisHorizontalIcon } from 'react-native-heroicons/outline';
 import { sanitizeEmailBody, hasResidualEncodingArtifacts } from '@/lib/email';
 
 /** Strip script tags from HTML for safe rendering. */
@@ -20,6 +21,20 @@ function stripUnresolvableCidImages(html: string): { html: string; removedCount:
     html: html.replace(cidImgPattern, ''),
     removedCount: matches.length,
   };
+}
+
+function ExpandThreadButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="self-start mt-2 min-w-6 px-2 py-1 items-center justify-center rounded-full"
+      style={{ backgroundColor: 'rgba(107, 114, 128, 0.18)' }}
+      accessibilityRole="button"
+      accessibilityLabel="Show full message thread"
+    >
+      <EllipsisHorizontalIcon size={13} color="#D1D5DB" />
+    </Pressable>
+  );
 }
 
 /** Renders message body as plain text or HTML (with images) when body_html is present. */
@@ -74,17 +89,7 @@ export function MessageBody({
           <Text className="text-gray-300 font-instrument text-sm leading-6 text-left">
             {cleanDisplayText || '(No content)'}
           </Text>
-          <Pressable
-            onPress={() => {
-              setShowFullThread(true);
-            }}
-            className="self-start mt-2 px-2 py-1 rounded-md"
-            style={{ backgroundColor: 'rgba(107, 114, 128, 0.18)' }}
-            accessibilityRole="button"
-            accessibilityLabel="Show full message thread"
-          >
-            <Text className="text-gray-300 font-instrument-semibold text-xs">...</Text>
-          </Pressable>
+          <ExpandThreadButton onPress={() => setShowFullThread(true)} />
         </View>
       );
     }
@@ -102,17 +107,7 @@ export function MessageBody({
           <Text className="text-gray-300 font-instrument text-sm leading-6 text-left">
             {cleanDisplayText || '(No content)'}
           </Text>
-          <Pressable
-            onPress={() => {
-              setShowFullThread(true);
-            }}
-            className="self-start mt-2 px-2 py-1 rounded-md"
-            style={{ backgroundColor: 'rgba(107, 114, 128, 0.18)' }}
-            accessibilityRole="button"
-            accessibilityLabel="Show full message thread"
-          >
-            <Text className="text-gray-300 font-instrument-semibold text-xs">...</Text>
-          </Pressable>
+          <ExpandThreadButton onPress={() => setShowFullThread(true)} />
         </View>
       );
     }
@@ -144,15 +139,7 @@ export function MessageBody({
         {textToRender || '(No content)'}
       </Text>
       {hasCollapsedThread && !showFullThread ? (
-        <Pressable
-          onPress={() => setShowFullThread(true)}
-          className="self-start mt-2 px-2 py-1 rounded-md"
-          style={{ backgroundColor: 'rgba(107, 114, 128, 0.18)' }}
-          accessibilityRole="button"
-          accessibilityLabel="Show full message thread"
-        >
-          <Text className="text-gray-300 font-instrument-semibold text-xs">...</Text>
-        </Pressable>
+        <ExpandThreadButton onPress={() => setShowFullThread(true)} />
       ) : null}
     </View>
   );

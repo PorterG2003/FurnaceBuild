@@ -11,6 +11,7 @@
  *
  * Strategy: find the earliest start of any quoted/forwarded/signature block and truncate there.
  */
+import { sanitizeEmailBody } from './sanitize-body';
 
 export type ParseEmailBodyOptions = {
   /** Input format; if 'html', body is stripped to plain text first. Default 'text'. */
@@ -127,7 +128,7 @@ export function parseEmailBody(
   options: ParseEmailBodyOptions = {}
 ): ParsedEmailBody {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  let text = body ?? '';
+  let text = sanitizeEmailBody(body ?? '', { format: opts.format });
   if (text === '') {
     return { displayBody: '', hadQuotedOrSignatureContent: false };
   }

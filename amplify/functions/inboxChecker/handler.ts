@@ -1,5 +1,6 @@
 import { SupabaseClient, createClient } from '@supabase/supabase-js';
 import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
 import type { EventBridgeHandler } from 'aws-lambda';
 
 /**
@@ -88,43 +89,19 @@ async function fetchNewMessages(
         for await (const chunk of parsed.content) {
           chunks.push(Buffer.from(chunk));
         }
-        const rawMessage = Buffer.concat(chunks).toString('utf-8');
-        
-        // Simple email parsing (for production, consider using a proper email parser)
-        const headers: Record<string, string | string[]> = {};
-        const headerEnd = rawMessage.indexOf('\r\n\r\n');
-        const headerText = rawMessage.substring(0, headerEnd);
-        const bodyText = rawMessage.substring(headerEnd + 4);
+        const rawBuffer = Buffer.concat(chunks);
 
-        // Parse headers
-        for (const line of headerText.split('\r\n')) {
-          const colonIndex = line.indexOf(':');
-          if (colonIndex === -1) continue;
-          const key = line.substring(0, colonIndex).trim().toLowerCase();
-          const value = line.substring(colonIndex + 1).trim();
-          
-          if (headers[key]) {
-            // Multiple values - convert to array
-            const existing = headers[key];
-            headers[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
-          } else {
-            headers[key] = value;
-          }
-        }
-
-        // Extract key headers
-        const messageId = extractHeaderValue(headers['message-id']);
-        const inReplyTo = extractHeaderValue(headers['in-reply-to']);
-        const references = extractHeaderValue(headers['references']);
-        const fromHeader = parseEmailAddress(extractHeaderValue(headers['from']));
-        const toHeader = parseEmailAddressList(extractHeaderValue(headers['to']));
-        const subject = extractHeaderValue(headers['subject']) || '(No Subject)';
-        const dateHeader = extractHeaderValue(headers['date']);
-        const date = dateHeader ? new Date(dateHeader) : new Date();
-
-        // Extract body (simple - for production, use proper MIME parser)
-        const bodyTextContent = extractBodyText(bodyText);
-        const bodyHtmlContent = extractBodyHtml(bodyText);
+        // Parse RFC822 safely: decodes quoted-printable/base64/charset correctly.
+        const mail = await simpleParser(rawBuffer);
+        const refs = mail.references;
+        const references = refs == null ? null : Array.isArray(refs) ? refs[0] ?? null : refs;
+        const fromHeader = addressToFrom(mail.from);
+        const toHeader = addressesToTo(mail.to);
+        const subject = mail.subject ?? '(No Subject)';
+        const date = mail.date ?? new Date();
+        const bodyTextContent = typeof mail.text === 'string' ? mail.text.trim() : null;
+        const bodyHtmlContent = typeof mail.html === 'string' ? mail.html.trim() : null;
+        const headers = mailHeadersToRecord(mail.headers as Map<string, unknown>);
 
         // Extract attachments info (with part and imapUid for on-demand fetching)
         const extractAttachments = (
@@ -158,16 +135,16 @@ async function fetchNewMessages(
 
         processedMessages.push({
           uid,
-          messageId,
-          inReplyTo,
+          messageId: mail.messageId ?? null,
+          inReplyTo: mail.inReplyTo ?? null,
           references,
           from: fromHeader,
           to: toHeader,
           subject,
-          bodyText: bodyTextContent,
-          bodyHtml: bodyHtmlContent,
+          bodyText: bodyTextContent || null,
+          bodyHtml: bodyHtmlContent || null,
           date,
-          headers: headers as Record<string, string | string[]>,
+          headers,
           attachments,
         });
       } catch (error) {
@@ -195,62 +172,39 @@ function extractHeaderValue(value: string | string[] | undefined): string | null
   return value;
 }
 
-/**
- * Parse email address from header (simple version)
- */
-function parseEmailAddress(header: string | null): { name?: string; address: string } {
-  if (!header) return { address: '' };
-  
-  // Simple parsing: "Name <email@domain.com>" or "email@domain.com"
-  const match = header.match(/^(?:([^<]+)<)?([^>]+@[^>]+)(?:>)?$/);
-  if (match) {
-    return {
-      name: match[1]?.trim() || undefined,
-      address: match[2]?.trim() || header.trim(),
-    };
-  }
-  return { address: header.trim() };
+function addressToFrom(addr: any): { name?: string; address: string } {
+  if (!addr?.value?.[0]) return { address: '' };
+  const v = addr.value[0];
+  return {
+    name: v.name || undefined,
+    address: v.address || (typeof v === 'string' ? v : ''),
+  };
 }
 
-/**
- * Parse email address list
- */
-function parseEmailAddressList(header: string | null): Array<{ name?: string; address: string }> {
-  if (!header) return [];
-  
-  // Split by comma and parse each
-  return header.split(',').map(addr => parseEmailAddress(addr.trim()));
+function addressesToTo(addr: any): Array<{ name?: string; address: string }> {
+  if (!addr?.value) return [];
+  return addr.value.map((v: any) => ({
+    name: v.name || undefined,
+    address: v.address || (typeof v === 'string' ? v : ''),
+  }));
 }
 
-/**
- * Extract plain text body (simple MIME parsing)
- */
-function extractBodyText(body: string): string | null {
-  // Look for text/plain part
-  const textPlainMatch = body.match(/Content-Type:\s*text\/plain[^]*?\r\n\r\n([^]*?)(?:\r\n--|$)/is);
-  if (textPlainMatch) {
-    return textPlainMatch[1].trim();
+function mailHeadersToRecord(headers: Map<string, unknown>): Record<string, string | string[]> {
+  const out: Record<string, string | string[]> = {};
+  if (!headers) return out;
+  for (const [key, value] of headers.entries()) {
+    if (value == null) continue;
+    if (Array.isArray(value)) {
+      out[key] = value.map((v) => (typeof v === 'string' ? v : String(v)));
+    } else if (typeof value === 'string') {
+      out[key] = value;
+    } else if (typeof (value as any)?.text === 'string') {
+      out[key] = (value as any).text;
+    } else {
+      out[key] = String(value);
+    }
   }
-  
-  // If no MIME structure, return body as-is
-  if (!body.includes('Content-Type:')) {
-    return body.trim() || null;
-  }
-  
-  return null;
-}
-
-/**
- * Extract HTML body (simple MIME parsing)
- */
-function extractBodyHtml(body: string): string | null {
-  // Look for text/html part
-  const textHtmlMatch = body.match(/Content-Type:\s*text\/html[^]*?\r\n\r\n([^]*?)(?:\r\n--|$)/is);
-  if (textHtmlMatch) {
-    return textHtmlMatch[1].trim();
-  }
-  
-  return null;
+  return out;
 }
 
 /**
@@ -626,6 +580,12 @@ async function handleUnsubscribe(
 
 export const handler: EventBridgeHandler<'Scheduled Event', null, void> = async (event) => {
   console.log('Inbox checker triggered:', JSON.stringify(event, null, 2));
+
+  // Runtime guard: disable Lambda ingestion when ECS inbox-checker-worker is active.
+  if (String(process.env.INBOX_CHECKER_LAMBDA_ENABLED ?? 'true').toLowerCase() !== 'true') {
+    console.log('INBOX_CHECKER_LAMBDA_ENABLED=false, skipping Lambda inbox check run');
+    return;
+  }
 
   // Initialize clients
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;

@@ -101,6 +101,10 @@ export default function InboxPage() {
   const [pendingReply, setPendingReply] = useState<PendingReply | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const messagesScrollViewRef = useRef<ScrollView>(null);
+  const lastContentHeightRef = useRef(0);
+  const prevMessagesLengthRef = useRef(0);
+  const prevSelectedThreadIdRef = useRef<string | null>(null);
+  const autoScrollArmedRef = useRef(false);
   const selectedThreadIdRef = useRef(selectedThreadId);
   selectedThreadIdRef.current = selectedThreadId;
 
@@ -380,9 +384,24 @@ export default function InboxPage() {
     };
   }, []);
 
-  const scrollMessagesToEnd = useCallback(() => {
+  const scrollMessagesToEnd = useCallback((reason: string, nextHeight?: number) => {
+    if (typeof nextHeight === 'number') {
+      lastContentHeightRef.current = nextHeight;
+    }
     messagesScrollViewRef.current?.scrollToEnd({ animated: true });
-  }, []);
+  }, [messages.length]);
+
+  useEffect(() => {
+    const previousThreadId = prevSelectedThreadIdRef.current;
+    const previousLength = prevMessagesLengthRef.current;
+    const threadChanged = previousThreadId !== selectedThreadId;
+    const messagesIncreased = messages.length > previousLength;
+    if (threadChanged || messagesIncreased) {
+      autoScrollArmedRef.current = true;
+    }
+    prevMessagesLengthRef.current = messages.length;
+    prevSelectedThreadIdRef.current = selectedThreadId;
+  }, [messages.length, selectedThreadId, pendingReply, composerMode]);
 
   const openReplyComposer = useCallback(
     (message: EmailMessage) => {
@@ -824,7 +843,17 @@ export default function InboxPage() {
               ) : (
                 <ScrollView
                   ref={messagesScrollViewRef}
-                  onContentSizeChange={scrollMessagesToEnd}
+                  onContentSizeChange={(_w, h) => {
+                    const shouldAutoScroll = autoScrollArmedRef.current;
+                    if (shouldAutoScroll) {
+                      autoScrollArmedRef.current = false;
+                      scrollMessagesToEnd('content-size-change', h);
+                      return;
+                    }
+                    if (lastContentHeightRef.current !== h) {
+                      lastContentHeightRef.current = h;
+                    }
+                  }}
                   className="flex-1 bg-[#121212]"
                   contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 32 }}
                   showsVerticalScrollIndicator={false}

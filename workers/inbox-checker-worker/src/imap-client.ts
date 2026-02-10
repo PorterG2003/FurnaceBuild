@@ -1,4 +1,5 @@
 import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
 import type { Mailbox, ProcessedMessage } from './types.js';
 
 /**
@@ -87,7 +88,9 @@ export class ImapClient {
   }
 
   /**
-   * Parse a raw email message
+   * Parse a raw email message using mailparser for proper MIME decoding
+   * (quoted-printable, base64, charsets). BodyStructure is still used for
+   * attachment part identifiers (for on-demand fetch).
    */
   private async parseMessage(
     uid: number,
@@ -96,65 +99,22 @@ export class ImapClient {
   ): Promise<ProcessedMessage> {
     // Download full RFC822 message (part undefined). Options.uid so range is UID not sequence.
     const parsed = await client.download(uid, undefined, { uid: true });
-    
-    // Read the stream content
+
+    // Read the stream content as raw Buffer (mailparser handles encoding)
     const chunks: Buffer[] = [];
     for await (const chunk of parsed.content) {
       chunks.push(Buffer.from(chunk));
     }
-    const rawMessage = Buffer.concat(chunks).toString('utf-8');
-    
-    // Simple email parsing (for production, consider using mailparser library)
-    const headers: Record<string, string | string[]> = {};
-    const headerEnd = rawMessage.indexOf('\r\n\r\n');
-    if (headerEnd === -1) {
-      throw new Error('Invalid email format: no header/body separator');
-    }
-    const headerText = rawMessage.substring(0, headerEnd);
-    const bodyText = rawMessage.substring(headerEnd + 4);
+    const rawBuffer = Buffer.concat(chunks);
 
-    // Parse headers
-    for (const line of headerText.split('\r\n')) {
-      // Handle line folding (continuation lines start with space/tab)
-      if (line.match(/^\s/)) {
-        // Continuation line - append to last header
-        const lastKey = Object.keys(headers).pop();
-        if (lastKey) {
-          const existing = headers[lastKey];
-          headers[lastKey] = (Array.isArray(existing) ? existing[existing.length - 1] : existing) + ' ' + line.trim();
-        }
-        continue;
-      }
+    // Use mailparser for proper MIME decoding (quoted-printable, base64, charsets)
+    const mail = await simpleParser(rawBuffer);
 
-      const colonIndex = line.indexOf(':');
-      if (colonIndex === -1) continue;
-      const key = line.substring(0, colonIndex).trim().toLowerCase();
-      const value = line.substring(colonIndex + 1).trim();
-      
-      if (headers[key]) {
-        // Multiple values - convert to array
-        const existing = headers[key];
-        headers[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
-      } else {
-        headers[key] = value;
-      }
-    }
+    const fromHeader = this.addressToFrom(mail.from);
+    const toHeader = this.addressesToTo(mail.to);
+    const headers = this.mailHeadersToRecord(mail.headers);
 
-    // Extract key headers
-    const messageId = this.extractHeaderValue(headers['message-id']);
-    const inReplyTo = this.extractHeaderValue(headers['in-reply-to']);
-    const references = this.extractHeaderValue(headers['references']);
-    const fromHeader = this.parseEmailAddress(this.extractHeaderValue(headers['from']));
-    const toHeader = this.parseEmailAddressList(this.extractHeaderValue(headers['to']));
-    const subject = this.extractHeaderValue(headers['subject']) || '(No Subject)';
-    const dateHeader = this.extractHeaderValue(headers['date']);
-    const date = dateHeader ? new Date(dateHeader) : new Date();
-
-    // Extract body (simple - for production, use proper MIME parser)
-    const bodyTextContent = this.extractBodyText(bodyText);
-    const bodyHtmlContent = this.extractBodyHtml(bodyText);
-
-    // Extract attachments info
+    // Extract attachments info (use bodyStructure for part IDs - required for on-demand fetch)
     // Helper function to recursively extract attachments with part identifiers
     const extractAttachments = (
       nodes: any[],
@@ -195,86 +155,60 @@ export class ImapClient {
       ? extractAttachments(message.bodyStructure.childNodes)
       : [];
 
+    const refs = mail.references;
+    const references = refs == null ? null : Array.isArray(refs) ? refs[0] ?? null : refs;
+
+    const textBody = typeof mail.text === 'string' ? mail.text.trim() : null;
+    const htmlBody = typeof mail.html === 'string' ? mail.html.trim() : null;
+
     return {
       uid,
-      messageId,
-      inReplyTo,
+      messageId: mail.messageId ?? null,
+      inReplyTo: mail.inReplyTo ?? null,
       references,
       from: fromHeader,
       to: toHeader,
-      subject,
-      bodyText: bodyTextContent,
-      bodyHtml: bodyHtmlContent,
-      date,
-      headers: headers as Record<string, string | string[]>,
+      subject: mail.subject ?? '(No Subject)',
+      bodyText: textBody || null,
+      bodyHtml: htmlBody || null,
+      date: mail.date ?? new Date(),
+      headers,
       attachments,
     };
   }
 
-  /**
-   * Extract header value (handle arrays)
-   */
-  private extractHeaderValue(value: string | string[] | undefined): string | null {
-    if (!value) return null;
-    if (Array.isArray(value)) return value[0] || null;
-    return value;
+  private addressToFrom(addr: any): { name?: string; address: string } {
+    if (!addr?.value?.[0]) return { address: '' };
+    const v = addr.value[0];
+    return {
+      name: v.name || undefined,
+      address: v.address || (typeof v === 'string' ? v : ''),
+    };
   }
 
-  /**
-   * Parse email address from header (simple version)
-   */
-  private parseEmailAddress(header: string | null): { name?: string; address: string } {
-    if (!header) return { address: '' };
-    
-    // Simple parsing: "Name <email@domain.com>" or "email@domain.com"
-    const match = header.match(/^(?:([^<]+)<)?([^>]+@[^>]+)(?:>)?$/);
-    if (match) {
-      return {
-        name: match[1]?.trim() || undefined,
-        address: match[2]?.trim() || header.trim(),
-      };
-    }
-    return { address: header.trim() };
+  private addressesToTo(addr: any): Array<{ name?: string; address: string }> {
+    if (!addr?.value) return [];
+    return addr.value.map((v: any) => ({
+      name: v.name || undefined,
+      address: v.address || (typeof v === 'string' ? v : ''),
+    }));
   }
 
-  /**
-   * Parse email address list
-   */
-  private parseEmailAddressList(header: string | null): Array<{ name?: string; address: string }> {
-    if (!header) return [];
-    
-    // Split by comma and parse each
-    return header.split(',').map(addr => this.parseEmailAddress(addr.trim()));
-  }
-
-  /**
-   * Extract plain text body (simple MIME parsing)
-   */
-  private extractBodyText(body: string): string | null {
-    // Look for text/plain part
-    const textPlainMatch = body.match(/Content-Type:\s*text\/plain[^]*?\r\n\r\n([^]*?)(?:\r\n--|$)/is);
-    if (textPlainMatch) {
-      return textPlainMatch[1].trim();
+  private mailHeadersToRecord(headers: Map<string, any>): Record<string, string | string[]> {
+    const out: Record<string, string | string[]> = {};
+    if (!headers) return out;
+    for (const [key, value] of headers.entries()) {
+      if (value == null) continue;
+      if (Array.isArray(value)) {
+        out[key] = value.map((v) => (typeof v === 'string' ? v : String(v)));
+      } else if (typeof value === 'string') {
+        out[key] = value;
+      } else if (value?.text) {
+        out[key] = value.text;
+      } else {
+        out[key] = String(value);
+      }
     }
-    
-    // If no MIME structure, return body as-is
-    if (!body.includes('Content-Type:')) {
-      return body.trim() || null;
-    }
-    
-    return null;
-  }
-
-  /**
-   * Extract HTML body (simple MIME parsing)
-   */
-  private extractBodyHtml(body: string): string | null {
-    // Look for text/html part
-    const textHtmlMatch = body.match(/Content-Type:\s*text\/html[^]*?\r\n\r\n([^]*?)(?:\r\n--|$)/is);
-    if (textHtmlMatch) {
-      return textHtmlMatch[1].trim();
-    }
-    
-    return null;
+    return out;
   }
 }

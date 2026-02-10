@@ -182,6 +182,25 @@ The script will:
 
 **Note:** Services are isolated by cluster - the script queries the specific cluster for that environment, so dev and prod won't mix.
 
+### Inbox Checker Runtime Ownership
+
+To avoid duplicate ingestion, only one inbox checker runtime should be active:
+
+- **Option A (default):** Amplify Lambda `inboxChecker`
+- **Option B:** ECS `inbox-checker-worker`
+
+When scaling ECS inbox checker above `0`, disable Lambda ingestion at deploy time:
+
+```bash
+INBOX_CHECKER_LAMBDA_ENABLED=false npx ampx pipeline-deploy --branch "$AWS_BRANCH" --app-id "$AWS_APP_ID"
+```
+
+The scaling script enforces this by default and blocks inbox checker ECS scale-up unless you explicitly override with:
+
+```bash
+ALLOW_DUAL_INGESTION=true bash scripts/scale-services.sh dev 1 1 1
+```
+
 ### Stack Management
 - `npm run check:stack` - Check stack status
 - `npm run cancel:stack` - Cancel stuck stack deployment

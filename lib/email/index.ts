@@ -8,3 +8,9 @@ export {
   type ParseEmailBodyOptions,
   type ParsedEmailBody,
 } from './parse-body';
+
+export {
+  sanitizeEmailBody,
+  hasResidualEncodingArtifacts,
+  type SanitizeEmailBodyOptions,
+} from './sanitize-body';

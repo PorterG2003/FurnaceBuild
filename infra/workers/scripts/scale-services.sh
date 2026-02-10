@@ -94,6 +94,17 @@ if [ -n "$INBOX_CHECKER_SERVICE_NAME" ]; then
 fi
 echo ""
 
+if [ -n "$INBOX_CHECKER_SERVICE_NAME" ] && [ "$INBOX_CHECKER_COUNT" -gt 0 ] && [ "${ALLOW_DUAL_INGESTION:-false}" != "true" ]; then
+  echo "⚠️  Dual ingestion protection"
+  echo "   You are scaling ECS inbox-checker-worker above 0."
+  echo "   Ensure Amplify Lambda inboxChecker is disabled at deploy time:"
+  echo "   INBOX_CHECKER_LAMBDA_ENABLED=false npx ampx pipeline-deploy ..."
+  echo ""
+  echo "   If you intentionally want both paths active, rerun with:"
+  echo "   ALLOW_DUAL_INGESTION=true bash scripts/scale-services.sh $ENVIRONMENT $SEND_COUNT $SCHEDULER_COUNT $INBOX_CHECKER_COUNT"
+  exit 1
+fi
+
 # Function to scale a service
 scale_service() {
   local service_name="$1"

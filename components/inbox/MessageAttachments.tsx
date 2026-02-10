@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { View, Text, Pressable, Image, Platform } from 'react-native';
 import { ArrowDownTrayIcon, DocumentIcon, PhotoIcon } from 'react-native-heroicons/outline';
 import type { EmailMessage } from '@/lib/supabase/types';
@@ -6,10 +6,28 @@ import { formatBytes } from '@/lib/inbox';
 
 const BLOCK_SIZE = 140;
 
-function isImageType(contentType: string | undefined): boolean {
-  if (!contentType) return false;
-  const ct = contentType.toLowerCase();
-  return ct.startsWith('image/');
+function isImageType(contentType: string | undefined, filename?: string): boolean {
+  const ct = (contentType ?? '').toLowerCase().trim();
+  if (ct.startsWith('image/')) return true;
+
+  // Some providers store image attachments as application/octet-stream.
+  const normalizedFilename = (filename ?? '').toLowerCase();
+  const ext = normalizedFilename.includes('.') ? normalizedFilename.split('.').pop() ?? '' : '';
+  const imageExtensions = new Set([
+    'jpg',
+    'jpeg',
+    'png',
+    'gif',
+    'webp',
+    'bmp',
+    'tif',
+    'tiff',
+    'heic',
+    'heif',
+    'avif',
+    'svg',
+  ]);
+  return imageExtensions.has(ext);
 }
 
 /** Single attachment block: square preview/icon, truncated filename; on hover: full filename + download */
@@ -17,12 +35,16 @@ function AttachmentBlock({
   att,
   message,
   index,
+  activeHoverId,
+  setActiveHoverId,
   onDownload,
   onFetchPreview,
 }: {
   att: { filename?: string; name?: string; contentType?: string; content_type?: string; size?: number; part?: string; imapUid?: number };
   message: EmailMessage;
   index: number;
+  activeHoverId: string | null;
+  setActiveHoverId: Dispatch<SetStateAction<string | null>>;
   onDownload: (emailMessageId: string, part: string, filename: string) => Promise<void>;
   onFetchPreview?: (emailMessageId: string, part: string) => Promise<Blob | null>;
 }) {
@@ -35,12 +57,13 @@ function AttachmentBlock({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
-  const [webHovered, setWebHovered] = useState(false);
+  const attachmentDebugId = `${message.id}:${String(part ?? 'no-part')}:${index}`;
+  const webHovered = Platform.OS === 'web' && activeHoverId === attachmentDebugId;
   const showHoverContent = webHovered || Platform.OS !== 'web';
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!isImageType(contentType) || !onFetchPreview || !part || !canDownload) return;
+    if (!isImageType(contentType, filename) || !onFetchPreview || !part || !canDownload) return;
     let revoked = false;
     setPreviewLoading(true);
     onFetchPreview(message.id, String(part))
@@ -63,15 +86,19 @@ function AttachmentBlock({
       }
       setPreviewUrl(null);
     };
-  }, [message.id, part, contentType, canDownload, onFetchPreview]);
+  }, [message.id, part, filename, contentType, canDownload, onFetchPreview]);
 
-  const isImage = isImageType(contentType);
+  const isImage = isImageType(contentType, filename);
 
   const containerProps =
     Platform.OS === 'web'
       ? {
-          onMouseEnter: () => setWebHovered(true),
-          onMouseLeave: () => setWebHovered(false),
+          onMouseEnter: () => {
+            setActiveHoverId(attachmentDebugId);
+          },
+          onMouseLeave: () => {
+            setActiveHoverId(null);
+          },
         }
       : {};
 
@@ -220,16 +247,74 @@ export function MessageAttachments({
   onFetchPreview?: (emailMessageId: string, part: string) => Promise<Blob | null>;
 }) {
   const attachments = (message.attachments as Array<{ filename?: string; name?: string; contentType?: string; content_type?: string; size?: number; part?: string; imapUid?: number }> | null) ?? [];
+  const [activeHoverId, setActiveHoverId] = useState<string | null>(null);
+  const activeHoverIdRef = useRef<string | null>(activeHoverId);
+  const gridRef = useRef<any>(null);
+
+  useEffect(() => {
+    activeHoverIdRef.current = activeHoverId;
+  }, [activeHoverId]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    const clearHoverFromWindowExit = () => {
+      if (!activeHoverIdRef.current) return;
+      setActiveHoverId(null);
+    };
+
+    const onWindowBlur = () => clearHoverFromWindowExit();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') clearHoverFromWindowExit();
+    };
+    const onWindowMouseOut = (event: MouseEvent) => {
+      if (!event.relatedTarget) clearHoverFromWindowExit();
+    };
+    const onWindowMouseMove = (event: MouseEvent) => {
+      if (!activeHoverIdRef.current) return;
+      const gridEl = gridRef.current as Element | null;
+      const target = event.target as Node | null;
+      if (!gridEl || !target) return;
+      if (!gridEl.contains(target)) {
+        setActiveHoverId(null);
+      }
+    };
+
+    window.addEventListener('blur', onWindowBlur);
+    window.addEventListener('mouseout', onWindowMouseOut);
+    window.addEventListener('mousemove', onWindowMouseMove);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.removeEventListener('blur', onWindowBlur);
+      window.removeEventListener('mouseout', onWindowMouseOut);
+      window.removeEventListener('mousemove', onWindowMouseMove);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
   if (!Array.isArray(attachments) || attachments.length === 0) return null;
 
   return (
-    <View className="mt-3 flex-row flex-wrap gap-2">
+    <View
+      ref={gridRef}
+      className="mt-3 flex-row flex-wrap gap-2"
+      {...(Platform.OS === 'web'
+        ? {
+            onMouseLeave: () => {
+              setActiveHoverId(null);
+            },
+          }
+        : {})}
+    >
       {attachments.map((att, i) => (
         <AttachmentBlock
-          key={i}
+          key={`${message.id}:${att.part ?? i}:${att.filename ?? att.name ?? 'attachment'}`}
           att={att}
           message={message}
           index={i}
+          activeHoverId={activeHoverId}
+          setActiveHoverId={setActiveHoverId}
           onDownload={onDownload}
           onFetchPreview={onFetchPreview}
         />

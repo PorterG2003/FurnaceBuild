@@ -22,6 +22,12 @@ export interface ComposerRichEditorProps {
   placeholder?: string;
   editorRef: React.MutableRefObject<EditorBridge | null>;
   minHeight?: number;
+  /** Attachment count for badge (web toolbar only) */
+  attachmentCount?: number;
+  /** File selection callback (web toolbar only) */
+  onFilesSelected?: (files: FileList) => void;
+  /** Rendered between toolbar and content (web) or above editor (native), e.g. attachment list */
+  renderBetweenToolbarAndContent?: React.ReactNode;
 }
 
 /**
@@ -33,6 +39,9 @@ export function ComposerRichEditor({
   placeholder = 'Write your message…',
   editorRef,
   minHeight = 120,
+  attachmentCount: _attachmentCount,
+  onFilesSelected: _onFilesSelected,
+  renderBetweenToolbarAndContent,
 }: ComposerRichEditorProps) {
   const editor = useEditorBridge({
     autofocus: false,
@@ -55,6 +64,7 @@ export function ComposerRichEditor({
     <View style={{ minHeight, borderRadius: 12, overflow: 'hidden', backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#2A2A2A' }}>
       <RichText editor={editor} />
       <Toolbar editor={editor} />
+      {renderBetweenToolbarAndContent}
     </View>
   );
 }

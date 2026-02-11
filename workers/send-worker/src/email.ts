@@ -119,6 +119,8 @@ export interface ReplyEmailOptions {
   bodyHtml?: string | null;
   inReplyTo?: string | null;
   references?: string | null;
+  /** File attachments (content = base64). Merged with inline image attachments when sending. */
+  attachments?: Array<{ filename: string; contentType?: string; content: string }>;
 }
 
 /**
@@ -143,7 +145,22 @@ export async function sendReplyEmail(
   }
 
   const bodyHtml = options.bodyHtml || options.bodyText;
-  const { html: processedHtml, attachments } = processInlineImagesForEmail(bodyHtml);
+  const { html: processedHtml, attachments: inlineAttachments } = processInlineImagesForEmail(bodyHtml);
+
+  const allAttachments: nodemailer.SendMailOptions['attachments'] = [...(inlineAttachments || [])];
+  if (options.attachments && options.attachments.length > 0) {
+    for (const att of options.attachments) {
+      const content = typeof (att as { content?: string }).content === 'string' ? (att as { content: string }).content : '';
+      const contentType = (att as { contentType?: string }).contentType ?? (att as { content_type?: string }).content_type;
+      if (!content) continue;
+      allAttachments.push({
+        filename: (att as { filename?: string }).filename ?? 'attachment',
+        content: Buffer.from(content, 'base64'),
+        contentType: contentType || undefined,
+      });
+    }
+  }
+  console.log(`[SEND WORKER] sendReplyEmail: ${options.attachments?.length ?? 0} file attachment(s), ${allAttachments.length} total (incl. inline)`);
 
   const mailOptions: nodemailer.SendMailOptions = {
     from: `"${mailbox.display_name || mailbox.email_address}" <${mailbox.email_address}>`,
@@ -152,7 +169,7 @@ export async function sendReplyEmail(
     subject: options.subject,
     text: options.bodyText,
     html: processedHtml,
-    attachments: attachments && attachments.length > 0 ? attachments : undefined,
+    attachments: allAttachments.length > 0 ? allAttachments : undefined,
     messageId,
     headers,
   };

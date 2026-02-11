@@ -8,6 +8,7 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import {
   LinkIcon,
+  PaperClipIcon,
   PhotoIcon,
   CodeBracketIcon,
   CodeBracketSquareIcon,
@@ -18,6 +19,7 @@ import {
   ArrowUturnRightIcon,
   TrashIcon,
 } from 'react-native-heroicons/outline';
+import { COMPOSER_FILE_INPUT_ID } from './ComposerAttachments';
 
 export interface EditorBridge {
   getHTML: () => string;
@@ -30,6 +32,12 @@ export interface ComposerRichEditorProps {
   placeholder?: string;
   editorRef: React.MutableRefObject<EditorBridge | null>;
   minHeight?: number;
+  /** Attachment count for badge on attach button (web) */
+  attachmentCount?: number;
+  /** Called when user selects files via attach button (web). Parent should read files and update state. */
+  onFilesSelected?: (files: FileList) => void;
+  /** Rendered between the toolbar and the editor content (e.g. attachment chips). */
+  renderBetweenToolbarAndContent?: React.ReactNode;
 }
 
 /**
@@ -41,6 +49,9 @@ export function ComposerRichEditor({
   placeholder = 'Write your message…',
   editorRef,
   minHeight = 120,
+  attachmentCount = 0,
+  onFilesSelected,
+  renderBetweenToolbarAndContent,
 }: ComposerRichEditorProps) {
   const placeholderRef = useRef(placeholder);
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false);
@@ -358,6 +369,57 @@ export function ComposerRichEditor({
           )}
         </div>
 
+        {onFilesSelected && (
+          <>
+            <input
+              id={COMPOSER_FILE_INPUT_ID}
+              type="file"
+              multiple
+              accept="*/*"
+              style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+              onChange={(e) => {
+                const files = e.target.files;
+                if (files && files.length > 0) {
+                  onFilesSelected(files);
+                }
+                e.target.value = '';
+              }}
+            />
+            <label
+              htmlFor={COMPOSER_FILE_INPUT_ID}
+              className="composer-toolbar-btn"
+              title="Attach file"
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+            >
+              <PaperClipIcon size={18} color="currentColor" />
+              {attachmentCount > 0 && (
+                <span
+                  className="composer-toolbar-attach-badge"
+                  style={{
+                    position: 'absolute',
+                    top: 2,
+                    right: 2,
+                    minWidth: 14,
+                    height: 14,
+                    borderRadius: 7,
+                    backgroundColor: '#F3440D',
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingLeft: 2,
+                    paddingRight: 2,
+                  }}
+                >
+                  {attachmentCount > 9 ? '9+' : attachmentCount}
+                </span>
+              )}
+            </label>
+          </>
+        )}
+
         <div style={{ marginLeft: 'auto' }} />
 
         <ToolbarButton onClick={() => editor.chain().focus().undo().run()} active={false} disabled={!editor.can().undo()} title="Undo">
@@ -371,6 +433,7 @@ export function ComposerRichEditor({
       <div ref={editorContentRef} className="composer-editor-wrapper" style={{ minHeight: minHeight - 52 }}>
         <EditorContent editor={editor} />
       </div>
+      {renderBetweenToolbarAndContent}
       {imageToolbar && editor && createPortal(
         <div
           data-composer-popover

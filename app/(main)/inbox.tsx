@@ -32,6 +32,7 @@ import { buildQuotedForwardThreadHtml } from '@/lib/inbox/quote-utils';
 import { MagnifyingGlassIcon, PaperAirplaneIcon } from 'react-native-heroicons/outline';
 import type { EditorBridge } from '@10play/tentap-editor';
 import {
+  ComposerAttachments,
   ComposerRichEditor,
   DateDivider,
   MessageBubble,
@@ -43,10 +44,15 @@ import {
   SKELETON_DELAY_MS,
   SKELETON_MIN_DISPLAY_MS,
 } from '@/components/inbox';
+import type { ComposerAttachmentItem } from '@/components/inbox';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import outputs from '@/amplify_outputs.json';
 
 const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
+
+const MAX_ATTACHMENTS = 10;
+const MAX_TOTAL_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 export default function InboxPage() {
   const { user } = useAuthenticator();
@@ -77,6 +83,9 @@ export default function InboxPage() {
   const [forwardSubject, setForwardSubject] = useState('');
   const [sendingForward, setSendingForward] = useState(false);
   const [forwardError, setForwardError] = useState<string | null>(null);
+  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachmentItem[]>([]);
+  const [composerAttachmentsLoading, setComposerAttachmentsLoading] = useState(false);
+  const [composerAttachmentsSkipMessage, setComposerAttachmentsSkipMessage] = useState<string | null>(null);
 
   const [showThreadSkeleton, setShowThreadSkeleton] = useState(false);
   const [showMessagesSkeleton, setShowMessagesSkeleton] = useState(false);
@@ -97,6 +106,7 @@ export default function InboxPage() {
     errorMessage?: string | null;
     isFailed?: boolean;
     inReplyToMessageId: string;
+    attachments?: Array<{ filename: string; contentType: string; content: string }>;
   };
   const [pendingReply, setPendingReply] = useState<PendingReply | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -107,6 +117,75 @@ export default function InboxPage() {
   const autoScrollArmedRef = useRef(false);
   const selectedThreadIdRef = useRef(selectedThreadId);
   selectedThreadIdRef.current = selectedThreadId;
+
+  const handleComposerFilesSelected = useCallback(
+    async (files: FileList) => {
+      if (!files?.length) return;
+      setComposerAttachmentsLoading(true);
+      setComposerAttachmentsSkipMessage(null);
+      const toAdd: ComposerAttachmentItem[] = [];
+      let skippedTooBig = 0;
+      let skippedTotal = 0;
+      let skippedCount = 0;
+      let skippedOther = 0;
+      const currentTotal = composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0);
+      for (let i = 0; i < files.length; i++) {
+        if (composerAttachments.length + toAdd.length >= MAX_ATTACHMENTS) {
+          skippedCount += files.length - i;
+          break;
+        }
+        const file = files[i];
+        if (file.size > MAX_FILE_BYTES) {
+          skippedTooBig += 1;
+          continue;
+        }
+        const runningTotal = currentTotal + toAdd.reduce((s, a) => s + (a.size ?? 0), 0);
+        if (runningTotal + file.size > MAX_TOTAL_BYTES) {
+          skippedTotal += 1;
+          continue;
+        }
+        try {
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = reader.result as string;
+              const match = result?.match(/^data:([^;]+);base64,(.+)$/);
+              if (match) resolve(match[2]);
+              else reject(new Error('Invalid data URL'));
+            };
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+          });
+          toAdd.push({
+            filename: file.name,
+            contentType: file.type || 'application/octet-stream',
+            content: base64,
+            size: file.size,
+          });
+        } catch {
+          skippedOther += 1;
+        }
+      }
+      setComposerAttachmentsLoading(false);
+      if (toAdd.length > 0) {
+        setComposerAttachments((prev) => [...prev, ...toAdd]);
+      }
+      const skippedTotalCount = skippedTooBig + skippedTotal + skippedCount + skippedOther;
+      if (skippedTotalCount > 0) {
+        const parts: string[] = [];
+        if (skippedTooBig > 0) parts.push(`${skippedTooBig} over 2 MB`);
+        if (skippedTotal > 0) parts.push(`${skippedTotal} would exceed 5 MB total`);
+        if (skippedCount > 0) parts.push(`${skippedCount} over 10 file limit`);
+        if (skippedOther > 0) parts.push(`${skippedOther} could not be read`);
+        setComposerAttachmentsSkipMessage(
+          toAdd.length > 0
+            ? `${skippedTotalCount} file${skippedTotalCount !== 1 ? 's' : ''} skipped (${parts.join(', ')})`
+            : `No files added. ${skippedTotalCount} file${skippedTotalCount !== 1 ? 's' : ''} skipped (${parts.join(', ')})`
+        );
+      }
+    },
+    [composerAttachments]
+  );
 
   const threadSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
   const messagesSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
@@ -235,6 +314,7 @@ export default function InboxPage() {
         errorMessage: jobForThread.error_message,
         isFailed: jobForThread.status === 'failed',
         inReplyToMessageId: jobForThread.message_data.in_reply_to_message_id,
+        attachments: jobForThread.message_data.attachments,
       });
 
       // Start polling for this job
@@ -497,7 +577,11 @@ export default function InboxPage() {
       toValue: 1,
       duration: 250,
       useNativeDriver: true,
-    }).start(() => setComposerMode(null));
+    }).start(() => {
+      setComposerMode(null);
+      setComposerAttachments([]);
+      setComposerAttachmentsSkipMessage(null);
+    });
   }, [slideAnim]);
 
   useEffect(() => {
@@ -517,16 +601,20 @@ export default function InboxPage() {
     setSendingReply(true);
     setReplyError(null);
     try {
+      const replyAttachments = pendingReply.attachments?.length
+        ? pendingReply.attachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
+        : undefined;
       const jobId = await createReplyJob({
         accountId,
         threadId: selectedThreadId,
         inReplyToMessageId: inReplyToMessageId!,
         subject: pendingReply.subject,
         bodyText: pendingReply.bodyText,
-        bodyHtml: pendingReply.bodyText,
+        bodyHtml: pendingReply.bodyHtml ?? pendingReply.bodyText,
         toEmail: pendingReply.toEmail,
         toName: pendingReply.toName ?? null,
         cc: pendingReply.cc?.length ? pendingReply.cc : undefined,
+        attachments: replyAttachments,
       });
       const fromEmail = messages.find((m) => m.direction === 'sent')?.from_email ?? '';
       const receivedAt = new Date().toISOString();
@@ -543,6 +631,7 @@ export default function InboxPage() {
         receivedAt,
         messageCountWhenPending: messages.length,
         inReplyToMessageId: pendingReply.inReplyToMessageId,
+        attachments: pendingReply.attachments,
       });
       loadMessages(selectedThreadId);
       if (pollingIntervalRef.current) {
@@ -588,11 +677,20 @@ export default function InboxPage() {
       setReplyError('To is required');
       return;
     }
+    const totalAttachmentBytes = composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0);
+    if (totalAttachmentBytes > MAX_TOTAL_BYTES) {
+      setReplyError('Total attachment size exceeds 5 MB.');
+      return;
+    }
     setSendingReply(true);
     setReplyError(null);
     try {
       const bodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
       const bodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? bodyText;
+      const replyAttachments =
+        composerAttachments.length > 0
+          ? composerAttachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
+          : undefined;
       const jobId = await createReplyJob({
         accountId,
         threadId: selectedThreadId,
@@ -603,6 +701,7 @@ export default function InboxPage() {
         toEmail: replyToEmail.trim(),
         toName: replyToName.trim() || null,
         cc: replyCc.trim() ? replyCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : undefined,
+        attachments: replyAttachments,
       });
       const fromEmail = messages.find((m) => m.direction === 'sent')?.from_email ?? '';
       const receivedAt = new Date().toISOString();
@@ -620,6 +719,7 @@ export default function InboxPage() {
         receivedAt,
         messageCountWhenPending: messages.length,
         inReplyToMessageId,
+        attachments: replyAttachments,
       });
       closeComposerPanel();
       loadMessages(selectedThreadId);
@@ -658,7 +758,7 @@ export default function InboxPage() {
     } finally {
       setSendingReply(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyCc, messages, loadMessages, closeComposerPanel]);
+  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyCc, composerAttachments, messages, loadMessages, closeComposerPanel]);
 
   const sendForward = useCallback(async () => {
     if (!accountId || !selectedThreadId || !selectedThread || !forwardedMessageId) return;
@@ -666,12 +766,20 @@ export default function InboxPage() {
       setForwardError('To is required');
       return;
     }
+    const totalAttachmentBytes = composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0);
+    if (totalAttachmentBytes > MAX_TOTAL_BYTES) {
+      setForwardError('Total attachment size exceeds 5 MB.');
+      return;
+    }
     setSendingForward(true);
     setForwardError(null);
     try {
       const bodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
       const bodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? bodyText;
-
+      const forwardAttachments =
+        composerAttachments.length > 0
+          ? composerAttachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
+          : undefined;
       await createForwardJob({
         accountId,
         threadId: selectedThreadId,
@@ -682,6 +790,7 @@ export default function InboxPage() {
         toEmail: forwardToEmail.trim(),
         toName: null,
         cc: forwardCc.trim() ? forwardCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : undefined,
+        attachments: forwardAttachments,
       });
       closeComposerPanel();
     } catch (err) {
@@ -689,7 +798,7 @@ export default function InboxPage() {
     } finally {
       setSendingForward(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, forwardedMessageId, forwardToEmail, forwardSubject, forwardCc, closeComposerPanel]);
+  }, [accountId, selectedThreadId, selectedThread, forwardedMessageId, forwardToEmail, forwardSubject, forwardCc, composerAttachments, closeComposerPanel]);
 
   return (
     <PageLayout scrollable={false}>
@@ -982,11 +1091,34 @@ export default function InboxPage() {
                           placeholder="Write your reply…"
                           editorRef={composerEditorRef}
                           minHeight={140}
+                          attachmentCount={composerAttachments.length}
+                          onFilesSelected={handleComposerFilesSelected}
+                          renderBetweenToolbarAndContent={
+                            <ComposerAttachments
+                              attachments={composerAttachments}
+                              onAttachmentsChange={setComposerAttachments}
+                              maxFiles={MAX_ATTACHMENTS}
+                              maxTotalBytes={MAX_TOTAL_BYTES}
+                              maxFileBytes={MAX_FILE_BYTES}
+                              hideTrigger={Platform.OS === 'web'}
+                              loading={composerAttachmentsLoading}
+                              skipMessage={composerAttachmentsSkipMessage}
+                              error={
+                                composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0) > MAX_TOTAL_BYTES
+                                  ? 'Total attachment size exceeds 5 MB.'
+                                  : null
+                              }
+                            />
+                          }
                         />
                         <View className="mb-5" />
                         <Button
                           onPress={sendReply}
-                          disabled={sendingReply || !replyToEmail.trim()}
+                          disabled={
+                            sendingReply ||
+                            !replyToEmail.trim() ||
+                            composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0) > MAX_TOTAL_BYTES
+                          }
                           className="rounded-xl"
                         >
                           <View className="flex-row items-center gap-2">
@@ -1045,11 +1177,34 @@ export default function InboxPage() {
                           placeholder="Write your message…"
                           editorRef={composerEditorRef}
                           minHeight={140}
+                          attachmentCount={composerAttachments.length}
+                          onFilesSelected={handleComposerFilesSelected}
+                          renderBetweenToolbarAndContent={
+                            <ComposerAttachments
+                              attachments={composerAttachments}
+                              onAttachmentsChange={setComposerAttachments}
+                              maxFiles={MAX_ATTACHMENTS}
+                              maxTotalBytes={MAX_TOTAL_BYTES}
+                              maxFileBytes={MAX_FILE_BYTES}
+                              hideTrigger={Platform.OS === 'web'}
+                              loading={composerAttachmentsLoading}
+                              skipMessage={composerAttachmentsSkipMessage}
+                              error={
+                                composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0) > MAX_TOTAL_BYTES
+                                  ? 'Total attachment size exceeds 5 MB.'
+                                  : null
+                              }
+                            />
+                          }
                         />
                         <View className="mb-5" />
                         <Button
                           onPress={sendForward}
-                          disabled={sendingForward || !forwardToEmail.trim()}
+                          disabled={
+                            sendingForward ||
+                            !forwardToEmail.trim() ||
+                            composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0) > MAX_TOTAL_BYTES
+                          }
                           className="rounded-xl"
                         >
                           <View className="flex-row items-center gap-2">

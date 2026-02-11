@@ -1,3 +1,5 @@
+export { ComposerAttachments } from './ComposerAttachments';
+export type { ComposerAttachmentItem, ComposerAttachmentsProps } from './ComposerAttachments';
 export { ComposerRichEditor } from './ComposerRichEditor';
 export { DateDivider } from './DateDivider';
 export { MessageAttachments } from './MessageAttachments';

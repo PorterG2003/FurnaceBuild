@@ -401,6 +401,19 @@ export class SendWorker {
 
     // 3. Send reply via SMTP
     const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
+    const rawAttachments = Array.isArray(md.attachments) ? md.attachments : [];
+    // Normalize: support both camelCase (from client) and snake_case (if DB/PostgREST ever returns it)
+    const fileAttachments = rawAttachments
+      .map((att: Record<string, unknown>) => {
+        const a = att as { filename?: string; contentType?: string; content_type?: string; content?: string };
+        return {
+          filename: a.filename ?? 'attachment',
+          contentType: a.contentType ?? a.content_type ?? 'application/octet-stream',
+          content: a.content ?? '',
+        };
+      })
+      .filter((att) => typeof att.content === 'string' && att.content.length > 0);
+    console.log(`[SEND WORKER] Reply job ${message_job_id} attachments: ${fileAttachments.length} (raw: ${rawAttachments.length})`);
     const replyOptions: ReplyEmailOptions = {
       toEmail: md.to_email || '',
       toName: md.to_name ?? null,
@@ -410,6 +423,7 @@ export class SendWorker {
       bodyHtml: md.body_html ?? null,
       inReplyTo: md.in_reply_to ?? null,
       references: md.message_references ?? null,
+      attachments: fileAttachments.length > 0 ? fileAttachments : undefined,
     };
     let providerMessageId: string;
     try {
@@ -436,6 +450,16 @@ export class SendWorker {
     const toAdd = [replyOptions.toEmail, ...(replyOptions.cc || [])].filter(Boolean);
     const newParticipants = [...new Set([...participants, ...toAdd])];
 
+    // Build attachment metadata for email_messages (filename, contentType, size; no base64)
+    const replyAttachmentMeta =
+      fileAttachments.length > 0
+        ? fileAttachments.map((att: { filename: string; contentType?: string; content: string }) => ({
+            filename: att.filename,
+            contentType: att.contentType ?? 'application/octet-stream',
+            size: Buffer.from(att.content, 'base64').length,
+          }))
+        : [];
+
     // 5. Insert email_messages (sent reply)
     const now = new Date().toISOString();
     const { error: insertError } = await this.supabase
@@ -456,6 +480,7 @@ export class SendWorker {
         in_reply_to: replyOptions.inReplyTo,
         message_references: replyOptions.references,
         received_at: now,
+        attachments: replyAttachmentMeta,
       });
     if (insertError) {
       throw new Error(`Failed to insert email_messages for reply: ${insertError.message}`);
@@ -548,6 +573,18 @@ export class SendWorker {
 
     // 3. Send forward via SMTP (no In-Reply-To/References)
     const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
+    const rawForwardAttachments = Array.isArray(md.attachments) ? md.attachments : [];
+    const forwardFileAttachments = rawForwardAttachments
+      .map((att: Record<string, unknown>) => {
+        const a = att as { filename?: string; contentType?: string; content_type?: string; content?: string };
+        return {
+          filename: a.filename ?? 'attachment',
+          contentType: a.contentType ?? a.content_type ?? 'application/octet-stream',
+          content: a.content ?? '',
+        };
+      })
+      .filter((att) => typeof att.content === 'string' && att.content.length > 0);
+    console.log(`[SEND WORKER] Forward job ${message_job_id} attachments: ${forwardFileAttachments.length} (raw: ${rawForwardAttachments.length})`);
     const forwardOptions: ReplyEmailOptions = {
       toEmail: md.to_email || '',
       toName: md.to_name ?? null,
@@ -557,6 +594,7 @@ export class SendWorker {
       bodyHtml: md.body_html ?? null,
       inReplyTo: null,
       references: null,
+      attachments: forwardFileAttachments.length > 0 ? forwardFileAttachments : undefined,
     };
     try {
       await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, forwardOptions);

@@ -77,6 +77,13 @@ export async function getMessagesByThread(threadId: string): Promise<EmailMessag
   return data ?? [];
 }
 
+/** Attachment for sending (reply/forward): content is base64 */
+export interface SendAttachment {
+  filename: string;
+  contentType: string;
+  content: string;
+}
+
 export interface CreateReplyJobParams {
   accountId: string;
   threadId: string;
@@ -87,6 +94,7 @@ export interface CreateReplyJobParams {
   toEmail: string;
   toName?: string | null;
   cc?: string[] | null;
+  attachments?: SendAttachment[] | null;
 }
 
 export interface CreateForwardJobParams {
@@ -99,6 +107,7 @@ export interface CreateForwardJobParams {
   toEmail: string;
   toName?: string | null;
   cc?: string[] | null;
+  attachments?: SendAttachment[] | null;
 }
 
 /**
@@ -117,6 +126,7 @@ export async function createReplyJob(params: CreateReplyJobParams): Promise<stri
     p_to_email: params.toEmail,
     p_to_name: params.toName ?? null,
     p_cc: params.cc && params.cc.length > 0 ? params.cc : null,
+    p_attachments: params.attachments ?? null,
   });
 
   if (error) {
@@ -146,6 +156,7 @@ export async function createForwardJob(params: CreateForwardJobParams): Promise<
     p_to_email: params.toEmail,
     p_to_name: params.toName ?? null,
     p_cc: params.cc && params.cc.length > 0 ? params.cc : null,
+    p_attachments: params.attachments ?? null,
   });
 
   if (error) {
@@ -206,6 +217,7 @@ export interface PendingInboxReplyJob {
     to_email: string;
     to_name: string;
     cc: string[];
+    attachments?: SendAttachment[];
   };
 }
 
@@ -267,6 +279,7 @@ export async function getPendingInboxReplyJobs(
           to_email: md.to_email || '',
           to_name: md.to_name || '',
           cc: Array.isArray(md.cc) ? md.cc : [],
+          attachments: Array.isArray(md.attachments) ? md.attachments : undefined,
         },
       });
     }

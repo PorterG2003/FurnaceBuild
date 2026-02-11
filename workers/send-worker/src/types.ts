@@ -32,6 +32,7 @@ export interface MessageJob {
     source?: 'inbox_reply' | 'inbox_forward';
     thread_id?: string;
     in_reply_to_message_id?: string;
+    forwarded_message_id?: string;
     subject?: string;
     body_text?: string;
     body_html?: string;
@@ -40,6 +41,7 @@ export interface MessageJob {
     cc?: string[];
     in_reply_to?: string;
     message_references?: string;
+    attachments?: Array<{ filename: string; contentType?: string; content: string }>;
   };
   sqs_message_id: string | null;
   created_at: string;

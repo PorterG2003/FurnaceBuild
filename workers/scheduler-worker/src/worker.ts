@@ -359,7 +359,7 @@ export class SchedulerWorker {
       console.log(`[ENROLLMENT ${enrollmentId}] Loading campaign ${enrollment.campaign_id.substring(0, 8)}...`);
       const { data: campaign, error: campaignError } = await this.supabase
         .from('campaigns')
-        .select('id, flow_data, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at')
+        .select('id, flow_data, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at, status')
         .eq('id', enrollment.campaign_id)
         .single();
 
@@ -367,6 +367,16 @@ export class SchedulerWorker {
         throw new Error(`Campaign ${enrollment.campaign_id} not found: ${campaignError?.message}`);
       }
       console.log(`[ENROLLMENT ${enrollmentId}] Campaign loaded. Account ID: ${campaign.account_id?.substring(0, 8) || 'MISSING'}`);
+
+      if (campaign.status !== 'running') {
+        console.log(`[ENROLLMENT ${enrollmentId}] Campaign status is '${campaign.status}'. Skipping processing until campaign is running.`);
+        await this.supabase
+          .from('enrollments')
+          .update({ next_run_at: new Date().toISOString() })
+          .eq('id', enrollment.id)
+          .eq('state', 'active');
+        return;
+      }
 
       // 2. Validate account_id exists
       if (!campaign.account_id) {
@@ -537,8 +547,7 @@ export class SchedulerWorker {
       const isDeferral = (error as any)?.isDeferral === true;
       
       if (isDeferral) {
-        // Normal deferral - enrollment already updated in handleEmailNode
-        // Just continue to next enrollment without logging
+        // Normal deferral - enrollment already updated; continue without logging
         return;
       }
 

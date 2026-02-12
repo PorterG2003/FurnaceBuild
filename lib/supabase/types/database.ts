@@ -443,6 +443,29 @@ export interface Database {
           updated_at?: string;
         };
       };
+      block_list: {
+        Row: {
+          id: string;
+          account_id: string;
+          value: string;
+          type: 'email' | 'domain';
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          value: string;
+          type: 'email' | 'domain';
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          value?: string;
+          type?: 'email' | 'domain';
+          created_at?: string | null;
+        };
+      };
     };
     Views: {
       [_ in never]: never;

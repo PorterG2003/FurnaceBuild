@@ -131,6 +131,28 @@ export class SendWorker {
       // 1. Load related data (lead, mailbox, node config)
       const { lead, mailbox, nodeConfig } = await this.loadJobData(messageJob);
 
+      // 1b. Block list check — skip campaign sends to blocked addresses
+      const { data: campaign } = await this.supabase
+        .from('campaigns')
+        .select('account_id')
+        .eq('id', messageJob.campaign_id)
+        .single();
+      const accountId = campaign?.account_id;
+      if (accountId) {
+        const blocked = await this.isEmailBlocked(accountId, lead.email);
+        if (blocked) {
+          console.log(`[SEND WORKER] Lead ${lead.email} is blocked, cancelling job ${message_job_id}`);
+          await this.supabase
+            .from('message_jobs')
+            .update({
+              status: 'cancelled',
+              error_message: 'Lead blocked',
+            })
+            .eq('id', message_job_id);
+          return;
+        }
+      }
+
       // 2. Atomic throttle check and reservation
       // This atomically checks throttle limits and updates counters
       // If throttle fails, job is cancelled by the function
@@ -672,6 +694,31 @@ export class SendWorker {
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Check if an email is blocked for an account (exact email or domain match).
+   */
+  private async isEmailBlocked(accountId: string, email: string): Promise<boolean> {
+    const { data: entries, error } = await this.supabase
+      .from('block_list')
+      .select('value, type')
+      .eq('account_id', accountId);
+
+    if (error || !entries?.length) return false;
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const atIndex = normalizedEmail.indexOf('@');
+    const domain = atIndex >= 0 && atIndex < normalizedEmail.length - 1
+      ? normalizedEmail.slice(atIndex + 1)
+      : null;
+
+    for (const entry of entries) {
+      const v = (entry.value || '').trim().toLowerCase();
+      if (entry.type === 'email' && v === normalizedEmail) return true;
+      if (entry.type === 'domain' && domain && v === domain) return true;
+    }
+    return false;
   }
 }
 

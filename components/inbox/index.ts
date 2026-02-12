@@ -1,3 +1,6 @@
+export { BlockSenderModal } from './BlockSenderModal';
+export { ManageBlockListModal } from './ManageBlockListModal';
+export type { BlockSenderModalProps } from './BlockSenderModal';
 export { ComposerAttachments } from './ComposerAttachments';
 export type { ComposerAttachmentItem, ComposerAttachmentsProps } from './ComposerAttachments';
 export { ComposerRichEditor } from './ComposerRichEditor';

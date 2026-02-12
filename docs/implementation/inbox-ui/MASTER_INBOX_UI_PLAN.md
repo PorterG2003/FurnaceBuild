@@ -1,7 +1,7 @@
 # Master Inbox UI — Step-by-Step Implementation Plan
 
-**Last updated**: February 3, 2026  
-**Current progress**: Steps 1, 2, and 4 complete
+**Last updated**: February 11, 2026  
+**Current progress**: Steps 1–6 complete; Step 5 partial (client-side search only)
 
 ---
 
@@ -13,10 +13,10 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 |------|--------|--------|
 | 1 | Thread Panel + Message Panel (read-only, real data) | ✅ Done |
 | 2 | Reply support | ✅ Done |
-| 3 | Attachments (receive, then send) | Todo |
-| 4 | Forward support | Done |
-| 5 | Search and filtering | Todo |
-| 6 | Block list | Todo |
+| 3 | Attachments (receive, then send) | ✅ Done |
+| 4 | Forward support | ✅ Done |
+| 5 | Search and filtering | Partial |
+| 6 | Block list | Done |
 | 7 | Thread tagging | Todo |
 | 8 | Thread categorization | Todo |
 
@@ -39,9 +39,9 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 - **UI** (`app/(main)/inbox.tsx`)
   - Account resolution: user → `getUserByExternalId` → `getAccountMembershipsForUser` → primary account.
   - Thread Panel: loads via `getThreadsByAccount(accountId, { hasReplyOnly: true })`. Shows subject, participants, relative time, message count. Selection drives Message Panel.
-  - Message Panel: loads via `getMessagesByThread(selectedThreadId)`. Shows sender (name or email), “Sent” badge for sent messages, formatted date, body (plain text or stripped HTML).
+  - Message Panel: loads via `getMessagesByThread(selectedThreadId)`. Shows sender (name or email), "Sent" badge for sent messages, formatted date, body (plain text or stripped HTML).
   - Loading: `LoadingState` for threads (initial) and messages (on thread select).
-  - Empty: `EmptyState` when no threads (“No conversations yet”); “Select a conversation” when no selection.
+  - Empty: `EmptyState` when no threads ("No conversations yet"); "Select a conversation" when no selection.
   - Error: `Alert` with Retry for thread load and message load.
   - Pull-to-refresh on thread list.
   - Auto-select first thread when list loads; clear/reset selection when list is empty or selected thread no longer in list.
@@ -74,54 +74,67 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 
 ---
 
-## Step 3: Attachments — Todo
+## Step 3: Attachments — ✅ Done
 
 **Goal**: View and download attachments on received messages; attach files when sending (reply/forward).
 
+**Deep dive**: [INBOX_ATTACHMENTS.md](./INBOX_ATTACHMENTS.md)
+
+### Accomplished
+
 - **Receiving**
-  - Backend: Amplify Lambda (Function URL) — fetches attachment via IMAP given `email_message_id` and `part`; returns binary.
-  - UI: Show attachment list per message (from `attachments` JSONB); “Download” calls API and opens/saves file.
+  - Backend: `amplify/functions/fetchEmailAttachment` Lambda with Function URL; fetches attachment via IMAP given `email_message_id` and `part`; returns binary. JWT auth, RLS via account membership.
+  - Inbox service: `fetchAttachment(emailMessageId, part)` in `lib/supabase/services/inbox.ts`.
+  - UI: `MessageAttachments` component; attachment list from `message.attachments`; Download button; image preview for image types; graceful handling of missing `part`/`imapUid`.
 - **Sending**
-  - Backend: Accept file upload (e.g. Supabase Storage or S3) or base64 in API; send-worker attaches to outgoing email via SMTP. Optionally store attachment metadata on sent `email_messages` row.
-  - UI: Composer file picker; show chosen files; send with reply/forward.
-- **Deep dive**: [INBOX_ATTACHMENTS.md](./INBOX_ATTACHMENTS.md) — Receiving (fetch API, UI), sending (storage strategy, RPC + worker, composer UI).
+  - Backend: `create_inbox_reply_job` and `create_inbox_forward_job` accept `p_attachments` (base64 in `message_data`); send-worker merges with inline images, passes to nodemailer; limits: 10 files, 5 MB total, 2 MB per file.
+  - UI: `ComposerAttachments` component; file picker (web + native); chosen files list with remove; limits enforced; attachments passed to reply/forward on send.
 
 ---
 
-## Step 4: Forward support — Done
+## Step 4: Forward support — ✅ Done
 
 **Goal**: Forward a message (or thread) to new recipients.
 
-- **Backend**: Reuse same send path as reply. Decide: forward as new thread (send only, no thread link) vs same-thread; keep simple at first (send only).
-- **UI**: Forward action; composer with subject “Fwd: …”, body with quoted original (and optional attachment list). Recipient field; send.
-- **Expand**: Create `INBOX_FORWARD.md` when implementing.
+### Accomplished
+
+- **Backend**: Reuses same send path as reply (`message_type = 'inbox_forward'`); `create_inbox_forward_job` RPC; send-worker processes forward jobs; send only (no thread link).
+- **UI** (`app/(main)/inbox.tsx`): Forward action opens composer with subject "Fwd: …", body with quoted original via `buildQuotedForwardThreadHtml`; To/Cc fields; attachments supported via `ComposerAttachments`; optimistic UI and polling.
 
 ---
 
-## Step 5: Search and filtering — Todo
+## Step 5: Search and filtering — Partial
 
 **Goal**: Search thread subject/participants/body; filter by mailbox, campaign, date range, read/unread.
 
-- **Partial**: Basic client-side thread search (subject/participants) is already in place; full-text and backend filters still todo.
-- **Backend**: Full-text search on `email_threads` (and optionally `email_messages`) or external search later. Add filters to thread list API: `mailbox_id`, `campaign_id`, read/unread, date range. Pagination when filtering.
+### Done
+
+- Client-side thread search: `threadSearchQuery` filters threads by subject and participants (case-insensitive); shows "X of Y" result count in search bar.
+
+### Todo
+
+- **Backend**: Full-text search on `email_threads` (and optionally `email_messages`) or external search later. Add filters to `getThreadsByAccount`: `mailbox_id`, `campaign_id`, read/unread, date range. Pagination when filtering.
 - **UI**: Filter chips/dropdowns for mailbox/campaign/date/read. Thread list updates from list API with params. Optional: URL/state for shareable filters.
 - **Expand**: Create `INBOX_SEARCH_FILTERS.md` when implementing.
 
 ---
 
-## Step 6: Block list — Todo
+## Step 6: Block list — Done
 
-**Goal**: Block senders/domains; hide or flag threads from blocked addresses; optionally affect ingestion/sending.
+**Goal**: Block senders/domains to prevent campaign emails; show blocked status per email; allow manual replies with confirmation.
 
-- **Backend**: New table (e.g. `block_list`: account_id, email_or_domain, type email|domain). RLS by account. Thread list API filters or marks threads matching block list. Optionally inbox-checker/send path checks block list.
-- **UI**: “Block sender/domain” from thread or message; settings list of blocked entries and “Unblock”.
-- **Expand**: Create `INBOX_BLOCK_LIST.md` when implementing.
+**Deep dive**: [INBOX_BLOCK_LIST.md](./INBOX_BLOCK_LIST.md)
+
+### Accomplished
+
+- **Backend**: `block_list` table (account_id, value, type email|domain). Block list service: getBlockList, addBlockEntry, removeBlockEntry, isEmailBlocked, isEmailBlockedByEntries. Send-worker checks block list before sending campaign jobs; cancels job if lead email is blocked.
+- **UI**: Per-email blocked badge in MessagePanelHeader; Block button opens BlockSenderModal with participant list (Block email | Block domain). Reply/forward checks all recipients (To, Cc); shows confirmation if any blocked. Account page: Inbox / Block list section with Unblock.
 
 ---
 
 ## Step 7: Thread tagging — Todo
 
-**Goal**: User-defined labels on threads (e.g. “Follow up”, “Urgent”); filter by tag.
+**Goal**: User-defined labels on threads (e.g. "Follow up", "Urgent"); filter by tag.
 
 - **Backend**: New table(s): e.g. `thread_tags` (account_id, name, color?) and `thread_tag_assignments` (thread_id, tag_id), or JSONB `tags` on `email_threads`. List/filter APIs include tags.
 - **UI**: Add/remove tags on thread (dropdown/autocomplete); show tags on thread row and message header; filter by tag in Thread Panel.
@@ -131,10 +144,10 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 
 ## Step 8: Thread categorization — Todo
 
-**Goal**: System- or user-driven categories (e.g. “Lead replied”, “Meeting set”); optional sync with AI Categorizer node.
+**Goal**: System- or user-driven categories (e.g. "Lead replied", "Meeting set"); optional sync with AI Categorizer node.
 
 - **Backend**: Add `category`/`labels` to `email_threads` or separate `thread_categories` table. Inbox-checker or job sets category when processing replies; user can override. List/filter APIs include category.
-- **UI**: Category badge on thread row; filter by category; if AI-driven, “Suggested: X” and confirm/override.
+- **UI**: Category badge on thread row; filter by category; if AI-driven, "Suggested: X" and confirm/override.
 - **Expand**: Create `INBOX_CATEGORIZATION.md` when implementing.
 
 ---

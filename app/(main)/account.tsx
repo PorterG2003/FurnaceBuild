@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { ManageBlockListModal } from '@/components/inbox';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { LoadingState, Alert } from '@/components/ui/feedback';
@@ -24,13 +25,15 @@ import {
   getAccountMembershipsForUser,
   getUserByEmail,
   getUserByExternalId,
+  getBlockList,
+  removeBlockEntry,
   removeMemberFromAccount,
   updateAccount,
   updateMemberRole,
   updateUserProfile,
 } from '@/lib/supabase/services';
 import { sendInvitationEmail } from '@/lib/services/email';
-import type { AccountUser, Invitation, User } from '@/lib/supabase/types';
+import type { AccountUser, BlockListEntry, Invitation, User } from '@/lib/supabase/types';
 
 export default function AccountPage() {
   const { user } = useAuthenticator();
@@ -68,6 +71,9 @@ export default function AccountPage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingAccount, setSavingAccount] = useState(false);
   const [inviting, setInviting] = useState(false);
+  const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
+  const [unblockingId, setUnblockingId] = useState<string | null>(null);
+  const [blockListModalVisible, setBlockListModalVisible] = useState(false);
 
   const buildDefaultAccountName = useCallback(
     (currentName?: string | null) => {
@@ -166,12 +172,14 @@ export default function AccountPage() {
 
       // Load team members and invitations if we have an account
       if (primaryMembership?.account.id) {
-        const [members, pendingInvitations] = await Promise.all([
+        const [members, pendingInvitations, blockListData] = await Promise.all([
           getAccountMembers(primaryMembership.account.id),
           getAccountInvitations(primaryMembership.account.id),
+          getBlockList(primaryMembership.account.id),
         ]);
         setTeamMembers(members);
         setInvitations(pendingInvitations);
+        setBlockList(blockListData);
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -438,6 +446,20 @@ export default function AccountPage() {
     }
   }, [membership, resetInviteFeedback]);
 
+  const handleUnblock = useCallback(async (entryId: string) => {
+    if (!membership?.account) return;
+    setUnblockingId(entryId);
+    try {
+      await removeBlockEntry(membership.account.id, entryId);
+      const updated = await getBlockList(membership.account.id);
+      setBlockList(updated);
+    } catch (error: unknown) {
+      console.error('Failed to unblock:', error);
+    } finally {
+      setUnblockingId(null);
+    }
+  }, [membership]);
+
   const isOwner = membership?.membership.is_owner ?? false;
   return (
     <PageLayout contentPadding={0} scrollable={false}>
@@ -598,7 +620,7 @@ export default function AccountPage() {
               </View>
 
               {isOwner && membership?.account ? (
-                <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5">
+                <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
                   <Text className="text-white text-base font-instrument-semibold mb-5">
                     Team Members
                   </Text>
@@ -797,6 +819,33 @@ export default function AccountPage() {
                   )}
                 </View>
               ) : null}
+
+              {/* Inbox / Block list */}
+              <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
+                <Text className="text-white text-base font-instrument-semibold mb-1.5">
+                  Inbox / Block list
+                </Text>
+                <Text className="text-gray-500 text-xs font-instrument mb-4">
+                  Blocked addresses and domains do not receive automated campaign emails. You can still reply manually from the inbox.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setBlockListModalVisible(true)}
+                  activeOpacity={0.8}
+                  className="flex-row items-center justify-center px-4 py-2.5 rounded-xl border border-[#3A3A3A] bg-[#2A2A2A] self-start"
+                >
+                  <Text className="text-gray-200 text-sm font-instrument-medium">
+                    Manage Block List
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <ManageBlockListModal
+                visible={blockListModalVisible}
+                onClose={() => setBlockListModalVisible(false)}
+                blockList={blockList}
+                onUnblock={handleUnblock}
+                unblockingId={unblockingId}
+              />
             </>
           )}
             </View>

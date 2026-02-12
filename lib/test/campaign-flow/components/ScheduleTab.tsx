@@ -8,7 +8,7 @@ import { Tabs, type Tab } from './Tabs';
 interface MessageJob {
   id: string;
   type: 'message_job';
-  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled';
+  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'blocked';
   scheduled_at: string;
   reserved_at: string | null;
   sent_at: string | null;
@@ -217,6 +217,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       case 'failed':
         return '#ef4444';
       case 'cancelled':
+      case 'blocked':
         return '#6b7280';
       default:
         return '#6b7280';
@@ -235,6 +236,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       case 'failed':
         return '#ef444420';
       case 'cancelled':
+      case 'blocked':
         return '#6b728020';
       default:
         return '#6b728020';
@@ -264,6 +266,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
   ];
 
   const getStatusBadge = (status: string) => {
+    const label = status === 'blocked' ? 'Blocked' : status;
     return (
       <View
         className="px-2 py-1 rounded"
@@ -273,7 +276,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
           className="text-xs font-instrument-semibold uppercase"
           style={{ color: getStatusColor(status) }}
         >
-          {status}
+          {label}
         </Text>
       </View>
     );

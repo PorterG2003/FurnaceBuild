@@ -15,6 +15,7 @@ interface JobStatus {
   sent: number;
   cancelled: number;
   failed: number;
+  blocked: number;
 }
 
 interface ThrottleStatus {
@@ -53,6 +54,7 @@ export function RaceConditionTest() {
     sent: 0,
     cancelled: 0,
     failed: 0,
+    blocked: 0,
   });
   const [throttleStatus, setThrottleStatus] = useState<ThrottleStatus | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
@@ -154,6 +156,7 @@ export function RaceConditionTest() {
         sent: 0,
         cancelled: 0,
         failed: 0,
+        blocked: 0,
       };
 
       // Collect error messages from failed jobs to diagnose the issue
@@ -453,13 +456,14 @@ export function RaceConditionTest() {
       sent: 0,
       cancelled: 0,
       failed: 0,
+      blocked: 0,
     });
     setThrottleStatus(null);
     stopPolling();
   };
 
   const totalJobs = Object.values(jobStatus).reduce((sum, count) => sum + count, 0);
-  const completedJobs = jobStatus.sent + jobStatus.cancelled + jobStatus.failed;
+  const completedJobs = jobStatus.sent + jobStatus.cancelled + jobStatus.failed + jobStatus.blocked;
   const isComplete = totalJobs > 0 && completedJobs === totalJobs;
 
   return (
@@ -651,6 +655,7 @@ export function RaceConditionTest() {
                           backgroundColor:
                             status === 'sent' ? '#10b981' :
                             status === 'cancelled' ? '#f59e0b' :
+                            status === 'blocked' ? '#6b7280' :
                             status === 'failed' ? '#ef4444' :
                             status === 'reserved' ? '#3b82f6' :
                             '#6b7280',
@@ -827,7 +832,7 @@ export function RaceConditionTest() {
                     Expected: 1 sent, {totalJobs - 1} cancelled
                   </Text>
                   <Text className="text-gray-400 text-xs">
-                    Actual: {jobStatus.sent} sent, {jobStatus.cancelled} cancelled, {jobStatus.failed} failed
+                    Actual: {jobStatus.sent} sent, {jobStatus.cancelled} cancelled, {jobStatus.failed} failed{jobStatus.blocked > 0 ? `, ${jobStatus.blocked} blocked` : ''}
                   </Text>
                 </View>
               </View>

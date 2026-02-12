@@ -197,18 +197,22 @@ export async function evaluateFlow(
     
     const messageJob = messageJobs[0]; // Get the (should be only) message_job
     
-    // Check if the message_job has been sent
+    // Check if the message_job has been sent or is terminal (cancelled = e.g. block list; don't retry)
     const isSent = messageJob.sent_at !== null || messageJob.status === 'sent';
+    const isTerminal = messageJob.status === 'cancelled' || messageJob.status === 'failed' || messageJob.status === 'blocked';
     
-    if (!isSent) {
-      // Email not sent yet - don't advance to next node
+    if (!isSent && !isTerminal) {
+      // Email not sent yet and not terminal - don't advance to next node
       // Send worker will update enrollment.next_run_at when email is sent, triggering re-evaluation
       console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has unsent message_job. Waiting for send worker...`);
       return { nodes: [], waitingForEmail: true };
     }
     
-    // Email has been sent - continue with normal flow evaluation
-    console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job sent. Proceeding to next node.`);
+    if (isTerminal) {
+      console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job ${messageJob.status}. Proceeding to next node.`);
+    } else {
+      console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job sent. Proceeding to next node.`);
+    }
   }
 
   // Find edges starting from current node's flow_node_id

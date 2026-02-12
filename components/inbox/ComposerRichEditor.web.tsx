@@ -25,6 +25,8 @@ export interface EditorBridge {
   getHTML: () => string;
   getText: () => string;
   setPlaceholder?: (value: string) => void;
+  /** Insert text/HTML at cursor (used by EmailBodyEditor for variables). */
+  insertContent?: (text: string) => void;
 }
 
 export interface ComposerRichEditorProps {
@@ -119,6 +121,9 @@ export function ComposerRichEditor({
       getText: () => editor.getText(),
       setPlaceholder: (value: string) => {
         placeholderRef.current = value;
+      },
+      insertContent: (text: string) => {
+        editor.chain().focus().insertContent(text).run();
       },
     };
     editorRef.current = bridge;

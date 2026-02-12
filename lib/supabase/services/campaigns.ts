@@ -251,6 +251,81 @@ export async function updateCampaign(
 }
 
 /**
+ * Ensure enrollments exist for campaign leads.
+ * Uses conflict-safe upsert on (campaign_id, lead_id) and does not mutate existing rows.
+ */
+export async function ensureCampaignEnrollmentsForLeads(
+  campaignId: string,
+  leadIds: string[]
+): Promise<void> {
+  if (!leadIds.length) return;
+
+  const rows = leadIds.map((leadId) => ({
+    campaign_id: campaignId,
+    lead_id: leadId,
+    current_node_id: null,
+    state: 'active',
+    next_run_at: new Date().toISOString(),
+    flow_position: {},
+  }));
+
+  const { error } = await supabase
+    .from('enrollments')
+    .upsert(rows as any, {
+      onConflict: 'campaign_id,lead_id',
+      ignoreDuplicates: true,
+    });
+
+  if (error) {
+    throw new Error(`Failed to ensure campaign enrollments: ${error.message}`);
+  }
+}
+
+/**
+ * Backfill enrollments for all leads in a campaign.
+ */
+export async function backfillCampaignEnrollments(campaignId: string): Promise<void> {
+  const { data: leads, error } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('campaign_id', campaignId);
+
+  if (error) {
+    throw new Error(`Failed to load campaign leads for enrollment backfill: ${error.message}`);
+  }
+
+  const leadIds = (leads || []).map((lead: any) => lead.id).filter(Boolean);
+  await ensureCampaignEnrollmentsForLeads(campaignId, leadIds);
+}
+
+/**
+ * Hard-pause cleanup: cancel unsent campaign jobs for a campaign.
+ * Manual inbox jobs are intentionally excluded.
+ */
+export async function cancelUnsentCampaignJobs(
+  campaignId: string,
+  reason: string = 'Campaign paused'
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('message_jobs')
+    .update({
+      status: 'cancelled',
+      error_message: reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('campaign_id', campaignId)
+    .in('status', ['pending', 'reserved'])
+    .or('message_type.eq.campaign,message_type.is.null')
+    .select('id');
+
+  if (error) {
+    throw new Error(`Failed to cancel unsent campaign jobs: ${error.message}`);
+  }
+
+  return (data || []).length;
+}
+
+/**
  * Delete a campaign
  */
 export async function deleteCampaign(id: string): Promise<void> {

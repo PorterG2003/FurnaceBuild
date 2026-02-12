@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { useMemo, useState, useRef, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { CodeBracketIcon } from 'react-native-heroicons/outline';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
+import { EmailBodyEditor } from '../EmailBodyEditor';
 
 type LeadVariable = { token: string; description: string };
 
@@ -188,6 +189,26 @@ const VariableInput = ({
   );
 };
 
+/** Convert plain text template to HTML for TipTap (one <p> per line). */
+function templateToHtml(template: string): string {
+  if (!template || !template.trim()) return '<p></p>';
+  const lines = template.split(/\r?\n/);
+  return lines.map((line) => `<p>${escapeHtml(line)}</p>`).join('');
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Check if string looks like HTML (has tags). */
+function isHtml(str: string): boolean {
+  return /<[a-z][\s\S]*>/i.test(str);
+}
+
 interface EmailNodeModalProps {
   visible: boolean;
   onClose: () => void;
@@ -195,11 +216,15 @@ interface EmailNodeModalProps {
     label?: string;
     subject?: string;
     template?: string;
+    body_html?: string;
+    body_text?: string;
   }) => void;
   initialData?: {
     label?: string;
     subject?: string;
     template?: string;
+    body_html?: string;
+    body_text?: string;
     campaignId?: string;
   };
 }
@@ -214,7 +239,23 @@ function EmailNodeModal({
   const [subject, setSubject] = useState(initialData?.subject || '');
   const [template, setTemplate] = useState(initialData?.template || '');
   const [openMenu, setOpenMenu] = useState<'subject' | 'template' | null>(null);
+  const bodyEditorRef = useRef<{ getHTML: () => string; getText: () => string } | null>(null);
 
+  const initialBodyContent = useMemo(() => {
+    const html = initialData?.body_html;
+    const tmpl = initialData?.template;
+    if (html && isHtml(html)) return html;
+    if (tmpl) return templateToHtml(tmpl);
+    return '<p></p>';
+  }, [initialData?.body_html, initialData?.template]);
+
+  useEffect(() => {
+    if (visible && initialData) {
+      setLabel(initialData.label ?? 'Send Email');
+      setSubject(initialData.subject ?? '');
+      setTemplate(initialData.template ?? '');
+    }
+  }, [visible, initialData]);
 
   const leadVariables = useMemo(
     (): LeadVariable[] => [
@@ -233,10 +274,14 @@ function EmailNodeModal({
   );
 
   const handleSave = () => {
+    const bodyHtml = bodyEditorRef.current?.getHTML?.();
+    const bodyText = bodyEditorRef.current?.getText?.();
     onSave({
       label,
       subject,
-      template,
+      template: bodyText ?? template,
+      body_html: bodyHtml ?? undefined,
+      body_text: bodyText ?? undefined,
     });
     onClose();
   };
@@ -297,31 +342,48 @@ function EmailNodeModal({
           />
         </View>
 
-        <VariableInput
-          label="Subject"
-          value={subject}
-          onChange={setSubject}
-          placeholder="e.g. Quick idea for {{first_name}}"
-          variant="subject"
-          isMenuOpen={openMenu === 'subject'}
-          onToggleMenu={() => setOpenMenu(prev => (prev === 'subject' ? null : 'subject'))}
-          onRequestCloseMenu={() => setOpenMenu(null)}
-          variables={leadVariables}
-        />
+        <View>
+          <VariableInput
+            label="Subject"
+            value={subject}
+            onChange={setSubject}
+            placeholder="e.g. Quick idea for {{first_name}} (or leave empty to continue thread)"
+            variant="subject"
+            isMenuOpen={openMenu === 'subject'}
+            onToggleMenu={() => setOpenMenu(prev => (prev === 'subject' ? null : 'subject'))}
+            onRequestCloseMenu={() => setOpenMenu(null)}
+            variables={leadVariables}
+          />
+          <Text className="text-xs text-gray-500 mt-1.5">
+            Leave empty on follow-up emails to use the first email's subject and keep replies in the same thread.
+          </Text>
+        </View>
 
-        <VariableInput
-          label="Email Body"
-          value={template}
-          onChange={setTemplate}
-          placeholder="Hi {{first_name}},\n\nLoved what you're building at {{company_name}}..."
-          multiline
-          minHeight={220}
-          variant="body"
-          isMenuOpen={openMenu === 'template'}
-          onToggleMenu={() => setOpenMenu(prev => (prev === 'template' ? null : 'template'))}
-          onRequestCloseMenu={() => setOpenMenu(null)}
-          variables={leadVariables}
-        />
+        {Platform.OS === 'web' ? (
+          <EmailBodyEditor
+            key={visible ? 'open' : 'closed'}
+            initialContent={initialBodyContent}
+            editorRef={bodyEditorRef}
+            variables={leadVariables}
+            placeholder="Hi {{first_name}},\n\nLoved what you're building at {{company_name}}..."
+            minHeight={220}
+            label="Email Body"
+          />
+        ) : (
+          <VariableInput
+            label="Email Body"
+            value={template}
+            onChange={setTemplate}
+            placeholder="Hi {{first_name}},\n\nLoved what you're building at {{company_name}}..."
+            multiline
+            minHeight={220}
+            variant="body"
+            isMenuOpen={openMenu === 'template'}
+            onToggleMenu={() => setOpenMenu(prev => (prev === 'template' ? null : 'template'))}
+            onRequestCloseMenu={() => setOpenMenu(null)}
+            variables={leadVariables}
+          />
+        )}
       </View>
     </BaseModal>
   );

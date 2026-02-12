@@ -172,7 +172,7 @@ export async function createForwardJob(params: CreateForwardJobParams): Promise<
 
 export interface MessageJobStatus {
   id: string;
-  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled';
+  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'blocked';
   error_message: string | null;
 }
 

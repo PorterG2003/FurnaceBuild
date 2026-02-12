@@ -20,6 +20,7 @@ export async function batchAssignIntervalJobs(
   const { data: campaigns, error: campaignsError } = await supabase
     .from('campaigns')
     .select('id, jitter_percentage')
+    .eq('status', 'running')
     .not('sending_interval_seconds', 'is', null);
   
   if (campaignsError) {
@@ -110,7 +111,8 @@ export async function batchAssignIntervalJobs(
         continue;
       }
       
-      // Filter enrollments that don't already have a message_job for this node
+      // Filter enrollments that don't already have a message_job for this node.
+      // Include 'cancelled' and 'blocked': do not create another job if the only job was cancelled or blocked.
       const enrollmentsWithoutJobs: typeof enrollments = [];
       
       for (const enrollment of enrollments) {
@@ -119,7 +121,7 @@ export async function batchAssignIntervalJobs(
           .select('id')
           .eq('enrollment_id', enrollment.id)
           .eq('node_id', enrollment.current_node_id)
-          .in('status', ['pending', 'reserved', 'sending', 'sent', 'failed'])
+          .in('status', ['pending', 'reserved', 'sending', 'sent', 'failed', 'cancelled', 'blocked'])
           .maybeSingle();
         
         if (!existingJob) {
@@ -205,6 +207,16 @@ export async function batchAssignIntervalJobs(
           }
           mailboxId = selectedMailbox.id;
           rotationIndex++;
+          // Persist assignment so subsequent emails for this lead use the same mailbox
+          const { error: updateLeadError } = await supabase
+            .from('leads')
+            .update({ mailbox_id: selectedMailbox.id })
+            .eq('id', enrollment.lead_id)
+            .is('mailbox_id', null);
+          if (!updateLeadError) {
+            console.log(`[BATCH INTERVAL] Assigned mailbox ${selectedMailbox.id.substring(0, 8)} to lead ${enrollment.lead_id.substring(0, 8)}`);
+          }
+          // If update failed (e.g. race: another worker assigned), lead now has mailbox_id; next batch run will use it
         }
         
         // Get node data

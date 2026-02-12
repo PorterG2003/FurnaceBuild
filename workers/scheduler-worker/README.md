@@ -23,8 +23,11 @@ workers/scheduler-worker/
 │   ├── flow-evaluation.ts # Flow traversal logic
 │   ├── scheduling.ts      # Schedule calculation logic
 │   ├── mailbox-selection.ts # Mailbox selection (round-robin)
+│   ├── batch-interval-assignment.ts # Batch job creation for email nodes (assigns mailbox to lead, creates message_jobs)
 │   ├── node-handlers/     # Node type handlers
-│   │   └── email-handler.ts
+│   │   ├── ai-categorizer-handler.ts
+│   │   ├── data-sender-handler.ts
+│   │   └── wait-time-handler.ts
 │   ├── supabase.ts        # Supabase client setup
 │   └── types.ts           # TypeScript type definitions
 ├── dist/                  # Compiled JavaScript (generated)

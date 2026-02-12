@@ -7,4 +7,5 @@ export * from './leads';
 export * from './users';
 export * from './mailboxes';
 export * from './inbox';
+export * from './block-list';
 

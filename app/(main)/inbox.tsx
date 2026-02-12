@@ -14,6 +14,7 @@ import {
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { PageLayout } from '@/components/ui/layout';
 import { EmptyState, Alert } from '@/components/ui/feedback';
+import { ConfirmDeleteModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import {
   getAccountMembershipsForUser,
@@ -25,13 +26,16 @@ import {
   getMessageJobStatus,
   getPendingInboxReplyJobs,
   fetchAttachment,
+  getBlockList,
+  isEmailBlockedByEntries,
 } from '@/lib/supabase/services';
-import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
+import type { EmailThread, EmailMessage, BlockListEntry } from '@/lib/supabase/types';
 import { groupMessagesByDate } from '@/lib/inbox';
 import { buildQuotedForwardThreadHtml } from '@/lib/inbox/quote-utils';
 import { MagnifyingGlassIcon, PaperAirplaneIcon } from 'react-native-heroicons/outline';
 import type { EditorBridge } from '@10play/tentap-editor';
 import {
+  BlockSenderModal,
   ComposerAttachments,
   ComposerRichEditor,
   DateDivider,
@@ -90,6 +94,12 @@ export default function InboxPage() {
   const [showThreadSkeleton, setShowThreadSkeleton] = useState(false);
   const [showMessagesSkeleton, setShowMessagesSkeleton] = useState(false);
   const [threadSearchQuery, setThreadSearchQuery] = useState('');
+  const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
+  const [blockModalVisible, setBlockModalVisible] = useState(false);
+  const [blockedRecipientConfirm, setBlockedRecipientConfirm] = useState<{
+    mode: 'reply' | 'forward';
+    onConfirm: () => void;
+  } | null>(null);
 
   type PendingReply = {
     threadId: string;
@@ -205,11 +215,63 @@ export default function InboxPage() {
     });
   }, [threads, threadSearchQuery]);
 
+  const selectedThreadProspectEmails = useMemo(() => {
+    if (!selectedThreadId || !messages.length) return [];
+    const displayMessages = pendingReply && selectedThreadId === pendingReply.threadId
+      ? [
+          ...messages,
+          {
+            id: 'pending-' + pendingReply.jobId,
+            direction: 'sent' as const,
+            from_email: pendingReply.fromEmail,
+            from_name: null,
+            to_email: pendingReply.toEmail,
+            to_name: null,
+            cc: null,
+            subject: pendingReply.subject,
+            body_text: pendingReply.bodyText,
+            body_html: pendingReply.bodyHtml,
+            message_id: null,
+            in_reply_to: null,
+            message_references: null,
+            received_at: pendingReply.receivedAt,
+            read_at: null,
+            headers: {},
+            attachments: [],
+            imap_uid: null,
+            created_at: pendingReply.receivedAt,
+            updated_at: pendingReply.receivedAt,
+          },
+        ].sort(
+          (a, b) =>
+            new Date(a.received_at).getTime() - new Date(b.received_at).getTime()
+        )
+      : messages;
+    return [
+      ...new Set(
+        displayMessages.filter((m) => m.direction === 'received').map((m) => m.from_email)
+      ),
+    ];
+  }, [selectedThreadId, messages, pendingReply]);
+
+  const blockedProspectEmails = useMemo(() => {
+    const blocked = new Set<string>();
+    for (const email of selectedThreadProspectEmails) {
+      if (isEmailBlockedByEntries(email, blockList)) {
+        blocked.add(email.trim().toLowerCase());
+      }
+    }
+    return blocked;
+  }, [selectedThreadProspectEmails, blockList]);
+
   const handleRefresh = useCallback(async () => {
     if (!accountId) return;
     setRefreshing(true);
     try {
-      const list = await getThreadsByAccount(accountId, { hasReplyOnly: true });
+      const [list] = await Promise.all([
+        getThreadsByAccount(accountId, { hasReplyOnly: true }),
+        loadBlockList(),
+      ]);
       setThreads(list);
       if (list.length === 0) {
         setSelectedThreadId(null);
@@ -353,14 +415,26 @@ export default function InboxPage() {
     }
   }, [accountId, selectedThreadId, loadMessages]);
 
+  const loadBlockList = useCallback(async () => {
+    if (!accountId) return;
+    try {
+      const list = await getBlockList(accountId);
+      setBlockList(list);
+    } catch (err) {
+      console.error('Failed to load block list:', err);
+    }
+  }, [accountId]);
+
   useEffect(() => {
     if (accountId) {
       loadThreads();
+      loadBlockList();
     } else {
       setThreadsLoading(false);
       setThreads([]);
+      setBlockList([]);
     }
-  }, [accountId, loadThreads]);
+  }, [accountId, loadThreads, loadBlockList]);
 
   // Restore pending reply when thread is selected
   useEffect(() => {
@@ -671,7 +745,7 @@ export default function InboxPage() {
     }
   }, [accountId, selectedThreadId, selectedThread, pendingReply, messages, loadMessages]);
 
-  const sendReply = useCallback(async () => {
+  const sendReply = useCallback(async (skipBlockCheck?: boolean) => {
     if (!accountId || !selectedThreadId || !selectedThread || !inReplyToMessageId) return;
     if (!replyToEmail.trim()) {
       setReplyError('To is required');
@@ -681,6 +755,18 @@ export default function InboxPage() {
     if (totalAttachmentBytes > MAX_TOTAL_BYTES) {
       setReplyError('Total attachment size exceeds 5 MB.');
       return;
+    }
+    const ccArray = replyCc.trim() ? replyCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : [];
+    const allRecipients = [replyToEmail.trim(), ...ccArray];
+    if (!skipBlockCheck && blockList.length > 0) {
+      const anyBlocked = allRecipients.some((email) => isEmailBlockedByEntries(email, blockList));
+      if (anyBlocked) {
+        setBlockedRecipientConfirm({
+          mode: 'reply',
+          onConfirm: () => sendReply(true),
+        });
+        return;
+      }
     }
     setSendingReply(true);
     setReplyError(null);
@@ -700,12 +786,11 @@ export default function InboxPage() {
         bodyHtml: bodyHtml || '',
         toEmail: replyToEmail.trim(),
         toName: replyToName.trim() || null,
-        cc: replyCc.trim() ? replyCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : undefined,
+        cc: ccArray.length > 0 ? ccArray : undefined,
         attachments: replyAttachments,
       });
       const fromEmail = messages.find((m) => m.direction === 'sent')?.from_email ?? '';
       const receivedAt = new Date().toISOString();
-      const ccArray = replyCc.trim() ? replyCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : [];
       setPendingReply({
         threadId: selectedThreadId,
         jobId,
@@ -729,27 +814,20 @@ export default function InboxPage() {
       }
       pollingIntervalRef.current = setInterval(async () => {
         loadMessages(selectedThreadId, { silent: true });
-        // Check job status for failures
         try {
           const jobStatus = await getMessageJobStatus(jobId);
-          if (jobStatus) {
-            if (jobStatus.status === 'failed') {
-              setPendingReply((prev) =>
-                prev && prev.jobId === jobId
-                  ? { ...prev, isFailed: true, errorMessage: jobStatus.error_message }
-                  : prev
-              );
-              if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current);
-                pollingIntervalRef.current = null;
-              }
-            } else if (jobStatus.status === 'sent') {
-              // Job succeeded, clear pending when message appears
-              // (handled by the effect checking messages.length)
+          if (jobStatus?.status === 'failed') {
+            setPendingReply((prev) =>
+              prev && prev.jobId === jobId
+                ? { ...prev, isFailed: true, errorMessage: jobStatus.error_message }
+                : prev
+            );
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
             }
           }
         } catch (err) {
-          // Ignore errors checking job status, continue polling
           console.error('Failed to check job status:', err);
         }
       }, 2000);
@@ -758,9 +836,9 @@ export default function InboxPage() {
     } finally {
       setSendingReply(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyCc, composerAttachments, messages, loadMessages, closeComposerPanel]);
+  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyCc, composerAttachments, messages, blockList, loadMessages, closeComposerPanel]);
 
-  const sendForward = useCallback(async () => {
+  const sendForward = useCallback(async (skipBlockCheck?: boolean) => {
     if (!accountId || !selectedThreadId || !selectedThread || !forwardedMessageId) return;
     if (!forwardToEmail.trim()) {
       setForwardError('To is required');
@@ -770,6 +848,18 @@ export default function InboxPage() {
     if (totalAttachmentBytes > MAX_TOTAL_BYTES) {
       setForwardError('Total attachment size exceeds 5 MB.');
       return;
+    }
+    const ccArray = forwardCc.trim() ? forwardCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : [];
+    const allRecipients = [forwardToEmail.trim(), ...ccArray];
+    if (!skipBlockCheck && blockList.length > 0) {
+      const anyBlocked = allRecipients.some((email) => isEmailBlockedByEntries(email, blockList));
+      if (anyBlocked) {
+        setBlockedRecipientConfirm({
+          mode: 'forward',
+          onConfirm: () => sendForward(true),
+        });
+        return;
+      }
     }
     setSendingForward(true);
     setForwardError(null);
@@ -789,7 +879,7 @@ export default function InboxPage() {
         bodyHtml: bodyHtml || bodyText,
         toEmail: forwardToEmail.trim(),
         toName: null,
-        cc: forwardCc.trim() ? forwardCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : undefined,
+        cc: ccArray.length > 0 ? ccArray : undefined,
         attachments: forwardAttachments,
       });
       closeComposerPanel();
@@ -798,7 +888,7 @@ export default function InboxPage() {
     } finally {
       setSendingForward(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, forwardedMessageId, forwardToEmail, forwardSubject, forwardCc, composerAttachments, closeComposerPanel]);
+  }, [accountId, selectedThreadId, selectedThread, forwardedMessageId, forwardToEmail, forwardSubject, forwardCc, composerAttachments, blockList, closeComposerPanel]);
 
   return (
     <PageLayout scrollable={false}>
@@ -926,16 +1016,15 @@ export default function InboxPage() {
                   <>
               <MessagePanelHeader
                 subject={selectedThread.subject ?? ''}
-                prospectEmails={[
-                  ...new Set(
-                    displayMessages.filter((m) => m.direction === 'received').map((m) => m.from_email)
-                  ),
-                ]}
+                prospectEmails={selectedThreadProspectEmails}
                 senderEmails={[
                   ...new Set(
                     displayMessages.filter((m) => m.direction === 'sent').map((m) => m.from_email)
                   ),
                 ]}
+                blockedEmails={blockedProspectEmails}
+                onBlock={accountId ? () => setBlockModalVisible(true) : undefined}
+                showBlockButton={!!accountId && selectedThreadProspectEmails.length > 0}
               />
               {messagesError && (
                 <View className="p-4">
@@ -1012,6 +1101,34 @@ export default function InboxPage() {
           )}
         </View>
         </View>
+
+        {/* Block sender modal */}
+        {accountId && (
+          <BlockSenderModal
+            visible={blockModalVisible}
+            onClose={() => setBlockModalVisible(false)}
+            participantEmails={selectedThreadProspectEmails}
+            accountId={accountId}
+            onBlocked={loadBlockList}
+          />
+        )}
+
+        {/* Confirmation when sending to blocked recipient */}
+        {blockedRecipientConfirm && (
+          <ConfirmDeleteModal
+            visible={!!blockedRecipientConfirm}
+            onClose={() => setBlockedRecipientConfirm(null)}
+            onConfirm={async () => {
+              blockedRecipientConfirm.onConfirm();
+              setBlockedRecipientConfirm(null);
+            }}
+            title="Send to blocked address?"
+            description="This lead has been blocked. No automatic emails will be sent to them, but you can send messages to them manually without unblocking if you wish. Confirm to proceed."
+            confirmLabel="Send anyway"
+            cancelLabel="Cancel"
+            requireConfirmation={false}
+          />
+        )}
 
         {/* Reply/Forward composer: right-side panel (slides in, pushes content left) */}
         {composerMode && (
@@ -1113,7 +1230,7 @@ export default function InboxPage() {
                         />
                         <View className="mb-5" />
                         <Button
-                          onPress={sendReply}
+                          onPress={() => sendReply()}
                           disabled={
                             sendingReply ||
                             !replyToEmail.trim() ||
@@ -1199,7 +1316,7 @@ export default function InboxPage() {
                         />
                         <View className="mb-5" />
                         <Button
-                          onPress={sendForward}
+                          onPress={() => sendForward()}
                           disabled={
                             sendingForward ||
                             !forwardToEmail.trim() ||

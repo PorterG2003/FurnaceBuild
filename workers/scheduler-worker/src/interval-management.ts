@@ -23,6 +23,7 @@ export async function maintainCampaignIntervals(
   const { data: campaigns, error } = await supabase
     .from('campaigns')
     .select('id, sending_interval_seconds, created_at, schedule, last_completed_interval_time')
+    .eq('status', 'running')
     .not('sending_interval_seconds', 'is', null);
   
   if (error) {

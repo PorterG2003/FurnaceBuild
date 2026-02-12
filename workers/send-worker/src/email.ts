@@ -63,20 +63,79 @@ export function generateMessageId(): string {
 }
 
 /**
- * Merge template with lead data
- * Simple template replacement: {{field}} → lead.field
+ * Get nested value from object by dot-separated path (e.g. "custom.field_name").
+ */
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  const parts = path.split('.');
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current == null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+/**
+ * Merge template with lead data.
+ * Supports {{field}} for top-level fields and {{custom.field_name}} for custom_lead_data.
  */
 export function mergeTemplate(template: string, lead: Lead): string {
   if (!template) return '';
-  
-  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-    const value = (lead as any)[key];
+
+  return template.replace(/\{\{([^}]+)\}\}/g, (match, key: string) => {
+    const trimmedKey = key.trim();
+    if (!trimmedKey) return match;
+
+    let value: unknown;
+    if (trimmedKey.startsWith('custom.')) {
+      const subKey = trimmedKey.slice(7);
+      value = getNestedValue(
+        (lead as any).custom_lead_data ?? {},
+        subKey
+      );
+    } else {
+      value = (lead as any)[trimmedKey];
+    }
+
     return value !== undefined && value !== null ? String(value) : match;
   });
 }
 
 /**
- * Send email via SMTP
+ * Process spintax: {option1|option2|option3} → randomly pick one option per occurrence.
+ * Supports nested spintax. Options may contain variables {{var}}; runs before variable merge.
+ */
+export function processSpintax(str: string): string {
+  if (!str) return '';
+
+  // Match {opt1|opt2|opt3}; options can contain {{var}} (variable placeholders)
+  const spinRegex = /\{((?:\{\{[^}]*\}\}|[^{}|])*(?:\|(?:\{\{[^}]*\}\}|[^{}|])*)+)\}/g;
+  let result = str;
+  let prev: string;
+  do {
+    prev = result;
+    result = result.replace(spinRegex, (match, optionsStr: string) => {
+      const options = optionsStr.split('|').map((o) => o.trim());
+      if (options.length < 2) return match;
+      const idx = Math.floor(Math.random() * options.length);
+      return options[idx] ?? match;
+    });
+  } while (result !== prev);
+
+  return result;
+}
+
+/**
+ * Strip HTML tags to produce plain text fallback.
+ */
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Send email via SMTP.
+ * Accepts body (plain) or bodyHtml+bodyText for rich emails.
+ * Optional inReplyTo/references set In-Reply-To and References headers for thread continuation.
  */
 export async function sendEmail(
   transporter: Transporter,
@@ -84,29 +143,54 @@ export async function sendEmail(
   job: MessageJob,
   lead: Lead,
   subject: string,
-  body: string
+  body: string,
+  inReplyTo?: string | null,
+  references?: string | null,
+  options?: { bodyHtml?: string; bodyText?: string }
 ): Promise<string> {
   const messageId = generateMessageId();
+  const headers: Record<string, string> = {
+    'X-Message-ID': job.id, // Track our internal message_job_id
+  };
+  if (inReplyTo) {
+    headers['In-Reply-To'] = inReplyTo;
+  }
+  if (references) {
+    headers['References'] = references;
+  }
+
+  let text: string;
+  let html: string;
+  let attachments: nodemailer.SendMailOptions['attachments'];
+
+  if (options?.bodyHtml) {
+    const { html: processedHtml, attachments: inlineAttachments } = processInlineImagesForEmail(options.bodyHtml);
+    html = processedHtml;
+    attachments = inlineAttachments;
+    text = options.bodyText?.trim() || stripHtml(html) || body;
+  } else {
+    text = body;
+    html = body;
+    attachments = undefined;
+  }
 
   const mailOptions: nodemailer.SendMailOptions = {
     from: `"${mailbox.display_name}" <${mailbox.email_address}>`,
     to: lead.email,
     subject: subject,
-    text: body,
-    html: body, // TODO: Support HTML emails if needed
+    text,
+    html,
+    attachments,
     messageId: messageId,
-    headers: {
-      'X-Message-ID': job.id, // Track our internal message_job_id
-    },
+    headers,
   };
 
   const info = await transporter.sendMail(mailOptions);
-  
+
   if (!info.messageId) {
-    // If nodemailer doesn't set messageId, use our generated one
     return messageId;
   }
-  
+
   return info.messageId;
 }
 

@@ -24,7 +24,7 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
         
         return (
           <View key={index} className="flex-row items-center">
-            {item.href && !isLast ? (
+            {item.href ? (
               <Pressable
                 onPress={() => router.push(item.href!)}
                 onHoverIn={() => Platform.OS === 'web' && setHoveredIndex(index)}
@@ -34,9 +34,9 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
                 }`}
               >
                 <Text 
-                  className={`font-instrument text-sm ${
-                    isHovered ? 'text-white' : 'text-gray-400'
-                  }`}
+                  className={`font-instrument ${
+                    isLast ? 'text-base font-instrument-semibold' : 'text-sm'
+                  } ${isHovered ? 'text-white' : isLast ? 'text-white' : 'text-gray-400'}`}
                 >
                   {item.label}
                 </Text>

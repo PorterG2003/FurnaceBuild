@@ -332,7 +332,8 @@ export class ThreadManager {
 
     if (!existingSentMessage) {
       // Extract body from message_data (template - not merged, but that's okay for now)
-      const body = messageData.node_config?.body || '';
+      // Builder saves body as "template"; support both for display
+      const body = messageData.node_config?.body ?? messageData.node_config?.template ?? '';
       const leadName = messageJob.leads?.name || null;
       const mailboxDisplayName = mailbox.display_name || null;
 

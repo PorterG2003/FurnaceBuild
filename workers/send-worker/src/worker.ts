@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { DatabaseClient } from './database.js';
-import { sendEmail, sendReplyEmail, mergeTemplate } from './email.js';
+import { sendEmail, sendReplyEmail, mergeTemplate, processSpintax } from './email.js';
 import type { ReplyEmailOptions } from './email.js';
 import { SmtpPool } from './smtp-pool.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
@@ -134,18 +134,31 @@ export class SendWorker {
       // 1b. Block list check — skip campaign sends to blocked addresses
       const { data: campaign } = await this.supabase
         .from('campaigns')
-        .select('account_id')
+        .select('account_id, status')
         .eq('id', messageJob.campaign_id)
         .single();
-      const accountId = campaign?.account_id;
+
+      if (!campaign || campaign.status !== 'running') {
+        console.log(`[SEND WORKER] Campaign ${messageJob.campaign_id} is not running. Cancelling message job ${message_job_id}.`);
+        await this.supabase
+          .from('message_jobs')
+          .update({
+            status: 'cancelled',
+            error_message: `Campaign status is ${campaign?.status || 'unknown'}`,
+          })
+          .eq('id', message_job_id);
+        return;
+      }
+
+      const accountId = campaign.account_id;
       if (accountId) {
         const blocked = await this.isEmailBlocked(accountId, lead.email);
         if (blocked) {
-          console.log(`[SEND WORKER] Lead ${lead.email} is blocked, cancelling job ${message_job_id}`);
+          console.log(`[SEND WORKER] Lead ${lead.email} is blocked, marking job ${message_job_id} as blocked`);
           await this.supabase
             .from('message_jobs')
             .update({
-              status: 'cancelled',
+              status: 'blocked',
               error_message: 'Lead blocked',
             })
             .eq('id', message_job_id);
@@ -194,9 +207,46 @@ export class SendWorker {
 
       // Throttle check passed - proceed with sending
 
+      // 2b. Get first sent message for this campaign+lead (for thread continuation)
+      const threadFirst = await this.getFirstSentMessageForCampaignLead(messageJob.campaign_id, messageJob.lead_id);
+
       // 3. Generate email content from template
-      const subject = mergeTemplate(nodeConfig.subject || '', lead);
-      const emailBody = mergeTemplate(nodeConfig.body || '', lead);
+      // Pipeline: spintax → variable merge. Prefer body_html (rich) over template (legacy).
+      const subjectRaw = String(nodeConfig.subject ?? '');
+      const subjectSpun = processSpintax(subjectRaw);
+      const currentSubject = mergeTemplate(subjectSpun, lead);
+
+      const bodyRaw = typeof (nodeConfig.body_html ?? nodeConfig.template ?? nodeConfig.body) === 'string'
+        ? (nodeConfig.body_html ?? nodeConfig.template ?? nodeConfig.body)
+        : '';
+      const bodySpun = processSpintax(bodyRaw);
+      const bodyMerged = mergeTemplate(bodySpun, lead);
+      const bodyTextFromConfig = typeof nodeConfig.body_text === 'string' ? nodeConfig.body_text : null;
+
+      const isHtmlBody = /<[a-z][\s\S]*>/i.test(bodyMerged);
+      const emailBody = bodyMerged;
+      const emailBodyText = bodyTextFromConfig ?? (isHtmlBody ? null : bodyMerged);
+
+      // Subject: use current node's subject; if follow-up and empty, use first email's subject
+      let subject: string;
+      let inReplyTo: string | null = null;
+      let references: string | null = null;
+      if (threadFirst) {
+        if (threadFirst.provider_message_id) {
+          inReplyTo = threadFirst.provider_message_id;
+          references = threadFirst.provider_message_id;
+        }
+        if (currentSubject.trim() === '') {
+          const nc = threadFirst.message_data?.node_config;
+          const firstSubjectTemplate = (nc?.subject ?? nc?.template ?? '') as string;
+          const firstSubjectSpun = processSpintax(typeof firstSubjectTemplate === 'string' ? firstSubjectTemplate : '');
+          subject = mergeTemplate(firstSubjectSpun, lead);
+        } else {
+          subject = currentSubject;
+        }
+      } else {
+        subject = currentSubject;
+      }
 
       // Check if this is a test mode job (skip SMTP sending)
       // Test mailboxes are identified by @furnace.test email domain
@@ -218,14 +268,17 @@ export class SendWorker {
         const transporter = await this.smtpPool.getTransporter(mailbox);
 
         try {
-          // 5. Send email
+          // 5. Send email (with optional threading headers for follow-ups)
           providerMessageId = await sendEmail(
             transporter,
             mailbox,
             messageJob,
             lead,
             subject,
-            emailBody
+            emailBody,
+            inReplyTo,
+            references,
+            isHtmlBody ? { bodyHtml: emailBody, bodyText: emailBodyText ?? undefined } : undefined
           );
           
           // Mark message sent (for maxMessages tracking)
@@ -640,6 +693,29 @@ export class SendWorker {
       .eq('id', message_job_id);
 
     console.log(`[SEND WORKER] Inbox forward job ${message_job_id} sent successfully`);
+  }
+
+  /**
+   * Get the first sent campaign email for this campaign+lead (for thread continuation).
+   * Returns null if this is the first email or no previous sent job exists.
+   */
+  private async getFirstSentMessageForCampaignLead(
+    campaignId: string,
+    leadId: string
+  ): Promise<{ id: string; provider_message_id: string | null; message_data: any } | null> {
+    const { data, error } = await this.supabase
+      .from('message_jobs')
+      .select('id, provider_message_id, message_data')
+      .eq('campaign_id', campaignId)
+      .eq('lead_id', leadId)
+      .eq('status', 'sent')
+      .or('message_type.is.null,message_type.eq.campaign')
+      .order('scheduled_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data as { id: string; provider_message_id: string | null; message_data: any };
   }
 
   /**

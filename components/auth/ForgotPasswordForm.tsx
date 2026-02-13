@@ -1,19 +1,49 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { resetPassword } from 'aws-amplify/auth';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
 
 interface ForgotPasswordFormProps {
   onBackToSignIn: () => void;
+  onCodeSent: (email: string) => void;
 }
 
-export function ForgotPasswordForm({ onBackToSignIn }: ForgotPasswordFormProps) {
+export function ForgotPasswordForm({ onBackToSignIn, onCodeSent }: ForgotPasswordFormProps) {
   const [email, setEmail] = useState('');
-  const { submitForm, toSignIn } = useAuthenticator();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const handleReset = async () => {
-    submitForm({ username: email });
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setError('Please enter your email');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await resetPassword({ username: trimmed });
+
+      setSuccess('Check your email for the reset code.');
+      onCodeSent(trimmed);
+    } catch (err: any) {
+      if (err.name === 'UserNotFoundException') {
+        setError('No account found with this email');
+      } else if (err.name === 'LimitExceededException') {
+        setError('Too many attempts. Please try again later.');
+      } else if (err.name === 'InvalidParameterException') {
+        setError('Please check your email format');
+      } else {
+        setError(err.message ?? 'Failed to send reset code. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -46,16 +76,31 @@ export function ForgotPasswordForm({ onBackToSignIn }: ForgotPasswordFormProps) 
         />
       </View>
 
-      <Button onPress={handleReset} className="mb-4">
-        Send Reset Code
+      {error ? (
+        <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
+          <Text className="text-red-400 text-center font-instrument-medium text-sm">
+            {error}
+          </Text>
+        </View>
+      ) : null}
+
+      {success ? (
+        <View className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-xl">
+          <Text className="text-green-400 text-center font-instrument-medium text-sm">
+            {success}
+          </Text>
+        </View>
+      ) : null}
+
+      <Button onPress={handleReset} className="mb-4" disabled={isLoading}>
+        {isLoading ? 'Sending...' : 'Send Reset Code'}
       </Button>
 
-                <Pressable onPress={onBackToSignIn}>
-                  <Text className="text-center text-brand-orange font-instrument-medium">
-                    Back to Sign In
-                  </Text>
-                </Pressable>
+      <Pressable onPress={onBackToSignIn}>
+        <Text className="text-center text-brand-orange font-instrument-medium">
+          Back to Sign In
+        </Text>
+      </Pressable>
     </FormCard>
   );
 }
-

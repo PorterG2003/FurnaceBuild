@@ -1,15 +1,18 @@
 import { Stack } from 'expo-router';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
+import { AccountProvider } from '@/contexts/AccountContext';
 
 export default function MainLayout() {
-  const { isAuthenticated } = useAuthGuard();
+  useAuthGuard();
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-      }}
-    />
+    <AccountProvider>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+        }}
+      />
+    </AccountProvider>
   );
 }
 

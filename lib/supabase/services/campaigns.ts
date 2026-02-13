@@ -9,6 +9,7 @@ import { getAccountMembershipsForUser, getUserByExternalId } from './users';
 
 export interface CampaignFilters {
   ownerId?: string;
+  accountId?: string;
   organizationId?: string | null;
 }
 
@@ -24,6 +25,10 @@ export async function getCampaigns(filters?: CampaignFilters): Promise<Campaign[
   // Apply filters
   if (filters?.ownerId) {
     query = query.eq('owner_id', filters.ownerId);
+  }
+
+  if (filters?.accountId) {
+    query = query.eq('account_id', filters.accountId);
   }
 
   if (filters?.organizationId !== undefined) {

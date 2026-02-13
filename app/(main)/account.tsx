@@ -8,23 +8,21 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useMemo } from 'react';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { ManageBlockListModal } from '@/components/inbox';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { LoadingState, Alert } from '@/components/ui/feedback';
+import { BaseModal } from '@/components/ui/modals';
+import { useAccount } from '@/contexts/AccountContext';
 import {
-  AccountMembership,
   addUserToAccount,
-  createAccount,
   createInvitation,
-  createUserProfile,
   deleteInvitation,
   getAccountInvitations,
   getAccountMembers,
-  getAccountMembershipsForUser,
   getUserByEmail,
-  getUserByExternalId,
   getBlockList,
   removeBlockEntry,
   removeMemberFromAccount,
@@ -36,21 +34,20 @@ import { sendInvitationEmail } from '@/lib/services/email';
 import type { AccountUser, BlockListEntry, Invitation, User } from '@/lib/supabase/types';
 
 export default function AccountPage() {
-  const { user } = useAuthenticator();
-  const externalId = user?.userId ?? null;
-  const loginId = user?.signInDetails?.loginId ?? null;
-  const username = user?.username ?? null;
+  const { user: cognitoUser } = useAuthenticator();
   const cognitoEmail =
-    (user as any)?.attributes?.email ??
-    (user as any)?.attributes?.preferred_username ??
-    loginId ??
+    (cognitoUser as any)?.attributes?.email ??
+    (cognitoUser as any)?.attributes?.preferred_username ??
+    cognitoUser?.signInDetails?.loginId ??
+    cognitoUser?.username ??
     null;
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { user: profile, account, memberships, loading: isLoading, error: loadError, refetch } = useAccount();
+  const membership = useMemo(
+    () => (account ? memberships.find((m) => m.account.id === account.id) ?? null : null),
+    [account, memberships]
+  );
 
-  const [profile, setProfile] = useState<User | null>(null);
-  const [membership, setMembership] = useState<AccountMembership | null>(null);
   const [teamMembers, setTeamMembers] = useState<Array<{ user: User; membership: AccountUser }>>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [revokingInvitationId, setRevokingInvitationId] = useState<string | null>(null);
@@ -74,22 +71,7 @@ export default function AccountPage() {
   const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
   const [blockListModalVisible, setBlockListModalVisible] = useState(false);
-
-  const buildDefaultAccountName = useCallback(
-    (currentName?: string | null) => {
-      if (currentName && currentName.trim().length > 0) {
-        return `${currentName.trim()}'s Account`;
-      }
-      if (username && username.trim().length > 0) {
-        return `${username.trim()}'s Account`;
-      }
-      if (loginId && loginId.trim().length > 0) {
-        return `${loginId.trim()}'s Account`;
-      }
-      return 'New Account';
-    },
-    [loginId, username]
-  );
+  const [roleEditMember, setRoleEditMember] = useState<{ membershipId: string; memberName: string } | null>(null);
 
   const resetProfileFeedback = useCallback(() => {
     setProfileMessage(null);
@@ -116,89 +98,54 @@ export default function AccountPage() {
     setCompanyInput(value);
   };
 
-  const fetchAccountContext = useCallback(async () => {
-    if (!externalId) {
-      setLoadError('Unable to determine the signed-in user.');
-      setIsLoading(false);
+  useEffect(() => {
+    if (!profile) {
+      setNameInput('');
       return;
     }
-    if (!cognitoEmail) {
-      setLoadError('Unable to determine your email address from Cognito.');
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setLoadError(null);
-
-    try {
-      resetProfileFeedback();
-      resetAccountFeedback();
-
-      let existingUser = await getUserByExternalId(externalId);
-
-      if (!existingUser) {
-        existingUser = await createUserProfile({
-          external_id: externalId,
-          email: cognitoEmail,
-          name: username ?? undefined,
-        });
-      } else if (existingUser.email !== cognitoEmail) {
-        existingUser = await updateUserProfile(existingUser.id, { email: cognitoEmail });
-      }
-
-      let memberships = await getAccountMembershipsForUser(existingUser.id);
-
-      if (memberships.length === 0) {
-        const account = await createAccount({
-          name: buildDefaultAccountName(existingUser.name),
-        });
-        const membershipRecord = await addUserToAccount(account.id, existingUser.id, true);
-        memberships = [
-          {
-            membership: membershipRecord,
-            account,
-          },
-        ];
-      }
-
-      const primaryMembership =
-        memberships.find((entry) => entry.membership.is_owner) ?? memberships[0] ?? null;
-
-      setProfile(existingUser);
-      setMembership(primaryMembership);
-      setNameInput(existingUser.name ?? '');
-      setCompanyInput(primaryMembership?.account.name ?? '');
-
-      // Load team members and invitations if we have an account
-      if (primaryMembership?.account.id) {
-        const [members, pendingInvitations, blockListData] = await Promise.all([
-          getAccountMembers(primaryMembership.account.id),
-          getAccountInvitations(primaryMembership.account.id),
-          getBlockList(primaryMembership.account.id),
-        ]);
-        setTeamMembers(members);
-        setInvitations(pendingInvitations);
-        setBlockList(blockListData);
-      }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setLoadError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [
-    buildDefaultAccountName,
-    cognitoEmail,
-    externalId,
-    resetAccountFeedback,
-    resetProfileFeedback,
-    username,
-  ]);
+    setNameInput(profile.name ?? '');
+  }, [profile?.id, profile?.name]);
 
   useEffect(() => {
-    fetchAccountContext();
-  }, [fetchAccountContext]);
+    if (!membership?.account) {
+      setCompanyInput('');
+      return;
+    }
+    setCompanyInput(membership.account.name ?? '');
+  }, [membership?.account?.id, membership?.account?.name]);
+
+  useEffect(() => {
+    if (!account?.id) {
+      setTeamMembers([]);
+      setInvitations([]);
+      setBlockList([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [members, pendingInvitations, blockListData] = await Promise.all([
+          getAccountMembers(account.id),
+          getAccountInvitations(account.id),
+          getBlockList(account.id),
+        ]);
+        if (!cancelled) {
+          setTeamMembers(members);
+          setInvitations(pendingInvitations);
+          setBlockList(blockListData);
+        }
+      } catch {
+        if (!cancelled) {
+          setTeamMembers([]);
+          setInvitations([]);
+          setBlockList([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [account?.id]);
 
   const handleSaveProfile = useCallback(async () => {
     if (!profile) return;
@@ -213,9 +160,9 @@ export default function AccountPage() {
     resetProfileFeedback();
 
     try {
-      const updated = await updateUserProfile(profile.id, { name: trimmedName });
-      setProfile(updated);
-      setNameInput(updated.name ?? '');
+      await updateUserProfile(profile.id, { name: trimmedName });
+      await refetch();
+      setNameInput(trimmedName);
       setProfileMessage('Profile updated successfully.');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to update profile.';
@@ -223,7 +170,7 @@ export default function AccountPage() {
     } finally {
       setSavingProfile(false);
     }
-  }, [nameInput, profile]);
+  }, [nameInput, profile, refetch]);
 
   const handleSaveAccount = useCallback(async () => {
     if (!membership || !membership.account) return;
@@ -240,10 +187,7 @@ export default function AccountPage() {
 
     try {
       const updatedAccount = await updateAccount(membership.account.id, { name: trimmedCompany });
-      setMembership({
-        membership: membership.membership,
-        account: updatedAccount,
-      });
+      await refetch();
       setCompanyInput(updatedAccount.name ?? '');
       setAccountMessage('Company name updated successfully.');
     } catch (error: unknown) {
@@ -252,7 +196,7 @@ export default function AccountPage() {
     } finally {
       setSavingAccount(false);
     }
-  }, [companyInput, membership, resetAccountFeedback]);
+  }, [companyInput, membership, refetch, resetAccountFeedback]);
 
   const handleInviteTeamMember = useCallback(async () => {
     if (!membership || !membership.account || !profile) return;
@@ -305,8 +249,8 @@ export default function AccountPage() {
       if (existingUser) {
         // User exists, add them directly to the account
         await addUserToAccount(membership.account.id, existingUser.id, false);
+        await refetch();
         setInviteMessage(`${trimmedEmail} has been added to the team.`);
-        // Refresh team members
         const updatedMembers = await getAccountMembers(membership.account.id);
         setTeamMembers(updatedMembers);
       } else {
@@ -339,7 +283,7 @@ export default function AccountPage() {
           });
 
           setInviteMessage(`Invitation sent to ${trimmedEmail}.`);
-          // Refresh invitations
+          await refetch();
           const updatedInvitations = await getAccountInvitations(membership.account.id);
           setInvitations(updatedInvitations);
         } catch (emailError) {
@@ -370,6 +314,7 @@ export default function AccountPage() {
     inviteEmailInput,
     membership,
     profile,
+    refetch,
     teamMembers,
     invitations,
     resetInviteFeedback,
@@ -384,9 +329,8 @@ export default function AccountPage() {
 
     try {
       await deleteInvitation(invitationId);
+      await refetch();
       setInviteMessage('Invitation revoked successfully.');
-      
-      // Refresh invitations
       const updatedInvitations = await getAccountInvitations(membership.account.id);
       setInvitations(updatedInvitations);
     } catch (error: unknown) {
@@ -395,7 +339,7 @@ export default function AccountPage() {
     } finally {
       setRevokingInvitationId(null);
     }
-  }, [membership, resetInviteFeedback]);
+  }, [membership, refetch, resetInviteFeedback]);
 
   const handleUpdateMemberRole = useCallback(async (membershipId: string, newRole: 'owner' | 'admin' | 'member') => {
     if (!membership || !membership.account) return;
@@ -406,9 +350,8 @@ export default function AccountPage() {
 
     try {
       await updateMemberRole(membershipId, newRole);
+      await refetch();
       setInviteMessage('Member role updated successfully.');
-      
-      // Refresh team members
       const updatedMembers = await getAccountMembers(membership.account.id);
       setTeamMembers(updatedMembers);
     } catch (error: unknown) {
@@ -417,7 +360,7 @@ export default function AccountPage() {
     } finally {
       setUpdatingRoleId(null);
     }
-  }, [membership, resetInviteFeedback]);
+  }, [membership, refetch, resetInviteFeedback]);
 
   const handleRemoveMember = useCallback(async (membershipId: string, memberName: string) => {
     if (!membership || !membership.account) return;
@@ -433,9 +376,8 @@ export default function AccountPage() {
 
     try {
       await removeMemberFromAccount(membershipId);
+      await refetch();
       setInviteMessage('Member removed successfully.');
-      
-      // Refresh team members
       const updatedMembers = await getAccountMembers(membership.account.id);
       setTeamMembers(updatedMembers);
     } catch (error: unknown) {
@@ -444,7 +386,7 @@ export default function AccountPage() {
     } finally {
       setRemovingMemberId(null);
     }
-  }, [membership, resetInviteFeedback]);
+  }, [membership, refetch, resetInviteFeedback]);
 
   const handleUnblock = useCallback(async (entryId: string) => {
     if (!membership?.account) return;
@@ -484,7 +426,7 @@ export default function AccountPage() {
               Account Settings
             </Text>
             <Text className="text-gray-400 text-xs font-instrument mt-0.5">
-              Manage your profile and team
+              {membership?.account?.name ? `Manage your profile and ${membership.account.name}` : 'Manage your profile and team'}
             </Text>
           </View>
 
@@ -497,6 +439,13 @@ export default function AccountPage() {
             <Alert variant="error" message={loadError} />
           ) : (
             <>
+              {!isOwner && membership?.account?.name ? (
+                <View className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                  <Text className="text-amber-200 text-sm font-instrument">
+                    You're viewing {membership.account.name} as a member. Only owners can change company details or manage the team.
+                  </Text>
+                </View>
+              ) : null}
               <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
                 <Text className="text-white text-base font-instrument-semibold mb-5">
                   Your Profile
@@ -630,6 +579,9 @@ export default function AccountPage() {
                     <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
                       Invite Team Member
                     </Text>
+                    <Text className="text-xs text-gray-500 mb-2">
+                      They'll get an email with a link to join this account.
+                    </Text>
                     <View className="flex-row gap-2">
                       <View className="flex-1">
                         <TextInput
@@ -679,7 +631,7 @@ export default function AccountPage() {
                   </View>
 
                   {/* Current Team Members */}
-                  {teamMembers.length > 0 && (
+                  {teamMembers.length > 0 ? (
                     <View className="mb-4">
                       <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
                         Current Members ({teamMembers.length})
@@ -733,22 +685,36 @@ export default function AccountPage() {
                                     <option value="member">Member</option>
                                   </select>
                                 ) : (
-                                  <View className={`px-2 py-0.5 rounded ${
-                                    currentRole === 'owner' 
-                                      ? 'bg-brand-orange/20 border border-brand-orange/30' 
-                                      : currentRole === 'admin'
-                                      ? 'bg-blue-500/20 border border-blue-500/30'
-                                      : 'bg-gray-500/20 border border-gray-500/30'
-                                  }`}>
-                                    <Text className={`text-xs font-instrument-medium capitalize ${
-                                      currentRole === 'owner'
-                                        ? 'text-brand-orange'
+                                  <View className="flex-row items-center gap-2">
+                                    <View className={`px-2 py-0.5 rounded ${
+                                      currentRole === 'owner' 
+                                        ? 'bg-brand-orange/20 border border-brand-orange/30' 
                                         : currentRole === 'admin'
-                                        ? 'text-blue-400'
-                                        : 'text-gray-400'
+                                        ? 'bg-blue-500/20 border border-blue-500/30'
+                                        : 'bg-gray-500/20 border border-gray-500/30'
                                     }`}>
-                                      {currentRole}
-                                    </Text>
+                                      <Text className={`text-xs font-instrument-medium capitalize ${
+                                        currentRole === 'owner'
+                                          ? 'text-brand-orange'
+                                          : currentRole === 'admin'
+                                          ? 'text-blue-400'
+                                          : 'text-gray-400'
+                                      }`}>
+                                        {currentRole}
+                                      </Text>
+                                    </View>
+                                    {canManage && Platform.OS !== 'web' && (
+                                      <TouchableOpacity
+                                        onPress={() => setRoleEditMember({ membershipId: member.membership.id, memberName: member.user.name || member.user.email })}
+                                        disabled={updatingRoleId === member.membership.id}
+                                        className="px-2 py-1 rounded bg-[#2A2A2A] border border-[#3A3A3A] active:opacity-80"
+                                        activeOpacity={0.7}
+                                      >
+                                        <Text className="text-gray-300 text-xs font-instrument-medium">
+                                          {updatingRoleId === member.membership.id ? 'Updating...' : 'Change role'}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    )}
                                   </View>
                                 )}
                                 
@@ -773,6 +739,12 @@ export default function AccountPage() {
                           );
                         })}
                       </View>
+                    </View>
+                  ) : (
+                    <View className="mb-4 p-3 bg-[#121212] border border-[#2A2A2A] rounded-lg">
+                      <Text className="text-gray-400 text-sm font-instrument">
+                        No other members yet. Invite someone by email below.
+                      </Text>
                     </View>
                   )}
 
@@ -845,6 +817,33 @@ export default function AccountPage() {
                 blockList={blockList}
                 onUnblock={handleUnblock}
                 unblockingId={unblockingId}
+              />
+
+              <BaseModal
+                visible={roleEditMember !== null}
+                onClose={() => setRoleEditMember(null)}
+                title="Change role"
+                description={roleEditMember ? `Set role for ${roleEditMember.memberName}` : undefined}
+                compact
+                footer={
+                  <View className="flex-row gap-2 flex-wrap p-4">
+                    {(['owner', 'admin', 'member'] as const).map((role) => (
+                      <Button
+                        key={role}
+                        size="sm"
+                        variant="outline"
+                        onPress={async () => {
+                          if (!roleEditMember) return;
+                          await handleUpdateMemberRole(roleEditMember.membershipId, role);
+                          setRoleEditMember(null);
+                        }}
+                        disabled={updatingRoleId === roleEditMember?.membershipId}
+                      >
+                        {role.charAt(0).toUpperCase() + role.slice(1)}
+                      </Button>
+                    ))}
+                  </View>
+                }
               />
             </>
           )}

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, Pressable, Platform } from 'react-native';
+import { View, Text, Pressable, Platform, Modal, TouchableOpacity } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from 'react-native-reanimated';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { SvgXml } from 'react-native-svg';
-import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon, EnvelopeIcon } from 'react-native-heroicons/outline';
+import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon, EnvelopeIcon, ChevronDownIcon } from 'react-native-heroicons/outline';
+import { useAccount } from '@/contexts/AccountContext';
 
 const furnaceLogoFull = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
@@ -47,10 +48,13 @@ let persistedExpandedState = false;
 
 export function NavBar() {
   const { signOut, user } = useAuthenticator();
+  const { account, memberships, setCurrentAccountId } = useAccount();
   const router = useRouter();
   const pathname = usePathname();
+  const [switcherVisible, setSwitcherVisible] = useState(false);
   // Use persisted state, but allow local state to control animations
   const [isExpanded, setIsExpanded] = useState(persistedExpandedState);
+  const hasMultipleAccounts = memberships.length > 1;
 
   // Animated width values: collapsed = 56px (square buttons), expanded = 224px
   // Padding values: px-2 = 8px, px-4 = 16px
@@ -195,6 +199,81 @@ export function NavBar() {
           <View>
             {/* Divider */}
             <View className="h-px bg-[#2A2A2A] mb-4" />
+
+            {/* Current account name + switcher */}
+            {account && (
+              <View className="mb-3">
+                {hasMultipleAccounts ? (
+                  <Pressable
+                    onPress={() => setSwitcherVisible(true)}
+                    className={`flex-row items-center rounded-lg border border-[#3A3A3A] py-2 ${isExpanded ? 'px-2' : 'px-0 justify-center'}`}
+                  >
+                    {isExpanded ? (
+                      <>
+                        <Text className="text-gray-300 font-instrument text-sm flex-1" numberOfLines={1} ellipsizeMode="tail">
+                          {account.name}
+                        </Text>
+                        <ChevronDownIcon size={16} color="#9CA3AF" />
+                      </>
+                    ) : (
+                      <ChevronDownIcon size={18} color="#9CA3AF" />
+                    )}
+                  </Pressable>
+                ) : (
+                  isExpanded && (
+                    <View className="py-1 px-2">
+                      <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1} ellipsizeMode="tail">
+                        {account.name}
+                      </Text>
+                    </View>
+                  )
+                )}
+              </View>
+            )}
+
+            {/* Account switcher modal */}
+            {hasMultipleAccounts && (
+              <Modal
+                visible={switcherVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setSwitcherVisible(false)}
+              >
+                <Pressable
+                  style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' }}
+                  onPress={() => setSwitcherVisible(false)}
+                >
+                  <Pressable
+                    style={{ backgroundColor: '#1A1A1A', borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: '#2A2A2A', padding: 16, paddingBottom: 32 }}
+                    onPress={(e) => e.stopPropagation()}
+                  >
+                    <Text className="text-white font-instrument-semibold text-lg mb-3">Switch account</Text>
+                    {memberships.map((m) => (
+                      <TouchableOpacity
+                        key={m.account.id}
+                        onPress={() => {
+                          setCurrentAccountId(m.account.id);
+                          setSwitcherVisible(false);
+                        }}
+                        className={`py-3 px-3 rounded-lg mb-1 ${m.account.id === account?.id ? 'bg-brand-orange/20 border border-brand-orange' : 'bg-[#2A2A2A] border border-[#3A3A3A]'}`}
+                        activeOpacity={0.7}
+                      >
+                        <Text className={`font-instrument text-sm ${m.account.id === account?.id ? 'text-brand-orange' : 'text-white'}`}>
+                          {m.account.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      onPress={() => setSwitcherVisible(false)}
+                      className="py-2 mt-2"
+                      activeOpacity={0.7}
+                    >
+                      <Text className="text-gray-400 font-instrument text-sm text-center">Cancel</Text>
+                    </TouchableOpacity>
+                  </Pressable>
+                </Pressable>
+              </Modal>
+            )}
 
             {/* Settings Button */}
             <Pressable

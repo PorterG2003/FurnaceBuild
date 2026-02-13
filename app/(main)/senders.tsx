@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/Checkbox';
@@ -20,9 +20,7 @@ import { Platform } from 'react-native';
 import {
   createMailbox,
   deleteMailbox,
-  getAccountMembershipsForUser,
   getMailboxesByAccount,
-  getUserByExternalId,
   updateMailbox,
   updateMailboxStatus,
 } from '@/lib/supabase/services';
@@ -146,13 +144,12 @@ function ActionButton({
 }
 
 export default function SendersPage() {
-  const { user } = useAuthenticator();
-  const externalId = user?.userId ?? null;
+  const { account, user: profile } = useAccount();
+  const accountId = account?.id ?? null;
 
   const [isLoading, setIsLoading] = useState(true);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [selectedMailboxes, setSelectedMailboxes] = useState<Set<string>>(new Set());
-  const [accountId, setAccountId] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [mailboxToDelete, setMailboxToDelete] = useState<Mailbox | null>(null);
@@ -187,7 +184,7 @@ export default function SendersPage() {
   });
 
   const loadMailboxes = useCallback(async () => {
-    if (!externalId || !accountId) return;
+    if (!accountId) return;
 
     try {
       setIsLoading(true);
@@ -198,28 +195,7 @@ export default function SendersPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [externalId, accountId]);
-
-  useEffect(() => {
-    const fetchAccount = async () => {
-      if (!externalId) return;
-
-      try {
-        const userProfile = await getUserByExternalId(externalId);
-        if (!userProfile) return;
-
-        const memberships = await getAccountMembershipsForUser(userProfile.id);
-        if (memberships.length > 0) {
-          const primaryAccount = memberships.find((m) => m.membership.is_owner) ?? memberships[0];
-          setAccountId(primaryAccount.account.id);
-        }
-      } catch (err) {
-        console.error('Failed to fetch account:', err);
-      }
-    };
-
-    fetchAccount();
-  }, [externalId]);
+  }, [accountId]);
 
   useEffect(() => {
     if (accountId) {
@@ -304,7 +280,7 @@ export default function SendersPage() {
   };
 
   const handleConnect = async () => {
-    if (!accountId || !externalId) {
+    if (!accountId || !profile) {
       setError('Account not found');
       return;
     }
@@ -332,17 +308,12 @@ export default function SendersPage() {
     setSuccess(null);
 
     try {
-      const userProfile = await getUserByExternalId(externalId);
-      if (!userProfile) {
-        throw new Error('User profile not found');
-      }
-
       // ⚠️ SECURITY: Passwords should be encrypted before storing
       // TODO: Implement encryption using Supabase Vault or AWS KMS
       // For now, storing as plain text (NOT PRODUCTION READY)
       await createMailbox({
         account_id: accountId,
-        user_id: userProfile.id,
+        user_id: profile.id,
         email_address: formData.email_address.trim(),
         display_name: formData.display_name.trim() || null,
         provider: formData.provider,

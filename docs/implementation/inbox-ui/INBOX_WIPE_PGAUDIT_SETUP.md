@@ -34,10 +34,15 @@ BEFORE DELETE is logged (and the full row stored) for:
 - Each delete inserts one row with:
   - **table_name**, **record_id**, **deleted_at**, **deleted_by**
   - **deleted_row** (JSONB): full row at delete time so you can **recover** it (see below).
+  - **application_name**, **client_addr**, **backend_pid** (connection trace; see “Who is logged” below).
 
 **PII and retention:** `deleted_row` stores the full row, which may include PII (emails, names, body content, custom_lead_data, etc.). Audit rows are retained for 7 days (see prune below). Ensure this aligns with your privacy/compliance.
 
-**Who is logged:** `deleted_by` is the **Postgres role** only (e.g. `authenticator`, `postgres`). You do not get application user id or API key; for app-level attribution you would need the app to set a session variable before deletes.
+**Who is logged:** `deleted_by` is the **Postgres role** (e.g. `authenticator`, `postgres`). In addition, each row stores **connection trace** so you can tell *which* client did the delete when the role is `postgres`:
+  - **application_name** – Connection application name set by the client (e.g. Supabase SQL Editor, Dashboard). Scripts can set their own via `SET application_name = 'my-script'` or in the connection string.
+  - **client_addr** – Client IP (`inet_client_addr()`). NULL for local/unix connections.
+  - **backend_pid** – Postgres backend process ID at delete time; correlate with `pg_stat_activity` or logs if you snapshot them.
+  When `deleted_by = 'postgres'`, checking `application_name` and `client_addr` helps distinguish Dashboard SQL Editor vs Table Editor vs a migration run vs an external script. You do not get application user id or API key; for app-level attribution you would need the app to set a session variable before deletes.
 
 **Deletes on the audit table:** Deletes or TRUNCATE on `audit_delete_log` itself are **not** audited (to avoid recursion).
 
@@ -50,7 +55,8 @@ BEFORE DELETE is logged (and the full row stored) for:
 1. Run **`20260213100001_audit_deletes_trigger.sql`**.
 2. Run **`20260213100002_audit_deletes_store_row_and_prune.sql`** (adds `deleted_row` and prune function).
 3. Run **`20260213100003_audit_deletes_index_and_truncate.sql`** (adds index on `deleted_at` for prune performance and TRUNCATE auditing).
-4. Optional: Run **`20260213100004_audit_delete_log_pgcron_schedule.sql`** to schedule the 7-day prune daily at 03:00 UTC via pg_cron. If the pg_cron extension is not installed, the migration does nothing.
+4. Run **`20260213100005_audit_delete_log_connection_trace.sql`** (adds `application_name`, `client_addr`, `backend_pid` so you can tell which client did the delete when `deleted_by` is `postgres`).
+5. Optional: Run **`20260213100004_audit_delete_log_pgcron_schedule.sql`** to schedule the 7-day prune daily at 03:00 UTC via pg_cron. If the pg_cron extension is not installed, the migration does nothing.
 
 ### 7-day retention (auto-delete old audit rows)
 
@@ -73,11 +79,13 @@ The second migration runs `audit_delete_log_prune(7)` once; after that, you must
 
 ### How to use it next time (investigation)
 
-After a wipe, run in SQL Editor:
+After a wipe, run in SQL Editor (include connection trace so you can see *which* client did the delete when `deleted_by` is `postgres`):
 
 ```sql
-SELECT id, table_name, record_id, deleted_at, deleted_by
+SELECT id, table_name, record_id, deleted_at, deleted_by,
+       application_name, client_addr, backend_pid
 FROM audit_delete_log
+WHERE deleted_at > NOW() - INTERVAL '7 days'
 ORDER BY deleted_at DESC
 LIMIT 100;
 ```
@@ -91,7 +99,17 @@ WHERE table_name IN ('email_threads', 'email_messages', 'campaigns', 'mailboxes'
 ORDER BY deleted_at DESC;
 ```
 
-You’ll see which table, which record id, when, and which role (`postgres` = Dashboard, `authenticator` or anon/authenticated = API/app).
+To narrow by source when `deleted_by = 'postgres'`, filter on **application_name** (e.g. Supabase SQL Editor) or **client_addr** (IP):
+
+```sql
+SELECT table_name, deleted_at, deleted_by, application_name, client_addr
+FROM audit_delete_log
+WHERE deleted_by = 'postgres'
+  AND deleted_at > NOW() - INTERVAL '7 days'
+ORDER BY deleted_at DESC;
+```
+
+You’ll see which table, which record id, when, which role (`postgres` = Dashboard/direct DB, `authenticator` or anon/authenticated = API/app), and which connection (application_name + client_addr).
 
 ### Recovering deleted data
 
@@ -164,7 +182,7 @@ Search for **`AUDIT`** and **`DELETE`** (or table names like **`email_threads`**
 
 | If… | Do this |
 |-----|--------|
-| **pgaudit is not in Extensions** | Use **Option A** only: run migrations `20260213100001`, `20260213100002`, and `20260213100003`. Query **`audit_delete_log`** after a wipe. |
+| **pgaudit is not in Extensions** | Use **Option A** only: run migrations `20260213100001` through `20260213100005`. Query **`audit_delete_log`** (including **application_name**, **client_addr**) after a wipe. |
 | **pgaudit is available** | Enable it (Dashboard or `CREATE EXTENSION pgaudit`), then run the Option A migrations too. You get both the table and Postgres log lines. |
 
 The trigger-based audit (Option A) works in all Supabase projects and does not depend on any extension.

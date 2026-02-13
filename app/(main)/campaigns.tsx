@@ -6,6 +6,7 @@ import { Alert, LoadingState, EmptyState } from '@/components/ui/feedback';
 import { BaseModal } from '@/components/ui/modals';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter } from 'expo-router';
+import { useAccount } from '@/contexts/AccountContext';
 import { getCampaigns, createCampaign, deleteCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import { PlusIcon, TrashIcon, PencilIcon, ChartBarIcon } from 'react-native-heroicons/outline';
@@ -272,6 +273,7 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
 
 export default function CampaignsPage() {
   const { user } = useAuthenticator();
+  const { account } = useAccount();
   const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -281,12 +283,12 @@ export default function CampaignsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const loadCampaigns = async () => {
-    if (!user?.userId) return;
+    if (!account?.id) return;
 
     setIsLoading(true);
     setError('');
     try {
-      const data = await getCampaigns({ ownerId: user.userId });
+      const data = await getCampaigns({ accountId: account.id });
       setCampaigns(data);
     } catch (err: any) {
       setError(err.message || 'Failed to load campaigns');
@@ -298,11 +300,14 @@ export default function CampaignsPage() {
 
   useEffect(() => {
     loadCampaigns();
-  }, [user?.userId]);
+  }, [account?.id]);
 
   const handleCreateCampaign = async (name: string) => {
     if (!user?.userId) {
       throw new Error('User not authenticated');
+    }
+    if (!account?.id) {
+      throw new Error('No account selected');
     }
 
     setIsCreating(true);
@@ -310,6 +315,7 @@ export default function CampaignsPage() {
       const newCampaign = await createCampaign({
         name,
         owner_id: user.userId,
+        account_id: account.id,
         organization_id: null,
         status: 'draft',
       });

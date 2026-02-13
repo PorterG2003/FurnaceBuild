@@ -323,11 +323,11 @@ export interface Database {
         Row: {
           id: string;
           account_id: string;
-          campaign_id: string;
-          lead_id: string;
-          enrollment_id: string;
-          message_job_id: string;
-          mailbox_id: string;
+          campaign_id: string | null;
+          lead_id: string | null;
+          enrollment_id: string | null;
+          message_job_id: string | null;
+          mailbox_id: string | null;
           subject: string;
           participants: string[];
           last_message_at: string;
@@ -339,11 +339,11 @@ export interface Database {
         Insert: {
           id?: string;
           account_id: string;
-          campaign_id: string;
-          lead_id: string;
-          enrollment_id: string;
-          message_job_id: string;
-          mailbox_id: string;
+          campaign_id?: string | null;
+          lead_id?: string | null;
+          enrollment_id?: string | null;
+          message_job_id?: string | null;
+          mailbox_id?: string | null;
           subject: string;
           participants?: string[];
           last_message_at: string;

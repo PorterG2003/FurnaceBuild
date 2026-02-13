@@ -11,16 +11,14 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
 import { EmptyState, Alert } from '@/components/ui/feedback';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import {
-  getAccountMembershipsForUser,
   getThreadsByAccount,
   getMessagesByThread,
-  getUserByExternalId,
   createReplyJob,
   createForwardJob,
   getMessageJobStatus,
@@ -59,10 +57,8 @@ const MAX_TOTAL_BYTES = 5 * 1024 * 1024;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 export default function InboxPage() {
-  const { user } = useAuthenticator();
-  const externalId = user?.userId ?? null;
-
-  const [accountId, setAccountId] = useState<string | null>(null);
+  const { account } = useAccount();
+  const accountId = account?.id ?? null;
   const [threads, setThreads] = useState<EmailThread[]>([]);
   const [threadsLoading, setThreadsLoading] = useState(true);
   const [threadsError, setThreadsError] = useState<string | null>(null);
@@ -326,28 +322,6 @@ export default function InboxPage() {
       }
     }
   }, []);
-
-  useEffect(() => {
-    if (!externalId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const userProfile = await getUserByExternalId(externalId);
-        if (!userProfile || cancelled) return;
-        const memberships = await getAccountMembershipsForUser(userProfile.id);
-        if (cancelled) return;
-        if (memberships.length > 0) {
-          const primary = memberships.find((m) => m.membership.is_owner) ?? memberships[0];
-          setAccountId(primary.account.id);
-        }
-      } catch {
-        if (!cancelled) setAccountId(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [externalId]);
 
   // Restore pending reply from database for the selected thread
   const restorePendingReply = useCallback(async () => {

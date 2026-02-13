@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, Platform } from 'r
 import { CodeBracketIcon } from 'react-native-heroicons/outline';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
+import { SearchAndSelect } from '@/components/ui/forms';
 import { EmailBodyEditor } from '../EmailBodyEditor';
 import { getLeads } from '@/lib/supabase/services/leads';
 import { mergeTemplate, processSpintax, type LeadLike } from '@/lib/email';
@@ -260,7 +261,7 @@ function EmailNodeModal({
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
-  const [selectedLeadId, setSelectedLeadId] = useState<string | 'sample' | null>(null);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   /** Selected lead object (keeps preview working when list updates e.g. after search). */
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [leadSearch, setLeadSearch] = useState('');
@@ -299,7 +300,7 @@ function EmailNodeModal({
       })
         .then((data) => {
           setLeads(data);
-          const nextId: string | 'sample' = data.length > 0 ? data[0].id : 'sample';
+          const nextId: string | null = data.length > 0 ? data[0].id : null;
           setSelectedLeadId(nextId);
           setSelectedLead(data.length > 0 ? data[0] : null);
         })
@@ -470,91 +471,34 @@ function EmailNodeModal({
             <Text className="text-sm font-instrument-medium mb-3 text-gray-300">
               Preview message
             </Text>
-            {leadsLoading ? (
-              <Text className="text-gray-500 text-sm">Loading leads…</Text>
-            ) : (
-              <>
-                <View className="mb-3">
-                  <Text className="text-xs font-instrument-medium mb-2 text-gray-400">
-                    Select lead
-                  </Text>
-                  <TextInput
-                    value={leadSearch}
-                    onChangeText={setLeadSearch}
-                    placeholder="Search by email or name…"
-                    placeholderTextColor="#666"
-                    className="border border-white/30 rounded-xl px-4 py-2.5 bg-white/5 text-sm text-white mb-2"
-                    style={{
-                      borderColor: '#FFFFFF4D',
-                      backgroundColor: '#FFFFFF0D',
-                      color: '#FFFFFF',
-                      borderWidth: 1,
-                    }}
-                    selectionColor="#FF4D00"
-                    underlineColorAndroid="transparent"
-                  />
-                  {leads.length === 0 && !leadsLoading ? (
-                    <Text className="text-gray-500 text-sm">
-                      {leadSearch.trim()
-                        ? 'No leads match your search.'
-                        : 'No leads in this campaign — add leads to preview with real data. Showing sample below.'}
-                    </Text>
-                  ) : (
-                    <ScrollView
-                      style={{ maxHeight: 160 }}
-                      showsVerticalScrollIndicator
-                      nestedScrollEnabled
-                    >
-                      {leads.map((lead) => (
-                        <TouchableOpacity
-                          key={lead.id}
-                          onPress={() => {
-                            setSelectedLeadId(lead.id);
-                            setSelectedLead(lead);
-                          }}
-                          style={{
-                            paddingHorizontal: 12,
-                            paddingVertical: 10,
-                            borderRadius: 10,
-                            borderWidth: 1,
-                            marginBottom: 6,
-                            backgroundColor: selectedLeadId === lead.id ? 'rgba(243,68,13,0.2)' : '#262626',
-                            borderColor: selectedLeadId === lead.id ? '#F3440D' : 'rgba(255,255,255,0.12)',
-                          }}
-                        >
-                          <Text className="text-white font-instrument-medium text-sm" numberOfLines={1}>
-                            {lead.email ?? lead.name ?? lead.id}
-                          </Text>
-                          {(lead.name ?? lead.first_name) && (
-                            <Text className="text-gray-400 text-xs mt-0.5" numberOfLines={1}>
-                              {lead.first_name && lead.last_name ? `${lead.first_name} ${lead.last_name}` : (lead.name ?? lead.first_name ?? '')}
-                            </Text>
-                          )}
-                        </TouchableOpacity>
-                      ))}
-                      <TouchableOpacity
-                        onPress={() => {
-                          setSelectedLeadId('sample');
-                          setSelectedLead(null);
-                        }}
-                        style={{
-                          paddingHorizontal: 12,
-                          paddingVertical: 10,
-                          borderRadius: 10,
-                          borderWidth: 1,
-                          backgroundColor: selectedLeadId === 'sample' ? 'rgba(243,68,13,0.2)' : '#262626',
-                          borderColor: selectedLeadId === 'sample' ? '#F3440D' : 'rgba(255,255,255,0.12)',
-                        }}
-                      >
-                        <Text className="text-white font-instrument-medium text-sm">Sample</Text>
-                        <Text className="text-gray-400 text-xs mt-0.5">Placeholder data</Text>
-                      </TouchableOpacity>
-                    </ScrollView>
-                  )}
-                </View>
-                {(() => {
+            <SearchAndSelect<Lead>
+              items={leads}
+              getItemId={(l) => l.id}
+              getItemLabel={(l) => ({
+                primary: l.email ?? l.name ?? l.id,
+                secondary: (l.first_name && l.last_name ? `${l.first_name} ${l.last_name}` : (l.name ?? l.first_name ?? '')) || undefined,
+              })}
+              value={selectedLeadId}
+              onChange={(id, item) => {
+                setSelectedLeadId(id);
+                setSelectedLead(item);
+              }}
+              onSearchChange={setLeadSearch}
+              searchValue={leadSearch}
+              loading={leadsLoading}
+              label="Select lead"
+              placeholder="Select lead…"
+              searchPlaceholder="Search by email or name…"
+              emptyMessage={(hasSearch) =>
+                hasSearch
+                  ? 'No leads match your search.'
+                  : 'No leads in this campaign — add leads to preview with real data. Showing sample below.'
+              }
+              loadingMessage="Loading leads…"
+            />
+            {(() => {
                   const resolvedLead: LeadLike =
-                    selectedLeadId === 'sample' || !selectedLeadId
+                    !selectedLeadId
                       ? SAMPLE_LEAD
                       : (selectedLead?.id === selectedLeadId ? selectedLead : leads.find((l) => l.id === selectedLeadId)) != null
                         ? (selectedLead?.id === selectedLeadId ? selectedLead : leads.find((l) => l.id === selectedLeadId)) as LeadLike
@@ -594,8 +538,6 @@ function EmailNodeModal({
                     </View>
                   );
                 })()}
-              </>
-            )}
           </View>
         )}
       </View>

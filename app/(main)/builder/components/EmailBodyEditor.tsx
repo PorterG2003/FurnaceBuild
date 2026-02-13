@@ -87,6 +87,8 @@ export interface EmailBodyEditorProps {
   placeholder?: string;
   minHeight?: number;
   label?: string;
+  /** Called when content changes (web). Used for live preview. */
+  onContentChange?: (text: string) => void;
 }
 
 /**
@@ -101,6 +103,7 @@ export function EmailBodyEditor({
   placeholder = "Hi {{first_name}},\n\nLoved what you're building at {{company_name}}...",
   minHeight = 220,
   label = 'Email Body',
+  onContentChange,
 }: EmailBodyEditorProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -154,6 +157,7 @@ export function EmailBodyEditor({
           placeholder={placeholder}
           editorRef={editorRef as React.MutableRefObject<import('@10play/tentap-editor').EditorBridge | null>}
           minHeight={minHeight}
+          onContentChange={onContentChange}
         />
         {menuOpen && (
           <VariableMenu

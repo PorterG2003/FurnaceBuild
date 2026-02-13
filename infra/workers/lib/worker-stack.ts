@@ -44,6 +44,12 @@ export class WorkerStack extends cdk.Stack {
     super(scope, id, props);
 
     const { environment, supabaseUrl, supabaseSecretKeyParamPath, desiredCount } = props;
+
+    if (!supabaseSecretKeyParamPath?.trim()) {
+      throw new Error(
+        'WorkerStack(' + id + '): supabaseSecretKeyParamPath is required so ECS tasks can fetch SUPABASE_SECRET_KEY from Parameter Store'
+      );
+    }
     const region = props.env?.region || 'us-west-2';
     const account = props.env?.account;
 

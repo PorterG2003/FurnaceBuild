@@ -14,3 +14,6 @@ export {
   hasResidualEncodingArtifacts,
   type SanitizeEmailBodyOptions,
 } from './sanitize-body';
+
+export { mergeTemplate, type LeadLike } from './mergeTemplate';
+export { processSpintax, type ProcessSpintaxOptions } from './processSpintax';

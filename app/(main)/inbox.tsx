@@ -338,7 +338,11 @@ export default function InboxPage() {
         if (cancelled) return;
         if (memberships.length > 0) {
           const primary = memberships.find((m) => m.membership.is_owner) ?? memberships[0];
-          setAccountId(primary.account.id);
+          const resolvedAccountId = primary.account.id;
+          // #region agent log
+          fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'inbox.tsx:accountResolution',message:'Inbox account resolved',data:{accountId:resolvedAccountId,membershipCount:memberships.length},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
+          setAccountId(resolvedAccountId);
         }
       } catch {
         if (!cancelled) setAccountId(null);

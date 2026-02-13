@@ -329,6 +329,9 @@ export async function cancelUnsentCampaignJobs(
  * Delete a campaign
  */
 export async function deleteCampaign(id: string): Promise<void> {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.ts:deleteCampaign',message:'Campaign delete invoked',data:{campaignId:id},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   const { error } = await supabase
     .from('campaigns')
     .delete()
@@ -346,6 +349,9 @@ export async function deleteCampaign(id: string): Promise<void> {
  * 2. Deletes the campaign (which cascades to: leads, enrollments, message_jobs, events, nodes, campaign_mailboxes, email_threads)
  */
 export async function deleteTestCampaign(campaignId: string): Promise<void> {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.ts:deleteTestCampaign',message:'Test campaign delete invoked',data:{campaignId},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   // Verify campaign exists
   const campaign = await getCampaignById(campaignId);
   if (!campaign) {

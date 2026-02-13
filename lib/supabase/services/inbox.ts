@@ -40,7 +40,11 @@ export async function getThreadsByAccount(
     throw new Error(`Failed to fetch threads: ${error.message}`);
   }
 
-  return data ?? [];
+  const list = data ?? [];
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'inbox.ts:getThreadsByAccount',message:'Threads loaded for account',data:{accountId,threadCount:list.length,hasReplyOnly:options?.hasReplyOnly===true},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+  return list;
 }
 
 /**

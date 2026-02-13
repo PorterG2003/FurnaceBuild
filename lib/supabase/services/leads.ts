@@ -10,6 +10,12 @@ export interface LeadFilters {
   campaignId?: string;
   bucketId?: string;
   status?: Lead['status'];
+  /** Max number of leads to return (for pagination/preview). */
+  limit?: number;
+  /** Offset for pagination (use with limit). */
+  offset?: number;
+  /** Search by email or name (ilike). */
+  search?: string;
 }
 
 /**
@@ -57,6 +63,19 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
 
   if (filters?.status) {
     query = query.eq('status', filters.status);
+  }
+
+  const searchTerm = filters?.search?.trim();
+  if (searchTerm) {
+    const pattern = `%${searchTerm}%`;
+    query = query.or(`email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`);
+  }
+
+  if (typeof filters?.offset === 'number') {
+    const limit = filters.limit ?? 50;
+    query = query.range(filters.offset, filters.offset + limit - 1);
+  } else if (typeof filters?.limit === 'number') {
+    query = query.limit(filters.limit);
   }
 
   const { data, error } = await query;

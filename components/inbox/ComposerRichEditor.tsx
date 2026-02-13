@@ -28,6 +28,8 @@ export interface ComposerRichEditorProps {
   onFilesSelected?: (files: FileList) => void;
   /** Rendered between toolbar and content (web) or above editor (native), e.g. attachment list */
   renderBetweenToolbarAndContent?: React.ReactNode;
+  /** Content change callback (web only) */
+  onContentChange?: (text: string) => void;
 }
 
 /**
@@ -42,6 +44,7 @@ export function ComposerRichEditor({
   attachmentCount: _attachmentCount,
   onFilesSelected: _onFilesSelected,
   renderBetweenToolbarAndContent,
+  onContentChange: _onContentChange,
 }: ComposerRichEditorProps) {
   const editor = useEditorBridge({
     autofocus: false,

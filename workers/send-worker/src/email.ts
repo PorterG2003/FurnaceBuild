@@ -78,6 +78,7 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
 /**
  * Merge template with lead data.
  * Supports {{field}} for top-level fields and {{custom.field_name}} for custom_lead_data.
+ * Logic must stay in sync with lib/email (mergeTemplate.ts) used for builder preview.
  */
 export function mergeTemplate(template: string, lead: Lead): string {
   if (!template) return '';
@@ -104,6 +105,7 @@ export function mergeTemplate(template: string, lead: Lead): string {
 /**
  * Process spintax: {option1|option2|option3} → randomly pick one option per occurrence.
  * Supports nested spintax. Options may contain variables {{var}}; runs before variable merge.
+ * Logic must stay in sync with lib/email (processSpintax.ts) used for builder preview.
  */
 export function processSpintax(str: string): string {
   if (!str) return '';

@@ -40,6 +40,8 @@ export interface ComposerRichEditorProps {
   onFilesSelected?: (files: FileList) => void;
   /** Rendered between the toolbar and the editor content (e.g. attachment chips). */
   renderBetweenToolbarAndContent?: React.ReactNode;
+  /** Called when editor content changes (e.g. for live preview). Passes plain text. */
+  onContentChange?: (text: string) => void;
 }
 
 /**
@@ -54,6 +56,7 @@ export function ComposerRichEditor({
   attachmentCount = 0,
   onFilesSelected,
   renderBetweenToolbarAndContent,
+  onContentChange,
 }: ComposerRichEditorProps) {
   const placeholderRef = useRef(placeholder);
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false);
@@ -131,6 +134,15 @@ export function ComposerRichEditor({
       editorRef.current = null;
     };
   }, [editor, editorRef]);
+
+  useEffect(() => {
+    if (!editor || !onContentChange) return;
+    const handleUpdate = () => onContentChange(editor.getText());
+    editor.on('update', handleUpdate);
+    return () => {
+      editor.off('update', handleUpdate);
+    };
+  }, [editor, onContentChange]);
 
   useEffect(() => {
     if (!editor) return;

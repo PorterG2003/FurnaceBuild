@@ -44,6 +44,18 @@ async function main() {
     const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
     const awsRegion = process.env.AWS_REGION || 'us-west-2';
 
+    // #region agent log
+    const envDiag = {
+      hasSupabaseUrl: !!supabaseUrl,
+      hasParamPath: !!supabaseSecretKeyParamPath,
+      paramPathValue: supabaseSecretKeyParamPath ?? '<unset>',
+      hasSecretKeyDirect: !!supabaseSecretKey,
+      awsRegion,
+    };
+    console.log('[scheduler-worker env]', JSON.stringify(envDiag));
+    fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'scheduler-worker/index.ts:main',message:'env check',data:envDiag,timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
+
     if (!supabaseUrl) {
       throw new Error('Missing required environment variable: SUPABASE_URL');
     }
@@ -52,8 +64,29 @@ async function main() {
     let secretKey = supabaseSecretKey;
     if (supabaseSecretKeyParamPath && !secretKey) {
       console.log(`Fetching SUPABASE_SECRET_KEY from Parameter Store: ${supabaseSecretKeyParamPath}`);
-      secretKey = await fetchSecretFromParameterStore(supabaseSecretKeyParamPath, awsRegion);
-      process.env.SUPABASE_SECRET_KEY = secretKey;
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'scheduler-worker/index.ts:before-ssm',message:'attempting SSM fetch',data:{paramPath:supabaseSecretKeyParamPath,region:awsRegion},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
+      try {
+        secretKey = await fetchSecretFromParameterStore(supabaseSecretKeyParamPath, awsRegion);
+        process.env.SUPABASE_SECRET_KEY = secretKey;
+        // #region agent log
+        console.log('[scheduler-worker] SSM fetch succeeded');
+        fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'scheduler-worker/index.ts:after-ssm',message:'SSM fetch succeeded',data:{hasSecret:!!secretKey},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+        // #endregion
+      } catch (fetchErr) {
+        // #region agent log
+        const errMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+        console.log('[scheduler-worker] SSM fetch failed:', errMsg);
+        fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'scheduler-worker/index.ts:ssm-fetch-err',message:'SSM fetch failed',data:{error:errMsg},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+        // #endregion
+        throw fetchErr;
+      }
+    } else {
+      // #region agent log
+      console.log('[scheduler-worker] Skipping SSM fetch (paramPath?', !!supabaseSecretKeyParamPath, 'secretKey?', !!secretKey, ')');
+      fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'scheduler-worker/index.ts:skip-ssm',message:'skipped SSM fetch',data:{hadParamPath:!!supabaseSecretKeyParamPath,hadSecretKey:!!secretKey},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
     }
 
     if (!secretKey) {

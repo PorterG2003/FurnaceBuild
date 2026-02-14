@@ -192,7 +192,7 @@ export default function AcceptInvitationPage() {
               Invitation Expired
             </Text>
             <Text className="text-gray-400 text-base font-instrument text-center mb-6">
-              This invitation has expired. Please ask for a new invitation.
+              This invitation has expired. Ask your team for a new invitation.
             </Text>
             <Button onPress={() => router.replace('/')} variant="default">
               Go to Home
@@ -219,12 +219,12 @@ export default function AcceptInvitationPage() {
         return (
           <View className="flex-1 items-center justify-center p-8">
             <Text className="text-white text-2xl font-instrument-bold mb-4 text-center">
-              Sign In Required
+              Sign In to Accept
             </Text>
             <Text className="text-gray-400 text-base font-instrument text-center mb-6">
-              {invitation 
-                ? `Please sign in with ${invitation.email} to accept this invitation.`
-                : 'Please sign in to accept this invitation.'}
+              {invitation
+                ? `Sign in with the email this invitation was sent to (${invitation.email}) to accept.`
+                : 'Sign in with the email this invitation was sent to in order to accept.'}
             </Text>
             <Button onPress={handleSignIn} variant="default">
               Sign In
@@ -236,10 +236,10 @@ export default function AcceptInvitationPage() {
         return (
           <View className="flex-1 items-center justify-center p-8">
             <Text className="text-white text-2xl font-instrument-bold mb-4 text-center">
-              Email Mismatch
+              Wrong Account
             </Text>
             <Text className="text-gray-400 text-base font-instrument text-center mb-6">
-              {errorMessage || 'This invitation was sent to a different email address.'}
+              This invitation was sent to {invitation?.email ?? 'another email'}, but you're signed in with a different account. Sign in with the correct email to accept.
             </Text>
             <Button onPress={handleSignIn} variant="default">
               Sign In with Correct Email
@@ -264,14 +264,19 @@ export default function AcceptInvitationPage() {
         return (
           <View className="flex-1 items-center justify-center p-8">
             <Text className="text-white text-2xl font-instrument-bold mb-4 text-center">
-              Error
+              Something Went Wrong
             </Text>
             <Text className="text-red-400 text-base font-instrument text-center mb-6">
               {errorMessage || 'An error occurred while processing the invitation.'}
             </Text>
-            <Button onPress={() => router.replace('/')} variant="default">
-              Go to Home
-            </Button>
+            <View className="flex-row gap-3">
+              <Button onPress={() => loadInvitation()} variant="outline">
+                Try Again
+              </Button>
+              <Button onPress={() => router.replace('/')} variant="default">
+                Go to Home
+              </Button>
+            </View>
           </View>
         );
 

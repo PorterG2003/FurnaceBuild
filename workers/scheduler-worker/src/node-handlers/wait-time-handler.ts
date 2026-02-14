@@ -20,17 +20,31 @@ export async function handleWaitTimeNode(
   schedule: CampaignSchedule | null,
   supabase: SupabaseClient
 ): Promise<void> {
-  // 1. Extract wait duration from node.node_data (database node structure)
-  // Support both 'wait_duration_seconds' and 'duration_seconds' for compatibility
-  const waitDurationSeconds = node.node_data?.wait_duration_seconds || 
-                               node.node_data?.duration_seconds || 
-                               0;
+  // 1. Extract wait duration from node.node_data (canonical: wait_duration_seconds set by builder)
+  // Fallback: duration_seconds, or legacy duration+unit for nodes saved before we set wait_duration_seconds
+  const raw = node.node_data || {};
+  let waitDurationSeconds = Number(raw.wait_duration_seconds) || Number(raw.duration_seconds) || 0;
+  if (waitDurationSeconds <= 0 && raw.duration != null && String(raw.duration).trim() !== '') {
+    const n = parseInt(String(raw.duration), 10);
+    const unit = raw.unit || 'hours';
+    if (!Number.isNaN(n) && n >= 0) {
+      const multipliers: Record<string, number> = { minutes: 60, hours: 3600, days: 86400 };
+      waitDurationSeconds = n * (multipliers[unit] ?? 3600);
+    }
+  }
 
   if (waitDurationSeconds <= 0) {
-    const error = `Invalid wait duration for node ${node.id} (enrollment ${enrollment.id}): ${waitDurationSeconds} seconds`;
-    console.error(error);
-    // TODO: Send to Slack error reporting channel - Invalid wait duration configuration
-    throw new Error(error);
+    // No wait (or invalid): advance immediately so flow continues
+    const nextRunAt = new Date().toISOString();
+    const { error } = await supabase
+      .from('enrollments')
+      .update({
+        current_node_id: node.id,
+        next_run_at: nextRunAt,
+      })
+      .eq('id', enrollment.id);
+    if (error) throw new Error(`Failed to update enrollment ${enrollment.id}: ${error.message}`);
+    return;
   }
 
   // 2. Calculate base next_run_at from enrollment's updated_at (when enrollment was claimed/processed)

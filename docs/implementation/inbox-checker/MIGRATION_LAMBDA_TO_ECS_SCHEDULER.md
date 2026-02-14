@@ -178,7 +178,7 @@ This document outlines the steps required to migrate from the existing Lambda-ba
   - Environment variables:
     - `SUPABASE_URL` (from process.env)
     - `SEND_QUEUE_URL` (from process.env)
-    - `SUPABASE_SERVICE_KEY_PARAM_PATH` (Parameter Store path)
+    - `SUPABASE_SECRET_KEY_PARAM_PATH` (Parameter Store path)
     - `AWS_REGION` (from process.env)
   - Logging: CloudWatch Logs with log group
 
@@ -397,14 +397,14 @@ This document outlines the steps required to migrate from the existing Lambda-ba
 
 #### 7.1 Update Implementation Plan
 
-**File:** `docs/implementation/IMPLEMENTATION_PLAN.md`
+**File:** `docs/implementation/status/IMPLEMENTATION_PLAN.md`
 
 **Tasks:**
 - ✅ Already updated (Phase 2.2, 3.1, Scaling Strategy)
 
 #### 7.2 Update Phase 3.1 Plan
 
-**File:** `docs/implementation/PHASE3.1_FLOW_EVALUATION_ENGINE.md`
+**File:** `docs/implementation/flow/PHASE3.1_FLOW_EVALUATION_ENGINE.md`
 
 **Tasks:**
 - ✅ Already updated (prerequisites, current state)

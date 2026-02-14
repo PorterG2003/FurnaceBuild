@@ -1,6 +1,8 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { DatabaseClient } from './database.js';
-import { createTransporter, sendEmail, mergeTemplate } from './email.js';
+import { sendEmail, sendReplyEmail, mergeTemplate, processSpintax } from './email.js';
+import type { ReplyEmailOptions } from './email.js';
+import { SmtpPool } from './smtp-pool.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
 
 export interface WorkerConfig {
@@ -11,6 +13,7 @@ export interface WorkerConfig {
 export class SendWorker {
   private supabase: SupabaseClient;
   private databaseClient: DatabaseClient;
+  private smtpPool: SmtpPool;
   private running: boolean = false;
   private consecutiveEmptyPolls: number = 0;
   private readonly maxEmptyPolls: number = 10;
@@ -18,6 +21,7 @@ export class SendWorker {
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
     this.databaseClient = config.databaseClient;
+    this.smtpPool = new SmtpPool(100); // Cache up to 100 mailboxes
   }
 
   /**
@@ -29,38 +33,48 @@ export class SendWorker {
 
     while (this.running) {
       try {
-        // Poll database for message jobs ready to send
+        // Manual sends (replies, forwards) take priority — poll manual first
+        const manualJobs = await this.databaseClient.pollManual();
+        if (manualJobs.length > 0) {
+          this.consecutiveEmptyPolls = 0;
+          const results = await Promise.allSettled(
+            manualJobs.map(job => this.processMessageJob(job))
+          );
+          results.forEach((r, i) => {
+            if (r.status === 'rejected') {
+              console.error(`[SEND WORKER] Failed manual job ${manualJobs[i].id}:`, r.reason);
+            }
+          });
+          continue;
+        }
+
+        // Then poll campaign jobs
         const messageJobs = await this.databaseClient.poll();
 
         if (messageJobs.length > 0) {
           this.consecutiveEmptyPolls = 0;
           console.log(`[SEND WORKER] Found ${messageJobs.length} message job(s) ready to send`);
 
-          // Process jobs in parallel (with concurrency limit if needed)
           const results = await Promise.allSettled(
             messageJobs.map(job => this.processMessageJob(job))
           );
 
-          // Log results
           const successful = results.filter(r => r.status === 'fulfilled').length;
           const failed = results.filter(r => r.status === 'rejected').length;
           console.log(`[SEND WORKER] Processed ${messageJobs.length} job(s): ${successful} successful, ${failed} failed`);
 
-          // Log any failures
           results.forEach((result, index) => {
             if (result.status === 'rejected') {
               console.error(`[SEND WORKER] Failed to process message job ${messageJobs[index].id}:`, result.reason);
             }
           });
         } else {
-          // No jobs found - adaptive polling: increase interval when idle
           this.consecutiveEmptyPolls++;
           const pollInterval = this.calculatePollInterval();
           await this.sleep(pollInterval);
         }
       } catch (error) {
         console.error('[SEND WORKER] Error in main loop:', error);
-        // Wait before retrying
         await this.sleep(5000);
       }
     }
@@ -84,79 +98,155 @@ export class SendWorker {
   /**
    * Stop the worker gracefully
    */
-  stop(): void {
+  async stop(): Promise<void> {
     console.log('Stopping send worker...');
     this.running = false;
+    // Close all SMTP connections
+    await this.smtpPool.closeAll();
   }
 
   /**
    * Process a single message job (already claimed from database)
    */
   private async processMessageJob(messageJob: MessageJob): Promise<void> {
+    const isInboxReply =
+      messageJob.message_type === 'inbox_reply' ||
+      messageJob.message_data?.source === 'inbox_reply';
+    if (isInboxReply) {
+      return this.processInboxReplyJob(messageJob);
+    }
+
+    const isInboxForward =
+      messageJob.message_type === 'inbox_forward' ||
+      messageJob.message_data?.source === 'inbox_forward';
+    if (isInboxForward) {
+      return this.processInboxForwardJob(messageJob);
+    }
+
     try {
       const message_job_id = messageJob.id;
 
       console.log(`[SEND WORKER] Processing message job: ${message_job_id}`);
 
-      // Job is already claimed (status = 'reserved') and scheduled_at <= NOW() is guaranteed by RPC function
-      // No need to check scheduled_at or load from database again
-
-      // 1. TODO: Reserve job (atomic throttle check)
-      // For now, we'll skip throttling and proceed
-      // const reserved = await this.reserveMessageJob(messageJob);
-      // if (!reserved) {
-      //   // Throttle limit hit, mark job for retry/reschedule
-      //   return;
-      // }
-
-      // 2. Load related data (lead, mailbox, node config)
+      // 1. Load related data (lead, mailbox, node config)
       const { lead, mailbox, nodeConfig } = await this.loadJobData(messageJob);
 
-      // 2b. Check minimum gap between sends for this mailbox
-      // This ensures we don't send emails too quickly from the same mailbox
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-      const { data: throttle, error: throttleError } = await this.supabase
-        .from('mailbox_throttles')
-        .select('last_sent_at, min_gap_seconds, sent_count')
-        .eq('mailbox_id', messageJob.mailbox_id)
-        .eq('date', today)
-        .maybeSingle();
+      // 1b. Block list check — skip campaign sends to blocked addresses
+      const { data: campaign } = await this.supabase
+        .from('campaigns')
+        .select('account_id, status')
+        .eq('id', messageJob.campaign_id)
+        .single();
 
-      if (throttleError) {
-        throw new Error(`Failed to check mailbox throttle for mailbox ${messageJob.mailbox_id}: ${throttleError.message}`);
+      if (!campaign || campaign.status !== 'running') {
+        console.log(`[SEND WORKER] Campaign ${messageJob.campaign_id} is not running. Cancelling message job ${message_job_id}.`);
+        await this.supabase
+          .from('message_jobs')
+          .update({
+            status: 'cancelled',
+            error_message: `Campaign status is ${campaign?.status || 'unknown'}`,
+          })
+          .eq('id', message_job_id);
+        return;
       }
 
-      // Get min gap (default to 180 seconds if not configured)
-      const minGapSeconds = throttle?.min_gap_seconds ?? 180;
-
-      // Check if minimum gap is met
-      if (throttle?.last_sent_at) {
-        const lastSentAt = new Date(throttle.last_sent_at);
-        const now = new Date();
-        const timeSinceLastSend = (now.getTime() - lastSentAt.getTime()) / 1000; // seconds
-
-        if (timeSinceLastSend < minGapSeconds) {
-          const remainingSeconds = Math.ceil(minGapSeconds - timeSinceLastSend);
-          const errorMessage = `Minimum gap not met for mailbox ${messageJob.mailbox_id}. Last sent: ${lastSentAt.toISOString()}, Required gap: ${minGapSeconds}s, Time since last send: ${timeSinceLastSend.toFixed(1)}s, Remaining: ${remainingSeconds}s`;
-          
-          console.error(`[SEND WORKER] ${errorMessage}`);
-          
-          // Mark job as failed
+      const accountId = campaign.account_id;
+      if (accountId) {
+        const blocked = await this.isEmailBlocked(accountId, lead.email);
+        if (blocked) {
+          console.log(`[SEND WORKER] Lead ${lead.email} is blocked, marking job ${message_job_id} as blocked`);
           await this.supabase
             .from('message_jobs')
             .update({
-              status: 'failed',
-              error_message: errorMessage,
+              status: 'blocked',
+              error_message: 'Lead blocked',
             })
             .eq('id', message_job_id);
-
-          throw new Error(errorMessage);
+          return;
         }
       }
 
+      // 2. Atomic throttle check and reservation
+      // This atomically checks throttle limits and updates counters
+      // If throttle fails, job is cancelled by the function
+      const { data: throttleResult, error: throttleError } = await this.supabase
+        .rpc('check_mailbox_throttle_and_reserve', {
+          p_message_job_id: message_job_id
+        })
+        .single();
+
+      if (throttleError) {
+        // RPC call failed - this could be a function not found error or other issue
+        // Check if job is still in reserved status - if so, mark as failed
+        // If not, it might have been cancelled by another process
+        const { data: currentJob } = await this.supabase
+          .from('message_jobs')
+          .select('status')
+          .eq('id', message_job_id)
+          .single();
+        
+        if (currentJob?.status === 'reserved') {
+          // Job is still reserved, so the RPC call genuinely failed
+          throw new Error(`Failed to check mailbox throttle for message job ${message_job_id}: ${throttleError.message}`);
+        } else {
+          // Job status changed (might be cancelled or processed by another worker)
+          console.log(`[SEND WORKER] Job ${message_job_id} status changed to ${currentJob?.status}, skipping throttle check`);
+          return; // Skip this job, continue to next
+        }
+      }
+
+      // Type assertion for RPC result
+      const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
+
+      if (!result?.success) {
+        // Throttle check failed - job already cancelled by RPC function
+        const failureReason = result?.failure_reason || 'Unknown throttle failure';
+        console.log(`[SEND WORKER] Throttle check failed for message job ${message_job_id}: ${failureReason}`);
+        return; // Skip this job, continue to next
+      }
+
+      // Throttle check passed - proceed with sending
+
+      // 2b. Get first sent message for this campaign+lead (for thread continuation)
+      const threadFirst = await this.getFirstSentMessageForCampaignLead(messageJob.campaign_id, messageJob.lead_id);
+
       // 3. Generate email content from template
-      const subject = mergeTemplate(nodeConfig.subject || '', lead);
-      const emailBody = mergeTemplate(nodeConfig.body || '', lead);
+      // Pipeline: spintax → variable merge. Prefer body_html (rich) over template (legacy).
+      const subjectRaw = String(nodeConfig.subject ?? '');
+      const subjectSpun = processSpintax(subjectRaw);
+      const currentSubject = mergeTemplate(subjectSpun, lead);
+
+      const bodyRaw = typeof (nodeConfig.body_html ?? nodeConfig.template ?? nodeConfig.body) === 'string'
+        ? (nodeConfig.body_html ?? nodeConfig.template ?? nodeConfig.body)
+        : '';
+      const bodySpun = processSpintax(bodyRaw);
+      const bodyMerged = mergeTemplate(bodySpun, lead);
+      const bodyTextFromConfig = typeof nodeConfig.body_text === 'string' ? nodeConfig.body_text : null;
+
+      const isHtmlBody = /<[a-z][\s\S]*>/i.test(bodyMerged);
+      const emailBody = bodyMerged;
+      const emailBodyText = bodyTextFromConfig ?? (isHtmlBody ? null : bodyMerged);
+
+      // Subject: use current node's subject; if follow-up and empty, use first email's subject
+      let subject: string;
+      let inReplyTo: string | null = null;
+      let references: string | null = null;
+      if (threadFirst) {
+        if (threadFirst.provider_message_id) {
+          inReplyTo = threadFirst.provider_message_id;
+          references = threadFirst.provider_message_id;
+        }
+        if (currentSubject.trim() === '') {
+          const nc = threadFirst.message_data?.node_config;
+          const firstSubjectTemplate = (nc?.subject ?? nc?.template ?? '') as string;
+          const firstSubjectSpun = processSpintax(typeof firstSubjectTemplate === 'string' ? firstSubjectTemplate : '');
+          subject = mergeTemplate(firstSubjectSpun, lead);
+        } else {
+          subject = currentSubject;
+        }
+      } else {
+        subject = currentSubject;
+      }
 
       // Check if this is a test mode job (skip SMTP sending)
       // Test mailboxes are identified by @furnace.test email domain
@@ -174,19 +264,35 @@ export class SendWorker {
       } else {
         // Production mode: Send via SMTP
         console.log(`[SEND WORKER] Sending email via SMTP for message job ${message_job_id}`);
-        // 4. Create SMTP transporter
-        const transporter = createTransporter(mailbox);
+        // 4. Get SMTP transporter from pool (reuses connection if available)
+        const transporter = await this.smtpPool.getTransporter(mailbox);
 
-        // 5. Send email
-        providerMessageId = await sendEmail(
-          transporter,
-          mailbox,
-          messageJob,
-          lead,
-          subject,
-          emailBody
-        );
-        console.log(`[SEND WORKER] Email sent successfully for message job ${message_job_id} (provider_message_id: ${providerMessageId})`);
+        try {
+          // 5. Send email (with optional threading headers for follow-ups)
+          providerMessageId = await sendEmail(
+            transporter,
+            mailbox,
+            messageJob,
+            lead,
+            subject,
+            emailBody,
+            inReplyTo,
+            references,
+            isHtmlBody ? { bodyHtml: emailBody, bodyText: emailBodyText ?? undefined } : undefined
+          );
+          
+          // Mark message sent (for maxMessages tracking)
+          this.smtpPool.markMessageSent(mailbox.id);
+          
+          console.log(`[SEND WORKER] Email sent successfully for message job ${message_job_id} (provider_message_id: ${providerMessageId})`);
+        } catch (error: any) {
+          // On connection/auth errors, remove transporter from cache so it gets recreated
+          if (error.code === 'EAUTH' || error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+            console.error(`[SEND WORKER] SMTP connection error for mailbox ${mailbox.id}, removing from pool:`, error);
+            this.smtpPool.removeTransporter(mailbox.id);
+          }
+          throw error; // Re-throw to be handled by outer error handling
+        }
       }
 
       // 6. Update message_job status
@@ -199,34 +305,8 @@ export class SendWorker {
         })
         .eq('id', message_job_id);
 
-      // 6a. Update mailbox_throttles last_sent_at (for min gap enforcement)
-      // This ensures the next send from this mailbox will check the correct last_sent_at
-      try {
-        const sentAt = new Date().toISOString();
-        const newSentCount = (throttle?.sent_count ?? 0) + 1;
-        
-        const { error: throttleUpdateError } = await this.supabase
-          .from('mailbox_throttles')
-          .upsert({
-            mailbox_id: messageJob.mailbox_id,
-            date: today,
-            last_sent_at: sentAt,
-            sent_count: newSentCount,
-          }, {
-            onConflict: 'mailbox_id,date',
-            ignoreDuplicates: false,
-          });
-        
-        if (throttleUpdateError) {
-          // Log error but don't fail the send (email is already sent)
-          console.error(`[SEND WORKER] Failed to update mailbox_throttles for mailbox ${messageJob.mailbox_id}:`, throttleUpdateError);
-        } else {
-          console.log(`[SEND WORKER] Updated mailbox_throttles for mailbox ${messageJob.mailbox_id}: last_sent_at=${sentAt}, sent_count=${newSentCount}`);
-        }
-      } catch (error) {
-        // Log error but don't fail the send
-        console.error(`[SEND WORKER] Error updating mailbox_throttles for mailbox ${messageJob.mailbox_id}:`, error);
-      }
+      // 6a. Throttle counters already updated by check_mailbox_throttle_and_reserve() function
+      // No need to update mailbox_throttles here
 
       // 6b. Update enrollment to trigger scheduler re-evaluation
       // This allows the scheduler to pick up the enrollment immediately and proceed to next node
@@ -308,23 +388,22 @@ export class SendWorker {
         
         console.log(`[SEND WORKER] Marked message job ${messageJob.id} as failed`);
 
-        // Check if interval should be marked as processed (immediate, not waiting for scheduler timer)
-        // This makes interval completion happen immediately instead of waiting up to 1 minute
-        try {
-          const { data: processedCount, error: processedError } = await this.supabase
-            .rpc('check_and_update_processed_intervals', {
-              p_campaign_id: messageJob.campaign_id
-            });
-          
-          if (processedError) {
-            // Log error but don't fail (job is already marked as failed)
-            console.error(`[SEND WORKER] Failed to check processed intervals for campaign ${messageJob.campaign_id}:`, processedError);
-          } else if (processedCount && processedCount > 0) {
-            console.log(`[SEND WORKER] Marked ${processedCount} interval(s) as processed for campaign ${messageJob.campaign_id}`);
+        // Only update processed intervals for campaign jobs (not inbox reply/forward)
+        const isCampaign = messageJob.message_type !== 'inbox_reply' && messageJob.message_type !== 'inbox_forward' && messageJob.message_data?.source !== 'inbox_reply' && messageJob.message_data?.source !== 'inbox_forward';
+        if (isCampaign) {
+          try {
+            const { data: processedCount, error: processedError } = await this.supabase
+              .rpc('check_and_update_processed_intervals', {
+                p_campaign_id: messageJob.campaign_id
+              });
+            if (processedError) {
+              console.error(`[SEND WORKER] Failed to check processed intervals for campaign ${messageJob.campaign_id}:`, processedError);
+            } else if (processedCount && processedCount > 0) {
+              console.log(`[SEND WORKER] Marked ${processedCount} interval(s) as processed for campaign ${messageJob.campaign_id}`);
+            }
+          } catch (processedCheckError) {
+            console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, processedCheckError);
           }
-        } catch (processedCheckError) {
-          // Log error but don't fail (job is already marked as failed)
-          console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, processedCheckError);
         }
       } catch (updateError) {
         // Log but don't throw - we've already logged the original error
@@ -334,6 +413,309 @@ export class SendWorker {
       // Re-throw to be caught by Promise.allSettled in the main loop
       throw error;
     }
+  }
+
+  /**
+   * Process an inbox reply job: send reply email, insert email_messages, update email_threads.
+   * Does not update enrollment or intervals (flow is irrelevant).
+   */
+  private async processInboxReplyJob(messageJob: MessageJob): Promise<void> {
+    const message_job_id = messageJob.id;
+    const md = messageJob.message_data || {};
+    const threadId = md.thread_id as string | undefined;
+    const inReplyToMessageId = md.in_reply_to_message_id as string | undefined;
+
+    if (!threadId || !inReplyToMessageId) {
+      throw new Error(`Inbox reply job ${message_job_id} missing thread_id or in_reply_to_message_id`);
+    }
+
+    console.log(`[SEND WORKER] Processing inbox reply job: ${message_job_id}`);
+
+    // 1. Load mailbox
+    const { data: mailbox, error: mailboxError } = await this.supabase
+      .from('mailboxes')
+      .select('*')
+      .eq('id', messageJob.mailbox_id)
+      .single();
+    if (mailboxError || !mailbox) {
+      throw new Error(`Failed to load mailbox ${messageJob.mailbox_id}: ${mailboxError?.message}`);
+    }
+
+    // 2. Throttle check (same as campaign)
+    const { data: throttleResult, error: throttleError } = await this.supabase
+      .rpc('check_mailbox_throttle_and_reserve', { p_message_job_id: message_job_id })
+      .single();
+    if (throttleError) {
+      const { data: currentJob } = await this.supabase
+        .from('message_jobs')
+        .select('status')
+        .eq('id', message_job_id)
+        .single();
+      if (currentJob?.status === 'reserved') {
+        throw new Error(`Throttle check failed for reply job ${message_job_id}: ${throttleError.message}`);
+      }
+      return;
+    }
+    const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
+    if (!result?.success) {
+      // Manual sends: do not leave job cancelled; re-queue so it retries when throttle allows
+      console.log(`[SEND WORKER] Throttle check failed for reply job ${message_job_id}: ${result?.failure_reason}. Re-queuing for retry.`);
+      const { error: updateError } = await this.supabase
+        .from('message_jobs')
+        .update({
+          status: 'pending',
+          reserved_at: null,
+          error_message: null,
+        })
+        .eq('id', message_job_id);
+      if (updateError) {
+        console.error(`[SEND WORKER] Failed to re-queue reply job ${message_job_id}:`, updateError);
+      }
+      return;
+    }
+
+    // 3. Send reply via SMTP
+    const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
+    const rawAttachments = Array.isArray(md.attachments) ? md.attachments : [];
+    // Normalize: support both camelCase (from client) and snake_case (if DB/PostgREST ever returns it)
+    const fileAttachments = rawAttachments
+      .map((att: Record<string, unknown>) => {
+        const a = att as { filename?: string; contentType?: string; content_type?: string; content?: string };
+        return {
+          filename: a.filename ?? 'attachment',
+          contentType: a.contentType ?? a.content_type ?? 'application/octet-stream',
+          content: a.content ?? '',
+        };
+      })
+      .filter((att) => typeof att.content === 'string' && att.content.length > 0);
+    console.log(`[SEND WORKER] Reply job ${message_job_id} attachments: ${fileAttachments.length} (raw: ${rawAttachments.length})`);
+    const replyOptions: ReplyEmailOptions = {
+      toEmail: md.to_email || '',
+      toName: md.to_name ?? null,
+      cc: Array.isArray(md.cc) ? md.cc : undefined,
+      subject: md.subject || '(No subject)',
+      bodyText: md.body_text || md.body_html || '',
+      bodyHtml: md.body_html ?? null,
+      inReplyTo: md.in_reply_to ?? null,
+      references: md.message_references ?? null,
+      attachments: fileAttachments.length > 0 ? fileAttachments : undefined,
+    };
+    let providerMessageId: string;
+    try {
+      providerMessageId = await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, replyOptions);
+      this.smtpPool.markMessageSent(mailbox.id);
+    } catch (err: any) {
+      if (err.code === 'EAUTH' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT') {
+        this.smtpPool.removeTransporter(mailbox.id);
+      }
+      throw err;
+    }
+
+    // 4. Load thread for participants and current counts
+    const { data: thread, error: threadError } = await this.supabase
+      .from('email_threads')
+      .select('participants, message_count')
+      .eq('id', threadId)
+      .single();
+    if (threadError || !thread) {
+      throw new Error(`Failed to load thread ${threadId}: ${threadError?.message}`);
+    }
+
+    const participants = (thread.participants || []) as string[];
+    const toAdd = [replyOptions.toEmail, ...(replyOptions.cc || [])].filter(Boolean);
+    const newParticipants = [...new Set([...participants, ...toAdd])];
+
+    // Build attachment metadata for email_messages (filename, contentType, size; no base64)
+    const replyAttachmentMeta =
+      fileAttachments.length > 0
+        ? fileAttachments.map((att: { filename: string; contentType?: string; content: string }) => ({
+            filename: att.filename,
+            contentType: att.contentType ?? 'application/octet-stream',
+            size: Buffer.from(att.content, 'base64').length,
+          }))
+        : [];
+
+    // 5. Insert email_messages (sent reply)
+    const now = new Date().toISOString();
+    const { error: insertError } = await this.supabase
+      .from('email_messages')
+      .insert({
+        thread_id: threadId,
+        message_job_id: message_job_id,
+        direction: 'sent',
+        from_email: mailbox.email_address,
+        from_name: mailbox.display_name,
+        to_email: replyOptions.toEmail,
+        to_name: replyOptions.toName || null,
+        cc: replyOptions.cc && replyOptions.cc.length > 0 ? replyOptions.cc : null,
+        subject: replyOptions.subject,
+        body_text: replyOptions.bodyText,
+        body_html: replyOptions.bodyHtml,
+        message_id: providerMessageId,
+        in_reply_to: replyOptions.inReplyTo,
+        message_references: replyOptions.references,
+        received_at: now,
+        attachments: replyAttachmentMeta,
+      });
+    if (insertError) {
+      throw new Error(`Failed to insert email_messages for reply: ${insertError.message}`);
+    }
+
+    // 6. Update email_threads (last_message_at, message_count, participants)
+    const { error: updateThreadError } = await this.supabase
+      .from('email_threads')
+      .update({
+        last_message_at: now,
+        message_count: (thread.message_count || 0) + 1,
+        participants: newParticipants,
+        updated_at: now,
+      })
+      .eq('id', threadId);
+    if (updateThreadError) {
+      throw new Error(`Failed to update email_threads: ${updateThreadError.message}`);
+    }
+
+    // 7. Mark message_job sent
+    await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'sent',
+        sent_at: now,
+        provider_message_id: providerMessageId,
+        updated_at: now,
+      })
+      .eq('id', message_job_id);
+
+    console.log(`[SEND WORKER] Inbox reply job ${message_job_id} sent successfully`);
+  }
+
+  /**
+   * Process an inbox forward job: send forward email to new recipients.
+   * Forward is send-only (no email_messages insert, no email_threads update).
+   */
+  private async processInboxForwardJob(messageJob: MessageJob): Promise<void> {
+    const message_job_id = messageJob.id;
+    const md = messageJob.message_data || {};
+    const threadId = md.thread_id as string | undefined;
+
+    if (!threadId) {
+      throw new Error(`Inbox forward job ${message_job_id} missing thread_id`);
+    }
+
+    console.log(`[SEND WORKER] Processing inbox forward job: ${message_job_id}`);
+
+    // 1. Load mailbox
+    const { data: mailbox, error: mailboxError } = await this.supabase
+      .from('mailboxes')
+      .select('*')
+      .eq('id', messageJob.mailbox_id)
+      .single();
+    if (mailboxError || !mailbox) {
+      throw new Error(`Failed to load mailbox ${messageJob.mailbox_id}: ${mailboxError?.message}`);
+    }
+
+    // 2. Throttle check (same as reply)
+    const { data: throttleResult, error: throttleError } = await this.supabase
+      .rpc('check_mailbox_throttle_and_reserve', { p_message_job_id: message_job_id })
+      .single();
+    if (throttleError) {
+      const { data: currentJob } = await this.supabase
+        .from('message_jobs')
+        .select('status')
+        .eq('id', message_job_id)
+        .single();
+      if (currentJob?.status === 'reserved') {
+        throw new Error(`Throttle check failed for forward job ${message_job_id}: ${throttleError.message}`);
+      }
+      return;
+    }
+    const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
+    if (!result?.success) {
+      console.log(`[SEND WORKER] Throttle check failed for forward job ${message_job_id}: ${result?.failure_reason}. Re-queuing for retry.`);
+      const { error: updateError } = await this.supabase
+        .from('message_jobs')
+        .update({
+          status: 'pending',
+          reserved_at: null,
+          error_message: null,
+        })
+        .eq('id', message_job_id);
+      if (updateError) {
+        console.error(`[SEND WORKER] Failed to re-queue forward job ${message_job_id}:`, updateError);
+      }
+      return;
+    }
+
+    // 3. Send forward via SMTP (no In-Reply-To/References)
+    const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
+    const rawForwardAttachments = Array.isArray(md.attachments) ? md.attachments : [];
+    const forwardFileAttachments = rawForwardAttachments
+      .map((att: Record<string, unknown>) => {
+        const a = att as { filename?: string; contentType?: string; content_type?: string; content?: string };
+        return {
+          filename: a.filename ?? 'attachment',
+          contentType: a.contentType ?? a.content_type ?? 'application/octet-stream',
+          content: a.content ?? '',
+        };
+      })
+      .filter((att) => typeof att.content === 'string' && att.content.length > 0);
+    console.log(`[SEND WORKER] Forward job ${message_job_id} attachments: ${forwardFileAttachments.length} (raw: ${rawForwardAttachments.length})`);
+    const forwardOptions: ReplyEmailOptions = {
+      toEmail: md.to_email || '',
+      toName: md.to_name ?? null,
+      cc: Array.isArray(md.cc) ? md.cc : undefined,
+      subject: md.subject || '(No subject)',
+      bodyText: md.body_text || md.body_html || '',
+      bodyHtml: md.body_html ?? null,
+      inReplyTo: null,
+      references: null,
+      attachments: forwardFileAttachments.length > 0 ? forwardFileAttachments : undefined,
+    };
+    try {
+      await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, forwardOptions);
+      this.smtpPool.markMessageSent(mailbox.id);
+    } catch (err: any) {
+      if (err.code === 'EAUTH' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT') {
+        this.smtpPool.removeTransporter(mailbox.id);
+      }
+      throw err;
+    }
+
+    // 4. Mark message_job sent (no email_messages or email_threads update)
+    const now = new Date().toISOString();
+    await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'sent',
+        sent_at: now,
+        updated_at: now,
+      })
+      .eq('id', message_job_id);
+
+    console.log(`[SEND WORKER] Inbox forward job ${message_job_id} sent successfully`);
+  }
+
+  /**
+   * Get the first sent campaign email for this campaign+lead (for thread continuation).
+   * Returns null if this is the first email or no previous sent job exists.
+   */
+  private async getFirstSentMessageForCampaignLead(
+    campaignId: string,
+    leadId: string
+  ): Promise<{ id: string; provider_message_id: string | null; message_data: any } | null> {
+    const { data, error } = await this.supabase
+      .from('message_jobs')
+      .select('id, provider_message_id, message_data')
+      .eq('campaign_id', campaignId)
+      .eq('lead_id', leadId)
+      .eq('status', 'sent')
+      .or('message_type.is.null,message_type.eq.campaign')
+      .order('scheduled_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data as { id: string; provider_message_id: string | null; message_data: any };
   }
 
   /**
@@ -377,21 +759,42 @@ export class SendWorker {
   }
 
   /**
-   * TODO: Implement atomic job reservation with throttle checking
+   * @deprecated This method is no longer used. Throttle checking is now done via
+   * the check_mailbox_throttle_and_reserve() RPC function which is called directly
+   * in processMessageJob().
    */
   private async reserveMessageJob(messageJob: MessageJob): Promise<boolean> {
-    // This will call a Supabase function to atomically:
-    // 1. Check throttle limits
-    // 2. Reserve the job (update status to 'reserved')
-    // 3. Update throttle counters
-    // Returns true if reserved, false if throttle limit hit
-    // 
-    // For now, we'll skip this and implement it in Phase 4 (Pacing & Throttling)
+    // Deprecated - not used anymore
     return true;
   }
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Check if an email is blocked for an account (exact email or domain match).
+   */
+  private async isEmailBlocked(accountId: string, email: string): Promise<boolean> {
+    const { data: entries, error } = await this.supabase
+      .from('block_list')
+      .select('value, type')
+      .eq('account_id', accountId);
+
+    if (error || !entries?.length) return false;
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const atIndex = normalizedEmail.indexOf('@');
+    const domain = atIndex >= 0 && atIndex < normalizedEmail.length - 1
+      ? normalizedEmail.slice(atIndex + 1)
+      : null;
+
+    for (const entry of entries) {
+      const v = (entry.value || '').trim().toLowerCase();
+      if (entry.type === 'email' && v === normalizedEmail) return true;
+      if (entry.type === 'domain' && domain && v === domain) return true;
+    }
+    return false;
   }
 }
 

@@ -15,13 +15,12 @@ const region = process.env.CDK_DEFAULT_REGION || process.env.AWS_REGION || 'us-w
 const devSupabaseUrl = process.env.DEV_SUPABASE_URL || process.env.SUPABASE_URL_DEV;
 const prodSupabaseUrl = process.env.PROD_SUPABASE_URL || process.env.SUPABASE_URL_PROD;
 
-// SSM Parameter Store paths for SUPABASE_SERVICE_KEY (Supabase Secret Key)
-// These should be set up manually in SSM Parameter Store using the Secret Key (not Publishable Key)
-// Secret Key = old "Service Role Key" - bypasses RLS and has admin privileges
-const devSupabaseServiceKeyParamPath = process.env.DEV_SUPABASE_SERVICE_KEY_PARAM_PATH || 
-  '/amplify/furnacebuild/dev/SUPABASE_SERVICE_KEY';
-const prodSupabaseServiceKeyParamPath = process.env.PROD_SUPABASE_SERVICE_KEY_PARAM_PATH || 
-  '/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SERVICE_KEY';
+// SSM Parameter Store paths for SUPABASE_SECRET_KEY (Supabase Secret Key)
+// Set up manually in SSM Parameter Store using the Secret Key (not Publishable Key)
+const devSupabaseSecretKeyParamPath = process.env.DEV_SUPABASE_SECRET_KEY_PARAM_PATH ||
+  '/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY';
+const prodSupabaseSecretKeyParamPath = process.env.PROD_SUPABASE_SECRET_KEY_PARAM_PATH ||
+  '/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY';
 
 // Validate required environment variables
 if (!devSupabaseUrl) {
@@ -44,10 +43,11 @@ new WorkerStack(app, 'WorkerStack-Dev', {
   },
   environment: 'dev',
   supabaseUrl: devSupabaseUrl,
-  supabaseServiceKeyParamPath: devSupabaseServiceKeyParamPath,
+  supabaseSecretKeyParamPath: devSupabaseSecretKeyParamPath,
   desiredCount: {
     sendWorker: 0, // Start with 0, scale up after pushing Docker images
     schedulerWorker: 0, // Start with 0, scale up after pushing Docker images
+    inboxCheckerWorker: 0, // Start with 0, scale up after pushing Docker images
   },
 });
 
@@ -59,10 +59,11 @@ new WorkerStack(app, 'WorkerStack-Prod', {
   },
   environment: 'prod',
   supabaseUrl: prodSupabaseUrl,
-  supabaseServiceKeyParamPath: prodSupabaseServiceKeyParamPath,
+  supabaseSecretKeyParamPath: prodSupabaseSecretKeyParamPath,
   desiredCount: {
     sendWorker: 0, // Start with 0, scale up after pushing Docker images
     schedulerWorker: 0, // Start with 0, scale up after pushing Docker images
+    inboxCheckerWorker: 0, // Start with 0, scale up after pushing Docker images
   },
 });
 

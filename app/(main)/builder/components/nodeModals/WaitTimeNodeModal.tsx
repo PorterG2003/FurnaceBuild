@@ -3,6 +3,18 @@ import { View, Text, TextInput, TouchableOpacity } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 
+const UNIT_TO_SECONDS: Record<string, number> = {
+  minutes: 60,
+  hours: 3600,
+  days: 86400,
+};
+
+function toWaitDurationSeconds(duration: string, unit: string): number {
+  const n = parseInt(duration.trim(), 10);
+  if (Number.isNaN(n) || n < 0) return 0;
+  return n * (UNIT_TO_SECONDS[unit] ?? 3600);
+}
+
 interface WaitTimeNodeModalProps {
   visible: boolean;
   onClose: () => void;
@@ -10,11 +22,13 @@ interface WaitTimeNodeModalProps {
     label?: string;
     duration?: string;
     unit?: 'minutes' | 'hours' | 'days';
+    wait_duration_seconds?: number;
   }) => void;
   initialData?: {
     label?: string;
     duration?: string;
     unit?: 'minutes' | 'hours' | 'days';
+    wait_duration_seconds?: number;
   };
 }
 
@@ -31,7 +45,8 @@ function WaitTimeNodeModal({
   );
 
   const handleSave = () => {
-    onSave({ label, duration, unit });
+    const wait_duration_seconds = toWaitDurationSeconds(duration, unit);
+    onSave({ label, duration, unit, wait_duration_seconds });
     onClose();
   };
 

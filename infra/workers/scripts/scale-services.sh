@@ -19,6 +19,7 @@ fi
 ENVIRONMENT="${1:-dev}"
 SEND_COUNT="${2:-1}"
 SCHEDULER_COUNT="${3:-1}"
+INBOX_CHECKER_COUNT="${4:-1}"
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 
@@ -49,6 +50,12 @@ SCHEDULER_SERVICE_FULL=$(aws ecs list-services \
   --query "serviceArns[?contains(@, 'SchedulerWorker')]" \
   --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
 
+INBOX_CHECKER_SERVICE_FULL=$(aws ecs list-services \
+  --cluster "$CLUSTER_NAME" \
+  --region "$REGION" \
+  --query "serviceArns[?contains(@, 'InboxCheckerWorker')]" \
+  --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+
 if [ -z "$SEND_SERVICE_FULL" ] || [ "$SEND_SERVICE_FULL" = "None" ]; then
   echo "❌ Error: Could not find SendWorkerService in cluster $CLUSTER_NAME"
   echo "   Make sure the stack is deployed: npm run deploy:$ENVIRONMENT"
@@ -61,17 +68,42 @@ if [ -z "$SCHEDULER_SERVICE_FULL" ] || [ "$SCHEDULER_SERVICE_FULL" = "None" ]; t
   exit 1
 fi
 
+# Inbox checker is optional (may not exist in older deployments)
+if [ -z "$INBOX_CHECKER_SERVICE_FULL" ] || [ "$INBOX_CHECKER_SERVICE_FULL" = "None" ]; then
+  echo "⚠️  Warning: Could not find InboxCheckerWorkerService in cluster $CLUSTER_NAME"
+  echo "   Skipping inbox checker worker scaling"
+  INBOX_CHECKER_SERVICE_FULL=""
+fi
+
 SEND_SERVICE_NAME="$SEND_SERVICE_FULL"
 SCHEDULER_SERVICE_NAME="$SCHEDULER_SERVICE_FULL"
+INBOX_CHECKER_SERVICE_NAME="$INBOX_CHECKER_SERVICE_FULL"
 
 echo "📈 Scaling ECS services"
 echo "   Environment: $ENVIRONMENT"
 echo "   Cluster: $CLUSTER_NAME"
 echo "   Send Worker Service: $SEND_SERVICE_NAME"
 echo "   Scheduler Worker Service: $SCHEDULER_SERVICE_NAME"
+if [ -n "$INBOX_CHECKER_SERVICE_NAME" ]; then
+  echo "   Inbox Checker Worker Service: $INBOX_CHECKER_SERVICE_NAME"
+fi
 echo "   Send Worker: $SEND_COUNT tasks"
 echo "   Scheduler Worker: $SCHEDULER_COUNT tasks"
+if [ -n "$INBOX_CHECKER_SERVICE_NAME" ]; then
+  echo "   Inbox Checker Worker: $INBOX_CHECKER_COUNT tasks"
+fi
 echo ""
+
+if [ -n "$INBOX_CHECKER_SERVICE_NAME" ] && [ "$INBOX_CHECKER_COUNT" -gt 0 ] && [ "${ALLOW_DUAL_INGESTION:-false}" != "true" ]; then
+  echo "⚠️  Dual ingestion protection"
+  echo "   You are scaling ECS inbox-checker-worker above 0."
+  echo "   Ensure Amplify Lambda inboxChecker is disabled at deploy time:"
+  echo "   INBOX_CHECKER_LAMBDA_ENABLED=false npx ampx pipeline-deploy ..."
+  echo ""
+  echo "   If you intentionally want both paths active, rerun with:"
+  echo "   ALLOW_DUAL_INGESTION=true bash scripts/scale-services.sh $ENVIRONMENT $SEND_COUNT $SCHEDULER_COUNT $INBOX_CHECKER_COUNT"
+  exit 1
+fi
 
 # Function to scale a service
 scale_service() {
@@ -101,6 +133,11 @@ scale_service "$SEND_SERVICE_NAME" "$SEND_COUNT"
 # Scale scheduler worker service
 scale_service "$SCHEDULER_SERVICE_NAME" "$SCHEDULER_COUNT"
 
+# Scale inbox checker worker service (if it exists)
+if [ -n "$INBOX_CHECKER_SERVICE_NAME" ]; then
+  scale_service "$INBOX_CHECKER_SERVICE_NAME" "$INBOX_CHECKER_COUNT"
+fi
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✨ Services scaled successfully!"
@@ -113,7 +150,9 @@ echo "      aws ecs list-tasks --cluster $CLUSTER_NAME --region $REGION"
 echo "   3. Check CloudWatch logs:"
 echo "      aws logs tail /ecs/furnace/send-worker-$ENVIRONMENT --follow --region $REGION"
 echo "      aws logs tail /ecs/furnace/scheduler-worker-$ENVIRONMENT --follow --region $REGION"
+echo "      aws logs tail /ecs/furnace/inbox-checker-worker-$ENVIRONMENT --follow --region $REGION"
 echo ""
-echo "💡 To scale down (set to 0):"
-echo "   bash scripts/scale-services.sh $ENVIRONMENT 0 0"
+echo "💡 To scale down (set all to 0):"
+echo "   npm run scale:down:$ENVIRONMENT"
+echo "   Or: bash scripts/scale-services.sh $ENVIRONMENT 0 0 0"
 

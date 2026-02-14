@@ -6,6 +6,7 @@ import { Alert, LoadingState, EmptyState } from '@/components/ui/feedback';
 import { BaseModal } from '@/components/ui/modals';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter } from 'expo-router';
+import { useAccount } from '@/contexts/AccountContext';
 import { getCampaigns, createCampaign, deleteCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import { PlusIcon, TrashIcon, PencilIcon, ChartBarIcon } from 'react-native-heroicons/outline';
@@ -79,7 +80,7 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
         </View>
       }
     >
-      <View className="mb-4">
+      <View className="mb-2">
         <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Campaign Name</Text>
         <TextInput
           value={name}
@@ -101,6 +102,9 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
           autoFocus
         />
       </View>
+      <Text className="text-gray-500 font-instrument text-sm mb-4">
+        Next you'll build your flow, then set schedule and mailboxes to go live.
+      </Text>
       {error ? (
         <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
           <Text className="text-red-400 text-center font-instrument-medium text-sm">
@@ -118,9 +122,50 @@ interface CampaignCardProps {
   isDeleting: boolean;
 }
 
+function hasFlow(campaign: Campaign): boolean {
+  if (!campaign?.flow_data) return false;
+  try {
+    const fd =
+      typeof campaign.flow_data === 'string'
+        ? JSON.parse(campaign.flow_data)
+        : campaign.flow_data;
+    const nodes = Array.isArray((fd as any)?.nodes) ? (fd as any).nodes : [];
+    return nodes.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function CampaignStatusPill({ status }: { status: string }) {
+  const colors: Record<string, { bg: string; text: string }> = {
+    draft: { bg: '#374151', text: '#9CA3AF' },
+    running: { bg: '#065F46', text: '#10B981' },
+    paused: { bg: '#78350F', text: '#F59E0B' },
+    stopped: { bg: '#44403C', text: '#A8A29E' },
+  };
+  const s = status?.toLowerCase() in colors ? status.toLowerCase() : 'draft';
+  const { bg, text } = colors[s] || colors.draft;
+  return (
+    <View
+      style={{
+        backgroundColor: bg,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 8,
+      }}
+    >
+      <Text style={{ color: text, fontSize: 12, fontWeight: '500' }}>
+        {status === 'draft' ? 'Draft' : status === 'running' ? 'Running' : status === 'paused' ? 'Paused' : 'Stopped'}
+      </Text>
+    </View>
+  );
+}
+
 function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
   const router = useRouter();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const isDraft = campaign.status === 'draft';
+  const draftHasFlow = hasFlow(campaign);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -131,33 +176,47 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
     });
   };
 
+  const handleContinueSetup = () => {
+    if (isDraft && !draftHasFlow) {
+      router.push({ pathname: '/builder', params: { campaignId: campaign.id } });
+    } else {
+      router.push({ pathname: '/campaigns/[id]', params: { id: campaign.id } });
+    }
+  };
+
+  const handleOpen = () => {
+    router.push({ pathname: '/campaigns/[id]', params: { id: campaign.id } });
+  };
+
   const handleDelete = async () => {
     await onDelete(campaign.id);
     setShowDeleteConfirm(false);
   };
 
-  const handleEdit = () => {
-    router.push({
-      pathname: '/builder',
-      params: { campaignId: campaign.id },
-    });
-  };
-
-  const handleInsights = () => {
-    router.push({
-      pathname: '/campaigns/[id]',
-      params: { id: campaign.id },
-    });
+  const handleEditFlow = () => {
+    router.push({ pathname: '/builder', params: { campaignId: campaign.id } });
   };
 
   return (
     <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
       <View className="flex-row items-start justify-between">
         <View className="flex-1 mr-4">
-          <Text className="text-white font-instrument-semibold text-lg mb-2">
-            {campaign.name}
-          </Text>
-          <Text className="text-gray-400 font-instrument text-sm">
+          <View className="flex-row items-center gap-2 mb-1">
+            <Pressable onPress={isDraft ? handleContinueSetup : handleOpen}>
+              <Text className="text-white font-instrument-semibold text-lg">
+                {campaign.name}
+              </Text>
+            </Pressable>
+            <CampaignStatusPill status={campaign.status || 'draft'} />
+          </View>
+          {isDraft && (
+            <Text className="text-gray-400 font-instrument text-sm mb-1">
+              {draftHasFlow
+                ? 'Next: Configure schedule & mailboxes to start'
+                : 'Next: Build your flow'}
+            </Text>
+          )}
+          <Text className="text-gray-500 font-instrument text-sm">
             Created {formatDate(campaign.created_at)}
           </Text>
         </View>
@@ -180,15 +239,20 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
             </Pressable>
           </View>
         ) : (
-          <View className="flex-row gap-2">
+          <View className="flex-row gap-2 items-center">
+            {isDraft && (
+              <Pressable
+                onPress={handleContinueSetup}
+                className="px-4 py-2 rounded-lg bg-brand-orange"
+                style={{ backgroundColor: '#f85102' }}
+              >
+                <Text className="text-white font-instrument-medium text-sm">
+                  Continue setup
+                </Text>
+              </Pressable>
+            )}
             <Pressable
-              onPress={handleInsights}
-              className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-            >
-              <ChartBarIcon size={18} color="#f85102" />
-            </Pressable>
-            <Pressable
-              onPress={handleEdit}
+              onPress={handleEditFlow}
               className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
             >
               <PencilIcon size={18} color="#f85102" />
@@ -209,6 +273,7 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
 
 export default function CampaignsPage() {
   const { user } = useAuthenticator();
+  const { account } = useAccount();
   const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -218,12 +283,12 @@ export default function CampaignsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const loadCampaigns = async () => {
-    if (!user?.userId) return;
+    if (!account?.id) return;
 
     setIsLoading(true);
     setError('');
     try {
-      const data = await getCampaigns({ ownerId: user.userId });
+      const data = await getCampaigns({ accountId: account.id });
       setCampaigns(data);
     } catch (err: any) {
       setError(err.message || 'Failed to load campaigns');
@@ -235,11 +300,14 @@ export default function CampaignsPage() {
 
   useEffect(() => {
     loadCampaigns();
-  }, [user?.userId]);
+  }, [account?.id]);
 
   const handleCreateCampaign = async (name: string) => {
     if (!user?.userId) {
       throw new Error('User not authenticated');
+    }
+    if (!account?.id) {
+      throw new Error('No account selected');
     }
 
     setIsCreating(true);
@@ -247,7 +315,9 @@ export default function CampaignsPage() {
       const newCampaign = await createCampaign({
         name,
         owner_id: user.userId,
+        account_id: account.id,
         organization_id: null,
+        status: 'draft',
       });
       await loadCampaigns();
       // Navigate to builder after successful creation

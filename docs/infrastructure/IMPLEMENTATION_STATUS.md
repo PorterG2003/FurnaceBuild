@@ -107,12 +107,12 @@ Progress on setting up isolated dev/prod infrastructure with Supabase branches a
 ### Still Needed:
 - ⚠️ **Update Amplify environment variables for dev:**
   - Set `EXPO_PUBLIC_SUPABASE_URL` to dev branch URL
-  - Set `EXPO_PUBLIC_SUPABASE_ANON_KEY` to dev branch anon key
+  - Set `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to dev branch publishable key
   - Configure in Amplify Console or `amplify.yml`
 
 - ⚠️ **Update Amplify environment variables for prod:**
   - Set `EXPO_PUBLIC_SUPABASE_URL` to prod branch URL
-  - Set `EXPO_PUBLIC_SUPABASE_ANON_KEY` to prod branch anon key
+  - Set `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to prod branch publishable key
 
 - ⚠️ **Update Lambda functions** (if they use Supabase):
   - `enrollmentMetric` - needs environment-specific Supabase URL

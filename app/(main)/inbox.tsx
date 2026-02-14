@@ -1,274 +1,1318 @@
-import { useState } from 'react';
-import { View, Text, ScrollView, Pressable, TouchableOpacity } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  Pressable,
+  RefreshControl,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Animated,
+  Dimensions,
+} from 'react-native';
+import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
+import { EmptyState, Alert } from '@/components/ui/feedback';
+import { ConfirmDeleteModal } from '@/components/ui/modals';
+import { Button } from '@/components/ui/button';
+import {
+  getThreadsByAccount,
+  getMessagesByThread,
+  createReplyJob,
+  createForwardJob,
+  getMessageJobStatus,
+  getPendingInboxReplyJobs,
+  fetchAttachment,
+  getBlockList,
+  isEmailBlockedByEntries,
+} from '@/lib/supabase/services';
+import type { EmailThread, EmailMessage, BlockListEntry } from '@/lib/supabase/types';
+import { groupMessagesByDate } from '@/lib/inbox';
+import { buildQuotedForwardThreadHtml } from '@/lib/inbox/quote-utils';
+import { MagnifyingGlassIcon, PaperAirplaneIcon } from 'react-native-heroicons/outline';
+import type { EditorBridge } from '@10play/tentap-editor';
+import {
+  BlockSenderModal,
+  ComposerAttachments,
+  ComposerRichEditor,
+  DateDivider,
+  MessageBubble,
+  MessagePanelHeader,
+  MessagePanelHeaderSkeleton,
+  MessageListSkeleton,
+  ThreadItem,
+  ThreadListSkeleton,
+  SKELETON_DELAY_MS,
+  SKELETON_MIN_DISPLAY_MS,
+} from '@/components/inbox';
+import type { ComposerAttachmentItem } from '@/components/inbox';
+import { fetchAuthSession } from 'aws-amplify/auth';
+import outputs from '@/amplify_outputs.json';
 
-// Mock data types
-interface EmailMessage {
-  id: string;
-  sender: string;
-  senderEmail: string;
-  body: string;
-  timestamp: string;
-  isRead: boolean;
-}
+const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
 
-interface EmailThread {
-  id: string;
-  subject: string;
-  participants: string[];
-  lastMessage: string;
-  timestamp: string;
-  unreadCount: number;
-  messages: EmailMessage[];
-}
-
-// Mock data
-const mockThreads: EmailThread[] = [
-  {
-    id: '1',
-    subject: 'Project Proposal Discussion',
-    participants: ['Sarah Johnson', 'Mike Chen'],
-    lastMessage: 'Thanks for the update! Looking forward to reviewing the proposal.',
-    timestamp: '2 hours ago',
-    unreadCount: 2,
-    messages: [
-      {
-        id: 'm1',
-        sender: 'Sarah Johnson',
-        senderEmail: 'sarah.johnson@example.com',
-        body: 'Hi team, I wanted to discuss the project proposal we submitted last week. Do you have time for a quick call?',
-        timestamp: 'Yesterday, 3:45 PM',
-        isRead: true,
-      },
-      {
-        id: 'm2',
-        sender: 'Mike Chen',
-        senderEmail: 'mike.chen@example.com',
-        body: 'Sure! I can do tomorrow afternoon. What time works for you?',
-        timestamp: 'Yesterday, 4:12 PM',
-        isRead: true,
-      },
-      {
-        id: 'm3',
-        sender: 'Sarah Johnson',
-        senderEmail: 'sarah.johnson@example.com',
-        body: 'Thanks for the update! Looking forward to reviewing the proposal.',
-        timestamp: '2 hours ago',
-        isRead: false,
-      },
-    ],
-  },
-  {
-    id: '2',
-    subject: 'Budget Approval Request',
-    participants: ['Finance Team'],
-    lastMessage: 'The budget has been reviewed and approved. Please proceed.',
-    timestamp: '5 hours ago',
-    unreadCount: 0,
-    messages: [
-      {
-        id: 'm4',
-        sender: 'Finance Team',
-        senderEmail: 'finance@company.com',
-        body: 'The budget has been reviewed and approved. Please proceed with the implementation.',
-        timestamp: '5 hours ago',
-        isRead: true,
-      },
-    ],
-  },
-  {
-    id: '3',
-    subject: 'Weekly Team Standup',
-    participants: ['Alex Rivera', 'Emma Wilson'],
-    lastMessage: 'See you all at 10 AM tomorrow!',
-    timestamp: '1 day ago',
-    unreadCount: 1,
-    messages: [
-      {
-        id: 'm5',
-        sender: 'Alex Rivera',
-        senderEmail: 'alex.rivera@example.com',
-        body: 'Reminder: Weekly standup is scheduled for tomorrow at 10 AM. Please come prepared with your updates.',
-        timestamp: '1 day ago',
-        isRead: true,
-      },
-      {
-        id: 'm6',
-        sender: 'Emma Wilson',
-        senderEmail: 'emma.wilson@example.com',
-        body: 'See you all at 10 AM tomorrow!',
-        timestamp: '1 day ago',
-        isRead: false,
-      },
-    ],
-  },
-  {
-    id: '4',
-    subject: 'Client Feedback on Design',
-    participants: ['Design Team', 'Client ABC'],
-    lastMessage: 'The new design looks great! We love the color scheme.',
-    timestamp: '2 days ago',
-    unreadCount: 0,
-    messages: [
-      {
-        id: 'm7',
-        sender: 'Client ABC',
-        senderEmail: 'contact@clientabc.com',
-        body: 'The new design looks great! We love the color scheme and the overall layout. Just a few minor tweaks needed.',
-        timestamp: '2 days ago',
-        isRead: true,
-      },
-    ],
-  },
-  {
-    id: '5',
-    subject: 'New Feature Launch',
-    participants: ['Product Team'],
-    lastMessage: 'The feature is now live in production. Great work everyone!',
-    timestamp: '3 days ago',
-    unreadCount: 0,
-    messages: [
-      {
-        id: 'm8',
-        sender: 'Product Team',
-        senderEmail: 'product@company.com',
-        body: 'The feature is now live in production. Great work everyone!',
-        timestamp: '3 days ago',
-        isRead: true,
-      },
-    ],
-  },
-];
-
-function ThreadItem({
-  thread,
-  isSelected,
-  onSelect,
-}: {
-  thread: EmailThread;
-  isSelected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onSelect}
-      className={`p-4 border-b border-[#2A2A2A] ${
-        isSelected ? 'bg-[#1F1F1F]' : 'bg-transparent'
-      }`}
-      style={{
-        borderBottomWidth: 1,
-        borderBottomColor: '#2A2A2A',
-        backgroundColor: isSelected ? '#1F1F1F' : 'transparent',
-      }}
-    >
-      <View className="flex-row items-start justify-between mb-2">
-        <View className="flex-1 mr-2">
-          <Text
-            className={`font-instrument-semibold text-base mb-1 ${
-              thread.unreadCount > 0 ? 'text-white' : 'text-gray-300'
-            }`}
-            numberOfLines={1}
-          >
-            {thread.subject}
-          </Text>
-          <Text className="text-gray-400 font-instrument text-sm" numberOfLines={1}>
-            {thread.participants.join(', ')}
-          </Text>
-        </View>
-        {thread.unreadCount > 0 && (
-          <View
-            className="bg-brand-orange rounded-full px-2 py-1 min-w-[24px] items-center justify-center"
-            style={{ backgroundColor: '#F3440D' }}
-          >
-            <Text className="text-white font-instrument-semibold text-xs">
-              {thread.unreadCount}
-            </Text>
-          </View>
-        )}
-      </View>
-      <Text className="text-gray-500 font-instrument text-sm mb-2" numberOfLines={2}>
-        {thread.lastMessage}
-      </Text>
-      <Text className="text-gray-600 font-instrument text-xs">{thread.timestamp}</Text>
-    </Pressable>
-  );
-}
-
-function MessageItem({ message }: { message: EmailMessage }) {
-  return (
-    <View className="mb-6 pb-6 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
-      <View className="flex-row items-center justify-between mb-3">
-        <View className="flex-1">
-          <Text className="text-white font-instrument-semibold text-base mb-1">
-            {message.sender}
-          </Text>
-          <Text className="text-gray-400 font-instrument text-sm">{message.senderEmail}</Text>
-        </View>
-        <Text className="text-gray-500 font-instrument text-sm">{message.timestamp}</Text>
-      </View>
-      <Text className="text-gray-300 font-instrument text-base leading-6">{message.body}</Text>
-    </View>
-  );
-}
+const MAX_ATTACHMENTS = 10;
+const MAX_TOTAL_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 export default function InboxPage() {
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(mockThreads[0]?.id || null);
+  const { account } = useAccount();
+  const accountId = account?.id ?? null;
+  const [threads, setThreads] = useState<EmailThread[]>([]);
+  const [threadsLoading, setThreadsLoading] = useState(true);
+  const [threadsError, setThreadsError] = useState<string | null>(null);
 
-  const selectedThread = mockThreads.find((t) => t.id === selectedThreadId);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<EmailMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [composerMode, setComposerMode] = useState<'reply' | 'forward' | null>(null);
+  const [inReplyToMessageId, setInReplyToMessageId] = useState<string | null>(null);
+  const [replyToEmail, setReplyToEmail] = useState('');
+  const [replyToName, setReplyToName] = useState('');
+  const [replySubject, setReplySubject] = useState('');
+  const [replyCc, setReplyCc] = useState('');
+  const composerEditorRef = useRef<EditorBridge | null>(null);
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [forwardedMessageId, setForwardedMessageId] = useState<string | null>(null);
+  const [forwardToEmail, setForwardToEmail] = useState('');
+  const [forwardCc, setForwardCc] = useState('');
+  const [forwardSubject, setForwardSubject] = useState('');
+  const [sendingForward, setSendingForward] = useState(false);
+  const [forwardError, setForwardError] = useState<string | null>(null);
+  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachmentItem[]>([]);
+  const [composerAttachmentsLoading, setComposerAttachmentsLoading] = useState(false);
+  const [composerAttachmentsSkipMessage, setComposerAttachmentsSkipMessage] = useState<string | null>(null);
+
+  const [showThreadSkeleton, setShowThreadSkeleton] = useState(false);
+  const [showMessagesSkeleton, setShowMessagesSkeleton] = useState(false);
+  const [threadSearchQuery, setThreadSearchQuery] = useState('');
+  const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
+  const [blockModalVisible, setBlockModalVisible] = useState(false);
+  const [blockedRecipientConfirm, setBlockedRecipientConfirm] = useState<{
+    mode: 'reply' | 'forward';
+    onConfirm: () => void;
+  } | null>(null);
+
+  type PendingReply = {
+    threadId: string;
+    jobId: string;
+    subject: string;
+    bodyText: string;
+    bodyHtml: string;
+    toEmail: string;
+    toName: string | null;
+    cc: string[];
+    fromEmail: string;
+    receivedAt: string;
+    messageCountWhenPending: number;
+    errorMessage?: string | null;
+    isFailed?: boolean;
+    inReplyToMessageId: string;
+    attachments?: Array<{ filename: string; contentType: string; content: string }>;
+  };
+  const [pendingReply, setPendingReply] = useState<PendingReply | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const messagesScrollViewRef = useRef<ScrollView>(null);
+  const lastContentHeightRef = useRef(0);
+  const prevMessagesLengthRef = useRef(0);
+  const prevSelectedThreadIdRef = useRef<string | null>(null);
+  const autoScrollArmedRef = useRef(false);
+  const selectedThreadIdRef = useRef(selectedThreadId);
+  selectedThreadIdRef.current = selectedThreadId;
+
+  const handleComposerFilesSelected = useCallback(
+    async (files: FileList) => {
+      if (!files?.length) return;
+      setComposerAttachmentsLoading(true);
+      setComposerAttachmentsSkipMessage(null);
+      const toAdd: ComposerAttachmentItem[] = [];
+      let skippedTooBig = 0;
+      let skippedTotal = 0;
+      let skippedCount = 0;
+      let skippedOther = 0;
+      const currentTotal = composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0);
+      for (let i = 0; i < files.length; i++) {
+        if (composerAttachments.length + toAdd.length >= MAX_ATTACHMENTS) {
+          skippedCount += files.length - i;
+          break;
+        }
+        const file = files[i];
+        if (file.size > MAX_FILE_BYTES) {
+          skippedTooBig += 1;
+          continue;
+        }
+        const runningTotal = currentTotal + toAdd.reduce((s, a) => s + (a.size ?? 0), 0);
+        if (runningTotal + file.size > MAX_TOTAL_BYTES) {
+          skippedTotal += 1;
+          continue;
+        }
+        try {
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = reader.result as string;
+              const match = result?.match(/^data:([^;]+);base64,(.+)$/);
+              if (match) resolve(match[2]);
+              else reject(new Error('Invalid data URL'));
+            };
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+          });
+          toAdd.push({
+            filename: file.name,
+            contentType: file.type || 'application/octet-stream',
+            content: base64,
+            size: file.size,
+          });
+        } catch {
+          skippedOther += 1;
+        }
+      }
+      setComposerAttachmentsLoading(false);
+      if (toAdd.length > 0) {
+        setComposerAttachments((prev) => [...prev, ...toAdd]);
+      }
+      const skippedTotalCount = skippedTooBig + skippedTotal + skippedCount + skippedOther;
+      if (skippedTotalCount > 0) {
+        const parts: string[] = [];
+        if (skippedTooBig > 0) parts.push(`${skippedTooBig} over 2 MB`);
+        if (skippedTotal > 0) parts.push(`${skippedTotal} would exceed 5 MB total`);
+        if (skippedCount > 0) parts.push(`${skippedCount} over 10 file limit`);
+        if (skippedOther > 0) parts.push(`${skippedOther} could not be read`);
+        setComposerAttachmentsSkipMessage(
+          toAdd.length > 0
+            ? `${skippedTotalCount} file${skippedTotalCount !== 1 ? 's' : ''} skipped (${parts.join(', ')})`
+            : `No files added. ${skippedTotalCount} file${skippedTotalCount !== 1 ? 's' : ''} skipped (${parts.join(', ')})`
+        );
+      }
+    },
+    [composerAttachments]
+  );
+
+  const threadSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
+  const messagesSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
+
+  const selectedThread = threads.find((t) => t.id === selectedThreadId);
+  const threadsLoadingOrNoAccount = threadsLoading || !accountId;
+
+  const filteredThreads = useMemo(() => {
+    const q = threadSearchQuery.trim().toLowerCase();
+    if (!q) return threads;
+    return threads.filter((thread) => {
+      const subjectMatch = (thread.subject ?? '').toLowerCase().includes(q);
+      const participantsMatch = (thread.participants ?? []).some((p) =>
+        p.toLowerCase().includes(q)
+      );
+      return subjectMatch || participantsMatch;
+    });
+  }, [threads, threadSearchQuery]);
+
+  const selectedThreadProspectEmails = useMemo(() => {
+    if (!selectedThreadId || !messages.length) return [];
+    const displayMessages = pendingReply && selectedThreadId === pendingReply.threadId
+      ? [
+          ...messages,
+          {
+            id: 'pending-' + pendingReply.jobId,
+            direction: 'sent' as const,
+            from_email: pendingReply.fromEmail,
+            from_name: null,
+            to_email: pendingReply.toEmail,
+            to_name: null,
+            cc: null,
+            subject: pendingReply.subject,
+            body_text: pendingReply.bodyText,
+            body_html: pendingReply.bodyHtml,
+            message_id: null,
+            in_reply_to: null,
+            message_references: null,
+            received_at: pendingReply.receivedAt,
+            read_at: null,
+            headers: {},
+            attachments: [],
+            imap_uid: null,
+            created_at: pendingReply.receivedAt,
+            updated_at: pendingReply.receivedAt,
+          },
+        ].sort(
+          (a, b) =>
+            new Date(a.received_at).getTime() - new Date(b.received_at).getTime()
+        )
+      : messages;
+    return [
+      ...new Set(
+        displayMessages.filter((m) => m.direction === 'received').map((m) => m.from_email)
+      ),
+    ];
+  }, [selectedThreadId, messages, pendingReply]);
+
+  const blockedProspectEmails = useMemo(() => {
+    const blocked = new Set<string>();
+    for (const email of selectedThreadProspectEmails) {
+      if (isEmailBlockedByEntries(email, blockList)) {
+        blocked.add(email.trim().toLowerCase());
+      }
+    }
+    return blocked;
+  }, [selectedThreadProspectEmails, blockList]);
+
+  const handleRefresh = useCallback(async () => {
+    if (!accountId) return;
+    setRefreshing(true);
+    try {
+      const [list] = await Promise.all([
+        getThreadsByAccount(accountId, { hasReplyOnly: true }),
+        loadBlockList(),
+      ]);
+      setThreads(list);
+      if (list.length === 0) {
+        setSelectedThreadId(null);
+      } else if (
+        !selectedThreadId ||
+        !list.some((t) => t.id === selectedThreadId)
+      ) {
+        setSelectedThreadId(list[0].id);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [accountId, selectedThreadId]);
+
+  const loadThreads = useCallback(async () => {
+    if (!accountId) return;
+    setThreadsError(null);
+    setThreadsLoading(true);
+    try {
+      const list = await getThreadsByAccount(accountId, { hasReplyOnly: true });
+      setThreads(list);
+      if (list.length === 0) {
+        setSelectedThreadId(null);
+      } else {
+        const current = selectedThreadIdRef.current;
+        if (!current || !list.some((t) => t.id === current)) {
+          setSelectedThreadId(list[0].id);
+        }
+      }
+    } catch (err) {
+      setThreadsError(err instanceof Error ? err.message : 'Failed to load conversations');
+    } finally {
+      setThreadsLoading(false);
+    }
+  }, [accountId]);
+
+  const loadMessages = useCallback(async (threadId: string, options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setMessagesError(null);
+      setMessagesLoading(true);
+    }
+    try {
+      const list = await getMessagesByThread(threadId);
+      setMessages(list);
+    } catch (err) {
+      if (!options?.silent) {
+        setMessagesError(err instanceof Error ? err.message : 'Failed to load messages');
+      }
+    } finally {
+      if (!options?.silent) {
+        setMessagesLoading(false);
+      }
+    }
+  }, []);
+
+  // Restore pending reply from database for the selected thread
+  const restorePendingReply = useCallback(async () => {
+    if (!accountId || !selectedThreadId) return;
+    try {
+      const pendingJobs = await getPendingInboxReplyJobs(accountId);
+      const jobForThread = pendingJobs.find((j) => j.thread_id === selectedThreadId);
+      if (!jobForThread) return;
+
+      // Get fromEmail from sent messages in the thread
+      const threadMessages = await getMessagesByThread(selectedThreadId);
+      const fromEmail = threadMessages.find((m) => m.direction === 'sent')?.from_email ?? '';
+
+      setPendingReply({
+        threadId: jobForThread.thread_id,
+        jobId: jobForThread.id,
+        subject: jobForThread.message_data.subject,
+        bodyText: jobForThread.message_data.body_text,
+        bodyHtml: jobForThread.message_data.body_html,
+        toEmail: jobForThread.message_data.to_email,
+        toName: jobForThread.message_data.to_name || null,
+        cc: jobForThread.message_data.cc || [],
+        fromEmail,
+        receivedAt: new Date().toISOString(), // Use current time for display
+        messageCountWhenPending: threadMessages.length,
+        errorMessage: jobForThread.error_message,
+        isFailed: jobForThread.status === 'failed',
+        inReplyToMessageId: jobForThread.message_data.in_reply_to_message_id,
+        attachments: jobForThread.message_data.attachments,
+      });
+
+      // Start polling for this job
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      const jobIdToPoll = jobForThread.id;
+      pollingIntervalRef.current = setInterval(async () => {
+        loadMessages(selectedThreadId, { silent: true });
+        // Check job status
+        try {
+          const jobStatus = await getMessageJobStatus(jobIdToPoll);
+          if (jobStatus) {
+            if (jobStatus.status === 'failed') {
+              setPendingReply((prev) =>
+                prev && prev.jobId === jobIdToPoll
+                  ? { ...prev, isFailed: true, errorMessage: jobStatus.error_message }
+                  : prev
+              );
+              if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+              }
+            } else if (jobStatus.status === 'sent') {
+              // Job succeeded, clear pending when message appears
+              // (handled by the effect checking messages.length)
+            }
+          }
+        } catch (err) {
+          console.error('Failed to check job status:', err);
+        }
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to restore pending reply:', err);
+    }
+  }, [accountId, selectedThreadId, loadMessages]);
+
+  const loadBlockList = useCallback(async () => {
+    if (!accountId) return;
+    try {
+      const list = await getBlockList(accountId);
+      setBlockList(list);
+    } catch (err) {
+      console.error('Failed to load block list:', err);
+    }
+  }, [accountId]);
+
+  useEffect(() => {
+    if (accountId) {
+      loadThreads();
+      loadBlockList();
+    } else {
+      setThreadsLoading(false);
+      setThreads([]);
+      setBlockList([]);
+    }
+  }, [accountId, loadThreads, loadBlockList]);
+
+  // Restore pending reply when thread is selected
+  useEffect(() => {
+    if (accountId && selectedThreadId && !threadsLoading) {
+      restorePendingReply();
+    }
+  }, [accountId, selectedThreadId, threadsLoading, restorePendingReply]);
+
+  useEffect(() => {
+    if (selectedThreadId) {
+      loadMessages(selectedThreadId);
+    } else {
+      setMessages([]);
+    }
+  }, [selectedThreadId, loadMessages]);
+
+  // Thread skeleton: delay 200ms before showing, min 300ms once shown
+  useEffect(() => {
+    const t = threadSkeletonTimers.current;
+    if (threadsLoadingOrNoAccount) {
+      if (t.hide) {
+        clearTimeout(t.hide);
+        t.hide = null;
+      }
+      t.show = setTimeout(() => setShowThreadSkeleton(true), SKELETON_DELAY_MS);
+      return () => {
+        if (t.show) clearTimeout(t.show);
+        t.show = null;
+      };
+    } else {
+      if (t.show) {
+        clearTimeout(t.show);
+        t.show = null;
+      }
+      if (showThreadSkeleton) {
+        t.hide = setTimeout(() => setShowThreadSkeleton(false), SKELETON_MIN_DISPLAY_MS);
+        return () => {
+          if (t.hide) clearTimeout(t.hide);
+          t.hide = null;
+        };
+      }
+    }
+  }, [threadsLoadingOrNoAccount, showThreadSkeleton]);
+
+  // Messages skeleton: delay 200ms before showing, min 300ms once shown
+  useEffect(() => {
+    const t = messagesSkeletonTimers.current;
+    if (messagesLoading) {
+      if (t.hide) {
+        clearTimeout(t.hide);
+        t.hide = null;
+      }
+      t.show = setTimeout(() => setShowMessagesSkeleton(true), SKELETON_DELAY_MS);
+      return () => {
+        if (t.show) clearTimeout(t.show);
+        t.show = null;
+      };
+    } else {
+      if (t.show) {
+        clearTimeout(t.show);
+        t.show = null;
+      }
+      if (showMessagesSkeleton) {
+        t.hide = setTimeout(() => setShowMessagesSkeleton(false), SKELETON_MIN_DISPLAY_MS);
+        return () => {
+          if (t.hide) clearTimeout(t.hide);
+          t.hide = null;
+        };
+      }
+    }
+  }, [messagesLoading, showMessagesSkeleton]);
+
+  // Clear pending reply when thread changes or when sent message appears (polling)
+  useEffect(() => {
+    if (!pendingReply) return;
+    if (selectedThreadId !== pendingReply.threadId) {
+      setPendingReply(null);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      return;
+    }
+    // If failed, don't clear on message count change (user needs to see error)
+    if (!pendingReply.isFailed && messages.length > pendingReply.messageCountWhenPending) {
+      setPendingReply(null);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    }
+  }, [pendingReply, selectedThreadId, messages.length]);
+
+  // Clear polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  const scrollMessagesToEnd = useCallback((reason: string, nextHeight?: number) => {
+    if (typeof nextHeight === 'number') {
+      lastContentHeightRef.current = nextHeight;
+    }
+    messagesScrollViewRef.current?.scrollToEnd({ animated: true });
+  }, [messages.length]);
+
+  useEffect(() => {
+    const previousThreadId = prevSelectedThreadIdRef.current;
+    const previousLength = prevMessagesLengthRef.current;
+    const threadChanged = previousThreadId !== selectedThreadId;
+    const messagesIncreased = messages.length > previousLength;
+    if (threadChanged || messagesIncreased) {
+      autoScrollArmedRef.current = true;
+    }
+    prevMessagesLengthRef.current = messages.length;
+    prevSelectedThreadIdRef.current = selectedThreadId;
+  }, [messages.length, selectedThreadId, pendingReply, composerMode]);
+
+  const openReplyComposer = useCallback(
+    (message: EmailMessage) => {
+      if (!selectedThread) return;
+      const lastReceived = [...messages].reverse().find((m) => m.direction === 'received');
+      const toEmail = message.direction === 'received' ? message.from_email : lastReceived?.from_email ?? '';
+      const toName = message.direction === 'received' ? (message.from_name ?? '') : (lastReceived?.from_name ?? '');
+      setInReplyToMessageId(message.id);
+      setReplyToEmail(toEmail);
+      setReplyToName(toName);
+      setReplySubject(selectedThread.subject?.startsWith('Re:') ? selectedThread.subject : `Re: ${selectedThread.subject || '(No subject)'}`);
+
+      // Prefill CC from whole thread history (participants), excluding To and our sending identity
+      const ourEmail = messages.find((m) => m.direction === 'sent')?.from_email?.trim().toLowerCase();
+      const toNorm = toEmail.trim().toLowerCase();
+      const ccSeen = new Set<string>();
+      const ccList: string[] = [];
+      for (const p of selectedThread.participants ?? []) {
+        const e = p.trim();
+        if (!e) continue;
+        const n = e.toLowerCase();
+        if (n === toNorm || n === ourEmail || ccSeen.has(n)) continue;
+        ccSeen.add(n);
+        ccList.push(e);
+      }
+      setReplyCc(ccList.join(', '));
+
+      setReplyError(null);
+      setComposerMode('reply');
+    },
+    [selectedThread, messages]
+  );
+
+  const openForwardComposer = useCallback(
+    (_message: EmailMessage) => {
+      if (!selectedThread) return;
+      const subject = selectedThread.subject ?? '(No subject)';
+      const fwdSubject = subject.startsWith('Fwd:') ? subject : `Fwd: ${subject}`;
+      setForwardedMessageId(_message.id);
+      setForwardToEmail('');
+      setForwardCc('');
+      setForwardSubject(fwdSubject);
+      setForwardError(null);
+      setComposerMode('forward');
+    },
+    [selectedThread]
+  );
+
+  const handleFetchAttachmentBlob = useCallback(
+    async (emailMessageId: string, part: string): Promise<Blob | null> => {
+      if (!FETCH_ATTACHMENT_URL) return null;
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
+        if (!token) return null;
+        return await fetchAttachment(FETCH_ATTACHMENT_URL, token, emailMessageId, part);
+      } catch {
+        return null;
+      }
+    },
+    []
+  );
+
+  const handleDownloadAttachment = useCallback(
+    async (emailMessageId: string, part: string, filename: string) => {
+      const blob = await handleFetchAttachmentBlob(emailMessageId, part);
+      if (!blob) return;
+      try {
+        if (Platform.OS === 'web') {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename || 'attachment';
+          a.click();
+          URL.revokeObjectURL(url);
+        } else {
+          // Native: download not yet implemented (web only for now)
+          // TODO: Add expo-file-system + expo-sharing for native save/share
+        }
+      } catch (err) {
+        console.error('Download attachment failed:', err);
+      }
+    },
+    [handleFetchAttachmentBlob]
+  );
+
+  const winWidth = Dimensions.get('window').width;
+  const REPLY_PANEL_WIDTH = Math.min(800, Math.max(520, winWidth * 0.58));
+  const slideAnim = useRef(new Animated.Value(1)).current;
+
+  const closeComposerPanel = useCallback(() => {
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      setComposerMode(null);
+      setComposerAttachments([]);
+      setComposerAttachmentsSkipMessage(null);
+    });
+  }, [slideAnim]);
+
+  useEffect(() => {
+    if (composerMode) {
+      slideAnim.setValue(1);
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 65,
+        friction: 11,
+      }).start();
+    }
+  }, [composerMode, slideAnim]);
+
+  const retryFailedReply = useCallback(async () => {
+    if (!accountId || !selectedThreadId || !selectedThread || !pendingReply || !pendingReply.isFailed) return;
+    setSendingReply(true);
+    setReplyError(null);
+    try {
+      const replyAttachments = pendingReply.attachments?.length
+        ? pendingReply.attachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
+        : undefined;
+      const jobId = await createReplyJob({
+        accountId,
+        threadId: selectedThreadId,
+        inReplyToMessageId: inReplyToMessageId!,
+        subject: pendingReply.subject,
+        bodyText: pendingReply.bodyText,
+        bodyHtml: pendingReply.bodyHtml ?? pendingReply.bodyText,
+        toEmail: pendingReply.toEmail,
+        toName: pendingReply.toName ?? null,
+        cc: pendingReply.cc?.length ? pendingReply.cc : undefined,
+        attachments: replyAttachments,
+      });
+      const fromEmail = messages.find((m) => m.direction === 'sent')?.from_email ?? '';
+      const receivedAt = new Date().toISOString();
+      setPendingReply({
+        threadId: selectedThreadId,
+        jobId,
+        subject: pendingReply.subject,
+        bodyText: pendingReply.bodyText,
+        bodyHtml: pendingReply.bodyHtml,
+        toEmail: pendingReply.toEmail,
+        toName: pendingReply.toName,
+        cc: pendingReply.cc,
+        fromEmail,
+        receivedAt,
+        messageCountWhenPending: messages.length,
+        inReplyToMessageId: pendingReply.inReplyToMessageId,
+        attachments: pendingReply.attachments,
+      });
+      loadMessages(selectedThreadId);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      pollingIntervalRef.current = setInterval(async () => {
+        loadMessages(selectedThreadId, { silent: true });
+        // Check job status for failures
+        try {
+          const jobStatus = await getMessageJobStatus(jobId);
+          if (jobStatus) {
+            if (jobStatus.status === 'failed') {
+              setPendingReply((prev) =>
+                prev && prev.jobId === jobId
+                  ? { ...prev, isFailed: true, errorMessage: jobStatus.error_message }
+                  : prev
+              );
+              if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+              }
+            } else if (jobStatus.status === 'sent') {
+              // Job succeeded, clear pending when message appears
+              // (handled by the effect checking messages.length)
+            }
+          }
+        } catch (err) {
+          // Ignore errors checking job status, continue polling
+          console.error('Failed to check job status:', err);
+        }
+      }, 2000);
+    } catch (err) {
+      setReplyError(err instanceof Error ? err.message : 'Failed to retry reply');
+    } finally {
+      setSendingReply(false);
+    }
+  }, [accountId, selectedThreadId, selectedThread, pendingReply, messages, loadMessages]);
+
+  const sendReply = useCallback(async (skipBlockCheck?: boolean) => {
+    if (!accountId || !selectedThreadId || !selectedThread || !inReplyToMessageId) return;
+    if (!replyToEmail.trim()) {
+      setReplyError('To is required');
+      return;
+    }
+    const totalAttachmentBytes = composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0);
+    if (totalAttachmentBytes > MAX_TOTAL_BYTES) {
+      setReplyError('Total attachment size exceeds 5 MB.');
+      return;
+    }
+    const ccArray = replyCc.trim() ? replyCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : [];
+    const allRecipients = [replyToEmail.trim(), ...ccArray];
+    if (!skipBlockCheck && blockList.length > 0) {
+      const anyBlocked = allRecipients.some((email) => isEmailBlockedByEntries(email, blockList));
+      if (anyBlocked) {
+        setBlockedRecipientConfirm({
+          mode: 'reply',
+          onConfirm: () => sendReply(true),
+        });
+        return;
+      }
+    }
+    setSendingReply(true);
+    setReplyError(null);
+    try {
+      const bodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
+      const bodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? bodyText;
+      const replyAttachments =
+        composerAttachments.length > 0
+          ? composerAttachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
+          : undefined;
+      const jobId = await createReplyJob({
+        accountId,
+        threadId: selectedThreadId,
+        inReplyToMessageId,
+        subject: replySubject.trim() || '(No subject)',
+        bodyText: bodyText || '',
+        bodyHtml: bodyHtml || '',
+        toEmail: replyToEmail.trim(),
+        toName: replyToName.trim() || null,
+        cc: ccArray.length > 0 ? ccArray : undefined,
+        attachments: replyAttachments,
+      });
+      const fromEmail = messages.find((m) => m.direction === 'sent')?.from_email ?? '';
+      const receivedAt = new Date().toISOString();
+      setPendingReply({
+        threadId: selectedThreadId,
+        jobId,
+        subject: replySubject.trim() || '(No subject)',
+        bodyText: bodyText || '',
+        bodyHtml: bodyHtml || '',
+        toEmail: replyToEmail.trim(),
+        toName: replyToName.trim() || null,
+        cc: ccArray,
+        fromEmail,
+        receivedAt,
+        messageCountWhenPending: messages.length,
+        inReplyToMessageId,
+        attachments: replyAttachments,
+      });
+      closeComposerPanel();
+      loadMessages(selectedThreadId);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      pollingIntervalRef.current = setInterval(async () => {
+        loadMessages(selectedThreadId, { silent: true });
+        try {
+          const jobStatus = await getMessageJobStatus(jobId);
+          if (jobStatus?.status === 'failed') {
+            setPendingReply((prev) =>
+              prev && prev.jobId === jobId
+                ? { ...prev, isFailed: true, errorMessage: jobStatus.error_message }
+                : prev
+            );
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
+            }
+          }
+        } catch (err) {
+          console.error('Failed to check job status:', err);
+        }
+      }, 2000);
+    } catch (err) {
+      setReplyError(err instanceof Error ? err.message : 'Failed to send reply');
+    } finally {
+      setSendingReply(false);
+    }
+  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyCc, composerAttachments, messages, blockList, loadMessages, closeComposerPanel]);
+
+  const sendForward = useCallback(async (skipBlockCheck?: boolean) => {
+    if (!accountId || !selectedThreadId || !selectedThread || !forwardedMessageId) return;
+    if (!forwardToEmail.trim()) {
+      setForwardError('To is required');
+      return;
+    }
+    const totalAttachmentBytes = composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0);
+    if (totalAttachmentBytes > MAX_TOTAL_BYTES) {
+      setForwardError('Total attachment size exceeds 5 MB.');
+      return;
+    }
+    const ccArray = forwardCc.trim() ? forwardCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : [];
+    const allRecipients = [forwardToEmail.trim(), ...ccArray];
+    if (!skipBlockCheck && blockList.length > 0) {
+      const anyBlocked = allRecipients.some((email) => isEmailBlockedByEntries(email, blockList));
+      if (anyBlocked) {
+        setBlockedRecipientConfirm({
+          mode: 'forward',
+          onConfirm: () => sendForward(true),
+        });
+        return;
+      }
+    }
+    setSendingForward(true);
+    setForwardError(null);
+    try {
+      const bodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
+      const bodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? bodyText;
+      const forwardAttachments =
+        composerAttachments.length > 0
+          ? composerAttachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
+          : undefined;
+      await createForwardJob({
+        accountId,
+        threadId: selectedThreadId,
+        forwardedMessageId,
+        subject: forwardSubject.trim() || '(No subject)',
+        bodyText: bodyText || '',
+        bodyHtml: bodyHtml || bodyText,
+        toEmail: forwardToEmail.trim(),
+        toName: null,
+        cc: ccArray.length > 0 ? ccArray : undefined,
+        attachments: forwardAttachments,
+      });
+      closeComposerPanel();
+    } catch (err) {
+      setForwardError(err instanceof Error ? err.message : 'Failed to send forward');
+    } finally {
+      setSendingForward(false);
+    }
+  }, [accountId, selectedThreadId, selectedThread, forwardedMessageId, forwardToEmail, forwardSubject, forwardCc, composerAttachments, blockList, closeComposerPanel]);
 
   return (
     <PageLayout scrollable={false}>
       <View className="flex-1 flex-row bg-[#121212]">
-        {/* Threads Panel */}
-        <View className="w-96 border-r border-[#2A2A2A]" style={{ borderRightWidth: 1 }}>
-          <View className="p-4 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
-            <Text className="text-2xl font-instrument-semibold text-white mb-1">Inbox</Text>
-            <Text className="text-gray-400 font-instrument text-sm">
-              {mockThreads.length} conversations
-            </Text>
-          </View>
-          <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-            {mockThreads.map((thread) => (
-              <ThreadItem
-                key={thread.id}
-                thread={thread}
-                isSelected={selectedThreadId === thread.id}
-                onSelect={() => setSelectedThreadId(thread.id)}
+        {/* Threads + Message content (slides left when reply panel opens) */}
+        <View style={{ flex: 1, minWidth: 0 }} className="flex-row">
+        {/* Threads Panel - collapses when reply/forward panel is open */}
+        <Animated.View
+          className="border-r border-[#2A2A2A] bg-[#0D0D0D]"
+          style={{
+            width: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 384] }),
+            overflow: 'hidden',
+            borderRightWidth: 1,
+          }}
+        >
+          <View className="px-4 py-4 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
+            <View className="flex-row items-center rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-3 py-2.5" style={{ borderWidth: 1 }}>
+              <MagnifyingGlassIcon size={20} color="#6B7280" style={{ marginRight: 10 }} />
+              <TextInput
+                value={threadSearchQuery}
+                onChangeText={setThreadSearchQuery}
+                placeholder="Search conversations…"
+                placeholderTextColor="#6B7280"
+                className="flex-1 text-white font-instrument text-base py-0"
+                style={{ minHeight: 24 }}
               />
-            ))}
-          </ScrollView>
-        </View>
+            </View>
+            {!threadsLoadingOrNoAccount && !showThreadSkeleton && threads.length > 0 && (
+              <Text className="text-gray-500 font-instrument text-xs mt-2">
+                {threadSearchQuery.trim()
+                  ? `${filteredThreads.length} of ${threads.length}`
+                  : `${threads.length} conversation${threads.length !== 1 ? 's' : ''}`}
+              </Text>
+            )}
+          </View>
+          {threadsError && (
+            <View className="px-4 py-3">
+              <Alert
+                variant="error"
+                message={threadsError}
+                actionText="Retry"
+                onAction={() => loadThreads()}
+              />
+            </View>
+          )}
+          {(threadsLoadingOrNoAccount || showThreadSkeleton) ? (
+            <ThreadListSkeleton />
+          ) : threads.length === 0 && !threadsError ? (
+            <EmptyState
+              title="No conversations yet"
+              description="Replies to your campaign emails will appear here."
+              className="flex-1 px-5"
+            />
+          ) : filteredThreads.length === 0 ? (
+            <EmptyState
+              title="No matching conversations"
+              description="Try a different search term."
+              className="flex-1 px-5"
+            />
+          ) : (
+            <ScrollView
+              className="flex-1"
+              contentContainerStyle={{ paddingVertical: 8 }}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+              }
+            >
+              {filteredThreads.map((thread) => (
+                <ThreadItem
+                  key={thread.id}
+                  thread={thread}
+                  isSelected={selectedThreadId === thread.id}
+                  onSelect={() => setSelectedThreadId(thread.id)}
+                />
+              ))}
+            </ScrollView>
+          )}
+        </Animated.View>
 
-        {/* Conversation Panel */}
+        {/* Message Panel */}
         <View className="flex-1">
-          {selectedThread ? (
+          {(threadsLoadingOrNoAccount || showThreadSkeleton) ? (
             <>
-              <View className="p-4 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
-                <Text className="text-xl font-instrument-semibold text-white mb-1">
-                  {selectedThread.subject}
-                </Text>
-                <Text className="text-gray-400 font-instrument text-sm">
-                  {selectedThread.participants.join(', ')}
-                </Text>
-              </View>
-              <ScrollView
-                className="flex-1"
-                contentContainerStyle={{ padding: 24 }}
-                showsVerticalScrollIndicator={false}
-              >
-                {selectedThread.messages.map((message) => (
-                  <MessageItem key={message.id} message={message} />
-                ))}
-              </ScrollView>
+              <MessagePanelHeaderSkeleton />
+              <MessageListSkeleton />
+            </>
+          ) : selectedThread ? (
+            <>
+              {(() => {
+                const displayMessages: EmailMessage[] =
+                  pendingReply && selectedThreadId === pendingReply.threadId
+                    ? [
+                        ...messages,
+                        {
+                          id: `pending-${pendingReply.jobId}`,
+                          thread_id: selectedThreadId!,
+                          message_job_id: pendingReply.jobId,
+                          direction: 'sent' as const,
+                          from_email: pendingReply.fromEmail,
+                          from_name: null,
+                          to_email: pendingReply.toEmail,
+                          to_name: null,
+                          cc: null,
+                          subject: pendingReply.subject,
+                          body_text: pendingReply.bodyText,
+                          body_html: pendingReply.bodyHtml,
+                          message_id: null,
+                          in_reply_to: null,
+                          message_references: null,
+                          received_at: pendingReply.receivedAt,
+                          read_at: null,
+                          headers: {},
+                          attachments: [],
+                          imap_uid: null,
+                          created_at: pendingReply.receivedAt,
+                          updated_at: pendingReply.receivedAt,
+                        },
+                      ].sort(
+                        (a, b) =>
+                          new Date(a.received_at).getTime() - new Date(b.received_at).getTime()
+                      )
+                    : messages;
+                return (
+                  <>
+              <MessagePanelHeader
+                subject={selectedThread.subject ?? ''}
+                prospectEmails={selectedThreadProspectEmails}
+                senderEmails={[
+                  ...new Set(
+                    displayMessages.filter((m) => m.direction === 'sent').map((m) => m.from_email)
+                  ),
+                ]}
+                blockedEmails={blockedProspectEmails}
+                onBlock={accountId ? () => setBlockModalVisible(true) : undefined}
+                showBlockButton={!!accountId && selectedThreadProspectEmails.length > 0}
+              />
+              {messagesError && (
+                <View className="p-4">
+                  <Alert
+                    variant="error"
+                    message={messagesError}
+                    actionText="Retry"
+                    onAction={() => selectedThreadId && loadMessages(selectedThreadId)}
+                  />
+                </View>
+              )}
+              {showMessagesSkeleton ? (
+                <MessageListSkeleton />
+              ) : (
+                <ScrollView
+                  ref={messagesScrollViewRef}
+                  onContentSizeChange={(_w, h) => {
+                    const shouldAutoScroll = autoScrollArmedRef.current;
+                    if (shouldAutoScroll) {
+                      autoScrollArmedRef.current = false;
+                      scrollMessagesToEnd('content-size-change', h);
+                      return;
+                    }
+                    if (lastContentHeightRef.current !== h) {
+                      lastContentHeightRef.current = h;
+                    }
+                  }}
+                  className="flex-1 bg-[#121212]"
+                  contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 32 }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {groupMessagesByDate(displayMessages).map((group) => (
+                    <View key={group.label}>
+                      <DateDivider label={group.label} />
+                      {group.messages.map((message) => {
+                        const isPendingMessage = message.id.startsWith('pending-');
+                        const pendingInfo = isPendingMessage && pendingReply && selectedThreadId === pendingReply.threadId
+                          ? pendingReply
+                          : null;
+                        return (
+                          <MessageBubble
+                            key={message.id}
+                            message={message}
+                            onReply={openReplyComposer}
+                            onForward={openForwardComposer}
+                            onDownloadAttachment={FETCH_ATTACHMENT_URL ? handleDownloadAttachment : undefined}
+                            onFetchAttachmentPreview={FETCH_ATTACHMENT_URL ? handleFetchAttachmentBlob : undefined}
+                            isPending={isPendingMessage && !pendingInfo?.isFailed}
+                            isFailed={pendingInfo?.isFailed ?? false}
+                            errorMessage={pendingInfo?.errorMessage}
+                            onRetry={pendingInfo?.isFailed ? retryFailedReply : undefined}
+                          />
+                        );
+                      })}
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+                  </>
+                );
+              })()}
             </>
           ) : (
-            <View className="flex-1 items-center justify-center">
-              <Text className="text-gray-400 font-instrument text-lg">
-                Select a conversation to view messages
-              </Text>
+            <View className="flex-1 items-center justify-center px-8">
+              <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-2xl p-8 max-w-sm w-full items-center">
+                <Text className="text-white font-instrument-semibold text-xl mb-2 text-center">
+                  Select a conversation
+                </Text>
+                <Text className="text-gray-400 font-instrument text-center">
+                  Choose a thread from the list to view messages and reply.
+                </Text>
+              </View>
             </View>
           )}
         </View>
+        </View>
+
+        {/* Block sender modal */}
+        {accountId && (
+          <BlockSenderModal
+            visible={blockModalVisible}
+            onClose={() => setBlockModalVisible(false)}
+            participantEmails={selectedThreadProspectEmails}
+            accountId={accountId}
+            onBlocked={loadBlockList}
+          />
+        )}
+
+        {/* Confirmation when sending to blocked recipient */}
+        {blockedRecipientConfirm && (
+          <ConfirmDeleteModal
+            visible={!!blockedRecipientConfirm}
+            onClose={() => setBlockedRecipientConfirm(null)}
+            onConfirm={async () => {
+              blockedRecipientConfirm.onConfirm();
+              setBlockedRecipientConfirm(null);
+            }}
+            title="Send to blocked address?"
+            description="This lead has been blocked. No automatic emails will be sent to them, but you can send messages to them manually without unblocking if you wish. Confirm to proceed."
+            confirmLabel="Send anyway"
+            cancelLabel="Cancel"
+            requireConfirmation={false}
+          />
+        )}
+
+        {/* Reply/Forward composer: right-side panel (slides in, pushes content left) */}
+        {composerMode && (
+          <Animated.View
+            style={{
+              width: slideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [REPLY_PANEL_WIDTH, 0],
+              }),
+              overflow: 'hidden',
+              backgroundColor: '#1A1A1A',
+              borderLeftWidth: 1,
+              borderLeftColor: '#2A2A2A',
+            }}
+          >
+            <View style={{ width: REPLY_PANEL_WIDTH, flex: 1 }}>
+              <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={{ flex: 1 }}
+              >
+                <View className="flex-1 p-5">
+                  <View className="flex-row justify-between items-center mb-5 pb-3 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
+                    <Text className="text-xl font-instrument-semibold text-white">
+                      {composerMode === 'reply' ? 'Reply' : 'Forward'}
+                    </Text>
+                    <Pressable
+                      onPress={closeComposerPanel}
+                      className="rounded-xl border border-[#3A3A3A] px-4 py-2"
+                    >
+                      <Text className="text-gray-300 font-instrument-medium text-sm">Cancel</Text>
+                    </Pressable>
+                  </View>
+                  {composerMode === 'reply' ? (
+                    <>
+                      {replyError && (
+                        <Alert variant="error" message={replyError} className="mb-4" />
+                      )}
+                      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} className="flex-1 pb-4">
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">To</Text>
+                        <TextInput
+                          value={replyToEmail}
+                          onChangeText={setReplyToEmail}
+                          placeholder="recipient@example.com"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="email-address"
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Cc (optional)</Text>
+                        <Text className="text-gray-500 font-instrument text-xs mb-1">Separate multiple addresses with commas or spaces.</Text>
+                        <TextInput
+                          value={replyCc}
+                          onChangeText={setReplyCc}
+                          placeholder="cc@example.com, other@example.com"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="email-address"
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Subject</Text>
+                        <TextInput
+                          value={replySubject}
+                          onChangeText={setReplySubject}
+                          placeholder="Subject"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Message</Text>
+                        <ComposerRichEditor
+                          key="reply"
+                          initialContent="<p></p>"
+                          placeholder="Write your reply…"
+                          editorRef={composerEditorRef}
+                          minHeight={140}
+                          attachmentCount={composerAttachments.length}
+                          onFilesSelected={handleComposerFilesSelected}
+                          renderBetweenToolbarAndContent={
+                            <ComposerAttachments
+                              attachments={composerAttachments}
+                              onAttachmentsChange={setComposerAttachments}
+                              maxFiles={MAX_ATTACHMENTS}
+                              maxTotalBytes={MAX_TOTAL_BYTES}
+                              maxFileBytes={MAX_FILE_BYTES}
+                              hideTrigger={Platform.OS === 'web'}
+                              loading={composerAttachmentsLoading}
+                              skipMessage={composerAttachmentsSkipMessage}
+                              error={
+                                composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0) > MAX_TOTAL_BYTES
+                                  ? 'Total attachment size exceeds 5 MB.'
+                                  : null
+                              }
+                            />
+                          }
+                        />
+                        <View className="mb-5" />
+                        <Button
+                          onPress={() => sendReply()}
+                          disabled={
+                            sendingReply ||
+                            !replyToEmail.trim() ||
+                            composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0) > MAX_TOTAL_BYTES
+                          }
+                          className="rounded-xl"
+                        >
+                          <View className="flex-row items-center gap-2">
+                            <Text className="font-instrument-medium text-base text-white">
+                              {sendingReply ? 'Sending…' : 'Send reply'}
+                            </Text>
+                            <PaperAirplaneIcon size={18} color="white" />
+                          </View>
+                        </Button>
+                      </ScrollView>
+                    </>
+                  ) : (
+                    <>
+                      {forwardError && (
+                        <Alert variant="error" message={forwardError} className="mb-4" />
+                      )}
+                      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} className="flex-1 pb-4">
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">To</Text>
+                        <TextInput
+                          value={forwardToEmail}
+                          onChangeText={setForwardToEmail}
+                          placeholder="recipient@example.com"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="email-address"
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Cc (optional)</Text>
+                        <TextInput
+                          value={forwardCc}
+                          onChangeText={setForwardCc}
+                          placeholder="cc@example.com, other@example.com"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          keyboardType="email-address"
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Subject</Text>
+                        <TextInput
+                          value={forwardSubject}
+                          onChangeText={setForwardSubject}
+                          placeholder="Subject"
+                          placeholderTextColor="#6B7280"
+                          className="bg-[#2A2A2A] text-white font-instrument rounded-xl px-4 py-3 mb-4 border border-[#2A2A2A]"
+                          style={{ borderWidth: 1 }}
+                        />
+                        <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Message</Text>
+                        <Text className="text-gray-500 font-instrument text-xs mb-1">Add your message above the forwarded content.</Text>
+                        <ComposerRichEditor
+                          key="forward"
+                          initialContent={`<p></p>${buildQuotedForwardThreadHtml(messages, selectedThread?.subject ?? '(No subject)')}`}
+                          placeholder="Write your message…"
+                          editorRef={composerEditorRef}
+                          minHeight={140}
+                          attachmentCount={composerAttachments.length}
+                          onFilesSelected={handleComposerFilesSelected}
+                          renderBetweenToolbarAndContent={
+                            <ComposerAttachments
+                              attachments={composerAttachments}
+                              onAttachmentsChange={setComposerAttachments}
+                              maxFiles={MAX_ATTACHMENTS}
+                              maxTotalBytes={MAX_TOTAL_BYTES}
+                              maxFileBytes={MAX_FILE_BYTES}
+                              hideTrigger={Platform.OS === 'web'}
+                              loading={composerAttachmentsLoading}
+                              skipMessage={composerAttachmentsSkipMessage}
+                              error={
+                                composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0) > MAX_TOTAL_BYTES
+                                  ? 'Total attachment size exceeds 5 MB.'
+                                  : null
+                              }
+                            />
+                          }
+                        />
+                        <View className="mb-5" />
+                        <Button
+                          onPress={() => sendForward()}
+                          disabled={
+                            sendingForward ||
+                            !forwardToEmail.trim() ||
+                            composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0) > MAX_TOTAL_BYTES
+                          }
+                          className="rounded-xl"
+                        >
+                          <View className="flex-row items-center gap-2">
+                            <Text className="font-instrument-medium text-base text-white">
+                              {sendingForward ? 'Sending…' : 'Send forward'}
+                            </Text>
+                            <PaperAirplaneIcon size={18} color="white" />
+                          </View>
+                        </Button>
+                      </ScrollView>
+                    </>
+                  )}
+                </View>
+              </KeyboardAvoidingView>
+            </View>
+          </Animated.View>
+        )}
       </View>
     </PageLayout>
   );

@@ -3,6 +3,7 @@ import { Animated, View, Text, TextInput, TouchableOpacity, Platform, Alert } fr
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { createLeads, generateGlobalLeadId, getLeads } from '@/lib/supabase/services/leads';
+import { ensureCampaignEnrollmentsForLeads } from '@/lib/supabase/services/campaigns';
 import type { LeadInsert, Lead } from '@/lib/supabase/types';
 
 interface LeadSourceNodeModalProps {
@@ -578,6 +579,12 @@ function LeadSourceNodeModal({
       }
 
       const savedLeads = await createLeads(leadsToSave);
+      if (initialData.campaignId && savedLeads.length > 0) {
+        await ensureCampaignEnrollmentsForLeads(
+          initialData.campaignId,
+          savedLeads.map((lead) => lead.id)
+        );
+      }
 
       setImportedCount(savedLeads.length);
       Alert.alert('Import complete', `Successfully saved ${savedLeads.length} lead${savedLeads.length === 1 ? '' : 's'}.`);

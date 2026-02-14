@@ -7,14 +7,15 @@ import { FormCard } from '@/components/ui/forms';
 interface SignInFormProps {
   onGoToSignUp: () => void;
   onGoToForgotPassword: () => void;
+  initialSuccessMessage?: string;
 }
 
-export function SignInForm({ onGoToSignUp, onGoToForgotPassword }: SignInFormProps) {
+export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessMessage }: SignInFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [success, setSuccess] = useState(initialSuccessMessage ?? '');
 
   const handleForgotPassword = () => {
     onGoToForgotPassword();
@@ -22,6 +23,12 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword }: SignInFormPro
 
   const handleSignUp = () => {
     onGoToSignUp();
+  };
+
+  const clearInitialSuccessIfUserInteracts = () => {
+    if (initialSuccessMessage && success === initialSuccessMessage) {
+      setSuccess('');
+    }
   };
 
   const handleSignIn = async () => {
@@ -79,7 +86,10 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword }: SignInFormPro
         <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Email</Text>
         <TextInput
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(text) => {
+            setEmail(text);
+            clearInitialSuccessIfUserInteracts();
+          }}
           placeholder="Enter your email"
           autoCapitalize="none"
           keyboardType="email-address"
@@ -100,7 +110,10 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword }: SignInFormPro
         <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Password</Text>
         <TextInput
           value={password}
-          onChangeText={setPassword}
+          onChangeText={(text) => {
+            setPassword(text);
+            clearInitialSuccessIfUserInteracts();
+          }}
           placeholder="Enter your password"
           secureTextEntry
           className="border border-white/30 rounded-xl px-4 py-4 bg-white/5 backdrop-blur-sm text-base text-white placeholder-gray-300 focus:border-brand-orange focus:ring-0 focus:bg-white/10"

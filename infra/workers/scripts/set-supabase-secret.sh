@@ -1,5 +1,5 @@
 #!/bin/bash
-# Set Supabase Service Role Key in SSM Parameter Store
+# Set Supabase Secret Key in SSM Parameter Store
 
 set -e
 
@@ -32,9 +32,9 @@ fi
 
 # Set parameter path based on environment
 if [ "$ENVIRONMENT" = "dev" ]; then
-  PARAM_PATH="/amplify/furnacebuild/dev/SUPABASE_SERVICE_KEY"
+  PARAM_PATH="/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY"
 else
-  PARAM_PATH="/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SERVICE_KEY"
+  PARAM_PATH="/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY"
 fi
 
 # Get service key if not provided
@@ -122,6 +122,7 @@ if [ $? -eq 0 ]; then
   echo "   4. Check CloudWatch logs:"
   echo "      aws logs tail /ecs/furnace/send-worker-$ENVIRONMENT --follow --region $REGION"
   echo "      aws logs tail /ecs/furnace/scheduler-worker-$ENVIRONMENT --follow --region $REGION"
+  echo "      aws logs tail /ecs/furnace/inbox-checker-worker-$ENVIRONMENT --follow --region $REGION"
 else
   echo "❌ Failed to set parameter"
   exit 1

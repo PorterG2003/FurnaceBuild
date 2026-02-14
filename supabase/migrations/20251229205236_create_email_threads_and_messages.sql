@@ -147,5 +147,5 @@ COMMENT ON COLUMN email_messages.in_reply_to IS 'In-Reply-To header - links to p
 COMMENT ON COLUMN email_messages.message_references IS 'References header - thread history (renamed from references, reserved keyword)';
 COMMENT ON COLUMN email_messages.received_at IS 'When message was received (from IMAP) or sent (for sent messages)';
 COMMENT ON COLUMN email_messages.headers IS 'Full email headers stored as JSONB for debugging and advanced features';
-COMMENT ON COLUMN email_messages.attachments IS 'Array of attachment metadata: {filename, content_type, size, imap_uid}';
+COMMENT ON COLUMN email_messages.attachments IS 'Array of attachment metadata: {filename, contentType, size, part, imapUid}. part = MIME part identifier for on-demand fetching, imapUid = message UID.';
 

@@ -13,7 +13,9 @@ const resend = new Resend(process.env.RESEND_API_KEY);
  * 
  * When called through Data API, arguments come from event.arguments
  */
-export const handler: Schema['sendInvitationEmail']['functionHandler'] = async (event) => {
+// Handler type is inferred from the function body
+// Using explicit type causes issues with .returns(a.json()) in Amplify Gen 2
+export const handler = async (event: Parameters<Schema['sendInvitationEmail']['functionHandler']>[0]) => {
   try {
     // Arguments come from event.arguments when called through Data API
     // This is typed from the schema definition in data/resource.ts
@@ -83,9 +85,10 @@ If you didn't expect this invitation, you can safely ignore this email.
     }
 
     // Return data directly (Data API will wrap it)
+    // Schema says .returns(a.json()), so we return the JSON object
     return { 
       success: true, 
-      messageId: data?.id,
+      messageId: data?.id || '',
       message: 'Invitation email sent successfully' 
     };
   } catch (error) {

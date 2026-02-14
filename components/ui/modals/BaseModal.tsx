@@ -6,10 +6,12 @@ interface BaseModalProps {
   onClose: () => void;
   title: string;
   description?: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   footer?: React.ReactNode;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
   maxHeight?: number;
+  /** When true, omits the content area. Use for modals with only title, description, and footer. */
+  compact?: boolean;
 }
 
 const maxWidthClasses = {
@@ -18,6 +20,8 @@ const maxWidthClasses = {
   lg: 'max-w-lg',
   xl: 'max-w-xl',
   '2xl': 'max-w-2xl',
+  '3xl': 'max-w-3xl',
+  '4xl': 'max-w-4xl',
 };
 
 export function BaseModal({
@@ -29,6 +33,7 @@ export function BaseModal({
   footer,
   maxWidth = 'md',
   maxHeight,
+  compact = false,
 }: BaseModalProps) {
   return (
     <Modal
@@ -69,28 +74,30 @@ export function BaseModal({
               </Pressable>
             </View>
 
-            {/* Content */}
-            <View
-              className="p-6"
-              style={maxHeight ? { flexGrow: 1, flexShrink: 1, minHeight: 0 } : undefined}
-            >
-              {maxHeight ? (
-                <ScrollView
-                  style={{ flex: 1 }}
-                  contentContainerStyle={{ paddingBottom: footer ? 12 : 0 }}
-                  keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator
-                >
-              {children}
-                </ScrollView>
-              ) : (
-                children
-              )}
-            </View>
+            {/* Content - omitted when compact (title + description + footer only) */}
+            {!compact && (
+              <View
+                className="p-6"
+                style={maxHeight ? { flexGrow: 1, flexShrink: 1, minHeight: 0 } : undefined}
+              >
+                {maxHeight ? (
+                  <ScrollView
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ paddingBottom: footer ? 12 : 0 }}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator
+                  >
+                    {children}
+                  </ScrollView>
+                ) : (
+                  children
+                )}
+              </View>
+            )}
 
             {/* Footer */}
             {footer && (
-              <View className="px-6 pb-6 border-t border-[#2A2A2A] pt-6">
+              <View className={`px-6 pb-6 pt-6 ${!compact ? 'border-t border-[#2A2A2A]' : ''}`}>
                 {footer}
               </View>
             )}

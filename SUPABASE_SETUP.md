@@ -28,7 +28,7 @@ Create a `.env` file in the root of your project:
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your-publishable-api-key-here
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-api-key-here
 ```
 
 **Important:** Add `.env` to your `.gitignore` file to keep credentials secure!
@@ -42,7 +42,7 @@ You can also add them to `app.json` under `expo.extra`:
   "expo": {
     "extra": {
       "supabaseUrl": "https://your-project-id.supabase.co",
-      "supabaseAnonKey": "your-publishable-api-key-here"
+      "supabasePublishableKey": "your-publishable-api-key-here"
     }
   }
 }

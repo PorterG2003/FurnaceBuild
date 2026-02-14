@@ -49,7 +49,7 @@ npm install
 2. Set environment variables:
 ```bash
 export SUPABASE_URL=your-supabase-url
-export SUPABASE_SERVICE_KEY=your-service-key
+export SUPABASE_SECRET_KEY=your-secret-key
 export SEND_QUEUE_URL=https://sqs.us-west-2.amazonaws.com/.../furnace-send-queue
 export AWS_REGION=us-west-2
 ```
@@ -115,7 +115,7 @@ docker build -f workers/send-worker/Dockerfile -t furnace/send-worker:latest .
 ```bash
 docker run --rm \
   -e SUPABASE_URL=your-supabase-url \
-  -e SUPABASE_SERVICE_KEY=your-service-key \
+  -e SUPABASE_SECRET_KEY=your-secret-key \
   -e SEND_QUEUE_URL=https://sqs.us-west-2.amazonaws.com/.../furnace-send-queue \
   -e AWS_REGION=us-west-2 \
   furnace/send-worker:latest
@@ -167,17 +167,17 @@ The script will:
 ## Environment Variables
 
 - `SUPABASE_URL` (required): Supabase project URL
-- `SUPABASE_SERVICE_KEY` (required): Service role key (bypasses RLS)
-  - Can be provided directly, or fetched from Parameter Store if `SUPABASE_SERVICE_KEY_PARAM_PATH` is set
-- `SUPABASE_SERVICE_KEY_PARAM_PATH` (optional): SSM Parameter Store path to fetch `SUPABASE_SERVICE_KEY` from
-  - Example: `/amplify/furnacebuild/porter-sandbox-387f79dcc1/SUPABASE_SERVICE_KEY`
+- `SUPABASE_SECRET_KEY` (required): Supabase Secret Key (bypasses RLS)
+  - Can be provided directly, or fetched from Parameter Store if `SUPABASE_SECRET_KEY_PARAM_PATH` is set
+- `SUPABASE_SECRET_KEY_PARAM_PATH` (optional): SSM Parameter Store path to fetch `SUPABASE_SECRET_KEY` from
+  - Example: `/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY`
   - If set, the worker will fetch the secret from Parameter Store at startup
 - `SEND_QUEUE_URL` (required): SQS queue URL
 - `AWS_REGION` (optional): AWS region, defaults to `us-west-2`
 
 ## Architecture
 
-See [docs/implementation/PHASE2.6_DOCKER_IMAGES_ECR.md](../../docs/implementation/PHASE2.6_DOCKER_IMAGES_ECR.md) for detailed architecture and implementation notes.
+See [docs/implementation/aws/PHASE2.6_DOCKER_IMAGES_ECR.md](../../docs/implementation/aws/PHASE2.6_DOCKER_IMAGES_ECR.md) for detailed architecture and implementation notes.
 
 ## Development Workflow
 

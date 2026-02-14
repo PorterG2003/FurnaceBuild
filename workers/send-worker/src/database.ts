@@ -23,28 +23,42 @@ export class DatabaseClient {
   }
 
   /**
-   * Claim message jobs ready to send using atomic UPDATE-based locking
+   * Claim manual (inbox reply/forward) jobs first — manual sends take priority.
+   */
+  async pollManual(): Promise<MessageJob[]> {
+    try {
+      const { data, error } = await this.supabase
+        .rpc('claim_manual_message_jobs_ready', {
+          p_batch_size: Math.min(this.batchSize, 50),
+          p_processing_timeout_minutes: 5,
+        });
+
+      if (error) {
+        console.error('[DATABASE] Error claiming manual message jobs:', error);
+        throw error;
+      }
+
+      const jobs = (data as MessageJob[]) || [];
+      if (jobs.length > 0) {
+        console.log(`[DATABASE] Claimed ${jobs.length} manual message job(s)`);
+      }
+      return jobs;
+    } catch (error) {
+      console.error('Error claiming manual message jobs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Claim campaign message jobs ready to send using atomic UPDATE-based locking
    * Returns array of message jobs, or empty array if none found
-   * 
-   * This uses an atomic UPDATE operation to claim jobs, providing 100% guarantee
-   * against duplicate processing. The function:
-   * - Atomically updates jobs to mark as "reserved" (sets status to 'reserved' and reserved_at)
-   * - Only jobs that match criteria are updated (status = 'pending' AND scheduled_at <= NOW())
-   * - If worker crashes, jobs can be reset after timeout (based on reserved_at)
-   * 
-   * This ensures that when multiple send workers are running:
-   * - Only one worker can successfully claim a given job (atomic UPDATE)
-   * - Multiple workers can claim different jobs in parallel
-   * - No duplicate sends occur (database-level guarantee)
    */
   async poll(): Promise<MessageJob[]> {
     try {
-      // Use RPC function that atomically claims message jobs via UPDATE
-      // This provides 100% guarantee against duplicate processing
       const { data, error } = await this.supabase
         .rpc('claim_message_jobs_ready', {
           p_batch_size: this.batchSize,
-          p_processing_timeout_minutes: 5  // Timeout if worker crashes
+          p_processing_timeout_minutes: 5,
         });
 
       if (error) {

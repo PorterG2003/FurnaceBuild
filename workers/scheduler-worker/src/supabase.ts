@@ -5,18 +5,18 @@ import { SupabaseClient, createClient } from '@supabase/supabase-js';
  * 
  * Environment variables required:
  * - SUPABASE_URL: Supabase project URL
- * - SUPABASE_SERVICE_KEY: Service role key (admin privileges)
+ * - SUPABASE_SECRET_KEY: Supabase Secret Key (bypasses RLS)
  */
 export function createSupabaseClient(): SupabaseClient {
   const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
 
-  if (!supabaseUrl || !supabaseServiceKey) {
+  if (!supabaseUrl || !supabaseSecretKey) {
     throw new Error(
-      'Missing required environment variables: SUPABASE_URL or SUPABASE_SERVICE_KEY'
+      'Missing required environment variables: SUPABASE_URL or SUPABASE_SECRET_KEY'
     );
   }
 
-  return createClient(supabaseUrl, supabaseServiceKey);
+  return createClient(supabaseUrl, supabaseSecretKey);
 }
 

@@ -10,6 +10,7 @@ backend:
         - cd amplify/functions/enrollmentMetric && npm install && cd - || (echo "Failed to install enrollmentMetric dependencies" && exit 1)
         - cd amplify/functions/inboxChecker && npm install && cd - || (echo "Failed to install inboxChecker dependencies" && exit 1)
         - cd amplify/functions/sendInvitationEmail && npm install && cd - || (echo "Failed to install sendInvitationEmail dependencies" && exit 1)
+        - cd amplify/functions/fetchEmailAttachment && npm install && cd - || (echo "Failed to install fetchEmailAttachment dependencies" && exit 1)
         - echo "=== Function dependencies installed successfully ==="
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
     build:
@@ -28,8 +29,8 @@ frontend:
           if [ -n "$EXPO_PUBLIC_SUPABASE_URL" ]; then
             echo "EXPO_PUBLIC_SUPABASE_URL=$EXPO_PUBLIC_SUPABASE_URL" >> .env
           fi
-          if [ -n "$EXPO_PUBLIC_SUPABASE_ANON_KEY" ]; then
-            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=$EXPO_PUBLIC_SUPABASE_ANON_KEY" >> .env
+          if [ -n "$EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY" >> .env
           fi
         - npx expo export --platform web --output-dir web-build
   artifacts:

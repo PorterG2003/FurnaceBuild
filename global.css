@@ -178,3 +178,452 @@ input[type="password"]:focus {
 .react-flow__attribution {
   display: none !important;
 }
+
+/* TipTap rich text editor (inbox composer) - match form input styling */
+.composer-editor {
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #FFFFFF;
+  background: #2A2A2A;
+  min-height: 80px;
+  padding: 12px 16px;
+  outline: none;
+  border-radius: 0 0 12px 12px;
+}
+
+/* TipTap/ProseMirror wrapper - ensure proper containment */
+.composer-editor-wrapper {
+  background: #2A2A2A;
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
+}
+
+.composer-editor-wrapper .ProseMirror,
+.composer-editor-wrapper [contenteditable="true"] {
+  border-radius: 0 0 12px 12px;
+}
+
+.composer-editor:focus {
+  outline: none;
+}
+
+.composer-editor p {
+  margin: 0 0 0.5em 0;
+  color: inherit;
+}
+
+.composer-editor p:last-child {
+  margin-bottom: 0;
+}
+
+.composer-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #6B7280;
+  pointer-events: none;
+  height: 0;
+}
+
+.composer-editor ul {
+  list-style-type: disc !important;
+  list-style-position: outside;
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+  color: inherit;
+}
+
+.composer-editor ol {
+  list-style-type: decimal !important;
+  list-style-position: outside;
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+  color: inherit;
+}
+
+.composer-editor ul ul {
+  list-style-type: circle !important;
+}
+
+.composer-editor ul ul ul {
+  list-style-type: square !important;
+}
+
+.composer-editor li {
+  margin: 0.25em 0;
+  color: #FFFFFF;
+}
+
+/* Ensure list markers are visible (Tailwind/ProseMirror may reset them) */
+.composer-editor ul li::marker,
+.composer-editor ol li::marker {
+  color: #9CA3AF;
+}
+
+.composer-editor blockquote {
+  border-left: 3px solid #3A3A3A;
+  padding-left: 1em;
+  margin: 0.5em 0;
+  color: #9CA3AF;
+}
+
+.composer-editor pre {
+  background: #1A1A1A;
+  padding: 12px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+  font-size: 14px;
+  color: #E5E7EB;
+}
+
+.composer-editor code {
+  background: #1A1A1A;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #E5E7EB;
+}
+
+.composer-editor pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.composer-editor strong {
+  font-weight: 600;
+}
+
+.composer-editor em {
+  font-style: italic;
+}
+
+.composer-editor s {
+  text-decoration: line-through;
+}
+
+.composer-editor u {
+  text-decoration: underline;
+}
+
+/* Links */
+.composer-editor a {
+  color: #F3440D;
+  text-decoration: underline;
+}
+
+.composer-editor a:hover {
+  color: #F3683D;
+}
+
+/* Headings */
+.composer-editor h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 0.75em 0 0.5em 0;
+  color: #FFFFFF;
+}
+
+.composer-editor h2 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 0.6em 0 0.4em 0;
+  color: #FFFFFF;
+}
+
+.composer-editor h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.5em 0 0.35em 0;
+  color: #FFFFFF;
+}
+
+.composer-editor h1:first-child,
+.composer-editor h2:first-child,
+.composer-editor h3:first-child {
+  margin-top: 0;
+}
+
+/* Images */
+.composer-editor img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+  margin: 0.5em 0;
+}
+
+.composer-editor .ProseMirror-selectednode {
+  outline: 2px solid #F3440D;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.composer-editor hr {
+  border: none;
+  border-top: 1px solid #3A3A3A;
+  margin: 1em 0;
+}
+
+/* Toolbar - single line with horizontal overflow, match inbox inputs */
+.composer-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px;
+  background: #2A2A2A;
+  border-bottom: 1px solid #3A3A3A;
+  border-radius: 12px 12px 0 0;
+  min-height: 44px;
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.composer-toolbar-btn {
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #9CA3AF;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.composer-toolbar-btn:hover:not(.is-disabled) {
+  background: #3A3A3A;
+  color: #FFFFFF;
+  border-color: #4A4A4A;
+}
+
+.composer-toolbar-btn.is-active {
+  background: #3A3A3A;
+  color: #FFFFFF;
+  border-color: #4A4A4A;
+}
+
+.composer-toolbar-btn.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Toolbar dividers */
+.composer-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: #2A2A2A;
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+/* Image hover toolbar - size + delete */
+.composer-image-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  background: #1A1A1A;
+  border: 1px solid #3A3A3A;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.composer-image-toolbar-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #9CA3AF;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.composer-image-toolbar-btn:hover {
+  background: #3A3A3A;
+  color: #FFFFFF;
+}
+
+.composer-image-toolbar-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+}
+
+/* Popovers - match form input styling */
+.composer-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  padding: 14px;
+  background: #1A1A1A;
+  border: 1px solid #3A3A3A;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  min-width: 280px;
+}
+
+.composer-popover-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #9CA3AF;
+  margin-bottom: 6px;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+}
+
+.composer-popover-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: #2A2A2A;
+  border: 1px solid #3A3A3A;
+  border-radius: 12px;
+  color: #FFFFFF;
+  font-size: 15px;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+  transition: border-color 0.15s;
+}
+
+.composer-popover-input:focus {
+  outline: none;
+  border-color: #F3440D;
+  box-shadow: 0 0 0 1px rgba(243, 68, 13, 0.2);
+}
+
+.composer-popover-input::placeholder {
+  color: #6B7280;
+}
+
+.composer-popover-hint {
+  font-size: 12px;
+  color: #6B7280;
+  margin-top: 6px;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+}
+
+.composer-popover-error {
+  font-size: 13px;
+  color: #EF4444;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+}
+
+.composer-popover-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.composer-popover-btn {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid #3A3A3A;
+  background: #2A2A2A;
+  color: #FFFFFF;
+  font-size: 14px;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.composer-popover-btn:hover {
+  background: #3A3A3A;
+  border-color: #4A4A4A;
+}
+
+.composer-popover-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: #9CA3AF;
+}
+
+.composer-popover-btn-ghost:hover {
+  background: #2A2A2A;
+  color: #FFFFFF;
+}
+
+.composer-popover-btn-danger {
+  background: transparent;
+  border-color: transparent;
+  color: #EF4444;
+}
+
+.composer-popover-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.composer-popover-dropdown {
+  min-width: 140px;
+  padding: 4px 0;
+}
+
+.composer-popover-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: #D1D5DB;
+  font-size: 14px;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.composer-popover-dropdown-item:hover {
+  background: #2A2A2A;
+  color: #FFFFFF;
+}
+
+.composer-popover-dropdown-item.is-active {
+  background: #3A3A3A;
+  color: #FFFFFF;
+}
+
+/* Inbox message body HTML (plain text + images, links) */
+.message-body-html {
+  color: #D1D5DB;
+  font-size: 14px;
+  line-height: 1.6;
+  font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+}
+
+.message-body-html img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+  margin: 0.5em 0;
+}
+
+.message-body-html a {
+  color: #F3440D;
+}
+
+.message-body-html p {
+  margin: 0 0 0.5em 0;
+}
+
+.message-body-html p:last-child {
+  margin-bottom: 0;
+}

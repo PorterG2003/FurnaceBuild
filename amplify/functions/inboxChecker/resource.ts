@@ -10,8 +10,10 @@ import { defineFunction, secret } from '@aws-amplify/backend';
  * - EXPO_PUBLIC_SUPABASE_URL: Environment variable (public URL, not sensitive)
  *   Set via: npx ampx sandbox secret set EXPO_PUBLIC_SUPABASE_URL
  *   (Note: Using secret() for convenience, but value is not sensitive)
- * - SUPABASE_SERVICE_KEY: Secret (⚠️ SERVICE ROLE KEY with admin privileges - MUST be secret)
- *   Set via: npx ampx sandbox secret set SUPABASE_SERVICE_KEY
+ * - SUPABASE_SECRET_KEY: Secret (Supabase Secret Key - bypasses RLS, MUST be secret)
+ *   Set via: npx ampx sandbox secret set SUPABASE_SECRET_KEY
+ * - INBOX_CHECKER_LAMBDA_ENABLED: plain env toggle ('true' | 'false')
+ *   Use to avoid dual ingestion when ECS inbox-checker-worker is active.
  * 
  * Note: AWS_REGION is automatically available in Lambda runtime as process.env.AWS_REGION
  * and should NOT be set manually (it's a reserved environment variable).
@@ -35,7 +37,10 @@ export const inboxChecker = defineFunction({
     // Environment variables (not sensitive, but using secret() for centralized management)
     EXPO_PUBLIC_SUPABASE_URL: secret('EXPO_PUBLIC_SUPABASE_URL'),
     // Secret (sensitive - MUST use secrets)
-    SUPABASE_SERVICE_KEY: secret('SUPABASE_SERVICE_KEY'),
+    SUPABASE_SECRET_KEY: secret('SUPABASE_SECRET_KEY'),
+    // When ECS inbox-checker-worker is scaled >0, set this to 'false' at deploy time
+    // to avoid Lambda + ECS dual ingestion.
+    INBOX_CHECKER_LAMBDA_ENABLED: process.env.INBOX_CHECKER_LAMBDA_ENABLED ?? 'true',
     // AWS_REGION is automatically set by Lambda runtime - don't set it manually
   },
 });

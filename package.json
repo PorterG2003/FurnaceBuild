@@ -6,9 +6,14 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "validate": "bash scripts/validate-expo-build.sh",
+    "validate:build": "bash scripts/validate-expo-build.sh",
+    "verify:email-parsing": "tsx scripts/verify-email-parsing.ts"
   },
   "dependencies": {
+    "@10play/react-native-web-webview": "^0.0.3",
+    "@10play/tentap-editor": "^1.0.1",
     "@aws-amplify/react-native": "^1.2.0",
     "@aws-amplify/ui-react-native": "^2.6.3",
     "@aws-sdk/client-lambda": "^3.932.0",
@@ -20,6 +25,10 @@
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.4.0",
     "@supabase/supabase-js": "^2.77.0",
+    "@tiptap/extension-image": "^3.19.0",
+    "@tiptap/pm": "^3.19.0",
+    "@tiptap/react": "^3.19.0",
+    "@tiptap/starter-kit": "^3.19.0",
     "@xyflow/react": "^12.9.2",
     "aws-amplify": "^6.15.7",
     "babel-plugin-module-resolver": "^5.0.2",
@@ -28,6 +37,9 @@
     "date-fns-tz": "^2.0.0",
     "expo": "~54.0.25",
     "expo-constants": "~18.0.10",
+    "expo-crypto": "~15.0.3",
+    "expo-document-picker": "~14.0.8",
+    "expo-file-system": "~18.0.6",
     "expo-font": "^14.0.9",
     "expo-linking": "~8.0.9",
     "expo-router": "~6.0.15",
@@ -43,11 +55,13 @@
     "react-native-get-random-values": "~1.11.0",
     "react-native-heroicons": "^4.0.0",
     "react-native-reanimated": "^4.1.3",
+    "react-native-worklets": "^0.5.0",
     "react-native-safe-area-context": "^5.6.1",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-web": "^0.21.0",
+    "react-native-webview": "^13.16.0",
     "resend": "^6.4.2",
     "tailwind-merge": "^3.3.1",
     "tailwind-variants": "^3.1.1",
@@ -59,6 +73,7 @@
   },
   "devDependencies": {
     "@aws-amplify/backend": "^1.17.0",
+    "dotenv": "^16.4.5",
     "@aws-amplify/backend-cli": "^1.8.0",
     "@aws-amplify/backend-deployer": "^2.1.3",
     "@aws-amplify/sandbox": "^2.1.2",
@@ -71,6 +86,10 @@
     "esbuild": "^0.25.11",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "@types/react": "~19.1.0",
+    "@types/react-dom": "~19.1.0"
   },
   "private": true
 }

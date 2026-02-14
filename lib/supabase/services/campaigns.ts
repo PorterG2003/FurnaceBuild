@@ -9,6 +9,7 @@ import { getAccountMembershipsForUser, getUserByExternalId } from './users';
 
 export interface CampaignFilters {
   ownerId?: string;
+  accountId?: string;
   organizationId?: string | null;
 }
 
@@ -24,6 +25,10 @@ export async function getCampaigns(filters?: CampaignFilters): Promise<Campaign[
   // Apply filters
   if (filters?.ownerId) {
     query = query.eq('owner_id', filters.ownerId);
+  }
+
+  if (filters?.accountId) {
+    query = query.eq('account_id', filters.accountId);
   }
 
   if (filters?.organizationId !== undefined) {
@@ -251,9 +256,87 @@ export async function updateCampaign(
 }
 
 /**
+ * Ensure enrollments exist for campaign leads.
+ * Uses conflict-safe upsert on (campaign_id, lead_id) and does not mutate existing rows.
+ */
+export async function ensureCampaignEnrollmentsForLeads(
+  campaignId: string,
+  leadIds: string[]
+): Promise<void> {
+  if (!leadIds.length) return;
+
+  const rows = leadIds.map((leadId) => ({
+    campaign_id: campaignId,
+    lead_id: leadId,
+    current_node_id: null,
+    state: 'active',
+    next_run_at: new Date().toISOString(),
+    flow_position: {},
+  }));
+
+  const { error } = await supabase
+    .from('enrollments')
+    .upsert(rows as any, {
+      onConflict: 'campaign_id,lead_id',
+      ignoreDuplicates: true,
+    });
+
+  if (error) {
+    throw new Error(`Failed to ensure campaign enrollments: ${error.message}`);
+  }
+}
+
+/**
+ * Backfill enrollments for all leads in a campaign.
+ */
+export async function backfillCampaignEnrollments(campaignId: string): Promise<void> {
+  const { data: leads, error } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('campaign_id', campaignId);
+
+  if (error) {
+    throw new Error(`Failed to load campaign leads for enrollment backfill: ${error.message}`);
+  }
+
+  const leadIds = (leads || []).map((lead: any) => lead.id).filter(Boolean);
+  await ensureCampaignEnrollmentsForLeads(campaignId, leadIds);
+}
+
+/**
+ * Hard-pause cleanup: cancel unsent campaign jobs for a campaign.
+ * Manual inbox jobs are intentionally excluded.
+ */
+export async function cancelUnsentCampaignJobs(
+  campaignId: string,
+  reason: string = 'Campaign paused'
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('message_jobs')
+    .update({
+      status: 'cancelled',
+      error_message: reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('campaign_id', campaignId)
+    .in('status', ['pending', 'reserved'])
+    .or('message_type.eq.campaign,message_type.is.null')
+    .select('id');
+
+  if (error) {
+    throw new Error(`Failed to cancel unsent campaign jobs: ${error.message}`);
+  }
+
+  return (data || []).length;
+}
+
+/**
  * Delete a campaign
  */
 export async function deleteCampaign(id: string): Promise<void> {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.ts:deleteCampaign',message:'Campaign delete invoked',data:{campaignId:id},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   const { error } = await supabase
     .from('campaigns')
     .delete()
@@ -271,6 +354,9 @@ export async function deleteCampaign(id: string): Promise<void> {
  * 2. Deletes the campaign (which cascades to: leads, enrollments, message_jobs, events, nodes, campaign_mailboxes, email_threads)
  */
 export async function deleteTestCampaign(campaignId: string): Promise<void> {
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.ts:deleteTestCampaign',message:'Test campaign delete invoked',data:{campaignId},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   // Verify campaign exists
   const campaign = await getCampaignById(campaignId);
   if (!campaign) {

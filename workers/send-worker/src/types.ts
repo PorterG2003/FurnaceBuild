@@ -8,14 +8,17 @@
  * - Copy types from lib/supabase/types/
  */
 
+export type MessageType = 'campaign' | 'inbox_reply' | 'inbox_forward';
+
 export interface MessageJob {
   id: string;
   enrollment_id: string;
   campaign_id: string;
   lead_id: string;
   mailbox_id: string;
-  node_id: string;
-  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled';
+  node_id: string | null;
+  message_type?: MessageType;
+  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'blocked';
   scheduled_at: string;
   reserved_at: string | null;
   sent_at: string | null;
@@ -23,9 +26,22 @@ export interface MessageJob {
   error_message: string | null;
   retry_count: number;
   message_data: {
-    node_config: any;
+    node_config?: any;
     lead_data?: any;
     campaign_data?: any;
+    source?: 'inbox_reply' | 'inbox_forward';
+    thread_id?: string;
+    in_reply_to_message_id?: string;
+    forwarded_message_id?: string;
+    subject?: string;
+    body_text?: string;
+    body_html?: string;
+    to_email?: string;
+    to_name?: string;
+    cc?: string[];
+    in_reply_to?: string;
+    message_references?: string;
+    attachments?: Array<{ filename: string; contentType?: string; content: string }>;
   };
   sqs_message_id: string | null;
   created_at: string;

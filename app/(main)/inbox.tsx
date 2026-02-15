@@ -10,6 +10,7 @@ import {
   Platform,
   Animated,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
@@ -26,17 +27,28 @@ import {
   fetchAttachment,
   getBlockList,
   isEmailBlockedByEntries,
+  markThreadMessagesRead,
+  getMailboxesByAccount,
+  getCampaigns,
+  getThreadTags,
+  getTagsForThreads,
+  addTagToThread,
+  removeTagFromThread,
+  createThreadTag,
+  updateThreadCategory,
 } from '@/lib/supabase/services';
-import type { EmailThread, EmailMessage, BlockListEntry } from '@/lib/supabase/types';
+import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
+import type { EmailThread, EmailMessage, BlockListEntry, Mailbox, Campaign } from '@/lib/supabase/types';
 import { groupMessagesByDate } from '@/lib/inbox';
 import { buildQuotedForwardThreadHtml } from '@/lib/inbox/quote-utils';
-import { MagnifyingGlassIcon, PaperAirplaneIcon } from 'react-native-heroicons/outline';
+import { MagnifyingGlassIcon, PaperAirplaneIcon, FunnelIcon } from 'react-native-heroicons/outline';
 import type { EditorBridge } from '@10play/tentap-editor';
 import {
   BlockSenderModal,
   ComposerAttachments,
   ComposerRichEditor,
   DateDivider,
+  InboxFilterDropdown,
   MessageBubble,
   MessagePanelHeader,
   MessagePanelHeaderSkeleton,
@@ -55,6 +67,9 @@ const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: 
 const MAX_ATTACHMENTS = 10;
 const MAX_TOTAL_BYTES = 5 * 1024 * 1024;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
+const THREAD_PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 400;
+const THREAD_CATEGORIES = ['Lead replied', 'Meeting set', 'Not interested', 'Follow up'];
 
 export default function InboxPage() {
   const { account } = useAccount();
@@ -90,7 +105,28 @@ export default function InboxPage() {
   const [showThreadSkeleton, setShowThreadSkeleton] = useState(false);
   const [showMessagesSkeleton, setShowMessagesSkeleton] = useState(false);
   const [threadSearchQuery, setThreadSearchQuery] = useState('');
+  const [mailboxFilterId, setMailboxFilterId] = useState<string | null>(null);
+  const [campaignFilterId, setCampaignFilterId] = useState<string | null>(null);
+  const [unreadOnlyFilter, setUnreadOnlyFilter] = useState(false);
+  const [datePreset, setDatePreset] = useState<'7d' | '30d' | null>(null);
+  const [tagFilterIds, setTagFilterIds] = useState<string[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [threadOffset, setThreadOffset] = useState(0);
+  const [hasMoreThreads, setHasMoreThreads] = useState(false);
+  const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
+  const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [filterAnchorLayout, setFilterAnchorLayout] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
+  const filterButtonRef = useRef<View>(null);
+  const [threadTagsMap, setThreadTagsMap] = useState<Record<string, ThreadTag[]>>({});
+  const [accountTags, setAccountTags] = useState<ThreadTag[]>([]);
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [blockedRecipientConfirm, setBlockedRecipientConfirm] = useState<{
     mode: 'reply' | 'forward';
@@ -199,17 +235,16 @@ export default function InboxPage() {
   const selectedThread = threads.find((t) => t.id === selectedThreadId);
   const threadsLoadingOrNoAccount = threadsLoading || !accountId;
 
-  const filteredThreads = useMemo(() => {
-    const q = threadSearchQuery.trim().toLowerCase();
-    if (!q) return threads;
-    return threads.filter((thread) => {
-      const subjectMatch = (thread.subject ?? '').toLowerCase().includes(q);
-      const participantsMatch = (thread.participants ?? []).some((p) =>
-        p.toLowerCase().includes(q)
-      );
-      return subjectMatch || participantsMatch;
-    });
-  }, [threads, threadSearchQuery]);
+  // Server-driven filtering: threads are already filtered by getThreadsByAccount
+  const displayThreads = threads;
+  const hasActiveFilters =
+    !!mailboxFilterId ||
+    !!campaignFilterId ||
+    unreadOnlyFilter ||
+    !!datePreset ||
+    tagFilterIds.length > 0 ||
+    !!categoryFilter ||
+    threadSearchQuery.trim().length > 0;
 
   const selectedThreadProspectEmails = useMemo(() => {
     if (!selectedThreadId || !messages.length) return [];
@@ -260,15 +295,45 @@ export default function InboxPage() {
     return blocked;
   }, [selectedThreadProspectEmails, blockList]);
 
+  const buildThreadFilters = useCallback(() => {
+    let dateFrom: string | undefined;
+    if (datePreset === '7d') {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      dateFrom = d.toISOString();
+    } else if (datePreset === '30d') {
+      const d = new Date();
+      d.setDate(d.getDate() - 30);
+      dateFrom = d.toISOString();
+    }
+    return {
+      hasReplyOnly: true,
+      includeUnreadCount: true,
+      limit: THREAD_PAGE_SIZE,
+      offset: 0,
+      mailboxId: mailboxFilterId ?? undefined,
+      campaignId: campaignFilterId ?? undefined,
+      unreadOnly: unreadOnlyFilter || undefined,
+      dateFrom,
+      dateTo: undefined,
+      searchQuery: threadSearchQuery.trim() || undefined,
+      tagIds: tagFilterIds.length > 0 ? tagFilterIds : undefined,
+      category: categoryFilter ?? undefined,
+    };
+  }, [mailboxFilterId, campaignFilterId, unreadOnlyFilter, datePreset, threadSearchQuery, tagFilterIds, categoryFilter]);
+
   const handleRefresh = useCallback(async () => {
     if (!accountId) return;
     setRefreshing(true);
+    setThreadOffset(0);
     try {
+      const opts = buildThreadFilters();
       const [list] = await Promise.all([
-        getThreadsByAccount(accountId, { hasReplyOnly: true }),
+        getThreadsByAccount(accountId, opts),
         loadBlockList(),
       ]);
       setThreads(list);
+      setHasMoreThreads(list.length >= THREAD_PAGE_SIZE);
       if (list.length === 0) {
         setSelectedThreadId(null);
       } else if (
@@ -280,27 +345,75 @@ export default function InboxPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [accountId, selectedThreadId]);
+  }, [accountId, selectedThreadId, buildThreadFilters]);
 
-  const loadThreads = useCallback(async () => {
+  const loadThreadsRef = useRef<(options?: { append?: boolean }) => Promise<void>>(() => Promise.resolve());
+  const loadThreads = useCallback(async (options?: { append?: boolean }) => {
     if (!accountId) return;
-    setThreadsError(null);
-    setThreadsLoading(true);
+    const append = options?.append ?? false;
+    const offset = append ? threadOffset : 0;
+    if (!append) {
+      setThreadsError(null);
+      setThreadsLoading(true);
+    } else {
+      setLoadingMoreThreads(true);
+    }
     try {
-      const list = await getThreadsByAccount(accountId, { hasReplyOnly: true });
-      setThreads(list);
-      if (list.length === 0) {
-        setSelectedThreadId(null);
+      const opts = {
+        ...buildThreadFilters(),
+        offset,
+        limit: THREAD_PAGE_SIZE,
+      };
+      const list = await getThreadsByAccount(accountId, opts);
+      if (append) {
+        setThreads((prev) => {
+          const existingIds = new Set(prev.map((t) => t.id));
+          const newThreads = list.filter((t) => !existingIds.has(t.id));
+          return [...prev, ...newThreads];
+        });
+        setThreadOffset((o) => o + list.length);
+        setHasMoreThreads(list.length >= THREAD_PAGE_SIZE);
       } else {
-        const current = selectedThreadIdRef.current;
-        if (!current || !list.some((t) => t.id === current)) {
-          setSelectedThreadId(list[0].id);
+        setThreads(list);
+        setThreadOffset(list.length);
+        setHasMoreThreads(list.length >= THREAD_PAGE_SIZE);
+        if (list.length === 0) {
+          setSelectedThreadId(null);
+        } else {
+          const current = selectedThreadIdRef.current;
+          if (!current || !list.some((t) => t.id === current)) {
+            setSelectedThreadId(list[0].id);
+          }
         }
       }
     } catch (err) {
-      setThreadsError(err instanceof Error ? err.message : 'Failed to load conversations');
+      if (!append) {
+        setThreadsError(err instanceof Error ? err.message : 'Failed to load conversations');
+      }
     } finally {
       setThreadsLoading(false);
+      setLoadingMoreThreads(false);
+    }
+  }, [accountId, buildThreadFilters, threadOffset]);
+  loadThreadsRef.current = loadThreads;
+
+  const loadMoreThreads = useCallback(() => {
+    loadThreads({ append: true });
+  }, [loadThreads]);
+
+  const loadMailboxesAndCampaigns = useCallback(async () => {
+    if (!accountId) return;
+    try {
+      const [mbList, campList, tagsList] = await Promise.all([
+        getMailboxesByAccount(accountId),
+        getCampaigns({ accountId }),
+        getThreadTags(accountId),
+      ]);
+      setMailboxes(mbList);
+      setCampaigns(campList);
+      setAccountTags(tagsList);
+    } catch (err) {
+      console.error('Failed to load mailboxes/campaigns/tags:', err);
     }
   }, [accountId]);
 
@@ -399,16 +512,71 @@ export default function InboxPage() {
     }
   }, [accountId]);
 
+  const handleSelectThread = useCallback((threadId: string) => {
+    setSelectedThreadId(threadId);
+    markThreadMessagesRead(threadId).catch((err) => console.error('Failed to mark thread as read:', err));
+    setThreads((prev) =>
+      prev.map((t) => (t.id === threadId && 'unread_count' in t ? { ...t, unread_count: 0 } : t))
+    );
+  }, []);
+
+  const initialLoadDoneRef = useRef<string | null>(null);
   useEffect(() => {
-    if (accountId) {
-      loadThreads();
-      loadBlockList();
-    } else {
+    if (!accountId) {
       setThreadsLoading(false);
       setThreads([]);
       setBlockList([]);
+      initialLoadDoneRef.current = null;
+      return;
     }
-  }, [accountId, loadThreads, loadBlockList]);
+    if (initialLoadDoneRef.current === accountId) return;
+    initialLoadDoneRef.current = accountId;
+    loadMailboxesAndCampaigns();
+    loadThreads();
+    loadBlockList();
+  }, [accountId, loadThreads, loadBlockList, loadMailboxesAndCampaigns]);
+
+  // Load tags for displayed threads
+  useEffect(() => {
+    if (threads.length === 0) {
+      setThreadTagsMap({});
+      return;
+    }
+    getTagsForThreads(threads.map((t) => t.id))
+      .then(setThreadTagsMap)
+      .catch((err) => console.error('Failed to load thread tags:', err));
+  }, [threads]);
+
+  // Refetch when non-search filters change (skip initial mount to avoid double-fetch)
+  const filtersEffectRanRef = useRef(false);
+  useEffect(() => {
+    if (!accountId) return;
+    if (!filtersEffectRanRef.current) {
+      filtersEffectRanRef.current = true;
+      return;
+    }
+    setThreadOffset(0);
+    loadThreadsRef.current();
+  }, [accountId, mailboxFilterId, campaignFilterId, unreadOnlyFilter, datePreset, tagFilterIds, categoryFilter]);
+
+  // Debounced refetch when search query changes
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!accountId) return;
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+    searchDebounceRef.current = setTimeout(() => {
+      searchDebounceRef.current = null;
+      setThreadOffset(0);
+      loadThreadsRef.current();
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, [accountId, threadSearchQuery]);
 
   // Restore pending reply when thread is selected
   useEffect(() => {
@@ -878,25 +1046,46 @@ export default function InboxPage() {
             borderRightWidth: 1,
           }}
         >
-          <View className="px-4 py-4 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
-            <View className="flex-row items-center rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-3 py-2.5" style={{ borderWidth: 1 }}>
-              <MagnifyingGlassIcon size={20} color="#6B7280" style={{ marginRight: 10 }} />
-              <TextInput
-                value={threadSearchQuery}
-                onChangeText={setThreadSearchQuery}
-                placeholder="Search conversations…"
-                placeholderTextColor="#6B7280"
-                className="flex-1 text-white font-instrument text-base py-0"
-                style={{ minHeight: 24 }}
-              />
+          <View className="px-4 py-4">
+            <View className="flex-row items-center" style={{ minWidth: 0, gap: 10 }}>
+              <View
+                className="flex-1 flex-row items-center rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-3 py-2.5"
+                style={{ borderWidth: 1, minWidth: 0 }}
+              >
+                <MagnifyingGlassIcon size={20} color="#6B7280" style={{ marginRight: 10 }} />
+                <TextInput
+                  value={threadSearchQuery}
+                  onChangeText={setThreadSearchQuery}
+                  placeholder="Search conversations…"
+                  placeholderTextColor="#6B7280"
+                  className="flex-1 text-white font-instrument text-base py-0"
+                  style={{ minHeight: 24 }}
+                />
+              </View>
+              <View ref={filterButtonRef} collapsable={false} style={{ flexShrink: 0 }}>
+                <Pressable
+                  onPress={() => {
+                    filterButtonRef.current?.measureInWindow((x, y, w, h) => {
+                      setFilterAnchorLayout({ x, y, w, h });
+                      setFilterMenuOpen(true);
+                    });
+                  }}
+                  className="rounded-xl border items-center justify-center"
+                  style={{
+                    width: 44,
+                    height: 44,
+                    backgroundColor: '#1A1A1A',
+                    borderColor: '#2A2A2A',
+                    borderWidth: 1,
+                  }}
+                >
+                  <FunnelIcon
+                    size={18}
+                    color={hasActiveFilters ? '#F3440D' : '#9CA3AF'}
+                  />
+                </Pressable>
+              </View>
             </View>
-            {!threadsLoadingOrNoAccount && !showThreadSkeleton && threads.length > 0 && (
-              <Text className="text-gray-500 font-instrument text-xs mt-2">
-                {threadSearchQuery.trim()
-                  ? `${filteredThreads.length} of ${threads.length}`
-                  : `${threads.length} conversation${threads.length !== 1 ? 's' : ''}`}
-              </Text>
-            )}
           </View>
           {threadsError && (
             <View className="px-4 py-3">
@@ -916,7 +1105,7 @@ export default function InboxPage() {
               description="Replies to your campaign emails will appear here."
               className="flex-1 px-5"
             />
-          ) : filteredThreads.length === 0 ? (
+          ) : displayThreads.length === 0 ? (
             <EmptyState
               title="No matching conversations"
               description="Try a different search term."
@@ -925,20 +1114,34 @@ export default function InboxPage() {
           ) : (
             <ScrollView
               className="flex-1"
-              contentContainerStyle={{ paddingVertical: 8 }}
+              contentContainerStyle={{ paddingTop: 0, paddingBottom: 8 }}
               showsVerticalScrollIndicator={false}
               refreshControl={
                 <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
               }
             >
-              {filteredThreads.map((thread) => (
+              {displayThreads.map((thread) => (
                 <ThreadItem
                   key={thread.id}
                   thread={thread}
                   isSelected={selectedThreadId === thread.id}
-                  onSelect={() => setSelectedThreadId(thread.id)}
+                  onSelect={() => handleSelectThread(thread.id)}
+                  unreadCount={'unread_count' in thread ? (thread as { unread_count: number }).unread_count : 0}
+                  tags={threadTagsMap[thread.id] ?? []}
                 />
               ))}
+              {hasMoreThreads && (
+                <Pressable
+                  onPress={loadMoreThreads}
+                  disabled={loadingMoreThreads}
+                  className="mx-3 mt-2 mb-4 py-3 rounded-xl items-center"
+                  style={{ backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A' }}
+                >
+                  <Text className="text-orange-500 font-instrument text-sm">
+                    {loadingMoreThreads ? 'Loading…' : 'Load more'}
+                  </Text>
+                </Pressable>
+              )}
             </ScrollView>
           )}
         </Animated.View>
@@ -999,6 +1202,76 @@ export default function InboxPage() {
                 blockedEmails={blockedProspectEmails}
                 onBlock={accountId ? () => setBlockModalVisible(true) : undefined}
                 showBlockButton={!!accountId && selectedThreadProspectEmails.length > 0}
+                threadTags={selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []) : []}
+                accountTags={accountTags}
+                onAddTag={
+                  selectedThreadId && accountId
+                    ? async (tag) => {
+                        try {
+                          await addTagToThread(selectedThreadId, tag.id);
+                          setThreadTagsMap((prev) => ({
+                            ...prev,
+                            [selectedThreadId]: [...(prev[selectedThreadId] ?? []), tag],
+                          }));
+                          if (!accountTags.some((t) => t.id === tag.id)) {
+                            setAccountTags((p) => [...p, tag]);
+                          }
+                        } catch (e) {
+                          console.error('Failed to add tag:', e);
+                        }
+                      }
+                    : undefined
+                }
+                onRemoveTag={
+                  selectedThreadId
+                    ? async (tag) => {
+                        try {
+                          await removeTagFromThread(selectedThreadId, tag.id);
+                          setThreadTagsMap((prev) => ({
+                            ...prev,
+                            [selectedThreadId]: (prev[selectedThreadId] ?? []).filter((t) => t.id !== tag.id),
+                          }));
+                        } catch (e) {
+                          console.error('Failed to remove tag:', e);
+                        }
+                      }
+                    : undefined
+                }
+                category={selectedThread?.category ?? null}
+                onSetCategory={
+                  selectedThreadId && accountId
+                    ? async (cat) => {
+                        try {
+                          await updateThreadCategory(selectedThreadId, cat);
+                          setThreads((prev) =>
+                            prev.map((t) =>
+                              t.id === selectedThreadId ? { ...t, category: cat } : t
+                            )
+                          );
+                        } catch (e) {
+                          console.error('Failed to update category:', e);
+                        }
+                      }
+                    : undefined
+                }
+                categoryOptions={THREAD_CATEGORIES}
+                onCreateTag={
+                  selectedThreadId && accountId
+                    ? async () => {
+                        try {
+                          const tag = await createThreadTag(accountId, { name: 'New tag' });
+                          await addTagToThread(selectedThreadId, tag.id);
+                          setAccountTags((p) => [...p, tag]);
+                          setThreadTagsMap((prev) => ({
+                            ...prev,
+                            [selectedThreadId]: [...(prev[selectedThreadId] ?? []), tag],
+                          }));
+                        } catch (e) {
+                          console.error('Failed to create tag:', e);
+                        }
+                      }
+                    : undefined
+                }
               />
               {messagesError && (
                 <View className="p-4">
@@ -1075,6 +1348,36 @@ export default function InboxPage() {
           )}
         </View>
         </View>
+
+        {/* Filter dropdown */}
+        <InboxFilterDropdown
+          visible={filterMenuOpen}
+          onClose={() => setFilterMenuOpen(false)}
+          anchorLayout={filterAnchorLayout}
+          unreadOnlyFilter={unreadOnlyFilter}
+          onUnreadOnlyFilterChange={setUnreadOnlyFilter}
+          datePreset={datePreset}
+          onDatePresetChange={setDatePreset}
+          mailboxFilterId={mailboxFilterId}
+          onMailboxFilterIdChange={setMailboxFilterId}
+          campaignFilterId={campaignFilterId}
+          onCampaignFilterIdChange={setCampaignFilterId}
+          categoryFilter={categoryFilter}
+          onCategoryFilterChange={setCategoryFilter}
+          tagFilterIds={tagFilterIds}
+          onTagFilterIdsChange={setTagFilterIds}
+          mailboxes={mailboxes}
+          campaigns={campaigns}
+          accountTags={accountTags}
+          onClearAll={() => {
+            setMailboxFilterId(null);
+            setCampaignFilterId(null);
+            setUnreadOnlyFilter(false);
+            setDatePreset(null);
+            setTagFilterIds([]);
+            setCategoryFilter(null);
+          }}
+        />
 
         {/* Block sender modal */}
         {accountId && (

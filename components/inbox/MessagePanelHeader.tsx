@@ -5,7 +5,7 @@ import { Select } from '@/components/ui/forms';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 
-/** Sticky header: left = prospect name + email; right = toolbar (tags, campaign, category, Block) */
+/** Sticky header: left = prospect name + email; right = toolbar (campaign chip, Block, tags, category) */
 export function MessagePanelHeader({
   prospectName,
   campaignName,
@@ -73,8 +73,37 @@ export function MessagePanelHeader({
           )}
         </View>
 
-        {/* Right: toolbar — tags, campaign chip, category, Block */}
+        {/* Right: toolbar — campaign chip, Block List, tags, category */}
         <View className="flex-row items-center gap-2 flex-shrink-0">
+          {campaignName ? (
+            <View
+              className="rounded-lg px-2 py-0.5"
+              style={{ backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#3A3A3A' }}
+            >
+              <Text className="text-xs font-instrument text-gray-400" numberOfLines={1}>
+                {campaignName}
+              </Text>
+            </View>
+          ) : null}
+          {showBlockButton && onBlock && (
+            <Pressable
+              onPress={onBlock}
+              className="flex-row items-center gap-1.5 rounded-lg px-2.5 py-1.5 min-h-[32px]"
+              style={{
+                backgroundColor: 'rgba(185, 28, 28, 0.15)',
+                borderWidth: 1,
+                borderColor: 'rgba(185, 28, 28, 0.5)',
+              }}
+            >
+              <NoSymbolIcon size={14} color="#F87171" />
+              <Text
+                className="text-xs font-instrument-medium"
+                style={{ color: '#FCA5A5' }}
+              >
+                Block List
+              </Text>
+            </Pressable>
+          )}
           {showTags && (
             <Pressable
               onPress={onOpenTagsPanel}
@@ -96,16 +125,6 @@ export function MessagePanelHeader({
               <ChevronDownIcon size={14} color="#9CA3AF" style={{ marginLeft: 10 }} />
             </Pressable>
           )}
-          {campaignName ? (
-            <View
-              className="rounded-lg px-2 py-0.5"
-              style={{ backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#3A3A3A' }}
-            >
-              <Text className="text-xs font-instrument text-gray-400" numberOfLines={1}>
-                {campaignName}
-              </Text>
-            </View>
-          ) : null}
           {onSetCategory && categoryOptions.length > 0 && (
             <Select<{ id: string; name: string }>
               items={categoryItems}
@@ -122,15 +141,6 @@ export function MessagePanelHeader({
               dropdownMinWidth={220}
               listMaxHeight={220}
             />
-          )}
-          {showBlockButton && onBlock && (
-            <Pressable
-              onPress={onBlock}
-              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-            >
-              <NoSymbolIcon size={14} color="#9CA3AF" />
-              <Text className="text-gray-400 font-instrument-medium text-xs">Block</Text>
-            </Pressable>
           )}
         </View>
       </View>

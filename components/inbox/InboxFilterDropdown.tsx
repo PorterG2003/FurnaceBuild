@@ -7,7 +7,7 @@ import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import { resolveTagColor } from '@/lib/inbox/tag-colors';
 
-const THREAD_CATEGORIES = ['Lead replied', 'Meeting set', 'Not interested', 'Follow up'];
+const THREAD_CATEGORIES = ['Interested', 'Not Interested'];
 const DATE_OPTIONS = [
   { id: 'all', name: 'All' },
   { id: '7d', name: 'Last 7 days' },

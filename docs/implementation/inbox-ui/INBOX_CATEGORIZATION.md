@@ -33,7 +33,5 @@ See [supabase/migrations/20260214100001_add_category_to_email_threads.sql](../..
 
 ## Preset categories
 
-- Lead replied
-- Meeting set
-- Not interested
-- Follow up
+- Interested
+- Not Interested

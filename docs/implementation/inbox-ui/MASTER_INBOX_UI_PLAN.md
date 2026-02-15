@@ -1,7 +1,8 @@
 # Master Inbox UI — Step-by-Step Implementation Plan
 
-**Last updated**: February 11, 2026  
-**Current progress**: Steps 1–6 complete; Step 5 partial (client-side search only)
+**Last updated**: February 15, 2026  
+**Current progress**: Steps 1–8 complete  
+**Status**: Plan complete as of Feb 2026. Optional polish and future steps may be added below.
 
 ---
 
@@ -15,10 +16,10 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 | 2 | Reply support | ✅ Done |
 | 3 | Attachments (receive, then send) | ✅ Done |
 | 4 | Forward support | ✅ Done |
-| 5 | Search and filtering | Partial |
-| 6 | Block list | Done |
-| 7 | Thread tagging | Todo |
-| 8 | Thread categorization | Todo |
+| 5 | Search and filtering | ✅ Done |
+| 6 | Block list | ✅ Done |
+| 7 | Thread tagging | ✅ Done |
+| 8 | Thread categorization | ✅ Done |
 
 ---
 
@@ -103,19 +104,16 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 
 ---
 
-## Step 5: Search and filtering — Partial
+## Step 5: Search and filtering — ✅ Done
 
 **Goal**: Search thread subject/participants/body; filter by mailbox, campaign, date range, read/unread.
 
-### Done
+**Deep dive**: [INBOX_SEARCH_FILTERS.md](./INBOX_SEARCH_FILTERS.md)
 
-- Client-side thread search: `threadSearchQuery` filters threads by subject and participants (case-insensitive); shows "X of Y" result count in search bar.
+### Accomplished
 
-### Todo
-
-- **Backend**: Full-text search on `email_threads` (and optionally `email_messages`) or external search later. Add filters to `getThreadsByAccount`: `mailbox_id`, `campaign_id`, read/unread, date range. Pagination when filtering.
-- **UI**: Filter chips/dropdowns for mailbox/campaign/date/read. Thread list updates from list API with params. Optional: URL/state for shareable filters.
-- **Expand**: Create `INBOX_SEARCH_FILTERS.md` when implementing.
+- **Backend** (`lib/supabase/services/inbox.ts`): `getThreadsByAccount` options: `mailboxId`, `campaignId`, `unreadOnly` (subquery for threads with unread received messages), `dateFrom`/`dateTo`, `searchQuery` (ilike on subject), `tagIds`, `category` (including `NO_CATEGORY_FILTER` for no category), `limit`/`offset` (pagination), `includeUnreadCount`. `markThreadMessagesRead(threadId)` for mark-as-read.
+- **UI**: `InboxFilterDropdown` with Unread only toggle; Date (All / Last 7 days / Last 30 days); Mailbox, Campaign, Category, Tag (multi-select) with search; Clear all. Search bar with debounced server-side subject search. Thread list loads with filter params; pagination (e.g. load more). Client-side thread search also filters by subject/participants with "X of Y" result count.
 
 ---
 
@@ -132,23 +130,29 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 
 ---
 
-## Step 7: Thread tagging — Todo
+## Step 7: Thread tagging — ✅ Done
 
 **Goal**: User-defined labels on threads (e.g. "Follow up", "Urgent"); filter by tag.
 
-- **Backend**: New table(s): e.g. `thread_tags` (account_id, name, color?) and `thread_tag_assignments` (thread_id, tag_id), or JSONB `tags` on `email_threads`. List/filter APIs include tags.
-- **UI**: Add/remove tags on thread (dropdown/autocomplete); show tags on thread row and message header; filter by tag in Thread Panel.
-- **Expand**: Create `INBOX_TAGGING.md` when implementing.
+**Deep dive**: [INBOX_TAGGING.md](./INBOX_TAGGING.md)
+
+### Accomplished
+
+- **Backend**: `thread_tags` (account_id, name, color) and `thread_tag_assignments` (thread_id, tag_id). Service `lib/supabase/services/thread-tags.ts`: getThreadTags, createThreadTag, updateThreadTag, deleteThreadTag, addTagToThread, removeTagFromThread, getTagsForThread, getTagsForThreads. `getThreadsByAccount` accepts `tagIds` to filter threads by tag (OR).
+- **UI**: TagsPanelModal to add/remove tags on thread and create new tag; EditTagModal, CreateTagModal. Tags shown on thread row (ThreadItem) and in MessagePanelHeader. Filter dropdown includes Tag multi-select (SearchAndSelectMulti) with account tags.
 
 ---
 
-## Step 8: Thread categorization — Todo
+## Step 8: Thread categorization — ✅ Done
 
 **Goal**: System- or user-driven categories (e.g. "Lead replied", "Meeting set"); optional sync with AI Categorizer node.
 
-- **Backend**: Add `category`/`labels` to `email_threads` or separate `thread_categories` table. Inbox-checker or job sets category when processing replies; user can override. List/filter APIs include category.
-- **UI**: Category badge on thread row; filter by category; if AI-driven, "Suggested: X" and confirm/override.
-- **Expand**: Create `INBOX_CATEGORIZATION.md` when implementing.
+**Deep dive**: [INBOX_CATEGORIZATION.md](./INBOX_CATEGORIZATION.md)
+
+### Accomplished
+
+- **Backend**: `email_threads.category` (TEXT) and `category_source` ('user' | 'system' | 'ai'). `getThreadsByAccount` accepts `category` filter (and `NO_CATEGORY_FILTER` for threads with no category). `updateThreadCategory(threadId, category)` sets category and category_source='user'.
+- **UI**: Category badge on thread row; InboxFilterDropdown includes Category select (All, No category, plus preset categories e.g. Interested, Not Interested) with category colors. Message panel header supports setting/clearing category.
 
 ---
 

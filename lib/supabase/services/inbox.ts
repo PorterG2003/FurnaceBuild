@@ -1,5 +1,6 @@
 import { supabase } from '../client';
 import type { EmailThread, EmailMessage } from '../types';
+import { getDisplayBody } from '@/lib/email';
 
 /** Attachment metadata stored on email_messages */
 export interface AttachmentMeta {
@@ -11,6 +12,32 @@ export interface AttachmentMeta {
   imapUid?: number;
 }
 
+export interface GetThreadsByAccountOptions {
+  hasReplyOnly?: boolean;
+  limit?: number;
+  offset?: number;
+  mailboxId?: string;
+  campaignId?: string;
+  unreadOnly?: boolean;
+  dateFrom?: string; // ISO
+  dateTo?: string; // ISO
+  searchQuery?: string;
+  /** Filter by threads that have any of these tag IDs */
+  tagIds?: string[];
+  /**
+   * Filter by category.
+   * Use NO_CATEGORY_FILTER to show only threads with no category set.
+   */
+  category?: string;
+  /** When true, returned threads include unread_count (requires extra query) */
+  includeUnreadCount?: boolean;
+}
+
+/** Sentinel value for category filter: show only threads with no category (category IS NULL). */
+export const NO_CATEGORY_FILTER = '__no_category__';
+
+export type EmailThreadWithUnread = EmailThread & { unread_count: number };
+
 /**
  * List email threads for an account.
  * Ordered by last_message_at descending (newest first).
@@ -18,7 +45,41 @@ export interface AttachmentMeta {
  */
 export async function getThreadsByAccount(
   accountId: string,
-  options?: { hasReplyOnly?: boolean; limit?: number }
+  options?: GetThreadsByAccountOptions
+): Promise<EmailThread[]> {
+  // When unreadOnly is set, we need to filter to threads with unread received messages.
+  // Two-query approach: first get thread IDs, then fetch threads.
+  if (options?.unreadOnly === true) {
+    const { data: unreadThreadIds } = await supabase
+      .from('email_messages')
+      .select('thread_id')
+      .eq('direction', 'received')
+      .is('read_at', null);
+    const threadIds = [...new Set((unreadThreadIds ?? []).map((r) => r.thread_id))];
+    if (threadIds.length === 0) {
+      return [];
+    }
+    // Fetch threads and join with email_threads to ensure account_id match
+    const { data: threadsWithUnread } = await supabase
+      .from('email_threads')
+      .select('id')
+      .eq('account_id', accountId)
+      .in('id', threadIds);
+    const ids = (threadsWithUnread ?? []).map((t) => t.id);
+    if (ids.length === 0) {
+      return [];
+    }
+    // Fall through to build query with .in('id', ids) - we'll need to merge this into the main query
+    // Actually, let's refactor: we'll add the id filter to the main query.
+    return getThreadsByAccountInternal(accountId, { ...options, restrictToThreadIds: ids });
+  }
+
+  return getThreadsByAccountInternal(accountId, options);
+}
+
+async function getThreadsByAccountInternal(
+  accountId: string,
+  options?: GetThreadsByAccountOptions & { restrictToThreadIds?: string[] }
 ): Promise<EmailThread[]> {
   let query = supabase
     .from('email_threads')
@@ -30,8 +91,61 @@ export async function getThreadsByAccount(
     query = query.eq('has_reply', true);
   }
 
-  if (options?.limit != null && options.limit > 0) {
-    query = query.limit(options.limit);
+  if (options?.mailboxId) {
+    query = query.eq('mailbox_id', options.mailboxId);
+  }
+
+  if (options?.campaignId) {
+    query = query.eq('campaign_id', options.campaignId);
+  }
+
+  if (options?.dateFrom) {
+    query = query.gte('last_message_at', options.dateFrom);
+  }
+
+  if (options?.dateTo) {
+    query = query.lte('last_message_at', options.dateTo);
+  }
+
+  if (options?.searchQuery && options.searchQuery.trim()) {
+    const q = options.searchQuery.trim();
+    const pattern = `%${q.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
+    query = query.ilike('subject', pattern);
+    // Note: participants search would require RPC; subject-only for MVP
+  }
+
+  if (options?.category === NO_CATEGORY_FILTER) {
+    query = query.is('category', null);
+  } else if (options?.category) {
+    query = query.eq('category', options.category);
+  }
+
+  if (options?.tagIds && options.tagIds.length > 0) {
+    const { data: assigned } = await supabase
+      .from('thread_tag_assignments')
+      .select('thread_id')
+      .in('tag_id', options.tagIds);
+    const tagThreadIds = [...new Set((assigned ?? []).map((r) => r.thread_id))];
+    if (tagThreadIds.length === 0) {
+      return [];
+    }
+    const idsToRestrict = options.restrictToThreadIds
+      ? tagThreadIds.filter((id) => options.restrictToThreadIds!.includes(id))
+      : tagThreadIds;
+    if (idsToRestrict.length === 0) {
+      return [];
+    }
+    query = query.in('id', idsToRestrict);
+  }
+
+  if (options?.restrictToThreadIds && options.restrictToThreadIds.length > 0 && !options?.tagIds?.length) {
+    query = query.in('id', options.restrictToThreadIds);
+  }
+
+  const limit = options?.limit;
+  const offset = options?.offset ?? 0;
+  if (limit != null && limit > 0) {
+    query = query.range(offset, offset + limit - 1);
   }
 
   const { data, error } = await query;
@@ -40,11 +154,116 @@ export async function getThreadsByAccount(
     throw new Error(`Failed to fetch threads: ${error.message}`);
   }
 
-  const list = data ?? [];
-  // #region agent log
-  fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'inbox.ts:getThreadsByAccount',message:'Threads loaded for account',data:{accountId,threadCount:list.length,hasReplyOnly:options?.hasReplyOnly===true},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
+  const list = (data ?? []) as EmailThread[];
+
+  if (options?.includeUnreadCount === true && list.length > 0) {
+    const counts = await getThreadUnreadCounts(list.map((t) => t.id));
+    return list.map((t) => ({ ...t, unread_count: counts[t.id] ?? 0 }));
+  }
+
   return list;
+}
+
+/**
+ * Get unread message count per thread (received messages with read_at IS NULL).
+ * Used for inbox thread badges.
+ */
+export async function getThreadUnreadCounts(
+  threadIds: string[]
+): Promise<Record<string, number>> {
+  if (threadIds.length === 0) {
+    return {};
+  }
+  const { data, error } = await supabase
+    .from('email_messages')
+    .select('thread_id')
+    .in('thread_id', threadIds)
+    .eq('direction', 'received')
+    .is('read_at', null);
+
+  if (error) {
+    throw new Error(`Failed to fetch unread counts: ${error.message}`);
+  }
+
+  const counts: Record<string, number> = {};
+  for (const row of data ?? []) {
+    counts[row.thread_id] = (counts[row.thread_id] ?? 0) + 1;
+  }
+  return counts;
+}
+
+const SNIPPET_MAX_LENGTH = 100;
+
+/**
+ * Get a truncated preview of the latest message body per thread.
+ * Used for thread list cards. Returns threadId -> snippet (stripped, truncated).
+ */
+export async function getThreadSnippets(
+  threadIds: string[]
+): Promise<Record<string, string>> {
+  if (threadIds.length === 0) {
+    return {};
+  }
+  const { data, error } = await supabase
+    .from('email_messages')
+    .select('thread_id, body_text, body_html, received_at')
+    .in('thread_id', threadIds)
+    .order('received_at', { ascending: false })
+    .limit(1000);
+
+  if (error) {
+    throw new Error(`Failed to fetch thread snippets: ${error.message}`);
+  }
+
+  const map: Record<string, string> = {};
+  for (const row of data ?? []) {
+    if (row.thread_id in map) continue;
+    const hasText = row.body_text != null && row.body_text.trim().length > 0;
+    const body = hasText ? row.body_text! : (row.body_html ?? '');
+    const format = hasText ? 'text' : 'html';
+    const display = getDisplayBody(body, { format });
+    const oneline = display.replace(/\s+/g, ' ').trim();
+    map[row.thread_id] = oneline.slice(0, SNIPPET_MAX_LENGTH);
+  }
+  return map;
+}
+
+/**
+ * Mark all received messages in a thread as read.
+ * Call when user views/selects a thread.
+ */
+export async function markThreadMessagesRead(threadId: string): Promise<void> {
+  const { error } = await supabase
+    .from('email_messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq('thread_id', threadId)
+    .eq('direction', 'received')
+    .is('read_at', null);
+
+  if (error) {
+    throw new Error(`Failed to mark thread as read: ${error.message}`);
+  }
+}
+
+/**
+ * Update thread category (user override).
+ */
+export async function updateThreadCategory(
+  threadId: string,
+  category: string | null
+): Promise<void> {
+  const { error } = await supabase
+    .from('email_threads')
+    .update({
+      category: category ?? null,
+      category_source: category ? 'user' : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', threadId);
+
+  if (error) {
+    throw new Error(`Failed to update thread category: ${error.message}`);
+  }
 }
 
 /**

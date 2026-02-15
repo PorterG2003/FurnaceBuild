@@ -2,6 +2,7 @@
  * Inbox formatters: dates, file sizes, date grouping.
  */
 import type { EmailMessage } from '@/lib/supabase/types';
+import { getDisplayBody } from '@/lib/email';
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -44,6 +45,14 @@ export function formatThreadDate(iso: string): string {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
+/** Full date and time for thread list, no year. e.g. "Feb 14 at 10:52 PM" */
+export function formatThreadDateWithTime(iso: string): string {
+  const d = new Date(iso);
+  const datePart = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const timePart = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `${datePart} at ${timePart}`;
+}
+
 /** Date group label for dividers: Today, Yesterday, Mon Jan 27, or Jan 15, 2026 */
 export function getDateGroupLabel(iso: string): string {
   const d = new Date(iso);
@@ -84,6 +93,18 @@ export function groupMessagesByDate(messages: EmailMessage[]): { label: string; 
     groups.push({ label: currentLabel!, messages: currentGroup });
   }
   return groups;
+}
+
+/**
+ * Parse message body for preview: strip quoted replies, signatures, HTML;
+ * decode entities and normalize whitespace. Uses the same logic as full message display.
+ */
+export function parsePreviewText(raw: string, format?: 'text' | 'html'): string {
+  if (!raw || typeof raw !== 'string') return '';
+  const inferredFormat =
+    format ?? (raw.includes('<') && raw.includes('>') ? 'html' : 'text');
+  const display = getDisplayBody(raw, { format: inferredFormat });
+  return display.replace(/\s+/g, ' ').trim();
 }
 
 /** Initials from name or email (e.g. "Sarah Johnson" -> "SJ", "sarah@co.com" -> "sa") */

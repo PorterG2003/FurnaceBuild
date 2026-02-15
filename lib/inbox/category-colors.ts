@@ -3,10 +3,8 @@
  */
 
 export const THREAD_CATEGORY_COLORS: Record<string, string> = {
-  'Lead replied': '#34D399',   // emerald – positive, engagement
-  'Meeting set': '#818CF8',    // indigo – scheduled, committed
-  'Not interested': '#94A3B8', // slate – muted, inactive
-  'Follow up': '#FBBF24',     // amber – action / to-do
+  Interested: '#34D399',    // emerald – positive, engaged
+  'Not Interested': '#94A3B8', // slate – muted, inactive
 };
 
 /**

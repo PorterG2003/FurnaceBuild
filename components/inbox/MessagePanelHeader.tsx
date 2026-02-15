@@ -17,7 +17,7 @@ export function MessagePanelHeader({
   onOpenTagsPanel,
   category,
   onSetCategory,
-  categoryOptions = ['Lead replied', 'Meeting set', 'Not interested', 'Follow up'],
+  categoryOptions = ['Interested', 'Not Interested'],
 }: {
   prospectName?: string | null;
   campaignName?: string | null;

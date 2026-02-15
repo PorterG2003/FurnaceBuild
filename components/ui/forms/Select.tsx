@@ -204,15 +204,15 @@ export function Select<T>({
       alignItems: 'center' as const,
       borderWidth: 1,
     };
-    if (isSelected) {
-      return { ...base, backgroundColor: 'rgba(243, 68, 13, 0.14)', borderColor: 'rgba(243, 68, 13, 0.4)' };
-    }
     if (itemColorVariant === 'tint' && itemColor) {
       return {
         ...base,
         backgroundColor: hexToTranslucentBackground(itemColor),
-        borderColor: `${itemColor}66`,
+        borderColor: isSelected ? `${itemColor}CC` : `${itemColor}66`,
       };
+    }
+    if (isSelected) {
+      return { ...base, backgroundColor: 'rgba(243, 68, 13, 0.14)', borderColor: 'rgba(243, 68, 13, 0.4)' };
     }
     return { ...base, backgroundColor: '#121212', borderColor: '#2A2A2A' };
   };
@@ -238,68 +238,44 @@ export function Select<T>({
         onPress={openPopover}
         activeOpacity={0.8}
         style={[
-          triggerStyle,
-          {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            ...sz.trigger,
-          },
-        ]}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 }}>
-          {itemColorVariant === 'tint' && triggerColor ? (
-            <View
-              style={{
-                flex: 1,
-                minWidth: 0,
-                paddingVertical: 2,
-                paddingHorizontal: 6,
-                borderRadius: 6,
+          itemColorVariant === 'tint' && triggerColor
+            ? {
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                ...sz.trigger,
                 backgroundColor: hexToTranslucentBackground(triggerColor),
                 borderWidth: 1,
                 borderColor: `${triggerColor}66`,
+              }
+            : { ...triggerStyle, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', ...sz.trigger },
+        ]}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 10 }}>
+          {triggerColor && itemColorVariant === 'dot' ? (
+            <View
+              style={{
+                width: 12,
+                height: 12,
+                borderRadius: 6,
+                backgroundColor: triggerColor,
+                borderWidth: 1,
+                borderColor: '#3A3A3A',
+                marginRight: 8,
               }}
-            >
-              <Text
-                className={`${sz.triggerTextClassName} text-white`}
-                style={{
-                  fontFamily: 'Instrument Sans, system-ui, sans-serif',
-                  color: selectedLabel ? '#FFFFFF' : '#666666',
-                }}
-                numberOfLines={1}
-              >
-                {displayText}
-              </Text>
-            </View>
-          ) : (
-            <>
-              {triggerColor && itemColorVariant === 'dot' ? (
-                <View
-                  style={{
-                    width: 12,
-                    height: 12,
-                    borderRadius: 6,
-                    backgroundColor: triggerColor,
-                    borderWidth: 1,
-                    borderColor: '#3A3A3A',
-                    marginRight: 8,
-                  }}
-                />
-              ) : null}
-              <Text
-                className={`${sz.triggerTextClassName} text-white`}
-                style={{
-                  fontFamily: 'Instrument Sans, system-ui, sans-serif',
-                  flex: 1,
-                  color: selectedLabel ? '#FFFFFF' : '#666666',
-                }}
-                numberOfLines={1}
-              >
-                {displayText}
-              </Text>
-            </>
-          )}
+            />
+          ) : null}
+          <Text
+            className={`${sz.triggerTextClassName} text-white`}
+            style={{
+              fontFamily: 'Instrument Sans, system-ui, sans-serif',
+              flex: 1,
+              color: selectedLabel ? '#FFFFFF' : '#666666',
+            }}
+            numberOfLines={1}
+          >
+            {displayText}
+          </Text>
         </View>
         <ChevronDownIcon size={sz.chevronSize} color="#9CA3AF" />
       </TouchableOpacity>

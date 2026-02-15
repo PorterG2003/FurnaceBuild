@@ -1,6 +1,8 @@
 export { BlockSenderModal } from './BlockSenderModal';
 export { CreateTagModal } from './CreateTagModal';
 export type { CreateTagModalProps } from './CreateTagModal';
+export { EditTagModal } from './EditTagModal';
+export type { EditTagModalProps } from './EditTagModal';
 export { TagsPanelModal } from './TagsPanelModal';
 export type { TagsPanelModalProps } from './TagsPanelModal';
 export { ManageBlockListModal } from './ManageBlockListModal';

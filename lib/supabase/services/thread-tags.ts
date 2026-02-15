@@ -114,6 +114,17 @@ export async function removeTagFromThread(threadId: string, tagId: string): Prom
 }
 
 /**
+ * Permanently delete a tag from the account.
+ * Removes all thread assignments via CASCADE.
+ */
+export async function deleteThreadTag(tagId: string): Promise<void> {
+  const { error } = await supabase.from('thread_tags').delete().eq('id', tagId);
+  if (error) {
+    throw new Error(`Failed to delete tag: ${error.message}`);
+  }
+}
+
+/**
  * Get tags for multiple threads in one call.
  * Returns a map of thread_id -> ThreadTag[].
  */

@@ -1412,19 +1412,24 @@ export default function InboxPage() {
                 console.error('Failed to remove tag:', e);
               }
             }}
-            onUpdateTagColor={async (tag, color) => {
-              try {
-                const updated = await updateThreadTag(tag.id, { color });
-                setAccountTags((p) => p.map((t) => (t.id === updated.id ? updated : t)));
-                setThreadTagsMap((prev) => ({
-                  ...prev,
-                  [selectedThreadId]: (prev[selectedThreadId] ?? []).map((t) =>
-                    t.id === updated.id ? updated : t
-                  ),
-                }));
-              } catch (e) {
-                console.error('Failed to update tag color:', e);
-              }
+            onUpdateTag={(updated) => {
+              setAccountTags((p) => p.map((t) => (t.id === updated.id ? updated : t)));
+              setThreadTagsMap((prev) => ({
+                ...prev,
+                [selectedThreadId]: (prev[selectedThreadId] ?? []).map((t) =>
+                  t.id === updated.id ? updated : t
+                ),
+              }));
+            }}
+            onDeleteTag={(deleted) => {
+              setAccountTags((p) => p.filter((t) => t.id !== deleted.id));
+              setThreadTagsMap((prev) => {
+                const next = { ...prev };
+                for (const threadId of Object.keys(next)) {
+                  next[threadId] = (next[threadId] ?? []).filter((t) => t.id !== deleted.id);
+                }
+                return next;
+              });
             }}
             onCreateTag={() => {
               setTagsPanelVisible(false);

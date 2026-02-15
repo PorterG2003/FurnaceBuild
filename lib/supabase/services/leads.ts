@@ -107,6 +107,32 @@ export async function getLeadById(id: string): Promise<Lead | null> {
   return data;
 }
 
+/** Display name for a lead: name, or first + last, or email */
+export function getLeadDisplayName(lead: Lead | null): string {
+  if (!lead) return '';
+  if (lead.name && lead.name.trim()) return lead.name.trim();
+  const firstLast = [lead.first_name, lead.last_name].filter(Boolean).join(' ').trim();
+  if (firstLast) return firstLast;
+  if (lead.email && lead.email.trim()) return lead.email.trim();
+  return '';
+}
+
+/**
+ * Get leads by IDs (batch). Returns empty array if ids is empty.
+ */
+export async function getLeadsByIds(ids: string[]): Promise<Lead[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase
+    .from('leads')
+    .select('*')
+    .in('id', ids);
+
+  if (error) {
+    throw new Error(`Failed to fetch leads: ${error.message}`);
+  }
+  return data ?? [];
+}
+
 /**
  * Create a new lead
  */

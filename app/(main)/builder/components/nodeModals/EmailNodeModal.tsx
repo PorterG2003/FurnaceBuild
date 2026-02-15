@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, Platform } from 'r
 import { CodeBracketIcon } from 'react-native-heroicons/outline';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
-import { SearchAndSelect } from '@/components/ui/forms';
+import { Select } from '@/components/ui/forms';
 import { EmailBodyEditor } from '../EmailBodyEditor';
 import { getLeads } from '@/lib/supabase/services/leads';
 import { mergeTemplate, processSpintax, type LeadLike } from '@/lib/email';
@@ -471,7 +471,7 @@ function EmailNodeModal({
             <Text className="text-sm font-instrument-medium mb-3 text-gray-300">
               Preview message
             </Text>
-            <SearchAndSelect<Lead>
+            <Select<Lead>
               items={leads}
               getItemId={(l) => l.id}
               getItemLabel={(l) => ({

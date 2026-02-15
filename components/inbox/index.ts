@@ -1,4 +1,10 @@
 export { BlockSenderModal } from './BlockSenderModal';
+export { CreateTagModal } from './CreateTagModal';
+export type { CreateTagModalProps } from './CreateTagModal';
+export { EditTagModal } from './EditTagModal';
+export type { EditTagModalProps } from './EditTagModal';
+export { TagsPanelModal } from './TagsPanelModal';
+export type { TagsPanelModalProps } from './TagsPanelModal';
 export { ManageBlockListModal } from './ManageBlockListModal';
 export type { BlockSenderModalProps } from './BlockSenderModal';
 export { ComposerAttachments } from './ComposerAttachments';
@@ -11,3 +17,4 @@ export { MessageBubble } from './MessageBubble';
 export { MessagePanelHeader } from './MessagePanelHeader';
 export { MessageListSkeleton, MessagePanelHeaderSkeleton, ThreadListSkeleton, SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from './MessageListSkeleton';
 export { ThreadItem } from './ThreadItem';
+export { InboxFilterDropdown } from './InboxFilterDropdown';

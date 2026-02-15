@@ -46,14 +46,15 @@ export function BaseModal({
         style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
         onPress={onClose}
       >
-        <Pressable
+        <View
           style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}
-          onPress={(e) => e.stopPropagation()}
+          pointerEvents="box-none"
         >
-          <View
-            className={`bg-[#1A1A1A] rounded-2xl border border-[#2A2A2A] w-full ${maxWidthClasses[maxWidth]}`}
-            style={maxHeight ? { maxHeight, minHeight: 320 } : {}}
-          >
+          <Pressable onPress={(e) => e.stopPropagation()} style={{ alignSelf: 'stretch', alignItems: 'center' }}>
+            <View
+              className={`bg-[#1A1A1A] rounded-2xl border border-[#2A2A2A] w-full ${maxWidthClasses[maxWidth]}`}
+              style={maxHeight ? { maxHeight, minHeight: 320 } : {}}
+            >
             {/* Header */}
             <View className="flex-row items-start justify-between p-6 border-b border-[#2A2A2A]">
               <View className="flex-1 mr-4">
@@ -102,7 +103,8 @@ export function BaseModal({
               </View>
             )}
           </View>
-        </Pressable>
+          </Pressable>
+        </View>
       </Pressable>
     </Modal>
   );

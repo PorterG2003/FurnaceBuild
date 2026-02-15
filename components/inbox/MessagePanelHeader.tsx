@@ -1,94 +1,148 @@
+import { useMemo } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { NoSymbolIcon } from 'react-native-heroicons/outline';
+import { ChevronDownIcon, NoSymbolIcon } from 'react-native-heroicons/outline';
+import { Select } from '@/components/ui/forms';
+import { getCategoryColor } from '@/lib/inbox/category-colors';
+import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 
-/** Sticky header: subject, then prospect(s) vs sender with clear separation */
+/** Sticky header: left = prospect name + email; right = toolbar (campaign chip, Block, tags, category) */
 export function MessagePanelHeader({
-  subject,
+  prospectName,
+  campaignName,
   prospectEmails,
-  senderEmails,
   blockedEmails = [],
   onBlock,
   showBlockButton = true,
+  threadTags = [],
+  onOpenTagsPanel,
+  category,
+  onSetCategory,
+  categoryOptions = ['Interested', 'Not Interested'],
 }: {
-  subject: string;
+  prospectName?: string | null;
+  campaignName?: string | null;
   prospectEmails: string[];
-  senderEmails: string[];
   blockedEmails?: string[] | Set<string>;
   onBlock?: () => void;
   showBlockButton?: boolean;
+  threadTags?: ThreadTag[];
+  /** When set, shows a single "Tags" control that opens the tags panel (add/remove/create). */
+  onOpenTagsPanel?: () => void;
+  category?: string | null;
+  onSetCategory?: (category: string | null) => void;
+  categoryOptions?: string[];
 }) {
   const blockedSet = blockedEmails instanceof Set ? blockedEmails : new Set(blockedEmails);
   const hasBlocked = prospectEmails.some((e) => blockedSet.has(e.trim().toLowerCase()));
-  const hasProspects = prospectEmails.length > 0;
+  const showTags = !!onOpenTagsPanel;
+  const categoryItems = useMemo(
+    () => [{ id: '', name: 'No category' }, ...categoryOptions.map((c) => ({ id: c, name: c }))],
+    [categoryOptions]
+  );
+
+  const title = prospectName ?? prospectEmails[0] ?? '—';
+  const emailLine = prospectEmails.length > 0 ? prospectEmails.join(', ') : '';
 
   return (
     <View
-      className="px-5 py-4 border-b border-[#2A2A2A] bg-[#0D0D0D]"
+      className="px-5 py-3.5 border-b border-[#2A2A2A] bg-[#0D0D0D]"
       style={{ borderBottomWidth: 1 }}
     >
-      <Text
-        className="text-xl font-instrument-semibold text-white"
-        numberOfLines={1}
-      >
-        {subject || '(No subject)'}
-      </Text>
-      <View className="mt-3 gap-0">
-        {hasProspects && (
-          <View className="flex-row items-start gap-3 py-1.5">
-            <View className="rounded-md bg-[#1A1A1A] px-2 py-0.5 self-start">
-              <Text className="text-gray-500 font-instrument-medium text-xs">
-                Prospect{prospectEmails.length !== 1 ? 's' : ''}
-              </Text>
-            </View>
-            <View className="flex-1 gap-1">
-              {prospectEmails.map((email) => {
-                const isBlocked = blockedSet.has(email.trim().toLowerCase());
-                return (
-                  <View key={email} className="flex-row items-center gap-2 flex-wrap">
-                    <Text className="text-gray-300 font-instrument text-sm" numberOfLines={1}>
-                      {email}
-                    </Text>
-                    {isBlocked && (
-                      <View className="flex-row items-center gap-1 rounded-md bg-amber-500/20 px-2 py-0.5">
-                        <NoSymbolIcon size={12} color="#F59E0B" />
-                        <Text className="text-amber-400 font-instrument-medium text-xs">Blocked</Text>
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-            {showBlockButton && onBlock && (
-              <Pressable
-                onPress={onBlock}
-                className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-              >
-                <NoSymbolIcon size={14} color="#9CA3AF" />
-                <Text className="text-gray-400 font-instrument-medium text-xs">Block</Text>
-              </Pressable>
-            )}
-          </View>
-        )}
-        {hasBlocked && (
-          <Text className="text-gray-500 font-instrument text-xs mt-1.5">
-            No automated emails will be sent to blocked addresses. Manual replies allowed.
+      <View className="flex-row items-center justify-between gap-3">
+        {/* Left: prospect name + email (tight between, more above/below) */}
+        <View className="flex-1 min-w-0">
+          <Text
+            className="text-lg font-instrument-semibold text-white leading-tight"
+            numberOfLines={1}
+          >
+            {title}
           </Text>
-        )}
-        {senderEmails.length > 0 && (
-          <View className="flex-row items-center gap-3 py-1.5">
-            <View className="rounded-md bg-[#1A1A1A] px-2 py-0.5 self-start">
-              <Text className="text-gray-500 font-instrument-medium text-xs">
-                Your email
+          {emailLine ? (
+            <Text
+              className="text-sm font-instrument text-gray-500 leading-tight"
+              numberOfLines={1}
+              style={{ marginTop: 2 }}
+            >
+              {emailLine}
+            </Text>
+          ) : null}
+          {hasBlocked && (
+            <Text className="text-gray-500 font-instrument text-xs mt-1.5">
+              No automated emails to blocked.
+            </Text>
+          )}
+        </View>
+
+        {/* Right: toolbar — campaign chip, Block List, tags, category */}
+        <View className="flex-row items-center gap-2 flex-shrink-0">
+          {campaignName ? (
+            <View
+              className="rounded-lg px-2 py-0.5"
+              style={{ backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#3A3A3A' }}
+            >
+              <Text className="text-xs font-instrument text-gray-400" numberOfLines={1}>
+                {campaignName}
               </Text>
             </View>
-            <Text className="text-gray-300 font-instrument text-sm flex-1" numberOfLines={2}>
-              {senderEmails.join(', ')}
-            </Text>
-          </View>
-        )}
-        {!hasProspects && senderEmails.length === 0 && (
-          <Text className="text-gray-500 font-instrument text-sm py-2">—</Text>
-        )}
+          ) : null}
+          {showBlockButton && onBlock && (
+            <Pressable
+              onPress={onBlock}
+              className="flex-row items-center gap-1.5 rounded-lg px-2.5 py-1.5 min-h-[32px]"
+              style={{
+                backgroundColor: 'rgba(185, 28, 28, 0.15)',
+                borderWidth: 1,
+                borderColor: 'rgba(185, 28, 28, 0.5)',
+              }}
+            >
+              <NoSymbolIcon size={14} color="#F87171" />
+              <Text
+                className="text-xs font-instrument-medium"
+                style={{ color: '#FCA5A5' }}
+              >
+                Block List
+              </Text>
+            </Pressable>
+          )}
+          {showTags && (
+            <Pressable
+              onPress={onOpenTagsPanel}
+              className="flex-row items-center justify-between rounded-lg px-2.5 py-1.5 min-h-[32px] min-w-[80px]"
+              style={{
+                backgroundColor: '#FFFFFF0D',
+                borderColor: '#FFFFFF4D',
+                borderWidth: 1,
+              }}
+            >
+              <Text
+                className="text-xs font-instrument flex-1"
+                style={{
+                  color: threadTags.length > 0 ? '#FFFFFF' : '#666666',
+                }}
+              >
+                Tags{threadTags.length > 0 ? ` (${threadTags.length})` : ''}
+              </Text>
+              <ChevronDownIcon size={14} color="#9CA3AF" style={{ marginLeft: 10 }} />
+            </Pressable>
+          )}
+          {onSetCategory && categoryOptions.length > 0 && (
+            <Select<{ id: string; name: string }>
+              items={categoryItems}
+              getItemId={(i) => i.id}
+              getItemLabel={(i) => ({ primary: i.name })}
+              getItemColor={(item) => getCategoryColor(item.id || null)}
+              itemColorVariant="tint"
+              value={category ?? ''}
+              onChange={(id) => onSetCategory(id || null)}
+              placeholder="Category"
+              searchable={false}
+              noMargin
+              size="compact"
+              dropdownMinWidth={220}
+              listMaxHeight={220}
+            />
+          )}
+        </View>
       </View>
     </View>
   );

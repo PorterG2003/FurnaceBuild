@@ -48,18 +48,22 @@ export function ThreadListSkeleton() {
   return (
     <ScrollView
       className="flex-1"
-      contentContainerStyle={{ paddingVertical: 8 }}
+      contentContainerStyle={{ paddingTop: 0, paddingBottom: 8 }}
       showsVerticalScrollIndicator={false}
     >
       {THREAD_SKELETON_WIDTHS.map(([w1, w2, w3], i) => (
         <StaggeredFadeIn key={i} index={i}>
           <View
-            className="mx-3 mb-2 rounded-xl border border-[#2A2A2A] px-4 py-3"
+            className="mx-3 mb-1.5 rounded-xl border border-[#2A2A2A] px-3 py-2.5"
             style={{ borderWidth: 1 }}
           >
+            <View className="flex-row justify-between mb-1">
+              <Skeleton style={{ width: 100, height: 12, borderRadius: 4 }} />
+              <Skeleton style={{ width: 72, height: 18, borderRadius: 10 }} />
+            </View>
             <Skeleton style={{ width: w1, height: 16, borderRadius: 4 }} />
             <Skeleton style={{ width: w2, height: 12, borderRadius: 4, marginTop: 4 }} />
-            <Skeleton style={{ width: w3, height: 12, borderRadius: 4, marginTop: 8 }} />
+            <Skeleton style={{ width: 120, height: 18, borderRadius: 6, marginTop: 6 }} />
           </View>
         </StaggeredFadeIn>
       ))}
@@ -70,18 +74,21 @@ export function ThreadListSkeleton() {
 function MessagePanelHeaderSkeleton() {
   return (
     <View
-      className="px-5 py-4 border-b border-[#2A2A2A] bg-[#0D0D0D]"
+      className="px-5 py-3.5 border-b border-[#2A2A2A] bg-[#0D0D0D]"
       style={{ borderBottomWidth: 1 }}
     >
-      <Skeleton style={{ width: 240, height: 24, borderRadius: 4 }} />
-      <View className="mt-3 gap-0">
-        <View className="flex-row items-center gap-3 py-1.5">
-          <Skeleton style={{ width: 64, height: 20, borderRadius: 4 }} />
-          <Skeleton style={{ width: 160, height: 16, borderRadius: 4 }} />
+      <View className="flex-row items-center justify-between gap-3">
+        {/* Left: name + email (tight between) */}
+        <View className="flex-1 min-w-0">
+          <Skeleton style={{ height: 20, borderRadius: 4, marginBottom: 2, maxWidth: 200 }} />
+          <Skeleton style={{ height: 14, borderRadius: 4, maxWidth: 260 }} />
         </View>
-        <View className="flex-row items-center gap-3 py-1.5">
-          <Skeleton style={{ width: 72, height: 20, borderRadius: 4 }} />
-          <Skeleton style={{ width: 140, height: 16, borderRadius: 4 }} />
+        {/* Right: toolbar */}
+        <View className="flex-row items-center gap-2 flex-shrink-0">
+          <Skeleton style={{ width: 48, height: 24, borderRadius: 6 }} />
+          <Skeleton style={{ width: 72, height: 24, borderRadius: 6 }} />
+          <Skeleton style={{ width: 100, height: 28, borderRadius: 8 }} />
+          <Skeleton style={{ width: 56, height: 28, borderRadius: 8 }} />
         </View>
       </View>
     </View>

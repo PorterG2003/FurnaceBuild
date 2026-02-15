@@ -56,6 +56,35 @@ export async function createThreadTag(
 }
 
 /**
+ * Update a tag's color or name.
+ */
+export async function updateThreadTag(
+  tagId: string,
+  params: { color?: string | null; name?: string }
+): Promise<ThreadTag> {
+  const updates: { color?: string | null; name?: string } = {};
+  if (params.color !== undefined) updates.color = params.color;
+  if (params.name !== undefined) updates.name = params.name.trim();
+  if (Object.keys(updates).length === 0) {
+    const { data } = await supabase.from('thread_tags').select('*').eq('id', tagId).single();
+    if (!data) throw new Error('Tag not found');
+    return data;
+  }
+  const { data, error } = await supabase
+    .from('thread_tags')
+    .update(updates)
+    .eq('id', tagId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update thread tag: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
  * Add a tag to a thread.
  */
 export async function addTagToThread(threadId: string, tagId: string): Promise<void> {

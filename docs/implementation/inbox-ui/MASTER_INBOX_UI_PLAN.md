@@ -1,7 +1,7 @@
 # Master Inbox UI — Step-by-Step Implementation Plan
 
-**Last updated**: February 11, 2026  
-**Current progress**: Steps 1–6 complete; Step 5 partial (client-side search only)
+**Last updated**: February 14, 2026  
+**Current progress**: Steps 1–8 complete
 
 ---
 
@@ -15,10 +15,10 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 | 2 | Reply support | ✅ Done |
 | 3 | Attachments (receive, then send) | ✅ Done |
 | 4 | Forward support | ✅ Done |
-| 5 | Search and filtering | Partial |
-| 6 | Block list | Done |
-| 7 | Thread tagging | Todo |
-| 8 | Thread categorization | Todo |
+| 5 | Search and filtering | ✅ Done |
+| 6 | Block list | ✅ Done |
+| 7 | Thread tagging | ✅ Done |
+| 8 | Thread categorization | ✅ Done |
 
 ---
 

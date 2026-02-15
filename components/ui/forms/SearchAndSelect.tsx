@@ -256,19 +256,46 @@ export function SearchAndSelect<T>({
                   />
                 </View>
                 {loading ? (
-                  <Text
-                    className="text-gray-500 text-sm"
-                    style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif', paddingVertical: 8 }}
-                  >
-                    {loadingMessage}
-                  </Text>
+                  <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                    <Text
+                      className="text-gray-500 text-sm"
+                      style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
+                    >
+                      {loadingMessage}
+                    </Text>
+                  </View>
                 ) : items.length === 0 ? (
-                  <Text
-                    className="text-gray-500 text-sm"
-                    style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif', paddingVertical: 8 }}
+                  <View
+                    style={{
+                      paddingVertical: 32,
+                      paddingHorizontal: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minHeight: 80,
+                    }}
                   >
-                    {emptyMessage(searchValue.trim().length > 0)}
-                  </Text>
+                    <Text
+                      className="text-gray-400 text-sm"
+                      style={{
+                        fontFamily: 'Instrument Sans, system-ui, sans-serif',
+                        textAlign: 'center',
+                        lineHeight: 20,
+                      }}
+                    >
+                      {emptyMessage(searchValue.trim().length > 0)}
+                    </Text>
+                    {searchValue.trim().length > 0 && (
+                      <Text
+                        className="text-gray-500 text-xs mt-1"
+                        style={{
+                          fontFamily: 'Instrument Sans, system-ui, sans-serif',
+                          textAlign: 'center',
+                        }}
+                      >
+                        Try a different search term.
+                      </Text>
+                    )}
+                  </View>
                 ) : (
                   <ScrollView
                     style={{ maxHeight: listMaxHeight }}

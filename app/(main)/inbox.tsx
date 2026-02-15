@@ -1222,13 +1222,17 @@ export default function InboxPage() {
                 return (
                   <>
               <MessagePanelHeader
-                subject={selectedThread.subject ?? ''}
+                prospectName={
+                  (selectedThread?.lead_id && leadDisplayNamesMap[selectedThread.lead_id]) ||
+                  selectedThreadProspectEmails[0] ||
+                  null
+                }
+                campaignName={
+                  selectedThread?.campaign_id
+                    ? campaigns.find((c) => c.id === selectedThread.campaign_id)?.name ?? null
+                    : null
+                }
                 prospectEmails={selectedThreadProspectEmails}
-                senderEmails={[
-                  ...new Set(
-                    displayMessages.filter((m) => m.direction === 'sent').map((m) => m.from_email)
-                  ),
-                ]}
                 blockedEmails={blockedProspectEmails}
                 onBlock={accountId ? () => setBlockModalVisible(true) : undefined}
                 showBlockButton={!!accountId && selectedThreadProspectEmails.length > 0}

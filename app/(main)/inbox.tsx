@@ -37,7 +37,7 @@ import {
   getLeadDisplayName,
   addTagToThread,
   removeTagFromThread,
-  createThreadTag,
+  updateThreadTag,
   updateThreadCategory,
 } from '@/lib/supabase/services';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
@@ -49,6 +49,7 @@ import type { EditorBridge } from '@10play/tentap-editor';
 import {
   BlockSenderModal,
   ComposerAttachments,
+  CreateTagModal,
   ComposerRichEditor,
   DateDivider,
   InboxFilterDropdown,
@@ -58,6 +59,7 @@ import {
   MessageListSkeleton,
   ThreadItem,
   ThreadListSkeleton,
+  TagsPanelModal,
   SKELETON_DELAY_MS,
   SKELETON_MIN_DISPLAY_MS,
 } from '@/components/inbox';
@@ -133,6 +135,8 @@ export default function InboxPage() {
   const [leadDisplayNamesMap, setLeadDisplayNamesMap] = useState<Record<string, string>>({});
   const [accountTags, setAccountTags] = useState<ThreadTag[]>([]);
   const [blockModalVisible, setBlockModalVisible] = useState(false);
+  const [createTagModalVisible, setCreateTagModalVisible] = useState(false);
+  const [tagsPanelVisible, setTagsPanelVisible] = useState(false);
   const [blockedRecipientConfirm, setBlockedRecipientConfirm] = useState<{
     mode: 'reply' | 'forward';
     onConfirm: () => void;
@@ -1237,39 +1241,8 @@ export default function InboxPage() {
                 onBlock={accountId ? () => setBlockModalVisible(true) : undefined}
                 showBlockButton={!!accountId && selectedThreadProspectEmails.length > 0}
                 threadTags={selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []) : []}
-                accountTags={accountTags}
-                onAddTag={
-                  selectedThreadId && accountId
-                    ? async (tag) => {
-                        try {
-                          await addTagToThread(selectedThreadId, tag.id);
-                          setThreadTagsMap((prev) => ({
-                            ...prev,
-                            [selectedThreadId]: [...(prev[selectedThreadId] ?? []), tag],
-                          }));
-                          if (!accountTags.some((t) => t.id === tag.id)) {
-                            setAccountTags((p) => [...p, tag]);
-                          }
-                        } catch (e) {
-                          console.error('Failed to add tag:', e);
-                        }
-                      }
-                    : undefined
-                }
-                onRemoveTag={
-                  selectedThreadId
-                    ? async (tag) => {
-                        try {
-                          await removeTagFromThread(selectedThreadId, tag.id);
-                          setThreadTagsMap((prev) => ({
-                            ...prev,
-                            [selectedThreadId]: (prev[selectedThreadId] ?? []).filter((t) => t.id !== tag.id),
-                          }));
-                        } catch (e) {
-                          console.error('Failed to remove tag:', e);
-                        }
-                      }
-                    : undefined
+                onOpenTagsPanel={
+                  selectedThreadId && accountId ? () => setTagsPanelVisible(true) : undefined
                 }
                 category={selectedThread?.category ?? null}
                 onSetCategory={
@@ -1289,23 +1262,6 @@ export default function InboxPage() {
                     : undefined
                 }
                 categoryOptions={THREAD_CATEGORIES}
-                onCreateTag={
-                  selectedThreadId && accountId
-                    ? async () => {
-                        try {
-                          const tag = await createThreadTag(accountId, { name: 'New tag' });
-                          await addTagToThread(selectedThreadId, tag.id);
-                          setAccountTags((p) => [...p, tag]);
-                          setThreadTagsMap((prev) => ({
-                            ...prev,
-                            [selectedThreadId]: [...(prev[selectedThreadId] ?? []), tag],
-                          }));
-                        } catch (e) {
-                          console.error('Failed to create tag:', e);
-                        }
-                      }
-                    : undefined
-                }
               />
               {messagesError && (
                 <View className="p-4">
@@ -1421,6 +1377,82 @@ export default function InboxPage() {
             participantEmails={selectedThreadProspectEmails}
             accountId={accountId}
             onBlocked={loadBlockList}
+          />
+        )}
+
+        {/* Tags panel */}
+        {accountId && selectedThreadId && (
+          <TagsPanelModal
+            visible={tagsPanelVisible}
+            onClose={() => setTagsPanelVisible(false)}
+            threadTags={threadTagsMap[selectedThreadId] ?? []}
+            accountTags={accountTags}
+            onAddTag={async (tag) => {
+              try {
+                await addTagToThread(selectedThreadId, tag.id);
+                setThreadTagsMap((prev) => ({
+                  ...prev,
+                  [selectedThreadId]: [...(prev[selectedThreadId] ?? []), tag],
+                }));
+                if (!accountTags.some((t) => t.id === tag.id)) {
+                  setAccountTags((p) => [...p, tag]);
+                }
+              } catch (e) {
+                console.error('Failed to add tag:', e);
+              }
+            }}
+            onRemoveTag={async (tag) => {
+              try {
+                await removeTagFromThread(selectedThreadId, tag.id);
+                setThreadTagsMap((prev) => ({
+                  ...prev,
+                  [selectedThreadId]: (prev[selectedThreadId] ?? []).filter((t) => t.id !== tag.id),
+                }));
+              } catch (e) {
+                console.error('Failed to remove tag:', e);
+              }
+            }}
+            onUpdateTagColor={async (tag, color) => {
+              try {
+                const updated = await updateThreadTag(tag.id, { color });
+                setAccountTags((p) => p.map((t) => (t.id === updated.id ? updated : t)));
+                setThreadTagsMap((prev) => ({
+                  ...prev,
+                  [selectedThreadId]: (prev[selectedThreadId] ?? []).map((t) =>
+                    t.id === updated.id ? updated : t
+                  ),
+                }));
+              } catch (e) {
+                console.error('Failed to update tag color:', e);
+              }
+            }}
+            onCreateTag={() => {
+              setTagsPanelVisible(false);
+              setCreateTagModalVisible(true);
+            }}
+          />
+        )}
+
+        {/* Create tag modal */}
+        {accountId && (
+          <CreateTagModal
+            visible={createTagModalVisible}
+            onClose={() => setCreateTagModalVisible(false)}
+            accountId={accountId}
+            onCreated={async (tag) => {
+              setAccountTags((p) => (p.some((t) => t.id === tag.id) ? p : [...p, tag]));
+              if (selectedThreadId) {
+                try {
+                  await addTagToThread(selectedThreadId, tag.id);
+                  setThreadTagsMap((prev) => ({
+                    ...prev,
+                    [selectedThreadId]: [...(prev[selectedThreadId] ?? []), tag],
+                  }));
+                } catch (e) {
+                  console.error('Failed to add tag to thread:', e);
+                }
+              }
+            }}
           />
         )}
 

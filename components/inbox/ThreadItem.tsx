@@ -1,7 +1,10 @@
 import { View, Pressable, Text } from 'react-native';
 import type { EmailThread } from '@/lib/supabase/types';
 import { formatThreadDateWithTime } from '@/lib/inbox';
+import { hexToPillBackground, isPresetColor } from '@/lib/inbox/tag-colors';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
+
+const MAX_VISIBLE_TAGS = 3;
 
 export function ThreadItem({
   thread,
@@ -23,11 +26,9 @@ export function ThreadItem({
   preview?: string | null;
   tags?: ThreadTag[];
 }) {
-  const topTag = thread.category
-    ? { label: thread.category, bg: 'rgba(99, 102, 241, 0.2)', color: '#818CF8' }
-    : tags.length > 0
-      ? { label: tags[0].name, bg: tags[0].color || 'rgba(243, 68, 13, 0.2)', color: '#FB923C' }
-      : null;
+  const visibleTags = tags.slice(0, MAX_VISIBLE_TAGS);
+  const extraCount = tags.length > MAX_VISIBLE_TAGS ? tags.length - MAX_VISIBLE_TAGS : 0;
+  const hasCategory = !!thread.category;
 
   return (
     <Pressable
@@ -42,21 +43,45 @@ export function ThreadItem({
             : { backgroundColor: '#121212', borderColor: '#2A2A2A', opacity: 0.9 },
       ]}
     >
-      {/* Top: date (left) + tag/category pill (right) */}
+      {/* Top: date (left) + category/tag pills (right) */}
       <View className="flex-row items-center justify-between gap-2 mb-1">
         <Text className="text-gray-500 font-instrument text-xs">
           {formatThreadDateWithTime(thread.last_message_at)}
         </Text>
-        {topTag && (
-          <View
-            className="rounded-full px-2 py-0.5"
-            style={{ backgroundColor: topTag.bg }}
-          >
-            <Text className="text-xs font-instrument" style={{ color: topTag.color }}>
-              {topTag.label}
-            </Text>
-          </View>
-        )}
+        <View className="flex-row items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+          {hasCategory && (
+            <View
+              className="rounded-full px-2 py-0.5"
+              style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)' }}
+            >
+              <Text className="text-xs font-instrument" style={{ color: '#818CF8' }}>
+                {thread.category}
+              </Text>
+            </View>
+          )}
+          {visibleTags.map((tag) => {
+            const bg = isPresetColor(tag.color) ? hexToPillBackground(tag.color!) : 'rgba(243, 68, 13, 0.2)';
+            return (
+              <View
+                key={tag.id}
+                className="rounded-full px-2 py-0.5"
+                style={{ backgroundColor: bg }}
+              >
+                <Text className="text-xs font-instrument text-white" numberOfLines={1}>
+                  {tag.name}
+                </Text>
+              </View>
+            );
+          })}
+          {extraCount > 0 && (
+            <View
+              className="rounded-full px-2 py-0.5"
+              style={{ backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#3A3A3A' }}
+            >
+              <Text className="text-xs font-instrument text-gray-400">+{extraCount}</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* Bold title: lead name or email fallback */}

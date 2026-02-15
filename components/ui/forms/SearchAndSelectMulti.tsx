@@ -21,6 +21,8 @@ export interface SearchAndSelectMultiProps<T> {
   listMaxHeight?: number;
   /** Shown when there are no items. (hasSearch) => string */
   emptyMessage?: (hasSearch: boolean) => string;
+  /** Optional: return hex color for item to show a colored dot next to the label */
+  getItemColor?: (item: T) => string | null | undefined;
 }
 
 export function SearchAndSelectMulti<T>({
@@ -34,6 +36,7 @@ export function SearchAndSelectMulti<T>({
   placeholder = 'All',
   listMaxHeight = 200,
   emptyMessage = (hasSearch: boolean) => (hasSearch ? 'No results' : 'No options'),
+  getItemColor,
 }: SearchAndSelectMultiProps<T>) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -251,6 +254,23 @@ export function SearchAndSelectMulti<T>({
                             <Text className="text-orange-500 text-xs font-bold">✓</Text>
                           )}
                         </View>
+                        {getItemColor ? (
+                          (() => {
+                            const color = getItemColor(item);
+                            return color ? (
+                              <View
+                                style={{
+                                  width: 12,
+                                  height: 12,
+                                  borderRadius: 6,
+                                  backgroundColor: color,
+                                  borderWidth: 1,
+                                  borderColor: '#3A3A3A',
+                                }}
+                              />
+                            ) : null;
+                          })()
+                        ) : null}
                         <Text
                           className="text-white font-instrument-medium text-sm flex-1"
                           numberOfLines={1}

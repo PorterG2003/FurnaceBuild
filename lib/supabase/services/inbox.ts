@@ -24,11 +24,17 @@ export interface GetThreadsByAccountOptions {
   searchQuery?: string;
   /** Filter by threads that have any of these tag IDs */
   tagIds?: string[];
-  /** Filter by category */
+  /**
+   * Filter by category.
+   * Use NO_CATEGORY_FILTER to show only threads with no category set.
+   */
   category?: string;
   /** When true, returned threads include unread_count (requires extra query) */
   includeUnreadCount?: boolean;
 }
+
+/** Sentinel value for category filter: show only threads with no category (category IS NULL). */
+export const NO_CATEGORY_FILTER = '__no_category__';
 
 export type EmailThreadWithUnread = EmailThread & { unread_count: number };
 
@@ -106,6 +112,12 @@ async function getThreadsByAccountInternal(
     const pattern = `%${q.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
     query = query.ilike('subject', pattern);
     // Note: participants search would require RPC; subject-only for MVP
+  }
+
+  if (options?.category === NO_CATEGORY_FILTER) {
+    query = query.is('category', null);
+  } else if (options?.category) {
+    query = query.eq('category', options.category);
   }
 
   if (options?.tagIds && options.tagIds.length > 0) {

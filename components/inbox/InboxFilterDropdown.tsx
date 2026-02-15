@@ -6,6 +6,7 @@ import type { Mailbox, Campaign } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import { resolveTagColor } from '@/lib/inbox/tag-colors';
+import { NO_CATEGORY_FILTER } from '@/lib/supabase/services/inbox';
 
 const THREAD_CATEGORIES = ['Interested', 'Not Interested'];
 const DATE_OPTIONS = [
@@ -71,7 +72,11 @@ export function InboxFilterDropdown({
     [campaigns]
   );
   const categoryItems = useMemo(
-    () => [{ id: 'all', name: 'All' }, ...THREAD_CATEGORIES.map((c) => ({ id: c, name: c }))],
+    () => [
+      { id: 'all', name: 'All' },
+      { id: NO_CATEGORY_FILTER, name: 'No category' },
+      ...THREAD_CATEGORIES.map((c) => ({ id: c, name: c })),
+    ],
     []
   );
   const dateItems = useMemo(() => DATE_OPTIONS, []);
@@ -191,7 +196,7 @@ export function InboxFilterDropdown({
               items={filteredCategoryItems}
               getItemId={(i) => i.id}
               getItemLabel={(i) => ({ primary: i.name })}
-              getItemColor={(item) => (item.id === 'all' ? null : getCategoryColor(item.id))}
+              getItemColor={(item) => (item.id === 'all' || item.id === NO_CATEGORY_FILTER ? null : getCategoryColor(item.id))}
               itemColorVariant="tint"
               value={categoryFilter || 'all'}
               onChange={(id) => onCategoryFilterChange(id === 'all' ? null : id)}

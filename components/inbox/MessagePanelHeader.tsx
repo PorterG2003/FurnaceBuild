@@ -78,12 +78,22 @@ export function MessagePanelHeader({
           {showTags && (
             <Pressable
               onPress={onOpenTagsPanel}
-              className="flex-row items-center gap-1.5 rounded-lg border border-[#3A3A3A] bg-[#1A1A1A] px-2.5 py-1.5 min-w-[80px]"
+              className="flex-row items-center justify-between rounded-lg px-2.5 py-1.5 min-h-[32px] min-w-[80px]"
+              style={{
+                backgroundColor: '#FFFFFF0D',
+                borderColor: '#FFFFFF4D',
+                borderWidth: 1,
+              }}
             >
-              <Text className="text-xs font-instrument text-gray-300">
+              <Text
+                className="text-xs font-instrument flex-1"
+                style={{
+                  color: threadTags.length > 0 ? '#FFFFFF' : '#666666',
+                }}
+              >
                 Tags{threadTags.length > 0 ? ` (${threadTags.length})` : ''}
               </Text>
-              <ChevronDownIcon size={14} color="#9CA3AF" />
+              <ChevronDownIcon size={14} color="#9CA3AF" style={{ marginLeft: 10 }} />
             </Pressable>
           )}
           {campaignName ? (

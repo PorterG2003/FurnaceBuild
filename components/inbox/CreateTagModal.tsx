@@ -61,9 +61,14 @@ export function CreateTagModal({
       maxWidth="sm"
       footer={
         <View className="flex-row gap-3">
-          <Button variant="secondary" onPress={onClose} disabled={isSubmitting} className="flex-1">
-            Cancel
-          </Button>
+          <Pressable
+            onPress={onClose}
+            disabled={isSubmitting}
+            className="flex-1 px-4 py-3 rounded-xl border border-white/20 bg-white/5 items-center justify-center"
+            style={{ opacity: isSubmitting ? 0.5 : 1 }}
+          >
+            <Text className="text-white font-instrument-medium">Cancel</Text>
+          </Pressable>
           <Button
             variant="default"
             onPress={handleCreate}
@@ -77,7 +82,10 @@ export function CreateTagModal({
     >
       <View className="gap-4">
         <View>
-          <Text className="text-sm font-instrument-medium text-gray-300 mb-2">Name</Text>
+          <Text className="text-base font-instrument-medium text-white mb-1">Tag name</Text>
+          <Text className="text-sm font-instrument text-gray-400 mb-2">
+            This will appear on threads and in filters.
+          </Text>
           <TextInput
             value={name}
             onChangeText={(t) => {
@@ -88,7 +96,8 @@ export function CreateTagModal({
             placeholderTextColor="#666"
             autoCapitalize="none"
             autoCorrect={false}
-            className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
+            autoFocus={visible}
+            className="border border-white/30 rounded-xl px-4 py-3.5 bg-white/5 text-base text-white"
             style={{
               borderColor: '#FFFFFF4D',
               backgroundColor: '#FFFFFF0D',
@@ -102,7 +111,7 @@ export function CreateTagModal({
         </View>
 
         <View>
-          <Text className="text-sm font-instrument-medium text-gray-300 mb-2">Color</Text>
+          <Text className="text-base font-instrument-medium text-white mb-2">Color</Text>
           <View className="flex-row flex-wrap gap-2">
             {TAG_PRESET_COLORS.map((hex) => {
               const isSelected = selectedColor === hex;

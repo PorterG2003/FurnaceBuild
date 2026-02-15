@@ -48,7 +48,7 @@ export function ThreadListSkeleton() {
   return (
     <ScrollView
       className="flex-1"
-      contentContainerStyle={{ paddingVertical: 8 }}
+      contentContainerStyle={{ paddingTop: 0, paddingBottom: 8 }}
       showsVerticalScrollIndicator={false}
     >
       {THREAD_SKELETON_WIDTHS.map(([w1, w2, w3], i) => (

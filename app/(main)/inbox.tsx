@@ -32,6 +32,9 @@ import {
   getCampaigns,
   getThreadTags,
   getTagsForThreads,
+  getThreadSnippets,
+  getLeadsByIds,
+  getLeadDisplayName,
   addTagToThread,
   removeTagFromThread,
   createThreadTag,
@@ -126,6 +129,8 @@ export default function InboxPage() {
   } | null>(null);
   const filterButtonRef = useRef<View>(null);
   const [threadTagsMap, setThreadTagsMap] = useState<Record<string, ThreadTag[]>>({});
+  const [threadSnippetsMap, setThreadSnippetsMap] = useState<Record<string, string>>({});
+  const [leadDisplayNamesMap, setLeadDisplayNamesMap] = useState<Record<string, string>>({});
   const [accountTags, setAccountTags] = useState<ThreadTag[]>([]);
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [blockedRecipientConfirm, setBlockedRecipientConfirm] = useState<{
@@ -536,15 +541,32 @@ export default function InboxPage() {
     loadBlockList();
   }, [accountId, loadThreads, loadBlockList, loadMailboxesAndCampaigns]);
 
-  // Load tags for displayed threads
+  // Load tags, snippets, and lead display names for displayed threads
   useEffect(() => {
     if (threads.length === 0) {
       setThreadTagsMap({});
+      setThreadSnippetsMap({});
+      setLeadDisplayNamesMap({});
       return;
     }
-    getTagsForThreads(threads.map((t) => t.id))
-      .then(setThreadTagsMap)
-      .catch((err) => console.error('Failed to load thread tags:', err));
+    const ids = threads.map((t) => t.id);
+    const leadIds = [...new Set(threads.map((t) => t.lead_id).filter(Boolean))] as string[];
+    Promise.all([
+      getTagsForThreads(ids),
+      getThreadSnippets(ids),
+      leadIds.length > 0 ? getLeadsByIds(leadIds) : Promise.resolve([]),
+    ])
+      .then(([tags, snippets, leads]) => {
+        setThreadTagsMap(tags);
+        setThreadSnippetsMap(snippets);
+        const leadNames: Record<string, string> = {};
+        for (const lead of leads) {
+          const name = getLeadDisplayName(lead);
+          if (name) leadNames[lead.id] = name;
+        }
+        setLeadDisplayNamesMap(leadNames);
+      })
+      .catch((err) => console.error('Failed to load thread tags/snippets/leads:', err));
   }, [threads]);
 
   // Refetch when non-search filters change (skip initial mount to avoid double-fetch)
@@ -1114,7 +1136,7 @@ export default function InboxPage() {
           ) : (
             <ScrollView
               className="flex-1"
-              contentContainerStyle={{ paddingTop: 0, paddingBottom: 8 }}
+              contentContainerStyle={{ paddingTop: 0, paddingBottom: 6 }}
               showsVerticalScrollIndicator={false}
               refreshControl={
                 <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
@@ -1126,7 +1148,15 @@ export default function InboxPage() {
                   thread={thread}
                   isSelected={selectedThreadId === thread.id}
                   onSelect={() => handleSelectThread(thread.id)}
-                  unreadCount={'unread_count' in thread ? (thread as { unread_count: number }).unread_count : 0}
+                  isUnread={'unread_count' in thread ? (thread as { unread_count: number }).unread_count > 0 : false}
+                  cardTitle={
+                    (thread.lead_id && leadDisplayNamesMap[thread.lead_id]) ||
+                    thread.participants?.[0] ||
+                    thread.subject ||
+                    '(No subject)'
+                  }
+                  campaignName={thread.campaign_id ? campaigns.find((c) => c.id === thread.campaign_id)?.name ?? null : null}
+                  preview={threadSnippetsMap[thread.id] ?? null}
                   tags={threadTagsMap[thread.id] ?? []}
                 />
               ))}
@@ -1134,7 +1164,7 @@ export default function InboxPage() {
                 <Pressable
                   onPress={loadMoreThreads}
                   disabled={loadingMoreThreads}
-                  className="mx-3 mt-2 mb-4 py-3 rounded-xl items-center"
+                  className="mx-3 mt-1.5 mb-3 py-2.5 rounded-xl items-center"
                   style={{ backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A' }}
                 >
                   <Text className="text-orange-500 font-instrument text-sm">

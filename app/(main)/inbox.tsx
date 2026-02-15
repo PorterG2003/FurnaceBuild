@@ -74,7 +74,7 @@ const MAX_TOTAL_BYTES = 5 * 1024 * 1024;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const THREAD_PAGE_SIZE = 50;
 const SEARCH_DEBOUNCE_MS = 400;
-const THREAD_CATEGORIES = ['Lead replied', 'Meeting set', 'Not interested', 'Follow up'];
+const THREAD_CATEGORIES = ['Interested', 'Not Interested'];
 
 export default function InboxPage() {
   const { account } = useAccount();

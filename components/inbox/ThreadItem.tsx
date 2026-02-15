@@ -1,6 +1,7 @@
 import { View, Pressable, Text } from 'react-native';
 import type { EmailThread } from '@/lib/supabase/types';
 import { formatThreadDateWithTime } from '@/lib/inbox';
+import { getCategoryColor } from '@/lib/inbox/category-colors';
 import { hexToPillBackground, isPresetColor } from '@/lib/inbox/tag-colors';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 
@@ -49,16 +50,22 @@ export function ThreadItem({
           {formatThreadDateWithTime(thread.last_message_at)}
         </Text>
         <View className="flex-row items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
-          {hasCategory && (
-            <View
-              className="rounded-full px-2 py-0.5"
-              style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)' }}
-            >
-              <Text className="text-xs font-instrument" style={{ color: '#818CF8' }}>
-                {thread.category}
-              </Text>
-            </View>
-          )}
+          {hasCategory && (() => {
+            const color = getCategoryColor(thread.category);
+            const bg = color ? hexToPillBackground(color, 0.15) : 'rgba(148, 163, 184, 0.15)';
+            const textColor = color ?? '#94A3B8';
+            const borderColor = color ? `${color}50` : '#3A3A3A'; // 8-digit hex for tinted border
+            return (
+              <View
+                className="rounded-lg px-2 py-0.5 border"
+                style={{ backgroundColor: bg, borderColor }}
+              >
+                <Text className="text-xs font-instrument" style={{ color: textColor }}>
+                  {thread.category}
+                </Text>
+              </View>
+            );
+          })()}
           {visibleTags.map((tag) => {
             const bg = isPresetColor(tag.color) ? hexToPillBackground(tag.color!) : 'rgba(243, 68, 13, 0.2)';
             return (

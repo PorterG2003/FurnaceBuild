@@ -17,6 +17,17 @@ const NAMED_ENTITY_MAP: Record<string, string> = {
   quot: '"',
   apos: "'",
   nbsp: ' ',
+  mdash: '\u2014',
+  ndash: '\u2013',
+  hellip: '\u2026',
+  lsquo: '\u2018',
+  rsquo: '\u2019',
+  ldquo: '\u201C',
+  rdquo: '\u201D',
+  bull: '\u2022',
+  copy: '\u00A9',
+  reg: '\u00AE',
+  trade: '\u2122',
 };
 
 function hasQuotedPrintableArtifacts(input: string): boolean {

@@ -1,76 +1,91 @@
 import { View, Pressable, Text } from 'react-native';
 import type { EmailThread } from '@/lib/supabase/types';
-import { formatThreadDate } from '@/lib/inbox';
+import { formatThreadDateWithTime } from '@/lib/inbox';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 
 export function ThreadItem({
   thread,
   isSelected,
   onSelect,
-  unreadCount = 0,
+  isUnread = false,
+  cardTitle,
+  campaignName = null,
+  preview = null,
   tags = [],
 }: {
   thread: EmailThread;
   isSelected: boolean;
   onSelect: () => void;
-  unreadCount?: number;
+  isUnread?: boolean;
+  /** Lead name with fallback to email; used as the card title */
+  cardTitle?: string;
+  campaignName?: string | null;
+  preview?: string | null;
   tags?: ThreadTag[];
 }) {
+  const topTag = thread.category
+    ? { label: thread.category, bg: 'rgba(99, 102, 241, 0.2)', color: '#818CF8' }
+    : tags.length > 0
+      ? { label: tags[0].name, bg: tags[0].color || 'rgba(243, 68, 13, 0.2)', color: '#FB923C' }
+      : null;
+
   return (
     <Pressable
       onPress={onSelect}
-      className="mx-3 mb-2 rounded-xl px-4 py-3"
+      className="mx-3 mb-1.5 rounded-xl px-3 py-2.5"
       style={[
         { borderWidth: 1 },
         isSelected
           ? { backgroundColor: 'rgba(243, 68, 13, 0.14)', borderColor: 'rgba(243, 68, 13, 0.4)' }
-          : { backgroundColor: '#121212', borderColor: '#2A2A2A' },
+          : isUnread
+            ? { backgroundColor: '#1A1A1A', borderColor: '#2A2A2A' }
+            : { backgroundColor: '#121212', borderColor: '#2A2A2A', opacity: 0.9 },
       ]}
     >
-      <View className="flex-row items-center justify-between gap-2">
-        <Text
-          className="font-instrument-semibold text-base text-white mb-1 flex-1"
-          numberOfLines={1}
-        >
-          {thread.subject || '(No subject)'}
+      {/* Top: date (left) + tag/category pill (right) */}
+      <View className="flex-row items-center justify-between gap-2 mb-1">
+        <Text className="text-gray-500 font-instrument text-xs">
+          {formatThreadDateWithTime(thread.last_message_at)}
         </Text>
-        {unreadCount > 0 && (
+        {topTag && (
           <View
-            className="min-w-[20px] h-5 rounded-full bg-orange-500 items-center justify-center px-1.5"
+            className="rounded-full px-2 py-0.5"
+            style={{ backgroundColor: topTag.bg }}
           >
-            <Text className="text-white font-instrument-bold text-xs">
-              {unreadCount > 99 ? '99+' : unreadCount}
+            <Text className="text-xs font-instrument" style={{ color: topTag.color }}>
+              {topTag.label}
             </Text>
           </View>
         )}
       </View>
-      <Text className="text-gray-400 font-instrument text-sm mb-2" numberOfLines={1}>
-        {thread.participants?.length ? thread.participants.join(', ') : '—'}
+
+      {/* Bold title: lead name or email fallback */}
+      <Text
+        className={`text-base mb-1 ${isUnread ? 'font-instrument-bold text-white' : 'font-instrument-semibold text-white'}`}
+        numberOfLines={1}
+      >
+        {cardTitle ?? thread.subject ?? '(No subject)'}
       </Text>
-      {thread.category && (
-        <View className="rounded px-2 py-0.5 self-start mb-1" style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)' }}>
-          <Text className="text-xs font-instrument text-indigo-400">{thread.category}</Text>
+
+      {/* Message preview */}
+      {preview ? (
+        <Text
+          className="text-gray-400 font-instrument text-sm mb-1.5"
+          numberOfLines={2}
+        >
+          {preview}
+        </Text>
+      ) : null}
+
+      {/* Campaign chip at bottom */}
+      {campaignName ? (
+        <View
+          className="rounded-lg px-2 py-0.5 self-start"
+          style={{ backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#3A3A3A' }}
+        >
+          <Text className="text-xs font-instrument text-gray-400">{campaignName}</Text>
         </View>
-      )}
-      {tags.length > 0 && (
-        <View className="flex-row flex-wrap gap-1 mb-1">
-          {tags.slice(0, 3).map((tag) => (
-            <View
-              key={tag.id}
-              className="rounded px-2 py-0.5"
-              style={{ backgroundColor: tag.color || 'rgba(243, 68, 13, 0.2)' }}
-            >
-              <Text className="text-xs font-instrument text-orange-400">{tag.name}</Text>
-            </View>
-          ))}
-          {tags.length > 3 && (
-            <Text className="text-xs font-instrument text-gray-500">+{tags.length - 3}</Text>
-          )}
-        </View>
-      )}
-      <Text className="text-gray-500 font-instrument text-xs">
-        {formatThreadDate(thread.last_message_at)} · {thread.message_count} message{thread.message_count !== 1 ? 's' : ''}
-      </Text>
+      ) : null}
     </Pressable>
   );
 }

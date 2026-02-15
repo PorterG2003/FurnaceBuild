@@ -1,5 +1,6 @@
 import { View, Text, Pressable } from 'react-native';
-import { NoSymbolIcon } from 'react-native-heroicons/outline';
+import { NoSymbolIcon, PlusIcon } from 'react-native-heroicons/outline';
+import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 
 /** Sticky header: subject, then prospect(s) vs sender with clear separation */
 export function MessagePanelHeader({
@@ -9,6 +10,14 @@ export function MessagePanelHeader({
   blockedEmails = [],
   onBlock,
   showBlockButton = true,
+  threadTags = [],
+  accountTags = [],
+  onAddTag,
+  onRemoveTag,
+  onCreateTag,
+  category,
+  onSetCategory,
+  categoryOptions = ['Lead replied', 'Meeting set', 'Not interested', 'Follow up'],
 }: {
   subject: string;
   prospectEmails: string[];
@@ -16,6 +25,14 @@ export function MessagePanelHeader({
   blockedEmails?: string[] | Set<string>;
   onBlock?: () => void;
   showBlockButton?: boolean;
+  threadTags?: ThreadTag[];
+  accountTags?: ThreadTag[];
+  onAddTag?: (tag: ThreadTag) => void;
+  onRemoveTag?: (tag: ThreadTag) => void;
+  onCreateTag?: () => void;
+  category?: string | null;
+  onSetCategory?: (category: string | null) => void;
+  categoryOptions?: string[];
 }) {
   const blockedSet = blockedEmails instanceof Set ? blockedEmails : new Set(blockedEmails);
   const hasBlocked = prospectEmails.some((e) => blockedSet.has(e.trim().toLowerCase()));
@@ -86,8 +103,70 @@ export function MessagePanelHeader({
             </Text>
           </View>
         )}
+        {onSetCategory && categoryOptions.length > 0 && (
+          <View className="flex-row items-center gap-2 py-1.5 flex-wrap">
+            <Text className="text-gray-500 font-instrument-medium text-xs">Category:</Text>
+            {category ? (
+              <View className="flex-row items-center gap-1">
+                <View className="rounded px-2 py-0.5" style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)' }}>
+                  <Text className="text-xs font-instrument text-indigo-400">{category}</Text>
+                </View>
+                <Pressable onPress={() => onSetCategory(null)} className="px-1">
+                  <Text className="text-xs text-gray-500">×</Text>
+                </Pressable>
+              </View>
+            ) : null}
+            {categoryOptions
+              .filter((c) => c !== category)
+              .map((c) => (
+                <Pressable
+                  key={c}
+                  onPress={() => onSetCategory(c)}
+                  className="rounded px-2 py-0.5 border border-[#3A3A3A]"
+                >
+                  <Text className="text-xs font-instrument text-gray-400">+ {c}</Text>
+                </Pressable>
+              ))}
+          </View>
+        )}
         {!hasProspects && senderEmails.length === 0 && (
           <Text className="text-gray-500 font-instrument text-sm py-2">—</Text>
+        )}
+        {((onAddTag || onRemoveTag || onCreateTag) && (threadTags.length > 0 || accountTags.length > 0 || onCreateTag)) && (
+          <View className="flex-row items-center gap-2 py-1.5 flex-wrap">
+            {threadTags.map((tag) => (
+              <Pressable
+                key={tag.id}
+                onPress={() => onRemoveTag?.(tag)}
+                className="rounded px-2 py-0.5 flex-row items-center gap-1"
+                style={{ backgroundColor: tag.color || 'rgba(243, 68, 13, 0.2)' }}
+              >
+                <Text className="text-xs font-instrument text-orange-400">{tag.name}</Text>
+                <Text className="text-xs text-orange-400">×</Text>
+              </Pressable>
+            ))}
+              {accountTags
+              .filter((t) => !threadTags.some((tt) => tt.id === t.id))
+              .map((tag) => (
+                <Pressable
+                  key={tag.id}
+                  onPress={() => onAddTag?.(tag)}
+                  className="rounded px-2 py-0.5 flex-row items-center gap-1 border border-[#3A3A3A]"
+                >
+                  <PlusIcon size={12} color="#9CA3AF" />
+                  <Text className="text-xs font-instrument text-gray-400">{tag.name}</Text>
+                </Pressable>
+              ))}
+            {onCreateTag && (
+              <Pressable
+                onPress={onCreateTag}
+                className="rounded px-2 py-0.5 flex-row items-center gap-1 border border-dashed border-[#4B5563]"
+              >
+                <PlusIcon size={12} color="#6B7280" />
+                <Text className="text-xs font-instrument text-gray-500">New tag</Text>
+              </Pressable>
+            )}
+          </View>
         )}
       </View>
     </View>

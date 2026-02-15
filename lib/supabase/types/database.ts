@@ -333,6 +333,8 @@ export interface Database {
           last_message_at: string;
           message_count: number;
           has_reply: boolean;
+          category: string | null;
+          category_source: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -349,6 +351,8 @@ export interface Database {
           last_message_at: string;
           message_count?: number;
           has_reply?: boolean;
+          category?: string | null;
+          category_source?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -365,6 +369,8 @@ export interface Database {
           last_message_at?: string;
           message_count?: number;
           has_reply?: boolean;
+          category?: string | null;
+          category_source?: string | null;
           created_at?: string;
           updated_at?: string;
         };

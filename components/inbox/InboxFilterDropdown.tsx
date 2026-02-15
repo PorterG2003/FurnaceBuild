@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, Modal, Pressable, ScrollView } from 'react-native';
-import { SearchAndSelect, SearchAndSelectMulti } from '@/components/ui/forms';
+import { Select, SearchAndSelectMulti } from '@/components/ui/forms';
 import { Toggle } from '@/components/ui/Toggle';
 import type { Mailbox, Campaign } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
+import { getCategoryColor } from '@/lib/inbox/category-colors';
+import { resolveTagColor } from '@/lib/inbox/tag-colors';
 
 const THREAD_CATEGORIES = ['Lead replied', 'Meeting set', 'Not interested', 'Follow up'];
 const DATE_OPTIONS = [
@@ -142,7 +144,7 @@ export function InboxFilterDropdown({
             </View>
 
             {/* Date */}
-            <SearchAndSelect
+            <Select
               label="Date"
               items={filteredDateItems}
               getItemId={(i) => i.id}
@@ -156,7 +158,7 @@ export function InboxFilterDropdown({
             />
 
             {/* Mailbox */}
-            <SearchAndSelect
+            <Select
               label="Mailbox"
               items={filteredMailboxItems}
               getItemId={(m) => m.id}
@@ -170,7 +172,7 @@ export function InboxFilterDropdown({
             />
 
             {/* Campaign */}
-            <SearchAndSelect
+            <Select
               label="Campaign"
               items={filteredCampaignItems}
               getItemId={(c) => c.id}
@@ -184,11 +186,13 @@ export function InboxFilterDropdown({
             />
 
             {/* Category */}
-            <SearchAndSelect
+            <Select
               label="Category"
               items={filteredCategoryItems}
               getItemId={(i) => i.id}
               getItemLabel={(i) => ({ primary: i.name })}
+              getItemColor={(item) => (item.id === 'all' ? null : getCategoryColor(item.id))}
+              itemColorVariant="tint"
               value={categoryFilter || 'all'}
               onChange={(id) => onCategoryFilterChange(id === 'all' ? null : id)}
               onSearchChange={setCategorySearch}
@@ -203,6 +207,7 @@ export function InboxFilterDropdown({
               items={accountTags}
               getItemId={(t) => t.id}
               getItemLabel={(t) => t.name}
+              getItemColor={(t) => resolveTagColor(t.color)}
               value={tagFilterIds}
               onChange={onTagFilterIdsChange}
               searchPlaceholder="Search tags…"

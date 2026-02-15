@@ -1,6 +1,6 @@
 export { FormCard } from './FormCard';
-export { SearchAndSelect } from './SearchAndSelect';
-export type { SearchAndSelectProps } from './SearchAndSelect';
+export { Select } from './Select';
+export type { SelectProps, SelectPropsSearchable, SelectPropsNonSearchable } from './Select';
 export { SearchAndSelectInline } from './SearchAndSelectInline';
 export type { SearchAndSelectInlineProps } from './SearchAndSelectInline';
 export { SearchAndSelectMulti } from './SearchAndSelectMulti';

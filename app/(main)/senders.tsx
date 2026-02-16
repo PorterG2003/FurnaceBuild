@@ -13,7 +13,7 @@ import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { Alert, LoadingState, EmptyState } from '@/components/ui/feedback';
+import { LoadingState, EmptyState, useToast } from '@/components/ui/feedback';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import { PlayIcon, TrashIcon, XMarkIcon } from 'react-native-heroicons/outline';
 import { Platform } from 'react-native';
@@ -145,6 +145,7 @@ function ActionButton({
 
 export default function SendersPage() {
   const { account, user: profile } = useAccount();
+  const { toast } = useToast();
   const accountId = account?.id ?? null;
 
   const [isLoading, setIsLoading] = useState(true);
@@ -165,8 +166,6 @@ export default function SendersPage() {
     smtp?: { success: boolean; error?: string };
     imap?: { success: boolean; error?: string };
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<MailboxFormData>({
     provider: 'gmail',
@@ -227,24 +226,23 @@ export default function SendersPage() {
   const handleTestConnection = async () => {
     // Validation
     if (!formData.email_address.trim()) {
-      setError('Email address is required');
+      toast.error('Email address is required');
       return;
     }
     if (!formData.smtp_host.trim() || !formData.imap_host.trim()) {
-      setError('SMTP and IMAP hosts are required');
+      toast.error('SMTP and IMAP hosts are required');
       return;
     }
     if (!formData.smtp_username.trim() || !formData.imap_username.trim()) {
-      setError('SMTP and IMAP usernames are required');
+      toast.error('SMTP and IMAP usernames are required');
       return;
     }
     if (!formData.smtp_password.trim() || !formData.imap_password.trim()) {
-      setError('SMTP and IMAP passwords are required');
+      toast.error('SMTP and IMAP passwords are required');
       return;
     }
 
     setTesting(true);
-    setError(null);
     setTestResult(null);
 
     try {
@@ -264,14 +262,13 @@ export default function SendersPage() {
 
       setTestResult(result);
       if (result.success) {
-        setSuccess('Connection test successful!');
-        setTimeout(() => setSuccess(null), 5000);
+        toast.success('Connection test successful!');
       } else {
-        setError(result.message);
+        toast.error(result.message);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to test connection';
-      setError(message);
+      toast.error(message);
       setTestResult({
         success: false,
         message,
@@ -283,31 +280,29 @@ export default function SendersPage() {
 
   const handleConnect = async () => {
     if (!accountId || !profile) {
-      setError('Account not found');
+      toast.error('Account not found');
       return;
     }
 
     // Validation
     if (!formData.email_address.trim()) {
-      setError('Email address is required');
+      toast.error('Email address is required');
       return;
     }
     if (!formData.smtp_host.trim() || !formData.imap_host.trim()) {
-      setError('SMTP and IMAP hosts are required');
+      toast.error('SMTP and IMAP hosts are required');
       return;
     }
     if (!formData.smtp_username.trim() || !formData.imap_username.trim()) {
-      setError('SMTP and IMAP usernames are required');
+      toast.error('SMTP and IMAP usernames are required');
       return;
     }
     if (!formData.smtp_password.trim() || !formData.imap_password.trim()) {
-      setError('SMTP and IMAP passwords are required');
+      toast.error('SMTP and IMAP passwords are required');
       return;
     }
 
     setConnecting(true);
-    setError(null);
-    setSuccess(null);
 
     try {
       // ⚠️ SECURITY: Passwords should be encrypted before storing
@@ -334,7 +329,7 @@ export default function SendersPage() {
         sync_enabled: true,
       });
 
-      setSuccess('Mailbox connected successfully!');
+      toast.success('Mailbox connected successfully!');
       setShowConnectModal(false);
       
       // Reset form
@@ -356,12 +351,9 @@ export default function SendersPage() {
       });
 
       await loadMailboxes();
-      
-      // Auto-dismiss success message
-      setTimeout(() => setSuccess(null), 5000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to connect mailbox';
-      setError(message);
+      toast.error(message);
     } finally {
       setConnecting(false);
     }
@@ -369,8 +361,6 @@ export default function SendersPage() {
 
   const handleTestMailbox = async (mailbox: Mailbox) => {
     setTestingMailboxId(mailbox.id);
-    setError(null);
-    setSuccess(null);
 
     try {
       const result = await testMailboxConnection({
@@ -403,7 +393,7 @@ export default function SendersPage() {
       await loadMailboxes();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to test mailbox connection';
-      setError(message);
+      toast.error(message);
       setTestResult(null);
       // Update status to error
       await updateMailboxStatus(mailbox.id, 'error', message);
@@ -422,19 +412,16 @@ export default function SendersPage() {
     if (!mailboxToDelete) return;
 
     setDeleting(true);
-    setError(null);
-    setSuccess(null);
 
     try {
       await deleteMailbox(mailboxToDelete.id);
       await loadMailboxes();
-      setSuccess('Mailbox deleted successfully');
-      setTimeout(() => setSuccess(null), 5000);
+      toast.success('Mailbox deleted successfully');
       setShowDeleteModal(false);
       setMailboxToDelete(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete mailbox';
-      setError(message);
+      toast.error(message);
     } finally {
       setDeleting(false);
     }
@@ -493,10 +480,6 @@ export default function SendersPage() {
             </Button>
           </View>
 
-          {/* Messages */}
-          {error && <Alert variant="error" message={error} />}
-          {success && <Alert variant="success" message={success} />}
-
           {/* Bulk Actions Bar - Shows when items are selected */}
           {selectedMailboxes.size > 0 && (
             <View className="mb-4 p-4 bg-[#1F1F1F] border border-[#2A2A2A] rounded-xl flex-row items-center justify-between">
@@ -511,11 +494,10 @@ export default function SendersPage() {
                       await Promise.all(ids.map((id) => deleteMailbox(id)));
                       setSelectedMailboxes(new Set());
                       await loadMailboxes();
-                      setSuccess(`${ids.length} ${ids.length === 1 ? 'mailbox' : 'mailboxes'} deleted successfully`);
-                      setTimeout(() => setSuccess(null), 5000);
+                      toast.success(`${ids.length} ${ids.length === 1 ? 'mailbox' : 'mailboxes'} deleted successfully`);
                     } catch (err) {
                       const message = err instanceof Error ? err.message : 'Failed to delete mailboxes';
-                      setError(message);
+                      toast.error(message);
                     }
                   }}
                   className="px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-lg"
@@ -673,8 +655,6 @@ export default function SendersPage() {
         animationType="fade"
         onRequestClose={() => {
           setShowConnectModal(false);
-          setError(null);
-          setSuccess(null);
           setTestResult(null);
         }}
       >
@@ -697,8 +677,6 @@ export default function SendersPage() {
             }}
             onPress={() => {
               setShowConnectModal(false);
-              setError(null);
-              setSuccess(null);
               setTestResult(null);
             }}
           />
@@ -764,7 +742,6 @@ export default function SendersPage() {
                       smtp_username: prev.smtp_username || text,
                       imap_username: prev.imap_username || text,
                     }));
-                    setError(null);
                   }}
                   placeholder="your@email.com"
                   placeholderTextColor="#666"
@@ -790,7 +767,6 @@ export default function SendersPage() {
                   value={formData.display_name}
                   onChangeText={(text) => {
                     setFormData((prev) => ({ ...prev, display_name: text }));
-                    setError(null);
                   }}
                   placeholder="John Doe"
                   placeholderTextColor="#666"
@@ -818,7 +794,6 @@ export default function SendersPage() {
                   value={formData.smtp_host}
                   onChangeText={(text) => {
                     setFormData((prev) => ({ ...prev, smtp_host: text }));
-                    setError(null);
                   }}
                   placeholder="smtp.gmail.com"
                   placeholderTextColor="#666"
@@ -842,7 +817,6 @@ export default function SendersPage() {
                   value={formData.smtp_port}
                   onChangeText={(text) => {
                     setFormData((prev) => ({ ...prev, smtp_port: text }));
-                    setError(null);
                   }}
                   placeholder="587"
                   placeholderTextColor="#666"
@@ -866,7 +840,6 @@ export default function SendersPage() {
                   value={formData.smtp_username}
                   onChangeText={(text) => {
                     setFormData((prev) => ({ ...prev, smtp_username: text }));
-                    setError(null);
                   }}
                   placeholder="your@email.com"
                   placeholderTextColor="#666"
@@ -890,7 +863,6 @@ export default function SendersPage() {
                   value={formData.smtp_password}
                   onChangeText={(text) => {
                     setFormData((prev) => ({ ...prev, smtp_password: text }));
-                    setError(null);
                   }}
                   placeholder="Enter SMTP password or app password"
                   placeholderTextColor="#666"
@@ -922,7 +894,6 @@ export default function SendersPage() {
                   value={formData.imap_host}
                   onChangeText={(text) => {
                     setFormData((prev) => ({ ...prev, imap_host: text }));
-                    setError(null);
                   }}
                   placeholder="imap.gmail.com"
                   placeholderTextColor="#666"
@@ -946,7 +917,6 @@ export default function SendersPage() {
                   value={formData.imap_port}
                   onChangeText={(text) => {
                     setFormData((prev) => ({ ...prev, imap_port: text }));
-                    setError(null);
                   }}
                   placeholder="993"
                   placeholderTextColor="#666"
@@ -970,7 +940,6 @@ export default function SendersPage() {
                   value={formData.imap_username}
                   onChangeText={(text) => {
                     setFormData((prev) => ({ ...prev, imap_username: text }));
-                    setError(null);
                   }}
                   placeholder="your@email.com"
                   placeholderTextColor="#666"
@@ -994,7 +963,6 @@ export default function SendersPage() {
                   value={formData.imap_password}
                   onChangeText={(text) => {
                     setFormData((prev) => ({ ...prev, imap_password: text }));
-                    setError(null);
                   }}
                   placeholder="Enter IMAP password or app password"
                   placeholderTextColor="#666"
@@ -1076,21 +1044,11 @@ export default function SendersPage() {
                 </View>
               )}
 
-              {error && (
-                <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
-                  <Text className="text-red-400 text-center font-instrument-medium text-sm">
-                    {error}
-                  </Text>
-                </View>
-              )}
-
               {/* Actions */}
               <View className="flex-row gap-3 mt-4">
                 <TouchableOpacity
                   onPress={() => {
                     setShowConnectModal(false);
-                    setError(null);
-                    setSuccess(null);
                     setTestResult(null);
                   }}
                   className="flex-1 px-4 py-3 bg-white/5 border border-white/20 rounded-xl"

@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable } from 'react-native';
 import { signIn } from 'aws-amplify/auth';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
+import { useToast } from '@/components/ui/feedback';
 
 interface SignInFormProps {
   onGoToSignUp: () => void;
@@ -11,11 +12,17 @@ interface SignInFormProps {
 }
 
 export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessMessage }: SignInFormProps) {
+  const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(initialSuccessMessage ?? '');
+
+  useEffect(() => {
+    if (initialSuccessMessage) {
+      toast.success(initialSuccessMessage);
+    }
+  }, [initialSuccessMessage, toast]);
 
   const handleForgotPassword = () => {
     onGoToForgotPassword();
@@ -23,12 +30,6 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
 
   const handleSignUp = () => {
     onGoToSignUp();
-  };
-
-  const clearInitialSuccessIfUserInteracts = () => {
-    if (initialSuccessMessage && success === initialSuccessMessage) {
-      setSuccess('');
-    }
   };
 
   const handleSignIn = async () => {
@@ -39,7 +40,6 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
 
     setIsLoading(true);
     setError('');
-    setSuccess('');
 
     try {
       const { isSignedIn } = await signIn({
@@ -48,26 +48,25 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
       });
 
       if (isSignedIn) {
-        setSuccess('Sign in successful! Redirecting...');
+        toast.success('Sign in successful! Redirecting...');
         setIsLoading(false);
         // The auth guard will handle the redirect
       } else {
-        setError('Sign in failed. Please try again.');
+        toast.error('Sign in failed. Please try again.');
         setIsLoading(false);
       }
       
     } catch (err: any) {
-      // More specific error handling
       if (err.name === 'UserNotFoundException') {
-        setError('No account found with this email');
+        toast.error('No account found with this email');
       } else if (err.name === 'NotAuthorizedException') {
-        setError('Incorrect password');
+        toast.error('Incorrect password');
       } else if (err.name === 'UserNotConfirmedException') {
-        setError('Please verify your email before signing in');
+        toast.error('Please verify your email before signing in');
       } else if (err.name === 'InvalidParameterException') {
-        setError('Please check your email format');
+        toast.error('Please check your email format');
       } else {
-        setError(`Sign in failed: ${err.message}`);
+        toast.error(`Sign in failed: ${err.message}`);
       }
       setIsLoading(false);
     }
@@ -112,7 +111,7 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
           value={password}
           onChangeText={(text) => {
             setPassword(text);
-            clearInitialSuccessIfUserInteracts();
+            setError('');
           }}
           placeholder="Enter your password"
           secureTextEntry
@@ -133,14 +132,6 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
         <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
           <Text className="text-red-400 text-center font-instrument-medium text-sm">
             {error}
-          </Text>
-        </View>
-      ) : null}
-
-      {success ? (
-        <View className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-xl">
-          <Text className="text-green-400 text-center font-instrument-medium text-sm">
-            {success}
           </Text>
         </View>
       ) : null}

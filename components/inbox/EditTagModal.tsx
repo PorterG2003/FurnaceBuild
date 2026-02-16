@@ -4,6 +4,7 @@ import { TrashIcon } from 'react-native-heroicons/outline';
 import { BaseModal } from '@/components/ui/modals/BaseModal';
 import { ConfirmDeleteModal } from '@/components/ui/modals/ConfirmDeleteModal';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/feedback';
 import { TAG_PRESET_COLORS } from '@/lib/inbox/tag-colors';
 import { updateThreadTag, deleteThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
@@ -23,10 +24,10 @@ export function EditTagModal({
   onSaved,
   onDeleted,
 }: EditTagModalProps) {
+  const { toast } = useToast();
   const [name, setName] = useState('');
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -34,7 +35,6 @@ export function EditTagModal({
     if (visible && tag) {
       setName(tag.name);
       setSelectedColor(tag.color ?? TAG_PRESET_COLORS[0]);
-      setError(null);
     }
   }, [visible, tag]);
 
@@ -44,10 +44,9 @@ export function EditTagModal({
     if (!tag) return;
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Name is required');
+      toast.error('Name is required');
       return;
     }
-    setError(null);
     setIsSubmitting(true);
     try {
       const updated = await updateThreadTag(tag.id, {
@@ -57,7 +56,7 @@ export function EditTagModal({
       onSaved(updated);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update tag');
+      toast.error(e instanceof Error ? e.message : 'Failed to update tag');
     } finally {
       setIsSubmitting(false);
     }
@@ -72,7 +71,7 @@ export function EditTagModal({
       setShowDeleteConfirm(false);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete tag');
+      toast.error(e instanceof Error ? e.message : 'Failed to delete tag');
     } finally {
       setIsDeleting(false);
     }
@@ -130,10 +129,7 @@ export function EditTagModal({
             </View>
             <TextInput
               value={name}
-              onChangeText={(t) => {
-                setName(t);
-                setError(null);
-              }}
+              onChangeText={setName}
               placeholder="e.g. Follow up"
               placeholderTextColor="#666"
               autoCapitalize="none"
@@ -175,10 +171,6 @@ export function EditTagModal({
               })}
             </View>
           </View>
-
-          {error ? (
-            <Text className="text-sm font-instrument text-red-400">{error}</Text>
-          ) : null}
         </View>
       </BaseModal>
 

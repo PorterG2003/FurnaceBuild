@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, View, Text, TextInput, TouchableOpacity, Platform, Alert } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Platform, Alert, useWindowDimensions } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
+import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { createLeads, generateGlobalLeadId, getLeads } from '@/lib/supabase/services/leads';
 import { ensureCampaignEnrollmentsForLeads } from '@/lib/supabase/services/campaigns';
@@ -156,32 +157,9 @@ function LeadSourceNodeModal({
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [apiKey] = useState(() => `live_${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`);
   const [isImportWizardOpen, setIsImportWizardOpen] = useState(false);
-  const [tabContainerWidth, setTabContainerWidth] = useState(0);
-  const tabIndicator = useRef(new Animated.Value(0)).current;
   const [dbLeads, setDbLeads] = useState<Lead[]>([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
-
-  const activeTabIndex = useMemo(() => {
-    const index = leadSourceTabs.findIndex(tab => tab.id === activeTab);
-    return index === -1 ? 0 : index;
-  }, [activeTab]);
-
-  useEffect(() => {
-    Animated.timing(tabIndicator, {
-      toValue: activeTabIndex,
-      duration: 220,
-      useNativeDriver: true,
-    }).start();
-  }, [activeTabIndex, tabIndicator]);
-
-  const tabWidth = tabContainerWidth > 0 ? tabContainerWidth / leadSourceTabs.length : 0;
-
-  const indicatorTranslateX = useMemo(() => {
-    return tabIndicator.interpolate({
-      inputRange: leadSourceTabs.map((_, index) => index),
-      outputRange: leadSourceTabs.map((_, index) => index * tabWidth),
-    });
-  }, [tabIndicator, tabWidth]);
+  const { height: windowHeight } = useWindowDimensions();
 
   const displayColumns = useMemo(() => csvColumns.slice(0, 6), [csvColumns]);
   const hiddenColumnCount = csvColumns.length > displayColumns.length ? csvColumns.length - displayColumns.length : 0;
@@ -286,8 +264,7 @@ function LeadSourceNodeModal({
         field,
         percentage: Math.min(100, Math.round((count / totalRows) * 100)),
       }))
-      .sort((a, b) => b.percentage - a.percentage)
-      .slice(0, 8);
+      .sort((a, b) => b.percentage - a.percentage);
 
     return {
       totalRows,
@@ -1155,7 +1132,6 @@ function LeadSourceNodeModal({
                   }}
                 >
                   {Object.entries(example)
-                    .slice(0, 8)
                     .map(([key, value]) => (
                       <View key={key} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
                         <Text style={{ color: '#9CA3AF', fontSize: 12, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>
@@ -1235,8 +1211,8 @@ function LeadSourceNodeModal({
         title="Import Leads"
         description="Upload a CSV, match your fields, and review before saving leads to this bucket"
         footer={wizardFooter}
-        maxWidth="2xl"
-        maxHeight={720}
+        maxWidth="full"
+        height={Math.round(windowHeight * 0.9)}
       >
         <View className="gap-6">
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 16 }}>
@@ -1334,73 +1310,16 @@ function LeadSourceNodeModal({
         title="Configure Lead Source Node"
         description="Configure CSV imports, API access, and data insights for this lead bucket"
         footer={footer}
-        maxWidth="2xl"
-        maxHeight={720}
+        maxWidth="full"
+        height={Math.round(windowHeight * 0.9)}
       >
         <View className="gap-6">
-          <View
-            onLayout={(event) => {
-              const width = event.nativeEvent.layout.width;
-              if (width !== tabContainerWidth) {
-                setTabContainerWidth(width);
-              }
-            }}
-            style={{
-              position: 'relative',
-              flexDirection: 'row',
-              backgroundColor: 'rgba(255,255,255,0.05)',
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.08)',
-              overflow: 'hidden',
-            }}
-          >
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                {
-                  position: 'absolute',
-                  top: 0,
-                  bottom: 0,
-                  width: tabWidth,
-                  borderRadius: 12,
-                  backgroundColor: '#F3440D',
-                  transform: [{ translateX: indicatorTranslateX }],
-                },
-                !tabWidth && { opacity: 0 },
-              ]}
-            />
-            {leadSourceTabs.map(tab => {
-              const isActive = activeTab === tab.id;
-              return (
-                <TouchableOpacity
-                  key={tab.id}
-                  onPress={() => setActiveTab(tab.id)}
-                  activeOpacity={0.85}
-                  style={{
-                    flex: 1,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    paddingVertical: 10,
-                    paddingHorizontal: 12,
-                    zIndex: 1,
-                  }}
-                >
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      color: isActive ? '#FFFFFF' : '#C7C9CC',
-                      fontSize: 13,
-                      fontFamily: 'Instrument Sans, system-ui, sans-serif',
-                      fontWeight: isActive ? '600' : '500',
-                    }}
-                  >
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          <Tabs
+            tabs={[...leadSourceTabs]}
+            activeTab={activeTab}
+            onTabChange={(id) => setActiveTab(id as TabId)}
+            layout="content"
+          />
 
           {renderActiveTab()}
       </View>

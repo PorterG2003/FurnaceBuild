@@ -1,10 +1,9 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { View, ScrollView, Animated } from 'react-native';
 import { Skeleton } from '@/components/ui/feedback';
+import { SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from '@/components/ui/feedback/skeletonConstants';
 import type { DimensionValue } from 'react-native';
 
-const SKELETON_DELAY_MS = 200;
-const SKELETON_MIN_DISPLAY_MS = 300;
 const STAGGER_DELAY_MS = 60;
 
 /** Per-item width variations (pixels) for a more organic skeleton look. */

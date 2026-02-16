@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, Pressable, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
-import { Alert, LoadingState, EmptyState, useToast } from '@/components/ui/feedback';
+import { Alert, EmptyState, useToast } from '@/components/ui/feedback';
+import { CampaignListSkeleton, SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from '@/components/skeletons';
 import { BaseModal } from '@/components/ui/modals';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter } from 'expo-router';
@@ -407,6 +408,8 @@ export default function CampaignsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showSkeleton, setShowSkeleton] = useState(false);
+  const skeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
 
   const loadCampaigns = async () => {
     if (!account?.id) return;
@@ -429,6 +432,34 @@ export default function CampaignsPage() {
   useEffect(() => {
     loadCampaigns();
   }, [account?.id]);
+
+  // Skeleton: delay 200ms before showing, min 300ms once shown
+  useEffect(() => {
+    const t = skeletonTimers.current;
+    if (isLoading) {
+      if (t.hide) {
+        clearTimeout(t.hide);
+        t.hide = null;
+      }
+      t.show = setTimeout(() => setShowSkeleton(true), SKELETON_DELAY_MS);
+      return () => {
+        if (t.show) clearTimeout(t.show);
+        t.show = null;
+      };
+    } else {
+      if (t.show) {
+        clearTimeout(t.show);
+        t.show = null;
+      }
+      if (showSkeleton) {
+        t.hide = setTimeout(() => setShowSkeleton(false), SKELETON_MIN_DISPLAY_MS);
+        return () => {
+          if (t.hide) clearTimeout(t.hide);
+          t.hide = null;
+        };
+      }
+    }
+  }, [isLoading, showSkeleton]);
 
   const handleCreateCampaign = async (name: string) => {
     if (!user?.userId) {
@@ -504,8 +535,8 @@ export default function CampaignsPage() {
         />
       ) : null}
       {/* Loading State */}
-      {isLoading ? (
-        <LoadingState message="Loading campaigns..." />
+      {(isLoading || showSkeleton) ? (
+        <CampaignListSkeleton />
       ) : campaigns.length === 0 ? (
         /* Empty State */
         <EmptyState

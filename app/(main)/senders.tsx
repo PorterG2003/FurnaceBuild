@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -13,7 +13,8 @@ import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { LoadingState, EmptyState, useToast } from '@/components/ui/feedback';
+import { EmptyState, useToast } from '@/components/ui/feedback';
+import { SendersTableSkeleton, SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from '@/components/skeletons';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import { PlayIcon, TrashIcon, XMarkIcon } from 'react-native-heroicons/outline';
 import { Platform } from 'react-native';
@@ -166,6 +167,8 @@ export default function SendersPage() {
     smtp?: { success: boolean; error?: string };
     imap?: { success: boolean; error?: string };
   } | null>(null);
+  const [showSkeleton, setShowSkeleton] = useState(false);
+  const skeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
 
   const [formData, setFormData] = useState<MailboxFormData>({
     provider: 'gmail',
@@ -203,6 +206,34 @@ export default function SendersPage() {
       loadMailboxes();
     }
   }, [accountId, loadMailboxes]);
+
+  // Skeleton: delay 200ms before showing, min 300ms once shown
+  useEffect(() => {
+    const t = skeletonTimers.current;
+    if (isLoading) {
+      if (t.hide) {
+        clearTimeout(t.hide);
+        t.hide = null;
+      }
+      t.show = setTimeout(() => setShowSkeleton(true), SKELETON_DELAY_MS);
+      return () => {
+        if (t.show) clearTimeout(t.show);
+        t.show = null;
+      };
+    } else {
+      if (t.show) {
+        clearTimeout(t.show);
+        t.show = null;
+      }
+      if (showSkeleton) {
+        t.hide = setTimeout(() => setShowSkeleton(false), SKELETON_MIN_DISPLAY_MS);
+        return () => {
+          if (t.hide) clearTimeout(t.hide);
+          t.hide = null;
+        };
+      }
+    }
+  }, [isLoading, showSkeleton]);
 
   const handleProviderChange = (provider: Provider) => {
     const preset = PROVIDER_PRESETS[provider];
@@ -519,8 +550,8 @@ export default function SendersPage() {
           )}
 
           {/* Loading State */}
-          {isLoading ? (
-            <LoadingState message="Loading mailboxes..." />
+          {(isLoading || showSkeleton) ? (
+            <SendersTableSkeleton />
           ) : mailboxes.length === 0 ? (
             /* Empty State */
             <EmptyState

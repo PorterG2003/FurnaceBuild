@@ -17,3 +17,4 @@ export {
 
 export { mergeTemplate, type LeadLike } from './mergeTemplate';
 export { processSpintax, type ProcessSpintaxOptions } from './processSpintax';
+export { getLeadVariables, type LeadVariable } from './leadVariables';

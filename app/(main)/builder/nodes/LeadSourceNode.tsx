@@ -4,6 +4,8 @@ import { nodeIcons } from './nodeMetadata';
 interface LeadSourceNodeData {
   label?: string;
   source?: string;
+  customFieldKeys?: string[];
+  mappedStandardFieldKeys?: string[];
 }
 
 interface LeadSourceNodeProps {

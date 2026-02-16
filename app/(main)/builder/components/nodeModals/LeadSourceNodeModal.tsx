@@ -13,12 +13,16 @@ interface LeadSourceNodeModalProps {
     label?: string;
     source?: string;
     bucketId?: string;
+    customFieldKeys?: string[];
+    mappedStandardFieldKeys?: string[];
   }) => void;
   initialData?: {
     label?: string;
     source?: string;
     campaignId?: string;
     bucketId?: string;
+    customFieldKeys?: string[];
+    mappedStandardFieldKeys?: string[];
   };
 }
 
@@ -329,9 +333,19 @@ function LeadSourceNodeModal({
       : false;
 
   const handleSave = () => {
+    const customFieldKeys = Array.from(
+      new Set([...(initialData?.customFieldKeys ?? []), ...customFieldColumns])
+    );
+    const mappedStandardFieldKeys =
+      csvColumns.length > 0
+        ? (Object.entries(fieldMappings).filter(([, col]) => col?.trim()).map(([key]) => key) as string[])
+        : (initialData?.mappedStandardFieldKeys ?? undefined);
+
     onSave({
       label,
       bucketId: initialData?.bucketId,
+      customFieldKeys,
+      mappedStandardFieldKeys,
     });
     onClose();
   };

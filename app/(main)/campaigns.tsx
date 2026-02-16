@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
-import { Alert, LoadingState, EmptyState } from '@/components/ui/feedback';
+import { Alert, LoadingState, EmptyState, useToast } from '@/components/ui/feedback';
 import { BaseModal } from '@/components/ui/modals';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter } from 'expo-router';
@@ -32,6 +32,7 @@ interface CreateCampaignModalProps {
 }
 
 function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCampaignModalProps) {
+  const { toast } = useToast();
   const [name, setName] = useState('');
   const [error, setError] = useState('');
 
@@ -47,7 +48,7 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
       setName('');
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to create campaign');
+      toast.error(err.message || 'Failed to create campaign');
     }
   };
 
@@ -397,6 +398,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
 export default function CampaignsPage() {
   const { user } = useAuthenticator();
   const { account } = useAccount();
+  const { toast } = useToast();
   const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [campaignStats, setCampaignStats] = useState<Record<string, CampaignStats>>({});
@@ -462,7 +464,7 @@ export default function CampaignsPage() {
       await deleteCampaign(id);
       await loadCampaigns();
     } catch (err: any) {
-      setError(err.message || 'Failed to delete campaign');
+      toast.error(err.message || 'Failed to delete campaign');
       console.error('Error deleting campaign:', err);
     } finally {
       setDeletingId(null);

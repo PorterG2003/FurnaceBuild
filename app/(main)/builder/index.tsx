@@ -634,9 +634,35 @@ export default function BuilderPage() {
             bucketId: campaign?.bucket_id || editingNode.data?.bucketId,
           };
         } else if (editingNode.type === 'email') {
+          const nodes =
+            typeof window !== 'undefined' && (window as any).__reactFlowGetNodes
+              ? (window as any).__reactFlowGetNodes()
+              : [];
+          const leadSourceNodes = (nodes as any[]).filter(
+            (n: any) => n.type === 'leadSource'
+          );
+          const customFieldKeys = Array.from(
+            new Set(
+              leadSourceNodes.flatMap(
+                (n: any) => n.data?.customFieldKeys ?? []
+              )
+            )
+          );
+          const mappedStandardFieldKeys = Array.from(
+            new Set(
+              leadSourceNodes.flatMap(
+                (n: any) => n.data?.mappedStandardFieldKeys ?? []
+              )
+            )
+          );
           modalData = {
             ...editingNode.data,
             campaignId: campaignId,
+            customFieldKeys,
+            mappedStandardFieldKeys:
+              mappedStandardFieldKeys.length > 0
+                ? mappedStandardFieldKeys
+                : undefined,
           };
         }
         

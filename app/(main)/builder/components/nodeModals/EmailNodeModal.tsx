@@ -6,11 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/forms';
 import { EmailBodyEditor } from '../EmailBodyEditor';
 import { getLeads } from '@/lib/supabase/services/leads';
-import { mergeTemplate, processSpintax, type LeadLike } from '@/lib/email';
+import { mergeTemplate, processSpintax, getLeadVariables, type LeadLike, type LeadVariable } from '@/lib/email';
 import type { Lead } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
-
-type LeadVariable = { token: string; description: string };
 
 interface VariableMenuProps {
   variables: LeadVariable[];
@@ -244,6 +242,8 @@ interface EmailNodeModalProps {
     body_html?: string;
     body_text?: string;
     campaignId?: string;
+    customFieldKeys?: string[];
+    mappedStandardFieldKeys?: string[];
   };
 }
 
@@ -338,19 +338,12 @@ function EmailNodeModal({
   }, [visible, initialData?.campaignId, leadSearch, fetchLeads, debouncedSearchLeads]);
 
   const leadVariables = useMemo(
-    (): LeadVariable[] => [
-      { token: '{{email}}', description: 'Lead email address' },
-      { token: '{{name}}', description: 'Full name if available' },
-      { token: '{{first_name}}', description: 'First name (falls back to name)' },
-      { token: '{{last_name}}', description: 'Last name' },
-      { token: '{{company_name}}', description: 'Company name' },
-      { token: '{{website}}', description: 'Company website URL' },
-      { token: '{{linkedin_url}}', description: 'Lead LinkedIn profile' },
-      { token: '{{company_linkedin_url}}', description: 'Company LinkedIn profile' },
-      { token: '{{source}}', description: 'Lead source' },
-      { token: '{{custom.field_name}}', description: 'Custom field (replace field_name)' },
-    ],
-    []
+    () =>
+      getLeadVariables(
+        initialData?.mappedStandardFieldKeys,
+        initialData?.customFieldKeys
+      ),
+    [initialData?.mappedStandardFieldKeys, initialData?.customFieldKeys]
   );
 
   const handleSave = () => {

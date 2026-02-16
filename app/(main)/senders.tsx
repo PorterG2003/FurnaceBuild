@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Alert, LoadingState, EmptyState } from '@/components/ui/feedback';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
-import { PlayIcon, TrashIcon } from 'react-native-heroicons/outline';
+import { PlayIcon, TrashIcon, XMarkIcon } from 'react-native-heroicons/outline';
 import { Platform } from 'react-native';
 import {
   createMailbox,
@@ -152,6 +152,8 @@ export default function SendersPage() {
   const [selectedMailboxes, setSelectedMailboxes] = useState<Set<string>>(new Set());
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showTestResultModal, setShowTestResultModal] = useState(false);
+  const [testResultMailboxEmail, setTestResultMailboxEmail] = useState<string | null>(null);
   const [mailboxToDelete, setMailboxToDelete] = useState<Mailbox | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -393,18 +395,16 @@ export default function SendersPage() {
         result.success ? null : result.message
       );
 
-      if (result.success) {
-        setSuccess(`Mailbox "${mailbox.display_name || mailbox.email_address}" connection test passed!`);
-        setTimeout(() => setSuccess(null), 5000);
-      } else {
-        setError(`Connection test failed: ${result.message}`);
-      }
+      setTestResult(result);
+      setTestResultMailboxEmail(mailbox.email_address);
+      setShowTestResultModal(true);
 
       // Reload mailboxes to show updated status
       await loadMailboxes();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to test mailbox connection';
       setError(message);
+      setTestResult(null);
       // Update status to error
       await updateMailboxStatus(mailbox.id, 'error', message);
       await loadMailboxes();
@@ -488,7 +488,7 @@ export default function SendersPage() {
                 Manage your email mailbox connections
             </Text>
             </View>
-            <Button onPress={() => setShowConnectModal(true)}>
+            <Button onPress={() => { setTestResult(null); setShowTestResultModal(false); setShowConnectModal(true); }}>
               Connect Mailbox
             </Button>
           </View>
@@ -545,7 +545,7 @@ export default function SendersPage() {
               title="No Mailboxes Connected"
               description="Connect your first mailbox to start sending and receiving emails"
               actionText="Connect Your First Mailbox"
-              onAction={() => setShowConnectModal(true)}
+              onAction={() => { setTestResult(null); setShowTestResultModal(false); setShowConnectModal(true); }}
             />
           ) : (
             /* Mailboxes Table */
@@ -1115,6 +1115,138 @@ export default function SendersPage() {
                 </TouchableOpacity>
               </View>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Test Result Modal - shown when Test is clicked on a table row */}
+      <Modal
+        visible={showTestResultModal && testResult !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowTestResultModal(false);
+          setTestResult(null);
+          setTestResultMailboxEmail(null);
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 20,
+          }}
+        >
+          <Pressable
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+            }}
+            onPress={() => {
+              setShowTestResultModal(false);
+              setTestResult(null);
+              setTestResultMailboxEmail(null);
+            }}
+          />
+          <View
+            style={{
+              backgroundColor: '#1A1A1A',
+              borderRadius: 20,
+              borderWidth: 1,
+              borderColor: '#2A2A2A',
+              width: '100%',
+              maxWidth: 420,
+              overflow: 'hidden',
+            }}
+          >
+            {testResult && (
+              <>
+                {/* Top section: title + close button */}
+                <View className="flex-row items-center justify-between px-5 py-4 border-b border-[#2A2A2A]">
+                  {testResultMailboxEmail ? (
+                    <Text className="flex-1 font-instrument-semibold text-lg text-white" numberOfLines={1}>
+                      {testResultMailboxEmail}
+                    </Text>
+                  ) : (
+                    <View className="flex-1" />
+                  )}
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowTestResultModal(false);
+                      setTestResult(null);
+                      setTestResultMailboxEmail(null);
+                    }}
+                    className="p-2 -mr-2"
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <XMarkIcon size={24} color="#9CA3AF" />
+                  </TouchableOpacity>
+                </View>
+
+                <View className="px-5 py-5">
+                <View
+                  className={`rounded-xl px-4 py-3 mb-5 ${
+                    testResult.success
+                      ? 'bg-green-500/15 border border-green-500/40'
+                      : 'bg-red-500/15 border border-red-500/40'
+                  }`}
+                >
+                  <Text
+                    className={`text-center font-instrument-semibold text-base ${
+                      testResult.success ? 'text-green-400' : 'text-red-400'
+                    }`}
+                  >
+                    {testResult.success ? 'Connection test passed' : 'Connection test failed'}
+                  </Text>
+                </View>
+                <View className="gap-3 mb-6">
+                  {testResult.smtp && (
+                    <View className="flex-row items-center justify-between py-2.5 px-4 rounded-lg bg-[#252525] border border-[#2A2A2A]">
+                      <Text className="text-gray-400 font-instrument text-sm">SMTP (sending)</Text>
+                      <View className="flex-row items-center gap-2">
+                        {testResult.smtp.success ? (
+                          <Text className="text-green-400 font-instrument text-sm">Connected</Text>
+                        ) : (
+                          <Text className="text-red-400 font-instrument text-sm" numberOfLines={1} style={{ maxWidth: 180 }}>
+                            {testResult.smtp.error}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
+                  {testResult.imap && (
+                    <View className="flex-row items-center justify-between py-2.5 px-4 rounded-lg bg-[#252525] border border-[#2A2A2A]">
+                      <Text className="text-gray-400 font-instrument text-sm">IMAP (receiving)</Text>
+                      <View className="flex-row items-center gap-2">
+                        {testResult.imap.success ? (
+                          <Text className="text-green-400 font-instrument text-sm">Connected</Text>
+                        ) : (
+                          <Text className="text-red-400 font-instrument text-sm" numberOfLines={1} style={{ maxWidth: 180 }}>
+                            {testResult.imap.error}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowTestResultModal(false);
+                    setTestResult(null);
+                    setTestResultMailboxEmail(null);
+                  }}
+                  className="w-full py-3.5 rounded-xl bg-brand-orange active:opacity-90"
+                >
+                  <Text className="text-center text-white font-instrument-semibold">Close</Text>
+                </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>

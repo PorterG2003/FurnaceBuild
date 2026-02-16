@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
-import { EmptyState, Alert } from '@/components/ui/feedback';
+import { EmptyState, Alert, useToast } from '@/components/ui/feedback';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import {
@@ -78,6 +78,7 @@ const THREAD_CATEGORIES = ['Interested', 'Not Interested'];
 
 export default function InboxPage() {
   const { account } = useAccount();
+  const { toast } = useToast();
   const accountId = account?.id ?? null;
   const [threads, setThreads] = useState<EmailThread[]>([]);
   const [threadsLoading, setThreadsLoading] = useState(true);
@@ -96,13 +97,11 @@ export default function InboxPage() {
   const [replyCc, setReplyCc] = useState('');
   const composerEditorRef = useRef<EditorBridge | null>(null);
   const [sendingReply, setSendingReply] = useState(false);
-  const [replyError, setReplyError] = useState<string | null>(null);
   const [forwardedMessageId, setForwardedMessageId] = useState<string | null>(null);
   const [forwardToEmail, setForwardToEmail] = useState('');
   const [forwardCc, setForwardCc] = useState('');
   const [forwardSubject, setForwardSubject] = useState('');
   const [sendingForward, setSendingForward] = useState(false);
-  const [forwardError, setForwardError] = useState<string | null>(null);
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachmentItem[]>([]);
   const [composerAttachmentsLoading, setComposerAttachmentsLoading] = useState(false);
   const [composerAttachmentsSkipMessage, setComposerAttachmentsSkipMessage] = useState<string | null>(null);
@@ -751,7 +750,6 @@ export default function InboxPage() {
       }
       setReplyCc(ccList.join(', '));
 
-      setReplyError(null);
       setComposerMode('reply');
     },
     [selectedThread, messages]
@@ -766,7 +764,6 @@ export default function InboxPage() {
       setForwardToEmail('');
       setForwardCc('');
       setForwardSubject(fwdSubject);
-      setForwardError(null);
       setComposerMode('forward');
     },
     [selectedThread]
@@ -841,7 +838,6 @@ export default function InboxPage() {
   const retryFailedReply = useCallback(async () => {
     if (!accountId || !selectedThreadId || !selectedThread || !pendingReply || !pendingReply.isFailed) return;
     setSendingReply(true);
-    setReplyError(null);
     try {
       const replyAttachments = pendingReply.attachments?.length
         ? pendingReply.attachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
@@ -907,21 +903,21 @@ export default function InboxPage() {
         }
       }, 2000);
     } catch (err) {
-      setReplyError(err instanceof Error ? err.message : 'Failed to retry reply');
+      toast.error(err instanceof Error ? err.message : 'Failed to retry reply');
     } finally {
       setSendingReply(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, pendingReply, messages, loadMessages]);
+  }, [accountId, selectedThreadId, selectedThread, pendingReply, messages, loadMessages, toast]);
 
   const sendReply = useCallback(async (skipBlockCheck?: boolean) => {
     if (!accountId || !selectedThreadId || !selectedThread || !inReplyToMessageId) return;
     if (!replyToEmail.trim()) {
-      setReplyError('To is required');
+      toast.error('To is required');
       return;
     }
     const totalAttachmentBytes = composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0);
     if (totalAttachmentBytes > MAX_TOTAL_BYTES) {
-      setReplyError('Total attachment size exceeds 5 MB.');
+      toast.error('Total attachment size exceeds 5 MB.');
       return;
     }
     const ccArray = replyCc.trim() ? replyCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : [];
@@ -937,7 +933,6 @@ export default function InboxPage() {
       }
     }
     setSendingReply(true);
-    setReplyError(null);
     try {
       const bodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
       const bodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? bodyText;
@@ -1000,21 +995,21 @@ export default function InboxPage() {
         }
       }, 2000);
     } catch (err) {
-      setReplyError(err instanceof Error ? err.message : 'Failed to send reply');
+      toast.error(err instanceof Error ? err.message : 'Failed to send reply');
     } finally {
       setSendingReply(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyCc, composerAttachments, messages, blockList, loadMessages, closeComposerPanel]);
+  }, [accountId, selectedThreadId, selectedThread, inReplyToMessageId, replyToEmail, replyToName, replySubject, replyCc, composerAttachments, messages, blockList, loadMessages, closeComposerPanel, toast]);
 
   const sendForward = useCallback(async (skipBlockCheck?: boolean) => {
     if (!accountId || !selectedThreadId || !selectedThread || !forwardedMessageId) return;
     if (!forwardToEmail.trim()) {
-      setForwardError('To is required');
+      toast.error('To is required');
       return;
     }
     const totalAttachmentBytes = composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0);
     if (totalAttachmentBytes > MAX_TOTAL_BYTES) {
-      setForwardError('Total attachment size exceeds 5 MB.');
+      toast.error('Total attachment size exceeds 5 MB.');
       return;
     }
     const ccArray = forwardCc.trim() ? forwardCc.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean) : [];
@@ -1030,7 +1025,6 @@ export default function InboxPage() {
       }
     }
     setSendingForward(true);
-    setForwardError(null);
     try {
       const bodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
       const bodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? bodyText;
@@ -1052,11 +1046,11 @@ export default function InboxPage() {
       });
       closeComposerPanel();
     } catch (err) {
-      setForwardError(err instanceof Error ? err.message : 'Failed to send forward');
+      toast.error(err instanceof Error ? err.message : 'Failed to send forward');
     } finally {
       setSendingForward(false);
     }
-  }, [accountId, selectedThreadId, selectedThread, forwardedMessageId, forwardToEmail, forwardSubject, forwardCc, composerAttachments, blockList, closeComposerPanel]);
+  }, [accountId, selectedThreadId, selectedThread, forwardedMessageId, forwardToEmail, forwardSubject, forwardCc, composerAttachments, blockList, closeComposerPanel, toast]);
 
   return (
     <PageLayout scrollable={false}>
@@ -1511,9 +1505,6 @@ export default function InboxPage() {
                   </View>
                   {composerMode === 'reply' ? (
                     <>
-                      {replyError && (
-                        <Alert variant="error" message={replyError} className="mb-4" />
-                      )}
                       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} className="flex-1 pb-4">
                         <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">To</Text>
                         <TextInput
@@ -1597,9 +1588,6 @@ export default function InboxPage() {
                     </>
                   ) : (
                     <>
-                      {forwardError && (
-                        <Alert variant="error" message={forwardError} className="mb-4" />
-                      )}
                       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} className="flex-1 pb-4">
                         <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">To</Text>
                         <TextInput

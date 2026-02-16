@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { BaseModal } from '@/components/ui/modals/BaseModal';
+import { useToast } from '@/components/ui/feedback';
 import { addBlockEntry } from '@/lib/supabase/services';
 
 export interface BlockSenderModalProps {
@@ -18,25 +19,25 @@ export function BlockSenderModal({
   accountId,
   onBlocked,
 }: BlockSenderModalProps) {
+  const { toast } = useToast();
   const [adding, setAdding] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const uniqueEmails = Array.from(new Set(participantEmails.map((e) => e.trim().toLowerCase()).filter(Boolean)));
 
   const handleBlock = async (email: string, type: 'email' | 'domain') => {
     setAdding(`${email}:${type}`);
-    setError(null);
     try {
       const value = type === 'email' ? email : email.split('@')[1] || email;
       if (!value) {
-        setError('Invalid email');
+        toast.error('Invalid email');
+        setAdding(null);
         return;
       }
       await addBlockEntry(accountId, { value, type });
       onBlocked();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to block');
+      toast.error(err instanceof Error ? err.message : 'Failed to block');
     } finally {
       setAdding(null);
     }
@@ -52,11 +53,6 @@ export function BlockSenderModal({
       maxHeight={480}
     >
       <View className="gap-3">
-        {error && (
-          <View className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-2">
-            <Text className="text-red-400 font-instrument text-sm">{error}</Text>
-          </View>
-        )}
         {uniqueEmails.length === 0 ? (
           <Text className="text-gray-400 font-instrument text-sm">
             No prospect emails to block in this thread.

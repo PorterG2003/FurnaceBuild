@@ -7,3 +7,4 @@
 {"location":"inbox.ts:getThreadsByAccountInternal","message":"Internal options","data":{"hasCategory":false},"timestamp":1771193645731,"hypothesisId":"A,E"}
 {"location":"inbox.ts:getThreadsByAccountInternal","message":"Internal options","data":{"hasCategory":false},"timestamp":1771193663627,"hypothesisId":"A,E"}
 {"location":"inbox.ts:getThreadsByAccountInternal","message":"Internal options","data":{"hasCategory":false},"timestamp":1771193664029,"hypothesisId":"A,E"}
+{"location":"campaigns.ts:deleteCampaign","message":"Campaign delete invoked","data":{"campaignId":"564f1005-05ad-45bb-a508-c83b3b0733c1"},"timestamp":1771279564981,"hypothesisId":"A"}

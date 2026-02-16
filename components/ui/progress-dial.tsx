@@ -4,9 +4,11 @@ import Svg, { Circle } from 'react-native-svg';
 interface ProgressDialProps {
   value: number;
   total?: number;
-  label: string;
+  label?: string;
   color?: string;
   size?: number;
+  /** When true, center displays percentage (e.g. "42%") instead of value/total */
+  showAsPercentage?: boolean;
 }
 
 /**
@@ -16,19 +18,46 @@ interface ProgressDialProps {
 export function ProgressDial({
   value,
   total,
-  label,
+  label = '',
   color = '#f85102',
   size = 100,
+  showAsPercentage = false,
 }: ProgressDialProps) {
   const percentage = total && total > 0 ? Math.min((value / total) * 100, 100) : 0;
-  const strokeWidth = 8;
+  const strokeWidth = 6;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
   const center = size / 2;
 
+  const centerContent = showAsPercentage ? (
+    <Text
+      className="text-white font-instrument-semibold"
+      style={{ fontSize: size * 0.24, lineHeight: size * 0.3 }}
+    >
+      {Math.round(percentage)}%
+    </Text>
+  ) : (
+    <>
+      <Text
+        className="text-white font-instrument-semibold"
+        style={{ fontSize: size * 0.3, lineHeight: size * 0.35 }}
+      >
+        {value}
+      </Text>
+      {total !== undefined && (
+        <Text
+          className="text-gray-500 font-instrument"
+          style={{ fontSize: size * 0.15, lineHeight: size * 0.18, marginTop: -2 }}
+        >
+          / {total}
+        </Text>
+      )}
+    </>
+  );
+
   return (
-    <View className="items-center" style={{ width: size + 40 }}>
+    <View className="items-center" style={{ width: label ? size + 40 : size }}>
       <View style={{ width: size, height: size, position: 'relative' }}>
         <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
           {/* Background circle */}
@@ -68,30 +97,18 @@ export function ProgressDial({
             justifyContent: 'center',
           }}
         >
-          <Text
-            className="text-white font-instrument-semibold"
-            style={{ fontSize: size * 0.3, lineHeight: size * 0.35 }}
-          >
-            {value}
-          </Text>
-          {total !== undefined && (
-            <Text
-              className="text-gray-500 font-instrument"
-              style={{ fontSize: size * 0.15, lineHeight: size * 0.18, marginTop: -2 }}
-            >
-              / {total}
-            </Text>
-          )}
+          {centerContent}
         </View>
       </View>
 
-      {/* Label */}
-      <Text
-        className="text-gray-400 font-instrument text-xs mt-3 text-center"
-        style={{ width: size + 40 }}
-      >
-        {label}
-      </Text>
+      {label ? (
+        <Text
+          className="text-gray-400 font-instrument text-xs mt-3 text-center"
+          style={{ width: size + 40 }}
+        >
+          {label}
+        </Text>
+      ) : null}
     </View>
   );
 }

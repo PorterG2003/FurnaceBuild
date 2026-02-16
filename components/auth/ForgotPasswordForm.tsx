@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable } from 'react-native';
 import { resetPassword } from 'aws-amplify/auth';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
+import { useToast } from '@/components/ui/feedback';
 
 interface ForgotPasswordFormProps {
   onBackToSignIn: () => void;
@@ -10,10 +11,10 @@ interface ForgotPasswordFormProps {
 }
 
 export function ForgotPasswordForm({ onBackToSignIn, onCodeSent }: ForgotPasswordFormProps) {
+  const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   const handleReset = async () => {
     const trimmed = email.trim();
@@ -24,22 +25,21 @@ export function ForgotPasswordForm({ onBackToSignIn, onCodeSent }: ForgotPasswor
 
     setIsLoading(true);
     setError('');
-    setSuccess('');
 
     try {
       await resetPassword({ username: trimmed });
 
-      setSuccess('Check your email for the reset code.');
+      toast.success('Check your email for the reset code.');
       onCodeSent(trimmed);
     } catch (err: any) {
       if (err.name === 'UserNotFoundException') {
-        setError('No account found with this email');
+        toast.error('No account found with this email');
       } else if (err.name === 'LimitExceededException') {
-        setError('Too many attempts. Please try again later.');
+        toast.error('Too many attempts. Please try again later.');
       } else if (err.name === 'InvalidParameterException') {
-        setError('Please check your email format');
+        toast.error('Please check your email format');
       } else {
-        setError(err.message ?? 'Failed to send reset code. Please try again.');
+        toast.error(err.message ?? 'Failed to send reset code. Please try again.');
       }
     } finally {
       setIsLoading(false);
@@ -80,14 +80,6 @@ export function ForgotPasswordForm({ onBackToSignIn, onCodeSent }: ForgotPasswor
         <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
           <Text className="text-red-400 text-center font-instrument-medium text-sm">
             {error}
-          </Text>
-        </View>
-      ) : null}
-
-      {success ? (
-        <View className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-xl">
-          <Text className="text-green-400 text-center font-instrument-medium text-sm">
-            {success}
           </Text>
         </View>
       ) : null}

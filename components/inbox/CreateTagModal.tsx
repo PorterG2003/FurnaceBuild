@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
 import { BaseModal } from '@/components/ui/modals/BaseModal';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/feedback';
 import { TAG_PRESET_COLORS, pickRandomPresetColor } from '@/lib/inbox/tag-colors';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 
@@ -18,27 +19,24 @@ export function CreateTagModal({
   onCreated,
   accountId,
 }: CreateTagModalProps) {
+  const { toast } = useToast();
   const [name, setName] = useState('');
   const [selectedColor, setSelectedColor] = useState(() => pickRandomPresetColor());
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // Reset to random color when modal opens
   useEffect(() => {
     if (visible) {
       setName('');
       setSelectedColor(pickRandomPresetColor());
-      setError(null);
     }
   }, [visible]);
 
   const handleCreate = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Name is required');
+      toast.error('Name is required');
       return;
     }
-    setError(null);
     setIsSubmitting(true);
     try {
       const { createThreadTag } = await import('@/lib/supabase/services/thread-tags');
@@ -46,7 +44,7 @@ export function CreateTagModal({
       onCreated(tag);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create tag');
+      toast.error(e instanceof Error ? e.message : 'Failed to create tag');
     } finally {
       setIsSubmitting(false);
     }
@@ -132,10 +130,6 @@ export function CreateTagModal({
             })}
           </View>
         </View>
-
-        {error ? (
-          <Text className="text-sm font-instrument text-red-400">{error}</Text>
-        ) : null}
       </View>
     </BaseModal>
   );

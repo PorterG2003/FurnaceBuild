@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
 import { signUp } from 'aws-amplify/auth';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
+import { useToast } from '@/components/ui/feedback';
 
 interface SignUpFormProps {
   onSignUpSuccess: (email: string, password: string) => void;
@@ -10,16 +11,13 @@ interface SignUpFormProps {
 }
 
 export function SignUpForm({ onSignUpSuccess, onBackToSignIn }: SignUpFormProps) {
+  const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [showUserExistsOptions, setShowUserExistsOptions] = useState(false);
-
-  // Log current state
-  console.log('📝 SignUpForm - Current state:', { email, isLoading, error, success });
 
   // Navigation functions (we'll need to pass these as props or use router)
   const handleSignIn = () => {
@@ -55,12 +53,8 @@ export function SignUpForm({ onSignUpSuccess, onBackToSignIn }: SignUpFormProps)
 
     setIsLoading(true);
     setError('');
-    setSuccess('');
-
-    console.log('📝 Attempting sign up with email:', email);
 
     try {
-      console.log('📝 Calling AWS Amplify signUp API...');
       const result = await signUp({
         username: email,
         password: password,
@@ -71,62 +65,50 @@ export function SignUpForm({ onSignUpSuccess, onBackToSignIn }: SignUpFormProps)
         }
       });
 
-      console.log('📝 SignUp result:', result);
-      console.log('📝 Next step:', result.nextStep);
-
       if (result.nextStep) {
         switch (result.nextStep.signUpStep) {
           case 'CONFIRM_SIGN_UP':
-            console.log('📝 Email confirmation required');
-            setSuccess('Account created! Please check your email for verification code.');
+            toast.success('Account created! Please check your email for verification code.');
             setIsLoading(false);
-            // Call the success callback to navigate to verification
             setTimeout(() => {
               onSignUpSuccess(email, password);
             }, 1500);
             break;
           case 'DONE':
-            console.log('📝 Sign up complete');
-            setSuccess('Account created successfully! Redirecting...');
+            toast.success('Account created successfully! Redirecting...');
             setIsLoading(false);
             break;
           case 'COMPLETE_AUTO_SIGN_IN':
-            console.log('📝 Auto sign-in required');
-            setSuccess('Account created! Completing sign-in...');
+            toast.success('Account created! Completing sign-in...');
             setIsLoading(false);
             break;
           default:
-            console.log('📝 Unknown next step:', result.nextStep);
-            setSuccess('Account created! Please check your email for verification code.');
+            toast.success('Account created! Please check your email for verification code.');
             setIsLoading(false);
-            // Call the success callback to navigate to verification
             setTimeout(() => {
               onSignUpSuccess(email, password);
             }, 1500);
         }
       } else {
-        console.log('📝 No nextStep in response');
-        setSuccess('Account created! Please check your email for verification code.');
+        toast.success('Account created! Please check your email for verification code.');
         setIsLoading(false);
       }
       
     } catch (err: any) {
-      console.error('📝 Sign up error:', err);
-      console.error('📝 Error details:', JSON.stringify(err, null, 2));
-      
-      // More specific error handling
       if (err.name === 'UsernameExistsException') {
         setError('An account with this email already exists.');
         setShowUserExistsOptions(true);
         setIsLoading(false);
       } else if (err.name === 'InvalidPasswordException') {
-        setError('Password does not meet requirements');
+        toast.error('Password does not meet requirements');
+        setIsLoading(false);
       } else if (err.name === 'InvalidParameterException') {
-        setError('Please check your email format');
+        toast.error('Please check your email format');
+        setIsLoading(false);
       } else {
-        setError(`Sign up failed: ${err.message}`);
+        toast.error(`Sign up failed: ${err.message}`);
+        setIsLoading(false);
       }
-      setIsLoading(false);
     }
   };
 
@@ -225,14 +207,6 @@ export function SignUpForm({ onSignUpSuccess, onBackToSignIn }: SignUpFormProps)
               </Pressable>
             </View>
           )}
-        </View>
-      ) : null}
-
-      {success ? (
-        <View className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-xl">
-          <Text className="text-green-400 text-center font-instrument-medium text-sm">
-            {success}
-          </Text>
         </View>
       ) : null}
 

@@ -13,7 +13,7 @@ import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { ManageBlockListModal } from '@/components/inbox';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
-import { LoadingState, Alert } from '@/components/ui/feedback';
+import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
 import { BaseModal } from '@/components/ui/modals';
 import { useAccount } from '@/contexts/AccountContext';
 import {
@@ -35,6 +35,7 @@ import type { AccountUser, BlockListEntry, Invitation, User } from '@/lib/supaba
 
 export default function AccountPage() {
   const { user: cognitoUser } = useAuthenticator();
+  const { toast } = useToast();
   const cognitoEmail =
     (cognitoUser as any)?.attributes?.email ??
     (cognitoUser as any)?.attributes?.preferred_username ??
@@ -58,13 +59,6 @@ export default function AccountPage() {
   const [companyInput, setCompanyInput] = useState('');
   const [inviteEmailInput, setInviteEmailInput] = useState('');
 
-  const [profileMessage, setProfileMessage] = useState<string | null>(null);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [accountMessage, setAccountMessage] = useState<string | null>(null);
-  const [accountError, setAccountError] = useState<string | null>(null);
-  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingAccount, setSavingAccount] = useState(false);
   const [inviting, setInviting] = useState(false);
@@ -73,28 +67,11 @@ export default function AccountPage() {
   const [blockListModalVisible, setBlockListModalVisible] = useState(false);
   const [roleEditMember, setRoleEditMember] = useState<{ membershipId: string; memberName: string } | null>(null);
 
-  const resetProfileFeedback = useCallback(() => {
-    setProfileMessage(null);
-    setProfileError(null);
-  }, []);
-
-  const resetAccountFeedback = useCallback(() => {
-    setAccountMessage(null);
-    setAccountError(null);
-  }, []);
-
-  const resetInviteFeedback = useCallback(() => {
-    setInviteMessage(null);
-    setInviteError(null);
-  }, []);
-
   const handleNameChange = (value: string) => {
-    resetProfileFeedback();
     setNameInput(value);
   };
 
   const handleCompanyChange = (value: string) => {
-    resetAccountFeedback();
     setCompanyInput(value);
   };
 
@@ -152,25 +129,24 @@ export default function AccountPage() {
 
     const trimmedName = nameInput.trim();
     if (trimmedName.length === 0) {
-      setProfileError('Name cannot be empty.');
+      toast.error('Name cannot be empty.');
       return;
     }
 
     setSavingProfile(true);
-    resetProfileFeedback();
 
     try {
       await updateUserProfile(profile.id, { name: trimmedName });
       await refetch();
       setNameInput(trimmedName);
-      setProfileMessage('Profile updated successfully.');
+      toast.success('Profile updated successfully.');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to update profile.';
-      setProfileError(message);
+      toast.error(message);
     } finally {
       setSavingProfile(false);
     }
-  }, [nameInput, profile, refetch]);
+  }, [nameInput, profile, refetch, toast]);
 
   const handleSaveAccount = useCallback(async () => {
     if (!membership || !membership.account) return;
@@ -178,25 +154,24 @@ export default function AccountPage() {
 
     const trimmedCompany = companyInput.trim();
     if (trimmedCompany.length === 0) {
-      setAccountError('Company name cannot be empty.');
+      toast.error('Company name cannot be empty.');
       return;
     }
 
     setSavingAccount(true);
-    resetAccountFeedback();
 
     try {
       const updatedAccount = await updateAccount(membership.account.id, { name: trimmedCompany });
       await refetch();
       setCompanyInput(updatedAccount.name ?? '');
-      setAccountMessage('Company name updated successfully.');
+      toast.success('Company name updated successfully.');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to update company name.';
-      setAccountError(message);
+      toast.error(message);
     } finally {
       setSavingAccount(false);
     }
-  }, [companyInput, membership, refetch, resetAccountFeedback]);
+  }, [companyInput, membership, refetch, toast]);
 
   const handleInviteTeamMember = useCallback(async () => {
     if (!membership || !membership.account || !profile) return;
@@ -204,20 +179,20 @@ export default function AccountPage() {
 
     const trimmedEmail = inviteEmailInput.trim().toLowerCase();
     if (trimmedEmail.length === 0) {
-      setInviteError('Please enter an email address.');
+      toast.error('Please enter an email address.');
       return;
     }
 
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
-      setInviteError('Please enter a valid email address.');
+      toast.error('Please enter a valid email address.');
       return;
     }
 
     // Don't allow inviting yourself
     if (trimmedEmail === profile.email.toLowerCase()) {
-      setInviteError('You cannot invite yourself.');
+      toast.error('You cannot invite yourself.');
       return;
     }
 
@@ -226,7 +201,7 @@ export default function AccountPage() {
       (m) => m.user.email.toLowerCase() === trimmedEmail
     );
     if (existingMember) {
-      setInviteError('This user is already a team member.');
+      toast.error('This user is already a team member.');
       return;
     }
 
@@ -235,12 +210,11 @@ export default function AccountPage() {
       (inv) => inv.email.toLowerCase() === trimmedEmail
     );
     if (existingInvitation) {
-      setInviteError('An invitation has already been sent to this email.');
+      toast.error('An invitation has already been sent to this email.');
       return;
     }
 
     setInviting(true);
-    resetInviteFeedback();
 
     try {
       // Try to find existing user by email
@@ -250,7 +224,7 @@ export default function AccountPage() {
         // User exists, add them directly to the account
         await addUserToAccount(membership.account.id, existingUser.id, false);
         await refetch();
-        setInviteMessage(`${trimmedEmail} has been added to the team.`);
+        toast.success(`${trimmedEmail} has been added to the team.`);
         const updatedMembers = await getAccountMembers(membership.account.id);
         setTeamMembers(updatedMembers);
       } else {
@@ -282,7 +256,7 @@ export default function AccountPage() {
             acceptUrl,
           });
 
-          setInviteMessage(`Invitation sent to ${trimmedEmail}.`);
+          toast.success(`Invitation sent to ${trimmedEmail}.`);
           await refetch();
           const updatedInvitations = await getAccountInvitations(membership.account.id);
           setInvitations(updatedInvitations);
@@ -306,7 +280,7 @@ export default function AccountPage() {
       setInviteEmailInput('');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to send invitation.';
-      setInviteError(message);
+      toast.error(message);
     } finally {
       setInviting(false);
     }
@@ -317,7 +291,7 @@ export default function AccountPage() {
     refetch,
     teamMembers,
     invitations,
-    resetInviteFeedback,
+    toast,
   ]);
 
   const handleRevokeInvitation = useCallback(async (invitationId: string) => {
@@ -325,42 +299,40 @@ export default function AccountPage() {
     if (!membership.membership.is_owner) return;
 
     setRevokingInvitationId(invitationId);
-    resetInviteFeedback();
 
     try {
       await deleteInvitation(invitationId);
       await refetch();
-      setInviteMessage('Invitation revoked successfully.');
+      toast.success('Invitation revoked successfully.');
       const updatedInvitations = await getAccountInvitations(membership.account.id);
       setInvitations(updatedInvitations);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to revoke invitation.';
-      setInviteError(message);
+      toast.error(message);
     } finally {
       setRevokingInvitationId(null);
     }
-  }, [membership, refetch, resetInviteFeedback]);
+  }, [membership, refetch, toast]);
 
   const handleUpdateMemberRole = useCallback(async (membershipId: string, newRole: 'owner' | 'admin' | 'member') => {
     if (!membership || !membership.account) return;
     if (!membership.membership.is_owner) return;
 
     setUpdatingRoleId(membershipId);
-    resetInviteFeedback();
 
     try {
       await updateMemberRole(membershipId, newRole);
       await refetch();
-      setInviteMessage('Member role updated successfully.');
+      toast.success('Member role updated successfully.');
       const updatedMembers = await getAccountMembers(membership.account.id);
       setTeamMembers(updatedMembers);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to update member role.';
-      setInviteError(message);
+      toast.error(message);
     } finally {
       setUpdatingRoleId(null);
     }
-  }, [membership, refetch, resetInviteFeedback]);
+  }, [membership, refetch, toast]);
 
   const handleRemoveMember = useCallback(async (membershipId: string, memberName: string) => {
     if (!membership || !membership.account) return;
@@ -372,21 +344,20 @@ export default function AccountPage() {
     }
 
     setRemovingMemberId(membershipId);
-    resetInviteFeedback();
 
     try {
       await removeMemberFromAccount(membershipId);
       await refetch();
-      setInviteMessage('Member removed successfully.');
+      toast.success('Member removed successfully.');
       const updatedMembers = await getAccountMembers(membership.account.id);
       setTeamMembers(updatedMembers);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to remove member.';
-      setInviteError(message);
+      toast.error(message);
     } finally {
       setRemovingMemberId(null);
     }
-  }, [membership, refetch, resetInviteFeedback]);
+  }, [membership, refetch, toast]);
 
   const handleUnblock = useCallback(async (entryId: string) => {
     if (!membership?.account) return;
@@ -483,22 +454,6 @@ export default function AccountPage() {
                   </Text>
                 </View>
 
-                {profileError ? (
-                  <View className="mb-3 p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg">
-                    <Text className="text-red-400 text-xs font-instrument-medium">
-                      {profileError}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {profileMessage ? (
-                  <View className="mb-3 p-2.5 bg-green-500/10 border border-green-500/20 rounded-lg">
-                    <Text className="text-green-400 text-xs font-instrument-medium">
-                      {profileMessage}
-                    </Text>
-                  </View>
-                ) : null}
-
                 <Button onPress={handleSaveProfile} disabled={savingProfile} size="sm" className="mt-2">
                   {savingProfile ? 'Saving...' : 'Save Name'}
                 </Button>
@@ -545,22 +500,6 @@ export default function AccountPage() {
                   </View>
                 )}
 
-                {accountError ? (
-                  <View className="mb-3 p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg">
-                    <Text className="text-red-400 text-xs font-instrument-medium">
-                      {accountError}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {accountMessage ? (
-                  <View className="mb-3 p-2.5 bg-green-500/10 border border-green-500/20 rounded-lg">
-                    <Text className="text-green-400 text-xs font-instrument-medium">
-                      {accountMessage}
-                    </Text>
-                  </View>
-                ) : null}
-
                 {isOwner && (
                   <Button onPress={handleSaveAccount} disabled={savingAccount} size="sm" className="mt-2">
                     {savingAccount ? 'Saving...' : 'Save Company Name'}
@@ -586,10 +525,7 @@ export default function AccountPage() {
                       <View className="flex-1">
                         <TextInput
                           value={inviteEmailInput}
-                          onChangeText={(value) => {
-                            resetInviteFeedback();
-                            setInviteEmailInput(value);
-                          }}
+                          onChangeText={setInviteEmailInput}
                           placeholder="Enter email address"
                           placeholderTextColor="#9CA3AF"
                           autoCapitalize="none"
@@ -613,21 +549,6 @@ export default function AccountPage() {
                       </Button>
                     </View>
 
-                    {inviteError ? (
-                      <View className="mt-2 p-2 bg-red-500/10 border border-red-500/20 rounded-lg">
-                        <Text className="text-red-400 text-xs font-instrument-medium">
-                          {inviteError}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {inviteMessage ? (
-                      <View className="mt-2 p-2 bg-green-500/10 border border-green-500/20 rounded-lg">
-                        <Text className="text-green-400 text-xs font-instrument-medium">
-                          {inviteMessage}
-                        </Text>
-                      </View>
-                    ) : null}
                   </View>
 
                   {/* Current Team Members */}

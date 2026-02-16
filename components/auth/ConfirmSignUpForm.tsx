@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable } from 'react-native';
 import { confirmSignUp, signIn } from 'aws-amplify/auth';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
+import { useToast } from '@/components/ui/feedback';
 
 interface ConfirmSignUpFormProps {
   email: string;
@@ -12,10 +13,10 @@ interface ConfirmSignUpFormProps {
 }
 
 export function ConfirmSignUpForm({ email, password, onSuccess, onBackToSignIn }: ConfirmSignUpFormProps) {
+  const { toast } = useToast();
   const [verificationCode, setVerificationCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   const handleConfirmSignUp = async () => {
     if (!verificationCode.trim()) {
@@ -25,41 +26,29 @@ export function ConfirmSignUpForm({ email, password, onSuccess, onBackToSignIn }
 
     setIsLoading(true);
     setError('');
-    setSuccess('');
-
-    console.log('📧 Attempting to confirm sign up with code:', verificationCode);
 
     try {
-      // First try to confirm the signup
-      const { isSignUpComplete, nextStep } = await confirmSignUp({
+      const { isSignUpComplete } = await confirmSignUp({
         username: email,
         confirmationCode: verificationCode
       });
 
-      console.log('📧 Confirm signup result:', { isSignUpComplete, nextStep });
-
       if (isSignUpComplete) {
         try {
-          // Then try to sign in
-          console.log('📧 Attempting auto sign-in...');
           const { isSignedIn } = await signIn({
             username: email,
             password: password,
           });
 
-          console.log('📧 Sign in result:', { isSignedIn });
-
           if (isSignedIn) {
-            setSuccess('Account verified and signed in successfully!');
+            toast.success('Account verified and signed in successfully!');
             setIsLoading(false);
-            // Call onSuccess to navigate to main app
             setTimeout(() => {
               onSuccess();
             }, 1500);
           }
         } catch (signInErr: any) {
-          console.error('📧 Sign in error:', signInErr);
-          setError("Failed to sign in after confirmation. Please try signing in manually.");
+          toast.error("Failed to sign in after confirmation. Please try signing in manually.");
           setIsLoading(false);
           setTimeout(() => {
             onBackToSignIn();
@@ -67,41 +56,38 @@ export function ConfirmSignUpForm({ email, password, onSuccess, onBackToSignIn }
         }
       }
     } catch (err: any) {
-      console.error('📧 Confirm Sign Up Error:', err);
-      
       if (err.name === 'ExpiredCodeException') {
         setError("Verification code has expired. Please request a new code.");
+        setIsLoading(false);
       } else if (err.name === 'NotAuthorizedException' && err.message.includes('CONFIRMED')) {
-        // User is already confirmed, try to sign in directly
         try {
           const { isSignedIn } = await signIn({
             username: email,
             password: password,
           });
           if (isSignedIn) {
-            setSuccess('Account is already confirmed. Signed in successfully!');
+            toast.success('Account is already confirmed. Signed in successfully!');
             setIsLoading(false);
             setTimeout(() => {
               onSuccess();
             }, 1500);
           }
         } catch (signInErr) {
-          setError("Account is already confirmed. Please sign in.");
+          toast.error("Account is already confirmed. Please sign in.");
           setIsLoading(false);
           setTimeout(() => {
             onBackToSignIn();
           }, 2000);
         }
       } else {
-        setError("Failed to confirm sign-up. Please check the code and try again.");
+        toast.error("Failed to confirm sign-up. Please check the code and try again.");
         setIsLoading(false);
       }
     }
   };
 
   const handleResendCode = async () => {
-    console.log('📧 Resend code requested');
-    setSuccess('Verification code resent! Please check your email.');
+    toast.success('Verification code resent! Please check your email.');
     // TODO: Implement resend code functionality
   };
 
@@ -139,14 +125,6 @@ export function ConfirmSignUpForm({ email, password, onSuccess, onBackToSignIn }
         <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
           <Text className="text-red-400 text-center font-instrument-medium text-sm">
             {error}
-          </Text>
-        </View>
-      ) : null}
-
-      {success ? (
-        <View className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-xl">
-          <Text className="text-green-400 text-center font-instrument-medium text-sm">
-            {success}
           </Text>
         </View>
       ) : null}

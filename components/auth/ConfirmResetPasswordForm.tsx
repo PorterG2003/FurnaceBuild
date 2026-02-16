@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable } from 'react-native';
 import { confirmResetPassword, resetPassword } from 'aws-amplify/auth';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
+import { useToast } from '@/components/ui/feedback';
 
 interface ConfirmResetPasswordFormProps {
   email: string;
@@ -18,13 +19,13 @@ const inputStyle = {
 };
 
 export function ConfirmResetPasswordForm({ email, onSuccess, onBackToSignIn }: ConfirmResetPasswordFormProps) {
+  const { toast } = useToast();
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   const handleResetPassword = async () => {
     const trimmedCode = code.trim();
@@ -43,7 +44,6 @@ export function ConfirmResetPasswordForm({ email, onSuccess, onBackToSignIn }: C
 
     setIsLoading(true);
     setError('');
-    setSuccess('');
 
     try {
       await confirmResetPassword({
@@ -52,18 +52,18 @@ export function ConfirmResetPasswordForm({ email, onSuccess, onBackToSignIn }: C
         newPassword,
       });
 
-      setSuccess('Password updated. Sign in with your new password.');
+      toast.success('Password updated. Sign in with your new password.');
       setIsLoading(false);
       setTimeout(() => {
         onSuccess();
       }, 1500);
     } catch (err: any) {
       if (err.name === 'ExpiredCodeException') {
-        setError('Code expired. Request a new code.');
+        toast.error('Code expired. Request a new code.');
       } else if (err.name === 'CodeMismatchException') {
-        setError('Invalid code. Please check and try again.');
+        toast.error('Invalid code. Please check and try again.');
       } else {
-        setError(err.message ?? 'Failed to reset password. Please try again.');
+        toast.error(err.message ?? 'Failed to reset password. Please try again.');
       }
       setIsLoading(false);
     }
@@ -72,16 +72,15 @@ export function ConfirmResetPasswordForm({ email, onSuccess, onBackToSignIn }: C
   const handleResendCode = async () => {
     setIsResending(true);
     setError('');
-    setSuccess('');
 
     try {
       await resetPassword({ username: email });
-      setSuccess('Reset code resent! Check your email.');
+      toast.success('Reset code resent! Check your email.');
     } catch (err: any) {
       if (err.name === 'LimitExceededException') {
-        setError('Too many attempts. Please try again later.');
+        toast.error('Too many attempts. Please try again later.');
       } else {
-        setError(err.message ?? 'Failed to resend code.');
+        toast.error(err.message ?? 'Failed to resend code.');
       }
     } finally {
       setIsResending(false);
@@ -147,14 +146,6 @@ export function ConfirmResetPasswordForm({ email, onSuccess, onBackToSignIn }: C
         <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
           <Text className="text-red-400 text-center font-instrument-medium text-sm">
             {error}
-          </Text>
-        </View>
-      ) : null}
-
-      {success ? (
-        <View className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-xl">
-          <Text className="text-green-400 text-center font-instrument-medium text-sm">
-            {success}
           </Text>
         </View>
       ) : null}

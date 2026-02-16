@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, Pressable, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { Alert, LoadingState, EmptyState } from '@/components/ui/feedback';
@@ -7,9 +7,22 @@ import { BaseModal } from '@/components/ui/modals';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
-import { getCampaigns, createCampaign, deleteCampaign } from '@/lib/supabase/services/campaigns';
+import { getCampaigns, createCampaign, deleteCampaign, getCampaignStatsForCampaigns, type CampaignStats } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
-import { PlusIcon, TrashIcon, PencilIcon, ChartBarIcon } from 'react-native-heroicons/outline';
+import {
+  PlusIcon,
+  TrashIcon,
+  PencilIcon,
+  PaperAirplaneIcon,
+  ArrowUturnLeftIcon,
+  CheckCircleIcon,
+} from 'react-native-heroicons/outline';
+import { ProgressDial } from '@/components/ui/progress-dial';
+
+const STAT_COLUMN_WIDTH = 72;
+const POSITIVE_COLUMN_WIDTH = 88;
+const STAT_COLUMN_GAP = 16;
+const NARROW_BREAKPOINT = 600;
 
 interface CreateCampaignModalProps {
   visible: boolean;
@@ -118,6 +131,7 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
 
 interface CampaignCardProps {
   campaign: Campaign;
+  stats?: CampaignStats;
   onDelete: (id: string) => Promise<void>;
   isDeleting: boolean;
 }
@@ -161,11 +175,19 @@ function CampaignStatusPill({ status }: { status: string }) {
   );
 }
 
-function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
+function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardProps) {
   const router = useRouter();
+  const { width: screenWidth } = useWindowDimensions();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const isNarrow = screenWidth < NARROW_BREAKPOINT;
   const isDraft = campaign.status === 'draft';
   const draftHasFlow = hasFlow(campaign);
+
+  const sentCount = stats?.sentCount ?? 0;
+  const repliedCount = stats?.repliedCount ?? 0;
+  const positiveReplyCount = stats?.positiveReplyCount ?? 0;
+  const enrollmentCount = stats?.enrollmentCount ?? 0;
+  const sentTotal = enrollmentCount > 0 ? enrollmentCount : 1;
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -197,30 +219,104 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
     router.push({ pathname: '/builder', params: { campaignId: campaign.id } });
   };
 
-  return (
-    <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
-      <View className="flex-row items-start justify-between">
-        <View className="flex-1 mr-4">
-          <View className="flex-row items-center gap-2 mb-1">
-            <Pressable onPress={isDraft ? handleContinueSetup : handleOpen}>
-              <Text className="text-white font-instrument-semibold text-lg">
-                {campaign.name}
-              </Text>
-            </Pressable>
-            <CampaignStatusPill status={campaign.status || 'draft'} />
-          </View>
-          {isDraft && (
-            <Text className="text-gray-400 font-instrument text-sm mb-1">
-              {draftHasFlow
-                ? 'Next: Configure schedule & mailboxes to start'
-                : 'Next: Build your flow'}
-            </Text>
-          )}
-          <Text className="text-gray-500 font-instrument text-sm">
-            Created {formatDate(campaign.created_at)}
+  const repliedPct = sentCount > 0 ? Math.round((repliedCount / sentCount) * 100) : 0;
+  const positivePct = repliedCount > 0 ? Math.round((positiveReplyCount / repliedCount) * 100) : 0;
+
+  const StatColumn = ({
+    icon: Icon,
+    value,
+    pct,
+    label,
+    color,
+  }: {
+    icon: React.ComponentType<{ size?: number; color?: string }>;
+    value: number;
+    pct?: number;
+    label: string;
+    color: string;
+  }) => (
+    <View style={{ alignItems: 'center' }}>
+      <View style={{ marginBottom: 4 }}>
+        <Icon size={16} color={color} />
+      </View>
+      <Text className="font-instrument-semibold text-base" style={{ color }}>
+        {value}
+        {pct !== undefined ? (
+          <Text className="text-gray-500 font-instrument text-sm"> ({pct}%)</Text>
+        ) : null}
+      </Text>
+      <Text className="text-gray-500 font-instrument text-xs mt-0.5">{label}</Text>
+    </View>
+  );
+
+  const campaignBlock = (
+    <View className="flex-row" style={{ gap: 12, flex: isNarrow ? undefined : 1, maxWidth: isNarrow ? undefined : '35%', minWidth: 0 }}>
+      <View style={{ marginTop: 2 }}>
+        <ProgressDial
+          value={sentCount}
+          total={sentTotal}
+          showAsPercentage
+          color="#10b981"
+          size={56}
+        />
+      </View>
+      <View className="flex-1" style={{ minWidth: 0 }}>
+        <View className="flex-row items-center gap-2 mb-1 flex-wrap">
+          <Text className="text-white font-instrument-semibold text-lg">
+            {campaign.name}
           </Text>
+          <CampaignStatusPill status={campaign.status || 'draft'} />
         </View>
-        {showDeleteConfirm ? (
+        {isDraft && (
+          <Text className="text-gray-400 font-instrument text-sm mb-1">
+            {draftHasFlow
+              ? 'Next: Configure schedule & mailboxes to start'
+              : 'Next: Build your flow'}
+          </Text>
+        )}
+        <Text className="text-gray-500 font-instrument text-sm">
+          Created {formatDate(campaign.created_at)}
+        </Text>
+      </View>
+    </View>
+  );
+
+  const statsBlock = (
+    <View
+      style={{
+        flexDirection: 'row',
+        flex: isNarrow ? undefined : 0,
+        flexBasis: isNarrow ? undefined : '40%',
+        flexShrink: isNarrow ? undefined : 0,
+        justifyContent: isNarrow ? 'flex-start' : 'space-around',
+        gap: isNarrow ? STAT_COLUMN_GAP : 0,
+      }}
+    >
+      <View style={{ width: STAT_COLUMN_WIDTH, alignItems: 'center' }}>
+        <StatColumn icon={PaperAirplaneIcon} value={sentCount} label="Sent" color="#a78bfa" />
+      </View>
+      <View style={{ width: STAT_COLUMN_WIDTH, alignItems: 'center' }}>
+        <StatColumn
+          icon={ArrowUturnLeftIcon}
+          value={repliedCount}
+          pct={repliedPct}
+          label="Replied"
+          color="#14b8a6"
+        />
+      </View>
+      <View style={{ width: POSITIVE_COLUMN_WIDTH, alignItems: 'center' }}>
+        <StatColumn
+          icon={CheckCircleIcon}
+          value={positiveReplyCount}
+          pct={positivePct}
+          label="Positive Reply"
+          color="#10b981"
+        />
+      </View>
+    </View>
+  );
+
+  const toolsBlock = showDeleteConfirm ? (
           <View className="flex-row gap-2">
             <Pressable
               onPress={() => setShowDeleteConfirm(false)}
@@ -265,9 +361,36 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
               <TrashIcon size={18} color="#ef4444" />
             </Pressable>
           </View>
-        )}
+  );
+
+  const handleCardPress = isDraft ? handleContinueSetup : handleOpen;
+
+  if (isNarrow) {
+    return (
+      <Pressable onPress={handleCardPress}>
+        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
+          <View className="flex-row items-start justify-between" style={{ marginBottom: 12 }}>
+            {campaignBlock}
+            {toolsBlock}
+          </View>
+          {statsBlock}
+        </View>
+      </Pressable>
+    );
+  }
+
+  return (
+    <Pressable onPress={handleCardPress}>
+      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4" style={{ position: 'relative' }}>
+        <View className="flex-row items-start" style={{ gap: 16 }}>
+          {campaignBlock}
+          {statsBlock}
+        </View>
+        <View style={{ position: 'absolute', right: 16, top: 16 }}>
+          {toolsBlock}
+        </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -276,6 +399,7 @@ export default function CampaignsPage() {
   const { account } = useAccount();
   const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [campaignStats, setCampaignStats] = useState<Record<string, CampaignStats>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -290,6 +414,8 @@ export default function CampaignsPage() {
     try {
       const data = await getCampaigns({ accountId: account.id });
       setCampaigns(data);
+      const stats = await getCampaignStatsForCampaigns(data.map((c) => c.id));
+      setCampaignStats(stats);
     } catch (err: any) {
       setError(err.message || 'Failed to load campaigns');
       console.error('Error loading campaigns:', err);
@@ -403,6 +529,7 @@ export default function CampaignsPage() {
             <CampaignCard
               key={campaign.id}
               campaign={campaign}
+              stats={campaignStats[campaign.id]}
               onDelete={handleDeleteCampaign}
               isDeleting={deletingId === campaign.id}
             />

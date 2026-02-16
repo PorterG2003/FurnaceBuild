@@ -48,6 +48,90 @@ export async function getCampaigns(filters?: CampaignFilters): Promise<Campaign[
   return data || [];
 }
 
+export interface CampaignStats {
+  sentCount: number;
+  repliedCount: number;
+  positiveReplyCount: number;
+  enrollmentCount: number;
+}
+
+/**
+ * Get sent/replied/positive reply counts for multiple campaigns in one batch.
+ */
+export async function getCampaignStatsForCampaigns(
+  campaignIds: string[]
+): Promise<Record<string, CampaignStats>> {
+  const result: Record<string, CampaignStats> = {};
+  if (campaignIds.length === 0) return result;
+
+  // Initialize all campaigns with zero stats
+  for (const id of campaignIds) {
+    result[id] = { sentCount: 0, repliedCount: 0, positiveReplyCount: 0, enrollmentCount: 0 };
+  }
+
+  // Enrollment count: total enrollments (emails to be sent)
+  const { data: enrollmentRows } = await supabase
+    .from('enrollments')
+    .select('campaign_id')
+    .in('campaign_id', campaignIds);
+
+  if (enrollmentRows) {
+    for (const row of enrollmentRows) {
+      if (row.campaign_id && result[row.campaign_id]) {
+        result[row.campaign_id].enrollmentCount++;
+      }
+    }
+  }
+
+  // Sent count: message_jobs with status='sent' and message_type in ('campaign', null)
+  const { data: sentRows } = await supabase
+    .from('message_jobs')
+    .select('campaign_id')
+    .in('campaign_id', campaignIds)
+    .eq('status', 'sent')
+    .or('message_type.eq.campaign,message_type.is.null');
+
+  if (sentRows) {
+    for (const row of sentRows) {
+      if (row.campaign_id && result[row.campaign_id]) {
+        result[row.campaign_id].sentCount++;
+      }
+    }
+  }
+
+  // Replied count: email_threads with has_reply=true
+  const { data: repliedRows } = await supabase
+    .from('email_threads')
+    .select('campaign_id')
+    .in('campaign_id', campaignIds)
+    .eq('has_reply', true);
+
+  if (repliedRows) {
+    for (const row of repliedRows) {
+      if (row.campaign_id && result[row.campaign_id]) {
+        result[row.campaign_id].repliedCount++;
+      }
+    }
+  }
+
+  // Positive reply count: email_threads with category='Interested'
+  const { data: positiveRows } = await supabase
+    .from('email_threads')
+    .select('campaign_id')
+    .in('campaign_id', campaignIds)
+    .eq('category', 'Interested');
+
+  if (positiveRows) {
+    for (const row of positiveRows) {
+      if (row.campaign_id && result[row.campaign_id]) {
+        result[row.campaign_id].positiveReplyCount++;
+      }
+    }
+  }
+
+  return result;
+}
+
 /**
  * Get a single campaign by ID
  */

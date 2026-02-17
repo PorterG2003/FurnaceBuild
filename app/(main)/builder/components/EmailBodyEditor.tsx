@@ -22,6 +22,8 @@ export interface EmailBodyEditorProps {
   label?: string;
   /** Called when content changes (web). Used for live preview. */
   onContentChange?: (text: string) => void;
+  /** Optional element to render in the header row to the right of the Variables button (e.g. Preview). */
+  trailingElement?: React.ReactNode;
 }
 
 /**
@@ -37,6 +39,7 @@ export function EmailBodyEditor({
   minHeight = 220,
   label = 'Email Body',
   onContentChange,
+  trailingElement,
 }: EmailBodyEditorProps) {
   const [variableSearch, setVariableSearch] = useState('');
 
@@ -66,6 +69,8 @@ export function EmailBodyEditor({
         <Text className="text-sm font-instrument-medium text-gray-300">
           {label}
         </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {trailingElement}
         <Select<LeadVariable>
           items={filteredVariables}
           getItemId={(v) => v.token}
@@ -102,8 +107,9 @@ export function EmailBodyEditor({
             >
               <CodeBracketIcon size={18} color={open ? '#F3440D' : '#FFFFFF'} />
             </TouchableOpacity>
-          )}
+            )}
         />
+        </View>
       </View>
       <View>
         <ComposerRichEditor

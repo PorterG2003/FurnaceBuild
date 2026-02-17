@@ -61,6 +61,7 @@ export default function AccountPage() {
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingAccount, setSavingAccount] = useState(false);
+  const [savingSuppressBounced, setSavingSuppressBounced] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
@@ -172,6 +173,24 @@ export default function AccountPage() {
       setSavingAccount(false);
     }
   }, [companyInput, membership, refetch, toast]);
+
+  const handleSuppressBouncedChange = useCallback(
+    async (value: boolean) => {
+      if (!membership?.account || !membership.membership.is_owner) return;
+      setSavingSuppressBounced(true);
+      try {
+        await updateAccount(membership.account.id, { suppress_bounced_emails: value });
+        await refetch();
+        toast.success(value ? 'Bounced emails will be blocked automatically.' : 'Bounced emails will not be added to the block list.');
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Failed to update setting.';
+        toast.error(message);
+      } finally {
+        setSavingSuppressBounced(false);
+      }
+    },
+    [membership, refetch, toast]
+  );
 
   const handleInviteTeamMember = useCallback(async () => {
     if (!membership || !membership.account || !profile) return;
@@ -738,6 +757,10 @@ export default function AccountPage() {
                 blockList={blockList}
                 onUnblock={handleUnblock}
                 unblockingId={unblockingId}
+                suppressBouncedEmails={membership?.account?.suppress_bounced_emails !== false}
+                onSuppressBouncedChange={handleSuppressBouncedChange}
+                savingSuppressBounced={savingSuppressBounced}
+                isOwner={!!isOwner}
               />
 
               <BaseModal

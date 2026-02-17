@@ -17,6 +17,7 @@ import {
   PaperAirplaneIcon,
   ArrowUturnLeftIcon,
   CheckCircleIcon,
+  ExclamationTriangleIcon,
 } from 'react-native-heroicons/outline';
 import { ProgressDial } from '@/components/ui/progress-dial';
 
@@ -188,6 +189,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   const sentCount = stats?.sentCount ?? 0;
   const repliedCount = stats?.repliedCount ?? 0;
   const positiveReplyCount = stats?.positiveReplyCount ?? 0;
+  const bounceCount = stats?.bounceCount ?? 0;
   const enrollmentCount = stats?.enrollmentCount ?? 0;
   const sentTotal = enrollmentCount > 0 ? enrollmentCount : 1;
 
@@ -314,6 +316,9 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
           label="Positive Reply"
           color="#10b981"
         />
+      </View>
+      <View style={{ width: STAT_COLUMN_WIDTH, alignItems: 'center' }}>
+        <StatColumn icon={ExclamationTriangleIcon} value={bounceCount} label="Bounced" color="#f59e0b" />
       </View>
     </View>
   );

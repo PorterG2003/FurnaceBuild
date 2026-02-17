@@ -1,5 +1,9 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { ProcessedMessage, Mailbox, MessageJob } from './types.js';
+import {
+  extractCandidateEmails,
+  classifyBounce,
+} from './bounce-detection/index.js';
 
 /**
  * Thread manager for creating email threads and messages
@@ -262,6 +266,31 @@ export class ThreadManager {
         .update({ state: 'stopped' })
         .eq('id', originalJob.enrollment_id);
 
+      const isCampaignReply =
+        (originalJob as any).message_type !== 'inbox_reply' &&
+        (originalJob as any).message_type !== 'inbox_forward' &&
+        (originalJob as any).message_data?.source !== 'inbox_reply' &&
+        (originalJob as any).message_data?.source !== 'inbox_forward';
+
+      if (isCampaignReply) {
+        await this.supabase.from('events').insert({
+          campaign_id: originalJob.campaign_id,
+          lead_id: originalJob.lead_id,
+          enrollment_id: originalJob.enrollment_id,
+          message_job_id: originalJob.id,
+          event_type: 'replied',
+          event_data: { detected_at: new Date().toISOString() },
+        });
+        const isPositive = (thread as any).category === 'Interested';
+        const { error: statsError } = await this.supabase.rpc('increment_campaign_stats_replied', {
+          p_campaign_id: originalJob.campaign_id,
+          p_is_positive: isPositive,
+        });
+        if (statsError) {
+          console.error(`[INBOX CHECKER] Failed to increment campaign_stats replied for campaign ${originalJob.campaign_id}:`, statsError);
+        }
+      }
+
       console.log(`Reply to original message detected and processed: message_job ${originalJob.id}, enrollment ${originalJob.enrollment_id} stopped`);
     } else {
       console.log(`Reply to reply detected and processed: added to thread ${thread.id}`);
@@ -374,36 +403,159 @@ export class ThreadManager {
   }
 
   /**
-   * Handle a bounce message
+   * Handle a bounce message: idempotency check, match to message_jobs, write events (with severity/code),
+   * update campaign_stats, narrow fallback (stop only best-guess when no match), lead suppression on hard bounce.
    */
   async handleBounce(mailbox: Mailbox, message: ProcessedMessage): Promise<void> {
-    // Try to find the original message_job by matching recipient email
-    // Bounces usually have the original recipient in the body or headers
-    const recipientEmail = message.to[0]?.address;
-    if (!recipientEmail) return;
-
-    // Find recent sent message_jobs to this recipient from this mailbox
-    const { data: recentJobs } = await this.supabase
-      .from('message_jobs')
-      .select('enrollment_id')
-      .eq('mailbox_id', mailbox.id)
-      .eq('status', 'sent')
-      .gte('sent_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()) // Last 7 days
-      .order('sent_at', { ascending: false })
-      .limit(50);
-
-    if (!recentJobs || recentJobs.length === 0) return;
-
-    // Stop enrollments (conservative approach - stop all recent enrollments from this mailbox)
-    const enrollmentIds = new Set(recentJobs.map(j => j.enrollment_id));
-    for (const enrollmentId of enrollmentIds) {
-      await this.supabase
-        .from('enrollments')
-        .update({ state: 'stopped' })
-        .eq('id', enrollmentId);
+    if (message.messageId) {
+      const { data: existingByMsgId } = await this.supabase
+        .from('events')
+        .select('id')
+        .eq('event_type', 'bounced')
+        .eq('mailbox_id', mailbox.id)
+        .filter('event_data', 'cs', { bounce_message_id: message.messageId })
+        .limit(1)
+        .maybeSingle();
+      if (existingByMsgId?.id) {
+        console.log(`[INBOX CHECKER] Bounce already processed (idempotency), skipping messageId: ${message.messageId}`);
+        return;
+      }
+    } else if (message.uid != null) {
+      const { data: existingByUid } = await this.supabase
+        .from('events')
+        .select('id')
+        .eq('event_type', 'bounced')
+        .eq('mailbox_id', mailbox.id)
+        .filter('event_data', 'cs', { bounce_uid: message.uid })
+        .limit(1)
+        .maybeSingle();
+      if (existingByUid?.id) {
+        console.log(`[INBOX CHECKER] Bounce already processed (idempotency), skipping uid: ${message.uid}`);
+        return;
+      }
     }
 
-    console.log(`Bounce detected in mailbox ${mailbox.id}, stopped ${enrollmentIds.size} enrollments`);
+    const candidateEmails = extractCandidateEmails({
+      subject: message.subject,
+      from: message.from,
+      to: message.to,
+      bodyText: message.bodyText,
+      bodyHtml: message.bodyHtml,
+      headers: message.headers,
+      messageId: message.messageId,
+      uid: message.uid,
+    });
+    if (candidateEmails.length === 0) return;
+
+    const classification = classifyBounce({ bodyText: message.bodyText, bodyHtml: message.bodyHtml });
+    const eventDataBase = {
+      detected_at: new Date().toISOString(),
+      severity: classification.severity,
+      ...(classification.smtpCode && { smtp_code: classification.smtpCode }),
+      ...(message.messageId && { bounce_message_id: message.messageId }),
+      ...(message.uid != null && { bounce_uid: message.uid }),
+    };
+
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: jobsWithLeads } = await this.supabase
+      .from('message_jobs')
+      .select('id, campaign_id, enrollment_id, lead_id, sent_at')
+      .eq('mailbox_id', mailbox.id)
+      .eq('status', 'sent')
+      .gte('sent_at', since)
+      .order('sent_at', { ascending: false })
+      .limit(100);
+
+    if (!jobsWithLeads || jobsWithLeads.length === 0) return;
+
+    const { data: account } = await this.supabase
+      .from('accounts')
+      .select('suppress_bounced_emails')
+      .eq('id', mailbox.account_id)
+      .single();
+    const suppressBouncedEmails = account?.suppress_bounced_emails !== false;
+
+    const leadIds = [...new Set(jobsWithLeads.map((j) => j.lead_id))];
+    const { data: leads } = await this.supabase
+      .from('leads')
+      .select('id, email')
+      .in('id', leadIds);
+    const leadEmailById = new Map((leads || []).map((l) => [l.id, (l.email || '').toLowerCase()]));
+
+    const candidateSet = new Set(candidateEmails);
+    const matchedJobs = jobsWithLeads.filter((j) => candidateSet.has(leadEmailById.get(j.lead_id) || ''));
+
+    const campaignIdsUpdated = new Set<string>();
+    const enrollmentsToStop: string[] = [];
+
+    if (matchedJobs.length > 0) {
+      enrollmentsToStop.push(...matchedJobs.map((j) => j.enrollment_id));
+      for (const job of matchedJobs) {
+        await this.supabase.from('events').insert({
+          campaign_id: job.campaign_id,
+          lead_id: job.lead_id,
+          enrollment_id: job.enrollment_id,
+          message_job_id: job.id,
+          mailbox_id: mailbox.id,
+          event_type: 'bounced',
+          event_data: eventDataBase,
+        });
+        if (!campaignIdsUpdated.has(job.campaign_id)) {
+          campaignIdsUpdated.add(job.campaign_id);
+          const { error } = await this.supabase.rpc('increment_campaign_stats_bounce', {
+            p_campaign_id: job.campaign_id,
+          });
+          if (error) {
+            console.error(`[INBOX CHECKER] Failed to increment campaign_stats bounce for campaign ${job.campaign_id}:`, error);
+          }
+        }
+        if (classification.severity === 'hard' && suppressBouncedEmails) {
+          const leadEmail = leadEmailById.get(job.lead_id);
+          if (leadEmail) {
+            await this.supabase.from('block_list').upsert(
+              { account_id: mailbox.account_id, value: leadEmail, type: 'email', reason: 'bounced' },
+              { onConflict: 'account_id,value,type', ignoreDuplicates: true }
+            );
+          }
+        }
+      }
+    } else {
+      const bestGuess = jobsWithLeads[0];
+      if (bestGuess) {
+        enrollmentsToStop.push(bestGuess.enrollment_id);
+        await this.supabase.from('events').insert({
+          campaign_id: bestGuess.campaign_id,
+          lead_id: bestGuess.lead_id,
+          enrollment_id: bestGuess.enrollment_id,
+          message_job_id: bestGuess.id,
+          mailbox_id: mailbox.id,
+          event_type: 'bounced',
+          event_data: { ...eventDataBase, matched: false },
+        });
+        const { error } = await this.supabase.rpc('increment_campaign_stats_bounce', {
+          p_campaign_id: bestGuess.campaign_id,
+        });
+        if (error) {
+          console.error(`[INBOX CHECKER] Failed to increment campaign_stats bounce for campaign ${bestGuess.campaign_id}:`, error);
+        }
+        if (classification.severity === 'hard' && suppressBouncedEmails) {
+          const leadEmail = leadEmailById.get(bestGuess.lead_id);
+          if (leadEmail) {
+            await this.supabase.from('block_list').upsert(
+              { account_id: mailbox.account_id, value: leadEmail, type: 'email', reason: 'bounced' },
+              { onConflict: 'account_id,value,type', ignoreDuplicates: true }
+            );
+          }
+        }
+      }
+    }
+
+    for (const enrollmentId of enrollmentsToStop) {
+      await this.supabase.from('enrollments').update({ state: 'stopped' }).eq('id', enrollmentId);
+    }
+
+    console.log(`Bounce detected in mailbox ${mailbox.id}, stopped ${enrollmentsToStop.length} enrollments, severity=${classification.severity}`);
   }
 
   /**

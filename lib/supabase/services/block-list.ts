@@ -21,13 +21,13 @@ export async function getBlockList(accountId: string): Promise<BlockListEntry[]>
 
 /**
  * Add a block list entry. Value is stored as-is (caller should normalize case if desired).
- * Enforces unique (account_id, value, type).
+ * Enforces unique (account_id, value, type). Reason defaults to 'manual' for user-added entries.
  */
 export async function addBlockEntry(
   accountId: string,
-  params: { value: string; type: 'email' | 'domain' }
+  params: { value: string; type: 'email' | 'domain'; reason?: string }
 ): Promise<BlockListEntry> {
-  const { value, type } = params;
+  const { value, type, reason = 'manual' } = params;
   const normalizedValue = value.trim().toLowerCase();
   if (!normalizedValue) {
     throw new Error('Block list value cannot be empty');
@@ -39,6 +39,7 @@ export async function addBlockEntry(
       account_id: accountId,
       value: normalizedValue,
       type,
+      reason,
     })
     .select()
     .single();

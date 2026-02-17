@@ -1,7 +1,7 @@
 /**
  * Quote utilities for reply/forward: escape HTML, block-quote, build quoted blocks.
  */
-import { getDisplayBody } from '@/lib/email';
+import { getDisplayBody } from '@/lib/email/index';
 import type { EmailMessage } from '@/lib/supabase/types';
 import { formatMessageDate } from './formatters';
 

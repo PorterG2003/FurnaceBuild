@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, ActivityIndicator } from 'react-native';
+import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { supabase } from '@/lib/supabase/client';
 import { format } from 'date-fns';
 import { DataTable, type TableColumn } from './DataTable';
@@ -66,6 +67,8 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>('emails');
+  const [emailSearchQuery, setEmailSearchQuery] = useState('');
+  const [enrollmentSearchQuery, setEnrollmentSearchQuery] = useState('');
 
   useEffect(() => {
     const loadScheduleData = async () => {
@@ -204,6 +207,23 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
         return new Date(b.next_run_at!).getTime() - new Date(a.next_run_at!).getTime(); // Newest first
     });
   }, [enrollments]);
+
+  const filterByLead = (item: { lead: { email?: string | null; name?: string | null } | null }, q: string) => {
+    if (!q.trim()) return true;
+    const query = q.toLowerCase();
+    const email = item.lead?.email?.toLowerCase() || '';
+    const name = item.lead?.name?.toLowerCase() || '';
+    return email.includes(query) || name.includes(query);
+  };
+
+  const filteredMessageJobs = useMemo(
+    () => (emailSearchQuery.trim() ? sortedMessageJobs.filter((item) => filterByLead(item, emailSearchQuery)) : sortedMessageJobs),
+    [sortedMessageJobs, emailSearchQuery]
+  );
+  const filteredEnrollments = useMemo(
+    () => (enrollmentSearchQuery.trim() ? sortedEnrollments.filter((item) => filterByLead(item, enrollmentSearchQuery)) : sortedEnrollments),
+    [sortedEnrollments, enrollmentSearchQuery]
+  );
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -453,37 +473,63 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
       {activeTab === 'emails' && (
-        <DataTable
-          title="Email Jobs"
-          items={sortedMessageJobs}
-          columns={emailColumns}
-          searchable={true}
-          searchPlaceholder="Search by lead email..."
-          searchFilter={(item, query) => {
-            const email = item.lead?.email?.toLowerCase() || '';
-            const name = item.lead?.name?.toLowerCase() || '';
-            return email.includes(query) || name.includes(query);
-          }}
-          emptyMessage="No email jobs found for this campaign"
-          getItemKey={(item) => item.id}
-        />
+        <>
+          <View className="flex-row items-center justify-between mb-4">
+            <Text className="text-lg font-instrument-semibold text-white">Email Jobs</Text>
+            <Text className="text-gray-400 font-instrument text-sm">
+              {filteredMessageJobs.length} {filteredMessageJobs.length !== 1 ? 'items' : 'item'}
+              {emailSearchQuery.trim() && ` (filtered from ${sortedMessageJobs.length} total)`}
+            </Text>
+          </View>
+          <View className="mb-4">
+            <View className="flex-row items-center bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-3 py-2">
+              <MagnifyingGlassIcon size={18} color="#6b7280" />
+              <TextInput
+                value={emailSearchQuery}
+                onChangeText={setEmailSearchQuery}
+                placeholder="Search by lead email..."
+                placeholderTextColor="#6b7280"
+                className="flex-1 ml-2 text-white font-instrument text-sm"
+              />
+            </View>
+          </View>
+          <DataTable
+            items={filteredMessageJobs}
+            columns={emailColumns}
+            emptyMessage="No email jobs found for this campaign"
+            getItemKey={(item) => item.id}
+          />
+        </>
       )}
 
       {activeTab === 'enrollments' && (
-      <DataTable
-          title="Enrollments"
-          items={sortedEnrollments}
-          columns={enrollmentColumns}
-        searchable={true}
-        searchPlaceholder="Search by lead email..."
-        searchFilter={(item, query) => {
-          const email = item.lead?.email?.toLowerCase() || '';
-          const name = item.lead?.name?.toLowerCase() || '';
-          return email.includes(query) || name.includes(query);
-        }}
-          emptyMessage="No enrollments found for this campaign"
-        getItemKey={(item) => item.id}
-      />
+        <>
+          <View className="flex-row items-center justify-between mb-4">
+            <Text className="text-lg font-instrument-semibold text-white">Enrollments</Text>
+            <Text className="text-gray-400 font-instrument text-sm">
+              {filteredEnrollments.length} {filteredEnrollments.length !== 1 ? 'items' : 'item'}
+              {enrollmentSearchQuery.trim() && ` (filtered from ${sortedEnrollments.length} total)`}
+            </Text>
+          </View>
+          <View className="mb-4">
+            <View className="flex-row items-center bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-3 py-2">
+              <MagnifyingGlassIcon size={18} color="#6b7280" />
+              <TextInput
+                value={enrollmentSearchQuery}
+                onChangeText={setEnrollmentSearchQuery}
+                placeholder="Search by lead email..."
+                placeholderTextColor="#6b7280"
+                className="flex-1 ml-2 text-white font-instrument text-sm"
+              />
+            </View>
+          </View>
+          <DataTable
+            items={filteredEnrollments}
+            columns={enrollmentColumns}
+            emptyMessage="No enrollments found for this campaign"
+            getItemKey={(item) => item.id}
+          />
+        </>
       )}
     </View>
   );

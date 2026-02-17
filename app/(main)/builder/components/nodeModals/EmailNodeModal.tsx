@@ -1,84 +1,14 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Platform } from 'react-native';
-import { CodeBracketIcon } from 'react-native-heroicons/outline';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/forms';
+import { CodeBracketIcon } from 'react-native-heroicons/outline';
 import { EmailBodyEditor } from '../EmailBodyEditor';
 import { getLeads } from '@/lib/supabase/services/leads';
-import { mergeTemplate, processSpintax, type LeadLike } from '@/lib/email';
+import { mergeTemplate, processSpintax, getLeadVariables, type LeadLike, type LeadVariable } from '@/lib/email';
 import type { Lead } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
-
-type LeadVariable = { token: string; description: string };
-
-interface VariableMenuProps {
-  variables: LeadVariable[];
-  width?: number;
-  maxHeight?: number;
-  anchorOffset?: number;
-  onSelect: (token: string) => void;
-}
-
-const VariableMenu = ({
-  variables,
-  width = 240,
-  maxHeight = 280,
-  anchorOffset = 52,
-  onSelect,
-}: VariableMenuProps) => (
-  <View
-    style={{
-      position: 'absolute',
-      top: anchorOffset,
-      right: 0,
-      width,
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.18)',
-      backgroundColor: '#141414',
-      paddingVertical: 6,
-      paddingHorizontal: 6,
-      shadowColor: '#000',
-      shadowOpacity: 0.45,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 12 },
-      elevation: 12,
-      zIndex: 200,
-      maxHeight,
-      overflow: 'hidden',
-    }}
-  >
-    <ScrollView
-      showsVerticalScrollIndicator
-      style={{ maxHeight: maxHeight - 12 }}
-      contentContainerStyle={{ paddingVertical: 4 }}
-    >
-      {variables.map((variable, index) => (
-        <TouchableOpacity
-          key={variable.token}
-          onPress={() => onSelect(variable.token)}
-          style={{
-            borderRadius: 10,
-            paddingHorizontal: 12,
-            paddingVertical: 10,
-            backgroundColor: '#262626',
-            borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.12)',
-            marginBottom: index === variables.length - 1 ? 0 : 8,
-          }}
-        >
-          <Text style={{ color: '#FFFFFF', fontSize: 12, fontFamily: 'Instrument Sans, system-ui, sans-serif', fontWeight: '600' }}>
-            {variable.token}
-          </Text>
-          <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: 3, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>
-            {variable.description}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
-  </View>
-);
 
 interface VariableInputProps {
   label: string;
@@ -88,9 +18,6 @@ interface VariableInputProps {
   multiline?: boolean;
   minHeight?: number;
   variant?: 'subject' | 'body';
-  isMenuOpen: boolean;
-  onToggleMenu: () => void;
-  onRequestCloseMenu: () => void;
   variables: LeadVariable[];
 }
 
@@ -102,11 +29,19 @@ const VariableInput = ({
   multiline = false,
   minHeight,
   variant = 'body',
-  isMenuOpen,
-  onToggleMenu,
-  onRequestCloseMenu,
   variables,
 }: VariableInputProps) => {
+  const [variableSearch, setVariableSearch] = useState('');
+
+  const filteredVariables = useMemo(() => {
+    if (!variableSearch.trim()) return variables;
+    const q = variableSearch.trim().toLowerCase();
+    return variables.filter(
+      (v) =>
+        v.token.toLowerCase().includes(q) || v.description.toLowerCase().includes(q)
+    );
+  }, [variables, variableSearch]);
+
   const handleSelectVariable = (token: string) => {
     const currentValue = value || '';
 
@@ -120,29 +55,17 @@ const VariableInput = ({
           : token;
 
     onChange(nextValue);
-    onRequestCloseMenu();
   };
 
   return (
-    <View
-      style={{
-        marginBottom: 24,
-        position: 'relative',
-        zIndex: isMenuOpen ? 30 : 1,
-      }}
-    >
+    <View style={{ marginBottom: 24 }}>
       <Text className="text-sm font-instrument-medium mb-2 text-gray-300">
         {label}
       </Text>
-      <View style={{ position: 'relative', zIndex: isMenuOpen ? 40 : 1 }}>
+      <View style={{ position: 'relative' }}>
         <TextInput
           value={value}
           onChangeText={onChange}
-          onFocus={() => {
-            if (isMenuOpen) {
-              onRequestCloseMenu();
-            }
-          }}
           placeholder={placeholder}
           placeholderTextColor="#666"
           className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
@@ -151,7 +74,7 @@ const VariableInput = ({
             backgroundColor: '#FFFFFF0D',
             color: '#FFFFFF',
             borderWidth: 1,
-            paddingRight: 64,
+            paddingRight: 52,
             textAlignVertical: multiline ? 'top' : 'center',
             ...(multiline && typeof minHeight === 'number' ? { minHeight } : {}),
           }}
@@ -159,36 +82,46 @@ const VariableInput = ({
           underlineColorAndroid="transparent"
           multiline={multiline}
         />
-        <TouchableOpacity
-          onPress={onToggleMenu}
-          style={{
-            position: 'absolute',
-            top: 7,
-            right: 7,
-            borderRadius: 12,
-            paddingHorizontal: 12,
-            paddingVertical: 8,
-            borderWidth: 1,
-            borderColor: isMenuOpen ? 'rgba(243,68,13,0.4)' : 'rgba(255,255,255,0.16)',
-            backgroundColor: isMenuOpen ? 'rgba(243,68,13,0.2)' : 'rgba(255,255,255,0.08)',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <CodeBracketIcon 
-            size={18} 
-            color={isMenuOpen ? '#F3440D' : '#FFFFFF'} 
+        <View style={{ position: 'absolute', top: 7, right: 7 }}>
+          <Select<LeadVariable>
+            items={filteredVariables}
+            getItemId={(v) => v.token}
+            getItemLabel={(v) => ({ primary: v.token, secondary: v.description })}
+            value={null}
+            onChange={(_id, item) => {
+              if (item) handleSelectVariable(item.token);
+            }}
+            searchable={true}
+            onSearchChange={setVariableSearch}
+            searchValue={variableSearch}
+            placeholder="Variables"
+            searchPlaceholder="Search variables…"
+            emptyMessage={(hasSearch) =>
+              hasSearch ? 'No matching variables.' : 'No variables.'
+            }
+            listMaxHeight={320}
+            noMargin={true}
+            size="compact"
+            dropdownMinWidth={260}
+            renderTrigger={({ open, onPress }) => (
+              <TouchableOpacity
+                onPress={onPress}
+                style={{
+                  borderRadius: 12,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderWidth: 1,
+                  borderColor: open ? 'rgba(243,68,13,0.4)' : 'rgba(255,255,255,0.16)',
+                  backgroundColor: open ? 'rgba(243,68,13,0.2)' : 'rgba(255,255,255,0.08)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <CodeBracketIcon size={18} color={open ? '#F3440D' : '#FFFFFF'} />
+              </TouchableOpacity>
+            )}
           />
-        </TouchableOpacity>
-        {isMenuOpen && (
-          <VariableMenu
-            variables={variables}
-            width={260}
-            maxHeight={320}
-            anchorOffset={52}
-            onSelect={handleSelectVariable}
-          />
-        )}
+        </View>
       </View>
     </View>
   );
@@ -244,6 +177,8 @@ interface EmailNodeModalProps {
     body_html?: string;
     body_text?: string;
     campaignId?: string;
+    customFieldKeys?: string[];
+    mappedStandardFieldKeys?: string[];
   };
 }
 
@@ -256,7 +191,6 @@ function EmailNodeModal({
   const [label, setLabel] = useState(initialData?.label || 'Send Email');
   const [subject, setSubject] = useState(initialData?.subject || '');
   const [template, setTemplate] = useState(initialData?.template || '');
-  const [openMenu, setOpenMenu] = useState<'subject' | 'template' | null>(null);
   const bodyEditorRef = useRef<{ getHTML: () => string; getText: () => string } | null>(null);
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -338,19 +272,12 @@ function EmailNodeModal({
   }, [visible, initialData?.campaignId, leadSearch, fetchLeads, debouncedSearchLeads]);
 
   const leadVariables = useMemo(
-    (): LeadVariable[] => [
-      { token: '{{email}}', description: 'Lead email address' },
-      { token: '{{name}}', description: 'Full name if available' },
-      { token: '{{first_name}}', description: 'First name (falls back to name)' },
-      { token: '{{last_name}}', description: 'Last name' },
-      { token: '{{company_name}}', description: 'Company name' },
-      { token: '{{website}}', description: 'Company website URL' },
-      { token: '{{linkedin_url}}', description: 'Lead LinkedIn profile' },
-      { token: '{{company_linkedin_url}}', description: 'Company LinkedIn profile' },
-      { token: '{{source}}', description: 'Lead source' },
-      { token: '{{custom.field_name}}', description: 'Custom field (replace field_name)' },
-    ],
-    []
+    () =>
+      getLeadVariables(
+        initialData?.mappedStandardFieldKeys,
+        initialData?.customFieldKeys
+      ),
+    [initialData?.mappedStandardFieldKeys, initialData?.customFieldKeys]
   );
 
   const handleSave = () => {
@@ -429,9 +356,6 @@ function EmailNodeModal({
             onChange={setSubject}
             placeholder="e.g. Quick idea for {{first_name}} (or leave empty to continue thread)"
             variant="subject"
-            isMenuOpen={openMenu === 'subject'}
-            onToggleMenu={() => setOpenMenu(prev => (prev === 'subject' ? null : 'subject'))}
-            onRequestCloseMenu={() => setOpenMenu(null)}
             variables={leadVariables}
           />
           <Text className="text-xs text-gray-500 mt-1.5">
@@ -459,9 +383,6 @@ function EmailNodeModal({
             multiline
             minHeight={220}
             variant="body"
-            isMenuOpen={openMenu === 'template'}
-            onToggleMenu={() => setOpenMenu(prev => (prev === 'template' ? null : 'template'))}
-            onRequestCloseMenu={() => setOpenMenu(null)}
             variables={leadVariables}
           />
         )}

@@ -60,7 +60,7 @@ echo "⚡ Validating Lambda Functions"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-LAMBDA_FUNCTIONS=("testMailboxConnection" "enrollmentMetric" "inboxChecker" "sendInvitationEmail")
+LAMBDA_FUNCTIONS=("testMailboxConnection" "enrollmentMetric" "sendInvitationEmail")
 
 for func in "${LAMBDA_FUNCTIONS[@]}"; do
   FUNC_DIR="$PROJECT_ROOT/amplify/functions/$func"

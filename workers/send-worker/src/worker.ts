@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { buildCampaignEmailContent, type LeadLike } from '@furnace/email-lib';
 import { DatabaseClient } from './database.js';
-import { sendEmail, sendReplyEmail, mergeTemplate, processSpintax } from './email.js';
+import { sendEmail, sendReplyEmail } from './email.js';
 import type { ReplyEmailOptions } from './email.js';
 import { SmtpPool } from './smtp-pool.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
@@ -205,22 +206,22 @@ export class SendWorker {
       // 2b. Get first sent message for this campaign+lead (for thread continuation)
       const threadFirst = await this.getFirstSentMessageForCampaignLead(messageJob.campaign_id, messageJob.lead_id);
 
-      // 3. Generate email content from template
-      // Pipeline: spintax → variable merge. Prefer body_html (rich) over template (legacy).
-      const subjectRaw = String(nodeConfig.subject ?? '');
-      const subjectSpun = processSpintax(subjectRaw);
-      const currentSubject = mergeTemplate(subjectSpun, lead);
-
-      const bodyRaw = typeof (nodeConfig.body_html ?? nodeConfig.template ?? nodeConfig.body) === 'string'
-        ? (nodeConfig.body_html ?? nodeConfig.template ?? nodeConfig.body)
-        : '';
-      const bodySpun = processSpintax(bodyRaw);
-      const bodyMerged = mergeTemplate(bodySpun, lead);
-      const bodyTextFromConfig = typeof nodeConfig.body_text === 'string' ? nodeConfig.body_text : null;
-
-      const isHtmlBody = /<[a-z][\s\S]*>/i.test(bodyMerged);
-      const emailBody = bodyMerged;
-      const emailBodyText = bodyTextFromConfig ?? (isHtmlBody ? null : bodyMerged);
+      // 3. Generate email content from template (shared pipeline with preview)
+      const content = buildCampaignEmailContent(
+        {
+          subject: nodeConfig.subject,
+          body_html: nodeConfig.body_html,
+          body_text: nodeConfig.body_text,
+          template: nodeConfig.template,
+          body: nodeConfig.body,
+        },
+        lead as unknown as LeadLike,
+        { deterministic: false }
+      );
+      const currentSubject = content.subject;
+      const emailBody = content.bodyMerged;
+      const isHtmlBody = content.isHtmlBody;
+      const emailBodyText = content.bodyText;
 
       // Subject: use current node's subject; if follow-up and empty, use first email's subject
       let subject: string;
@@ -233,9 +234,15 @@ export class SendWorker {
         }
         if (currentSubject.trim() === '') {
           const nc = threadFirst.message_data?.node_config;
-          const firstSubjectTemplate = (nc?.subject ?? nc?.template ?? '') as string;
-          const firstSubjectSpun = processSpintax(typeof firstSubjectTemplate === 'string' ? firstSubjectTemplate : '');
-          subject = mergeTemplate(firstSubjectSpun, lead);
+          const firstConfig = {
+            subject: (nc?.subject ?? nc?.template ?? '') as string,
+          };
+          const firstContent = buildCampaignEmailContent(
+            firstConfig,
+            lead as unknown as LeadLike,
+            { deterministic: false }
+          );
+          subject = firstContent.subject;
         } else {
           subject = currentSubject;
         }

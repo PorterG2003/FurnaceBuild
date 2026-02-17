@@ -7,20 +7,20 @@ export {
   getDisplayBody,
   type ParseEmailBodyOptions,
   type ParsedEmailBody,
-} from './parse-body.js';
+} from './parse-body';
 
 export {
   sanitizeEmailBody,
   hasResidualEncodingArtifacts,
   type SanitizeEmailBodyOptions,
-} from './sanitize-body.js';
+} from './sanitize-body';
 
-export { mergeTemplate, type LeadLike } from './mergeTemplate.js';
-export { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js';
-export { getLeadVariables, type LeadVariable } from './leadVariables.js';
+export { mergeTemplate, type LeadLike } from './mergeTemplate';
+export { processSpintax, type ProcessSpintaxOptions } from './processSpintax';
+export { getLeadVariables, type LeadVariable } from './leadVariables';
 export {
   buildCampaignEmailContent,
   type BuildCampaignEmailContentConfig,
   type BuildCampaignEmailContentResult,
   type BuildCampaignEmailContentOptions,
-} from './buildCampaignEmailContent.js';
+} from './buildCampaignEmailContent';

@@ -2,7 +2,7 @@
  * Inbox formatters: dates, file sizes, date grouping.
  */
 import type { EmailMessage } from '@/lib/supabase/types';
-import { getDisplayBody } from '@/lib/email';
+import { getDisplayBody } from '@/lib/email/index';
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

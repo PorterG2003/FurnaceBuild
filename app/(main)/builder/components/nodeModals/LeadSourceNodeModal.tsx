@@ -3,7 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, Platform, Alert, useWindowDime
 import { BaseModal } from '@/components/ui/modals';
 import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { createLeads, generateGlobalLeadId, getLeads } from '@/lib/supabase/services/leads';
+import { DataTable, type TableColumn } from '@/lib/test/campaign-flow/components/DataTable';
+import { createLeads, generateGlobalLeadId, getLeadCount, getLeads } from '@/lib/supabase/services/leads';
 import { ensureCampaignEnrollmentsForLeads } from '@/lib/supabase/services/campaigns';
 import type { LeadInsert, Lead } from '@/lib/supabase/types';
 
@@ -32,6 +33,9 @@ interface ParsedCSV {
   normalizedHeaders: string[];
   rows: Record<string, string>[];
 }
+
+const INSIGHTS_COLUMN_MIN_WIDTH = 160;
+const INSIGHTS_COLUMN_MAX_WIDTH = 240;
 
 // Simple CSV parser (handles basic CSV format)
 function parseCSV(csvText: string): ParsedCSV {
@@ -158,6 +162,7 @@ function LeadSourceNodeModal({
   const [apiKey] = useState(() => `live_${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`);
   const [isImportWizardOpen, setIsImportWizardOpen] = useState(false);
   const [dbLeads, setDbLeads] = useState<Lead[]>([]);
+  const [leadCount, setLeadCount] = useState<number | null>(null);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const { height: windowHeight } = useWindowDimensions();
 
@@ -189,10 +194,15 @@ function LeadSourceNodeModal({
             filters.bucketId = initialData.bucketId;
           }
           
-          const leads = await getLeads(filters);
+          const [count, leads] = await Promise.all([
+            getLeadCount(filters),
+            getLeads({ ...filters, limit: 200 }),
+          ]);
+          setLeadCount(count);
           setDbLeads(leads);
         } catch (error) {
           console.error('Failed to fetch leads for insights:', error);
+          setLeadCount(null);
           setDbLeads([]);
         } finally {
           setIsLoadingLeads(false);
@@ -212,7 +222,7 @@ function LeadSourceNodeModal({
     // Convert Lead objects to Record<string, string> format
     return dbLeads.map(lead => {
       const record: Record<string, string> = {};
-      
+
       // Map all lead fields from database schema
       if (lead.email) record.email = lead.email;
       if (lead.name) record.name = lead.name;
@@ -224,7 +234,7 @@ function LeadSourceNodeModal({
       if (lead.company_linkedin_url) record.company_linkedin_url = lead.company_linkedin_url;
       if (lead.source) record.source = lead.source;
       if (lead.status) record.status = lead.status;
-      
+
       // Add any custom lead data if it exists
       if (lead.custom_lead_data && typeof lead.custom_lead_data === 'object') {
         Object.entries(lead.custom_lead_data).forEach(([key, value]) => {
@@ -233,7 +243,7 @@ function LeadSourceNodeModal({
           }
         });
       }
-      
+
       return record;
     });
   }, [dbLeads, csvRows]);
@@ -1092,63 +1102,45 @@ function LeadSourceNodeModal({
         <>
           <View className="p-4 border border-white/10 rounded-xl bg-white/5">
             <Text className="text-sm text-white font-instrument-medium">
-              {insightSummary.totalRows} lead{insightSummary.totalRows === 1 ? '' : 's'} {dbLeads.length > 0 ? 'in campaign' : 'imported in latest upload'}
+              {dbLeads.length > 0
+                ? `${leadCount ?? dbLeads.length} lead${(leadCount ?? dbLeads.length) === 1 ? '' : 's'} in campaign`
+                : `${insightSummary.totalRows} lead${insightSummary.totalRows === 1 ? '' : 's'} imported in latest upload`}
             </Text>
             <Text className="text-xs text-gray-400 mt-2">
               Showing field coverage across {dbLeads.length > 0 ? 'all' : 'imported'} records.
             </Text>
           </View>
 
-          <View className="p-4 border border-white/10 rounded-xl bg-white/5">
-            <Text className="text-xs text-gray-400 uppercase tracking-[0.2em] mb-2">
-              Top Fields
-            </Text>
-            {insightSummary.fields.length > 0 ? (
-              insightSummary.fields.map(field => (
-                <View key={field.field} className="flex-row items-center justify-between py-1.5">
-                  <Text className="text-sm text-gray-300">{field.field}</Text>
-                  <Text className="text-sm text-white font-instrument-medium">{field.percentage}%</Text>
-                </View>
-              ))
-            ) : (
-              <Text className="text-sm text-gray-400">No fields detected.</Text>
+          <DataTable
+            items={leadsForInsights.map((row, i) => ({ ...row, __rowKey: `row-${i}` })) as (Record<string, string> & { __rowKey: string })[]}
+            columns={insightSummary.fields.map(
+              (f): TableColumn<Record<string, string> & { __rowKey: string }> => {
+                const filled = Math.round(insightSummary.totalRows * (f.percentage / 100));
+                const empty = insightSummary.totalRows - filled;
+                const minFromLabel = Math.ceil(f.field.length * 8);
+                const minWidth = Math.min(
+                  INSIGHTS_COLUMN_MAX_WIDTH,
+                  Math.max(INSIGHTS_COLUMN_MIN_WIDTH, minFromLabel)
+                );
+                return {
+                  key: f.field,
+                  label: f.field,
+                  flex: 0,
+                  minWidth,
+                  maxWidth: INSIGHTS_COLUMN_MAX_WIDTH,
+                  headerStats: { filled, empty },
+                  render: (item) => (
+                    <Text className="text-white font-instrument text-sm" numberOfLines={1}>
+                      {item[f.field] ?? '—'}
+                    </Text>
+                  ),
+                };
+              }
             )}
-          </View>
-
-          <View className="p-4 border border-white/10 rounded-xl bg-white/5">
-            <Text className="text-xs text-gray-400 uppercase tracking-[0.2em] mb-2">
-              Lead Examples
-            </Text>
-            <View style={{ gap: 12 }}>
-              {insightSummary.examples.map((example, index) => (
-                <View
-                  key={index}
-                  style={{
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.12)',
-                    borderRadius: 12,
-                    padding: 12,
-                    backgroundColor: 'rgba(255,255,255,0.04)',
-                  }}
-                >
-                  {Object.entries(example)
-                    .map(([key, value]) => (
-                      <View key={key} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                        <Text style={{ color: '#9CA3AF', fontSize: 12, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>
-                          {key}
-                        </Text>
-                        <Text
-                          style={{ color: '#FFFFFF', fontSize: 12, fontFamily: 'Instrument Sans, system-ui, sans-serif', maxWidth: 200 }}
-                          numberOfLines={1}
-                        >
-                          {value || '—'}
-              </Text>
-                      </View>
-                    ))}
-                </View>
-              ))}
-            </View>
-          </View>
+            itemsPerPage={20}
+            emptyMessage="No sample records"
+            getItemKey={(item) => item.__rowKey}
+          />
         </>
       )}
     </View>

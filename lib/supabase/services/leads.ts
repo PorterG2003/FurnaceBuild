@@ -87,6 +87,36 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
   return data || [];
 }
 
+export interface LeadCountFilters {
+  campaignId?: string;
+  bucketId?: string;
+}
+
+/**
+ * Get total lead count with optional filters (count-only query, no row limit).
+ */
+export async function getLeadCount(filters?: LeadCountFilters): Promise<number> {
+  let query = supabase
+    .from('leads')
+    .select('id', { count: 'exact', head: true });
+
+  if (filters?.campaignId) {
+    query = query.eq('campaign_id', filters.campaignId);
+  }
+
+  if (filters?.bucketId) {
+    query = query.eq('bucket_id', filters.bucketId);
+  }
+
+  const { count, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch lead count: ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
 /**
  * Get a single lead by ID
  */

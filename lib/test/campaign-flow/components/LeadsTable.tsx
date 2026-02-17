@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { View, Text } from 'react-native';
+import { useState, useMemo } from 'react';
+import { View, Text, TextInput } from 'react-native';
+import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { DataTable, type TableColumn } from './DataTable';
 import { LeadActivityModal } from './LeadActivityModal';
 
@@ -20,6 +21,16 @@ interface LeadsTableProps {
 
 export function LeadsTable({ leads, loading, campaignId }: LeadsTableProps) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredLeads = useMemo(() => {
+    if (!searchQuery.trim()) return leads;
+    const q = searchQuery.toLowerCase();
+    return leads.filter(
+      (lead) =>
+        lead.email.toLowerCase().includes(q) || (lead.name || '').toLowerCase().includes(q)
+    );
+  }, [leads, searchQuery]);
 
   const getStateBadge = (state: string | null) => {
     if (!state) {
@@ -97,17 +108,28 @@ export function LeadsTable({ leads, loading, campaignId }: LeadsTableProps) {
 
   return (
     <>
+      <View className="flex-row items-center justify-between mb-4">
+        <Text className="text-lg font-instrument-semibold text-white">Leads</Text>
+        <Text className="text-gray-400 font-instrument text-sm">
+          {filteredLeads.length} {filteredLeads.length !== 1 ? 'items' : 'item'}
+          {searchQuery.trim() && ` (filtered from ${leads.length} total)`}
+        </Text>
+      </View>
+      <View className="mb-4">
+        <View className="flex-row items-center bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-3 py-2">
+          <MagnifyingGlassIcon size={18} color="#6b7280" />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search by email or name..."
+            placeholderTextColor="#6b7280"
+            className="flex-1 ml-2 text-white font-instrument text-sm"
+          />
+        </View>
+      </View>
       <DataTable
-        title="Leads"
-        items={leads}
+        items={filteredLeads}
         columns={columns}
-        searchable={true}
-        searchPlaceholder="Search by email or name..."
-        searchFilter={(lead, query) => {
-          const email = lead.email.toLowerCase();
-          const name = (lead.name || '').toLowerCase();
-          return email.includes(query) || name.includes(query);
-        }}
         loading={loading}
         emptyMessage="No leads found"
         onRowPress={(lead) => setSelectedLead(lead)}

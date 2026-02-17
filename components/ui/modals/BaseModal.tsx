@@ -8,8 +8,10 @@ interface BaseModalProps {
   description?: string;
   children?: React.ReactNode;
   footer?: React.ReactNode;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'full';
   maxHeight?: number;
+  /** When set, modal has a fixed height (min and max). Use with maxHeight for consistent size. */
+  height?: number;
   /** When true, omits the content area. Use for modals with only title, description, and footer. */
   compact?: boolean;
 }
@@ -22,6 +24,7 @@ const maxWidthClasses = {
   '2xl': 'max-w-2xl',
   '3xl': 'max-w-3xl',
   '4xl': 'max-w-4xl',
+  full: 'max-w-[95vw]',
 };
 
 export function BaseModal({
@@ -33,8 +36,14 @@ export function BaseModal({
   footer,
   maxWidth = 'md',
   maxHeight,
+  height,
   compact = false,
 }: BaseModalProps) {
+  const contentHeight = height ?? maxHeight;
+  const containerStyle = contentHeight
+    ? { maxHeight: contentHeight, minHeight: height ?? 320 }
+    : {};
+
   return (
     <Modal
       visible={visible}
@@ -53,7 +62,7 @@ export function BaseModal({
           <Pressable onPress={(e) => e.stopPropagation()} style={{ alignSelf: 'stretch', alignItems: 'center' }}>
             <View
               className={`bg-[#1A1A1A] rounded-2xl border border-[#2A2A2A] w-full ${maxWidthClasses[maxWidth]}`}
-              style={maxHeight ? { maxHeight, minHeight: 320 } : {}}
+              style={containerStyle}
             >
             {/* Header */}
             <View className="flex-row items-start justify-between p-6 border-b border-[#2A2A2A]">
@@ -79,9 +88,9 @@ export function BaseModal({
             {!compact && (
               <View
                 className="p-6"
-                style={maxHeight ? { flexGrow: 1, flexShrink: 1, minHeight: 0 } : undefined}
+                style={contentHeight ? { flexGrow: 1, flexShrink: 1, minHeight: 0 } : undefined}
               >
-                {maxHeight ? (
+                {contentHeight ? (
                   <ScrollView
                     style={{ flex: 1 }}
                     contentContainerStyle={{ paddingBottom: footer ? 12 : 0 }}

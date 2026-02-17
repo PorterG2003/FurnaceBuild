@@ -31,6 +31,8 @@ interface SelectPropsBase<T> {
   getItemColor?: (item: T) => string | null | undefined;
   /** When getItemColor is used: 'dot' = small dot indicator (default); 'tint' = full-row translucent background + border. */
   itemColorVariant?: 'dot' | 'tint';
+  /** Optional custom trigger. When provided, replaces the default trigger; use for icon buttons etc. */
+  renderTrigger?: (props: { open: boolean; onPress: () => void }) => React.ReactNode;
 }
 
 export interface SelectPropsSearchable<T> extends SelectPropsBase<T> {
@@ -114,6 +116,7 @@ export function Select<T>({
   dropdownMaxWidth,
   getItemColor,
   itemColorVariant = 'dot',
+  renderTrigger,
 }: SelectProps<T>) {
   const sz = sizeStyles[size];
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -230,55 +233,67 @@ export function Select<T>({
           {label}
         </Text>
       )}
-      <TouchableOpacity
-        ref={triggerRef}
-        onLayout={() => {
-          if (open) triggerRef.current?.measureInWindow((x, y, w, h) => setTriggerLayout({ x, y, w, h }));
-        }}
-        onPress={openPopover}
-        activeOpacity={0.8}
-        style={[
-          itemColorVariant === 'tint' && triggerColor
-            ? {
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                ...sz.trigger,
-                backgroundColor: hexToTranslucentBackground(triggerColor),
-                borderWidth: 1,
-                borderColor: `${triggerColor}66`,
-              }
-            : { ...triggerStyle, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', ...sz.trigger },
-        ]}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 10 }}>
-          {triggerColor && itemColorVariant === 'dot' ? (
-            <View
-              style={{
-                width: 12,
-                height: 12,
-                borderRadius: 6,
-                backgroundColor: triggerColor,
-                borderWidth: 1,
-                borderColor: '#3A3A3A',
-                marginRight: 8,
-              }}
-            />
-          ) : null}
-          <Text
-            className={`${sz.triggerTextClassName} text-white`}
-            style={{
-              fontFamily: 'Instrument Sans, system-ui, sans-serif',
-              flex: 1,
-              color: selectedLabel ? '#FFFFFF' : '#666666',
-            }}
-            numberOfLines={1}
-          >
-            {displayText}
-          </Text>
+      {renderTrigger ? (
+        <View
+          ref={triggerRef}
+          onLayout={() => {
+            if (open) triggerRef.current?.measureInWindow((x, y, w, h) => setTriggerLayout({ x, y, w, h }));
+          }}
+          collapsable={false}
+        >
+          {renderTrigger({ open, onPress: openPopover })}
         </View>
-        <ChevronDownIcon size={sz.chevronSize} color="#9CA3AF" />
-      </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          ref={triggerRef}
+          onLayout={() => {
+            if (open) triggerRef.current?.measureInWindow((x, y, w, h) => setTriggerLayout({ x, y, w, h }));
+          }}
+          onPress={openPopover}
+          activeOpacity={0.8}
+          style={[
+            itemColorVariant === 'tint' && triggerColor
+              ? {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  ...sz.trigger,
+                  backgroundColor: hexToTranslucentBackground(triggerColor),
+                  borderWidth: 1,
+                  borderColor: `${triggerColor}66`,
+                }
+              : { ...triggerStyle, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', ...sz.trigger },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 10 }}>
+            {triggerColor && itemColorVariant === 'dot' ? (
+              <View
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: 6,
+                  backgroundColor: triggerColor,
+                  borderWidth: 1,
+                  borderColor: '#3A3A3A',
+                  marginRight: 8,
+                }}
+              />
+            ) : null}
+            <Text
+              className={`${sz.triggerTextClassName} text-white`}
+              style={{
+                fontFamily: 'Instrument Sans, system-ui, sans-serif',
+                flex: 1,
+                color: selectedLabel ? '#FFFFFF' : '#666666',
+              }}
+              numberOfLines={1}
+            >
+              {displayText}
+            </Text>
+          </View>
+          <ChevronDownIcon size={sz.chevronSize} color="#9CA3AF" />
+        </TouchableOpacity>
+      )}
 
       <Modal
         visible={open}

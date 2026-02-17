@@ -1,66 +1,77 @@
 import { useState, useMemo, ReactNode } from 'react';
-import { View, Text, Pressable, TextInput, ScrollView } from 'react-native';
-import { ChevronUpIcon, ChevronDownIcon, MagnifyingGlassIcon } from 'react-native-heroicons/outline';
+import { View, Text, Pressable, ScrollView } from 'react-native';
+import { ChevronUpIcon, ChevronDownIcon } from 'react-native-heroicons/outline';
+import { Checkbox } from '@/components/ui/Checkbox';
+import { Skeleton } from '@/components/ui/feedback';
+import { Tooltip } from '@/components/ui/Tooltip';
+
+/** Extra padding on the left of the first column and right of the last column so content isn't flush to the table edges. */
+const OUTER_EDGE_PADDING_X = 24;
 
 export interface TableColumn<T> {
   key: string;
   label: string;
-  minWidth?: number; // Minimum width in pixels
-  flex?: number; // Flex value (defaults to 1 if not specified)
+  minWidth?: number;
+  maxWidth?: number;
+  flex?: number;
   sortable?: boolean;
-  sortValue?: (item: T) => string | number; // Function to extract sortable value
+  sortValue?: (item: T) => string | number;
   render: (item: T) => ReactNode;
+  /** When set, show a filled/empty bar in the header and a tooltip on hover with counts and percentages. */
+  headerStats?: { filled: number; empty: number };
+  /** When set with headerStats, use this fixed width for the bar (ensures consistent bar width and avoids overflow). */
+  headerStatsBarWidth?: number;
 }
 
 interface DataTableProps<T> {
-  title: string;
   items: T[];
   columns: TableColumn<T>[];
-  searchable?: boolean;
-  searchPlaceholder?: string;
-  searchFilter?: (item: T, query: string) => boolean;
   itemsPerPage?: number;
   loading?: boolean;
   emptyMessage?: string;
   onRowPress?: (item: T) => void;
   getItemKey: (item: T) => string;
+  /** When true, show checkbox column and allow row selection. Requires selectedKeys and onSelectionChange. */
+  selectable?: boolean;
+  selectedKeys?: Set<string>;
+  onSelectionChange?: (keys: Set<string>) => void;
+  /** When false, show all sorted items and hide pagination UI. Default true. */
+  pagination?: boolean;
+  /** When provided and there are no items, render this instead of emptyMessage. */
+  renderEmpty?: () => ReactNode;
+  /** When true, columns share width equally (flex: 1 when no column.flex). When false, columns use only minWidth/content. Default false. */
+  equalColumnWidths?: boolean;
 }
 
 type SortDirection = 'asc' | 'desc';
 
 export function DataTable<T>({
-  title,
   items,
   columns,
-  searchable = false,
-  searchPlaceholder = 'Search...',
-  searchFilter,
   itemsPerPage = 20,
   loading = false,
   emptyMessage = 'No items found',
   onRowPress,
   getItemKey,
+  selectable = false,
+  selectedKeys,
+  onSelectionChange,
+  pagination: paginationEnabled = true,
+  renderEmpty,
+  equalColumnWidths = false,
 }: DataTableProps<T>) {
-  const [searchQuery, setSearchQuery] = useState('');
   const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [tableContainerWidth, setTableContainerWidth] = useState<number>(0);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Filter items based on search query
-  const filteredItems = useMemo(() => {
-    if (!searchable || !searchQuery.trim() || !searchFilter) return items;
-    const query = searchQuery.toLowerCase();
-    return items.filter((item) => searchFilter(item, query));
-  }, [items, searchQuery, searchable, searchFilter]);
-
-  // Sort items
   const sortedItems = useMemo(() => {
-    if (!sortColumn) return filteredItems;
+    if (!sortColumn) return items;
 
     const column = columns.find((col) => col.key === sortColumn);
-    if (!column || !column.sortable || !column.sortValue) return filteredItems;
+    if (!column || !column.sortable || !column.sortValue) return items;
 
-    const sorted = [...filteredItems].sort((a, b) => {
+    const sorted = [...items].sort((a, b) => {
       const aValue = column.sortValue!(a);
       const bValue = column.sortValue!(b);
 
@@ -70,14 +81,59 @@ export function DataTable<T>({
     });
 
     return sorted;
-  }, [filteredItems, sortColumn, sortDirection, columns]);
+  }, [items, sortColumn, sortDirection, columns]);
 
-  // Paginate items
-  const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
-  const paginatedItems = useMemo(() => {
+  const totalPages = paginationEnabled
+    ? Math.max(1, Math.ceil(sortedItems.length / itemsPerPage))
+    : 1;
+
+  const visibleItems = useMemo(() => {
+    if (!paginationEnabled) return sortedItems;
     const start = (currentPage - 1) * itemsPerPage;
     return sortedItems.slice(start, start + itemsPerPage);
-  }, [sortedItems, currentPage, itemsPerPage]);
+  }, [paginationEnabled, sortedItems, currentPage, itemsPerPage]);
+
+  const allSelected =
+    selectable &&
+    visibleItems.length > 0 &&
+    selectedKeys != null &&
+    visibleItems.every((item) => selectedKeys.has(getItemKey(item)));
+
+  const someSelected =
+    selectable &&
+    selectedKeys != null &&
+    visibleItems.some((item) => selectedKeys.has(getItemKey(item))) &&
+    !allSelected;
+
+  const toggleSelectAll = () => {
+    if (!selectable || !onSelectionChange || selectedKeys == null) return;
+    const visibleKeys = new Set(visibleItems.map(getItemKey));
+    if (allSelected) {
+      const next = new Set(selectedKeys);
+      visibleKeys.forEach((k) => next.delete(k));
+      onSelectionChange(next);
+    } else {
+      const next = new Set(selectedKeys);
+      visibleKeys.forEach((k) => next.add(k));
+      onSelectionChange(next);
+    }
+  };
+
+  const getColumnFlex = (column: TableColumn<T>) =>
+    column.flex !== undefined ? column.flex : equalColumnWidths ? 1 : 0;
+
+  const minOfColumnMinWidths = useMemo(() => {
+    const widths = columns.map((c) => c.minWidth).filter((w): w is number => w != null);
+    return widths.length > 0 ? Math.min(...widths) : undefined;
+  }, [columns]);
+
+  const toggleRow = (key: string) => {
+    if (!selectable || !onSelectionChange || selectedKeys == null) return;
+    const next = new Set(selectedKeys);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    onSelectionChange(next);
+  };
 
   const handleSort = (columnKey: string) => {
     const column = columns.find((col) => col.key === columnKey);
@@ -128,75 +184,221 @@ export function DataTable<T>({
     );
   };
 
-  if (loading) {
+  const HeaderCellWithStats = ({ column, index, isFirst, isLast, minOfColumnMinWidths: minMinW }: {
+    column: TableColumn<T>;
+    index: number;
+    isFirst: boolean;
+    isLast: boolean;
+    minOfColumnMinWidths?: number;
+  }) => {
+    const minOfColumnMinWidths = minMinW;
+    const cellFlex = getColumnFlex(column);
+    const stats = column.headerStats;
+    const total = stats ? stats.filled + stats.empty : 0;
+    const filledPct = total > 0 ? Math.round((stats!.filled / total) * 100) : 0;
+    const emptyPct = total > 0 ? 100 - filledPct : 0;
+
+    const cellPaddingH = 24;
+    const fullBarWidth =
+      minOfColumnMinWidths != null
+        ? Math.max(0, minOfColumnMinWidths - cellPaddingH)
+        : column.minWidth != null
+          ? Math.max(0, column.minWidth - cellPaddingH)
+          : undefined;
+    const barWidth =
+      column.headerStatsBarWidth ??
+      (fullBarWidth != null ? Math.floor(fullBarWidth / 2) : undefined);
+    const bar = stats && total > 0 && (
+      <View
+        style={{
+          width: barWidth,
+          marginRight: 8,
+          flexDirection: 'row',
+          height: 4,
+          borderRadius: 2,
+          overflow: 'hidden',
+          backgroundColor: '#2A2A2A',
+        }}
+      >
+        <View style={{ flex: stats.filled, backgroundColor: '#22c55e' }} />
+        <View style={{ flex: stats.empty, backgroundColor: '#ef4444' }} />
+      </View>
+    );
+
+    const tooltipContent =
+      stats && total > 0 ? (
+        <>
+          <Text className="text-white font-instrument text-xs">
+            {stats.filled} filled ({filledPct}%)
+          </Text>
+          <Text className="text-gray-400 font-instrument text-xs mt-0.5">
+            {stats.empty} empty ({emptyPct}%)
+          </Text>
+        </>
+      ) : null;
+
+    const labelContent =
+      stats && total > 0 && tooltipContent ? (
+        <Tooltip content={tooltipContent} placement="top">
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <SortButton columnKey={column.key} label={column.label} />
+          </View>
+        </Tooltip>
+      ) : (
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <SortButton columnKey={column.key} label={column.label} />
+        </View>
+      );
+
     return (
-      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6">
-        <Text className="text-gray-400 font-instrument text-sm">Loading...</Text>
+      <View
+        className="px-2 py-2"
+        style={{
+          minWidth: column.minWidth,
+          maxWidth: column.maxWidth,
+          flex: cellFlex,
+          paddingLeft: !selectable && isFirst ? OUTER_EDGE_PADDING_X : undefined,
+          paddingRight: isLast ? OUTER_EDGE_PADDING_X : 16,
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          minHeight: 44,
+        }}
+      >
+        {labelContent}
+        {bar ?? <View style={{ height: 4 }} />}
+      </View>
+    );
+  };
+
+  if (loading) {
+    const skeletonColumnCount = columns.length + (selectable ? 1 : 0);
+    const skeletonRowCount = 6;
+    return (
+      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
+        <View className="flex-row border-b border-[#2A2A2A] bg-[#1F1F1F]">
+          {Array.from({ length: skeletonColumnCount }).map((_, i) => (
+            <View
+              key={i}
+              className="px-2 py-2 justify-center"
+              style={{
+                width: i === 0 && selectable ? 56 : undefined,
+                flex: i === 0 && selectable ? 0 : equalColumnWidths ? 1 : 0,
+                minWidth: i === 0 && selectable ? undefined : equalColumnWidths ? undefined : 80,
+                paddingLeft: i === 0 ? OUTER_EDGE_PADDING_X : undefined,
+                paddingRight: i === skeletonColumnCount - 1 ? OUTER_EDGE_PADDING_X : undefined,
+              }}
+            >
+              <Skeleton style={{ height: 14, width: i === 0 && selectable ? 20 : 70, borderRadius: 4 }} />
+            </View>
+          ))}
+        </View>
+        {Array.from({ length: skeletonRowCount }).map((_, rowIndex) => (
+          <View
+            key={rowIndex}
+            className={`flex-row border-b border-[#2A2A2A] ${rowIndex === skeletonRowCount - 1 ? 'border-b-0' : ''}`}
+            style={{ minHeight: 48 }}
+          >
+            {Array.from({ length: skeletonColumnCount }).map((_, colIndex) => (
+              <View
+                key={colIndex}
+                className="px-2 py-2 justify-center items-center"
+                style={{
+                  width: colIndex === 0 && selectable ? 56 : undefined,
+                  flex: colIndex === 0 && selectable ? 0 : equalColumnWidths ? 1 : 0,
+                  minWidth: colIndex === 0 && selectable ? undefined : equalColumnWidths ? undefined : 80,
+                  paddingLeft: colIndex === 0 ? OUTER_EDGE_PADDING_X : undefined,
+                  paddingRight: colIndex === skeletonColumnCount - 1 ? OUTER_EDGE_PADDING_X : undefined,
+                }}
+              >
+                <Skeleton
+                  style={{
+                    height: 14,
+                    width: colIndex === 0 && selectable ? 20 : 60 + (colIndex % 3) * 20,
+                    borderRadius: 4,
+                  }}
+                />
+              </View>
+            ))}
+          </View>
+        ))}
       </View>
     );
   }
 
   return (
-    <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6">
-      <View className="flex-row items-center justify-between mb-4">
-        <Text className="text-lg font-instrument-semibold text-white">{title}</Text>
-        <Text className="text-gray-400 font-instrument text-sm">
-          {sortedItems.length} {sortedItems.length !== 1 ? 'items' : 'item'}
-          {searchQuery && ` (filtered from ${items.length} total)`}
-        </Text>
-      </View>
-
-      {/* Search */}
-      {searchable && (
-        <View className="mb-4">
-          <View className="flex-row items-center bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-3 py-2">
-            <MagnifyingGlassIcon size={18} color="#6b7280" />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder={searchPlaceholder}
-              placeholderTextColor="#6b7280"
-              className="flex-1 ml-2 text-white font-instrument text-sm"
-            />
-          </View>
-        </View>
-      )}
-
-      {/* Table */}
-      <View>
-        {/* Table Header */}
-        <View className="flex-row border-b border-[#2A2A2A] pb-3 mb-4">
-          {columns.map((column, index) => (
-            <View
-              key={column.key}
-              style={{
-                minWidth: column.minWidth,
-                flex: column.flex !== undefined ? column.flex : 1,
-                paddingRight: index < columns.length - 1 ? 16 : 0,
-              }}
-            >
-              <SortButton columnKey={column.key} label={column.label} />
+    <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
+      <View
+        style={{ width: '100%' }}
+        onLayout={(e) => setTableContainerWidth(e.nativeEvent.layout.width)}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={true}
+          contentContainerStyle={tableContainerWidth > 0 ? { minWidth: tableContainerWidth } : undefined}
+        >
+          <View
+            className="overflow-hidden"
+            style={tableContainerWidth > 0 ? { minWidth: tableContainerWidth } : undefined}
+          >
+            {/* Table Header */}
+            <View className="flex-row border-b border-[#2A2A2A] bg-[#1F1F1F]">
+          {selectable && (
+            <View className="px-2 py-2 justify-center items-center" style={{ width: 56, paddingLeft: OUTER_EDGE_PADDING_X }}>
+              <Checkbox
+                checked={allSelected}
+                indeterminate={someSelected}
+                onPress={toggleSelectAll}
+              />
             </View>
+          )}
+          {columns.map((column, index) => (
+            <HeaderCellWithStats
+              key={column.key}
+              column={column}
+              index={index}
+              isFirst={index === 0}
+              isLast={index === columns.length - 1}
+              minOfColumnMinWidths={minOfColumnMinWidths}
+            />
           ))}
         </View>
 
         {/* Table Rows */}
-        {paginatedItems.length === 0 ? (
+        {visibleItems.length === 0 ? (
           <View className="py-12 items-center">
-            <Text className="text-gray-500 font-instrument text-sm">{emptyMessage}</Text>
+            {renderEmpty ? renderEmpty() : (
+              <Text className="text-gray-500 font-instrument text-sm">{emptyMessage}</Text>
+            )}
           </View>
         ) : (
-          <View className="gap-3">
-            {paginatedItems.map((item) => {
+          <>
+            {visibleItems.map((item, rowIndex) => {
+              const key = getItemKey(item);
+              const isSelected = selectable && selectedKeys != null && selectedKeys.has(key);
+              const isLastRow = rowIndex === visibleItems.length - 1;
               const RowContent = (
-                <View className="flex-row items-center bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-4 py-3">
+                <View
+                  className={`flex-row items-center border-b border-[#2A2A2A] ${isLastRow ? 'border-b-0' : ''} ${isSelected ? 'bg-[#1F1F1F]' : ''}`}
+                  style={{ minHeight: 48 }}
+                >
+                  {selectable && (
+                    <View className="px-2 py-2 justify-center items-center" style={{ width: 56, paddingLeft: OUTER_EDGE_PADDING_X }}>
+                      <Checkbox
+                        checked={selectedKeys?.has(key) ?? false}
+                        onPress={() => toggleRow(key)}
+                      />
+                    </View>
+                  )}
                   {columns.map((column, index) => (
                     <View
                       key={column.key}
+                      className="px-2 py-2 justify-center"
                       style={{
                         minWidth: column.minWidth,
-                        flex: column.flex !== undefined ? column.flex : 1,
-                        paddingRight: index < columns.length - 1 ? 16 : 0,
+                        maxWidth: column.maxWidth,
+                        flex: getColumnFlex(column),
+                        paddingLeft: !selectable && index === 0 ? OUTER_EDGE_PADDING_X : undefined,
+                        paddingRight: index < columns.length - 1 ? 16 : OUTER_EDGE_PADDING_X,
                       }}
                     >
                       {column.render(item)}
@@ -208,24 +410,26 @@ export function DataTable<T>({
               if (onRowPress) {
                 return (
                   <Pressable
-                    key={getItemKey(item)}
+                    key={key}
                     onPress={() => onRowPress(item)}
-                    className="active:opacity-80 active:border-[#3A3A3A]"
+                    className="active:opacity-80"
                   >
                     {RowContent}
                   </Pressable>
                 );
               }
 
-              return <View key={getItemKey(item)}>{RowContent}</View>;
+              return <View key={key}>{RowContent}</View>;
             })}
-          </View>
+          </>
         )}
+          </View>
+        </ScrollView>
       </View>
 
       {/* Pagination */}
-      {totalPages > 0 && (
-        <View className="flex-row items-center justify-between mt-6 pt-4 border-t border-[#2A2A2A]">
+      {paginationEnabled && totalPages > 1 && (
+        <View className="flex-row items-center justify-between mt-4 pt-4 px-6 pb-4 border-t border-[#2A2A2A]">
           <Pressable
             onPress={() => setCurrentPage(Math.max(1, currentPage - 1))}
             disabled={currentPage === 1}

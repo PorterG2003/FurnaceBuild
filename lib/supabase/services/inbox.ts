@@ -1,6 +1,6 @@
 import { supabase } from '../client';
 import type { EmailThread, EmailMessage } from '../types';
-import { getDisplayBody } from '@/lib/email';
+import { getDisplayBody } from '@/lib/email/index';
 
 /** Attachment metadata stored on email_messages */
 export interface AttachmentMeta {

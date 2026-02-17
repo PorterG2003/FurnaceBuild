@@ -6,7 +6,7 @@ import { Select } from '@/components/ui/forms';
 import { CodeBracketIcon, EyeIcon } from 'react-native-heroicons/outline';
 import { EmailBodyEditor } from '../EmailBodyEditor';
 import { EmailPreviewModal } from './EmailPreviewModal';
-import { getLeadVariables, type LeadVariable } from '@/lib/email';
+import { getLeadVariables, type LeadVariable } from '@/lib/email/index';
 
 interface VariableInputProps {
   label: string;

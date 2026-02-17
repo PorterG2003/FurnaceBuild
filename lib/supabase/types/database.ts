@@ -54,6 +54,7 @@ export interface Database {
           id: string;
           name: string;
           jitter_percentage: number;
+          suppress_bounced_emails: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -61,6 +62,7 @@ export interface Database {
           id?: string;
           name: string;
           jitter_percentage?: number;
+          suppress_bounced_emails?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -68,6 +70,7 @@ export interface Database {
           id?: string;
           name?: string;
           jitter_percentage?: number;
+          suppress_bounced_emails?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -455,6 +458,7 @@ export interface Database {
           account_id: string;
           value: string;
           type: 'email' | 'domain';
+          reason: string | null;
           created_at: string | null;
         };
         Insert: {
@@ -462,6 +466,7 @@ export interface Database {
           account_id: string;
           value: string;
           type: 'email' | 'domain';
+          reason?: string | null;
           created_at?: string | null;
         };
         Update: {
@@ -469,6 +474,7 @@ export interface Database {
           account_id?: string;
           value?: string;
           type?: 'email' | 'domain';
+          reason?: string | null;
           created_at?: string | null;
         };
       };

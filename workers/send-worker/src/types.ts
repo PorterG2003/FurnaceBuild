@@ -10,6 +10,15 @@
 
 export type MessageType = 'campaign' | 'inbox_reply' | 'inbox_forward';
 
+/**
+ * True if this job is a campaign send (scheduler-created). False for inbox_reply/inbox_forward.
+ * Use this instead of ad-hoc checks so campaign vs manual is defined in one place.
+ */
+export function isCampaignMessageJob(job: { message_type?: MessageType | null }): boolean {
+  const t = job.message_type;
+  return t !== 'inbox_reply' && t !== 'inbox_forward';
+}
+
 export interface MessageJob {
   id: string;
   enrollment_id: string;

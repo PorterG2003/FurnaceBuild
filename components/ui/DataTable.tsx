@@ -476,4 +476,3 @@ export function DataTable<T>({
     </View>
   );
 }
-

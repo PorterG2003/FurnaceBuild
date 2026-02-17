@@ -4,6 +4,7 @@ import { sendEmail, sendReplyEmail, mergeTemplate, processSpintax } from './emai
 import type { ReplyEmailOptions } from './email.js';
 import { SmtpPool } from './smtp-pool.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
+import { isCampaignMessageJob } from './types.js';
 
 export interface WorkerConfig {
   supabase: SupabaseClient;
@@ -109,19 +110,13 @@ export class SendWorker {
    * Process a single message job (already claimed from database)
    */
   private async processMessageJob(messageJob: MessageJob): Promise<void> {
-    const isInboxReply =
-      messageJob.message_type === 'inbox_reply' ||
-      messageJob.message_data?.source === 'inbox_reply';
-    if (isInboxReply) {
+    if (messageJob.message_type === 'inbox_reply') {
       return this.processInboxReplyJob(messageJob);
     }
-
-    const isInboxForward =
-      messageJob.message_type === 'inbox_forward' ||
-      messageJob.message_data?.source === 'inbox_forward';
-    if (isInboxForward) {
+    if (messageJob.message_type === 'inbox_forward') {
       return this.processInboxForwardJob(messageJob);
     }
+    // Campaign (or null/legacy): continue with campaign send flow
 
     try {
       const message_job_id = messageJob.id;
@@ -363,6 +358,20 @@ export class SendWorker {
           },
         });
 
+      // 7b. Update campaign_stats.sent_count (campaign sends only; skip inbox_reply/inbox_forward)
+      if (isCampaignMessageJob(messageJob)) {
+        try {
+          const { error: statsError } = await this.supabase.rpc('increment_campaign_stats_sent', {
+            p_campaign_id: messageJob.campaign_id,
+          });
+          if (statsError) {
+            console.error(`[SEND WORKER] Failed to increment campaign_stats.sent_count for campaign ${messageJob.campaign_id}:`, statsError);
+          }
+        } catch (err) {
+          console.error(`[SEND WORKER] Error incrementing campaign_stats for campaign ${messageJob.campaign_id}:`, err);
+        }
+      }
+
       if (skipSmtp) {
         console.log(`[TEST MODE] Successfully processed message job ${message_job_id} (no email sent)`);
       } else {
@@ -389,8 +398,7 @@ export class SendWorker {
         console.log(`[SEND WORKER] Marked message job ${messageJob.id} as failed`);
 
         // Only update processed intervals for campaign jobs (not inbox reply/forward)
-        const isCampaign = messageJob.message_type !== 'inbox_reply' && messageJob.message_type !== 'inbox_forward' && messageJob.message_data?.source !== 'inbox_reply' && messageJob.message_data?.source !== 'inbox_forward';
-        if (isCampaign) {
+        if (isCampaignMessageJob(messageJob)) {
           try {
             const { data: processedCount, error: processedError } = await this.supabase
               .rpc('check_and_update_processed_intervals', {

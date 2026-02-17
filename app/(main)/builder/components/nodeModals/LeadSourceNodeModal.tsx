@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, Platform, Alert, useWindowDime
 import { BaseModal } from '@/components/ui/modals';
 import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { DataTable, type TableColumn } from '@/lib/test/campaign-flow/components/DataTable';
+import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { createLeads, generateGlobalLeadId, getLeadCount, getLeads } from '@/lib/supabase/services/leads';
 import { ensureCampaignEnrollmentsForLeads } from '@/lib/supabase/services/campaigns';
 import type { LeadInsert, Lead } from '@/lib/supabase/types';

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Text, View, Platform, Pressable } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { EllipsisHorizontalIcon } from 'react-native-heroicons/outline';
-import { sanitizeEmailBody, hasResidualEncodingArtifacts } from '@/lib/email';
+import { sanitizeEmailBody, hasResidualEncodingArtifacts } from '@/lib/email/index';
 
 /** Strip script tags from HTML for safe rendering. */
 function stripScripts(html: string): string {

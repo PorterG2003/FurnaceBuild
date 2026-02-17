@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
-import { buildCampaignEmailContent, sanitizeEmailBody, type LeadLike } from '@/lib/email';
+import { buildCampaignEmailContent, sanitizeEmailBody, type LeadLike } from '@/lib/email/index';
 import { getLeads } from '@/lib/supabase/services/leads';
 import type { Lead } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';

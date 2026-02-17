@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { View, Text, Pressable, Animated } from 'react-native';
 import { ArrowUturnLeftIcon, ArrowUturnRightIcon, ArrowPathIcon, ExclamationCircleIcon } from 'react-native-heroicons/outline';
 import type { EmailMessage } from '@/lib/supabase/types';
-import { getDisplayBody } from '@/lib/email';
+import { getDisplayBody } from '@/lib/email/index';
 import { formatMessageDate, getInitials } from '@/lib/inbox';
 import { MessageBody } from './MessageBody';
 import { MessageAttachments } from './MessageAttachments';

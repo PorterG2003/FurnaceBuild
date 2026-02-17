@@ -9,7 +9,6 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { sendInvitationEmail } from './functions/sendInvitationEmail/resource';
-import { inboxChecker } from './functions/inboxChecker/resource';
 import { enrollmentMetric } from './functions/enrollmentMetric/resource';
 import { fetchEmailAttachment } from './functions/fetchEmailAttachment/resource';
 
@@ -23,7 +22,6 @@ const backend = defineBackend({
   auth,
   data,
   sendInvitationEmail,
-  inboxChecker,
   enrollmentMetric,
   fetchEmailAttachment,
 });

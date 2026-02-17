@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { View, Text, TextInput } from 'react-native';
 import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
-import { DataTable, type TableColumn } from './DataTable';
+import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { LeadActivityModal } from './LeadActivityModal';
 
 export interface Lead {

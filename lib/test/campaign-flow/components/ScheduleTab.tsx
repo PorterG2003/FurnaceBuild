@@ -3,7 +3,7 @@ import { View, Text, TextInput, ActivityIndicator } from 'react-native';
 import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { supabase } from '@/lib/supabase/client';
 import { format } from 'date-fns';
-import { DataTable, type TableColumn } from './DataTable';
+import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { Tabs, type Tab } from './Tabs';
 
 interface MessageJob {

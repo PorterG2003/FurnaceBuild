@@ -4,7 +4,7 @@ import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { supabase } from '@/lib/supabase/client';
 import { format } from 'date-fns';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
-import { Tabs, type Tab } from './Tabs';
+import { Tabs, type Tab } from '@/components/ui/tabs';
 
 interface MessageJob {
   id: string;
@@ -534,4 +534,3 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     </View>
   );
 }
-

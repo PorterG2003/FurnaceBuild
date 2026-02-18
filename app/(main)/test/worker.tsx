@@ -9,7 +9,7 @@ import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailb
 import type { Mailbox } from '@/lib/supabase/types';
 import { getUserByExternalId, getAccountMembershipsForUser } from '@/lib/supabase/services/users';
 import { Button } from '@/components/ui/button';
-import { Tabs, type Tab } from '@/lib/test/campaign-flow/components/Tabs';
+import { Tabs, type Tab } from '@/components/ui/tabs';
 import { RaceConditionTest } from './worker-race-condition';
 
 interface StepStatus {

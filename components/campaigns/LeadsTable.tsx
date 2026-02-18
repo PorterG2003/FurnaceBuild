@@ -8,7 +8,7 @@ export interface Lead {
   id: string;
   email: string;
   name: string | null;
-  enrollment_state: 'active' | 'completed' | null;
+  enrollment_state: 'active' | 'completed' | 'stopped' | 'paused' | null;
   enrollment_current_node_id: string | null;
   created_at: string;
 }
@@ -41,15 +41,18 @@ export function LeadsTable({ leads, loading, campaignId }: LeadsTableProps) {
       );
     }
 
-    const colors =
-      state === 'completed'
-        ? { bg: '#10b98120', text: '#10b981' }
-        : { bg: '#3b82f620', text: '#3b82f6' };
+    const stateConfig: Record<string, { bg: string; text: string; label: string }> = {
+      completed: { bg: '#10b98120', text: '#10b981', label: 'Completed' },
+      active: { bg: '#3b82f620', text: '#3b82f6', label: 'In Progress' },
+      stopped: { bg: '#f59e0b20', text: '#f59e0b', label: 'Stopped' },
+      paused: { bg: '#8b5cf620', text: '#8b5cf6', label: 'Paused' },
+    };
+    const colors = stateConfig[state] ?? { bg: '#6b728020', text: '#6b7280', label: state };
 
     return (
       <View className="self-start px-3 py-1.5 rounded-md" style={{ backgroundColor: colors.bg }}>
         <Text className="text-xs font-instrument-semibold" style={{ color: colors.text }}>
-          {state === 'completed' ? 'Completed' : 'In Progress'}
+          {colors.label}
         </Text>
       </View>
     );
@@ -150,4 +153,3 @@ export function LeadsTable({ leads, loading, campaignId }: LeadsTableProps) {
     </>
   );
 }
-

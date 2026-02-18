@@ -113,6 +113,66 @@ export async function getCampaignStatsForCampaigns(
   return result;
 }
 
+export interface CampaignStatsByDay {
+  date: string;
+  sent: number;
+  replied: number;
+  positiveReply: number;
+  bounce: number;
+}
+
+/**
+ * Get per-day counts of sent, replied, positive reply, and bounce for a campaign (for charts).
+ * Reads from events; positive replies use event_data.is_positive when synced from thread category.
+ */
+export async function getCampaignStatsByDay(
+  campaignId: string,
+  startDate: string,
+  endDate: string
+): Promise<CampaignStatsByDay[]> {
+  const start = new Date(startDate + 'T00:00:00.000Z');
+  const end = new Date(endDate + 'T23:59:59.999Z');
+
+  const { data: rows, error } = await supabase
+    .from('events')
+    .select('event_type, event_data, created_at')
+    .eq('campaign_id', campaignId)
+    .in('event_type', ['sent', 'replied', 'bounced'])
+    .gte('created_at', start.toISOString())
+    .lte('created_at', end.toISOString());
+
+  if (error) {
+    throw new Error(`Failed to fetch campaign stats by day: ${error.message}`);
+  }
+
+  const byDay = new Map<string, { sent: number; replied: number; positiveReply: number; bounce: number }>();
+
+  const addDay = (d: string) => {
+    if (!byDay.has(d)) {
+      byDay.set(d, { sent: 0, replied: 0, positiveReply: 0, bounce: 0 });
+    }
+    return byDay.get(d)!;
+  };
+
+  for (const row of rows || []) {
+    const day = row.created_at?.slice(0, 10) ?? '';
+    if (!day) continue;
+    const bucket = addDay(day);
+    if (row.event_type === 'sent') bucket.sent += 1;
+    else if (row.event_type === 'replied') {
+      bucket.replied += 1;
+      const isPositive = row.event_data && (row.event_data as any).is_positive === true;
+      if (isPositive) bucket.positiveReply += 1;
+    } else if (row.event_type === 'bounced') bucket.bounce += 1;
+  }
+
+  const sorted = Array.from(byDay.entries()).sort(([a], [b]) => a.localeCompare(b));
+  return sorted.map(([date, counts]) => ({
+    date,
+    ...counts,
+  }));
+}
+
 /**
  * Get a single campaign by ID
  */

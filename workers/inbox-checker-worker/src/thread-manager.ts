@@ -273,21 +273,42 @@ export class ThreadManager {
         (originalJob as any).message_data?.source !== 'inbox_forward';
 
       if (isCampaignReply) {
-        await this.supabase.from('events').insert({
-          campaign_id: originalJob.campaign_id,
-          lead_id: originalJob.lead_id,
-          enrollment_id: originalJob.enrollment_id,
-          message_job_id: originalJob.id,
-          event_type: 'replied',
-          event_data: { detected_at: new Date().toISOString() },
-        });
-        const isPositive = (thread as any).category === 'Interested';
-        const { error: statsError } = await this.supabase.rpc('increment_campaign_stats_replied', {
-          p_campaign_id: originalJob.campaign_id,
-          p_is_positive: isPositive,
-        });
-        if (statsError) {
-          console.error(`[INBOX CHECKER] Failed to increment campaign_stats replied for campaign ${originalJob.campaign_id}:`, statsError);
+        const { data: existingReplied } = await this.supabase
+          .from('events')
+          .select('id')
+          .eq('campaign_id', originalJob.campaign_id)
+          .eq('message_job_id', originalJob.id)
+          .eq('event_type', 'replied')
+          .limit(1)
+          .maybeSingle();
+
+        if (!existingReplied) {
+          await this.supabase.from('events').insert({
+            campaign_id: originalJob.campaign_id,
+            lead_id: originalJob.lead_id,
+            enrollment_id: originalJob.enrollment_id,
+            message_job_id: originalJob.id,
+            event_type: 'replied',
+            event_data: { detected_at: new Date().toISOString() },
+          });
+          const isPositive = (thread as any).category === 'Interested';
+          let statsError: Error | null = null;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const { error } = await this.supabase.rpc('increment_campaign_stats_replied', {
+              p_campaign_id: originalJob.campaign_id,
+              p_is_positive: isPositive,
+            });
+            if (!error) break;
+            statsError = error;
+            if (attempt < 3) {
+              await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)));
+            }
+          }
+          if (statsError) {
+            console.error(`[INBOX CHECKER] Failed to increment campaign_stats replied for campaign ${originalJob.campaign_id} after retries:`, statsError);
+          }
+        } else {
+          console.log(`[INBOX CHECKER] Reply already processed for message_job ${originalJob.id}, skipping event and stats`);
         }
       }
 
@@ -503,11 +524,19 @@ export class ThreadManager {
         });
         if (!campaignIdsUpdated.has(job.campaign_id)) {
           campaignIdsUpdated.add(job.campaign_id);
-          const { error } = await this.supabase.rpc('increment_campaign_stats_bounce', {
-            p_campaign_id: job.campaign_id,
-          });
-          if (error) {
-            console.error(`[INBOX CHECKER] Failed to increment campaign_stats bounce for campaign ${job.campaign_id}:`, error);
+          let bounceError: Error | null = null;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const { error } = await this.supabase.rpc('increment_campaign_stats_bounce', {
+              p_campaign_id: job.campaign_id,
+            });
+            if (!error) break;
+            bounceError = error;
+            if (attempt < 3) {
+              await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)));
+            }
+          }
+          if (bounceError) {
+            console.error(`[INBOX CHECKER] Failed to increment campaign_stats bounce for campaign ${job.campaign_id} after retries:`, bounceError);
           }
         }
         if (classification.severity === 'hard' && suppressBouncedEmails) {
@@ -533,11 +562,19 @@ export class ThreadManager {
           event_type: 'bounced',
           event_data: { ...eventDataBase, matched: false },
         });
-        const { error } = await this.supabase.rpc('increment_campaign_stats_bounce', {
-          p_campaign_id: bestGuess.campaign_id,
-        });
-        if (error) {
-          console.error(`[INBOX CHECKER] Failed to increment campaign_stats bounce for campaign ${bestGuess.campaign_id}:`, error);
+        let bounceError: Error | null = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const { error } = await this.supabase.rpc('increment_campaign_stats_bounce', {
+            p_campaign_id: bestGuess.campaign_id,
+          });
+          if (!error) break;
+          bounceError = error;
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)));
+          }
+        }
+        if (bounceError) {
+          console.error(`[INBOX CHECKER] Failed to increment campaign_stats bounce for campaign ${bestGuess.campaign_id} after retries:`, bounceError);
         }
         if (classification.severity === 'hard' && suppressBouncedEmails) {
           const leadEmail = leadEmailById.get(bestGuess.lead_id);

@@ -4,13 +4,12 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PageLayout, Breadcrumb } from '@/components/ui/layout';
 import { LoadingState, Alert } from '@/components/ui/feedback';
 import { ProgressDial } from '@/components/ui/progress-dial';
-import { FlowDiagram } from '@/lib/test/campaign-flow/components/FlowDiagram';
-import { LeadsTable, type Lead } from '@/lib/test/campaign-flow/components/LeadsTable';
-import { ScheduleTab } from '@/lib/test/campaign-flow/components/ScheduleTab';
-import { Tabs, type Tab } from '@/lib/test/campaign-flow/components/Tabs';
-import { isWithinSchedule } from '@/lib/test/campaign-flow/utils';
-import { getCampaignById, getCampaignMailboxes } from '@/lib/supabase/services/campaigns';
+import { FlowDiagram, LeadsTable, ScheduleTab, type Lead } from '@/components/campaigns';
+import { Tabs, type Tab } from '@/components/ui/tabs';
+import { isWithinSchedule } from '@/lib/campaigns/utils';
+import { getCampaignById, getCampaignMailboxes, getCampaignStatsByDay, getCampaignStatsForCampaigns, type CampaignStatsByDay, type CampaignStats } from '@/lib/supabase/services/campaigns';
 import { supabase } from '@/lib/supabase/client';
+import { CampaignStatsChart } from '@/components/campaigns/CampaignStatsChart';
 import type { Campaign } from '@/lib/supabase/types';
 import { format } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
@@ -34,11 +33,16 @@ export default function CampaignPage() {
   const [leadsNotStarted, setLeadsNotStarted] = useState(0);
   const [leadsInProgress, setLeadsInProgress] = useState(0);
   const [leadsCompleted, setLeadsCompleted] = useState(0);
+  const [leadsStopped, setLeadsStopped] = useState(0);
+  const [leadsPaused, setLeadsPaused] = useState(0);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>('details');
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [statsByDay, setStatsByDay] = useState<CampaignStatsByDay[]>([]);
+  const [statsByDayLoading, setStatsByDayLoading] = useState(false);
+  const [campaignStats, setCampaignStats] = useState<CampaignStats | null>(null);
 
   const loadCampaign = useCallback(async (silent = false) => {
     if (!id) return;
@@ -48,41 +52,40 @@ export default function CampaignPage() {
       const campaignData = await getCampaignById(id);
       if (!campaignData) {
         setLoadError('Campaign not found');
+        setCampaignStats(null);
         return;
       }
       setCampaign(campaignData);
 
-      const mailboxes = await getCampaignMailboxes(id);
+      const [mailboxesResult, statsResult] = await Promise.all([
+        getCampaignMailboxes(id),
+        getCampaignStatsForCampaigns([id]).then((m) => m[id] ?? null),
+      ]);
+      const mailboxes = mailboxesResult;
+      setCampaignStats(statsResult);
       setMailboxCount(mailboxes?.length ?? 0);
 
-      const { count: leadsCount } = await supabase
-        .from('leads')
-        .select('*', { count: 'exact', head: true })
-        .eq('campaign_id', id);
-      const totalLeads = leadsCount ?? 0;
-      setLeadCount(totalLeads);
-
-      const { count: enrollmentsCount } = await supabase
-        .from('enrollments')
-        .select('*', { count: 'exact', head: true })
-        .eq('campaign_id', id);
-      setEnrollmentCount(enrollmentsCount ?? 0);
-
+      // Single enrollments query: derive count and state breakdown from same snapshot
       const { data: enrollments, error: enrollmentsError } = await supabase
         .from('enrollments')
         .select('state, lead_id, current_node_id')
         .eq('campaign_id', id);
 
+      const enrollmentCount = enrollments?.length ?? 0;
+      setEnrollmentCount(enrollmentCount);
+
       if (!enrollmentsError && enrollments) {
         const completed = enrollments.filter((e: any) => e.state === 'completed').length;
         const inProgress = enrollments.filter((e: any) => e.state === 'active').length;
-        const started = enrollments.length;
-        const notStarted = Math.max(0, totalLeads - started);
+        const stopped = enrollments.filter((e: any) => e.state === 'stopped').length;
+        const paused = enrollments.filter((e: any) => e.state === 'paused').length;
         setLeadsCompleted(completed);
         setLeadsInProgress(inProgress);
-        setLeadsNotStarted(notStarted);
+        setLeadsStopped(stopped);
+        setLeadsPaused(paused);
       }
 
+      // Single leads query: use same snapshot for lead count and leads list
       setLeadsLoading(true);
       const { data: leadsData, error: leadsError } = await supabase
         .from('leads')
@@ -90,12 +93,22 @@ export default function CampaignPage() {
         .eq('campaign_id', id)
         .order('created_at', { ascending: false });
 
-      if (!leadsError && leadsData) {
-        const enrollmentMap = new Map<string, { state: 'active' | 'completed' | null; current_node_id: string | null }>();
+      if (leadsError) {
+        setLeadCount(0);
+        setLeads([]);
+        setLeadsNotStarted(0);
+      } else if (leadsData) {
+        const totalLeads = leadsData.length;
+        setLeadCount(totalLeads);
+
+        const notStarted = Math.max(0, totalLeads - enrollmentCount);
+        setLeadsNotStarted(notStarted);
+
+        const enrollmentMap = new Map<string, { state: 'active' | 'completed' | 'stopped' | 'paused' | null; current_node_id: string | null }>();
         if (enrollments) {
           enrollments.forEach((enrollment: any) => {
             enrollmentMap.set(enrollment.lead_id, {
-              state: enrollment.state as 'active' | 'completed' | null,
+              state: enrollment.state as 'active' | 'completed' | 'stopped' | 'paused' | null,
               current_node_id: enrollment.current_node_id,
             });
           });
@@ -116,6 +129,7 @@ export default function CampaignPage() {
     } catch (err) {
       console.error('Error loading campaign:', err);
       setLoadError(err instanceof Error ? err.message : 'Failed to load campaign');
+      setCampaignStats(null);
     } finally {
       setLeadsLoading(false);
       if (!silent) setIsLoading(false);
@@ -125,6 +139,29 @@ export default function CampaignPage() {
   useEffect(() => {
     loadCampaign();
   }, [loadCampaign]);
+
+  const loadStatsByDay = useCallback(async () => {
+    if (!id) return;
+    setStatsByDayLoading(true);
+    try {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      const startStr = start.toISOString().slice(0, 10);
+      const endStr = end.toISOString().slice(0, 10);
+      const data = await getCampaignStatsByDay(id, startStr, endStr);
+      setStatsByDay(data);
+    } catch (err) {
+      console.error('Error loading campaign stats by day:', err);
+      setStatsByDay([]);
+    } finally {
+      setStatsByDayLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (id && activeTab === 'details') loadStatsByDay();
+  }, [id, activeTab, loadStatsByDay, refreshKey]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -341,6 +378,26 @@ export default function CampaignPage() {
                           <Text className="text-gray-400 font-instrument text-xs">Total Enrollments</Text>
                           <Text className="text-white font-instrument-semibold text-sm">{enrollmentCount}</Text>
                         </View>
+                        {campaignStats && (
+                          <>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <Text className="text-gray-400 font-instrument text-xs">Sent</Text>
+                              <Text className="text-white font-instrument-semibold text-sm">{campaignStats.sentCount}</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <Text className="text-gray-400 font-instrument text-xs">Replied</Text>
+                              <Text className="text-white font-instrument-semibold text-sm">{campaignStats.repliedCount}</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <Text className="text-gray-400 font-instrument text-xs">Positive Reply</Text>
+                              <Text className="text-white font-instrument-semibold text-sm">{campaignStats.positiveReplyCount}</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <Text className="text-gray-400 font-instrument text-xs">Bounced</Text>
+                              <Text className="text-white font-instrument-semibold text-sm">{campaignStats.bounceCount}</Text>
+                            </View>
+                          </>
+                        )}
                       </View>
                     </View>
 
@@ -368,9 +425,28 @@ export default function CampaignPage() {
                           color="#10b981"
                           size={90}
                         />
+                        <ProgressDial
+                          value={leadsStopped}
+                          total={leadCount}
+                          label="Stopped"
+                          color="#f59e0b"
+                          size={90}
+                        />
+                        <ProgressDial
+                          value={leadsPaused}
+                          total={leadCount}
+                          label="Paused"
+                          color="#8b5cf6"
+                          size={90}
+                        />
                       </View>
                     </View>
                   </View>
+                </View>
+
+                <View style={{ marginBottom: 16 }}>
+                  <Text className="text-lg font-instrument-semibold text-white mb-4">Activity (last 30 days)</Text>
+                  <CampaignStatsChart data={statsByDay} loading={statsByDayLoading} />
                 </View>
 
                 {flowData?.nodes && flowData?.edges && (

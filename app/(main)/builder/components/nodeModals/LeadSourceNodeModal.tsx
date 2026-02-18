@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Platform, Alert, useWindowDimensions } from 'react-native';
+import Papa from 'papaparse';
 import { BaseModal } from '@/components/ui/modals';
 import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -37,38 +38,42 @@ interface ParsedCSV {
 const INSIGHTS_COLUMN_MIN_WIDTH = 160;
 const INSIGHTS_COLUMN_MAX_WIDTH = 240;
 
-// Simple CSV parser (handles basic CSV format)
+const UTF8_BOM = '\ufeff';
+
+/** Robust CSV parser (RFC 4180): quoted fields, commas in quotes, \r\n, BOM. */
 function parseCSV(csvText: string): ParsedCSV {
-  const lines = csvText
-    .trim()
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0);
+  const trimmed = csvText.trim();
+  if (!trimmed.length) {
+    return { headers: [], normalizedHeaders: [], rows: [] };
+  }
+  const withoutBOM = trimmed.startsWith(UTF8_BOM) ? trimmed.slice(UTF8_BOM.length) : trimmed;
 
-  if (lines.length < 2) {
-    return {
-      headers: [],
-      normalizedHeaders: [],
-      rows: [],
-    };
+  const result = Papa.parse<Record<string, string>>(withoutBOM, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (h) => h.trim(),
+  });
+
+  if (result.errors.length > 0) {
+    const first = result.errors[0];
+    const msg = first?.message
+      ? `Invalid CSV: ${first.message}`
+      : 'Invalid CSV: check that the file has a header row and that commas inside cells are in quoted fields (e.g. "Last, First").';
+    throw new Error(msg);
   }
 
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-  const normalizedHeaders = headers.map(header => header.toLowerCase());
-  const rows: Record<string, string>[] = [];
+  const fields = result.meta.fields ?? [];
+  const headers = fields.length > 0 ? fields : (result.data[0] ? Object.keys(result.data[0]) : []);
+  const normalizedHeaders = headers.map((h) => h.toLowerCase());
 
-  for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-    if (values.length === 0 || values.every(value => value.length === 0)) {
-      continue;
-    }
-
-    const row: Record<string, string> = {};
-    headers.forEach((header, index) => {
-      row[header] = values[index] || '';
+  const rows: Record<string, string>[] = result.data.map((row) => {
+    const out: Record<string, string> = {};
+    headers.forEach((header) => {
+      const val = row[header];
+      out[header] = val != null ? String(val).trim() : '';
     });
-    rows.push(row);
-  }
+    return out;
+  });
 
   return {
     headers,
@@ -369,7 +374,10 @@ function LeadSourceNodeModal({
 
   const handleCsvFileSelect = async () => {
     if (!initialData?.campaignId || !initialData?.bucketId) {
-      Alert.alert('Missing data', 'Campaign ID and Bucket ID are required for importing leads.');
+      Alert.alert(
+        'Missing data',
+        "This lead bucket isn't ready yet. Close the modal and try again."
+      );
       return;
     }
 
@@ -379,22 +387,29 @@ function LeadSourceNodeModal({
     }
 
     try {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.csv';
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.csv';
+      input.value = '';
       input.onchange = async (event) => {
         const file = (event.target as HTMLInputElement).files?.[0];
-          if (!file) return;
+        if (!file) return;
 
-          setIsImporting(true);
-          try {
-            const text = await file.text();
+        setIsImporting(true);
+        try {
+          let text = await file.text();
+          if (text.startsWith(UTF8_BOM)) {
+            text = text.slice(UTF8_BOM.length);
+          }
           const parsed = parseCSV(text);
 
           if (!parsed.rows.length) {
-            Alert.alert('No data found', 'We could not detect any rows in that CSV file.');
-              return;
-            }
+            Alert.alert(
+              'No data found',
+              'Check that the file has a header row and at least one data row.'
+            );
+            return;
+          }
 
           setCsvFileName(file.name);
           setCsvRows(parsed.rows);
@@ -406,16 +421,17 @@ function LeadSourceNodeModal({
           setImportSummary(null);
           setImportedCount(null);
           setCsvStep(1);
+        } catch (error: any) {
+          const message =
+            error?.message ||
+            'We ran into an issue parsing that CSV file. If your file has commas inside cells, ensure they\'re in quoted fields (e.g. "Last, First").';
+          Alert.alert('Import failed', message);
+        } finally {
+          setIsImporting(false);
+        }
+      };
 
-          Alert.alert('CSV loaded', 'Fields auto-mapped where possible. Review the mapping to continue.');
-          } catch (error: any) {
-          Alert.alert('Import failed', error?.message || 'We ran into an issue parsing that CSV file.');
-          } finally {
-            setIsImporting(false);
-          }
-        };
-
-        input.click();
+      input.click();
     } catch (error: any) {
       Alert.alert('Import failed', error?.message || 'Unable to select a CSV file.');
       setIsImporting(false);

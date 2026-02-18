@@ -3,11 +3,9 @@ import { View, Text, ActivityIndicator, ScrollView, Pressable, TextInput } from 
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PageLayout } from '@/components/ui/layout';
 import { ProgressDial } from '@/components/ui/progress-dial';
-import { FlowDiagram } from '@/lib/test/campaign-flow/components/FlowDiagram';
-import { LeadsTable, type Lead } from '@/lib/test/campaign-flow/components/LeadsTable';
-import { ScheduleTab } from '@/lib/test/campaign-flow/components/ScheduleTab';
-import { Tabs, type Tab } from '@/lib/test/campaign-flow/components/Tabs';
-import { isWithinSchedule } from '@/lib/test/campaign-flow/utils';
+import { FlowDiagram, LeadsTable, ScheduleTab, type Lead } from '@/components/campaigns';
+import { Tabs, type Tab } from '@/components/ui/tabs';
+import { isWithinSchedule } from '@/lib/campaigns/utils';
 import { getCampaignById, updateCampaign } from '@/lib/supabase/services/campaigns';
 import { getCampaignMailboxes } from '@/lib/supabase/services/campaigns';
 import { supabase } from '@/lib/supabase/client';

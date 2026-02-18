@@ -367,15 +367,20 @@ export class SendWorker {
 
       // 7b. Update campaign_stats.sent_count (campaign sends only; skip inbox_reply/inbox_forward)
       if (isCampaignMessageJob(messageJob)) {
-        try {
-          const { error: statsError } = await this.supabase.rpc('increment_campaign_stats_sent', {
-            p_campaign_id: messageJob.campaign_id,
+        const campaignId = messageJob.campaign_id;
+        let statsError: Error | null = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const { error } = await this.supabase.rpc('increment_campaign_stats_sent', {
+            p_campaign_id: campaignId,
           });
-          if (statsError) {
-            console.error(`[SEND WORKER] Failed to increment campaign_stats.sent_count for campaign ${messageJob.campaign_id}:`, statsError);
+          if (!error) break;
+          statsError = error;
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)));
           }
-        } catch (err) {
-          console.error(`[SEND WORKER] Error incrementing campaign_stats for campaign ${messageJob.campaign_id}:`, err);
+        }
+        if (statsError) {
+          console.error(`[SEND WORKER] Failed to increment campaign_stats.sent_count for campaign ${campaignId} after retries:`, statsError);
         }
       }
 

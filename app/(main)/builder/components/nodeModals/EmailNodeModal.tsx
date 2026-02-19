@@ -1,12 +1,14 @@
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Platform } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
+import { Alert } from '@/components/ui/feedback/Alert';
 import { Select } from '@/components/ui/forms';
-import { CodeBracketIcon, EyeIcon } from 'react-native-heroicons/outline';
+import { CodeBracketIcon, EyeIcon, ExclamationTriangleIcon } from 'react-native-heroicons/outline';
 import { EmailBodyEditor } from '../EmailBodyEditor';
 import { EmailPreviewModal } from './EmailPreviewModal';
-import { getLeadVariables, type LeadVariable } from '@/lib/email/index';
+import { getLeadVariables, extractVariableKeys, extractMalformedVariables, type LeadVariable } from '@/lib/email/index';
+import { getLeadCount } from '@/lib/supabase/services/leads';
 
 interface VariableInputProps {
   label: string;
@@ -212,6 +214,58 @@ function EmailNodeModal({
     [initialData?.mappedStandardFieldKeys, initialData?.customFieldKeys]
   );
 
+  const variableKeys = useMemo(
+    () => extractVariableKeys(subject, template),
+    [subject, template]
+  );
+
+  const validKeys = useMemo(
+    () => new Set(leadVariables.map((v) => v.token.replace(/^\{\{|\}\}$/g, ''))),
+    [leadVariables]
+  );
+
+  const unknownKeys = useMemo(
+    () => variableKeys.filter((k) => !validKeys.has(k)),
+    [variableKeys, validKeys]
+  );
+
+  const malformedVars = useMemo(
+    () => extractMalformedVariables(subject, template),
+    [subject, template]
+  );
+
+  const hasInvalidVars = unknownKeys.length > 0 || malformedVars.length > 0;
+
+  const [missingValueCount, setMissingValueCount] = useState<number | null>(null);
+  const countTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Only run the count query for variable keys that actually exist in the schema
+  const knownVariableKeys = useMemo(
+    () => variableKeys.filter((k) => validKeys.has(k)),
+    [variableKeys, validKeys]
+  );
+
+  useEffect(() => {
+    if (countTimerRef.current) clearTimeout(countTimerRef.current);
+
+    if (!visible || !initialData?.campaignId || knownVariableKeys.length === 0) {
+      setMissingValueCount(null);
+      return;
+    }
+    let cancelled = false;
+    countTimerRef.current = setTimeout(() => {
+      getLeadCount({ campaignId: initialData.campaignId, missingFields: knownVariableKeys })
+        .then((count) => { if (!cancelled) setMissingValueCount(count); })
+        .catch(() => { if (!cancelled) setMissingValueCount(null); });
+    }, 500);
+    return () => {
+      cancelled = true;
+      if (countTimerRef.current) clearTimeout(countTimerRef.current);
+    };
+  }, [visible, initialData?.campaignId, knownVariableKeys]);
+
+  const showMissingWarning = knownVariableKeys.length > 0 && missingValueCount != null && missingValueCount > 0;
+
   const handleSave = () => {
     const bodyHtml = bodyEditorRef.current?.getHTML?.();
     const bodyText = bodyEditorRef.current?.getText?.();
@@ -273,6 +327,20 @@ function EmailNodeModal({
       height={typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.9) : 900}
     >
       <View className="gap-5">
+        {hasInvalidVars && (
+          <Alert
+            variant="error"
+            message={`The following variables are invalid or don't exist: ${[...unknownKeys.map((k) => `{{${k}}}`), ...malformedVars].join(', ')}. Check spelling or use the Variables menu.`}
+          />
+        )}
+        {showMissingWarning && (
+          <Alert
+            variant="warning"
+            message="Some leads may have empty values for the variables you're using. Preview to see which leads have missing data."
+            actionText="Preview"
+            onAction={handleOpenPreview}
+          />
+        )}
         <View>
           <Text className="text-sm font-instrument-medium mb-2 text-gray-300">
             Label
@@ -317,6 +385,7 @@ function EmailNodeModal({
             placeholder="Hi {{first_name}},\n\nLoved what you're building at {{company_name}}..."
             minHeight={220}
             label="Email Body"
+            onContentChange={(text) => setTemplate(text)}
             trailingElement={
               <TouchableOpacity
                 onPress={handleOpenPreview}
@@ -328,13 +397,32 @@ function EmailNodeModal({
                   paddingHorizontal: 12,
                   paddingVertical: 8,
                   borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.16)',
-                  backgroundColor: 'rgba(255,255,255,0.08)',
+                  borderColor: hasInvalidVars
+                    ? 'rgba(239,68,68,0.4)'
+                    : showMissingWarning
+                      ? 'rgba(245,158,11,0.4)'
+                      : 'rgba(255,255,255,0.16)',
+                  backgroundColor: hasInvalidVars
+                    ? 'rgba(239,68,68,0.2)'
+                    : showMissingWarning
+                      ? 'rgba(245,158,11,0.2)'
+                      : 'rgba(255,255,255,0.08)',
                 }}
                 activeOpacity={0.7}
               >
-                <EyeIcon size={18} color="#FFFFFF" />
-                <Text className="text-sm font-instrument-medium text-white">Preview</Text>
+                {hasInvalidVars ? (
+                  <ExclamationTriangleIcon size={18} color="#EF4444" />
+                ) : showMissingWarning ? (
+                  <ExclamationTriangleIcon size={18} color="#F59E0B" />
+                ) : (
+                  <EyeIcon size={18} color="#FFFFFF" />
+                )}
+                <Text
+                  className="text-sm font-instrument-medium"
+                  style={{ color: hasInvalidVars ? '#EF4444' : showMissingWarning ? '#F59E0B' : '#FFFFFF' }}
+                >
+                  Preview
+                </Text>
               </TouchableOpacity>
             }
           />
@@ -351,13 +439,32 @@ function EmailNodeModal({
                   paddingHorizontal: 12,
                   paddingVertical: 8,
                   borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.16)',
-                  backgroundColor: 'rgba(255,255,255,0.08)',
+                  borderColor: hasInvalidVars
+                    ? 'rgba(239,68,68,0.4)'
+                    : showMissingWarning
+                      ? 'rgba(245,158,11,0.4)'
+                      : 'rgba(255,255,255,0.16)',
+                  backgroundColor: hasInvalidVars
+                    ? 'rgba(239,68,68,0.2)'
+                    : showMissingWarning
+                      ? 'rgba(245,158,11,0.2)'
+                      : 'rgba(255,255,255,0.08)',
                 }}
                 activeOpacity={0.7}
               >
-                <EyeIcon size={18} color="#FFFFFF" />
-                <Text className="text-sm font-instrument-medium text-white">Preview</Text>
+                {hasInvalidVars ? (
+                  <ExclamationTriangleIcon size={18} color="#EF4444" />
+                ) : showMissingWarning ? (
+                  <ExclamationTriangleIcon size={18} color="#F59E0B" />
+                ) : (
+                  <EyeIcon size={18} color="#FFFFFF" />
+                )}
+                <Text
+                  className="text-sm font-instrument-medium"
+                  style={{ color: hasInvalidVars ? '#EF4444' : showMissingWarning ? '#F59E0B' : '#FFFFFF' }}
+                >
+                  Preview
+                </Text>
               </TouchableOpacity>
             </View>
             <VariableInput
@@ -380,6 +487,7 @@ function EmailNodeModal({
       onClose={() => setPreviewOpen(false)}
       config={previewConfig}
       campaignId={initialData?.campaignId}
+      variableKeys={variableKeys}
     />
     </>
   );

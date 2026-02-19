@@ -361,7 +361,10 @@ export class SendWorker {
           event_data: {
             provider_message_id: providerMessageId,
             sent_at: new Date().toISOString(),
-            test_mode: skipSmtp, // Mark as test mode in event data
+            test_mode: skipSmtp,
+            sent_subject: subject,
+            sent_body_html: emailBody,
+            sent_body_text: emailBodyText,
           },
         });
 

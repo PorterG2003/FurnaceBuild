@@ -327,7 +327,7 @@ export class ThreadManager {
     messageJob: MessageJob,
     mailbox: Mailbox
   ): Promise<any> {
-    // Check if thread already exists
+    // Check if thread already exists for this message_job
     const { data: existingThread } = await this.supabase
       .from('email_threads')
       .select('*')
@@ -338,14 +338,48 @@ export class ThreadManager {
       return existingThread;
     }
 
-    // Get message data
-    const messageData = messageJob.message_data || {};
-    const subject = messageData.subject || messageData.node_config?.subject || '(No Subject)';
+    // Check if a thread already exists for this campaign+lead (handles edge case where
+    // a later campaign send arrives after the first reply already created a thread)
+    const { data: existingCampaignThread } = await this.supabase
+      .from('email_threads')
+      .select('*')
+      .eq('campaign_id', messageJob.campaign_id)
+      .eq('lead_id', messageJob.lead_id)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-    // Get account_id from mailbox (from the relation or directly)
+    if (existingCampaignThread) {
+      await this.backfillSentMessages(
+        existingCampaignThread,
+        messageJob.campaign_id,
+        messageJob.lead_id,
+        messageJob.sent_at || messageJob.created_at,
+        mailbox
+      );
+      return existingCampaignThread;
+    }
+
+    // Get message data for the thread subject (use first send's merged subject from events if available)
+    const messageData = messageJob.message_data || {};
+    const templateSubject = messageData.subject || messageData.node_config?.subject || '(No Subject)';
+
     const accountId = messageJob.mailboxes?.account_id || mailbox.account_id;
     const mailboxEmail = messageJob.mailboxes?.email_address || mailbox.email_address;
     const leadEmail = messageJob.leads?.email || '';
+
+    // Try to get the merged subject from the sent event for the first send
+    const { data: firstSentEvent } = await this.supabase
+      .from('events')
+      .select('event_data')
+      .eq('campaign_id', messageJob.campaign_id)
+      .eq('lead_id', messageJob.lead_id)
+      .eq('event_type', 'sent')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    const subject = firstSentEvent?.event_data?.sent_subject || templateSubject;
 
     // Create new thread
     const { data: newThread, error: threadError } = await this.supabase
@@ -361,7 +395,7 @@ export class ThreadManager {
         participants: [mailboxEmail, leadEmail].filter(Boolean),
         last_message_at: messageJob.sent_at || messageJob.created_at,
         message_count: 1,
-        has_reply: false, // Will be set to true when reply is received
+        has_reply: false,
       })
       .select()
       .single();
@@ -371,56 +405,153 @@ export class ThreadManager {
       throw threadError;
     }
 
-    // Backfill the original sent message into email_messages
-    // Check if it already exists (shouldn't, but check to avoid duplicates)
-    const { data: existingSentMessage } = await this.supabase
+    // Backfill all prior sent messages for this campaign+lead into email_messages
+    await this.backfillSentMessages(
+      newThread,
+      messageJob.campaign_id,
+      messageJob.lead_id,
+      messageJob.sent_at || messageJob.created_at,
+      mailbox
+    );
+
+    return newThread;
+  }
+
+  /**
+   * Backfill sent campaign messages into email_messages for a thread.
+   * Queries all sent message_jobs for campaign+lead up to cutoffTime, loads merged
+   * content from the sent event's event_data when available, and inserts any missing
+   * email_messages (direction = 'sent').
+   */
+  private async backfillSentMessages(
+    thread: any,
+    campaignId: string,
+    leadId: string,
+    cutoffTime: string,
+    mailbox: Mailbox
+  ): Promise<void> {
+    // Get all sent campaign message_jobs for this campaign+lead, ordered by sent_at
+    const { data: sentJobs, error: jobsError } = await this.supabase
+      .from('message_jobs')
+      .select('id, provider_message_id, sent_at, created_at, message_data, mailbox_id, lead_id')
+      .eq('campaign_id', campaignId)
+      .eq('lead_id', leadId)
+      .eq('status', 'sent')
+      .or('message_type.is.null,message_type.eq.campaign')
+      .lte('sent_at', cutoffTime)
+      .order('sent_at', { ascending: true });
+
+    if (jobsError || !sentJobs || sentJobs.length === 0) {
+      return;
+    }
+
+    // Get all sent events for these jobs in one query (for merged content)
+    const jobIds = sentJobs.map(j => j.id);
+    const { data: sentEvents } = await this.supabase
+      .from('events')
+      .select('message_job_id, event_data')
+      .eq('event_type', 'sent')
+      .in('message_job_id', jobIds);
+
+    const eventByJobId = new Map<string, any>();
+    if (sentEvents) {
+      for (const evt of sentEvents) {
+        eventByJobId.set(evt.message_job_id, evt.event_data);
+      }
+    }
+
+    // Check which jobs already have an email_message
+    const { data: existingMessages } = await this.supabase
       .from('email_messages')
-      .select('id')
-      .eq('message_job_id', messageJob.id)
+      .select('message_job_id')
+      .eq('thread_id', thread.id)
       .eq('direction', 'sent')
+      .in('message_job_id', jobIds);
+
+    const existingJobIds = new Set((existingMessages || []).map(m => m.message_job_id));
+
+    const mailboxEmail = mailbox.email_address;
+    const mailboxDisplayName = mailbox.display_name || null;
+
+    // Load lead name once
+    const { data: leadRow } = await this.supabase
+      .from('leads')
+      .select('email, name')
+      .eq('id', leadId)
       .maybeSingle();
 
-    if (!existingSentMessage) {
-      // Extract body from message_data (template - not merged, but that's okay for now)
-      // Builder saves body as "template"; support both for display
-      const body = messageData.node_config?.body ?? messageData.node_config?.template ?? '';
-      const leadName = messageJob.leads?.name || null;
-      const mailboxDisplayName = mailbox.display_name || null;
+    const leadEmail = leadRow?.email || '';
+    const leadName = leadRow?.name || null;
 
-      // Normalize provider_message_id for consistent storage
-      const normalizedProviderMessageId = this.normalizeMessageId(messageJob.provider_message_id);
-      
-      // Create email_message for the original sent message
-      const { error: sentMessageError } = await this.supabase
+    let insertedCount = 0;
+    for (const job of sentJobs) {
+      if (existingJobIds.has(job.id)) continue;
+
+      const evtData = eventByJobId.get(job.id);
+      const md = job.message_data || {};
+      const nc = md.node_config || {};
+
+      // Use merged content from event when available, else fall back to template
+      const jobSubject = evtData?.sent_subject || md.subject || nc.subject || '(No Subject)';
+      const jobBodyHtml = evtData?.sent_body_html || nc.body || nc.template || '';
+      const jobBodyText = evtData?.sent_body_text || nc.body || nc.template || '';
+
+      const normalizedProviderId = this.normalizeMessageId(job.provider_message_id);
+
+      // Determine in_reply_to / references for follow-ups (not the first send)
+      let inReplyTo: string | null = null;
+      let msgReferences: string | null = null;
+      if (insertedCount > 0 && sentJobs[0]?.provider_message_id) {
+        const firstNormalized = this.normalizeMessageId(sentJobs[0].provider_message_id);
+        inReplyTo = firstNormalized;
+        msgReferences = firstNormalized;
+      }
+
+      const { error: insertError } = await this.supabase
         .from('email_messages')
         .insert({
-          thread_id: newThread.id,
-          message_job_id: messageJob.id,
+          thread_id: thread.id,
+          message_job_id: job.id,
           direction: 'sent',
           from_email: mailboxEmail,
           from_name: mailboxDisplayName,
           to_email: leadEmail,
           to_name: leadName,
-          subject: subject,
-          body_text: body, // Template body (not merged, but sufficient for display)
-          body_html: body, // Same for now (send worker uses same body for text/html)
-          message_id: normalizedProviderMessageId, // Store normalized version
-          in_reply_to: null, // Original message has no In-Reply-To
-          message_references: null,
-          received_at: messageJob.sent_at || messageJob.created_at,
-          headers: {}, // We don't store headers for sent messages
+          subject: jobSubject,
+          body_text: jobBodyText,
+          body_html: jobBodyHtml,
+          message_id: normalizedProviderId,
+          in_reply_to: inReplyTo,
+          message_references: msgReferences,
+          received_at: job.sent_at || job.created_at,
+          headers: {},
           attachments: [],
         });
 
-      if (sentMessageError) {
-        console.error('Error creating email_message for original sent message:', sentMessageError);
-        throw new Error(`Failed to backfill original sent message for thread: ${sentMessageError.message}`);
+      if (insertError) {
+        if (insertError.code === '23505' || insertError.message?.includes('duplicate')) {
+          continue; // Race condition, skip
+        }
+        console.error(`Error backfilling sent message for job ${job.id}:`, insertError);
+      } else {
+        insertedCount++;
       }
-      // Note: message_count is already set to 1 (original sent message)
-      // handleReply will increment it when the reply is added
     }
 
-    return newThread;
+    // Update thread message_count to reflect backfilled messages
+    if (insertedCount > 0) {
+      const { count: totalCount } = await this.supabase
+        .from('email_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('thread_id', thread.id);
+
+      if (totalCount != null) {
+        await this.supabase
+          .from('email_threads')
+          .update({ message_count: totalCount })
+          .eq('id', thread.id);
+      }
+    }
   }
 
   /**

@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
-import { buildCampaignEmailContent, sanitizeEmailBody, type LeadLike } from '@/lib/email/index';
-import { getLeads } from '@/lib/supabase/services/leads';
+import { buildCampaignEmailContent, sanitizeEmailBody, hasMissingValues, type LeadLike } from '@/lib/email/index';
+import { getLeads, getLeadCount } from '@/lib/supabase/services/leads';
 import type { Lead } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
 
@@ -35,6 +35,8 @@ interface EmailPreviewModalProps {
   onClose: () => void;
   config: EmailPreviewConfig | null;
   campaignId?: string;
+  /** Variable keys used in the template (e.g. ["first_name", "custom.role"]) */
+  variableKeys?: string[];
 }
 
 const PREVIEW_LEAD_LIMIT = 50;
@@ -44,6 +46,7 @@ function EmailPreviewModal({
   onClose,
   config,
   campaignId,
+  variableKeys,
 }: EmailPreviewModalProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
@@ -52,14 +55,37 @@ function EmailPreviewModal({
   const [leadSearch, setLeadSearch] = useState('');
   const lastFetchedSearchRef = useRef<string | undefined>(undefined);
 
+  const hasVariables = (variableKeys?.length ?? 0) > 0;
+
+  // null = not yet determined (count query in progress)
+  const [showMissingOnly, setShowMissingOnly] = useState<boolean | null>(null);
+
+  // Smart default: run count query on open to decide filter default
+  useEffect(() => {
+    if (!visible || !campaignId || !hasVariables) {
+      setShowMissingOnly(hasVariables ? null : false);
+      return;
+    }
+    let cancelled = false;
+    getLeadCount({ campaignId, missingFields: variableKeys })
+      .then((count) => {
+        if (!cancelled) setShowMissingOnly(count > 0);
+      })
+      .catch(() => {
+        if (!cancelled) setShowMissingOnly(false);
+      });
+    return () => { cancelled = true; };
+  }, [visible, campaignId, hasVariables, variableKeys]);
+
   const fetchLeads = useCallback(
-    (search: string) => {
+    (search: string, missingOnly: boolean) => {
       if (!campaignId) return;
       setLeadsLoading(true);
       getLeads({
         campaignId,
         limit: PREVIEW_LEAD_LIMIT,
         search: search.trim() || undefined,
+        missingFields: missingOnly && variableKeys?.length ? variableKeys : undefined,
       })
         .then((data) => {
           setLeads(data);
@@ -70,31 +96,36 @@ function EmailPreviewModal({
         .catch(() => setLeads([]))
         .finally(() => setLeadsLoading(false));
     },
-    [campaignId]
+    [campaignId, variableKeys]
   );
 
   const debouncedSearchLeads = useMemo(
-    () => debounce((search: string) => fetchLeads(search), 300),
+    () => debounce((search: string, missingOnly: boolean) => fetchLeads(search, missingOnly), 300),
     [fetchLeads]
   );
 
+  // Re-fetch when visibility, search, or filter toggle changes
   useEffect(() => {
-    if (!visible || !campaignId) {
-      setLeads([]);
-      setSelectedLeadId(null);
-      setSelectedLead(null);
-      setLeadSearch('');
-      lastFetchedSearchRef.current = undefined;
+    if (!visible || !campaignId || showMissingOnly === null) {
+      if (!visible) {
+        setLeads([]);
+        setSelectedLeadId(null);
+        setSelectedLead(null);
+        setLeadSearch('');
+        lastFetchedSearchRef.current = undefined;
+        setShowMissingOnly(hasVariables ? null : false);
+      }
       return;
     }
-    if (lastFetchedSearchRef.current === leadSearch) return;
-    lastFetchedSearchRef.current = leadSearch;
+    const searchKey = `${leadSearch}|${showMissingOnly}`;
+    if (lastFetchedSearchRef.current === searchKey) return;
+    lastFetchedSearchRef.current = searchKey;
     if (leadSearch.trim() === '') {
-      fetchLeads('');
+      fetchLeads('', showMissingOnly);
     } else {
-      debouncedSearchLeads(leadSearch);
+      debouncedSearchLeads(leadSearch, showMissingOnly);
     }
-  }, [visible, campaignId, leadSearch, fetchLeads, debouncedSearchLeads]);
+  }, [visible, campaignId, leadSearch, showMissingOnly, fetchLeads, debouncedSearchLeads, hasVariables]);
 
   const resolvedLead: LeadLike = useMemo(() => {
     if (!selectedLeadId) return SAMPLE_LEAD;
@@ -151,6 +182,42 @@ function EmailPreviewModal({
         {/* Left panel: leads list */}
         <View style={{ width: 280, minWidth: 280, borderRightWidth: 1, borderColor: '#2A2A2A', paddingRight: 16 }}>
           <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Leads</Text>
+          {hasVariables && showMissingOnly !== null && (
+            <View style={{ flexDirection: 'row', marginBottom: 8, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#2A2A2A' }}>
+              <TouchableOpacity
+                onPress={() => setShowMissingOnly(true)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 6,
+                  alignItems: 'center',
+                  backgroundColor: showMissingOnly ? 'rgba(245,158,11,0.2)' : 'transparent',
+                }}
+              >
+                <Text
+                  className="text-xs font-instrument-medium"
+                  style={{ color: showMissingOnly ? '#F59E0B' : '#9CA3AF' }}
+                >
+                  Missing values
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowMissingOnly(false)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 6,
+                  alignItems: 'center',
+                  backgroundColor: !showMissingOnly ? 'rgba(255,255,255,0.08)' : 'transparent',
+                }}
+              >
+                <Text
+                  className="text-xs font-instrument-medium"
+                  style={{ color: !showMissingOnly ? '#FFFFFF' : '#9CA3AF' }}
+                >
+                  All leads
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {campaignId ? (
             <>
               <ScrollView
@@ -161,12 +228,21 @@ function EmailPreviewModal({
                 {leadsLoading && leads.length === 0 ? (
                   <Text className="text-gray-500 text-sm">Loading…</Text>
                 ) : leads.length === 0 ? (
-                  <Text className="text-gray-500 text-sm">
-                    No leads in this campaign. Using sample lead for preview.
-                  </Text>
+                  showMissingOnly && hasVariables ? (
+                    <Text className="text-gray-500 text-sm">
+                      All leads have values for the variables you're using.
+                    </Text>
+                  ) : (
+                    <Text className="text-gray-500 text-sm">
+                      No leads in this campaign. Using sample lead for preview.
+                    </Text>
+                  )
                 ) : (
                   leads.map((lead) => {
                     const isSelected = lead.id === selectedLeadId;
+                    const isMissing = hasVariables && variableKeys
+                      ? hasMissingValues(lead as LeadLike, variableKeys)
+                      : false;
                     return (
                       <TouchableOpacity
                         key={lead.id}
@@ -175,6 +251,8 @@ function EmailPreviewModal({
                           setSelectedLead(lead);
                         }}
                         style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
                           paddingVertical: 10,
                           paddingHorizontal: 12,
                           borderRadius: 8,
@@ -184,14 +262,26 @@ function EmailPreviewModal({
                           borderColor: isSelected ? 'rgba(243,68,13,0.4)' : 'transparent',
                         }}
                       >
-                        <Text className="text-white font-instrument text-sm" numberOfLines={1}>
-                          {lead.email ?? lead.name ?? lead.id}
-                        </Text>
-                        {(lead.first_name || lead.last_name || lead.name) && (
-                          <Text className="text-gray-500 text-xs mt-0.5" numberOfLines={1}>
-                            {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.name}
-                          </Text>
+                        {isMissing && !showMissingOnly && (
+                          <View style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: 3,
+                            backgroundColor: '#F59E0B',
+                            marginRight: 8,
+                            flexShrink: 0,
+                          }} />
                         )}
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text className="text-white font-instrument text-sm" numberOfLines={1}>
+                            {lead.email ?? lead.name ?? lead.id}
+                          </Text>
+                          {(lead.first_name || lead.last_name || lead.name) && (
+                            <Text className="text-gray-500 text-xs mt-0.5" numberOfLines={1}>
+                              {[lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.name}
+                            </Text>
+                          )}
+                        </View>
                       </TouchableOpacity>
                     );
                   })

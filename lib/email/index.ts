@@ -15,7 +15,7 @@ export {
   type SanitizeEmailBodyOptions,
 } from './sanitize-body';
 
-export { mergeTemplate, type LeadLike } from './mergeTemplate';
+export { mergeTemplate, extractVariableKeys, extractMalformedVariables, hasMissingValues, type LeadLike } from './mergeTemplate';
 export { processSpintax, type ProcessSpintaxOptions } from './processSpintax';
 export { getLeadVariables, type LeadVariable } from './leadVariables';
 export {

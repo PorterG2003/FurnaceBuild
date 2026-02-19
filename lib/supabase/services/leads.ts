@@ -16,6 +16,8 @@ export interface LeadFilters {
   offset?: number;
   /** Search by email or name (ilike). */
   search?: string;
+  /** Filter to leads where any of these fields is null or empty. Prefix custom fields with "custom." */
+  missingFields?: string[];
 }
 
 /**
@@ -71,6 +73,21 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
     query = query.or(`email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`);
   }
 
+  if (filters?.missingFields?.length) {
+    const conditions: string[] = [];
+    for (const field of filters.missingFields) {
+      if (field.startsWith('custom.')) {
+        const jsonKey = field.slice(7);
+        conditions.push(`custom_lead_data->>${jsonKey}.is.null`);
+        conditions.push(`custom_lead_data->>${jsonKey}.eq.`);
+      } else {
+        conditions.push(`${field}.is.null`);
+        conditions.push(`${field}.eq.`);
+      }
+    }
+    query = query.or(conditions.join(','));
+  }
+
   if (typeof filters?.offset === 'number') {
     const limit = filters.limit ?? 50;
     query = query.range(filters.offset, filters.offset + limit - 1);
@@ -90,6 +107,8 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
 export interface LeadCountFilters {
   campaignId?: string;
   bucketId?: string;
+  /** Count only leads where any of these fields is null or empty. Prefix custom fields with "custom." */
+  missingFields?: string[];
 }
 
 /**
@@ -98,7 +117,7 @@ export interface LeadCountFilters {
 export async function getLeadCount(filters?: LeadCountFilters): Promise<number> {
   let query = supabase
     .from('leads')
-    .select('id', { count: 'exact', head: true });
+    .select('id', { count: 'exact', head: true }) as any;
 
   if (filters?.campaignId) {
     query = query.eq('campaign_id', filters.campaignId);
@@ -106,6 +125,21 @@ export async function getLeadCount(filters?: LeadCountFilters): Promise<number> 
 
   if (filters?.bucketId) {
     query = query.eq('bucket_id', filters.bucketId);
+  }
+
+  if (filters?.missingFields?.length) {
+    const conditions: string[] = [];
+    for (const field of filters.missingFields) {
+      if (field.startsWith('custom.')) {
+        const jsonKey = field.slice(7);
+        conditions.push(`custom_lead_data->>${jsonKey}.is.null`);
+        conditions.push(`custom_lead_data->>${jsonKey}.eq.`);
+      } else {
+        conditions.push(`${field}.is.null`);
+        conditions.push(`${field}.eq.`);
+      }
+    }
+    query = query.or(conditions.join(','));
   }
 
   const { count, error } = await query;

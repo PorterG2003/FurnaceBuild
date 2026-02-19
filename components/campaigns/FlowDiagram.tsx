@@ -53,10 +53,42 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
 
   if (!nodes || nodes.length === 0) {
     return (
-      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6" style={{ minHeight: 400 }}>
-        <Text className="text-gray-400 font-instrument text-sm text-center">
-          No flow diagram available
-        </Text>
+      <View
+        className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-8"
+        style={{
+          minHeight: 280,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderStyle: 'solid',
+        }}
+      >
+        <View
+          style={{
+            borderWidth: 1,
+            borderColor: '#2A2A2A',
+            borderStyle: 'dashed',
+            borderRadius: 12,
+            paddingVertical: 32,
+            paddingHorizontal: 24,
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            maxWidth: 320,
+          }}
+        >
+          <Text
+            className="text-gray-500 font-instrument text-4xl mb-3"
+            style={{ opacity: 0.6 }}
+          >
+            ∿
+          </Text>
+          <Text className="text-white font-instrument-semibold text-base text-center mb-1">
+            No flow yet
+          </Text>
+          <Text className="text-gray-500 font-instrument text-sm text-center">
+            Edit the campaign flow in the builder to see it here.
+          </Text>
+        </View>
       </View>
     );
   }

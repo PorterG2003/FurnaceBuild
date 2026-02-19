@@ -3,7 +3,7 @@ import { View, Text, Pressable, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PageLayout, Breadcrumb } from '@/components/ui/layout';
 import { LoadingState, Alert } from '@/components/ui/feedback';
-import { ProgressDial } from '@/components/ui/progress-dial';
+import { MultiSegmentDial } from '@/components/ui/multi-segment-dial';
 import { FlowDiagram, LeadsTable, ScheduleTab, type Lead } from '@/components/campaigns';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { isWithinSchedule } from '@/lib/campaigns/utils';
@@ -20,6 +20,40 @@ const tabs: Tab[] = [
   { id: 'leads', label: 'Leads' },
   { id: 'schedule', label: 'Schedule' },
 ];
+
+function fillMissingStatsByDay(
+  rows: CampaignStatsByDay[],
+  startDate: string,
+  endDate: string
+): CampaignStatsByDay[] {
+  const existingByDay = new Map(rows.map((item) => [item.date, item] as const));
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+    return rows;
+  }
+
+  const filled: CampaignStatsByDay[] = [];
+  const cursor = new Date(start);
+
+  while (cursor <= end) {
+    const date = cursor.toISOString().slice(0, 10);
+    const existing = existingByDay.get(date);
+    filled.push(
+      existing ?? {
+        date,
+        sent: 0,
+        replied: 0,
+        positiveReply: 0,
+        bounce: 0,
+      }
+    );
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return filled;
+}
 
 export default function CampaignPage() {
   const router = useRouter();
@@ -141,27 +175,24 @@ export default function CampaignPage() {
   }, [loadCampaign]);
 
   const loadStatsByDay = useCallback(async () => {
-    if (!id) return;
+    if (!id || !campaign) return;
     setStatsByDayLoading(true);
     try {
-      const end = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - 30);
-      const startStr = start.toISOString().slice(0, 10);
-      const endStr = end.toISOString().slice(0, 10);
+      const startStr = campaign.created_at.slice(0, 10);
+      const endStr = new Date().toISOString().slice(0, 10);
       const data = await getCampaignStatsByDay(id, startStr, endStr);
-      setStatsByDay(data);
+      setStatsByDay(fillMissingStatsByDay(data, startStr, endStr));
     } catch (err) {
       console.error('Error loading campaign stats by day:', err);
       setStatsByDay([]);
     } finally {
       setStatsByDayLoading(false);
     }
-  }, [id]);
+  }, [id, campaign]);
 
   useEffect(() => {
-    if (id && activeTab === 'details') loadStatsByDay();
-  }, [id, activeTab, loadStatsByDay, refreshKey]);
+    if (id && campaign && activeTab === 'details') loadStatsByDay();
+  }, [id, campaign, activeTab, loadStatsByDay, refreshKey]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -365,89 +396,79 @@ export default function CampaignPage() {
                         )}
                       </View>
 
-                      <View style={{ flex: 1, gap: 12 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Text className="text-gray-400 font-instrument text-xs">Mailboxes</Text>
-                          <Text className="text-white font-instrument-semibold text-sm">{mailboxCount}</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text className="text-gray-400 font-instrument text-xs mb-3">Lead Progress</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 80, flexWrap: 'wrap' }}>
+                          <MultiSegmentDial
+                            segments={[
+                              { value: leadsNotStarted, color: '#6b7280' },
+                              { value: leadsInProgress, color: '#3b82f6' },
+                              { value: leadsPaused, color: '#8b5cf6' },
+                              { value: leadsCompleted, color: '#10b981' },
+                              { value: leadsStopped, color: '#f59e0b' },
+                            ]}
+                            total={leadCount}
+                            size={150}
+                            strokeWidth={10}
+                            centerValue={leadsCompleted + leadsStopped}
+                            centerTotal={leadCount}
+                            centerTopLabel="Completed"
+                            centerBottomLabel="Total"
+                          />
+                          <View style={{ flex: 1, minWidth: 140 }}>
+                            {leadCount === 0 ? (
+                              <Text className="text-gray-500 font-instrument text-sm">No leads</Text>
+                            ) : (
+                              <>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
+                                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#6b7280' }} />
+                                    <Text className="text-gray-300 font-instrument text-sm">Not Started</Text>
+                                  </View>
+                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsNotStarted}</Text>
+                                </View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
+                                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#3b82f6' }} />
+                                    <Text className="text-gray-300 font-instrument text-sm">In Progress</Text>
+                                  </View>
+                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsInProgress}</Text>
+                                </View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
+                                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#8b5cf6' }} />
+                                    <Text className="text-gray-300 font-instrument text-sm">Paused</Text>
+                                  </View>
+                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsPaused}</Text>
+                                </View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
+                                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#10b981' }} />
+                                    <Text className="text-gray-300 font-instrument text-sm">Completed</Text>
+                                  </View>
+                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsCompleted}</Text>
+                                </View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
+                                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#f59e0b' }} />
+                                    <Text className="text-gray-300 font-instrument text-sm">Stopped</Text>
+                                  </View>
+                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsStopped}</Text>
+                                </View>
+                              </>
+                            )}
+                          </View>
                         </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Text className="text-gray-400 font-instrument text-xs">Leads</Text>
-                          <Text className="text-white font-instrument-semibold text-sm">{leadCount}</Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Text className="text-gray-400 font-instrument text-xs">Total Enrollments</Text>
-                          <Text className="text-white font-instrument-semibold text-sm">{enrollmentCount}</Text>
-                        </View>
-                        {campaignStats && (
-                          <>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <Text className="text-gray-400 font-instrument text-xs">Sent</Text>
-                              <Text className="text-white font-instrument-semibold text-sm">{campaignStats.sentCount}</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <Text className="text-gray-400 font-instrument text-xs">Replied</Text>
-                              <Text className="text-white font-instrument-semibold text-sm">{campaignStats.repliedCount}</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <Text className="text-gray-400 font-instrument text-xs">Positive Reply</Text>
-                              <Text className="text-white font-instrument-semibold text-sm">{campaignStats.positiveReplyCount}</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <Text className="text-gray-400 font-instrument text-xs">Bounced</Text>
-                              <Text className="text-white font-instrument-semibold text-sm">{campaignStats.bounceCount}</Text>
-                            </View>
-                          </>
-                        )}
-                      </View>
-                    </View>
-
-                    <View style={{ paddingTop: 16, borderTopWidth: 1, borderTopColor: '#2A2A2A' }}>
-                      <Text className="text-gray-400 font-instrument text-xs mb-4 text-center">Lead Progress</Text>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', gap: 16 }}>
-                        <ProgressDial
-                          value={leadsNotStarted}
-                          total={leadCount}
-                          label="Not Started"
-                          color="#6b7280"
-                          size={90}
-                        />
-                        <ProgressDial
-                          value={leadsInProgress}
-                          total={leadCount}
-                          label="In Progress"
-                          color="#3b82f6"
-                          size={90}
-                        />
-                        <ProgressDial
-                          value={leadsCompleted}
-                          total={leadCount}
-                          label="Completed"
-                          color="#10b981"
-                          size={90}
-                        />
-                        <ProgressDial
-                          value={leadsStopped}
-                          total={leadCount}
-                          label="Stopped"
-                          color="#f59e0b"
-                          size={90}
-                        />
-                        <ProgressDial
-                          value={leadsPaused}
-                          total={leadCount}
-                          label="Paused"
-                          color="#8b5cf6"
-                          size={90}
-                        />
                       </View>
                     </View>
                   </View>
-                </View>
-
-                <View style={{ marginBottom: 16 }}>
-                  <Text className="text-lg font-instrument-semibold text-white mb-4">Activity (last 30 days)</Text>
-                  <CampaignStatsChart data={statsByDay} loading={statsByDayLoading} />
-                </View>
+                  <View style={{ borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingTop: 24, marginTop: 24 }}>
+                    <View style={{ marginBottom: 16 }}>
+                      <Text className="text-lg font-instrument-semibold text-white">Daily activity</Text>
+                    </View>
+                    <CampaignStatsChart data={statsByDay} loading={statsByDayLoading} embedded />
+                  </View>
+                  </View>
 
                 {flowData?.nodes && flowData?.edges && (
                   <View style={{ marginBottom: 16 }}>

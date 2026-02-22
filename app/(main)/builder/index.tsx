@@ -1,10 +1,9 @@
 import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
 import { View, Platform, Text, Pressable } from 'react-native';
-import { Button } from '@/components/ui/button';
 import { Breadcrumb } from '@/components/ui/layout';
 import { NavBar } from '@/components/ui/layout/NavBar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { getCampaignById, getCampaignMailboxes, updateCampaign } from '@/lib/supabase/services/campaigns';
+import { getCampaignById, updateCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
 import { nodeTypes } from './nodes/nodeTypes';
@@ -47,22 +46,6 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
     Handle = ReactFlowModule.Handle;
   } catch (error) {
     console.error('Failed to load React Flow:', error);
-  }
-}
-
-// Note: Initial nodes/edges are now passed as props to FlowEditor
-
-function hasFlowBuilt(campaign: Campaign | null): boolean {
-  if (!campaign?.flow_data) return false;
-  try {
-    const fd =
-      typeof campaign.flow_data === 'string'
-        ? JSON.parse(campaign.flow_data)
-        : campaign.flow_data;
-    const nodes = Array.isArray((fd as any)?.nodes) ? (fd as any).nodes : [];
-    return nodes.length > 0;
-  } catch {
-    return false;
   }
 }
 
@@ -253,9 +236,7 @@ export default function BuilderPage() {
   const { campaignId } = useLocalSearchParams<{ campaignId: string }>();
   const router = useRouter();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [mailboxes, setMailboxes] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isStarting, setIsStarting] = useState(false);
   const [editingNode, setEditingNode] = useState<{ id: string; type: string; data: any } | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [initialFlowData, setInitialFlowData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
@@ -274,12 +255,8 @@ export default function BuilderPage() {
       
       setIsLoading(true);
       try {
-        const [data, mailboxList] = await Promise.all([
-          getCampaignById(campaignId),
-          getCampaignMailboxes(campaignId),
-        ]);
+        const data = await getCampaignById(campaignId);
         setCampaign(data);
-        setMailboxes(mailboxList || []);
         
         // Extract and parse flow_data
         if (data?.flow_data && !hasLoadedFlowRef.current) {
@@ -416,42 +393,13 @@ export default function BuilderPage() {
     setEditingNode(null);
   };
 
-  const nameSet = !!(campaign?.name?.trim());
-  const flowBuilt = hasFlowBuilt(campaign);
-  const scheduleSet = true;
-  const mailboxesAdded = mailboxes.length >= 1;
-  const isDraft = campaign?.status === 'draft' || (campaign != null && campaign.status !== 'running' && campaign.status !== 'paused' && campaign.status !== 'stopped');
-  const canStart = isDraft && nameSet && flowBuilt && scheduleSet && mailboxesAdded;
-  const showProgressBar = !isLoading && campaign && campaign.status !== 'running' && campaign.status !== 'paused' && campaign.status !== 'stopped';
-
-  const steps = [
-    { label: 'Name', done: nameSet },
-    { label: 'Flow', done: flowBuilt },
-    { label: 'Schedule', done: scheduleSet, onPress: () => campaignId && router.push({ pathname: '/campaigns/[id]/setup', params: { id: campaignId } }) },
-    { label: 'Mailboxes', done: mailboxesAdded, onPress: () => campaignId && router.push({ pathname: '/campaigns/[id]/setup', params: { id: campaignId } }) },
-  ];
-
-  const handleStartCampaign = async () => {
-    if (!campaignId || !canStart) return;
-    setIsStarting(true);
-    try {
-      await updateCampaign(campaignId, { status: 'running' });
-      const data = await getCampaignById(campaignId);
-      setCampaign(data);
-    } catch (err) {
-      console.error('Error starting campaign:', err);
-    } finally {
-      setIsStarting(false);
-    }
-  };
-
   return (
     <View className="flex-1 bg-[#121212] flex-row">
       <NavBar />
       
       {/* Main Content Area - React Flow */}
       <View className="flex-1 relative">
-        {/* Header: breadcrumb + progress strip (draft) */}
+        {/* Header */}
         <View
           style={{
             backgroundColor: '#121212',
@@ -478,95 +426,40 @@ export default function BuilderPage() {
                 },
               ]}
             />
-            {/* Save Status Indicator */}
-            {saveStatus !== 'idle' && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {saveStatus === 'saving' && (
-                  <>
-                    <View 
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 4,
-                        backgroundColor: '#FBBF24',
-                      }}
-                    />
-                    <Text className="text-gray-400 font-instrument text-sm">Saving...</Text>
-                  </>
-                )}
-                {saveStatus === 'saved' && (
-                  <>
-                    <View 
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                      backgroundColor: '#F3440D',
-                    }}
-                    />
-                    <Text className="text-gray-400 font-instrument text-sm">Saved</Text>
-                  </>
-                )}
-                {saveStatus === 'error' && (
-                  <>
-                    <View 
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 4,
-                        backgroundColor: '#EF4444',
-                      }}
-                    />
-                    <Text className="text-red-400 font-instrument text-sm">Save failed</Text>
-                  </>
-                )}
-              </View>
-            )}
-          </View>
-
-          {/* Progress bar (draft only) */}
-          {showProgressBar && (
-            <View style={{ paddingHorizontal: 24, paddingBottom: 16 }}>
-              <View style={{ flexDirection: 'row', marginBottom: 8 }}>
-                {steps.map((step, i) => (
-                  <View key={i} style={{ flex: 1, alignItems: 'center' }}>
-                    {step.onPress ? (
-                      <Pressable onPress={step.onPress}>
-                        <Text className="font-instrument text-xs text-gray-400">
-                          {step.label}
-                        </Text>
-                      </Pressable>
-                    ) : (
-                      <Text className="font-instrument text-xs text-gray-400">
-                        {step.label}
-                      </Text>
-                    )}
-                  </View>
-                ))}
-              </View>
-              <View style={{ height: 6, borderRadius: 3, overflow: 'hidden', backgroundColor: '#2A2A2A' }}>
-                <View
-                  style={{
-                    height: '100%',
-                    width: `${(steps.filter((s) => s.done).length / steps.length) * 100}%`,
-                    backgroundColor: '#F3440D',
-                    borderTopLeftRadius: 3,
-                    borderBottomLeftRadius: 3,
-                  }}
-                />
-              </View>
-              {canStart && (
-                <View style={{ marginTop: 12, alignSelf: 'flex-start' }}>
-                  <Button
-                    onPress={handleStartCampaign}
-                    disabled={isStarting}
-                  >
-                    {isStarting ? 'Starting...' : 'Start campaign'}
-                  </Button>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {/* Save Status Indicator */}
+              {saveStatus !== 'idle' && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {saveStatus === 'saving' && (
+                    <>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#FBBF24' }} />
+                      <Text className="text-gray-400 font-instrument text-sm">Saving...</Text>
+                    </>
+                  )}
+                  {saveStatus === 'saved' && (
+                    <>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#F3440D' }} />
+                      <Text className="text-gray-400 font-instrument text-sm">Saved</Text>
+                    </>
+                  )}
+                  {saveStatus === 'error' && (
+                    <>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' }} />
+                      <Text className="text-red-400 font-instrument text-sm">Save failed</Text>
+                    </>
+                  )}
                 </View>
               )}
+              {campaignId && (
+                <Pressable
+                  onPress={() => router.push({ pathname: '/campaigns/[id]/mission-control', params: { id: campaignId } })}
+                  className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+                >
+                  <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
+                </Pressable>
+              )}
             </View>
-          )}
+          </View>
         </View>
 
         {/* Flow Editor */}
@@ -589,10 +482,10 @@ export default function BuilderPage() {
               <Text className="text-gray-400 font-instrument">Loading flow...</Text>
             </View>
           )}
-          {/* Floating Configure & launch button - bottom right */}
+          {/* Floating Mission Control button - bottom right */}
           {campaignId && (
             <Pressable
-              onPress={() => router.push({ pathname: '/campaigns/[id]/setup', params: { id: campaignId } })}
+              onPress={() => router.push({ pathname: '/campaigns/[id]/mission-control', params: { id: campaignId } })}
               style={{
                 position: 'absolute',
                 right: 24,
@@ -610,7 +503,7 @@ export default function BuilderPage() {
               }}
             >
               <Text className="text-white font-instrument-semibold text-sm">
-                Configure & launch
+                Mission Control
               </Text>
             </Pressable>
           )}

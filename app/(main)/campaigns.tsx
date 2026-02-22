@@ -119,7 +119,7 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
         />
       </View>
       <Text className="text-gray-500 font-instrument text-sm mb-4">
-        Next you'll build your flow, then set schedule and mailboxes to go live.
+        Next you'll configure your flow, schedule, and mailboxes in Mission Control.
       </Text>
       {error ? (
         <View className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
@@ -203,11 +203,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   };
 
   const handleContinueSetup = () => {
-    if (isDraft && !draftHasFlow) {
-      router.push({ pathname: '/builder', params: { campaignId: campaign.id } });
-    } else {
-      router.push({ pathname: '/campaigns/[id]', params: { id: campaign.id } });
-    }
+    router.push({ pathname: '/campaigns/[id]/mission-control', params: { id: campaign.id } });
   };
 
   const handleOpen = () => {
@@ -350,7 +346,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
                 style={{ backgroundColor: '#f85102' }}
               >
                 <Text className="text-white font-instrument-medium text-sm">
-                  Continue setup
+                  Mission Control
                 </Text>
               </Pressable>
             )}
@@ -484,10 +480,9 @@ export default function CampaignsPage() {
         status: 'draft',
       });
       await loadCampaigns();
-      // Navigate to builder after successful creation
       router.push({
-        pathname: '/builder',
-        params: { campaignId: newCampaign.id },
+        pathname: '/campaigns/[id]/mission-control',
+        params: { id: newCampaign.id },
       });
     } finally {
       setIsCreating(false);

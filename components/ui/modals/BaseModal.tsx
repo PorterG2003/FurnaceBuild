@@ -56,8 +56,7 @@ export function BaseModal({
         onPress={onClose}
       >
         <View
-          style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}
-          pointerEvents="box-none"
+          style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, pointerEvents: 'box-none' }}
         >
           <Pressable onPress={(e) => e.stopPropagation()} style={{ alignSelf: 'stretch', alignItems: 'center' }}>
             <View

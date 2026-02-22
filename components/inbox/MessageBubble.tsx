@@ -76,9 +76,9 @@ export function MessageBubble({
     >
       {isPending && !isFailed ? (
         <Animated.View
-          pointerEvents="none"
           style={{
             position: 'absolute',
+            pointerEvents: 'none',
             top: 0,
             left: 0,
             right: 0,
@@ -91,7 +91,6 @@ export function MessageBubble({
       ) : null}
       {isFailed ? (
         <View
-          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
@@ -101,6 +100,7 @@ export function MessageBubble({
             borderWidth: 2,
             borderRadius: 12,
             borderColor: '#EF4444',
+            pointerEvents: 'none',
           }}
         />
       ) : null}

@@ -40,8 +40,7 @@ export function ScheduleModal({ visible, onClose, onSaved, campaign, campaignId 
       setSchedule(s);
       const matched =
         scheduleMatchesPreset(s, '24/7') ? '24/7' :
-        scheduleMatchesPreset(s, 'business-hours') ? 'business-hours' :
-        scheduleMatchesPreset(s, 'weekdays-only') ? 'weekdays-only' : 'custom';
+        scheduleMatchesPreset(s, 'business-hours') ? 'business-hours' : 'custom';
       setSchedulePreset(matched);
     } else {
       setSchedulePreset('24/7');

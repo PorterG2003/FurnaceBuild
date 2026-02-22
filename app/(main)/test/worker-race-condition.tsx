@@ -942,3 +942,5 @@ export function RaceConditionTest() {
     </ScrollView>
   );
 }
+
+export default RaceConditionTest;

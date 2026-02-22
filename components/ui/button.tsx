@@ -22,7 +22,8 @@ export function Button({
         {
           'bg-brand-orange text-white': variant === 'default' && !props.disabled,
           'bg-brand-orange/50 text-white/70': variant === 'default' && props.disabled,
-          'bg-secondary text-secondary-foreground': variant === 'secondary',
+          'bg-[#2A2A2A]': variant === 'secondary' && !props.disabled,
+          'bg-[#2A2A2A]/50': variant === 'secondary' && props.disabled,
           'border border-input bg-transparent': variant === 'outline',
         },
         {
@@ -42,9 +43,9 @@ export function Button({
           className={cn(
             'font-instrument-medium',
             {
-              'text-white': variant === 'default',
-              'text-black': variant === 'secondary',
-              'text-foreground': variant === 'outline',
+            'text-white': variant === 'default',
+            'text-gray-200': variant === 'secondary',
+            'text-foreground': variant === 'outline',
             },
             {
               'text-base': size === 'default',

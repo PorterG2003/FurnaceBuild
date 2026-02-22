@@ -331,3 +331,4 @@ function EmailPreviewModal({
 }
 
 export { EmailPreviewModal };
+export default EmailPreviewModal;

@@ -124,3 +124,5 @@ export function EmailBodyEditor({
     </View>
   );
 }
+
+export default EmailBodyEditor;

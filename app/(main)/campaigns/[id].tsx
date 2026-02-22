@@ -208,8 +208,8 @@ export default function CampaignPage() {
     if (id) router.push({ pathname: '/builder', params: { campaignId: id } });
   };
 
-  const handleOpenSetup = () => {
-    if (id) router.push({ pathname: '/campaigns/[id]/setup', params: { id } });
+  const handleOpenMissionControl = () => {
+    if (id) router.push({ pathname: '/campaigns/[id]/mission-control', params: { id } });
   };
 
   const schedule = campaign ? (campaign.schedule as any) || null : null;
@@ -264,10 +264,10 @@ export default function CampaignPage() {
             </View>
           </Pressable>
           <Pressable
-            onPress={handleOpenSetup}
+            onPress={handleOpenMissionControl}
             className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
           >
-            <Text className="text-white font-instrument-medium text-sm">Setup</Text>
+            <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
           </Pressable>
           <Pressable
             onPress={handleEditFlow}

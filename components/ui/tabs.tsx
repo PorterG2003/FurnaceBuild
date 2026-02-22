@@ -138,10 +138,10 @@ export function Tabs({ tabs, activeTab, onTabChange, layout = 'content' }: TabsP
     >
       {hasMeasurements && (
         <Animated.View
-          pointerEvents="none"
           style={{
             position: 'absolute',
             left: CONTAINER_PADDING,
+            pointerEvents: 'none',
             top: INDICATOR_INSET,
             bottom: INDICATOR_INSET,
             borderRadius: 8,

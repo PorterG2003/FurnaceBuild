@@ -12,8 +12,7 @@ export interface ScheduleShape {
 
 export const SCHEDULE_PRESETS = [
   { value: '24/7', label: '24/7 (No restrictions)' },
-  { value: 'business-hours', label: 'Business hours (9–5 Mon–Fri)' },
-  { value: 'weekdays-only', label: 'Weekdays only (24/7 Mon–Fri)' },
+  { value: 'business-hours', label: 'Business hours (9–5 Mon–Fri, Central)' },
 ] as const;
 
 export type SchedulePreset = (typeof SCHEDULE_PRESETS)[number]['value'] | 'custom';
@@ -71,20 +70,11 @@ export function applyPreset(preset: SchedulePreset): ScheduleShape {
       };
     case 'business-hours':
       return {
-        timezone: 'America/New_York',
+        timezone: 'America/Chicago',
         start_hour: 9,
         start_minute: 0,
         end_hour: 17,
         end_minute: 0,
-        days_of_week: [1, 2, 3, 4, 5],
-      };
-    case 'weekdays-only':
-      return {
-        timezone: 'America/New_York',
-        start_hour: 0,
-        start_minute: 0,
-        end_hour: 23,
-        end_minute: 59,
         days_of_week: [1, 2, 3, 4, 5],
       };
     default:
@@ -107,7 +97,7 @@ export function formatHour12(hour: number, minute: number): string {
 
 export function scheduleMatchesPreset(schedule: ScheduleShape | null, preset: SchedulePreset): boolean {
   if (!schedule || preset === 'custom') return false;
-  const applied = applyPreset(preset as '24/7' | 'business-hours' | 'weekdays-only');
+  const applied = applyPreset(preset as '24/7' | 'business-hours');
   return (
     schedule.timezone === applied.timezone &&
     schedule.start_hour === applied.start_hour &&

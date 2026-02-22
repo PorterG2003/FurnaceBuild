@@ -13,8 +13,7 @@ interface ScheduleConfigurationStepProps {
 
 const SCHEDULE_PRESETS: { value: SchedulePreset; label: string }[] = [
   { value: '24/7', label: '24/7 (No Restrictions)' },
-  { value: 'business-hours', label: 'Business Hours (9-5 Mon-Fri)' },
-  { value: 'weekdays-only', label: 'Weekdays Only (24/7 Mon-Fri)' },
+  { value: 'business-hours', label: 'Business Hours (9-5 Mon-Fri, Central)' },
 ];
 
 const DAYS_OF_WEEK = [

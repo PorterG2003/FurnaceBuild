@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, Platform, useWindowDimensions, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native';
 import { BarChart, type barDataItem } from 'react-native-gifted-charts';
 import type { CampaignStatsByDay } from '@/lib/supabase/services/campaigns';
 import { format, parseISO } from 'date-fns';
+import { Tooltip } from '@/components/ui/Tooltip';
 
 const CHART_HEIGHT = 220;
 const COLORS = {
@@ -20,6 +21,11 @@ const GROUP_LABEL_WIDTH = 4 * GROUP_BAR_WIDTH + 3 * BAR_SPACING;
 const BAR_ANIMATION_DURATION = 700;
 const FONT_FAMILY = 'InstrumentSans_400Regular';
 const FONT_FAMILY_SEMIBOLD = 'InstrumentSans_600SemiBold';
+const INITIAL_SPACING = 16;
+const END_SPACING = 16;
+const Y_AXIS_LABEL_WIDTH = 35;
+const GROUP_WIDTH = 4 * GROUP_BAR_WIDTH + 3 * BAR_SPACING + GROUP_SPACING;
+const STRIP_WIDTH = 4 * GROUP_BAR_WIDTH + 3 * BAR_SPACING;
 
 interface BarItem extends barDataItem {
   value: number;
@@ -54,6 +60,32 @@ function getNiceMax(value: number): number {
   return Math.ceil(value / 25) * 25;
 }
 
+const STAT_DEFS = [
+  { label: 'Sent', key: 'sent' as const, color: COLORS.sent },
+  { label: 'Replied', key: 'replied' as const, color: COLORS.replied },
+  { label: 'Positive', key: 'positiveReply' as const, color: COLORS.positiveReply },
+  { label: 'Bounced', key: 'bounce' as const, color: COLORS.bounce },
+];
+
+function DayTooltipContent({ day }: { day: CampaignStatsByDay }) {
+  return (
+    <>
+      <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 4, fontFamily: FONT_FAMILY }}>
+        {format(parseISO(day.date), 'MMM d, yyyy')}
+      </Text>
+      {STAT_DEFS.map((stat) => (
+        <View key={stat.label} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: stat.color }} />
+            <Text style={{ color: '#D1D5DB', fontSize: 12, fontFamily: FONT_FAMILY }}>{stat.label}</Text>
+          </View>
+          <Text style={{ color: '#fff', fontSize: 12, fontFamily: FONT_FAMILY }}>{day[stat.key]}</Text>
+        </View>
+      ))}
+    </>
+  );
+}
+
 interface CampaignStatsChartProps {
   data: CampaignStatsByDay[];
   loading?: boolean;
@@ -63,6 +95,7 @@ interface CampaignStatsChartProps {
 
 export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsChartProps) {
   const progress = useBarGrowAnimation(!!data && data.length > 0);
+  const [scrollX, setScrollX] = useState(0);
 
   const wrapperStyle = { width: '100%' as const };
   const wrapperClass = embedded ? undefined : 'rounded-xl border border-[#2A2A2A] bg-[#1A1A1A]';
@@ -96,6 +129,7 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
 
   const { width: windowWidth } = useWindowDimensions();
   const chartParentWidth = windowWidth - 24 * 2 - 16 * 2;
+  const chartContentWidth = INITIAL_SPACING + data.length * GROUP_WIDTH + END_SPACING;
 
   const barData: BarItem[] = [];
   data.forEach((day) => {
@@ -142,45 +176,30 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
     });
   });
 
-  const renderTooltip = useCallback((item: BarItem) => {
-    if (!item) return null;
-    const barItem = item as BarItem;
-    return (
-      <View
-        style={{
-          backgroundColor: '#2A2A2A',
-          borderWidth: 1,
-          borderColor: '#3A3A3A',
-          borderRadius: 8,
-          paddingVertical: 10,
-          paddingHorizontal: 12,
-          minWidth: 100,
-        }}
-      >
-        <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 4, fontFamily: FONT_FAMILY }}>
-          {barItem.date ? format(parseISO(barItem.date), 'MMM d, yyyy') : ''}
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 2,
-                backgroundColor: (barItem.frontColor as string) ?? '#9CA3AF',
-              }}
-            />
-            <Text style={{ color: '#D1D5DB', fontSize: 12, fontFamily: FONT_FAMILY }}>
-              {barItem.dataLabel ?? ''}
-            </Text>
-          </View>
-          <Text style={{ color: '#fff', fontSize: 12, fontFamily: FONT_FAMILY }}>
-            {barItem.value ?? 0}
-          </Text>
-        </View>
-      </View>
-    );
+  const handleScroll = useCallback((ev: NativeSyntheticEvent<NativeScrollEvent>) => {
+    setScrollX(ev.nativeEvent.contentOffset.x);
   }, []);
+
+  const tooltipStrips = useMemo(
+    () =>
+      data.map((day, i) => (
+        <Tooltip
+          key={day.date}
+          content={<DayTooltipContent day={day} />}
+          placement="cursor"
+          style={{
+            position: 'absolute',
+            left: INITIAL_SPACING + i * GROUP_WIDTH,
+            width: STRIP_WIDTH,
+            top: 0,
+            bottom: 0,
+          }}
+        >
+          <View style={{ flex: 1 }} />
+        </Tooltip>
+      )),
+    [data]
+  );
 
   return (
     <View className={wrapperClass} style={wrapperStyle}>
@@ -203,36 +222,64 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
             <Text className="text-gray-400 font-instrument text-xs">Bounced</Text>
           </View>
         </View>
-        <BarChart
-        data={barData}
-        width={chartParentWidth}
-        height={CHART_HEIGHT}
-        maxValue={maxValue}
-        noOfSections={4}
-        barWidth={GROUP_BAR_WIDTH}
-        spacing={BAR_SPACING}
-        initialSpacing={16}
-        endSpacing={16}
-        xAxisThickness={1}
-        xAxisColor="#2A2A2A"
-        yAxisThickness={0}
-        yAxisTextStyle={{ color: '#9CA3AF', fontSize: 11, fontFamily: FONT_FAMILY }}
-        xAxisLabelTextStyle={{ color: '#9CA3AF', fontSize: 10, fontFamily: FONT_FAMILY }}
-        labelsDistanceFromXaxis={8}
-        hideRules={false}
-        rulesColor="#2A2A2A"
-        rulesThickness={1}
-        disableScroll={false}
-        showScrollIndicator={false}
-        scrollToEnd
-        roundedBottom={false}
-        barBorderTopLeftRadius={2}
-        barBorderTopRightRadius={2}
-        backgroundColor="transparent"
-        isAnimated={false}
-        renderTooltip={renderTooltip}
-        autoCenterTooltip
-      />
+        <View style={{ position: 'relative' }}>
+          <BarChart
+            data={barData}
+            width={chartParentWidth}
+            height={CHART_HEIGHT}
+            maxValue={maxValue}
+            noOfSections={4}
+            barWidth={GROUP_BAR_WIDTH}
+            spacing={BAR_SPACING}
+            initialSpacing={INITIAL_SPACING}
+            endSpacing={END_SPACING}
+            xAxisThickness={1}
+            xAxisColor="#2A2A2A"
+            yAxisThickness={0}
+            yAxisLabelWidth={Y_AXIS_LABEL_WIDTH}
+            yAxisTextStyle={{ color: '#9CA3AF', fontSize: 11, fontFamily: FONT_FAMILY }}
+            xAxisLabelTextStyle={{ color: '#9CA3AF', fontSize: 10, fontFamily: FONT_FAMILY }}
+            labelsDistanceFromXaxis={8}
+            hideRules={false}
+            rulesColor="#2A2A2A"
+            rulesThickness={1}
+            disableScroll={false}
+            showScrollIndicator={false}
+            scrollToEnd
+            roundedBottom={false}
+            barBorderTopLeftRadius={2}
+            barBorderTopRightRadius={2}
+            backgroundColor="transparent"
+            isAnimated={false}
+            onScroll={handleScroll}
+          />
+          {Platform.OS === 'web' && (
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: Y_AXIS_LABEL_WIDTH,
+                right: 0,
+                overflow: 'hidden',
+              }}
+              pointerEvents="box-none"
+            >
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  transform: [{ translateX: -scrollX }],
+                  width: chartContentWidth,
+                }}
+                pointerEvents="box-none"
+              >
+                {tooltipStrips}
+              </View>
+            </View>
+          )}
+        </View>
       </View>
     </View>
   );

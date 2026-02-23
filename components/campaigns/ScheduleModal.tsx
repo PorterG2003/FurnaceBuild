@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
-import { View, Text, Pressable, TextInput, Platform } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, Pressable, TextInput } from 'react-native';
+
+const isWeb = typeof window !== 'undefined';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { IntervalMinutesInput } from '@/components/campaigns/IntervalMinutesInput';
+import { useConfirmClose } from '@/hooks/useConfirmClose';
 import { updateCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import {
@@ -17,6 +20,7 @@ import {
   applyPreset,
   formatHour12,
   scheduleMatchesPreset,
+  scheduleEquals,
 } from '@/lib/campaigns/utils';
 
 interface ScheduleModalProps {
@@ -32,22 +36,39 @@ export function ScheduleModal({ visible, onClose, onSaved, campaign, campaignId 
   const [schedule, setSchedule] = useState<ScheduleShape | null>(null);
   const [sendingIntervalSeconds, setSendingIntervalSeconds] = useState(300);
   const [isSaving, setIsSaving] = useState(false);
+  const initialRef = useRef<{ schedule: ScheduleShape | null; preset: SchedulePreset; interval: number } | null>(null);
 
   useEffect(() => {
     if (!visible || !campaign) return;
     const s = scheduleFromCampaign(campaign);
+    let preset: SchedulePreset;
+    let initialSchedule: ScheduleShape | null;
     if (s) {
       setSchedule(s);
-      const matched =
+      preset =
         scheduleMatchesPreset(s, '24/7') ? '24/7' :
         scheduleMatchesPreset(s, 'business-hours') ? 'business-hours' : 'custom';
-      setSchedulePreset(matched);
+      setSchedulePreset(preset);
+      initialSchedule = s;
     } else {
       setSchedulePreset('24/7');
-      setSchedule(applyPreset('24/7'));
+      initialSchedule = applyPreset('24/7');
+      setSchedule(initialSchedule);
+      preset = '24/7';
     }
-    setSendingIntervalSeconds(campaign.sending_interval_seconds ?? 300);
+    const interval = campaign.sending_interval_seconds ?? 300;
+    setSendingIntervalSeconds(interval);
+    initialRef.current = { schedule: initialSchedule, preset, interval };
   }, [visible, campaign]);
+
+  const isDirty =
+    initialRef.current === null
+      ? false
+      : schedulePreset !== initialRef.current.preset ||
+        sendingIntervalSeconds !== initialRef.current.interval ||
+        !scheduleEquals(schedule, initialRef.current.schedule);
+
+  const handleClose = useConfirmClose(isDirty, onClose);
 
   const intervalMinutes = Math.floor(sendingIntervalSeconds / 60);
 
@@ -71,7 +92,7 @@ export function ScheduleModal({ visible, onClose, onSaved, campaign, campaignId 
   return (
     <BaseModal
       visible={visible}
-      onClose={onClose}
+      onClose={handleClose}
       title="Schedule & Interval"
       description="Configure when emails are sent and how often"
       maxWidth="2xl"
@@ -79,7 +100,7 @@ export function ScheduleModal({ visible, onClose, onSaved, campaign, campaignId 
       footer={
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <View style={{ flex: 1 }}>
-            <Button onPress={onClose} variant="secondary">Cancel</Button>
+            <Button onPress={handleClose} variant="secondary">Cancel</Button>
           </View>
           <View style={{ flex: 1 }}>
             <Button onPress={handleSave} disabled={isSaving}>
@@ -127,7 +148,7 @@ export function ScheduleModal({ visible, onClose, onSaved, campaign, campaignId 
 
           <View>
             <Text className="text-gray-400 font-instrument text-xs mb-2">Timezone</Text>
-            {Platform.OS === 'web' ? (
+            {isWeb ? (
               <select
                 value={schedule?.timezone ?? 'America/New_York'}
                 onChange={(e) => {
@@ -180,7 +201,7 @@ export function ScheduleModal({ visible, onClose, onSaved, campaign, campaignId 
                 <View style={{ flex: 1, minWidth: 100 }}>
                   <Text className="text-gray-500 font-instrument text-xs mb-1">Start</Text>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
-                    {Platform.OS === 'web' ? (
+                    {isWeb ? (
                       <>
                         <select
                           value={String(schedule?.start_hour ?? 9)}
@@ -223,7 +244,7 @@ export function ScheduleModal({ visible, onClose, onSaved, campaign, campaignId 
                 <View style={{ flex: 1, minWidth: 100 }}>
                   <Text className="text-gray-500 font-instrument text-xs mb-1">End</Text>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
-                    {Platform.OS === 'web' ? (
+                    {isWeb ? (
                       <>
                         <select
                           value={String(schedule?.end_hour ?? 17)}

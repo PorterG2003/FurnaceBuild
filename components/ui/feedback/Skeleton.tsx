@@ -2,6 +2,9 @@ import React from 'react';
 import { useEffect, useRef } from 'react';
 import { View, Animated, StyleProp, ViewStyle } from 'react-native';
 
+const isWeb = typeof window !== 'undefined';
+const useNativeDriver = !isWeb;
+
 interface SkeletonProps {
   /**
    * Optional className for the container (NativeWind)
@@ -40,12 +43,12 @@ export function Skeleton({
         Animated.timing(opacity, {
           toValue: 0.7,
           duration: 600,
-          useNativeDriver: true,
+          useNativeDriver,
         }),
         Animated.timing(opacity, {
           toValue: 0.4,
           duration: 600,
-          useNativeDriver: true,
+          useNativeDriver,
         }),
       ])
     );

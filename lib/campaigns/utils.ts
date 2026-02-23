@@ -109,6 +109,20 @@ export function scheduleMatchesPreset(schedule: ScheduleShape | null, preset: Sc
   );
 }
 
+export function scheduleEquals(a: ScheduleShape | null, b: ScheduleShape | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.timezone === b.timezone &&
+    a.start_hour === b.start_hour &&
+    (a.start_minute ?? 0) === (b.start_minute ?? 0) &&
+    a.end_hour === b.end_hour &&
+    (a.end_minute ?? 59) === (b.end_minute ?? 59) &&
+    a.days_of_week.length === b.days_of_week.length &&
+    a.days_of_week.every((d, i) => d === b.days_of_week[i])
+  );
+}
+
 export function calculateEmailsPerMailboxPerDay(schedule: ScheduleShape | null, intervalMinutes: number): string {
   if (!schedule || !intervalMinutes || intervalMinutes <= 0) return '—';
   const startMin = (schedule.start_hour ?? 0) * 60 + (schedule.start_minute ?? 0);
@@ -127,8 +141,7 @@ export function calculateEmailsPerMailboxPerDay(schedule: ScheduleShape | null, 
   const intervalsPerWindow = Math.floor(windowMinutes / intervalMinutes);
   const daysCount = schedule.days_of_week?.length ?? 0;
   if (daysCount === 7) return `~${intervalsPerWindow} per mailbox per day`;
-  const avgPerDay = Math.round((intervalsPerWindow * daysCount) / 7 * 100) / 100;
-  return `~${intervalsPerWindow} per scheduled day (avg ${avgPerDay} per calendar day)`;
+  return `~${intervalsPerWindow} per scheduled day`;
 }
 
 export function hasFlowBuilt(campaign: Campaign | null): boolean {

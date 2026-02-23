@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { Authenticator } from '@aws-amplify/ui-react-native';
 import { ToastProvider } from '@/components/ui/feedback';
+import { ConfirmProvider } from '@/components/ui/ConfirmContext';
 
 // Suppress pointerEvents deprecation from react-native-web (triggered by @react-navigation)
 if (typeof console !== 'undefined' && console.warn) {
@@ -50,8 +51,10 @@ export default function RootLayout() {
   return (
     <Authenticator.Provider>
       <ToastProvider>
-        <StatusBar style="auto" />
-        <Slot />
+        <ConfirmProvider>
+          <StatusBar style="auto" />
+          <Slot />
+        </ConfirmProvider>
       </ToastProvider>
     </Authenticator.Provider>
   );

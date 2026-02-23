@@ -179,7 +179,7 @@ function ToastItemComponent({
         {
           zIndex,
           transform: [{ scale: scaleAnim }, { translateY: stackOffsetYAnim }],
-          pointerEvents: 'box-none',
+          pointerEvents: 'auto',
         },
       ]}
     >
@@ -268,8 +268,8 @@ export function ToastProvider({ children }: ToastProviderProps) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <View style={[styles.overlay, { top: topInset, pointerEvents: 'box-none' }]}>
-        <View style={styles.stackContainer}>
+      <View style={[styles.overlay, { top: topInset, pointerEvents: 'none' }]}>
+        <View style={[styles.stackContainer, { pointerEvents: 'box-none' }]}>
           {displayToasts.map((item, index) => {
             const isExiting = item.id === exitingId;
             const visualIndex = visibleWhenExiting

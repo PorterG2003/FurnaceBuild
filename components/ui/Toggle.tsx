@@ -97,11 +97,9 @@ export function Toggle({
               height: THUMB_SIZE,
               borderRadius: THUMB_SIZE / 2,
               marginVertical: (TRACK_HEIGHT - THUMB_SIZE) / 2,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.3,
-              shadowRadius: 2,
-              elevation: 2,
+              ...(typeof window !== 'undefined'
+                ? { boxShadow: '0px 1px 2px rgba(0,0,0,0.3)' }
+                : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 2 }),
             },
             thumbAnimatedStyle,
           ]}

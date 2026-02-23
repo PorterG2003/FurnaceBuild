@@ -122,19 +122,39 @@ export function NavBar() {
     return pathname === path;
   };
 
+  const navRef = useRef<View>(null);
+
   const mouseProps = Platform.OS === 'web' ? {
     onMouseEnter: () => {
       persistedExpandedState = true;
       setIsExpanded(true);
     },
-    onMouseLeave: () => {
+    onMouseLeave: (e: any) => {
+      const ne = e?.nativeEvent;
+      const clientX = ne?.clientX ?? 0;
+      const clientY = ne?.clientY ?? 0;
+      const relatedTarget = ne?.relatedTarget;
+      const el = (navRef.current as any) as HTMLElement | undefined;
+      const rect = el?.getBoundingClientRect?.();
+      const inside = rect ? (clientX >= rect.left && clientX <= rect.left + rect.width && clientY >= rect.top && clientY <= rect.top + rect.height) : null;
+      const movedToChild = el && relatedTarget && typeof el.contains === 'function' && el.contains(relatedTarget);
+      const rightEdge = rect ? rect.left + rect.width : 0;
+      const nearRightEdge = rect ? clientX >= rightEdge - 2 : false;
+      const leavingToOutside = relatedTarget && el && typeof el.contains === 'function' && !el.contains(relatedTarget);
+      if (leavingToOutside) {
+        persistedExpandedState = false;
+        setIsExpanded(false);
+        return;
+      }
+      if (movedToChild || (inside && !nearRightEdge)) return;
       persistedExpandedState = false;
       setIsExpanded(false);
     },
   } : {};
 
   return (
-    <Animated.View 
+    <Animated.View
+      ref={navRef}
       className="bg-[#1A1A1A] border-r border-[#2A2A2A] h-full py-6 overflow-hidden"
       style={animatedStyle}
       {...(mouseProps as any)}

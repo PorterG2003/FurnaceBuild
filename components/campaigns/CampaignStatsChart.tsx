@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, useWindowDimensions } from 'react-native';
-import { BarChart, type stackDataItem } from 'react-native-gifted-charts';
+import { BarChart, type barDataItem } from 'react-native-gifted-charts';
 import type { CampaignStatsByDay } from '@/lib/supabase/services/campaigns';
 import { format, parseISO } from 'date-fns';
 
@@ -11,12 +11,20 @@ const COLORS = {
   positiveReply: '#10b981',
   bounce: '#f59e0b',
 };
-const STACK_LABELS = ['Sent', 'Replied', 'Positive', 'Bounced'] as const;
-const BAR_WIDTH = 48;
-const BAR_SPACING = 10;
+const BAR_LABELS = ['Sent', 'Replied', 'Positive', 'Bounced'] as const;
+type BarLabelType = (typeof BAR_LABELS)[number];
+const GROUP_BAR_WIDTH = 14;
+const BAR_SPACING = 4;
+const GROUP_SPACING = 16;
 const BAR_ANIMATION_DURATION = 700;
 const FONT_FAMILY = 'InstrumentSans_400Regular';
 const FONT_FAMILY_SEMIBOLD = 'InstrumentSans_600SemiBold';
+
+interface BarItem extends barDataItem {
+  value: number;
+  dataLabel: BarLabelType;
+  date: string;
+}
 
 function useBarGrowAnimation(hasData: boolean) {
   const [progress, setProgress] = useState(0);
@@ -79,62 +87,61 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
     );
   }
 
-  const maxTotal = Math.max(
+  const maxSingle = Math.max(
     1,
-    ...data.map((d) => d.sent + d.replied + d.positiveReply + d.bounce)
+    ...data.flatMap((d) => [d.sent, d.replied, d.positiveReply, d.bounce])
   );
-  const maxValue = getNiceMax(maxTotal);
+  const maxValue = getNiceMax(maxSingle);
 
   const { width: windowWidth } = useWindowDimensions();
   const chartParentWidth = windowWidth - 24 * 2 - 16 * 2;
 
-  const stackData: stackDataItem[] = data.map((day) => {
-    const total = day.sent + day.replied + day.positiveReply + day.bounce;
-    const stacks = [
-      { value: day.sent * progress, color: COLORS.sent },
-      { value: day.replied * progress, color: COLORS.replied },
-      { value: day.positiveReply * progress, color: COLORS.positiveReply },
-      { value: day.bounce * progress, color: COLORS.bounce },
+  const barData: BarItem[] = [];
+  data.forEach((day) => {
+    const dateLabel = format(parseISO(day.date), 'MMM d');
+    const values: { value: number; type: BarLabelType; color: string }[] = [
+      { value: day.sent * progress, type: 'Sent', color: COLORS.sent },
+      { value: day.replied * progress, type: 'Replied', color: COLORS.replied },
+      { value: day.positiveReply * progress, type: 'Positive', color: COLORS.positiveReply },
+      { value: day.bounce * progress, type: 'Bounced', color: COLORS.bounce },
     ];
-    const topSegmentColor =
-      day.bounce > 0
-        ? COLORS.bounce
-        : day.positiveReply > 0
-          ? COLORS.positiveReply
-          : day.replied > 0
-            ? COLORS.replied
-            : COLORS.sent;
-    return {
-      label: format(parseISO(day.date), 'MMM d'),
-      labelTextStyle: {
-        color: '#9CA3AF',
-        fontSize: 10,
-        fontFamily: FONT_FAMILY,
-      },
-      stacks,
-      topLabelComponent:
-        total > 0
-          ? () => (
-              <View style={{ marginTop: 24 }}>
-                <Text
-                  style={{
-                    color: topSegmentColor,
-                    fontSize: 11,
-                    fontFamily: FONT_FAMILY_SEMIBOLD,
-                  }}
-                >
-                  {total}
-                </Text>
-              </View>
-            )
-          : undefined,
-      topLabelContainerStyle: {},
-    };
+    values.forEach((v, i) => {
+      barData.push({
+        value: v.value,
+        frontColor: v.color,
+        label: i === 0 ? dateLabel : '',
+        dataLabel: v.type,
+        date: day.date,
+        spacing: i === 3 ? GROUP_SPACING : BAR_SPACING,
+        barWidth: GROUP_BAR_WIDTH,
+        labelTextStyle: {
+          color: '#9CA3AF',
+          fontSize: 10,
+          fontFamily: FONT_FAMILY,
+        },
+        topLabelComponent:
+          v.value > 0
+            ? () => (
+                <View style={{ marginTop: 20 }}>
+                  <Text
+                    style={{
+                      color: v.color,
+                      fontSize: 10,
+                      fontFamily: FONT_FAMILY_SEMIBOLD,
+                    }}
+                  >
+                    {Math.round(v.value)}
+                  </Text>
+                </View>
+              )
+            : undefined,
+      });
+    });
   });
 
-  const renderTooltip = useCallback((item: stackDataItem) => {
-    if (!item?.stacks?.length) return null;
-    const total = item.stacks.reduce((acc, s) => acc + (s.value ?? 0), 0);
+  const renderTooltip = useCallback((item: BarItem) => {
+    if (!item) return null;
+    const barItem = item as BarItem;
     return (
       <View
         style={{
@@ -144,24 +151,29 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
           borderRadius: 8,
           paddingVertical: 10,
           paddingHorizontal: 12,
-          minWidth: 120,
+          minWidth: 100,
         }}
       >
-        <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 6, fontFamily: FONT_FAMILY }}>
-          {item.label}
+        <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 4, fontFamily: FONT_FAMILY }}>
+          {barItem.date ? format(parseISO(barItem.date), 'MMM d, yyyy') : ''}
         </Text>
-        {item.stacks.map((stack, i) => (
-          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: stack.color as string }} />
-              <Text style={{ color: '#D1D5DB', fontSize: 12, fontFamily: FONT_FAMILY }}>{STACK_LABELS[i]}</Text>
-            </View>
-            <Text style={{ color: '#fff', fontSize: 12, fontFamily: FONT_FAMILY }}>{stack.value ?? 0}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 2,
+                backgroundColor: (barItem.frontColor as string) ?? '#9CA3AF',
+              }}
+            />
+            <Text style={{ color: '#D1D5DB', fontSize: 12, fontFamily: FONT_FAMILY }}>
+              {barItem.dataLabel ?? ''}
+            </Text>
           </View>
-        ))}
-        <View style={{ borderTopWidth: 1, borderTopColor: '#3A3A3A', marginTop: 6, paddingTop: 6, flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text style={{ color: '#9CA3AF', fontSize: 11, fontFamily: FONT_FAMILY }}>Total</Text>
-          <Text style={{ color: '#fff', fontSize: 12, fontFamily: FONT_FAMILY }}>{total}</Text>
+          <Text style={{ color: '#fff', fontSize: 12, fontFamily: FONT_FAMILY }}>
+            {barItem.value ?? 0}
+          </Text>
         </View>
       </View>
     );
@@ -189,12 +201,12 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
           </View>
         </View>
         <BarChart
-        stackData={stackData}
+        data={barData}
         width={chartParentWidth}
         height={CHART_HEIGHT}
         maxValue={maxValue}
         noOfSections={4}
-        barWidth={BAR_WIDTH}
+        barWidth={GROUP_BAR_WIDTH}
         spacing={BAR_SPACING}
         initialSpacing={16}
         endSpacing={16}
@@ -212,10 +224,6 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
         scrollToEnd
         roundedTop
         roundedBottom={false}
-        stackBorderTopLeftRadius={3}
-        stackBorderTopRightRadius={3}
-        stackBorderBottomLeftRadius={3}
-        stackBorderBottomRightRadius={3}
         backgroundColor="transparent"
         isAnimated={false}
         renderTooltip={renderTooltip}

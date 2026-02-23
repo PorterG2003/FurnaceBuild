@@ -4,12 +4,16 @@ import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { LeadActivityModal } from './LeadActivityModal';
 
+export type EnrollmentStoppedReason = 'replied' | 'bounced' | 'unsubscribed' | 'error';
+
 export interface Lead {
   id: string;
   email: string;
   name: string | null;
   enrollment_state: 'active' | 'completed' | 'stopped' | 'paused' | null;
   enrollment_current_node_id: string | null;
+  enrollment_stopped_reason: EnrollmentStoppedReason | null;
+  enrollment_stopped_error_message: string | null;
   created_at: string;
 }
 
@@ -32,7 +36,18 @@ export function LeadsTable({ leads, loading, campaignId }: LeadsTableProps) {
     );
   }, [leads, searchQuery]);
 
-  const getStateBadge = (state: string | null) => {
+  const stoppedReasonLabel: Record<EnrollmentStoppedReason, string> = {
+    replied: 'Replied',
+    bounced: 'Bounced',
+    unsubscribed: 'Unsubscribed',
+    error: 'Error',
+  };
+
+  const getStateBadge = (
+    state: string | null,
+    stoppedReason: EnrollmentStoppedReason | null = null,
+    stoppedErrorMessage: string | null = null
+  ) => {
     if (!state) {
       return (
         <View className="self-start px-3 py-1.5 rounded-md" style={{ backgroundColor: '#6b728020' }}>
@@ -44,16 +59,38 @@ export function LeadsTable({ leads, loading, campaignId }: LeadsTableProps) {
     const stateConfig: Record<string, { bg: string; text: string; label: string }> = {
       completed: { bg: '#10b98120', text: '#10b981', label: 'Completed' },
       active: { bg: '#3b82f620', text: '#3b82f6', label: 'In Progress' },
-      stopped: { bg: '#f59e0b20', text: '#f59e0b', label: 'Stopped' },
+      stopped: {
+        bg: '#f59e0b20',
+        text: '#f59e0b',
+        label: stoppedReason ? `Stopped (${stoppedReasonLabel[stoppedReason]})` : 'Stopped',
+      },
       paused: { bg: '#8b5cf620', text: '#8b5cf6', label: 'Paused' },
     };
     const colors = stateConfig[state] ?? { bg: '#6b728020', text: '#6b7280', label: state };
 
+    const errorClue =
+      state === 'stopped' && stoppedReason === 'error' && stoppedErrorMessage
+        ? stoppedErrorMessage.length > 80
+          ? `${stoppedErrorMessage.slice(0, 80)}…`
+          : stoppedErrorMessage
+        : null;
+
     return (
-      <View className="self-start px-3 py-1.5 rounded-md" style={{ backgroundColor: colors.bg }}>
-        <Text className="text-xs font-instrument-semibold" style={{ color: colors.text }}>
-          {colors.label}
-        </Text>
+      <View className="self-start">
+        <View className="px-3 py-1.5 rounded-md" style={{ backgroundColor: colors.bg }}>
+          <Text className="text-xs font-instrument-semibold" style={{ color: colors.text }}>
+            {colors.label}
+          </Text>
+        </View>
+        {errorClue && (
+          <Text
+            className="text-xs text-gray-500 font-instrument mt-1 max-w-[200px]"
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            {errorClue}
+          </Text>
+        )}
       </View>
     );
   };
@@ -92,7 +129,12 @@ export function LeadsTable({ leads, loading, campaignId }: LeadsTableProps) {
       flex: 0,
       sortable: true,
       sortValue: (lead) => lead.enrollment_state || '',
-      render: (lead) => getStateBadge(lead.enrollment_state),
+      render: (lead) =>
+        getStateBadge(
+          lead.enrollment_state,
+          lead.enrollment_stopped_reason,
+          lead.enrollment_stopped_error_message
+        ),
     },
     {
       key: 'created_at',

@@ -68,6 +68,14 @@ Step-by-step implementation plans and guides, organized by domain.
 
 ---
 
+## Campaign stats
+
+| Doc | Description |
+|-----|-------------|
+| [campaign-stats/CAMPAIGN_STATS_CALCULATIONS.md](./campaign-stats/CAMPAIGN_STATS_CALCULATIONS.md) | Stat definitions, who updates them, and how totals vs per-day charts are read |
+
+---
+
 ## Inbox UI
 
 | Doc | Description |

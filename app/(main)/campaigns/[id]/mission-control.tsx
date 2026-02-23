@@ -264,7 +264,7 @@ export default function MissionControlPage() {
           contentContainerStyle={{ padding: 24 }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Flow Card (full-width) */}
+          {/* Flow Card (full-width). Height scales with node count so the full flow fits. */}
           <Pressable
             onPress={handleEditFlow}
             className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl mb-6"
@@ -300,13 +300,17 @@ export default function MissionControlPage() {
                 {flowBuilt ? 'Edit flow' : 'Build flow'}
               </Button>
             </View>
-            <View style={{ height: 220, margin: 12, marginTop: 16, borderRadius: 8, overflow: 'hidden', pointerEvents: 'none' }}>
+            <View style={{ margin: 12, marginTop: 16, borderRadius: 8, overflow: 'hidden', pointerEvents: 'none' }}>
               {flowData?.nodes && flowData.nodes.length > 0 ? (
-                <FlowDiagram nodes={flowData.nodes} edges={flowData.edges || []} />
+                <FlowDiagram
+                  nodes={flowData.nodes}
+                  edges={flowData.edges || []}
+                  height={Math.min(420, Math.max(260, 140 + flowData.nodes.length * 72))}
+                />
               ) : (
                 <View
                   style={{
-                    flex: 1,
+                    height: 200,
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderWidth: 1,
@@ -350,7 +354,7 @@ export default function MissionControlPage() {
                     {throughputText}
                   </Text>
                 </View>
-                <Button size="sm" onPress={() => setShowScheduleModal(true)}>
+                <Button size="sm" variant="secondary" onPress={() => setShowScheduleModal(true)}>
                   Edit schedule
                 </Button>
               </View>
@@ -388,7 +392,7 @@ export default function MissionControlPage() {
                     </Text>
                   )}
                 </View>
-                <Button size="sm" onPress={() => setShowMailboxesModal(true)}>
+                <Button size="sm" variant="secondary" onPress={() => setShowMailboxesModal(true)}>
                   {mailboxesAdded ? 'Edit mailboxes' : 'Add mailboxes'}
                 </Button>
               </View>

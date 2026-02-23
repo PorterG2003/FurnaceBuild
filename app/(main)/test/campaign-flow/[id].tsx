@@ -135,6 +135,8 @@ export default function TestCampaignViewPage() {
             name: lead.name,
             enrollment_state: enrollment?.state || null,
             enrollment_current_node_id: enrollment?.current_node_id || null,
+            enrollment_stopped_reason: null,
+            enrollment_stopped_error_message: null,
             created_at: lead.created_at,
           };
         });

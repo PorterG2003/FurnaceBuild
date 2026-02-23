@@ -261,9 +261,10 @@ export class ThreadManager {
     // Only stop the enrollment if this is a reply to the original sent message
     // (not a reply to a reply)
     if (isReplyToOriginal && originalJob) {
+      const stoppedAt = new Date().toISOString();
       await this.supabase
         .from('enrollments')
-        .update({ state: 'stopped' })
+        .update({ state: 'stopped', stopped_reason: 'replied', stopped_at: stoppedAt })
         .eq('id', originalJob.enrollment_id);
 
       const isCampaignReply =
@@ -273,41 +274,19 @@ export class ThreadManager {
         (originalJob as any).message_data?.source !== 'inbox_forward';
 
       if (isCampaignReply) {
-        const { data: existingReplied } = await this.supabase
-          .from('events')
-          .select('id')
-          .eq('campaign_id', originalJob.campaign_id)
-          .eq('message_job_id', originalJob.id)
-          .eq('event_type', 'replied')
-          .limit(1)
-          .maybeSingle();
-
-        if (!existingReplied) {
-          await this.supabase.from('events').insert({
-            campaign_id: originalJob.campaign_id,
-            lead_id: originalJob.lead_id,
-            enrollment_id: originalJob.enrollment_id,
-            message_job_id: originalJob.id,
-            event_type: 'replied',
-            event_data: { detected_at: new Date().toISOString() },
-          });
-          const isPositive = (thread as any).category === 'Interested';
-          let statsError: Error | null = null;
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            const { error } = await this.supabase.rpc('increment_campaign_stats_replied', {
-              p_campaign_id: originalJob.campaign_id,
-              p_is_positive: isPositive,
-            });
-            if (!error) break;
-            statsError = error;
-            if (attempt < 3) {
-              await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)));
-            }
-          }
-          if (statsError) {
-            console.error(`[INBOX CHECKER] Failed to increment campaign_stats replied for campaign ${originalJob.campaign_id} after retries:`, statsError);
-          }
-        } else {
+        const isPositive = (thread as any).category === 'Interested';
+        const eventData = { detected_at: new Date().toISOString() };
+        const { data: inserted, error } = await this.supabase.rpc('record_replied_event_and_increment', {
+          p_campaign_id: originalJob.campaign_id,
+          p_lead_id: originalJob.lead_id,
+          p_enrollment_id: originalJob.enrollment_id,
+          p_message_job_id: originalJob.id,
+          p_event_data: eventData,
+          p_is_positive: isPositive,
+        });
+        if (error) {
+          console.error(`[INBOX CHECKER] Failed to record replied event and increment campaign_stats for campaign ${originalJob.campaign_id}:`, error);
+        } else if (!inserted) {
           console.log(`[INBOX CHECKER] Reply already processed for message_job ${originalJob.id}, skipping event and stats`);
         }
       }
@@ -638,37 +617,21 @@ export class ThreadManager {
     const candidateSet = new Set(candidateEmails);
     const matchedJobs = jobsWithLeads.filter((j) => candidateSet.has(leadEmailById.get(j.lead_id) || ''));
 
-    const campaignIdsUpdated = new Set<string>();
     const enrollmentsToStop: string[] = [];
 
     if (matchedJobs.length > 0) {
       enrollmentsToStop.push(...matchedJobs.map((j) => j.enrollment_id));
       for (const job of matchedJobs) {
-        await this.supabase.from('events').insert({
-          campaign_id: job.campaign_id,
-          lead_id: job.lead_id,
-          enrollment_id: job.enrollment_id,
-          message_job_id: job.id,
-          mailbox_id: mailbox.id,
-          event_type: 'bounced',
-          event_data: eventDataBase,
+        const { error } = await this.supabase.rpc('record_bounced_event_and_increment', {
+          p_campaign_id: job.campaign_id,
+          p_lead_id: job.lead_id,
+          p_enrollment_id: job.enrollment_id,
+          p_message_job_id: job.id,
+          p_mailbox_id: mailbox.id,
+          p_event_data: eventDataBase,
         });
-        if (!campaignIdsUpdated.has(job.campaign_id)) {
-          campaignIdsUpdated.add(job.campaign_id);
-          let bounceError: Error | null = null;
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            const { error } = await this.supabase.rpc('increment_campaign_stats_bounce', {
-              p_campaign_id: job.campaign_id,
-            });
-            if (!error) break;
-            bounceError = error;
-            if (attempt < 3) {
-              await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)));
-            }
-          }
-          if (bounceError) {
-            console.error(`[INBOX CHECKER] Failed to increment campaign_stats bounce for campaign ${job.campaign_id} after retries:`, bounceError);
-          }
+        if (error) {
+          console.error(`[INBOX CHECKER] Failed to record bounced event and increment campaign_stats for campaign ${job.campaign_id}:`, error);
         }
         if (classification.severity === 'hard' && suppressBouncedEmails) {
           const leadEmail = leadEmailById.get(job.lead_id);
@@ -684,28 +647,16 @@ export class ThreadManager {
       const bestGuess = jobsWithLeads[0];
       if (bestGuess) {
         enrollmentsToStop.push(bestGuess.enrollment_id);
-        await this.supabase.from('events').insert({
-          campaign_id: bestGuess.campaign_id,
-          lead_id: bestGuess.lead_id,
-          enrollment_id: bestGuess.enrollment_id,
-          message_job_id: bestGuess.id,
-          mailbox_id: mailbox.id,
-          event_type: 'bounced',
-          event_data: { ...eventDataBase, matched: false },
+        const { error } = await this.supabase.rpc('record_bounced_event_and_increment', {
+          p_campaign_id: bestGuess.campaign_id,
+          p_lead_id: bestGuess.lead_id,
+          p_enrollment_id: bestGuess.enrollment_id,
+          p_message_job_id: bestGuess.id,
+          p_mailbox_id: mailbox.id,
+          p_event_data: { ...eventDataBase, matched: false },
         });
-        let bounceError: Error | null = null;
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          const { error } = await this.supabase.rpc('increment_campaign_stats_bounce', {
-            p_campaign_id: bestGuess.campaign_id,
-          });
-          if (!error) break;
-          bounceError = error;
-          if (attempt < 3) {
-            await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)));
-          }
-        }
-        if (bounceError) {
-          console.error(`[INBOX CHECKER] Failed to increment campaign_stats bounce for campaign ${bestGuess.campaign_id} after retries:`, bounceError);
+        if (error) {
+          console.error(`[INBOX CHECKER] Failed to record bounced event and increment campaign_stats for campaign ${bestGuess.campaign_id}:`, error);
         }
         if (classification.severity === 'hard' && suppressBouncedEmails) {
           const leadEmail = leadEmailById.get(bestGuess.lead_id);
@@ -719,8 +670,12 @@ export class ThreadManager {
       }
     }
 
+    const stoppedAt = new Date().toISOString();
     for (const enrollmentId of enrollmentsToStop) {
-      await this.supabase.from('enrollments').update({ state: 'stopped' }).eq('id', enrollmentId);
+      await this.supabase
+        .from('enrollments')
+        .update({ state: 'stopped', stopped_reason: 'bounced', stopped_at: stoppedAt })
+        .eq('id', enrollmentId);
     }
 
     console.log(`Bounce detected in mailbox ${mailbox.id}, stopped ${enrollmentsToStop.length} enrollments, severity=${classification.severity}`);
@@ -748,10 +703,11 @@ export class ThreadManager {
 
     // Stop enrollments for this recipient
     const enrollmentIds = new Set(recentJobs.map(j => j.enrollment_id));
+    const stoppedAt = new Date().toISOString();
     for (const enrollmentId of enrollmentIds) {
       await this.supabase
         .from('enrollments')
-        .update({ state: 'stopped' })
+        .update({ state: 'stopped', stopped_reason: 'unsubscribed', stopped_at: stoppedAt })
         .eq('id', enrollmentId);
     }
 

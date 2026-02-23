@@ -102,7 +102,7 @@ export default function CampaignPage() {
       // Single enrollments query: derive count and state breakdown from same snapshot
       const { data: enrollments, error: enrollmentsError } = await supabase
         .from('enrollments')
-        .select('state, lead_id, current_node_id')
+        .select('state, lead_id, current_node_id, stopped_reason, stopped_error_message')
         .eq('campaign_id', id);
 
       const enrollmentCount = enrollments?.length ?? 0;
@@ -138,12 +138,26 @@ export default function CampaignPage() {
         const notStarted = Math.max(0, totalLeads - enrollmentCount);
         setLeadsNotStarted(notStarted);
 
-        const enrollmentMap = new Map<string, { state: 'active' | 'completed' | 'stopped' | 'paused' | null; current_node_id: string | null }>();
+        type StoppedReason = 'replied' | 'bounced' | 'unsubscribed' | 'error';
+        const enrollmentMap = new Map<
+          string,
+          {
+            state: 'active' | 'completed' | 'stopped' | 'paused' | null;
+            current_node_id: string | null;
+            stopped_reason: StoppedReason | null;
+            stopped_error_message: string | null;
+          }
+        >();
         if (enrollments) {
           enrollments.forEach((enrollment: any) => {
             enrollmentMap.set(enrollment.lead_id, {
               state: enrollment.state as 'active' | 'completed' | 'stopped' | 'paused' | null,
               current_node_id: enrollment.current_node_id,
+              stopped_reason:
+                enrollment.stopped_reason != null && ['replied', 'bounced', 'unsubscribed', 'error'].includes(enrollment.stopped_reason)
+                  ? (enrollment.stopped_reason as StoppedReason)
+                  : null,
+              stopped_error_message: enrollment.stopped_error_message ?? null,
             });
           });
         }
@@ -155,6 +169,8 @@ export default function CampaignPage() {
             name: lead.name,
             enrollment_state: enrollment?.state ?? null,
             enrollment_current_node_id: enrollment?.current_node_id ?? null,
+            enrollment_stopped_reason: enrollment?.stopped_reason ?? null,
+            enrollment_stopped_error_message: enrollment?.stopped_error_message ?? null,
             created_at: lead.created_at,
           };
         });

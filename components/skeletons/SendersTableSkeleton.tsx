@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { View, Text, Animated } from 'react-native';
 import { Skeleton } from '@/components/ui/feedback';
 
+const useNativeDriver = typeof window === 'undefined';
 const STAGGER_DELAY_MS = 60;
 
 function StaggeredFadeIn({ index, children }: { index: number; children: ReactNode }) {
@@ -11,7 +12,7 @@ function StaggeredFadeIn({ index, children }: { index: number; children: ReactNo
       Animated.timing(opacity, {
         toValue: 1,
         duration: 280,
-        useNativeDriver: true,
+        useNativeDriver,
       }).start();
     }, index * STAGGER_DELAY_MS);
     return () => clearTimeout(timer);

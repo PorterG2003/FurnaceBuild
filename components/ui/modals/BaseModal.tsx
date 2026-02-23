@@ -1,5 +1,8 @@
+import { useEffect, useRef } from 'react';
 import { Modal, Pressable, View, Text, ScrollView } from 'react-native';
 import { XMarkIcon } from 'react-native-heroicons/outline';
+
+const isWeb = typeof window !== 'undefined';
 
 interface BaseModalProps {
   visible: boolean;
@@ -43,6 +46,17 @@ export function BaseModal({
   const containerStyle = contentHeight
     ? { maxHeight: contentHeight, minHeight: height ?? 320 }
     : {};
+  const dialogRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (visible && isWeb && dialogRef.current) {
+      const node = (dialogRef.current as any) as HTMLElement | undefined;
+      if (node?.focus) {
+        const t = setTimeout(() => node.focus(), 0);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [visible]);
 
   return (
     <Modal
@@ -58,7 +72,12 @@ export function BaseModal({
         <View
           style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, pointerEvents: 'box-none' }}
         >
-          <Pressable onPress={(e) => e.stopPropagation()} style={{ alignSelf: 'stretch', alignItems: 'center' }}>
+          <Pressable
+            ref={dialogRef}
+            onPress={(e) => e.stopPropagation()}
+            style={{ alignSelf: 'stretch', alignItems: 'center' }}
+            {...(isWeb ? { tabIndex: -1 } : {})}
+          >
             <View
               className={`bg-[#1A1A1A] rounded-2xl border border-[#2A2A2A] w-full ${maxWidthClasses[maxWidth]}`}
               style={containerStyle}

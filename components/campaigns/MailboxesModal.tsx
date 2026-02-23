@@ -3,6 +3,7 @@ import { View, Text, Pressable, TextInput } from 'react-native';
 import { CheckIcon } from 'react-native-heroicons/outline';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
+import { useConfirmClose } from '@/hooks/useConfirmClose';
 import { assignMailboxesToCampaign } from '@/lib/supabase/services/campaigns';
 import { getMailboxesByAccount } from '@/lib/supabase/services/mailboxes';
 
@@ -57,6 +58,13 @@ export function MailboxesModal({ visible, onClose, onSaved, campaignId, accountI
     });
   };
 
+  const isDirty =
+    selectedIds.size !== currentMailboxIds.length ||
+    currentMailboxIds.some((id) => !selectedIds.has(id)) ||
+    [...selectedIds].some((id) => !currentMailboxIds.includes(id));
+
+  const handleClose = useConfirmClose(isDirty, onClose);
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
@@ -73,7 +81,7 @@ export function MailboxesModal({ visible, onClose, onSaved, campaignId, accountI
   return (
     <BaseModal
       visible={visible}
-      onClose={onClose}
+      onClose={handleClose}
       title="Mailboxes"
       description={`Select which mailboxes send for this campaign. Selected: ${selectedIds.size}`}
       maxWidth="2xl"
@@ -81,7 +89,7 @@ export function MailboxesModal({ visible, onClose, onSaved, campaignId, accountI
       footer={
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <View style={{ flex: 1 }}>
-            <Button onPress={onClose} variant="secondary">Cancel</Button>
+            <Button onPress={handleClose} variant="secondary">Cancel</Button>
           </View>
           <View style={{ flex: 1 }}>
             <Button onPress={handleSave} disabled={isSaving}>

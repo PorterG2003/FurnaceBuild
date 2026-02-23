@@ -12,8 +12,7 @@ export interface ScheduleShape {
 
 export const SCHEDULE_PRESETS = [
   { value: '24/7', label: '24/7 (No restrictions)' },
-  { value: 'business-hours', label: 'Business hours (9–5 Mon–Fri)' },
-  { value: 'weekdays-only', label: 'Weekdays only (24/7 Mon–Fri)' },
+  { value: 'business-hours', label: 'Business hours (9–5 Mon–Fri, Central)' },
 ] as const;
 
 export type SchedulePreset = (typeof SCHEDULE_PRESETS)[number]['value'] | 'custom';
@@ -71,20 +70,11 @@ export function applyPreset(preset: SchedulePreset): ScheduleShape {
       };
     case 'business-hours':
       return {
-        timezone: 'America/New_York',
+        timezone: 'America/Chicago',
         start_hour: 9,
         start_minute: 0,
         end_hour: 17,
         end_minute: 0,
-        days_of_week: [1, 2, 3, 4, 5],
-      };
-    case 'weekdays-only':
-      return {
-        timezone: 'America/New_York',
-        start_hour: 0,
-        start_minute: 0,
-        end_hour: 23,
-        end_minute: 59,
         days_of_week: [1, 2, 3, 4, 5],
       };
     default:
@@ -107,7 +97,7 @@ export function formatHour12(hour: number, minute: number): string {
 
 export function scheduleMatchesPreset(schedule: ScheduleShape | null, preset: SchedulePreset): boolean {
   if (!schedule || preset === 'custom') return false;
-  const applied = applyPreset(preset as '24/7' | 'business-hours' | 'weekdays-only');
+  const applied = applyPreset(preset as '24/7' | 'business-hours');
   return (
     schedule.timezone === applied.timezone &&
     schedule.start_hour === applied.start_hour &&
@@ -116,6 +106,20 @@ export function scheduleMatchesPreset(schedule: ScheduleShape | null, preset: Sc
     (schedule.end_minute ?? 59) === (applied.end_minute ?? 59) &&
     schedule.days_of_week.length === applied.days_of_week.length &&
     schedule.days_of_week.every((d, i) => d === applied.days_of_week[i])
+  );
+}
+
+export function scheduleEquals(a: ScheduleShape | null, b: ScheduleShape | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.timezone === b.timezone &&
+    a.start_hour === b.start_hour &&
+    (a.start_minute ?? 0) === (b.start_minute ?? 0) &&
+    a.end_hour === b.end_hour &&
+    (a.end_minute ?? 59) === (b.end_minute ?? 59) &&
+    a.days_of_week.length === b.days_of_week.length &&
+    a.days_of_week.every((d, i) => d === b.days_of_week[i])
   );
 }
 
@@ -137,8 +141,7 @@ export function calculateEmailsPerMailboxPerDay(schedule: ScheduleShape | null, 
   const intervalsPerWindow = Math.floor(windowMinutes / intervalMinutes);
   const daysCount = schedule.days_of_week?.length ?? 0;
   if (daysCount === 7) return `~${intervalsPerWindow} per mailbox per day`;
-  const avgPerDay = Math.round((intervalsPerWindow * daysCount) / 7 * 100) / 100;
-  return `~${intervalsPerWindow} per scheduled day (avg ${avgPerDay} per calendar day)`;
+  return `~${intervalsPerWindow} per scheduled day`;
 }
 
 export function hasFlowBuilt(campaign: Campaign | null): boolean {

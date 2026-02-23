@@ -49,6 +49,9 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
   }
 }
 
+/** Label for the flow editor / builder page in breadcrumbs and UI. Change here to rename globally. */
+export const FLOW_EDITOR_PAGE_LABEL = 'Flow editor';
+
 // Factory map for creating nodes
 const nodeFactories: Record<string, (position: { x: number; y: number }) => any> = {
   email: createEmailNode,
@@ -421,9 +424,10 @@ export default function BuilderPage() {
               items={[
                 { label: 'Campaigns', href: '/campaigns' },
                 {
-                  label: isLoading ? 'Loading...' : (campaign?.name || 'Campaign Builder'),
+                  label: isLoading ? 'Loading...' : (campaign?.name || 'Campaign'),
                   href: campaignId ? `/campaigns/${campaignId}` : undefined,
                 },
+                { label: FLOW_EDITOR_PAGE_LABEL },
               ]}
             />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -495,11 +499,9 @@ export default function BuilderPage() {
                 paddingVertical: 14,
                 borderRadius: 12,
                 zIndex: 10,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.25,
-                shadowRadius: 4,
-                elevation: 4,
+                ...(typeof window !== 'undefined'
+                  ? { boxShadow: '0px 2px 4px rgba(0,0,0,0.25)' }
+                  : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 4 }),
               }}
             >
               <Text className="text-white font-instrument-semibold text-sm">

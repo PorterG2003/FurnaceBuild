@@ -55,6 +55,8 @@ export interface CampaignStats {
   bounceCount: number;
   lastBounceAt: string | null;
   enrollmentCount: number;
+  terminalEnrollmentCount: number;
+  contactedEnrollmentCount: number;
 }
 
 /**
@@ -75,19 +77,39 @@ export async function getCampaignStatsForCampaigns(
       bounceCount: 0,
       lastBounceAt: null,
       enrollmentCount: 0,
+      terminalEnrollmentCount: 0,
+      contactedEnrollmentCount: 0,
     };
   }
 
-  // Enrollment count: total enrollments (emails to be sent)
+  const TERMINAL_STATES = ['stopped', 'completed'];
+
+  // Enrollment counts: total + terminal (stopped/completed) per campaign
   const { data: enrollmentRows } = await supabase
     .from('enrollments')
-    .select('campaign_id')
+    .select('campaign_id, state')
     .in('campaign_id', campaignIds);
 
   if (enrollmentRows) {
     for (const row of enrollmentRows) {
       if (row.campaign_id && result[row.campaign_id]) {
         result[row.campaign_id].enrollmentCount++;
+        if (TERMINAL_STATES.includes(row.state)) {
+          result[row.campaign_id].terminalEnrollmentCount++;
+        }
+      }
+    }
+  }
+
+  // Contacted count: distinct enrollments with ≥1 sent campaign email (DB-side aggregation)
+  const { data: contactedRows } = await supabase.rpc('get_campaign_contacted_counts', {
+    p_campaign_ids: campaignIds,
+  });
+
+  if (contactedRows) {
+    for (const row of contactedRows) {
+      if (row.campaign_id && result[row.campaign_id]) {
+        result[row.campaign_id].contactedEnrollmentCount = row.contacted_count ?? 0;
       }
     }
   }

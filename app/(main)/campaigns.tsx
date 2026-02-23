@@ -191,7 +191,13 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   const positiveReplyCount = stats?.positiveReplyCount ?? 0;
   const bounceCount = stats?.bounceCount ?? 0;
   const enrollmentCount = stats?.enrollmentCount ?? 0;
-  const sentTotal = enrollmentCount > 0 ? enrollmentCount : 1;
+  const contactedCount = stats?.contactedEnrollmentCount ?? 0;
+  const terminalCount = stats?.terminalEnrollmentCount ?? 0;
+  // Use max(contacted, terminal) for "reached" so enrollments that are terminal without
+  // a sent email (e.g. stopped before first send) still count toward completion.
+  const reachedCount = Math.max(contactedCount, terminalCount);
+  const completionValue = reachedCount + terminalCount;
+  const completionTotal = enrollmentCount > 0 ? enrollmentCount * 2 : 1;
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -253,8 +259,8 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
     <View className="flex-row" style={{ gap: 12, flex: isNarrow ? undefined : 1, maxWidth: isNarrow ? undefined : '35%', minWidth: 0 }}>
       <View style={{ marginTop: 2 }}>
         <ProgressDial
-          value={sentCount}
-          total={sentTotal}
+          value={completionValue}
+          total={completionTotal}
           showAsPercentage
           color="#10b981"
           size={56}

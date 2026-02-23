@@ -1,7 +1,7 @@
 import { useState, useRef, useLayoutEffect, type ReactNode, type CSSProperties } from 'react';
 import { View, Pressable, Platform, type StyleProp, type ViewStyle } from 'react-native';
 
-export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right';
+export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right' | 'cursor';
 
 interface TooltipProps {
   content: ReactNode;
@@ -51,9 +51,12 @@ const PLACEMENT_STYLES: Record<TooltipPlacement, ViewStyle> = {
 
 const PORTAL_Z_INDEX = 99999;
 
+const CURSOR_OFFSET = 12;
+
 export function Tooltip({ content, placement = 'top', children, style }: TooltipProps) {
   const [hovered, setHovered] = useState(false);
   const [triggerRect, setTriggerRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   const wrapperRef = useRef<View>(null);
 
   const updatePosition = () => {
@@ -86,7 +89,25 @@ export function Tooltip({ content, placement = 'top', children, style }: Tooltip
   );
 
   const renderTooltipInPortal = () => {
-    if (Platform.OS !== 'web' || !triggerRect || typeof document === 'undefined') return null;
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return null;
+    if (placement === 'cursor') {
+      if (!cursorPosition) return null;
+      const { createPortal } = require('react-dom');
+      const portalStyle: CSSProperties = {
+        position: 'fixed',
+        zIndex: PORTAL_Z_INDEX,
+        pointerEvents: 'none',
+        left: cursorPosition.x + CURSOR_OFFSET,
+        top: cursorPosition.y + CURSOR_OFFSET,
+      };
+      return createPortal(
+        <div style={portalStyle} data-tooltip-portal>
+          {tooltipPanel}
+        </div>,
+        document.body
+      );
+    }
+    if (!triggerRect) return null;
     const { createPortal } = require('react-dom');
     const { x, y, w, h } = triggerRect;
     let portalStyle: CSSProperties = {
@@ -119,7 +140,7 @@ export function Tooltip({ content, placement = 'top', children, style }: Tooltip
   const renderTooltipInPlace = () => (
     <View
       style={[
-        PLACEMENT_STYLES[placement],
+        placement === 'cursor' ? PLACEMENT_STYLES.top : PLACEMENT_STYLES[placement],
         {
           zIndex: PORTAL_Z_INDEX,
           ...TOOLTIP_PANEL_STYLE,
@@ -130,13 +151,30 @@ export function Tooltip({ content, placement = 'top', children, style }: Tooltip
     </View>
   );
 
+  const isCursorPlacement = placement === 'cursor';
+  const handleMouseMove = isCursorPlacement && Platform.OS === 'web'
+    ? (e: { nativeEvent: { clientX?: number; clientY?: number } }) => {
+        const { clientX, clientY } = e.nativeEvent;
+        if (typeof clientX === 'number' && typeof clientY === 'number') {
+          setCursorPosition({ x: clientX, y: clientY });
+        }
+      }
+    : undefined;
+  const handleHoverIn = Platform.OS === 'web' ? () => setHovered(true) : undefined;
+  const handleHoverOut = Platform.OS === 'web' ? () => {
+    setHovered(false);
+    if (isCursorPlacement) setCursorPosition(null);
+  } : undefined;
+
   return (
-    <View ref={wrapperRef} style={[{ position: 'relative' }, style]}>
-      <Pressable
-        style={{ flex: 1, minWidth: 0 }}
-        onHoverIn={Platform.OS === 'web' ? () => setHovered(true) : undefined}
-        onHoverOut={Platform.OS === 'web' ? () => setHovered(false) : undefined}
-      >
+    <View
+      ref={wrapperRef}
+      style={[{ position: 'relative' }, style]}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={handleHoverIn}
+      onMouseLeave={handleHoverOut}
+    >
+      <Pressable style={{ flex: 1, minWidth: 0 }} onHoverIn={handleHoverIn} onHoverOut={handleHoverOut}>
         {children}
       </Pressable>
       {hovered && (

@@ -107,6 +107,7 @@ export function FlowDiagram({ nodes, edges, height = 400 }: FlowDiagramProps) {
           nodesConnectable={false}
           elementsSelectable={false}
           panOnDrag={false}
+          preventScrolling={false}
           zoomOnScroll={false}
           zoomOnPinch={false}
           zoomOnDoubleClick={false}

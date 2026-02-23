@@ -16,6 +16,7 @@ type BarLabelType = (typeof BAR_LABELS)[number];
 const GROUP_BAR_WIDTH = 14;
 const BAR_SPACING = 4;
 const GROUP_SPACING = 16;
+const GROUP_LABEL_WIDTH = 4 * GROUP_BAR_WIDTH + 3 * BAR_SPACING;
 const BAR_ANIMATION_DURATION = 700;
 const FONT_FAMILY = 'InstrumentSans_400Regular';
 const FONT_FAMILY_SEMIBOLD = 'InstrumentSans_600SemiBold';
@@ -110,15 +111,17 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
         value: v.value,
         frontColor: v.color,
         label: i === 0 ? dateLabel : '',
+        labelWidth: i === 0 ? GROUP_LABEL_WIDTH - BAR_SPACING : 0,
+        labelComponent: i === 0 ? undefined : () => null,
         dataLabel: v.type,
         date: day.date,
         spacing: i === 3 ? GROUP_SPACING : BAR_SPACING,
         barWidth: GROUP_BAR_WIDTH,
-        labelTextStyle: {
+        labelTextStyle: i === 0 ? {
           color: '#9CA3AF',
           fontSize: 10,
           fontFamily: FONT_FAMILY,
-        },
+        } : undefined,
         topLabelComponent:
           v.value > 0
             ? () => (
@@ -222,8 +225,9 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
         disableScroll={false}
         showScrollIndicator={false}
         scrollToEnd
-        roundedTop
         roundedBottom={false}
+        barBorderTopLeftRadius={2}
+        barBorderTopRightRadius={2}
         backgroundColor="transparent"
         isAnimated={false}
         renderTooltip={renderTooltip}

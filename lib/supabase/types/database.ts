@@ -185,8 +185,50 @@ export interface Database {
           updated_at?: string;
         };
       };
-      // lead_states removed - replaced by enrollments
-      // lead_states: { ... }
+      enrollments: {
+        Row: {
+          id: string;
+          campaign_id: string;
+          lead_id: string;
+          current_node_id: string | null;
+          state: 'active' | 'paused' | 'stopped' | 'completed';
+          next_run_at: string | null;
+          flow_position: Json | null;
+          created_at: string;
+          updated_at: string;
+          stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
+          stopped_at: string | null;
+          stopped_error_message: string | null;
+        };
+        Insert: {
+          id?: string;
+          campaign_id: string;
+          lead_id: string;
+          current_node_id?: string | null;
+          state?: 'active' | 'paused' | 'stopped' | 'completed';
+          next_run_at?: string | null;
+          flow_position?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+          stopped_reason?: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
+          stopped_at?: string | null;
+          stopped_error_message?: string | null;
+        };
+        Update: {
+          id?: string;
+          campaign_id?: string;
+          lead_id?: string;
+          current_node_id?: string | null;
+          state?: 'active' | 'paused' | 'stopped' | 'completed';
+          next_run_at?: string | null;
+          flow_position?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+          stopped_reason?: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
+          stopped_at?: string | null;
+          stopped_error_message?: string | null;
+        };
+      };
       users: {
         Row: {
           id: string;

@@ -560,6 +560,9 @@ export class SchedulerWorker {
         console.error('Stack trace:', errorStack);
       }
 
+      // Store a short clue for the UI (what/where/why); max 500 chars, single line
+      const stoppedErrorMessage = errorMessage.replace(/\s+/g, ' ').trim().slice(0, 500) || null;
+
       // TODO: Send error to Slack error reporting channel
       // - Include: enrollment_id, campaign_id, error message, stack trace
       // - Categorize errors (critical vs. recoverable)
@@ -567,11 +570,15 @@ export class SchedulerWorker {
 
       // Try to update enrollment state to indicate error (don't fail if this fails)
       try {
+        const stoppedAt = new Date().toISOString();
         // Fatal error: stop enrollment to prevent infinite retries
         await this.supabase
           .from('enrollments')
           .update({
             state: 'stopped', // Stop enrollment on error to prevent infinite retries
+            stopped_reason: 'error',
+            stopped_at: stoppedAt,
+            stopped_error_message: stoppedErrorMessage,
             next_run_at: new Date(Date.now() + 3600000).toISOString(), // Retry in 1 hour
           })
           .eq('id', enrollment.id);

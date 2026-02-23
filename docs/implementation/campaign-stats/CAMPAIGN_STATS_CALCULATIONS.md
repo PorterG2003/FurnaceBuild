@@ -53,6 +53,28 @@ Total **enrollments** for the campaign. Not stored in `campaign_stats`; computed
 
 - **Code:** [lib/supabase/services/campaigns.ts](../../../lib/supabase/services/campaigns.ts) — `getCampaignStatsForCampaigns` queries `enrollments` and merges with `campaign_stats`.
 
+### Campaign list completion percentage
+
+The completion dial on the campaign list uses a **blended formula** combining two independent signals:
+
+- **Contacted count** — distinct enrollments that have at least one sent campaign email (`message_jobs` with `status = 'sent'` and campaign type). Computed efficiently via the `get_campaign_contacted_counts` RPC (DB-side `COUNT(DISTINCT enrollment_id) … GROUP BY campaign_id`).
+- **Terminal count** — enrollments with `state` in (`stopped`, `completed`).
+
+**Formula:** `(reachedCount + terminalCount) / (enrollmentCount × 2)`, capped at 100%, where **reachedCount = max(contactedCount, terminalCount)**. So enrollments that are terminal but have no sent campaign email (e.g. stopped before first send) still count as "reached" for the first half, and "all terminal" always shows 100%.
+
+This gives two "halves" of progress: reaching people contributes up to 50%, and finishing them contributes the other 50%. When all enrollments are terminal, the value equals `enrollmentCount × 2`, yielding 100%.
+
+| Scenario (100 enrollments) | Contacted | Terminal | Value | Completion |
+|---|---|---|---|---|
+| Campaign just started | 0 | 0 | 0 / 200 | **0%** |
+| All reached, none done | 100 | 0 | 100 / 200 | **50%** |
+| Half reached, some done | 50 | 30 | 80 / 200 | **40%** |
+| All reached and done | 100 | 100 | 200 / 200 | **100%** |
+
+Edge case: if there are no enrollments, total is set to 1 to avoid division by zero, resulting in 0%.
+
+- **Code:** `getCampaignStatsForCampaigns` in [lib/supabase/services/campaigns.ts](../../../lib/supabase/services/campaigns.ts) computes `enrollmentCount`, `terminalEnrollmentCount`, and `contactedEnrollmentCount`. The `CampaignCard` in [app/(main)/campaigns.tsx](../../../app/(main)/campaigns.tsx) passes `value = contactedCount + terminalCount` and `total = enrollmentCount * 2` (or 1) to `ProgressDial`.
+
 ---
 
 ## Data model
@@ -102,7 +124,7 @@ flowchart LR
 
 ## How the app reads stats
 
-- **List/card totals and campaign detail summary:** `getCampaignStatsForCampaigns(campaignIds)` in [lib/supabase/services/campaigns.ts](../../../lib/supabase/services/campaigns.ts). Reads `campaign_stats` for sent/replied/positive_reply/bounce/last_bounce_at and `enrollments` for enrollment count. Used by [app/(main)/campaigns.tsx](../../../app/(main)/campaigns.tsx) and [app/(main)/campaigns/[id].tsx](../../../app/(main)/campaigns/[id].tsx).
+- **List/card totals and campaign detail summary:** `getCampaignStatsForCampaigns(campaignIds)` in [lib/supabase/services/campaigns.ts](../../../lib/supabase/services/campaigns.ts). Makes three queries: `enrollments` (total + terminal counts per campaign), `get_campaign_contacted_counts` RPC (contacted count per campaign), and `campaign_stats` (sent/replied/positive_reply/bounce/last_bounce_at). Used by [app/(main)/campaigns.tsx](../../../app/(main)/campaigns.tsx) and [app/(main)/campaigns/[id].tsx](../../../app/(main)/campaigns/[id].tsx).
 
 - **Per-day chart:** `getCampaignStatsByDay(campaignId, start, end)` in the same service. Queries **events** only (`event_type` in sent, replied, bounced), buckets by date; for replied, positive count uses `event_data.is_positive`. Used by [components/campaigns/CampaignStatsChart.tsx](../../../components/campaigns/CampaignStatsChart.tsx).
 
@@ -138,10 +160,12 @@ One-time backfill: [supabase/migrations/20260216000002_backfill_campaign_stats.s
 - `20260218000000` — positive_reply delta RPC + `update_replied_event_is_positive`.
 - `20260216000002` — backfill campaign_stats from message_jobs, email_threads, events.
 - `20260222120000` — atomic RPCs (record_sent/replied/bounced_event_and_increment), unique replied index, `reconcile_campaign_stats`.
+- `20260222150000` — `get_campaign_contacted_counts` RPC + partial index on `message_jobs` for campaign completion dial.
 
 ### RPCs
 
 - **Atomic (event + stats in one transaction):** `record_sent_event_and_increment`, `record_replied_event_and_increment`, `record_bounced_event_and_increment`.
+- **Contacted count (completion dial):** `get_campaign_contacted_counts(p_campaign_ids UUID[])` — returns per-campaign count of distinct enrollments with ≥1 sent campaign email.
 - **Reconciliation:** `reconcile_campaign_stats(p_campaign_id)` — pass NULL for all campaigns.
 - **Positive reply (user override):** `update_campaign_stats_positive_reply(p_campaign_id, p_delta)`, `update_replied_event_is_positive(p_campaign_id, p_message_job_id, p_is_positive)`.
 - **Legacy (still present, used by reconciliation):** `increment_campaign_stats_sent`, `increment_campaign_stats_replied`, `increment_campaign_stats_bounce` — workers now use the atomic RPCs above.

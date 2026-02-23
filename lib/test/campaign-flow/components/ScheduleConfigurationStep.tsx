@@ -13,8 +13,7 @@ interface ScheduleConfigurationStepProps {
 
 const SCHEDULE_PRESETS: { value: SchedulePreset; label: string }[] = [
   { value: '24/7', label: '24/7 (No Restrictions)' },
-  { value: 'business-hours', label: 'Business Hours (9-5 Mon-Fri)' },
-  { value: 'weekdays-only', label: 'Weekdays Only (24/7 Mon-Fri)' },
+  { value: 'business-hours', label: 'Business Hours (9-5 Mon-Fri, Central)' },
 ];
 
 const DAYS_OF_WEEK = [
@@ -214,19 +213,12 @@ export function ScheduleConfigurationStep({
     // Calculate intervals per window
     const intervalsPerWindow = Math.floor(windowMinutes / intervalMinutes);
     
-    // Calculate emails per scheduled day
     const emailsPerScheduledDay = intervalsPerWindow;
-    
-    // Calculate average per calendar day (considering days of week)
     const scheduledDaysPerWeek = schedule.days_of_week.length;
-    const averageEmailsPerDay = Math.round((emailsPerScheduledDay * scheduledDaysPerWeek) / 7 * 100) / 100;
-
-    // Show per scheduled day, and average per calendar day
     if (scheduledDaysPerWeek === 7) {
       return `${emailsPerScheduledDay} per day`;
-    } else {
-      return `${emailsPerScheduledDay} per scheduled day (avg ${averageEmailsPerDay.toFixed(1)} per calendar day)`;
     }
+    return `${emailsPerScheduledDay} per scheduled day`;
   };
 
   return (

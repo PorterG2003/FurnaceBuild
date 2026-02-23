@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/feedback';
 import { SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from '@/components/ui/feedback/skeletonConstants';
 import type { DimensionValue } from 'react-native';
 
+const useNativeDriver = typeof window === 'undefined';
 const STAGGER_DELAY_MS = 60;
 
 /** Per-item width variations (pixels) for a more organic skeleton look. */
@@ -34,7 +35,7 @@ function StaggeredFadeIn({ index, children }: { index: number; children: ReactNo
       Animated.timing(opacity, {
         toValue: 1,
         duration: 280,
-        useNativeDriver: true,
+        useNativeDriver,
       }).start();
     }, index * STAGGER_DELAY_MS);
     return () => clearTimeout(timer);

@@ -124,11 +124,9 @@ export function InboxFilterDropdown({
             borderRadius: 12,
             borderWidth: 1,
             borderColor: '#2A2A2A',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.35,
-            shadowRadius: 16,
-            elevation: 12,
+            ...(typeof window !== 'undefined'
+              ? { boxShadow: '0px 8px 16px rgba(0,0,0,0.35)' }
+              : { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 12 }),
             overflow: 'hidden',
           }}
           onPress={(e) => e?.stopPropagation?.()}

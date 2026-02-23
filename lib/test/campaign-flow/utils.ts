@@ -62,21 +62,11 @@ export function applySchedulePreset(preset: SchedulePreset): ScheduleConfig {
       };
     case 'business-hours':
       return {
-        timezone: 'America/New_York',
+        timezone: 'America/Chicago',
         start_hour: 9,
         start_minute: 0,
         end_hour: 17,
         end_minute: 0,
-        days_of_week: [1, 2, 3, 4, 5],
-        sending_interval_seconds: 300,
-      };
-    case 'weekdays-only':
-      return {
-        timezone: 'America/New_York',
-        start_hour: 0,
-        start_minute: 0,
-        end_hour: 23,
-        end_minute: 59,
         days_of_week: [1, 2, 3, 4, 5],
         sending_interval_seconds: 300,
       };

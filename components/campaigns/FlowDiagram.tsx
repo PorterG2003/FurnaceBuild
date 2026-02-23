@@ -34,16 +34,18 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
 interface FlowDiagramProps {
   nodes: any[];
   edges: any[];
+  /** Height of the diagram container. When set, fitView will scale the flow to fit. Omit for default (400). */
+  height?: number;
 }
 
 /**
  * Read-only React Flow diagram component
  * Displays a flow diagram without any interaction (no drag, zoom, pan, etc.)
  */
-export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
+export function FlowDiagram({ nodes, edges, height = 400 }: FlowDiagramProps) {
   if (!ReactFlow || !ReactFlowProvider || Platform.OS !== 'web') {
     return (
-      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6" style={{ minHeight: 400 }}>
+      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6" style={{ minHeight: height || 400 }}>
         <Text className="text-gray-400 font-instrument text-sm text-center">
           Flow diagram not available on this platform
         </Text>
@@ -93,8 +95,9 @@ export function FlowDiagram({ nodes, edges }: FlowDiagramProps) {
     );
   }
 
+  const diagramHeight = height || 400;
   return (
-    <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6" style={{ height: 500 }}>
+    <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl" style={{ height: diagramHeight, padding: 0 }}>
       <ReactFlowProvider>
         <ReactFlow
           nodes={nodes}

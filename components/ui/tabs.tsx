@@ -148,11 +148,9 @@ export function Tabs({ tabs, activeTab, onTabChange, layout = 'content' }: TabsP
             backgroundColor: '#f85102',
             width: tabIndicatorWidth,
             transform: [{ translateX: indicatorTranslateX }],
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.25,
-            shadowRadius: 4,
-            elevation: 4,
+            ...(typeof window !== 'undefined'
+              ? { boxShadow: '0px 2px 4px rgba(0,0,0,0.25)' }
+              : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 4 }),
           }}
         />
       )}

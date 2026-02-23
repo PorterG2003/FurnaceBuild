@@ -12,4 +12,4 @@ export interface ScheduleConfig {
   sending_interval_seconds: number;
 }
 
-export type SchedulePreset = '24/7' | 'business-hours' | 'weekdays-only' | 'custom';
+export type SchedulePreset = '24/7' | 'business-hours' | 'custom';

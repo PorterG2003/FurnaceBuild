@@ -349,42 +349,35 @@ export class SendWorker {
         console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, error);
       }
 
-      // 7. Create event record
-      await this.supabase
-        .from('events')
-        .insert({
+      // 7. Create event record and update campaign_stats (atomic for campaign sends)
+      const eventData = {
+        provider_message_id: providerMessageId,
+        sent_at: new Date().toISOString(),
+        test_mode: skipSmtp,
+        sent_subject: subject,
+        sent_body_html: emailBody,
+        sent_body_text: emailBodyText,
+      };
+      if (isCampaignMessageJob(messageJob)) {
+        const { error } = await this.supabase.rpc('record_sent_event_and_increment', {
+          p_campaign_id: messageJob.campaign_id,
+          p_lead_id: messageJob.lead_id,
+          p_enrollment_id: messageJob.enrollment_id,
+          p_message_job_id: messageJob.id,
+          p_event_data: eventData,
+        });
+        if (error) {
+          console.error(`[SEND WORKER] Failed to record sent event and increment campaign_stats for campaign ${messageJob.campaign_id}:`, error);
+        }
+      } else {
+        await this.supabase.from('events').insert({
           campaign_id: messageJob.campaign_id,
           lead_id: messageJob.lead_id,
           enrollment_id: messageJob.enrollment_id,
           message_job_id: messageJob.id,
           event_type: 'sent',
-          event_data: {
-            provider_message_id: providerMessageId,
-            sent_at: new Date().toISOString(),
-            test_mode: skipSmtp,
-            sent_subject: subject,
-            sent_body_html: emailBody,
-            sent_body_text: emailBodyText,
-          },
+          event_data: eventData,
         });
-
-      // 7b. Update campaign_stats.sent_count (campaign sends only; skip inbox_reply/inbox_forward)
-      if (isCampaignMessageJob(messageJob)) {
-        const campaignId = messageJob.campaign_id;
-        let statsError: Error | null = null;
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          const { error } = await this.supabase.rpc('increment_campaign_stats_sent', {
-            p_campaign_id: campaignId,
-          });
-          if (!error) break;
-          statsError = error;
-          if (attempt < 3) {
-            await new Promise((r) => setTimeout(r, 200 * Math.pow(2, attempt - 1)));
-          }
-        }
-        if (statsError) {
-          console.error(`[SEND WORKER] Failed to increment campaign_stats.sent_count for campaign ${campaignId} after retries:`, statsError);
-        }
       }
 
       if (skipSmtp) {

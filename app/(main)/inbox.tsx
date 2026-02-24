@@ -42,7 +42,7 @@ import {
 } from '@/lib/supabase/services';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailThread, EmailMessage, BlockListEntry, Mailbox, Campaign } from '@/lib/supabase/types';
-import { groupMessagesByDate } from '@/lib/inbox';
+import { groupMessagesByDate, signatureToHtml } from '@/lib/inbox';
 import { buildQuotedForwardThreadHtml } from '@/lib/inbox/quote-utils';
 import { MagnifyingGlassIcon, PaperAirplaneIcon, FunnelIcon } from 'react-native-heroicons/outline';
 import type { EditorBridge } from '@10play/tentap-editor';
@@ -241,6 +241,11 @@ export default function InboxPage() {
   const messagesSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
 
   const selectedThread = threads.find((t) => t.id === selectedThreadId);
+  const selectedThreadSignatureHtml = useMemo(() => {
+    if (!selectedThread?.mailbox_id) return '';
+    const mb = mailboxes.find((m) => m.id === selectedThread.mailbox_id);
+    return signatureToHtml(mb?.signature);
+  }, [selectedThread?.mailbox_id, mailboxes]);
   const threadsLoadingOrNoAccount = threadsLoading || !accountId;
 
   // Server-driven filtering: threads are already filtered by getThreadsByAccount
@@ -1543,7 +1548,7 @@ export default function InboxPage() {
                         <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Message</Text>
                         <ComposerRichEditor
                           key="reply"
-                          initialContent="<p></p>"
+                          initialContent={`<p></p>${selectedThreadSignatureHtml}`}
                           placeholder="Write your reply…"
                           editorRef={composerEditorRef}
                           minHeight={140}
@@ -1626,7 +1631,7 @@ export default function InboxPage() {
                         <Text className="text-gray-500 font-instrument text-xs mb-1">Add your message above the forwarded content.</Text>
                         <ComposerRichEditor
                           key="forward"
-                          initialContent={`<p></p>${buildQuotedForwardThreadHtml(messages, selectedThread?.subject ?? '(No subject)')}`}
+                          initialContent={`<p></p>${selectedThreadSignatureHtml}${buildQuotedForwardThreadHtml(messages, selectedThread?.subject ?? '(No subject)')}`}
                           placeholder="Write your message…"
                           editorRef={composerEditorRef}
                           minHeight={140}

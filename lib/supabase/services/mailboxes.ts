@@ -150,16 +150,7 @@ export async function updateMailboxLastSynced(id: string): Promise<Mailbox> {
 }
 
 /**
- * Toggle sync enabled status
- */
-export async function setMailboxSyncEnabled(id: string, enabled: boolean): Promise<Mailbox> {
-  return updateMailbox(id, {
-    sync_enabled: enabled,
-  });
-}
-
-/**
- * Get connected mailboxes for an account (status = 'connected')
+ * Get connected mailboxes for an account (status = 'connected'), excluding test mailboxes (*@furnace.test).
  */
 export async function getConnectedMailboxes(accountId: string): Promise<Mailbox[]> {
   const { data, error } = await supabase
@@ -167,13 +158,12 @@ export async function getConnectedMailboxes(accountId: string): Promise<Mailbox[
     .select('*')
     .eq('account_id', accountId)
     .eq('status', 'connected')
-    .eq('sync_enabled', true)
     .order('created_at', { ascending: false });
 
   if (error) {
     throw new Error(`Failed to fetch connected mailboxes: ${error.message}`);
   }
 
-  return data ?? [];
+  return (data ?? []).filter((m) => !m.email_address.endsWith('@furnace.test'));
 }
 

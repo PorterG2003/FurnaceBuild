@@ -64,8 +64,9 @@ export function generateMessageId(): string {
 
 /**
  * Strip HTML tags to produce plain text fallback.
+ * Exported for use in worker when deriving plain-text body from final HTML (e.g. after appending signature).
  */
-function stripHtml(html: string): string {
+export function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 

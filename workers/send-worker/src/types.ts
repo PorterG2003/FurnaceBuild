@@ -70,6 +70,7 @@ export interface Mailbox {
   smtp_status: 'active' | 'throttled' | 'error' | 'disabled';
   smtp_connection_limit?: number;
   smtp_messages_per_connection?: number;
+  signature?: string | null;
   // ... other fields
 }
 

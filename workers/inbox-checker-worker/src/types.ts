@@ -21,7 +21,6 @@ export interface Mailbox {
   imap_password: string;
   imap_use_ssl: boolean;
   status: 'connected' | 'disconnected' | 'error';
-  sync_enabled: boolean;
   last_synced_at: string | null;
   error_message: string | null;
   created_at: string;

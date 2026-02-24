@@ -158,7 +158,7 @@ Inbox Workers (ECS Fargate)
 ```
 Inbox Workers (ECS Scheduled Task or CloudWatch → Lambda)
   → Runs every 5 minutes
-  → Queries: "SELECT * FROM mailboxes WHERE sync_enabled = true"
+  → Queries: "SELECT * FROM mailboxes WHERE status = 'connected' AND email_address NOT LIKE '%@furnace.test'"
   → For each mailbox:
     → Connect via IMAP
     → Check for new messages since last_synced_at
@@ -200,7 +200,7 @@ Inbox Workers (ECS Scheduled Task or CloudWatch → Lambda)
 **Implementation:**
 - CloudWatch Event Rule: Every 5 minutes
 - Lambda or ECS Scheduled Task:
-  - Query: `SELECT * FROM mailboxes WHERE sync_enabled = true AND status = 'active'`
+  - Query: `SELECT * FROM mailboxes WHERE status = 'connected' AND email_address NOT LIKE '%@furnace.test'`
   - For each mailbox: Check via IMAP, process, update `last_synced_at`
   - If many mailboxes: Partition by `mailbox_id % N` across N workers
 

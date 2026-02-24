@@ -1,7 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { buildCampaignEmailContent, type LeadLike } from '@furnace/email-lib';
 import { DatabaseClient } from './database.js';
-import { sendEmail, sendReplyEmail } from './email.js';
+import { sendEmail, sendReplyEmail, stripHtml } from './email.js';
 import type { ReplyEmailOptions } from './email.js';
 import { SmtpPool } from './smtp-pool.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
@@ -219,9 +219,22 @@ export class SendWorker {
         { deterministic: false }
       );
       const currentSubject = content.subject;
-      const emailBody = content.bodyMerged;
+      let emailBody = content.bodyMerged;
       const isHtmlBody = content.isHtmlBody;
-      const emailBodyText = content.bodyText;
+      let emailBodyText = content.bodyText;
+
+      // Append mailbox signature to campaign emails (signature is HTML from rich editor)
+      if (mailbox.signature && mailbox.signature.trim()) {
+        const sigHtml = `<div class="email-signature" style="margin-top:16px;padding-top:8px;border-top:1px solid #ccc;color:#888;font-size:14px;">${mailbox.signature.trim()}</div>`;
+        if (isHtmlBody) {
+          emailBody = `${emailBody}${sigHtml}`;
+          emailBodyText = stripHtml(emailBody);
+        } else {
+          const sigPlain = stripHtml(mailbox.signature);
+          emailBody = `${emailBody}\n\n-- \n${sigPlain}`;
+          emailBodyText = emailBody;
+        }
+      }
 
       // Subject: use current node's subject; if follow-up and empty, use first email's subject
       let subject: string;

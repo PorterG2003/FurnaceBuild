@@ -291,7 +291,7 @@ This document outlines the step-by-step plan to implement the scalable email inf
 **Tasks**:
 - Create CloudWatch Event Rule (every 5 minutes)
 - Create Lambda function (or ECS Scheduled Task):
-  - Query Supabase: `SELECT * FROM mailboxes WHERE sync_enabled = true AND status = 'active'`
+  - Query Supabase: `SELECT * FROM mailboxes WHERE status = 'connected' AND email_address NOT LIKE '%@furnace.test'`
   - For each mailbox:
     - Connect via IMAP
     - Check for new messages since `last_synced_at`
@@ -461,7 +461,7 @@ This document outlines the step-by-step plan to implement the scalable email inf
 **Tasks**:
 - Scheduled task (CloudWatch → Lambda or ECS Scheduled Task):
   - Runs every 5 minutes
-  - Query Supabase: `SELECT * FROM mailboxes WHERE sync_enabled = true AND status = 'active'`
+  - Query Supabase: `SELECT * FROM mailboxes WHERE status = 'connected' AND email_address NOT LIKE '%@furnace.test'`
   - For each mailbox:
     1. Connect via IMAP using `mailboxes.imap_*` credentials
     2. Query for recent messages (since `last_synced_at`)

@@ -3,7 +3,7 @@ import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { ComposerRichEditor } from '@/components/inbox';
 import type { EditorBridge } from '@10play/tentap-editor';
-import type { MailboxFormData, Provider } from './types';
+import type { MailboxFormData } from './types';
 
 const inputStyle = {
   borderColor: '#FFFFFF4D',
@@ -21,7 +21,6 @@ export interface ConnectMailboxModalProps {
   testResult: { success: boolean; message: string; smtp?: { success: boolean; error?: string }; imap?: { success: boolean; error?: string } } | null;
   testing: boolean;
   onConnect: () => void;
-  onProviderChange: (provider: Provider) => void;
   onTestConnection: () => void;
   connectSignatureEditorRef: React.RefObject<EditorBridge | null>;
 }
@@ -35,7 +34,6 @@ export function ConnectMailboxModal({
   testResult,
   testing,
   onConnect,
-  onProviderChange,
   onTestConnection,
   connectSignatureEditorRef,
 }: ConnectMailboxModalProps) {
@@ -43,8 +41,8 @@ export function ConnectMailboxModal({
     <BaseModal
       visible={visible}
       onClose={onClose}
-      title="Connect Mailbox"
-      description="Connect your email account to send and receive emails"
+      title="Create Mailbox"
+      description="Add an SMTP/IMAP mailbox"
       maxWidth="2xl"
       maxHeight={680}
       footer={
@@ -59,35 +57,12 @@ export function ConnectMailboxModal({
               onPress={onConnect}
               disabled={connecting || (testResult !== null && !testResult.success)}
             >
-              {connecting ? 'Connecting...' : 'Connect'}
+              {connecting ? 'Creating...' : 'Create'}
             </Button>
           </View>
         </View>
       }
     >
-      <View className="mb-6">
-        <Text className="text-sm font-instrument-medium mb-3 text-gray-300">Email Provider</Text>
-        <View className="flex-row gap-3">
-          {(['gmail', 'outlook', 'custom'] as Provider[]).map((provider) => (
-            <TouchableOpacity
-              key={provider}
-              onPress={() => onProviderChange(provider)}
-              className={`flex-1 px-4 py-3 rounded-xl border ${
-                formData.provider === provider ? 'bg-brand-orange/20 border-brand-orange' : 'bg-white/5 border-white/20'
-              }`}
-            >
-              <Text
-                className={`text-center font-instrument-medium capitalize ${
-                  formData.provider === provider ? 'text-white' : 'text-gray-400'
-                }`}
-              >
-                {provider}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
       <View className="mb-4">
         <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Email Address</Text>
         <TextInput
@@ -137,6 +112,68 @@ export function ConnectMailboxModal({
         </Text>
       </View>
 
+      <Text className="text-lg font-instrument-semibold text-white mt-6 mb-4">Sending limits</Text>
+      <View className="mb-4">
+        <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Minimum seconds between sends</Text>
+        <TextInput
+          value={formData.min_gap_seconds != null ? String(formData.min_gap_seconds) : ''}
+          onChangeText={(text) => {
+            const n = text.trim() === '' ? null : parseInt(text, 10);
+            setFormData((prev) => ({
+              ...prev,
+              min_gap_seconds: n !== null && !Number.isNaN(n) ? n : prev.min_gap_seconds ?? 180,
+            }));
+          }}
+          placeholder="180"
+          placeholderTextColor="#666"
+          keyboardType="numeric"
+          className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
+          style={inputStyle}
+          selectionColor="#FF4D00"
+        />
+        <Text className="text-xs text-gray-500 font-instrument mt-2">Minimum gap between sends from this mailbox (default: 180).</Text>
+      </View>
+      <View className="mb-4">
+        <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Max sends per day</Text>
+        <TextInput
+          value={formData.daily_limit != null ? String(formData.daily_limit) : ''}
+          onChangeText={(text) => {
+            const n = text.trim() === '' ? null : parseInt(text, 10);
+            setFormData((prev) => ({
+              ...prev,
+              daily_limit: n !== null && !Number.isNaN(n) ? n : prev.daily_limit ?? 50,
+            }));
+          }}
+          placeholder="50"
+          placeholderTextColor="#666"
+          keyboardType="numeric"
+          className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
+          style={inputStyle}
+          selectionColor="#FF4D00"
+        />
+        <Text className="text-xs text-gray-500 font-instrument mt-2">Daily email limit for this mailbox (default: 50).</Text>
+      </View>
+      <View className="mb-4">
+        <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Max sends per hour</Text>
+        <TextInput
+          value={formData.hourly_limit != null ? String(formData.hourly_limit) : ''}
+          onChangeText={(text) => {
+            const n = text.trim() === '' ? null : parseInt(text, 10);
+            setFormData((prev) => ({
+              ...prev,
+              hourly_limit: n !== null && !Number.isNaN(n) ? n : prev.hourly_limit ?? 10,
+            }));
+          }}
+          placeholder="10"
+          placeholderTextColor="#666"
+          keyboardType="numeric"
+          className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
+          style={inputStyle}
+          selectionColor="#FF4D00"
+        />
+        <Text className="text-xs text-gray-500 font-instrument mt-2">Hourly email limit for this mailbox (default: 10).</Text>
+      </View>
+
       <Text className="text-lg font-instrument-semibold mb-4 text-white mt-6">SMTP Settings (Sending)</Text>
 
       <View className="mb-4">
@@ -144,7 +181,7 @@ export function ConnectMailboxModal({
         <TextInput
           value={formData.smtp_host}
           onChangeText={(text) => setFormData((prev) => ({ ...prev, smtp_host: text }))}
-          placeholder="smtp.gmail.com"
+          placeholder="SMTP host"
           placeholderTextColor="#666"
           autoCapitalize="none"
           className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
@@ -158,7 +195,7 @@ export function ConnectMailboxModal({
         <TextInput
           value={formData.smtp_port}
           onChangeText={(text) => setFormData((prev) => ({ ...prev, smtp_port: text }))}
-          placeholder="587"
+          placeholder="e.g. 587"
           placeholderTextColor="#666"
           keyboardType="numeric"
           className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
@@ -186,16 +223,13 @@ export function ConnectMailboxModal({
         <TextInput
           value={formData.smtp_password}
           onChangeText={(text) => setFormData((prev) => ({ ...prev, smtp_password: text }))}
-          placeholder="Enter SMTP password or app password"
+          placeholder="SMTP password"
           placeholderTextColor="#666"
           secureTextEntry
           className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
           style={inputStyle}
           selectionColor="#FF4D00"
         />
-        <Text className="text-xs text-gray-500 font-instrument mt-2">
-          For Gmail, use an App Password instead of your regular password
-        </Text>
       </View>
 
       <Text className="text-lg font-instrument-semibold mb-4 text-white mt-6">IMAP Settings (Receiving)</Text>
@@ -205,7 +239,7 @@ export function ConnectMailboxModal({
         <TextInput
           value={formData.imap_host}
           onChangeText={(text) => setFormData((prev) => ({ ...prev, imap_host: text }))}
-          placeholder="imap.gmail.com"
+          placeholder="IMAP host"
           placeholderTextColor="#666"
           autoCapitalize="none"
           className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
@@ -219,7 +253,7 @@ export function ConnectMailboxModal({
         <TextInput
           value={formData.imap_port}
           onChangeText={(text) => setFormData((prev) => ({ ...prev, imap_port: text }))}
-          placeholder="993"
+          placeholder="e.g. 993"
           placeholderTextColor="#666"
           keyboardType="numeric"
           className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
@@ -247,16 +281,13 @@ export function ConnectMailboxModal({
         <TextInput
           value={formData.imap_password}
           onChangeText={(text) => setFormData((prev) => ({ ...prev, imap_password: text }))}
-          placeholder="Enter IMAP password or app password"
+          placeholder="IMAP password"
           placeholderTextColor="#666"
           secureTextEntry
           className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
           style={inputStyle}
           selectionColor="#FF4D00"
         />
-        <Text className="text-xs text-gray-500 font-instrument mt-2">
-          For Gmail, use an App Password instead of your regular password
-        </Text>
       </View>
 
       <View className="mb-4 mt-6">

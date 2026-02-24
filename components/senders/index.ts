@@ -8,8 +8,11 @@ export { TestResultModal } from './TestResultModal';
 export type { TestResultModalProps } from './TestResultModal';
 export { MailboxesTable } from './MailboxesTable';
 export type { MailboxesTableProps } from './MailboxesTable';
+export { UploadMailboxesCSVModal } from './UploadMailboxesCSVModal';
+export type { UploadMailboxesCSVModalProps } from './UploadMailboxesCSVModal';
 export {
   BLANK_MAILBOX_FORM_DATA,
+  CREATE_MAILBOX_FORM_DATA,
   DEFAULT_MAILBOX_FORM_DATA,
   PROVIDER_PRESETS,
   type MailboxFormData,

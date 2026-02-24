@@ -226,7 +226,6 @@ export default function CampaignFlowTestPage() {
           imap_password: 'test-password',
           imap_use_ssl: true,
           status: 'connected',
-          sync_enabled: false,
           provider: 'gmail' as any,
         });
         mailboxIds.push(mailbox.id);

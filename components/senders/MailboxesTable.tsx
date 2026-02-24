@@ -37,6 +37,7 @@ export interface MailboxesTableProps {
   onBulkEdit: () => void;
   onClearSelection: () => void;
   onConnectMailbox: () => void;
+  onUploadCSV?: () => void;
 }
 
 export function MailboxesTable({
@@ -56,6 +57,7 @@ export function MailboxesTable({
   onBulkEdit,
   onClearSelection,
   onConnectMailbox,
+  onUploadCSV,
 }: MailboxesTableProps) {
   if (isLoading || showSkeleton) {
     return <SendersTableSkeleton />;
@@ -64,10 +66,20 @@ export function MailboxesTable({
   if (mailboxes.length === 0) {
     return (
       <EmptyState
-        title="No Mailboxes Connected"
-        description="Connect your first mailbox to start sending and receiving emails"
-        actionText="Connect Your First Mailbox"
-        onAction={onConnectMailbox}
+        title="No mailboxes"
+        description="Create a mailbox or upload a CSV to add mailboxes."
+        action={
+          <View className="gap-3 w-full items-center">
+            <Button onPress={onConnectMailbox} className="w-full max-w-xs">
+              Create mailbox
+            </Button>
+            {onUploadCSV && (
+              <Button variant="secondary" onPress={onUploadCSV} className="w-full max-w-xs">
+                Upload CSV
+              </Button>
+            )}
+          </View>
+        }
       />
     );
   }
@@ -116,9 +128,6 @@ export function MailboxesTable({
             <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">Email Address</Text>
           </View>
           <View className="flex-[1] px-2 py-2 justify-center">
-            <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">Provider</Text>
-          </View>
-          <View className="flex-[1] px-2 py-2 justify-center">
             <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">Status</Text>
           </View>
           <View className="flex-[1] px-2 py-2 justify-center">
@@ -145,9 +154,6 @@ export function MailboxesTable({
               </View>
               <View className="flex-[2] px-2 py-2 justify-center">
                 <Text className="text-gray-400 font-instrument text-sm">{mailbox.email_address}</Text>
-              </View>
-              <View className="flex-[1] px-2 py-2 justify-center">
-                <Text className="text-gray-400 font-instrument text-sm capitalize">{mailbox.provider}</Text>
               </View>
               <View className="flex-[1] px-2 py-2 justify-center">
                 <View

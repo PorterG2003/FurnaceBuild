@@ -601,8 +601,8 @@ export const handler = async (event: any) => {
   const { data: mailboxes, error } = await supabase
     .from('mailboxes')
     .select('*')
-    .eq('sync_enabled', true)
-    .eq('status', 'connected');
+    .eq('status', 'connected')
+    .not('email_address', 'ilike', '%@furnace.test');
 
   if (error) {
     console.error('Error querying mailboxes:', error);

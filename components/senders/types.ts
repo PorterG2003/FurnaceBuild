@@ -64,6 +64,25 @@ export const DEFAULT_MAILBOX_FORM_DATA: MailboxFormData = {
   imap_use_ssl: true,
 };
 
+/** Blank form for create-mailbox flow: no provider prefills; all SMTP/IMAP fields empty. */
+export const CREATE_MAILBOX_FORM_DATA: MailboxFormData = {
+  provider: 'custom',
+  email_address: '',
+  display_name: '',
+  signature: '',
+  smtp_host: '',
+  smtp_port: '',
+  smtp_username: '',
+  smtp_password: '',
+  smtp_use_tls: true,
+  smtp_use_ssl: false,
+  imap_host: '',
+  imap_port: '',
+  imap_username: '',
+  imap_password: '',
+  imap_use_ssl: true,
+};
+
 /** Blank form for bulk update: empty strings so only filled fields are applied to selected mailboxes. */
 export const BLANK_MAILBOX_FORM_DATA: MailboxFormData = {
   provider: 'gmail',

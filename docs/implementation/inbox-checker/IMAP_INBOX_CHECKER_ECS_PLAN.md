@@ -30,8 +30,8 @@
 │                    Supabase Database                         │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  mailboxes table                                     │   │
-│  │  - sync_enabled = true                               │   │
 │  │  - status = 'connected'                              │   │
+│  │  - email_address NOT LIKE '%@furnace.test'            │   │
 │  │  - last_synced_at < NOW() - 5 minutes                │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
@@ -111,8 +111,7 @@ RETURNS TABLE (
   imap_use_ssl BOOLEAN,
   last_synced_at TIMESTAMPTZ,
   status TEXT,
-  sync_enabled BOOLEAN,
-  -- ... other mailbox fields
+  -- ... other mailbox fields (sync eligibility by pattern: exclude *@furnace.test)
 ) AS $$
 DECLARE
   v_processing_timeout TIMESTAMPTZ;
@@ -128,8 +127,8 @@ BEGIN
       updated_at = NOW()
   WHERE id IN (
     SELECT id FROM mailboxes
-    WHERE sync_enabled = true
-      AND status = 'connected'
+    WHERE status = 'connected'
+      AND email_address NOT LIKE '%@furnace.test'
       AND (
         -- Never synced
         last_synced_at IS NULL
@@ -905,7 +904,7 @@ npm run scale:dev -- inbox-checker 3  # 3 inbox checker workers
 ### Auto-Scaling (Future)
 
 Based on queue depth:
-- Query: `SELECT COUNT(*) FROM mailboxes WHERE sync_enabled = true AND status = 'connected' AND (last_synced_at IS NULL OR last_synced_at < NOW() - INTERVAL '5 minutes')`
+- Query: `SELECT COUNT(*) FROM mailboxes WHERE status = 'connected' AND email_address NOT LIKE '%@furnace.test' AND (last_synced_at IS NULL OR last_synced_at < NOW() - INTERVAL '5 minutes')`
 - Scale up if count > threshold (e.g., 100 mailboxes pending)
 - Scale down if count = 0 for sustained period
 

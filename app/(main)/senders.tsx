@@ -8,11 +8,11 @@ import { SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from '@/components/skeleto
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import {
   ConnectMailboxModal,
-  DEFAULT_MAILBOX_FORM_DATA,
+  CREATE_MAILBOX_FORM_DATA,
   EditMailboxModal,
   MailboxesTable,
-  PROVIDER_PRESETS,
   TestResultModal,
+  UploadMailboxesCSVModal,
   type MailboxFormData,
   type Provider,
   type TestConnectionResult,
@@ -52,6 +52,7 @@ export default function SendersPage() {
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [selectedMailboxes, setSelectedMailboxes] = useState<Set<string>>(new Set());
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showUploadCSVModal, setShowUploadCSVModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showTestResultModal, setShowTestResultModal] = useState(false);
   const [testResultMailboxEmail, setTestResultMailboxEmail] = useState<string | null>(null);
@@ -73,7 +74,7 @@ export default function SendersPage() {
   const editSignatureEditorRef = useRef<EditorBridge | null>(null);
   const connectSignatureEditorRef = useRef<EditorBridge | null>(null);
 
-  const [formData, setFormData] = useState<MailboxFormData>(DEFAULT_MAILBOX_FORM_DATA);
+  const [formData, setFormData] = useState<MailboxFormData>(CREATE_MAILBOX_FORM_DATA);
 
   const loadMailboxes = useCallback(async () => {
     if (!accountId) return;
@@ -122,25 +123,6 @@ export default function SendersPage() {
       }
     }
   }, [isLoading, showSkeleton]);
-
-  const handleProviderChange = (provider: Provider) => {
-    const preset = PROVIDER_PRESETS[provider];
-    setFormData((prev) => ({
-      ...prev,
-      provider,
-      smtp_host: preset.smtp_host || prev.smtp_host,
-      smtp_port: preset.smtp_port || prev.smtp_port,
-      smtp_use_tls: preset.smtp_use_tls ?? prev.smtp_use_tls,
-      smtp_use_ssl: preset.smtp_use_ssl ?? prev.smtp_use_ssl,
-      imap_host: preset.imap_host || prev.imap_host,
-      imap_port: preset.imap_port || prev.imap_port,
-      imap_use_ssl: preset.imap_use_ssl ?? prev.imap_use_ssl,
-      // Keep user-entered values for username/password
-      smtp_username: prev.smtp_username || prev.email_address,
-      imap_username: prev.imap_username || prev.email_address,
-    }));
-    setTestResult(null);
-  };
 
   const handleTestConnection = async () => {
     // Validation
@@ -249,11 +231,14 @@ export default function SendersPage() {
         imap_password: formData.imap_password, // Should be encrypted
         imap_use_ssl: formData.imap_use_ssl,
         status: 'connected',
+        min_gap_seconds: formData.min_gap_seconds ?? null,
+        daily_limit: formData.daily_limit ?? null,
+        hourly_limit: formData.hourly_limit ?? null,
       });
 
-      toast.success('Mailbox connected successfully!');
+      toast.success('Mailbox created successfully');
       setShowConnectModal(false);
-      setFormData(DEFAULT_MAILBOX_FORM_DATA);
+      setFormData(CREATE_MAILBOX_FORM_DATA);
       await loadMailboxes();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to connect mailbox';
@@ -470,7 +455,12 @@ export default function SendersPage() {
           <Text className="text-3xl font-instrument-semibold text-white mb-2">Senders</Text>
           <Text className="text-gray-400 font-instrument">Manage your email mailbox connections</Text>
         </View>
-        <Button onPress={openConnectModal}>Connect Mailbox</Button>
+        <View className="flex-row gap-2">
+          <Button variant="secondary" onPress={() => setShowUploadCSVModal(true)}>
+            Upload CSV
+          </Button>
+          <Button onPress={openConnectModal}>Create mailbox</Button>
+        </View>
       </View>
 
       <MailboxesTable
@@ -490,6 +480,7 @@ export default function SendersPage() {
         onBulkEdit={handleBulkEdit}
         onClearSelection={() => setSelectedMailboxes(new Set())}
         onConnectMailbox={openConnectModal}
+        onUploadCSV={() => setShowUploadCSVModal(true)}
       />
 
       <ConnectMailboxModal
@@ -504,9 +495,22 @@ export default function SendersPage() {
         testResult={testResult}
         testing={testing}
         onConnect={handleConnect}
-        onProviderChange={handleProviderChange}
         onTestConnection={handleTestConnection}
         connectSignatureEditorRef={connectSignatureEditorRef}
+      />
+
+      <UploadMailboxesCSVModal
+        visible={showUploadCSVModal}
+        onClose={() => setShowUploadCSVModal(false)}
+        onSuccess={async (created, failed) => {
+          await loadMailboxes();
+          if (created > 0) {
+            if (failed > 0) toast.success(`${created} mailboxes created; ${failed} failed`);
+            else toast.success(`${created} mailbox${created !== 1 ? 'es' : ''} created`);
+          } else if (failed > 0) toast.error('Failed to create mailboxes');
+        }}
+        accountId={accountId ?? ''}
+        userId={profile?.id ?? ''}
       />
 
       <TestResultModal

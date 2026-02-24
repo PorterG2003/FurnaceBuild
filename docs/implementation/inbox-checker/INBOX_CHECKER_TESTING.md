@@ -69,8 +69,7 @@ Look for:
 
 **Setup**:
 1. Ensure you have at least one mailbox with:
-   - `sync_enabled = true`
-   - `status = 'connected'`
+   - `status = 'connected'` and not a test mailbox (email_address does not end with `@furnace.test`)
    - Valid IMAP credentials
    - `last_synced_at` is NULL or older than 5 minutes
 
@@ -80,7 +79,6 @@ Look for:
    SELECT 
      id,
      email_address,
-     sync_enabled,
      status,
      last_synced_at,
      CASE 
@@ -89,8 +87,8 @@ Look for:
        ELSE 'Recently synced'
      END as sync_status
    FROM mailboxes
-   WHERE sync_enabled = true
-     AND status = 'connected'
+   WHERE status = 'connected'
+     AND email_address NOT LIKE '%@furnace.test'
    ORDER BY last_synced_at ASC NULLS FIRST
    LIMIT 10;
    ```
@@ -324,7 +322,8 @@ SELECT
   COUNT(DISTINCT DATE_TRUNC('minute', last_synced_at)) as unique_minutes
 FROM mailboxes
 WHERE last_synced_at > NOW() - INTERVAL '1 hour'
-  AND sync_enabled = true;
+  AND status = 'connected'
+  AND email_address NOT LIKE '%@furnace.test';
 ```
 
 ### Check Reply Detection Rate
@@ -345,8 +344,8 @@ WHERE et.has_reply = true
 -- Mailboxes waiting to be checked
 SELECT COUNT(*) as pending_mailboxes
 FROM mailboxes
-WHERE sync_enabled = true
-  AND status = 'connected'
+WHERE status = 'connected'
+  AND email_address NOT LIKE '%@furnace.test'
   AND (
     last_synced_at IS NULL
     OR last_synced_at < NOW() - INTERVAL '5 minutes'
@@ -406,8 +405,8 @@ DNS can’t resolve the IMAP hostname. Usually this means the mailbox has the wr
    -- Mailboxes that should be claimed
    SELECT COUNT(*)
    FROM mailboxes
-   WHERE sync_enabled = true
-     AND status = 'connected'
+   WHERE status = 'connected'
+     AND email_address NOT LIKE '%@furnace.test'
      AND (
        last_synced_at IS NULL
        OR last_synced_at < NOW() - INTERVAL '5 minutes'
@@ -445,7 +444,6 @@ LIMIT 5;
 SELECT 
   id,
   email_address,
-  sync_enabled,
   status,
   last_synced_at,
   (last_synced_at > NOW() - INTERVAL '10 minutes') AS synced_recently
@@ -453,7 +451,7 @@ FROM mailboxes
 WHERE id = '<your-mailbox-id>';
 ```
 
-- `sync_enabled` must be `true`, `status` `'connected'`.
+- Mailbox must be `status` `'connected'` and not a test mailbox (email_address does not end with `@furnace.test`).
 - `last_synced_at` should be recent (within the last 10 minutes if the worker is running).
 - If `last_synced_at` is old or null, the mailbox isn’t being claimed/processed. Check that the inbox-checker worker is running and that this mailbox matches the claim criteria.
 

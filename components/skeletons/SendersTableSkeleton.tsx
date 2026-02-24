@@ -43,13 +43,7 @@ function SkeletonRow({ index, isLast }: { index: number; isLast: boolean }) {
           <Skeleton style={{ width: 180, height: 14, borderRadius: 4 }} />
         </View>
         <View className="flex-[1] px-2 py-2 justify-center">
-          <Skeleton style={{ width: 56, height: 14, borderRadius: 4 }} />
-        </View>
-        <View className="flex-[1] px-2 py-2 justify-center">
           <Skeleton style={{ width: 72, height: 22, borderRadius: 6 }} />
-        </View>
-        <View className="flex-[1] px-2 py-2 justify-center">
-          <Skeleton style={{ width: 56, height: 14, borderRadius: 4 }} />
         </View>
         <View className="flex-[1] px-2 py-2 justify-center">
           <View className="flex-row gap-1.5">
@@ -90,17 +84,7 @@ export function SendersTableSkeleton() {
         </View>
         <View className="flex-[1] px-2 py-2 justify-center">
           <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">
-            Provider
-          </Text>
-        </View>
-        <View className="flex-[1] px-2 py-2 justify-center">
-          <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">
             Status
-          </Text>
-        </View>
-        <View className="flex-[1] px-2 py-2 justify-center">
-          <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">
-            Sync
           </Text>
         </View>
         <View className="flex-[1] px-2 py-2 justify-center">

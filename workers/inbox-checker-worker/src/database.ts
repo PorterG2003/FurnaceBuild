@@ -32,7 +32,7 @@ export class DatabaseClient {
    * This uses an atomic UPDATE operation to claim mailboxes, providing 100% guarantee
    * against duplicate processing. The function:
    * - Atomically updates mailboxes to mark as "processing" (sets last_synced_at to NOW())
-   * - Only mailboxes that match criteria are updated (sync_enabled = true, status = 'connected', etc.)
+   * - Only mailboxes that match criteria are claimed (status = 'connected', not *@furnace.test, etc.)
    * - If worker crashes, mailbox becomes eligible again after timeout
    * 
    * This ensures that when multiple workers are running:

@@ -45,3 +45,6 @@ yarn-error.*
 .amplify
 amplify_outputs*
 amplifyconfiguration*
+
+# cursor
+.cursor/debug.log

@@ -96,6 +96,34 @@ interface CampaignStatsChartProps {
 export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsChartProps) {
   const progress = useBarGrowAnimation(!!data && data.length > 0);
   const [scrollX, setScrollX] = useState(0);
+  const { width: windowWidth } = useWindowDimensions();
+
+  const handleScroll = useCallback((ev: NativeSyntheticEvent<NativeScrollEvent>) => {
+    setScrollX(ev.nativeEvent.contentOffset.x);
+  }, []);
+
+  const tooltipStrips = useMemo(
+    () =>
+      data && data.length > 0
+        ? data.map((day, i) => (
+            <Tooltip
+              key={day.date}
+              content={<DayTooltipContent day={day} />}
+              placement="cursor"
+              style={{
+                position: 'absolute',
+                left: INITIAL_SPACING + i * GROUP_WIDTH,
+                width: STRIP_WIDTH,
+                top: 0,
+                bottom: 0,
+              }}
+            >
+              <View style={{ flex: 1 }} />
+            </Tooltip>
+          ))
+        : null,
+    [data]
+  );
 
   const wrapperStyle = { width: '100%' as const };
   const wrapperClass = embedded ? undefined : 'rounded-xl border border-[#2A2A2A] bg-[#1A1A1A]';
@@ -127,7 +155,6 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
   );
   const maxValue = getNiceMax(maxSingle);
 
-  const { width: windowWidth } = useWindowDimensions();
   const chartParentWidth = windowWidth - 24 * 2 - 16 * 2;
   const chartContentWidth = INITIAL_SPACING + data.length * GROUP_WIDTH + END_SPACING;
 
@@ -175,31 +202,6 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
       });
     });
   });
-
-  const handleScroll = useCallback((ev: NativeSyntheticEvent<NativeScrollEvent>) => {
-    setScrollX(ev.nativeEvent.contentOffset.x);
-  }, []);
-
-  const tooltipStrips = useMemo(
-    () =>
-      data.map((day, i) => (
-        <Tooltip
-          key={day.date}
-          content={<DayTooltipContent day={day} />}
-          placement="cursor"
-          style={{
-            position: 'absolute',
-            left: INITIAL_SPACING + i * GROUP_WIDTH,
-            width: STRIP_WIDTH,
-            top: 0,
-            bottom: 0,
-          }}
-        >
-          <View style={{ flex: 1 }} />
-        </Tooltip>
-      )),
-    [data]
-  );
 
   return (
     <View className={wrapperClass} style={wrapperStyle}>

@@ -96,6 +96,9 @@ export default function CampaignPage() {
         getCampaignStatsForCampaigns([id]).then((m) => m[id] ?? null),
       ]);
       const mailboxes = mailboxesResult;
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns/[id].tsx:loadCampaign',message:'Detail page received stats',data:{id,statsResult:statsResult!=null?{sentCount:statsResult.sentCount,repliedCount:statsResult.repliedCount,enrollmentCount:statsResult.enrollmentCount,contactedEnrollmentCount:statsResult.contactedEnrollmentCount}:null},timestamp:Date.now(),hypothesisId:'B_C_D'})}).catch(()=>{});
+      // #endregion
       setCampaignStats(statsResult);
       setMailboxCount(mailboxes?.length ?? 0);
 

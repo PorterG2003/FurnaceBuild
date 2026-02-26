@@ -199,6 +199,10 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   const completionValue = reachedCount + terminalCount;
   const completionTotal = enrollmentCount > 0 ? enrollmentCount * 2 : 1;
 
+  // #region agent log
+  fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.tsx:CampaignCard',message:'Dial inputs',data:{campaignId:campaign.id?.slice(0,8),contactedCount,terminalCount,reachedCount,completionValue,completionTotal},timestamp:Date.now(),hypothesisId:'D',runId:'verify'})}).catch(()=>{});
+  // #endregion
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
@@ -427,6 +431,10 @@ export default function CampaignsPage() {
       const data = await getCampaigns({ accountId: account.id });
       setCampaigns(data);
       const stats = await getCampaignStatsForCampaigns(data.map((c) => c.id));
+      // #region agent log
+      const firstCampaignId = data[0]?.id;
+      fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.tsx:loadCampaigns',message:'List page received stats',data:{campaignsLength:data.length,firstCampaignId,statsKeys:Object.keys(stats).length,statsForFirst:firstCampaignId?stats[firstCampaignId]:null,hasStatsForFirst:firstCampaignId?firstCampaignId in stats:false},timestamp:Date.now(),hypothesisId:'B_E'})}).catch(()=>{});
+      // #endregion
       setCampaignStats(stats);
     } catch (err: any) {
       setError(err.message || 'Failed to load campaigns');

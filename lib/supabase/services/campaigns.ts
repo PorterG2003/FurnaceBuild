@@ -69,6 +69,11 @@ export async function getCampaignStatsForCampaigns(
   const result: Record<string, CampaignStats> = {};
   if (campaignIds.length === 0) return result;
 
+  // #region agent log
+  const firstId = campaignIds[0];
+  fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.ts:getCampaignStatsForCampaigns',message:'Batch stats request',data:{campaignIdsLength:campaignIds.length,firstId,firstIdType:typeof firstId},timestamp:Date.now(),hypothesisId:'A_B_C'})}).catch(()=>{});
+  // #endregion
+
   for (const id of campaignIds) {
     result[id] = {
       sentCount: 0,
@@ -91,6 +96,7 @@ export async function getCampaignStatsForCampaigns(
     .in('campaign_id', campaignIds);
 
   if (enrollmentRows) {
+    const sampleRow = enrollmentRows[0];
     for (const row of enrollmentRows) {
       if (row.campaign_id && result[row.campaign_id]) {
         result[row.campaign_id].enrollmentCount++;
@@ -99,6 +105,9 @@ export async function getCampaignStatsForCampaigns(
         }
       }
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.ts:afterEnrollments',message:'Enrollments merged',data:{firstId,enrollmentCount:result[firstId]?.enrollmentCount,sampleCampaignId:sampleRow?.campaign_id,sampleCampaignIdType:typeof sampleRow?.campaign_id,keyMatches:firstId in result,resultHasFirstId:result[firstId]!=null},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
   }
 
   // Contacted count: distinct enrollments with ≥1 sent campaign email (DB-side aggregation)
@@ -107,11 +116,15 @@ export async function getCampaignStatsForCampaigns(
   });
 
   if (contactedRows) {
+    const sampleContacted = contactedRows[0];
     for (const row of contactedRows) {
       if (row.campaign_id && result[row.campaign_id]) {
         result[row.campaign_id].contactedEnrollmentCount = row.contacted_count ?? 0;
       }
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.ts:afterContacted',message:'Contacted RPC merged',data:{firstId,contactedEnrollmentCount:result[firstId]?.contactedEnrollmentCount,sampleCampaignId:sampleContacted?.campaign_id,sampleCampaignIdType:typeof sampleContacted?.campaign_id},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
   }
 
   // Sent, replied, positive reply, bounce from campaign_stats
@@ -121,6 +134,7 @@ export async function getCampaignStatsForCampaigns(
     .in('campaign_id', campaignIds);
 
   if (statsRows) {
+    const sampleStatsRow = statsRows.find((r: any) => r.campaign_id === firstId) ?? statsRows[0];
     for (const row of statsRows) {
       if (row.campaign_id && result[row.campaign_id]) {
         result[row.campaign_id].sentCount = row.sent_count ?? 0;
@@ -130,8 +144,15 @@ export async function getCampaignStatsForCampaigns(
         result[row.campaign_id].lastBounceAt = row.last_bounce_at ?? null;
       }
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.ts:afterCampaignStats',message:'campaign_stats merged',data:{firstId,sentCount:result[firstId]?.sentCount,repliedCount:result[firstId]?.repliedCount,statsRowsLength:statsRows.length,sampleStatsCampaignId:sampleStatsRow?.campaign_id,sampleStatsCampaignIdType:typeof sampleStatsRow?.campaign_id},timestamp:Date.now(),hypothesisId:'A_C'})}).catch(()=>{});
+    // #endregion
   }
 
+  // #region agent log
+  const resultKeys = Object.keys(result);
+  fetch('http://127.0.0.1:7243/ingest/28828e28-f092-4c58-9db7-7686778cf427',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.ts:getCampaignStatsForCampaigns:return',message:'Final result',data:{firstId,resultKeysLength:resultKeys.length,firstResult:result[firstId],firstKeySample:resultKeys[0],firstKeyEqualsFirstId:resultKeys[0]===firstId},timestamp:Date.now(),hypothesisId:'B_C'})}).catch(()=>{});
+  // #endregion
   return result;
 }
 

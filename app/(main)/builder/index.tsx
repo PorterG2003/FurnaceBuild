@@ -68,17 +68,14 @@ interface FlowEditorProps {
   onFlowChange?: (nodes: any[], edges: any[]) => void;
 }
 
-function FlowEditor({ onEditNode, initialNodes = [], initialEdges = [], onFlowChange }: FlowEditorProps) {
-  if (!useNodesState || !useEdgesState || !addEdge || !ReactFlow || !ReactFlowProvider) {
-    return (
-      <View className="flex-1 items-center justify-center">
-        <Text className="text-white font-instrument">React Flow not available</Text>
-      </View>
-    );
-  }
+// Only mount FlowEditor when React Flow is loaded (avoids hooks-before-return in FlowEditor)
+function isReactFlowAvailable() {
+  return !!(useNodesState && useEdgesState && addEdge && ReactFlow && ReactFlowProvider);
+}
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+function FlowEditor({ onEditNode, initialNodes = [], initialEdges = [], onFlowChange }: FlowEditorProps) {
+  const [nodes, setNodes, onNodesChange] = useNodesState!(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState!(initialEdges);
   
   // Track if initial load is complete to avoid saving during initialization
   const isInitialLoadRef = useRef(true);
@@ -474,13 +471,17 @@ export default function BuilderPage() {
             backgroundColor: 'transparent'
           }}
         >
-          {initialFlowData !== null ? (
+          {initialFlowData !== null && isReactFlowAvailable() ? (
             <FlowEditor 
               onEditNode={handleEditNode}
               initialNodes={initialFlowData.nodes}
               initialEdges={initialFlowData.edges}
               onFlowChange={handleFlowChange}
             />
+          ) : initialFlowData !== null ? (
+            <View className="flex-1 items-center justify-center">
+              <Text className="text-white font-instrument">React Flow not available</Text>
+            </View>
           ) : (
             <View className="flex-1 items-center justify-center">
               <Text className="text-gray-400 font-instrument">Loading flow...</Text>

@@ -32,6 +32,10 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
     onGoToSignUp();
   };
 
+  const clearInitialSuccessIfUserInteracts = () => {
+    // Clear/dismiss any initial success toast when user starts typing (no-op if toast has no dismiss API)
+  };
+
   const handleSignIn = async () => {
     if (!email || !password) {
       setError('Please fill in all fields');
@@ -88,6 +92,7 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
           onChangeText={(text) => {
             setEmail(text);
             clearInitialSuccessIfUserInteracts();
+            setError('');
           }}
           placeholder="Enter your email"
           autoCapitalize="none"

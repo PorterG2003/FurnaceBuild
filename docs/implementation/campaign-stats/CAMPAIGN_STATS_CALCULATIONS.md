@@ -73,7 +73,7 @@ This gives two "halves" of progress: reaching people contributes up to 50%, and 
 
 Edge case: if there are no enrollments, total is set to 1 to avoid division by zero, resulting in 0%.
 
-- **Code:** `getCampaignStatsForCampaigns` in [lib/supabase/services/campaigns.ts](../../../lib/supabase/services/campaigns.ts) computes `enrollmentCount`, `terminalEnrollmentCount`, and `contactedEnrollmentCount`. The `CampaignCard` in [app/(main)/campaigns.tsx](../../../app/(main)/campaigns.tsx) passes `value = contactedCount + terminalCount` and `total = enrollmentCount * 2` (or 1) to `ProgressDial`.
+- **Code:** `getCampaignStatsForCampaigns` in [lib/supabase/services/campaigns.ts](../../../lib/supabase/services/campaigns.ts) computes `enrollmentCount`, `terminalEnrollmentCount`, and `contactedEnrollmentCount`. The `CampaignCard` in [app/(main)/campaigns.tsx](../../../app/(main)/campaigns.tsx) uses `reachedCount = max(contactedCount, terminalCount)` so enrollments that are terminal without a sent email still count, then passes `value = reachedCount + terminalCount` and `total = enrollmentCount * 2` (or 1) to `ProgressDial`.
 
 ---
 

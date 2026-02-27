@@ -10,6 +10,7 @@
     "dev": "tsx watch src/index.ts"
   },
   "dependencies": {
+    "@furnace/slack-lib": "file:../../lib/slack",
     "@aws-sdk/client-sqs": "^3.0.0",
     "@aws-sdk/client-ssm": "^3.0.0",
     "@supabase/supabase-js": "^2.77.0",
@@ -22,4 +23,3 @@
     "tsx": "^4.0.0"
   }
 }
-

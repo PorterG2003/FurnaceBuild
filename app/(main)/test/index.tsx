@@ -1,7 +1,7 @@
 import { View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { PageLayout } from '@/components/ui/layout';
-import { EnvelopeIcon, ArrowsRightLeftIcon, ListBulletIcon, PaintBrushIcon, ArrowPathIcon } from 'react-native-heroicons/outline';
+import { EnvelopeIcon, ArrowsRightLeftIcon, ListBulletIcon, PaintBrushIcon, ArrowPathIcon, MegaphoneIcon } from 'react-native-heroicons/outline';
 
 interface Test {
   id: string;
@@ -119,6 +119,33 @@ export default function TestIndexPage() {
                 </Text>
                 <Text className="text-gray-400 font-instrument text-sm">
                   Recompute stats from source tables to fix list/detail drift
+                </Text>
+              </View>
+            </View>
+            <Text className="text-gray-500 font-instrument text-2xl">→</Text>
+          </View>
+        </Pressable>
+      </View>
+
+      {/* Slack Error Reporting Section */}
+      <View className="mb-6">
+        <Pressable
+          onPress={() => router.push('/test/slack-errors' as any)}
+          className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 active:opacity-80"
+          accessibilityRole="button"
+          accessibilityLabel="Slack error reporting"
+        >
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-4 flex-1">
+              <View className="bg-brand-orange/20 p-3 rounded-lg">
+                <MegaphoneIcon size={24} color="#f85102" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-white font-instrument-semibold text-lg mb-1">
+                  Slack Error Reporting
+                </Text>
+                <Text className="text-gray-400 font-instrument text-sm">
+                  Send test errors to Slack and trigger real worker errors for verification
                 </Text>
               </View>
             </View>

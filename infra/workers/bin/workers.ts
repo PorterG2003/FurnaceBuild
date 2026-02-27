@@ -22,6 +22,10 @@ const devSupabaseSecretKeyParamPath = process.env.DEV_SUPABASE_SECRET_KEY_PARAM_
 const prodSupabaseSecretKeyParamPath = process.env.PROD_SUPABASE_SECRET_KEY_PARAM_PATH ||
   '/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY';
 
+// Optional: Slack Incoming Webhook URL for error reporting (workers post errors to this channel when set)
+const devSlackErrorWebhookUrl = process.env.DEV_SLACK_ERROR_WEBHOOK_URL || process.env.SLACK_ERROR_WEBHOOK_URL || undefined;
+const prodSlackErrorWebhookUrl = process.env.PROD_SLACK_ERROR_WEBHOOK_URL || process.env.SLACK_ERROR_WEBHOOK_URL || undefined;
+
 // Validate required environment variables
 if (!devSupabaseUrl) {
   throw new Error('DEV_SUPABASE_URL or SUPABASE_URL_DEV environment variable is required for dev stack');
@@ -44,6 +48,7 @@ new WorkerStack(app, 'WorkerStack-Dev', {
   environment: 'dev',
   supabaseUrl: devSupabaseUrl,
   supabaseSecretKeyParamPath: devSupabaseSecretKeyParamPath,
+  slackErrorWebhookUrl: devSlackErrorWebhookUrl,
   desiredCount: {
     sendWorker: 0, // Start with 0, scale up after pushing Docker images
     schedulerWorker: 0, // Start with 0, scale up after pushing Docker images
@@ -60,6 +65,7 @@ new WorkerStack(app, 'WorkerStack-Prod', {
   environment: 'prod',
   supabaseUrl: prodSupabaseUrl,
   supabaseSecretKeyParamPath: prodSupabaseSecretKeyParamPath,
+  slackErrorWebhookUrl: prodSlackErrorWebhookUrl,
   desiredCount: {
     sendWorker: 0, // Start with 0, scale up after pushing Docker images
     schedulerWorker: 0, // Start with 0, scale up after pushing Docker images

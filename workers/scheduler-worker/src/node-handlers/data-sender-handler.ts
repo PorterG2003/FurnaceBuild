@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import type { Enrollment } from '../types.js';
 
 /**
@@ -49,7 +50,12 @@ export async function handleDataSenderNode(
   if (error) {
     const errorMsg = `Failed to update enrollment ${enrollment.id} after DataSender node ${node.id}: ${error.message}`;
     console.error(errorMsg);
-    // TODO: Send to Slack error reporting channel - DataSender enrollment update error
+    reportErrorToSlack('DataSender enrollment update error', {
+      severity: 'critical',
+      enrollment_id: enrollment.id,
+      node_id: node.id,
+      error: error.message,
+    });
     throw new Error(errorMsg);
   }
 }

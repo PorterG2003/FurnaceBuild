@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import type { Enrollment, CampaignSchedule } from '../types.js';
 import { calculateNextRunAt } from '../scheduling.js';
 
@@ -60,8 +61,12 @@ export async function handleWaitTimeNode(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error calculating scheduled time for wait node ${node.id} (enrollment ${enrollment.id}):`, errorMessage);
-    // TODO: Send to Slack error reporting channel - Schedule calculation error
-    // Fallback: Use base time + wait duration (no schedule)
+    reportErrorToSlack('Schedule calculation error for wait node', {
+      severity: 'warning',
+      enrollment_id: enrollment.id,
+      node_id: node.id,
+      error: errorMessage,
+    });
     nextRunAt = baseNextRunAt.toISOString();
   }
 

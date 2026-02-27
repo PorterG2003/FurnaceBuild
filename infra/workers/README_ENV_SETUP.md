@@ -35,6 +35,7 @@ The **send-worker** (and scheduler / inbox-checker workers) need:
 | `SUPABASE_URL` | CDK deploy | Supabase project URL (from `DEV_SUPABASE_URL` / `PROD_SUPABASE_URL` in `.env.local`) |
 | `SUPABASE_SECRET_KEY_PARAM_PATH` | CDK deploy | SSM Parameter Store path where the Secret Key is stored (defaults in code; override with `DEV_SUPABASE_SECRET_KEY_PARAM_PATH` / `PROD_SUPABASE_SECRET_KEY_PARAM_PATH` in `.env.local`) |
 | `AWS_REGION` | CDK deploy | e.g. `us-west-2` |
+| `DEV_SLACK_ERROR_WEBHOOK_URL` / `PROD_SLACK_ERROR_WEBHOOK_URL` | CDK deploy (optional) | When set in `.env.local`, errors from workers are posted to Slack. Use **both** for different channels: dev workers (deploy:dev) use `DEV_`, prod workers (deploy:prod) use `PROD_`. Fallback: `SLACK_ERROR_WEBHOOK_URL` is used for both if the env-specific one is not set. |
 
 These are **baked into the ECS task definition** when you run:
 

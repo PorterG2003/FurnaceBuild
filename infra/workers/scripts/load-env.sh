@@ -41,6 +41,14 @@ export CDK_DEFAULT_REGION
 export DEV_SUPABASE_URL
 export PROD_SUPABASE_URL
 
+# Optional: warn if Slack error webhook is not set (workers will not report errors to Slack)
+if [ -z "$DEV_SLACK_ERROR_WEBHOOK_URL" ] && [ -z "$SLACK_ERROR_WEBHOOK_URL" ]; then
+  echo "⚠️  Slack error reporting disabled: set DEV_SLACK_ERROR_WEBHOOK_URL (or SLACK_ERROR_WEBHOOK_URL) in .env.local and redeploy to enable."
+fi
+if [ -z "$PROD_SLACK_ERROR_WEBHOOK_URL" ] && [ -z "$SLACK_ERROR_WEBHOOK_URL" ]; then
+  echo "⚠️  Slack (prod) disabled: set PROD_SLACK_ERROR_WEBHOOK_URL (or SLACK_ERROR_WEBHOOK_URL) in .env.local and redeploy for prod workers."
+fi
+
 echo "✅ Environment variables loaded from .env.local"
 
 # Execute all remaining arguments as a command

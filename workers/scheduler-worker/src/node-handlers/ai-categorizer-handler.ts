@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import type { Enrollment } from '../types.js';
 
 /**
@@ -27,7 +28,11 @@ export async function handleAICategorizerNode(
   if (categories.length === 0) {
     const warning = `AICategorizer node ${node.id} (enrollment ${enrollment.id}) has no categories defined`;
     console.warn(warning);
-    // TODO: Send to Slack error reporting channel - AICategorizer misconfiguration (warning)
+    reportErrorToSlack('AICategorizer node has no categories defined', {
+      severity: 'warning',
+      enrollment_id: enrollment.id,
+      node_id: node.id,
+    });
     return null;
   }
 
@@ -46,7 +51,12 @@ export async function handleAICategorizerNode(
   if (!matchingEdge) {
     const warning = `No edge found for category "${selectedCategory}" from AICategorizer node ${node.id} (enrollment ${enrollment.id})`;
     console.warn(warning);
-    // TODO: Send to Slack error reporting channel - AICategorizer edge mismatch (warning)
+    reportErrorToSlack('AICategorizer edge mismatch (no edge for selected category)', {
+      severity: 'warning',
+      enrollment_id: enrollment.id,
+      node_id: node.id,
+      category: selectedCategory,
+    });
     // Fallback: Use first edge from this node
     const firstEdge = edges.find((edge: any) => edge.source === node.flow_node_id);
     if (firstEdge) {

@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { buildCampaignEmailContent, type LeadLike } from '@furnace/email-lib';
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { DatabaseClient } from './database.js';
 import { sendEmail, sendReplyEmail, stripHtml } from './email.js';
 import type { ReplyEmailOptions } from './email.js';
@@ -77,6 +78,8 @@ export class SendWorker {
         }
       } catch (error) {
         console.error('[SEND WORKER] Error in main loop:', error);
+        const msg = error instanceof Error ? error.message : String(error);
+        reportErrorToSlack(`Send-worker main loop error: ${msg}`, { severity: 'critical' });
         await this.sleep(5000);
       }
     }
@@ -406,6 +409,12 @@ export class SendWorker {
       const errorMessage = error instanceof Error 
         ? error.message 
         : String(error);
+
+      reportErrorToSlack(`Send-worker failed to process message job: ${errorMessage}`, {
+        severity: 'critical',
+        message_job_id: messageJob.id,
+        enrollment_id: messageJob.enrollment_id,
+      });
       
       try {
         await this.supabase

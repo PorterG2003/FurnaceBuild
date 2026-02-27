@@ -1,5 +1,6 @@
 import { toZonedTime, fromZonedTime, format } from 'date-fns-tz';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import type { CampaignSchedule } from './types.js';
 
 /**
@@ -13,7 +14,7 @@ export function isWithinSchedule(
     // Validate schedule structure
     if (!schedule.timezone || typeof schedule.start_hour !== 'number' || typeof schedule.end_hour !== 'number') {
       console.error('Invalid schedule structure:', schedule);
-      // TODO: Send to Slack error reporting channel - Invalid schedule configuration
+      reportErrorToSlack('Invalid schedule configuration (missing timezone or hours)', { severity: 'warning' });
       return true; // Default to allowing if schedule is invalid (fail open)
     }
 
@@ -38,7 +39,11 @@ export function isWithinSchedule(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error checking schedule (timezone: ${schedule.timezone}):`, errorMessage);
-    // TODO: Send to Slack error reporting channel - Timezone conversion error
+    reportErrorToSlack('Timezone conversion error in isWithinSchedule', {
+      severity: 'warning',
+      timezone: schedule.timezone,
+      error: errorMessage,
+    });
     return true; // Default to allowing if timezone conversion fails (fail open)
   }
 }
@@ -55,7 +60,7 @@ export function calculateNextAllowedTime(
     // Validate schedule structure
     if (!schedule.timezone || typeof schedule.start_hour !== 'number' || typeof schedule.end_hour !== 'number') {
       console.error('Invalid schedule structure:', schedule);
-      // TODO: Send to Slack error reporting channel - Invalid schedule configuration
+      reportErrorToSlack('Invalid schedule configuration in calculateNextAllowedTime', { severity: 'warning' });
       return baseTime; // Return base time if schedule is invalid
     }
 
@@ -131,8 +136,11 @@ export function calculateNextAllowedTime(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`Error calculating next allowed time (timezone: ${schedule.timezone}):`, errorMessage);
-    // TODO: Send to Slack error reporting channel - Timezone calculation error
-    // Return base time + 1 hour as fallback
+    reportErrorToSlack('Timezone calculation error in calculateNextAllowedTime', {
+      severity: 'warning',
+      timezone: schedule.timezone,
+      error: errorMessage,
+    });
     return new Date(baseTime.getTime() + 3600000);
   }
 }

@@ -134,6 +134,11 @@ async function main() {
 
   } catch (error) {
     console.error('Fatal error:', error);
+    const { reportErrorToSlack } = await import('@furnace/slack-lib');
+    reportErrorToSlack('Scheduler worker fatal error', {
+      severity: 'critical',
+      error: error instanceof Error ? error.message : String(error),
+    });
     process.exit(1);
   }
 }

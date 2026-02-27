@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { createClient } from '@supabase/supabase-js';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
@@ -165,10 +166,21 @@ async function main(): Promise<void> {
       2
     )
   );
+
+  if (!dryRun && failed > 0) {
+    reportErrorToSlack('Backfill reparse completed with failures', {
+      severity: 'warning',
+      candidates: String(candidates.length),
+      reparsed: String(reparsed),
+      failed: String(failed),
+    });
+  }
 }
 
 main().catch((err) => {
   console.error('Backfill reparse failed:', err);
+  const msg = err instanceof Error ? err.message : String(err);
+  reportErrorToSlack('Backfill reparse failed', { severity: 'critical', error: msg });
   process.exit(1);
 });
 

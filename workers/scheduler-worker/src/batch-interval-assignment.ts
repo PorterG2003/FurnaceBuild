@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { selectMailbox } from './mailbox-selection.js';
 
@@ -25,6 +26,7 @@ export async function batchAssignIntervalJobs(
   
   if (campaignsError) {
     console.error('[BATCH INTERVAL] Error loading campaigns:', campaignsError);
+    reportErrorToSlack('Scheduler: batch interval failed to load campaigns', { severity: 'critical', error: campaignsError.message });
     return;
   }
   
@@ -50,6 +52,11 @@ export async function batchAssignIntervalJobs(
       
       if (intervalsError) {
         console.error(`[BATCH INTERVAL] Error checking intervals for campaign ${campaign.id.substring(0, 8)}:`, intervalsError);
+        reportErrorToSlack('Scheduler: batch interval failed to check intervals', {
+          severity: 'warning',
+          campaign_id: campaign.id,
+          error: intervalsError.message,
+        });
         continue;
       }
       
@@ -104,6 +111,11 @@ export async function batchAssignIntervalJobs(
       
       if (enrollmentsError) {
         console.error(`[BATCH INTERVAL] Error loading enrollments for campaign ${campaign.id.substring(0, 8)}:`, enrollmentsError);
+        reportErrorToSlack('Scheduler: batch interval failed to load enrollments', {
+          severity: 'warning',
+          campaign_id: campaign.id,
+          error: enrollmentsError.message,
+        });
         continue;
       }
       
@@ -262,6 +274,11 @@ export async function batchAssignIntervalJobs(
       
       if (rpcError) {
         console.error(`[BATCH INTERVAL] RPC error for campaign ${campaign.id.substring(0, 8)}:`, rpcError);
+        reportErrorToSlack('Scheduler: batch interval RPC failed (assign_message_jobs_to_interval)', {
+          severity: 'critical',
+          campaign_id: campaign.id,
+          error: rpcError.message,
+        });
         continue;
       }
       
@@ -275,6 +292,12 @@ export async function batchAssignIntervalJobs(
       
     } catch (error) {
       console.error(`[BATCH INTERVAL] Error processing campaign ${campaign.id.substring(0, 8)}:`, error);
+      const msg = error instanceof Error ? error.message : String(error);
+      reportErrorToSlack('Scheduler: batch interval error processing campaign', {
+        severity: 'critical',
+        campaign_id: campaign.id,
+        error: msg,
+      });
     }
   }
 }

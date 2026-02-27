@@ -362,12 +362,25 @@ export class SendWorker {
         if (enrollmentError) {
           // Log error but don't fail the send (email is already sent)
           console.error(`[SEND WORKER] Failed to update enrollment ${messageJob.enrollment_id} next_run_at:`, enrollmentError);
+          reportErrorToSlack('Send-worker: failed to update enrollment next_run_at', {
+            severity: 'warning',
+            enrollment_id: messageJob.enrollment_id,
+            message_job_id: message_job_id,
+            error: enrollmentError.message,
+          });
         } else {
           console.log(`[SEND WORKER] Updated enrollment ${messageJob.enrollment_id} next_run_at to trigger scheduler re-evaluation`);
         }
       } catch (error) {
         // Log error but don't fail the send
         console.error(`[SEND WORKER] Error updating enrollment ${messageJob.enrollment_id}:`, error);
+        const msg = error instanceof Error ? error.message : String(error);
+        reportErrorToSlack('Send-worker: failed to update enrollment next_run_at', {
+          severity: 'warning',
+          enrollment_id: messageJob.enrollment_id,
+          message_job_id: message_job_id,
+          error: msg,
+        });
       }
 
       // 6c. Check if interval should be marked as processed (immediate, not waiting for scheduler timer)
@@ -381,12 +394,25 @@ export class SendWorker {
         if (processedError) {
           // Log error but don't fail the send (email is already sent)
           console.error(`[SEND WORKER] Failed to check processed intervals for campaign ${messageJob.campaign_id}:`, processedError);
+          reportErrorToSlack('Send-worker: check_and_update_processed_intervals failed', {
+            severity: 'warning',
+            campaign_id: messageJob.campaign_id,
+            message_job_id: message_job_id,
+            error: processedError.message,
+          });
         } else if (processedCount && processedCount > 0) {
           console.log(`[SEND WORKER] Marked ${processedCount} interval(s) as processed for campaign ${messageJob.campaign_id}`);
         }
       } catch (error) {
         // Log error but don't fail the send
         console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, error);
+        const msg = error instanceof Error ? error.message : String(error);
+        reportErrorToSlack('Send-worker: check_and_update_processed_intervals failed', {
+          severity: 'warning',
+          campaign_id: messageJob.campaign_id,
+          message_job_id: message_job_id,
+          error: msg,
+        });
       }
 
       // 7. Create event record and update campaign_stats (atomic for campaign sends)
@@ -476,6 +502,13 @@ export class SendWorker {
       } catch (updateError) {
         // Log but don't throw - we've already logged the original error
         console.error(`[SEND WORKER] Failed to update message job ${messageJob.id} status to failed:`, updateError);
+        const updateMsg = updateError instanceof Error ? updateError.message : String(updateError);
+        reportErrorToSlack('Send-worker: failed to mark message_job as failed', {
+          severity: 'critical',
+          message_job_id: messageJob.id,
+          enrollment_id: messageJob.enrollment_id,
+          error: updateMsg,
+        });
       }
       
       // Re-throw to be caught by Promise.allSettled in the main loop

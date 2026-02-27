@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { supabase } from '../client';
 import type { Lead, LeadInsert, LeadUpdate } from '../types';
 
@@ -38,6 +39,8 @@ export async function generateGlobalLeadId(email: string | null | undefined): Pr
       return hashHex;
     } catch (error) {
       console.error('Failed to generate global lead ID:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      reportErrorToSlack('Failed to generate global lead ID', { severity: 'warning', error: msg });
       return null;
     }
   }

@@ -1,4 +1,4 @@
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import { reportErrorToSlack } from '../slack/reportErrorToSlack';
 import { utcToZonedTime } from 'date-fns-tz';
 import type { Campaign } from '@/lib/supabase/types';
 

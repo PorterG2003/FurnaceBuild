@@ -1,4 +1,4 @@
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import { reportErrorToSlack } from '../slack/reportErrorToSlack';
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '@/amplify/data/resource';
 

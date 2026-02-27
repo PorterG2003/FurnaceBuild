@@ -1,4 +1,4 @@
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import { reportErrorToSlack } from '../../slack/reportErrorToSlack';
 import { supabase } from '../client';
 import type { Lead, LeadInsert, LeadUpdate } from '../types';
 

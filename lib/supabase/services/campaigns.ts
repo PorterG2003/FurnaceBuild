@@ -1,4 +1,4 @@
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import { reportErrorToSlack } from '../../slack/reportErrorToSlack';
 import { supabase } from '../client';
 import type { Campaign, CampaignInsert, CampaignUpdate } from '../types';
 import { getAccountMembershipsForUser, getUserByExternalId } from './users';

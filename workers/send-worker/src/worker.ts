@@ -210,17 +210,29 @@ export class SendWorker {
       const threadFirst = await this.getFirstSentMessageForCampaignLead(messageJob.campaign_id, messageJob.lead_id);
 
       // 3. Generate email content from template (shared pipeline with preview)
-      const content = buildCampaignEmailContent(
-        {
-          subject: nodeConfig.subject,
-          body_html: nodeConfig.body_html,
-          body_text: nodeConfig.body_text,
-          template: nodeConfig.template,
-          body: nodeConfig.body,
-        },
-        lead as unknown as LeadLike,
-        { deterministic: false }
-      );
+      let content;
+      try {
+        content = buildCampaignEmailContent(
+          {
+            subject: nodeConfig.subject,
+            body_html: nodeConfig.body_html,
+            body_text: nodeConfig.body_text,
+            template: nodeConfig.template,
+            body: nodeConfig.body,
+          },
+          lead as unknown as LeadLike,
+          { deterministic: false }
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        reportErrorToSlack('Send-worker: campaign email content build/parse failed (initial email may not render correctly)', {
+          severity: 'critical',
+          message_job_id: message_job_id,
+          campaign_id: messageJob.campaign_id,
+          error: msg,
+        });
+        throw err;
+      }
       const currentSubject = content.subject;
       let emailBody = content.bodyMerged;
       const isHtmlBody = content.isHtmlBody;
@@ -253,11 +265,23 @@ export class SendWorker {
           const firstConfig = {
             subject: (nc?.subject ?? nc?.template ?? '') as string,
           };
-          const firstContent = buildCampaignEmailContent(
-            firstConfig,
-            lead as unknown as LeadLike,
-            { deterministic: false }
-          );
+          let firstContent;
+          try {
+            firstContent = buildCampaignEmailContent(
+              firstConfig,
+              lead as unknown as LeadLike,
+              { deterministic: false }
+            );
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            reportErrorToSlack('Send-worker: first-email subject/content parse failed (thread follow-up)', {
+              severity: 'warning',
+              message_job_id: message_job_id,
+              campaign_id: messageJob.campaign_id,
+              error: msg,
+            });
+            throw err;
+          }
           subject = firstContent.subject;
         } else {
           subject = currentSubject;
@@ -384,6 +408,12 @@ export class SendWorker {
         });
         if (error) {
           console.error(`[SEND WORKER] Failed to record sent event and increment campaign_stats for campaign ${messageJob.campaign_id}:`, error);
+          reportErrorToSlack('Send-worker: record_sent_event_and_increment failed (campaign stats may be out of sync)', {
+            severity: 'warning',
+            campaign_id: messageJob.campaign_id,
+            message_job_id: messageJob.id,
+            error: error.message,
+          });
         }
       } else {
         await this.supabase.from('events').insert({
@@ -538,6 +568,14 @@ export class SendWorker {
       references: md.message_references ?? null,
       attachments: fileAttachments.length > 0 ? fileAttachments : undefined,
     };
+    const replyBodyEmpty = !(replyOptions.bodyText || '').trim() && !(replyOptions.bodyHtml || '').trim();
+    if (replyBodyEmpty) {
+      reportErrorToSlack('Send-worker: inbox reply had empty body (initial email may not have been parsed)', {
+        severity: 'warning',
+        message_job_id: message_job_id,
+        thread_id: threadId,
+      });
+    }
     let providerMessageId: string;
     try {
       providerMessageId = await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, replyOptions);
@@ -709,6 +747,14 @@ export class SendWorker {
       references: null,
       attachments: forwardFileAttachments.length > 0 ? forwardFileAttachments : undefined,
     };
+    const forwardBodyEmpty = !(forwardOptions.bodyText || '').trim() && !(forwardOptions.bodyHtml || '').trim();
+    if (forwardBodyEmpty) {
+      reportErrorToSlack('Send-worker: inbox forward had empty body (initial email may not have been parsed)', {
+        severity: 'warning',
+        message_job_id: message_job_id,
+        thread_id: threadId,
+      });
+    }
     try {
       await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, forwardOptions);
       this.smtpPool.markMessageSent(mailbox.id);

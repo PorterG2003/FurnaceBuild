@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { supabase } from '../client';
 import type { Campaign, CampaignInsert, CampaignUpdate } from '../types';
 import { getAccountMembershipsForUser, getUserByExternalId } from './users';
@@ -260,6 +261,8 @@ export async function createCampaign(campaign: CampaignInsert): Promise<Campaign
       }
     } catch (error) {
       console.error('Failed to auto-resolve account_id for campaign:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      reportErrorToSlack('Failed to auto-resolve account_id for campaign', { severity: 'warning', owner_id: campaign.owner_id ?? '', error: msg });
       // Throw error - account_id is required for scheduler to work
       throw new Error(`Failed to resolve account_id for campaign owner ${campaign.owner_id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

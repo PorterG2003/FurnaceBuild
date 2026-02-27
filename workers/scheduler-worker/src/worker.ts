@@ -146,11 +146,15 @@ export class SchedulerWorker {
     // Run immediately, then every minute
     maintainCampaignIntervals(this.supabase).catch(err => {
       console.error('[INTERVAL MAINTENANCE] Error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      reportErrorToSlack('Scheduler: interval maintenance failed', { severity: 'warning', error: msg });
     });
 
     this.intervalMaintenanceTimer = setInterval(() => {
       maintainCampaignIntervals(this.supabase).catch(err => {
         console.error('[INTERVAL MAINTENANCE] Error:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        reportErrorToSlack('Scheduler: interval maintenance failed', { severity: 'warning', error: msg });
       });
     }, 60000); // 1 minute
   }
@@ -168,11 +172,14 @@ export class SchedulerWorker {
         
         if (error) {
           console.error('[STALE LOCK CLEANUP] Error:', error);
+          reportErrorToSlack('Scheduler: stale lock cleanup RPC failed', { severity: 'warning', error: error.message });
         } else if (data > 0) {
           console.log(`[STALE LOCK CLEANUP] Released ${data} stale locks`);
         }
       } catch (error) {
         console.error('[STALE LOCK CLEANUP] Error:', error);
+        const msg = error instanceof Error ? error.message : String(error);
+        reportErrorToSlack('Scheduler: stale lock cleanup failed', { severity: 'warning', error: msg });
       }
     }, 300000); // 5 minutes
   }
@@ -190,11 +197,14 @@ export class SchedulerWorker {
         
         if (error) {
           console.error('[PROCESSED INTERVAL CHECK] Error:', error);
+          reportErrorToSlack('Scheduler: processed interval check RPC failed', { severity: 'warning', error: error.message });
         } else if (data > 0) {
           console.log(`[PROCESSED INTERVAL CHECK] Updated ${data} processed interval(s)`);
         }
       } catch (error) {
         console.error('[PROCESSED INTERVAL CHECK] Error:', error);
+        const msg = error instanceof Error ? error.message : String(error);
+        reportErrorToSlack('Scheduler: processed interval check failed', { severity: 'warning', error: msg });
       }
     }, 60000); // 1 minute
   }
@@ -206,11 +216,15 @@ export class SchedulerWorker {
     // Run immediately, then every 30 seconds
     batchAssignIntervalJobs(this.supabase, this.mailboxRotationIndex).catch(err => {
       console.error('[BATCH INTERVAL] Error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      reportErrorToSlack('Scheduler: batch interval assignment failed', { severity: 'critical', error: msg });
     });
 
     this.batchIntervalAssignmentTimer = setInterval(() => {
       batchAssignIntervalJobs(this.supabase, this.mailboxRotationIndex).catch(err => {
         console.error('[BATCH INTERVAL] Error:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        reportErrorToSlack('Scheduler: batch interval assignment failed', { severity: 'critical', error: msg });
       });
     }, 30000); // 30 seconds
   }
@@ -486,7 +500,14 @@ export class SchedulerWorker {
               .single();
 
             if (selectedNodeError || !selectedNode) {
-              console.error(`Selected node ${selectedFlowNodeId} not found: ${selectedNodeError?.message}`);
+              const errMsg = selectedNodeError?.message ?? 'Node not found';
+              console.error(`Selected node ${selectedFlowNodeId} not found: ${errMsg}`);
+              reportErrorToSlack('Scheduler: selected node not found (flow inconsistency)', {
+                severity: 'warning',
+                enrollment_id: enrollment.id,
+                flow_node_id: selectedFlowNodeId,
+                error: errMsg,
+              });
               // Update enrollment to AICategorizer node and set next_run_at for retry
               await this.supabase
                 .from('enrollments')
@@ -591,6 +612,13 @@ export class SchedulerWorker {
           .eq('id', enrollment.id);
       } catch (updateError) {
         console.error(`Failed to update enrollment ${enrollment.id} after error:`, updateError);
+        const updateMsg = updateError instanceof Error ? updateError.message : String(updateError);
+        reportErrorToSlack('Scheduler: failed to update enrollment state after error', {
+          severity: 'warning',
+          enrollment_id: enrollment.id,
+          campaign_id: enrollment.campaign_id,
+          error: updateMsg,
+        });
       }
 
       // Continue with next enrollment (don't stop worker)

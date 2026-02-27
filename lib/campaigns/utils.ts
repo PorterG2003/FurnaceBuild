@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { utcToZonedTime } from 'date-fns-tz';
 import type { Campaign } from '@/lib/supabase/types';
 
@@ -239,6 +240,8 @@ export function isWithinSchedule(schedule: {
     return currentTimeMinutes >= startTimeMinutes && currentTimeMinutes < endTimeMinutes;
   } catch (error) {
     console.error('Error checking schedule:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    reportErrorToSlack('Error checking schedule (campaigns utils)', { severity: 'warning', error: msg });
     return false;
   }
 }

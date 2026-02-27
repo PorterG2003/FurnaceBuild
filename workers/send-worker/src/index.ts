@@ -106,6 +106,11 @@ async function main() {
       console.error('[FATAL ERROR] Error message:', error.message);
       console.error('[FATAL ERROR] Stack trace:', error.stack);
     }
+    const { reportErrorToSlack } = await import('@furnace/slack-lib');
+    reportErrorToSlack('Send-worker failed to start', {
+      severity: 'critical',
+      error: error instanceof Error ? error.message : String(error),
+    });
     process.exit(1);
   }
 }

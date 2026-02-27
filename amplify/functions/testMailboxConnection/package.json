@@ -1,13 +1,1 @@
-{
-  "type": "module",
-  "dependencies": {
-    "nodemailer": "^6.9.8",
-    "imapflow": "^1.0.107",
-    "@types/nodemailer": "^6.4.14"
-  },
-  "devDependencies": {
-    "@types/aws-lambda": "^8.10.145",
-    "typescript": "^5.0.0"
-  }
-}
-
+{"type":"module","dependencies":{"@furnace/slack-lib":"file:../../../lib/slack","nodemailer":"^6.9.8","imapflow":"^1.0.107","@types/nodemailer":"^6.4.14"},"devDependencies":{"@types/aws-lambda":"^8.10.145","typescript":"^5.0.0"}}

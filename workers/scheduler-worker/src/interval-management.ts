@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { CampaignSchedule } from './types.js';
 import { isWithinSchedule, calculateNextAllowedTime } from './scheduling.js';
@@ -28,6 +29,7 @@ export async function maintainCampaignIntervals(
   
   if (error) {
     console.error('[INTERVAL MAINTENANCE] Error loading campaigns:', error);
+    reportErrorToSlack('Scheduler: interval maintenance failed to load campaigns', { severity: 'warning', error: error.message });
     return;
   }
   
@@ -51,6 +53,12 @@ export async function maintainCampaignIntervals(
       );
     } catch (error) {
       console.error(`[INTERVAL MAINTENANCE] Error maintaining intervals for campaign ${campaign.id}:`, error);
+      const msg = error instanceof Error ? error.message : String(error);
+      reportErrorToSlack('Scheduler: interval maintenance failed for campaign', {
+        severity: 'warning',
+        campaign_id: campaign.id,
+        error: msg,
+      });
     }
   }
 }

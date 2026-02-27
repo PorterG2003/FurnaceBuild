@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { supabase } from '../client';
 import type { EmailThread, EmailMessage } from '../types';
 import { getDisplayBody } from '@/lib/email/index';
@@ -574,7 +575,9 @@ export async function fetchAttachment(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error || `Failed to fetch attachment: ${res.status}`);
+    const errMsg = (err as { error?: string }).error || `Failed to fetch attachment: ${res.status}`;
+    reportErrorToSlack('Failed to fetch email attachment', { severity: 'warning', email_message_id: emailMessageId, part, error: errMsg });
+    throw new Error(errMsg);
   }
 
   return res.blob();

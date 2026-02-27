@@ -24,6 +24,7 @@
     "@react-native-community/netinfo": "^11.4.1",
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.4.0",
+    "@furnace/slack-lib": "file:lib/slack",
     "@supabase/supabase-js": "^2.77.0",
     "@tiptap/extension-image": "^3.19.0",
     "@tiptap/pm": "^3.19.0",

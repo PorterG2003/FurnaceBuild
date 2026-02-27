@@ -1,5 +1,6 @@
-import { SupabaseClient, createClient } from '@supabase/supabase-js';
 import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
+import { reportErrorToSlack } from '@furnace/slack-lib';
+import { createClient } from '@supabase/supabase-js';
 
 /**
  * Enrollment Metric Lambda Handler
@@ -61,6 +62,8 @@ export const handler = async (event: any) => {
 
   } catch (error) {
     console.error('Fatal error in Enrollment Metric Lambda:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    reportErrorToSlack('Enrollment Metric Lambda failed', { severity: 'critical', error: msg });
     throw error;
   }
 };

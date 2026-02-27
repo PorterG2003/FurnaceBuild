@@ -9,7 +9,14 @@ COPY lib/email/*.ts ./lib/email/
 WORKDIR /app/lib/email
 RUN npm install && npm run build
 
-# Worker: copy package files and install (file:../../lib/email will resolve to /app/lib/email)
+# Copy and build @furnace/slack-lib (worker depends on file:../../lib/slack)
+WORKDIR /app
+COPY lib/slack/package*.json lib/slack/tsconfig.build.json ./lib/slack/
+COPY lib/slack/*.ts ./lib/slack/
+WORKDIR /app/lib/slack
+RUN npm install && npm run build
+
+# Worker: copy package files and install (file:../../lib/email and file:../../lib/slack resolve)
 WORKDIR /app/workers/send-worker
 COPY workers/send-worker/package*.json ./
 RUN npm ci
@@ -24,9 +31,11 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy email-lib (package.json + dist only) so file:../../lib/email from worker dir resolves
+# Copy email-lib and slack-lib (package.json + dist only) so file:../../lib/* from worker dir resolve
 COPY --from=builder /app/lib/email/package.json ./lib/email/
 COPY --from=builder /app/lib/email/dist ./lib/email/dist
+COPY --from=builder /app/lib/slack/package.json ./lib/slack/
+COPY --from=builder /app/lib/slack/dist ./lib/slack/dist
 
 # Copy worker package and built output into workers/send-worker
 COPY workers/send-worker/package*.json ./workers/send-worker/

@@ -30,6 +30,11 @@ export interface WorkerStackProps extends cdk.StackProps {
     schedulerWorker: number;
     inboxCheckerWorker: number;
   };
+
+  /**
+   * Optional Slack Incoming Webhook URL for error reporting. When set, workers will post errors to this channel.
+   */
+  slackErrorWebhookUrl?: string;
 }
 
 export class WorkerStack extends cdk.Stack {
@@ -43,7 +48,7 @@ export class WorkerStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: WorkerStackProps) {
     super(scope, id, props);
 
-    const { environment, supabaseUrl, supabaseSecretKeyParamPath, desiredCount } = props;
+    const { environment, supabaseUrl, supabaseSecretKeyParamPath, desiredCount, slackErrorWebhookUrl } = props;
 
     if (!supabaseSecretKeyParamPath?.trim()) {
       throw new Error(
@@ -283,6 +288,7 @@ export class WorkerStack extends cdk.Stack {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
         SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
+        ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
       },
     });
 
@@ -327,6 +333,7 @@ export class WorkerStack extends cdk.Stack {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
         SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
+        ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
       },
     });
 
@@ -365,6 +372,7 @@ export class WorkerStack extends cdk.Stack {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
         SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
+        ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
       },
     });
 

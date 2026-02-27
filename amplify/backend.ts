@@ -32,6 +32,7 @@ const authResources = backend.auth.resources;
 fetchAttachmentLambda.addEnvironment('COGNITO_USER_POOL_ID', authResources.userPool.userPoolId);
 fetchAttachmentLambda.addEnvironment('COGNITO_CLIENT_ID', authResources.userPoolClient.userPoolClientId);
 fetchAttachmentLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+
 const fetchAttachmentUrl = fetchAttachmentLambda.addFunctionUrl({
   authType: lambda.FunctionUrlAuthType.NONE, // We validate JWT inside the handler
   cors: {

@@ -1,0 +1,15 @@
+{
+  "name": "@furnace/slack-lib",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "index.ts",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.9.0"
+  }
+}

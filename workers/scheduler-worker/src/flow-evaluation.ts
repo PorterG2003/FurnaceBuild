@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import type { Enrollment } from './types.js';
 
 /**
@@ -50,14 +51,22 @@ export async function evaluateFlow(
   if (!flowData) {
     const error = `Invalid flow_data: flow_data is null or undefined for enrollment ${enrollment.id}`;
     console.error(`[FLOW ${enrollmentId}] ${error}`);
-    // TODO: Send to Slack error reporting channel - Invalid flow data
+    reportErrorToSlack('Invalid flow_data: null or undefined', {
+      severity: 'critical',
+      enrollment_id: enrollment.id,
+      campaign_id: campaignId,
+    });
     return { nodes: [] };
   }
 
   if (!flowData.edges || !Array.isArray(flowData.edges)) {
     const error = `Invalid flow_data: edges array is missing or invalid for enrollment ${enrollment.id}`;
     console.error(`[FLOW ${enrollmentId}] ${error}`);
-    // TODO: Send to Slack error reporting channel - Invalid flow edges
+    reportErrorToSlack('Invalid flow_data: edges array missing or invalid', {
+      severity: 'critical',
+      enrollment_id: enrollment.id,
+      campaign_id: campaignId,
+    });
     return { nodes: [] };
   }
   
@@ -78,7 +87,12 @@ export async function evaluateFlow(
 
     if (error) {
       console.error(`[FLOW ${enrollmentId}] Error loading entry node: ${error.message}`);
-      // TODO: Send to Slack error reporting channel - Database error loading entry node
+      reportErrorToSlack('Database error loading entry node', {
+        severity: 'critical',
+        enrollment_id: enrollment.id,
+        campaign_id: campaignId,
+        error: error.message,
+      });
       return { nodes: [] };
     }
 
@@ -92,7 +106,11 @@ export async function evaluateFlow(
       
       if (nextEdges.length === 0) {
         console.warn(`[FLOW ${enrollmentId}] No edges found from leadSource node. Flow has no nodes to process.`);
-        // TODO: Send to Slack error reporting channel - No edges from leadSource (warning)
+        reportErrorToSlack('No edges from leadSource node', {
+          severity: 'warning',
+          enrollment_id: enrollment.id,
+          campaign_id: campaignId,
+        });
         return { nodes: [] };
       }
 
@@ -109,7 +127,12 @@ export async function evaluateFlow(
 
       if (nextNodesError) {
         console.error(`[FLOW ${enrollmentId}] Error loading nodes after leadSource: ${nextNodesError.message}`);
-        // TODO: Send to Slack error reporting channel - Database error loading nodes after leadSource
+        reportErrorToSlack('Database error loading nodes after leadSource', {
+          severity: 'critical',
+          enrollment_id: enrollment.id,
+          campaign_id: campaignId,
+          error: nextNodesError.message,
+        });
         return { nodes: [] };
       }
 
@@ -131,7 +154,11 @@ export async function evaluateFlow(
 
     // Fallback: Get first node (non-leadSource) if no leadSource exists
     console.warn(`[FLOW ${enrollmentId}] No leadSource node found. Attempting to find first non-leadSource node as entry.`);
-    // TODO: Send to Slack error reporting channel - No leadSource node (warning)
+    reportErrorToSlack('No leadSource node found for campaign', {
+      severity: 'warning',
+      enrollment_id: enrollment.id,
+      campaign_id: campaignId,
+    });
     const { data: firstNodes, error: firstError } = await supabase
       .from('nodes')
       .select('*')
@@ -142,7 +169,12 @@ export async function evaluateFlow(
 
     if (firstError) {
       console.error(`[FLOW ${enrollmentId}] Error loading first node: ${firstError.message}`);
-      // TODO: Send to Slack error reporting channel - Database error loading first node
+      reportErrorToSlack('Database error loading first node', {
+        severity: 'critical',
+        enrollment_id: enrollment.id,
+        campaign_id: campaignId,
+        error: firstError.message,
+      });
       return { nodes: [] };
     }
 
@@ -152,7 +184,11 @@ export async function evaluateFlow(
     }
 
     console.warn(`[FLOW ${enrollmentId}] No entry point nodes found for campaign ${campaignId.substring(0, 8)}. Flow cannot be evaluated.`);
-    // TODO: Send to Slack error reporting channel - No entry point nodes (critical)
+    reportErrorToSlack('No entry point nodes for campaign (flow cannot be evaluated)', {
+      severity: 'critical',
+      enrollment_id: enrollment.id,
+      campaign_id: campaignId,
+    });
     return { nodes: [] };
   }
   
@@ -167,8 +203,12 @@ export async function evaluateFlow(
   if (currentNodeError || !currentNode) {
     const error = `Current node ${enrollment.current_node_id} not found for enrollment ${enrollment.id}: ${currentNodeError?.message || 'Node not found'}`;
     console.error(error);
-    // TODO: Send to Slack error reporting channel - Missing node in database
-    // This indicates data inconsistency (node_id exists in enrollment but not in nodes table)
+    reportErrorToSlack('Missing node in database (enrollment references non-existent node)', {
+      severity: 'critical',
+      enrollment_id: enrollment.id,
+      campaign_id: campaignId,
+      current_node_id: enrollment.current_node_id ?? '',
+    });
     return { nodes: [] };
   }
 

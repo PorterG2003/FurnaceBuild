@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import pLimit from 'p-limit';
 import { DatabaseClient } from './database.js';
 import { ImapClient } from './imap-client.js';
@@ -77,6 +78,8 @@ export class InboxCheckerWorker {
         }
       } catch (error) {
         console.error('[INBOX CHECKER] Error in main loop:', error);
+        const msg = error instanceof Error ? error.message : String(error);
+        reportErrorToSlack(`Inbox-checker main loop error: ${msg}`, { severity: 'critical' });
         await this.sleep(5000); // Wait before retrying
       }
     }
@@ -155,6 +158,13 @@ export class InboxCheckerWorker {
       console.log(`[INBOX CHECKER] Mailbox ${mailbox.id} processed: ${replies} replies, ${bounces} bounces, ${unsubscribes} unsubscribes`);
     } catch (error) {
       console.error(`[INBOX CHECKER] Error processing mailbox ${mailbox.id}:`, error);
+
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      reportErrorToSlack(`Inbox-checker failed to process mailbox: ${errorMessage}`, {
+        severity: 'critical',
+        mailbox_id: mailbox.id,
+        email_address: mailbox.email_address,
+      });
 
       // Record error_message so the UI can show it. Only set status = 'error' for
       // failures that look permanent (bad config), so we don't stop checking on

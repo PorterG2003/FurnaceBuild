@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { DatabaseClient } from './database.js';
 import { evaluateFlow } from './flow-evaluation.js';
 import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
@@ -106,9 +107,10 @@ export class SchedulerWorker {
         if (errorStack) {
           console.error('Stack trace:', errorStack);
         }
-        // TODO: Send to Slack error reporting channel - Worker main loop error (critical)
-        // This indicates a fatal error that stopped the worker loop
-        // Wait before retrying
+        reportErrorToSlack('Scheduler worker main loop error (fatal)', {
+          severity: 'critical',
+          error: errorMessage,
+        });
         await this.sleep(5000);
       }
     }
@@ -392,7 +394,11 @@ export class SchedulerWorker {
 
       if (accountError) {
         console.warn(`Account ${campaign.account_id} not found for campaign ${enrollment.campaign_id}, using default jitter: ${accountError?.message}`);
-        // TODO: Send to Slack error reporting channel - Missing account (warning, not critical)
+        reportErrorToSlack('Missing account for campaign (using default jitter)', {
+          severity: 'warning',
+          campaign_id: enrollment.campaign_id,
+          account_id: campaign.account_id,
+        });
       }
 
       // Determine jitter: campaign > account > default (10%)
@@ -563,10 +569,11 @@ export class SchedulerWorker {
       // Store a short clue for the UI (what/where/why); max 500 chars, single line
       const stoppedErrorMessage = errorMessage.replace(/\s+/g, ' ').trim().slice(0, 500) || null;
 
-      // TODO: Send error to Slack error reporting channel
-      // - Include: enrollment_id, campaign_id, error message, stack trace
-      // - Categorize errors (critical vs. recoverable)
-      // - Rate limit to avoid spam
+      reportErrorToSlack(`Enrollment processing error: ${errorMessage}`, {
+        severity: 'critical',
+        enrollment_id: enrollment.id,
+        campaign_id: enrollment.campaign_id,
+      });
 
       // Try to update enrollment state to indicate error (don't fail if this fails)
       try {

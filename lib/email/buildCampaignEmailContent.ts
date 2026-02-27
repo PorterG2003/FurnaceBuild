@@ -4,8 +4,8 @@
  * Pipeline: body_html ?? template ?? body → processSpintax → mergeTemplate; same for subject.
  */
 
-import { mergeTemplate, type LeadLike } from './mergeTemplate';
-import { processSpintax, type ProcessSpintaxOptions } from './processSpintax';
+import { mergeTemplate, type LeadLike } from './mergeTemplate.js';
+import { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js';
 
 export interface BuildCampaignEmailContentConfig {
   subject?: string;

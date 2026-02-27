@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { createSupabaseClient } from './supabase.js';
 import { DatabaseClient } from './database.js';
 import { SchedulerWorker } from './worker.js';
@@ -35,6 +36,9 @@ async function fetchSecretFromParameterStore(
  * - SUPABASE_URL: Supabase project URL
  * - SUPABASE_SECRET_KEY: Supabase Secret Key (or SUPABASE_SECRET_KEY_PARAM_PATH to fetch from Parameter Store)
  * - AWS_REGION: AWS region (defaults to us-west-2)
+ *
+ * Optional (for local dev, set in workers/scheduler-worker/.env):
+ * - SLACK_ERROR_WEBHOOK_URL: Incoming Webhook URL for error reporting to Slack
  */
 async function main() {
   try {

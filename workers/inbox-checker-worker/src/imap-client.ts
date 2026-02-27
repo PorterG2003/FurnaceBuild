@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import type { Mailbox, ProcessedMessage } from './types.js';
@@ -73,6 +74,14 @@ export class ImapClient {
           processedMessages.push(parsed);
         } catch (error) {
           console.error(`Error processing message ${uid} in mailbox ${mailbox.id}:`, error);
+          const msg = error instanceof Error ? error.message : String(error);
+          reportErrorToSlack('Inbox-checker: initial email parse failed (download or MIME parse)', {
+            severity: 'warning',
+            mailbox_id: mailbox.id,
+            email_address: mailbox.email_address,
+            imap_uid: String(uid),
+            error: msg,
+          });
           // Continue with next message
         }
       }

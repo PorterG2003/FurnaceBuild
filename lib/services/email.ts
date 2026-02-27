@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '@/amplify/data/resource';
 
@@ -45,6 +46,7 @@ export async function sendInvitationEmail(params: SendInvitationEmailParams): Pr
         response = JSON.parse(result.data);
       } catch (parseError) {
         console.error('Failed to parse response data:', result.data);
+        reportErrorToSlack('Invalid response format from email function (parse)', { severity: 'warning', error: 'Invalid response format from email function' });
         throw new Error('Invalid response format from email function');
       }
     } else {
@@ -57,7 +59,8 @@ export async function sendInvitationEmail(params: SendInvitationEmailParams): Pr
     }
   } catch (error) {
     console.error('Error sending invitation email:', error);
-    // Log more details if available
+    const msg = error instanceof Error ? error.message : String(error);
+    reportErrorToSlack('Error sending invitation email', { severity: 'warning', error: msg });
     if (error instanceof Error) {
       console.error('Error message:', error.message);
       console.error('Error stack:', error.stack);
@@ -129,6 +132,7 @@ export async function testMailboxConnection(
       try {
         response = JSON.parse(result.data);
       } catch (parseError) {
+        reportErrorToSlack('Invalid response format from test mailbox function', { severity: 'warning', error: 'Invalid response format from test function' });
         throw new Error('Invalid response format from test function');
       }
     } else {
@@ -138,6 +142,8 @@ export async function testMailboxConnection(
     return response as TestMailboxConnectionResult;
   } catch (error) {
     console.error('Error testing mailbox connection:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    reportErrorToSlack('Error testing mailbox connection', { severity: 'warning', error: msg });
     if (error instanceof Error && error.message.includes('is not a function')) {
       throw new Error(
         'testMailboxConnection function is not deployed. Please run: npx ampx sandbox'

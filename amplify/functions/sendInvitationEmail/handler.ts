@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { Resend } from 'resend';
 import type { Schema } from '../../data/resource';
 
@@ -93,6 +94,8 @@ If you didn't expect this invitation, you can safely ignore this email.
     };
   } catch (error) {
     console.error('Handler error:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    reportErrorToSlack('Send invitation email failed', { severity: 'warning', error: msg });
     throw error;
   }
 };

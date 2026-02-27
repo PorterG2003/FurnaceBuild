@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { ProcessedMessage, Mailbox, MessageJob } from './types.js';
 import {
@@ -215,6 +216,11 @@ export class ThreadManager {
         return true; // Already processed by another worker, return success
       }
       console.error('Error creating email_message:', messageError);
+      reportErrorToSlack('Inbox-checker: failed to create email_message', {
+        severity: 'critical',
+        thread_id: thread.id,
+        error: messageError.message,
+      });
       throw messageError;
     }
 
@@ -286,6 +292,12 @@ export class ThreadManager {
         });
         if (error) {
           console.error(`[INBOX CHECKER] Failed to record replied event and increment campaign_stats for campaign ${originalJob.campaign_id}:`, error);
+          reportErrorToSlack('Inbox-checker: record_replied_event_and_increment failed', {
+            severity: 'warning',
+            campaign_id: originalJob.campaign_id,
+            message_job_id: originalJob.id,
+            error: error.message,
+          });
         } else if (!inserted) {
           console.log(`[INBOX CHECKER] Reply already processed for message_job ${originalJob.id}, skipping event and stats`);
         }
@@ -381,6 +393,11 @@ export class ThreadManager {
 
     if (threadError) {
       console.error('Error creating email_thread:', threadError);
+      reportErrorToSlack('Inbox-checker: failed to create email_thread', {
+        severity: 'critical',
+        message_job_id: messageJob.id,
+        error: threadError.message,
+      });
       throw threadError;
     }
 
@@ -512,6 +529,12 @@ export class ThreadManager {
           continue; // Race condition, skip
         }
         console.error(`Error backfilling sent message for job ${job.id}:`, insertError);
+        reportErrorToSlack('Inbox-checker: backfill sent message failed', {
+          severity: 'warning',
+          message_job_id: job.id,
+          thread_id: thread.id,
+          error: insertError.message,
+        });
       } else {
         insertedCount++;
       }
@@ -632,6 +655,12 @@ export class ThreadManager {
         });
         if (error) {
           console.error(`[INBOX CHECKER] Failed to record bounced event and increment campaign_stats for campaign ${job.campaign_id}:`, error);
+          reportErrorToSlack('Inbox-checker: record_bounced_event_and_increment failed', {
+            severity: 'warning',
+            campaign_id: job.campaign_id,
+            message_job_id: job.id,
+            error: error.message,
+          });
         }
         if (classification.severity === 'hard' && suppressBouncedEmails) {
           const leadEmail = leadEmailById.get(job.lead_id);
@@ -657,6 +686,12 @@ export class ThreadManager {
         });
         if (error) {
           console.error(`[INBOX CHECKER] Failed to record bounced event and increment campaign_stats for campaign ${bestGuess.campaign_id}:`, error);
+          reportErrorToSlack('Inbox-checker: record_bounced_event_and_increment failed (best guess)', {
+            severity: 'warning',
+            campaign_id: bestGuess.campaign_id,
+            message_job_id: bestGuess.id,
+            error: error.message,
+          });
         }
         if (classification.severity === 'hard' && suppressBouncedEmails) {
           const leadEmail = leadEmailById.get(bestGuess.lead_id);

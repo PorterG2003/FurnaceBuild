@@ -1,3 +1,4 @@
+import { reportErrorToSlack } from '@furnace/slack-lib';
 import nodemailer from 'nodemailer';
 import { ImapFlow } from 'imapflow';
 import type { Schema } from '../../data/resource';
@@ -151,6 +152,8 @@ export const handler: Schema['testMailboxConnection']['functionHandler'] = async
     };
   } catch (error: any) {
     console.error('Test mailbox connection error:', error);
+    const msg = error?.message ?? String(error);
+    reportErrorToSlack('Test mailbox connection failed', { severity: 'warning', error: msg });
     throw error;
   }
 };

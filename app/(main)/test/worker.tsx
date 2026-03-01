@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, TextInput, TouchableOpacity } from 'react-native';
 import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { PageLayout } from '@/components/ui/layout';
 import { supabase } from '@/lib/supabase/client';
+import { buildCampaignEmailContent } from '@/lib/email/index';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
@@ -88,6 +89,35 @@ export default function TestWorkerPage() {
       cancelled = true;
     };
   }, [user?.userId]);
+
+  const selectedMailbox = useMemo(
+    () => (selectedMailboxId ? mailboxes.find((m) => m.id === selectedMailboxId) ?? null : null),
+    [mailboxes, selectedMailboxId]
+  );
+
+  const previewContent = useMemo(() => {
+    const lead = {
+      email: recipientEmail,
+      name: recipientName,
+      first_name: recipientName.trim().split(/\s+/)[0] || recipientName,
+      last_name: recipientName.trim().split(/\s+/).slice(1).join(' ') || '',
+      company_name: '',
+      website: '',
+      linkedin_url: '',
+      company_linkedin_url: '',
+      source: 'Test',
+    };
+    return buildCampaignEmailContent(
+      {
+        subject: emailSubject,
+        body: emailBody,
+        template: emailBody,
+        signature: selectedMailbox?.signature ?? undefined,
+      },
+      lead,
+      { deterministic: true }
+    );
+  }, [emailSubject, emailBody, recipientEmail, recipientName, selectedMailbox?.signature]);
 
   const updateStep = (step: string, status: StepStatus['status'], message?: string) => {
     setSteps(prev => ({
@@ -610,6 +640,23 @@ export default function TestWorkerPage() {
           <Text className="text-gray-500 text-xs mt-1">
             Use template variables like {'{{name}}'} and {'{{email}}'} - they'll be replaced with actual values
           </Text>
+        </View>
+
+        <View className="bg-gray-900/50 border border-gray-700 rounded-xl p-4">
+          <Text className="text-sm font-medium text-gray-300 mb-2">Preview (with signature)</Text>
+          <Text className="text-gray-500 text-xs mb-2">
+            This is what will be sent including the selected mailbox's signature.
+          </Text>
+          <View className="gap-2">
+            <Text className="text-gray-400 text-xs">Subject</Text>
+            <Text className="text-white text-sm">{previewContent.subject || '(empty)'}</Text>
+            <Text className="text-gray-400 text-xs mt-2">Body</Text>
+            <ScrollView style={{ maxHeight: 160 }} className="bg-black/30 rounded-lg p-3">
+              <Text className="text-gray-300 text-sm">
+                {previewContent.bodyText ?? previewContent.bodyMerged?.replace(/<[^>]+>/g, ' ') ?? '(empty)'}
+              </Text>
+            </ScrollView>
+          </View>
         </View>
       </View>
 

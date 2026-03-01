@@ -9,15 +9,15 @@ import { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js'
 import { stripSignatureStyles } from './strip-signature-styles.js';
 
 /**
- * Replace paragraph/block boundaries with a single <br> so spacing is consistent
- * across email clients (no varying <p> margins). One paragraph boundary = one line break.
- * The body-signature join still uses explicit <br><br> for two lines of gap.
+ * Convert block-level HTML (from TipTap or signature editor) to a flat <br>-separated
+ * fragment with no <p> wrappers. Email clients add margin to <p>; using only <br>
+ * produces consistent line spacing everywhere.
  */
-function normalizeParagraphBoundaries(html: string): string {
-  return html
-    .replace(/<\/p>\s*<p>/gi, '<br>')
-    .replace(/<\/p>\s*<div/gi, '</p><br><div')
-    .replace(/<\/div>\s*<p>/gi, '</div><br><p');
+function htmlToFragment(html: string): string {
+  let out = html.replace(/<\/p>\s*<p[^>]*>/gi, '<br>');
+  out = out.replace(/^<p[^>]*>/i, '');
+  out = out.replace(/<\/p>\s*$/i, '');
+  return out.trim();
 }
 
 export interface BuildCampaignEmailContentConfig {
@@ -62,15 +62,19 @@ export function buildCampaignEmailContent(
   const bodyIsHtml = /<[a-z][\s\S]*>/i.test(bodyPart);
   const sigIsHtml = /<[a-z][\s\S]*>/i.test(sigPart);
   const sigPartForHtml = sigPart.replace(/^(\s*<br\s*\/?>\s*)+/gi, '').trimStart();
-  const combinedHtml =
-    bodyIsHtml && sigIsHtml
-      ? `${bodyPart}<br>${sigPartForHtml}`
-      : null;
-  const bodyRaw = normalizedSignature
-    ? bodyIsHtml && sigIsHtml
-      ? normalizeParagraphBoundaries(combinedHtml!)
-      : `${bodyPart}\n${sigPart}`
-    : bodySource;
+
+  let bodyRaw: string;
+  if (normalizedSignature && bodyIsHtml && sigIsHtml) {
+    const bodyFragment = htmlToFragment(bodyPart);
+    const sigFragment = htmlToFragment(sigPartForHtml);
+    bodyRaw = `${bodyFragment}<br><br>${sigFragment}`;
+  } else if (normalizedSignature) {
+    bodyRaw = `${bodyPart}\n\n${sigPart}`;
+  } else if (bodyIsHtml) {
+    bodyRaw = htmlToFragment(bodyPart);
+  } else {
+    bodyRaw = bodySource;
+  }
   const bodySpun = processSpintax(bodyRaw, options);
   const bodyMerged = mergeTemplate(bodySpun, lead);
   const bodyTextFromConfig =
@@ -88,7 +92,7 @@ export function buildCampaignEmailContent(
     log('bodyPart (trimmed end)', bodyPart);
     log('sigPart (trimmed start)', sigPart);
     log('bodyIsHtml / sigIsHtml', { bodyIsHtml, sigIsHtml });
-    log('bodyRaw (join used)', bodyIsHtml && sigIsHtml ? '<br>' : '\\n');
+    log('bodyRaw (join used)', bodyIsHtml && sigIsHtml ? '<br><br>' : '\\n\\n');
     log('bodyRaw (snippet around join)', bodyRaw.slice(Math.max(0, bodyPart.length - 20), bodyPart.length + 60));
     log('bodyMerged (snippet around join)', bodyMerged.slice(Math.max(0, bodyPart.length - 20), bodyPart.length + 120));
   }

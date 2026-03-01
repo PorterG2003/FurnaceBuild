@@ -1,15 +1,16 @@
+import { stripSignatureStyles } from '@/lib/email/index';
+
 /**
  * Convert a mailbox signature (HTML from rich editor) to an HTML block suitable for
- * injecting into the rich-text composer or appending to campaign emails.
- * The value is already HTML; we wrap it in the signature div without escaping.
+ * injecting into the rich-text composer. No wrapper styling; only formatting HTML
+ * (e.g. br, b, i) is preserved (style/class stripped).
  *
  * Returns an empty string when signature is null/empty so callers can
  * concatenate without branching.
  */
 export function signatureToHtml(signature: string | null | undefined): string {
   if (!signature || !signature.trim()) return '';
-
-  return `<div class="email-signature" style="margin-top:16px;padding-top:8px;border-top:1px solid #ccc;color:#888;font-size:14px;">${signature.trim()}</div>`;
+  return stripSignatureStyles(signature.trim());
 }
 
 /**

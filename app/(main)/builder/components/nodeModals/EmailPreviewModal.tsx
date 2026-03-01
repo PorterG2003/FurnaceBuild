@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
 import { buildCampaignEmailContent, sanitizeEmailBody, hasMissingValues, type LeadLike } from '@/lib/email/index';
+import { getCampaignMailboxes } from '@/lib/supabase/services/campaigns';
 import { getLeads, getLeadCount } from '@/lib/supabase/services/leads';
 import type { Lead } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
@@ -54,8 +55,30 @@ function EmailPreviewModal({
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [leadSearch, setLeadSearch] = useState('');
   const lastFetchedSearchRef = useRef<string | undefined>(undefined);
+  /** Signature from first campaign mailbox (for preview). */
+  const [previewSignature, setPreviewSignature] = useState<string | null>(null);
 
   const hasVariables = (variableKeys?.length ?? 0) > 0;
+
+  // Fetch first campaign mailbox signature when preview opens and we have a campaign
+  useEffect(() => {
+    if (!visible || !campaignId) {
+      setPreviewSignature(null);
+      return;
+    }
+    let cancelled = false;
+    getCampaignMailboxes(campaignId)
+      .then((mailboxes) => {
+        if (cancelled) return;
+        const first = mailboxes?.[0];
+        const sig = first?.signature;
+        setPreviewSignature(sig && String(sig).trim() ? String(sig).trim() : null);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewSignature(null);
+      });
+    return () => { cancelled = true; };
+  }, [visible, campaignId]);
 
   // null = not yet determined (count query in progress)
   const [showMissingOnly, setShowMissingOnly] = useState<boolean | null>(null);
@@ -142,11 +165,12 @@ function EmailPreviewModal({
         body_html: config.body_html,
         body_text: config.body_text,
         template: config.template,
+        signature: previewSignature ?? undefined,
       },
       resolvedLead,
       { deterministic: true }
     );
-  }, [config, resolvedLead]);
+  }, [config, resolvedLead, previewSignature]);
 
   const safeHtml = useMemo(() => {
     if (!content?.isHtmlBody || !content.bodyMerged) return '';
@@ -303,6 +327,24 @@ function EmailPreviewModal({
                 {content.subject || '(empty)'}
               </Text>
               <Text className="text-xs font-instrument-medium text-gray-400 mb-1">Body</Text>
+              {campaignId && !previewSignature && (
+                <View
+                  style={{
+                    backgroundColor: 'rgba(75, 85, 99, 0.25)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(75, 85, 99, 0.5)',
+                    borderRadius: 8,
+                    paddingVertical: 10,
+                    paddingHorizontal: 12,
+                    marginBottom: 12,
+                    borderStyle: 'dashed',
+                  }}
+                >
+                  <Text className="text-gray-500 text-xs font-instrument" style={{ fontStyle: 'italic' }}>
+                    Signature will appear here once mailboxes are assigned to this campaign.
+                  </Text>
+                </View>
+              )}
               <ScrollView
                 style={{ flex: 1, maxHeight: 360 }}
                 showsVerticalScrollIndicator

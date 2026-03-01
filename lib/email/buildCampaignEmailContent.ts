@@ -6,6 +6,7 @@
 
 import { mergeTemplate, type LeadLike } from './mergeTemplate.js';
 import { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js';
+import { stripSignatureStyles } from './strip-signature-styles.js';
 
 export interface BuildCampaignEmailContentConfig {
   subject?: string;
@@ -13,6 +14,8 @@ export interface BuildCampaignEmailContentConfig {
   body_text?: string;
   template?: string;
   body?: string;
+  /** Optional mailbox signature; included in body and processed with spintax/mergeTemplate. */
+  signature?: string;
 }
 
 export interface BuildCampaignEmailContentResult {
@@ -36,10 +39,14 @@ export function buildCampaignEmailContent(
   const subjectSpun = processSpintax(subjectRaw, options);
   const subject = mergeTemplate(subjectSpun, lead);
 
-  const bodyRaw =
+  const bodySource =
     typeof (config.body_html ?? config.template ?? config.body) === 'string'
       ? (config.body_html ?? config.template ?? config.body)!
       : '';
+  const normalizedSignature =
+    config.signature?.trim() ? stripSignatureStyles(config.signature.trim()) : '';
+  const bodyRaw =
+    normalizedSignature ? `${bodySource}\n\n${normalizedSignature}` : bodySource;
   const bodySpun = processSpintax(bodyRaw, options);
   const bodyMerged = mergeTemplate(bodySpun, lead);
   const bodyTextFromConfig =

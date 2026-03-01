@@ -159,7 +159,7 @@ function EmailPreviewModal({
 
   const content = useMemo(() => {
     if (!config) return null;
-    return buildCampaignEmailContent(
+    const result = buildCampaignEmailContent(
       {
         subject: config.subject,
         body_html: config.body_html,
@@ -170,6 +170,19 @@ function EmailPreviewModal({
       resolvedLead,
       { deterministic: true }
     );
+    if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
+      console.log('[EmailPreviewModal] previewSignature', {
+        hasSignature: !!previewSignature,
+        length: previewSignature?.length,
+        snippet: previewSignature?.slice(0, 100),
+      });
+      console.log('[EmailPreviewModal] content', {
+        isHtmlBody: result.isHtmlBody,
+        bodyMergedLength: result.bodyMerged?.length,
+        bodyMergedSnippet: result.bodyMerged?.slice(-200),
+      });
+    }
+    return result;
   }, [config, resolvedLead, previewSignature]);
 
   const safeHtml = useMemo(() => {

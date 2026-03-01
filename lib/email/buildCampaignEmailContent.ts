@@ -8,6 +8,18 @@ import { mergeTemplate, type LeadLike } from './mergeTemplate.js';
 import { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js';
 import { stripSignatureStyles } from './strip-signature-styles.js';
 
+/**
+ * Replace paragraph/block boundaries with a single <br> so spacing is consistent
+ * across email clients (no varying <p> margins). One paragraph boundary = one line break.
+ * The body-signature join still uses explicit <br><br> for two lines of gap.
+ */
+function normalizeParagraphBoundaries(html: string): string {
+  return html
+    .replace(/<\/p>\s*<p>/gi, '<br>')
+    .replace(/<\/p>\s*<div/gi, '</p><br><div')
+    .replace(/<\/div>\s*<p>/gi, '</div><br><p');
+}
+
 export interface BuildCampaignEmailContentConfig {
   subject?: string;
   body_html?: string;
@@ -49,10 +61,15 @@ export function buildCampaignEmailContent(
   const sigPart = normalizedSignature.replace(/^\s+/, '');
   const bodyIsHtml = /<[a-z][\s\S]*>/i.test(bodyPart);
   const sigIsHtml = /<[a-z][\s\S]*>/i.test(sigPart);
+  const sigPartForHtml = sigPart.replace(/^(\s*<br\s*\/?>\s*)+/gi, '').trimStart();
+  const combinedHtml =
+    bodyIsHtml && sigIsHtml
+      ? `${bodyPart}<br>${sigPartForHtml}`
+      : null;
   const bodyRaw = normalizedSignature
     ? bodyIsHtml && sigIsHtml
-      ? `${bodyPart}<p><br></p>${sigPart}`
-      : `${bodyPart}\n\n${sigPart}`
+      ? normalizeParagraphBoundaries(combinedHtml!)
+      : `${bodyPart}\n${sigPart}`
     : bodySource;
   const bodySpun = processSpintax(bodyRaw, options);
   const bodyMerged = mergeTemplate(bodySpun, lead);
@@ -71,7 +88,7 @@ export function buildCampaignEmailContent(
     log('bodyPart (trimmed end)', bodyPart);
     log('sigPart (trimmed start)', sigPart);
     log('bodyIsHtml / sigIsHtml', { bodyIsHtml, sigIsHtml });
-    log('bodyRaw (join used)', bodyIsHtml && sigIsHtml ? 'HTML spacer' : '\\n\\n');
+    log('bodyRaw (join used)', bodyIsHtml && sigIsHtml ? '<br>' : '\\n');
     log('bodyRaw (snippet around join)', bodyRaw.slice(Math.max(0, bodyPart.length - 20), bodyPart.length + 60));
     log('bodyMerged (snippet around join)', bodyMerged.slice(Math.max(0, bodyPart.length - 20), bodyPart.length + 120));
   }

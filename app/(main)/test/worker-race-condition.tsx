@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, RefreshControl } from 'react-native';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { useAccount } from '@/contexts/AccountContext';
 import { supabase } from '@/lib/supabase/client';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
-import { getUserByExternalId, getAccountMembershipsForUser } from '@/lib/supabase/services/users';
+import { getAccountMembershipsForUser } from '@/lib/supabase/services/users';
 import { Button } from '@/components/ui/button';
 
 interface JobStatus {
@@ -30,7 +30,7 @@ interface ThrottleStatus {
 type TestScenario = 'min-gap' | 'daily-limit' | 'hourly-limit' | 'mixed';
 
 export function RaceConditionTest() {
-  const { user } = useAuthenticator();
+  const { user } = useAccount();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mailboxId, setMailboxId] = useState<string | null>(null);
@@ -242,7 +242,7 @@ export function RaceConditionTest() {
   }, [testRunning, mailboxId]);
 
   const handleCreateTest = async () => {
-    if (!user?.userId) {
+    if (!user?.id) {
       setError('User not authenticated');
       return;
     }
@@ -259,20 +259,10 @@ export function RaceConditionTest() {
     stopPolling();
 
     try {
-      // 1. Get user profile (create if doesn't exist)
-      let userProfile = await getUserByExternalId(user.userId);
-      if (!userProfile) {
-        // User profile doesn't exist - create it
-        const { createUserProfile } = await import('@/lib/supabase/services/users');
-        userProfile = await createUserProfile({
-          external_id: user.userId,
-          email: user.signInDetails?.loginId || user.username || '',
-          name: null,
-        });
-      }
+      if (!user?.id) throw new Error('User not authenticated.');
 
       // 2. Get account
-      const memberships = await getAccountMembershipsForUser(userProfile.id);
+      const memberships = await getAccountMembershipsForUser(user.id);
       if (!memberships || memberships.length === 0) {
         throw new Error('User has no account');
       }
@@ -281,7 +271,7 @@ export function RaceConditionTest() {
       // 3. Create a new mailbox for each test to ensure clean throttle state
       // This prevents throttle counters from previous tests interfering with new tests
       const mailbox = await createMailbox({
-        user_id: userProfile.id,
+        user_id: user.id,
         account_id: account.id,
         email_address: `race-test-${scenario}-${Date.now()}@furnace.test`,
         display_name: `Race Condition Test Mailbox - ${scenario}`,
@@ -306,7 +296,7 @@ export function RaceConditionTest() {
       const { data: existingCampaigns } = await supabase
         .from('campaigns')
         .select('*')
-        .eq('owner_id', userProfile.id)
+        .eq('owner_id', user.id)
         .limit(1);
 
       let campaign;
@@ -315,7 +305,7 @@ export function RaceConditionTest() {
       } else {
         campaign = await createCampaign({
           name: 'Race Condition Test Campaign',
-          owner_id: userProfile.id,
+          owner_id: user.id,
           account_id: account.id, // Pass account_id directly
           organization_id: null,
           status: 'draft',
@@ -327,6 +317,7 @@ export function RaceConditionTest() {
       const lead = await createLead({
         campaign_id: campaign.id,
         bucket_id: campaign.bucket_id,
+        account_id: account.id,
         email: `test-${Date.now()}@example.com`,
         name: 'Test Lead',
         status: 'new',
@@ -338,6 +329,7 @@ export function RaceConditionTest() {
         .from('enrollments')
         .insert({
           campaign_id: campaign.id,
+          account_id: account.id,
           lead_id: lead.id,
           state: 'active',
           next_run_at: new Date().toISOString(),
@@ -354,6 +346,7 @@ export function RaceConditionTest() {
         .from('nodes')
         .insert({
           campaign_id: campaign.id,
+          account_id: account.id,
           flow_node_id: nodeId,
           node_type: 'email',
           node_data: { subject: 'Race Condition Test', body: 'Test body' },
@@ -371,6 +364,7 @@ export function RaceConditionTest() {
       
       let throttleData: any = {
         mailbox_id: mailbox.id,
+        account_id: account.id,
         date: today,
         daily_limit: parseInt(dailyLimit, 10),
         hourly_limit: parseInt(hourlyLimit, 10),
@@ -411,6 +405,7 @@ export function RaceConditionTest() {
       const messageJobsData = Array.from({ length: jobCountNum }, () => ({
         enrollment_id: enrollment.id,
         campaign_id: campaign.id,
+        account_id: account.id,
         lead_id: lead.id,
         mailbox_id: mailbox.id,
         node_id: node.id,

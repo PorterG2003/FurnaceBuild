@@ -1,6 +1,6 @@
-import { View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { SignInForm } from '@/components/auth/SignInForm';
 import { SignUpForm } from '@/components/auth/SignUpForm';
 import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
@@ -10,12 +10,27 @@ import { HeroHeatShimmer, EmberParticlesLite } from '@/components/ui/effects';
 
 type AuthState = 'signIn' | 'signUp' | 'confirmSignUp' | 'forgotPassword' | 'confirmResetPassword';
 
-function AuthContent() {
+export default function AuthIndex() {
   const router = useRouter();
-  const [authState, setAuthState] = useState<AuthState>('signIn');
+  const { invitation_id, email: inviteEmail, mode } = useLocalSearchParams<{
+    invitation_id?: string;
+    email?: string;
+    mode?: string;
+  }>();
+  const { user, isRecoverySession, clearRecoverySession } = useAuth();
+  const [authState, setAuthState] = useState<AuthState>(
+    isRecoverySession ? 'confirmResetPassword' : mode === 'signUp' ? 'signUp' : 'signIn',
+  );
   const [signUpData, setSignUpData] = useState<{ email: string; password: string } | null>(null);
   const [forgotPasswordData, setForgotPasswordData] = useState<{ email: string } | null>(null);
   const [signInSuccessMessage, setSignInSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isRecoverySession && user) {
+      setForgotPasswordData({ email: user.email ?? '' });
+      setAuthState('confirmResetPassword');
+    }
+  }, [isRecoverySession, user]);
 
   const handleSignUpSuccess = (email: string, password: string) => {
     setSignUpData({ email, password });
@@ -23,7 +38,11 @@ function AuthContent() {
   };
 
   const handleVerificationSuccess = () => {
-    router.replace('/');
+    if (invitation_id) {
+      router.replace(`/accept-invitation/${invitation_id}`);
+    } else {
+      router.replace('/');
+    }
   };
 
   const handleBackToSignIn = () => {
@@ -45,6 +64,7 @@ function AuthContent() {
   const handleBackToSignInFromForgot = () => {
     setAuthState('signIn');
     setForgotPasswordData(null);
+    clearRecoverySession();
   };
 
   const handleForgotPasswordCodeSent = (email: string) => {
@@ -53,17 +73,15 @@ function AuthContent() {
   };
 
   const handleResetPasswordSuccess = () => {
-    setSignInSuccessMessage('Password updated. Sign in with your new password.');
-    setAuthState('signIn');
     setForgotPasswordData(null);
+    clearRecoverySession();
   };
 
-  // Render different forms based on the current auth state
   const renderForm = () => {
     switch (authState) {
       case 'signIn':
         return (
-          <SignInForm 
+          <SignInForm
             onGoToSignUp={handleGoToSignUp}
             onGoToForgotPassword={handleGoToForgotPassword}
             initialSuccessMessage={signInSuccessMessage ?? undefined}
@@ -71,51 +89,54 @@ function AuthContent() {
         );
       case 'signUp':
         return (
-          <SignUpForm 
+          <SignUpForm
             onSignUpSuccess={handleSignUpSuccess}
             onBackToSignIn={handleBackToSignIn}
+            initialEmail={inviteEmail}
           />
         );
       case 'forgotPassword':
         return (
-          <ForgotPasswordForm 
+          <ForgotPasswordForm
             onBackToSignIn={handleBackToSignInFromForgot}
             onCodeSent={handleForgotPasswordCodeSent}
           />
         );
       case 'confirmResetPassword':
-        return forgotPasswordData ? (
-          <ConfirmResetPasswordForm 
-            email={forgotPasswordData.email}
+        return forgotPasswordData || isRecoverySession ? (
+          <ConfirmResetPasswordForm
+            email={forgotPasswordData?.email ?? ''}
             onSuccess={handleResetPasswordSuccess}
             onBackToSignIn={() => {
               setAuthState('signIn');
               setForgotPasswordData(null);
+              clearRecoverySession();
             }}
+            isRecoverySession={isRecoverySession}
           />
         ) : (
-          <SignInForm 
+          <SignInForm
             onGoToSignUp={handleGoToSignUp}
             onGoToForgotPassword={handleGoToForgotPassword}
           />
         );
       case 'confirmSignUp':
         return signUpData ? (
-          <ConfirmSignUpForm 
+          <ConfirmSignUpForm
             email={signUpData.email}
             password={signUpData.password}
             onSuccess={handleVerificationSuccess}
             onBackToSignIn={handleBackToSignIn}
           />
         ) : (
-          <SignInForm 
+          <SignInForm
             onGoToSignUp={handleGoToSignUp}
             onGoToForgotPassword={handleGoToForgotPassword}
           />
         );
       default:
         return (
-          <SignInForm 
+          <SignInForm
             onGoToSignUp={handleGoToSignUp}
             onGoToForgotPassword={handleGoToForgotPassword}
           />
@@ -125,36 +146,14 @@ function AuthContent() {
 
   return (
     <>
-      {/* Background with heat shimmer effect */}
-      <HeroHeatShimmer 
-        intensity="low" 
-        speed="slow" 
+      <HeroHeatShimmer
+        intensity="low"
+        speed="slow"
         tint="ember"
         className="flex-1"
       >
         {renderForm()}
       </HeroHeatShimmer>
-      
-      {/* Floating ember particles */}
-      <EmberParticlesLite density="low" maxOpacity={0.06} />
-    </>
-  );
-}
-
-export default function AuthIndex() {
-  return (
-    <>
-      {/* Background with heat shimmer effect */}
-      <HeroHeatShimmer 
-        intensity="low" 
-        speed="slow" 
-        tint="ember"
-        className="flex-1"
-      >
-        <AuthContent />
-      </HeroHeatShimmer>
-      
-      {/* Floating ember particles */}
       <EmberParticlesLite density="low" maxOpacity={0.06} />
     </>
   );

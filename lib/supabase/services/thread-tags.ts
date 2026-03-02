@@ -88,9 +88,14 @@ export async function updateThreadTag(
  * Add a tag to a thread.
  */
 export async function addTagToThread(threadId: string, tagId: string): Promise<void> {
+  const { data: thread } = await supabase.from('email_threads').select('account_id').eq('id', threadId).single();
+  const accountId = thread?.account_id;
+  if (!accountId) throw new Error('Thread not found or missing account_id');
+
   const { error } = await supabase.from('thread_tag_assignments').insert({
     thread_id: threadId,
     tag_id: tagId,
+    account_id: accountId,
   });
 
   if (error) {

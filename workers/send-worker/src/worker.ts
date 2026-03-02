@@ -198,10 +198,10 @@ export class SendWorker {
       const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
 
       if (!result?.success) {
-        // Throttle check failed - job already cancelled by RPC function
+        // Throttle check failed - RPC re-queued the job with a future scheduled_at
         const failureReason = result?.failure_reason || 'Unknown throttle failure';
-        console.log(`[SEND WORKER] Throttle check failed for message job ${message_job_id}: ${failureReason}`);
-        return; // Skip this job, continue to next
+        console.log(`[SEND WORKER] Throttle check failed for message job ${message_job_id}: ${failureReason}. Job re-queued for retry.`);
+        return;
       }
 
       // Throttle check passed - proceed with sending
@@ -432,6 +432,7 @@ export class SendWorker {
       } else {
         await this.supabase.from('events').insert({
           campaign_id: messageJob.campaign_id,
+          account_id: accountId,
           lead_id: messageJob.lead_id,
           enrollment_id: messageJob.enrollment_id,
           message_job_id: messageJob.id,
@@ -547,19 +548,7 @@ export class SendWorker {
     }
     const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
     if (!result?.success) {
-      // Manual sends: do not leave job cancelled; re-queue so it retries when throttle allows
-      console.log(`[SEND WORKER] Throttle check failed for reply job ${message_job_id}: ${result?.failure_reason}. Re-queuing for retry.`);
-      const { error: updateError } = await this.supabase
-        .from('message_jobs')
-        .update({
-          status: 'pending',
-          reserved_at: null,
-          error_message: null,
-        })
-        .eq('id', message_job_id);
-      if (updateError) {
-        console.error(`[SEND WORKER] Failed to re-queue reply job ${message_job_id}:`, updateError);
-      }
+      console.log(`[SEND WORKER] Throttle check failed for reply job ${message_job_id}: ${result?.failure_reason}. Job re-queued for retry.`);
       return;
     }
 
@@ -608,10 +597,10 @@ export class SendWorker {
       throw err;
     }
 
-    // 4. Load thread for participants and current counts
+    // 4. Load thread for participants, message count, and account_id
     const { data: thread, error: threadError } = await this.supabase
       .from('email_threads')
-      .select('participants, message_count')
+      .select('participants, message_count, account_id')
       .eq('id', threadId)
       .single();
     if (threadError || !thread) {
@@ -638,6 +627,7 @@ export class SendWorker {
       .from('email_messages')
       .insert({
         thread_id: threadId,
+        account_id: thread.account_id,
         message_job_id: message_job_id,
         direction: 'sent',
         from_email: mailbox.email_address,
@@ -728,18 +718,7 @@ export class SendWorker {
     }
     const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
     if (!result?.success) {
-      console.log(`[SEND WORKER] Throttle check failed for forward job ${message_job_id}: ${result?.failure_reason}. Re-queuing for retry.`);
-      const { error: updateError } = await this.supabase
-        .from('message_jobs')
-        .update({
-          status: 'pending',
-          reserved_at: null,
-          error_message: null,
-        })
-        .eq('id', message_job_id);
-      if (updateError) {
-        console.error(`[SEND WORKER] Failed to re-queue forward job ${message_job_id}:`, updateError);
-      }
+      console.log(`[SEND WORKER] Throttle check failed for forward job ${message_job_id}: ${result?.failure_reason}. Job re-queued for retry.`);
       return;
     }
 

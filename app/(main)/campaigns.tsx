@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Alert, EmptyState, useToast } from '@/components/ui/feedback';
 import { CampaignListSkeleton, SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from '@/components/skeletons';
 import { BaseModal } from '@/components/ui/modals';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
 import { useRouter } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
 import { getCampaigns, createCampaign, deleteCampaign, getCampaignStatsForCampaigns, type CampaignStats } from '@/lib/supabase/services/campaigns';
@@ -408,8 +407,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
 }
 
 export default function CampaignsPage() {
-  const { user } = useAuthenticator();
-  const { account } = useAccount();
+  const { user, account } = useAccount();
   const { toast } = useToast();
   const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -477,7 +475,7 @@ export default function CampaignsPage() {
   }, [isLoading, showSkeleton]);
 
   const handleCreateCampaign = async (name: string) => {
-    if (!user?.userId) {
+    if (!user?.id) {
       throw new Error('User not authenticated');
     }
     if (!account?.id) {
@@ -488,7 +486,7 @@ export default function CampaignsPage() {
     try {
       const newCampaign = await createCampaign({
         name,
-        owner_id: user.userId,
+        owner_id: user.id,
         account_id: account.id,
         organization_id: null,
         status: 'draft',

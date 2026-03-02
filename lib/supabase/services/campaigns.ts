@@ -1,7 +1,7 @@
 import { reportErrorToSlack } from '../../slack/reportErrorToSlack';
 import { supabase } from '../client';
 import type { Campaign, CampaignInsert, CampaignUpdate } from '../types';
-import { getAccountMembershipsForUser, getUserByExternalId } from './users';
+import { getAccountMembershipsForUser, getUserById, getUserByExternalId } from './users';
 
 /**
  * Campaign service for database operations
@@ -248,8 +248,8 @@ export async function createCampaign(campaign: CampaignInsert): Promise<Campaign
   
   if (!accountId && campaign.owner_id) {
     try {
-      // Get user by external_id (Cognito user ID)
-      const user = await getUserByExternalId(campaign.owner_id);
+      // Resolve owner: try by id first, then external_id (legacy migration field)
+      const user = await getUserById(campaign.owner_id) ?? await getUserByExternalId(campaign.owner_id);
       if (user) {
         // Get user's account memberships
         const memberships = await getAccountMembershipsForUser(user.id);
@@ -313,11 +313,15 @@ export async function assignMailboxesToCampaign(
     throw new Error(`Failed to remove existing mailbox assignments: ${deleteError.message}`);
   }
 
-  // Insert new assignments
+  // Insert new assignments (account_id required for RLS)
   if (mailboxIds.length > 0) {
+    const { data: campaign } = await supabase.from('campaigns').select('account_id').eq('id', campaignId).single();
+    const accountId = campaign?.account_id;
+    if (!accountId) throw new Error('Campaign not found or missing account_id');
     const assignments = mailboxIds.map(mailboxId => ({
       campaign_id: campaignId,
       mailbox_id: mailboxId,
+      account_id: accountId,
     }));
 
     const { error: insertError } = await supabase
@@ -436,8 +440,18 @@ export async function ensureCampaignEnrollmentsForLeads(
 ): Promise<void> {
   if (!leadIds.length) return;
 
+  const { data: campaign, error: campError } = await supabase
+    .from('campaigns')
+    .select('account_id')
+    .eq('id', campaignId)
+    .single();
+  if (campError || !campaign?.account_id) {
+    throw new Error(`Campaign not found or missing account_id: ${campError?.message}`);
+  }
+
   const rows = leadIds.map((leadId) => ({
     campaign_id: campaignId,
+    account_id: campaign.account_id,
     lead_id: leadId,
     current_node_id: null,
     state: 'active',

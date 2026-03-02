@@ -1,39 +1,34 @@
 import { reportErrorToSlack } from '@furnace/slack-lib';
+import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import type { Schema } from '../../data/resource';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-/**
- * Handler for sendInvitationEmail function
- * 
- * According to Amplify Gen 2 docs:
- * "Use the Schema export to strongly type your Function handler"
- * "arguments typed from .arguments()"
- * "return typed from .returns()"
- * 
- * When called through Data API, arguments come from event.arguments
- */
-// Handler type is inferred from the function body
-// Using explicit type causes issues with .returns(a.json()) in Amplify Gen 2
-export const handler = async (event: Parameters<Schema['sendInvitationEmail']['functionHandler']>[0]) => {
-  try {
-    // Arguments come from event.arguments when called through Data API
-    // This is typed from the schema definition in data/resource.ts
-    const { to, inviterName, inviterEmail, accountName, acceptUrl } = event.arguments;
+function isFunctionUrlEvent(event: any): event is { headers: Record<string, string>; body?: string | null; isBase64Encoded?: boolean } {
+  return event && typeof event.headers === 'object' && !event.arguments;
+}
 
-    if (!to || !inviterName || !accountName) {
-      throw new Error('Missing required fields: to, inviterName, and accountName are required');
-    }
+async function sendInvitationEmailLogic(args: {
+  to: string;
+  inviterName: string;
+  inviterEmail: string;
+  accountName: string;
+  acceptUrl?: string;
+}) {
+  const { to, inviterName, inviterEmail, accountName, acceptUrl } = args;
 
-    // For now, we'll use a simple accept URL - you can customize this
-    const defaultAcceptUrl = acceptUrl || 'https://your-app-url.com/accept-invitation';
+  if (!to || !inviterName || !accountName) {
+    throw new Error('Missing required fields: to, inviterName, and accountName are required');
+  }
 
-    const { data, error } = await resend.emails.send({
-      from: 'Furnace <porter@getfurnace.io>', // Update this with your verified domain
-      to: [to],
-      subject: `You've been invited to join ${accountName} on Furnace`,
-      html: `
+  const defaultAcceptUrl = acceptUrl || 'https://your-app-url.com/accept-invitation';
+
+  const { data, error } = await resend.emails.send({
+    from: 'Furnace <porter@getfurnace.io>',
+    to: [to],
+    subject: `You've been invited to join ${accountName} on Furnace`,
+    html: `
         <!DOCTYPE html>
         <html>
           <head>
@@ -67,7 +62,7 @@ export const handler = async (event: Parameters<Schema['sendInvitationEmail']['f
           </body>
         </html>
       `,
-      text: `
+    text: `
 You've been invited to join ${accountName} on Furnace
 
 ${inviterName} (${inviterEmail}) has invited you to join ${accountName} on Furnace.
@@ -78,25 +73,51 @@ Accept your invitation: ${defaultAcceptUrl}
 
 If you didn't expect this invitation, you can safely ignore this email.
       `.trim(),
-    });
+  });
 
-    if (error) {
-      console.error('Resend error:', error);
-      throw new Error(`Failed to send email: ${JSON.stringify(error)}`);
+  if (error) {
+    console.error('Resend error:', error);
+    throw new Error(`Failed to send email: ${JSON.stringify(error)}`);
+  }
+
+  return { success: true, messageId: data?.id || '', message: 'Invitation email sent successfully' };
+}
+
+export const handler = async (event: Parameters<Schema['sendInvitationEmail']['functionHandler']>[0] | { headers: Record<string, string>; body?: string | null; isBase64Encoded?: boolean }) => {
+  const isUrlInvocation = isFunctionUrlEvent(event);
+  try {
+    if (isUrlInvocation) {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
+      if (!supabaseUrl || !supabaseSecretKey) {
+        return { statusCode: 500, body: JSON.stringify({ error: 'Server configuration error' }) };
+      }
+      const auth = event.headers?.authorization || event.headers?.Authorization;
+      const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : null;
+      if (!token) {
+        return { statusCode: 401, body: JSON.stringify({ error: 'Missing or invalid Authorization header' }) };
+      }
+      const supabase = createClient(supabaseUrl, supabaseSecretKey);
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return { statusCode: 401, body: JSON.stringify({ error: 'Invalid or expired token' }) };
+      }
+      const body = event.body ? (event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body) : '{}';
+      const args = JSON.parse(body) as { to: string; inviterName: string; inviterEmail: string; accountName: string; acceptUrl?: string };
+      const result = await sendInvitationEmailLogic(args);
+      return { statusCode: 200, body: JSON.stringify(result) };
     }
 
-    // Return data directly (Data API will wrap it)
-    // Schema says .returns(a.json()), so we return the JSON object
-    return { 
-      success: true, 
-      messageId: data?.id || '',
-      message: 'Invitation email sent successfully' 
-    };
+    const { to, inviterName, inviterEmail, accountName, acceptUrl } = event.arguments;
+    const result = await sendInvitationEmailLogic({ to, inviterName, inviterEmail, accountName, acceptUrl: acceptUrl ?? undefined });
+    return result;
   } catch (error) {
     console.error('Handler error:', error);
     const msg = error instanceof Error ? error.message : String(error);
     reportErrorToSlack('Send invitation email failed', { severity: 'warning', error: msg });
+    if (isUrlInvocation) {
+      return { statusCode: 500, body: JSON.stringify({ error: msg }) };
+    }
     throw error;
   }
 };
-

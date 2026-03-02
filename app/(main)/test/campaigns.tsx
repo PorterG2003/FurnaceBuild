@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, ActivityIndicator, Pressable, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
 import { ConfirmDeleteModal } from '@/components/ui/modals/ConfirmDeleteModal';
-import { getUserByExternalId } from '@/lib/supabase/services/users';
 import { getTestCampaigns, deleteTestCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import { TrashIcon, ArrowRightIcon, ArrowPathIcon, PlusIcon } from 'react-native-heroicons/outline';
@@ -12,7 +11,7 @@ import { format } from 'date-fns';
 
 export default function TestCampaignsPage() {
   const router = useRouter();
-  const { user } = useAuthenticator();
+  const { user } = useAccount();
   const [loading, setLoading] = useState(true);
   const [testCampaigns, setTestCampaigns] = useState<Campaign[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +20,7 @@ export default function TestCampaignsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const loadTestCampaigns = useCallback(async () => {
-    if (!user?.userId) {
+    if (!user?.id) {
       setError('User not authenticated');
       setLoading(false);
       return;
@@ -30,15 +29,7 @@ export default function TestCampaignsPage() {
     try {
       setLoading(true);
       setError(null);
-
-      const userProfile = await getUserByExternalId(user.userId);
-      if (!userProfile) {
-        setError('User profile not found');
-        setLoading(false);
-        return;
-      }
-
-      const campaigns = await getTestCampaigns(userProfile.id);
+      const campaigns = await getTestCampaigns(user.id);
       setTestCampaigns(campaigns);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
@@ -46,7 +37,7 @@ export default function TestCampaignsPage() {
     } finally {
       setLoading(false);
     }
-  }, [user?.userId]);
+  }, [user?.id]);
 
   useEffect(() => {
     loadTestCampaigns();

@@ -1,24 +1,21 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
-import type { Account, User } from '@/lib/supabase/types';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { supabase } from '@/lib/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import type { Account, AccountUser, BlockListEntry, Invitation, User } from '@/lib/supabase/types';
 import type { AccountMembership } from '@/lib/supabase/services/users';
 import {
-  addUserToAccount,
-  createAccount,
-  createUserProfile,
+  getAccountMembers,
   getAccountMembershipsForUser,
-  getUserByExternalId,
+  getAccountInvitations,
   updateUserProfile,
 } from '@/lib/supabase/services/users';
+import { getBlockList } from '@/lib/supabase/services/block-list';
 
-function buildDefaultAccountName(loginId: string | null, username: string | null, currentName?: string | null): string {
+function buildDefaultAccountName(loginId: string | null, currentName?: string | null): string {
   if (currentName && currentName.trim().length > 0) {
     return `${currentName.trim()}'s Account`;
-  }
-  if (username && username.trim().length > 0) {
-    return `${username.trim()}'s Account`;
   }
   if (loginId && loginId.trim().length > 0) {
     return `${loginId.trim()}'s Account`;
@@ -30,9 +27,13 @@ interface AccountContextValue {
   user: User | null;
   account: Account | null;
   memberships: AccountMembership[];
+  teamMembers: Array<{ user: User; membership: AccountUser }>;
+  invitations: Invitation[];
+  blockList: BlockListEntry[];
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
+  refetchAccountData: () => Promise<void>;
   setCurrentAccountId: (accountId: string) => void;
 }
 
@@ -47,94 +48,136 @@ export function useAccount() {
 }
 
 export function AccountProvider({ children }: { children: React.ReactNode }) {
-  const { user: cognitoUser, authStatus } = useAuthenticator();
-  const externalId = cognitoUser?.userId ?? null;
-  const loginId = cognitoUser?.signInDetails?.loginId ?? null;
-  const username = cognitoUser?.username ?? null;
-  const cognitoEmail =
-    (cognitoUser as any)?.attributes?.email ??
-    (cognitoUser as any)?.attributes?.preferred_username ??
-    loginId ??
-    null;
-
+  const { user: authUser } = useAuth();
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
   const [memberships, setMemberships] = useState<AccountMembership[]>([]);
   const [currentAccountId, setCurrentAccountIdState] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<Array<{ user: User; membership: AccountUser }>>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastFetchedIdRef = useRef<string | null>(null);
 
-  const fetchUserAndMemberships = useCallback(async () => {
-    if (!externalId || !cognitoEmail) {
-      setSupabaseUser(null);
-      setMemberships([]);
-      setCurrentAccountIdState(null);
-      setLoading(false);
-      setError(!externalId ? 'Unable to determine the signed-in user.' : 'Unable to determine your email from Cognito.');
-      return;
-    }
+  const fetchUserAndMemberships = useCallback(
+    async (authUserId: string, email: string, name?: string | null): Promise<AccountMembership[] | null> => {
+      setLoading(true);
+      setError(null);
 
-    setLoading(true);
-    setError(null);
+      try {
+        let user: User | null = null;
 
-    try {
-      let existingUser = await getUserByExternalId(externalId);
+        // handle_new_user trigger creates the row; retry once if not yet visible
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const { data: existingUser } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', authUserId)
+            .maybeSingle();
 
-      if (!existingUser) {
-        existingUser = await createUserProfile({
-          external_id: externalId,
-          email: cognitoEmail,
-          name: username ?? undefined,
+          if (existingUser) {
+            if (existingUser.email !== email) {
+              user = await updateUserProfile(existingUser.id, { email });
+            } else {
+              user = existingUser;
+            }
+            break;
+          }
+
+          if (attempt === 0) {
+            await new Promise((r) => setTimeout(r, 500));
+          }
+        }
+
+        if (!user) {
+          throw new Error('User profile not found. The account may still be initializing — please refresh.');
+        }
+
+        let nextMemberships = await getAccountMembershipsForUser(user.id);
+
+        if (nextMemberships.length === 0) {
+          const accountName = buildDefaultAccountName(email, user.name);
+          const { data: newAccountId, error: rpcErr } = await supabase.rpc('bootstrap_account', {
+            p_account_name: accountName,
+          });
+          if (rpcErr || !newAccountId) {
+            throw new Error(rpcErr?.message ?? 'Failed to bootstrap account');
+          }
+          nextMemberships = await getAccountMembershipsForUser(user.id);
+        }
+
+        setSupabaseUser(user);
+        setMemberships(nextMemberships);
+
+        const primary = nextMemberships.find((m) => m.membership.is_owner) ?? nextMemberships[0];
+        setCurrentAccountIdState((prev) => {
+          if (!prev) return primary?.account.id ?? null;
+          const stillMember = nextMemberships.some((m) => m.account.id === prev);
+          return stillMember ? prev : (primary?.account.id ?? null);
         });
-      } else if (existingUser.email !== cognitoEmail) {
-        existingUser = await updateUserProfile(existingUser.id, { email: cognitoEmail });
+
+        return nextMemberships;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        setError(message);
+        setSupabaseUser(null);
+        setMemberships([]);
+        setCurrentAccountIdState(null);
+        return null;
+      } finally {
+        setLoading(false);
       }
-
-      let nextMemberships = await getAccountMembershipsForUser(existingUser.id);
-
-      if (nextMemberships.length === 0) {
-        const account = await createAccount({
-          name: buildDefaultAccountName(loginId, username, existingUser.name),
-        });
-        const membershipRecord = await addUserToAccount(account.id, existingUser.id, true);
-        nextMemberships = [
-          {
-            membership: membershipRecord,
-            account,
-          },
-        ];
-      }
-
-      setSupabaseUser(existingUser);
-      setMemberships(nextMemberships);
-
-      const primary = nextMemberships.find((m) => m.membership.is_owner) ?? nextMemberships[0];
-      setCurrentAccountIdState((prev) => {
-        if (!prev) return primary?.account.id ?? null;
-        const stillMember = nextMemberships.some((m) => m.account.id === prev);
-        return stillMember ? prev : (primary?.account.id ?? null);
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      setError(message);
-      setSupabaseUser(null);
-      setMemberships([]);
-      setCurrentAccountIdState(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [externalId, cognitoEmail, loginId, username]);
+    },
+    []
+  );
 
   useEffect(() => {
-    if (authStatus !== 'authenticated' || !cognitoUser) {
+    if (!authUser) {
       setSupabaseUser(null);
       setMemberships([]);
       setCurrentAccountIdState(null);
+      setTeamMembers([]);
+      setInvitations([]);
+      setBlockList([]);
       setLoading(false);
       setError(null);
+      lastFetchedIdRef.current = null;
       return;
     }
-    fetchUserAndMemberships();
-  }, [authStatus, cognitoUser, fetchUserAndMemberships]);
+
+    if (lastFetchedIdRef.current === authUser.id) return;
+    lastFetchedIdRef.current = authUser.id;
+
+    const email = authUser.email ?? '';
+    const name = authUser.user_metadata?.name ?? authUser.user_metadata?.full_name ?? null;
+    fetchUserAndMemberships(authUser.id, email, name);
+  }, [authUser, fetchUserAndMemberships]);
+
+  const fetchAccountData = useCallback(async (accountId: string) => {
+    const [members, pendingInvitations, blockListData] = await Promise.all([
+      getAccountMembers(accountId),
+      getAccountInvitations(accountId),
+      getBlockList(accountId),
+    ]);
+    setTeamMembers(members);
+    setInvitations(pendingInvitations);
+    setBlockList(blockListData);
+  }, []);
+
+  const refetchAccountData = useCallback(async () => {
+    if (!currentAccountId) return;
+    await fetchAccountData(currentAccountId);
+  }, [currentAccountId, fetchAccountData]);
+
+  useEffect(() => {
+    if (!currentAccountId || memberships.length === 0) {
+      setTeamMembers([]);
+      setInvitations([]);
+      setBlockList([]);
+      return;
+    }
+    fetchAccountData(currentAccountId);
+  }, [currentAccountId, memberships.length, fetchAccountData]);
 
   const setCurrentAccountId = useCallback((accountId: string) => {
     setCurrentAccountIdState((prev) => {
@@ -149,17 +192,33 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     return entry?.account ?? null;
   }, [currentAccountId, memberships]);
 
+  const refetch = useCallback(async () => {
+    if (!authUser) return;
+    const email = authUser.email ?? '';
+    const name = authUser.user_metadata?.name ?? authUser.user_metadata?.full_name ?? null;
+    lastFetchedIdRef.current = null;
+    const nextMemberships = await fetchUserAndMemberships(authUser.id, email, name);
+    const primary = nextMemberships?.find((m) => m.membership.is_owner) ?? nextMemberships?.[0];
+    if (primary?.account.id) {
+      await fetchAccountData(primary.account.id);
+    }
+  }, [authUser, fetchUserAndMemberships, fetchAccountData]);
+
   const value = useMemo<AccountContextValue>(
     () => ({
       user: supabaseUser,
       account,
       memberships,
+      teamMembers,
+      invitations,
+      blockList,
       loading,
       error,
-      refetch: fetchUserAndMemberships,
+      refetch,
+      refetchAccountData,
       setCurrentAccountId,
     }),
-    [supabaseUser, account, memberships, loading, error, fetchUserAndMemberships, setCurrentAccountId]
+    [supabaseUser, account, memberships, teamMembers, invitations, blockList, loading, error, refetch, refetchAccountData, setCurrentAccountId]
   );
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;

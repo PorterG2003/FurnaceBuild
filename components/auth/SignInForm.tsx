@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
-import { signIn } from 'aws-amplify/auth';
+import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/feedback';
@@ -24,18 +24,6 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
     }
   }, [initialSuccessMessage, toast]);
 
-  const handleForgotPassword = () => {
-    onGoToForgotPassword();
-  };
-
-  const handleSignUp = () => {
-    onGoToSignUp();
-  };
-
-  const clearInitialSuccessIfUserInteracts = () => {
-    // Clear/dismiss any initial success toast when user starts typing (no-op if toast has no dismiss API)
-  };
-
   const handleSignIn = async () => {
     if (!email || !password) {
       setError('Please fill in all fields');
@@ -46,32 +34,27 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
     setError('');
 
     try {
-      const { isSignedIn } = await signIn({
-        username: email,
-        password: password,
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
       });
 
-      if (isSignedIn) {
-        toast.success('Sign in successful! Redirecting...');
+      if (signInError) {
+        if (signInError.message.includes('Invalid login')) {
+          toast.error('Invalid email or password');
+        } else if (signInError.message.includes('Email not confirmed')) {
+          toast.error('Please verify your email before signing in');
+        } else {
+          toast.error(signInError.message);
+        }
         setIsLoading(false);
-        // The auth guard will handle the redirect
-      } else {
-        toast.error('Sign in failed. Please try again.');
-        setIsLoading(false);
+        return;
       }
-      
+
+      toast.success('Sign in successful! Redirecting...');
+      setIsLoading(false);
     } catch (err: any) {
-      if (err.name === 'UserNotFoundException') {
-        toast.error('No account found with this email');
-      } else if (err.name === 'NotAuthorizedException') {
-        toast.error('Incorrect password');
-      } else if (err.name === 'UserNotConfirmedException') {
-        toast.error('Please verify your email before signing in');
-      } else if (err.name === 'InvalidParameterException') {
-        toast.error('Please check your email format');
-      } else {
-        toast.error(`Sign in failed: ${err.message}`);
-      }
+      toast.error(err?.message ?? 'Sign in failed. Please try again.');
       setIsLoading(false);
     }
   };
@@ -91,7 +74,6 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
           value={email}
           onChangeText={(text) => {
             setEmail(text);
-            clearInitialSuccessIfUserInteracts();
             setError('');
           }}
           placeholder="Enter your email"
@@ -141,7 +123,7 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
         </View>
       ) : null}
 
-      <Pressable onPress={handleForgotPassword} className="mb-6">
+      <Pressable onPress={onGoToForgotPassword} className="mb-6">
         <Text className="text-right text-brand-orange font-instrument-medium">
           Forgot Password?
         </Text>
@@ -152,12 +134,11 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
       </Button>
 
       <View className="flex-row justify-center items-center">
-          <Text className="text-gray-300 font-instrument">Don't have an account? </Text>
-        <Pressable onPress={handleSignUp}>
+        <Text className="text-gray-300 font-instrument">Don't have an account? </Text>
+        <Pressable onPress={onGoToSignUp}>
           <Text className="text-brand-orange font-instrument-medium">Sign Up</Text>
         </Pressable>
       </View>
     </FormCard>
   );
 }
-

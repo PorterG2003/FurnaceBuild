@@ -8,8 +8,8 @@ import { defineFunction, secret } from '@aws-amplify/backend';
  *
  * Environment:
  * - SUPABASE_URL: from .env.local at deploy time (plain env var)
- * - SUPABASE_SECRET_KEY: secret (Supabase Secret Key, replaces legacy service role key)
- * - COGNITO_USER_POOL_ID: for JWT verification (passed from auth resource)
+ * - SUPABASE_SECRET_KEY: secret (Supabase service role key)
+ * - SUPABASE_JWT_SECRET: Supabase project JWT secret (Project Settings > API > JWT Secret) for verifying access tokens
  */
 export const fetchEmailAttachment = defineFunction({
   name: 'fetchEmailAttachment',

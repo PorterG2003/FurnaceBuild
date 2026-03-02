@@ -554,7 +554,7 @@ export async function getPendingInboxReplyJobs(
  * Returns the raw bytes as a Blob (web) or ArrayBuffer (for React Native).
  *
  * @param functionUrl - Lambda Function URL from amplify_outputs.custom.fetchEmailAttachmentUrl
- * @param authToken - Cognito ID token (from fetchAuthSession)
+ * @param authToken - Supabase access token (from supabase.auth.getSession().session.access_token)
  * @param emailMessageId - email_messages.id
  * @param part - MIME part identifier (e.g. "1", "1.2")
  */

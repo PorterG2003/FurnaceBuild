@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, TextInput, TouchableOpacity } from 'react-native';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
 import { supabase } from '@/lib/supabase/client';
 import { buildCampaignEmailContent } from '@/lib/email/index';
@@ -8,7 +8,7 @@ import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
 import type { Mailbox } from '@/lib/supabase/types';
-import { getUserByExternalId, getAccountMembershipsForUser } from '@/lib/supabase/services/users';
+import { getAccountMembershipsForUser } from '@/lib/supabase/services/users';
 import { Button } from '@/components/ui/button';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { RaceConditionTest } from './worker-race-condition';
@@ -28,7 +28,7 @@ type WizardStep = 'configure' | 'processing' | 'complete';
  * Step 3: Complete (show verification guide)
  */
 export default function TestWorkerPage() {
-  const { user } = useAuthenticator();
+  const { user } = useAccount();
   const [activeTab, setActiveTab] = useState<string>('basic');
   const [currentStep, setCurrentStep] = useState<WizardStep>('configure');
   const [loading, setLoading] = useState(false);
@@ -54,17 +54,13 @@ export default function TestWorkerPage() {
 
   // Load user's mailboxes so user can pick one to send from
   useEffect(() => {
-    if (!user?.userId) {
+    if (!user?.id) {
       setMailboxesLoading(false);
       return;
     }
     let cancelled = false;
     setMailboxesLoading(true);
-    getUserByExternalId(user.userId)
-      .then((profile) => {
-        if (cancelled || !profile) return [] as Mailbox[];
-        return getMailboxesByUser(profile.id);
-      })
+    getMailboxesByUser(user.id)
       .then((list) => {
         if (cancelled) return;
         // Exclude test mailboxes — they skip SMTP and won't actually send
@@ -88,7 +84,7 @@ export default function TestWorkerPage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.userId]);
+  }, [user?.id]);
 
   const selectedMailbox = useMemo(
     () => (selectedMailboxId ? mailboxes.find((m) => m.id === selectedMailboxId) ?? null : null),
@@ -167,7 +163,7 @@ export default function TestWorkerPage() {
   };
 
   const handleCreateAndSend = async () => {
-    if (!user?.userId) {
+    if (!user?.id) {
       setError('User not authenticated');
       return;
     }
@@ -178,20 +174,17 @@ export default function TestWorkerPage() {
     setSteps({});
 
     try {
-      // 1. Get or create user profile
+      // 1. User from account context
+      if (!user?.id) throw new Error('User not authenticated.');
       updateStep('user', 'loading', 'Getting user profile...');
-      let userProfile = await getUserByExternalId(user.userId);
-      if (!userProfile) {
-        throw new Error('User profile not found. Please complete account setup first.');
-      }
-      updateStep('user', 'success', `User: ${userProfile.id.substring(0, 8)}...`);
+      updateStep('user', 'success', `User: ${user.id.substring(0, 8)}...`);
 
       // 2. Get or create campaign
       updateStep('campaign', 'loading', 'Getting or creating campaign...');
       const { data: existingCampaigns } = await supabase
         .from('campaigns')
         .select('*')
-        .eq('owner_id', userProfile.id)
+        .eq('owner_id', user.id)
         .limit(1);
 
       let campaign;
@@ -201,7 +194,7 @@ export default function TestWorkerPage() {
       } else {
         campaign = await createCampaign({
           name: 'Test Campaign - Worker',
-          owner_id: userProfile.id,
+          owner_id: user.id,
           organization_id: null,
           status: 'draft',
           flow_data: {
@@ -214,7 +207,7 @@ export default function TestWorkerPage() {
 
       // 3. Get user's account (required for mailbox)
       updateStep('account', 'loading', 'Getting user account...');
-      const memberships = await getAccountMembershipsForUser(userProfile.id);
+      const memberships = await getAccountMembershipsForUser(user.id);
       if (!memberships || memberships.length === 0) {
         throw new Error('User has no account. Please complete account setup first.');
       }
@@ -232,13 +225,13 @@ export default function TestWorkerPage() {
         }
       }
       if (!mailbox) {
-        const existingMailboxes = await getMailboxesByUser(userProfile.id);
+        const existingMailboxes = await getMailboxesByUser(user.id);
         if (existingMailboxes && existingMailboxes.length > 0) {
           mailbox = existingMailboxes[0];
           updateStep('mailbox', 'success', `Using ${mailbox.email_address}`);
         } else {
           mailbox = await createMailbox({
-            user_id: userProfile.id,
+            user_id: user.id,
             account_id: account.id,
             email_address: 'test@example.com',
             display_name: 'Test Mailbox',
@@ -267,6 +260,7 @@ export default function TestWorkerPage() {
       const lead = await createLead({
         campaign_id: campaign.id,
         bucket_id: campaign.bucket_id,
+        account_id: account.id,
         email: recipientEmail,
         name: recipientName,
         status: 'new',
@@ -280,6 +274,7 @@ export default function TestWorkerPage() {
         .from('enrollments')
         .insert({
           campaign_id: campaign.id,
+          account_id: account.id,
           lead_id: lead.id,
           state: 'active',
           next_run_at: new Date().toISOString(),
@@ -300,6 +295,7 @@ export default function TestWorkerPage() {
         .from('nodes')
         .insert({
           campaign_id: campaign.id,
+          account_id: account.id,
           flow_node_id: nodeId,
           node_type: 'email',
           node_data: {
@@ -325,6 +321,7 @@ export default function TestWorkerPage() {
       const messageJobsData = Array.from({ length: count }, () => ({
         enrollment_id: enrollment.id,
         campaign_id: campaign.id,
+        account_id: account.id,
         lead_id: lead.id,
         mailbox_id: mailbox.id,
         node_id: node.id,

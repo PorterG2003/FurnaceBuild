@@ -4,9 +4,9 @@ import { useFonts, InstrumentSans_400Regular, InstrumentSans_500Medium, Instrume
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { Authenticator } from '@aws-amplify/ui-react-native';
 import { ToastProvider } from '@/components/ui/feedback';
 import { ConfirmProvider } from '@/components/ui/ConfirmContext';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 // Suppress pointerEvents deprecation from react-native-web (triggered by @react-navigation)
 if (typeof console !== 'undefined' && console.warn) {
@@ -49,14 +49,14 @@ export default function RootLayout() {
   }
 
   return (
-    <Authenticator.Provider>
+    <AuthProvider>
       <ToastProvider>
         <ConfirmProvider>
           <StatusBar style="auto" />
           <Slot />
         </ConfirmProvider>
       </ToastProvider>
-    </Authenticator.Provider>
+    </AuthProvider>
   );
 }
 

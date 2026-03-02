@@ -9,6 +9,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { sendInvitationEmail } from './functions/sendInvitationEmail/resource';
+import { testMailboxConnection } from './functions/testMailboxConnection/resource';
 import { enrollmentMetric } from './functions/enrollmentMetric/resource';
 import { fetchEmailAttachment } from './functions/fetchEmailAttachment/resource';
 
@@ -22,15 +23,13 @@ const backend = defineBackend({
   auth,
   data,
   sendInvitationEmail,
+  testMailboxConnection,
   enrollmentMetric,
   fetchEmailAttachment,
 });
 
-// Fetch email attachment: Function URL + Cognito env for JWT verification
+// Fetch email attachment: Function URL + Supabase auth.getUser() for token verification
 const fetchAttachmentLambda = backend.fetchEmailAttachment.resources.lambda as lambda.Function;
-const authResources = backend.auth.resources;
-fetchAttachmentLambda.addEnvironment('COGNITO_USER_POOL_ID', authResources.userPool.userPoolId);
-fetchAttachmentLambda.addEnvironment('COGNITO_CLIENT_ID', authResources.userPoolClient.userPoolClientId);
 fetchAttachmentLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 
 const fetchAttachmentUrl = fetchAttachmentLambda.addFunctionUrl({
@@ -58,9 +57,60 @@ const allowPublicInvokeViaUrl = new lambda.CfnPermission(fetchAttachmentLambda.s
   principal: '*',
 });
 allowPublicInvokeViaUrl.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+// Send invitation email: Function URL + Supabase auth.getUser() for token verification
+const sendInvitationLambda = backend.sendInvitationEmail.resources.lambda as lambda.Function;
+sendInvitationLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+const sendInvitationUrl = sendInvitationLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(sendInvitationLambda.stack, 'AllowPublicSendInvitationUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: sendInvitationLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicSendInvitationInvoke = new lambda.CfnPermission(sendInvitationLambda.stack, 'AllowPublicSendInvitationInvokeViaUrl', {
+  action: 'lambda:InvokeFunction',
+  functionName: sendInvitationLambda.functionName,
+  principal: '*',
+});
+allowPublicSendInvitationInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+// Test mailbox connection: Function URL + Supabase auth.getUser() for token verification
+const testMailboxLambda = backend.testMailboxConnection.resources.lambda as lambda.Function;
+testMailboxLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+const testMailboxUrl = testMailboxLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(testMailboxLambda.stack, 'AllowPublicTestMailboxUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: testMailboxLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicTestMailboxInvoke = new lambda.CfnPermission(testMailboxLambda.stack, 'AllowPublicTestMailboxInvokeViaUrl', {
+  action: 'lambda:InvokeFunction',
+  functionName: testMailboxLambda.functionName,
+  principal: '*',
+});
+allowPublicTestMailboxInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
 backend.addOutput({
   custom: {
     fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
+    sendInvitationEmailUrl: sendInvitationUrl.url,
+    testMailboxConnectionUrl: testMailboxUrl.url,
   },
 });
 

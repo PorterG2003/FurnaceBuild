@@ -189,6 +189,7 @@ export class ThreadManager {
       .from('email_messages')
       .insert({
         thread_id: thread.id,
+        account_id: thread.account_id,
         message_job_id: null, // This is a received message
         direction: 'received',
         from_email: message.from.address,
@@ -507,6 +508,7 @@ export class ThreadManager {
         .from('email_messages')
         .insert({
           thread_id: thread.id,
+          account_id: thread.account_id,
           message_job_id: job.id,
           direction: 'sent',
           from_email: mailboxEmail,

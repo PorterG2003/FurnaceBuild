@@ -1,12 +1,11 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ImapFlow } from 'imapflow';
-import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
 /**
  * Lambda Function URL handler for fetching email attachments.
  *
  * Request: POST with JSON body { email_message_id, part } or GET with query params.
- * Headers: Authorization: Bearer <cognito_id_token>
+ * Headers: Authorization: Bearer <supabase_access_token>
  *
  * Returns: Binary attachment with Content-Type and Content-Disposition headers.
  */
@@ -35,7 +34,6 @@ function parseRequest(event: FunctionUrlEvent): { emailMessageId: string; part: 
   const body = event.body;
   const queryString = event.rawQueryString || '';
 
-  // Try POST body first
   if (body) {
     try {
       const parsed = JSON.parse(event.isBase64Encoded ? Buffer.from(body, 'base64').toString() : body);
@@ -47,7 +45,6 @@ function parseRequest(event: FunctionUrlEvent): { emailMessageId: string; part: 
     }
   }
 
-  // Try query params
   const params = new URLSearchParams(queryString);
   const emailMessageId = params.get('email_message_id');
   const part = params.get('part');
@@ -62,20 +59,6 @@ function getAuthHeader(event: FunctionUrlEvent): string | null {
   const auth = event.headers?.['authorization'] || event.headers?.['Authorization'];
   if (!auth || !auth.startsWith('Bearer ')) return null;
   return auth.slice(7).trim();
-}
-
-async function verifyCognitoToken(token: string, userPoolId: string, clientId: string): Promise<string | null> {
-  try {
-    const verifier = CognitoJwtVerifier.create({
-      userPoolId,
-      tokenUse: 'id',
-      clientId,
-    });
-    const payload = await verifier.verify(token);
-    return payload.sub || null;
-  } catch {
-    return null;
-  }
 }
 
 function response(statusCode: number, body?: string, headers?: Record<string, string>, isBase64Encoded?: boolean): FunctionUrlResponse {
@@ -93,21 +76,17 @@ function jsonResponse(statusCode: number, data: object): FunctionUrlResponse {
 }
 
 export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlResponse> => {
-  console.log('fetchEmailAttachment invoked'); // Ensures log group is created
-  // CORS preflight
+  console.log('fetchEmailAttachment invoked');
   const method = event.requestContext?.http?.method;
-  // OPTIONS preflight - Function URL CORS config adds CORS headers; don't duplicate them here
   if (event.headers?.['access-control-request-method'] || method === 'OPTIONS') {
     return response(204, '');
   }
 
-  const userPoolId = process.env.COGNITO_USER_POOL_ID;
-  const clientId = process.env.COGNITO_CLIENT_ID;
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
 
-  if (!userPoolId || !clientId || !supabaseUrl || !supabaseSecretKey) {
-    console.error('Missing env: COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, SUPABASE_URL, or SUPABASE_SECRET_KEY');
+  if (!supabaseUrl || !supabaseSecretKey) {
+    console.error('Missing env: SUPABASE_URL or SUPABASE_SECRET_KEY');
     return jsonResponse(500, { error: 'Server configuration error' });
   }
 
@@ -116,19 +95,19 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
     return jsonResponse(401, { error: 'Missing or invalid Authorization header' });
   }
 
-  const cognitoSub = await verifyCognitoToken(token, userPoolId, clientId);
-  if (!cognitoSub) {
+  const supabase: SupabaseClient = createClient(supabaseUrl, supabaseSecretKey);
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !user) {
     return jsonResponse(401, { error: 'Invalid or expired token' });
   }
+  const userId = user.id;
 
   const params = parseRequest(event);
   if (!params) {
     return jsonResponse(400, { error: 'Missing email_message_id or part' });
   }
 
-  const supabase: SupabaseClient = createClient(supabaseUrl, supabaseSecretKey);
-
-  // 1. Load email_message (mailbox_id comes from thread, not message)
   const { data: emailMessage, error: msgError } = await supabase
     .from('email_messages')
     .select('id, thread_id, imap_uid, attachments')
@@ -149,7 +128,6 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
     return jsonResponse(400, { error: 'Message has no IMAP UID (cannot fetch attachment)' });
   }
 
-  // 2. Load thread (includes mailbox_id) and verify account access
   const { data: thread, error: threadError } = await supabase
     .from('email_threads')
     .select('id, account_id, mailbox_id')
@@ -165,31 +143,19 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
     return jsonResponse(400, { error: 'Thread has no mailbox (cannot fetch attachment)' });
   }
 
-  // 3. Find user by external_id (Cognito sub) and check account membership
-  const { data: user } = await supabase
-    .from('users')
-    .select('id')
-    .eq('external_id', cognitoSub)
-    .maybeSingle();
-
-  if (!user) {
-    console.log('403: User not found', { cognitoSub });
-    return jsonResponse(403, { error: 'User not found' });
-  }
-
+  // User id from JWT (Supabase auth.uid()); verify account membership
   const { data: membership } = await supabase
     .from('account_users')
     .select('id')
     .eq('account_id', thread.account_id)
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .maybeSingle();
 
   if (!membership) {
-    console.log('403: Access denied to this thread', { userId: user.id, accountId: thread.account_id });
+    console.log('403: Access denied to this thread', { userId, accountId: thread.account_id });
     return jsonResponse(403, { error: 'Access denied to this thread' });
   }
 
-  // 4. Find attachment metadata (filename, contentType) from attachments array
   const attachments = (emailMessage.attachments as any) ?? [];
   const attachment = Array.isArray(attachments)
     ? attachments.find((a: any) => String(a.part ?? a.partId) === params.part)
@@ -197,7 +163,6 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
   const filename = attachment?.filename ?? attachment?.name ?? 'attachment';
   const contentType = attachment?.contentType ?? attachment?.content_type ?? 'application/octet-stream';
 
-  // 5. Load mailbox (from thread)
   const { data: mailbox, error: mailboxError } = await supabase
     .from('mailboxes')
     .select('id, imap_host, imap_port, imap_use_ssl, imap_username, imap_password')
@@ -208,7 +173,6 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
     return jsonResponse(502, { error: 'Mailbox not found or unavailable' });
   }
 
-  // 6. Connect IMAP and fetch part
   const client = new ImapFlow({
     host: mailbox.imap_host,
     port: mailbox.imap_port,
@@ -224,7 +188,6 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
     await client.connect();
     await client.mailboxOpen('INBOX');
 
-    // Fetch specific MIME part (part is e.g. "1", "1.2", "2")
     const parsed = await client.download(imapUid, params.part, { uid: true });
     const chunks: Buffer[] = [];
     for await (const chunk of parsed.content) {

@@ -18,7 +18,24 @@ export interface AccountMembership {
 }
 
 /**
- * Fetch a user by their Cognito external ID.
+ * Fetch a user by their primary key id (Supabase Auth user id).
+ */
+export async function getUserById(id: string): Promise<User | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch user: ${error.message}`);
+  }
+
+  return data ?? null;
+}
+
+/**
+ * Fetch a user by their external ID (legacy migration field).
  */
 export async function getUserByExternalId(externalId: string): Promise<User | null> {
   const { data, error } = await supabase
@@ -91,7 +108,7 @@ export async function updateUserProfile(id: string, updates: UserUpdate): Promis
 export async function getAccountMembershipsForUser(userId: string): Promise<AccountMembership[]> {
   const { data: memberships, error } = await supabase
     .from('account_users')
-    .select('id, account_id, user_id, is_owner, created_at, updated_at')
+    .select('id, account_id, user_id, is_owner, role, created_at, updated_at')
     .eq('user_id', userId);
 
   if (error) {

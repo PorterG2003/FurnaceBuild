@@ -5,6 +5,7 @@ import { BaseModal } from '@/components/ui/modals';
 import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
+import { useAccount } from '@/contexts/AccountContext';
 import { createLeads, generateGlobalLeadId, getLeadCount, getLeads } from '@/lib/supabase/services/leads';
 import { ensureCampaignEnrollmentsForLeads } from '@/lib/supabase/services/campaigns';
 import type { LeadInsert, Lead } from '@/lib/supabase/types';
@@ -145,6 +146,7 @@ function LeadSourceNodeModal({
   onSave,
   initialData,
 }: LeadSourceNodeModalProps) {
+  const { account } = useAccount();
   const [label, setLabel] = useState(initialData?.label || 'Lead Bucket');
   const [activeTab, setActiveTab] = useState<TabId>('details');
   const [isImporting, setIsImporting] = useState(false);
@@ -563,9 +565,11 @@ function LeadSourceNodeModal({
             return null;
           }
 
+          if (!account?.id) throw new Error('No account selected');
           const lead: LeadInsert = {
             campaign_id: initialData.campaignId!,
             bucket_id: initialData.bucketId!,
+            account_id: account.id,
             email,
             name: derivedName,
             first_name: firstName,

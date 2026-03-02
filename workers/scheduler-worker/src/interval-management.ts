@@ -151,7 +151,17 @@ async function createCampaignIntervals(
   schedule: CampaignSchedule | null,
   supabase: SupabaseClient
 ): Promise<void> {
-  const intervals = [];
+  const { data: campaign, error: campError } = await supabase
+    .from('campaigns')
+    .select('account_id')
+    .eq('id', campaignId)
+    .single();
+  if (campError || !campaign?.account_id) {
+    throw new Error(`Campaign ${campaignId} not found or missing account_id: ${campError?.message}`);
+  }
+  const accountId = campaign.account_id;
+
+  const intervals: { campaign_id: string; account_id: string; interval_time: string; status: string }[] = [];
   let currentTime = new Date(startFrom);
   
   // If schedule exists, start from the next allowed time
@@ -182,6 +192,7 @@ async function createCampaignIntervals(
     // Interval is valid (either no schedule or within schedule) - create it
     intervals.push({
       campaign_id: campaignId,
+      account_id: accountId,
       interval_time: currentTime.toISOString(),
       status: 'available'
     });

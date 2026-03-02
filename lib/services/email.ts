@@ -1,6 +1,10 @@
 import { reportErrorToSlack } from '../slack/reportErrorToSlack';
-import { generateClient } from 'aws-amplify/api';
-import type { Schema } from '@/amplify/data/resource';
+import { supabase } from '@/lib/supabase/client';
+import outputs from '@/amplify_outputs.json';
+
+const custom = (outputs as { custom?: { sendInvitationEmailUrl?: string; testMailboxConnectionUrl?: string } }).custom;
+const SEND_INVITATION_URL = custom?.sendInvitationEmailUrl;
+const TEST_MAILBOX_URL = custom?.testMailboxConnectionUrl;
 
 interface SendInvitationEmailParams {
   to: string;
@@ -11,61 +15,46 @@ interface SendInvitationEmailParams {
 }
 
 /**
- * Send an invitation email via Resend
+ * Send an invitation email via the sendInvitationEmail Lambda (Function URL + Supabase JWT).
  */
 export async function sendInvitationEmail(params: SendInvitationEmailParams): Promise<void> {
-  try {
-    // Generate client with user pool authentication
-    // The query requires allow.authenticated() which needs user pool tokens
-    const client = generateClient<Schema>({
-      authMode: 'userPool', // Use Cognito User Pool auth instead of identity pool
-    });
-    
-    const result = await client.queries.sendInvitationEmail({
+  if (!SEND_INVITATION_URL) {
+    throw new Error('sendInvitationEmail URL not configured. Deploy the Amplify backend and ensure amplify_outputs.json includes custom.sendInvitationEmailUrl.');
+  }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) {
+    throw new Error('You must be signed in to send an invitation.');
+  }
+
+  const res = await fetch(SEND_INVITATION_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
       to: params.to,
       inviterName: params.inviterName,
       inviterEmail: params.inviterEmail,
       accountName: params.accountName,
       acceptUrl: params.acceptUrl,
-    });
+    }),
+  });
 
-    // Log the full result for debugging
-    console.log('Email function result:', JSON.stringify(result, null, 2));
+  const data = await res.json().catch(() => ({}));
 
-    // Check for errors in the result
-    if (result.errors && result.errors.length > 0) {
-      console.error('GraphQL errors:', result.errors);
-      throw new Error(result.errors[0].message || 'Failed to send invitation email');
-    }
+  if (!res.ok) {
+    const msg = (data as { error?: string }).error || res.statusText;
+    reportErrorToSlack('Send invitation email failed', { severity: 'warning', error: msg });
+    throw new Error(msg || 'Failed to send invitation email');
+  }
 
-    // The function returns data as a JSON string when called through Data API
-    // Parse it if it's a string, otherwise use it directly
-    let response: any;
-    if (typeof result.data === 'string') {
-      try {
-        response = JSON.parse(result.data);
-      } catch (parseError) {
-        console.error('Failed to parse response data:', result.data);
-        reportErrorToSlack('Invalid response format from email function (parse)', { severity: 'warning', error: 'Invalid response format from email function' });
-        throw new Error('Invalid response format from email function');
-      }
-    } else {
-      response = result.data;
-    }
-
-    if (!response?.success) {
-      console.error('Function returned unsuccessful response:', response);
-      throw new Error(response?.message || response?.error || 'Failed to send invitation email');
-    }
-  } catch (error) {
-    console.error('Error sending invitation email:', error);
-    const msg = error instanceof Error ? error.message : String(error);
-    reportErrorToSlack('Error sending invitation email', { severity: 'warning', error: msg });
-    if (error instanceof Error) {
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-    }
-    throw error;
+  if (!(data as { success?: boolean }).success) {
+    const msg = (data as { error?: string }).error || (data as { message?: string }).message || 'Failed to send invitation email';
+    reportErrorToSlack('Send invitation email failed', { severity: 'warning', error: msg });
+    throw new Error(msg);
   }
 }
 
@@ -91,66 +80,39 @@ interface TestMailboxConnectionResult {
 }
 
 /**
- * Test mailbox SMTP and IMAP connections
+ * Test mailbox SMTP and IMAP connections via the testMailboxConnection Lambda (Function URL + Supabase JWT).
  */
 export async function testMailboxConnection(
   params: TestMailboxConnectionParams
 ): Promise<TestMailboxConnectionResult> {
-  try {
-    const client = generateClient<Schema>({
-      authMode: 'userPool',
-    });
-
-    // Check if the function exists
-    if (!client.queries.testMailboxConnection) {
-      throw new Error(
-        'testMailboxConnection function is not available. Please deploy the Amplify backend by running: npx ampx sandbox'
-      );
-    }
-
-    const result = await client.queries.testMailboxConnection({
-      smtp_host: params.smtp_host,
-      smtp_port: params.smtp_port,
-      smtp_username: params.smtp_username,
-      smtp_password: params.smtp_password,
-      smtp_use_tls: params.smtp_use_tls,
-      smtp_use_ssl: params.smtp_use_ssl,
-      imap_host: params.imap_host,
-      imap_port: params.imap_port,
-      imap_username: params.imap_username,
-      imap_password: params.imap_password,
-      imap_use_ssl: params.imap_use_ssl,
-    });
-
-    if (result.errors && result.errors.length > 0) {
-      throw new Error(result.errors[0].message || 'Failed to test mailbox connection');
-    }
-
-    // Parse response if it's a string
-    let response: any;
-    if (typeof result.data === 'string') {
-      try {
-        response = JSON.parse(result.data);
-      } catch (parseError) {
-        reportErrorToSlack('Invalid response format from test mailbox function', { severity: 'warning', error: 'Invalid response format from test function' });
-        throw new Error('Invalid response format from test function');
-      }
-    } else {
-      response = result.data;
-    }
-
-    return response as TestMailboxConnectionResult;
-  } catch (error) {
-    console.error('Error testing mailbox connection:', error);
-    const msg = error instanceof Error ? error.message : String(error);
-    reportErrorToSlack('Error testing mailbox connection', { severity: 'warning', error: msg });
-    if (error instanceof Error && error.message.includes('is not a function')) {
-      throw new Error(
-        'testMailboxConnection function is not deployed. Please run: npx ampx sandbox'
-      );
-    }
-    throw error;
+  if (!TEST_MAILBOX_URL) {
+    throw new Error(
+      'testMailboxConnection URL not configured. Deploy the Amplify backend and ensure amplify_outputs.json includes custom.testMailboxConnectionUrl.'
+    );
   }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) {
+    throw new Error('You must be signed in to test mailbox connection.');
+  }
+
+  const res = await fetch(TEST_MAILBOX_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(params),
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    const msg = (data as { error?: string }).error || res.statusText;
+    reportErrorToSlack('Test mailbox connection failed', { severity: 'warning', error: msg });
+    throw new Error(msg || 'Failed to test mailbox connection');
+  }
+
+  return data as TestMailboxConnectionResult;
 }
-
-

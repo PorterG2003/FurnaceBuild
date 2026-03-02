@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, ActivityIndicator } from 'react-native';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
 import { supabase } from '@/lib/supabase/client';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { assignMailboxesToCampaign } from '@/lib/supabase/services/campaigns';
 import { createMailbox } from '@/lib/supabase/services/mailboxes';
 import { createLead } from '@/lib/supabase/services/leads';
-import { getUserByExternalId, getAccountMembershipsForUser } from '@/lib/supabase/services/users';
+import { getAccountMembershipsForUser } from '@/lib/supabase/services/users';
 import type { WizardStep, FlowTemplate, ScheduleConfig } from '@/lib/test/campaign-flow/types';
 import { ALLOWED_EMAIL } from '@/lib/test/campaign-flow/constants';
 import { createFlowTemplate } from '@/lib/test/campaign-flow/flow-templates';
@@ -22,7 +22,7 @@ import {
 } from '@/lib/test/campaign-flow/components';
 
 export default function CampaignFlowTestPage() {
-  const { user } = useAuthenticator();
+  const { user } = useAccount();
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [currentStep, setCurrentStep] = useState<WizardStep>('flow');
   const [loading, setLoading] = useState(true);
@@ -60,17 +60,7 @@ export default function CampaignFlowTestPage() {
     total?: number;
   } | null>(null);
 
-  // Get user email from Cognito
-  const getUserEmail = useCallback(() => {
-    const loginId = user?.signInDetails?.loginId ?? null;
-    const username = user?.username ?? null;
-    const cognitoEmail =
-      (user as any)?.attributes?.email ??
-      (user as any)?.attributes?.preferred_username ??
-      loginId ??
-      null;
-    return cognitoEmail?.toLowerCase().trim() ?? null;
-  }, [user]);
+  const getUserEmail = useCallback(() => user?.email?.toLowerCase().trim() ?? null, [user]);
 
   // Check authorization
   useEffect(() => {
@@ -147,7 +137,7 @@ export default function CampaignFlowTestPage() {
   };
 
   const handleCreateTest = async () => {
-    if (!user?.userId) {
+    if (!user?.id) {
       setError('User not authenticated');
       return;
     }
@@ -159,14 +149,11 @@ export default function CampaignFlowTestPage() {
     try {
       // 1. Get user profile
       setCreationProgress({ step: 'Getting user profile...' });
-      const userProfile = await getUserByExternalId(user.userId);
-      if (!userProfile) {
-        throw new Error('User profile not found. Please complete account setup first.');
-      }
+      if (!user?.id) throw new Error('User not authenticated.');
 
       // 2. Get user's account
       setCreationProgress({ step: 'Getting user account...' });
-      const memberships = await getAccountMembershipsForUser(userProfile.id);
+      const memberships = await getAccountMembershipsForUser(user.id);
       if (!memberships || memberships.length === 0) {
         throw new Error('User has no account. Please complete account setup first.');
       }
@@ -188,7 +175,7 @@ export default function CampaignFlowTestPage() {
       
       const campaignData: any = {
         name: campaignName,
-        owner_id: userProfile.id,
+        owner_id: user.id,
         account_id: account.id,
         organization_id: null,
         status: 'running',
@@ -210,7 +197,7 @@ export default function CampaignFlowTestPage() {
       for (let i = 1; i <= mailboxCount; i++) {
         setCreationProgress({ step: 'Creating mailboxes', current: i, total: mailboxCount });
         const mailbox = await createMailbox({
-          user_id: userProfile.id,
+          user_id: user.id,
           account_id: account.id,
           email_address: `test-mailbox-${i}@furnace.test`,
           display_name: `Test Mailbox ${i}`,
@@ -244,6 +231,7 @@ export default function CampaignFlowTestPage() {
         const lead = await createLead({
           campaign_id: campaign.id,
           bucket_id: campaign.bucket_id,
+          account_id: account.id,
           email: leadData.email,
           name: leadData.name,
           status: 'new',
@@ -256,6 +244,7 @@ export default function CampaignFlowTestPage() {
           .from('enrollments')
           .insert({
             campaign_id: campaign.id,
+            account_id: account.id,
             lead_id: lead.id,
             current_node_id: null, // Let evaluateFlow handle entry point
             state: 'active',

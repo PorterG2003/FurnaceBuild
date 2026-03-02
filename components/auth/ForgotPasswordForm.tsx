@@ -1,9 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable } from 'react-native';
-import { resetPassword } from 'aws-amplify/auth';
+import { View, Text, TextInput, Pressable, Platform } from 'react-native';
+import Constants from 'expo-constants';
+import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/feedback';
+
+/** Base URL for password reset redirect. Set EXPO_PUBLIC_APP_URL in .env to match Supabase Redirect URLs (e.g. http://localhost:8081 or production URL). */
+function getAppBaseUrl(): string | undefined {
+  if (Platform.OS !== 'web') return undefined;
+  const fromEnv = process.env.EXPO_PUBLIC_APP_URL ?? Constants.expoConfig?.extra?.appUrl;
+  if (typeof fromEnv === 'string' && fromEnv) return fromEnv;
+  if (typeof window !== 'undefined') return window.location.origin;
+  return undefined;
+}
 
 interface ForgotPasswordFormProps {
   onBackToSignIn: () => void;
@@ -27,20 +37,22 @@ export function ForgotPasswordForm({ onBackToSignIn, onCodeSent }: ForgotPasswor
     setError('');
 
     try {
-      await resetPassword({ username: trimmed });
+      const baseUrl = getAppBaseUrl();
+      const redirectTo = baseUrl ? `${baseUrl.replace(/\/$/, '')}/auth` : undefined;
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmed, {
+        redirectTo,
+      });
 
-      toast.success('Check your email for the reset code.');
+      if (resetError) {
+        toast.error(resetError.message ?? 'Failed to send reset email.');
+        setIsLoading(false);
+        return;
+      }
+
+      toast.success('Check your email for the password reset link.');
       onCodeSent(trimmed);
     } catch (err: any) {
-      if (err.name === 'UserNotFoundException') {
-        toast.error('No account found with this email');
-      } else if (err.name === 'LimitExceededException') {
-        toast.error('Too many attempts. Please try again later.');
-      } else if (err.name === 'InvalidParameterException') {
-        toast.error('Please check your email format');
-      } else {
-        toast.error(err.message ?? 'Failed to send reset code. Please try again.');
-      }
+      toast.error(err?.message ?? 'Failed to send reset email. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -52,7 +64,7 @@ export function ForgotPasswordForm({ onBackToSignIn, onCodeSent }: ForgotPasswor
         Reset Password
       </Text>
       <Text className="text-center text-gray-300 mb-8 font-instrument">
-        Enter your email to receive a password reset code
+        Enter your email to receive a password reset link
       </Text>
 
       <View className="mb-6">
@@ -85,7 +97,7 @@ export function ForgotPasswordForm({ onBackToSignIn, onCodeSent }: ForgotPasswor
       ) : null}
 
       <Button onPress={handleReset} className="mb-4" disabled={isLoading}>
-        {isLoading ? 'Sending...' : 'Send Reset Code'}
+        {isLoading ? 'Sending...' : 'Send Reset Link'}
       </Button>
 
       <Pressable onPress={onBackToSignIn}>

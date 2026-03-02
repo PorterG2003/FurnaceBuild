@@ -1,12 +1,24 @@
-import { Stack } from 'expo-router';
-import { useAuthGuard } from '@/hooks/useAuthGuard';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function AuthLayout() {
-  const { isAuthenticated } = useAuthGuard();
+  const { user, loading, isRecoverySession } = useAuth();
+  const router = useRouter();
+  const { invitation_id } = useLocalSearchParams<{ invitation_id?: string }>();
 
-  // The auth guard handles redirects automatically
-  // If user is authenticated, they'll be redirected to main app
-  // If user is not authenticated, they can access auth pages
+  useEffect(() => {
+    if (loading) return;
+    if (user && !isRecoverySession) {
+      if (invitation_id) {
+        router.replace(`/accept-invitation/${invitation_id}`);
+      } else {
+        router.replace('/');
+      }
+    }
+  }, [user, loading, isRecoverySession, router, invitation_id]);
+
+  if (loading) return null;
 
   return (
     <Stack

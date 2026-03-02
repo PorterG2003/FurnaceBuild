@@ -11,6 +11,7 @@ export const sendInvitationEmail = defineFunction({
   entry: './handler.ts',
   environment: {
     RESEND_API_KEY: secret('RESEND_API_KEY'),
+    SUPABASE_SECRET_KEY: secret('SUPABASE_SECRET_KEY'),
   },
 });
 

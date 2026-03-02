@@ -64,7 +64,7 @@ import {
   SKELETON_MIN_DISPLAY_MS,
 } from '@/components/inbox';
 import type { ComposerAttachmentItem } from '@/components/inbox';
-import { fetchAuthSession } from 'aws-amplify/auth';
+import { supabase } from '@/lib/supabase/client';
 import outputs from '@/amplify_outputs.json';
 
 const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
@@ -778,8 +778,8 @@ export default function InboxPage() {
     async (emailMessageId: string, part: string): Promise<Blob | null> => {
       if (!FETCH_ATTACHMENT_URL) return null;
       try {
-        const session = await fetchAuthSession();
-        const token = session.tokens?.idToken?.toString();
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
         if (!token) return null;
         return await fetchAttachment(FETCH_ATTACHMENT_URL, token, emailMessageId, part);
       } catch {

@@ -79,11 +79,11 @@ npx supabase gen types typescript --project-id <your-project-id> > lib/supabase/
 
 ```typescript
 import { getCampaigns, createCampaign } from '@/lib/supabase/services';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { useAccount } from '@/contexts/AccountContext';
 
 // In a component
-const { user } = useAuthenticator();
-const campaigns = await getCampaigns({ ownerId: user.userId });
+const { user } = useAccount();
+const campaigns = await getCampaigns({ ownerId: user.id });
 ```
 
 

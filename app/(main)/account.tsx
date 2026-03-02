@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useMemo } from 'react';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { ManageBlockListModal } from '@/components/inbox';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
@@ -17,40 +17,47 @@ import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
 import { BaseModal } from '@/components/ui/modals';
 import { useAccount } from '@/contexts/AccountContext';
 import {
-  addUserToAccount,
-  createInvitation,
   deleteInvitation,
-  getAccountInvitations,
-  getAccountMembers,
-  getUserByEmail,
-  getBlockList,
   removeBlockEntry,
   removeMemberFromAccount,
   updateAccount,
   updateMemberRole,
   updateUserProfile,
 } from '@/lib/supabase/services';
+import { supabase } from '@/lib/supabase/client';
 import { sendInvitationEmail } from '@/lib/services/email';
 import type { AccountUser, BlockListEntry, Invitation, User } from '@/lib/supabase/types';
 
 export default function AccountPage() {
-  const { user: cognitoUser } = useAuthenticator();
   const { toast } = useToast();
-  const cognitoEmail =
-    (cognitoUser as any)?.attributes?.email ??
-    (cognitoUser as any)?.attributes?.preferred_username ??
-    cognitoUser?.signInDetails?.loginId ??
-    cognitoUser?.username ??
-    null;
+  const { switch_account } = useLocalSearchParams<{ switch_account?: string }>();
+  const {
+    user: profile,
+    account,
+    memberships,
+    teamMembers,
+    invitations,
+    blockList,
+    loading: isLoading,
+    error: loadError,
+    refetch,
+    refetchAccountData,
+    setCurrentAccountId,
+  } = useAccount();
 
-  const { user: profile, account, memberships, loading: isLoading, error: loadError, refetch } = useAccount();
+  const switchHandledRef = useRef(false);
+  useEffect(() => {
+    if (switch_account && !switchHandledRef.current && memberships.length > 0) {
+      switchHandledRef.current = true;
+      setCurrentAccountId(switch_account);
+    }
+  }, [switch_account, memberships.length, setCurrentAccountId]);
+  const userEmail = profile?.email ?? null;
   const membership = useMemo(
     () => (account ? memberships.find((m) => m.account.id === account.id) ?? null : null),
     [account, memberships]
   );
 
-  const [teamMembers, setTeamMembers] = useState<Array<{ user: User; membership: AccountUser }>>([]);
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [revokingInvitationId, setRevokingInvitationId] = useState<string | null>(null);
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
@@ -63,7 +70,6 @@ export default function AccountPage() {
   const [savingAccount, setSavingAccount] = useState(false);
   const [savingSuppressBounced, setSavingSuppressBounced] = useState(false);
   const [inviting, setInviting] = useState(false);
-  const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
   const [blockListModalVisible, setBlockListModalVisible] = useState(false);
   const [roleEditMember, setRoleEditMember] = useState<{ membershipId: string; memberName: string } | null>(null);
@@ -91,39 +97,6 @@ export default function AccountPage() {
     }
     setCompanyInput(membership.account.name ?? '');
   }, [membership?.account?.id, membership?.account?.name]);
-
-  useEffect(() => {
-    if (!account?.id) {
-      setTeamMembers([]);
-      setInvitations([]);
-      setBlockList([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const [members, pendingInvitations, blockListData] = await Promise.all([
-          getAccountMembers(account.id),
-          getAccountInvitations(account.id),
-          getBlockList(account.id),
-        ]);
-        if (!cancelled) {
-          setTeamMembers(members);
-          setInvitations(pendingInvitations);
-          setBlockList(blockListData);
-        }
-      } catch {
-        if (!cancelled) {
-          setTeamMembers([]);
-          setInvitations([]);
-          setBlockList([]);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [account?.id]);
 
   const handleSaveProfile = useCallback(async () => {
     if (!profile) return;
@@ -236,37 +209,28 @@ export default function AccountPage() {
     setInviting(true);
 
     try {
-      // Try to find existing user by email
-      const existingUser = await getUserByEmail(trimmedEmail);
+      const { data: result, error: rpcError } = await supabase.rpc('invite_user_to_account', {
+        p_account_id: membership.account.id,
+        p_email: trimmedEmail,
+        p_invited_by: profile.id,
+      });
 
-      if (existingUser) {
-        // User exists, add them directly to the account
-        await addUserToAccount(membership.account.id, existingUser.id, false);
-        await refetch();
-        toast.success(`${trimmedEmail} has been added to the team.`);
-        const updatedMembers = await getAccountMembers(membership.account.id);
-        setTeamMembers(updatedMembers);
-      } else {
-        // User doesn't exist, create invitation first to get the ID
-        // Then send email with the real ID, and delete invitation if email fails
-        let invitation: Invitation | null = null;
-        
+      if (rpcError) throw new Error(rpcError.message);
+
+      const status = (result as { status: string; invitation_id?: string }).status;
+
+      if (status === 'already_member') {
+        toast.info(`${trimmedEmail} is already a member of this team.`);
+      } else if (status === 'pending_invite') {
+        toast.info(`${trimmedEmail} already has a pending invite.`);
+      } else if (status === 'invited') {
+        const invitationId = (result as { invitation_id: string }).invitation_id;
+        const baseUrl = typeof window !== 'undefined'
+          ? window.location.origin
+          : 'https://build.getfurnace.io';
+        const acceptUrl = `${baseUrl}/accept-invitation/${invitationId}`;
+
         try {
-          // Create invitation first so we have the ID for the email
-          invitation = await createInvitation({
-            account_id: membership.account.id,
-            email: trimmedEmail,
-            invited_by_user_id: profile.id,
-            status: 'pending',
-          });
-
-          // Build accept URL with the real invitation ID
-          const baseUrl = typeof window !== 'undefined' 
-            ? window.location.origin 
-            : 'https://build.getfurnace.io';
-          const acceptUrl = `${baseUrl}/accept-invitation/${invitation.id}`;
-
-          // Send invitation email with the real invitation ID
           await sendInvitationEmail({
             to: trimmedEmail,
             inviterName: profile.name || profile.email,
@@ -274,27 +238,15 @@ export default function AccountPage() {
             accountName: membership.account.name,
             acceptUrl,
           });
-
-          toast.success(`Invitation sent to ${trimmedEmail}.`);
-          await refetch();
-          const updatedInvitations = await getAccountInvitations(membership.account.id);
-          setInvitations(updatedInvitations);
         } catch (emailError) {
-          console.error('Failed to send invitation email:', emailError);
-          
-          // Email failed, delete the invitation we just created
-          if (invitation) {
-            try {
-              await deleteInvitation(invitation.id);
-            } catch (deleteError) {
-              console.error('Failed to clean up invitation after email failure:', deleteError);
-            }
-          }
-          
-          // Re-throw the error so the outer catch handles it
+          try { await deleteInvitation(invitationId); } catch { /* best-effort cleanup */ }
           throw emailError;
         }
+
+        toast.success(`Invitation sent to ${trimmedEmail}.`);
       }
+
+      await refetchAccountData();
 
       setInviteEmailInput('');
     } catch (error: unknown) {
@@ -308,6 +260,7 @@ export default function AccountPage() {
     membership,
     profile,
     refetch,
+    refetchAccountData,
     teamMembers,
     invitations,
     toast,
@@ -322,16 +275,15 @@ export default function AccountPage() {
     try {
       await deleteInvitation(invitationId);
       await refetch();
+      await refetchAccountData();
       toast.success('Invitation revoked successfully.');
-      const updatedInvitations = await getAccountInvitations(membership.account.id);
-      setInvitations(updatedInvitations);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to revoke invitation.';
       toast.error(message);
     } finally {
       setRevokingInvitationId(null);
     }
-  }, [membership, refetch, toast]);
+  }, [membership, refetch, refetchAccountData, toast]);
 
   const handleUpdateMemberRole = useCallback(async (membershipId: string, newRole: 'owner' | 'admin' | 'member') => {
     if (!membership || !membership.account) return;
@@ -342,16 +294,15 @@ export default function AccountPage() {
     try {
       await updateMemberRole(membershipId, newRole);
       await refetch();
+      await refetchAccountData();
       toast.success('Member role updated successfully.');
-      const updatedMembers = await getAccountMembers(membership.account.id);
-      setTeamMembers(updatedMembers);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to update member role.';
       toast.error(message);
     } finally {
       setUpdatingRoleId(null);
     }
-  }, [membership, refetch, toast]);
+  }, [membership, refetch, refetchAccountData, toast]);
 
   const handleRemoveMember = useCallback(async (membershipId: string, memberName: string) => {
     if (!membership || !membership.account) return;
@@ -367,30 +318,28 @@ export default function AccountPage() {
     try {
       await removeMemberFromAccount(membershipId);
       await refetch();
+      await refetchAccountData();
       toast.success('Member removed successfully.');
-      const updatedMembers = await getAccountMembers(membership.account.id);
-      setTeamMembers(updatedMembers);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to remove member.';
       toast.error(message);
     } finally {
       setRemovingMemberId(null);
     }
-  }, [membership, refetch, toast]);
+  }, [membership, refetch, refetchAccountData, toast]);
 
   const handleUnblock = useCallback(async (entryId: string) => {
     if (!membership?.account) return;
     setUnblockingId(entryId);
     try {
       await removeBlockEntry(membership.account.id, entryId);
-      const updated = await getBlockList(membership.account.id);
-      setBlockList(updated);
+      await refetchAccountData();
     } catch (error: unknown) {
       console.error('Failed to unblock:', error);
     } finally {
       setUnblockingId(null);
     }
-  }, [membership]);
+  }, [membership, refetchAccountData]);
 
   const isOwner = membership?.membership.is_owner ?? false;
   return (
@@ -466,10 +415,10 @@ export default function AccountPage() {
                     Email
                   </Text>
                   <Text className="text-white text-sm font-instrument mb-1.5">
-                    {profile?.email ?? cognitoEmail ?? 'Not available'}
+                    {profile?.email ?? userEmail ?? 'Not available'}
                   </Text>
                   <Text className="text-xs text-gray-500">
-                    Email comes from Cognito and cannot be edited here.
+                    Email comes from your login and cannot be edited here.
                   </Text>
                 </View>
 
@@ -526,51 +475,50 @@ export default function AccountPage() {
                 )}
               </View>
 
-              {isOwner && membership?.account ? (
+              {membership?.account ? (
                 <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
                   <Text className="text-white text-base font-instrument-semibold mb-5">
                     Team Members
                   </Text>
 
-                  {/* Invite Section */}
-                  <View className="mb-4 pb-4 border-b border-[#2A2A2A]">
-                    <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
-                      Invite Team Member
-                    </Text>
-                    <Text className="text-xs text-gray-500 mb-2">
-                      They'll get an email with a link to join this account.
-                    </Text>
-                    <View className="flex-row gap-2">
-                      <View className="flex-1">
-                        <TextInput
-                          value={inviteEmailInput}
-                          onChangeText={setInviteEmailInput}
-                          placeholder="Enter email address"
-                          placeholderTextColor="#9CA3AF"
-                          autoCapitalize="none"
-                          keyboardType="email-address"
-                          className="border rounded-lg px-3 py-2 bg-[#121212] text-sm text-white"
-                          style={{
-                            borderColor: '#3A3A3A',
-                            backgroundColor: '#121212',
-                            color: '#FFFFFF',
-                            borderWidth: 1,
-                          }}
-                        />
+                  {isOwner && (
+                    <View className="mb-4 pb-4 border-b border-[#2A2A2A]">
+                      <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
+                        Invite Team Member
+                      </Text>
+                      <Text className="text-xs text-gray-500 mb-2">
+                        They'll get an email with a link to join this account.
+                      </Text>
+                      <View className="flex-row gap-2">
+                        <View className="flex-1">
+                          <TextInput
+                            value={inviteEmailInput}
+                            onChangeText={setInviteEmailInput}
+                            placeholder="Enter email address"
+                            placeholderTextColor="#9CA3AF"
+                            autoCapitalize="none"
+                            keyboardType="email-address"
+                            className="border rounded-lg px-3 py-2 bg-[#121212] text-sm text-white"
+                            style={{
+                              borderColor: '#3A3A3A',
+                              backgroundColor: '#121212',
+                              color: '#FFFFFF',
+                              borderWidth: 1,
+                            }}
+                          />
+                        </View>
+                        <Button
+                          onPress={handleInviteTeamMember}
+                          disabled={inviting}
+                          size="sm"
+                          className="px-4"
+                        >
+                          {inviting ? 'Sending...' : 'Invite'}
+                        </Button>
                       </View>
-                      <Button
-                        onPress={handleInviteTeamMember}
-                        disabled={inviting}
-                        size="sm"
-                        className="px-4"
-                      >
-                        {inviting ? 'Sending...' : 'Invite'}
-                      </Button>
                     </View>
+                  )}
 
-                  </View>
-
-                  {/* Current Team Members */}
                   {teamMembers.length > 0 ? (
                     <View className="mb-4">
                       <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
@@ -579,7 +527,7 @@ export default function AccountPage() {
                       <View className="bg-[#121212] border border-[#2A2A2A] rounded-lg overflow-hidden">
                         {teamMembers.map((member, index) => {
                           const isCurrentUser = member.user.id === profile?.id;
-                          const canManage = membership?.membership.is_owner && !isCurrentUser;
+                          const canManage = isOwner && !isCurrentUser;
                           const currentRole = member.membership.role || (member.membership.is_owner ? 'owner' : 'member');
                           
                           return (
@@ -683,13 +631,12 @@ export default function AccountPage() {
                   ) : (
                     <View className="mb-4 p-3 bg-[#121212] border border-[#2A2A2A] rounded-lg">
                       <Text className="text-gray-400 text-sm font-instrument">
-                        No other members yet. Invite someone by email below.
+                        {isOwner ? 'No other members yet. Invite someone by email above.' : 'No other members yet.'}
                       </Text>
                     </View>
                   )}
 
-                  {/* Pending Invitations */}
-                  {invitations.length > 0 && (
+                  {isOwner && invitations.length > 0 && (
                     <View>
                       <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
                         Pending Invitations ({invitations.length})

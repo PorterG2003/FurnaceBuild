@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuthenticator } from '@aws-amplify/ui-react-native';
+import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
 import { MegaphoneIcon, ArrowLeftIcon, TrashIcon } from 'react-native-heroicons/outline';
 import { supabase } from '@/lib/supabase/client';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox } from '@/lib/supabase/services/mailboxes';
-import { getUserByExternalId, getAccountMembershipsForUser } from '@/lib/supabase/services/users';
+import { getAccountMembershipsForUser } from '@/lib/supabase/services/users';
 
 type Service = 'scheduler' | 'send' | 'inbox-checker';
 
@@ -20,7 +20,7 @@ const SLACK_TEST_MAILBOX_INBOX = 'slack-test-inbox@furnace-slack-test.example.co
 
 export default function SlackErrorsTestPage() {
   const router = useRouter();
-  const { user } = useAuthenticator();
+  const { user } = useAccount();
   const [triggerLoading, setTriggerLoading] = useState<Service | null>(null);
   const [triggerMessage, setTriggerMessage] = useState<string | null>(null);
   const [cleanupLoading, setCleanupLoading] = useState(false);
@@ -30,27 +30,28 @@ export default function SlackErrorsTestPage() {
     setTriggerMessage(null);
     setTriggerLoading('scheduler');
     try {
-      const profile = await getUserByExternalId(user?.userId ?? '');
-      if (!profile) throw new Error('User profile not found');
-      const memberships = await getAccountMembershipsForUser(profile.id);
+      if (!user?.id) throw new Error('User not authenticated');
+      const memberships = await getAccountMembershipsForUser(user.id);
       if (!memberships?.length) throw new Error('No account found');
       const accountId = memberships.find((m) => m.membership.is_owner)?.account.id ?? memberships[0].account.id;
 
       const campaign = await createCampaign({
         name: `${SLACK_TEST_CAMPAIGN_NAME_PREFIX} Scheduler error`,
-        owner_id: user!.userId,
+        owner_id: user.id,
         status: 'running',
         flow_data: {},
       });
       const lead = await createLead({
         campaign_id: campaign.id,
         bucket_id: campaign.bucket_id ?? campaign.id,
+        account_id: accountId,
         email: 'slack-test@furnace.test',
         name: 'Slack Test',
         status: 'new',
       });
       await supabase.from('enrollments').insert({
         campaign_id: campaign.id,
+        account_id: accountId,
         lead_id: lead.id,
         state: 'active',
         next_run_at: new Date().toISOString(),
@@ -69,14 +70,13 @@ export default function SlackErrorsTestPage() {
     setTriggerMessage(null);
     setTriggerLoading('send');
     try {
-      const profile = await getUserByExternalId(user?.userId ?? '');
-      if (!profile) throw new Error('User profile not found');
-      const memberships = await getAccountMembershipsForUser(profile.id);
+      if (!user?.id) throw new Error('User not authenticated');
+      const memberships = await getAccountMembershipsForUser(user.id);
       if (!memberships?.length) throw new Error('No account found');
       const account = memberships.find((m) => m.membership.is_owner)?.account ?? memberships[0].account;
 
       const mailbox = await createMailbox({
-        user_id: profile.id,
+        user_id: user.id,
         account_id: account.id,
         email_address: SLACK_TEST_MAILBOX_SEND,
         display_name: 'Slack test send',
@@ -97,7 +97,7 @@ export default function SlackErrorsTestPage() {
 
       const campaign = await createCampaign({
         name: `${SLACK_TEST_CAMPAIGN_NAME_PREFIX} Send worker error`,
-        owner_id: user!.userId,
+        owner_id: user!.id,
         status: 'running',
         flow_data: { nodes: [{ id: 'email-1', type: 'email', data: { subject: 'Test', body: 'Test' } }], edges: [] },
       });
@@ -112,6 +112,7 @@ export default function SlackErrorsTestPage() {
       const lead = await createLead({
         campaign_id: campaign.id,
         bucket_id: campaign.bucket_id ?? campaign.id,
+        account_id: account.id,
         email: 'slack-send-test@furnace.test',
         name: 'Slack Send Test',
         status: 'new',
@@ -120,6 +121,7 @@ export default function SlackErrorsTestPage() {
         .from('enrollments')
         .insert({
           campaign_id: campaign.id,
+          account_id: account.id,
           lead_id: lead.id,
           state: 'active',
           current_node_id: node.id,
@@ -133,6 +135,7 @@ export default function SlackErrorsTestPage() {
       await supabase.from('message_jobs').insert({
         enrollment_id: enrollment.id,
         campaign_id: campaign.id,
+        account_id: account.id,
         lead_id: lead.id,
         mailbox_id: mailbox.id,
         node_id: node.id,
@@ -154,14 +157,13 @@ export default function SlackErrorsTestPage() {
     setTriggerMessage(null);
     setTriggerLoading('inbox-checker');
     try {
-      const profile = await getUserByExternalId(user?.userId ?? '');
-      if (!profile) throw new Error('User profile not found');
-      const memberships = await getAccountMembershipsForUser(profile.id);
+      if (!user?.id) throw new Error('User not authenticated');
+      const memberships = await getAccountMembershipsForUser(user.id);
       if (!memberships?.length) throw new Error('No account found');
       const account = memberships.find((m) => m.membership.is_owner)?.account ?? memberships[0].account;
 
       await createMailbox({
-        user_id: profile.id,
+        user_id: user.id,
         account_id: account.id,
         email_address: SLACK_TEST_MAILBOX_INBOX,
         display_name: 'Slack test inbox',

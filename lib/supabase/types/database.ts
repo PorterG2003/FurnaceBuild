@@ -130,6 +130,7 @@ export interface Database {
           id: string;
           campaign_id: string;
           bucket_id: string;
+          account_id: string;
           email: string | null;
           name: string | null;
           first_name: string | null;
@@ -149,6 +150,7 @@ export interface Database {
           id?: string;
           campaign_id: string;
           bucket_id: string;
+          account_id: string;
           email?: string | null;
           name?: string | null;
           first_name?: string | null;
@@ -168,6 +170,7 @@ export interface Database {
           id?: string;
           campaign_id?: string;
           bucket_id?: string;
+          account_id?: string;
           email?: string | null;
           name?: string | null;
           first_name?: string | null;
@@ -189,6 +192,7 @@ export interface Database {
         Row: {
           id: string;
           campaign_id: string;
+          account_id: string;
           lead_id: string;
           current_node_id: string | null;
           state: 'active' | 'paused' | 'stopped' | 'completed';
@@ -203,6 +207,7 @@ export interface Database {
         Insert: {
           id?: string;
           campaign_id: string;
+          account_id: string;
           lead_id: string;
           current_node_id?: string | null;
           state?: 'active' | 'paused' | 'stopped' | 'completed';
@@ -232,7 +237,7 @@ export interface Database {
       users: {
         Row: {
           id: string;
-          external_id: string;
+          external_id: string | null;
           email: string;
           name: string | null;
           created_at: string;
@@ -240,7 +245,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          external_id: string;
+          external_id?: string | null;
           email: string;
           name?: string | null;
           created_at?: string;
@@ -248,7 +253,7 @@ export interface Database {
         };
         Update: {
           id?: string;
-          external_id?: string;
+          external_id?: string | null;
           email?: string;
           name?: string | null;
           created_at?: string;
@@ -433,6 +438,7 @@ export interface Database {
         Row: {
           id: string;
           thread_id: string;
+          account_id: string;
           message_job_id: string | null;
           direction: 'sent' | 'received';
           from_email: string;
@@ -457,6 +463,7 @@ export interface Database {
         Insert: {
           id?: string;
           thread_id: string;
+          account_id: string;
           message_job_id?: string | null;
           direction: 'sent' | 'received';
           from_email: string;
@@ -481,6 +488,7 @@ export interface Database {
         Update: {
           id?: string;
           thread_id?: string;
+          account_id?: string;
           message_job_id?: string | null;
           direction?: 'sent' | 'received';
           from_email?: string;

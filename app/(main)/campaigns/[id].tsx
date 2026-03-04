@@ -535,35 +535,35 @@ export default function CampaignPage() {
                                     <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#6b7280' }} />
                                     <Text className="text-gray-300 font-instrument text-sm">Not Started</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsNotStarted}</Text>
+                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsNotStarted.toLocaleString()}</Text>
                                 </View>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
                                     <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#3b82f6' }} />
                                     <Text className="text-gray-300 font-instrument text-sm">In Progress</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsInProgress}</Text>
+                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsInProgress.toLocaleString()}</Text>
                                 </View>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
                                     <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#8b5cf6' }} />
                                     <Text className="text-gray-300 font-instrument text-sm">Paused</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsPaused}</Text>
+                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsPaused.toLocaleString()}</Text>
                                 </View>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
                                     <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#10b981' }} />
                                     <Text className="text-gray-300 font-instrument text-sm">Completed</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsCompleted}</Text>
+                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsCompleted.toLocaleString()}</Text>
                                 </View>
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
                                     <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#f59e0b' }} />
                                     <Text className="text-gray-300 font-instrument text-sm">Stopped</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsStopped}</Text>
+                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsStopped.toLocaleString()}</Text>
                                 </View>
                               </>
                             )}

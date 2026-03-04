@@ -19,6 +19,9 @@ import {
   ExclamationTriangleIcon,
 } from 'react-native-heroicons/outline';
 import { ProgressDial } from '@/components/ui/progress-dial';
+import { isSmartleadCampaign } from '@/lib/campaigns/utils';
+import { Tooltip } from '@/components/ui/Tooltip';
+import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 
 const STAT_COLUMN_WIDTH = 72;
 const POSITIVE_COLUMN_WIDTH = 88;
@@ -181,9 +184,11 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showSmartleadModal, setShowSmartleadModal] = useState(false);
   const isNarrow = screenWidth < NARROW_BREAKPOINT;
   const isDraft = campaign.status === 'draft';
   const draftHasFlow = hasFlow(campaign);
+  const isSmartlead = isSmartleadCampaign(campaign);
 
   const sentCount = stats?.sentCount ?? 0;
   const repliedCount = stats?.repliedCount ?? 0;
@@ -212,6 +217,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   };
 
   const handleContinueSetup = () => {
+    if (isSmartlead) { setShowSmartleadModal(true); return; }
     router.push({ pathname: '/campaigns/[id]/mission-control', params: { id: campaign.id } });
   };
 
@@ -225,6 +231,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   };
 
   const handleEditFlow = () => {
+    if (isSmartlead) { setShowSmartleadModal(true); return; }
     router.push({ pathname: '/builder', params: { campaignId: campaign.id } });
   };
 
@@ -348,7 +355,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
           </View>
         ) : (
           <View className="flex-row gap-2 items-center">
-            {isDraft && (
+            {isDraft && !isSmartlead && (
               <Pressable
                 onPress={handleContinueSetup}
                 className="px-4 py-2 rounded-lg bg-brand-orange"
@@ -359,12 +366,24 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
                 </Text>
               </Pressable>
             )}
-            <Pressable
-              onPress={handleEditFlow}
-              className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-            >
-              <PencilIcon size={18} color="#f85102" />
-            </Pressable>
+            {isSmartlead ? (
+              <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
+                <Pressable
+                  onPress={handleEditFlow}
+                  className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+                  style={{ opacity: 0.5 }}
+                >
+                  <PencilIcon size={18} color="#f85102" />
+                </Pressable>
+              </Tooltip>
+            ) : (
+              <Pressable
+                onPress={handleEditFlow}
+                className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+              >
+                <PencilIcon size={18} color="#f85102" />
+              </Pressable>
+            )}
             <Pressable
               onPress={() => setShowDeleteConfirm(true)}
               className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
@@ -375,34 +394,49 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
           </View>
   );
 
-  const handleCardPress = isDraft ? handleContinueSetup : handleOpen;
+  const handleCardPress = isSmartlead ? handleOpen : (isDraft ? handleContinueSetup : handleOpen);
+
+  const smartleadModal = isSmartlead ? (
+    <SmartleadRestrictedModal
+      visible={showSmartleadModal}
+      onClose={() => setShowSmartleadModal(false)}
+      campaignId={campaign.id}
+      isOnStatsPage={false}
+    />
+  ) : null;
 
   if (isNarrow) {
     return (
-      <Pressable onPress={handleCardPress}>
-        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
-          <View className="flex-row items-start justify-between" style={{ marginBottom: 12 }}>
-            {campaignBlock}
-            {toolsBlock}
+      <>
+        <Pressable onPress={handleCardPress}>
+          <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
+            <View className="flex-row items-start justify-between" style={{ marginBottom: 12 }}>
+              {campaignBlock}
+              {toolsBlock}
+            </View>
+            {statsBlock}
           </View>
-          {statsBlock}
-        </View>
-      </Pressable>
+        </Pressable>
+        {smartleadModal}
+      </>
     );
   }
 
   return (
-    <Pressable onPress={handleCardPress}>
-      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4" style={{ position: 'relative' }}>
-        <View className="flex-row items-start" style={{ gap: 16 }}>
-          {campaignBlock}
-          {statsBlock}
+    <>
+      <Pressable onPress={handleCardPress}>
+        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4" style={{ position: 'relative' }}>
+          <View className="flex-row items-start" style={{ gap: 16 }}>
+            {campaignBlock}
+            {statsBlock}
+          </View>
+          <View style={{ position: 'absolute', right: 16, top: 16 }}>
+            {toolsBlock}
+          </View>
         </View>
-        <View style={{ position: 'absolute', right: 16, top: 16 }}>
-          {toolsBlock}
-        </View>
-      </View>
-    </Pressable>
+      </Pressable>
+      {smartleadModal}
+    </>
   );
 }
 

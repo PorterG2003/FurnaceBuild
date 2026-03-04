@@ -22,7 +22,9 @@ import {
   summarizeSchedule,
   calculateEmailsPerMailboxPerDay,
   scheduleFromCampaign,
+  isSmartleadCampaign,
 } from '@/lib/campaigns/utils';
+import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 
 export default function MissionControlPage() {
   const router = useRouter();
@@ -59,6 +61,8 @@ export default function MissionControlPage() {
   useEffect(() => {
     loadCampaign();
   }, [loadCampaign]);
+
+  const isSmartlead = isSmartleadCampaign(campaign);
 
   const nameSet = !!(campaign?.name?.trim());
   const flowBuilt = hasFlowBuilt(campaign);
@@ -439,6 +443,13 @@ export default function MissionControlPage() {
           )}
         </ScrollView>
       )}
+
+      <SmartleadRestrictedModal
+        visible={!isLoading && isSmartlead}
+        onClose={() => {}}
+        campaignId={id ?? null}
+        isOnStatsPage={false}
+      />
 
       {/* Modals */}
       <ScheduleModal

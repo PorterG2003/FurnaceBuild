@@ -167,13 +167,46 @@ export interface CampaignStatsByDay {
 
 /**
  * Get per-day counts of sent, replied, positive reply, and bounce for a campaign (for charts).
- * Reads from events; positive replies use event_data.is_positive when synced from thread category.
+ * When source === 'smartlead', reads from imported_campaign_stats_by_day; otherwise reads from events.
  */
 export async function getCampaignStatsByDay(
   campaignId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  source?: string | null,
 ): Promise<CampaignStatsByDay[]> {
+  if (source === 'smartlead') {
+    const { data: rows, error } = await supabase
+      .from('imported_campaign_stats_by_day')
+      .select('date, sent_count, replied_count, positive_reply_count, bounce_count')
+      .eq('campaign_id', campaignId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to fetch imported campaign stats by day: ${error.message}`);
+    }
+    const result = (rows || []).map((r) => ({
+      date: typeof r.date === 'string' ? r.date : new Date(r.date).toISOString().slice(0, 10),
+      sent: r.sent_count ?? 0,
+      replied: r.replied_count ?? 0,
+      positiveReply: r.positive_reply_count ?? 0,
+      bounce: r.bounce_count ?? 0,
+    }));
+    if (process.env.NODE_ENV !== 'production') {
+      const sample = result.slice(0, 3).concat(result.length > 6 ? result.slice(-3) : result.slice(3, 6));
+      console.log('[Smartlead stats] getCampaignStatsByDay (imported)', {
+        campaignId,
+        startDate,
+        endDate,
+        rowCount: result.length,
+        sample: sample.map((d) => ({ date: d.date, sent: d.sent, replied: d.replied, bounce: d.bounce })),
+      });
+    }
+    return result;
+  }
+
   const start = new Date(startDate + 'T00:00:00.000Z');
   const end = new Date(endDate + 'T23:59:59.999Z');
 

@@ -1,5 +1,6 @@
-import { useState, useRef, useLayoutEffect, type ReactNode, type CSSProperties } from 'react';
-import { View, Pressable, Platform, type StyleProp, type ViewStyle } from 'react-native';
+import { useState, useRef, useLayoutEffect, type ReactNode, type RefObject } from 'react';
+import { View, Pressable, Platform, type StyleProp, type ViewStyle, type ViewProps } from 'react-native';
+import { PopupPortal, type PopupPlacement } from '@/components/ui/PopupPortal';
 
 export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right' | 'cursor';
 
@@ -11,8 +12,6 @@ interface TooltipProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const GAP = 6;
-
 const TOOLTIP_PANEL_STYLE = {
   paddingHorizontal: 10,
   paddingVertical: 8,
@@ -22,163 +21,136 @@ const TOOLTIP_PANEL_STYLE = {
   borderColor: '#2A2A2A',
 };
 
-/** In-place tooltip styles (used when not using portal, e.g. native). */
-const PLACEMENT_STYLES: Record<TooltipPlacement, ViewStyle> = {
-  top: {
-    position: 'absolute',
-    bottom: 36,
-    left: 0,
-  },
-  bottom: {
-    position: 'absolute',
-    top: 36,
-    left: 0,
-    marginTop: GAP,
-  },
-  left: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    marginRight: GAP,
-  },
-  right: {
-    position: 'absolute',
-    left: 40,
-    top: 0,
-    marginLeft: GAP,
-  },
-};
-
-const PORTAL_Z_INDEX = 99999;
-
 const CURSOR_OFFSET = 12;
+const EDGE_PAD = 8;
+const PORTAL_Z_INDEX = 99999;
 
 export function Tooltip({ content, placement = 'top', children, style }: TooltipProps) {
   const [hovered, setHovered] = useState(false);
-  const [triggerRect, setTriggerRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   const wrapperRef = useRef<View>(null);
-
-  const updatePosition = () => {
-    wrapperRef.current?.measureInWindow((x, y, w, h) => {
-      setTriggerRect((prev) => {
-        if (!prev || prev.x !== x || prev.y !== y || prev.w !== w || prev.h !== h) {
-          return { x, y, w, h };
-        }
-        return prev;
-      });
-    });
-  };
-
-  useLayoutEffect(() => {
-    if (!hovered || Platform.OS !== 'web') return;
-    updatePosition();
-    if (typeof window === 'undefined') return;
-    window.addEventListener('scroll', updatePosition, true);
-    window.addEventListener('resize', updatePosition);
-    return () => {
-      window.removeEventListener('scroll', updatePosition, true);
-      window.removeEventListener('resize', updatePosition);
-    };
-  }, [hovered, Platform.OS]);
-
-  const tooltipPanel = (
-    <View style={TOOLTIP_PANEL_STYLE}>
-      {content}
-    </View>
-  );
-
-  const renderTooltipInPortal = () => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return null;
-    if (placement === 'cursor') {
-      if (!cursorPosition) return null;
-      const { createPortal } = require('react-dom');
-      const portalStyle: CSSProperties = {
-        position: 'fixed',
-        zIndex: PORTAL_Z_INDEX,
-        pointerEvents: 'none',
-        left: cursorPosition.x + CURSOR_OFFSET,
-        top: cursorPosition.y + CURSOR_OFFSET,
-      };
-      return createPortal(
-        <div style={portalStyle} data-tooltip-portal>
-          {tooltipPanel}
-        </div>,
-        document.body
-      );
-    }
-    if (!triggerRect) return null;
-    const { createPortal } = require('react-dom');
-    const { x, y, w, h } = triggerRect;
-    let portalStyle: CSSProperties = {
-      position: 'fixed',
-      zIndex: PORTAL_Z_INDEX,
-      pointerEvents: 'none',
-    };
-    switch (placement) {
-      case 'top':
-        portalStyle = { ...portalStyle, top: y - GAP, left: x, transform: 'translateY(-100%)' };
-        break;
-      case 'bottom':
-        portalStyle = { ...portalStyle, top: y + h + GAP, left: x };
-        break;
-      case 'left':
-        portalStyle = { ...portalStyle, top: y, left: x - GAP, transform: 'translateX(-100%)' };
-        break;
-      case 'right':
-        portalStyle = { ...portalStyle, top: y, left: x + w + GAP };
-        break;
-    }
-    return createPortal(
-      <div style={portalStyle} data-tooltip-portal>
-        {tooltipPanel}
-      </div>,
-      document.body
-    );
-  };
-
-  const renderTooltipInPlace = () => (
-    <View
-      style={[
-        placement === 'cursor' ? PLACEMENT_STYLES.top : PLACEMENT_STYLES[placement],
-        {
-          zIndex: PORTAL_Z_INDEX,
-          ...TOOLTIP_PANEL_STYLE,
-        },
-      ]}
-    >
-      {content}
-    </View>
-  );
+  // Ref to the cursor-tooltip DOM div so we can measure it for clamping.
+  const cursorPopupRef = useRef<HTMLDivElement | null>(null);
+  // Clamped position computed after measuring the popup element.
+  const [clampedPos, setClampedPos] = useState<{ left: number; top: number } | null>(null);
 
   const isCursorPlacement = placement === 'cursor';
+
   const handleMouseMove = isCursorPlacement && Platform.OS === 'web'
     ? (e: { nativeEvent: { clientX?: number; clientY?: number } }) => {
         const { clientX, clientY } = e.nativeEvent;
         if (typeof clientX === 'number' && typeof clientY === 'number') {
+          setClampedPos(null); // reset so useLayoutEffect re-clamps after next render
           setCursorPosition({ x: clientX, y: clientY });
+        }
+      }
+    : undefined;
+  // For cursor placement we need initial position from the enter event so the tooltip shows
+  // without requiring a mouse move (e.g. chart bar strips).
+  const handleMouseEnter = Platform.OS === 'web'
+    ? (e: { nativeEvent: { clientX?: number; clientY?: number } }) => {
+        setHovered(true);
+        if (isCursorPlacement) {
+          const { clientX, clientY } = e.nativeEvent;
+          if (typeof clientX === 'number' && typeof clientY === 'number') {
+            setClampedPos(null);
+            setCursorPosition({ x: clientX, y: clientY });
+          }
         }
       }
     : undefined;
   const handleHoverIn = Platform.OS === 'web' ? () => setHovered(true) : undefined;
   const handleHoverOut = Platform.OS === 'web' ? () => {
     setHovered(false);
-    if (isCursorPlacement) setCursorPosition(null);
+    if (isCursorPlacement) {
+      setCursorPosition(null);
+      setClampedPos(null);
+    }
   } : undefined;
+
+  // After cursor position changes, measure the rendered popup and clamp it inside the viewport.
+  useLayoutEffect(() => {
+    if (Platform.OS !== 'web' || !cursorPosition || !cursorPopupRef.current) return;
+    const el = cursorPopupRef.current;
+    const pw = el.offsetWidth;
+    const ph = el.offsetHeight;
+    if (!pw && !ph) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const rawLeft = cursorPosition.x + CURSOR_OFFSET;
+    const rawTop  = cursorPosition.y + CURSOR_OFFSET;
+    setClampedPos({
+      left: Math.min(rawLeft, vw - pw - EDGE_PAD),
+      top:  Math.min(rawTop,  vh - ph - EDGE_PAD),
+    });
+  }, [cursorPosition]);
+
+  // Cursor-following tooltip is rendered as a fixed-positioned portal
+  // independently of PopupPortal (no anchor measurement needed).
+  const renderCursorTooltip = () => {
+    if (!hovered || !cursorPosition || typeof document === 'undefined') return null;
+    const { createPortal } = require('react-dom');
+    // First pass: off-screen + hidden so we can measure. Clamped position applied once available.
+    const style: React.CSSProperties = clampedPos
+      ? {
+          position: 'fixed',
+          zIndex: PORTAL_Z_INDEX,
+          pointerEvents: 'none',
+          left: clampedPos.left,
+          top: clampedPos.top,
+        }
+      : {
+          position: 'fixed',
+          zIndex: PORTAL_Z_INDEX,
+          pointerEvents: 'none',
+          left: cursorPosition.x + CURSOR_OFFSET,
+          top: cursorPosition.y + CURSOR_OFFSET,
+          visibility: 'hidden' as const,
+        };
+    return createPortal(
+      <div ref={cursorPopupRef} style={style}>
+        <View style={TOOLTIP_PANEL_STYLE}>{content}</View>
+      </div>,
+      document.body,
+    );
+  };
+
+  // Map TooltipPlacement → PopupPlacement (cursor handled separately above)
+  const popupPlacement = (isCursorPlacement ? 'top' : placement) as PopupPlacement;
+
+  const webMouseProps =
+    Platform.OS === 'web'
+      ? ({
+          onMouseMove: handleMouseMove,
+          onMouseEnter: handleMouseEnter,
+          onMouseLeave: handleHoverOut,
+        } as ViewProps)
+      : {};
 
   return (
     <View
       ref={wrapperRef}
       style={[{ position: 'relative' }, style]}
-      onMouseMove={handleMouseMove}
-      onMouseEnter={handleHoverIn}
-      onMouseLeave={handleHoverOut}
+      {...webMouseProps}
     >
       <Pressable style={{ flex: 1, minWidth: 0 }} onHoverIn={handleHoverIn} onHoverOut={handleHoverOut}>
         {children}
       </Pressable>
-      {hovered && (
-        Platform.OS === 'web' ? renderTooltipInPortal() : renderTooltipInPlace()
+
+      {/* Cursor tooltip — positioned at mouse coords, no anchor measurement */}
+      {isCursorPlacement && Platform.OS === 'web' && renderCursorTooltip()}
+
+      {/* Standard placements — delegate positioning to PopupPortal */}
+      {!isCursorPlacement && (
+        <PopupPortal
+          anchorRef={wrapperRef as RefObject<View>}
+          open={hovered}
+          placement={popupPlacement}
+          gap={6}
+          interactive={false}
+        >
+          <View style={TOOLTIP_PANEL_STYLE}>{content}</View>
+        </PopupPortal>
       )}
     </View>
   );

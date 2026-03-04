@@ -6,6 +6,8 @@ import { format, parseISO } from 'date-fns';
 import { Tooltip } from '@/components/ui/Tooltip';
 
 const CHART_HEIGHT = 220;
+/** Extra space below chart so x-axis labels with descenders (e.g. "Aug", "Sep") are not clipped */
+const CHART_X_LABEL_PADDING_BOTTOM = 14;
 const COLORS = {
   sent: '#a78bfa',
   replied: '#14b8a6',
@@ -113,7 +115,7 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
               style={{
                 position: 'absolute',
                 left: INITIAL_SPACING + i * GROUP_WIDTH,
-                width: STRIP_WIDTH,
+                width: GROUP_WIDTH,
                 top: 0,
                 bottom: 0,
               }}
@@ -238,7 +240,7 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
               }}
               contentContainerStyle={{ width: chartContentWidth }}
             >
-              <View style={{ width: chartContentWidth }}>
+              <View style={{ width: chartContentWidth, paddingBottom: CHART_X_LABEL_PADDING_BOTTOM }}>
                 <BarChart
                   data={barData}
                   width={chartContentWidth}
@@ -286,7 +288,7 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
               </View>
             </ScrollView>
           ) : (
-            <>
+            <View style={{ paddingBottom: CHART_X_LABEL_PADDING_BOTTOM }}>
               <BarChart
                 data={barData}
                 width={chartParentWidth}
@@ -341,7 +343,7 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
                   {tooltipStrips}
                 </View>
               </View>
-            </>
+            </View>
           )}
         </View>
       </View>

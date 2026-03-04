@@ -142,7 +142,6 @@ export async function fetchSmartleadLeads(
   const enc = (s: string) => encodeURIComponent(s);
   const all: SmartleadLead[] = [];
   let offset = 0;
-  let totalLeads: number | null = null;
 
   const parseLead = (item: { lead?: Record<string, unknown> }): SmartleadLead => {
     const lead: Record<string, unknown> = item?.lead ?? item;
@@ -171,11 +170,11 @@ export async function fetchSmartleadLeads(
     }
     const json = await res.json();
     const data = Array.isArray(json?.data) ? json.data : [];
-    if (typeof json?.total_leads === 'number') totalLeads = json.total_leads;
     for (const item of data) {
       all.push(parseLead(item));
     }
-    if (data.length < LEADS_PAGE_LIMIT || (totalLeads != null && offset + data.length >= totalLeads)) {
+    // Only stop when we get a partial page; don't rely on total_leads (API may cap it at 1000)
+    if (data.length < LEADS_PAGE_LIMIT) {
       break;
     }
     offset += data.length;

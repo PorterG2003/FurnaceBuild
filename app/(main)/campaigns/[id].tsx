@@ -116,16 +116,28 @@ export default function CampaignPage() {
       setCampaignStats(statsResult);
       setMailboxCount(mailboxes?.length ?? 0);
 
-      // Single enrollments query: derive count and state breakdown from same snapshot
-      const { data: enrollments, error: enrollmentsError } = await supabase
-        .from('enrollments')
-        .select('state, lead_id, current_node_id, stopped_reason, stopped_error_message')
-        .eq('campaign_id', id);
+      // Enrollments: paginate to get all (PostgREST default max is 1000 rows per request)
+      const PAGE_SIZE = 1000;
+      let enrollments: any[] = [];
+      let enrollmentsError: Error | null = null;
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const { data: page, error } = await supabase
+          .from('enrollments')
+          .select('state, lead_id, current_node_id, stopped_reason, stopped_error_message')
+          .eq('campaign_id', id)
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) {
+          enrollmentsError = error;
+          break;
+        }
+        enrollments = enrollments.concat(page ?? []);
+        if (!page || page.length < PAGE_SIZE) break;
+      }
 
-      const enrollmentCount = enrollments?.length ?? 0;
+      const enrollmentCount = !enrollmentsError ? enrollments.length : 0;
       setEnrollmentCount(enrollmentCount);
 
-      if (!enrollmentsError && enrollments) {
+      if (!enrollmentsError && enrollments.length) {
         const completed = enrollments.filter((e: any) => e.state === 'completed').length;
         const inProgress = enrollments.filter((e: any) => e.state === 'active').length;
         const stopped = enrollments.filter((e: any) => e.state === 'stopped').length;
@@ -136,13 +148,24 @@ export default function CampaignPage() {
         setLeadsPaused(paused);
       }
 
-      // Single leads query: use same snapshot for lead count and leads list
+      // Leads: paginate to get all (PostgREST default max is 1000 rows per request)
       setLeadsLoading(true);
-      const { data: leadsData, error: leadsError } = await supabase
-        .from('leads')
-        .select('id, email, name, created_at')
-        .eq('campaign_id', id)
-        .order('created_at', { ascending: false });
+      let leadsData: any[] = [];
+      let leadsError: Error | null = null;
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const { data: page, error } = await supabase
+          .from('leads')
+          .select('id, email, name, created_at')
+          .eq('campaign_id', id)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) {
+          leadsError = error;
+          break;
+        }
+        leadsData = leadsData.concat(page ?? []);
+        if (!page || page.length < PAGE_SIZE) break;
+      }
 
       if (leadsError) {
         setLeadCount(0);

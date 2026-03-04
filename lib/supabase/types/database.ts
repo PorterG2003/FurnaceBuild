@@ -89,6 +89,9 @@ export interface Database {
           bucket_id: string;
           status: 'draft' | 'running' | 'paused' | 'stopped';
           sending_interval_seconds: number;
+          source: string | null;
+          smartlead_campaign_id: number | null;
+          smartlead_created_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -105,6 +108,9 @@ export interface Database {
           bucket_id?: string;
           status?: 'draft' | 'running' | 'paused' | 'stopped';
           sending_interval_seconds?: number;
+          source?: string | null;
+          smartlead_campaign_id?: number | null;
+          smartlead_created_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -121,6 +127,9 @@ export interface Database {
           bucket_id?: string;
           status?: 'draft' | 'running' | 'paused' | 'stopped';
           sending_interval_seconds?: number;
+          source?: string | null;
+          smartlead_campaign_id?: number | null;
+          smartlead_created_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -142,6 +151,7 @@ export interface Database {
           source: string | null;
           custom_lead_data: Json | null;
           global_lead_id: string | null;
+          smartlead_lead_id: number | null;
           status: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           created_at: string;
           updated_at: string;
@@ -162,6 +172,7 @@ export interface Database {
           source?: string | null;
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
+          smartlead_lead_id?: number | null;
           status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           created_at?: string;
           updated_at?: string;
@@ -182,6 +193,7 @@ export interface Database {
           source?: string | null;
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
+          smartlead_lead_id?: number | null;
           status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           mailbox_id?: string | null;
           created_at?: string;
@@ -290,6 +302,38 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           expires_at?: string | null;
+        };
+      };
+      imported_campaign_stats_by_day: {
+        Row: {
+          campaign_id: string;
+          date: string;
+          sent_count: number;
+          replied_count: number;
+          positive_reply_count: number;
+          bounce_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          campaign_id: string;
+          date: string;
+          sent_count?: number;
+          replied_count?: number;
+          positive_reply_count?: number;
+          bounce_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          campaign_id?: string;
+          date?: string;
+          sent_count?: number;
+          replied_count?: number;
+          positive_reply_count?: number;
+          bounce_count?: number;
+          created_at?: string;
+          updated_at?: string;
         };
       };
       mailboxes: {

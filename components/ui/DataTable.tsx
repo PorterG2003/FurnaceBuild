@@ -41,6 +41,8 @@ interface DataTableProps<T> {
   renderEmpty?: () => ReactNode;
   /** When true, columns share width equally (flex: 1 when no column.flex). When false, columns use only minWidth/content. Default false. */
   equalColumnWidths?: boolean;
+  /** When true, header row uses vertically centered single-line cells (no stats bar). Default false. */
+  compactHeader?: boolean;
 }
 
 type SortDirection = 'asc' | 'desc';
@@ -59,6 +61,7 @@ export function DataTable<T>({
   pagination: paginationEnabled = true,
   renderEmpty,
   equalColumnWidths = false,
+  compactHeader = false,
 }: DataTableProps<T>) {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [tableContainerWidth, setTableContainerWidth] = useState<number>(0);
@@ -341,7 +344,10 @@ export function DataTable<T>({
             style={tableContainerWidth > 0 ? { minWidth: tableContainerWidth } : undefined}
           >
             {/* Table Header */}
-            <View className="flex-row border-b border-[#2A2A2A] bg-[#1F1F1F]">
+            <View
+              className={`flex-row border-b border-[#2A2A2A] bg-[#1F1F1F] ${compactHeader ? 'items-center' : ''}`}
+              style={compactHeader ? { minHeight: 48 } : undefined}
+            >
           {selectable && (
             <View className="px-2 py-2 justify-center items-center" style={{ width: 56, paddingLeft: OUTER_EDGE_PADDING_X }}>
               <Checkbox
@@ -351,16 +357,32 @@ export function DataTable<T>({
               />
             </View>
           )}
-          {columns.map((column, index) => (
-            <HeaderCellWithStats
-              key={column.key}
-              column={column}
-              index={index}
-              isFirst={index === 0}
-              isLast={index === columns.length - 1}
-              minOfColumnMinWidths={minOfColumnMinWidths}
-            />
-          ))}
+          {columns.map((column, index) =>
+            compactHeader ? (
+              <View
+                key={column.key}
+                className="px-2 py-2 justify-center"
+                style={{
+                  minWidth: column.minWidth,
+                  maxWidth: column.maxWidth,
+                  flex: getColumnFlex(column),
+                  paddingLeft: !selectable && index === 0 ? OUTER_EDGE_PADDING_X : undefined,
+                  paddingRight: index < columns.length - 1 ? 16 : OUTER_EDGE_PADDING_X,
+                }}
+              >
+                <SortButton columnKey={column.key} label={column.label} />
+              </View>
+            ) : (
+              <HeaderCellWithStats
+                key={column.key}
+                column={column}
+                index={index}
+                isFirst={index === 0}
+                isLast={index === columns.length - 1}
+                minOfColumnMinWidths={minOfColumnMinWidths}
+              />
+            )
+          )}
         </View>
 
         {/* Table Rows */}

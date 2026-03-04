@@ -6,7 +6,9 @@ import { LoadingState, Alert } from '@/components/ui/feedback';
 import { MultiSegmentDial } from '@/components/ui/multi-segment-dial';
 import { FlowDiagram, LeadsTable, ScheduleTab, type Lead } from '@/components/campaigns';
 import { Tabs, type Tab } from '@/components/ui/tabs';
-import { isWithinSchedule } from '@/lib/campaigns/utils';
+import { isWithinSchedule, isSmartleadCampaign } from '@/lib/campaigns/utils';
+import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { getCampaignById, getCampaignMailboxes, getCampaignStatsByDay, getCampaignStatsForCampaigns, type CampaignStatsByDay, type CampaignStats } from '@/lib/supabase/services/campaigns';
 import { supabase } from '@/lib/supabase/client';
 import { CampaignStatsChart } from '@/components/campaigns/CampaignStatsChart';
@@ -77,6 +79,15 @@ export default function CampaignPage() {
   const [statsByDay, setStatsByDay] = useState<CampaignStatsByDay[]>([]);
   const [statsByDayLoading, setStatsByDayLoading] = useState(false);
   const [campaignStats, setCampaignStats] = useState<CampaignStats | null>(null);
+  const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
+
+  const isSmartlead = isSmartleadCampaign(campaign);
+
+  useEffect(() => {
+    if (isSmartlead && activeTab !== 'details') {
+      setActiveTab('details');
+    }
+  }, [isSmartlead]);
 
   const loadCampaign = useCallback(async (silent = false) => {
     if (!id) return;
@@ -197,9 +208,14 @@ export default function CampaignPage() {
     if (!id || !campaign) return;
     setStatsByDayLoading(true);
     try {
-      const startStr = campaign.created_at.slice(0, 10);
+      // For Smartlead campaigns, use smartlead_created_at so the range includes imported historical data.
+      // Furnace campaign.created_at is when we migrated, which would exclude past stats.
+      const startStr =
+        campaign.source === 'smartlead' && campaign.smartlead_created_at
+          ? campaign.smartlead_created_at.slice(0, 10)
+          : campaign.created_at.slice(0, 10);
       const endStr = new Date().toISOString().slice(0, 10);
-      const data = await getCampaignStatsByDay(id, startStr, endStr);
+      const data = await getCampaignStatsByDay(id, startStr, endStr, campaign?.source ?? null);
       setStatsByDay(fillMissingStatsByDay(data, startStr, endStr));
     } catch (err) {
       console.error('Error loading campaign stats by day:', err);
@@ -224,10 +240,12 @@ export default function CampaignPage() {
   };
 
   const handleEditFlow = () => {
+    if (isSmartlead) { setShowSmartleadRestrictedModal(true); return; }
     if (id) router.push({ pathname: '/builder', params: { campaignId: id } });
   };
 
   const handleOpenMissionControl = () => {
+    if (isSmartlead) { setShowSmartleadRestrictedModal(true); return; }
     if (id) router.push({ pathname: '/campaigns/[id]/mission-control', params: { id } });
   };
 
@@ -282,18 +300,42 @@ export default function CampaignPage() {
               </Text>
             </View>
           </Pressable>
-          <Pressable
-            onPress={handleOpenMissionControl}
-            className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-          >
-            <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
-          </Pressable>
-          <Pressable
-            onPress={handleEditFlow}
-            className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-          >
-            <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
-          </Pressable>
+          {isSmartlead ? (
+            <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
+              <Pressable
+                onPress={handleOpenMissionControl}
+                className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+                style={{ opacity: 0.5 }}
+              >
+                <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
+              </Pressable>
+            </Tooltip>
+          ) : (
+            <Pressable
+              onPress={handleOpenMissionControl}
+              className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+            >
+              <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
+            </Pressable>
+          )}
+          {isSmartlead ? (
+            <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
+              <Pressable
+                onPress={handleEditFlow}
+                className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+                style={{ opacity: 0.5 }}
+              >
+                <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
+              </Pressable>
+            </Tooltip>
+          ) : (
+            <Pressable
+              onPress={handleEditFlow}
+              className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+            >
+              <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -305,7 +347,7 @@ export default function CampaignPage() {
         </View>
       ) : campaign ? (
         <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 16 }}>
-          <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+          <Tabs tabs={isSmartlead ? [{ id: 'details', label: 'Details' }] : tabs} activeTab={activeTab} onTabChange={setActiveTab} />
           <ScrollView
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: 24 }}
@@ -484,6 +526,9 @@ export default function CampaignPage() {
                   <View style={{ borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingTop: 24, marginTop: 24 }}>
                     <View style={{ marginBottom: 16 }}>
                       <Text className="text-lg font-instrument-semibold text-white">Daily activity</Text>
+                      {campaign?.source === 'smartlead' && (
+                        <Text className="text-sm text-neutral-400 font-instrument mt-1">Imported from Smartlead</Text>
+                      )}
                     </View>
                     <CampaignStatsChart data={statsByDay} loading={statsByDayLoading} embedded />
                   </View>
@@ -512,6 +557,12 @@ export default function CampaignPage() {
           </ScrollView>
         </View>
       ) : null}
+      <SmartleadRestrictedModal
+        visible={showSmartleadRestrictedModal}
+        onClose={() => setShowSmartleadRestrictedModal(false)}
+        campaignId={id ?? null}
+        isOnStatsPage={true}
+      />
     </PageLayout>
   );
 }

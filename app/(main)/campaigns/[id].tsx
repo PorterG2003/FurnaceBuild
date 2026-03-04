@@ -12,6 +12,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { getCampaignById, getCampaignMailboxes, getCampaignStatsByDay, getCampaignStatsForCampaigns, type CampaignStatsByDay, type CampaignStats } from '@/lib/supabase/services/campaigns';
 import { supabase } from '@/lib/supabase/client';
 import { CampaignStatsChart } from '@/components/campaigns/CampaignStatsChart';
+import { DateInput } from '@/components/ui/DateInput';
 import type { Campaign } from '@/lib/supabase/types';
 import { format } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
@@ -78,6 +79,8 @@ export default function CampaignPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [statsByDay, setStatsByDay] = useState<CampaignStatsByDay[]>([]);
   const [statsByDayLoading, setStatsByDayLoading] = useState(false);
+  const [statsStartDate, setStatsStartDate] = useState<string | null>(null);
+  const [statsEndDate, setStatsEndDate] = useState<string | null>(null);
   const [campaignStats, setCampaignStats] = useState<CampaignStats | null>(null);
   const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
 
@@ -204,30 +207,76 @@ export default function CampaignPage() {
     loadCampaign();
   }, [loadCampaign]);
 
-  const loadStatsByDay = useCallback(async () => {
+  const loadStatsByDay = useCallback(async (bootstrapping: boolean) => {
     if (!id || !campaign) return;
     setStatsByDayLoading(true);
     try {
-      // For Smartlead campaigns, use smartlead_created_at so the range includes imported historical data.
-      // Furnace campaign.created_at is when we migrated, which would exclude past stats.
-      const startStr =
-        campaign.source === 'smartlead' && campaign.smartlead_created_at
-          ? campaign.smartlead_created_at.slice(0, 10)
-          : campaign.created_at.slice(0, 10);
-      const endStr = new Date().toISOString().slice(0, 10);
+      let startStr: string;
+      let endStr: string;
+
+      if (!bootstrapping && statsStartDate && statsEndDate) {
+        // User has set explicit dates — use them directly
+        startStr = statsStartDate;
+        endStr = statsEndDate;
+      } else {
+        // Bootstrap: fetch the widest sensible range to find the first/last entry
+        startStr =
+          campaign.source === 'smartlead' && campaign.smartlead_created_at
+            ? campaign.smartlead_created_at.slice(0, 10)
+            : campaign.created_at.slice(0, 10);
+        endStr = new Date().toISOString().slice(0, 10);
+      }
+
       const data = await getCampaignStatsByDay(id, startStr, endStr, campaign?.source ?? null);
-      setStatsByDay(fillMissingStatsByDay(data, startStr, endStr));
+
+      if (bootstrapping && data.length > 0) {
+        const toDateStr = (v: string | unknown) =>
+          typeof v === 'string' ? v.slice(0, 10) : new Date(v as string).toISOString().slice(0, 10);
+        const first = toDateStr(data[0].date);
+        const lastRow = (() => {
+          for (let i = data.length - 1; i >= 0; i--) {
+            const row = data[i];
+            const hasActivity = (row.sent + row.replied + row.positiveReply + row.bounce) > 0;
+            if (hasActivity) return row;
+          }
+          return data[data.length - 1];
+        })();
+        const last = toDateStr(lastRow.date);
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const lastPlus2 = (() => {
+          const d = new Date(last + 'T12:00:00Z');
+          d.setUTCDate(d.getUTCDate() + 2);
+          return d.toISOString().slice(0, 10);
+        })();
+        const bootstrapEnd = today <= lastPlus2 ? today : lastPlus2;
+        setStatsStartDate(first);
+        setStatsEndDate(bootstrapEnd);
+        setStatsByDay(fillMissingStatsByDay(data, first, bootstrapEnd));
+      } else {
+        setStatsByDay(fillMissingStatsByDay(data, startStr, endStr));
+      }
     } catch (err) {
       console.error('Error loading campaign stats by day:', err);
       setStatsByDay([]);
     } finally {
       setStatsByDayLoading(false);
     }
-  }, [id, campaign]);
+  }, [id, campaign, statsStartDate, statsEndDate]);
 
+  // Bootstrap: run once when campaign loads on the details tab or on refresh
   useEffect(() => {
-    if (id && campaign && activeTab === 'details') loadStatsByDay();
-  }, [id, campaign, activeTab, loadStatsByDay, refreshKey]);
+    if (id && campaign && activeTab === 'details') {
+      loadStatsByDay(true);
+    }
+  }, [id, campaign, activeTab, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refetch when user explicitly changes dates (skip bootstrap mode)
+  useEffect(() => {
+    if (id && campaign && activeTab === 'details' && statsStartDate && statsEndDate) {
+      loadStatsByDay(false);
+    }
+  }, [statsStartDate, statsEndDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -524,11 +573,29 @@ export default function CampaignPage() {
                     </View>
                   </View>
                   <View style={{ borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingTop: 24, marginTop: 24 }}>
-                    <View style={{ marginBottom: 16 }}>
-                      <Text className="text-lg font-instrument-semibold text-white">Daily activity</Text>
-                      {campaign?.source === 'smartlead' && (
-                        <Text className="text-sm text-neutral-400 font-instrument mt-1">Imported from Smartlead</Text>
-                      )}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                      <View>
+                        <Text className="text-lg font-instrument-semibold text-white">Daily activity</Text>
+                        {campaign?.source === 'smartlead' && (
+                          <Text className="text-sm text-neutral-400 font-instrument mt-1">Imported from Smartlead</Text>
+                        )}
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+                        <DateInput
+                          label="From"
+                          value={statsStartDate ?? ''}
+                          onChange={(v) => setStatsStartDate(v)}
+                          max={statsEndDate ?? undefined}
+                          disabled={statsByDayLoading}
+                        />
+                        <DateInput
+                          label="To"
+                          value={statsEndDate ?? ''}
+                          onChange={(v) => setStatsEndDate(v)}
+                          min={statsStartDate ?? undefined}
+                          disabled={statsByDayLoading}
+                        />
+                      </View>
                     </View>
                     <CampaignStatsChart data={statsByDay} loading={statsByDayLoading} embedded />
                   </View>

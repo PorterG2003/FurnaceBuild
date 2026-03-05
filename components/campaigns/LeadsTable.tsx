@@ -21,9 +21,15 @@ interface LeadsTableProps {
   leads: Lead[];
   loading?: boolean;
   campaignId: string;
+  /**
+   * When true, no add/edit/delete (or other mutating) actions may be shown.
+   * Use this for read-only contexts (e.g. Smartlead campaigns). Any future
+   * mutating UI must be hidden or disabled when readOnly is true.
+   */
+  readOnly?: boolean;
 }
 
-export function LeadsTable({ leads, loading, campaignId }: LeadsTableProps) {
+export function LeadsTable({ leads, loading, campaignId, readOnly = false }: LeadsTableProps) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 

@@ -86,12 +86,6 @@ export default function CampaignPage() {
 
   const isSmartlead = isSmartleadCampaign(campaign);
 
-  useEffect(() => {
-    if (isSmartlead && activeTab !== 'details') {
-      setActiveTab('details');
-    }
-  }, [isSmartlead]);
-
   const loadCampaign = useCallback(async (silent = false) => {
     if (!id) return;
     if (!silent) setIsLoading(true);
@@ -419,7 +413,7 @@ export default function CampaignPage() {
         </View>
       ) : campaign ? (
         <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 16 }}>
-          <Tabs tabs={isSmartlead ? [{ id: 'details', label: 'Details' }] : tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+          <Tabs tabs={isSmartlead ? [{ id: 'details', label: 'Details' }, { id: 'leads', label: 'Leads' }] : tabs} activeTab={activeTab} onTabChange={setActiveTab} />
           <ScrollView
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: 24 }}
@@ -635,7 +629,7 @@ export default function CampaignPage() {
 
             {activeTab === 'leads' && (
               <View style={{ marginBottom: 16 }}>
-                <LeadsTable leads={leads} loading={leadsLoading} campaignId={id!} />
+                <LeadsTable leads={leads} loading={leadsLoading} campaignId={id!} readOnly={isSmartlead} />
               </View>
             )}
 

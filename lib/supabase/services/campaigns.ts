@@ -465,11 +465,17 @@ export async function updateCampaign(
 
 /**
  * Ensure enrollments exist for campaign leads.
- * Uses conflict-safe upsert on (campaign_id, lead_id) and does not mutate existing rows.
+ * Uses upsert on (campaign_id, lead_id).
+ *
+ * @param enrollmentStates - Optional per-lead state override, same length as leadIds.
+ *   When omitted every enrollment is created as 'active' (default for native campaigns)
+ *   and existing rows are left unchanged (ignoreDuplicates). When provided (e.g. Smartlead
+ *   migration), existing rows are updated so re-runs refresh state from the source.
  */
 export async function ensureCampaignEnrollmentsForLeads(
   campaignId: string,
-  leadIds: string[]
+  leadIds: string[],
+  enrollmentStates?: ('active' | 'completed' | 'stopped' | 'paused')[]
 ): Promise<void> {
   if (!leadIds.length) return;
 
@@ -482,12 +488,12 @@ export async function ensureCampaignEnrollmentsForLeads(
     throw new Error(`Campaign not found or missing account_id: ${campError?.message}`);
   }
 
-  const rows = leadIds.map((leadId) => ({
+  const rows = leadIds.map((leadId, i) => ({
     campaign_id: campaignId,
     account_id: campaign.account_id,
     lead_id: leadId,
     current_node_id: null,
-    state: 'active',
+    state: enrollmentStates?.[i] ?? 'active',
     next_run_at: new Date().toISOString(),
     flow_position: {},
   }));
@@ -496,7 +502,8 @@ export async function ensureCampaignEnrollmentsForLeads(
     .from('enrollments')
     .upsert(rows as any, {
       onConflict: 'campaign_id,lead_id',
-      ignoreDuplicates: true,
+      // When we have per-lead state (e.g. Smartlead), update on conflict so re-runs refresh state
+      ignoreDuplicates: enrollmentStates === undefined,
     });
 
   if (error) {

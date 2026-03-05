@@ -148,6 +148,7 @@ export interface Database {
           website: string | null;
           linkedin_url: string | null;
           company_linkedin_url: string | null;
+          phone_number: string | null;
           source: string | null;
           custom_lead_data: Json | null;
           global_lead_id: string | null;
@@ -169,6 +170,7 @@ export interface Database {
           website?: string | null;
           linkedin_url?: string | null;
           company_linkedin_url?: string | null;
+          phone_number?: string | null;
           source?: string | null;
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
@@ -190,6 +192,7 @@ export interface Database {
           website?: string | null;
           linkedin_url?: string | null;
           company_linkedin_url?: string | null;
+          phone_number?: string | null;
           source?: string | null;
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;

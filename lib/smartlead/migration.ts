@@ -36,7 +36,25 @@ export interface SmartleadLead {
   website?: string;
   linkedin_profile?: string;
   phone_number?: string;
+  location?: string;
+  company_url?: string;
+  /** Smartlead custom_fields object (e.g. { "Title": "Regional Manager" }). */
+  custom_fields?: Record<string, unknown>;
+  /** Status from the list-leads wrapper (STARTED, INPROGRESS, COMPLETED, PAUSED, STOPPED, SENT, …) */
+  status?: string;
   [key: string]: unknown;
+}
+
+/** Map Smartlead lead status → Furnace enrollment state. */
+export function smartleadStatusToEnrollmentState(
+  status: string | undefined,
+): 'active' | 'completed' | 'stopped' | 'paused' {
+  switch (status?.toUpperCase()) {
+    case 'COMPLETED': return 'completed';
+    case 'PAUSED':    return 'paused';
+    case 'STOPPED':   return 'stopped';
+    default:          return 'active'; // STARTED, INPROGRESS, SENT, unknown
+  }
 }
 
 /** Normalized campaign stats from Smartlead (for campaign_stats table). */
@@ -113,6 +131,8 @@ function parseLeadsResponse(text: string): SmartleadLead[] {
       const idStr = idCol ? row[idCol] : null;
       const id = idStr != null && idStr !== '' ? parseInt(String(idStr), 10) : index + 1;
       const numId = Number.isFinite(id) ? id : index + 1;
+      const locationCol = findCol('location');
+      const companyUrlCol = findCol('company_url', 'company url');
       return {
         id: numId,
         email: row[findCol('email') ?? ''] ?? undefined,
@@ -122,6 +142,8 @@ function parseLeadsResponse(text: string): SmartleadLead[] {
         website: row[findCol('website') ?? ''] ?? undefined,
         linkedin_profile: row[findCol('linkedin_profile', 'linkedin') ?? ''] ?? undefined,
         phone_number: row[findCol('phone_number', 'phone') ?? ''] ?? undefined,
+        location: locationCol ? (row[locationCol] ?? undefined) : undefined,
+        company_url: companyUrlCol ? (row[companyUrlCol] ?? undefined) : undefined,
       } as SmartleadLead;
     });
   } catch {
@@ -143,10 +165,15 @@ export async function fetchSmartleadLeads(
   const all: SmartleadLead[] = [];
   let offset = 0;
 
-  const parseLead = (item: { lead?: Record<string, unknown> }): SmartleadLead => {
+  const parseLead = (item: Record<string, unknown> & { lead?: Record<string, unknown> }): SmartleadLead => {
     const lead: Record<string, unknown> = item?.lead ?? item;
     const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
     const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+    const customFields = lead.custom_fields;
+    const customFieldsObj =
+      customFields != null && typeof customFields === 'object' && !Array.isArray(customFields)
+        ? (customFields as Record<string, unknown>)
+        : undefined;
     return {
       id: num(lead.id),
       email: str(lead.email),
@@ -156,6 +183,11 @@ export async function fetchSmartleadLeads(
       website: str(lead.website),
       linkedin_profile: str(lead.linkedin_profile),
       phone_number: lead.phone_number != null ? String(lead.phone_number) : undefined,
+      location: str(lead.location),
+      company_url: str(lead.company_url),
+      custom_fields: customFieldsObj,
+      // status lives on the wrapper object, not on lead
+      status: str(item.status),
     };
   };
 
@@ -475,6 +507,37 @@ export async function upsertCampaignFromSmartlead(
 
 const LEAD_BATCH_SIZE = 200;
 
+function isLinkedInUrl(url: string): boolean {
+  return /linkedin\.com/i.test(url.trim());
+}
+
+/** Normalize a value for JSONB: only string, number, boolean; else stringify. */
+function jsonbSafeValue(v: unknown): string | number | boolean {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return v;
+  return String(v);
+}
+
+/**
+ * Build custom_lead_data from Smartlead lead: merge custom_fields, then set location (if value),
+ * and company_url (if value and not a LinkedIn URL). Prefer explicit location/company_url over
+ * keys from custom_fields.
+ */
+function buildCustomLeadData(sl: SmartleadLead): Record<string, string | number | boolean> | null {
+  const out: Record<string, string | number | boolean> = {};
+  if (sl.custom_fields && typeof sl.custom_fields === 'object' && !Array.isArray(sl.custom_fields)) {
+    for (const [k, v] of Object.entries(sl.custom_fields)) {
+      out[k] = jsonbSafeValue(v);
+    }
+  }
+  const location = sl.location?.trim();
+  if (location) out.location = location;
+  const companyUrl = sl.company_url?.trim();
+  if (companyUrl && !isLinkedInUrl(companyUrl)) out.company_url = companyUrl;
+  if (Object.keys(out).length === 0) return null;
+  return out;
+}
+
 export async function upsertLeadsFromSmartlead(
   campaignId: string,
   bucketId: string,
@@ -493,6 +556,10 @@ export async function upsertLeadsFromSmartlead(
       batch.map(async (sl) => {
         const email = sl.email?.trim() || null;
         const globalLeadId = await generateGlobalLeadId(email);
+        const companyUrl = sl.company_url?.trim();
+        const companyLinkedInUrl =
+          companyUrl && isLinkedInUrl(companyUrl) ? companyUrl : null;
+        const customLeadData = buildCustomLeadData(sl);
 
         return {
           campaign_id: campaignId,
@@ -504,6 +571,9 @@ export async function upsertLeadsFromSmartlead(
           company_name: sl.company_name?.trim() || null,
           website: sl.website?.trim() || null,
           linkedin_url: sl.linkedin_profile?.trim() || null,
+          company_linkedin_url: companyLinkedInUrl,
+          phone_number: sl.phone_number?.trim() || null,
+          custom_lead_data: customLeadData,
           source: 'smartlead',
           smartlead_lead_id: sl.id,
           global_lead_id: globalLeadId,
@@ -669,7 +739,11 @@ export async function migrateSmartleadCampaigns(
         leadCount: leadIds.length,
       });
 
-      await ensureCampaignEnrollmentsForLeads(campaign.id, leadIds);
+      await ensureCampaignEnrollmentsForLeads(
+        campaign.id,
+        leadIds,
+        smartleadLeads.map((l) => smartleadStatusToEnrollmentState(l.status)),
+      );
 
       if (statsApiAvailable !== false) {
         onProgress?.({ campaignIndex: i, campaignCount: selectedCampaigns.length, campaignName: sl.name, phase: 'stats' });

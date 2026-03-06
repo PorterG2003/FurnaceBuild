@@ -149,7 +149,7 @@ export default function CampaignPage() {
       for (let offset = 0; ; offset += PAGE_SIZE) {
         const { data: page, error } = await supabase
           .from('leads')
-          .select('id, email, name, created_at')
+          .select('id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, status, created_at')
           .eq('campaign_id', id)
           .order('created_at', { ascending: false })
           .range(offset, offset + PAGE_SIZE - 1);
@@ -201,6 +201,16 @@ export default function CampaignPage() {
             id: lead.id,
             email: lead.email || '',
             name: lead.name,
+            first_name: lead.first_name ?? null,
+            last_name: lead.last_name ?? null,
+            company_name: lead.company_name ?? null,
+            website: lead.website ?? null,
+            linkedin_url: lead.linkedin_url ?? null,
+            company_linkedin_url: lead.company_linkedin_url ?? null,
+            phone_number: lead.phone_number ?? null,
+            source: lead.source ?? null,
+            custom_lead_data: lead.custom_lead_data ?? null,
+            status: lead.status ?? null,
             enrollment_state: enrollment?.state ?? null,
             enrollment_current_node_id: enrollment?.current_node_id ?? null,
             enrollment_stopped_reason: enrollment?.stopped_reason ?? null,

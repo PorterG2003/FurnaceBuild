@@ -162,7 +162,7 @@ export function DataTable<T>({
     const column = columns.find((col) => col.key === columnKey);
     if (!column || !column.sortable) {
       return (
-        <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">
+        <Text className="text-gray-400 font-instrument-semibold text-xs uppercase" style={{ textAlign: 'left' }}>
           {label}
         </Text>
       );
@@ -172,7 +172,7 @@ export function DataTable<T>({
     return (
       <Pressable
         onPress={() => handleSort(columnKey)}
-        className="flex-row items-center gap-1 px-3 py-2 active:opacity-70"
+        className="flex-row items-center gap-1 pl-0 pr-3 py-2 active:opacity-70"
       >
         <Text
           className={`text-xs font-instrument-semibold ${
@@ -425,7 +425,7 @@ export function DataTable<T>({
                   {columns.map((column, index) => (
                     <View
                       key={column.key}
-                      className="px-2 py-2 justify-start items-center"
+                      className="px-2 py-2 justify-start items-start"
                       style={{
                         minWidth: column.minWidth,
                         maxWidth: column.maxWidth,

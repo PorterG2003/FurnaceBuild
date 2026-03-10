@@ -6,10 +6,13 @@ import { LoadingState, Alert } from '@/components/ui/feedback';
 import { MultiSegmentDial } from '@/components/ui/multi-segment-dial';
 import { FlowDiagram, LeadsTable, ScheduleTab, type Lead } from '@/components/campaigns';
 import { Tabs, type Tab } from '@/components/ui/tabs';
-import { isWithinSchedule } from '@/lib/campaigns/utils';
+import { isWithinSchedule, isSmartleadCampaign } from '@/lib/campaigns/utils';
+import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { getCampaignById, getCampaignMailboxes, getCampaignStatsByDay, getCampaignStatsForCampaigns, type CampaignStatsByDay, type CampaignStats } from '@/lib/supabase/services/campaigns';
 import { supabase } from '@/lib/supabase/client';
 import { CampaignStatsChart } from '@/components/campaigns/CampaignStatsChart';
+import { DateInput } from '@/components/ui/DateInput';
 import type { Campaign } from '@/lib/supabase/types';
 import { format } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
@@ -76,7 +79,12 @@ export default function CampaignPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [statsByDay, setStatsByDay] = useState<CampaignStatsByDay[]>([]);
   const [statsByDayLoading, setStatsByDayLoading] = useState(false);
+  const [statsStartDate, setStatsStartDate] = useState<string | null>(null);
+  const [statsEndDate, setStatsEndDate] = useState<string | null>(null);
   const [campaignStats, setCampaignStats] = useState<CampaignStats | null>(null);
+  const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
+
+  const isSmartlead = isSmartleadCampaign(campaign);
 
   const loadCampaign = useCallback(async (silent = false) => {
     if (!id) return;
@@ -102,16 +110,28 @@ export default function CampaignPage() {
       setCampaignStats(statsResult);
       setMailboxCount(mailboxes?.length ?? 0);
 
-      // Single enrollments query: derive count and state breakdown from same snapshot
-      const { data: enrollments, error: enrollmentsError } = await supabase
-        .from('enrollments')
-        .select('state, lead_id, current_node_id, stopped_reason, stopped_error_message')
-        .eq('campaign_id', id);
+      // Enrollments: paginate to get all (PostgREST default max is 1000 rows per request)
+      const PAGE_SIZE = 1000;
+      let enrollments: any[] = [];
+      let enrollmentsError: Error | null = null;
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const { data: page, error } = await supabase
+          .from('enrollments')
+          .select('state, lead_id, current_node_id, stopped_reason, stopped_error_message')
+          .eq('campaign_id', id)
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) {
+          enrollmentsError = error;
+          break;
+        }
+        enrollments = enrollments.concat(page ?? []);
+        if (!page || page.length < PAGE_SIZE) break;
+      }
 
-      const enrollmentCount = enrollments?.length ?? 0;
+      const enrollmentCount = !enrollmentsError ? enrollments.length : 0;
       setEnrollmentCount(enrollmentCount);
 
-      if (!enrollmentsError && enrollments) {
+      if (!enrollmentsError && enrollments.length) {
         const completed = enrollments.filter((e: any) => e.state === 'completed').length;
         const inProgress = enrollments.filter((e: any) => e.state === 'active').length;
         const stopped = enrollments.filter((e: any) => e.state === 'stopped').length;
@@ -122,13 +142,24 @@ export default function CampaignPage() {
         setLeadsPaused(paused);
       }
 
-      // Single leads query: use same snapshot for lead count and leads list
+      // Leads: paginate to get all (PostgREST default max is 1000 rows per request)
       setLeadsLoading(true);
-      const { data: leadsData, error: leadsError } = await supabase
-        .from('leads')
-        .select('id, email, name, created_at')
-        .eq('campaign_id', id)
-        .order('created_at', { ascending: false });
+      let leadsData: any[] = [];
+      let leadsError: Error | null = null;
+      for (let offset = 0; ; offset += PAGE_SIZE) {
+        const { data: page, error } = await supabase
+          .from('leads')
+          .select('id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, status, created_at')
+          .eq('campaign_id', id)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (error) {
+          leadsError = error;
+          break;
+        }
+        leadsData = leadsData.concat(page ?? []);
+        if (!page || page.length < PAGE_SIZE) break;
+      }
 
       if (leadsError) {
         setLeadCount(0);
@@ -170,6 +201,16 @@ export default function CampaignPage() {
             id: lead.id,
             email: lead.email || '',
             name: lead.name,
+            first_name: lead.first_name ?? null,
+            last_name: lead.last_name ?? null,
+            company_name: lead.company_name ?? null,
+            website: lead.website ?? null,
+            linkedin_url: lead.linkedin_url ?? null,
+            company_linkedin_url: lead.company_linkedin_url ?? null,
+            phone_number: lead.phone_number ?? null,
+            source: lead.source ?? null,
+            custom_lead_data: lead.custom_lead_data ?? null,
+            status: lead.status ?? null,
             enrollment_state: enrollment?.state ?? null,
             enrollment_current_node_id: enrollment?.current_node_id ?? null,
             enrollment_stopped_reason: enrollment?.stopped_reason ?? null,
@@ -193,25 +234,76 @@ export default function CampaignPage() {
     loadCampaign();
   }, [loadCampaign]);
 
-  const loadStatsByDay = useCallback(async () => {
+  const loadStatsByDay = useCallback(async (bootstrapping: boolean) => {
     if (!id || !campaign) return;
     setStatsByDayLoading(true);
     try {
-      const startStr = campaign.created_at.slice(0, 10);
-      const endStr = new Date().toISOString().slice(0, 10);
-      const data = await getCampaignStatsByDay(id, startStr, endStr);
-      setStatsByDay(fillMissingStatsByDay(data, startStr, endStr));
+      let startStr: string;
+      let endStr: string;
+
+      if (!bootstrapping && statsStartDate && statsEndDate) {
+        // User has set explicit dates — use them directly
+        startStr = statsStartDate;
+        endStr = statsEndDate;
+      } else {
+        // Bootstrap: fetch the widest sensible range to find the first/last entry
+        startStr =
+          campaign.source === 'smartlead' && campaign.smartlead_created_at
+            ? campaign.smartlead_created_at.slice(0, 10)
+            : campaign.created_at.slice(0, 10);
+        endStr = new Date().toISOString().slice(0, 10);
+      }
+
+      const data = await getCampaignStatsByDay(id, startStr, endStr, campaign?.source ?? null);
+
+      if (bootstrapping && data.length > 0) {
+        const toDateStr = (v: string | unknown) =>
+          typeof v === 'string' ? v.slice(0, 10) : new Date(v as string).toISOString().slice(0, 10);
+        const first = toDateStr(data[0].date);
+        const lastRow = (() => {
+          for (let i = data.length - 1; i >= 0; i--) {
+            const row = data[i];
+            const hasActivity = (row.sent + row.replied + row.positiveReply + row.bounce) > 0;
+            if (hasActivity) return row;
+          }
+          return data[data.length - 1];
+        })();
+        const last = toDateStr(lastRow.date);
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const lastPlus2 = (() => {
+          const d = new Date(last + 'T12:00:00Z');
+          d.setUTCDate(d.getUTCDate() + 2);
+          return d.toISOString().slice(0, 10);
+        })();
+        const bootstrapEnd = today <= lastPlus2 ? today : lastPlus2;
+        setStatsStartDate(first);
+        setStatsEndDate(bootstrapEnd);
+        setStatsByDay(fillMissingStatsByDay(data, first, bootstrapEnd));
+      } else {
+        setStatsByDay(fillMissingStatsByDay(data, startStr, endStr));
+      }
     } catch (err) {
       console.error('Error loading campaign stats by day:', err);
       setStatsByDay([]);
     } finally {
       setStatsByDayLoading(false);
     }
-  }, [id, campaign]);
+  }, [id, campaign, statsStartDate, statsEndDate]);
 
+  // Bootstrap: run once when campaign loads on the details tab or on refresh
   useEffect(() => {
-    if (id && campaign && activeTab === 'details') loadStatsByDay();
-  }, [id, campaign, activeTab, loadStatsByDay, refreshKey]);
+    if (id && campaign && activeTab === 'details') {
+      loadStatsByDay(true);
+    }
+  }, [id, campaign, activeTab, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refetch when user explicitly changes dates (skip bootstrap mode)
+  useEffect(() => {
+    if (id && campaign && activeTab === 'details' && statsStartDate && statsEndDate) {
+      loadStatsByDay(false);
+    }
+  }, [statsStartDate, statsEndDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -224,10 +316,12 @@ export default function CampaignPage() {
   };
 
   const handleEditFlow = () => {
+    if (isSmartlead) { setShowSmartleadRestrictedModal(true); return; }
     if (id) router.push({ pathname: '/builder', params: { campaignId: id } });
   };
 
   const handleOpenMissionControl = () => {
+    if (isSmartlead) { setShowSmartleadRestrictedModal(true); return; }
     if (id) router.push({ pathname: '/campaigns/[id]/mission-control', params: { id } });
   };
 
@@ -282,18 +376,42 @@ export default function CampaignPage() {
               </Text>
             </View>
           </Pressable>
-          <Pressable
-            onPress={handleOpenMissionControl}
-            className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-          >
-            <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
-          </Pressable>
-          <Pressable
-            onPress={handleEditFlow}
-            className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-          >
-            <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
-          </Pressable>
+          {isSmartlead ? (
+            <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
+              <Pressable
+                onPress={handleOpenMissionControl}
+                className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+                style={{ opacity: 0.5 }}
+              >
+                <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
+              </Pressable>
+            </Tooltip>
+          ) : (
+            <Pressable
+              onPress={handleOpenMissionControl}
+              className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+            >
+              <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
+            </Pressable>
+          )}
+          {isSmartlead ? (
+            <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
+              <Pressable
+                onPress={handleEditFlow}
+                className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+                style={{ opacity: 0.5 }}
+              >
+                <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
+              </Pressable>
+            </Tooltip>
+          ) : (
+            <Pressable
+              onPress={handleEditFlow}
+              className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+            >
+              <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -305,7 +423,7 @@ export default function CampaignPage() {
         </View>
       ) : campaign ? (
         <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 16 }}>
-          <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+          <Tabs tabs={isSmartlead ? [{ id: 'details', label: 'Details' }, { id: 'leads', label: 'Leads' }] : tabs} activeTab={activeTab} onTabChange={setActiveTab} />
           <ScrollView
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: 24 }}
@@ -444,35 +562,35 @@ export default function CampaignPage() {
                                     <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#6b7280' }} />
                                     <Text className="text-gray-300 font-instrument text-sm">Not Started</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsNotStarted}</Text>
+                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsNotStarted.toLocaleString()}</Text>
                                 </View>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
                                     <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#3b82f6' }} />
                                     <Text className="text-gray-300 font-instrument text-sm">In Progress</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsInProgress}</Text>
+                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsInProgress.toLocaleString()}</Text>
                                 </View>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
                                     <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#8b5cf6' }} />
                                     <Text className="text-gray-300 font-instrument text-sm">Paused</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsPaused}</Text>
+                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsPaused.toLocaleString()}</Text>
                                 </View>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
                                     <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#10b981' }} />
                                     <Text className="text-gray-300 font-instrument text-sm">Completed</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsCompleted}</Text>
+                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsCompleted.toLocaleString()}</Text>
                                 </View>
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
                                     <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#f59e0b' }} />
                                     <Text className="text-gray-300 font-instrument text-sm">Stopped</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ width: 28, textAlign: 'right' }}>{leadsStopped}</Text>
+                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsStopped.toLocaleString()}</Text>
                                 </View>
                               </>
                             )}
@@ -482,8 +600,29 @@ export default function CampaignPage() {
                     </View>
                   </View>
                   <View style={{ borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingTop: 24, marginTop: 24 }}>
-                    <View style={{ marginBottom: 16 }}>
-                      <Text className="text-lg font-instrument-semibold text-white">Daily activity</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                      <View>
+                        <Text className="text-lg font-instrument-semibold text-white">Daily activity</Text>
+                        {campaign?.source === 'smartlead' && (
+                          <Text className="text-sm text-neutral-400 font-instrument mt-1">Imported from Smartlead</Text>
+                        )}
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+                        <DateInput
+                          label="From"
+                          value={statsStartDate ?? ''}
+                          onChange={(v) => setStatsStartDate(v)}
+                          max={statsEndDate ?? undefined}
+                          disabled={statsByDayLoading}
+                        />
+                        <DateInput
+                          label="To"
+                          value={statsEndDate ?? ''}
+                          onChange={(v) => setStatsEndDate(v)}
+                          min={statsStartDate ?? undefined}
+                          disabled={statsByDayLoading}
+                        />
+                      </View>
                     </View>
                     <CampaignStatsChart data={statsByDay} loading={statsByDayLoading} embedded />
                   </View>
@@ -500,7 +639,7 @@ export default function CampaignPage() {
 
             {activeTab === 'leads' && (
               <View style={{ marginBottom: 16 }}>
-                <LeadsTable leads={leads} loading={leadsLoading} campaignId={id!} />
+                <LeadsTable leads={leads} loading={leadsLoading} campaignId={id!} readOnly={isSmartlead} />
               </View>
             )}
 
@@ -512,6 +651,12 @@ export default function CampaignPage() {
           </ScrollView>
         </View>
       ) : null}
+      <SmartleadRestrictedModal
+        visible={showSmartleadRestrictedModal}
+        onClose={() => setShowSmartleadRestrictedModal(false)}
+        campaignId={id ?? null}
+        isOnStatsPage={true}
+      />
     </PageLayout>
   );
 }

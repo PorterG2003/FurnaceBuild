@@ -6,6 +6,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { getCampaignById, updateCampaign } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
+import { isSmartleadCampaign } from '@/lib/campaigns/utils';
+import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 import { nodeTypes } from './nodes/nodeTypes';
 import { NodeSidebar } from './components/NodeSidebar';
 import { nodeModalRegistry } from './components/nodeModals';
@@ -571,6 +573,12 @@ export default function BuilderPage() {
           />
         );
       })()}
+      <SmartleadRestrictedModal
+        visible={!isLoading && isSmartleadCampaign(campaign)}
+        onClose={() => {}}
+        campaignId={campaignId ?? null}
+        isOnStatsPage={false}
+      />
     </View>
   );
 }

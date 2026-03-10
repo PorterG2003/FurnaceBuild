@@ -8,6 +8,29 @@ import { LeadActivityModal } from './LeadActivityModal';
 const INSIGHTS_COLUMN_MIN_WIDTH = 160;
 const INSIGHTS_COLUMN_MAX_WIDTH = 240;
 
+/** Standard lead fields (from Lead interface). Custom fields from custom_lead_data are not in this set. */
+const STANDARD_LEAD_FIELDS = new Set([
+  'email',
+  'name',
+  'first_name',
+  'last_name',
+  'company_name',
+  'website',
+  'linkedin_url',
+  'company_linkedin_url',
+  'phone_number',
+  'source',
+  'status',
+]);
+
+function formatLeadHeaderLabel(fieldKey: string): string {
+  if (!STANDARD_LEAD_FIELDS.has(fieldKey)) return fieldKey;
+  return fieldKey
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export type EnrollmentStoppedReason = 'replied' | 'bounced' | 'unsubscribed' | 'error';
 
 export type LeadStatus = 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
@@ -190,7 +213,7 @@ export function LeadsTable({ leads, loading, campaignId, readOnly = false }: Lea
       );
       return {
         key: f.field,
-        label: f.field,
+        label: formatLeadHeaderLabel(f.field),
         flex: 0,
         minWidth,
         maxWidth: INSIGHTS_COLUMN_MAX_WIDTH,

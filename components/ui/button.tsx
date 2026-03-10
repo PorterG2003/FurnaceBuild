@@ -24,7 +24,7 @@ export function Button({
           'bg-brand-orange/50 text-white/70': variant === 'default' && props.disabled,
           'bg-[#2A2A2A]': variant === 'secondary' && !props.disabled,
           'bg-[#2A2A2A]/50': variant === 'secondary' && props.disabled,
-          'border border-input bg-transparent': variant === 'outline',
+          'border border-white/20 bg-white/5': variant === 'outline',
         },
         {
           'px-6 py-3': size === 'default',
@@ -45,7 +45,7 @@ export function Button({
             {
             'text-white': variant === 'default',
             'text-gray-200': variant === 'secondary',
-            'text-foreground': variant === 'outline',
+            'text-gray-200': variant === 'outline',
             },
             {
               'text-base': size === 'default',

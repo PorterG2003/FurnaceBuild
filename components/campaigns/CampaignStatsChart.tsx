@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Platform, useWindowDimensions, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native';
+import { View, Text, Platform, ScrollView, useWindowDimensions, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native';
 import { BarChart, type barDataItem } from 'react-native-gifted-charts';
 import type { CampaignStatsByDay } from '@/lib/supabase/services/campaigns';
 import { format, parseISO } from 'date-fns';
 import { Tooltip } from '@/components/ui/Tooltip';
 
 const CHART_HEIGHT = 220;
+/** Extra space below chart so x-axis labels with descenders (e.g. "Aug", "Sep") are not clipped */
+const CHART_X_LABEL_PADDING_BOTTOM = 14;
 const COLORS = {
   sent: '#a78bfa',
   replied: '#14b8a6',
@@ -113,7 +115,7 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
               style={{
                 position: 'absolute',
                 left: INITIAL_SPACING + i * GROUP_WIDTH,
-                width: STRIP_WIDTH,
+                width: GROUP_WIDTH,
                 top: 0,
                 bottom: 0,
               }}
@@ -225,59 +227,121 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
           </View>
         </View>
         <View style={{ position: 'relative' }}>
-          <BarChart
-            data={barData}
-            width={chartParentWidth}
-            height={CHART_HEIGHT}
-            maxValue={maxValue}
-            noOfSections={4}
-            barWidth={GROUP_BAR_WIDTH}
-            spacing={BAR_SPACING}
-            initialSpacing={INITIAL_SPACING}
-            endSpacing={END_SPACING}
-            xAxisThickness={1}
-            xAxisColor="#2A2A2A"
-            yAxisThickness={0}
-            yAxisLabelWidth={Y_AXIS_LABEL_WIDTH}
-            yAxisTextStyle={{ color: '#9CA3AF', fontSize: 11, fontFamily: FONT_FAMILY }}
-            xAxisLabelTextStyle={{ color: '#9CA3AF', fontSize: 10, fontFamily: FONT_FAMILY }}
-            labelsDistanceFromXaxis={8}
-            hideRules={false}
-            rulesColor="#2A2A2A"
-            rulesThickness={1}
-            disableScroll={false}
-            showScrollIndicator={false}
-            scrollToEnd
-            roundedBottom={false}
-            barBorderTopLeftRadius={2}
-            barBorderTopRightRadius={2}
-            backgroundColor="transparent"
-            isAnimated={false}
-            onScroll={handleScroll}
-          />
-          {Platform.OS === 'web' && (
-            <View
+          {Platform.OS === 'web' ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={true}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
               style={{
-                position: 'absolute',
-                top: 0,
-                bottom: 0,
-                left: Y_AXIS_LABEL_WIDTH,
-                right: 0,
-                overflow: 'hidden',
+                width: chartParentWidth,
+                // Prevent browser back/forward on horizontal swipe at scroll edges; allow normal scroll
+                overscrollBehaviorX: 'contain' as const,
               }}
-              pointerEvents="box-none"
+              contentContainerStyle={{ width: chartContentWidth }}
             >
+              <View style={{ width: chartContentWidth, paddingBottom: CHART_X_LABEL_PADDING_BOTTOM }}>
+                <BarChart
+                  data={barData}
+                  width={chartContentWidth}
+                  height={CHART_HEIGHT}
+                  maxValue={maxValue}
+                  noOfSections={4}
+                  barWidth={GROUP_BAR_WIDTH}
+                  spacing={BAR_SPACING}
+                  initialSpacing={INITIAL_SPACING}
+                  endSpacing={END_SPACING}
+                  xAxisThickness={1}
+                  xAxisColor="#2A2A2A"
+                  yAxisThickness={0}
+                  yAxisLabelWidth={Y_AXIS_LABEL_WIDTH}
+                  yAxisTextStyle={{ color: '#9CA3AF', fontSize: 11, fontFamily: FONT_FAMILY }}
+                  xAxisLabelTextStyle={{ color: '#9CA3AF', fontSize: 10, fontFamily: FONT_FAMILY }}
+                  labelsDistanceFromXaxis={8}
+                  hideRules={false}
+                  rulesColor="#2A2A2A"
+                  rulesThickness={1}
+                  disableScroll={true}
+                  showScrollIndicator={false}
+                  scrollToEnd={false}
+                  roundedBottom={false}
+                  barBorderTopLeftRadius={2}
+                  barBorderTopRightRadius={2}
+                  backgroundColor="transparent"
+                  isAnimated={false}
+                />
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: Y_AXIS_LABEL_WIDTH,
+                    right: 0,
+                    bottom: 0,
+                    width: chartContentWidth - Y_AXIS_LABEL_WIDTH,
+                  }}
+                  pointerEvents="box-none"
+                >
+                  <View style={{ flex: 1, width: chartContentWidth - Y_AXIS_LABEL_WIDTH }} pointerEvents="box-none">
+                    {tooltipStrips}
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+          ) : (
+            <View style={{ paddingBottom: CHART_X_LABEL_PADDING_BOTTOM }}>
+              <BarChart
+                data={barData}
+                width={chartParentWidth}
+                height={CHART_HEIGHT}
+                maxValue={maxValue}
+                noOfSections={4}
+                barWidth={GROUP_BAR_WIDTH}
+                spacing={BAR_SPACING}
+                initialSpacing={INITIAL_SPACING}
+                endSpacing={END_SPACING}
+                xAxisThickness={1}
+                xAxisColor="#2A2A2A"
+                yAxisThickness={0}
+                yAxisLabelWidth={Y_AXIS_LABEL_WIDTH}
+                yAxisTextStyle={{ color: '#9CA3AF', fontSize: 11, fontFamily: FONT_FAMILY }}
+                xAxisLabelTextStyle={{ color: '#9CA3AF', fontSize: 10, fontFamily: FONT_FAMILY }}
+                labelsDistanceFromXaxis={8}
+                hideRules={false}
+                rulesColor="#2A2A2A"
+                rulesThickness={1}
+                disableScroll={false}
+                showScrollIndicator={false}
+                scrollToEnd
+                roundedBottom={false}
+                barBorderTopLeftRadius={2}
+                barBorderTopRightRadius={2}
+                backgroundColor="transparent"
+                isAnimated={false}
+                onScroll={handleScroll}
+              />
               <View
                 style={{
                   position: 'absolute',
                   top: 0,
                   bottom: 0,
-                  transform: [{ translateX: -scrollX }],
-                  width: chartContentWidth,
+                  left: Y_AXIS_LABEL_WIDTH,
+                  right: 0,
+                  overflow: 'hidden',
                 }}
                 pointerEvents="box-none"
               >
-                {tooltipStrips}
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    transform: [{ translateX: -scrollX }],
+                    width: chartContentWidth,
+                  }}
+                  pointerEvents="box-none"
+                >
+                  {tooltipStrips}
+                </View>
               </View>
             </View>
           )}

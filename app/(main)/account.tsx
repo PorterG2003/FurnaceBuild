@@ -11,6 +11,7 @@ import {
 import { useMemo } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { ManageBlockListModal } from '@/components/inbox';
+import { SmartleadMigrationWizardModal } from '@/components/account/SmartleadMigrationWizardModal';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
@@ -72,6 +73,7 @@ export default function AccountPage() {
   const [inviting, setInviting] = useState(false);
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
   const [blockListModalVisible, setBlockListModalVisible] = useState(false);
+  const [smartleadWizardVisible, setSmartleadWizardVisible] = useState(false);
   const [roleEditMember, setRoleEditMember] = useState<{ membershipId: string; memberName: string } | null>(null);
 
   const handleNameChange = (value: string) => {
@@ -697,6 +699,30 @@ export default function AccountPage() {
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Smartlead Migration */}
+              <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
+                <Text className="text-white text-base font-instrument-semibold mb-1.5">
+                  Smartlead Migration
+                </Text>
+                <Text className="text-gray-500 text-xs font-instrument mb-4">
+                  Import campaigns and leads from your Smartlead account.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setSmartleadWizardVisible(true)}
+                  activeOpacity={0.8}
+                  className="flex-row items-center justify-center px-4 py-2.5 rounded-xl border border-[#3A3A3A] bg-[#2A2A2A] self-start"
+                >
+                  <Text className="text-gray-200 text-sm font-instrument-medium">
+                    Start Migration
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <SmartleadMigrationWizardModal
+                visible={smartleadWizardVisible}
+                onClose={() => setSmartleadWizardVisible(false)}
+              />
 
               <ManageBlockListModal
                 visible={blockListModalVisible}

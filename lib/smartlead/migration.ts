@@ -1,14 +1,16 @@
 import Papa from 'papaparse';
-import { supabase } from '@/lib/supabase/client';
-import { ensureCampaignEnrollmentsForLeads } from '@/lib/supabase/services/campaigns';
-import { generateGlobalLeadId } from '@/lib/supabase/services/leads';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { stripHtml } from '@/lib/email/parse-body';
 import type { Campaign } from '@/lib/supabase/types';
+import type { Database } from '@/lib/supabase/types/database';
 
 const SMARTLEAD_BASE = 'https://server.smartlead.ai/api/v1';
 
 /** Smartlead allows max 200 requests per minute. Min ms between requests to stay under that. */
 const SMARTLEAD_RATE_LIMIT_MS = 350;
 let lastSmartleadRequestTime = 0;
+type MigrationDatabaseClient = SupabaseClient<Database>;
+let defaultMigrationDbPromise: Promise<MigrationDatabaseClient> | null = null;
 
 async function throttleSmartleadRequest(): Promise<void> {
   const now = Date.now();
@@ -17,6 +19,72 @@ async function throttleSmartleadRequest(): Promise<void> {
     await new Promise((r) => setTimeout(r, SMARTLEAD_RATE_LIMIT_MS - elapsed));
   }
   lastSmartleadRequestTime = Date.now();
+}
+
+async function getDefaultMigrationDb(): Promise<MigrationDatabaseClient> {
+  if (!defaultMigrationDbPromise) {
+    defaultMigrationDbPromise = import('@/lib/supabase/client').then(
+      (module) => module.supabase as MigrationDatabaseClient,
+    );
+  }
+  return defaultMigrationDbPromise;
+}
+
+async function generateGlobalLeadIdForMigration(email: string | null | undefined): Promise<string | null> {
+  if (!email) return null;
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return null;
+
+  try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(email.toLowerCase().trim());
+    const hashBuffer = await subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return null;
+  }
+}
+
+async function ensureCampaignEnrollmentsForLeadsInDb(
+  db: MigrationDatabaseClient,
+  campaignId: string,
+  leadIds: string[],
+  enrollmentStates?: Array<'active' | 'completed' | 'stopped' | 'paused'>,
+): Promise<void> {
+  if (!leadIds.length) return;
+
+  const { data: campaignData, error: campaignError } = await (db
+    .from('campaigns')
+    .select('account_id')
+    .eq('id', campaignId)
+    .single() as any);
+  const campaign = campaignData as { account_id: string | null } | null;
+
+  if (campaignError || !campaign?.account_id) {
+    throw new Error(`Campaign not found or missing account_id: ${campaignError?.message}`);
+  }
+
+  const rows = leadIds.map((leadId, index) => ({
+    campaign_id: campaignId,
+    account_id: campaign.account_id,
+    lead_id: leadId,
+    current_node_id: null,
+    state: enrollmentStates?.[index] ?? 'active',
+    next_run_at: new Date().toISOString(),
+    flow_position: {},
+  }));
+
+  const { error } = await (db
+    .from('enrollments')
+    .upsert(rows as any, {
+      onConflict: 'campaign_id,lead_id',
+      ignoreDuplicates: enrollmentStates === undefined,
+    }) as any);
+
+  if (error) {
+    throw new Error(`Failed to ensure campaign enrollments: ${error.message}`);
+  }
 }
 
 export interface SmartleadCampaign {
@@ -74,6 +142,37 @@ export interface SmartleadStatsByDay {
   positiveReply: number;
   bounce: number;
 }
+
+export interface SmartleadInboxReplyLead {
+  email_lead_id: number;
+  email_campaign_id: number | null;
+  lead_email?: string;
+  lead_first_name?: string;
+  lead_last_name?: string;
+}
+
+export interface SmartleadMessageHistoryItem {
+  stats_id?: string;
+  from: string;
+  to: string;
+  type: 'SENT' | 'REPLY';
+  message_id?: string;
+  time: string;
+  email_body?: string;
+  subject?: string;
+  cc?: string[];
+  raw: Record<string, unknown>;
+}
+
+type SmartleadLeadEnrollmentMapValue = {
+  leadId: string;
+  enrollmentId: string | null;
+};
+
+const SMARTLEAD_INBOX_REPLIES_PAGE_LIMIT = 20;
+
+/** Max lead_id count per enrollments request to avoid URL length 400 (Supabase/PostgREST). */
+const ENROLLMENTS_IN_QUERY_BATCH_SIZE = 25;
 
 // ---------------------------------------------------------------------------
 // Smartlead API helpers
@@ -213,6 +312,276 @@ export async function fetchSmartleadLeads(
   }
   return all;
 }
+
+function smartleadApiErrorMessage(res: Response, resource: string): string {
+  if (res.status === 401 || res.status === 403) {
+    return 'Invalid API key. Please check your Smartlead API key and try again.';
+  }
+  return `Smartlead ${resource} API error (${res.status}).`;
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function buildSmartleadLeadName(firstName?: string, lastName?: string): string | null {
+  const fullName = [firstName?.trim(), lastName?.trim()].filter(Boolean).join(' ').trim();
+  return fullName || null;
+}
+
+function parseSmartleadInboxReplyLead(item: unknown): SmartleadInboxReplyLead | null {
+  if (item == null || typeof item !== 'object' || Array.isArray(item)) return null;
+  const row = item as Record<string, unknown>;
+  const emailLeadId = numberOrNull(row.email_lead_id);
+  if (emailLeadId == null) return null;
+  return {
+    email_lead_id: emailLeadId,
+    email_campaign_id: numberOrNull(row.email_campaign_id),
+    lead_email: stringOrUndefined(row.lead_email),
+    lead_first_name: stringOrUndefined(row.lead_first_name),
+    lead_last_name: stringOrUndefined(row.lead_last_name),
+  };
+}
+
+async function fetchSmartleadInboxRepliesPage(
+  apiKey: string,
+  offset: number,
+  limit: number,
+  campaignIdFilter: number | null,
+): Promise<{ data: unknown[]; json: unknown }> {
+  const enc = (s: string) => encodeURIComponent(s);
+  const url =
+    `${SMARTLEAD_BASE}/master-inbox/inbox-replies` +
+    `?api_key=${enc(apiKey)}&fetch_message_history=false`;
+  const body: { offset: number; limit: number; filters?: { campaignId: number[] }; sortBy: string } = {
+    offset,
+    limit,
+    sortBy: 'REPLY_TIME_DESC',
+  };
+  if (campaignIdFilter != null) {
+    body.filters = { campaignId: [campaignIdFilter] };
+  }
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`${smartleadApiErrorMessage(res, 'inbox replies')} for campaign ${campaignIdFilter}`);
+  }
+  const json = await res.json();
+  const data = Array.isArray(json?.data) ? json.data : [];
+  return { data, json };
+}
+
+export async function fetchSmartleadInboxReplies(
+  apiKey: string,
+  smartleadCampaignId: number,
+  onProgress?: (totalFetched: number) => void,
+): Promise<SmartleadInboxReplyLead[]> {
+  const all: SmartleadInboxReplyLead[] = [];
+  let offset = 0;
+  const useFilter = true;
+
+  while (true) {
+    await throttleSmartleadRequest();
+    const { data } = await fetchSmartleadInboxRepliesPage(
+      apiKey,
+      offset,
+      SMARTLEAD_INBOX_REPLIES_PAGE_LIMIT,
+      useFilter ? smartleadCampaignId : null,
+    );
+    for (const item of data) {
+      const parsed = parseSmartleadInboxReplyLead(item);
+      if (!parsed) continue;
+      const matchesCampaign =
+        parsed.email_campaign_id == null || parsed.email_campaign_id === smartleadCampaignId;
+      if (matchesCampaign) {
+        all.push(parsed);
+      }
+    }
+    onProgress?.(all.length);
+    if (data.length < SMARTLEAD_INBOX_REPLIES_PAGE_LIMIT) {
+      break;
+    }
+    offset += data.length;
+  }
+
+  if (all.length === 0 && useFilter) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Smartlead migration] inbox-replies with campaign filter returned 0; retrying without filter');
+    }
+    offset = 0;
+    while (true) {
+      await throttleSmartleadRequest();
+      const { data } = await fetchSmartleadInboxRepliesPage(
+        apiKey,
+        offset,
+        SMARTLEAD_INBOX_REPLIES_PAGE_LIMIT,
+        null,
+      );
+      for (const item of data) {
+        const parsed = parseSmartleadInboxReplyLead(item);
+        if (!parsed) continue;
+        if (parsed.email_campaign_id === smartleadCampaignId) {
+          all.push(parsed);
+        }
+      }
+      onProgress?.(all.length);
+      if (data.length < SMARTLEAD_INBOX_REPLIES_PAGE_LIMIT) {
+        break;
+      }
+      offset += data.length;
+    }
+  }
+
+  return all;
+}
+
+function normalizeSmartleadMessageType(value: unknown): 'SENT' | 'REPLY' | null {
+  const upper = stringOrUndefined(value)?.toUpperCase();
+  if (upper === 'SENT') return 'SENT';
+  if (upper === 'REPLY') return 'REPLY';
+  return null;
+}
+
+function describeForLog(value: unknown): string {
+  if (value == null) return String(value);
+  if (Array.isArray(value)) return `array(${value.length})`;
+  if (typeof value === 'object') return `object(${Object.keys(value).join(',')})`;
+  return typeof value;
+}
+
+function parseSmartleadMessageHistoryItems(raw: unknown): SmartleadMessageHistoryItem[] {
+  const obj = raw != null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
+  const candidates: unknown[] = Array.isArray(raw) ? [raw] : [];
+  if (obj) {
+    candidates.push(obj.data, obj.email_history, obj.messages, obj.conversation, obj.thread, obj.history);
+    const fromData = obj.data != null && typeof obj.data === 'object' && !Array.isArray(obj.data)
+      ? (obj.data as Record<string, unknown>)
+      : null;
+    if (fromData) {
+      candidates.push(
+        fromData.email_history,
+        fromData.messages,
+        fromData.conversation,
+        fromData.thread,
+        fromData.history,
+      );
+    }
+  }
+  const items = candidates.find((candidate) => Array.isArray(candidate));
+  if (!Array.isArray(items)) {
+    if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+      const o = raw as Record<string, unknown>;
+      const keyTypes: Record<string, string> = {};
+      for (const k of Object.keys(o)) {
+        keyTypes[k] = describeForLog(o[k]);
+      }
+      console.warn('[Smartlead migration] message-history: no array in response shape', {
+        topLevelKeys: Object.keys(o),
+        keyTypes,
+      });
+    }
+    return [];
+  }
+
+  const parsed: SmartleadMessageHistoryItem[] = [];
+  let skipped = 0;
+  for (const item of items) {
+    if (item == null || typeof item !== 'object' || Array.isArray(item)) {
+      skipped += 1;
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    const type = normalizeSmartleadMessageType(row.type);
+    const from = stringOrUndefined(row.from);
+    const to = stringOrUndefined(row.to);
+    const time = stringOrUndefined(row.time);
+    if (!type || !from || !to || !time) {
+      skipped += 1;
+      continue;
+    }
+    parsed.push({
+      stats_id: stringOrUndefined(row.stats_id),
+      from,
+      to,
+      type,
+      message_id: stringOrUndefined(row.message_id),
+      time,
+      email_body: stringOrUndefined(row.email_body),
+      subject: stringOrUndefined(row.subject),
+      cc: Array.isArray(row.cc)
+        ? row.cc.map((value) => stringOrUndefined(value)).filter((value): value is string => !!value)
+        : undefined,
+      raw: row,
+    });
+  }
+  if (parsed.length === 0 && items.length > 0) {
+    const first = items[0];
+    const sample = typeof first === 'object' && first !== null && !Array.isArray(first)
+      ? { keys: Object.keys(first as object), type: (first as any)?.type, from: (first as any)?.from }
+      : null;
+    console.warn('[Smartlead migration] message-history: array had items but none passed validation', {
+      arrayLength: items.length,
+      skipped,
+      sampleFirstItem: sample,
+    });
+  }
+  return parsed.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+}
+
+export async function fetchSmartleadMessageHistory(
+  apiKey: string,
+  smartleadCampaignId: number,
+  smartleadLeadId: number,
+): Promise<SmartleadMessageHistoryItem[]> {
+  const result = await fetchSmartleadMessageHistoryWithRaw(
+    apiKey,
+    smartleadCampaignId,
+    smartleadLeadId,
+  );
+  return result.items;
+}
+
+/** Internal: fetches and returns both parsed items and raw JSON (for debug when empty). */
+async function fetchSmartleadMessageHistoryWithRaw(
+  apiKey: string,
+  smartleadCampaignId: number,
+  smartleadLeadId: number,
+): Promise<{ items: SmartleadMessageHistoryItem[]; rawJson: unknown }> {
+  const enc = (s: string) => encodeURIComponent(s);
+  await throttleSmartleadRequest();
+  const url =
+    `${SMARTLEAD_BASE}/campaigns/${smartleadCampaignId}/leads/${smartleadLeadId}/message-history` +
+    `?api_key=${enc(apiKey)}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(
+      `${smartleadApiErrorMessage(res, 'message history')} for campaign ${smartleadCampaignId}, lead ${smartleadLeadId}`,
+    );
+  }
+  const rawJson = await res.json();
+  const items = parseSmartleadMessageHistoryItems(rawJson);
+  if (items.length === 0) {
+    console.warn('[Smartlead migration] message-history empty for lead', {
+      smartleadCampaignId,
+      smartleadLeadId,
+      responseTopLevelKeys: typeof rawJson === 'object' && rawJson !== null ? Object.keys(rawJson) : [],
+    });
+  }
+  return { items, rawJson };
+}
+
 
 function parseSmartleadCampaignStatsResponse(raw: unknown): SmartleadCampaignStats {
   const data = (raw as any)?.data ?? raw;
@@ -477,7 +846,9 @@ export async function upsertCampaignFromSmartlead(
   sl: SmartleadCampaign,
   accountId: string,
   ownerId: string,
+  db?: MigrationDatabaseClient,
 ): Promise<Campaign> {
+  const database = db ?? await getDefaultMigrationDb();
   const now = new Date().toISOString();
 
   const row = {
@@ -494,7 +865,7 @@ export async function upsertCampaignFromSmartlead(
     updated_at: now,
   };
 
-  const { data, error } = await supabase
+  const { data, error } = await database
     .from('campaigns')
     .upsert(row as any, { onConflict: 'smartlead_campaign_id' })
     .select()
@@ -543,7 +914,9 @@ export async function upsertLeadsFromSmartlead(
   bucketId: string,
   accountId: string,
   smartleadLeads: SmartleadLead[],
+  db?: MigrationDatabaseClient,
 ): Promise<string[]> {
+  const database = db ?? await getDefaultMigrationDb();
   if (smartleadLeads.length === 0) return [];
 
   const allLeadIds: string[] = [];
@@ -555,7 +928,7 @@ export async function upsertLeadsFromSmartlead(
     const rows = await Promise.all(
       batch.map(async (sl) => {
         const email = sl.email?.trim() || null;
-        const globalLeadId = await generateGlobalLeadId(email);
+        const globalLeadId = await generateGlobalLeadIdForMigration(email);
         const companyUrl = sl.company_url?.trim();
         const companyLinkedInUrl =
           companyUrl && isLinkedInUrl(companyUrl) ? companyUrl : null;
@@ -584,7 +957,7 @@ export async function upsertLeadsFromSmartlead(
       }),
     );
 
-    const { data, error } = await supabase
+    const { data, error } = await database
       .from('leads')
       .upsert(rows as any, { onConflict: 'smartlead_lead_id' })
       .select('id');
@@ -604,9 +977,11 @@ export async function upsertCampaignStatsFromSmartlead(
   furnaceCampaignId: string,
   accountId: string,
   stats: SmartleadCampaignStats,
+  db?: MigrationDatabaseClient,
 ): Promise<void> {
-  const { error } = await supabase
-    .from('campaign_stats')
+  const database = db ?? await getDefaultMigrationDb();
+  const { error } = await ((database
+    .from('campaign_stats') as any)
     .update({
       sent_count: stats.sent,
       replied_count: stats.replied,
@@ -615,7 +990,7 @@ export async function upsertCampaignStatsFromSmartlead(
       last_bounce_at: stats.lastBounceAt,
       updated_at: new Date().toISOString(),
     })
-    .eq('campaign_id', furnaceCampaignId);
+    .eq('campaign_id', furnaceCampaignId));
 
   if (error) throw new Error(`Failed to update campaign_stats: ${error.message}`);
 }
@@ -627,7 +1002,9 @@ export async function upsertCampaignStatsFromSmartlead(
 export async function upsertImportedCampaignStatsByDay(
   campaignId: string,
   byDay: SmartleadStatsByDay[],
+  db?: MigrationDatabaseClient,
 ): Promise<void> {
+  const database = db ?? await getDefaultMigrationDb();
   if (byDay.length === 0) return;
   const now = new Date().toISOString();
   const rows = byDay.map((day) => ({
@@ -650,9 +1027,9 @@ export async function upsertImportedCampaignStatsByDay(
       sampleLast: last && last !== first ? { date: last.date, sent: last.sent, replied: last.replied, bounce: last.bounce } : null,
     });
   }
-  const { error } = await supabase
+  const { error } = await (database
     .from('imported_campaign_stats_by_day')
-    .upsert(rows, { onConflict: 'campaign_id,date', ignoreDuplicates: false });
+    .upsert(rows as any, { onConflict: 'campaign_id,date', ignoreDuplicates: false }) as any);
   if (error) {
     if (process.env.NODE_ENV !== 'production') {
       console.error('[Smartlead migration] upsertImportedCampaignStatsByDay error', { campaignId, error: error.message, byDayLength: byDay.length });
@@ -664,6 +1041,256 @@ export async function upsertImportedCampaignStatsByDay(
   }
 }
 
+async function getSmartleadLeadEnrollmentMap(
+  campaignId: string,
+  smartleadLeadIds: number[],
+  repliedLeadsWithEmail?: SmartleadInboxReplyLead[],
+  db?: MigrationDatabaseClient,
+): Promise<Map<number, SmartleadLeadEnrollmentMapValue>> {
+  const database = db ?? await getDefaultMigrationDb();
+  const ids = [...new Set(smartleadLeadIds.filter((id) => Number.isFinite(id) && id > 0))];
+  const out = new Map<number, SmartleadLeadEnrollmentMapValue>();
+
+  if (ids.length > 0) {
+    const { data: leadRowsData, error: leadsError } = await (database
+      .from('leads')
+      .select('id, smartlead_lead_id')
+      .eq('campaign_id', campaignId)
+      .in('smartlead_lead_id', ids) as any);
+    const leadRows = (leadRowsData ?? []) as Array<{ id: string; smartlead_lead_id: number | null }>;
+    if (leadsError) {
+      throw new Error(`Failed to fetch Smartlead lead mappings: ${leadsError.message}`);
+    }
+
+    const furnaceLeadIds: string[] = [];
+    for (const row of leadRows) {
+      if (row.smartlead_lead_id == null) continue;
+      furnaceLeadIds.push(row.id);
+    }
+
+    if (furnaceLeadIds.length > 0) {
+      const enrollmentIdByLeadId = new Map<string, string>();
+      for (let b = 0; b < furnaceLeadIds.length; b += ENROLLMENTS_IN_QUERY_BATCH_SIZE) {
+        const batch = furnaceLeadIds.slice(b, b + ENROLLMENTS_IN_QUERY_BATCH_SIZE);
+        const { data: enrollmentRowsData, error: enrollmentsError } = await (database
+          .from('enrollments')
+          .select('id, lead_id')
+          .eq('campaign_id', campaignId)
+          .in('lead_id', batch) as any);
+        const enrollmentRows = (enrollmentRowsData ?? []) as Array<{ id: string; lead_id: string }>;
+        if (enrollmentsError) {
+          throw new Error(`Failed to fetch Smartlead enrollment mappings: ${enrollmentsError.message}`);
+        }
+        for (const row of enrollmentRows) {
+          if (!enrollmentIdByLeadId.has(row.lead_id)) {
+            enrollmentIdByLeadId.set(row.lead_id, row.id);
+          }
+        }
+      }
+
+      for (const row of leadRows) {
+        if (row.smartlead_lead_id == null) continue;
+        out.set(row.smartlead_lead_id, {
+          leadId: row.id,
+          enrollmentId: enrollmentIdByLeadId.get(row.id) ?? null,
+        });
+      }
+    }
+  }
+
+  // Fallback: match by email when inbox-replies email_lead_id doesn't match leads.smartlead_lead_id
+  const withEmail = repliedLeadsWithEmail?.filter((r) => r.lead_email?.trim()) ?? [];
+  if (withEmail.length > 0) {
+    const emails = [...new Set(withEmail.map((r) => r.lead_email!.trim().toLowerCase()))];
+    const { data: leadByEmailRowsData, error: emailError } = await (database
+      .from('leads')
+      .select('id, email')
+      .eq('campaign_id', campaignId) as any);
+    const leadByEmailRows = (leadByEmailRowsData ?? []) as Array<{ id: string; email: string | null }>;
+    if (!emailError && leadByEmailRows.length) {
+      const leadIdByEmail = new Map<string, string>();
+      for (const row of leadByEmailRows) {
+        const e = row.email?.trim().toLowerCase();
+        if (e) leadIdByEmail.set(e, row.id);
+      }
+      const furnaceLeadIdsFromEmail = [...new Set(leadIdByEmail.values())];
+      if (furnaceLeadIdsFromEmail.length > 0) {
+        const enrollmentIdByLeadId = new Map<string, string>();
+        for (let b = 0; b < furnaceLeadIdsFromEmail.length; b += ENROLLMENTS_IN_QUERY_BATCH_SIZE) {
+          const batch = furnaceLeadIdsFromEmail.slice(b, b + ENROLLMENTS_IN_QUERY_BATCH_SIZE);
+          const { data: enrollmentRowsData } = await (database
+            .from('enrollments')
+            .select('id, lead_id')
+            .eq('campaign_id', campaignId)
+            .in('lead_id', batch) as any);
+          const enrollmentRows = (enrollmentRowsData ?? []) as Array<{ id: string; lead_id: string }>;
+          for (const row of enrollmentRows) {
+            if (!enrollmentIdByLeadId.has(row.lead_id)) enrollmentIdByLeadId.set(row.lead_id, row.id);
+          }
+        }
+        for (const replied of withEmail) {
+          if (out.has(replied.email_lead_id)) continue;
+          const leadId = leadIdByEmail.get(replied.lead_email!.trim().toLowerCase());
+          if (leadId) {
+            out.set(replied.email_lead_id, {
+              leadId,
+              enrollmentId: enrollmentIdByLeadId.get(leadId) ?? null,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
+function getSmartleadThreadSubject(messages: SmartleadMessageHistoryItem[]): string {
+  for (const message of messages) {
+    const subject = message.subject?.trim();
+    if (message.type === 'SENT' && subject) return subject;
+  }
+  for (const message of messages) {
+    const subject = message.subject?.trim();
+    if (subject) return subject;
+  }
+  return '(No subject)';
+}
+
+function getSmartleadThreadParticipants(messages: SmartleadMessageHistoryItem[]): string[] {
+  const participants: string[] = [];
+  const seen = new Set<string>();
+  const add = (value?: string) => {
+    const trimmed = value?.trim();
+    if (!trimmed) return;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    participants.push(trimmed);
+  };
+
+  for (const message of messages) {
+    add(message.from);
+    add(message.to);
+    for (const cc of message.cc ?? []) add(cc);
+  }
+
+  return participants;
+}
+
+function getParticipantName(
+  email: string,
+  leadEmail: string | undefined,
+  leadName: string | null,
+): string | null {
+  if (!leadEmail || !leadName) return null;
+  return email.trim().toLowerCase() === leadEmail.trim().toLowerCase() ? leadName : null;
+}
+
+async function upsertSmartleadConversationThread(params: {
+  accountId: string;
+  campaignId: string;
+  leadId: string;
+  enrollmentId: string | null;
+  smartleadLeadId: number;
+  messages: SmartleadMessageHistoryItem[];
+  db?: MigrationDatabaseClient;
+}): Promise<string> {
+  const { accountId, campaignId, leadId, enrollmentId, smartleadLeadId, messages, db } = params;
+  const database = db ?? await getDefaultMigrationDb();
+  const subject = getSmartleadThreadSubject(messages);
+  const participants = getSmartleadThreadParticipants(messages);
+  const lastMessageAt = messages[messages.length - 1]?.time ?? new Date().toISOString();
+
+  const { data, error } = await (database
+    .from('email_threads')
+    .upsert({
+      account_id: accountId,
+      campaign_id: campaignId,
+      lead_id: leadId,
+      enrollment_id: enrollmentId,
+      message_job_id: null,
+      mailbox_id: null,
+      smartlead_lead_id: smartleadLeadId,
+      subject,
+      participants,
+      last_message_at: lastMessageAt,
+      message_count: messages.length,
+      has_reply: true,
+      updated_at: new Date().toISOString(),
+    } as any, { onConflict: 'campaign_id,smartlead_lead_id' })
+    .select('id')
+    .single() as any);
+
+  if (error) {
+    throw new Error(`Failed to upsert Smartlead thread: ${error.message}`);
+  }
+  if (!data?.id) {
+    throw new Error('No thread id returned when upserting Smartlead thread.');
+  }
+  return data.id;
+}
+
+async function replaceSmartleadConversationMessages(params: {
+  threadId: string;
+  accountId: string;
+  leadEmail?: string;
+  leadFirstName?: string;
+  leadLastName?: string;
+  threadSubject: string;
+  messages: SmartleadMessageHistoryItem[];
+  db?: MigrationDatabaseClient;
+}): Promise<void> {
+  const { threadId, accountId, leadEmail, leadFirstName, leadLastName, threadSubject, messages, db } = params;
+  const database = db ?? await getDefaultMigrationDb();
+  const leadName = buildSmartleadLeadName(leadFirstName, leadLastName);
+
+  const { error: deleteError } = await database
+    .from('email_messages')
+    .delete()
+    .eq('thread_id', threadId);
+  if (deleteError) {
+    throw new Error(`Failed to replace Smartlead thread messages: ${deleteError.message}`);
+  }
+
+  if (messages.length === 0) return;
+
+  const now = new Date().toISOString();
+  const rows = messages.map((message) => ({
+    thread_id: threadId,
+    account_id: accountId,
+    message_job_id: null,
+    direction: message.type === 'REPLY' ? 'received' as const : 'sent' as const,
+    from_email: message.from,
+    from_name: getParticipantName(message.from, leadEmail, leadName),
+    to_email: message.to,
+    to_name: getParticipantName(message.to, leadEmail, leadName),
+    cc: message.cc?.length ? message.cc : null,
+    subject: message.subject?.trim() || threadSubject,
+    body_text: stripHtml(message.email_body),
+    body_html: message.email_body?.trim() || null,
+    message_id: message.message_id ?? null,
+    in_reply_to: null,
+    message_references: null,
+    received_at: message.time,
+    headers: {
+      source: 'smartlead',
+      smartlead_type: message.type,
+      smartlead_stats_id: message.stats_id ?? null,
+    },
+    attachments: [],
+    created_at: now,
+    updated_at: now,
+  }));
+
+  const { error: insertError } = await (database
+    .from('email_messages')
+    .insert(rows as any) as any);
+  if (insertError) {
+    throw new Error(`Failed to insert Smartlead thread messages: ${insertError.message}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Orchestration
 // ---------------------------------------------------------------------------
@@ -672,17 +1299,279 @@ export interface MigrationProgress {
   campaignIndex: number;
   campaignCount: number;
   campaignName: string;
-  phase: 'campaign' | 'leads' | 'enrollments' | 'stats' | 'done';
+  phase: 'campaign' | 'leads' | 'enrollments' | 'conversations' | 'stats' | 'done';
   leadCount?: number;
+  leadIndex?: number;
+  detail?: string;
+}
+
+/** Why 0 conversations might have been imported (for UI/logging). */
+export interface ConversationImportDiagnostics {
+  repliedFromApi: number;
+  leadsMatched: number;
+  skippedNoMatch: number;
+  skippedEmptyHistory: number;
+  imported: number;
 }
 
 export interface CampaignMigrationResult {
+  campaignId?: string;
   campaignName: string;
   status: 'succeeded' | 'failed';
   error?: string;
   leadsImported?: number;
+  conversationsImported?: number;
+  /** Set when phase ran; explains why conversation count may be 0. */
+  conversationDiagnostics?: ConversationImportDiagnostics;
   totalsStatsImported?: boolean;
   dayByDayStatsImported?: boolean;
+}
+
+export interface SingleCampaignMigrationParams {
+  apiKey: string;
+  campaign: SmartleadCampaign;
+  accountId: string,
+  ownerId: string,
+  campaignIndex: number;
+  campaignCount: number;
+  onProgress?: (p: MigrationProgress) => void,
+  db?: MigrationDatabaseClient;
+}
+
+export async function migrateSingleSmartleadCampaign(
+  params: SingleCampaignMigrationParams,
+): Promise<CampaignMigrationResult> {
+  const {
+    apiKey,
+    campaign: sl,
+    accountId,
+    ownerId,
+    campaignIndex,
+    campaignCount,
+    onProgress,
+    db,
+  } = params;
+  const database = db ?? await getDefaultMigrationDb();
+
+  const campaignResult: CampaignMigrationResult = {
+    campaignName: sl.name,
+    status: 'succeeded',
+    leadsImported: 0,
+    conversationsImported: 0,
+    totalsStatsImported: false,
+    dayByDayStatsImported: false,
+  };
+
+  try {
+    onProgress?.({ campaignIndex, campaignCount, campaignName: sl.name, phase: 'campaign' });
+
+    const campaign = await upsertCampaignFromSmartlead(sl, accountId, ownerId, database);
+    campaignResult.campaignId = campaign.id;
+
+    onProgress?.({ campaignIndex, campaignCount, campaignName: sl.name, phase: 'leads' });
+
+    const smartleadLeads = await fetchSmartleadLeads(apiKey, sl.id);
+
+    const leadIds = await upsertLeadsFromSmartlead(
+      campaign.id,
+      campaign.bucket_id,
+      accountId,
+      smartleadLeads,
+      database,
+    );
+
+    campaignResult.leadsImported = leadIds.length;
+
+    onProgress?.({
+      campaignIndex,
+      campaignCount,
+      campaignName: sl.name,
+      phase: 'enrollments',
+      leadCount: leadIds.length,
+    });
+
+    await ensureCampaignEnrollmentsForLeadsInDb(
+      database,
+      campaign.id,
+      leadIds,
+      smartleadLeads.map((lead) => smartleadStatusToEnrollmentState(lead.status)),
+    );
+
+    onProgress?.({
+      campaignIndex,
+      campaignCount,
+      campaignName: sl.name,
+      phase: 'conversations',
+      detail: 'fetching replied threads...',
+    });
+
+    const repliedLeads = await fetchSmartleadInboxReplies(
+      apiKey,
+      sl.id,
+      (totalFetched) =>
+        onProgress?.({
+          campaignIndex,
+          campaignCount,
+          campaignName: sl.name,
+          phase: 'conversations',
+          detail: `fetching replied threads (${totalFetched} found)...`,
+        }),
+    );
+
+    const leadEnrollmentMap = await getSmartleadLeadEnrollmentMap(
+      campaign.id,
+      repliedLeads.map((lead) => lead.email_lead_id),
+      repliedLeads,
+      db,
+    );
+
+    const conversationDiagnostics: ConversationImportDiagnostics = {
+      repliedFromApi: repliedLeads.length,
+      leadsMatched: leadEnrollmentMap.size,
+      skippedNoMatch: 0,
+      skippedEmptyHistory: 0,
+      imported: 0,
+    };
+    campaignResult.conversationDiagnostics = conversationDiagnostics;
+
+    console.log('[Smartlead migration] conversations', {
+      campaignName: sl.name,
+      smartleadCampaignId: sl.id,
+      repliedLeadsFromApi: repliedLeads.length,
+      leadsMatchedToFurnace: leadEnrollmentMap.size,
+    });
+
+    for (let leadIndex = 0; leadIndex < repliedLeads.length; leadIndex++) {
+      const repliedLead = repliedLeads[leadIndex];
+      const mapping = leadEnrollmentMap.get(repliedLead.email_lead_id);
+
+      if (!mapping) {
+        conversationDiagnostics.skippedNoMatch += 1;
+        console.warn('[Smartlead migration] skipping conversation: no Furnace lead match', {
+          campaignName: sl.name,
+          smartleadLeadId: repliedLead.email_lead_id,
+          lead_email: repliedLead.lead_email ?? '(missing)',
+        });
+        continue;
+      }
+
+      onProgress?.({
+        campaignIndex,
+        campaignCount,
+        campaignName: sl.name,
+        phase: 'conversations',
+        leadIndex: leadIndex + 1,
+        leadCount: repliedLeads.length,
+        detail: `fetching message history for lead ${leadIndex + 1} of ${repliedLeads.length}...`,
+      });
+
+      const { items: messageHistory, rawJson } = await fetchSmartleadMessageHistoryWithRaw(
+        apiKey,
+        sl.id,
+        repliedLead.email_lead_id,
+      );
+
+      if (messageHistory.length === 0) {
+        conversationDiagnostics.skippedEmptyHistory += 1;
+        console.warn('[Smartlead migration] skipping conversation: empty message history', {
+          campaignName: sl.name,
+          smartleadLeadId: repliedLead.email_lead_id,
+        });
+
+        if (conversationDiagnostics.skippedEmptyHistory === 1) {
+          console.warn('[Smartlead migration] first empty message-history raw response (for parsing debug)', {
+            campaignName: sl.name,
+            smartleadLeadId: repliedLead.email_lead_id,
+            topLevelKeys: typeof rawJson === 'object' && rawJson !== null ? Object.keys(rawJson) : [],
+            rawResponseSample: typeof rawJson === 'object'
+              ? JSON.stringify(rawJson).slice(0, 1200)
+              : String(rawJson),
+          });
+        }
+        continue;
+      }
+
+      const threadId = await upsertSmartleadConversationThread({
+        accountId,
+        campaignId: campaign.id,
+        leadId: mapping.leadId,
+        enrollmentId: mapping.enrollmentId,
+        smartleadLeadId: repliedLead.email_lead_id,
+        messages: messageHistory,
+        db: database,
+      });
+      const threadSubject = getSmartleadThreadSubject(messageHistory);
+      await replaceSmartleadConversationMessages({
+        threadId,
+        accountId,
+        leadEmail: repliedLead.lead_email,
+        leadFirstName: repliedLead.lead_first_name,
+        leadLastName: repliedLead.lead_last_name,
+        threadSubject,
+        messages: messageHistory,
+        db: database,
+      });
+      conversationDiagnostics.imported += 1;
+      campaignResult.conversationsImported = (campaignResult.conversationsImported ?? 0) + 1;
+    }
+
+    if (conversationDiagnostics.imported === 0 && repliedLeads.length > 0) {
+      console.warn('[Smartlead migration] 0 conversations imported', {
+        campaignName: sl.name,
+        ...conversationDiagnostics,
+      });
+    }
+
+    onProgress?.({ campaignIndex, campaignCount, campaignName: sl.name, phase: 'stats' });
+
+    try {
+      const stats = await fetchSmartleadCampaignStats(apiKey, sl.id);
+      await upsertCampaignStatsFromSmartlead(campaign.id, accountId, stats, database);
+      campaignResult.totalsStatsImported = true;
+
+      const startDate = (sl.created_at ?? new Date().toISOString()).slice(0, 10);
+      const endDate = await findSmartleadCampaignStatsEndDate(apiKey, sl.id, startDate, stats);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Smartlead migration] day-by-day range', {
+          campaignName: sl.name,
+          furnaceCampaignId: campaign.id,
+          smartleadCampaignId: sl.id,
+          startDate,
+          endDate,
+          totals: { sent: stats.sent, replied: stats.replied, bounce: stats.bounce },
+        });
+      }
+      const byDay = await fetchSmartleadCampaignStatsByDay(apiKey, sl.id, startDate, endDate);
+      if (process.env.NODE_ENV !== 'production') {
+        const sample = byDay.slice(0, 3).concat(byDay.length > 6 ? byDay.slice(-3) : byDay.slice(3, 6));
+        console.log('[Smartlead migration] fetchSmartleadCampaignStatsByDay result', {
+          campaignName: sl.name,
+          furnaceCampaignId: campaign.id,
+          dayCount: byDay.length,
+          dateRange: byDay.length ? { from: byDay[0].date, to: byDay[byDay.length - 1].date } : null,
+          sample: sample.map((day) => ({ date: day.date, sent: day.sent, replied: day.replied, bounce: day.bounce })),
+        });
+      }
+      if (byDay.length > 0) {
+        await upsertImportedCampaignStatsByDay(campaign.id, byDay, database);
+        campaignResult.dayByDayStatsImported = true;
+      }
+    } catch (statsError) {
+      console.warn(
+        '[Smartlead] Stats could not be imported (API returned 400/404). Campaign and lead data were imported successfully.',
+        statsError,
+      );
+    }
+
+    return campaignResult;
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      campaignName: sl.name,
+      status: 'failed',
+      error: errorMessage,
+    };
+  }
 }
 
 export async function migrateSmartleadCampaigns(
@@ -691,6 +1580,7 @@ export async function migrateSmartleadCampaigns(
   accountId: string,
   ownerId: string,
   onProgress?: (p: MigrationProgress) => void,
+  db?: MigrationDatabaseClient,
 ): Promise<{
   succeeded: string[];
   failed: { name: string; error: string }[];
@@ -698,109 +1588,35 @@ export async function migrateSmartleadCampaigns(
   totalLeadsImported: number;
   campaignResults: CampaignMigrationResult[];
 }> {
+  const database = db ?? await getDefaultMigrationDb();
   const succeeded: string[] = [];
   const failed: { name: string; error: string }[] = [];
   const campaignResults: CampaignMigrationResult[] = [];
-  let statsApiAvailable: boolean | null = null;
   let totalLeadsImported = 0;
+  let statsImported = false;
 
   for (let i = 0; i < selectedCampaigns.length; i++) {
-    const sl = selectedCampaigns[i];
-    const campaignResult: CampaignMigrationResult = {
-      campaignName: sl.name,
-      status: 'succeeded',
-      leadsImported: 0,
-      totalsStatsImported: false,
-      dayByDayStatsImported: false,
-    };
-    try {
-      onProgress?.({ campaignIndex: i, campaignCount: selectedCampaigns.length, campaignName: sl.name, phase: 'campaign' });
+    const campaignResult = await migrateSingleSmartleadCampaign({
+      apiKey,
+      campaign: selectedCampaigns[i],
+      accountId,
+      ownerId,
+      campaignIndex: i,
+      campaignCount: selectedCampaigns.length,
+      onProgress,
+      db: database,
+    });
 
-      const campaign = await upsertCampaignFromSmartlead(sl, accountId, ownerId);
+    campaignResults.push(campaignResult);
+    totalLeadsImported += campaignResult.leadsImported ?? 0;
+    statsImported = statsImported || campaignResult.totalsStatsImported === true || campaignResult.dayByDayStatsImported === true;
 
-      onProgress?.({ campaignIndex: i, campaignCount: selectedCampaigns.length, campaignName: sl.name, phase: 'leads' });
-
-      const smartleadLeads = await fetchSmartleadLeads(apiKey, sl.id);
-
-      const leadIds = await upsertLeadsFromSmartlead(
-        campaign.id,
-        campaign.bucket_id,
-        accountId,
-        smartleadLeads,
-      );
-
-      campaignResult.leadsImported = leadIds.length;
-
-      onProgress?.({
-        campaignIndex: i,
-        campaignCount: selectedCampaigns.length,
-        campaignName: sl.name,
-        phase: 'enrollments',
-        leadCount: leadIds.length,
-      });
-
-      await ensureCampaignEnrollmentsForLeads(
-        campaign.id,
-        leadIds,
-        smartleadLeads.map((l) => smartleadStatusToEnrollmentState(l.status)),
-      );
-
-      if (statsApiAvailable !== false) {
-        onProgress?.({ campaignIndex: i, campaignCount: selectedCampaigns.length, campaignName: sl.name, phase: 'stats' });
-
-        try {
-          const stats = await fetchSmartleadCampaignStats(apiKey, sl.id);
-          statsApiAvailable = true;
-          await upsertCampaignStatsFromSmartlead(campaign.id, accountId, stats);
-          campaignResult.totalsStatsImported = true;
-
-          const startDate = (sl.created_at ?? new Date().toISOString()).slice(0, 10);
-          const endDate = await findSmartleadCampaignStatsEndDate(apiKey, sl.id, startDate, stats);
-          if (process.env.NODE_ENV !== 'production') {
-            console.log('[Smartlead migration] day-by-day range', {
-              campaignName: sl.name,
-              furnaceCampaignId: campaign.id,
-              smartleadCampaignId: sl.id,
-              startDate,
-              endDate,
-              totals: { sent: stats.sent, replied: stats.replied, bounce: stats.bounce },
-            });
-          }
-          const byDay = await fetchSmartleadCampaignStatsByDay(apiKey, sl.id, startDate, endDate);
-          if (process.env.NODE_ENV !== 'production') {
-            const sample = byDay.slice(0, 3).concat(byDay.length > 6 ? byDay.slice(-3) : byDay.slice(3, 6));
-            console.log('[Smartlead migration] fetchSmartleadCampaignStatsByDay result', {
-              campaignName: sl.name,
-              furnaceCampaignId: campaign.id,
-              dayCount: byDay.length,
-              dateRange: byDay.length ? { from: byDay[0].date, to: byDay[byDay.length - 1].date } : null,
-              sample: sample.map((d) => ({ date: d.date, sent: d.sent, replied: d.replied, bounce: d.bounce })),
-            });
-          }
-          if (byDay.length > 0) {
-            await upsertImportedCampaignStatsByDay(campaign.id, byDay);
-            campaignResult.dayByDayStatsImported = true;
-          }
-        } catch (statsErr) {
-          statsApiAvailable = false;
-          if (i === 0) {
-            console.warn(
-              '[Smartlead] Stats could not be imported (API returned 400/404). Campaign and lead data were imported successfully.',
-            );
-          }
-        }
-      }
-
-      totalLeadsImported += leadIds.length;
-      succeeded.push(sl.name);
-      campaignResults.push(campaignResult);
-    } catch (e: unknown) {
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      failed.push({ name: sl.name, error: errorMessage });
-      campaignResults.push({
-        campaignName: sl.name,
-        status: 'failed',
-        error: errorMessage,
+    if (campaignResult.status === 'succeeded') {
+      succeeded.push(campaignResult.campaignName);
+    } else {
+      failed.push({
+        name: campaignResult.campaignName,
+        error: campaignResult.error ?? 'Migration failed.',
       });
     }
   }
@@ -810,7 +1626,7 @@ export async function migrateSmartleadCampaigns(
   return {
     succeeded,
     failed,
-    statsImported: statsApiAvailable === true,
+    statsImported,
     totalLeadsImported,
     campaignResults,
   };

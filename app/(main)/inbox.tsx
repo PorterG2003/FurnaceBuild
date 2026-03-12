@@ -24,7 +24,6 @@ import {
   createForwardJob,
   getMessageJobStatus,
   getPendingInboxReplyJobs,
-  fetchAttachment,
   getBlockList,
   isEmailBlockedByEntries,
   markThreadMessagesRead,
@@ -34,12 +33,14 @@ import {
   getTagsForThreads,
   getThreadSnippets,
   getLeadsByIds,
-  getLeadDisplayName,
   addTagToThread,
   removeTagFromThread,
   updateThreadTag,
   updateThreadCategory,
 } from '@/lib/supabase/services';
+import { fetchAttachment } from '@/lib/services/attachments';
+import { getAccessToken } from '@/lib/services/auth-token';
+import { getLeadDisplayName } from '@/lib/leads';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailThread, EmailMessage, BlockListEntry, Mailbox, Campaign } from '@/lib/supabase/types';
 import { groupMessagesByDate, signatureToHtml } from '@/lib/inbox';
@@ -64,7 +65,6 @@ import {
   SKELETON_MIN_DISPLAY_MS,
 } from '@/components/inbox';
 import type { ComposerAttachmentItem } from '@/components/inbox';
-import { supabase } from '@/lib/supabase/client';
 import outputs from '@/amplify_outputs.json';
 
 const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
@@ -778,8 +778,7 @@ export default function InboxPage() {
     async (emailMessageId: string, part: string): Promise<Blob | null> => {
       if (!FETCH_ATTACHMENT_URL) return null;
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
+        const token = await getAccessToken();
         if (!token) return null;
         return await fetchAttachment(FETCH_ATTACHMENT_URL, token, emailMessageId, part);
       } catch {
@@ -1159,6 +1158,7 @@ export default function InboxPage() {
                     '(No subject)'
                   }
                   campaignName={thread.campaign_id ? campaigns.find((c) => c.id === thread.campaign_id)?.name ?? null : null}
+                  sourceLabel={thread.smartlead_lead_id != null ? 'Smartlead' : null}
                   preview={threadSnippetsMap[thread.id] ?? null}
                   tags={threadTagsMap[thread.id] ?? []}
                 />
@@ -1196,6 +1196,7 @@ export default function InboxPage() {
                         {
                           id: `pending-${pendingReply.jobId}`,
                           thread_id: selectedThreadId!,
+                          account_id: selectedThread.account_id,
                           message_job_id: pendingReply.jobId,
                           direction: 'sent' as const,
                           from_email: pendingReply.fromEmail,
@@ -1235,6 +1236,7 @@ export default function InboxPage() {
                     ? campaigns.find((c) => c.id === selectedThread.campaign_id)?.name ?? null
                     : null
                 }
+                sourceLabel={selectedThread?.smartlead_lead_id != null ? 'Imported from Smartlead' : null}
                 prospectEmails={selectedThreadProspectEmails}
                 blockedEmails={blockedProspectEmails}
                 onBlock={accountId ? () => setBlockModalVisible(true) : undefined}

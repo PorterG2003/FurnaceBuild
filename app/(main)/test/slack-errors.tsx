@@ -1,3 +1,7 @@
+/**
+ * Debug-only test page: triggers and cleans up Slack error scenarios.
+ * Uses direct supabase.from/rpc for test data setup/teardown; not part of the app service layer.
+ */
 import { useState } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -8,7 +12,7 @@ import { supabase } from '@/lib/supabase/client';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox } from '@/lib/supabase/services/mailboxes';
-import { getAccountMembershipsForUser } from '@/lib/supabase/services/users';
+import { getAccountMembershipsForUser } from '@/lib/supabase/services/accounts';
 
 type Service = 'scheduler' | 'send' | 'inbox-checker';
 

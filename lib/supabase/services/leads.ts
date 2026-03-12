@@ -1,10 +1,9 @@
-import { reportErrorToSlack } from '../../slack/reportErrorToSlack';
 import { supabase } from '../client';
 import type { Lead, LeadInsert, LeadUpdate } from '../types';
 
 /**
- * Lead service for database operations
- * Handles all CRUD operations for leads
+ * Lead service for database operations.
+ * For getLeadDisplayName and generateGlobalLeadId use @/lib/leads.
  */
 
 export interface LeadFilters {
@@ -19,34 +18,6 @@ export interface LeadFilters {
   search?: string;
   /** Filter to leads where any of these fields is null or empty. Prefix custom fields with "custom." */
   missingFields?: string[];
-}
-
-/**
- * Generate global lead ID from email (SHA-256 hash)
- * This matches the database function generate_global_lead_id
- */
-export async function generateGlobalLeadId(email: string | null | undefined): Promise<string | null> {
-  if (!email) return null;
-  
-  // Use Web Crypto API for SHA-256 hashing (web only)
-  if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-    try {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(email.toLowerCase().trim());
-      const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      return hashHex;
-    } catch (error) {
-      console.error('Failed to generate global lead ID:', error);
-      const msg = error instanceof Error ? error.message : String(error);
-      reportErrorToSlack('Failed to generate global lead ID', { severity: 'warning', error: msg });
-      return null;
-    }
-  }
-  
-  // Fallback: return null and let database handle it
-  return null;
 }
 
 /**
@@ -172,16 +143,6 @@ export async function getLeadById(id: string): Promise<Lead | null> {
   }
 
   return data;
-}
-
-/** Display name for a lead: name, or first + last, or email */
-export function getLeadDisplayName(lead: Lead | null): string {
-  if (!lead) return '';
-  if (lead.name && lead.name.trim()) return lead.name.trim();
-  const firstLast = [lead.first_name, lead.last_name].filter(Boolean).join(' ').trim();
-  if (firstLast) return firstLast;
-  if (lead.email && lead.email.trim()) return lead.email.trim();
-  return '';
 }
 
 /**

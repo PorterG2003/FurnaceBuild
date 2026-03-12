@@ -6,7 +6,8 @@ import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { useAccount } from '@/contexts/AccountContext';
-import { createLeads, generateGlobalLeadId, getLeadCount, getLeads } from '@/lib/supabase/services/leads';
+import { createLeads, getLeadCount, getLeads } from '@/lib/supabase/services/leads';
+import { generateGlobalLeadId } from '@/lib/leads';
 import { ensureCampaignEnrollmentsForLeads } from '@/lib/supabase/services/campaigns';
 import type { LeadInsert, Lead } from '@/lib/supabase/types';
 

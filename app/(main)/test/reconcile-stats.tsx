@@ -3,8 +3,7 @@ import { View, Text, ActivityIndicator, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { PageLayout } from '@/components/ui/layout';
 import { useAccount } from '@/contexts/AccountContext';
-import { supabase } from '@/lib/supabase/client';
-import { getCampaigns } from '@/lib/supabase/services/campaigns';
+import { getCampaigns, reconcileCampaignStats } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import { ArrowPathIcon, CheckCircleIcon, ExclamationTriangleIcon } from 'react-native-heroicons/outline';
 
@@ -46,14 +45,8 @@ export default function ReconcileStatsPage() {
     setReconciling(true);
     setResult(null);
     try {
-      const { data, error } = await supabase.rpc('reconcile_campaign_stats', {
-        p_campaign_id: campaignId,
-      });
-      if (error) {
-        setResult({ type: 'error', message: error.message });
-      } else {
-        setResult({ type: 'success', count: data as number });
-      }
+      const count = await reconcileCampaignStats(campaignId);
+      setResult({ type: 'success', count });
     } catch (err) {
       setResult({ type: 'error', message: err instanceof Error ? err.message : 'Unknown error' });
     } finally {

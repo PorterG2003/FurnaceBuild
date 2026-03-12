@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase/client';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
-import { getAccountMembershipsForUser } from '@/lib/supabase/services/users';
+import { getAccountMembershipsForUser } from '@/lib/supabase/services/accounts';
 import { Button } from '@/components/ui/button';
 
 interface JobStatus {

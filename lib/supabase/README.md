@@ -1,75 +1,57 @@
-# Supabase Integration
+# Supabase Runtime Layer
 
-This directory contains all Supabase-related code for database operations.
+This directory contains the application-facing Supabase code used by the app and workers.
+
+It is not the source of truth for database migrations.
+
+## Canonical Split
+
+- `lib/supabase/` contains runtime code: client setup, TypeScript types, and service helpers.
+- `supabase/` at the repository root contains the Supabase CLI project, SQL migrations, and other database-project assets.
+
+When in doubt:
+
+- Import runtime code from `@/lib/supabase/*`
+- Put SQL migrations in `supabase/migrations/`
+- Run Supabase CLI commands from the repository root
+
+## Service boundary rules
+
+- **Database and RPC access** (`supabase.from(...)`, `supabase.rpc(...)`) from the app must live in `lib/supabase/services/`. Screens and components should not call these directly; they go through service functions.
+- **HTTP/backend wrappers** (e.g. `fetch()` to Lambda URLs or other APIs) live in `lib/services/`, even when they use a Supabase JWT for auth.
+- **Auth UI** (sign-in, sign-up, sign-out, password reset) may call `supabase.auth.*` directly in auth components. Other code that only needs an access token should use the shared helper from `lib/services/auth-token`.
 
 ## Structure
 
-- `client.ts` - Supabase client initialization and configuration
-- `types/` - TypeScript type definitions for database tables
-- `services/` - Data access layer for each table/entity
-- `migrations/` - SQL migration files (create this when needed)
+- `client.ts` - Supabase client initialization and auth/session helpers
+- `types/` - TypeScript database types used by the app and workers
+- `services/` - Data access layer for database and RPC; all app-side `supabase.from` / `supabase.rpc` usage belongs here
 
 ## Environment Variables
 
-You need to set the following environment variables:
+The app expects:
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=your-supabase-project-url
 EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-api-key
 ```
 
-**Getting your keys:**
-1. Go to Supabase Dashboard → Settings → API
-2. Click the **"API Keys"** tab (use the new keys, not legacy)
-3. Copy the **"Publishable API Key"** (safe for client-side)
-4. Copy your **Project URL**
+Get these from Supabase Dashboard -> Settings -> API.
 
-⚠️ Never use the "Secret API Key" in client-side code!
+Never use the secret API key in client-side code.
 
-These can be set in a `.env` file or in `app.json` under `expo.extra`.
+## Database Changes
 
-## Database Schema
+If you need to change the database schema:
 
-See `migrations/` directory for SQL migrations. The current schema includes:
-
-- `campaigns` - Campaign table with name, owner_id, and organization_id
-
-## Running Migrations
-
-You have two options for running database migrations:
-
-### Option 1: Manual (Current Setup - Simple)
-1. Create SQL migration file in `migrations/` (e.g., `002_add_users.sql`)
-2. Copy the SQL code
-3. Go to Supabase Dashboard → SQL Editor
-4. Paste and run the query
-5. ✅ Done!
-
-**Pros:** Simple, no extra setup  
-**Cons:** Manual step each time
-
-### Option 2: Supabase CLI (Automated - Recommended for teams)
-1. Install Supabase CLI: `npm install -g supabase`
-2. Login: `supabase login`
-3. Link project: `supabase link --project-ref your-project-id`
-4. Push migrations: `supabase db push`
-
-**Pros:** Automated, version controlled, can apply to multiple environments  
-**Cons:** Requires CLI setup
-
-For now, **Option 1 is fine** - just copy/paste migrations into SQL Editor when you create new tables.
-
-## Adding New Tables
-
-1. Create SQL migration in `migrations/` with a numbered filename (e.g., `002_add_users.sql`)
-2. Run the migration (see "Running Migrations" above)
-3. Add types to `types/database.ts`
-4. Create service file in `services/[table-name].ts`
-5. Export from `services/index.ts`
+1. Add a new SQL migration under `supabase/migrations/`
+2. Apply it with the repo's documented Supabase CLI workflow
+3. Regenerate or update `lib/supabase/types/database.ts`
+4. Update or add service helpers in `lib/supabase/services/` as needed
 
 ## Type Generation
 
-To auto-generate types from your Supabase schema:
+To regenerate types from the remote schema:
 
 ```bash
 npx supabase gen types typescript --project-id <your-project-id> > lib/supabase/types/database.ts
@@ -81,9 +63,6 @@ npx supabase gen types typescript --project-id <your-project-id> > lib/supabase/
 import { getCampaigns, createCampaign } from '@/lib/supabase/services';
 import { useAccount } from '@/contexts/AccountContext';
 
-// In a component
 const { user } = useAccount();
 const campaigns = await getCampaigns({ ownerId: user.id });
 ```
-
-

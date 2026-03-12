@@ -14,6 +14,7 @@ export function ThreadItem({
   isUnread = false,
   cardTitle,
   campaignName = null,
+  sourceLabel = null,
   preview = null,
   tags = [],
 }: {
@@ -24,6 +25,7 @@ export function ThreadItem({
   /** Lead name with fallback to email; used as the card title */
   cardTitle?: string;
   campaignName?: string | null;
+  sourceLabel?: string | null;
   preview?: string | null;
   tags?: ThreadTag[];
 }) {
@@ -109,13 +111,34 @@ export function ThreadItem({
         </Text>
       ) : null}
 
-      {/* Campaign chip at bottom */}
-      {campaignName ? (
-        <View
-          className="rounded-lg px-2 py-0.5 self-start"
-          style={{ backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#3A3A3A' }}
-        >
-          <Text className="text-xs font-instrument text-gray-400">{campaignName}</Text>
+      {/* Source / campaign chips at bottom */}
+      {(sourceLabel || campaignName) ? (
+        <View className="flex-row items-center gap-1.5 self-start flex-wrap">
+          {sourceLabel ? (
+            <View
+              className="rounded-lg px-2 py-0.5"
+              style={
+                sourceLabel === 'Smartlead'
+                  ? { backgroundColor: 'rgba(110, 88, 241, 0.12)', borderWidth: 1, borderColor: 'rgba(110, 88, 241, 0.3)' }
+                  : { backgroundColor: 'rgba(243, 68, 13, 0.12)', borderWidth: 1, borderColor: 'rgba(243, 68, 13, 0.3)' }
+              }
+            >
+              <Text
+                className="text-xs font-instrument"
+                style={{ color: sourceLabel === 'Smartlead' ? '#6e58f1' : '#F97316' }}
+              >
+                {sourceLabel}
+              </Text>
+            </View>
+          ) : null}
+          {campaignName ? (
+            <View
+              className="rounded-lg px-2 py-0.5"
+              style={{ backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#3A3A3A' }}
+            >
+              <Text className="text-xs font-instrument text-gray-400">{campaignName}</Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
     </Pressable>

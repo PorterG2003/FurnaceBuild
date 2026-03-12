@@ -6,9 +6,9 @@ import { supabase } from '@/lib/supabase/client';
 import { buildCampaignEmailContent } from '@/lib/email/index';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
-import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
+import { createMailbox, getMailboxById, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
 import type { Mailbox } from '@/lib/supabase/types';
-import { getAccountMembershipsForUser } from '@/lib/supabase/services/users';
+import { getAccountMembershipsForUser } from '@/lib/supabase/services/accounts';
 import { Button } from '@/components/ui/button';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { RaceConditionTest } from './worker-race-condition';
@@ -220,8 +220,7 @@ export default function TestWorkerPage() {
       if (selectedMailboxId) {
         mailbox = mailboxes.find((m) => m.id === selectedMailboxId) ?? null;
         if (!mailbox) {
-          const { data } = await supabase.from('mailboxes').select('*').eq('id', selectedMailboxId).single();
-          mailbox = data;
+          mailbox = await getMailboxById(selectedMailboxId);
         }
       }
       if (!mailbox) {

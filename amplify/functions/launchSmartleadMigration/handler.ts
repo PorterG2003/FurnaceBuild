@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ECSClient, RunTaskCommand } from '@aws-sdk/client-ecs';
 import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { reportErrorToSlack } from '@furnace/slack-lib';
 
 function isFunctionUrlEvent(
@@ -45,7 +45,7 @@ function getParameterPath(environment: string, runId: string): string {
 export const handler = async (
   event: { headers: Record<string, string>; body?: string | null; isBase64Encoded?: boolean },
 ) => {
-  let launchSupabase: ReturnType<typeof createClient> | null = null;
+  let launchSupabase: SupabaseClient | null = null;
   let launchPayload: LaunchPayload | null = null;
   if (!isFunctionUrlEvent(event)) {
     return {

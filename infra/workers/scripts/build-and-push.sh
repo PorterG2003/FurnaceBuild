@@ -18,7 +18,7 @@ fi
 
 # Parse arguments
 ENVIRONMENT="${1:-dev}"
-WORKER="${2:-all}"  # send-worker, scheduler-worker, or all
+WORKER="${2:-all}"  # send-worker, scheduler-worker, inbox-checker-worker, smartlead-migration-task, or all
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 ACCOUNT="${CDK_DEFAULT_ACCOUNT:-686255981838}"
@@ -26,14 +26,14 @@ ACCOUNT="${CDK_DEFAULT_ACCOUNT:-686255981838}"
 # Validate environment
 if [ "$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "prod" ]; then
   echo "❌ Error: Environment must be 'dev' or 'prod'"
-  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|all]"
+  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|smartlead-migration-task|all]"
   exit 1
 fi
 
 # Validate worker
-if [ "$WORKER" != "send-worker" ] && [ "$WORKER" != "scheduler-worker" ] && [ "$WORKER" != "inbox-checker-worker" ] && [ "$WORKER" != "all" ]; then
-  echo "❌ Error: Worker must be 'send-worker', 'scheduler-worker', 'inbox-checker-worker', or 'all'"
-  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|all]"
+if [ "$WORKER" != "send-worker" ] && [ "$WORKER" != "scheduler-worker" ] && [ "$WORKER" != "inbox-checker-worker" ] && [ "$WORKER" != "smartlead-migration-task" ] && [ "$WORKER" != "all" ]; then
+  echo "❌ Error: Worker must be 'send-worker', 'scheduler-worker', 'inbox-checker-worker', 'smartlead-migration-task', or 'all'"
+  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|smartlead-migration-task|all]"
   exit 1
 fi
 
@@ -56,6 +56,8 @@ get_repo_uri() {
     output_key="SendWorkerRepoUri"
   elif [ "$repo_name" = "scheduler-worker" ]; then
     output_key="SchedulerWorkerRepoUri"
+  elif [ "$repo_name" = "smartlead-migration-task" ]; then
+    output_key="SmartleadMigrationTaskRepoUri"
   else
     output_key="InboxCheckerWorkerRepoUri"
   fi
@@ -146,6 +148,7 @@ if [ "$WORKER" = "all" ]; then
   build_and_push_worker "send-worker"
   build_and_push_worker "scheduler-worker"
   build_and_push_worker "inbox-checker-worker"
+  build_and_push_worker "smartlead-migration-task"
 else
   build_and_push_worker "$WORKER"
 fi
@@ -156,10 +159,9 @@ echo "✨ All images built and pushed successfully!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📝 Next steps:"
-echo "   Scale up ECS services to start tasks:"
-echo ""
+echo "   Long-running workers:"
 echo "   npm run scale:$ENVIRONMENT"
 echo ""
-echo "   Or manually:"
-echo "   bash scripts/scale-services.sh $ENVIRONMENT 1 1"
+echo "   Smartlead migration task:"
+echo "   Deploy Amplify after infra/worker exports are available, then launch a migration run from the app."
 

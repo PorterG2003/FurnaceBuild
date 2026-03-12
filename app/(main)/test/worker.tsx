@@ -10,6 +10,7 @@ import { createMailbox, getMailboxById, getMailboxesByUser } from '@/lib/supabas
 import type { Mailbox } from '@/lib/supabase/types';
 import { getAccountMembershipsForUser } from '@/lib/supabase/services/accounts';
 import { Button } from '@/components/ui/button';
+import { SegmentControl } from '@/components/ui/segment-control';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { RaceConditionTest } from './worker-race-condition';
 
@@ -471,38 +472,18 @@ export default function TestWorkerPage() {
         {/* Test Mode Selector */}
         <View>
           <Text className="text-sm font-medium mb-2 text-gray-300">Test Mode</Text>
-          <View className="flex-row space-x-2">
-            <TouchableOpacity
-              onPress={() => {
-                setTestMode('single');
-                setError(null);
-              }}
-              className={`flex-1 py-3 px-4 rounded-xl border ${
-                testMode === 'single'
-                  ? 'bg-blue-600 border-blue-500'
-                  : 'bg-white/5 border-white/30'
-              }`}
-            >
-              <Text className={`text-center font-medium ${testMode === 'single' ? 'text-white' : 'text-gray-400'}`}>
-                Single Test
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                setTestMode('scale');
-                setError(null);
-              }}
-              className={`flex-1 py-3 px-4 rounded-xl border ${
-                testMode === 'scale'
-                  ? 'bg-blue-600 border-blue-500'
-                  : 'bg-white/5 border-white/30'
-              }`}
-            >
-              <Text className={`text-center font-medium ${testMode === 'scale' ? 'text-white' : 'text-gray-400'}`}>
-                Scale Test
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <SegmentControl
+            options={[
+              { value: 'single', label: 'Single Test' },
+              { value: 'scale', label: 'Scale Test' },
+            ]}
+            value={testMode}
+            onChange={(v) => {
+              setTestMode(v as 'single' | 'scale');
+              setError(null);
+            }}
+            unselectedVariant="outline"
+          />
           {testMode === 'scale' && (
             <View className="mt-2">
               <Text className="text-gray-500 text-xs">

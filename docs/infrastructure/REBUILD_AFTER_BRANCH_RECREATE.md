@@ -124,6 +124,13 @@ npm run deploy:dev
 
 This updates the ECS task definitions with the new Supabase URL (though you still need to restart services).
 
+**Important:** Deploy the worker stack before any Amplify backend deploy that imports worker exports for Smartlead migration. The backend now depends on these worker-stack exports existing in CloudFormation:
+
+- `FurnaceCluster-dev`
+- `FurnaceWorkerSecurityGroup-dev`
+- `FurnaceWorkerPublicSubnets-dev`
+- `FurnaceSmartleadMigrationTaskDefinition-dev`
+
 ---
 
 ## Step 5: Rebuild and Push Docker Images (If Needed)
@@ -133,12 +140,14 @@ If your worker code changed or you want fresh images:
 ```bash
 cd infra/workers
 
-# Build and push both workers for dev
+# Build and push all worker images for dev
 npm run build:dev
 
 # Or build individually:
 npm run build:dev:send      # Send worker only
 npm run build:dev:scheduler # Scheduler worker only
+npm run build:dev:inbox-checker
+npm run build:dev:smartlead
 ```
 
 **Note**: This only needs to be done if:
@@ -196,6 +205,12 @@ npm run check:env
 
 Should show the new `SUPABASE_URL` in task definitions.
 
+For the Smartlead migration task:
+
+```bash
+npm run check:env -- dev smartlead
+```
+
 ### 7.3 Check Worker Logs
 
 ```bash
@@ -209,6 +224,9 @@ aws logs tail /ecs/furnace/send-worker-dev --follow --region us-west-2
 
 # Scheduler worker logs
 aws logs tail /ecs/furnace/scheduler-worker-dev --follow --region us-west-2
+
+# Smartlead migration task logs
+aws logs tail /ecs/furnace/smartlead-migration-task-dev --follow --region us-west-2
 ```
 
 Look for:

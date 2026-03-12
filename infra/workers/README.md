@@ -1,6 +1,6 @@
 # Furnace Workers Infrastructure
 
-CDK project for deploying ECS workers (send worker and scheduler worker) to separate dev and prod environments.
+CDK project for deploying ECS worker infrastructure for `send-worker`, `scheduler-worker`, `inbox-checker-worker`, and the ad hoc `smartlead-migration-task` across separate dev and prod environments.
 
 ## Prerequisites
 
@@ -79,6 +79,23 @@ npm install
 
 ## Deployment
 
+### Deployment Contract With Amplify
+
+Amplify owns the app backend and Lambda functions. `infra/workers` owns the ECS cluster, networking, task definitions, and worker images.
+
+The Smartlead migration launcher in `amplify/backend.ts` imports these CloudFormation exports from the worker stack:
+
+- `FurnaceCluster-{env}`
+- `FurnaceWorkerSecurityGroup-{env}`
+- `FurnaceWorkerPublicSubnets-{env}`
+- `FurnaceSmartleadMigrationTaskDefinition-{env}`
+
+Because of that dependency, deploy the matching worker stack before any Amplify backend deploy that includes the Smartlead migration integration:
+
+- Amplify sandbox / non-production deploys should use worker environment `dev`
+- Amplify production deploys should use worker environment `prod`
+- If those exports are missing, Amplify backend deployment will fail
+
 ### Deploy Dev Stack
 
 ```bash
@@ -103,7 +120,11 @@ After deployment, check:
 
 1. **ECR Repositories:**
    ```bash
-   aws ecr describe-repositories --repository-names furnace/send-worker-dev furnace/scheduler-worker-dev
+   aws ecr describe-repositories --repository-names \
+     furnace/send-worker-dev \
+     furnace/scheduler-worker-dev \
+     furnace/inbox-checker-worker-dev \
+     furnace/smartlead-migration-task-dev
    ```
 
 2. **ECS Clusters:**
@@ -114,6 +135,11 @@ After deployment, check:
 3. **ECS Services:**
    ```bash
    aws ecs list-services --cluster furnace-cluster-dev
+   ```
+
+4. **Smartlead task definition export:**
+   ```bash
+   aws cloudformation list-exports --query "Exports[?starts_with(Name, 'FurnaceSmartleadMigrationTaskDefinition-')]"
    ```
 
 ## Build and Push Docker Images
@@ -136,10 +162,14 @@ npm run build:prod
 # Dev environment
 npm run build:dev:send       # Send worker only
 npm run build:dev:scheduler  # Scheduler worker only
+npm run build:dev:inbox-checker
+npm run build:dev:smartlead
 
 # Prod environment
 npm run build:prod:send      # Send worker only
 npm run build:prod:scheduler # Scheduler worker only
+npm run build:prod:inbox-checker
+npm run build:prod:smartlead
 ```
 
 ### Manual Build (Alternative)
@@ -149,6 +179,7 @@ You can also use the script directly:
 ```bash
 bash scripts/build-and-push.sh dev all           # All workers for dev
 bash scripts/build-and-push.sh prod send-worker  # Send worker for prod
+bash scripts/build-and-push.sh dev smartlead-migration-task
 ```
 
 The script will:
@@ -173,6 +204,10 @@ The script will:
 - `npm run build:prod` - Build and push all workers for prod
 - `npm run build:dev:send` - Build send worker for dev
 - `npm run build:dev:scheduler` - Build scheduler worker for dev
+- `npm run build:dev:inbox-checker` - Build inbox checker worker for dev
+- `npm run build:dev:smartlead` - Build Smartlead migration task image for dev
+- `npm run build:prod:inbox-checker` - Build inbox checker worker for prod
+- `npm run build:prod:smartlead` - Build Smartlead migration task image for prod
 
 ### Scaling Commands
 - `npm run scale:dev` - Scale dev services to 1 task each (queries `furnace-cluster-dev` only)
@@ -181,6 +216,28 @@ The script will:
 - `npm run scale:down:prod` - Scale prod services to 0 tasks (stop workers)
 
 **Note:** Services are isolated by cluster - the script queries the specific cluster for that environment, so dev and prod won't mix.
+
+### Smartlead Migration Task
+
+Unlike the other workers, `smartlead-migration-task` is not an ECS service. Amplify launches it on demand with `ecs:RunTask` from `amplify/functions/launchSmartleadMigration/handler.ts`.
+
+That means:
+
+- build and push its Docker image through the shared worker scripts
+- deploy the worker stack first so the exported cluster/network/task-definition values exist
+- do not use service scaling or restart commands for Smartlead
+- use task/log inspection commands instead:
+
+```bash
+# Check the task definition and latest runs
+npm run check:task -- dev smartlead
+
+# Check task definition environment
+npm run check:env -- dev smartlead
+
+# Check CloudWatch logs
+npm run check:logs -- dev smartlead
+```
 
 ### Inbox Checker Runtime Ownership
 

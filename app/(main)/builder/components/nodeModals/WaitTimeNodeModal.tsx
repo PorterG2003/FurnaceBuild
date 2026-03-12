@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
+import { SegmentControl } from '@/components/ui/segment-control';
 
 const UNIT_TO_SECONDS: Record<string, number> = {
   minutes: 60,
@@ -122,33 +123,15 @@ function WaitTimeNodeModal({
             <Text className="text-sm font-instrument-medium mb-2 text-gray-300">
               Unit
             </Text>
-            <View className="flex-row gap-2">
-              {(['minutes', 'hours', 'days'] as const).map((u) => (
-                <TouchableOpacity
-                  key={u}
-                  onPress={() => setUnit(u)}
-                  className={`flex-1 rounded-xl px-4 py-3 items-center justify-center border ${
-                    unit === u
-                      ? 'bg-brand-orange border-brand-orange'
-                      : 'border-[#3A3A3A] bg-[#2A2A2A]'
-                  }`}
-                  style={{
-                    borderWidth: 1,
-                  }}
-                >
-                  <Text
-                    className={`font-instrument-medium text-sm ${
-                      unit === u ? 'text-white' : 'text-gray-400'
-                    }`}
-                    style={{
-                      textTransform: 'capitalize',
-                    }}
-                  >
-                    {u}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <SegmentControl
+              options={[
+                { value: 'minutes', label: 'Minutes' },
+                { value: 'hours', label: 'Hours' },
+                { value: 'days', label: 'Days' },
+              ]}
+              value={unit}
+              onChange={(v) => setUnit(v as 'minutes' | 'hours' | 'days')}
+            />
           </View>
         </View>
       </View>

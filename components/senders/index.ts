@@ -1,5 +1,3 @@
-export { ActionButton } from './ActionButton';
-export type { ActionButtonProps } from './ActionButton';
 export { ConnectMailboxModal } from './ConnectMailboxModal';
 export type { ConnectMailboxModalProps } from './ConnectMailboxModal';
 export { EditMailboxModal } from './EditMailboxModal';

@@ -17,7 +17,7 @@ fi
 
 # Parse arguments
 ENVIRONMENT="${1:-dev}"
-WORKER_TYPE="${2:-send}"  # send, scheduler, or inbox-checker
+WORKER_TYPE="${2:-send}"  # send, scheduler, inbox-checker, or smartlead
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 CLUSTER_NAME="furnace-cluster-$ENVIRONMENT"
@@ -27,8 +27,10 @@ echo "   Environment: $ENVIRONMENT"
 echo "   Worker Type: $WORKER_TYPE"
 echo ""
 
-# Find the service
-if [ "$WORKER_TYPE" = "send" ]; then
+# Find the service (Smartlead runs as ad hoc tasks)
+if [ "$WORKER_TYPE" = "smartlead" ]; then
+  TASK_FAMILY="furnace-smartlead-migration-task-$ENVIRONMENT"
+elif [ "$WORKER_TYPE" = "send" ]; then
   SERVICE_NAME=$(aws ecs list-services \
     --cluster "$CLUSTER_NAME" \
     --region "$REGION" \
@@ -48,21 +50,32 @@ else
     --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
 fi
 
-if [ -z "$SERVICE_NAME" ] || [ "$SERVICE_NAME" = "None" ]; then
+if [ "$WORKER_TYPE" != "smartlead" ] && { [ -z "$SERVICE_NAME" ] || [ "$SERVICE_NAME" = "None" ]; }; then
   echo "❌ Service not found"
   exit 1
 fi
 
 # Check stopped tasks for errors
 echo "1️⃣  Checking recent stopped tasks for errors..."
-STOPPED_TASKS=$(aws ecs list-tasks \
-  --cluster "$CLUSTER_NAME" \
-  --service-name "$SERVICE_NAME" \
-  --desired-status STOPPED \
-  --region "$REGION" \
-  --max-items 5 \
-  --query 'taskArns' \
-  --output text)
+if [ "$WORKER_TYPE" = "smartlead" ]; then
+  STOPPED_TASKS=$(aws ecs list-tasks \
+    --cluster "$CLUSTER_NAME" \
+    --family "$TASK_FAMILY" \
+    --desired-status STOPPED \
+    --region "$REGION" \
+    --max-items 5 \
+    --query 'taskArns' \
+    --output text)
+else
+  STOPPED_TASKS=$(aws ecs list-tasks \
+    --cluster "$CLUSTER_NAME" \
+    --service-name "$SERVICE_NAME" \
+    --desired-status STOPPED \
+    --region "$REGION" \
+    --max-items 5 \
+    --query 'taskArns' \
+    --output text)
+fi
 
 if [ -n "$STOPPED_TASKS" ] && [ "$STOPPED_TASKS" != "None" ]; then
   echo "   Found stopped tasks, checking for exit codes..."
@@ -101,13 +114,23 @@ fi
 
 # Check current running task
 echo "2️⃣  Checking current running task..."
-RUNNING_TASKS=$(aws ecs list-tasks \
-  --cluster "$CLUSTER_NAME" \
-  --service-name "$SERVICE_NAME" \
-  --desired-status RUNNING \
-  --region "$REGION" \
-  --query 'taskArns[0]' \
-  --output text)
+if [ "$WORKER_TYPE" = "smartlead" ]; then
+  RUNNING_TASKS=$(aws ecs list-tasks \
+    --cluster "$CLUSTER_NAME" \
+    --family "$TASK_FAMILY" \
+    --desired-status RUNNING \
+    --region "$REGION" \
+    --query 'taskArns[0]' \
+    --output text)
+else
+  RUNNING_TASKS=$(aws ecs list-tasks \
+    --cluster "$CLUSTER_NAME" \
+    --service-name "$SERVICE_NAME" \
+    --desired-status RUNNING \
+    --region "$REGION" \
+    --query 'taskArns[0]' \
+    --output text)
+fi
 
 if [ -n "$RUNNING_TASKS" ] && [ "$RUNNING_TASKS" != "None" ]; then
   TASK_ID=$(echo $RUNNING_TASKS | awk -F'/' '{print $NF}')
@@ -189,9 +212,15 @@ echo "   2. Verify the image was built correctly"
 echo "   3. Check if environment variables are set correctly"
 echo ""
 echo "   If tasks are running but no logs:"
-echo "   1. Restart the service to force a fresh start:"
-echo "      npm run restart:$ENVIRONMENT"
-echo "   2. Check CloudWatch logs immediately after restart"
-echo "   3. Verify IAM permissions for CloudWatch Logs"
+if [ "$WORKER_TYPE" = "smartlead" ]; then
+  echo "   1. Launch a fresh Smartlead migration run"
+  echo "   2. Check CloudWatch logs immediately after launch"
+  echo "   3. Verify IAM permissions for CloudWatch Logs"
+else
+  echo "   1. Restart the service to force a fresh start:"
+  echo "      npm run restart:$ENVIRONMENT"
+  echo "   2. Check CloudWatch logs immediately after restart"
+  echo "   3. Verify IAM permissions for CloudWatch Logs"
+fi
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

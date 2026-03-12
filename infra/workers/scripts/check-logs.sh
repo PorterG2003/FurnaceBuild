@@ -17,7 +17,7 @@ fi
 
 # Parse arguments
 ENVIRONMENT="${1:-dev}"
-WORKER_TYPE="${2:-send}"  # send, scheduler, or inbox-checker
+WORKER_TYPE="${2:-send}"  # send, scheduler, inbox-checker, or smartlead
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 CLUSTER_NAME="furnace-cluster-$ENVIRONMENT"
@@ -26,6 +26,8 @@ if [ "$WORKER_TYPE" = "send" ]; then
   LOG_GROUP="/ecs/furnace/send-worker-$ENVIRONMENT"
 elif [ "$WORKER_TYPE" = "inbox-checker" ]; then
   LOG_GROUP="/ecs/furnace/inbox-checker-worker-$ENVIRONMENT"
+elif [ "$WORKER_TYPE" = "smartlead" ]; then
+  LOG_GROUP="/ecs/furnace/smartlead-migration-task-$ENVIRONMENT"
 else
   LOG_GROUP="/ecs/furnace/scheduler-worker-$ENVIRONMENT"
 fi

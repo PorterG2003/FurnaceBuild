@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, TextInput, RefreshControl } from 'react-native';
 import { useAccount } from '@/contexts/AccountContext';
 import { supabase } from '@/lib/supabase/client';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
@@ -7,6 +7,7 @@ import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
 import { getAccountMembershipsForUser } from '@/lib/supabase/services/accounts';
 import { Button } from '@/components/ui/button';
+import { SegmentControl } from '@/components/ui/segment-control';
 
 interface JobStatus {
   pending: number;
@@ -481,24 +482,17 @@ export function RaceConditionTest() {
           <View className="space-y-4">
             <View>
               <Text className="text-sm font-medium mb-2 text-gray-300">Test Scenario</Text>
-              <View className="flex-row flex-wrap gap-2">
-                {(['min-gap', 'daily-limit', 'hourly-limit', 'mixed'] as TestScenario[]).map((s) => (
-                  <TouchableOpacity
-                    key={s}
-                    onPress={() => setScenario(s)}
-                    className={`px-4 py-2 rounded-lg border ${
-                      scenario === s
-                        ? 'bg-brand-orange border-brand-orange'
-                        : 'bg-white/5 border-white/30'
-                    }`}
-                    style={scenario === s ? { backgroundColor: '#f85102', borderColor: '#f85102' } : undefined}
-                  >
-                    <Text className={`text-sm font-medium ${scenario === s ? 'text-white' : 'text-gray-400'}`}>
-                      {s === 'min-gap' ? 'Min Gap' : s === 'daily-limit' ? 'Daily Limit' : s === 'hourly-limit' ? 'Hourly Limit' : 'Mixed'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <SegmentControl
+                options={[
+                  { value: 'min-gap', label: 'Min Gap' },
+                  { value: 'daily-limit', label: 'Daily Limit' },
+                  { value: 'hourly-limit', label: 'Hourly Limit' },
+                  { value: 'mixed', label: 'Mixed' },
+                ]}
+                value={scenario}
+                onChange={(v) => setScenario(v as TestScenario)}
+                unselectedVariant="outline"
+              />
             </View>
 
             <View>

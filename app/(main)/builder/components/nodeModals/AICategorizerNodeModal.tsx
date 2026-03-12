@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TextInput, ScrollView } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { TrashIcon } from 'react-native-heroicons/outline';
 
 interface AICategorizerNodeModalProps {
@@ -125,12 +126,11 @@ export function AICategorizerNodeModal({
                     underlineColorAndroid="transparent"
                   />
                   {categories.length > 1 && (
-                    <TouchableOpacity
+                    <IconButton
+                      variant="destructive"
+                      icon={TrashIcon}
                       onPress={() => handleRemoveCategory(index)}
-                      className="p-3 rounded-lg border border-red-500/30 bg-red-500/20"
-                    >
-                      <TrashIcon size={18} color="#ef4444" />
-                    </TouchableOpacity>
+                    />
                   )}
                 </View>
               ))}

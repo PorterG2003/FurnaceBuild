@@ -629,35 +629,27 @@ export default function AccountPage() {
                                       </Text>
                                     </View>
                                     {canManage && Platform.OS !== 'web' && (
-                                      <TouchableOpacity
+                                      <Button
+                                        variant="secondary"
+                                        size="xs"
                                         onPress={() => setRoleEditMember({ membershipId: member.membership.id, memberName: member.user.name || member.user.email })}
                                         disabled={updatingRoleId === member.membership.id}
-                                        className="px-2 py-1 rounded bg-[#2A2A2A] border border-[#3A3A3A] active:opacity-80"
-                                        activeOpacity={0.7}
                                       >
-                                        <Text className="text-gray-300 text-xs font-instrument-medium">
-                                          {updatingRoleId === member.membership.id ? 'Updating...' : 'Change role'}
-                                        </Text>
-                                      </TouchableOpacity>
+                                        {updatingRoleId === member.membership.id ? 'Updating...' : 'Change role'}
+                                      </Button>
                                     )}
                                   </View>
                                 )}
                                 
                                 {canManage && (
-                                  <TouchableOpacity
+                                  <Button
+                                    variant="destructive"
+                                    size="xs"
                                     onPress={() => handleRemoveMember(member.membership.id, member.user.name || member.user.email)}
                                     disabled={removingMemberId === member.membership.id}
-                                    className="px-2 py-1 rounded bg-red-500/10 border border-red-500/20 active:bg-red-500/20"
-                                    activeOpacity={0.7}
                                   >
-                                    {removingMemberId === member.membership.id ? (
-                                      <ActivityIndicator size="small" color="#ef4444" />
-                                    ) : (
-                                      <Text className="text-red-400 text-xs font-instrument-medium">
-                                        Remove
-                                      </Text>
-                                    )}
-                                  </TouchableOpacity>
+                                    {removingMemberId === member.membership.id ? 'Removing...' : 'Remove'}
+                                  </Button>
                                 )}
                               </View>
                             </View>
@@ -694,20 +686,14 @@ export default function AccountPage() {
                                 Pending
                               </Text>
                             </View>
-                            <TouchableOpacity
+                            <Button
+                              variant="destructive"
+                              size="xs"
                               onPress={() => handleRevokeInvitation(invitation.id)}
                               disabled={revokingInvitationId === invitation.id}
-                              className="px-2 py-1 rounded bg-red-500/10 border border-red-500/20 active:bg-red-500/20"
-                              activeOpacity={0.7}
                             >
-                              {revokingInvitationId === invitation.id ? (
-                                <ActivityIndicator size="small" color="#ef4444" />
-                              ) : (
-                                <Text className="text-red-400 text-xs font-instrument-medium">
-                                  Revoke
-                                </Text>
-                              )}
-                            </TouchableOpacity>
+                              {revokingInvitationId === invitation.id ? 'Revoking...' : 'Revoke'}
+                            </Button>
                           </View>
                         ))}
                       </View>

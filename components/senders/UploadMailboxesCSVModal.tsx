@@ -460,9 +460,9 @@ export function UploadMailboxesCSVModal({
               <Text className="text-gray-500 text-sm mt-1">{rows.length} rows</Text>
             )}
           </TouchableOpacity>
-          <TouchableOpacity onPress={downloadTemplate} className="self-start">
-            <Text className="text-[#FF4D00] font-instrument-medium text-sm">Download template CSV</Text>
-          </TouchableOpacity>
+          <Button variant="link" size="sm" onPress={downloadTemplate} className="self-start">
+            Download template CSV
+          </Button>
         </View>
       )}
 

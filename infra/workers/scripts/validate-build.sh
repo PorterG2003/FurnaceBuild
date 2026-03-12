@@ -45,9 +45,10 @@ echo "📦 Validating TypeScript Builds"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-WORKERS=("send-worker" "scheduler-worker" "inbox-checker-worker")
+TS_WORKERS=("send-worker" "scheduler-worker" "inbox-checker-worker")
+DOCKER_WORKERS=("send-worker" "scheduler-worker" "inbox-checker-worker" "smartlead-migration-task")
 
-for worker in "${WORKERS[@]}"; do
+for worker in "${TS_WORKERS[@]}"; do
   WORKER_DIR="$PROJECT_ROOT/workers/$worker"
   
   if [ ! -d "$WORKER_DIR" ]; then
@@ -101,7 +102,7 @@ if [ "$SKIP_DOCKER" = false ]; then
     docker buildx create --use --name multiarch-builder 2>/dev/null || docker buildx use multiarch-builder
   fi
   
-  for worker in "${WORKERS[@]}"; do
+  for worker in "${DOCKER_WORKERS[@]}"; do
     WORKER_DIR="$PROJECT_ROOT/workers/$worker"
     DOCKERFILE="$WORKER_DIR/Dockerfile"
     

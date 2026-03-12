@@ -31,6 +31,18 @@ const backend = defineBackend({
   launchSmartleadMigration,
 });
 
+function resolveWorkerEnvironment(): 'dev' | 'prod' {
+  const value = process.env.WORKER_ENVIRONMENT ?? process.env.ENVIRONMENT ?? 'dev';
+
+  if (value !== 'dev' && value !== 'prod') {
+    throw new Error(
+      `Invalid WORKER_ENVIRONMENT/ENVIRONMENT value "${value}". Expected "dev" or "prod".`,
+    );
+  }
+
+  return value;
+}
+
 // Fetch email attachment: Function URL + Supabase auth.getUser() for token verification
 const fetchAttachmentLambda = backend.fetchEmailAttachment.resources.lambda as lambda.Function;
 fetchAttachmentLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
@@ -110,7 +122,7 @@ const allowPublicTestMailboxInvoke = new lambda.CfnPermission(testMailboxLambda.
 allowPublicTestMailboxInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
 const launchSmartleadMigrationLambda = backend.launchSmartleadMigration.resources.lambda as lambda.Function;
-const workerEnvironment = process.env.WORKER_ENVIRONMENT || process.env.ENVIRONMENT || 'dev';
+const workerEnvironment = resolveWorkerEnvironment();
 launchSmartleadMigrationLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 launchSmartleadMigrationLambda.addEnvironment('WORKER_ENVIRONMENT', workerEnvironment);
 launchSmartleadMigrationLambda.addEnvironment(

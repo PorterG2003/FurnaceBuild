@@ -431,33 +431,27 @@ function ReviewSectionPagination({
 
   return (
     <View className="flex-row items-center justify-between mt-3 px-1">
-      <TouchableOpacity
+      <Button
+        variant="secondary"
+        size="sm"
         onPress={onPrevious}
         disabled={!canPrevious}
-        activeOpacity={0.8}
-        className={`px-3 py-2 rounded-lg border ${canPrevious ? 'border-[#3A3A3A]' : 'border-[#2A2A2A] opacity-50'}`}
-        style={{ backgroundColor: '#1A1A1A' }}
       >
-        <Text className={`text-sm font-instrument-medium ${canPrevious ? 'text-white' : 'text-gray-500'}`}>
-          Previous
-        </Text>
-      </TouchableOpacity>
+        Previous
+      </Button>
 
       <Text className="text-xs text-gray-400 font-instrument">
         {start}-{end} of {formatCount(totalCount)}
       </Text>
 
-      <TouchableOpacity
+      <Button
+        variant="secondary"
+        size="sm"
         onPress={onNext}
         disabled={!canNext}
-        activeOpacity={0.8}
-        className={`px-3 py-2 rounded-lg border ${canNext ? 'border-[#3A3A3A]' : 'border-[#2A2A2A] opacity-50'}`}
-        style={{ backgroundColor: '#1A1A1A' }}
       >
-        <Text className={`text-sm font-instrument-medium ${canNext ? 'text-white' : 'text-gray-500'}`}>
-          Next
-        </Text>
-      </TouchableOpacity>
+        Next
+      </Button>
     </View>
   );
 }
@@ -1268,11 +1262,9 @@ export function SmartleadMigrationWizardModal({ visible, onClose }: Props) {
                   <Text className="text-xs text-gray-400 font-instrument-medium">
                     Campaigns ({campaigns.length}) — sub-campaigns nested under parents
                   </Text>
-                  <TouchableOpacity onPress={toggleAll} activeOpacity={0.7}>
-                    <Text className="text-xs text-brand-orange font-instrument-medium">
-                      {selectedIds.size === campaigns.length ? 'Deselect All' : 'Select All'}
-                    </Text>
-                  </TouchableOpacity>
+                  <Button variant="link" onPress={toggleAll} className="self-start">
+                    {selectedIds.size === campaigns.length ? 'Deselect All' : 'Select All'}
+                  </Button>
                 </View>
                 <View className="flex-row items-center rounded-lg border border-[#2A2A2A] bg-[#121212] px-3 py-2 mb-3">
                   <MagnifyingGlassIcon size={18} color="#9CA3AF" style={{ marginRight: 8 }} />

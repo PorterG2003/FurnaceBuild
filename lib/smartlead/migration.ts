@@ -3,23 +3,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { stripHtml } from '@/lib/email/parse-body';
 import type { Campaign } from '@/lib/supabase/types';
 import type { Database } from '@/lib/supabase/types/database';
+import { SMARTLEAD_BASE, smartleadRequest } from '@/lib/smartlead/api';
 
-const SMARTLEAD_BASE = 'https://server.smartlead.ai/api/v1';
-
-/** Smartlead allows max 200 requests per minute. Min ms between requests to stay under that. */
-const SMARTLEAD_RATE_LIMIT_MS = 350;
-let lastSmartleadRequestTime = 0;
 type MigrationDatabaseClient = SupabaseClient<Database>;
 let defaultMigrationDbPromise: Promise<MigrationDatabaseClient> | null = null;
-
-async function throttleSmartleadRequest(): Promise<void> {
-  const now = Date.now();
-  const elapsed = now - lastSmartleadRequestTime;
-  if (elapsed < SMARTLEAD_RATE_LIMIT_MS && lastSmartleadRequestTime > 0) {
-    await new Promise((r) => setTimeout(r, SMARTLEAD_RATE_LIMIT_MS - elapsed));
-  }
-  lastSmartleadRequestTime = Date.now();
-}
 
 async function getDefaultMigrationDb(): Promise<MigrationDatabaseClient> {
   if (!defaultMigrationDbPromise) {
@@ -179,9 +166,8 @@ const ENROLLMENTS_IN_QUERY_BATCH_SIZE = 25;
 // ---------------------------------------------------------------------------
 
 export async function fetchSmartleadCampaigns(apiKey: string): Promise<SmartleadCampaign[]> {
-  await throttleSmartleadRequest();
   const url = `${SMARTLEAD_BASE}/analytics/campaign/list?api_key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url);
+  const res = await smartleadRequest({ url });
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
       throw new Error('Invalid API key. Please check your Smartlead API key and try again.');
@@ -291,11 +277,10 @@ export async function fetchSmartleadLeads(
   };
 
   while (true) {
-    await throttleSmartleadRequest();
     const url =
       `${SMARTLEAD_BASE}/campaigns/${smartleadCampaignId}/leads` +
       `?api_key=${enc(apiKey)}&offset=${offset}&limit=${LEADS_PAGE_LIMIT}`;
-    const res = await fetch(url);
+    const res = await smartleadRequest({ url });
     if (!res.ok) {
       throw new Error(`Smartlead leads API error (${res.status}) for campaign ${smartleadCampaignId}.`);
     }
@@ -370,9 +355,9 @@ async function fetchSmartleadInboxRepliesPage(
   if (campaignIdFilter != null) {
     body.filters = { campaignId: [campaignIdFilter] };
   }
-  const res = await fetch(url, {
+  const res = await smartleadRequest({
+    url,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -393,7 +378,6 @@ export async function fetchSmartleadInboxReplies(
   const useFilter = true;
 
   while (true) {
-    await throttleSmartleadRequest();
     const { data } = await fetchSmartleadInboxRepliesPage(
       apiKey,
       offset,
@@ -422,7 +406,6 @@ export async function fetchSmartleadInboxReplies(
     }
     offset = 0;
     while (true) {
-      await throttleSmartleadRequest();
       const { data } = await fetchSmartleadInboxRepliesPage(
         apiKey,
         offset,
@@ -560,11 +543,10 @@ async function fetchSmartleadMessageHistoryWithRaw(
   smartleadLeadId: number,
 ): Promise<{ items: SmartleadMessageHistoryItem[]; rawJson: unknown }> {
   const enc = (s: string) => encodeURIComponent(s);
-  await throttleSmartleadRequest();
   const url =
     `${SMARTLEAD_BASE}/campaigns/${smartleadCampaignId}/leads/${smartleadLeadId}/message-history` +
     `?api_key=${enc(apiKey)}`;
-  const res = await fetch(url);
+  const res = await smartleadRequest({ url });
   if (!res.ok) {
     throw new Error(
       `${smartleadApiErrorMessage(res, 'message history')} for campaign ${smartleadCampaignId}, lead ${smartleadLeadId}`,
@@ -644,8 +626,7 @@ export async function fetchSmartleadCampaignStats(
   ];
 
   for (const url of urls) {
-    await throttleSmartleadRequest();
-    const res = await fetch(url);
+    const res = await smartleadRequest({ url });
     if (res.ok) {
       const raw = await res.json();
       return parseSmartleadCampaignStatsResponse(raw);
@@ -684,11 +665,10 @@ async function fetchSmartleadCampaignStatsRange(
   endDate: string,
 ): Promise<SmartleadCampaignStats> {
   const enc = (s: string) => encodeURIComponent(s);
-  await throttleSmartleadRequest();
   const url =
     `${SMARTLEAD_BASE}/campaigns/${smartleadCampaignId}/analytics-by-date` +
     `?api_key=${enc(apiKey)}&start_date=${enc(startDate)}&end_date=${enc(endDate)}`;
-  const res = await fetch(url);
+  const res = await smartleadRequest({ url });
   if (!res.ok) return { sent: 0, replied: 0, positiveReply: 0, bounce: 0, lastBounceAt: null };
   const raw = await res.json();
   return parseSmartleadCampaignStatsResponse(raw);
@@ -817,11 +797,10 @@ export async function fetchSmartleadCampaignStatsByDay(
   const cursor = new Date(start);
   while (cursor <= end) {
     const d = cursor.toISOString().slice(0, 10);
-    await throttleSmartleadRequest();
     const url =
       `${SMARTLEAD_BASE}/campaigns/${smartleadCampaignId}/analytics-by-date` +
       `?api_key=${enc(apiKey)}&start_date=${d}&end_date=${d}`;
-    const res = await fetch(url);
+    const res = await smartleadRequest({ url });
     if (res.ok) {
       const raw = await res.json();
       const data = (raw as any)?.data ?? raw;

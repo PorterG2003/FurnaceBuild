@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
+import { Button } from '@/components/ui/button';
 import { buildCampaignEmailContent, sanitizeEmailBody, hasMissingValues, type LeadLike } from '@/lib/email/index';
 import { getCampaignMailboxes } from '@/lib/supabase/services/campaigns';
 import { getLeads, getLeadCount } from '@/lib/supabase/services/leads';
@@ -195,13 +196,9 @@ function EmailPreviewModal({
 
   const footer = (
     <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-      <TouchableOpacity
-        onPress={onClose}
-        className="border border-[#3A3A3A] rounded-xl px-6 py-3 items-center justify-center"
-        style={{ borderWidth: 1, borderColor: '#3A3A3A' }}
-      >
-        <Text className="text-white font-instrument-medium text-base">Close</Text>
-      </TouchableOpacity>
+      <Button variant="secondary" onPress={onClose}>
+        Close
+      </Button>
     </View>
   );
 

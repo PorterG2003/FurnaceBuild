@@ -724,15 +724,14 @@ export default function AccountPage() {
                 <Text className="text-gray-500 text-xs font-instrument mb-4">
                   Blocked addresses and domains do not receive automated campaign emails. You can still reply manually from the inbox.
                 </Text>
-                <TouchableOpacity
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="self-start"
                   onPress={() => setBlockListModalVisible(true)}
-                  activeOpacity={0.8}
-                  className="flex-row items-center justify-center px-4 py-2.5 rounded-xl border border-[#3A3A3A] bg-[#2A2A2A] self-start"
                 >
-                  <Text className="text-gray-200 text-sm font-instrument-medium">
-                    Manage Block List
-                  </Text>
-                </TouchableOpacity>
+                  Manage Block List
+                </Button>
               </View>
 
               {/* Smartlead Migration */}
@@ -770,17 +769,16 @@ export default function AccountPage() {
                     ) : null}
                   </View>
                 ) : null}
-                <TouchableOpacity
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="self-start"
                   onPress={() => setSmartleadWizardVisible(true)}
-                  activeOpacity={0.8}
-                  className="flex-row items-center justify-center px-4 py-2.5 rounded-xl border border-[#3A3A3A] bg-[#2A2A2A] self-start"
                 >
-                  <Text className="text-gray-200 text-sm font-instrument-medium">
-                    {smartleadRun && (smartleadRun.status === 'running' || smartleadRun.status === 'launching' || smartleadRun.status === 'queued' || smartleadRun.status === 'cancel_requested')
-                      ? 'View Migration'
-                      : 'Start Migration'}
-                  </Text>
-                </TouchableOpacity>
+                  {smartleadRun && (smartleadRun.status === 'running' || smartleadRun.status === 'launching' || smartleadRun.status === 'queued' || smartleadRun.status === 'cancel_requested')
+                    ? 'View Migration'
+                    : 'Start Migration'}
+                </Button>
               </View>
 
               <SmartleadMigrationWizardModal

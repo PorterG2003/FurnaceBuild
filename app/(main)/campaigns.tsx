@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, Pressable, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, Pressable, useWindowDimensions } from 'react-native';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { Alert, EmptyState, useToast } from '@/components/ui/feedback';
@@ -72,20 +72,14 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
       footer={
         <View className="flex-row gap-3">
           <View className="flex-1">
-            <TouchableOpacity
+            <Button
+              variant="secondary"
               onPress={handleClose}
               disabled={isLoading}
-              className="border border-[#3A3A3A] rounded-xl px-6 py-3 items-center justify-center"
-              style={{
-                borderWidth: 1,
-                borderColor: '#3A3A3A',
-                opacity: isLoading ? 0.5 : 1,
-              }}
+              className="flex-1"
             >
-              <Text className="text-white font-instrument-medium text-base">
-                Cancel
-              </Text>
-            </TouchableOpacity>
+              Cancel
+            </Button>
           </View>
           <View className="flex-1">
             <Button

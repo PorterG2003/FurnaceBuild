@@ -9,6 +9,7 @@ import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 export function MessagePanelHeader({
   prospectName,
   campaignName,
+  sourceLabel,
   prospectEmails,
   blockedEmails = [],
   onBlock,
@@ -21,6 +22,7 @@ export function MessagePanelHeader({
 }: {
   prospectName?: string | null;
   campaignName?: string | null;
+  sourceLabel?: string | null;
   prospectEmails: string[];
   blockedEmails?: string[] | Set<string>;
   onBlock?: () => void;
@@ -75,6 +77,24 @@ export function MessagePanelHeader({
 
         {/* Right: toolbar — campaign chip, Block List, tags, category */}
         <View className="flex-row items-center gap-2 flex-shrink-0">
+          {sourceLabel ? (
+            <View
+              className="rounded-lg px-2 py-0.5"
+              style={
+                sourceLabel === 'Smartlead' || sourceLabel.startsWith('Imported from Smartlead')
+                  ? { backgroundColor: 'rgba(110, 88, 241, 0.12)', borderWidth: 1, borderColor: 'rgba(110, 88, 241, 0.3)' }
+                  : { backgroundColor: 'rgba(243, 68, 13, 0.12)', borderWidth: 1, borderColor: 'rgba(243, 68, 13, 0.3)' }
+              }
+            >
+              <Text
+                className="text-xs font-instrument"
+                style={{ color: sourceLabel === 'Smartlead' || sourceLabel.startsWith('Imported from Smartlead') ? '#6e58f1' : '#F97316' }}
+                numberOfLines={1}
+              >
+                {sourceLabel}
+              </Text>
+            </View>
+          ) : null}
           {campaignName ? (
             <View
               className="rounded-lg px-2 py-0.5"

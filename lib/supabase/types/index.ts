@@ -50,3 +50,15 @@ export type EmailMessageUpdate = Database['public']['Tables']['email_messages'][
 export type BlockListEntry = Database['public']['Tables']['block_list']['Row'];
 export type BlockListEntryInsert = Database['public']['Tables']['block_list']['Insert'];
 export type BlockListEntryUpdate = Database['public']['Tables']['block_list']['Update'];
+
+export type SmartleadMigrationRun = Database['public']['Tables']['smartlead_migration_runs']['Row'];
+export type SmartleadMigrationRunInsert = Database['public']['Tables']['smartlead_migration_runs']['Insert'];
+export type SmartleadMigrationRunUpdate = Database['public']['Tables']['smartlead_migration_runs']['Update'];
+
+export type SmartleadMigrationCampaign = Database['public']['Tables']['smartlead_migration_campaigns']['Row'];
+export type SmartleadMigrationCampaignInsert = Database['public']['Tables']['smartlead_migration_campaigns']['Insert'];
+export type SmartleadMigrationCampaignUpdate = Database['public']['Tables']['smartlead_migration_campaigns']['Update'];
+
+export type SmartleadMigrationEvent = Database['public']['Tables']['smartlead_migration_events']['Row'];
+export type SmartleadMigrationEventInsert = Database['public']['Tables']['smartlead_migration_events']['Insert'];
+export type SmartleadMigrationEventUpdate = Database['public']['Tables']['smartlead_migration_events']['Update'];

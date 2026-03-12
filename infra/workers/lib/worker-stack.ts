@@ -44,6 +44,7 @@ export class WorkerStack extends cdk.Stack {
   public readonly sendWorkerRepo: ecr.Repository;
   public readonly schedulerWorkerRepo: ecr.Repository;
   public readonly inboxCheckerWorkerRepo: ecr.Repository;
+  public readonly smartleadMigrationTaskRepo: ecr.Repository;
 
   constructor(scope: Construct, id: string, props: WorkerStackProps) {
     super(scope, id, props);
@@ -98,9 +99,21 @@ export class WorkerStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    const smartleadMigrationTaskRepo = new ecr.Repository(this, 'SmartleadMigrationTaskRepo', {
+      repositoryName: `furnace/smartlead-migration-task-${environment}`,
+      imageScanOnPush: true,
+      lifecycleRules: [
+        {
+          maxImageCount: 10,
+        },
+      ],
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     this.sendWorkerRepo = sendWorkerRepo;
     this.schedulerWorkerRepo = schedulerWorkerRepo;
     this.inboxCheckerWorkerRepo = inboxCheckerWorkerRepo;
+    this.smartleadMigrationTaskRepo = smartleadMigrationTaskRepo;
 
     // ============================================
     // VPC & Networking
@@ -142,6 +155,12 @@ export class WorkerStack extends cdk.Stack {
 
     const inboxCheckerWorkerLogGroup = new logs.LogGroup(this, 'InboxCheckerWorkerLogGroup', {
       logGroupName: `/ecs/furnace/inbox-checker-worker-${environment}`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const smartleadMigrationTaskLogGroup = new logs.LogGroup(this, 'SmartleadMigrationTaskLogGroup', {
+      logGroupName: `/ecs/furnace/smartlead-migration-task-${environment}`,
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
@@ -264,6 +283,32 @@ export class WorkerStack extends cdk.Stack {
       ],
       resources: [
         `arn:aws:ssm:${region}:${account}:parameter/amplify/*`,
+      ],
+    }));
+
+    const smartleadMigrationTaskRole = new iam.Role(this, 'SmartleadMigrationTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      description: `Role for Smartlead migration ECS tasks (${environment})`,
+    });
+
+    smartleadMigrationTaskRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'AllowSmartleadTaskCloudWatchLogs',
+      actions: [
+        'logs:CreateLogStream',
+        'logs:PutLogEvents',
+      ],
+      resources: [smartleadMigrationTaskLogGroup.logGroupArn + ':*'],
+    }));
+
+    smartleadMigrationTaskRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'AllowSmartleadTaskSSMAccess',
+      actions: [
+        'ssm:GetParameters',
+        'ssm:GetParameter',
+      ],
+      resources: [
+        `arn:aws:ssm:${region}:${account}:parameter/amplify/*`,
+        `arn:aws:ssm:${region}:${account}:parameter/furnace/smartlead-migrations/*`,
       ],
     }));
 
@@ -391,6 +436,32 @@ export class WorkerStack extends cdk.Stack {
     this.inboxCheckerWorkerService = inboxCheckerWorkerService;
 
     // ============================================
+    // Smartlead Migration Task Definition
+    // ============================================
+
+    const smartleadMigrationTaskDefinition = new ecs.FargateTaskDefinition(this, 'SmartleadMigrationTaskDef', {
+      family: `furnace-smartlead-migration-task-${environment}`,
+      memoryLimitMiB: 1024,
+      cpu: 512,
+      taskRole: smartleadMigrationTaskRole,
+      executionRole: taskExecutionRole,
+    });
+
+    smartleadMigrationTaskDefinition.addContainer('smartlead-migration-task', {
+      image: ecs.ContainerImage.fromEcrRepository(smartleadMigrationTaskRepo, 'latest'),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'smartlead-migration-task',
+        logGroup: smartleadMigrationTaskLogGroup,
+      }),
+      environment: {
+        AWS_REGION: region,
+        SUPABASE_URL: supabaseUrl,
+        SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
+        ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
+      },
+    });
+
+    // ============================================
     // Outputs
     // ============================================
 
@@ -412,10 +483,34 @@ export class WorkerStack extends cdk.Stack {
       exportName: `FurnaceInboxCheckerWorkerRepo-${environment}`,
     });
 
+    new cdk.CfnOutput(this, 'SmartleadMigrationTaskRepoUri', {
+      value: smartleadMigrationTaskRepo.repositoryUri,
+      description: 'ECR repository URI for Smartlead migration task',
+      exportName: `FurnaceSmartleadMigrationTaskRepo-${environment}`,
+    });
+
     new cdk.CfnOutput(this, 'ClusterName', {
       value: cluster.clusterName,
       description: 'ECS cluster name',
       exportName: `FurnaceCluster-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'WorkerSecurityGroupId', {
+      value: workerSecurityGroup.securityGroupId,
+      description: 'Security group id for Furnace ECS workers',
+      exportName: `FurnaceWorkerSecurityGroup-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'WorkerPublicSubnetIds', {
+      value: vpc.publicSubnets.map((subnet) => subnet.subnetId).join(','),
+      description: 'Comma-separated public subnet ids for Furnace ECS workers',
+      exportName: `FurnaceWorkerPublicSubnets-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'SmartleadMigrationTaskDefinitionArn', {
+      value: smartleadMigrationTaskDefinition.taskDefinitionArn,
+      description: 'Task definition ARN for Smartlead migration tasks',
+      exportName: `FurnaceSmartleadMigrationTaskDefinition-${environment}`,
     });
   }
 }

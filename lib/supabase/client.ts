@@ -53,3 +53,19 @@ export async function getCurrentUser(): Promise<User | null> {
   const { data: { user } } = await supabase.auth.getUser();
   return user;
 }
+
+/**
+ * Get the current Supabase access token (e.g. for Bearer auth to backend/Function URLs).
+ * Prefer this over raw getSession() when you only need the token.
+ */
+export async function getAccessToken(): Promise<string | null> {
+  const session = await getSession();
+  return session?.access_token ?? null;
+}
+
+/**
+ * Sign out the current user. Use this instead of raw supabase.auth.signOut() in app code.
+ */
+export function signOut(): Promise<{ error: Error | null }> {
+  return supabase.auth.signOut();
+}

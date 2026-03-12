@@ -19,15 +19,17 @@ import { BaseModal } from '@/components/ui/modals';
 import { useAccount } from '@/contexts/AccountContext';
 import {
   deleteInvitation,
+  getActiveSmartleadMigrationRun,
+  getLatestSmartleadMigrationRun,
+  inviteUserToAccount,
   removeBlockEntry,
   removeMemberFromAccount,
   updateAccount,
   updateMemberRole,
   updateUserProfile,
 } from '@/lib/supabase/services';
-import { supabase } from '@/lib/supabase/client';
 import { sendInvitationEmail } from '@/lib/services/email';
-import type { AccountUser, BlockListEntry, Invitation, User } from '@/lib/supabase/types';
+import type { AccountUser, BlockListEntry, Invitation, SmartleadMigrationRun, User } from '@/lib/supabase/types';
 
 export default function AccountPage() {
   const { toast } = useToast();
@@ -74,6 +76,7 @@ export default function AccountPage() {
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
   const [blockListModalVisible, setBlockListModalVisible] = useState(false);
   const [smartleadWizardVisible, setSmartleadWizardVisible] = useState(false);
+  const [smartleadRun, setSmartleadRun] = useState<SmartleadMigrationRun | null>(null);
   const [roleEditMember, setRoleEditMember] = useState<{ membershipId: string; memberName: string } | null>(null);
 
   const handleNameChange = (value: string) => {
@@ -99,6 +102,45 @@ export default function AccountPage() {
     }
     setCompanyInput(membership.account.name ?? '');
   }, [membership?.account?.id, membership?.account?.name]);
+
+  useEffect(() => {
+    if (!account?.id) {
+      setSmartleadRun(null);
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const refreshRun = async () => {
+      try {
+        const activeRun = await getActiveSmartleadMigrationRun(account.id);
+        if (cancelled) return;
+        if (activeRun) {
+          setSmartleadRun(activeRun);
+          return;
+        }
+        const latestRun = await getLatestSmartleadMigrationRun(account.id);
+        if (!cancelled) {
+          setSmartleadRun(latestRun);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load Smartlead migration run:', error);
+        }
+      }
+    };
+
+    void refreshRun();
+    intervalId = setInterval(() => {
+      void refreshRun();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [account?.id]);
 
   const handleSaveProfile = useCallback(async () => {
     if (!profile) return;
@@ -211,22 +253,15 @@ export default function AccountPage() {
     setInviting(true);
 
     try {
-      const { data: result, error: rpcError } = await supabase.rpc('invite_user_to_account', {
-        p_account_id: membership.account.id,
-        p_email: trimmedEmail,
-        p_invited_by: profile.id,
-      });
-
-      if (rpcError) throw new Error(rpcError.message);
-
-      const status = (result as { status: string; invitation_id?: string }).status;
+      const result = await inviteUserToAccount(membership.account.id, trimmedEmail, profile.id);
+      const status = result.status;
 
       if (status === 'already_member') {
         toast.info(`${trimmedEmail} is already a member of this team.`);
       } else if (status === 'pending_invite') {
         toast.info(`${trimmedEmail} already has a pending invite.`);
       } else if (status === 'invited') {
-        const invitationId = (result as { invitation_id: string }).invitation_id;
+        const invitationId = result.invitation_id!;
         const baseUrl = typeof window !== 'undefined'
           ? window.location.origin
           : 'https://build.getfurnace.io';
@@ -706,15 +741,44 @@ export default function AccountPage() {
                   Smartlead Migration
                 </Text>
                 <Text className="text-gray-500 text-xs font-instrument mb-4">
-                  Import campaigns and leads from your Smartlead account.
+                  Import campaigns and leads from your Smartlead account. Background runs keep their progress and errors visible even after reloads.
                 </Text>
+                {smartleadRun ? (
+                  <View className="mb-4 rounded-xl border border-[#2A2A2A] bg-[#141414] p-3">
+                    <View className="flex-row items-center justify-between gap-3">
+                      <Text className="text-white text-sm font-instrument-medium">
+                        {smartleadRun.status === 'running' || smartleadRun.status === 'launching' || smartleadRun.status === 'queued' || smartleadRun.status === 'cancel_requested'
+                          ? 'Active migration'
+                          : 'Last migration'}
+                      </Text>
+                      <View className="rounded-full border border-[#2A2A2A] bg-[#1F1F1F] px-2.5 py-1">
+                        <Text className="text-[11px] text-gray-300 font-instrument-medium capitalize">
+                          {smartleadRun.status.replace(/_/g, ' ')}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text className="text-gray-400 text-xs font-instrument mt-2">
+                      {smartleadRun.completed_campaign_count + smartleadRun.failed_campaign_count} of {smartleadRun.selected_campaign_count} campaigns processed
+                    </Text>
+                    <Text className="text-gray-500 text-xs font-instrument mt-1">
+                      {smartleadRun.leads_imported} leads, {smartleadRun.conversations_imported} conversations
+                    </Text>
+                    {smartleadRun.last_error_message ? (
+                      <Text className="text-red-400 text-xs font-instrument mt-2">
+                        {smartleadRun.last_error_message}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
                 <TouchableOpacity
                   onPress={() => setSmartleadWizardVisible(true)}
                   activeOpacity={0.8}
                   className="flex-row items-center justify-center px-4 py-2.5 rounded-xl border border-[#3A3A3A] bg-[#2A2A2A] self-start"
                 >
                   <Text className="text-gray-200 text-sm font-instrument-medium">
-                    Start Migration
+                    {smartleadRun && (smartleadRun.status === 'running' || smartleadRun.status === 'launching' || smartleadRun.status === 'queued' || smartleadRun.status === 'cancel_requested')
+                      ? 'View Migration'
+                      : 'Start Migration'}
                   </Text>
                 </TouchableOpacity>
               </View>

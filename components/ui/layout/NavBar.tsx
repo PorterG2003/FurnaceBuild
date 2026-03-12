@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable, Platform, Modal, TouchableOpacity } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from 'react-native-reanimated';
 import { useRouter, usePathname } from 'expo-router';
-import { supabase } from '@/lib/supabase/client';
+import { signOut } from '@/lib/supabase/client';
 import { SvgXml } from 'react-native-svg';
 import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon, EnvelopeIcon, ChevronDownIcon } from 'react-native-heroicons/outline';
 import { useAccount } from '@/contexts/AccountContext';
@@ -48,7 +48,7 @@ let persistedExpandedState = false;
 
 export function NavBar() {
   const { account, memberships, setCurrentAccountId, user } = useAccount();
-  const handleSignOut = () => supabase.auth.signOut();
+  const handleSignOut = () => signOut();
   const router = useRouter();
   const pathname = usePathname();
   const [switcherVisible, setSwitcherVisible] = useState(false);

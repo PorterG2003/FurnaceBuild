@@ -6,12 +6,14 @@ config({ path: '.env.local' });
 config();
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as cdk from 'aws-cdk-lib';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { sendInvitationEmail } from './functions/sendInvitationEmail/resource';
 import { testMailboxConnection } from './functions/testMailboxConnection/resource';
 import { enrollmentMetric } from './functions/enrollmentMetric/resource';
 import { fetchEmailAttachment } from './functions/fetchEmailAttachment/resource';
+import { launchSmartleadMigration } from './functions/launchSmartleadMigration/resource';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -26,6 +28,7 @@ const backend = defineBackend({
   testMailboxConnection,
   enrollmentMetric,
   fetchEmailAttachment,
+  launchSmartleadMigration,
 });
 
 // Fetch email attachment: Function URL + Supabase auth.getUser() for token verification
@@ -106,11 +109,80 @@ const allowPublicTestMailboxInvoke = new lambda.CfnPermission(testMailboxLambda.
 });
 allowPublicTestMailboxInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
+const launchSmartleadMigrationLambda = backend.launchSmartleadMigration.resources.lambda as lambda.Function;
+const workerEnvironment = process.env.WORKER_ENVIRONMENT || process.env.ENVIRONMENT || 'dev';
+launchSmartleadMigrationLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+launchSmartleadMigrationLambda.addEnvironment('WORKER_ENVIRONMENT', workerEnvironment);
+launchSmartleadMigrationLambda.addEnvironment(
+  'SMARTLEAD_MIGRATION_CLUSTER',
+  cdk.Fn.importValue(`FurnaceCluster-${workerEnvironment}`),
+);
+launchSmartleadMigrationLambda.addEnvironment(
+  'SMARTLEAD_MIGRATION_TASK_DEFINITION',
+  cdk.Fn.importValue(`FurnaceSmartleadMigrationTaskDefinition-${workerEnvironment}`),
+);
+launchSmartleadMigrationLambda.addEnvironment(
+  'SMARTLEAD_MIGRATION_SUBNET_IDS',
+  cdk.Fn.importValue(`FurnaceWorkerPublicSubnets-${workerEnvironment}`),
+);
+launchSmartleadMigrationLambda.addEnvironment(
+  'SMARTLEAD_MIGRATION_SECURITY_GROUP_ID',
+  cdk.Fn.importValue(`FurnaceWorkerSecurityGroup-${workerEnvironment}`),
+);
+launchSmartleadMigrationLambda.addToRolePolicy(new iam.PolicyStatement({
+  sid: 'AllowRunSmartleadMigrationTasks',
+  actions: [
+    'ecs:RunTask',
+  ],
+  resources: ['*'],
+}));
+launchSmartleadMigrationLambda.addToRolePolicy(new iam.PolicyStatement({
+  sid: 'AllowPassSmartleadMigrationTaskRoles',
+  actions: [
+    'iam:PassRole',
+  ],
+  resources: ['*'],
+}));
+launchSmartleadMigrationLambda.addToRolePolicy(new iam.PolicyStatement({
+  sid: 'AllowSmartleadMigrationParameterStore',
+  actions: [
+    'ssm:PutParameter',
+    'ssm:GetParameter',
+    'ssm:GetParameters',
+  ],
+  resources: ['*'],
+}));
+const launchSmartleadMigrationUrl = launchSmartleadMigrationLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(launchSmartleadMigrationLambda.stack, 'AllowPublicLaunchSmartleadMigrationUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: launchSmartleadMigrationLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicLaunchSmartleadMigrationInvoke = new lambda.CfnPermission(
+  launchSmartleadMigrationLambda.stack,
+  'AllowPublicLaunchSmartleadMigrationInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: launchSmartleadMigrationLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicLaunchSmartleadMigrationInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
 backend.addOutput({
   custom: {
     fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
     sendInvitationEmailUrl: sendInvitationUrl.url,
     testMailboxConnectionUrl: testMailboxUrl.url,
+    launchSmartleadMigrationUrl: launchSmartleadMigrationUrl.url,
   },
 });
 

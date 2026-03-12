@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -8,20 +8,46 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { CheckIcon, MagnifyingGlassIcon, XMarkIcon } from 'react-native-heroicons/outline';
+import { CheckIcon, ChevronDownIcon, MagnifyingGlassIcon, XMarkIcon } from 'react-native-heroicons/outline';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
+import { Select } from '@/components/ui/forms';
 import { useAccount } from '@/contexts/AccountContext';
 import {
   fetchSmartleadCampaigns,
-  migrateSmartleadCampaigns,
   type CampaignMigrationResult,
+  type ConversationImportDiagnostics,
   type MigrationProgress,
   type SmartleadCampaign,
 } from '@/lib/smartlead/migration';
+import {
+  cancelSmartleadMigrationRun,
+  createSmartleadMigrationRun,
+  getActiveSmartleadMigrationRun,
+  getSmartleadMigrationRun,
+  listSmartleadMigrationCampaigns,
+  listSmartleadMigrationEvents,
+} from '@/lib/supabase/services/smartlead-migrations';
+import {
+  launchSmartleadMigrationTask,
+  resumeSmartleadMigrationTask,
+} from '@/lib/services/smartlead-migration-runner';
+import { getLeads } from '@/lib/supabase/services/leads';
+import { getLeadDisplayName } from '@/lib/leads';
+import { getThreadsByAccount } from '@/lib/supabase/services/inbox';
+import type {
+  EmailThread,
+  Lead,
+  SmartleadMigrationCampaign,
+  SmartleadMigrationEvent,
+  SmartleadMigrationRun,
+} from '@/lib/supabase/types';
 
 const STEPS = ['API Key', 'Campaigns', 'Migrate'] as const;
+const ACTIVE_RUN_STATUSES: SmartleadMigrationRun['status'][] = ['queued', 'launching', 'running', 'cancel_requested'];
+const STALE_RUN_MS = 60_000;
 
 type CampaignRow = { campaign: SmartleadCampaign; depth: number };
 
@@ -73,6 +99,17 @@ const campaignSelectionColumns: TableColumn<CampaignRow>[] = [
   },
 ];
 
+/** Short reason why 0 conversations were imported (for UI). */
+function conversationZeroReason(d: ConversationImportDiagnostics | undefined): string | null {
+  if (!d) return null;
+  if (d.imported > 0) return null;
+  if (d.repliedFromApi === 0) return 'no replies in Smartlead';
+  if (d.leadsMatched === 0) return 'replies could not match to leads';
+  if (d.skippedNoMatch > 0) return `${d.skippedNoMatch} no lead match`;
+  if (d.skippedEmptyHistory > 0) return `${d.skippedEmptyHistory} empty history`;
+  return null;
+}
+
 function MigrationCheckCell({ value }: { value: boolean }) {
   return (
     <View className="flex-1 items-center justify-center">
@@ -116,6 +153,27 @@ const migrationResultColumns: TableColumn<CampaignMigrationResult>[] = [
     ),
   },
   {
+    key: 'conversations',
+    label: 'Conv',
+    minWidth: 72,
+    maxWidth: 72,
+    render: (r) => {
+      if (r.status !== 'succeeded') return <Text className="text-neutral-500 text-xs font-instrument text-center w-full">—</Text>;
+      const count = r.conversationsImported ?? 0;
+      const reason = conversationZeroReason(r.conversationDiagnostics);
+      return (
+        <View className="items-center justify-center w-full">
+          <Text className="text-neutral-300 text-xs font-instrument">{String(count)}</Text>
+          {count === 0 && reason && (
+            <Text className="text-neutral-500 text-[10px] font-instrument mt-0.5" numberOfLines={1}>
+              {reason}
+            </Text>
+          )}
+        </View>
+      );
+    },
+  },
+  {
     key: 'totals',
     label: 'Totals',
     minWidth: 72,
@@ -149,6 +207,344 @@ const migrationResultColumns: TableColumn<CampaignMigrationResult>[] = [
   },
 ];
 
+const migrationStatsColumns: TableColumn<CampaignMigrationResult>[] = [
+  migrationResultColumns[0],
+  migrationResultColumns[3],
+  migrationResultColumns[4],
+];
+
+const REVIEW_PAGE_SIZE = 25;
+
+type ReviewSectionKey = 'campaigns' | 'leads' | 'conversations' | 'stats' | 'events';
+
+type MigrationResultState = {
+  succeeded: string[];
+  failed: { name: string; error: string }[];
+  statsImported?: boolean;
+  totalLeadsImported?: number;
+  campaignResults?: CampaignMigrationResult[];
+};
+
+type ReviewCampaignOption = {
+  id: string;
+  name: string;
+  leadsImported: number;
+  conversationsImported: number;
+  totalsStatsImported: boolean;
+  dayByDayStatsImported: boolean;
+};
+
+type ReviewSectionLayout = {
+  y: number;
+  height: number;
+};
+
+function mapRunToProgress(
+  run: SmartleadMigrationRun | null,
+): MigrationProgress | null {
+  if (!run?.current_phase) return null;
+  return {
+    campaignIndex: Math.max(0, run.completed_campaign_count + run.failed_campaign_count),
+    campaignCount: run.selected_campaign_count,
+    campaignName: run.current_campaign_name ?? '',
+    phase: run.current_phase,
+    detail: run.current_detail ?? undefined,
+  };
+}
+
+function mapCampaignRowToResult(
+  row: SmartleadMigrationCampaign,
+): CampaignMigrationResult {
+  const diagnostics: ConversationImportDiagnostics | undefined = (
+    row.replied_from_api > 0 ||
+    row.leads_matched > 0 ||
+    row.skipped_no_match > 0 ||
+    row.skipped_empty_history > 0 ||
+    row.conversations_imported > 0
+  )
+    ? {
+        repliedFromApi: row.replied_from_api,
+        leadsMatched: row.leads_matched,
+        skippedNoMatch: row.skipped_no_match,
+        skippedEmptyHistory: row.skipped_empty_history,
+        imported: row.conversations_imported,
+      }
+    : undefined;
+
+  return {
+    campaignId: row.furnace_campaign_id ?? undefined,
+    campaignName: row.campaign_name,
+    status: row.status === 'succeeded' ? 'succeeded' : 'failed',
+    error: row.last_error_message ?? (row.status === 'cancelled' ? 'Migration cancelled.' : undefined),
+    leadsImported: row.leads_imported,
+    conversationsImported: row.conversations_imported,
+    conversationDiagnostics: diagnostics,
+    totalsStatsImported: row.totals_stats_imported,
+    dayByDayStatsImported: row.day_by_day_stats_imported,
+  };
+}
+
+function buildResultState(
+  run: SmartleadMigrationRun,
+  campaignRows: SmartleadMigrationCampaign[],
+): MigrationResultState {
+  const campaignResults = campaignRows.map(mapCampaignRowToResult);
+  const succeeded = campaignRows
+    .filter((row) => row.status === 'succeeded')
+    .map((row) => row.campaign_name);
+  const failed = campaignRows
+    .filter((row) => row.status === 'failed' || row.status === 'cancelled')
+    .map((row) => ({
+      name: row.campaign_name,
+      error: row.last_error_message ?? (row.status === 'cancelled' ? 'Migration cancelled.' : 'Migration failed.'),
+    }));
+
+  return {
+    succeeded,
+    failed,
+    statsImported: run.totals_stats_campaign_count > 0 || run.day_by_day_stats_campaign_count > 0,
+    totalLeadsImported: run.leads_imported,
+    campaignResults,
+  };
+}
+
+function formatCount(value: number | null | undefined): string {
+  return new Intl.NumberFormat().format(value ?? 0);
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatParticipants(participants: string[] | null | undefined): string {
+  if (!participants || participants.length === 0) return '—';
+  if (participants.length <= 2) return participants.join(', ');
+  return `${participants.slice(0, 2).join(', ')} +${participants.length - 2}`;
+}
+
+function ReviewSection({
+  title,
+  summary,
+  expanded,
+  onPress,
+  children,
+}: {
+  title: string;
+  summary: string;
+  expanded: boolean;
+  onPress: () => void;
+  children: ReactNode;
+}) {
+  const chevronRotation = useSharedValue(expanded ? 180 : 0);
+  const contentOpacity = useSharedValue(expanded ? 1 : 0);
+  const contentTranslateY = useSharedValue(expanded ? 0 : -6);
+
+  useEffect(() => {
+    chevronRotation.value = withTiming(expanded ? 180 : 0, {
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+    });
+
+    if (expanded) {
+      contentOpacity.value = 0;
+      contentTranslateY.value = -6;
+      contentOpacity.value = withTiming(1, {
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+      });
+      contentTranslateY.value = withTiming(0, {
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+      });
+    }
+  }, [expanded, chevronRotation, contentOpacity, contentTranslateY]);
+
+  const chevronAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chevronRotation.value}deg` }],
+  }));
+
+  const contentAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentTranslateY.value }],
+  }));
+
+  return (
+    <View className="rounded-xl border border-[#2A2A2A] bg-[#141414] overflow-hidden">
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.8}
+        className="px-4 py-4 flex-row items-center justify-between gap-3"
+      >
+        <View className="flex-1">
+          <Text className="text-white text-sm font-instrument-medium">{title}</Text>
+          <Text className="text-gray-400 text-xs font-instrument mt-1">{summary}</Text>
+        </View>
+        <View className="h-8 w-8 rounded-full bg-[#1F1F1F] border border-[#2A2A2A] items-center justify-center">
+          <Animated.View style={chevronAnimatedStyle}>
+            <ChevronDownIcon size={16} color="#9CA3AF" />
+          </Animated.View>
+        </View>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View className="px-4 pb-4 border-t border-[#2A2A2A] bg-[#111111]">
+          <Animated.View className="pt-4" style={contentAnimatedStyle}>
+            {children}
+          </Animated.View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ReviewSectionPagination({
+  page,
+  pageSize,
+  totalCount,
+  itemCount,
+  onPrevious,
+  onNext,
+}: {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  itemCount: number;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  if (totalCount <= 0) return null;
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const start = totalCount === 0 ? 0 : page * pageSize + 1;
+  const end = Math.min(totalCount, page * pageSize + itemCount);
+  const canPrevious = page > 0;
+  const canNext = page + 1 < totalPages && itemCount > 0;
+
+  return (
+    <View className="flex-row items-center justify-between mt-3 px-1">
+      <TouchableOpacity
+        onPress={onPrevious}
+        disabled={!canPrevious}
+        activeOpacity={0.8}
+        className={`px-3 py-2 rounded-lg border ${canPrevious ? 'border-[#3A3A3A]' : 'border-[#2A2A2A] opacity-50'}`}
+        style={{ backgroundColor: '#1A1A1A' }}
+      >
+        <Text className={`text-sm font-instrument-medium ${canPrevious ? 'text-white' : 'text-gray-500'}`}>
+          Previous
+        </Text>
+      </TouchableOpacity>
+
+      <Text className="text-xs text-gray-400 font-instrument">
+        {start}-{end} of {formatCount(totalCount)}
+      </Text>
+
+      <TouchableOpacity
+        onPress={onNext}
+        disabled={!canNext}
+        activeOpacity={0.8}
+        className={`px-3 py-2 rounded-lg border ${canNext ? 'border-[#3A3A3A]' : 'border-[#2A2A2A] opacity-50'}`}
+        style={{ backgroundColor: '#1A1A1A' }}
+      >
+        <Text className={`text-sm font-instrument-medium ${canNext ? 'text-white' : 'text-gray-500'}`}>
+          Next
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const migrationLeadColumns: TableColumn<Lead>[] = [
+  {
+    key: 'email',
+    label: 'Email',
+    flex: 2,
+    minWidth: 220,
+    render: (lead) => (
+      <Text className="text-sm text-white font-instrument-medium" numberOfLines={1}>
+        {lead.email ?? '—'}
+      </Text>
+    ),
+  },
+  {
+    key: 'name',
+    label: 'Name',
+    flex: 1.5,
+    minWidth: 180,
+    render: (lead) => (
+      <Text className="text-xs text-neutral-300 font-instrument" numberOfLines={1}>
+        {getLeadDisplayName(lead) || '—'}
+      </Text>
+    ),
+  },
+  {
+    key: 'created',
+    label: 'Imported',
+    minWidth: 160,
+    maxWidth: 160,
+    render: (lead) => (
+      <Text className="text-xs text-neutral-400 font-instrument" numberOfLines={1}>
+        {formatDateTime(lead.created_at)}
+      </Text>
+    ),
+  },
+];
+
+const migrationConversationColumns: TableColumn<EmailThread>[] = [
+  {
+    key: 'subject',
+    label: 'Subject',
+    flex: 2,
+    minWidth: 220,
+    render: (thread) => (
+      <Text className="text-sm text-white font-instrument-medium" numberOfLines={1}>
+        {thread.subject || 'No subject'}
+      </Text>
+    ),
+  },
+  {
+    key: 'participants',
+    label: 'Participants',
+    flex: 1.5,
+    minWidth: 220,
+    render: (thread) => (
+      <Text className="text-xs text-neutral-300 font-instrument" numberOfLines={1}>
+        {formatParticipants(thread.participants)}
+      </Text>
+    ),
+  },
+  {
+    key: 'lastMessage',
+    label: 'Last Message',
+    minWidth: 160,
+    maxWidth: 160,
+    render: (thread) => (
+      <Text className="text-xs text-neutral-400 font-instrument" numberOfLines={1}>
+        {formatDateTime(thread.last_message_at)}
+      </Text>
+    ),
+  },
+  {
+    key: 'messageCount',
+    label: 'Messages',
+    minWidth: 84,
+    maxWidth: 84,
+    render: (thread) => (
+      <Text className="text-xs text-neutral-300 font-instrument text-center w-full">
+        {formatCount(thread.message_count)}
+      </Text>
+    ),
+  },
+];
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -168,6 +564,10 @@ export function SmartleadMigrationWizardModal({ visible, onClose }: Props) {
 
   const [migrating, setMigrating] = useState(false);
   const [progress, setProgress] = useState<MigrationProgress | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
+  const [run, setRun] = useState<SmartleadMigrationRun | null>(null);
+  const [runCampaignRows, setRunCampaignRows] = useState<SmartleadMigrationCampaign[]>([]);
+  const [runEvents, setRunEvents] = useState<SmartleadMigrationEvent[]>([]);
 
   const campaignRows = useMemo((): CampaignRow[] => {
     if (campaigns.length === 0) return [];
@@ -212,13 +612,21 @@ export function SmartleadMigrationWizardModal({ visible, onClose }: Props) {
     });
   }, [campaignRows, campaignSearchQuery]);
 
-  const [result, setResult] = useState<{
-    succeeded: string[];
-    failed: { name: string; error: string }[];
-    statsImported?: boolean;
-    totalLeadsImported?: number;
-    campaignResults?: CampaignMigrationResult[];
-  } | null>(null);
+  const [result, setResult] = useState<MigrationResultState | null>(null);
+  const [expandedSection, setExpandedSection] = useState<ReviewSectionKey | null>(null);
+  const [selectedLeadCampaignId, setSelectedLeadCampaignId] = useState<string | null>(null);
+  const [leadPage, setLeadPage] = useState(0);
+  const [leadRows, setLeadRows] = useState<Lead[]>([]);
+  const [leadRowsLoading, setLeadRowsLoading] = useState(false);
+  const [leadRowsError, setLeadRowsError] = useState<string | null>(null);
+  const [selectedConversationCampaignId, setSelectedConversationCampaignId] = useState<string | null>(null);
+  const [conversationPage, setConversationPage] = useState(0);
+  const [conversationRows, setConversationRows] = useState<EmailThread[]>([]);
+  const [conversationRowsLoading, setConversationRowsLoading] = useState(false);
+  const [conversationRowsError, setConversationRowsError] = useState<string | null>(null);
+  const resultsScrollRef = useRef<ScrollView | null>(null);
+  const sectionLayoutsRef = useRef<Partial<Record<ReviewSectionKey, ReviewSectionLayout>>>({});
+  const resultsFade = useSharedValue(0);
 
   useEffect(() => {
     if (!visible) {
@@ -231,9 +639,281 @@ export function SmartleadMigrationWizardModal({ visible, onClose }: Props) {
       setError(null);
       setMigrating(false);
       setProgress(null);
+      setRunId(null);
+      setRun(null);
+      setRunCampaignRows([]);
+      setRunEvents([]);
+      setResult(null);
+      setExpandedSection(null);
+      setSelectedLeadCampaignId(null);
+      setLeadPage(0);
+      setLeadRows([]);
+      setLeadRowsLoading(false);
+      setLeadRowsError(null);
+      setSelectedConversationCampaignId(null);
+      setConversationPage(0);
+      setConversationRows([]);
+      setConversationRowsLoading(false);
+      setConversationRowsError(null);
+      sectionLayoutsRef.current = {};
+      resultsFade.value = 0;
+    }
+  }, [visible, resultsFade]);
+
+  const isRunStale = useMemo(() => {
+    if (!run?.last_heartbeat_at) return false;
+    if (!ACTIVE_RUN_STATUSES.includes(run.status)) return false;
+    return Date.now() - new Date(run.last_heartbeat_at).getTime() > STALE_RUN_MS;
+  }, [run]);
+
+  const refreshRunState = useCallback(async (targetRunId: string) => {
+    const [nextRun, nextCampaignRows, nextEvents] = await Promise.all([
+      getSmartleadMigrationRun(targetRunId),
+      listSmartleadMigrationCampaigns(targetRunId),
+      listSmartleadMigrationEvents(targetRunId, 40),
+    ]);
+
+    if (!nextRun) {
+      throw new Error('Migration run no longer exists.');
+    }
+
+    setRun(nextRun);
+    setRunCampaignRows(nextCampaignRows);
+    setRunEvents(nextEvents);
+    setProgress(mapRunToProgress(nextRun));
+
+    const isActive = ACTIVE_RUN_STATUSES.includes(nextRun.status);
+    setMigrating(isActive);
+    setStep(2);
+
+    if (!isActive) {
+      setResult(buildResultState(nextRun, nextCampaignRows));
+      setExpandedSection((current) => current ?? 'campaigns');
+    } else {
       setResult(null);
     }
-  }, [visible]);
+  }, []);
+
+  useEffect(() => {
+    if (!visible || !account?.id || runId) return;
+
+    let cancelled = false;
+    getActiveSmartleadMigrationRun(account.id)
+      .then((activeRun) => {
+        if (cancelled || !activeRun) return;
+        setRunId(activeRun.id);
+        setStep(2);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          console.error('Failed to restore Smartlead migration run:', err);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, account?.id, runId]);
+
+  useEffect(() => {
+    if (!visible || !runId) return;
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const poll = async () => {
+      try {
+        await refreshRunState(runId);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to refresh migration status.');
+        }
+      }
+    };
+
+    void poll();
+
+    intervalId = setInterval(() => {
+      void poll();
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [visible, runId, refreshRunState]);
+
+  const reviewCampaignResults = result?.campaignResults ?? [];
+  const reviewCampaignOptions = useMemo<ReviewCampaignOption[]>(
+    () =>
+      reviewCampaignResults
+        .filter((campaign): campaign is CampaignMigrationResult & { campaignId: string } =>
+          campaign.status === 'succeeded' && typeof campaign.campaignId === 'string' && campaign.campaignId.length > 0
+        )
+        .map((campaign) => ({
+          id: campaign.campaignId,
+          name: campaign.campaignName,
+          leadsImported: campaign.leadsImported ?? 0,
+          conversationsImported: campaign.conversationsImported ?? 0,
+          totalsStatsImported: campaign.totalsStatsImported ?? false,
+          dayByDayStatsImported: campaign.dayByDayStatsImported ?? false,
+        })),
+    [reviewCampaignResults]
+  );
+
+  const selectedLeadCampaign = useMemo(
+    () => reviewCampaignOptions.find((campaign) => campaign.id === selectedLeadCampaignId) ?? null,
+    [reviewCampaignOptions, selectedLeadCampaignId]
+  );
+  const selectedConversationCampaign = useMemo(
+    () => reviewCampaignOptions.find((campaign) => campaign.id === selectedConversationCampaignId) ?? null,
+    [reviewCampaignOptions, selectedConversationCampaignId]
+  );
+
+  const totalConversationsImported = useMemo(
+    () => reviewCampaignResults.reduce((sum, campaign) => sum + (campaign.conversationsImported ?? 0), 0),
+    [reviewCampaignResults]
+  );
+  const totalsStatsCampaignCount = useMemo(
+    () => reviewCampaignResults.filter((campaign) => campaign.totalsStatsImported).length,
+    [reviewCampaignResults]
+  );
+  const dayByDayStatsCampaignCount = useMemo(
+    () => reviewCampaignResults.filter((campaign) => campaign.dayByDayStatsImported).length,
+    [reviewCampaignResults]
+  );
+
+  const resultsAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: resultsFade.value,
+  }));
+
+  useEffect(() => {
+    if (reviewCampaignOptions.length === 0) {
+      setSelectedLeadCampaignId(null);
+      setSelectedConversationCampaignId(null);
+      return;
+    }
+
+    if (!selectedLeadCampaignId || !reviewCampaignOptions.some((campaign) => campaign.id === selectedLeadCampaignId)) {
+      setSelectedLeadCampaignId(reviewCampaignOptions[0].id);
+      setLeadPage(0);
+    }
+
+    if (
+      !selectedConversationCampaignId ||
+      !reviewCampaignOptions.some((campaign) => campaign.id === selectedConversationCampaignId)
+    ) {
+      setSelectedConversationCampaignId(reviewCampaignOptions[0].id);
+      setConversationPage(0);
+    }
+  }, [reviewCampaignOptions, selectedLeadCampaignId, selectedConversationCampaignId]);
+
+  useEffect(() => {
+    if (expandedSection !== 'leads' || !selectedLeadCampaign?.id) {
+      if (expandedSection !== 'leads') {
+        setLeadRows([]);
+        setLeadRowsLoading(false);
+        setLeadRowsError(null);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setLeadRowsLoading(true);
+    setLeadRowsError(null);
+
+    getLeads({
+      campaignId: selectedLeadCampaign.id,
+      limit: REVIEW_PAGE_SIZE,
+      offset: leadPage * REVIEW_PAGE_SIZE,
+    })
+      .then((rows) => {
+        if (!cancelled) setLeadRows(rows);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setLeadRows([]);
+          setLeadRowsError(err instanceof Error ? err.message : 'Failed to load imported leads.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLeadRowsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedSection, selectedLeadCampaign, leadPage]);
+
+  useEffect(() => {
+    if (expandedSection !== 'conversations' || !selectedConversationCampaign?.id || !account?.id) {
+      if (expandedSection !== 'conversations') {
+        setConversationRows([]);
+        setConversationRowsLoading(false);
+        setConversationRowsError(null);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setConversationRowsLoading(true);
+    setConversationRowsError(null);
+
+    getThreadsByAccount(account.id, {
+      campaignId: selectedConversationCampaign.id,
+      limit: REVIEW_PAGE_SIZE,
+      offset: conversationPage * REVIEW_PAGE_SIZE,
+    })
+      .then((rows) => {
+        if (!cancelled) setConversationRows(rows);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setConversationRows([]);
+          setConversationRowsError(err instanceof Error ? err.message : 'Failed to load imported conversations.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setConversationRowsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedSection, selectedConversationCampaign, conversationPage, account]);
+
+  useEffect(() => {
+    if (!result || (result.campaignResults?.length ?? 0) === 0) {
+      resultsFade.value = 0;
+      return;
+    }
+
+    resultsFade.value = 0;
+    const timeoutId = setTimeout(() => {
+      resultsFade.value = withTiming(1, {
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+      });
+      resultsScrollRef.current?.scrollTo({ y: 0, animated: true });
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [result, resultsFade]);
+
+  useEffect(() => {
+    if (!expandedSection) return;
+
+    const timeoutId = setTimeout(() => {
+      const layout = sectionLayoutsRef.current[expandedSection];
+      if (!layout) return;
+      resultsScrollRef.current?.scrollTo({
+        y: Math.max(0, layout.y - 24),
+        animated: true,
+      });
+    }, 120);
+
+    return () => clearTimeout(timeoutId);
+  }, [expandedSection]);
 
   const handleFetchCampaigns = useCallback(async () => {
     setStep(1);
@@ -283,27 +963,118 @@ export function SmartleadMigrationWizardModal({ visible, onClose }: Props) {
 
     setStep(2);
     setMigrating(true);
+    setRun(null);
+    setRunCampaignRows([]);
+    setRunEvents([]);
     setResult(null);
     setError(null);
+    setExpandedSection(null);
+    setSelectedLeadCampaignId(null);
+    setLeadPage(0);
+    setLeadRows([]);
+    setLeadRowsError(null);
+    setSelectedConversationCampaignId(null);
+    setConversationPage(0);
+    setConversationRows([]);
+    setConversationRowsError(null);
 
     try {
-      const res = await migrateSmartleadCampaigns(
-        apiKey.trim(),
-        selected,
-        account.id,
-        user.id,
-        (p) => setProgress(p),
-      );
-      setResult(res);
+      const nextRunId = await createSmartleadMigrationRun({
+        accountId: account.id,
+        selectedCampaigns: selected,
+      });
+      setRunId(nextRunId);
+      await launchSmartleadMigrationTask({
+        runId: nextRunId,
+        accountId: account.id,
+        apiKey: apiKey.trim(),
+      });
+      await refreshRunState(nextRunId);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Migration failed.');
-    } finally {
       setMigrating(false);
     }
-  }, [apiKey, campaigns, selectedIds, account, user]);
+  }, [apiKey, campaigns, selectedIds, account, user, refreshRunState]);
+
+  const handleCancelRun = useCallback(async () => {
+    if (!runId) return;
+    try {
+      await cancelSmartleadMigrationRun(runId);
+      await refreshRunState(runId);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to cancel migration.');
+    }
+  }, [runId, refreshRunState]);
+
+  const handleResumeRun = useCallback(async () => {
+    if (!runId || !account?.id) return;
+    try {
+      await resumeSmartleadMigrationTask({
+        runId,
+        accountId: account.id,
+      });
+      await refreshRunState(runId);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to resume migration.');
+    }
+  }, [runId, account?.id, refreshRunState]);
+
+  const handleRetryFailed = useCallback(async () => {
+    if (!account || !apiKey.trim()) return;
+
+    const failedCampaigns = runCampaignRows
+      .filter((row) => row.status === 'failed' || row.status === 'cancelled')
+      .map((row) => ({
+        id: row.smartlead_campaign_id,
+        name: row.campaign_name,
+        created_at: row.smartlead_created_at ?? undefined,
+      }));
+
+    if (failedCampaigns.length === 0) return;
+
+    setError(null);
+    setExpandedSection(null);
+    setResult(null);
+    setRun(null);
+    setRunCampaignRows([]);
+    setRunEvents([]);
+    setProgress(null);
+    setMigrating(true);
+
+    try {
+      const nextRunId = await createSmartleadMigrationRun({
+        accountId: account.id,
+        selectedCampaigns: failedCampaigns,
+      });
+      setRunId(nextRunId);
+      await launchSmartleadMigrationTask({
+        runId: nextRunId,
+        accountId: account.id,
+        apiKey: apiKey.trim(),
+      });
+      await refreshRunState(nextRunId);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to retry failed campaigns.');
+      setMigrating(false);
+    }
+  }, [account, apiKey, runCampaignRows, refreshRunState]);
 
   const canNext = step === 0 && apiKey.trim().length > 0;
   const canMigrate = step === 1 && selectedIds.size > 0 && !loading;
+  const canRetryFailed = !migrating && runCampaignRows.some((row) => row.status === 'failed' || row.status === 'cancelled') && apiKey.trim().length > 0;
+  const campaignSummary = `${formatCount(reviewCampaignResults.length)} migrated (${formatCount(result?.succeeded.length)} succeeded, ${formatCount(result?.failed.length)} failed)`;
+  const leadsSummary = `${formatCount(result?.totalLeadsImported)} leads imported`;
+  const conversationsSummary = `${formatCount(totalConversationsImported)} conversations imported`;
+  const statsSummary = `${formatCount(totalsStatsCampaignCount)} totals, ${formatCount(dayByDayStatsCampaignCount)} daily`;
+  const eventsSummary = `${formatCount(runEvents.length)} recent events`;
+
+  const storeSectionLayout = useCallback((section: ReviewSectionKey, y: number, height: number) => {
+    sectionLayoutsRef.current[section] = { y, height };
+  }, []);
+
+  const toggleReviewSection = useCallback((section: ReviewSectionKey) => {
+    setExpandedSection((current) => (current === section ? null : section));
+  }, []);
 
   const footer = (
     <View className="flex-row items-center justify-between">
@@ -327,7 +1098,7 @@ export function SmartleadMigrationWizardModal({ visible, onClose }: Props) {
           </TouchableOpacity>
         )}
       </View>
-      <View>
+      <View className="flex-row items-center gap-2">
         {step === 0 && (
           <Button onPress={handleFetchCampaigns} disabled={!canNext}>
             Next
@@ -335,7 +1106,24 @@ export function SmartleadMigrationWizardModal({ visible, onClose }: Props) {
         )}
         {step === 1 && (
           <Button onPress={handleMigrate} disabled={!canMigrate}>
-            Migrate Selected ({selectedIds.size})
+            Start Background Migration ({selectedIds.size})
+          </Button>
+        )}
+        {step === 2 && migrating && (
+          <>
+            {isRunStale ? (
+              <Button onPress={handleResumeRun} variant="secondary">
+                Resume Task
+              </Button>
+            ) : null}
+            <Button onPress={handleCancelRun} variant="secondary">
+              Cancel Run
+            </Button>
+          </>
+        )}
+        {step === 2 && !migrating && canRetryFailed && (
+          <Button onPress={handleRetryFailed} variant="secondary">
+            Retry Failed
           </Button>
         )}
         {step === 2 && !migrating && (
@@ -522,42 +1310,371 @@ export function SmartleadMigrationWizardModal({ visible, onClose }: Props) {
 
         {/* Step 2: Migration progress / results */}
         {step === 2 && (
-          <View className="gap-4">
-            {migrating && progress && (
-              <View className="items-center justify-center py-12 gap-4">
-                <ActivityIndicator size="large" color="#F3440D" />
-                <Text className="text-white text-sm font-instrument-medium">
-                  Migrating campaign {progress.campaignIndex + 1} of {progress.campaignCount}
-                </Text>
-                <Text className="text-gray-400 text-xs font-instrument">
-                  {progress.campaignName}
-                  {progress.phase === 'campaign' && ' — creating campaign...'}
-                  {progress.phase === 'leads' && ' — fetching & importing leads...'}
-                  {progress.phase === 'enrollments' && ` — creating enrollments (${progress.leadCount ?? 0} leads)...`}
-                  {progress.phase === 'stats' && ' — importing stats...'}
-                </Text>
-              </View>
-            )}
-
-            {!migrating && error && (
+          <View className="gap-4" style={{ flex: 1 }}>
+            {error && (
               <View className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
                 <Text className="text-red-400 text-sm font-instrument">{error}</Text>
               </View>
             )}
 
-            {!migrating && result && (result.campaignResults?.length ?? 0) > 0 && (
-              <View className="rounded-xl overflow-hidden">
-                <DataTable<CampaignMigrationResult>
-                  items={result.campaignResults ?? []}
-                  getItemKey={(r) =>
-                    `${r.campaignName}-${r.status}-${r.error ?? ''}-${r.leadsImported ?? 0}-${r.totalsStatsImported}-${r.dayByDayStatsImported}`
-                  }
-                  pagination={false}
-                  compactHeader
-                  emptyMessage="No results"
-                  columns={migrationResultColumns}
-                />
+            {run && (
+              <View className="rounded-xl border border-[#2A2A2A] bg-[#141414] p-4 gap-4">
+                <View className="flex-row items-center justify-between gap-3">
+                  <View className="flex-1">
+                    <Text className="text-white text-sm font-instrument-medium">
+                      {migrating ? 'Migration Running' : 'Migration Complete'}
+                    </Text>
+                    <Text className="text-gray-400 text-xs font-instrument mt-1">
+                      {formatCount(run.completed_campaign_count + run.failed_campaign_count)} of {formatCount(run.selected_campaign_count)} campaigns processed
+                    </Text>
+                  </View>
+                  <View className="px-2.5 py-1 rounded-full border border-[#2A2A2A] bg-[#1B1B1B]">
+                    <Text className="text-xs text-gray-300 font-instrument-medium capitalize">
+                      {run.status.replace(/_/g, ' ')}
+                    </Text>
+                  </View>
+                </View>
+
+                <View className="h-2 rounded-full bg-[#1F1F1F] overflow-hidden">
+                  <View
+                    style={{
+                      width: `${run.selected_campaign_count > 0
+                        ? Math.min(
+                            100,
+                            ((run.completed_campaign_count + run.failed_campaign_count) / run.selected_campaign_count) * 100,
+                          )
+                        : 0}%`,
+                      height: '100%',
+                      backgroundColor: '#F3440D',
+                    }}
+                  />
+                </View>
+
+                {progress ? (
+                  <View className="gap-1">
+                    <Text className="text-white text-sm font-instrument-medium">
+                      {progress.campaignName || 'Waiting for task...'}
+                    </Text>
+                    <Text className="text-gray-400 text-xs font-instrument">
+                      {progress.phase === 'campaign' && 'Creating campaign...'}
+                      {progress.phase === 'leads' && 'Fetching and importing leads...'}
+                      {progress.phase === 'enrollments' && `Creating enrollments (${progress.leadCount ?? 0} leads)...`}
+                      {progress.phase === 'conversations' && (progress.detail ?? 'Importing conversations...')}
+                      {progress.phase === 'stats' && 'Importing stats...'}
+                      {progress.phase === 'done' && (run.current_detail ?? 'Migration finished.')}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View className="flex-row flex-wrap gap-4">
+                  <View>
+                    <Text className="text-[11px] uppercase tracking-wide text-gray-500 font-instrument-medium">Leads</Text>
+                    <Text className="text-white text-sm font-instrument-medium">{formatCount(run.leads_imported)}</Text>
+                  </View>
+                  <View>
+                    <Text className="text-[11px] uppercase tracking-wide text-gray-500 font-instrument-medium">Conversations</Text>
+                    <Text className="text-white text-sm font-instrument-medium">{formatCount(run.conversations_imported)}</Text>
+                  </View>
+                  <View>
+                    <Text className="text-[11px] uppercase tracking-wide text-gray-500 font-instrument-medium">Stats</Text>
+                    <Text className="text-white text-sm font-instrument-medium">
+                      {formatCount(run.totals_stats_campaign_count)} totals / {formatCount(run.day_by_day_stats_campaign_count)} daily
+                    </Text>
+                  </View>
+                </View>
+
+                {run.last_error_message ? (
+                  <View className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                    <Text className="text-red-400 text-xs font-instrument">{run.last_error_message}</Text>
+                  </View>
+                ) : null}
               </View>
+            )}
+
+            {migrating && !run && progress && (
+              <View className="items-center justify-center py-12 gap-4">
+                <ActivityIndicator size="large" color="#F3440D" />
+                <Text className="text-white text-sm font-instrument-medium">
+                  Preparing background migration...
+                </Text>
+              </View>
+            )}
+
+            {runEvents.length > 0 && (
+              <View className="rounded-xl border border-[#2A2A2A] bg-[#141414] p-4 gap-3">
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-white text-sm font-instrument-medium">Recent Activity</Text>
+                  <Text className="text-gray-500 text-xs font-instrument">{eventsSummary}</Text>
+                </View>
+                <ScrollView style={{ maxHeight: Math.round(windowHeight * 0.18) }} showsVerticalScrollIndicator>
+                  <View className="gap-2">
+                    {runEvents.map((event) => (
+                      <View key={event.id} className="rounded-lg border border-[#232323] bg-[#101010] px-3 py-2">
+                        <View className="flex-row items-center justify-between gap-3">
+                          <Text
+                            className={`text-xs font-instrument-medium ${
+                              event.level === 'error'
+                                ? 'text-red-400'
+                                : event.level === 'warning'
+                                  ? 'text-amber-300'
+                                  : 'text-white'
+                            }`}
+                          >
+                            {event.detail ?? event.event_type.replace(/_/g, ' ')}
+                          </Text>
+                          <Text className="text-[10px] text-gray-500 font-instrument">
+                            {formatDateTime(event.created_at)}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+
+            {!migrating && result && (result.campaignResults?.length ?? 0) > 0 && (
+              <Animated.View style={resultsAnimatedStyle}>
+                <ScrollView
+                  ref={resultsScrollRef}
+                  style={{ maxHeight: Math.round(windowHeight * 0.42) }}
+                  showsVerticalScrollIndicator
+                  contentContainerStyle={{ gap: 12 }}
+                >
+                  <View
+                    onLayout={(event) => {
+                      const { y, height } = event.nativeEvent.layout;
+                      storeSectionLayout('campaigns', y, height);
+                    }}
+                  >
+                    <ReviewSection
+                      title="Campaigns"
+                      summary={campaignSummary}
+                      expanded={expandedSection === 'campaigns'}
+                      onPress={() => toggleReviewSection('campaigns')}
+                    >
+                      <DataTable<CampaignMigrationResult>
+                        items={reviewCampaignResults}
+                        getItemKey={(r) =>
+                          `${r.campaignId ?? 'none'}-${r.campaignName}-${r.totalsStatsImported}-${r.dayByDayStatsImported}`
+                        }
+                        pagination={false}
+                        compactHeader
+                        emptyMessage="No results"
+                        columns={migrationResultColumns}
+                      />
+                    </ReviewSection>
+                  </View>
+
+                  <View
+                    onLayout={(event) => {
+                      const { y, height } = event.nativeEvent.layout;
+                      storeSectionLayout('leads', y, height);
+                    }}
+                  >
+                    <ReviewSection
+                      title="Leads"
+                      summary={leadsSummary}
+                      expanded={expandedSection === 'leads'}
+                      onPress={() => toggleReviewSection('leads')}
+                    >
+                      {reviewCampaignOptions.length === 0 ? (
+                        <Text className="text-sm text-gray-400 font-instrument">
+                          No successful campaigns are available for lead review.
+                        </Text>
+                      ) : (
+                        <View className="gap-3">
+                          <Select<ReviewCampaignOption>
+                            items={reviewCampaignOptions}
+                            getItemId={(campaign) => campaign.id}
+                            getItemLabel={(campaign) => ({
+                              primary: campaign.name,
+                              secondary: `${formatCount(campaign.leadsImported)} leads imported`,
+                            })}
+                            value={selectedLeadCampaign?.id ?? null}
+                            onChange={(id) => {
+                              setSelectedLeadCampaignId(id);
+                              setLeadPage(0);
+                            }}
+                            label="Campaign"
+                            placeholder="Select a migrated campaign"
+                            searchable={false}
+                            size="compact"
+                          />
+
+                          {leadRowsError ? (
+                            <View className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+                              <Text className="text-red-400 text-sm font-instrument">{leadRowsError}</Text>
+                            </View>
+                          ) : null}
+
+                          <DataTable<Lead>
+                            items={leadRows}
+                            getItemKey={(lead) => lead.id}
+                            pagination={false}
+                            compactHeader
+                            loading={leadRowsLoading}
+                            emptyMessage={
+                              selectedLeadCampaign
+                                ? `No imported leads found for ${selectedLeadCampaign.name}.`
+                                : 'No imported leads found.'
+                            }
+                            columns={migrationLeadColumns}
+                          />
+
+                          {selectedLeadCampaign ? (
+                            <ReviewSectionPagination
+                              page={leadPage}
+                              pageSize={REVIEW_PAGE_SIZE}
+                              totalCount={selectedLeadCampaign.leadsImported}
+                              itemCount={leadRows.length}
+                              onPrevious={() => setLeadPage((page) => Math.max(0, page - 1))}
+                              onNext={() => setLeadPage((page) => page + 1)}
+                            />
+                          ) : null}
+                        </View>
+                      )}
+                    </ReviewSection>
+                  </View>
+
+                  <View
+                    onLayout={(event) => {
+                      const { y, height } = event.nativeEvent.layout;
+                      storeSectionLayout('conversations', y, height);
+                    }}
+                  >
+                    <ReviewSection
+                      title="Conversations"
+                      summary={conversationsSummary}
+                      expanded={expandedSection === 'conversations'}
+                      onPress={() => toggleReviewSection('conversations')}
+                    >
+                      {reviewCampaignOptions.length === 0 ? (
+                        <Text className="text-sm text-gray-400 font-instrument">
+                          No successful campaigns are available for conversation review.
+                        </Text>
+                      ) : (
+                        <View className="gap-3">
+                          <Select<ReviewCampaignOption>
+                            items={reviewCampaignOptions}
+                            getItemId={(campaign) => campaign.id}
+                            getItemLabel={(campaign) => ({
+                              primary: campaign.name,
+                              secondary: `${formatCount(campaign.conversationsImported)} conversations imported`,
+                            })}
+                            value={selectedConversationCampaign?.id ?? null}
+                            onChange={(id) => {
+                              setSelectedConversationCampaignId(id);
+                              setConversationPage(0);
+                            }}
+                            label="Campaign"
+                            placeholder="Select a migrated campaign"
+                            searchable={false}
+                            size="compact"
+                          />
+
+                          {conversationRowsError ? (
+                            <View className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+                              <Text className="text-red-400 text-sm font-instrument">{conversationRowsError}</Text>
+                            </View>
+                          ) : null}
+
+                          <DataTable<EmailThread>
+                            items={conversationRows}
+                            getItemKey={(thread) => thread.id}
+                            pagination={false}
+                            compactHeader
+                            loading={conversationRowsLoading}
+                            emptyMessage={
+                              selectedConversationCampaign
+                                ? `No imported conversations found for ${selectedConversationCampaign.name}.`
+                                : 'No imported conversations found.'
+                            }
+                            columns={migrationConversationColumns}
+                          />
+
+                          {selectedConversationCampaign ? (
+                            <ReviewSectionPagination
+                              page={conversationPage}
+                              pageSize={REVIEW_PAGE_SIZE}
+                              totalCount={selectedConversationCampaign.conversationsImported}
+                              itemCount={conversationRows.length}
+                              onPrevious={() => setConversationPage((page) => Math.max(0, page - 1))}
+                              onNext={() => setConversationPage((page) => page + 1)}
+                            />
+                          ) : null}
+                        </View>
+                      )}
+                    </ReviewSection>
+                  </View>
+
+                  <View
+                    onLayout={(event) => {
+                      const { y, height } = event.nativeEvent.layout;
+                      storeSectionLayout('events', y, height);
+                    }}
+                  >
+                    <ReviewSection
+                      title="Events"
+                      summary={eventsSummary}
+                      expanded={expandedSection === 'events'}
+                      onPress={() => toggleReviewSection('events')}
+                    >
+                      {runEvents.length === 0 ? (
+                        <Text className="text-sm text-gray-400 font-instrument">
+                          No event history is available for this run.
+                        </Text>
+                      ) : (
+                        <View className="gap-2">
+                          {runEvents.map((event) => (
+                            <View key={event.id} className="rounded-lg border border-[#232323] bg-[#101010] px-3 py-3">
+                              <View className="flex-row items-center justify-between gap-3">
+                                <Text
+                                  className={`text-xs font-instrument-medium ${
+                                    event.level === 'error'
+                                      ? 'text-red-400'
+                                      : event.level === 'warning'
+                                        ? 'text-amber-300'
+                                        : 'text-white'
+                                  }`}
+                                >
+                                  {event.detail ?? event.event_type.replace(/_/g, ' ')}
+                                </Text>
+                                <Text className="text-[10px] text-gray-500 font-instrument">
+                                  {formatDateTime(event.created_at)}
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </ReviewSection>
+                  </View>
+
+                  <View
+                    onLayout={(event) => {
+                      const { y, height } = event.nativeEvent.layout;
+                      storeSectionLayout('stats', y, height);
+                    }}
+                  >
+                    <ReviewSection
+                      title="Stats"
+                      summary={statsSummary}
+                      expanded={expandedSection === 'stats'}
+                      onPress={() => toggleReviewSection('stats')}
+                    >
+                      <DataTable<CampaignMigrationResult>
+                        items={reviewCampaignResults.filter((campaign) => campaign.status === 'succeeded')}
+                        getItemKey={(campaign) => `${campaign.campaignId ?? 'none'}-${campaign.campaignName}-stats`}
+                        pagination={false}
+                        compactHeader
+                        emptyMessage="No stats were imported."
+                        columns={migrationStatsColumns}
+                      />
+                    </ReviewSection>
+                  </View>
+                </ScrollView>
+              </Animated.View>
             )}
           </View>
         )}

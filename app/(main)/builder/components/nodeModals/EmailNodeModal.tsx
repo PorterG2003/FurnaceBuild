@@ -282,18 +282,9 @@ function EmailNodeModal({
   const footer = (
     <View className="flex-row gap-3">
       <View className="flex-1">
-        <TouchableOpacity
-          onPress={onClose}
-          className="border border-[#3A3A3A] rounded-xl px-6 py-3 items-center justify-center"
-          style={{
-            borderWidth: 1,
-            borderColor: '#3A3A3A',
-          }}
-        >
-          <Text className="text-white font-instrument-medium text-base">
-            Cancel
-          </Text>
-        </TouchableOpacity>
+        <Button variant="secondary" onPress={onClose} className="flex-1">
+          Cancel
+        </Button>
       </View>
       <View className="flex-1">
         <Button onPress={handleSave}>

@@ -1,5 +1,5 @@
 import { reportErrorToSlack } from '../slack/reportErrorToSlack';
-import { supabase } from '@/lib/supabase/client';
+import { getAccessToken } from '@/lib/services/auth-token';
 import outputs from '@/amplify_outputs.json';
 
 const custom = (outputs as { custom?: { sendInvitationEmailUrl?: string; testMailboxConnectionUrl?: string } }).custom;
@@ -22,8 +22,7 @@ export async function sendInvitationEmail(params: SendInvitationEmailParams): Pr
     throw new Error('sendInvitationEmail URL not configured. Deploy the Amplify backend and ensure amplify_outputs.json includes custom.sendInvitationEmailUrl.');
   }
 
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  const token = await getAccessToken();
   if (!token) {
     throw new Error('You must be signed in to send an invitation.');
   }
@@ -91,8 +90,7 @@ export async function testMailboxConnection(
     );
   }
 
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  const token = await getAccessToken();
   if (!token) {
     throw new Error('You must be signed in to test mailbox connection.');
   }

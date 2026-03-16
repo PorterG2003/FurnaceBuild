@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, TextInput } from 'react-native';
+import { Button } from '@/components/ui/button';
 import { BaseModal } from './BaseModal';
 
 interface ConfirmDeleteModalProps {
@@ -74,30 +75,22 @@ export function ConfirmDeleteModal({
       maxWidth="sm"
       footer={
         <View className="flex-row gap-3">
-          <TouchableOpacity
+          <Button
+            variant="outline"
             onPress={handleClose}
             disabled={isLoading}
-            className="flex-1 px-4 py-3 bg-white/5 border border-white/20 rounded-xl"
-            style={{ opacity: isLoading ? 0.5 : 1 }}
+            className="flex-1"
           >
-            <Text className="text-center text-white font-instrument-medium">
-              {cancelLabel}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+            {cancelLabel}
+          </Button>
+          <Button
+            variant="destructive"
             onPress={handleConfirm}
             disabled={isLoading || !isConfirmed}
-            className="flex-1 px-4 py-3 bg-red-500/20 border border-red-500/30 rounded-xl"
-            style={{ opacity: isLoading || !isConfirmed ? 0.5 : 1 }}
+            className="flex-1"
           >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#F87171" />
-            ) : (
-              <Text className="text-center text-red-400 font-instrument-medium">
-                {confirmLabel}
-              </Text>
-            )}
-          </TouchableOpacity>
+            {isLoading ? 'Deleting...' : confirmLabel}
+          </Button>
         </View>
       }
     >

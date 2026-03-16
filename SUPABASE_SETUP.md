@@ -2,6 +2,15 @@
 
 This guide walks you through setting up Supabase for your FurnaceBuild app.
 
+## Directory Roles
+
+This repo intentionally splits Supabase into two places:
+
+- `supabase/` at the repo root is the database project. It contains the Supabase CLI config and SQL migrations.
+- `lib/supabase/` is the runtime integration layer used by the app and workers.
+
+Use `supabase/migrations/` for schema changes. Use `@/lib/supabase/*` for application imports.
+
 ## 1. Create a Supabase Project
 
 1. Go to [supabase.com](https://supabase.com) and sign in/create account
@@ -13,7 +22,7 @@ This guide walks you through setting up Supabase for your FurnaceBuild app.
 In Settings > API:
 
 1. **Project URL**: Find this at the top of the API page (looks like `https://xxxxx.supabase.co`)
-2. **Publishable API Key**: 
+2. **Publishable API Key**:
    - Click the **"API Keys"** tab (NOT "Legacy API Keys")
    - Copy the **"Publishable API Key"** - this is safe for client-side use
    - ⚠️ Do NOT use the "Secret API Key" - that's for server-side only
@@ -50,17 +59,23 @@ You can also add them to `app.json` under `expo.extra`:
 
 ## 4. Run the Database Migration
 
-1. Open your Supabase project dashboard
-2. Go to SQL Editor
-3. Open the file `lib/supabase/migrations/001_create_campaigns.sql`
-4. Copy and paste the SQL into the editor
-5. Run the query to create the `campaigns` table
+The canonical migration history lives in `supabase/migrations/`.
 
-Alternatively, if you're using Supabase CLI:
+### Option A: Supabase CLI
+
+From the repository root:
 
 ```bash
 supabase db push
 ```
+
+### Option B: Manual SQL Editor
+
+1. Open your Supabase project dashboard
+2. Go to SQL Editor
+3. Open the relevant file from `supabase/migrations/`
+4. Copy and paste the SQL into the editor
+5. Run the query
 
 ## 5. Verify Setup
 
@@ -81,7 +96,11 @@ const campaigns = await getCampaigns({ ownerId: userId });
 
 ## Project Structure
 
-```
+```text
+supabase/
+├── config.toml             # Supabase CLI project config
+└── migrations/             # SQL migrations
+
 lib/supabase/
 ├── client.ts              # Supabase client initialization
 ├── types/
@@ -90,8 +109,6 @@ lib/supabase/
 ├── services/
 │   ├── campaigns.ts       # Campaign CRUD operations
 │   └── index.ts           # Service exports
-└── migrations/
-    └── 001_create_campaigns.sql  # Database migrations
 ```
 
 ## Next Steps
@@ -99,7 +116,7 @@ lib/supabase/
 - The campaigns table is ready to use
 - All CRUD operations are available via the service layer
 - Types are set up and ready to use
-- Add more tables by following the same pattern
+- Add more tables by creating new migrations in `supabase/migrations/`
 
 ## Security Notes
 
@@ -108,5 +125,3 @@ lib/supabase/
 - We're using app-level authorization (filtering by owner_id)
 - For production, consider implementing Row Level Security (RLS) policies
 - Never commit your `.env` file or secret keys to git
-
-

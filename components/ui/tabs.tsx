@@ -50,7 +50,7 @@ export function Tabs({ tabs, activeTab, onTabChange, layout = 'content' }: TabsP
     Animated.timing(tabIndicator, {
       toValue: activeTabIndex,
       duration: 220,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     }).start();
   }, [activeTabIndex, tabIndicator]);
 
@@ -93,12 +93,17 @@ export function Tabs({ tabs, activeTab, onTabChange, layout = 'content' }: TabsP
 
   const indicatorTranslateX = useMemo(() => {
     if (hasMeasurements) {
+      const positions =
+        layout === 'content'
+          ? (computedTabPositions as number[]).map((v) => v ?? 0)
+          : (tabPositions as number[]).map((v) => v ?? 0);
+      // interpolate() requires outputRange to have at least 2 elements
+      const inputRange = tabs.map((_, index) => index);
+      const outputRange = positions.length >= 2 ? positions : [positions[0] ?? 0, positions[0] ?? 0];
+      const safeInputRange = inputRange.length >= 2 ? inputRange : [0, 1];
       return tabIndicator.interpolate({
-        inputRange: tabs.map((_, index) => index),
-        outputRange:
-          layout === 'content'
-            ? (computedTabPositions as number[]).map((v) => v ?? 0)
-            : (tabPositions as number[]).map((v) => v ?? 0),
+        inputRange: safeInputRange,
+        outputRange,
       });
     }
     return fallbackTranslateX;

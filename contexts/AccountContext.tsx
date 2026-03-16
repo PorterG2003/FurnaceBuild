@@ -4,13 +4,13 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Account, AccountUser, BlockListEntry, Invitation, User } from '@/lib/supabase/types';
-import type { AccountMembership } from '@/lib/supabase/services/users';
+import type { AccountMembership } from '@/lib/supabase/services/accounts';
 import {
   getAccountMembers,
   getAccountMembershipsForUser,
   getAccountInvitations,
   updateUserProfile,
-} from '@/lib/supabase/services/users';
+} from '@/lib/supabase/services/accounts';
 import { getBlockList } from '@/lib/supabase/services/block-list';
 
 function buildDefaultAccountName(loginId: string | null, currentName?: string | null): string {

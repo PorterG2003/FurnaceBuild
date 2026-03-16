@@ -1,5 +1,7 @@
-import { Modal, Pressable, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, Pressable, Text, View } from 'react-native';
 import { XMarkIcon } from 'react-native-heroicons/outline';
+import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import type { TestConnectionResult } from './types';
 
 export interface TestResultModalProps {
@@ -56,9 +58,14 @@ export function TestResultModal({
                 ) : (
                   <View className="flex-1" />
                 )}
-                <TouchableOpacity onPress={onClose} className="p-2 -mr-2" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <XMarkIcon size={24} color="#9CA3AF" />
-                </TouchableOpacity>
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  icon={XMarkIcon}
+                  onPress={onClose}
+                  className="-mr-2"
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                />
               </View>
 
               <View className="px-5 py-5">
@@ -115,9 +122,9 @@ export function TestResultModal({
                     </View>
                   )}
                 </View>
-                <TouchableOpacity onPress={onClose} className="w-full py-3.5 rounded-xl bg-brand-orange active:opacity-90">
-                  <Text className="text-center text-white font-instrument-semibold">Close</Text>
-                </TouchableOpacity>
+                <Button onPress={onClose} className="w-full">
+                  Close
+                </Button>
               </View>
             </>
           )}

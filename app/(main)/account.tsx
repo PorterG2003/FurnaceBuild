@@ -11,6 +11,10 @@ import {
 import { useMemo } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { ManageBlockListModal } from '@/components/inbox';
+import {
+  MigrationHistoryModal,
+  SmartleadMigrationWizardModal,
+} from '@/components/account/smartleadMigration';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
@@ -18,15 +22,42 @@ import { BaseModal } from '@/components/ui/modals';
 import { useAccount } from '@/contexts/AccountContext';
 import {
   deleteInvitation,
+  getActiveSmartleadMigrationRun,
+  getLatestSmartleadMigrationRun,
+  inviteUserToAccount,
+  listSmartleadMigrationRuns,
   removeBlockEntry,
   removeMemberFromAccount,
   updateAccount,
   updateMemberRole,
   updateUserProfile,
 } from '@/lib/supabase/services';
-import { supabase } from '@/lib/supabase/client';
 import { sendInvitationEmail } from '@/lib/services/email';
-import type { AccountUser, BlockListEntry, Invitation, User } from '@/lib/supabase/types';
+import type { AccountUser, BlockListEntry, Invitation, SmartleadMigrationRun, User } from '@/lib/supabase/types';
+
+const ACTIVE_SMARTLEAD_RUN_STATUSES: SmartleadMigrationRun['status'][] = [
+  'queued',
+  'launch_requested',
+  'task_started',
+  'running',
+  'cancel_requested',
+];
+
+function getSmartleadRunSummary(run: SmartleadMigrationRun): string {
+  switch (run.status) {
+    case 'queued':
+    case 'launch_requested':
+      return 'Launch requested. Preparing the ECS task.';
+    case 'task_started':
+      return 'ECS task created. Waiting for the worker to claim the run.';
+    case 'failed_to_launch':
+      return 'This run never created an ECS task.';
+    case 'failed_to_claim':
+      return 'An ECS task was created, but the worker never claimed the run.';
+    default:
+      return `${run.completed_campaign_count + run.failed_campaign_count} of ${run.selected_campaign_count} campaigns processed`;
+  }
+}
 
 export default function AccountPage() {
   const { toast } = useToast();
@@ -72,6 +103,13 @@ export default function AccountPage() {
   const [inviting, setInviting] = useState(false);
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
   const [blockListModalVisible, setBlockListModalVisible] = useState(false);
+  const [smartleadWizardVisible, setSmartleadWizardVisible] = useState(false);
+  const [smartleadHistoryVisible, setSmartleadHistoryVisible] = useState(false);
+  const [smartleadRun, setSmartleadRun] = useState<SmartleadMigrationRun | null>(null);
+  const [selectedSmartleadRunId, setSelectedSmartleadRunId] = useState<string | null>(null);
+  const [smartleadRuns, setSmartleadRuns] = useState<SmartleadMigrationRun[]>([]);
+  const [smartleadRunsLoading, setSmartleadRunsLoading] = useState(false);
+  const [smartleadRunsError, setSmartleadRunsError] = useState<string | null>(null);
   const [roleEditMember, setRoleEditMember] = useState<{ membershipId: string; memberName: string } | null>(null);
 
   const handleNameChange = (value: string) => {
@@ -97,6 +135,85 @@ export default function AccountPage() {
     }
     setCompanyInput(membership.account.name ?? '');
   }, [membership?.account?.id, membership?.account?.name]);
+
+  useEffect(() => {
+    if (!account?.id) {
+      setSmartleadRun(null);
+      setSmartleadRuns([]);
+      setSmartleadRunsError(null);
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const refreshRun = async () => {
+      try {
+        const activeRun = await getActiveSmartleadMigrationRun(account.id);
+        if (cancelled) return;
+        if (activeRun) {
+          setSmartleadRun(activeRun);
+          return;
+        }
+        const latestRun = await getLatestSmartleadMigrationRun(account.id);
+        if (!cancelled) {
+          setSmartleadRun(latestRun);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load Smartlead migration run:', error);
+        }
+      }
+    };
+
+    void refreshRun();
+    intervalId = setInterval(() => {
+      void refreshRun();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [account?.id]);
+
+  useEffect(() => {
+    if (!smartleadHistoryVisible || !account?.id) return;
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const refreshRuns = async () => {
+      setSmartleadRunsLoading(true);
+      setSmartleadRunsError(null);
+      try {
+        const runs = await listSmartleadMigrationRuns(account.id);
+        if (!cancelled) {
+          setSmartleadRuns(runs);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSmartleadRunsError(
+            error instanceof Error ? error.message : 'Failed to load migration history.',
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setSmartleadRunsLoading(false);
+        }
+      }
+    };
+
+    void refreshRuns();
+    intervalId = setInterval(() => {
+      void refreshRuns();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [smartleadHistoryVisible, account?.id]);
 
   const handleSaveProfile = useCallback(async () => {
     if (!profile) return;
@@ -209,22 +326,15 @@ export default function AccountPage() {
     setInviting(true);
 
     try {
-      const { data: result, error: rpcError } = await supabase.rpc('invite_user_to_account', {
-        p_account_id: membership.account.id,
-        p_email: trimmedEmail,
-        p_invited_by: profile.id,
-      });
-
-      if (rpcError) throw new Error(rpcError.message);
-
-      const status = (result as { status: string; invitation_id?: string }).status;
+      const result = await inviteUserToAccount(membership.account.id, trimmedEmail, profile.id);
+      const status = result.status;
 
       if (status === 'already_member') {
         toast.info(`${trimmedEmail} is already a member of this team.`);
       } else if (status === 'pending_invite') {
         toast.info(`${trimmedEmail} already has a pending invite.`);
       } else if (status === 'invited') {
-        const invitationId = (result as { invitation_id: string }).invitation_id;
+        const invitationId = result.invitation_id!;
         const baseUrl = typeof window !== 'undefined'
           ? window.location.origin
           : 'https://build.getfurnace.io';
@@ -592,35 +702,27 @@ export default function AccountPage() {
                                       </Text>
                                     </View>
                                     {canManage && Platform.OS !== 'web' && (
-                                      <TouchableOpacity
+                                      <Button
+                                        variant="secondary"
+                                        size="xs"
                                         onPress={() => setRoleEditMember({ membershipId: member.membership.id, memberName: member.user.name || member.user.email })}
                                         disabled={updatingRoleId === member.membership.id}
-                                        className="px-2 py-1 rounded bg-[#2A2A2A] border border-[#3A3A3A] active:opacity-80"
-                                        activeOpacity={0.7}
                                       >
-                                        <Text className="text-gray-300 text-xs font-instrument-medium">
-                                          {updatingRoleId === member.membership.id ? 'Updating...' : 'Change role'}
-                                        </Text>
-                                      </TouchableOpacity>
+                                        {updatingRoleId === member.membership.id ? 'Updating...' : 'Change role'}
+                                      </Button>
                                     )}
                                   </View>
                                 )}
                                 
                                 {canManage && (
-                                  <TouchableOpacity
+                                  <Button
+                                    variant="destructive"
+                                    size="xs"
                                     onPress={() => handleRemoveMember(member.membership.id, member.user.name || member.user.email)}
                                     disabled={removingMemberId === member.membership.id}
-                                    className="px-2 py-1 rounded bg-red-500/10 border border-red-500/20 active:bg-red-500/20"
-                                    activeOpacity={0.7}
                                   >
-                                    {removingMemberId === member.membership.id ? (
-                                      <ActivityIndicator size="small" color="#ef4444" />
-                                    ) : (
-                                      <Text className="text-red-400 text-xs font-instrument-medium">
-                                        Remove
-                                      </Text>
-                                    )}
-                                  </TouchableOpacity>
+                                    {removingMemberId === member.membership.id ? 'Removing...' : 'Remove'}
+                                  </Button>
                                 )}
                               </View>
                             </View>
@@ -657,20 +759,14 @@ export default function AccountPage() {
                                 Pending
                               </Text>
                             </View>
-                            <TouchableOpacity
+                            <Button
+                              variant="destructive"
+                              size="xs"
                               onPress={() => handleRevokeInvitation(invitation.id)}
                               disabled={revokingInvitationId === invitation.id}
-                              className="px-2 py-1 rounded bg-red-500/10 border border-red-500/20 active:bg-red-500/20"
-                              activeOpacity={0.7}
                             >
-                              {revokingInvitationId === invitation.id ? (
-                                <ActivityIndicator size="small" color="#ef4444" />
-                              ) : (
-                                <Text className="text-red-400 text-xs font-instrument-medium">
-                                  Revoke
-                                </Text>
-                              )}
-                            </TouchableOpacity>
+                              {revokingInvitationId === invitation.id ? 'Revoking...' : 'Revoke'}
+                            </Button>
                           </View>
                         ))}
                       </View>
@@ -687,16 +783,97 @@ export default function AccountPage() {
                 <Text className="text-gray-500 text-xs font-instrument mb-4">
                   Blocked addresses and domains do not receive automated campaign emails. You can still reply manually from the inbox.
                 </Text>
-                <TouchableOpacity
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="self-start"
                   onPress={() => setBlockListModalVisible(true)}
-                  activeOpacity={0.8}
-                  className="flex-row items-center justify-center px-4 py-2.5 rounded-xl border border-[#3A3A3A] bg-[#2A2A2A] self-start"
                 >
-                  <Text className="text-gray-200 text-sm font-instrument-medium">
-                    Manage Block List
-                  </Text>
-                </TouchableOpacity>
+                  Manage Block List
+                </Button>
               </View>
+
+              {/* Smartlead Migration */}
+              <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
+                <Text className="text-white text-base font-instrument-semibold mb-1.5">
+                  Smartlead Migration
+                </Text>
+                <Text className="text-gray-500 text-xs font-instrument mb-4">
+                  Import campaigns and leads from your Smartlead account. Background runs keep their progress and errors visible even after reloads.
+                </Text>
+                {smartleadRun ? (
+                  <View className="mb-4 rounded-xl border border-[#2A2A2A] bg-[#141414] p-3">
+                    <View className="flex-row items-center justify-between gap-3">
+                      <Text className="text-white text-sm font-instrument-medium">
+                        {ACTIVE_SMARTLEAD_RUN_STATUSES.includes(smartleadRun.status)
+                          ? 'Active migration'
+                          : 'Most recent migration'}
+                      </Text>
+                      <View className="rounded-full border border-[#2A2A2A] bg-[#1F1F1F] px-2.5 py-1">
+                        <Text className="text-[11px] text-gray-300 font-instrument-medium capitalize">
+                          {smartleadRun.status.replace(/_/g, ' ')}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text className="text-gray-400 text-xs font-instrument mt-2">
+                      {getSmartleadRunSummary(smartleadRun)}
+                    </Text>
+                    <Text className="text-gray-500 text-xs font-instrument mt-1">
+                      {smartleadRun.leads_imported} leads, {smartleadRun.conversations_imported} conversations
+                    </Text>
+                    {smartleadRun.last_error_message ? (
+                      <Text className="text-red-400 text-xs font-instrument mt-2">
+                        {smartleadRun.last_error_message}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+                <View className="flex-row flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onPress={() => {
+                      if (smartleadRun && ACTIVE_SMARTLEAD_RUN_STATUSES.includes(smartleadRun.status)) {
+                        setSelectedSmartleadRunId(smartleadRun.id);
+                      } else {
+                        setSelectedSmartleadRunId(null);
+                      }
+                      setSmartleadWizardVisible(true);
+                    }}
+                  >
+                    {smartleadRun && ACTIVE_SMARTLEAD_RUN_STATUSES.includes(smartleadRun.status)
+                      ? 'View Migration'
+                      : 'Start Migration'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => setSmartleadHistoryVisible(true)}
+                  >
+                    View All Migrations
+                  </Button>
+                </View>
+              </View>
+
+              <SmartleadMigrationWizardModal
+                visible={smartleadWizardVisible}
+                onClose={() => {
+                  setSmartleadWizardVisible(false);
+                  setSelectedSmartleadRunId(null);
+                }}
+                initialRunId={selectedSmartleadRunId}
+              />
+              <MigrationHistoryModal
+                visible={smartleadHistoryVisible}
+                onClose={() => setSmartleadHistoryVisible(false)}
+                runs={smartleadRuns}
+                loading={smartleadRunsLoading}
+                error={smartleadRunsError}
+                onReviewRun={(runId) => {
+                  setSelectedSmartleadRunId(runId);
+                  setSmartleadHistoryVisible(false);
+                  setSmartleadWizardVisible(true);
+                }}
+              />
 
               <ManageBlockListModal
                 visible={blockListModalVisible}

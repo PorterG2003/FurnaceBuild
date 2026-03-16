@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TextInput, ScrollView } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { TrashIcon } from 'react-native-heroicons/outline';
 
 interface AICategorizerNodeModalProps {
@@ -53,18 +54,9 @@ export function AICategorizerNodeModal({
   const footer = (
     <View className="flex-row gap-3">
       <View className="flex-1">
-        <TouchableOpacity
-          onPress={onClose}
-          className="border border-[#3A3A3A] rounded-xl px-6 py-3 items-center justify-center"
-          style={{
-            borderWidth: 1,
-            borderColor: '#3A3A3A',
-          }}
-        >
-          <Text className="text-white font-instrument-medium text-base">
-            Cancel
-          </Text>
-        </TouchableOpacity>
+        <Button variant="secondary" onPress={onClose} className="flex-1">
+          Cancel
+        </Button>
       </View>
       <View className="flex-1">
         <Button onPress={handleSave}>
@@ -110,14 +102,9 @@ export function AICategorizerNodeModal({
             <Text className="text-sm font-instrument-medium text-gray-300">
               Categories
             </Text>
-            <TouchableOpacity
-              onPress={handleAddCategory}
-              className="px-3 py-1.5 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-            >
-              <Text className="text-white font-instrument-medium text-sm">
-                Add Category
-              </Text>
-            </TouchableOpacity>
+            <Button variant="secondary" size="sm" onPress={handleAddCategory}>
+              Add Category
+            </Button>
           </View>
           <ScrollView className="max-h-64" showsVerticalScrollIndicator={false}>
             <View className="gap-2">
@@ -139,12 +126,11 @@ export function AICategorizerNodeModal({
                     underlineColorAndroid="transparent"
                   />
                   {categories.length > 1 && (
-                    <TouchableOpacity
+                    <IconButton
+                      variant="destructive"
+                      icon={TrashIcon}
                       onPress={() => handleRemoveCategory(index)}
-                      className="p-3 rounded-lg border border-red-500/30 bg-red-500/20"
-                    >
-                      <TrashIcon size={18} color="#ef4444" />
-                    </TouchableOpacity>
+                    />
                   )}
                 </View>
               ))}

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Platform, Alert, useWindowDimensions } from 'react-native';
 import Papa from 'papaparse';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalStepIndicator } from '@/components/ui/modals';
 import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { useAccount } from '@/contexts/AccountContext';
-import { createLeads, generateGlobalLeadId, getLeadCount, getLeads } from '@/lib/supabase/services/leads';
+import { createLeads, getLeadCount, getLeads } from '@/lib/supabase/services/leads';
+import { generateGlobalLeadId } from '@/lib/leads';
 import { ensureCampaignEnrollmentsForLeads } from '@/lib/supabase/services/campaigns';
 import type { LeadInsert, Lead } from '@/lib/supabase/types';
 
@@ -999,19 +1000,9 @@ function LeadSourceNodeModal({
           <Text style={{ flex: 1, color: '#FFFFFF', fontSize: 13, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>
             {endpointUrl}
           </Text>
-          <TouchableOpacity
-            onPress={() => handleCopy(endpointUrl, 'Endpoint URL')}
-            style={{
-              borderRadius: 12,
-              paddingHorizontal: 14,
-              paddingVertical: 8,
-              backgroundColor: 'rgba(255,255,255,0.08)',
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.14)',
-            }}
-          >
-            <Text style={{ color: '#FFFFFF', fontSize: 12, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>Copy</Text>
-          </TouchableOpacity>
+          <Button variant="secondary" size="sm" onPress={() => handleCopy(endpointUrl, 'Endpoint URL')}>
+            Copy
+          </Button>
         </View>
         <Text className="text-xs text-gray-400 mt-3">
           Send a POST request to this URL to push leads directly into the bucket.
@@ -1026,32 +1017,12 @@ function LeadSourceNodeModal({
           <Text style={{ flex: 1, color: '#FFFFFF', fontSize: 13, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>
             {apiKeyVisible ? apiKey : '••••••••••••••••••'}
           </Text>
-          <TouchableOpacity
-            onPress={() => setApiKeyVisible(!apiKeyVisible)}
-            style={{
-              borderRadius: 12,
-              paddingHorizontal: 14,
-              paddingVertical: 8,
-              backgroundColor: 'rgba(255,255,255,0.05)',
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.08)',
-            }}
-          >
-            <Text style={{ color: '#FFFFFF', fontSize: 12 }}>{apiKeyVisible ? 'Hide' : 'Show'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleCopy(apiKey, 'API key')}
-            style={{
-              borderRadius: 12,
-              paddingHorizontal: 14,
-              paddingVertical: 8,
-              backgroundColor: 'rgba(255,255,255,0.08)',
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.14)',
-            }}
-          >
-            <Text style={{ color: '#FFFFFF', fontSize: 12 }}>Copy</Text>
-          </TouchableOpacity>
+          <Button variant="secondary" size="sm" onPress={() => setApiKeyVisible(!apiKeyVisible)}>
+            {apiKeyVisible ? 'Hide' : 'Show'}
+          </Button>
+          <Button variant="secondary" size="sm" onPress={() => handleCopy(apiKey, 'API key')}>
+            Copy
+          </Button>
         </View>
         <Text className="text-xs text-gray-400 mt-3">
           Use this key as a Bearer token in the Authorization header. Replace with a secure value when wiring up the backend.
@@ -1075,19 +1046,9 @@ function LeadSourceNodeModal({
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 }}>
-          <TouchableOpacity
-            onPress={() => handleCopy(payloadExample, 'Payload example')}
-            style={{
-              borderRadius: 12,
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.14)',
-              backgroundColor: 'rgba(255,255,255,0.05)',
-            }}
-          >
-            <Text style={{ color: '#FFFFFF', fontSize: 13 }}>Copy Payload</Text>
-          </TouchableOpacity>
+          <Button variant="secondary" size="sm" onPress={() => handleCopy(payloadExample, 'Payload example')}>
+            Copy Payload
+          </Button>
           <Button onPress={handleTestEndpoint} disabled={testStatus === 'loading'}>
             {testStatus === 'loading' ? 'Testing…' : 'Send Test (Mock)'}
           </Button>
@@ -1175,36 +1136,24 @@ function LeadSourceNodeModal({
 
     const wizardFooter = (
       <View className="flex-row items-center justify-between">
-        <TouchableOpacity
+        <Button
+          variant="secondary"
+          size="sm"
           onPress={goToPreviousCsvStep}
           disabled={csvStep === 0 || isSavingImport}
-          style={{
-            borderRadius: 12,
-            paddingHorizontal: 16,
-            paddingVertical: 10,
-            borderWidth: 1,
-            borderColor: csvStep === 0 || isSavingImport ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.18)',
-            opacity: csvStep === 0 || isSavingImport ? 0.5 : 1,
-          }}
         >
-          <Text style={{ color: '#FFFFFF', fontSize: 14, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>Back</Text>
-        </TouchableOpacity>
+          Back
+        </Button>
 
         <View style={{ flexDirection: 'row', gap: 12 }}>
-          <TouchableOpacity
+          <Button
+            variant="secondary"
+            size="sm"
             onPress={handleWizardReset}
             disabled={!csvColumns.length || isSavingImport}
-            style={{
-              borderRadius: 12,
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              borderWidth: 1,
-              borderColor: !csvColumns.length || isSavingImport ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.14)',
-              opacity: !csvColumns.length || isSavingImport ? 0.5 : 1,
-            }}
           >
-            <Text style={{ color: '#FFFFFF', fontSize: 14, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>Reset</Text>
-          </TouchableOpacity>
+            Reset
+          </Button>
 
           <Button
             onPress={isLastStep ? handleConfirmImport : goToNextCsvStep}
@@ -1227,47 +1176,7 @@ function LeadSourceNodeModal({
         height={Math.round(windowHeight * 0.9)}
       >
         <View className="gap-6">
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 16 }}>
-            {csvSteps.map((stepLabel, index) => {
-              const isActive = index === csvStep;
-              const isComplete = index < csvStep;
-              return (
-                <View key={stepLabel} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <View style={{ alignItems: 'center', minWidth: 88 }}>
-                    <View
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: isActive ? '#F3440D' : isComplete ? 'rgba(243,68,13,0.4)' : 'rgba(255,255,255,0.08)',
-                      }}
-                    >
-                      <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>{index + 1}</Text>
-                    </View>
-                    <Text
-                      style={{
-                        marginTop: 6,
-                        color: isActive ? '#FFFFFF' : '#9CA3AF',
-                        fontSize: 11,
-                        fontFamily: 'Instrument Sans, system-ui, sans-serif',
-                        fontWeight: isActive ? '600' : '500',
-                        letterSpacing: 1,
-                        textTransform: 'uppercase',
-                        textAlign: 'center',
-                      }}
-                    >
-                      {stepLabel}
-                    </Text>
-                  </View>
-                  {index < csvSteps.length - 1 && (
-                    <View style={{ width: 40, height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 8 }} />
-                  )}
-                </View>
-              );
-            })}
-          </View>
+          <ModalStepIndicator steps={csvSteps} activeIndex={csvStep} wrap />
 
           {renderCsvStepContent()}
         </View>
@@ -1293,18 +1202,9 @@ function LeadSourceNodeModal({
   const footer = (
     <View className="flex-row gap-3">
       <View className="flex-1">
-        <TouchableOpacity
-          onPress={onClose}
-          className="border border-[#3A3A3A] rounded-xl px-6 py-3 items-center justify-center"
-          style={{
-            borderWidth: 1,
-            borderColor: '#3A3A3A',
-          }}
-        >
-          <Text className="text-white font-instrument-medium text-base">
-            Cancel
-          </Text>
-        </TouchableOpacity>
+        <Button variant="secondary" onPress={onClose} className="flex-1">
+          Cancel
+        </Button>
       </View>
       <View className="flex-1">
         <Button onPress={handleSave} disabled={!label.trim()}>

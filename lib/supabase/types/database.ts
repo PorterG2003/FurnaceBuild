@@ -89,6 +89,9 @@ export interface Database {
           bucket_id: string;
           status: 'draft' | 'running' | 'paused' | 'stopped';
           sending_interval_seconds: number;
+          source: string | null;
+          smartlead_campaign_id: number | null;
+          smartlead_created_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -105,6 +108,9 @@ export interface Database {
           bucket_id?: string;
           status?: 'draft' | 'running' | 'paused' | 'stopped';
           sending_interval_seconds?: number;
+          source?: string | null;
+          smartlead_campaign_id?: number | null;
+          smartlead_created_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -121,6 +127,9 @@ export interface Database {
           bucket_id?: string;
           status?: 'draft' | 'running' | 'paused' | 'stopped';
           sending_interval_seconds?: number;
+          source?: string | null;
+          smartlead_campaign_id?: number | null;
+          smartlead_created_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -139,9 +148,11 @@ export interface Database {
           website: string | null;
           linkedin_url: string | null;
           company_linkedin_url: string | null;
+          phone_number: string | null;
           source: string | null;
           custom_lead_data: Json | null;
           global_lead_id: string | null;
+          smartlead_lead_id: number | null;
           status: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           created_at: string;
           updated_at: string;
@@ -159,9 +170,11 @@ export interface Database {
           website?: string | null;
           linkedin_url?: string | null;
           company_linkedin_url?: string | null;
+          phone_number?: string | null;
           source?: string | null;
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
+          smartlead_lead_id?: number | null;
           status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           created_at?: string;
           updated_at?: string;
@@ -179,9 +192,11 @@ export interface Database {
           website?: string | null;
           linkedin_url?: string | null;
           company_linkedin_url?: string | null;
+          phone_number?: string | null;
           source?: string | null;
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
+          smartlead_lead_id?: number | null;
           status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           mailbox_id?: string | null;
           created_at?: string;
@@ -292,6 +307,290 @@ export interface Database {
           expires_at?: string | null;
         };
       };
+      imported_campaign_stats_by_day: {
+        Row: {
+          campaign_id: string;
+          date: string;
+          sent_count: number;
+          replied_count: number;
+          positive_reply_count: number;
+          bounce_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          campaign_id: string;
+          date: string;
+          sent_count?: number;
+          replied_count?: number;
+          positive_reply_count?: number;
+          bounce_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          campaign_id?: string;
+          date?: string;
+          sent_count?: number;
+          replied_count?: number;
+          positive_reply_count?: number;
+          bounce_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      smartlead_migration_runs: {
+        Row: {
+          id: string;
+          account_id: string;
+          created_by: string;
+          status:
+            | 'queued'
+            | 'launch_requested'
+            | 'task_started'
+            | 'running'
+            | 'cancel_requested'
+            | 'completed'
+            | 'completed_with_warnings'
+            | 'failed'
+            | 'failed_to_launch'
+            | 'failed_to_claim'
+            | 'cancelled';
+          selected_campaign_count: number;
+          completed_campaign_count: number;
+          failed_campaign_count: number;
+          leads_imported: number;
+          conversations_imported: number;
+          totals_stats_campaign_count: number;
+          day_by_day_stats_campaign_count: number;
+          warning_count: number;
+          current_campaign_id: number | null;
+          current_campaign_name: string | null;
+          current_phase: 'campaign' | 'leads' | 'enrollments' | 'conversations' | 'stats' | 'done' | null;
+          current_detail: string | null;
+          last_error_message: string | null;
+          cancel_requested_at: string | null;
+          launch_requested_at: string | null;
+          launched_at: string | null;
+          started_at: string | null;
+          finished_at: string | null;
+          last_heartbeat_at: string | null;
+          task_arn: string | null;
+          worker_id: string | null;
+          api_key_secret_ref: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          created_by: string;
+          status?:
+            | 'queued'
+            | 'launch_requested'
+            | 'task_started'
+            | 'running'
+            | 'cancel_requested'
+            | 'completed'
+            | 'completed_with_warnings'
+            | 'failed'
+            | 'failed_to_launch'
+            | 'failed_to_claim'
+            | 'cancelled';
+          selected_campaign_count?: number;
+          completed_campaign_count?: number;
+          failed_campaign_count?: number;
+          leads_imported?: number;
+          conversations_imported?: number;
+          totals_stats_campaign_count?: number;
+          day_by_day_stats_campaign_count?: number;
+          warning_count?: number;
+          current_campaign_id?: number | null;
+          current_campaign_name?: string | null;
+          current_phase?: 'campaign' | 'leads' | 'enrollments' | 'conversations' | 'stats' | 'done' | null;
+          current_detail?: string | null;
+          last_error_message?: string | null;
+          cancel_requested_at?: string | null;
+          launch_requested_at?: string | null;
+          launched_at?: string | null;
+          started_at?: string | null;
+          finished_at?: string | null;
+          last_heartbeat_at?: string | null;
+          task_arn?: string | null;
+          worker_id?: string | null;
+          api_key_secret_ref?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          created_by?: string;
+          status?:
+            | 'queued'
+            | 'launch_requested'
+            | 'task_started'
+            | 'running'
+            | 'cancel_requested'
+            | 'completed'
+            | 'completed_with_warnings'
+            | 'failed'
+            | 'failed_to_launch'
+            | 'failed_to_claim'
+            | 'cancelled';
+          selected_campaign_count?: number;
+          completed_campaign_count?: number;
+          failed_campaign_count?: number;
+          leads_imported?: number;
+          conversations_imported?: number;
+          totals_stats_campaign_count?: number;
+          day_by_day_stats_campaign_count?: number;
+          warning_count?: number;
+          current_campaign_id?: number | null;
+          current_campaign_name?: string | null;
+          current_phase?: 'campaign' | 'leads' | 'enrollments' | 'conversations' | 'stats' | 'done' | null;
+          current_detail?: string | null;
+          last_error_message?: string | null;
+          cancel_requested_at?: string | null;
+          launch_requested_at?: string | null;
+          launched_at?: string | null;
+          started_at?: string | null;
+          finished_at?: string | null;
+          last_heartbeat_at?: string | null;
+          task_arn?: string | null;
+          worker_id?: string | null;
+          api_key_secret_ref?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      smartlead_migration_campaigns: {
+        Row: {
+          id: string;
+          run_id: string;
+          account_id: string;
+          order_index: number;
+          smartlead_campaign_id: number;
+          campaign_name: string;
+          smartlead_created_at: string | null;
+          furnace_campaign_id: string | null;
+          status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+          attempt_count: number;
+          last_phase: 'campaign' | 'leads' | 'enrollments' | 'conversations' | 'stats' | 'done' | null;
+          current_detail: string | null;
+          last_error_message: string | null;
+          leads_imported: number;
+          conversations_imported: number;
+          totals_stats_imported: boolean;
+          day_by_day_stats_imported: boolean;
+          replied_from_api: number;
+          leads_matched: number;
+          skipped_no_match: number;
+          skipped_empty_history: number;
+          started_at: string | null;
+          finished_at: string | null;
+          last_heartbeat_at: string | null;
+          worker_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          run_id: string;
+          account_id: string;
+          order_index: number;
+          smartlead_campaign_id: number;
+          campaign_name: string;
+          smartlead_created_at?: string | null;
+          furnace_campaign_id?: string | null;
+          status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+          attempt_count?: number;
+          last_phase?: 'campaign' | 'leads' | 'enrollments' | 'conversations' | 'stats' | 'done' | null;
+          current_detail?: string | null;
+          last_error_message?: string | null;
+          leads_imported?: number;
+          conversations_imported?: number;
+          totals_stats_imported?: boolean;
+          day_by_day_stats_imported?: boolean;
+          replied_from_api?: number;
+          leads_matched?: number;
+          skipped_no_match?: number;
+          skipped_empty_history?: number;
+          started_at?: string | null;
+          finished_at?: string | null;
+          last_heartbeat_at?: string | null;
+          worker_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          run_id?: string;
+          account_id?: string;
+          order_index?: number;
+          smartlead_campaign_id?: number;
+          campaign_name?: string;
+          smartlead_created_at?: string | null;
+          furnace_campaign_id?: string | null;
+          status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+          attempt_count?: number;
+          last_phase?: 'campaign' | 'leads' | 'enrollments' | 'conversations' | 'stats' | 'done' | null;
+          current_detail?: string | null;
+          last_error_message?: string | null;
+          leads_imported?: number;
+          conversations_imported?: number;
+          totals_stats_imported?: boolean;
+          day_by_day_stats_imported?: boolean;
+          replied_from_api?: number;
+          leads_matched?: number;
+          skipped_no_match?: number;
+          skipped_empty_history?: number;
+          started_at?: string | null;
+          finished_at?: string | null;
+          last_heartbeat_at?: string | null;
+          worker_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      smartlead_migration_events: {
+        Row: {
+          id: string;
+          run_id: string;
+          campaign_row_id: string | null;
+          account_id: string;
+          event_type: string;
+          level: 'info' | 'warning' | 'error';
+          phase: 'campaign' | 'leads' | 'enrollments' | 'conversations' | 'stats' | 'done' | null;
+          detail: string | null;
+          payload: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          run_id: string;
+          campaign_row_id?: string | null;
+          account_id: string;
+          event_type: string;
+          level?: 'info' | 'warning' | 'error';
+          phase?: 'campaign' | 'leads' | 'enrollments' | 'conversations' | 'stats' | 'done' | null;
+          detail?: string | null;
+          payload?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          run_id?: string;
+          campaign_row_id?: string | null;
+          account_id?: string;
+          event_type?: string;
+          level?: 'info' | 'warning' | 'error';
+          phase?: 'campaign' | 'leads' | 'enrollments' | 'conversations' | 'stats' | 'done' | null;
+          detail?: string | null;
+          payload?: Json;
+          created_at?: string;
+        };
+      };
       mailboxes: {
         Row: {
           id: string;
@@ -387,6 +686,7 @@ export interface Database {
           enrollment_id: string | null;
           message_job_id: string | null;
           mailbox_id: string | null;
+          smartlead_lead_id: number | null;
           subject: string;
           participants: string[];
           last_message_at: string;
@@ -405,6 +705,7 @@ export interface Database {
           enrollment_id?: string | null;
           message_job_id?: string | null;
           mailbox_id?: string | null;
+          smartlead_lead_id?: number | null;
           subject: string;
           participants?: string[];
           last_message_at: string;
@@ -423,6 +724,7 @@ export interface Database {
           enrollment_id?: string;
           message_job_id?: string;
           mailbox_id?: string;
+          smartlead_lead_id?: number | null;
           subject?: string;
           participants?: string[];
           last_message_at?: string;
@@ -542,7 +844,45 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      create_smartlead_migration_run: {
+        Args: {
+          p_account_id: string;
+          p_selected_campaigns: Json;
+        };
+        Returns: string;
+      };
+      cancel_smartlead_migration_run: {
+        Args: {
+          p_run_id: string;
+        };
+        Returns: boolean;
+      };
+      claim_smartlead_migration_run: {
+        Args: {
+          p_run_id: string;
+          p_worker_id: string;
+          p_task_arn?: string | null;
+          p_processing_timeout_minutes?: number;
+        };
+        Returns: boolean;
+      };
+      claim_next_smartlead_migration_campaign: {
+        Args: {
+          p_run_id: string;
+          p_worker_id: string;
+          p_processing_timeout_minutes?: number;
+        };
+        Returns: {
+          id: string;
+          run_id: string;
+          account_id: string;
+          order_index: number;
+          smartlead_campaign_id: number;
+          campaign_name: string;
+          smartlead_created_at: string | null;
+          attempt_count: number;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;

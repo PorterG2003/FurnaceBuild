@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Platform, Alert, useWindowDimensions } from 'react-native';
 import Papa from 'papaparse';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalStepIndicator } from '@/components/ui/modals';
 import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
@@ -1176,47 +1176,7 @@ function LeadSourceNodeModal({
         height={Math.round(windowHeight * 0.9)}
       >
         <View className="gap-6">
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 16 }}>
-            {csvSteps.map((stepLabel, index) => {
-              const isActive = index === csvStep;
-              const isComplete = index < csvStep;
-              return (
-                <View key={stepLabel} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <View style={{ alignItems: 'center', minWidth: 88 }}>
-                    <View
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: isActive ? '#F3440D' : isComplete ? 'rgba(243,68,13,0.4)' : 'rgba(255,255,255,0.08)',
-                      }}
-                    >
-                      <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>{index + 1}</Text>
-                    </View>
-                    <Text
-                      style={{
-                        marginTop: 6,
-                        color: isActive ? '#FFFFFF' : '#9CA3AF',
-                        fontSize: 11,
-                        fontFamily: 'Instrument Sans, system-ui, sans-serif',
-                        fontWeight: isActive ? '600' : '500',
-                        letterSpacing: 1,
-                        textTransform: 'uppercase',
-                        textAlign: 'center',
-                      }}
-                    >
-                      {stepLabel}
-                    </Text>
-                  </View>
-                  {index < csvSteps.length - 1 && (
-                    <View style={{ width: 40, height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 8 }} />
-                  )}
-                </View>
-              );
-            })}
-          </View>
+          <ModalStepIndicator steps={csvSteps} activeIndex={csvStep} wrap />
 
           {renderCsvStepContent()}
         </View>

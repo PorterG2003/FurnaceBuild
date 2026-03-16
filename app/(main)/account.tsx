@@ -11,7 +11,10 @@ import {
 import { useMemo } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { ManageBlockListModal } from '@/components/inbox';
-import { SmartleadMigrationWizardModal } from '@/components/account/SmartleadMigrationWizardModal';
+import {
+  MigrationHistoryModal,
+  SmartleadMigrationWizardModal,
+} from '@/components/account/smartleadMigration';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
@@ -22,6 +25,7 @@ import {
   getActiveSmartleadMigrationRun,
   getLatestSmartleadMigrationRun,
   inviteUserToAccount,
+  listSmartleadMigrationRuns,
   removeBlockEntry,
   removeMemberFromAccount,
   updateAccount,
@@ -30,6 +34,30 @@ import {
 } from '@/lib/supabase/services';
 import { sendInvitationEmail } from '@/lib/services/email';
 import type { AccountUser, BlockListEntry, Invitation, SmartleadMigrationRun, User } from '@/lib/supabase/types';
+
+const ACTIVE_SMARTLEAD_RUN_STATUSES: SmartleadMigrationRun['status'][] = [
+  'queued',
+  'launch_requested',
+  'task_started',
+  'running',
+  'cancel_requested',
+];
+
+function getSmartleadRunSummary(run: SmartleadMigrationRun): string {
+  switch (run.status) {
+    case 'queued':
+    case 'launch_requested':
+      return 'Launch requested. Preparing the ECS task.';
+    case 'task_started':
+      return 'ECS task created. Waiting for the worker to claim the run.';
+    case 'failed_to_launch':
+      return 'This run never created an ECS task.';
+    case 'failed_to_claim':
+      return 'An ECS task was created, but the worker never claimed the run.';
+    default:
+      return `${run.completed_campaign_count + run.failed_campaign_count} of ${run.selected_campaign_count} campaigns processed`;
+  }
+}
 
 export default function AccountPage() {
   const { toast } = useToast();
@@ -76,7 +104,12 @@ export default function AccountPage() {
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
   const [blockListModalVisible, setBlockListModalVisible] = useState(false);
   const [smartleadWizardVisible, setSmartleadWizardVisible] = useState(false);
+  const [smartleadHistoryVisible, setSmartleadHistoryVisible] = useState(false);
   const [smartleadRun, setSmartleadRun] = useState<SmartleadMigrationRun | null>(null);
+  const [selectedSmartleadRunId, setSelectedSmartleadRunId] = useState<string | null>(null);
+  const [smartleadRuns, setSmartleadRuns] = useState<SmartleadMigrationRun[]>([]);
+  const [smartleadRunsLoading, setSmartleadRunsLoading] = useState(false);
+  const [smartleadRunsError, setSmartleadRunsError] = useState<string | null>(null);
   const [roleEditMember, setRoleEditMember] = useState<{ membershipId: string; memberName: string } | null>(null);
 
   const handleNameChange = (value: string) => {
@@ -106,6 +139,8 @@ export default function AccountPage() {
   useEffect(() => {
     if (!account?.id) {
       setSmartleadRun(null);
+      setSmartleadRuns([]);
+      setSmartleadRunsError(null);
       return;
     }
 
@@ -141,6 +176,44 @@ export default function AccountPage() {
       if (intervalId) clearInterval(intervalId);
     };
   }, [account?.id]);
+
+  useEffect(() => {
+    if (!smartleadHistoryVisible || !account?.id) return;
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const refreshRuns = async () => {
+      setSmartleadRunsLoading(true);
+      setSmartleadRunsError(null);
+      try {
+        const runs = await listSmartleadMigrationRuns(account.id);
+        if (!cancelled) {
+          setSmartleadRuns(runs);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSmartleadRunsError(
+            error instanceof Error ? error.message : 'Failed to load migration history.',
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setSmartleadRunsLoading(false);
+        }
+      }
+    };
+
+    void refreshRuns();
+    intervalId = setInterval(() => {
+      void refreshRuns();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [smartleadHistoryVisible, account?.id]);
 
   const handleSaveProfile = useCallback(async () => {
     if (!profile) return;
@@ -732,9 +805,9 @@ export default function AccountPage() {
                   <View className="mb-4 rounded-xl border border-[#2A2A2A] bg-[#141414] p-3">
                     <View className="flex-row items-center justify-between gap-3">
                       <Text className="text-white text-sm font-instrument-medium">
-                        {smartleadRun.status === 'running' || smartleadRun.status === 'launching' || smartleadRun.status === 'queued' || smartleadRun.status === 'cancel_requested'
+                        {ACTIVE_SMARTLEAD_RUN_STATUSES.includes(smartleadRun.status)
                           ? 'Active migration'
-                          : 'Last migration'}
+                          : 'Most recent migration'}
                       </Text>
                       <View className="rounded-full border border-[#2A2A2A] bg-[#1F1F1F] px-2.5 py-1">
                         <Text className="text-[11px] text-gray-300 font-instrument-medium capitalize">
@@ -743,7 +816,7 @@ export default function AccountPage() {
                       </View>
                     </View>
                     <Text className="text-gray-400 text-xs font-instrument mt-2">
-                      {smartleadRun.completed_campaign_count + smartleadRun.failed_campaign_count} of {smartleadRun.selected_campaign_count} campaigns processed
+                      {getSmartleadRunSummary(smartleadRun)}
                     </Text>
                     <Text className="text-gray-500 text-xs font-instrument mt-1">
                       {smartleadRun.leads_imported} leads, {smartleadRun.conversations_imported} conversations
@@ -755,21 +828,51 @@ export default function AccountPage() {
                     ) : null}
                   </View>
                 ) : null}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="self-start"
-                  onPress={() => setSmartleadWizardVisible(true)}
-                >
-                  {smartleadRun && (smartleadRun.status === 'running' || smartleadRun.status === 'launching' || smartleadRun.status === 'queued' || smartleadRun.status === 'cancel_requested')
-                    ? 'View Migration'
-                    : 'Start Migration'}
-                </Button>
+                <View className="flex-row flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onPress={() => {
+                      if (smartleadRun && ACTIVE_SMARTLEAD_RUN_STATUSES.includes(smartleadRun.status)) {
+                        setSelectedSmartleadRunId(smartleadRun.id);
+                      } else {
+                        setSelectedSmartleadRunId(null);
+                      }
+                      setSmartleadWizardVisible(true);
+                    }}
+                  >
+                    {smartleadRun && ACTIVE_SMARTLEAD_RUN_STATUSES.includes(smartleadRun.status)
+                      ? 'View Migration'
+                      : 'Start Migration'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => setSmartleadHistoryVisible(true)}
+                  >
+                    View All Migrations
+                  </Button>
+                </View>
               </View>
 
               <SmartleadMigrationWizardModal
                 visible={smartleadWizardVisible}
-                onClose={() => setSmartleadWizardVisible(false)}
+                onClose={() => {
+                  setSmartleadWizardVisible(false);
+                  setSelectedSmartleadRunId(null);
+                }}
+                initialRunId={selectedSmartleadRunId}
+              />
+              <MigrationHistoryModal
+                visible={smartleadHistoryVisible}
+                onClose={() => setSmartleadHistoryVisible(false)}
+                runs={smartleadRuns}
+                loading={smartleadRunsLoading}
+                error={smartleadRunsError}
+                onReviewRun={(runId) => {
+                  setSelectedSmartleadRunId(runId);
+                  setSmartleadHistoryVisible(false);
+                  setSmartleadWizardVisible(true);
+                }}
               />
 
               <ManageBlockListModal

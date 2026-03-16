@@ -13,10 +13,31 @@ export interface SmartleadMigrationCampaignInput {
 
 const ACTIVE_RUN_STATUSES: SmartleadMigrationRun['status'][] = [
   'queued',
-  'launching',
+  'launch_requested',
+  'task_started',
   'running',
   'cancel_requested',
 ];
+
+async function reconcileSmartleadMigrationRunsForAccount(accountId: string): Promise<void> {
+  const { error } = await supabase.rpc('reconcile_smartlead_migration_runs_for_account', {
+    p_account_id: accountId,
+  });
+
+  if (error) {
+    throw new Error(`Failed to reconcile Smartlead migration runs: ${error.message}`);
+  }
+}
+
+async function reconcileSmartleadMigrationRun(runId: string): Promise<void> {
+  const { error } = await supabase.rpc('reconcile_smartlead_migration_run', {
+    p_run_id: runId,
+  });
+
+  if (error) {
+    throw new Error(`Failed to reconcile Smartlead migration run: ${error.message}`);
+  }
+}
 
 export async function createSmartleadMigrationRun(params: {
   accountId: string;
@@ -57,6 +78,8 @@ export async function cancelSmartleadMigrationRun(runId: string): Promise<boolea
 }
 
 export async function getSmartleadMigrationRun(runId: string): Promise<SmartleadMigrationRun | null> {
+  await reconcileSmartleadMigrationRun(runId);
+
   const { data, error } = await supabase
     .from('smartlead_migration_runs')
     .select('*')
@@ -73,6 +96,8 @@ export async function getSmartleadMigrationRun(runId: string): Promise<Smartlead
 export async function getLatestSmartleadMigrationRun(
   accountId: string,
 ): Promise<SmartleadMigrationRun | null> {
+  await reconcileSmartleadMigrationRunsForAccount(accountId);
+
   const { data, error } = await supabase
     .from('smartlead_migration_runs')
     .select('*')
@@ -91,6 +116,8 @@ export async function getLatestSmartleadMigrationRun(
 export async function getActiveSmartleadMigrationRun(
   accountId: string,
 ): Promise<SmartleadMigrationRun | null> {
+  await reconcileSmartleadMigrationRunsForAccount(accountId);
+
   const { data, error } = await supabase
     .from('smartlead_migration_runs')
     .select('*')
@@ -105,6 +132,31 @@ export async function getActiveSmartleadMigrationRun(
   }
 
   return data;
+}
+
+export async function listSmartleadMigrationRuns(
+  accountId: string,
+  limit?: number,
+): Promise<SmartleadMigrationRun[]> {
+  await reconcileSmartleadMigrationRunsForAccount(accountId);
+
+  let query = supabase
+    .from('smartlead_migration_runs')
+    .select('*')
+    .eq('account_id', accountId)
+    .order('created_at', { ascending: false });
+
+  if (typeof limit === 'number') {
+    query = query.limit(limit);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch Smartlead migration runs: ${error.message}`);
+  }
+
+  return data ?? [];
 }
 
 export async function listSmartleadMigrationCampaigns(

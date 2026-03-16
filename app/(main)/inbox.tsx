@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
-import { EmptyState, Alert, useToast } from '@/components/ui/feedback';
+import { EmptyState, Alert, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,7 +24,6 @@ import {
   createForwardJob,
   getMessageJobStatus,
   getPendingInboxReplyJobs,
-  fetchAttachment,
   getBlockList,
   isEmailBlockedByEntries,
   markThreadMessagesRead,
@@ -34,12 +33,14 @@ import {
   getTagsForThreads,
   getThreadSnippets,
   getLeadsByIds,
-  getLeadDisplayName,
   addTagToThread,
   removeTagFromThread,
   updateThreadTag,
   updateThreadCategory,
 } from '@/lib/supabase/services';
+import { fetchAttachment } from '@/lib/services/attachments';
+import { getAccessToken } from '@/lib/services/auth-token';
+import { getLeadDisplayName } from '@/lib/leads';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailThread, EmailMessage, BlockListEntry, Mailbox, Campaign } from '@/lib/supabase/types';
 import { groupMessagesByDate, signatureToHtml } from '@/lib/inbox';
@@ -60,11 +61,8 @@ import {
   ThreadItem,
   ThreadListSkeleton,
   TagsPanelModal,
-  SKELETON_DELAY_MS,
-  SKELETON_MIN_DISPLAY_MS,
 } from '@/components/inbox';
 import type { ComposerAttachmentItem } from '@/components/inbox';
-import { supabase } from '@/lib/supabase/client';
 import outputs from '@/amplify_outputs.json';
 
 const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
@@ -106,8 +104,6 @@ export default function InboxPage() {
   const [composerAttachmentsLoading, setComposerAttachmentsLoading] = useState(false);
   const [composerAttachmentsSkipMessage, setComposerAttachmentsSkipMessage] = useState<string | null>(null);
 
-  const [showThreadSkeleton, setShowThreadSkeleton] = useState(false);
-  const [showMessagesSkeleton, setShowMessagesSkeleton] = useState(false);
   const [threadSearchQuery, setThreadSearchQuery] = useState('');
   const [mailboxFilterId, setMailboxFilterId] = useState<string | null>(null);
   const [campaignFilterId, setCampaignFilterId] = useState<string | null>(null);
@@ -237,9 +233,6 @@ export default function InboxPage() {
     [composerAttachments]
   );
 
-  const threadSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
-  const messagesSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
-
   const selectedThread = threads.find((t) => t.id === selectedThreadId);
   const selectedThreadSignatureHtml = useMemo(() => {
     if (!selectedThread?.mailbox_id) return '';
@@ -247,6 +240,8 @@ export default function InboxPage() {
     return signatureToHtml(mb?.signature);
   }, [selectedThread?.mailbox_id, mailboxes]);
   const threadsLoadingOrNoAccount = threadsLoading || !accountId;
+  const showThreadSkeleton = useSmoothLoading(threadsLoadingOrNoAccount);
+  const showMessagesSkeleton = useSmoothLoading(messagesLoading);
 
   // Server-driven filtering: threads are already filtered by getThreadsByAccount
   const displayThreads = threads;
@@ -623,62 +618,6 @@ export default function InboxPage() {
     }
   }, [selectedThreadId, loadMessages]);
 
-  // Thread skeleton: delay 200ms before showing, min 300ms once shown
-  useEffect(() => {
-    const t = threadSkeletonTimers.current;
-    if (threadsLoadingOrNoAccount) {
-      if (t.hide) {
-        clearTimeout(t.hide);
-        t.hide = null;
-      }
-      t.show = setTimeout(() => setShowThreadSkeleton(true), SKELETON_DELAY_MS);
-      return () => {
-        if (t.show) clearTimeout(t.show);
-        t.show = null;
-      };
-    } else {
-      if (t.show) {
-        clearTimeout(t.show);
-        t.show = null;
-      }
-      if (showThreadSkeleton) {
-        t.hide = setTimeout(() => setShowThreadSkeleton(false), SKELETON_MIN_DISPLAY_MS);
-        return () => {
-          if (t.hide) clearTimeout(t.hide);
-          t.hide = null;
-        };
-      }
-    }
-  }, [threadsLoadingOrNoAccount, showThreadSkeleton]);
-
-  // Messages skeleton: delay 200ms before showing, min 300ms once shown
-  useEffect(() => {
-    const t = messagesSkeletonTimers.current;
-    if (messagesLoading) {
-      if (t.hide) {
-        clearTimeout(t.hide);
-        t.hide = null;
-      }
-      t.show = setTimeout(() => setShowMessagesSkeleton(true), SKELETON_DELAY_MS);
-      return () => {
-        if (t.show) clearTimeout(t.show);
-        t.show = null;
-      };
-    } else {
-      if (t.show) {
-        clearTimeout(t.show);
-        t.show = null;
-      }
-      if (showMessagesSkeleton) {
-        t.hide = setTimeout(() => setShowMessagesSkeleton(false), SKELETON_MIN_DISPLAY_MS);
-        return () => {
-          if (t.hide) clearTimeout(t.hide);
-          t.hide = null;
-        };
-      }
-    }
-  }, [messagesLoading, showMessagesSkeleton]);
-
   // Clear pending reply when thread changes or when sent message appears (polling)
   useEffect(() => {
     if (!pendingReply) return;
@@ -778,8 +717,7 @@ export default function InboxPage() {
     async (emailMessageId: string, part: string): Promise<Blob | null> => {
       if (!FETCH_ATTACHMENT_URL) return null;
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
+        const token = await getAccessToken();
         if (!token) return null;
         return await fetchAttachment(FETCH_ATTACHMENT_URL, token, emailMessageId, part);
       } catch {
@@ -1159,6 +1097,7 @@ export default function InboxPage() {
                     '(No subject)'
                   }
                   campaignName={thread.campaign_id ? campaigns.find((c) => c.id === thread.campaign_id)?.name ?? null : null}
+                  sourceLabel={thread.smartlead_lead_id != null ? 'Smartlead' : null}
                   preview={threadSnippetsMap[thread.id] ?? null}
                   tags={threadTagsMap[thread.id] ?? []}
                 />
@@ -1196,6 +1135,7 @@ export default function InboxPage() {
                         {
                           id: `pending-${pendingReply.jobId}`,
                           thread_id: selectedThreadId!,
+                          account_id: selectedThread.account_id,
                           message_job_id: pendingReply.jobId,
                           direction: 'sent' as const,
                           from_email: pendingReply.fromEmail,
@@ -1235,6 +1175,7 @@ export default function InboxPage() {
                     ? campaigns.find((c) => c.id === selectedThread.campaign_id)?.name ?? null
                     : null
                 }
+                sourceLabel={selectedThread?.smartlead_lead_id != null ? 'Imported from Smartlead' : null}
                 prospectEmails={selectedThreadProspectEmails}
                 blockedEmails={blockedProspectEmails}
                 onBlock={accountId ? () => setBlockModalVisible(true) : undefined}

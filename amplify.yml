@@ -10,8 +10,33 @@ backend:
         - cd amplify/functions/enrollmentMetric && npm install && cd - || (echo "Failed to install enrollmentMetric dependencies" && exit 1)
         - cd amplify/functions/sendInvitationEmail && npm install && cd - || (echo "Failed to install sendInvitationEmail dependencies" && exit 1)
         - cd amplify/functions/fetchEmailAttachment && npm install && cd - || (echo "Failed to install fetchEmailAttachment dependencies" && exit 1)
+        - cd amplify/functions/launchSmartleadMigration && npm install && cd - || (echo "Failed to install launchSmartleadMigration dependencies" && exit 1)
         - echo "=== Function dependencies installed successfully ==="
-        - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
+        - |
+          PROD_BRANCH="${PROD_BRANCH:-main}"
+          if [ "$AWS_BRANCH" = "$PROD_BRANCH" ]; then
+            WORKER_ENVIRONMENT=prod
+          else
+            WORKER_ENVIRONMENT=dev
+          fi
+          echo "Resolved WORKER_ENVIRONMENT=$WORKER_ENVIRONMENT for branch $AWS_BRANCH"
+          REQUIRED_EXPORTS=(
+            "FurnaceCluster-$WORKER_ENVIRONMENT"
+            "FurnaceWorkerSecurityGroup-$WORKER_ENVIRONMENT"
+            "FurnaceWorkerPublicSubnets-$WORKER_ENVIRONMENT"
+            "FurnaceSmartleadMigrationTaskDefinition-$WORKER_ENVIRONMENT"
+          )
+          for export_name in "${REQUIRED_EXPORTS[@]}"; do
+            export_value=$(aws cloudformation list-exports \
+              --query "Exports[?Name=='${export_name}'].Value | [0]" \
+              --output text)
+            if [ -z "$export_value" ] || [ "$export_value" = "None" ]; then
+              echo "Missing CloudFormation export: $export_name"
+              echo "Deploy infra/workers for $WORKER_ENVIRONMENT before running Amplify backend deployment."
+              exit 1
+            fi
+          done
+          WORKER_ENVIRONMENT="$WORKER_ENVIRONMENT" npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
     build:
       commands:
         - npx ampx generate outputs --branch $AWS_BRANCH --app-id $AWS_APP_ID

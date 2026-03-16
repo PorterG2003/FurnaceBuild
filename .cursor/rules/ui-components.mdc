@@ -30,3 +30,19 @@ When working on UI (especially common UI), follow these steps:
    - When creating reusable components, ensure they are well-documented
    - Include props types/interfaces
    - Consider adding usage examples if the component is complex
+
+## Shared UI State Patterns
+
+When UI timing logic uses `setTimeout` or repeated `useEffect` cleanup:
+
+1. **Check for an existing shared primitive first**
+   - Prefer shared hooks in `components/ui/feedback/` for delayed loading states
+   - Reuse existing modal timing helpers before adding inline close/reset timers
+
+2. **Keep timing abstractions small**
+   - Prefer simple APIs like `const showLoader = useSmoothLoading(isLoading)`
+   - Avoid broad hooks that mix loading, modal presence, async restore, and business state
+
+3. **Only extract when the pattern is truly reused**
+   - Shared hooks should remove duplicated timing logic across screens or modals
+   - If extracting adds indirection without a clear reuse win, keep the logic local

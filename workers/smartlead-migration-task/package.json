@@ -1,0 +1,24 @@
+{
+  "name": "@furnace/smartlead-migration-task",
+  "version": "1.0.0",
+  "description": "Ad hoc ECS task for Smartlead campaign migration",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --tsconfig=tsconfig.json --packages=external",
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ssm": "^3.0.0",
+    "@furnace/email-lib": "file:../../lib/email",
+    "@furnace/slack-lib": "file:../../lib/slack",
+    "@supabase/supabase-js": "^2.77.0",
+    "papaparse": "^5.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.25.12",
+    "tsx": "^4.0.0",
+    "typescript": "^5.9.0"
+  }
+}

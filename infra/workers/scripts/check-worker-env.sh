@@ -17,7 +17,7 @@ fi
 
 # Parse arguments
 ENVIRONMENT="${1:-dev}"
-WORKER_TYPE="${2:-scheduler}"  # send, scheduler, or inbox-checker
+WORKER_TYPE="${2:-scheduler}"  # send, scheduler, inbox-checker, or smartlead
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 CLUSTER_NAME="furnace-cluster-$ENVIRONMENT"
@@ -27,6 +27,33 @@ echo "   Environment: $ENVIRONMENT"
 echo "   Worker Type: $WORKER_TYPE"
 echo "   Cluster: $CLUSTER_NAME"
 echo ""
+
+if [ "$WORKER_TYPE" = "smartlead" ]; then
+  TASK_DEF_ENV=$(aws ecs describe-task-definition \
+    --task-definition "furnace-smartlead-migration-task-$ENVIRONMENT" \
+    --region "$REGION" \
+    --query 'taskDefinition.containerDefinitions[0].environment' \
+    --output json)
+
+  echo "🔧 Environment Variables in Task Definition:"
+  echo "$TASK_DEF_ENV" | jq -r '.[] | "   \(.name)=\(.value)"' | grep -E "(SUPABASE_URL|AWS_REGION|SUPABASE_SECRET_KEY_PARAM_PATH)" || echo "   (none found)"
+
+  if [ "$ENVIRONMENT" = "prod" ]; then
+    EXPECTED_SUPABASE_URL="${PROD_SUPABASE_URL}"
+  else
+    EXPECTED_SUPABASE_URL="${DEV_SUPABASE_URL}"
+  fi
+
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "💡 From .env.local:"
+  echo "   EXPECTED_SUPABASE_URL=${EXPECTED_SUPABASE_URL}"
+  echo ""
+  echo "⚠️  If these don't match, you need to redeploy the stack:"
+  echo "   npm run deploy:$ENVIRONMENT"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  exit 0
+fi
 
 # Find the service
 if [ "$WORKER_TYPE" = "send" ]; then
@@ -93,7 +120,13 @@ echo "$TASK_DEF" | jq -r '.[] | "   \(.name)=\(.value)"' | grep -E "(SUPABASE_UR
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "💡 From .env.local:"
-echo "   DEV_SUPABASE_URL=${DEV_SUPABASE_URL}"
+if [ "$ENVIRONMENT" = "prod" ]; then
+  EXPECTED_SUPABASE_URL="${PROD_SUPABASE_URL}"
+else
+  EXPECTED_SUPABASE_URL="${DEV_SUPABASE_URL}"
+fi
+
+echo "   EXPECTED_SUPABASE_URL=${EXPECTED_SUPABASE_URL}"
 echo ""
 echo "⚠️  If these don't match, you need to redeploy the stack:"
 echo "   npm run deploy:$ENVIRONMENT"

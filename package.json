@@ -9,7 +9,9 @@
     "web": "expo start --web",
     "validate": "bash scripts/validate-expo-build.sh",
     "validate:build": "bash scripts/validate-expo-build.sh",
-    "verify:email-parsing": "tsx scripts/verify-email-parsing.ts"
+    "verify:email-parsing": "tsx scripts/verify-email-parsing.ts",
+    "migrate:users": "tsx scripts/migrate-cognito-users-to-supabase-auth.ts",
+    "migrate:users:dry": "DRY_RUN=1 tsx scripts/migrate-cognito-users-to-supabase-auth.ts"
   },
   "dependencies": {
     "@10play/react-native-web-webview": "^0.0.3",
@@ -18,6 +20,7 @@
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo-google-fonts/instrument-sans": "^0.4.2",
     "@expo-google-fonts/inter": "^0.4.2",
+    "@furnace/email-lib": "file:lib/email",
     "@furnace/slack-lib": "file:lib/slack",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/netinfo": "^11.4.1",

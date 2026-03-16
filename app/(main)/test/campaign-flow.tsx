@@ -7,7 +7,7 @@ import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { assignMailboxesToCampaign } from '@/lib/supabase/services/campaigns';
 import { createMailbox } from '@/lib/supabase/services/mailboxes';
 import { createLead } from '@/lib/supabase/services/leads';
-import { getAccountMembershipsForUser } from '@/lib/supabase/services/users';
+import { getAccountMembershipsForUser } from '@/lib/supabase/services/accounts';
 import type { WizardStep, FlowTemplate, ScheduleConfig } from '@/lib/test/campaign-flow/types';
 import { ALLOWED_EMAIL } from '@/lib/test/campaign-flow/constants';
 import { createFlowTemplate } from '@/lib/test/campaign-flow/flow-templates';

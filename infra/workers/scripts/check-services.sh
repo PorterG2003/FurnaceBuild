@@ -87,6 +87,21 @@ echo "✅ Send Worker Service: $SEND_SERVICE_FULL"
 echo "✅ Scheduler Worker Service: $SCHEDULER_SERVICE_FULL"
 echo ""
 
+echo "2️⃣b️⃣  Smartlead Task Definition..."
+SMARTLEAD_TASK_DEF=$(aws ecs describe-task-definition \
+  --task-definition "furnace-smartlead-migration-task-$ENVIRONMENT" \
+  --region "$REGION" \
+  --query 'taskDefinition.taskDefinitionArn' \
+  --output text 2>/dev/null || echo "None")
+
+if [ "$SMARTLEAD_TASK_DEF" = "None" ] || [ -z "$SMARTLEAD_TASK_DEF" ]; then
+  echo "❌ Smartlead migration task definition not found"
+  exit 1
+fi
+
+echo "✅ Smartlead task definition: $SMARTLEAD_TASK_DEF"
+echo ""
+
 # Function to check service status
 check_service() {
   local service_name="$1"
@@ -224,6 +239,7 @@ echo ""
 echo "3️⃣  Checking Docker images in ECR..."
 SEND_REPO="furnace/send-worker-$ENVIRONMENT"
 SCHEDULER_REPO="furnace/scheduler-worker-$ENVIRONMENT"
+SMARTLEAD_REPO="furnace/smartlead-migration-task-$ENVIRONMENT"
 
 SEND_IMAGE_EXISTS=$(aws ecr describe-images \
   --repository-name "$SEND_REPO" \
@@ -233,6 +249,12 @@ SEND_IMAGE_EXISTS=$(aws ecr describe-images \
 
 SCHEDULER_IMAGE_EXISTS=$(aws ecr describe-images \
   --repository-name "$SCHEDULER_REPO" \
+  --region "$REGION" \
+  --query 'imageDetails[0].imageTags[0]' \
+  --output text 2>/dev/null || echo "None")
+
+SMARTLEAD_IMAGE_EXISTS=$(aws ecr describe-images \
+  --repository-name "$SMARTLEAD_REPO" \
   --region "$REGION" \
   --query 'imageDetails[0].imageTags[0]' \
   --output text 2>/dev/null || echo "None")
@@ -250,15 +272,39 @@ if [ "$SCHEDULER_IMAGE_EXISTS" = "None" ] || [ -z "$SCHEDULER_IMAGE_EXISTS" ]; t
 else
   echo "   ✅ Scheduler worker image found: $SCHEDULER_IMAGE_EXISTS"
 fi
+
+if [ "$SMARTLEAD_IMAGE_EXISTS" = "None" ] || [ -z "$SMARTLEAD_IMAGE_EXISTS" ]; then
+  echo "   ❌ No Docker images found in ECR for smartlead-migration-task"
+  echo "   💡 Build and push: npm run build:$ENVIRONMENT or npm run build:$ENVIRONMENT:smartlead"
+else
+  echo "   ✅ Smartlead migration task image found: $SMARTLEAD_IMAGE_EXISTS"
+fi
+echo ""
+
+echo "4️⃣  Recent Smartlead Tasks"
+SMARTLEAD_TASKS=$(aws ecs list-tasks \
+  --cluster "$CLUSTER_NAME" \
+  --family "furnace-smartlead-migration-task-$ENVIRONMENT" \
+  --desired-status RUNNING \
+  --region "$REGION" \
+  --query 'taskArns' \
+  --output text 2>/dev/null || echo "None")
+
+if [ "$SMARTLEAD_TASKS" = "None" ] || [ -z "$SMARTLEAD_TASKS" ]; then
+  echo "   ℹ️  No running Smartlead migration tasks right now"
+else
+  echo "   ✅ Running Smartlead task(s): $(echo $SMARTLEAD_TASKS | wc -w | tr -d ' ')"
+fi
 echo ""
 
 # Check CloudWatch logs
-echo "4️⃣  CloudWatch Logs"
+echo "5️⃣  CloudWatch Logs"
 echo "   View logs:"
 echo "   aws logs tail /ecs/furnace/send-worker-$ENVIRONMENT --follow --region $REGION"
 echo "   aws logs tail /ecs/furnace/scheduler-worker-$ENVIRONMENT --follow --region $REGION"
 echo "   aws logs tail /ecs/furnace/inbox-checker-worker-$ENVIRONMENT --follow --region $REGION"
-echo "   Or: npm run check:logs -- $ENVIRONMENT <send|scheduler|inbox-checker>"
+echo "   aws logs tail /ecs/furnace/smartlead-migration-task-$ENVIRONMENT --follow --region $REGION"
+echo "   Or: npm run check:logs -- $ENVIRONMENT <send|scheduler|inbox-checker|smartlead>"
 echo ""
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

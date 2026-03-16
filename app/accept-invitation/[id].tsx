@@ -6,22 +6,13 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-
-interface InvitationInfo {
-  status: string;
-  account_name?: string;
-  inviter_name?: string;
-  invitee_email?: string;
-  expires_at?: string;
-}
-
-interface AcceptResult {
-  status: string;
-  account_id?: string;
-}
+import {
+  getInvitationInfo,
+  acceptInvitationRpc,
+  type InvitationInfo,
+} from '@/lib/supabase/services/accounts';
 
 type PageStatus =
   | 'loading'
@@ -58,13 +49,7 @@ export default function AcceptInvitationPage() {
 
     (async () => {
       try {
-        const { data, error } = await supabase.rpc('get_invitation_info', {
-          p_invitation_id: id,
-        });
-
-        if (error) throw new Error(error.message);
-
-        const result = data as InvitationInfo;
+        const result = await getInvitationInfo(id);
         setInfo(result);
 
         switch (result.status) {
@@ -113,13 +98,7 @@ export default function AcceptInvitationPage() {
     setStatus('accepting');
 
     try {
-      const { data, error } = await supabase.rpc('accept_invitation', {
-        p_invitation_id: id,
-      });
-
-      if (error) throw new Error(error.message);
-
-      const result = data as AcceptResult;
+      const result = await acceptInvitationRpc(id);
 
       switch (result.status) {
         case 'accepted':

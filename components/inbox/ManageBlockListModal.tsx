@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, ScrollView, ActivityIndicator } from 'react-native';
 import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
+import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { BaseModal } from '@/components/ui/modals/BaseModal';
 import { Tabs } from '@/components/ui/tabs';
@@ -129,28 +130,19 @@ export function ManageBlockListModal({
         label: '',
         flex: 1,
         render: (entry) => (
-          <TouchableOpacity
+          <Button
+            variant="secondary"
+            size="xs"
             onPress={() => handleUnblockPress(entry)}
             disabled={unblockingId === entry.id}
-            className={`px-2 py-1 rounded active:opacity-70 self-start ${
-              pendingUnblockId === entry.id
-                ? 'bg-brand-orange/20 border border-brand-orange/40'
-                : 'bg-gray-500/20 border border-gray-500/30'
-            }`}
-            activeOpacity={0.7}
+            className="self-start"
           >
-            {unblockingId === entry.id ? (
-              <ActivityIndicator size="small" color="#9CA3AF" />
-            ) : (
-              <Text
-                className={`text-xs font-instrument-medium ${
-                  pendingUnblockId === entry.id ? 'text-brand-orange' : 'text-gray-400'
-                }`}
-              >
-                {pendingUnblockId === entry.id ? 'Click again to confirm' : 'Unblock'}
-              </Text>
-            )}
-          </TouchableOpacity>
+            {unblockingId === entry.id
+              ? 'Unblocking...'
+              : pendingUnblockId === entry.id
+                ? 'Click again to confirm'
+                : 'Unblock'}
+          </Button>
         ),
       },
     ],

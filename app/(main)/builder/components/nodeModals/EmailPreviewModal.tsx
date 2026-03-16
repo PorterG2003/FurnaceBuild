@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
+import { Button } from '@/components/ui/button';
+import { SegmentControl } from '@/components/ui/segment-control';
 import { buildCampaignEmailContent, sanitizeEmailBody, hasMissingValues, type LeadLike } from '@/lib/email/index';
 import { getCampaignMailboxes } from '@/lib/supabase/services/campaigns';
 import { getLeads, getLeadCount } from '@/lib/supabase/services/leads';
@@ -195,13 +197,9 @@ function EmailPreviewModal({
 
   const footer = (
     <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-      <TouchableOpacity
-        onPress={onClose}
-        className="border border-[#3A3A3A] rounded-xl px-6 py-3 items-center justify-center"
-        style={{ borderWidth: 1, borderColor: '#3A3A3A' }}
-      >
-        <Text className="text-white font-instrument-medium text-base">Close</Text>
-      </TouchableOpacity>
+      <Button variant="secondary" onPress={onClose}>
+        Close
+      </Button>
     </View>
   );
 
@@ -220,39 +218,15 @@ function EmailPreviewModal({
         <View style={{ width: 280, minWidth: 280, borderRightWidth: 1, borderColor: '#2A2A2A', paddingRight: 16 }}>
           <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Leads</Text>
           {hasVariables && showMissingOnly !== null && (
-            <View style={{ flexDirection: 'row', marginBottom: 8, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#2A2A2A' }}>
-              <TouchableOpacity
-                onPress={() => setShowMissingOnly(true)}
-                style={{
-                  flex: 1,
-                  paddingVertical: 6,
-                  alignItems: 'center',
-                  backgroundColor: showMissingOnly ? 'rgba(245,158,11,0.2)' : 'transparent',
-                }}
-              >
-                <Text
-                  className="text-xs font-instrument-medium"
-                  style={{ color: showMissingOnly ? '#F59E0B' : '#9CA3AF' }}
-                >
-                  Missing values
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setShowMissingOnly(false)}
-                style={{
-                  flex: 1,
-                  paddingVertical: 6,
-                  alignItems: 'center',
-                  backgroundColor: !showMissingOnly ? 'rgba(255,255,255,0.08)' : 'transparent',
-                }}
-              >
-                <Text
-                  className="text-xs font-instrument-medium"
-                  style={{ color: !showMissingOnly ? '#FFFFFF' : '#9CA3AF' }}
-                >
-                  All leads
-                </Text>
-              </TouchableOpacity>
+            <View style={{ marginBottom: 8 }}>
+              <SegmentControl
+                options={[
+                  { value: 'missing', label: 'Missing values' },
+                  { value: 'all', label: 'All leads' },
+                ]}
+                value={showMissingOnly ? 'missing' : 'all'}
+                onChange={(v) => setShowMissingOnly(v === 'missing')}
+              />
             </View>
           )}
           {campaignId ? (

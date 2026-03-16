@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, Pressable, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, TextInput, Pressable, useWindowDimensions } from 'react-native';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
-import { Alert, EmptyState, useToast } from '@/components/ui/feedback';
-import { CampaignListSkeleton, SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from '@/components/skeletons';
+import { Alert, EmptyState, useSmoothLoading, useToast } from '@/components/ui/feedback';
+import { CampaignListSkeleton } from '@/components/skeletons';
 import { BaseModal } from '@/components/ui/modals';
 import { useRouter } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
@@ -19,6 +19,9 @@ import {
   ExclamationTriangleIcon,
 } from 'react-native-heroicons/outline';
 import { ProgressDial } from '@/components/ui/progress-dial';
+import { isSmartleadCampaign } from '@/lib/campaigns/utils';
+import { Tooltip } from '@/components/ui/Tooltip';
+import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 
 const STAT_COLUMN_WIDTH = 72;
 const POSITIVE_COLUMN_WIDTH = 88;
@@ -69,20 +72,14 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
       footer={
         <View className="flex-row gap-3">
           <View className="flex-1">
-            <TouchableOpacity
+            <Button
+              variant="secondary"
               onPress={handleClose}
               disabled={isLoading}
-              className="border border-[#3A3A3A] rounded-xl px-6 py-3 items-center justify-center"
-              style={{
-                borderWidth: 1,
-                borderColor: '#3A3A3A',
-                opacity: isLoading ? 0.5 : 1,
-              }}
+              className="flex-1"
             >
-              <Text className="text-white font-instrument-medium text-base">
-                Cancel
-              </Text>
-            </TouchableOpacity>
+              Cancel
+            </Button>
           </View>
           <View className="flex-1">
             <Button
@@ -181,9 +178,11 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showSmartleadModal, setShowSmartleadModal] = useState(false);
   const isNarrow = screenWidth < NARROW_BREAKPOINT;
   const isDraft = campaign.status === 'draft';
   const draftHasFlow = hasFlow(campaign);
+  const isSmartlead = isSmartleadCampaign(campaign);
 
   const sentCount = stats?.sentCount ?? 0;
   const repliedCount = stats?.repliedCount ?? 0;
@@ -212,6 +211,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   };
 
   const handleContinueSetup = () => {
+    if (isSmartlead) { setShowSmartleadModal(true); return; }
     router.push({ pathname: '/campaigns/[id]/mission-control', params: { id: campaign.id } });
   };
 
@@ -225,6 +225,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   };
 
   const handleEditFlow = () => {
+    if (isSmartlead) { setShowSmartleadModal(true); return; }
     router.push({ pathname: '/builder', params: { campaignId: campaign.id } });
   };
 
@@ -348,7 +349,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
           </View>
         ) : (
           <View className="flex-row gap-2 items-center">
-            {isDraft && (
+            {isDraft && !isSmartlead && (
               <Pressable
                 onPress={handleContinueSetup}
                 className="px-4 py-2 rounded-lg bg-brand-orange"
@@ -359,12 +360,24 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
                 </Text>
               </Pressable>
             )}
-            <Pressable
-              onPress={handleEditFlow}
-              className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-            >
-              <PencilIcon size={18} color="#f85102" />
-            </Pressable>
+            {isSmartlead ? (
+              <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
+                <Pressable
+                  onPress={handleEditFlow}
+                  className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+                  style={{ opacity: 0.5 }}
+                >
+                  <PencilIcon size={18} color="#f85102" />
+                </Pressable>
+              </Tooltip>
+            ) : (
+              <Pressable
+                onPress={handleEditFlow}
+                className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+              >
+                <PencilIcon size={18} color="#f85102" />
+              </Pressable>
+            )}
             <Pressable
               onPress={() => setShowDeleteConfirm(true)}
               className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
@@ -375,34 +388,49 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
           </View>
   );
 
-  const handleCardPress = isDraft ? handleContinueSetup : handleOpen;
+  const handleCardPress = isSmartlead ? handleOpen : (isDraft ? handleContinueSetup : handleOpen);
+
+  const smartleadModal = isSmartlead ? (
+    <SmartleadRestrictedModal
+      visible={showSmartleadModal}
+      onClose={() => setShowSmartleadModal(false)}
+      campaignId={campaign.id}
+      isOnStatsPage={false}
+    />
+  ) : null;
 
   if (isNarrow) {
     return (
-      <Pressable onPress={handleCardPress}>
-        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
-          <View className="flex-row items-start justify-between" style={{ marginBottom: 12 }}>
-            {campaignBlock}
-            {toolsBlock}
+      <>
+        <Pressable onPress={handleCardPress}>
+          <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
+            <View className="flex-row items-start justify-between" style={{ marginBottom: 12 }}>
+              {campaignBlock}
+              {toolsBlock}
+            </View>
+            {statsBlock}
           </View>
-          {statsBlock}
-        </View>
-      </Pressable>
+        </Pressable>
+        {smartleadModal}
+      </>
     );
   }
 
   return (
-    <Pressable onPress={handleCardPress}>
-      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4" style={{ position: 'relative' }}>
-        <View className="flex-row items-start" style={{ gap: 16 }}>
-          {campaignBlock}
-          {statsBlock}
+    <>
+      <Pressable onPress={handleCardPress}>
+        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4" style={{ position: 'relative' }}>
+          <View className="flex-row items-start" style={{ gap: 16 }}>
+            {campaignBlock}
+            {statsBlock}
+          </View>
+          <View style={{ position: 'absolute', right: 16, top: 16 }}>
+            {toolsBlock}
+          </View>
         </View>
-        <View style={{ position: 'absolute', right: 16, top: 16 }}>
-          {toolsBlock}
-        </View>
-      </View>
-    </Pressable>
+      </Pressable>
+      {smartleadModal}
+    </>
   );
 }
 
@@ -417,8 +445,7 @@ export default function CampaignsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showSkeleton, setShowSkeleton] = useState(false);
-  const skeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
+  const showSkeleton = useSmoothLoading(isLoading);
 
   const loadCampaigns = async () => {
     if (!account?.id) return;
@@ -445,34 +472,6 @@ export default function CampaignsPage() {
   useEffect(() => {
     loadCampaigns();
   }, [account?.id]);
-
-  // Skeleton: delay 200ms before showing, min 300ms once shown
-  useEffect(() => {
-    const t = skeletonTimers.current;
-    if (isLoading) {
-      if (t.hide) {
-        clearTimeout(t.hide);
-        t.hide = null;
-      }
-      t.show = setTimeout(() => setShowSkeleton(true), SKELETON_DELAY_MS);
-      return () => {
-        if (t.show) clearTimeout(t.show);
-        t.show = null;
-      };
-    } else {
-      if (t.show) {
-        clearTimeout(t.show);
-        t.show = null;
-      }
-      if (showSkeleton) {
-        t.hide = setTimeout(() => setShowSkeleton(false), SKELETON_MIN_DISPLAY_MS);
-        return () => {
-          if (t.hide) clearTimeout(t.hide);
-          t.hide = null;
-        };
-      }
-    }
-  }, [isLoading, showSkeleton]);
 
   const handleCreateCampaign = async (name: string) => {
     if (!user?.id) {

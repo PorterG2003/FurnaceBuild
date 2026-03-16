@@ -1,9 +1,9 @@
 import { Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { EmptyState } from '@/components/ui/feedback';
 import { SendersTableSkeleton } from '@/components/skeletons';
-import { ActionButton } from './ActionButton';
 import { PencilIcon, PlayIcon, TrashIcon } from 'react-native-heroicons/outline';
 import type { Mailbox } from '@/lib/supabase/types';
 
@@ -170,16 +170,16 @@ export function MailboxesTable({
               </View>
               <View className="flex-[1] px-2 py-2 justify-center">
                 <View className="flex-row gap-1.5">
-                  <ActionButton
+                  <IconButton
+                    variant="secondary"
+                    size="sm"
+                    icon={PlayIcon}
+                    label={testingMailboxId === mailbox.id ? 'Testing...' : 'Test'}
                     onPress={() => onTestMailbox(mailbox)}
                     disabled={testingMailboxId === mailbox.id}
-                    isLoading={testingMailboxId === mailbox.id}
-                    icon={PlayIcon}
-                    label="Test"
-                    variant="blue"
                   />
-                  <ActionButton onPress={() => onEditMailbox(mailbox)} icon={PencilIcon} variant="blue" />
-                  <ActionButton onPress={() => onDeleteClick(mailbox)} icon={TrashIcon} variant="red" />
+                  <IconButton variant="secondary" size="sm" icon={PencilIcon} onPress={() => onEditMailbox(mailbox)} />
+                  <IconButton variant="destructive" size="sm" icon={TrashIcon} onPress={() => onDeleteClick(mailbox)} />
                 </View>
               </View>
             </View>

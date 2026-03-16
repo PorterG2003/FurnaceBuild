@@ -17,7 +17,7 @@ fi
 
 # Parse arguments
 ENVIRONMENT="${1:-dev}"
-WORKER_TYPE="${2:-send}"  # send, scheduler, or inbox-checker
+WORKER_TYPE="${2:-send}"  # send, scheduler, inbox-checker, or smartlead
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 CLUSTER_NAME="furnace-cluster-$ENVIRONMENT"
@@ -28,8 +28,10 @@ echo "   Worker Type: $WORKER_TYPE"
 echo "   Cluster: $CLUSTER_NAME"
 echo ""
 
-# Find the service
-if [ "$WORKER_TYPE" = "send" ]; then
+# Find the service (Smartlead runs as ad hoc tasks, not an ECS service)
+if [ "$WORKER_TYPE" = "smartlead" ]; then
+  TASK_FAMILY="furnace-smartlead-migration-task-$ENVIRONMENT"
+elif [ "$WORKER_TYPE" = "send" ]; then
   SERVICE_NAME=$(aws ecs list-services \
     --cluster "$CLUSTER_NAME" \
     --region "$REGION" \
@@ -49,23 +51,37 @@ else
     --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
 fi
 
-if [ -z "$SERVICE_NAME" ] || [ "$SERVICE_NAME" = "None" ]; then
+if [ "$WORKER_TYPE" != "smartlead" ] && { [ -z "$SERVICE_NAME" ] || [ "$SERVICE_NAME" = "None" ]; }; then
   echo "❌ Service not found"
   exit 1
 fi
 
-echo "📊 Service: $SERVICE_NAME"
+if [ "$WORKER_TYPE" = "smartlead" ]; then
+  echo "📊 Task Family: $TASK_FAMILY"
+else
+  echo "📊 Service: $SERVICE_NAME"
+fi
 echo ""
 
 # Get running tasks
 echo "1️⃣  Running Tasks:"
-RUNNING_TASKS=$(aws ecs list-tasks \
-  --cluster "$CLUSTER_NAME" \
-  --service-name "$SERVICE_NAME" \
-  --desired-status RUNNING \
-  --region "$REGION" \
-  --query 'taskArns' \
-  --output text)
+if [ "$WORKER_TYPE" = "smartlead" ]; then
+  RUNNING_TASKS=$(aws ecs list-tasks \
+    --cluster "$CLUSTER_NAME" \
+    --family "$TASK_FAMILY" \
+    --desired-status RUNNING \
+    --region "$REGION" \
+    --query 'taskArns' \
+    --output text)
+else
+  RUNNING_TASKS=$(aws ecs list-tasks \
+    --cluster "$CLUSTER_NAME" \
+    --service-name "$SERVICE_NAME" \
+    --desired-status RUNNING \
+    --region "$REGION" \
+    --query 'taskArns' \
+    --output text)
+fi
 
 if [ -z "$RUNNING_TASKS" ] || [ "$RUNNING_TASKS" = "None" ]; then
   echo "   ⚠️  No running tasks found"
@@ -73,14 +89,25 @@ if [ -z "$RUNNING_TASKS" ] || [ "$RUNNING_TASKS" = "None" ]; then
   
   # Check stopped tasks
   echo "2️⃣  Recent Stopped Tasks:"
-  STOPPED_TASKS=$(aws ecs list-tasks \
-    --cluster "$CLUSTER_NAME" \
-    --service-name "$SERVICE_NAME" \
-    --desired-status STOPPED \
-    --region "$REGION" \
-    --max-items 3 \
-    --query 'taskArns' \
-    --output text)
+  if [ "$WORKER_TYPE" = "smartlead" ]; then
+    STOPPED_TASKS=$(aws ecs list-tasks \
+      --cluster "$CLUSTER_NAME" \
+      --family "$TASK_FAMILY" \
+      --desired-status STOPPED \
+      --region "$REGION" \
+      --max-items 3 \
+      --query 'taskArns' \
+      --output text)
+  else
+    STOPPED_TASKS=$(aws ecs list-tasks \
+      --cluster "$CLUSTER_NAME" \
+      --service-name "$SERVICE_NAME" \
+      --desired-status STOPPED \
+      --region "$REGION" \
+      --max-items 3 \
+      --query 'taskArns' \
+      --output text)
+  fi
   
   if [ -n "$STOPPED_TASKS" ] && [ "$STOPPED_TASKS" != "None" ]; then
     for TASK_ARN in $STOPPED_TASKS; do
@@ -162,15 +189,27 @@ else
   echo ""
   
   # Get recent service events
-  echo "4️⃣  Recent Service Events (last 10):"
-  SERVICE_EVENTS=$(aws ecs describe-services \
-    --cluster "$CLUSTER_NAME" \
-    --services "$SERVICE_NAME" \
-    --region "$REGION" \
-    --query 'services[0].events[0:10]' \
-    --output json)
-  
-  echo "$SERVICE_EVENTS" | jq -r '.[] | "   [\(.createdAt)] \(.message)"' | head -10
+  if [ "$WORKER_TYPE" = "smartlead" ]; then
+    echo "4️⃣  Task Definition:"
+    TASK_DEF=$(aws ecs describe-task-definition \
+      --task-definition "$TASK_FAMILY" \
+      --region "$REGION" \
+      --query 'taskDefinition' \
+      --output json)
+    echo "   Family: $(echo "$TASK_DEF" | jq -r '.family')"
+    echo "   Revision: $(echo "$TASK_DEF" | jq -r '.revision')"
+    echo "   Container: $(echo "$TASK_DEF" | jq -r '.containerDefinitions[0].name')"
+  else
+    echo "4️⃣  Recent Service Events (last 10):"
+    SERVICE_EVENTS=$(aws ecs describe-services \
+      --cluster "$CLUSTER_NAME" \
+      --services "$SERVICE_NAME" \
+      --region "$REGION" \
+      --query 'services[0].events[0:10]' \
+      --output json)
+    
+    echo "$SERVICE_EVENTS" | jq -r '.[] | "   [\(.createdAt)] \(.message)"' | head -10
+  fi
 fi
 
 echo ""
@@ -180,6 +219,8 @@ if [ "$WORKER_TYPE" = "send" ]; then
   echo "   aws logs tail /ecs/furnace/send-worker-$ENVIRONMENT --follow --region $REGION"
 elif [ "$WORKER_TYPE" = "inbox-checker" ]; then
   echo "   aws logs tail /ecs/furnace/inbox-checker-worker-$ENVIRONMENT --follow --region $REGION"
+elif [ "$WORKER_TYPE" = "smartlead" ]; then
+  echo "   aws logs tail /ecs/furnace/smartlead-migration-task-$ENVIRONMENT --follow --region $REGION"
 else
   echo "   aws logs tail /ecs/furnace/scheduler-worker-$ENVIRONMENT --follow --region $REGION"
 fi

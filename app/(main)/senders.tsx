@@ -3,8 +3,7 @@ import { Text, View } from 'react-native';
 import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/feedback';
-import { SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from '@/components/skeletons';
+import { useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import {
   ConnectMailboxModal,
@@ -62,8 +61,7 @@ export default function SendersPage() {
   const [testing, setTesting] = useState(false);
   const [testingMailboxId, setTestingMailboxId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
-  const [showSkeleton, setShowSkeleton] = useState(false);
-  const skeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
+  const showSkeleton = useSmoothLoading(isLoading);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editMailbox, setEditMailbox] = useState<Mailbox | null>(null);
@@ -95,34 +93,6 @@ export default function SendersPage() {
       loadMailboxes();
     }
   }, [accountId, loadMailboxes]);
-
-  // Skeleton: delay 200ms before showing, min 300ms once shown
-  useEffect(() => {
-    const t = skeletonTimers.current;
-    if (isLoading) {
-      if (t.hide) {
-        clearTimeout(t.hide);
-        t.hide = null;
-      }
-      t.show = setTimeout(() => setShowSkeleton(true), SKELETON_DELAY_MS);
-      return () => {
-        if (t.show) clearTimeout(t.show);
-        t.show = null;
-      };
-    } else {
-      if (t.show) {
-        clearTimeout(t.show);
-        t.show = null;
-      }
-      if (showSkeleton) {
-        t.hide = setTimeout(() => setShowSkeleton(false), SKELETON_MIN_DISPLAY_MS);
-        return () => {
-          if (t.hide) clearTimeout(t.hide);
-          t.hide = null;
-        };
-      }
-    }
-  }, [isLoading, showSkeleton]);
 
   const handleTestConnection = async () => {
     // Validation

@@ -1,5 +1,5 @@
-import { useState, useMemo, ReactNode } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { useState, useMemo, useEffect, ReactNode } from 'react';
+import { ActivityIndicator, View, Text, Pressable, ScrollView } from 'react-native';
 import { ChevronUpIcon, ChevronDownIcon } from 'react-native-heroicons/outline';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Skeleton } from '@/components/ui/feedback';
@@ -41,6 +41,8 @@ interface DataTableProps<T> {
   renderEmpty?: () => ReactNode;
   /** When true, columns share width equally (flex: 1 when no column.flex). When false, columns use only minWidth/content. Default false. */
   equalColumnWidths?: boolean;
+  /** When true, header row uses vertically centered single-line cells (no stats bar). Default false. */
+  compactHeader?: boolean;
 }
 
 type SortDirection = 'asc' | 'desc';
@@ -59,11 +61,16 @@ export function DataTable<T>({
   pagination: paginationEnabled = true,
   renderEmpty,
   equalColumnWidths = false,
+  compactHeader = false,
 }: DataTableProps<T>) {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [tableContainerWidth, setTableContainerWidth] = useState<number>(0);
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [itemsPerPage]);
 
   const sortedItems = useMemo(() => {
     if (!sortColumn) return items;
@@ -77,7 +84,10 @@ export function DataTable<T>({
 
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
+      // Stable sort: break ties by item key so equal-value rows have deterministic order
+      const keyA = getItemKey(a);
+      const keyB = getItemKey(b);
+      return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
     });
 
     return sorted;
@@ -152,7 +162,7 @@ export function DataTable<T>({
     const column = columns.find((col) => col.key === columnKey);
     if (!column || !column.sortable) {
       return (
-        <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">
+        <Text className="text-gray-400 font-instrument-semibold text-xs uppercase" style={{ textAlign: 'left' }}>
           {label}
         </Text>
       );
@@ -162,12 +172,13 @@ export function DataTable<T>({
     return (
       <Pressable
         onPress={() => handleSort(columnKey)}
-        className="flex-row items-center gap-1 px-3 py-2 active:opacity-70"
+        className="flex-row items-center gap-1 pl-0 pr-3 py-2 active:opacity-70"
       >
         <Text
           className={`text-xs font-instrument-semibold ${
             isActive ? 'text-white' : 'text-gray-400'
           }`}
+          style={{ textAlign: 'left' }}
         >
           {label}
         </Text>
@@ -261,6 +272,7 @@ export function DataTable<T>({
           paddingRight: isLast ? OUTER_EDGE_PADDING_X : 16,
           flexDirection: 'column',
           justifyContent: 'space-between',
+          alignItems: 'flex-start',
           minHeight: 44,
         }}
       >
@@ -270,7 +282,7 @@ export function DataTable<T>({
     );
   };
 
-  if (loading) {
+  if (loading && items.length === 0) {
     const skeletonColumnCount = columns.length + (selectable ? 1 : 0);
     const skeletonRowCount = 6;
     return (
@@ -327,6 +339,12 @@ export function DataTable<T>({
 
   return (
     <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
+      {loading && items.length > 0 && (
+        <View className="absolute right-3 top-3 z-10 flex-row items-center gap-2 rounded-full border border-[#2A2A2A] bg-[#111111]/95 px-2.5 py-1.5">
+          <ActivityIndicator size="small" color="#9ca3af" />
+          <Text className="text-xs text-gray-400 font-instrument">Updating...</Text>
+        </View>
+      )}
       <View
         style={{ width: '100%' }}
         onLayout={(e) => setTableContainerWidth(e.nativeEvent.layout.width)}
@@ -341,7 +359,10 @@ export function DataTable<T>({
             style={tableContainerWidth > 0 ? { minWidth: tableContainerWidth } : undefined}
           >
             {/* Table Header */}
-            <View className="flex-row border-b border-[#2A2A2A] bg-[#1F1F1F]">
+            <View
+              className={`flex-row border-b border-[#2A2A2A] bg-[#1F1F1F] ${compactHeader ? 'items-center' : ''}`}
+              style={compactHeader ? { minHeight: 48 } : undefined}
+            >
           {selectable && (
             <View className="px-2 py-2 justify-center items-center" style={{ width: 56, paddingLeft: OUTER_EDGE_PADDING_X }}>
               <Checkbox
@@ -351,16 +372,32 @@ export function DataTable<T>({
               />
             </View>
           )}
-          {columns.map((column, index) => (
-            <HeaderCellWithStats
-              key={column.key}
-              column={column}
-              index={index}
-              isFirst={index === 0}
-              isLast={index === columns.length - 1}
-              minOfColumnMinWidths={minOfColumnMinWidths}
-            />
-          ))}
+          {columns.map((column, index) =>
+            compactHeader ? (
+              <View
+                key={column.key}
+                className="px-2 py-2 justify-center items-start"
+                style={{
+                  minWidth: column.minWidth,
+                  maxWidth: column.maxWidth,
+                  flex: getColumnFlex(column),
+                  paddingLeft: !selectable && index === 0 ? OUTER_EDGE_PADDING_X : undefined,
+                  paddingRight: index < columns.length - 1 ? 16 : OUTER_EDGE_PADDING_X,
+                }}
+              >
+                <SortButton columnKey={column.key} label={column.label} />
+              </View>
+            ) : (
+              <HeaderCellWithStats
+                key={column.key}
+                column={column}
+                index={index}
+                isFirst={index === 0}
+                isLast={index === columns.length - 1}
+                minOfColumnMinWidths={minOfColumnMinWidths}
+              />
+            )
+          )}
         </View>
 
         {/* Table Rows */}
@@ -374,6 +411,8 @@ export function DataTable<T>({
           <>
             {visibleItems.map((item, rowIndex) => {
               const key = getItemKey(item);
+              // Use rowIndex in key so duplicate item keys don't break React reconciliation (stuck rows)
+              const uniqueRowKey = `${key}-${rowIndex}`;
               const isSelected = selectable && selectedKeys != null && selectedKeys.has(key);
               const isLastRow = rowIndex === visibleItems.length - 1;
               const RowContent = (
@@ -392,7 +431,7 @@ export function DataTable<T>({
                   {columns.map((column, index) => (
                     <View
                       key={column.key}
-                      className="px-2 py-2 justify-center"
+                      className="px-2 py-2 justify-start items-start"
                       style={{
                         minWidth: column.minWidth,
                         maxWidth: column.maxWidth,
@@ -410,7 +449,7 @@ export function DataTable<T>({
               if (onRowPress) {
                 return (
                   <Pressable
-                    key={key}
+                    key={uniqueRowKey}
                     onPress={() => onRowPress(item)}
                     className="active:opacity-80"
                   >
@@ -419,7 +458,7 @@ export function DataTable<T>({
                 );
               }
 
-              return <View key={key}>{RowContent}</View>;
+              return <View key={uniqueRowKey}>{RowContent}</View>;
             })}
           </>
         )}

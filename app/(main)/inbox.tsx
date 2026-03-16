@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
-import { EmptyState, Alert, useToast } from '@/components/ui/feedback';
+import { EmptyState, Alert, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import {
@@ -61,8 +61,6 @@ import {
   ThreadItem,
   ThreadListSkeleton,
   TagsPanelModal,
-  SKELETON_DELAY_MS,
-  SKELETON_MIN_DISPLAY_MS,
 } from '@/components/inbox';
 import type { ComposerAttachmentItem } from '@/components/inbox';
 import outputs from '@/amplify_outputs.json';
@@ -106,8 +104,6 @@ export default function InboxPage() {
   const [composerAttachmentsLoading, setComposerAttachmentsLoading] = useState(false);
   const [composerAttachmentsSkipMessage, setComposerAttachmentsSkipMessage] = useState<string | null>(null);
 
-  const [showThreadSkeleton, setShowThreadSkeleton] = useState(false);
-  const [showMessagesSkeleton, setShowMessagesSkeleton] = useState(false);
   const [threadSearchQuery, setThreadSearchQuery] = useState('');
   const [mailboxFilterId, setMailboxFilterId] = useState<string | null>(null);
   const [campaignFilterId, setCampaignFilterId] = useState<string | null>(null);
@@ -237,9 +233,6 @@ export default function InboxPage() {
     [composerAttachments]
   );
 
-  const threadSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
-  const messagesSkeletonTimers = useRef<{ show: ReturnType<typeof setTimeout> | null; hide: ReturnType<typeof setTimeout> | null }>({ show: null, hide: null });
-
   const selectedThread = threads.find((t) => t.id === selectedThreadId);
   const selectedThreadSignatureHtml = useMemo(() => {
     if (!selectedThread?.mailbox_id) return '';
@@ -247,6 +240,8 @@ export default function InboxPage() {
     return signatureToHtml(mb?.signature);
   }, [selectedThread?.mailbox_id, mailboxes]);
   const threadsLoadingOrNoAccount = threadsLoading || !accountId;
+  const showThreadSkeleton = useSmoothLoading(threadsLoadingOrNoAccount);
+  const showMessagesSkeleton = useSmoothLoading(messagesLoading);
 
   // Server-driven filtering: threads are already filtered by getThreadsByAccount
   const displayThreads = threads;
@@ -622,62 +617,6 @@ export default function InboxPage() {
       setMessages([]);
     }
   }, [selectedThreadId, loadMessages]);
-
-  // Thread skeleton: delay 200ms before showing, min 300ms once shown
-  useEffect(() => {
-    const t = threadSkeletonTimers.current;
-    if (threadsLoadingOrNoAccount) {
-      if (t.hide) {
-        clearTimeout(t.hide);
-        t.hide = null;
-      }
-      t.show = setTimeout(() => setShowThreadSkeleton(true), SKELETON_DELAY_MS);
-      return () => {
-        if (t.show) clearTimeout(t.show);
-        t.show = null;
-      };
-    } else {
-      if (t.show) {
-        clearTimeout(t.show);
-        t.show = null;
-      }
-      if (showThreadSkeleton) {
-        t.hide = setTimeout(() => setShowThreadSkeleton(false), SKELETON_MIN_DISPLAY_MS);
-        return () => {
-          if (t.hide) clearTimeout(t.hide);
-          t.hide = null;
-        };
-      }
-    }
-  }, [threadsLoadingOrNoAccount, showThreadSkeleton]);
-
-  // Messages skeleton: delay 200ms before showing, min 300ms once shown
-  useEffect(() => {
-    const t = messagesSkeletonTimers.current;
-    if (messagesLoading) {
-      if (t.hide) {
-        clearTimeout(t.hide);
-        t.hide = null;
-      }
-      t.show = setTimeout(() => setShowMessagesSkeleton(true), SKELETON_DELAY_MS);
-      return () => {
-        if (t.show) clearTimeout(t.show);
-        t.show = null;
-      };
-    } else {
-      if (t.show) {
-        clearTimeout(t.show);
-        t.show = null;
-      }
-      if (showMessagesSkeleton) {
-        t.hide = setTimeout(() => setShowMessagesSkeleton(false), SKELETON_MIN_DISPLAY_MS);
-        return () => {
-          if (t.hide) clearTimeout(t.hide);
-          t.hide = null;
-        };
-      }
-    }
-  }, [messagesLoading, showMessagesSkeleton]);
 
   // Clear pending reply when thread changes or when sent message appears (polling)
   useEffect(() => {

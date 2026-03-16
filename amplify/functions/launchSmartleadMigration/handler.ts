@@ -14,7 +14,7 @@ interface LaunchPayload {
   runId: string;
   accountId: string;
   apiKey?: string;
-  action?: 'launch' | 'resume';
+  action?: 'launch';
 }
 
 async function verifyUser(token: string) {
@@ -47,6 +47,8 @@ export const handler = async (
 ) => {
   let launchSupabase: SupabaseClient | null = null;
   let launchPayload: LaunchPayload | null = null;
+  let launchedTaskArn: string | null = null;
+  let launchWorkerId: string | null = null;
   if (!isFunctionUrlEvent(event)) {
     return {
       statusCode: 400,
@@ -159,15 +161,34 @@ export const handler = async (
     await supabase
       .from('smartlead_migration_runs')
       .update({
-        status: 'launching',
+        status: 'launch_requested',
         api_key_secret_ref: apiKeySecretRef,
-        launched_at: new Date().toISOString(),
+        launch_requested_at: new Date().toISOString(),
+        launched_at: null,
+        started_at: null,
+        finished_at: null,
+        last_heartbeat_at: null,
+        task_arn: null,
+        worker_id: null,
+        current_phase: null,
+        current_detail: 'Requesting ECS task...',
         last_error_message: null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', payload.runId);
 
+    await supabase
+      .from('smartlead_migration_events')
+      .insert({
+        run_id: payload.runId,
+        account_id: payload.accountId,
+        event_type: 'run_launch_requested',
+        level: 'info',
+        detail: 'Launch requested. Preparing ECS task.',
+      });
+
     const workerId = randomUUID();
+    launchWorkerId = workerId;
     const ecs = new ECSClient({ region });
     const response = await ecs.send(new RunTaskCommand({
       cluster,
@@ -201,14 +222,16 @@ export const handler = async (
       const failure = response.failures?.[0];
       throw new Error(failure?.reason || 'ECS task launch failed');
     }
+    launchedTaskArn = taskArn;
 
     await supabase
       .from('smartlead_migration_runs')
       .update({
-        status: 'launching',
+        status: 'task_started',
         task_arn: taskArn,
         worker_id: workerId,
         launched_at: new Date().toISOString(),
+        current_detail: 'ECS task created. Waiting for worker claim.',
         updated_at: new Date().toISOString(),
       })
       .eq('id', payload.runId);
@@ -218,11 +241,9 @@ export const handler = async (
       .insert({
         run_id: payload.runId,
         account_id: payload.accountId,
-        event_type: payload.action === 'resume' ? 'run_resumed' : 'run_launched',
+        event_type: 'ecs_task_created',
         level: 'info',
-        detail: payload.action === 'resume'
-          ? 'Migration task resumed.'
-          : 'Migration task launched.',
+        detail: 'ECS task created. Waiting for worker claim.',
         payload: {
           task_arn: taskArn,
           worker_id: workerId,
@@ -240,16 +261,32 @@ export const handler = async (
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('launchSmartleadMigration error:', error);
-    if (launchSupabase && launchPayload?.runId) {
+    if (launchSupabase && launchPayload?.runId && !launchedTaskArn) {
       await launchSupabase
         .from('smartlead_migration_runs')
         .update({
-          status: 'failed',
+          status: 'failed_to_launch',
           last_error_message: message,
+          current_phase: 'done',
+          current_detail: null,
           finished_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
         .eq('id', launchPayload.runId);
+
+      await launchSupabase
+        .from('smartlead_migration_events')
+        .insert({
+          run_id: launchPayload.runId,
+          account_id: launchPayload.accountId,
+          event_type: 'run_failed_to_launch',
+          level: 'error',
+          phase: 'done',
+          detail: message,
+          payload: {
+            worker_id: launchWorkerId,
+          },
+        });
     }
     reportErrorToSlack('Failed to launch Smartlead migration task', {
       severity: 'critical',

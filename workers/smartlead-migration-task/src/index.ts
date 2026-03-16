@@ -10,7 +10,7 @@ import {
 } from '@/lib/smartlead/migration';
 import type { Database, Json } from '@/lib/supabase/types/database';
 
-type DbClient = SupabaseClient<Database>;
+type DbClient = any;
 type RunRow = Database['public']['Tables']['smartlead_migration_runs']['Row'];
 type CampaignRow = Database['public']['Tables']['smartlead_migration_campaigns']['Row'];
 type EventInsert = Database['public']['Tables']['smartlead_migration_events']['Insert'];
@@ -45,7 +45,7 @@ function createSupabase(secretKey: string): DbClient {
       autoRefreshToken: false,
       persistSession: false,
     },
-  });
+  }) as DbClient;
 }
 
 async function appendEvent(
@@ -206,6 +206,52 @@ async function cancelQueuedCampaigns(db: DbClient, runId: string): Promise<void>
   if (error) {
     throw new Error(`Failed to cancel remaining Smartlead migration campaigns: ${error.message}`);
   }
+}
+
+async function markRunFailedBeforeClaim(
+  db: DbClient,
+  run: RunRow,
+  workerId: string,
+  taskArn: string | null,
+  message: string,
+): Promise<void> {
+  const finishedAt = new Date().toISOString();
+  const { data, error } = await ((db
+    .from('smartlead_migration_runs') as any)
+    .update({
+      status: 'failed_to_claim',
+      worker_id: workerId,
+      task_arn: taskArn,
+      current_phase: 'done',
+      current_detail: null,
+      last_error_message: message,
+      finished_at: finishedAt,
+      updated_at: finishedAt,
+    } as any)
+    .eq('id', run.id)
+    .is('started_at', null)
+    .in('status', ['queued', 'launch_requested', 'task_started'])
+    .select('id')
+    .maybeSingle());
+
+  if (error) {
+    throw new Error(`Failed to mark Smartlead migration run as failed_to_claim: ${error.message}`);
+  }
+
+  if (!data) {
+    return;
+  }
+
+  await appendEvent(db, run, {
+    eventType: 'run_failed_to_claim',
+    level: 'error',
+    phase: 'done',
+    detail: message,
+    payload: {
+      worker_id: workerId,
+      task_arn: taskArn,
+    },
+  });
 }
 
 function mapCampaignRowToSmartleadCampaign(row: CampaignRow): SmartleadCampaign {
@@ -389,34 +435,39 @@ async function runTask(): Promise<void> {
   if (!supabaseSecret) throw new Error('Missing SUPABASE_SECRET_KEY or SUPABASE_SECRET_KEY_PARAM_PATH');
 
   const smartleadApiKey = await fetchSecureParameter(apiKeyParamPath, region);
-  const db = createSupabase(supabaseSecret);
   const workerId = process.env.SMARTLEAD_MIGRATION_WORKER_ID ?? randomUUID();
-
-  await claimRun(db, runId, workerId, taskArn);
-  const run = await getRun(db, runId);
-  const ownerId = run.created_by;
-
-  await appendEvent(db, run, {
-    eventType: 'run_started',
-    phase: 'campaign',
-    detail: 'Background migration task started.',
-    payload: {
-      worker_id: workerId,
-      task_arn: taskArn,
-    },
-  });
-
-  const heartbeatTimer = setInterval(() => {
-    updateRun(db, runId, {
-      last_heartbeat_at: new Date().toISOString(),
-    }).catch((error) => {
-      console.error('[smartlead-task] failed to write heartbeat', error);
-    });
-  }, HEARTBEAT_INTERVAL_MS);
-
+  const db = createSupabase(supabaseSecret);
+  let run: RunRow | null = null;
+  let claimed = false;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let cancelled = false;
 
   try {
+    run = await getRun(db, runId);
+
+    await claimRun(db, runId, workerId, taskArn);
+    claimed = true;
+    run = await getRun(db, runId);
+    const ownerId = run.created_by;
+
+    await appendEvent(db, run, {
+      eventType: 'run_started',
+      phase: 'campaign',
+      detail: 'Worker claimed the run and started processing.',
+      payload: {
+        worker_id: workerId,
+        task_arn: taskArn,
+      },
+    });
+
+    heartbeatTimer = setInterval(() => {
+      updateRun(db, runId, {
+        last_heartbeat_at: new Date().toISOString(),
+      }).catch((error) => {
+        console.error('[smartlead-task] failed to write heartbeat', error);
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+
     while (true) {
       if (await hasCancelRequested(db, runId)) {
         cancelled = true;
@@ -513,21 +564,25 @@ async function runTask(): Promise<void> {
     await finalizeRun(db, run, cancelled);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await updateRun(db, runId, {
-      status: 'failed',
-      current_phase: 'done',
-      current_detail: null,
-      last_error_message: message,
-      finished_at: new Date().toISOString(),
-      last_heartbeat_at: new Date().toISOString(),
-    });
+    if (run && !claimed) {
+      await markRunFailedBeforeClaim(db, run, workerId, taskArn, message);
+    } else if (run) {
+      await updateRun(db, runId, {
+        status: 'failed',
+        current_phase: 'done',
+        current_detail: null,
+        last_error_message: message,
+        finished_at: new Date().toISOString(),
+        last_heartbeat_at: new Date().toISOString(),
+      });
 
-    await appendEvent(db, run, {
-      eventType: 'run_failed',
-      level: 'error',
-      phase: 'done',
-      detail: message,
-    });
+      await appendEvent(db, run, {
+        eventType: 'run_failed',
+        level: 'error',
+        phase: 'done',
+        detail: message,
+      });
+    }
 
     reportErrorToSlack('Smartlead migration task failed', {
       severity: 'critical',
@@ -536,7 +591,9 @@ async function runTask(): Promise<void> {
     });
     throw error;
   } finally {
-    clearInterval(heartbeatTimer);
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+    }
   }
 }
 

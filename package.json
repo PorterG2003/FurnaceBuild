@@ -20,6 +20,7 @@
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo-google-fonts/instrument-sans": "^0.4.2",
     "@expo-google-fonts/inter": "^0.4.2",
+    "@furnace/email-lib": "file:lib/email",
     "@furnace/slack-lib": "file:lib/slack",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/netinfo": "^11.4.1",

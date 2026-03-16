@@ -344,7 +344,18 @@ export interface Database {
           id: string;
           account_id: string;
           created_by: string;
-          status: 'queued' | 'launching' | 'running' | 'cancel_requested' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled';
+          status:
+            | 'queued'
+            | 'launch_requested'
+            | 'task_started'
+            | 'running'
+            | 'cancel_requested'
+            | 'completed'
+            | 'completed_with_warnings'
+            | 'failed'
+            | 'failed_to_launch'
+            | 'failed_to_claim'
+            | 'cancelled';
           selected_campaign_count: number;
           completed_campaign_count: number;
           failed_campaign_count: number;
@@ -359,6 +370,7 @@ export interface Database {
           current_detail: string | null;
           last_error_message: string | null;
           cancel_requested_at: string | null;
+          launch_requested_at: string | null;
           launched_at: string | null;
           started_at: string | null;
           finished_at: string | null;
@@ -373,7 +385,18 @@ export interface Database {
           id?: string;
           account_id: string;
           created_by: string;
-          status?: 'queued' | 'launching' | 'running' | 'cancel_requested' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled';
+          status?:
+            | 'queued'
+            | 'launch_requested'
+            | 'task_started'
+            | 'running'
+            | 'cancel_requested'
+            | 'completed'
+            | 'completed_with_warnings'
+            | 'failed'
+            | 'failed_to_launch'
+            | 'failed_to_claim'
+            | 'cancelled';
           selected_campaign_count?: number;
           completed_campaign_count?: number;
           failed_campaign_count?: number;
@@ -388,6 +411,7 @@ export interface Database {
           current_detail?: string | null;
           last_error_message?: string | null;
           cancel_requested_at?: string | null;
+          launch_requested_at?: string | null;
           launched_at?: string | null;
           started_at?: string | null;
           finished_at?: string | null;
@@ -402,7 +426,18 @@ export interface Database {
           id?: string;
           account_id?: string;
           created_by?: string;
-          status?: 'queued' | 'launching' | 'running' | 'cancel_requested' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled';
+          status?:
+            | 'queued'
+            | 'launch_requested'
+            | 'task_started'
+            | 'running'
+            | 'cancel_requested'
+            | 'completed'
+            | 'completed_with_warnings'
+            | 'failed'
+            | 'failed_to_launch'
+            | 'failed_to_claim'
+            | 'cancelled';
           selected_campaign_count?: number;
           completed_campaign_count?: number;
           failed_campaign_count?: number;
@@ -417,6 +452,7 @@ export interface Database {
           current_detail?: string | null;
           last_error_message?: string | null;
           cancel_requested_at?: string | null;
+          launch_requested_at?: string | null;
           launched_at?: string | null;
           started_at?: string | null;
           finished_at?: string | null;

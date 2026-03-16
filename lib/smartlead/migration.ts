@@ -1,20 +1,21 @@
 import Papa from 'papaparse';
-import type { SupabaseClient } from '@supabase/supabase-js';
-import { stripHtml } from '@/lib/email/parse-body';
+import { stripHtml } from '@furnace/email-lib';
 import type { Campaign } from '@/lib/supabase/types';
 import type { Database } from '@/lib/supabase/types/database';
 import { SMARTLEAD_BASE, smartleadRequest } from '@/lib/smartlead/api';
 
-type MigrationDatabaseClient = SupabaseClient<Database>;
-let defaultMigrationDbPromise: Promise<MigrationDatabaseClient> | null = null;
+type MigrationDatabaseClient = {
+  from: (...args: any[]) => any;
+};
 
-async function getDefaultMigrationDb(): Promise<MigrationDatabaseClient> {
-  if (!defaultMigrationDbPromise) {
-    defaultMigrationDbPromise = import('@/lib/supabase/client').then(
-      (module) => module.supabase as MigrationDatabaseClient,
-    );
+async function resolveMigrationDb(
+  db?: MigrationDatabaseClient,
+): Promise<MigrationDatabaseClient> {
+  if (!db) {
+    throw new Error('A migration database client is required for Smartlead import operations.');
   }
-  return defaultMigrationDbPromise;
+
+  return db;
 }
 
 async function generateGlobalLeadIdForMigration(email: string | null | undefined): Promise<string | null> {
@@ -174,7 +175,7 @@ export async function fetchSmartleadCampaigns(apiKey: string): Promise<Smartlead
     }
     throw new Error(`Smartlead API error (${res.status}). Please try again.`);
   }
-  const data = await res.json();
+  const data = await res.json() as any;
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(data?.data?.campaign_list)) return data.data.campaign_list;
@@ -284,7 +285,7 @@ export async function fetchSmartleadLeads(
     if (!res.ok) {
       throw new Error(`Smartlead leads API error (${res.status}) for campaign ${smartleadCampaignId}.`);
     }
-    const json = await res.json();
+    const json = await res.json() as any;
     const data = Array.isArray(json?.data) ? json.data : [];
     for (const item of data) {
       all.push(parseLead(item));
@@ -363,7 +364,7 @@ async function fetchSmartleadInboxRepliesPage(
   if (!res.ok) {
     throw new Error(`${smartleadApiErrorMessage(res, 'inbox replies')} for campaign ${campaignIdFilter}`);
   }
-  const json = await res.json();
+  const json = await res.json() as any;
   const data = Array.isArray(json?.data) ? json.data : [];
   return { data, json };
 }
@@ -827,7 +828,7 @@ export async function upsertCampaignFromSmartlead(
   ownerId: string,
   db?: MigrationDatabaseClient,
 ): Promise<Campaign> {
-  const database = db ?? await getDefaultMigrationDb();
+  const database = await resolveMigrationDb(db);
   const now = new Date().toISOString();
 
   const row = {
@@ -895,7 +896,7 @@ export async function upsertLeadsFromSmartlead(
   smartleadLeads: SmartleadLead[],
   db?: MigrationDatabaseClient,
 ): Promise<string[]> {
-  const database = db ?? await getDefaultMigrationDb();
+  const database = await resolveMigrationDb(db);
   if (smartleadLeads.length === 0) return [];
 
   const allLeadIds: string[] = [];
@@ -958,7 +959,7 @@ export async function upsertCampaignStatsFromSmartlead(
   stats: SmartleadCampaignStats,
   db?: MigrationDatabaseClient,
 ): Promise<void> {
-  const database = db ?? await getDefaultMigrationDb();
+  const database = await resolveMigrationDb(db);
   const { error } = await ((database
     .from('campaign_stats') as any)
     .update({
@@ -983,7 +984,7 @@ export async function upsertImportedCampaignStatsByDay(
   byDay: SmartleadStatsByDay[],
   db?: MigrationDatabaseClient,
 ): Promise<void> {
-  const database = db ?? await getDefaultMigrationDb();
+  const database = await resolveMigrationDb(db);
   if (byDay.length === 0) return;
   const now = new Date().toISOString();
   const rows = byDay.map((day) => ({
@@ -1026,7 +1027,7 @@ async function getSmartleadLeadEnrollmentMap(
   repliedLeadsWithEmail?: SmartleadInboxReplyLead[],
   db?: MigrationDatabaseClient,
 ): Promise<Map<number, SmartleadLeadEnrollmentMapValue>> {
-  const database = db ?? await getDefaultMigrationDb();
+  const database = await resolveMigrationDb(db);
   const ids = [...new Set(smartleadLeadIds.filter((id) => Number.isFinite(id) && id > 0))];
   const out = new Map<number, SmartleadLeadEnrollmentMapValue>();
 
@@ -1176,7 +1177,7 @@ async function upsertSmartleadConversationThread(params: {
   db?: MigrationDatabaseClient;
 }): Promise<string> {
   const { accountId, campaignId, leadId, enrollmentId, smartleadLeadId, messages, db } = params;
-  const database = db ?? await getDefaultMigrationDb();
+  const database = await resolveMigrationDb(db);
   const subject = getSmartleadThreadSubject(messages);
   const participants = getSmartleadThreadParticipants(messages);
   const lastMessageAt = messages[messages.length - 1]?.time ?? new Date().toISOString();
@@ -1221,7 +1222,7 @@ async function replaceSmartleadConversationMessages(params: {
   db?: MigrationDatabaseClient;
 }): Promise<void> {
   const { threadId, accountId, leadEmail, leadFirstName, leadLastName, threadSubject, messages, db } = params;
-  const database = db ?? await getDefaultMigrationDb();
+  const database = await resolveMigrationDb(db);
   const leadName = buildSmartleadLeadName(leadFirstName, leadLastName);
 
   const { error: deleteError } = await database
@@ -1294,6 +1295,7 @@ export interface ConversationImportDiagnostics {
 }
 
 export interface CampaignMigrationResult {
+  campaignRowId?: string;
   campaignId?: string;
   campaignName: string;
   status: 'succeeded' | 'failed';
@@ -1330,7 +1332,7 @@ export async function migrateSingleSmartleadCampaign(
     onProgress,
     db,
   } = params;
-  const database = db ?? await getDefaultMigrationDb();
+  const database = await resolveMigrationDb(db);
 
   const campaignResult: CampaignMigrationResult = {
     campaignName: sl.name,
@@ -1567,7 +1569,7 @@ export async function migrateSmartleadCampaigns(
   totalLeadsImported: number;
   campaignResults: CampaignMigrationResult[];
 }> {
-  const database = db ?? await getDefaultMigrationDb();
+  const database = await resolveMigrationDb(db);
   const succeeded: string[] = [];
   const failed: { name: string; error: string }[] = [];
   const campaignResults: CampaignMigrationResult[] = [];

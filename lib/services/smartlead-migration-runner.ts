@@ -63,18 +63,3 @@ export async function launchSmartleadMigrationTask(
     throw new Error('Failed to launch Smartlead migration task.');
   }
 }
-
-export async function resumeSmartleadMigrationTask(params: {
-  runId: string;
-  accountId: string;
-}): Promise<void> {
-  const data = await callLauncher({
-    action: 'resume',
-    runId: params.runId,
-    accountId: params.accountId,
-  });
-
-  if (!data.success) {
-    throw new Error('Failed to resume Smartlead migration task.');
-  }
-}

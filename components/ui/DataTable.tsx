@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, ReactNode } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { ActivityIndicator, View, Text, Pressable, ScrollView } from 'react-native';
 import { ChevronUpIcon, ChevronDownIcon } from 'react-native-heroicons/outline';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Skeleton } from '@/components/ui/feedback';
@@ -282,7 +282,7 @@ export function DataTable<T>({
     );
   };
 
-  if (loading) {
+  if (loading && items.length === 0) {
     const skeletonColumnCount = columns.length + (selectable ? 1 : 0);
     const skeletonRowCount = 6;
     return (
@@ -339,6 +339,12 @@ export function DataTable<T>({
 
   return (
     <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
+      {loading && items.length > 0 && (
+        <View className="absolute right-3 top-3 z-10 flex-row items-center gap-2 rounded-full border border-[#2A2A2A] bg-[#111111]/95 px-2.5 py-1.5">
+          <ActivityIndicator size="small" color="#9ca3af" />
+          <Text className="text-xs text-gray-400 font-instrument">Updating...</Text>
+        </View>
+      )}
       <View
         style={{ width: '100%' }}
         onLayout={(e) => setTableContainerWidth(e.nativeEvent.layout.width)}

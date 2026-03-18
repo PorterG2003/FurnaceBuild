@@ -291,7 +291,7 @@ export function SmartleadMigrationWizardModal({ visible, onClose, initialRunId =
     };
   }, [visible, runId, refreshRunState]);
 
-  const reviewCampaignResults = result?.campaignResults ?? [];
+  const reviewCampaignResults = useMemo(() => result?.campaignResults ?? [], [result]);
   const reviewCampaignOptions = useMemo<ReviewCampaignOption[]>(
     () =>
       reviewCampaignResults

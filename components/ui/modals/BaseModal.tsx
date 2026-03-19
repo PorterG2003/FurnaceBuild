@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { Modal, Pressable, View, Text, ScrollView } from 'react-native';
+import { Modal, Pressable, View, Text, ScrollView, useWindowDimensions } from 'react-native';
 import { XMarkIcon } from 'react-native-heroicons/outline';
+import { BottomSheet } from './BottomSheet';
+import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 
 const isWeb = typeof window !== 'undefined';
 
@@ -42,6 +44,8 @@ export function BaseModal({
   height,
   compact = false,
 }: BaseModalProps) {
+  const { width, height: screenHeight } = useWindowDimensions();
+  const isMobile = width < LAYOUT_BREAKPOINT;
   const contentHeight = height ?? maxHeight;
   const containerStyle = contentHeight
     ? { maxHeight: contentHeight, minHeight: height ?? 320 }
@@ -49,14 +53,53 @@ export function BaseModal({
   const dialogRef = useRef<View>(null);
 
   useEffect(() => {
-    if (visible && isWeb && dialogRef.current) {
+    if (visible && isWeb && !isMobile && dialogRef.current) {
       const node = (dialogRef.current as any) as HTMLElement | undefined;
       if (node?.focus) {
         const t = setTimeout(() => node.focus(), 0);
         return () => clearTimeout(t);
       }
     }
-  }, [visible]);
+  }, [visible, isMobile]);
+
+  if (isMobile) {
+    const sheetContentMaxHeight = contentHeight
+      ? Math.min(contentHeight, 400)
+      : Math.min(400, screenHeight * 0.7);
+    return (
+      <BottomSheet visible={visible} onClose={onClose}>
+        <View className="border-b border-[#2A2A2A] pb-4 mb-4">
+          <View className="flex-1 min-w-0">
+            <Text className="text-xl font-instrument-semibold text-white" numberOfLines={2}>
+              {title}
+            </Text>
+            {description ? (
+              <Text className="text-gray-400 font-instrument text-sm mt-1" numberOfLines={3}>
+                {description}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+        {!compact && (
+          <View style={{ maxHeight: sheetContentMaxHeight }}>
+            <ScrollView
+              style={{ maxHeight: sheetContentMaxHeight }}
+              contentContainerStyle={{ paddingBottom: footer ? 12 : 0 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
+              {children}
+            </ScrollView>
+          </View>
+        )}
+        {footer ? (
+          <View className="pt-4 border-t border-[#2A2A2A] mt-4">
+            {footer}
+          </View>
+        ) : null}
+      </BottomSheet>
+    );
+  }
 
   return (
     <Modal

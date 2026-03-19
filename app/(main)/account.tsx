@@ -6,6 +6,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useMemo } from 'react';
@@ -15,7 +16,7 @@ import {
   MigrationHistoryModal,
   SmartleadMigrationWizardModal,
 } from '@/components/account/smartleadMigration';
-import { PageLayout } from '@/components/ui/layout';
+import { LAYOUT_BREAKPOINT, PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
 import { BaseModal } from '@/components/ui/modals';
@@ -32,6 +33,7 @@ import {
   updateMemberRole,
   updateUserProfile,
 } from '@/lib/supabase/services';
+import { signOut } from '@/lib/supabase/client';
 import { sendInvitationEmail } from '@/lib/services/email';
 import type { AccountUser, BlockListEntry, Invitation, SmartleadMigrationRun, User } from '@/lib/supabase/types';
 
@@ -452,6 +454,9 @@ export default function AccountPage() {
   }, [membership, refetchAccountData]);
 
   const isOwner = membership?.membership.is_owner ?? false;
+  const { width } = useWindowDimensions();
+  const isMobile = width < LAYOUT_BREAKPOINT;
+
   return (
     <PageLayout contentPadding={0} scrollable={false}>
       <ScrollView
@@ -916,6 +921,19 @@ export default function AccountPage() {
             </>
           )}
             </View>
+
+            {isMobile && (
+              <View className="w-full mt-8">
+                <Button
+                  variant="destructive"
+                  size="default"
+                  className="w-full"
+                  onPress={() => signOut()}
+                >
+                  Sign out
+                </Button>
+              </View>
+            )}
           </View>
         </ScrollView>
     </PageLayout>

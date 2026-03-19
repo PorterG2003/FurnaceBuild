@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* PWA safe areas: bottom inset in browser; none when installed (standalone) */
+[data-testid="safe-area-root"] {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (display-mode: standalone) {
+  [data-testid="safe-area-root"] {
+    padding-bottom: 0;
+  }
+}
+
 /* Font CSS Variables for web compatibility */
 :root {
   --font-instrument: 'Instrument Sans', system-ui, sans-serif;

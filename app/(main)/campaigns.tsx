@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, useWindowDimensions } from 'react-native';
 import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
+import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
 import { HeaderAddButton } from '@/components/ui/HeaderAddButton';
 import { IconButton } from '@/components/ui/icon-button';
@@ -327,8 +328,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   if (isMobileLayout) {
     return (
       <>
-        <Pressable onPress={handleCardPress}>
-          <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
+        <Card variant="card" onPress={handleCardPress} className="mb-4">
             {/* Block 1 — Identity (smaller name on mobile to reduce cut-off) */}
             <View className="flex-row gap-3 mb-3">
               <View className="mt-0.5">
@@ -385,8 +385,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
                 <StatColumn icon={ExclamationTriangleIcon} value={bounceCount} label="Bounced" color="#f59e0b" size={statSize} />
               </View>
             </View>
-          </View>
-        </Pressable>
+        </Card>
         {smartleadModal}
       </>
     );
@@ -394,8 +393,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
 
   return (
     <>
-      <Pressable onPress={handleCardPress}>
-        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4 relative">
+      <Card variant="card" onPress={handleCardPress} className="mb-4 relative">
           <View className="flex-row items-start gap-4">
             {campaignBlockDesktop}
             {statsBlockDesktop}
@@ -403,8 +401,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
           <View className="absolute right-4 top-4">
             {toolsBlockDesktop}
           </View>
-        </View>
-      </Pressable>
+        </Card>
       <ConfirmDeleteModal
         visible={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}

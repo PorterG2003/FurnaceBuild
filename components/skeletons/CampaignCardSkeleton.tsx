@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { View, Animated, useWindowDimensions } from 'react-native';
 import { Skeleton } from '@/components/ui/feedback';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
+import { Card } from '@/components/ui/Card';
 
 const useNativeDriver = typeof window === 'undefined';
 const STAGGER_DELAY_MS = 60;
@@ -76,7 +77,7 @@ function SingleCampaignCardSkeleton({ index, isMobileLayout }: { index: number; 
   if (isMobileLayout) {
     return (
       <StaggeredFadeIn index={index}>
-        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
+        <Card variant="card" className="mb-4">
           {/* Block 1 — Identity (dial 48 + smaller name/pill/date/next) */}
           <View className="flex-row gap-3 mb-3">
             <View className="mt-0.5">
@@ -103,14 +104,14 @@ function SingleCampaignCardSkeleton({ index, isMobileLayout }: { index: number; 
               <SingleStatSkeleton />
             </View>
           </View>
-        </View>
+        </Card>
       </StaggeredFadeIn>
     );
   }
 
   return (
     <StaggeredFadeIn index={index}>
-      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4 relative">
+      <Card variant="card" className="mb-4 relative">
         <View className="flex-row items-start gap-4">
           {campaignBlockDesktop}
           {statsBlockDesktop}
@@ -118,7 +119,7 @@ function SingleCampaignCardSkeleton({ index, isMobileLayout }: { index: number; 
         <View className="absolute right-4 top-4">
           {toolsBlock}
         </View>
-      </View>
+      </Card>
     </StaggeredFadeIn>
   );
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { PageLayout, Breadcrumb } from '@/components/ui/layout';
+import { PageLayout, DetailPageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { LoadingState, Alert } from '@/components/ui/feedback';
 import { MultiSegmentDial } from '@/components/ui/multi-segment-dial';
 import { FlowDiagram, LeadsTable, ScheduleTab, type Lead } from '@/components/campaigns';
@@ -84,6 +84,8 @@ export default function CampaignPage() {
   const [campaignStats, setCampaignStats] = useState<CampaignStats | null>(null);
   const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
 
+  const { width: screenWidth } = useWindowDimensions();
+  const isMobile = screenWidth < LAYOUT_BREAKPOINT;
   const isSmartlead = isSmartleadCampaign(campaign);
 
   const loadCampaign = useCallback(async (silent = false) => {
@@ -332,29 +334,17 @@ export default function CampaignPage() {
     ? format(utcToZonedTime(new Date(), schedule.timezone), 'HH:mm')
     : null;
 
-  return (
-    <PageLayout scrollable={false} contentPadding={0}>
-      <View
-        style={{
-          backgroundColor: '#121212',
-          borderBottomWidth: 1,
-          borderBottomColor: '#2A2A2A',
-          paddingHorizontal: 24,
-          paddingVertical: 16,
-          zIndex: 10,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Breadcrumb
-          items={[
-            { label: 'Campaigns', href: '/campaigns' },
-            {
-              label: isLoading ? 'Loading...' : campaign?.name || 'Campaign',
-            },
-          ]}
-        />
+  const detailHeader = (
+    <DetailPageHeader
+      breadcrumbItems={[
+        { label: 'Campaigns', href: '/campaigns' },
+        {
+          label: isLoading ? 'Loading...' : campaign?.name ?? 'Campaign',
+        },
+      ]}
+      backHref="/campaigns"
+      title={isLoading ? 'Loading...' : campaign?.name ?? 'Campaign'}
+      actions={
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Pressable
             onPress={handleRefresh}
@@ -377,62 +367,53 @@ export default function CampaignPage() {
             </View>
           </Pressable>
           {isSmartlead ? (
-            <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
-              <Pressable
-                onPress={handleOpenMissionControl}
-                className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-                style={{ opacity: 0.5 }}
-              >
-                <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
-              </Pressable>
-            </Tooltip>
-          ) : (
+          <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
             <Pressable
               onPress={handleOpenMissionControl}
               className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+              style={{ opacity: 0.5 }}
             >
               <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
             </Pressable>
-          )}
+          </Tooltip>
+        ) : (
+          <Pressable
+            onPress={handleOpenMissionControl}
+            className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+          >
+            <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
+          </Pressable>
+        )}
           {isSmartlead ? (
-            <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
-              <Pressable
-                onPress={handleEditFlow}
-                className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-                style={{ opacity: 0.5 }}
-              >
-                <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
-              </Pressable>
-            </Tooltip>
-          ) : (
+          <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
             <Pressable
               onPress={handleEditFlow}
               className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+              style={{ opacity: 0.5 }}
             >
               <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
             </Pressable>
-          )}
-        </View>
-      </View>
-
-      {isLoading ? (
-        <LoadingState message="Loading campaign..." />
-      ) : loadError ? (
-        <View style={{ padding: 24 }}>
-          <Alert variant="error" message={loadError} actionText="Retry" onAction={() => loadCampaign()} />
-        </View>
-      ) : campaign ? (
-        <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 16 }}>
-          <Tabs tabs={isSmartlead ? [{ id: 'details', label: 'Details' }, { id: 'leads', label: 'Leads' }] : tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: 24 }}
-            showsVerticalScrollIndicator={false}
+          </Tooltip>
+        ) : (
+          <Pressable
+            onPress={handleEditFlow}
+            className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
           >
+            <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
+          </Pressable>
+        )}
+        </View>
+      }
+    />
+  );
+
+  const tabContent = campaign ? (
+    <View className={isMobile ? 'pt-0' : 'pt-4'}>
+      <Tabs tabs={isSmartlead ? [{ id: 'details', label: 'Details' }, { id: 'leads', label: 'Leads' }] : tabs} activeTab={activeTab} onTabChange={setActiveTab} layout={isMobile ? 'equal' : 'content'} />
             {activeTab === 'details' && (
               <>
-                <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 mb-4">
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+                <View className={isMobile ? 'mb-4 pt-0 pb-0' : 'bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 mb-4'}>
+                  <View className={`flex-row items-center justify-between ${isMobile ? 'mb-3' : 'mb-6'}`}>
                     <Text className="text-lg font-instrument-semibold text-white">Campaign Overview</Text>
                     <View
                       className="px-3 py-1 rounded-lg"
@@ -462,7 +443,7 @@ export default function CampaignPage() {
                   </View>
 
                   <View style={{ gap: 24 }}>
-                    <View style={{ flexDirection: 'row', gap: 24 }}>
+                    <View style={{ flexDirection: isMobile ? 'column' : 'row', gap: 24 }}>
                       <View style={{ flex: 1, gap: 12 }}>
                         <View>
                           <Text className="text-gray-400 font-instrument text-xs mb-1">Created</Text>
@@ -533,65 +514,47 @@ export default function CampaignPage() {
                         )}
                       </View>
 
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text className="text-gray-400 font-instrument text-xs mb-3">Lead Progress</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 80, flexWrap: 'wrap' }}>
-                          <MultiSegmentDial
-                            segments={[
-                              { value: leadsNotStarted, color: '#6b7280' },
-                              { value: leadsInProgress, color: '#3b82f6' },
-                              { value: leadsPaused, color: '#8b5cf6' },
-                              { value: leadsCompleted, color: '#10b981' },
-                              { value: leadsStopped, color: '#f59e0b' },
-                            ]}
-                            total={leadCount}
-                            size={150}
-                            strokeWidth={10}
-                            centerValue={leadsCompleted + leadsStopped}
-                            centerTotal={leadCount}
-                            centerTopLabel="Completed"
-                            centerBottomLabel="Total"
-                          />
-                          <View style={{ flex: 1, minWidth: 140 }}>
+                      <View style={{ flex: isMobile ? undefined : 1, minWidth: 0 }}>
+                        <Text className="text-gray-400 font-instrument text-xs mb-3" style={isMobile ? { marginBottom: 8 } : undefined}>Lead Progress</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: isMobile ? 36 : 80, flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
+                          <View style={isMobile ? { width: 100, height: 100, flexShrink: 0 } : undefined}>
+                            <MultiSegmentDial
+                              segments={[
+                                { value: leadsNotStarted, color: '#6b7280' },
+                                { value: leadsInProgress, color: '#3b82f6' },
+                                { value: leadsPaused, color: '#8b5cf6' },
+                                { value: leadsCompleted, color: '#10b981' },
+                                { value: leadsStopped, color: '#f59e0b' },
+                              ]}
+                              total={leadCount}
+                              size={isMobile ? 100 : 150}
+                              strokeWidth={isMobile ? 8 : 10}
+                              centerValue={leadsCompleted + leadsStopped}
+                              centerTotal={leadCount}
+                              centerTopLabel="Completed"
+                              centerBottomLabel="Total"
+                            />
+                          </View>
+                          <View style={{ flex: 1, minWidth: 0 }}>
                             {leadCount === 0 ? (
-                              <Text className="text-gray-500 font-instrument text-sm">No leads</Text>
+                              <Text className={isMobile ? 'text-gray-500 font-instrument text-xs' : 'text-gray-500 font-instrument text-sm'}>No leads</Text>
                             ) : (
                               <>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
-                                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#6b7280' }} />
-                                    <Text className="text-gray-300 font-instrument text-sm">Not Started</Text>
+                                {[
+                                  { label: 'Not Started', color: '#6b7280', value: leadsNotStarted },
+                                  { label: 'In Progress', color: '#3b82f6', value: leadsInProgress },
+                                  { label: 'Paused', color: '#8b5cf6', value: leadsPaused },
+                                  { label: 'Completed', color: '#10b981', value: leadsCompleted },
+                                  { label: 'Stopped', color: '#f59e0b', value: leadsStopped },
+                                ].map(({ label, color, value }, index) => (
+                                  <View key={label} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: index < 4 ? (isMobile ? 4 : 8) : 0 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: isMobile ? 4 : 8, flex: 1, minWidth: 0 }}>
+                                      <View style={{ width: isMobile ? 6 : 10, height: isMobile ? 6 : 10, borderRadius: 2, backgroundColor: color }} />
+                                      <Text className={isMobile ? 'text-gray-300 font-instrument text-xs' : 'text-gray-300 font-instrument text-sm'} numberOfLines={1}>{label}</Text>
+                                    </View>
+                                    <Text className={isMobile ? 'text-white font-instrument text-xs' : 'text-white font-instrument text-sm'} style={{ marginLeft: isMobile ? 4 : 0, minWidth: isMobile ? 28 : 60, textAlign: 'right' }} numberOfLines={1}>{value.toLocaleString()}</Text>
                                   </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsNotStarted.toLocaleString()}</Text>
-                                </View>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
-                                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#3b82f6' }} />
-                                    <Text className="text-gray-300 font-instrument text-sm">In Progress</Text>
-                                  </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsInProgress.toLocaleString()}</Text>
-                                </View>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
-                                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#8b5cf6' }} />
-                                    <Text className="text-gray-300 font-instrument text-sm">Paused</Text>
-                                  </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsPaused.toLocaleString()}</Text>
-                                </View>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
-                                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#10b981' }} />
-                                    <Text className="text-gray-300 font-instrument text-sm">Completed</Text>
-                                  </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsCompleted.toLocaleString()}</Text>
-                                </View>
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, width: 160 }}>
-                                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#f59e0b' }} />
-                                    <Text className="text-gray-300 font-instrument text-sm">Stopped</Text>
-                                  </View>
-                                  <Text className="text-white font-instrument text-sm" style={{ minWidth: 60, textAlign: 'right' }}>{leadsStopped.toLocaleString()}</Text>
-                                </View>
+                                ))}
                               </>
                             )}
                           </View>
@@ -648,9 +611,42 @@ export default function CampaignPage() {
                 <ScheduleTab campaignId={id!} refreshTrigger={refreshKey} />
               </View>
             )}
-          </ScrollView>
-        </View>
-      ) : null}
+    </View>
+  ) : null;
+
+  return (
+    <PageLayout scrollable={false} mobileLayout="scrollable">
+      {isMobile ? (
+        <>
+          {detailHeader}
+          {isLoading && <LoadingState message="Loading campaign..." />}
+          {loadError && (
+            <Alert variant="error" message={loadError} actionText="Retry" onAction={() => loadCampaign()} />
+          )}
+          {campaign && !isLoading && !loadError && tabContent}
+        </>
+      ) : (
+        <>
+          {detailHeader}
+          {isLoading ? (
+            <LoadingState message="Loading campaign..." />
+          ) : loadError ? (
+            <View style={{ padding: 24 }}>
+              <Alert variant="error" message={loadError} actionText="Retry" onAction={() => loadCampaign()} />
+            </View>
+          ) : campaign ? (
+            <View style={{ flex: 1, paddingHorizontal: 24 }}>
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingTop: 16, paddingBottom: 24 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {tabContent}
+              </ScrollView>
+            </View>
+          ) : null}
+        </>
+      )}
       <SmartleadRestrictedModal
         visible={showSmartleadRestrictedModal}
         onClose={() => setShowSmartleadRestrictedModal(false)}

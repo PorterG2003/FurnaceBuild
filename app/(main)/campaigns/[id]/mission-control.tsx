@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CheckCircleIcon } from 'react-native-heroicons/outline';
-import { PageLayout, Breadcrumb } from '@/components/ui/layout';
+import { PageLayout, DetailPageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { LoadingState, Alert } from '@/components/ui/feedback';
 import { Button } from '@/components/ui/button';
 import { FlowDiagram } from '@/components/campaigns';
@@ -159,55 +159,48 @@ export default function MissionControlPage() {
     { label: 'Mailboxes', done: mailboxesAdded, summary: mailboxesAdded ? `${mailboxes.length} mailbox${mailboxes.length !== 1 ? 'es' : ''} assigned` : 'No mailboxes assigned' },
   ];
 
+  const { width } = useWindowDimensions();
+  const isMobile = width < LAYOUT_BREAKPOINT;
+
+  const missionControlHeader = (
+    <DetailPageHeader
+      breadcrumbItems={[
+        { label: 'Campaigns', href: '/campaigns' },
+        {
+          label: isLoading ? 'Loading...' : (campaign?.name || 'Campaign'),
+          href: id ? `/campaigns/${id}` : undefined,
+        },
+        { label: 'Mission Control' },
+      ]}
+      backHref={id ? `/campaigns/${id}` : '/campaigns'}
+      title="Mission Control"
+      actions={
+        <Pressable
+          onPress={handleBack}
+          className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+        >
+          <Text className="text-white font-instrument-medium text-sm">Back</Text>
+        </Pressable>
+      }
+    />
+  );
+
   return (
     <PageLayout scrollable={false} contentPadding={0}>
-      {/* Header */}
-      <View
-        style={{
-          backgroundColor: '#121212',
-          borderBottomWidth: 1,
-          borderBottomColor: '#2A2A2A',
-          zIndex: 10,
-        }}
-      >
+      {!isMobile && missionControlHeader}
+
+      {/* Status bar for running/paused/stopped campaigns (desktop only; on mobile it's inside the ScrollView below) */}
+      {!isMobile && !isLoading && !loadError && (isRunning || isPaused || campaign?.status === 'stopped') && (
         <View
           style={{
+            backgroundColor: '#121212',
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
             paddingHorizontal: 24,
-            paddingVertical: 16,
+            paddingBottom: 16,
           }}
         >
-          <Breadcrumb
-            items={[
-              { label: 'Campaigns', href: '/campaigns' },
-              {
-                label: isLoading ? 'Loading...' : (campaign?.name || 'Campaign'),
-                href: id ? `/campaigns/${id}` : undefined,
-              },
-              { label: 'Mission Control' },
-            ]}
-          />
-          <Pressable
-            onPress={handleBack}
-            className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-          >
-            <Text className="text-white font-instrument-medium text-sm">Back</Text>
-          </Pressable>
-        </View>
-
-        {/* Status bar for running/paused/stopped campaigns */}
-        {!isLoading && !loadError && (isRunning || isPaused || campaign?.status === 'stopped') && (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingHorizontal: 24,
-              paddingBottom: 16,
-            }}
-          >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               {(isRunning || isPaused) && (
                 <View
@@ -252,22 +245,71 @@ export default function MissionControlPage() {
               </View>
             )}
           </View>
-        )}
-      </View>
+      )}
 
       {/* Content */}
       {isLoading ? (
-        <LoadingState message="Loading mission control..." />
+        <>
+          {isMobile && missionControlHeader}
+          <LoadingState message="Loading mission control..." />
+        </>
       ) : loadError ? (
-        <View style={{ padding: 24 }}>
-          <Alert variant="error" message={loadError} actionText="Retry" onAction={loadCampaign} />
-        </View>
+        <>
+          {isMobile && missionControlHeader}
+          <View style={{ padding: 24 }}>
+            <Alert variant="error" message={loadError} actionText="Retry" onAction={loadCampaign} />
+          </View>
+        </>
       ) : (
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{ padding: 24 }}
           showsVerticalScrollIndicator={false}
         >
+          {isMobile && missionControlHeader}
+          {isMobile && (isRunning || isPaused || campaign?.status === 'stopped') && (
+            <View className="bg-[#121212] flex-row items-center justify-between pb-4">
+              <View className="flex-row items-center gap-2">
+                {(isRunning || isPaused) && (
+                  <View
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: isRunning ? '#F3440D' : '#F59E0B' }}
+                  />
+                )}
+                <Text className="text-gray-400 font-instrument text-sm">
+                  {isRunning && 'Campaign is running'}
+                  {isPaused && 'Campaign is paused'}
+                  {campaign?.status === 'stopped' && 'This campaign has been stopped'}
+                </Text>
+              </View>
+              {isRunning && (
+                <View className="flex-row gap-2">
+                  <Pressable
+                    onPress={handlePause}
+                    disabled={isPausing}
+                    className="py-1.5 px-3 rounded-lg border border-amber-500/50 bg-amber-500/10"
+                  >
+                    <Text className="text-amber-400 font-instrument-medium text-sm">
+                      {isPausing ? 'Pausing...' : 'Pause'}
+                    </Text>
+                  </Pressable>
+                  <Button onPress={handleStop} disabled={isStopping} variant="secondary">
+                    {isStopping ? 'Stopping...' : 'Stop'}
+                  </Button>
+                </View>
+              )}
+              {isPaused && (
+                <View className="flex-row gap-2">
+                  <Button onPress={handleResume} disabled={isStarting}>
+                    {isStarting ? 'Resuming...' : 'Resume'}
+                  </Button>
+                  <Button onPress={handleStop} disabled={isStopping} variant="secondary">
+                    {isStopping ? 'Stopping...' : 'Stop'}
+                  </Button>
+                </View>
+              )}
+            </View>
+          )}
           {/* Flow Card (full-width). Height scales with node count so the full flow fits. */}
           <Pressable
             onPress={handleEditFlow}

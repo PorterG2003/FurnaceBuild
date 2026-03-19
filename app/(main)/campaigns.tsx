@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, useWindowDimensions } from 'react-native';
-import { PageLayout } from '@/components/ui/layout';
+import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
+import { HeaderAddButton } from '@/components/ui/HeaderAddButton';
+import { IconButton } from '@/components/ui/icon-button';
+import { StatColumn } from '@/components/ui/StatColumn';
 import { Alert, EmptyState, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { CampaignListSkeleton } from '@/components/skeletons';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ConfirmDeleteModal } from '@/components/ui/modals';
 import { useRouter } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
 import { getCampaigns, createCampaign, deleteCampaign, getCampaignStatsForCampaigns, type CampaignStats } from '@/lib/supabase/services/campaigns';
@@ -21,12 +24,13 @@ import {
 import { ProgressDial } from '@/components/ui/progress-dial';
 import { isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { CampaignStatusPill } from '@/components/campaigns';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 
 const STAT_COLUMN_WIDTH = 72;
 const POSITIVE_COLUMN_WIDTH = 88;
-const STAT_COLUMN_GAP = 16;
-const NARROW_BREAKPOINT = 600;
+/** Below this width (mobile only), use extra-small stat variant and tighter layout */
+const EXTRA_NARROW_BREAKPOINT = 360;
 
 interface CreateCampaignModalProps {
   visible: boolean;
@@ -102,13 +106,7 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
           }}
           placeholder="Enter campaign name"
           placeholderTextColor="#666"
-          className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
-          style={{
-            borderColor: '#FFFFFF4D',
-            backgroundColor: '#FFFFFF0D',
-            color: '#FFFFFF',
-            borderWidth: 1,
-          }}
+          className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white border-[#FFFFFF4D] bg-[#FFFFFF0D]"
           selectionColor="#FF4D00"
           underlineColorAndroid="transparent"
           autoFocus
@@ -149,37 +147,12 @@ function hasFlow(campaign: Campaign): boolean {
   }
 }
 
-function CampaignStatusPill({ status }: { status: string }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    draft: { bg: '#374151', text: '#9CA3AF' },
-    running: { bg: '#065F46', text: '#10B981' },
-    paused: { bg: '#78350F', text: '#F59E0B' },
-    stopped: { bg: '#44403C', text: '#A8A29E' },
-  };
-  const s = status?.toLowerCase() in colors ? status.toLowerCase() : 'draft';
-  const { bg, text } = colors[s] || colors.draft;
-  return (
-    <View
-      style={{
-        backgroundColor: bg,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 8,
-      }}
-    >
-      <Text style={{ color: text, fontSize: 12, fontWeight: '500' }}>
-        {status === 'draft' ? 'Draft' : status === 'running' ? 'Running' : status === 'paused' ? 'Paused' : 'Stopped'}
-      </Text>
-    </View>
-  );
-}
-
 function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardProps) {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSmartleadModal, setShowSmartleadModal] = useState(false);
-  const isNarrow = screenWidth < NARROW_BREAKPOINT;
+  const isMobileLayout = screenWidth < LAYOUT_BREAKPOINT;
   const isDraft = campaign.status === 'draft';
   const draftHasFlow = hasFlow(campaign);
   const isSmartlead = isSmartleadCampaign(campaign);
@@ -221,7 +194,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
 
   const handleDelete = async () => {
     await onDelete(campaign.id);
-    setShowDeleteConfirm(false);
+    setShowDeleteModal(false);
   };
 
   const handleEditFlow = () => {
@@ -232,36 +205,38 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   const repliedPct = sentCount > 0 ? Math.round((repliedCount / sentCount) * 100) : 0;
   const positivePct = repliedCount > 0 ? Math.round((positiveReplyCount / repliedCount) * 100) : 0;
 
-  const StatColumn = ({
-    icon: Icon,
-    value,
-    pct,
-    label,
-    color,
-  }: {
-    icon: React.ComponentType<{ size?: number; color?: string }>;
-    value: number;
-    pct?: number;
-    label: string;
-    color: string;
-  }) => (
-    <View style={{ alignItems: 'center' }}>
-      <View style={{ marginBottom: 4 }}>
-        <Icon size={16} color={color} />
+  const statCells = (
+    <>
+      <View className="w-[72px] items-center">
+        <StatColumn icon={PaperAirplaneIcon} value={sentCount} label="Sent" color="#a78bfa" />
       </View>
-      <Text className="font-instrument-semibold text-base" style={{ color }}>
-        {value}
-        {pct !== undefined ? (
-          <Text className="text-gray-500 font-instrument text-sm"> ({pct}%)</Text>
-        ) : null}
-      </Text>
-      <Text className="text-gray-500 font-instrument text-xs mt-0.5">{label}</Text>
-    </View>
+      <View className="w-[72px] items-center">
+        <StatColumn
+          icon={ArrowUturnLeftIcon}
+          value={repliedCount}
+          pct={repliedPct}
+          label="Replied"
+          color="#14b8a6"
+        />
+      </View>
+      <View className="w-[88px] items-center">
+        <StatColumn
+          icon={CheckCircleIcon}
+          value={positiveReplyCount}
+          pct={positivePct}
+          label="Positive Reply"
+          color="#10b981"
+        />
+      </View>
+      <View className="w-[72px] items-center">
+        <StatColumn icon={ExclamationTriangleIcon} value={bounceCount} label="Bounced" color="#f59e0b" />
+      </View>
+    </>
   );
 
-  const campaignBlock = (
-    <View className="flex-row" style={{ gap: 12, flex: isNarrow ? undefined : 1, maxWidth: isNarrow ? undefined : '35%', minWidth: 0 }}>
-      <View style={{ marginTop: 2 }}>
+  const campaignBlockDesktop = (
+    <View className="flex-row gap-3 flex-1 max-w-[35%] min-w-0">
+      <View className="mt-0.5">
         <ProgressDial
           value={completionValue}
           total={completionTotal}
@@ -270,7 +245,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
           size={56}
         />
       </View>
-      <View className="flex-1" style={{ minWidth: 0 }}>
+      <View className="flex-1 min-w-0">
         <View className="flex-row items-center gap-2 mb-1 flex-wrap">
           <Text className="text-white font-instrument-semibold text-lg">
             {campaign.name}
@@ -291,104 +266,54 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
     </View>
   );
 
-  const statsBlock = (
-    <View
-      style={{
-        flexDirection: 'row',
-        flex: isNarrow ? undefined : 0,
-        flexBasis: isNarrow ? undefined : '40%',
-        flexShrink: isNarrow ? undefined : 0,
-        justifyContent: isNarrow ? 'flex-start' : 'space-around',
-        gap: isNarrow ? STAT_COLUMN_GAP : 0,
-      }}
-    >
-      <View style={{ width: STAT_COLUMN_WIDTH, alignItems: 'center' }}>
-        <StatColumn icon={PaperAirplaneIcon} value={sentCount} label="Sent" color="#a78bfa" />
-      </View>
-      <View style={{ width: STAT_COLUMN_WIDTH, alignItems: 'center' }}>
-        <StatColumn
-          icon={ArrowUturnLeftIcon}
-          value={repliedCount}
-          pct={repliedPct}
-          label="Replied"
-          color="#14b8a6"
-        />
-      </View>
-      <View style={{ width: POSITIVE_COLUMN_WIDTH, alignItems: 'center' }}>
-        <StatColumn
-          icon={CheckCircleIcon}
-          value={positiveReplyCount}
-          pct={positivePct}
-          label="Positive Reply"
-          color="#10b981"
-        />
-      </View>
-      <View style={{ width: STAT_COLUMN_WIDTH, alignItems: 'center' }}>
-        <StatColumn icon={ExclamationTriangleIcon} value={bounceCount} label="Bounced" color="#f59e0b" />
-      </View>
+  const statsBlockDesktop = (
+    <View className="flex-row flex-none basis-[40%] shrink-0 justify-around">
+      {statCells}
     </View>
   );
 
-  const toolsBlock = showDeleteConfirm ? (
-          <View className="flex-row gap-2">
-            <Pressable
-              onPress={() => setShowDeleteConfirm(false)}
-              className="px-3 py-1.5 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-            >
-              <Text className="text-white font-instrument-medium text-sm">Cancel</Text>
-            </Pressable>
-            <Pressable
-              onPress={handleDelete}
-              disabled={isDeleting}
-              className="px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/30"
-            >
-              <Text className="text-red-400 font-instrument-medium text-sm">
-                {isDeleting ? 'Deleting...' : 'Confirm'}
-              </Text>
-            </Pressable>
+  const toolsBlockDesktop = (
+    <View className="flex-row gap-2 items-center">
+      {isDraft && !isSmartlead && (
+        <Button
+          onPress={handleContinueSetup}
+          className="rounded-lg bg-[#f85102]"
+        >
+          Mission Control
+        </Button>
+      )}
+      {isSmartlead ? (
+        <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
+          <View className="opacity-50">
+            <IconButton
+              icon={PencilIcon}
+              variant="secondary"
+              onPress={handleEditFlow}
+              className="min-w-[44px] min-h-[44px]"
+            />
           </View>
-        ) : (
-          <View className="flex-row gap-2 items-center">
-            {isDraft && !isSmartlead && (
-              <Pressable
-                onPress={handleContinueSetup}
-                className="px-4 py-2 rounded-lg bg-brand-orange"
-                style={{ backgroundColor: '#f85102' }}
-              >
-                <Text className="text-white font-instrument-medium text-sm">
-                  Mission Control
-                </Text>
-              </Pressable>
-            )}
-            {isSmartlead ? (
-              <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
-                <Pressable
-                  onPress={handleEditFlow}
-                  className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-                  style={{ opacity: 0.5 }}
-                >
-                  <PencilIcon size={18} color="#f85102" />
-                </Pressable>
-              </Tooltip>
-            ) : (
-              <Pressable
-                onPress={handleEditFlow}
-                className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-              >
-                <PencilIcon size={18} color="#f85102" />
-              </Pressable>
-            )}
-            <Pressable
-              onPress={() => setShowDeleteConfirm(true)}
-              className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-              disabled={isDeleting}
-            >
-              <TrashIcon size={18} color="#ef4444" />
-            </Pressable>
-          </View>
+        </Tooltip>
+      ) : (
+        <IconButton
+          icon={PencilIcon}
+          variant="secondary"
+          onPress={(e) => { e?.stopPropagation?.(); handleEditFlow(); }}
+          className="min-w-[44px] min-h-[44px]"
+        />
+      )}
+      <IconButton
+        icon={TrashIcon}
+        variant="destructive"
+        onPress={(e) => { e?.stopPropagation?.(); setShowDeleteModal(true); }}
+        disabled={isDeleting}
+        className="min-w-[44px] min-h-[44px]"
+      />
+    </View>
   );
 
-  const handleCardPress = isSmartlead ? handleOpen : (isDraft ? handleContinueSetup : handleOpen);
+  const handleCardPress = isMobileLayout ? handleOpen : (isSmartlead ? handleOpen : (isDraft ? handleContinueSetup : handleOpen));
+  const isExtraNarrow = isMobileLayout && screenWidth < EXTRA_NARROW_BREAKPOINT;
+  const statSize = isExtraNarrow ? 'xs' : 'default';
 
   const smartleadModal = isSmartlead ? (
     <SmartleadRestrictedModal
@@ -399,16 +324,67 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
     />
   ) : null;
 
-  if (isNarrow) {
+  if (isMobileLayout) {
     return (
       <>
         <Pressable onPress={handleCardPress}>
           <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4">
-            <View className="flex-row items-start justify-between" style={{ marginBottom: 12 }}>
-              {campaignBlock}
-              {toolsBlock}
+            {/* Block 1 — Identity (smaller name on mobile to reduce cut-off) */}
+            <View className="flex-row gap-3 mb-3">
+              <View className="mt-0.5">
+                <ProgressDial
+                  value={completionValue}
+                  total={completionTotal}
+                  showAsPercentage
+                  color="#10b981"
+                  size={48}
+                />
+              </View>
+              <View className="flex-1 min-w-0">
+                <Text className="text-white font-instrument-semibold text-base mb-1" numberOfLines={2}>
+                  {campaign.name}
+                </Text>
+                <Text className="text-gray-500 font-instrument text-xs">
+                  Created {formatDate(campaign.created_at)}
+                </Text>
+                {isDraft && (
+                  <Text className="text-gray-400 font-instrument text-xs mt-1">
+                    {draftHasFlow
+                      ? 'Next: Configure schedule & mailboxes to start'
+                      : 'Next: Build your flow'}
+                  </Text>
+                )}
+              </View>
             </View>
-            {statsBlock}
+            {/* Block 2 — Stats: 4 columns with gap so first/last line up on the edges; margin above, no margin below */}
+            <View className="flex-row justify-between items-start mt-3 gap-3 px-2">
+              <View className="items-center">
+                <StatColumn icon={PaperAirplaneIcon} value={sentCount} label="Sent" color="#a78bfa" size={statSize} />
+              </View>
+              <View className="items-center">
+                <StatColumn
+                  icon={ArrowUturnLeftIcon}
+                  value={repliedCount}
+                  pct={repliedPct}
+                  label="Replied"
+                  color="#14b8a6"
+                  size={statSize}
+                />
+              </View>
+              <View className="items-center">
+                <StatColumn
+                  icon={CheckCircleIcon}
+                  value={positiveReplyCount}
+                  pct={positivePct}
+                  label="Positive"
+                  color="#10b981"
+                  size={statSize}
+                />
+              </View>
+              <View className="items-center">
+                <StatColumn icon={ExclamationTriangleIcon} value={bounceCount} label="Bounced" color="#f59e0b" size={statSize} />
+              </View>
+            </View>
           </View>
         </Pressable>
         {smartleadModal}
@@ -419,16 +395,26 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
   return (
     <>
       <Pressable onPress={handleCardPress}>
-        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4" style={{ position: 'relative' }}>
-          <View className="flex-row items-start" style={{ gap: 16 }}>
-            {campaignBlock}
-            {statsBlock}
+        <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 mb-4 relative">
+          <View className="flex-row items-start gap-4">
+            {campaignBlockDesktop}
+            {statsBlockDesktop}
           </View>
-          <View style={{ position: 'absolute', right: 16, top: 16 }}>
-            {toolsBlock}
+          <View className="absolute right-4 top-4">
+            {toolsBlockDesktop}
           </View>
         </View>
       </Pressable>
+      <ConfirmDeleteModal
+        visible={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleDelete}
+        title="Delete campaign?"
+        itemName={campaign.name}
+        confirmLabel="Delete campaign"
+        isLoading={isDeleting}
+        requireConfirmation={false}
+      />
       {smartleadModal}
     </>
   );
@@ -438,6 +424,7 @@ export default function CampaignsPage() {
   const { user, account } = useAccount();
   const { toast } = useToast();
   const router = useRouter();
+  const { width: screenWidth } = useWindowDimensions();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [campaignStats, setCampaignStats] = useState<Record<string, CampaignStats>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -446,6 +433,7 @@ export default function CampaignsPage() {
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const showSkeleton = useSmoothLoading(isLoading);
+  const isMobile = screenWidth < LAYOUT_BREAKPOINT;
 
   const loadCampaigns = async () => {
     if (!account?.id) return;
@@ -513,29 +501,32 @@ export default function CampaignsPage() {
     }
   };
 
+  const newCampaignButton = (
+    <Pressable
+      onPress={() => setShowCreateModal(true)}
+      className="rounded-xl px-6 py-3 flex-row items-center justify-center gap-2 bg-[#f85102]"
+    >
+      <PlusIcon size={20} color="#ffffff" />
+      <Text className="text-white font-instrument-medium text-base">
+        New Campaign
+      </Text>
+    </Pressable>
+  );
+
+  const newCampaignButtonMobile = (
+    <HeaderAddButton
+      onPress={() => setShowCreateModal(true)}
+      accessibilityLabel="New campaign"
+    />
+  );
+
   return (
     <PageLayout>
-      {/* Header */}
-      <View className="flex-row items-center justify-between mb-6">
-        <View>
-          <Text className="text-3xl font-instrument-semibold text-white mb-2">
-            Campaigns
-          </Text>
-          <Text className="text-gray-400 font-instrument">
-            Manage your marketing campaigns
-          </Text>
-        </View>
-        <Pressable
-          onPress={() => setShowCreateModal(true)}
-          className="bg-brand-orange rounded-xl px-6 py-3 flex-row items-center gap-2"
-          style={{ backgroundColor: '#f85102' }}
-        >
-          <PlusIcon size={20} color="#ffffff" />
-          <Text className="text-white font-instrument-medium text-base">
-            New Campaign
-          </Text>
-        </Pressable>
-      </View>
+      <PageHeader
+        title="Campaigns"
+        subtitle="Manage your marketing campaigns"
+        primaryAction={isMobile ? newCampaignButtonMobile : newCampaignButton}
+      />
       {/* Error Message */}
       {error ? (
         <Alert
@@ -556,8 +547,7 @@ export default function CampaignsPage() {
           action={
             <Pressable
               onPress={() => setShowCreateModal(true)}
-              className="bg-brand-orange rounded-xl px-6 py-3 flex-row items-center gap-2"
-              style={{ backgroundColor: '#f85102' }}
+              className={`rounded-xl px-6 py-3 flex-row items-center justify-center gap-2 bg-[#f85102] ${isMobile ? 'w-full' : ''}`}
             >
               <PlusIcon size={20} color="#ffffff" />
               <Text className="text-white font-instrument-medium text-base">

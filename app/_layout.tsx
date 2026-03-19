@@ -9,13 +9,6 @@ import { ToastProvider } from '@/components/ui/feedback';
 import { ConfirmProvider } from '@/components/ui/ConfirmContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 
-/** Safe area wrapper: top inset, app background, bottom inset (overridden in CSS when PWA standalone). */
-const safeAreaRootStyle = {
-  flex: 1,
-  backgroundColor: '#121212',
-  paddingTop: 'env(safe-area-inset-top, 0px)' as unknown as number,
-};
-
 // Suppress pointerEvents deprecation from react-native-web (triggered by @react-navigation)
 if (typeof console !== 'undefined' && console.warn) {
   const originalWarn = console.warn;
@@ -55,6 +48,12 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) {
     return null;
   }
+
+  const safeAreaRootStyle = {
+    flex: 1,
+    backgroundColor: '#121212',
+    paddingTop: 'env(safe-area-inset-top, 0px)' as unknown as number,
+  };
 
   return (
     <AuthProvider>

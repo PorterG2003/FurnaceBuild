@@ -73,8 +73,15 @@ function WebIndicator({ activeIndex }: { activeIndex: number }) {
   const [displayX, setDisplayX] = useState(() => indicatorX(persistedActiveIndex));
 
   useEffect(() => {
-    setDisplayX(indicatorX(activeIndex));
+    const targetX = indicatorX(activeIndex);
+    // Defer update so Safari paints the "from" state before transitioning to "to"
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setDisplayX(targetX);
+      });
+    });
     persistedActiveIndex = activeIndex;
+    return () => cancelAnimationFrame(id);
   }, [activeIndex]);
 
   return (
@@ -82,12 +89,13 @@ function WebIndicator({ activeIndex }: { activeIndex: number }) {
       style={[
         INDICATOR_BASE,
         {
-          transform: [{ translateX: displayX }],
+          transform: [{ translateX: displayX }, { translateZ: 0 }],
           // CSS properties passed through by react-native-web
           ...(({
             transitionProperty: 'transform',
             transitionDuration: `${TRANSITION_DURATION}ms`,
             transitionTimingFunction: EASING_CSS,
+            willChange: 'transform',
           }) as any),
         },
       ]}

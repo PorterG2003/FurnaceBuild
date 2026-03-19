@@ -2,14 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* PWA safe areas: bottom inset in browser; none when installed (standalone) */
-[data-testid="safe-area-root"] {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-@media (display-mode: standalone) {
-  [data-testid="safe-area-root"] {
-    padding-bottom: 0;
-  }
+/* App background so viewport is never white (backup if index.html is generated) */
+html,
+body,
+#root {
+  background-color: #121212;
+  min-height: 100dvh;
 }
 
 /* Font CSS Variables for web compatibility */

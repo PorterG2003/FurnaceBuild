@@ -24,9 +24,9 @@ function StaggeredFadeIn({ index, children }: { index: number; children: ReactNo
 function SingleStatSkeleton() {
   return (
     <View className="items-center">
-      <Skeleton className="w-4 h-4 rounded mb-1" />
-      <Skeleton className="w-7 h-4 rounded" />
-      <Skeleton className="w-10 h-3 rounded mt-1" />
+      <Skeleton style={{ width: 16, height: 16, borderRadius: 4, marginBottom: 4 }} />
+      <Skeleton style={{ width: 28, height: 16, borderRadius: 4 }} />
+      <Skeleton style={{ width: 40, height: 12, borderRadius: 4, marginTop: 4 }} />
     </View>
   );
 }
@@ -35,15 +35,15 @@ function SingleCampaignCardSkeleton({ index, isMobileLayout }: { index: number; 
   const campaignBlockDesktop = (
     <View className="flex-row gap-3 flex-1 max-w-[35%] min-w-0">
       <View className="mt-0.5">
-        <Skeleton className="w-14 h-14 rounded-full" />
+        <Skeleton style={{ width: 56, height: 56, borderRadius: 28 }} />
       </View>
       <View className="flex-1 min-w-0">
         <View className="flex-row items-center gap-2 mb-1 flex-wrap">
-          <Skeleton className="w-[180px] h-5 rounded" />
-          <Skeleton className="w-[72px] h-6 rounded-lg" />
+          <Skeleton style={{ width: 180, height: 20, borderRadius: 4 }} />
+          <Skeleton style={{ width: 72, height: 24, borderRadius: 8 }} />
         </View>
-        <Skeleton className="w-[220px] h-3.5 rounded mb-1" />
-        <Skeleton className="w-[120px] h-3 rounded" />
+        <Skeleton style={{ width: 220, height: 14, borderRadius: 4, marginBottom: 4 }} />
+        <Skeleton style={{ width: 120, height: 12, borderRadius: 4 }} />
       </View>
     </View>
   );
@@ -67,9 +67,9 @@ function SingleCampaignCardSkeleton({ index, isMobileLayout }: { index: number; 
 
   const toolsBlock = (
     <View className="flex-row gap-2 items-center">
-      <Skeleton className="w-[100px] h-8 rounded-lg" />
-      <Skeleton className="w-11 h-11 rounded-lg" />
-      <Skeleton className="w-11 h-11 rounded-lg" />
+      <Skeleton style={{ width: 100, height: 32, borderRadius: 8 }} />
+      <Skeleton style={{ width: 44, height: 44, borderRadius: 8 }} />
+      <Skeleton style={{ width: 44, height: 44, borderRadius: 8 }} />
     </View>
   );
 
@@ -80,12 +80,12 @@ function SingleCampaignCardSkeleton({ index, isMobileLayout }: { index: number; 
           {/* Block 1 — Identity (dial 48 + smaller name/pill/date/next) */}
           <View className="flex-row gap-3 mb-3">
             <View className="mt-0.5">
-              <Skeleton className="w-12 h-12 rounded-full" />
+              <Skeleton style={{ width: 48, height: 48, borderRadius: 24 }} />
             </View>
             <View className="flex-1 min-w-0">
-              <Skeleton className="w-[140px] h-4 rounded mb-1" />
-              <Skeleton className="w-[100px] h-3 rounded mb-1" />
-              <Skeleton className="w-[180px] h-3 rounded" />
+              <Skeleton style={{ width: 140, height: 16, borderRadius: 4, marginBottom: 4 }} />
+              <Skeleton style={{ width: 100, height: 12, borderRadius: 4, marginBottom: 4 }} />
+              <Skeleton style={{ width: 180, height: 12, borderRadius: 4 }} />
             </View>
           </View>
           {/* Block 2 — 4-column stats row (no margin below) */}

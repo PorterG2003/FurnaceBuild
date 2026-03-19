@@ -35,6 +35,15 @@ body,
   color: #D63B0B !important;
 }
 
+/* Prevent iOS PWA zoom on input focus (Safari zooms when font-size < 16px) */
+@supports (-webkit-touch-callout: none) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="image"]):not([type="hidden"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* Override input focus colors */
 [class*="amplify-input"]:focus,
 [class*="amplify-select"]:focus,
@@ -508,7 +517,7 @@ input[type="password"]:focus {
   border: 1px solid #3A3A3A;
   border-radius: 12px;
   color: #FFFFFF;
-  font-size: 15px;
+  font-size: 16px; /* 16px minimum prevents iOS zoom on focus */
   font-family: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
   transition: border-color 0.15s;
 }

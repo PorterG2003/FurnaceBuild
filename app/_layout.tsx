@@ -4,9 +4,13 @@ import { useFonts, InstrumentSans_400Regular, InstrumentSans_500Medium, Instrume
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { View } from 'react-native';
 import { ToastProvider } from '@/components/ui/feedback';
 import { ConfirmProvider } from '@/components/ui/ConfirmContext';
 import { AuthProvider } from '@/contexts/AuthContext';
+
+/** Top safe area for PWA (notch/status bar). Uses CSS env() so no JS inset logic needed. */
+const safeAreaTopStyle = { flex: 1, paddingTop: 'env(safe-area-inset-top, 0px)' as unknown as number };
 
 // Suppress pointerEvents deprecation from react-native-web (triggered by @react-navigation)
 if (typeof console !== 'undefined' && console.warn) {
@@ -52,8 +56,10 @@ export default function RootLayout() {
     <AuthProvider>
       <ToastProvider>
         <ConfirmProvider>
-          <StatusBar style="auto" />
-          <Slot />
+          <View style={safeAreaTopStyle}>
+            <StatusBar style="auto" />
+            <Slot />
+          </View>
         </ConfirmProvider>
       </ToastProvider>
     </AuthProvider>

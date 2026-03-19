@@ -9,8 +9,12 @@ import { ToastProvider } from '@/components/ui/feedback';
 import { ConfirmProvider } from '@/components/ui/ConfirmContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 
-/** Top safe area for PWA (notch/status bar). Uses CSS env() so no JS inset logic needed. */
-const safeAreaTopStyle = { flex: 1, paddingTop: 'env(safe-area-inset-top, 0px)' as unknown as number };
+/** Safe area wrapper: top inset, app background, bottom inset (overridden in CSS when PWA standalone). */
+const safeAreaRootStyle = {
+  flex: 1,
+  backgroundColor: '#121212',
+  paddingTop: 'env(safe-area-inset-top, 0px)' as unknown as number,
+};
 
 // Suppress pointerEvents deprecation from react-native-web (triggered by @react-navigation)
 if (typeof console !== 'undefined' && console.warn) {
@@ -56,7 +60,7 @@ export default function RootLayout() {
     <AuthProvider>
       <ToastProvider>
         <ConfirmProvider>
-          <View style={safeAreaTopStyle}>
+          <View style={safeAreaRootStyle} testID="safe-area-root">
             <StatusBar style="auto" />
             <Slot />
           </View>

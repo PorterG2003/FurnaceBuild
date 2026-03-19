@@ -4,17 +4,28 @@ import { NavBar } from './NavBar';
 import { BottomNavBar, BOTTOM_NAV_SCROLL_PADDING } from './BottomNavBar';
 import { LAYOUT_BREAKPOINT } from './constants';
 
+export type MobileLayoutMode = 'scrollable' | 'fixed';
+
 interface PageLayoutProps {
   children: React.ReactNode;
   /**
-   * If true, wraps children in a ScrollView with default padding
-   * If false, children are rendered as-is without ScrollView
+   * If true, wraps children in a ScrollView with default padding (desktop).
+   * If false, children are rendered as-is without ScrollView (desktop).
    */
   scrollable?: boolean;
   /**
-   * Padding for scrollable content (default: 24)
+   * Mobile only: 'scrollable' = one ScrollView with padding and bottom nav clearance;
+   * 'fixed' = fixed height container, no scroll. Defaults to 'scrollable' when scrollable=true, 'fixed' when scrollable=false.
+   */
+  mobileLayout?: MobileLayoutMode;
+  /**
+   * Padding for scrollable content (default: 24). On mobile scrollable pages, also used for bottom nav clearance.
    */
   contentPadding?: number;
+  /**
+   * Mobile fixed only: optional bottom padding/margin to clear the nav bar (default: 0).
+   */
+  mobileFixedBottomPadding?: number;
   /**
    * Additional className for the main content area
    */
@@ -24,21 +35,25 @@ interface PageLayoutProps {
 /**
  * Standard page layout component with NavBar sidebar (desktop) or
  * bottom tab bar (mobile). Used across all main app pages for consistent layout.
+ * Mobile: use mobileLayout='scrollable' for single-scroll pages with padding; 'fixed' for custom layouts.
  */
 export function PageLayout({
   children,
   scrollable = true,
-  contentPadding = 24,
+  mobileLayout: mobileLayoutProp,
+  contentPadding = 16,
+  mobileFixedBottomPadding = 0,
   contentClassName,
 }: PageLayoutProps) {
   const { width } = useWindowDimensions();
   const isMobileLayout = width < LAYOUT_BREAKPOINT;
+  const mobileLayout: MobileLayoutMode = mobileLayoutProp ?? (scrollable ? 'scrollable' : 'fixed');
 
   if (isMobileLayout) {
     return (
       <View className="flex-1 bg-[#121212]">
         <View className={`flex-1 relative ${contentClassName || ''}`}>
-          {scrollable ? (
+          {mobileLayout === 'scrollable' ? (
             <ScrollView
               className="flex-1"
               contentContainerStyle={{
@@ -51,7 +66,12 @@ export function PageLayout({
               {children}
             </ScrollView>
           ) : (
-            children
+            <View
+              className="flex-1"
+              style={mobileFixedBottomPadding > 0 ? { paddingBottom: mobileFixedBottomPadding } : undefined}
+            >
+              {children}
+            </View>
           )}
         </View>
         <BottomNavBar />

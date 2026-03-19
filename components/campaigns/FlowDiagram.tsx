@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { View, Text, Platform } from 'react-native';
 
 // Conditionally import React Flow only on web
@@ -95,12 +96,22 @@ export function FlowDiagram({ nodes, edges, height = 400 }: FlowDiagramProps) {
     );
   }
 
+  // Ensure every node has a valid position so React Flow never reads undefined.x/undefined.y
+  const safeNodes = useMemo(() => {
+    return nodes.map((node: any, index: number) => {
+      const pos = node.position;
+      const x = typeof pos?.x === 'number' ? pos.x : index * 200;
+      const y = typeof pos?.y === 'number' ? pos.y : 0;
+      return { ...node, position: { x, y } };
+    });
+  }, [nodes]);
+
   const diagramHeight = height || 400;
   return (
     <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl" style={{ height: diagramHeight, padding: 0 }}>
       <ReactFlowProvider>
         <ReactFlow
-          nodes={nodes}
+          nodes={safeNodes}
           edges={edges}
           nodeTypes={nodeTypes}
           nodesDraggable={false}

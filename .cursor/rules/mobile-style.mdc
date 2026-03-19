@@ -1,0 +1,16 @@
+---
+description: Mobile layout and style: breakpoints, cards, tap targets, padding
+globs: ['**/*.tsx', '**/*.jsx', 'components/**', 'app/(main)/**']
+alwaysApply: false
+---
+
+# Mobile Style
+
+- **Breakpoints**: Use `LAYOUT_BREAKPOINT` (768) from `@/components/ui/layout` for mobile layout (bottom nav vs sidebar). Branch layout with `useWindowDimensions().width < LAYOUT_BREAKPOINT`.
+- **Cards**: Use cards only in **list** contexts (e.g. campaign list). On detail/settings pages use sections with spacing and typography, not card wrappers. Use one card component with **styled** vs **inline** variant by breakpoint so we don't maintain two implementations — on mobile use inline (no bg/border).
+- **Tap targets**: Min 44pt for primary actions; use `min-w-[44px] min-h-[44px]` for icon buttons.
+- **Padding**: Page padding e.g. 24px desktop, 16px mobile; use `BOTTOM_NAV_SCROLL_PADDING` for scroll content above bottom nav.
+- **Typography**: Instrument font; keep labels and body readable on small screens.
+- **Safe area**: Respect insets for notched devices when using fixed/sticky elements.
+
+Do not create separate mobile and desktop card content; use one card with variant (styled/inline) driven by breakpoint.

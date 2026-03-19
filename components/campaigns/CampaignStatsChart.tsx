@@ -93,12 +93,18 @@ interface CampaignStatsChartProps {
   loading?: boolean;
   /** When true, omit outer card styling (for use inside another card) */
   embedded?: boolean;
+  /** Optional width for chart container (e.g. from parent onLayout). When provided, avoids double-subtraction of padding on narrow screens. */
+  containerWidth?: number;
 }
 
-export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsChartProps) {
+export function CampaignStatsChart({ data, loading, embedded, containerWidth: containerWidthProp }: CampaignStatsChartProps) {
   const progress = useBarGrowAnimation(!!data && data.length > 0);
   const [scrollX, setScrollX] = useState(0);
+  const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
   const { width: windowWidth } = useWindowDimensions();
+
+  const chartParentWidth =
+    containerWidthProp ?? measuredWidth ?? Math.max(280, windowWidth - 24 * 2 - 16 * 2);
 
   const handleScroll = useCallback((ev: NativeSyntheticEvent<NativeScrollEvent>) => {
     setScrollX(ev.nativeEvent.contentOffset.x);
@@ -157,7 +163,6 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
   );
   const maxValue = getNiceMax(maxSingle);
 
-  const chartParentWidth = windowWidth - 24 * 2 - 16 * 2;
   const chartContentWidth = INITIAL_SPACING + data.length * GROUP_WIDTH + END_SPACING;
 
   const barData: BarItem[] = [];
@@ -226,7 +231,13 @@ export function CampaignStatsChart({ data, loading, embedded }: CampaignStatsCha
             <Text className="text-gray-400 font-instrument text-xs">Bounced</Text>
           </View>
         </View>
-        <View style={{ position: 'relative' }}>
+        <View
+          style={{ position: 'relative' }}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0) setMeasuredWidth(w);
+          }}
+        >
           {Platform.OS === 'web' ? (
             <ScrollView
               horizontal

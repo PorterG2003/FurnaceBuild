@@ -16,7 +16,9 @@ import { DateInput } from '@/components/ui/DateInput';
 import type { Campaign } from '@/lib/supabase/types';
 import { format } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
-import { ArrowPathIcon } from 'react-native-heroicons/outline';
+import { ArrowPathIcon, RocketLaunchIcon, PencilSquareIcon } from 'react-native-heroicons/outline';
+import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
+import { BottomSheet } from '@/components/ui/modals/BottomSheet';
 
 const tabs: Tab[] = [
   { id: 'details', label: 'Details' },
@@ -83,6 +85,7 @@ export default function CampaignPage() {
   const [statsEndDate, setStatsEndDate] = useState<string | null>(null);
   const [campaignStats, setCampaignStats] = useState<CampaignStats | null>(null);
   const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
+  const [showCampaignActionsSheet, setShowCampaignActionsSheet] = useState(false);
 
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < LAYOUT_BREAKPOINT;
@@ -344,6 +347,13 @@ export default function CampaignPage() {
       ]}
       backHref="/campaigns"
       title={isLoading ? 'Loading...' : campaign?.name ?? 'Campaign'}
+      mobileRightAction={
+        <MobileHeaderButton
+          variant="actions"
+          onPress={() => setShowCampaignActionsSheet(true)}
+          accessibilityLabel="Campaign actions"
+        />
+      }
       actions={
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Pressable
@@ -653,6 +663,91 @@ export default function CampaignPage() {
         campaignId={id ?? null}
         isOnStatsPage={true}
       />
+      <BottomSheet
+        visible={showCampaignActionsSheet}
+        onClose={() => setShowCampaignActionsSheet(false)}
+      >
+        {/* Refresh */}
+        <Pressable
+          onPress={() => {
+            handleRefresh();
+            setShowCampaignActionsSheet(false);
+          }}
+          disabled={refreshing || isLoading}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            paddingVertical: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: '#2A2A2A',
+            opacity: refreshing || isLoading ? 0.6 : 1,
+          }}
+        >
+          <ArrowPathIcon size={20} color="#9CA3AF" style={{ transform: [{ rotate: refreshing ? '180deg' : '0deg' }] }} />
+          <Text className="text-white font-instrument-medium text-base">
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </Text>
+        </Pressable>
+        {/* Mission Control */}
+        {isSmartlead ? (
+          <View
+            style={{
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: 2,
+              paddingVertical: 14,
+              borderBottomWidth: 1,
+              borderBottomColor: '#2A2A2A',
+              opacity: 0.6,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <RocketLaunchIcon size={20} color="#9CA3AF" />
+              <Text className="text-white font-instrument-medium text-base">Mission Control</Text>
+            </View>
+            <Text className="text-gray-400 font-instrument text-sm pl-8">
+              Only the stats dashboard is available for Smartlead campaigns.
+            </Text>
+          </View>
+        ) : (
+          <Pressable
+            onPress={() => {
+              handleOpenMissionControl();
+              setShowCampaignActionsSheet(false);
+            }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              paddingVertical: 14,
+              borderBottomWidth: 1,
+              borderBottomColor: '#2A2A2A',
+            }}
+          >
+            <RocketLaunchIcon size={20} color="#9CA3AF" />
+            <Text className="text-white font-instrument-medium text-base">Mission Control</Text>
+          </Pressable>
+        )}
+        {/* Edit flow — always disabled on mobile */}
+        <View
+          style={{
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 2,
+            paddingVertical: 14,
+            opacity: 0.6,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <PencilSquareIcon size={20} color="#9CA3AF" />
+            <Text className="text-white font-instrument-medium text-base">Edit flow</Text>
+          </View>
+          <Text className="text-gray-400 font-instrument text-sm pl-8">
+            (Only available on desktop at the moment)
+          </Text>
+        </View>
+      </BottomSheet>
     </PageLayout>
   );
 }

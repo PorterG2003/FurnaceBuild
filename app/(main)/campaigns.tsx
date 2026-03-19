@@ -3,7 +3,7 @@ import { View, Text, TextInput, Pressable, useWindowDimensions } from 'react-nat
 import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
-import { HeaderAddButton } from '@/components/ui/HeaderAddButton';
+import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { IconButton } from '@/components/ui/icon-button';
 import { StatColumn } from '@/components/ui/StatColumn';
 import { Alert, EmptyState, useSmoothLoading, useToast } from '@/components/ui/feedback';
@@ -511,7 +511,8 @@ export default function CampaignsPage() {
   );
 
   const newCampaignButtonMobile = (
-    <HeaderAddButton
+    <MobileHeaderButton
+      variant="add"
       onPress={() => setShowCreateModal(true)}
       accessibilityLabel="New campaign"
     />

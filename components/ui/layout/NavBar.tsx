@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, Pressable, Platform, Modal, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { View, Text, Pressable, Platform, useWindowDimensions } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from 'react-native-reanimated';
 import { useRouter, usePathname } from 'expo-router';
 import { signOut } from '@/lib/supabase/client';
 import { SvgXml } from 'react-native-svg';
-import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon, EnvelopeIcon, ChevronDownIcon } from 'react-native-heroicons/outline';
+import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon, EnvelopeIcon } from 'react-native-heroicons/outline';
 import { useAccount } from '@/contexts/AccountContext';
+import { WorkspaceSwitcherPopover } from '@/components/ui/WorkspaceSwitcherPopover';
 
 const furnaceLogoFull = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
@@ -46,15 +47,25 @@ const furnaceLogoIcon = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 // Module-level variable to persist expanded state across route changes and remounts
 let persistedExpandedState = false;
 
+/** Viewport width below which the workspace switcher auto-closes (nav would dominate). */
+const SWITCHER_CLOSE_VIEWPORT_WIDTH = 900;
+
 export function NavBar() {
+  const { width: viewportWidth } = useWindowDimensions();
   const { account, memberships, setCurrentAccountId, user } = useAccount();
   const handleSignOut = () => signOut();
   const router = useRouter();
   const pathname = usePathname();
-  const [switcherVisible, setSwitcherVisible] = useState(false);
   // Use persisted state, but allow local state to control animations
   const [isExpanded, setIsExpanded] = useState(persistedExpandedState);
+  const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
   const hasMultipleAccounts = memberships.length > 1;
+
+  useEffect(() => {
+    if (workspaceSwitcherOpen && viewportWidth < SWITCHER_CLOSE_VIEWPORT_WIDTH) {
+      setWorkspaceSwitcherOpen(false);
+    }
+  }, [viewportWidth, workspaceSwitcherOpen]);
 
   // Animated width values: collapsed = 56px (square buttons), expanded = 224px
   // Padding values: px-2 = 8px, px-4 = 16px
@@ -73,18 +84,16 @@ export function NavBar() {
     }
   }, [pathname, isExpanded]);
 
-  // Animate based on isExpanded state, but skip animation on route changes
+  // Animate based on isExpanded and workspaceSwitcherOpen: switcher open => 340px, else expanded => 224, collapsed => 56
   useEffect(() => {
-    const targetWidth = isExpanded ? 224 : 56;
-    const targetPadding = isExpanded ? 16 : 8;
-    
+    const targetWidth = workspaceSwitcherOpen ? 340 : isExpanded ? 224 : 56;
+    const targetPadding = workspaceSwitcherOpen || isExpanded ? 16 : 8;
+
     if (isRouteChangeRef.current) {
-      // Route change: set immediately without animation
       width.value = targetWidth;
       paddingHorizontal.value = targetPadding;
       isRouteChangeRef.current = false;
     } else {
-      // User interaction: animate smoothly with easing
       const animationConfig = {
         duration: 300,
         easing: Easing.out(Easing.cubic),
@@ -92,7 +101,7 @@ export function NavBar() {
       width.value = withTiming(targetWidth, animationConfig);
       paddingHorizontal.value = withTiming(targetPadding, animationConfig);
     }
-  }, [isExpanded, width, paddingHorizontal]);
+  }, [isExpanded, workspaceSwitcherOpen, width, paddingHorizontal]);
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -123,6 +132,30 @@ export function NavBar() {
   };
 
   const navRef = useRef<View>(null);
+  const switcherContainerRef = useRef<View>(null);
+
+  // Close workspace switcher when clicking outside the switcher (or outside nav if ref not set). When click is outside nav, also collapse the nav.
+  useEffect(() => {
+    if (!workspaceSwitcherOpen || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      const navEl = navRef.current as unknown as Node | null;
+      const switcherEl = switcherContainerRef.current as unknown as Node | null;
+      const contains = (el: Node | null, node: Node) =>
+        el && typeof (el as any).contains === 'function' && (el as any).contains(node);
+      const outsideSwitcher = switcherEl ? !contains(switcherEl, target) : !contains(navEl, target);
+      if (outsideSwitcher) {
+        setWorkspaceSwitcherOpen(false);
+        if (navEl && !contains(navEl, target)) {
+          persistedExpandedState = false;
+          setIsExpanded(false);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [workspaceSwitcherOpen]);
 
   const mouseProps = Platform.OS === 'web' ? {
     onMouseEnter: () => {
@@ -130,6 +163,7 @@ export function NavBar() {
       setIsExpanded(true);
     },
     onMouseLeave: (e: any) => {
+      if (workspaceSwitcherOpen) return;
       const ne = e?.nativeEvent;
       const clientX = ne?.clientX ?? 0;
       const clientY = ne?.clientY ?? 0;
@@ -220,25 +254,26 @@ export function NavBar() {
             {/* Divider */}
             <View className="h-px bg-[#2A2A2A] mb-4" />
 
-            {/* Current account name + switcher */}
+            {/* Current workspace name + switcher (when multiple accounts) */}
             {account && (
               <View className="mb-3">
                 {hasMultipleAccounts ? (
-                  <Pressable
-                    onPress={() => setSwitcherVisible(true)}
-                    className={`flex-row items-center rounded-lg border border-[#3A3A3A] py-2 ${isExpanded ? 'px-2' : 'px-0 justify-center'}`}
-                  >
-                    {isExpanded ? (
-                      <>
-                        <Text className="text-gray-300 font-instrument text-sm flex-1" numberOfLines={1} ellipsizeMode="tail">
-                          {account.name}
-                        </Text>
-                        <ChevronDownIcon size={16} color="#9CA3AF" />
-                      </>
-                    ) : (
-                      <ChevronDownIcon size={18} color="#9CA3AF" />
-                    )}
-                  </Pressable>
+                  <WorkspaceSwitcherPopover
+                    memberships={memberships}
+                    currentAccountId={account.id}
+                    onChange={setCurrentAccountId}
+                    open={workspaceSwitcherOpen}
+                    containerRef={switcherContainerRef}
+                    onOpenChange={(open) => {
+                      setWorkspaceSwitcherOpen(open);
+                      if (open && !isExpanded) {
+                        persistedExpandedState = true;
+                        setIsExpanded(true);
+                      }
+                    }}
+                    isExpanded={isExpanded}
+                    currentWorkspaceName={account.name}
+                  />
                 ) : (
                   isExpanded && (
                     <View className="py-1 px-2">
@@ -249,50 +284,6 @@ export function NavBar() {
                   )
                 )}
               </View>
-            )}
-
-            {/* Account switcher modal */}
-            {hasMultipleAccounts && (
-              <Modal
-                visible={switcherVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setSwitcherVisible(false)}
-              >
-                <Pressable
-                  style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' }}
-                  onPress={() => setSwitcherVisible(false)}
-                >
-                  <Pressable
-                    style={{ backgroundColor: '#1A1A1A', borderTopLeftRadius: 16, borderTopRightRadius: 16, borderWidth: 1, borderColor: '#2A2A2A', padding: 16, paddingBottom: 32 }}
-                    onPress={(e) => e.stopPropagation()}
-                  >
-                    <Text className="text-white font-instrument-semibold text-lg mb-3">Switch account</Text>
-                    {memberships.map((m) => (
-                      <TouchableOpacity
-                        key={m.account.id}
-                        onPress={() => {
-                          setCurrentAccountId(m.account.id);
-                          setSwitcherVisible(false);
-                        }}
-                        className={`py-3 px-3 rounded-lg mb-1 ${m.account.id === account?.id ? 'bg-brand-orange/20 border border-brand-orange' : 'bg-[#2A2A2A] border border-[#3A3A3A]'}`}
-                        activeOpacity={0.7}
-                      >
-                        <Text className={`font-instrument text-sm ${m.account.id === account?.id ? 'text-brand-orange' : 'text-white'}`}>
-                          {m.account.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                    <TouchableOpacity
-                      onPress={() => setSwitcherVisible(false)}
-                      className="py-2 mt-2"
-                      activeOpacity={0.7}
-                    >
-                      <Text className="text-gray-400 font-instrument text-sm text-center">Cancel</Text>
-                    </TouchableOpacity>
-                  </Pressable>
-                </Pressable>
-              </Modal>
             )}
 
             {/* Settings Button */}

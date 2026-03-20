@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Platform, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useMemo } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { ManageBlockListModal } from '@/components/inbox';
@@ -16,10 +7,19 @@ import {
   MigrationHistoryModal,
   SmartleadMigrationWizardModal,
 } from '@/components/account/smartleadMigration';
-import { LAYOUT_BREAKPOINT, PageLayout } from '@/components/ui/layout';
+import type { BalancedSection } from '@/components/ui/layout';
+import {
+  BalancedTwoColumnLayout,
+  LAYOUT_BREAKPOINT,
+  PageHeader,
+  PageLayout,
+} from '@/components/ui/layout';
+import { WorkspaceSwitcherContent } from '@/components/ui/WorkspaceSwitcherPopover';
+import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
 import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
+import { BottomSheet } from '@/components/ui/modals/BottomSheet';
 import { useAccount } from '@/contexts/AccountContext';
 import {
   deleteInvitation,
@@ -36,6 +36,11 @@ import {
 import { signOut } from '@/lib/supabase/client';
 import { sendInvitationEmail } from '@/lib/services/email';
 import type { AccountUser, BlockListEntry, Invitation, SmartleadMigrationRun, User } from '@/lib/supabase/types';
+
+/** Max width per column so line length stays readable. */
+const DESKTOP_COLUMN_MAX_WIDTH = 440;
+/** Effective max width of the two-column content block, including the gap between columns. */
+const DESKTOP_TWO_COLUMN_WIDTH = DESKTOP_COLUMN_MAX_WIDTH * 2 + 24;
 
 const ACTIVE_SMARTLEAD_RUN_STATUSES: SmartleadMigrationRun['status'][] = [
   'queued',
@@ -59,6 +64,459 @@ function getSmartleadRunSummary(run: SmartleadMigrationRun): string {
     default:
       return `${run.completed_campaign_count + run.failed_campaign_count} of ${run.selected_campaign_count} campaigns processed`;
   }
+}
+
+const inputStyle = {
+  borderColor: '#3A3A3A',
+  backgroundColor: '#121212',
+  color: '#FFFFFF',
+  borderWidth: 1,
+} as const;
+
+function AccountProfileSection({
+  cardVariant,
+  cardClassName,
+  titleClassName,
+  nameInput,
+  onNameChange,
+  profile,
+  userEmail,
+  savingProfile,
+  onSaveProfile,
+}: {
+  cardVariant: 'card' | 'inline';
+  cardClassName?: string;
+  titleClassName: string;
+  nameInput: string;
+  onNameChange: (v: string) => void;
+  profile: User | null;
+  userEmail: string | null;
+  savingProfile: boolean;
+  onSaveProfile: () => void;
+}) {
+  return (
+    <Card variant={cardVariant} className={cardClassName}>
+      <Text className={titleClassName}>Your Profile</Text>
+      <View className="mb-4">
+        <Text className="text-xs text-gray-400 font-instrument-medium mb-2">Name</Text>
+        <TextInput
+          value={nameInput}
+          onChangeText={onNameChange}
+          placeholder="Enter your name"
+          placeholderTextColor="#9CA3AF"
+          autoCapitalize="words"
+          className="border rounded-lg px-3 py-2.5 bg-[#121212] text-sm text-white"
+          style={inputStyle}
+        />
+      </View>
+      <View className="mb-4">
+        <Text className="text-xs text-gray-400 font-instrument-medium mb-2">Email</Text>
+        <Text className="text-white text-sm font-instrument mb-1.5">
+          {profile?.email ?? userEmail ?? 'Not available'}
+        </Text>
+        <Text className="text-xs text-gray-500">
+          Email comes from your login and cannot be edited here.
+        </Text>
+      </View>
+      <Button onPress={onSaveProfile} disabled={savingProfile} size="sm" className="mt-2">
+        {savingProfile ? 'Saving...' : 'Save Name'}
+      </Button>
+    </Card>
+  );
+}
+
+function AccountCompanySection({
+  cardVariant,
+  cardClassName,
+  titleClassName,
+  companyInput,
+  onCompanyChange,
+  membership,
+  isOwner,
+  savingAccount,
+  onSaveAccount,
+}: {
+  cardVariant: 'card' | 'inline';
+  cardClassName?: string;
+  titleClassName: string;
+  companyInput: string;
+  onCompanyChange: (v: string) => void;
+  membership: { account: { name: string | null } } | null;
+  isOwner: boolean;
+  savingAccount: boolean;
+  onSaveAccount: () => void;
+}) {
+  return (
+    <Card variant={cardVariant} className={cardClassName ?? ''}>
+      <Text className={titleClassName}>Company</Text>
+      {isOwner ? (
+        <>
+          <View className="mb-4">
+            <Text className="text-xs text-gray-400 font-instrument-medium mb-2">Company Name</Text>
+            <TextInput
+              value={companyInput}
+              onChangeText={onCompanyChange}
+              placeholder="Enter company name"
+              placeholderTextColor="#9CA3AF"
+              className="border rounded-lg px-3 py-2.5 bg-[#121212] text-sm text-white"
+              style={inputStyle}
+            />
+            <Text className="text-xs text-gray-500 mt-1.5">
+              Company name changes apply to all collaborators.
+            </Text>
+          </View>
+          <Button onPress={onSaveAccount} disabled={savingAccount} size="sm" className="mt-2">
+            {savingAccount ? 'Saving...' : 'Save Company Name'}
+          </Button>
+        </>
+      ) : (
+        <View className="mb-4">
+          <Text className="text-xs text-gray-400 font-instrument-medium mb-2">Company Name</Text>
+          <Text className="text-white text-sm font-instrument mb-1.5">
+            {membership?.account?.name ?? 'Not available'}
+          </Text>
+          <Text className="text-xs text-gray-500">
+            Only account owners can change the company name.
+          </Text>
+        </View>
+      )}
+    </Card>
+  );
+}
+
+function AccountTeamMembersSection({
+  cardVariant,
+  cardClassName,
+  titleClassName,
+  teamMembers,
+  profile,
+  isOwner,
+  inviteEmailInput,
+  setInviteEmailInput,
+  onInviteTeamMember,
+  inviting,
+  updatingRoleId,
+  setRoleEditMember,
+  onUpdateMemberRole,
+  onRemoveMember,
+  removingMemberId,
+  invitations,
+  onRevokeInvitation,
+  revokingInvitationId,
+}: {
+  cardVariant: 'card' | 'inline';
+  cardClassName?: string;
+  titleClassName: string;
+  teamMembers: Array<{
+    user: User & { name: string | null; email: string };
+    membership: { id: string; role: string | null; is_owner: boolean };
+  }>;
+  profile: User | null;
+  isOwner: boolean;
+  inviteEmailInput: string;
+  setInviteEmailInput: (v: string) => void;
+  onInviteTeamMember: () => void;
+  inviting: boolean;
+  updatingRoleId: string | null;
+  setRoleEditMember: (v: { membershipId: string; memberName: string } | null) => void;
+  onUpdateMemberRole: (membershipId: string, role: 'owner' | 'admin' | 'member') => void;
+  onRemoveMember: (membershipId: string, memberName: string) => void;
+  removingMemberId: string | null;
+  invitations: Invitation[];
+  onRevokeInvitation: (id: string) => void;
+  revokingInvitationId: string | null;
+}) {
+  const currentMembersBlock = (
+    <>
+      {teamMembers.length > 0 ? (
+        <View className="mb-4">
+          <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
+            Current Members ({teamMembers.length})
+          </Text>
+          <View className="rounded-lg overflow-hidden">
+            {teamMembers.map((member, index) => {
+              const isCurrentUser = member.user.id === profile?.id;
+              const canManage = isOwner && !isCurrentUser;
+              const currentRole =
+                member.membership.role || (member.membership.is_owner ? 'owner' : 'member');
+              return (
+                <View
+                  key={member.membership.id}
+                  className={`flex-row items-center justify-between py-2.5 ${
+                    index < teamMembers.length - 1 ? 'border-b border-[#2A2A2A]' : ''
+                  }`}
+                >
+                  <View className="flex-1 mr-2">
+                    <Text className="text-white text-sm font-instrument-medium mb-0.5">
+                      {member.user.name || 'No name'}
+                      {isCurrentUser && (
+                        <Text className="text-gray-500 text-xs ml-1">(You)</Text>
+                      )}
+                    </Text>
+                    <Text className="text-gray-400 text-xs font-instrument">{member.user.email}</Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    {canManage && Platform.OS === 'web' ? (
+                      <select
+                        value={currentRole}
+                        onChange={(e) =>
+                          onUpdateMemberRole(
+                            member.membership.id,
+                            (e.target as HTMLSelectElement).value as 'owner' | 'admin' | 'member'
+                          )
+                        }
+                        disabled={updatingRoleId === member.membership.id}
+                        style={{
+                          backgroundColor: '#121212',
+                          borderColor: '#3A3A3A',
+                          borderWidth: 1,
+                          borderRadius: 6,
+                          padding: '4px 8px',
+                          color: '#FFFFFF',
+                          fontSize: 12,
+                          fontFamily: 'Instrument Sans, system-ui, sans-serif',
+                          cursor: updatingRoleId === member.membership.id ? 'not-allowed' : 'pointer',
+                          opacity: updatingRoleId === member.membership.id ? 0.5 : 1,
+                        }}
+                      >
+                        <option value="owner">Owner</option>
+                        <option value="admin">Admin</option>
+                        <option value="member">Member</option>
+                      </select>
+                    ) : (
+                      <View className="flex-row items-center gap-2">
+                        <View
+                          className={`px-2 py-0.5 rounded ${
+                            currentRole === 'owner'
+                              ? 'bg-brand-orange/20 border border-brand-orange/30'
+                              : currentRole === 'admin'
+                                ? 'bg-blue-500/20 border border-blue-500/30'
+                                : 'bg-gray-500/20 border border-gray-500/30'
+                          }`}
+                        >
+                          <Text
+                            className={`text-xs font-instrument-medium capitalize ${
+                              currentRole === 'owner'
+                                ? 'text-brand-orange'
+                                : currentRole === 'admin'
+                                  ? 'text-blue-400'
+                                  : 'text-gray-400'
+                            }`}
+                          >
+                            {currentRole}
+                          </Text>
+                        </View>
+                        {canManage && Platform.OS !== 'web' && (
+                          <Button
+                            variant="secondary"
+                            size="xs"
+                            onPress={() =>
+                              setRoleEditMember({
+                                membershipId: member.membership.id,
+                                memberName: member.user.name || member.user.email,
+                              })
+                            }
+                            disabled={updatingRoleId === member.membership.id}
+                          >
+                            {updatingRoleId === member.membership.id ? 'Updating...' : 'Change role'}
+                          </Button>
+                        )}
+                      </View>
+                    )}
+                    {canManage && (
+                      <Button
+                        variant="destructive"
+                        size="xs"
+                        onPress={() =>
+                          onRemoveMember(member.membership.id, member.user.name || member.user.email)
+                        }
+                        disabled={removingMemberId === member.membership.id}
+                      >
+                        {removingMemberId === member.membership.id ? 'Removing...' : 'Remove'}
+                      </Button>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ) : (
+        <View className="mb-4 py-3">
+          <Text className="text-gray-400 text-sm font-instrument">
+            {isOwner
+              ? 'No other members yet. Invite someone by email above.'
+              : 'No other members yet.'}
+          </Text>
+        </View>
+      )}
+    </>
+  );
+
+  const pendingInvitationsBlock = isOwner && invitations.length > 0 && (
+    <View>
+      <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
+        Pending Invitations ({invitations.length})
+      </Text>
+      <View className="rounded-lg overflow-hidden">
+        {invitations.map((invitation, index) => (
+          <View
+            key={invitation.id}
+            className={`flex-row items-center justify-between py-2 ${
+              index < invitations.length - 1 ? 'border-b border-[#2A2A2A]' : ''
+            }`}
+          >
+            <View className="flex-1 mr-2">
+              <Text className="text-white text-sm font-instrument mb-0.5">{invitation.email}</Text>
+              <Text className="text-gray-500 text-xs font-instrument">Pending</Text>
+            </View>
+            <Button
+              variant="destructive"
+              size="xs"
+              onPress={() => onRevokeInvitation(invitation.id)}
+              disabled={revokingInvitationId === invitation.id}
+            >
+              {revokingInvitationId === invitation.id ? 'Revoking...' : 'Revoke'}
+            </Button>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+
+  return (
+    <Card variant={cardVariant} className={cardClassName ?? ''}>
+      <Text className={titleClassName}>Team Members</Text>
+      {isOwner && (
+        <View className="mb-4 pb-4 border-b border-[#2A2A2A]">
+          <Text className="text-xs text-gray-400 font-instrument-medium mb-2">Invite Team Member</Text>
+          <Text className="text-xs text-gray-500 mb-2">
+            They'll get an email with a link to join this account.
+          </Text>
+          <View className="flex-row gap-2">
+            <View className="flex-1">
+              <TextInput
+                value={inviteEmailInput}
+                onChangeText={setInviteEmailInput}
+                placeholder="Enter email address"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                className="border rounded-lg px-3 py-2 bg-[#121212] text-sm text-white"
+                style={inputStyle}
+              />
+            </View>
+            <Button onPress={onInviteTeamMember} disabled={inviting} size="sm" className="px-4">
+              {inviting ? 'Sending...' : 'Invite'}
+            </Button>
+          </View>
+        </View>
+      )}
+      {currentMembersBlock}
+      {pendingInvitationsBlock}
+    </Card>
+  );
+}
+
+function AccountBlockListSection({
+  cardVariant,
+  cardClassName,
+  titleClassName,
+  onOpenModal,
+}: {
+  cardVariant: 'card' | 'inline';
+  cardClassName?: string;
+  titleClassName: string;
+  onOpenModal: () => void;
+}) {
+  return (
+    <Card variant={cardVariant} className={cardClassName ?? ''}>
+      <Text className={titleClassName}>Inbox / Block list</Text>
+      <Text className="text-gray-500 text-xs font-instrument mb-4">
+        Blocked addresses and domains do not receive automated campaign emails. You can still reply
+        manually from the inbox.
+      </Text>
+      <Button variant="secondary" size="sm" className="self-start" onPress={onOpenModal}>
+        Manage Block List
+      </Button>
+    </Card>
+  );
+}
+
+function AccountSmartleadSection({
+  cardVariant,
+  cardClassName,
+  titleClassName,
+  smartleadRun,
+  onOpenWizard,
+  onOpenHistory,
+  activeRunStatuses,
+  getRunSummary,
+}: {
+  cardVariant: 'card' | 'inline';
+  cardClassName?: string;
+  titleClassName: string;
+  smartleadRun: SmartleadMigrationRun | null;
+  onOpenWizard: (runId: string | null) => void;
+  onOpenHistory: () => void;
+  activeRunStatuses: SmartleadMigrationRun['status'][];
+  getRunSummary: (run: SmartleadMigrationRun) => string;
+}) {
+  return (
+    <Card variant={cardVariant} className={cardClassName ?? ''}>
+      <Text className={titleClassName}>Smartlead Migration</Text>
+      <Text className="text-gray-500 text-xs font-instrument mb-4">
+        Import campaigns and leads from your Smartlead account. Background runs keep their progress
+        and errors visible even after reloads.
+      </Text>
+      {smartleadRun ? (
+        <View className="mb-4 rounded-xl border border-[#2A2A2A] bg-[#141414] p-3">
+          <View className="flex-row items-center justify-between gap-3">
+            <Text className="text-white text-sm font-instrument-medium">
+              {activeRunStatuses.includes(smartleadRun.status)
+                ? 'Active migration'
+                : 'Most recent migration'}
+            </Text>
+            <View className="rounded-full border border-[#2A2A2A] bg-[#1F1F1F] px-2.5 py-1">
+              <Text className="text-[11px] text-gray-300 font-instrument-medium capitalize">
+                {smartleadRun.status.replace(/_/g, ' ')}
+              </Text>
+            </View>
+          </View>
+          <Text className="text-gray-400 text-xs font-instrument mt-2">
+            {getRunSummary(smartleadRun)}
+          </Text>
+          <Text className="text-gray-500 text-xs font-instrument mt-1">
+            {smartleadRun.leads_imported} leads, {smartleadRun.conversations_imported} conversations
+          </Text>
+          {smartleadRun.last_error_message ? (
+            <Text className="text-red-400 text-xs font-instrument mt-2">
+              {smartleadRun.last_error_message}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      <View className="flex-row flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          onPress={() => {
+            if (smartleadRun && activeRunStatuses.includes(smartleadRun.status)) {
+              onOpenWizard(smartleadRun.id);
+            } else {
+              onOpenWizard(null);
+            }
+          }}
+        >
+          {smartleadRun && activeRunStatuses.includes(smartleadRun.status)
+            ? 'View Migration'
+            : 'Start Migration'}
+        </Button>
+        <Button variant="secondary" size="sm" onPress={onOpenHistory}>
+          View All Migrations
+        </Button>
+      </View>
+    </Card>
+  );
 }
 
 export default function AccountPage() {
@@ -105,6 +563,7 @@ export default function AccountPage() {
   const [inviting, setInviting] = useState(false);
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
   const [blockListModalVisible, setBlockListModalVisible] = useState(false);
+  const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false);
   const [smartleadWizardVisible, setSmartleadWizardVisible] = useState(false);
   const [smartleadHistoryVisible, setSmartleadHistoryVisible] = useState(false);
   const [smartleadRun, setSmartleadRun] = useState<SmartleadMigrationRun | null>(null);
@@ -457,409 +916,219 @@ export default function AccountPage() {
   const { width } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
 
-  return (
-    <PageLayout contentPadding={0} scrollable={false}>
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{
-          paddingBottom: 48,
-          flexGrow: 1,
-        }}
-      >
-          {/* Header */}
-          <View 
-            style={{
-              backgroundColor: '#121212',
-              borderBottomWidth: 1,
-              borderBottomColor: '#2A2A2A',
-              paddingHorizontal: 24,
-              paddingVertical: 16,
+  const sectionTitleClass = isMobile
+    ? 'text-lg font-instrument-semibold text-white pb-2 mb-3 border-b border-[#2A2A2A]'
+    : 'text-lg font-instrument-semibold text-white pb-2 mb-4 border-b border-[#2A2A2A]';
+  const sectionCardVariant = 'card';
+  const sectionCardClassName = isMobile ? 'mb-5' : 'mb-8 p-5';
+
+  const sections = useMemo((): BalancedSection[] => {
+    const base: BalancedSection[] = [
+      {
+        id: 'profile',
+        groupLabel: 'Profile & account',
+        content: (
+          <AccountProfileSection
+            cardVariant={sectionCardVariant}
+            cardClassName={sectionCardClassName}
+            titleClassName={sectionTitleClass}
+            nameInput={nameInput}
+            onNameChange={handleNameChange}
+            profile={profile}
+            userEmail={userEmail}
+            savingProfile={savingProfile}
+            onSaveProfile={handleSaveProfile}
+          />
+        ),
+      },
+      {
+        id: 'company',
+        groupLabel: 'Team',
+        content: (
+          <AccountCompanySection
+            cardVariant={sectionCardVariant}
+            cardClassName={sectionCardClassName}
+            titleClassName={sectionTitleClass}
+            companyInput={companyInput}
+            onCompanyChange={handleCompanyChange}
+            membership={membership}
+            isOwner={isOwner}
+            savingAccount={savingAccount}
+            onSaveAccount={handleSaveAccount}
+          />
+        ),
+      },
+    ];
+    if (membership?.account) {
+      base.push({
+        id: 'team-members',
+        groupLabel: 'Team',
+        content: (
+          <AccountTeamMembersSection
+            cardVariant={sectionCardVariant}
+            cardClassName={sectionCardClassName}
+            titleClassName={sectionTitleClass}
+            teamMembers={teamMembers}
+            profile={profile}
+            isOwner={isOwner}
+            inviteEmailInput={inviteEmailInput}
+            setInviteEmailInput={setInviteEmailInput}
+            onInviteTeamMember={handleInviteTeamMember}
+            inviting={inviting}
+            updatingRoleId={updatingRoleId}
+            setRoleEditMember={setRoleEditMember}
+            onUpdateMemberRole={handleUpdateMemberRole}
+            onRemoveMember={handleRemoveMember}
+            removingMemberId={removingMemberId}
+            invitations={invitations}
+            onRevokeInvitation={handleRevokeInvitation}
+            revokingInvitationId={revokingInvitationId}
+          />
+        ),
+      });
+    }
+    base.push({
+      id: 'block-list',
+      groupLabel: 'Tools',
+      content: (
+        <AccountBlockListSection
+          cardVariant={sectionCardVariant}
+          cardClassName={sectionCardClassName}
+          titleClassName={sectionTitleClass}
+          onOpenModal={() => setBlockListModalVisible(true)}
+        />
+      ),
+    });
+    if (!isMobile) {
+      base.push({
+        id: 'smartlead',
+        groupLabel: 'Tools',
+        content: (
+          <AccountSmartleadSection
+            cardVariant={sectionCardVariant}
+            cardClassName={sectionCardClassName}
+            titleClassName={sectionTitleClass}
+            smartleadRun={smartleadRun}
+            onOpenWizard={(runId) => {
+              setSelectedSmartleadRunId(runId);
+              setSmartleadWizardVisible(true);
             }}
-          >
-            <Text className="text-white text-2xl font-instrument-semibold">
-              Account Settings
-            </Text>
-            <Text className="text-gray-400 text-xs font-instrument mt-0.5">
-              {membership?.account?.name ? `Manage your profile and ${membership.account.name}` : 'Manage your profile and team'}
-            </Text>
-          </View>
+            onOpenHistory={() => setSmartleadHistoryVisible(true)}
+            activeRunStatuses={ACTIVE_SMARTLEAD_RUN_STATUSES}
+            getRunSummary={getSmartleadRunSummary}
+          />
+        ),
+      });
+    }
+    return base;
+  }, [
+    isMobile,
+    sectionCardVariant,
+    sectionCardClassName,
+    sectionTitleClass,
+    nameInput,
+    handleNameChange,
+    profile,
+    userEmail,
+    savingProfile,
+    handleSaveProfile,
+    companyInput,
+    handleCompanyChange,
+    membership,
+    isOwner,
+    savingAccount,
+    handleSaveAccount,
+    teamMembers,
+    inviteEmailInput,
+    setInviteEmailInput,
+    handleInviteTeamMember,
+    inviting,
+    updatingRoleId,
+    setRoleEditMember,
+    handleUpdateMemberRole,
+    handleRemoveMember,
+    removingMemberId,
+    invitations,
+    handleRevokeInvitation,
+    revokingInvitationId,
+    smartleadRun,
+  ]);
 
-          {/* Content */}
-          <View className="p-6 items-center">
-            <View className="w-full max-w-2xl">
-          {isLoading ? (
-            <LoadingState message="Loading account details..." color="#f33203" />
-          ) : loadError ? (
-            <Alert variant="error" message={loadError} />
-          ) : (
-            <>
-              {!isOwner && membership?.account?.name ? (
-                <View className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-                  <Text className="text-amber-200 text-sm font-instrument">
-                    You're viewing {membership.account.name} as a member. Only owners can change company details or manage the team.
-                  </Text>
-                </View>
-              ) : null}
-              <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
-                <Text className="text-white text-base font-instrument-semibold mb-5">
-                  Your Profile
+  const signOutButton = (
+    <Button variant="destructive" size="sm" onPress={() => signOut()}>
+      Sign out
+    </Button>
+  );
+
+  return (
+    <PageLayout>
+      <PageHeader
+        title="Account"
+        subtitle={
+          membership?.account?.name
+            ? `Manage your profile and ${membership.account.name}`
+            : 'Manage your profile and team'
+        }
+        primaryAction={!isMobile ? signOutButton : undefined}
+      />
+
+      {isLoading ? (
+        <LoadingState message="Loading account details..." color="#f33203" />
+      ) : loadError ? (
+        <Alert variant="error" message={loadError} />
+      ) : (
+        <>
+          {!isOwner && membership?.account?.name ? (
+            <View
+              style={{
+                maxWidth: isMobile ? undefined : DESKTOP_TWO_COLUMN_WIDTH,
+                alignSelf: 'center',
+                width: '100%',
+              }}
+              className={isMobile ? 'mb-4' : 'mb-6'}
+            >
+              <View className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                <Text className="text-amber-200 text-sm font-instrument">
+                  You're viewing {membership.account.name} as a member. Only owners can change company details or manage the team.
                 </Text>
-
-                <View className="mb-4">
-                  <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
-                    Name
-                  </Text>
-                  <TextInput
-                    value={nameInput}
-                    onChangeText={handleNameChange}
-                    placeholder="Enter your name"
-                    placeholderTextColor="#9CA3AF"
-                    autoCapitalize="words"
-                    className="border rounded-lg px-3 py-2.5 bg-[#121212] text-sm text-white"
-                    style={{
-                      borderColor: '#3A3A3A',
-                      backgroundColor: '#121212',
-                      color: '#FFFFFF',
-                      borderWidth: 1,
-                    }}
-                  />
-                </View>
-
-                <View className="mb-4">
-                  <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
-                    Email
-                  </Text>
-                  <Text className="text-white text-sm font-instrument mb-1.5">
-                    {profile?.email ?? userEmail ?? 'Not available'}
-                  </Text>
-                  <Text className="text-xs text-gray-500">
-                    Email comes from your login and cannot be edited here.
-                  </Text>
-                </View>
-
-                <Button onPress={handleSaveProfile} disabled={savingProfile} size="sm" className="mt-2">
-                  {savingProfile ? 'Saving...' : 'Save Name'}
-                </Button>
               </View>
+            </View>
+          ) : null}
 
-              <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
-                <Text className="text-white text-base font-instrument-semibold mb-5">
-                  Company
+          {isMobile && memberships.length > 1 ? (
+            <Card variant="card" className="mb-5">
+              <Text className={sectionTitleClass}>Workspace</Text>
+              <Text className="text-xs text-gray-500 font-instrument mb-4 leading-5">
+                Campaigns, inbox, and senders use the account you choose. You belong to {memberships.length}{' '}
+                workspaces—pick one anytime.
+              </Text>
+              <View className="mb-4 py-2.5 px-3 rounded-lg bg-white/[0.04] border border-[#2A2A2A]">
+                <Text className="text-xs text-gray-400 font-instrument-medium mb-1">Currently viewing</Text>
+                <Text className="text-gray-200 text-sm font-instrument" numberOfLines={2}>
+                  {account?.name ?? 'Select account'}
                 </Text>
-
-                {isOwner ? (
-                  <View className="mb-4">
-                    <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
-                      Company Name
-                    </Text>
-                    <TextInput
-                      value={companyInput}
-                      onChangeText={handleCompanyChange}
-                      placeholder="Enter company name"
-                      placeholderTextColor="#9CA3AF"
-                      className="border rounded-lg px-3 py-2.5 bg-[#121212] text-sm text-white"
-                      style={{
-                        borderColor: '#3A3A3A',
-                        backgroundColor: '#121212',
-                        color: '#FFFFFF',
-                        borderWidth: 1,
-                      }}
-                    />
-                    <Text className="text-xs text-gray-500 mt-1.5">
-                      Company name changes apply to all collaborators.
-                    </Text>
-                  </View>
-                ) : (
-                  <View className="mb-4">
-                    <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
-                      Company Name
-                    </Text>
-                    <Text className="text-white text-sm font-instrument mb-1.5">
-                      {membership?.account?.name ?? 'Not available'}
-                    </Text>
-                    <Text className="text-xs text-gray-500">
-                      Only account owners can change the company name.
-                    </Text>
-                  </View>
-                )}
-
-                {isOwner && (
-                  <Button onPress={handleSaveAccount} disabled={savingAccount} size="sm" className="mt-2">
-                    {savingAccount ? 'Saving...' : 'Save Company Name'}
-                  </Button>
-                )}
               </View>
+              <Button variant="outline" size="sm" onPress={() => setAccountSwitcherOpen(true)} className="w-full">
+                Switch account
+              </Button>
+            </Card>
+          ) : null}
 
-              {membership?.account ? (
-                <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
-                  <Text className="text-white text-base font-instrument-semibold mb-5">
-                    Team Members
-                  </Text>
+          <BalancedTwoColumnLayout
+            sections={sections}
+            isDesktop={!isMobile}
+            compact={isMobile}
+            contentMaxWidth={DESKTOP_TWO_COLUMN_WIDTH}
+            columnMaxWidth={DESKTOP_COLUMN_MAX_WIDTH}
+          />
 
-                  {isOwner && (
-                    <View className="mb-4 pb-4 border-b border-[#2A2A2A]">
-                      <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
-                        Invite Team Member
-                      </Text>
-                      <Text className="text-xs text-gray-500 mb-2">
-                        They'll get an email with a link to join this account.
-                      </Text>
-                      <View className="flex-row gap-2">
-                        <View className="flex-1">
-                          <TextInput
-                            value={inviteEmailInput}
-                            onChangeText={setInviteEmailInput}
-                            placeholder="Enter email address"
-                            placeholderTextColor="#9CA3AF"
-                            autoCapitalize="none"
-                            keyboardType="email-address"
-                            className="border rounded-lg px-3 py-2 bg-[#121212] text-sm text-white"
-                            style={{
-                              borderColor: '#3A3A3A',
-                              backgroundColor: '#121212',
-                              color: '#FFFFFF',
-                              borderWidth: 1,
-                            }}
-                          />
-                        </View>
-                        <Button
-                          onPress={handleInviteTeamMember}
-                          disabled={inviting}
-                          size="sm"
-                          className="px-4"
-                        >
-                          {inviting ? 'Sending...' : 'Invite'}
-                        </Button>
-                      </View>
-                    </View>
-                  )}
+          {isMobile && (
+            <View className="mt-4 pt-4 border-t border-[#2A2A2A]">
+              {signOutButton}
+            </View>
+          )}
 
-                  {teamMembers.length > 0 ? (
-                    <View className="mb-4">
-                      <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
-                        Current Members ({teamMembers.length})
-                      </Text>
-                      <View className="bg-[#121212] border border-[#2A2A2A] rounded-lg overflow-hidden">
-                        {teamMembers.map((member, index) => {
-                          const isCurrentUser = member.user.id === profile?.id;
-                          const canManage = isOwner && !isCurrentUser;
-                          const currentRole = member.membership.role || (member.membership.is_owner ? 'owner' : 'member');
-                          
-                          return (
-                            <View
-                              key={member.membership.id}
-                              className={`flex-row items-center justify-between px-3 py-2.5 ${
-                                index < teamMembers.length - 1 ? 'border-b border-[#2A2A2A]' : ''
-                              }`}
-                            >
-                              <View className="flex-1 mr-2">
-                                <Text className="text-white text-sm font-instrument-medium mb-0.5">
-                                  {member.user.name || 'No name'}
-                                  {isCurrentUser && (
-                                    <Text className="text-gray-500 text-xs ml-1">(You)</Text>
-                                  )}
-                                </Text>
-                                <Text className="text-gray-400 text-xs font-instrument">
-                                  {member.user.email}
-                                </Text>
-                              </View>
-                              
-                              <View className="flex-row items-center gap-2">
-                                {canManage && Platform.OS === 'web' ? (
-                                  <select
-                                    value={currentRole}
-                                    onChange={(e) => handleUpdateMemberRole(member.membership.id, e.target.value as 'owner' | 'admin' | 'member')}
-                                    disabled={updatingRoleId === member.membership.id}
-                                    style={{
-                                      backgroundColor: '#121212',
-                                      borderColor: '#3A3A3A',
-                                      borderWidth: 1,
-                                      borderRadius: 6,
-                                      padding: '4px 8px',
-                                      color: '#FFFFFF',
-                                      fontSize: 12,
-                                      fontFamily: 'Instrument Sans, system-ui, sans-serif',
-                                      cursor: updatingRoleId === member.membership.id ? 'not-allowed' : 'pointer',
-                                      opacity: updatingRoleId === member.membership.id ? 0.5 : 1,
-                                    }}
-                                  >
-                                    <option value="owner">Owner</option>
-                                    <option value="admin">Admin</option>
-                                    <option value="member">Member</option>
-                                  </select>
-                                ) : (
-                                  <View className="flex-row items-center gap-2">
-                                    <View className={`px-2 py-0.5 rounded ${
-                                      currentRole === 'owner' 
-                                        ? 'bg-brand-orange/20 border border-brand-orange/30' 
-                                        : currentRole === 'admin'
-                                        ? 'bg-blue-500/20 border border-blue-500/30'
-                                        : 'bg-gray-500/20 border border-gray-500/30'
-                                    }`}>
-                                      <Text className={`text-xs font-instrument-medium capitalize ${
-                                        currentRole === 'owner'
-                                          ? 'text-brand-orange'
-                                          : currentRole === 'admin'
-                                          ? 'text-blue-400'
-                                          : 'text-gray-400'
-                                      }`}>
-                                        {currentRole}
-                                      </Text>
-                                    </View>
-                                    {canManage && Platform.OS !== 'web' && (
-                                      <Button
-                                        variant="secondary"
-                                        size="xs"
-                                        onPress={() => setRoleEditMember({ membershipId: member.membership.id, memberName: member.user.name || member.user.email })}
-                                        disabled={updatingRoleId === member.membership.id}
-                                      >
-                                        {updatingRoleId === member.membership.id ? 'Updating...' : 'Change role'}
-                                      </Button>
-                                    )}
-                                  </View>
-                                )}
-                                
-                                {canManage && (
-                                  <Button
-                                    variant="destructive"
-                                    size="xs"
-                                    onPress={() => handleRemoveMember(member.membership.id, member.user.name || member.user.email)}
-                                    disabled={removingMemberId === member.membership.id}
-                                  >
-                                    {removingMemberId === member.membership.id ? 'Removing...' : 'Remove'}
-                                  </Button>
-                                )}
-                              </View>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  ) : (
-                    <View className="mb-4 p-3 bg-[#121212] border border-[#2A2A2A] rounded-lg">
-                      <Text className="text-gray-400 text-sm font-instrument">
-                        {isOwner ? 'No other members yet. Invite someone by email above.' : 'No other members yet.'}
-                      </Text>
-                    </View>
-                  )}
-
-                  {isOwner && invitations.length > 0 && (
-                    <View>
-                      <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
-                        Pending Invitations ({invitations.length})
-                      </Text>
-                      <View className="bg-[#121212] border border-[#2A2A2A] rounded-lg overflow-hidden">
-                        {invitations.map((invitation, index) => (
-                          <View
-                            key={invitation.id}
-                            className={`flex-row items-center justify-between px-3 py-2 ${
-                              index < invitations.length - 1 ? 'border-b border-[#2A2A2A]' : ''
-                            }`}
-                          >
-                            <View className="flex-1 mr-2">
-                              <Text className="text-white text-sm font-instrument mb-0.5">
-                                {invitation.email}
-                              </Text>
-                              <Text className="text-gray-500 text-xs font-instrument">
-                                Pending
-                              </Text>
-                            </View>
-                            <Button
-                              variant="destructive"
-                              size="xs"
-                              onPress={() => handleRevokeInvitation(invitation.id)}
-                              disabled={revokingInvitationId === invitation.id}
-                            >
-                              {revokingInvitationId === invitation.id ? 'Revoking...' : 'Revoke'}
-                            </Button>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-                </View>
-              ) : null}
-
-              {/* Inbox / Block list */}
-              <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
-                <Text className="text-white text-base font-instrument-semibold mb-1.5">
-                  Inbox / Block list
-                </Text>
-                <Text className="text-gray-500 text-xs font-instrument mb-4">
-                  Blocked addresses and domains do not receive automated campaign emails. You can still reply manually from the inbox.
-                </Text>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="self-start"
-                  onPress={() => setBlockListModalVisible(true)}
-                >
-                  Manage Block List
-                </Button>
-              </View>
-
-              {/* Smartlead Migration */}
-              <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg p-5 mb-4">
-                <Text className="text-white text-base font-instrument-semibold mb-1.5">
-                  Smartlead Migration
-                </Text>
-                <Text className="text-gray-500 text-xs font-instrument mb-4">
-                  Import campaigns and leads from your Smartlead account. Background runs keep their progress and errors visible even after reloads.
-                </Text>
-                {smartleadRun ? (
-                  <View className="mb-4 rounded-xl border border-[#2A2A2A] bg-[#141414] p-3">
-                    <View className="flex-row items-center justify-between gap-3">
-                      <Text className="text-white text-sm font-instrument-medium">
-                        {ACTIVE_SMARTLEAD_RUN_STATUSES.includes(smartleadRun.status)
-                          ? 'Active migration'
-                          : 'Most recent migration'}
-                      </Text>
-                      <View className="rounded-full border border-[#2A2A2A] bg-[#1F1F1F] px-2.5 py-1">
-                        <Text className="text-[11px] text-gray-300 font-instrument-medium capitalize">
-                          {smartleadRun.status.replace(/_/g, ' ')}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text className="text-gray-400 text-xs font-instrument mt-2">
-                      {getSmartleadRunSummary(smartleadRun)}
-                    </Text>
-                    <Text className="text-gray-500 text-xs font-instrument mt-1">
-                      {smartleadRun.leads_imported} leads, {smartleadRun.conversations_imported} conversations
-                    </Text>
-                    {smartleadRun.last_error_message ? (
-                      <Text className="text-red-400 text-xs font-instrument mt-2">
-                        {smartleadRun.last_error_message}
-                      </Text>
-                    ) : null}
-                  </View>
-                ) : null}
-                <View className="flex-row flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    onPress={() => {
-                      if (smartleadRun && ACTIVE_SMARTLEAD_RUN_STATUSES.includes(smartleadRun.status)) {
-                        setSelectedSmartleadRunId(smartleadRun.id);
-                      } else {
-                        setSelectedSmartleadRunId(null);
-                      }
-                      setSmartleadWizardVisible(true);
-                    }}
-                  >
-                    {smartleadRun && ACTIVE_SMARTLEAD_RUN_STATUSES.includes(smartleadRun.status)
-                      ? 'View Migration'
-                      : 'Start Migration'}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onPress={() => setSmartleadHistoryVisible(true)}
-                  >
-                    View All Migrations
-                  </Button>
-                </View>
-              </View>
-
-              <SmartleadMigrationWizardModal
+          <SmartleadMigrationWizardModal
                 visible={smartleadWizardVisible}
                 onClose={() => {
                   setSmartleadWizardVisible(false);
@@ -892,6 +1161,18 @@ export default function AccountPage() {
                 isOwner={!!isOwner}
               />
 
+              <BottomSheet
+                visible={accountSwitcherOpen}
+                onClose={() => setAccountSwitcherOpen(false)}
+              >
+                <WorkspaceSwitcherContent
+                  memberships={memberships}
+                  currentAccountId={account?.id ?? null}
+                  onChange={(id) => setCurrentAccountId(id)}
+                  listMaxHeight={320}
+                />
+              </BottomSheet>
+
               <BaseModal
                 visible={roleEditMember !== null}
                 onClose={() => setRoleEditMember(null)}
@@ -899,7 +1180,7 @@ export default function AccountPage() {
                 description={roleEditMember ? `Set role for ${roleEditMember.memberName}` : undefined}
                 compact
                 footer={
-                  <View className="flex-row gap-2 flex-wrap p-4">
+                  <ModalFooter>
                     {(['owner', 'admin', 'member'] as const).map((role) => (
                       <Button
                         key={role}
@@ -915,27 +1196,11 @@ export default function AccountPage() {
                         {role.charAt(0).toUpperCase() + role.slice(1)}
                       </Button>
                     ))}
-                  </View>
+                  </ModalFooter>
                 }
               />
             </>
           )}
-            </View>
-
-            {isMobile && (
-              <View className="w-full mt-8">
-                <Button
-                  variant="destructive"
-                  size="default"
-                  className="w-full"
-                  onPress={() => signOut()}
-                >
-                  Sign out
-                </Button>
-              </View>
-            )}
-          </View>
-        </ScrollView>
     </PageLayout>
   );
 }

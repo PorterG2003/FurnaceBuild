@@ -15,9 +15,11 @@ interface TabsProps {
    * - equal: tabs share available width equally (full-width).
    */
   layout?: 'content' | 'equal';
+  /** Bottom margin of the tab bar. Default 16. Use 0 for tight layouts (e.g. mobile modals). */
+  marginBottom?: number;
 }
 
-export function Tabs({ tabs, activeTab, onTabChange, layout = 'content' }: TabsProps) {
+export function Tabs({ tabs, activeTab, onTabChange, layout = 'content', marginBottom = 16 }: TabsProps) {
   const [tabPositions, setTabPositions] = useState<Array<number | null>>([]);
   const [tabWidths, setTabWidths] = useState<Array<number | null>>([]);
   const [tabTextWidths, setTabTextWidths] = useState<Array<number | null>>([]);
@@ -134,7 +136,7 @@ export function Tabs({ tabs, activeTab, onTabChange, layout = 'content' }: TabsP
         borderWidth: 1,
         borderColor: '#2A2A2A',
         padding: CONTAINER_PADDING,
-        marginBottom: 16,
+        marginBottom,
         ...(isEqual
           ? { width: '100%', alignSelf: 'stretch' as const }
           : { alignSelf: 'flex-start' as const, maxWidth: '100%', flexShrink: 1 }),

@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Platform } from 'react-native';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/feedback/Alert';
 import { Select } from '@/components/ui/forms';
@@ -280,18 +280,22 @@ function EmailNodeModal({
   };
 
   const footer = (
-    <View className="flex-row gap-3">
-      <View className="flex-1">
-        <Button variant="secondary" onPress={onClose} className="flex-1">
-          Cancel
-        </Button>
-      </View>
-      <View className="flex-1">
-        <Button onPress={handleSave}>
-          Save
-        </Button>
-      </View>
-    </View>
+    <ModalFooter>
+      <Button variant="secondary" onPress={onClose}>
+        Cancel
+      </Button>
+      <Button onPress={handleSave}>
+        Save
+      </Button>
+    </ModalFooter>
+  );
+
+  const footerMobile = (
+    <ModalFooter>
+      <Button onPress={handleSave}>
+        Save
+      </Button>
+    </ModalFooter>
   );
 
   const handleOpenPreview = () => {
@@ -314,6 +318,7 @@ function EmailNodeModal({
       title="Configure Email Node"
       description="Personalize cold outreach emails using lead data from the connected bucket."
       footer={footer}
+      footerMobile={footerMobile}
       maxWidth="full"
       height={typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.9) : 900}
     >

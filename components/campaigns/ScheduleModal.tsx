@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable, TextInput } from 'react-native';
 
 const isWeb = typeof window !== 'undefined';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { IntervalMinutesInput } from '@/components/campaigns/IntervalMinutesInput';
 import { useConfirmClose } from '@/hooks/useConfirmClose';
@@ -98,16 +98,19 @@ export function ScheduleModal({ visible, onClose, onSaved, campaign, campaignId 
       maxWidth="2xl"
       maxHeight={720}
       footer={
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <Button onPress={handleClose} variant="secondary">Cancel</Button>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button onPress={handleSave} disabled={isSaving}>
-              {isSaving ? 'Saving...' : 'Save'}
-            </Button>
-          </View>
-        </View>
+        <ModalFooter>
+          <Button onPress={handleClose} variant="secondary">Cancel</Button>
+          <Button onPress={handleSave} disabled={isSaving}>
+            {isSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </ModalFooter>
+      }
+      footerMobile={
+        <ModalFooter>
+          <Button onPress={handleSave} disabled={isSaving}>
+            {isSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </ModalFooter>
       }
     >
       <View style={{ gap: 24 }}>

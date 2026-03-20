@@ -1,5 +1,5 @@
 import React, { type ReactNode, useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, Modal, Platform, Pressable, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const isWeb = Platform.OS === 'web';
@@ -71,20 +71,46 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
     }
   }, [visible, screenHeight, backdropOpacity, sheetTranslateY, useNative, isWeb]);
 
-  const containerStyle = isWeb
-    ? [
-        styles.container,
-        {
-          position: 'fixed',
-          left: 0,
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: '100vw',
-          height: '100vh',
-        } as Record<string, unknown>,
-      ]
-    : [styles.container, { width: screenWidth, height: screenHeight }];
+  const containerClassName = isWeb
+    ? 'fixed inset-0 w-screen h-screen flex justify-end overflow-hidden'
+    : 'flex-1 justify-end overflow-hidden';
+  /** Web: omit flex justify-end here — with RN Web it can collapse an absolutely positioned backdrop to height 0. */
+  const webBackdropModalContainerClassName = 'fixed inset-0 w-screen h-screen overflow-hidden';
+  const containerStyle = isWeb ? undefined : { width: screenWidth, height: screenHeight };
+  const webBackdropFillStyle = {
+    position: 'absolute' as const,
+    left: 0,
+    top: 0,
+    width: screenWidth,
+    height: screenHeight,
+  };
+
+  const sheetStyle = {
+    backgroundColor: '#1A1A1A',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    borderColor: '#2A2A2A',
+    paddingTop: 12,
+    paddingHorizontal: 16,
+    paddingBottom: Math.max(insets.bottom, 16),
+    minHeight: 120,
+    transform: [{ translateY: sheetTranslateY }],
+  };
+
+  const backdropStyle = {
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    opacity: backdropOpacity,
+  };
+
+  const dragHandleStyle = {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#4B5563',
+    alignSelf: 'center' as const,
+    marginBottom: 16,
+  };
 
   // On web: two Modals — backdrop fades in place, sheet slides up (close uses our Animated)
   if (isWeb) {
@@ -96,17 +122,9 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
           animationType="fade"
           onRequestClose={onClose}
         >
-          <View style={containerStyle as React.ComponentProps<typeof View>['style']}>
-            <Animated.View
-              style={[
-                StyleSheet.absoluteFillObject,
-                {
-                  backgroundColor: `rgba(0, 0, 0, ${BACKDROP_OPACITY})`,
-                  opacity: backdropOpacity,
-                },
-              ]}
-            >
-              <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+          <View className={webBackdropModalContainerClassName} style={containerStyle}>
+            <Animated.View style={[webBackdropFillStyle, backdropStyle]}>
+              <Pressable className="absolute inset-0" onPress={onClose} />
             </Animated.View>
           </View>
         </Modal>
@@ -117,21 +135,16 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
           onRequestClose={onClose}
         >
           <Pressable
-            style={containerStyle as React.ComponentProps<typeof View>['style']}
+            className={containerClassName}
+            style={containerStyle}
             onPress={onClose}
           >
             <Animated.View
-              style={[
-                styles.sheet,
-                {
-                  paddingBottom: Math.max(insets.bottom, 16),
-                  transform: [{ translateY: sheetTranslateY }],
-                  minHeight: 120,
-                },
-              ]}
+              className="overflow-hidden"
+              style={sheetStyle}
               onStartShouldSetResponder={() => true}
             >
-              <View style={styles.dragHandle} />
+              <View style={dragHandleStyle} />
               {children}
             </Animated.View>
           </Pressable>
@@ -142,58 +155,19 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
 
   return (
     <Modal visible={isOpen} transparent animationType="none" onRequestClose={onClose}>
-      <View style={containerStyle as React.ComponentProps<typeof View>['style']}>
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFillObject,
-            {
-              backgroundColor: `rgba(0, 0, 0, ${BACKDROP_OPACITY})`,
-              opacity: backdropOpacity,
-            },
-          ]}
-        >
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+      <View className={containerClassName} style={containerStyle}>
+        <Animated.View className="absolute inset-0" style={backdropStyle}>
+          <Pressable className="absolute inset-0" onPress={onClose} />
         </Animated.View>
         <Animated.View
-          style={[
-            styles.sheet,
-            {
-              paddingBottom: Math.max(insets.bottom, 16),
-              transform: [{ translateY: sheetTranslateY }],
-              minHeight: 120,
-            },
-          ]}
+          className="overflow-hidden"
+          style={sheetStyle}
           onStartShouldSetResponder={() => true}
         >
-          <View style={styles.dragHandle} />
+          <View style={dragHandleStyle} />
           {children}
         </Animated.View>
       </View>
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  sheet: {
-    backgroundColor: '#1A1A1A',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderTopWidth: 1,
-    borderColor: '#2A2A2A',
-    paddingTop: 12,
-    paddingHorizontal: 16,
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#4B5563',
-    alignSelf: 'center',
-    marginBottom: 8,
-  },
-});

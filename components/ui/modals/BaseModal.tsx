@@ -13,6 +13,8 @@ interface BaseModalProps {
   description?: string;
   children?: React.ReactNode;
   footer?: React.ReactNode;
+  /** On mobile (sheet), use this footer instead of footer when set. Use to omit Cancel and show only primary action(s). */
+  footerMobile?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'full';
   maxHeight?: number;
   /** When set, modal has a fixed height (min and max). Use with maxHeight for consistent size. */
@@ -39,6 +41,7 @@ export function BaseModal({
   description,
   children,
   footer,
+  footerMobile,
   maxWidth = 'md',
   maxHeight,
   height,
@@ -84,7 +87,7 @@ export function BaseModal({
           <View style={{ maxHeight: sheetContentMaxHeight }}>
             <ScrollView
               style={{ maxHeight: sheetContentMaxHeight }}
-              contentContainerStyle={{ paddingBottom: footer ? 12 : 0 }}
+              contentContainerStyle={{ paddingBottom: (footerMobile ?? footer) ? 12 : 0 }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
             >
@@ -92,9 +95,9 @@ export function BaseModal({
             </ScrollView>
           </View>
         )}
-        {footer ? (
+        {(footerMobile ?? footer) ? (
           <View className="pt-4 border-t border-[#2A2A2A] mt-4">
-            {footer}
+            {footerMobile ?? footer}
           </View>
         ) : null}
       </BottomSheet>

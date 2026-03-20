@@ -8,7 +8,7 @@ import { IconButton } from '@/components/ui/icon-button';
 import { StatColumn } from '@/components/ui/StatColumn';
 import { Alert, EmptyState, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { CampaignListSkeleton } from '@/components/skeletons';
-import { BaseModal, ConfirmDeleteModal } from '@/components/ui/modals';
+import { BaseModal, ConfirmDeleteModal, ModalFooter } from '@/components/ui/modals';
 import { useRouter } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
 import { getCampaigns, createCampaign, deleteCampaign, getCampaignStatsForCampaigns, type CampaignStats } from '@/lib/supabase/services/campaigns';
@@ -75,26 +75,31 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
       description="Give your campaign a name to get started"
       maxWidth="md"
       footer={
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <Button
-              variant="secondary"
-              onPress={handleClose}
-              disabled={isLoading}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-          </View>
-          <View className="flex-1">
-            <Button
-              onPress={handleCreate}
-              disabled={isLoading}
-            >
-              {isLoading ? 'Creating...' : 'Create Campaign'}
-            </Button>
-          </View>
-        </View>
+        <ModalFooter>
+          <Button
+            variant="secondary"
+            onPress={handleClose}
+            disabled={isLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onPress={handleCreate}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Creating...' : 'Create Campaign'}
+          </Button>
+        </ModalFooter>
+      }
+      footerMobile={
+        <ModalFooter>
+          <Button
+            onPress={handleCreate}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Creating...' : 'Create Campaign'}
+          </Button>
+        </ModalFooter>
       }
     >
       <View className="mb-2">

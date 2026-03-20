@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Text, TouchableOpacity, View } from 'react-native';
 import Papa from 'papaparse';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/DataTable';
 import { MultiSegmentDial } from '@/components/ui/multi-segment-dial';
@@ -373,13 +373,11 @@ export function UploadMailboxesCSVModal({
         description="Upload CSV is available on web."
         maxWidth="md"
         footer={
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Button onPress={handleClose} variant="secondary">
-                Close
-              </Button>
-            </View>
-          </View>
+          <ModalFooter>
+            <Button onPress={handleClose} variant="secondary">
+              Close
+            </Button>
+          </ModalFooter>
         }
       >
         <Text className="text-gray-400">Open this page in a browser to upload a CSV and create multiple mailboxes.</Text>
@@ -394,42 +392,52 @@ export function UploadMailboxesCSVModal({
 
   const footer =
     step === 0 ? (
-      <View style={{ flexDirection: 'row', gap: 12 }}>
-        <View style={{ flex: 1 }}>
-          <Button onPress={handleClose} variant="secondary">
-            Cancel
-          </Button>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Button onPress={() => setStep(1)} disabled={rows.length === 0}>
-            Next: Preview
-          </Button>
-        </View>
-      </View>
+      <ModalFooter>
+        <Button onPress={handleClose} variant="secondary">
+          Cancel
+        </Button>
+        <Button onPress={() => setStep(1)} disabled={rows.length === 0}>
+          Next: Preview
+        </Button>
+      </ModalFooter>
     ) : (
-      <View style={{ flexDirection: 'row', gap: 12 }}>
-        <View style={{ flex: 1 }}>
-          <Button
-            onPress={() => {
-              testsAbortedRef.current = true;
-              setStep(0);
-              setConnectionResults({});
-            }}
-            variant="secondary"
-            disabled={creating}
-          >
-            Back
-          </Button>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Button
-            onPress={handleCreate}
-            disabled={creating || validCount === 0 || testingConnections}
-          >
-            {creating ? `Creating... ${createdCount}/${validCount}` : `Create ${validCount} mailbox${validCount !== 1 ? 'es' : ''}`}
-          </Button>
-        </View>
-      </View>
+      <ModalFooter>
+        <Button
+          onPress={() => {
+            testsAbortedRef.current = true;
+            setStep(0);
+            setConnectionResults({});
+          }}
+          variant="secondary"
+          disabled={creating}
+        >
+          Back
+        </Button>
+        <Button
+          onPress={handleCreate}
+          disabled={creating || validCount === 0 || testingConnections}
+        >
+          {creating ? `Creating... ${createdCount}/${validCount}` : `Create ${validCount} mailbox${validCount !== 1 ? 'es' : ''}`}
+        </Button>
+      </ModalFooter>
+    );
+
+  const footerMobile =
+    step === 0 ? (
+      <ModalFooter>
+        <Button onPress={() => setStep(1)} disabled={rows.length === 0}>
+          Next: Preview
+        </Button>
+      </ModalFooter>
+    ) : (
+      <ModalFooter>
+        <Button
+          onPress={handleCreate}
+          disabled={creating || validCount === 0 || testingConnections}
+        >
+          {creating ? `Creating... ${createdCount}/${validCount}` : `Create ${validCount} mailbox${validCount !== 1 ? 'es' : ''}`}
+        </Button>
+      </ModalFooter>
     );
 
   return (
@@ -441,6 +449,7 @@ export function UploadMailboxesCSVModal({
       maxWidth="4xl"
       maxHeight={720}
       footer={footer}
+      footerMobile={footerMobile}
     >
       {step === 0 && (
         <View className="gap-4">

@@ -46,7 +46,11 @@ export type PopupPlacement =
   | 'bottom-start'
   | 'bottom-end'
   | 'left'
-  | 'right';
+  | 'left-start'
+  | 'left-end'
+  | 'right'
+  | 'right-start'
+  | 'right-end';
 
 export interface PopupPortalProps {
   /** Ref to the trigger element the popup should be anchored to. */
@@ -114,7 +118,11 @@ function rawPosition(
     case 'top-end':      return { top: ay - ph - gap, left: ax + aw - pw };
     case 'top':          return { top: ay - ph - gap, left: ax + aw / 2 - pw / 2 };
     case 'left':         return { top: ay + ah / 2 - ph / 2, left: ax - pw - gap };
+    case 'left-start':   return { top: ay, left: ax - pw - gap };
+    case 'left-end':     return { top: ay + ah - ph, left: ax - pw - gap };
     case 'right':        return { top: ay + ah / 2 - ph / 2, left: ax + aw + gap };
+    case 'right-start':  return { top: ay, left: ax + aw + gap };
+    case 'right-end':    return { top: ay + ah - ph, left: ax + aw + gap };
   }
 }
 
@@ -138,18 +146,24 @@ function computePosition(
     'top-start':    'bottom-start',
     'top-end':      'bottom-end',
     'left':         'right',
+    'left-start':   'right-start',
+    'left-end':     'right-end',
     'right':        'left',
+    'right-start':  'left-start',
+    'right-end':    'left-end',
   };
 
   let placement = preferred;
   let pos = rawPosition(placement, anchor, popup, gap);
 
   // Flip if overflowing on the preferred side
+  const overflowRight = (placement === 'right' || placement === 'right-start' || placement === 'right-end') && pos.left + popup.pw > vw;
+  const overflowLeft = (placement === 'left' || placement === 'left-start' || placement === 'left-end') && pos.left < 0;
   const needsFlip =
     (placement.startsWith('bottom') && pos.top + popup.ph > vh) ||
     (placement.startsWith('top')    && pos.top < 0) ||
-    (placement === 'left'           && pos.left < 0) ||
-    (placement === 'right'          && pos.left + popup.pw > vw);
+    overflowLeft ||
+    overflowRight;
 
   if (needsFlip && flipMap[placement]) {
     const flipped = flipMap[placement]!;
@@ -158,8 +172,8 @@ function computePosition(
     const flippedOk =
       (flipped.startsWith('bottom') ? flippedPos.top + popup.ph <= vh : true) &&
       (flipped.startsWith('top')    ? flippedPos.top >= 0 : true) &&
-      (flipped === 'left'           ? flippedPos.left >= 0 : true) &&
-      (flipped === 'right'          ? flippedPos.left + popup.pw <= vw : true);
+      ((flipped === 'left' || flipped === 'left-start' || flipped === 'left-end') ? flippedPos.left >= 0 : true) &&
+      ((flipped === 'right' || flipped === 'right-start' || flipped === 'right-end') ? flippedPos.left + popup.pw <= vw : true);
     if (flippedOk) {
       placement = flipped;
       pos = flippedPos;

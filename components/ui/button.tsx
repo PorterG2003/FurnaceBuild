@@ -5,6 +5,8 @@ import { cn } from '@/lib/cn';
 interface ButtonProps extends TouchableOpacityProps {
   variant?: 'default' | 'secondary' | 'outline' | 'destructive' | 'destructive-solid' | 'link';
   size?: 'default' | 'sm' | 'lg' | 'xs';
+  /** When true, button stretches to full width of its container (e.g. single-button modal footer). */
+  fullWidth?: boolean;
   children: React.ReactNode;
 }
 
@@ -12,6 +14,7 @@ export function Button({
   variant = 'default',
   size = 'default',
   className,
+  fullWidth = false,
   children,
   ...props
 }: ButtonProps) {
@@ -19,6 +22,7 @@ export function Button({
     <TouchableOpacity
       className={cn(
         'items-center justify-center font-instrument-medium flex-row',
+        fullWidth && 'self-stretch',
         {
           'rounded-lg': size === 'xs',
           'rounded-xl': size !== 'xs',
@@ -50,6 +54,8 @@ export function Button({
         children
       ) : (
         <Text
+          numberOfLines={2}
+          ellipsizeMode="clip"
           className={cn(
             'font-instrument-medium',
             {

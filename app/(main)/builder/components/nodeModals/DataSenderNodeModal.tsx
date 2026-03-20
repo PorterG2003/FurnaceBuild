@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TextInput } from 'react-native';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 
 interface DataSenderNodeModalProps {
@@ -34,18 +34,22 @@ function DataSenderNodeModal({
   };
 
   const footer = (
-    <View className="flex-row gap-3">
-      <View className="flex-1">
-        <Button variant="secondary" onPress={onClose} className="flex-1">
-          Cancel
-        </Button>
-      </View>
-      <View className="flex-1">
-        <Button onPress={handleSave}>
-          Save
-        </Button>
-      </View>
-    </View>
+    <ModalFooter>
+      <Button variant="secondary" onPress={onClose}>
+        Cancel
+      </Button>
+      <Button onPress={handleSave}>
+        Save
+      </Button>
+    </ModalFooter>
+  );
+
+  const footerMobile = (
+    <ModalFooter>
+      <Button onPress={handleSave}>
+        Save
+      </Button>
+    </ModalFooter>
   );
 
   return (
@@ -55,6 +59,7 @@ function DataSenderNodeModal({
       title="Configure Data Sender Node"
       description="Configure the endpoint and payload"
       footer={footer}
+      footerMobile={footerMobile}
     >
       <View className="gap-4">
         <View>

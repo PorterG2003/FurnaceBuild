@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, ScrollView, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
@@ -157,6 +158,9 @@ export function ManageBlockListModal({
     []
   );
 
+  const { width } = useWindowDimensions();
+  const isMobile = width < LAYOUT_BREAKPOINT;
+
   return (
     <BaseModal
       visible={visible}
@@ -171,7 +175,8 @@ export function ManageBlockListModal({
           tabs={tabs}
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          layout="content"
+          layout={isMobile ? 'equal' : 'content'}
+          marginBottom={isMobile ? 0 : 16}
         />
 
         {activeTab === TAB_SETTINGS && (

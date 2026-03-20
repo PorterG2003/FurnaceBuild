@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { View, Text, Pressable, TextInput } from 'react-native';
 import { CheckIcon } from 'react-native-heroicons/outline';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { useConfirmClose } from '@/hooks/useConfirmClose';
 import { assignMailboxesToCampaign } from '@/lib/supabase/services/campaigns';
@@ -87,16 +87,19 @@ export function MailboxesModal({ visible, onClose, onSaved, campaignId, accountI
       maxWidth="2xl"
       maxHeight={680}
       footer={
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <Button onPress={handleClose} variant="secondary">Cancel</Button>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button onPress={handleSave} disabled={isSaving}>
-              {isSaving ? 'Saving...' : 'Save'}
-            </Button>
-          </View>
-        </View>
+        <ModalFooter>
+          <Button onPress={handleClose} variant="secondary">Cancel</Button>
+          <Button onPress={handleSave} disabled={isSaving}>
+            {isSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </ModalFooter>
+      }
+      footerMobile={
+        <ModalFooter>
+          <Button onPress={handleSave} disabled={isSaving}>
+            {isSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </ModalFooter>
       }
     >
       <View style={{ marginBottom: 12 }}>

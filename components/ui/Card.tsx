@@ -24,7 +24,7 @@ export function Card({ children, variant, onPress, className = '' }: CardProps) 
   const isStyled = resolvedVariant === 'card';
   const baseClass = isStyled
     ? 'bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4'
-    : 'p-4';
+    : '';
   const combinedClass = `${baseClass} ${className}`.trim();
 
   const content = <View className={combinedClass}>{children}</View>;

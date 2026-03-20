@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
-import { BaseModal } from '@/components/ui/modals/BaseModal';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/feedback';
 import { TAG_PRESET_COLORS, pickRandomPresetColor } from '@/lib/inbox/tag-colors';
@@ -58,11 +58,11 @@ export function CreateTagModal({
       description="Give the tag a name and choose a color."
       maxWidth="sm"
       footer={
-        <View className="flex-row gap-3">
+        <ModalFooter>
           <Pressable
             onPress={onClose}
             disabled={isSubmitting}
-            className="flex-1 px-4 py-3 rounded-xl border border-white/20 bg-white/5 items-center justify-center"
+            className="px-4 py-3 rounded-xl border border-white/20 bg-white/5 items-center justify-center"
             style={{ opacity: isSubmitting ? 0.5 : 1 }}
           >
             <Text className="text-white font-instrument-medium">Cancel</Text>
@@ -71,11 +71,21 @@ export function CreateTagModal({
             variant="default"
             onPress={handleCreate}
             disabled={!name.trim() || isSubmitting}
-            className="flex-1"
           >
             {isSubmitting ? 'Creating…' : 'Create'}
           </Button>
-        </View>
+        </ModalFooter>
+      }
+      footerMobile={
+        <ModalFooter>
+          <Button
+            variant="default"
+            onPress={handleCreate}
+            disabled={!name.trim() || isSubmitting}
+          >
+            {isSubmitting ? 'Creating…' : 'Create'}
+          </Button>
+        </ModalFooter>
       }
     >
       <View className="gap-4">

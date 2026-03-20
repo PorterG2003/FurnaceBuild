@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
 import { TrashIcon } from 'react-native-heroicons/outline';
-import { BaseModal } from '@/components/ui/modals/BaseModal';
-import { ConfirmDeleteModal } from '@/components/ui/modals/ConfirmDeleteModal';
+import { BaseModal, ConfirmDeleteModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/feedback';
 import { TAG_PRESET_COLORS } from '@/lib/inbox/tag-colors';
@@ -88,11 +87,11 @@ export function EditTagModal({
         description="Change the tag name or color."
         maxWidth="md"
         footer={
-          <View className="flex-row gap-3">
+          <ModalFooter>
             <Pressable
               onPress={onClose}
               disabled={isSubmitting}
-              className="flex-1 px-4 py-3 rounded-xl border border-white/20 bg-white/5 items-center justify-center"
+              className="px-4 py-3 rounded-xl border border-white/20 bg-white/5 items-center justify-center"
               style={{ opacity: isSubmitting ? 0.5 : 1 }}
             >
               <Text className="text-white font-instrument-medium">Cancel</Text>
@@ -101,11 +100,21 @@ export function EditTagModal({
               variant="default"
               onPress={handleSave}
               disabled={!name.trim() || isSubmitting}
-              className="flex-1"
             >
               {isSubmitting ? 'Saving…' : 'Save'}
             </Button>
-          </View>
+          </ModalFooter>
+        }
+        footerMobile={
+          <ModalFooter>
+            <Button
+              variant="default"
+              onPress={handleSave}
+              disabled={!name.trim() || isSubmitting}
+            >
+              {isSubmitting ? 'Saving…' : 'Save'}
+            </Button>
+          </ModalFooter>
         }
       >
         <View className="gap-4">

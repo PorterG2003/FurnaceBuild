@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, TextInput, ScrollView } from 'react-native';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { TrashIcon } from 'react-native-heroicons/outline';
@@ -52,18 +52,22 @@ export function AICategorizerNodeModal({
   };
 
   const footer = (
-    <View className="flex-row gap-3">
-      <View className="flex-1">
-        <Button variant="secondary" onPress={onClose} className="flex-1">
-          Cancel
-        </Button>
-      </View>
-      <View className="flex-1">
-        <Button onPress={handleSave}>
-          Save
-        </Button>
-      </View>
-    </View>
+    <ModalFooter>
+      <Button variant="secondary" onPress={onClose}>
+        Cancel
+      </Button>
+      <Button onPress={handleSave}>
+        Save
+      </Button>
+    </ModalFooter>
+  );
+
+  const footerMobile = (
+    <ModalFooter>
+      <Button onPress={handleSave}>
+        Save
+      </Button>
+    </ModalFooter>
   );
 
   return (
@@ -73,6 +77,7 @@ export function AICategorizerNodeModal({
       title="Configure AI Categorizer Node"
       description="Configure the categories for AI categorization"
       footer={footer}
+      footerMobile={footerMobile}
       maxWidth="lg"
     >
       <View className="gap-4">

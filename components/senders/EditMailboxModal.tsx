@@ -1,5 +1,5 @@
 import { Text, TextInput, View } from 'react-native';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { ComposerRichEditor } from '@/components/inbox';
@@ -63,18 +63,21 @@ export function EditMailboxModal({
       maxWidth="4xl"
       maxHeight={720}
       footer={
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <Button onPress={onClose} variant="secondary">
-              Cancel
-            </Button>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button onPress={onSave} disabled={saving}>
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
-          </View>
-        </View>
+        <ModalFooter>
+          <Button onPress={onClose} variant="secondary">
+            Cancel
+          </Button>
+          <Button onPress={onSave} disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </ModalFooter>
+      }
+      footerMobile={
+        <ModalFooter>
+          <Button onPress={onSave} disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </ModalFooter>
       }
     >
       <View className="gap-4">

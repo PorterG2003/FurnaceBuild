@@ -1,5 +1,5 @@
 import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { BaseModal } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { ComposerRichEditor } from '@/components/inbox';
 import type { EditorBridge } from '@10play/tentap-editor';
@@ -46,21 +46,27 @@ export function ConnectMailboxModal({
       maxWidth="2xl"
       maxHeight={680}
       footer={
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <Button onPress={onClose} variant="secondary">
-              Cancel
-            </Button>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              onPress={onConnect}
-              disabled={connecting || (testResult !== null && !testResult.success)}
-            >
-              {connecting ? 'Creating...' : 'Create'}
-            </Button>
-          </View>
-        </View>
+        <ModalFooter>
+          <Button onPress={onClose} variant="secondary">
+            Cancel
+          </Button>
+          <Button
+            onPress={onConnect}
+            disabled={connecting || (testResult !== null && !testResult.success)}
+          >
+            {connecting ? 'Creating...' : 'Create'}
+          </Button>
+        </ModalFooter>
+      }
+      footerMobile={
+        <ModalFooter>
+          <Button
+            onPress={onConnect}
+            disabled={connecting || (testResult !== null && !testResult.success)}
+          >
+            {connecting ? 'Creating...' : 'Create'}
+          </Button>
+        </ModalFooter>
       }
     >
       <View className="mb-4">

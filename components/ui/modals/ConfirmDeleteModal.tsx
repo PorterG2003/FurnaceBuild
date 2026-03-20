@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, TextInput } from 'react-native';
 import { Button } from '@/components/ui/button';
 import { BaseModal } from './BaseModal';
+import { ModalFooter } from './ModalFooter';
 
 interface ConfirmDeleteModalProps {
   visible: boolean;
@@ -74,24 +75,29 @@ export function ConfirmDeleteModal({
       description={description || defaultDescription}
       maxWidth="sm"
       footer={
-        <View className="flex-row gap-3">
-          <Button
-            variant="outline"
-            onPress={handleClose}
-            disabled={isLoading}
-            className="flex-1"
-          >
+        <ModalFooter>
+          <Button variant="outline" onPress={handleClose} disabled={isLoading}>
             {cancelLabel}
           </Button>
           <Button
             variant="destructive"
             onPress={handleConfirm}
             disabled={isLoading || !isConfirmed}
-            className="flex-1"
           >
             {isLoading ? 'Deleting...' : confirmLabel}
           </Button>
-        </View>
+        </ModalFooter>
+      }
+      footerMobile={
+        <ModalFooter>
+          <Button
+            variant="destructive"
+            onPress={handleConfirm}
+            disabled={isLoading || !isConfirmed}
+          >
+            {isLoading ? 'Deleting...' : confirmLabel}
+          </Button>
+        </ModalFooter>
       }
     >
       {requireConfirmation && (

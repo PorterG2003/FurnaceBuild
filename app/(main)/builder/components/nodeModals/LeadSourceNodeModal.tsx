@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Platform, Alert, useWindowDimensions } from 'react-native';
 import Papa from 'papaparse';
-import { BaseModal, ModalStepIndicator } from '@/components/ui/modals';
+import { BaseModal, ModalFooter, ModalStepIndicator } from '@/components/ui/modals';
 import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
@@ -1165,6 +1165,17 @@ function LeadSourceNodeModal({
       </View>
     );
 
+    const wizardFooterMobile = (
+      <ModalFooter>
+        <Button
+          onPress={isLastStep ? handleConfirmImport : goToNextCsvStep}
+          disabled={isLastStep ? !importSummary || isSavingImport : isNextDisabled}
+        >
+          {isLastStep ? (isSavingImport ? 'Importing…' : 'Import Leads') : 'Next'}
+        </Button>
+      </ModalFooter>
+    );
+
     return (
       <BaseModal
         visible={isImportWizardOpen}
@@ -1172,6 +1183,7 @@ function LeadSourceNodeModal({
         title="Import Leads"
         description="Upload a CSV, match your fields, and review before saving leads to this bucket"
         footer={wizardFooter}
+        footerMobile={wizardFooterMobile}
         maxWidth="full"
         height={Math.round(windowHeight * 0.9)}
       >
@@ -1200,18 +1212,22 @@ function LeadSourceNodeModal({
   };
 
   const footer = (
-    <View className="flex-row gap-3">
-      <View className="flex-1">
-        <Button variant="secondary" onPress={onClose} className="flex-1">
-          Cancel
-        </Button>
-      </View>
-      <View className="flex-1">
-        <Button onPress={handleSave} disabled={!label.trim()}>
-          Save
-        </Button>
-      </View>
-    </View>
+    <ModalFooter>
+      <Button variant="secondary" onPress={onClose}>
+        Cancel
+      </Button>
+      <Button onPress={handleSave} disabled={!label.trim()}>
+        Save
+      </Button>
+    </ModalFooter>
+  );
+
+  const footerMobile = (
+    <ModalFooter>
+      <Button onPress={handleSave} disabled={!label.trim()}>
+        Save
+      </Button>
+    </ModalFooter>
   );
 
   return (
@@ -1222,6 +1238,7 @@ function LeadSourceNodeModal({
         title="Configure Lead Source Node"
         description="Configure CSV imports, API access, and data insights for this lead bucket"
         footer={footer}
+        footerMobile={footerMobile}
         maxWidth="full"
         height={Math.round(windowHeight * 0.9)}
       >

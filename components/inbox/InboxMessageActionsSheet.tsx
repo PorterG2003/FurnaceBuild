@@ -1,0 +1,124 @@
+import React from 'react';
+import { View, Text, Pressable } from 'react-native';
+import { NoSymbolIcon, TagIcon, FolderIcon } from 'react-native-heroicons/outline';
+import { BottomSheet } from '@/components/ui/modals';
+import type { EmailThread } from '@/lib/supabase/types';
+import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
+import { THREAD_CATEGORIES } from './inboxConstants';
+
+export interface InboxMessageActionsSheetProps {
+  visible: boolean;
+  onClose: () => void;
+  accountId: string | null;
+  selectedThreadId: string | null;
+  selectedThread: EmailThread | null;
+  threadTagsMap: Record<string, ThreadTag[]>;
+  selectedThreadProspectEmails: string[];
+  onBlock: () => void;
+  onTags: () => void;
+  onSetCategory: (category: string | null) => Promise<void>;
+}
+
+export function InboxMessageActionsSheet({
+  visible,
+  onClose,
+  accountId,
+  selectedThreadId,
+  selectedThread,
+  threadTagsMap,
+  selectedThreadProspectEmails,
+  onBlock,
+  onTags,
+  onSetCategory,
+}: InboxMessageActionsSheetProps) {
+  const tagCount = selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []).length : 0;
+
+  return (
+    <BottomSheet visible={visible} onClose={onClose}>
+      {accountId && selectedThreadId && selectedThread && (
+        <>
+          {!!accountId && selectedThreadProspectEmails.length > 0 && (
+            <Pressable
+              onPress={() => {
+                onBlock();
+                onClose();
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 14,
+                borderBottomWidth: 1,
+                borderBottomColor: '#2A2A2A',
+              }}
+            >
+              <NoSymbolIcon size={20} color="#F87171" />
+              <Text className="text-white font-instrument-medium text-base">Block sender</Text>
+            </Pressable>
+          )}
+          <Pressable
+            onPress={() => {
+              onTags();
+              onClose();
+            }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              paddingVertical: 14,
+              borderBottomWidth: 1,
+              borderBottomColor: '#2A2A2A',
+            }}
+          >
+            <TagIcon size={20} color="#9CA3AF" />
+            <Text className="text-white font-instrument-medium text-base">
+              Tags{tagCount > 0 ? ` (${tagCount})` : ''}
+            </Text>
+          </Pressable>
+          <View
+            style={{
+              paddingVertical: 14,
+              borderBottomWidth: 1,
+              borderBottomColor: '#2A2A2A',
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <FolderIcon size={20} color="#9CA3AF" />
+              <Text className="text-white font-instrument-medium text-base">Set category</Text>
+            </View>
+            {['', ...THREAD_CATEGORIES].map((cat) => {
+              const label = cat === '' ? 'No category' : cat;
+              const isSelected = (selectedThread?.category ?? null) === (cat || null);
+              return (
+                <Pressable
+                  key={cat || '__none__'}
+                  onPress={async () => {
+                    try {
+                      await onSetCategory(cat || null);
+                      onClose();
+                    } catch (e) {
+                      console.error('Failed to update category:', e);
+                    }
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 10,
+                    paddingLeft: 32,
+                  }}
+                >
+                  <Text
+                    className="font-instrument text-base"
+                    style={{ color: isSelected ? '#f85102' : '#9CA3AF' }}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      )}
+    </BottomSheet>
+  );
+}

@@ -1,5 +1,14 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, Modal, Pressable, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  Modal,
+  Pressable,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { BottomSheet } from '@/components/ui/modals';
 import { Select, SearchAndSelectMulti } from '@/components/ui/forms';
 import { Toggle } from '@/components/ui/Toggle';
 import type { Mailbox, Campaign } from '@/lib/supabase/types';
@@ -15,9 +24,14 @@ const DATE_OPTIONS = [
   { id: '30d', name: 'Last 30 days' },
 ];
 
+const DROPDOWN_SCROLL_MAX = 560;
+
 export interface InboxFilterDropdownProps {
   visible: boolean;
   onClose: () => void;
+  presentation: 'dropdown' | 'sheet';
+  /** Used when presentation is "sheet" */
+  sheetMaxHeight: number;
   anchorLayout: { x: number; y: number; w: number; h: number } | null;
   unreadOnlyFilter: boolean;
   onUnreadOnlyFilterChange: (v: boolean) => void;
@@ -40,6 +54,8 @@ export interface InboxFilterDropdownProps {
 export function InboxFilterDropdown({
   visible,
   onClose,
+  presentation,
+  sheetMaxHeight,
   anchorLayout,
   unreadOnlyFilter,
   onUnreadOnlyFilterChange,
@@ -103,15 +119,115 @@ export function InboxFilterDropdown({
 
   const dateValue = datePreset ?? 'all';
 
+  const scrollMaxHeight = presentation === 'sheet' ? sheetMaxHeight : DROPDOWN_SCROLL_MAX;
+
+  const filterFormScroll = (
+    <ScrollView
+      style={{ maxHeight: scrollMaxHeight }}
+      contentContainerStyle={{ padding: 16 }}
+      showsVerticalScrollIndicator
+      keyboardShouldPersistTaps="handled"
+    >
+      <View className="flex-row items-center justify-between mb-4">
+        <Text className="text-xs font-instrument-medium text-gray-400">Unread only</Text>
+        <Toggle value={unreadOnlyFilter} onValueChange={onUnreadOnlyFilterChange} />
+      </View>
+
+      <Select
+        label="Date"
+        items={filteredDateItems}
+        getItemId={(i) => i.id}
+        getItemLabel={(i) => ({ primary: i.name })}
+        value={dateValue}
+        onChange={(id) => onDatePresetChange(id === 'all' ? null : (id as '7d' | '30d'))}
+        onSearchChange={setDateSearch}
+        searchPlaceholder="Search…"
+        placeholder="All"
+        listMaxHeight={180}
+      />
+
+      <Select
+        label="Mailbox"
+        items={filteredMailboxItems}
+        getItemId={(m) => m.id}
+        getItemLabel={(m) => ({ primary: m.email_address ?? 'All' })}
+        value={mailboxFilterId || 'all'}
+        onChange={(id) => onMailboxFilterIdChange(id === 'all' ? null : id)}
+        onSearchChange={setMailboxSearch}
+        searchPlaceholder="Search mailboxes…"
+        placeholder="All"
+        listMaxHeight={200}
+      />
+
+      <Select
+        label="Campaign"
+        items={filteredCampaignItems}
+        getItemId={(c) => c.id}
+        getItemLabel={(c) => ({ primary: c.name ?? 'All' })}
+        value={campaignFilterId || 'all'}
+        onChange={(id) => onCampaignFilterIdChange(id === 'all' ? null : id)}
+        onSearchChange={setCampaignSearch}
+        searchPlaceholder="Search campaigns…"
+        placeholder="All"
+        listMaxHeight={200}
+      />
+
+      <Select
+        label="Category"
+        items={filteredCategoryItems}
+        getItemId={(i) => i.id}
+        getItemLabel={(i) => ({ primary: i.name })}
+        getItemColor={(item) =>
+          item.id === 'all' || item.id === NO_CATEGORY_FILTER ? null : getCategoryColor(item.id)
+        }
+        itemColorVariant="tint"
+        value={categoryFilter || 'all'}
+        onChange={(id) => onCategoryFilterChange(id === 'all' ? null : id)}
+        onSearchChange={setCategorySearch}
+        searchPlaceholder="Search…"
+        placeholder="All"
+        listMaxHeight={180}
+      />
+
+      <SearchAndSelectMulti
+        label="Tag"
+        items={accountTags}
+        getItemId={(t) => t.id}
+        getItemLabel={(t) => t.name}
+        getItemColor={(t) => resolveTagColor(t.color)}
+        value={tagFilterIds}
+        onChange={onTagFilterIdsChange}
+        searchPlaceholder="Search tags…"
+        placeholder="All"
+        listMaxHeight={200}
+        emptyMessage={(hasSearch) => (hasSearch ? 'No matching tags.' : 'No tags yet.')}
+      />
+
+      <Pressable onPress={onClearAll} className="py-2 mt-2">
+        <Text className="text-gray-400 font-instrument text-sm text-center">Clear all</Text>
+      </Pressable>
+    </ScrollView>
+  );
+
+  if (presentation === 'sheet') {
+    return (
+      <BottomSheet visible={visible} onClose={onClose}>
+        <View style={{ maxHeight: sheetMaxHeight }}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1 }}
+          >
+            {filterFormScroll}
+          </KeyboardAvoidingView>
+        </View>
+      </BottomSheet>
+    );
+  }
+
   if (!visible || !anchorLayout) return null;
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={{ flex: 1 }} onPress={onClose}>
         <Pressable
           style={{
@@ -119,111 +235,25 @@ export function InboxFilterDropdown({
             left: anchorLayout.x,
             top: anchorLayout.y + anchorLayout.h + 4,
             width: Math.max(anchorLayout.w, 440),
-            maxHeight: 560,
+            maxHeight: DROPDOWN_SCROLL_MAX,
             backgroundColor: '#1A1A1A',
             borderRadius: 12,
             borderWidth: 1,
             borderColor: '#2A2A2A',
             ...(typeof window !== 'undefined'
               ? { boxShadow: '0px 8px 16px rgba(0,0,0,0.35)' }
-              : { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 12 }),
+              : {
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.35,
+                  shadowRadius: 16,
+                  elevation: 12,
+                }),
             overflow: 'hidden',
           }}
           onPress={(e) => e?.stopPropagation?.()}
         >
-          <ScrollView
-            style={{ maxHeight: 560 }}
-            contentContainerStyle={{ padding: 16 }}
-            showsVerticalScrollIndicator
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Unread */}
-            <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-xs font-instrument-medium text-gray-400">Unread only</Text>
-              <Toggle
-                value={unreadOnlyFilter}
-                onValueChange={onUnreadOnlyFilterChange}
-              />
-            </View>
-
-            {/* Date */}
-            <Select
-              label="Date"
-              items={filteredDateItems}
-              getItemId={(i) => i.id}
-              getItemLabel={(i) => ({ primary: i.name })}
-              value={dateValue}
-              onChange={(id) => onDatePresetChange(id === 'all' ? null : (id as '7d' | '30d'))}
-              onSearchChange={setDateSearch}
-              searchPlaceholder="Search…"
-              placeholder="All"
-              listMaxHeight={180}
-            />
-
-            {/* Mailbox */}
-            <Select
-              label="Mailbox"
-              items={filteredMailboxItems}
-              getItemId={(m) => m.id}
-              getItemLabel={(m) => ({ primary: m.email_address ?? 'All' })}
-              value={mailboxFilterId || 'all'}
-              onChange={(id) => onMailboxFilterIdChange(id === 'all' ? null : id)}
-              onSearchChange={setMailboxSearch}
-              searchPlaceholder="Search mailboxes…"
-              placeholder="All"
-              listMaxHeight={200}
-            />
-
-            {/* Campaign */}
-            <Select
-              label="Campaign"
-              items={filteredCampaignItems}
-              getItemId={(c) => c.id}
-              getItemLabel={(c) => ({ primary: c.name ?? 'All' })}
-              value={campaignFilterId || 'all'}
-              onChange={(id) => onCampaignFilterIdChange(id === 'all' ? null : id)}
-              onSearchChange={setCampaignSearch}
-              searchPlaceholder="Search campaigns…"
-              placeholder="All"
-              listMaxHeight={200}
-            />
-
-            {/* Category */}
-            <Select
-              label="Category"
-              items={filteredCategoryItems}
-              getItemId={(i) => i.id}
-              getItemLabel={(i) => ({ primary: i.name })}
-              getItemColor={(item) => (item.id === 'all' || item.id === NO_CATEGORY_FILTER ? null : getCategoryColor(item.id))}
-              itemColorVariant="tint"
-              value={categoryFilter || 'all'}
-              onChange={(id) => onCategoryFilterChange(id === 'all' ? null : id)}
-              onSearchChange={setCategorySearch}
-              searchPlaceholder="Search…"
-              placeholder="All"
-              listMaxHeight={180}
-            />
-
-            {/* Tag (multi-select) */}
-            <SearchAndSelectMulti
-              label="Tag"
-              items={accountTags}
-              getItemId={(t) => t.id}
-              getItemLabel={(t) => t.name}
-              getItemColor={(t) => resolveTagColor(t.color)}
-              value={tagFilterIds}
-              onChange={onTagFilterIdsChange}
-              searchPlaceholder="Search tags…"
-              placeholder="All"
-              listMaxHeight={200}
-              emptyMessage={(hasSearch) => (hasSearch ? 'No matching tags.' : 'No tags yet.')}
-            />
-
-            {/* Clear all */}
-            <Pressable onPress={onClearAll} className="py-2 mt-2">
-              <Text className="text-gray-400 font-instrument text-sm text-center">Clear all</Text>
-            </Pressable>
-          </ScrollView>
+          {filterFormScroll}
         </Pressable>
       </Pressable>
     </Modal>

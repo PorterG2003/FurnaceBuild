@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,16 @@ import {
   Modal,
   Pressable,
   useWindowDimensions,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { ChevronDownIcon, MagnifyingGlassIcon } from 'react-native-heroicons/outline';
+import {
+  BottomSheet,
+  useBottomSheetTakeover,
+  usePickerInsideBottomSheet,
+} from '@/components/ui/modals';
+import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 
 interface SelectPropsBase<T> {
   items: T[];
@@ -120,6 +128,9 @@ export function Select<T>({
 }: SelectProps<T>) {
   const sz = sizeStyles[size];
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const isCompactLayout = screenWidth < LAYOUT_BREAKPOINT;
+  const insideSheet = usePickerInsideBottomSheet();
+  const { presentTakeover, dismissTakeover } = useBottomSheetTakeover();
   const [open, setOpen] = useState(false);
   const [internalSearch, setInternalSearch] = useState('');
   const [triggerLayout, setTriggerLayout] = useState<{
@@ -158,9 +169,9 @@ export function Select<T>({
     [onChange, closePopover]
   );
 
-  // Measure trigger position when opening (for popover placement)
+  // Measure trigger position when opening (for popover placement only)
   useEffect(() => {
-    if (!open) {
+    if (!open || isCompactLayout) {
       setTriggerLayout(null);
       return;
     }
@@ -172,15 +183,16 @@ export function Select<T>({
     measure();
     const t = setTimeout(measure, 50);
     return () => clearTimeout(t);
-  }, [open]);
+  }, [open, isCompactLayout]);
 
   // Focus search when popover opens (only when searchable)
   useEffect(() => {
     if (open && searchable) {
-      const t = setTimeout(() => searchInputRef.current?.focus(), 100);
+      const delay = insideSheet ? 160 : 100;
+      const t = setTimeout(() => searchInputRef.current?.focus(), delay);
       return () => clearTimeout(t);
     }
-  }, [open, searchable]);
+  }, [open, searchable, insideSheet]);
 
   // Escape to close (web)
   useEffect(() => {
@@ -200,28 +212,214 @@ export function Select<T>({
   const triggerColor =
     selectedItem && getItemColor ? getItemColor(selectedItem) ?? null : null;
 
-  const rowStyle = (isSelected: boolean, itemColor?: string | null) => {
-    const base = {
-      ...sz.row,
-      flexDirection: 'row' as const,
-      alignItems: 'center' as const,
-      borderWidth: 1,
-    };
-    if (itemColorVariant === 'tint' && itemColor) {
-      return {
-        ...base,
-        backgroundColor: hexToTranslucentBackground(itemColor),
-        borderColor: isSelected ? `${itemColor}CC` : `${itemColor}66`,
+  const rowStyle = useCallback(
+    (isSelected: boolean, itemColor?: string | null) => {
+      const base = {
+        ...sz.row,
+        flexDirection: 'row' as const,
+        alignItems: 'center' as const,
+        borderWidth: 1,
       };
-    }
-    if (isSelected) {
-      return { ...base, backgroundColor: 'rgba(243, 68, 13, 0.14)', borderColor: 'rgba(243, 68, 13, 0.4)' };
-    }
-    return { ...base, backgroundColor: '#121212', borderColor: '#2A2A2A' };
-  };
+      if (itemColorVariant === 'tint' && itemColor) {
+        return {
+          ...base,
+          backgroundColor: hexToTranslucentBackground(itemColor),
+          borderColor: isSelected ? `${itemColor}CC` : `${itemColor}66`,
+        };
+      }
+      if (isSelected) {
+        return { ...base, backgroundColor: 'rgba(243, 68, 13, 0.14)', borderColor: 'rgba(243, 68, 13, 0.4)' };
+      }
+      return { ...base, backgroundColor: '#121212', borderColor: '#2A2A2A' };
+    },
+    [sz.row, itemColorVariant]
+  );
 
   const hasSearchText = searchable && searchValue.trim().length > 0;
   const dropdownContentHeight = searchable ? listMaxHeight + 120 : listMaxHeight + 24;
+  const sheetBodyMaxHeight = Math.min(dropdownContentHeight, screenHeight * 0.55);
+  const takeoverListMax = Math.min(listMaxHeight, Math.floor(screenHeight * 0.65));
+
+  const renderListPanel = useCallback(
+    (listScrollMax: number = listMaxHeight) => (
+    <View style={{ padding: 10 }}>
+      {searchable && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: '#FFFFFF0D',
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: '#FFFFFF4D',
+            paddingHorizontal: 10,
+            paddingVertical: 8,
+            marginBottom: 8,
+          }}
+        >
+          <MagnifyingGlassIcon size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+          <TextInput
+            ref={searchInputRef}
+            value={searchValue}
+            onChangeText={handleSearchChange}
+            placeholder={searchPlaceholder}
+            placeholderTextColor="#666"
+            style={{
+              flex: 1,
+              color: '#FFFFFF',
+              fontSize: 14,
+              fontFamily: 'Instrument Sans, system-ui, sans-serif',
+              paddingVertical: 0,
+            }}
+            selectionColor="#FF4D00"
+            underlineColorAndroid="transparent"
+          />
+        </View>
+      )}
+      {loading ? (
+        <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+          <Text
+            className="text-gray-500 text-sm"
+            style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
+          >
+            {loadingMessage}
+          </Text>
+        </View>
+      ) : items.length === 0 ? (
+        <View
+          style={{
+            paddingVertical: 32,
+            paddingHorizontal: 16,
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: 80,
+          }}
+        >
+          <Text
+            className="text-gray-400 text-sm"
+            style={{
+              fontFamily: 'Instrument Sans, system-ui, sans-serif',
+              textAlign: 'center',
+              lineHeight: 20,
+            }}
+          >
+            {emptyMessage(hasSearchText)}
+          </Text>
+          {hasSearchText && (
+            <Text
+              className="text-gray-500 text-xs mt-1"
+              style={{
+                fontFamily: 'Instrument Sans, system-ui, sans-serif',
+                textAlign: 'center',
+              }}
+            >
+              Try a different search term.
+            </Text>
+          )}
+        </View>
+      ) : (
+        <ScrollView
+          style={{ maxHeight: listScrollMax }}
+          showsVerticalScrollIndicator
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+        >
+          {items.map((item) => {
+            const id = getItemId(item);
+            const { primary, secondary } = getItemLabel(item);
+            const isSelected = value === id;
+            const itemColor = getItemColor ? getItemColor(item) ?? null : null;
+            return (
+              <TouchableOpacity
+                key={id}
+                onPress={() => handleSelect(id, item)}
+                style={rowStyle(isSelected, itemColor)}
+              >
+                {itemColorVariant === 'dot' && getItemColor && itemColor ? (
+                  <View
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: 6,
+                      backgroundColor: itemColor,
+                      borderWidth: 1,
+                      borderColor: '#3A3A3A',
+                      marginRight: 8,
+                    }}
+                  />
+                ) : null}
+                <View style={{ flex: 1 }}>
+                  <Text
+                    className="text-white font-instrument-medium text-sm"
+                    style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
+                    numberOfLines={1}
+                  >
+                    {primary}
+                  </Text>
+                  {secondary != null && secondary !== '' && (
+                    <Text
+                      className="text-gray-400 text-xs mt-0.5"
+                      style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
+                      numberOfLines={1}
+                    >
+                      {secondary}
+                    </Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+    </View>
+    ),
+    [
+      searchable,
+      searchValue,
+      handleSearchChange,
+      searchPlaceholder,
+      loading,
+      loadingMessage,
+      items,
+      emptyMessage,
+      hasSearchText,
+      getItemId,
+      getItemLabel,
+      value,
+      getItemColor,
+      itemColorVariant,
+      rowStyle,
+      handleSelect,
+      listMaxHeight,
+    ]
+  );
+
+  useLayoutEffect(() => {
+    if (!isCompactLayout) {
+      dismissTakeover();
+      return;
+    }
+    if (!insideSheet) return;
+    if (!open) {
+      dismissTakeover();
+      return;
+    }
+    presentTakeover({
+      title: label ?? null,
+      content: renderListPanel(takeoverListMax),
+      onRequestDismiss: closePopover,
+    });
+  }, [
+    isCompactLayout,
+    insideSheet,
+    open,
+    dismissTakeover,
+    presentTakeover,
+    label,
+    closePopover,
+    renderListPanel,
+    takeoverListMax,
+  ]);
 
   return (
     <View style={{ marginBottom: noMargin ? 0 : 12 }}>
@@ -295,186 +493,74 @@ export function Select<T>({
         </TouchableOpacity>
       )}
 
-      <Modal
-        visible={open}
-        transparent
-        animationType="fade"
-        onRequestClose={closePopover}
-      >
-        <Pressable style={{ flex: 1 }} onPress={closePopover}>
-          {triggerLayout && (() => {
-            let w = triggerLayout.w;
-            if (dropdownMinWidth != null) w = Math.max(w, dropdownMinWidth);
-            if (dropdownMaxWidth != null) w = Math.min(w, dropdownMaxWidth);
-            const gap = 4;
-            const edgeInset = 8;
-            const spaceBelow = screenHeight - (triggerLayout.y + triggerLayout.h + gap);
-            const spaceAbove = triggerLayout.y;
-            const openAbove = spaceBelow < dropdownContentHeight && spaceAbove >= spaceBelow;
-            const top = openAbove
-              ? Math.max(edgeInset, triggerLayout.y - dropdownContentHeight - gap)
-              : Math.min(
-                  Math.max(edgeInset, triggerLayout.y + triggerLayout.h + gap),
-                  screenHeight - dropdownContentHeight - edgeInset
+      {isCompactLayout ? (
+        insideSheet ? null : (
+          <BottomSheet visible={open} onClose={closePopover}>
+            <View style={{ maxHeight: sheetBodyMaxHeight }}>
+              <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={{ flex: 1 }}
+              >
+                {renderListPanel()}
+              </KeyboardAvoidingView>
+            </View>
+          </BottomSheet>
+        )
+      ) : (
+        <Modal visible={open} transparent animationType="fade" onRequestClose={closePopover}>
+          <Pressable style={{ flex: 1 }} onPress={closePopover}>
+            {triggerLayout &&
+              (() => {
+                let w = triggerLayout.w;
+                if (dropdownMinWidth != null) w = Math.max(w, dropdownMinWidth);
+                if (dropdownMaxWidth != null) w = Math.min(w, dropdownMaxWidth);
+                const gap = 4;
+                const edgeInset = 8;
+                const spaceBelow = screenHeight - (triggerLayout.y + triggerLayout.h + gap);
+                const spaceAbove = triggerLayout.y;
+                const openAbove = spaceBelow < dropdownContentHeight && spaceAbove >= spaceBelow;
+                const top = openAbove
+                  ? Math.max(edgeInset, triggerLayout.y - dropdownContentHeight - gap)
+                  : Math.min(
+                      Math.max(edgeInset, triggerLayout.y + triggerLayout.h + gap),
+                      screenHeight - dropdownContentHeight - edgeInset
+                    );
+                const left = Math.max(
+                  edgeInset,
+                  Math.min(triggerLayout.x, screenWidth - w - edgeInset)
                 );
-            const left = Math.max(
-              edgeInset,
-              Math.min(triggerLayout.x, screenWidth - w - edgeInset)
-            );
-            return (
-            <Pressable
-              style={{
-                position: 'absolute',
-                left,
-                top,
-                width: w,
-                maxHeight: dropdownContentHeight,
-                backgroundColor: '#1A1A1A',
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: '#2A2A2A',
-                ...(typeof window !== 'undefined'
-                  ? { boxShadow: '0px 8px 16px rgba(0,0,0,0.35)' }
-                  : { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 12 }),
-                overflow: 'hidden',
-              }}
-              onPress={(e) => e?.stopPropagation?.()}
-            >
-              <View style={{ padding: 10 }}>
-                {searchable && (
-                  <View
+                return (
+                  <Pressable
                     style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      backgroundColor: '#FFFFFF0D',
-                      borderRadius: 10,
+                      position: 'absolute',
+                      left,
+                      top,
+                      width: w,
+                      maxHeight: dropdownContentHeight,
+                      backgroundColor: '#1A1A1A',
+                      borderRadius: 12,
                       borderWidth: 1,
-                      borderColor: '#FFFFFF4D',
-                      paddingHorizontal: 10,
-                      paddingVertical: 8,
-                      marginBottom: 8,
+                      borderColor: '#2A2A2A',
+                      ...(typeof window !== 'undefined'
+                        ? { boxShadow: '0px 8px 16px rgba(0,0,0,0.35)' }
+                        : {
+                            shadowColor: '#000',
+                            shadowOffset: { width: 0, height: 8 },
+                            shadowOpacity: 0.35,
+                            shadowRadius: 16,
+                            elevation: 12,
+                          }),
+                      overflow: 'hidden',
                     }}
+                    onPress={(e) => e?.stopPropagation?.()}
                   >
-                    <MagnifyingGlassIcon size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
-                    <TextInput
-                      ref={searchInputRef}
-                      value={searchValue}
-                      onChangeText={handleSearchChange}
-                      placeholder={searchPlaceholder}
-                      placeholderTextColor="#666"
-                      style={{
-                        flex: 1,
-                        color: '#FFFFFF',
-                        fontSize: 14,
-                        fontFamily: 'Instrument Sans, system-ui, sans-serif',
-                        paddingVertical: 0,
-                      }}
-                      selectionColor="#FF4D00"
-                      underlineColorAndroid="transparent"
-                    />
-                  </View>
-                )}
-                {loading ? (
-                  <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                    <Text
-                      className="text-gray-500 text-sm"
-                      style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
-                    >
-                      {loadingMessage}
-                    </Text>
-                  </View>
-                ) : items.length === 0 ? (
-                  <View
-                    style={{
-                      paddingVertical: 32,
-                      paddingHorizontal: 16,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      minHeight: 80,
-                    }}
-                  >
-                    <Text
-                      className="text-gray-400 text-sm"
-                      style={{
-                        fontFamily: 'Instrument Sans, system-ui, sans-serif',
-                        textAlign: 'center',
-                        lineHeight: 20,
-                      }}
-                    >
-                      {emptyMessage(hasSearchText)}
-                    </Text>
-                    {hasSearchText && (
-                      <Text
-                        className="text-gray-500 text-xs mt-1"
-                        style={{
-                          fontFamily: 'Instrument Sans, system-ui, sans-serif',
-                          textAlign: 'center',
-                        }}
-                      >
-                        Try a different search term.
-                      </Text>
-                    )}
-                  </View>
-                ) : (
-                  <ScrollView
-                    style={{ maxHeight: listMaxHeight }}
-                    showsVerticalScrollIndicator
-                    nestedScrollEnabled
-                    keyboardShouldPersistTaps="handled"
-                  >
-                    {items.map((item) => {
-                      const id = getItemId(item);
-                      const { primary, secondary } = getItemLabel(item);
-                      const isSelected = value === id;
-                      const itemColor = getItemColor ? getItemColor(item) ?? null : null;
-                      return (
-                        <TouchableOpacity
-                          key={id}
-                          onPress={() => handleSelect(id, item)}
-                          style={rowStyle(isSelected, itemColor)}
-                        >
-                          {itemColorVariant === 'dot' && getItemColor && itemColor ? (
-                            <View
-                              style={{
-                                width: 12,
-                                height: 12,
-                                borderRadius: 6,
-                                backgroundColor: itemColor,
-                                borderWidth: 1,
-                                borderColor: '#3A3A3A',
-                                marginRight: 8,
-                              }}
-                            />
-                          ) : null}
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              className="text-white font-instrument-medium text-sm"
-                              style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
-                              numberOfLines={1}
-                            >
-                              {primary}
-                            </Text>
-                            {secondary != null && secondary !== '' && (
-                              <Text
-                                className="text-gray-400 text-xs mt-0.5"
-                                style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
-                                numberOfLines={1}
-                              >
-                                {secondary}
-                              </Text>
-                            )}
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-              </View>
-            </Pressable>
-            );
-          })()}
-        </Pressable>
-      </Modal>
+                    {renderListPanel(listMaxHeight)}
+                  </Pressable>
+                );
+              })()}
+          </Pressable>
+        </Modal>
+      )}
     </View>
   );
 }

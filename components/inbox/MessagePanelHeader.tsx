@@ -11,7 +11,7 @@ export function MessagePanelHeader({
   campaignName,
   sourceLabel,
   prospectEmails,
-  blockedEmails = [],
+  blockedEmails: _blockedEmails = [],
   onBlock,
   showBlockButton = true,
   threadTags = [],
@@ -19,6 +19,8 @@ export function MessagePanelHeader({
   category,
   onSetCategory,
   categoryOptions = ['Interested', 'Not Interested'],
+  showToolbar = true,
+  showTitleAndEmail = true,
 }: {
   prospectName?: string | null;
   campaignName?: string | null;
@@ -33,9 +35,11 @@ export function MessagePanelHeader({
   category?: string | null;
   onSetCategory?: (category: string | null) => void;
   categoryOptions?: string[];
+  /** When false, hide the right-side toolbar (Block, Tags, Category). Default true. */
+  showToolbar?: boolean;
+  /** When false, hide the left-side title and email (e.g. when shown in a parent header). Default true. */
+  showTitleAndEmail?: boolean;
 }) {
-  const blockedSet = blockedEmails instanceof Set ? blockedEmails : new Set(blockedEmails);
-  const hasBlocked = prospectEmails.some((e) => blockedSet.has(e.trim().toLowerCase()));
   const showTags = !!onOpenTagsPanel;
   const categoryItems = useMemo(
     () => [{ id: '', name: 'No category' }, ...categoryOptions.map((c) => ({ id: c, name: c }))],
@@ -45,37 +49,43 @@ export function MessagePanelHeader({
   const title = prospectName ?? prospectEmails[0] ?? '—';
   const emailLine = prospectEmails.length > 0 ? prospectEmails.join(', ') : '';
 
+  const hasLeftContent = showTitleAndEmail;
+  const hasRightContent = showToolbar;
+  if (!hasLeftContent && !hasRightContent) {
+    return null;
+  }
+
   return (
     <View
       className="px-5 py-3.5 border-b border-[#2A2A2A] bg-[#0D0D0D]"
       style={{ borderBottomWidth: 1 }}
     >
       <View className="flex-row items-center justify-between gap-3">
-        {/* Left: prospect name + email (tight between, more above/below) */}
+        {/* Left: prospect name + email (optional) */}
         <View className="flex-1 min-w-0">
-          <Text
-            className="text-lg font-instrument-semibold text-white leading-tight"
-            numberOfLines={1}
-          >
-            {title}
-          </Text>
-          {emailLine ? (
-            <Text
-              className="text-sm font-instrument text-gray-500 leading-tight"
-              numberOfLines={1}
-              style={{ marginTop: 2 }}
-            >
-              {emailLine}
-            </Text>
+          {showTitleAndEmail ? (
+            <>
+              <Text
+                className="text-lg font-instrument-semibold text-white leading-tight"
+                numberOfLines={1}
+              >
+                {title}
+              </Text>
+              {emailLine ? (
+                <Text
+                  className="text-sm font-instrument text-gray-500 leading-tight"
+                  numberOfLines={1}
+                  style={{ marginTop: 2 }}
+                >
+                  {emailLine}
+                </Text>
+              ) : null}
+            </>
           ) : null}
-          {hasBlocked && (
-            <Text className="text-gray-500 font-instrument text-xs mt-1.5">
-              No automated emails to blocked.
-            </Text>
-          )}
         </View>
 
         {/* Right: toolbar — campaign chip, Block List, tags, category */}
+        {showToolbar ? (
         <View className="flex-row items-center gap-2 flex-shrink-0">
           {sourceLabel ? (
             <View
@@ -163,6 +173,7 @@ export function MessagePanelHeader({
             />
           )}
         </View>
+        ) : null}
       </View>
     </View>
   );

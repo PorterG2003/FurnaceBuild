@@ -1,13 +1,22 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, Animated } from 'react-native';
-import { ArrowUturnLeftIcon, ArrowUturnRightIcon, ArrowPathIcon, ExclamationCircleIcon } from 'react-native-heroicons/outline';
+import {
+  ArrowUturnLeftIcon,
+  ArrowUturnRightIcon,
+  ArrowPathIcon,
+  ExclamationCircleIcon,
+  EllipsisVerticalIcon,
+} from 'react-native-heroicons/outline';
 import type { EmailMessage } from '@/lib/supabase/types';
 import { getDisplayBody } from '@/lib/email/index';
 import { formatMessageDate, getInitials } from '@/lib/inbox';
+import { BottomSheet } from '@/components/ui/modals';
 import { MessageBody } from './MessageBody';
 import { MessageAttachments } from './MessageAttachments';
 
-/** Single message bubble: centered card with avatar and Reply/Forward in header */
+export type MessageBubbleActionsLayout = 'inline' | 'overflowSheet';
+
+/** Single message bubble: centered card with avatar and Reply/Forward in header (or overflow menu on mobile) */
 export function MessageBubble({
   message,
   onReply,
@@ -18,6 +27,7 @@ export function MessageBubble({
   isFailed,
   errorMessage,
   onRetry,
+  messageActionsLayout = 'inline',
 }: {
   message: EmailMessage;
   onReply?: (message: EmailMessage) => void;
@@ -28,7 +38,10 @@ export function MessageBubble({
   isFailed?: boolean;
   errorMessage?: string | null;
   onRetry?: () => void;
+  /** `overflowSheet`: three-dots opens a bottom sheet with Reply / Forward (mobile). */
+  messageActionsLayout?: MessageBubbleActionsLayout;
 }) {
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const rawBody = message.body_text ?? message.body_html ?? '';
   const body = getDisplayBody(rawBody, {
     format: message.body_text ? 'text' : 'html',
@@ -38,6 +51,11 @@ export function MessageBubble({
   const canReply = onReply != null && !isPending && !isFailed;
   const canForward = onForward != null && !isPending && !isFailed;
   const showRetry = isFailed && onRetry != null;
+  const showOverflowActions =
+    messageActionsLayout === 'overflowSheet' && (canReply || canForward);
+  const showInlineActions = messageActionsLayout === 'inline' && (canReply || canForward);
+  /** Desktop pane uses a centered 92%-width card; mobile inbox uses full width of the padded row. */
+  const fullWidthCard = messageActionsLayout === 'overflowSheet';
 
   const borderPulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -67,7 +85,11 @@ export function MessageBubble({
 
   const cardContent = (
     <View
-      className="rounded-xl w-[92%] max-w-[92%] overflow-hidden"
+      className={
+        fullWidthCard
+          ? 'rounded-xl w-full max-w-full overflow-hidden'
+          : 'rounded-xl w-[92%] max-w-[92%] overflow-hidden'
+      }
       style={{
         backgroundColor: isSent ? '#1E1E1E' : '#1A1A1A',
         borderWidth: isPending || isFailed ? 0 : 1,
@@ -123,9 +145,11 @@ export function MessageBubble({
                 {message.from_email}
               </Text>
             </View>
-            <Text className="text-gray-500 font-instrument text-xs flex-shrink-0 ml-2">
-              {isFailed ? 'Failed' : isPending ? 'Sending…' : formatMessageDate(message.received_at)}
-            </Text>
+            {(!fullWidthCard || isFailed || isPending) && (
+              <Text className="text-gray-500 font-instrument text-xs flex-shrink-0 ml-2">
+                {isFailed ? 'Failed' : isPending ? 'Sending…' : formatMessageDate(message.received_at)}
+              </Text>
+            )}
           </View>
           {showRetry && (
             <Pressable
@@ -140,7 +164,18 @@ export function MessageBubble({
               </Text>
             </Pressable>
           )}
-          {canReply && (
+          {showOverflowActions && (
+            <Pressable
+              onPress={() => setActionSheetOpen(true)}
+              className="flex-row items-center justify-center rounded-lg p-2 flex-shrink-0"
+              hitSlop={8}
+              accessibilityLabel="Message actions"
+              style={{ backgroundColor: 'rgba(107, 114, 128, 0.2)' }}
+            >
+              <EllipsisVerticalIcon size={20} color="#9CA3AF" />
+            </Pressable>
+          )}
+          {showInlineActions && canReply && (
             <Pressable
               onPress={() => onReply(message)}
               className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
@@ -153,7 +188,7 @@ export function MessageBubble({
               </Text>
             </Pressable>
           )}
-          {canForward && (
+          {showInlineActions && canForward && (
             <Pressable
               onPress={() => onForward(message)}
               className="flex-row items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0"
@@ -196,8 +231,56 @@ export function MessageBubble({
   );
 
   return (
-    <View className="mb-4 flex-row justify-center items-center">
+    <View
+      className={
+        fullWidthCard
+          ? 'mb-4 w-full'
+          : 'mb-4 flex-row w-full justify-center items-center'
+      }
+    >
       {cardContent}
+      {showOverflowActions && (
+        <BottomSheet visible={actionSheetOpen} onClose={() => setActionSheetOpen(false)}>
+          {canReply && (
+            <Pressable
+              onPress={() => {
+                setActionSheetOpen(false);
+                onReply?.(message);
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 14,
+                borderBottomWidth: canForward ? 1 : 0,
+                borderBottomColor: '#2A2A2A',
+              }}
+            >
+              <ArrowUturnLeftIcon size={20} color="#9CA3AF" />
+              <Text className="text-white font-instrument-medium text-base text-gray-400">
+                Reply
+              </Text>
+            </Pressable>
+          )}
+          {canForward && (
+            <Pressable
+              onPress={() => {
+                setActionSheetOpen(false);
+                onForward?.(message);
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 14,
+              }}
+            >
+              <ArrowUturnRightIcon size={20} color="#9CA3AF" />
+              <Text className="text-white font-instrument-medium text-base text-gray-400">Forward</Text>
+            </Pressable>
+          )}
+        </BottomSheet>
+      )}
     </View>
   );
 }

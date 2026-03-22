@@ -1,8 +1,8 @@
 import React, { type ReactNode } from 'react';
-import { View, Text, Pressable, useWindowDimensions } from 'react-native';
+import { View, Text, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeftIcon } from 'react-native-heroicons/outline';
 import { Breadcrumb } from './Breadcrumb';
+import { MobileHeaderBackButton } from './MobileHeaderBackButton';
 import { LAYOUT_BREAKPOINT } from './constants';
 
 export interface BreadcrumbItem {
@@ -14,43 +14,54 @@ interface DetailPageHeaderProps {
   breadcrumbItems: BreadcrumbItem[];
   backHref: string;
   title: string;
+  /** Mobile only: optional subtitle (e.g. email) shown below the title */
+  subtitle?: string | null;
   actions?: ReactNode;
   /** Mobile only: rendered on the right of the first row (e.g. three-dots actions button) */
   mobileRightAction?: ReactNode;
+  /** When set, mobile back button calls this instead of navigating to backHref (e.g. for same-page drill-in) */
+  onBack?: () => void;
 }
 
 export function DetailPageHeader({
   breadcrumbItems,
   backHref,
   title,
+  subtitle,
   actions,
   mobileRightAction,
+  onBack,
 }: DetailPageHeaderProps) {
   const { width } = useWindowDimensions();
   const router = useRouter();
   const isMobile = width < LAYOUT_BREAKPOINT;
 
   if (isMobile) {
+    const handleBack = () => (onBack != null ? onBack() : router.push(backHref));
     return (
       <View
         className="bg-[#121212] pb-4 relative"
         style={{ width: '100%', alignSelf: 'stretch', flexDirection: 'row', alignItems: 'stretch' }}
       >
         <View style={{ flex: 1, flexDirection: 'column', gap: 12, justifyContent: 'flex-start' }}>
-          <Pressable
-            onPress={() => router.push(backHref)}
-            className="flex-row items-center py-0.5 -ml-1"
-            accessibilityLabel="Back"
-          >
-            <ChevronLeftIcon size={18} color="#9CA3AF" />
-            <Text className="text-gray-400 font-instrument text-sm ml-1">Back</Text>
-          </Pressable>
-          <Text
-            className="text-white font-instrument-semibold text-2xl"
-            numberOfLines={2}
-          >
-            {title}
-          </Text>
+          <MobileHeaderBackButton onPress={handleBack} />
+          <View style={{ gap: 0 }}>
+            <Text
+              className="text-white font-instrument-semibold text-2xl"
+              numberOfLines={2}
+            >
+              {title}
+            </Text>
+            {subtitle ? (
+              <Text
+                className="text-gray-500 font-instrument text-sm"
+                numberOfLines={1}
+                style={{ marginTop: 2 }}
+              >
+                {subtitle}
+              </Text>
+            ) : null}
+          </View>
         </View>
         {mobileRightAction != null ? (
           <View style={{ justifyContent: 'center' }}>{mobileRightAction}</View>

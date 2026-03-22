@@ -4,6 +4,12 @@ import { Skeleton } from '@/components/ui/feedback';
 import { SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from '@/components/ui/feedback/skeletonConstants';
 import type { DimensionValue } from 'react-native';
 
+export type MessageListSkeletonVariant = 'desktop' | 'mobile';
+
+export type MessageListSkeletonProps = {
+  variant?: MessageListSkeletonVariant;
+};
+
 const useNativeDriver = typeof window === 'undefined';
 const STAGGER_DELAY_MS = 60;
 
@@ -95,13 +101,13 @@ function MessagePanelHeaderSkeleton() {
   );
 }
 
-function DateDividerSkeleton({ index }: { index: number }) {
+function DateDividerSkeleton({ index, compact }: { index: number; compact?: boolean }) {
   return (
     <StaggeredFadeIn index={index}>
-      <View className="py-5 flex-row items-center justify-center px-2">
+      <View className={`${compact ? 'py-3' : 'py-5'} flex-row items-center justify-center px-2`}>
         <View className="flex-1 h-px bg-[#2A2A2A]" style={{ maxWidth: 80 }} />
         <View className="mx-3">
-          <Skeleton style={{ width: 100, height: 24, borderRadius: 12 }} />
+          <Skeleton style={{ width: compact ? 88 : 100, height: compact ? 20 : 24, borderRadius: 12 }} />
         </View>
         <View className="flex-1 h-px bg-[#2A2A2A]" style={{ maxWidth: 80 }} />
       </View>
@@ -112,62 +118,93 @@ function DateDividerSkeleton({ index }: { index: number }) {
 function MessageCardSkeleton({
   bodyWidths,
   index,
+  variant = 'desktop',
 }: {
   bodyWidths: DimensionValue[];
   index: number;
+  variant?: MessageListSkeletonVariant;
 }) {
+  const mobile = variant === 'mobile';
+  const hPad = mobile ? 'px-4' : 'px-5';
+  const mxRule = mobile ? 'mx-4' : 'mx-5';
+  const cardInner = (
+    <>
+      <View className={`${hPad} pt-4 pb-3 flex-row items-center`}>
+        <Skeleton style={{ width: 40, height: 40, borderRadius: 20 }} />
+        <View className="ml-3 flex-1 min-w-0">
+          <Skeleton className="h-4 mb-1.5" style={{ width: '70%', borderRadius: 4 }} />
+          <Skeleton className="h-3" style={{ width: '52%', borderRadius: 4 }} />
+        </View>
+        {mobile ? (
+          <Skeleton style={{ width: 20, height: 20, borderRadius: 10 }} className="flex-shrink-0 ml-2" />
+        ) : (
+          <Skeleton className="h-3 flex-shrink-0" style={{ width: 72, borderRadius: 4 }} />
+        )}
+      </View>
+      <View className={`${mxRule} border-b border-[#2A2A2A]`} style={{ borderBottomWidth: 1 }} />
+      <View className={`${hPad} py-4`}>
+        {bodyWidths.map((w, j) => (
+          <Skeleton
+            key={j}
+            style={{
+              width: w,
+              height: 12,
+              borderRadius: 4,
+              marginBottom: j < bodyWidths.length - 1 ? 8 : 0,
+            }}
+          />
+        ))}
+      </View>
+    </>
+  );
+
   return (
     <StaggeredFadeIn index={index}>
-      <View
-        className="mb-4 rounded-xl overflow-hidden border border-[#2A2A2A]"
-        style={{
-          width: '92%',
-          alignSelf: 'center',
-          borderWidth: 1,
-          backgroundColor: '#1A1A1A',
-        }}
-      >
-        <View className="px-5 pt-4 pb-3 flex-row items-center">
-          <Skeleton style={{ width: 40, height: 40, borderRadius: 20 }} />
-          <View className="ml-3 flex-1">
-            <Skeleton className="h-4 mb-1.5" style={{ width: '70%', borderRadius: 4 }} />
-            <Skeleton className="h-3" style={{ width: '52%', borderRadius: 4 }} />
+      {mobile ? (
+        <View className="mb-3 w-full">
+          <View
+            className="rounded-xl w-full overflow-hidden border border-[#2A2A2A]"
+            style={{ borderWidth: 1, backgroundColor: '#1A1A1A' }}
+          >
+            {cardInner}
           </View>
-          <Skeleton className="h-3 flex-shrink-0" style={{ width: 72, borderRadius: 4 }} />
         </View>
-        <View className="mx-5 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }} />
-        <View className="px-5 py-4">
-          {bodyWidths.map((w, j) => (
-            <Skeleton
-              key={j}
-              style={{
-                width: w,
-                height: 12,
-                borderRadius: 4,
-                marginBottom: j < bodyWidths.length - 1 ? 8 : 0,
-              }}
-            />
-          ))}
+      ) : (
+        <View
+          className="mb-4 rounded-xl overflow-hidden border border-[#2A2A2A]"
+          style={{
+            width: '92%',
+            alignSelf: 'center',
+            borderWidth: 1,
+            backgroundColor: '#1A1A1A',
+          }}
+        >
+          {cardInner}
         </View>
-      </View>
+      )}
     </StaggeredFadeIn>
   );
 }
 
-/** Skeleton loading for message list (right panel). Only shown after 200ms delay. */
-export function MessageListSkeleton() {
+/** Skeleton loading for message list (right panel). Use `variant="mobile"` for inbox overflow-sheet layout (no desktop toolbar chrome). */
+export function MessageListSkeleton({ variant = 'desktop' }: MessageListSkeletonProps) {
+  const mobile = variant === 'mobile';
   return (
     <ScrollView
       className="flex-1 bg-[#121212]"
-      contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 32 }}
+      contentContainerStyle={{
+        paddingHorizontal: mobile ? 0 : 24,
+        paddingTop: mobile ? 8 : 20,
+        paddingBottom: mobile ? 0 : 32,
+      }}
       showsVerticalScrollIndicator={false}
     >
-      <DateDividerSkeleton index={0} />
-      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[0]} index={1} />
-      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[1]} index={2} />
-      <DateDividerSkeleton index={3} />
-      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[2]} index={4} />
-      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[3]} index={5} />
+      <DateDividerSkeleton index={0} compact={mobile} />
+      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[0]} index={1} variant={variant} />
+      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[1]} index={2} variant={variant} />
+      <DateDividerSkeleton index={3} compact={mobile} />
+      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[2]} index={4} variant={variant} />
+      <MessageCardSkeleton bodyWidths={MESSAGE_BODY_WIDTHS[3]} index={5} variant={variant} />
     </ScrollView>
   );
 }

@@ -31,6 +31,9 @@ export type User = Database['public']['Tables']['users']['Row'];
 export type UserInsert = Database['public']['Tables']['users']['Insert'];
 export type UserUpdate = Database['public']['Tables']['users']['Update'];
 
+export type UserAccessFlag = Database['public']['Tables']['user_access_flags']['Row'];
+export type UserAccessFlagInsert = Database['public']['Tables']['user_access_flags']['Insert'];
+
 export type Invitation = Database['public']['Tables']['invitations']['Row'];
 export type InvitationInsert = Database['public']['Tables']['invitations']['Insert'];
 export type InvitationUpdate = Database['public']['Tables']['invitations']['Update'];

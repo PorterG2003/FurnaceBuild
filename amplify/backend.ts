@@ -6,6 +6,9 @@ config({ path: '.env.local' });
 config();
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
+import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as cdk from 'aws-cdk-lib';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
@@ -14,6 +17,8 @@ import { testMailboxConnection } from './functions/testMailboxConnection/resourc
 import { enrollmentMetric } from './functions/enrollmentMetric/resource';
 import { fetchEmailAttachment } from './functions/fetchEmailAttachment/resource';
 import { launchSmartleadMigration } from './functions/launchSmartleadMigration/resource';
+import { foundryRegistryApi } from './functions/foundryRegistryApi/resource';
+import { foundryNormalizeJob } from './functions/foundryNormalizeJob/resource';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -29,6 +34,8 @@ const backend = defineBackend({
   enrollmentMetric,
   fetchEmailAttachment,
   launchSmartleadMigration,
+  foundryRegistryApi,
+  foundryNormalizeJob,
 });
 
 function resolveWorkerEnvironment(): 'dev' | 'prod' {
@@ -189,12 +196,136 @@ const allowPublicLaunchSmartleadMigrationInvoke = new lambda.CfnPermission(
 );
 allowPublicLaunchSmartleadMigrationInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
+// Foundry registry API: Function URL + JWT + main-DB foundry flag + leads Supabase reads
+const foundryRegistryLambda = backend.foundryRegistryApi.resources.lambda as lambda.Function;
+foundryRegistryLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+foundryRegistryLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
+// Lambda Function URL CORS AllowMethods does not accept OPTIONS (CloudFormation validation fails).
+// Preflight is still handled by the runtime / GET allowance; the handler also returns 204 for OPTIONS.
+const foundryRegistryUrl = foundryRegistryLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.GET, lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(foundryRegistryLambda.stack, 'AllowPublicFoundryRegistryUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: foundryRegistryLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicFoundryRegistryInvoke = new lambda.CfnPermission(
+  foundryRegistryLambda.stack,
+  'AllowPublicFoundryRegistryInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: foundryRegistryLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicFoundryRegistryInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+// Foundry async normalize: worker Lambda (Amplify) + Step Functions loop in same stack
+const foundryNormalizeLambda = backend.foundryNormalizeJob.resources.lambda as lambda.Function;
+foundryNormalizeLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
+
+const normalizeSfnStack = cdk.Stack.of(foundryNormalizeLambda);
+
+const foundryNormalizeChunkTask = new tasks.LambdaInvoke(normalizeSfnStack, 'FoundryNormalizeChunk', {
+  lambdaFunction: foundryNormalizeLambda,
+  payload: sfn.TaskInput.fromObject({
+    action: 'chunk',
+    jobId: sfn.JsonPath.stringAt('$.jobId'),
+    ingestionRunId: sfn.JsonPath.stringAt('$.ingestionRunId'),
+    batchSize: sfn.JsonPath.numberAt('$.batchSize'),
+    cursor: sfn.JsonPath.stringAt('$.cursor'),
+  }),
+  resultPath: '$.chunkOut',
+  payloadResponseOnly: true,
+});
+
+const foundryNormalizeFinalizeTask = new tasks.LambdaInvoke(normalizeSfnStack, 'FoundryFinalizeNormalizeJob', {
+  lambdaFunction: foundryNormalizeLambda,
+  payload: sfn.TaskInput.fromObject({
+    action: 'finalize',
+    jobId: sfn.JsonPath.stringAt('$.jobId'),
+  }),
+  resultPath: '$.finalizeOut',
+  payloadResponseOnly: true,
+});
+
+const foundryNormalizeFailNotify = new tasks.LambdaInvoke(normalizeSfnStack, 'FoundryFailNormalizeJob', {
+  lambdaFunction: foundryNormalizeLambda,
+  payload: sfn.TaskInput.fromObject({
+    action: 'fail',
+    jobId: sfn.JsonPath.stringAt('$.jobId'),
+    message: 'Normalize chunk failed',
+  }),
+  payloadResponseOnly: true,
+}).next(
+  new sfn.Fail(normalizeSfnStack, 'FoundryNormalizeFailed', {
+    error: 'NormalizeChunkError',
+    cause: 'Lambda or runtime error',
+  }),
+);
+
+foundryNormalizeChunkTask.addCatch(foundryNormalizeFailNotify, { errors: ['States.ALL'] });
+
+const foundryNormalizeAdvanceCursor = new sfn.Pass(normalizeSfnStack, 'FoundryNormalizeAdvanceCursor', {
+  parameters: {
+    'jobId.$': '$.jobId',
+    'ingestionRunId.$': '$.ingestionRunId',
+    'batchSize.$': '$.batchSize',
+    'cursor.$': '$.chunkOut.nextCursor',
+  },
+});
+
+const foundryNormalizeMoreChunks = new sfn.Choice(normalizeSfnStack, 'FoundryNormalizeMoreChunks')
+  .when(sfn.Condition.booleanEquals('$.chunkOut.done', true), foundryNormalizeFinalizeTask)
+  .otherwise(foundryNormalizeAdvanceCursor);
+
+foundryNormalizeChunkTask.next(foundryNormalizeMoreChunks);
+foundryNormalizeAdvanceCursor.next(foundryNormalizeChunkTask);
+
+foundryNormalizeFinalizeTask.next(new sfn.Succeed(normalizeSfnStack, 'FoundryNormalizeJobSucceeded'));
+
+const foundryNormalizeSmLogGroup = new logs.LogGroup(normalizeSfnStack, 'FoundryNormalizeSmLogs', {
+  retention: logs.RetentionDays.TWO_WEEKS,
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
+});
+
+const foundryNormalizeStateMachine = new sfn.StateMachine(normalizeSfnStack, 'FoundryNormalizeIngestionSm', {
+  stateMachineName: `foundry-normalize-ingestion-${resolveWorkerEnvironment()}`,
+  definitionBody: sfn.DefinitionBody.fromChainable(foundryNormalizeChunkTask),
+  tracingEnabled: true,
+  logs: {
+    destination: foundryNormalizeSmLogGroup,
+    level: sfn.LogLevel.ERROR,
+  },
+});
+
+foundryRegistryLambda.addEnvironment(
+  'FOUNDRY_NORMALIZE_STATE_MACHINE_ARN',
+  foundryNormalizeStateMachine.stateMachineArn,
+);
+foundryRegistryLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryStartNormalizeStepFunction',
+    actions: ['states:StartExecution'],
+    resources: [foundryNormalizeStateMachine.stateMachineArn],
+  }),
+);
+
 backend.addOutput({
   custom: {
     fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
     sendInvitationEmailUrl: sendInvitationUrl.url,
     testMailboxConnectionUrl: testMailboxUrl.url,
     launchSmartleadMigrationUrl: launchSmartleadMigrationUrl.url,
+    foundryRegistryApiUrl: foundryRegistryUrl.url,
+    foundryNormalizeStateMachineArn: foundryNormalizeStateMachine.stateMachineArn,
   },
 });
 

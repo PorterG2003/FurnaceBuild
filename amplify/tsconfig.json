@@ -12,6 +12,9 @@
     "paths": {
       "$amplify/*": [
         "../.amplify/generated/*"
+      ],
+      "@supabase/supabase-js": [
+        "../node_modules/@supabase/supabase-js"
       ]
     }
   },

@@ -10,26 +10,27 @@ export type FoundryAccessStatus = 'loading' | 'allowed' | 'denied';
 export function useFoundryAccess(): FoundryAccessStatus {
   const { user, loading: authLoading } = useAuth();
   const [status, setStatus] = useState<FoundryAccessStatus>('loading');
+  const userId = user?.id ?? null;
 
   useEffect(() => {
     if (authLoading) {
       setStatus('loading');
       return;
     }
-    if (!user) {
+    if (!userId) {
       setStatus('denied');
       return;
     }
 
     let cancelled = false;
     setStatus('loading');
-    getUserHasFoundryAccess(user.id).then((ok) => {
+    getUserHasFoundryAccess(userId).then((ok) => {
       if (!cancelled) setStatus(ok ? 'allowed' : 'denied');
     });
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user]);
+  }, [authLoading, userId]);
 
   return status;
 }

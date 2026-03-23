@@ -7,13 +7,7 @@ import {
   normalizeIngestionRunRecords,
   rejectCandidatesForSource,
 } from './entityResolution.js';
-import {
-  executeStateMatchingBatch,
-  getReviewTask,
-  listReviewTasks,
-  resolveReviewTask,
-  stateMatchingPreflight,
-} from './foundryLayer2.js';
+import { getReviewTask, listReviewTasks, resolveReviewTask, stateMatchingPreflight } from './foundryLayer2.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -247,19 +241,6 @@ export async function dispatchFoundryExtendedRoutes(
     if (!parsed.ok) return parsed.response;
     const pre = await stateMatchingPreflight(leadsClient, { companyIds: parsed.value.companyIds ?? [] });
     return jsonResponse(200, pre);
-  }
-
-  if (path === '/state-matching/batches' && method === 'POST') {
-    const parsed = parseJsonBody<{ companyIds: string[] }>(rawBody);
-    if (!parsed.ok) return parsed.response;
-    const ids = parsed.value.companyIds ?? [];
-    if (ids.length > 50) return jsonResponse(400, { error: 'At most 50 companies per batch' });
-    try {
-      const r = await executeStateMatchingBatch(leadsClient, ids);
-      return jsonResponse(200, r);
-    } catch (e) {
-      return jsonResponse(500, { error: e instanceof Error ? e.message : 'batch failed' });
-    }
   }
 
   const mBatch = path.match(/^\/state-matching\/batches\/([^/]+)$/);

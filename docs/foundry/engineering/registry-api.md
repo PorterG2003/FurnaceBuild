@@ -38,11 +38,13 @@ Auth: `Authorization: Bearer <main Supabase access token>`; requires `user_acces
 - `POST /review-tasks/:id/resolve` — body `{ resolution?, chosen_company_id?, chosen_match_action? }`
 - `POST /review-tasks/:id/cancel`
 
-## State matching (mock runner)
+## State matching (async)
 
-- `POST /state-matching/preflight` — body `{ companyIds: string[] }`
-- `POST /state-matching/batches` — body `{ companyIds: string[] }` (max 50)
+- `POST /state-matching/preflight` — body `{ companyIds: string[] }` (synchronous)
+- `POST /state-matching/batches` — body `{ companyIds: string[] }` (max 50); creates **`reconciliation_runs`** + **`foundry_jobs`** (`job_type: state_matching_batch`), starts **Step Functions** (`foundry-state-matching-{env}`). Returns **`{ jobId, reconciliation_run_id, executionArn, reused?, preflight }`**. Returns **503** if `FOUNDRY_STATE_MATCHING_STATE_MACHINE_ARN` is not configured. Poll **`GET /jobs/:id`** and **`GET /state-matching/batches/:reconciliation_run_id`** for completion.
 - `GET /state-matching/batches/:id` — `reconciliation_runs` + `reconciliation_results`
+
+Flow: mock registry connector (Lambda) for non-UT states; **Utah** companies run in **ECS** (same Utah scraper image, `run-reconciliation.ts`) after the mock step. Requires worker-stack exports (cluster, subnets, Utah task definition, execution + Utah task role ARNs, VPC id + AZs) and optional **leads** SSM secret on the Utah task for DB writes.
 
 ## Reconciliation
 

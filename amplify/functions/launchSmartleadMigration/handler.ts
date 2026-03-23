@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ECSClient, RunTaskCommand } from '@aws-sdk/client-ecs';
-import { SSMClient, GetParameterCommand, PutParameterCommand } from '@aws-sdk/client-ssm';
+import { GetParameterCommand, PutParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { reportErrorToSlack } from '@furnace/slack-lib';
 
@@ -40,6 +40,23 @@ async function verifyUser(token: string) {
 
 function getParameterPath(environment: string, runId: string): string {
   return `/furnace/smartlead-migrations/${environment}/${runId}/api-key`;
+}
+
+let cachedSmartleadTaskDefinitionArn: string | undefined;
+
+async function getSmartleadTaskDefinitionArnFromSsm(client: SSMClient): Promise<string> {
+  if (cachedSmartleadTaskDefinitionArn) return cachedSmartleadTaskDefinitionArn;
+  const paramName = process.env.SMARTLEAD_MIGRATION_TASK_DEFINITION_PARAM?.trim();
+  if (!paramName) {
+    throw new Error('Missing SMARTLEAD_MIGRATION_TASK_DEFINITION_PARAM');
+  }
+  const out = await client.send(new GetParameterCommand({ Name: paramName }));
+  const arn = out.Parameter?.Value?.trim();
+  if (!arn) {
+    throw new Error(`SSM parameter empty or missing: ${paramName}`);
+  }
+  cachedSmartleadTaskDefinitionArn = arn;
+  return arn;
 }
 
 export const handler = async (
@@ -85,7 +102,6 @@ export const handler = async (
 
     const environment = process.env.WORKER_ENVIRONMENT || process.env.ENVIRONMENT || 'dev';
     const cluster = process.env.SMARTLEAD_MIGRATION_CLUSTER;
-    const taskDefinition = process.env.SMARTLEAD_MIGRATION_TASK_DEFINITION;
     const subnetIds = (process.env.SMARTLEAD_MIGRATION_SUBNET_IDS || '')
       .split(',')
       .map((value) => value.trim())
@@ -93,7 +109,7 @@ export const handler = async (
     const securityGroupId = process.env.SMARTLEAD_MIGRATION_SECURITY_GROUP_ID;
     const region = process.env.AWS_REGION || 'us-west-2';
 
-    if (!cluster || !taskDefinition || subnetIds.length === 0 || !securityGroupId) {
+    if (!cluster || subnetIds.length === 0 || !securityGroupId) {
       throw new Error('Smartlead migration task infrastructure is not configured');
     }
 
@@ -190,6 +206,7 @@ export const handler = async (
     const workerId = randomUUID();
     launchWorkerId = workerId;
     const ecs = new ECSClient({ region });
+    const taskDefinition = await getSmartleadTaskDefinitionArnFromSsm(ssm);
     const response = await ecs.send(new RunTaskCommand({
       cluster,
       taskDefinition,

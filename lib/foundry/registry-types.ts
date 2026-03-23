@@ -138,6 +138,8 @@ export interface ImportedRecordRow {
   observed_at: string;
   ingestion_run_id: string;
   link_status: string;
+  /** Present when link_status is linked; current source→company link company UUID */
+  linked_company_id?: string | null;
   import_validation: string | null;
   review_status: '—';
   source_row_number: number | null;

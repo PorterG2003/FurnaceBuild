@@ -130,6 +130,51 @@ export async function fetchIngestionRunRecords(
   });
 }
 
+const INGESTION_RECORDS_PAGE_LIMIT = 500;
+
+export interface CollectLinkedCompanyIdsResult {
+  companyIds: string[];
+  scannedRows: number;
+  linkedRows: number;
+  unlinkedRows: number;
+}
+
+/** Pages through all records in an ingestion run and returns distinct linked company UUIDs. */
+export async function collectLinkedCompanyIdsFromIngestionRun(
+  runId: string,
+): Promise<CollectLinkedCompanyIdsResult> {
+  const idSet = new Set<string>();
+  let scannedRows = 0;
+  let linkedRows = 0;
+  let offset = 0;
+
+  for (;;) {
+    const res = await fetchIngestionRunRecords(runId, {
+      limit: INGESTION_RECORDS_PAGE_LIMIT,
+      offset,
+      filter: 'all',
+    });
+    const { records, limit } = res;
+    scannedRows += records.length;
+    for (const r of records) {
+      const cid = r.linked_company_id;
+      if (cid) {
+        linkedRows += 1;
+        idSet.add(cid);
+      }
+    }
+    if (records.length < limit) break;
+    offset += limit;
+  }
+
+  return {
+    companyIds: [...idSet],
+    scannedRows,
+    linkedRows,
+    unlinkedRows: scannedRows - linkedRows,
+  };
+}
+
 export async function postGoogleMapsImport(body: PostGoogleMapsImportBody): Promise<PostGoogleMapsImportResponse> {
   return registryFetchJson<PostGoogleMapsImportResponse>('imports/google-maps', {
     method: 'POST',
@@ -239,7 +284,15 @@ export async function postStateMatchingPreflight(companyIds: string[]): Promise<
   });
 }
 
-export async function postStateMatchingBatch(companyIds: string[]): Promise<{ run_id: string; per_company: unknown[] }> {
+export type PostStateMatchingBatchResponse = {
+  jobId: string;
+  reconciliation_run_id: string;
+  executionArn: string;
+  reused: boolean;
+  preflight: unknown;
+};
+
+export async function postStateMatchingBatch(companyIds: string[]): Promise<PostStateMatchingBatchResponse> {
   return registryFetchJson('state-matching/batches', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

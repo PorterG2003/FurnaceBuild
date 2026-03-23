@@ -1,0 +1,147 @@
+{
+ "Resources": {
+  "BulkSourceResolutionStubSmRole49A4347C": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "states.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "FoundryStack-Dev/BulkSourceResolutionStubSm/Role/Resource"
+   }
+  },
+  "BulkSourceResolutionStubSmC5A69CA8": {
+   "Type": "AWS::StepFunctions::StateMachine",
+   "Properties": {
+    "DefinitionString": "{\"StartAt\":\"BulkResolveStubPlaceholder\",\"States\":{\"BulkResolveStubPlaceholder\":{\"Type\":\"Pass\",\"Comment\":\"Phase 2: bulk_source_resolution chunk loop\",\"Next\":\"BulkResolveStubDone\"},\"BulkResolveStubDone\":{\"Type\":\"Succeed\"}}}",
+    "RoleArn": {
+     "Fn::GetAtt": [
+      "BulkSourceResolutionStubSmRole49A4347C",
+      "Arn"
+     ]
+    },
+    "StateMachineName": "foundry-bulk-resolve-stub-dev"
+   },
+   "DependsOn": [
+    "BulkSourceResolutionStubSmRole49A4347C"
+   ],
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "FoundryStack-Dev/BulkSourceResolutionStubSm/Resource"
+   }
+  },
+  "StateMatchingStubSmRole935F2115": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "states.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "FoundryStack-Dev/StateMatchingStubSm/Role/Resource"
+   }
+  },
+  "StateMatchingStubSm6AF4393F": {
+   "Type": "AWS::StepFunctions::StateMachine",
+   "Properties": {
+    "DefinitionString": "{\"StartAt\":\"StateMatchStubPlaceholder\",\"States\":{\"StateMatchStubPlaceholder\":{\"Type\":\"Pass\",\"Comment\":\"Phase 3: state_matching_batch orchestration + ECS connector\",\"Next\":\"StateMatchStubDone\"},\"StateMatchStubDone\":{\"Type\":\"Succeed\"}}}",
+    "RoleArn": {
+     "Fn::GetAtt": [
+      "StateMatchingStubSmRole935F2115",
+      "Arn"
+     ]
+    },
+    "StateMachineName": "foundry-state-match-stub-dev"
+   },
+   "DependsOn": [
+    "StateMatchingStubSmRole935F2115"
+   ],
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "FoundryStack-Dev/StateMatchingStubSm/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/02JSQ7CMAwA39J7YkpU8QHOCNQ+AJnUFe6SVNihhyh/R4ULp5nROHBNA3WFm1jfT3bmB+RO0U8GN7lnUVqHFLxyDAL5hiKmS94T9aZTVLqgf3Igcx7CfxfDuEBu4/xdO0vZ7Zp0TVpMiD3BKIe3c3A8QV2NwmxfKSgvBO2PH8g4SBSeAAAA"
+   },
+   "Metadata": {
+    "aws:cdk:path": "FoundryStack-Dev/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "BulkResolveStubStateMachineArn": {
+   "Value": {
+    "Ref": "BulkSourceResolutionStubSmC5A69CA8"
+   },
+   "Export": {
+    "Name": "FoundryBulkResolveStubSmArn-dev"
+   }
+  },
+  "StateMatchingStubStateMachineArn": {
+   "Value": {
+    "Ref": "StateMatchingStubSm6AF4393F"
+   },
+   "Export": {
+    "Name": "FoundryStateMatchStubSmArn-dev"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

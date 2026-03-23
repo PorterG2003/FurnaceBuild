@@ -11,6 +11,8 @@ This repo intentionally splits Supabase into two places:
 
 Use `supabase/migrations/` for schema changes. Use `@/lib/supabase/*` for application imports.
 
+**Separate registry / company-intel database:** the second Supabase project uses [`supabase-leads/supabase/`](supabase-leads/supabase/) for CLI config and migrations (`--workdir supabase-leads`). It is not the same as the main app DB. See [`docs/infrastructure/SUPABASE_LEADS.md`](docs/infrastructure/SUPABASE_LEADS.md).
+
 ## 1. Create a Supabase Project
 
 1. Go to [supabase.com](https://supabase.com) and sign in/create account

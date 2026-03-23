@@ -2,6 +2,10 @@
 
 This directory contains architecture, implementation, and decision documentation for the FurnaceBuild project.
 
+## Foundry (registry / company intel)
+
+Foundry is the internal subsystem for ingesting messy business listings, building **canonical companies**, pulling **state registry** evidence, reconciling the two, and queuing human review. Conceptual and schema documentation lives under **[foundry/](./foundry/)**, starting with **[foundry/overview.md](./foundry/overview.md)**.
+
 ## 📚 Structure
 
 ### [architecture/](./architecture/)

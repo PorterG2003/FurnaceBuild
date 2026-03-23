@@ -1,0 +1,21 @@
+{
+  "version": "52.0.0",
+  "files": {
+    "cb7b6466015e164024b0e39e49f47592ed934292980c5664a023075402cd57e5": {
+      "displayName": "FoundryStack-Prod Template",
+      "source": {
+        "path": "FoundryStack-Prod.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "686255981838-us-west-2-00a58353": {
+          "bucketName": "cdk-hnb659fds-assets-686255981838-us-west-2",
+          "objectKey": "cb7b6466015e164024b0e39e49f47592ed934292980c5664a023075402cd57e5.json",
+          "region": "us-west-2",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::686255981838:role/cdk-hnb659fds-file-publishing-role-686255981838-us-west-2"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

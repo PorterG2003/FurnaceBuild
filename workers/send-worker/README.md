@@ -169,9 +169,7 @@ The script will:
 - `SUPABASE_URL` (required): Supabase project URL
 - `SUPABASE_SECRET_KEY` (required): Supabase Secret Key (bypasses RLS)
   - Can be provided directly, or fetched from Parameter Store if `SUPABASE_SECRET_KEY_PARAM_PATH` is set
-- `SUPABASE_SECRET_KEY_PARAM_PATH` (optional): SSM Parameter Store path to fetch `SUPABASE_SECRET_KEY` from
-  - Example: `/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY`
-  - If set, the worker will fetch the secret from Parameter Store at startup
+- `SUPABASE_SECRET_KEY_PARAM_PATH` (optional for local): SSM full name for the Secret Key; in ECS CDK sets it to **`{DEV|PROD_SECRET_SSM_PREFIX}/SUPABASE_SECRET_KEY`** (see [`docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md`](../../docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md))
 - `SEND_QUEUE_URL` (required): SQS queue URL
 - `AWS_REGION` (optional): AWS region, defaults to `us-west-2`
 

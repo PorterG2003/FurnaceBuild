@@ -5,7 +5,7 @@
  * - GET /companies?limit=50
  * - GET /ingestion-runs?limit=
  * - GET /ingestion-runs/:id
- * - GET /ingestion-runs/:id/records?limit=&offset=&filter=
+ * - GET /ingestion-runs/:id/records?limit=&offset=&filter= (records include linked_company_id when link_status is linked)
  * - POST /imports/google-maps
  * - GET /source-records/:id
  * - POST /ingestion-runs/:id/normalize-records
@@ -15,7 +15,7 @@
  * - POST /resolution/bulk
  * - GET|PATCH /companies/:id, POST /companies/:id/locations, POST /companies (create)
  * - GET /review-tasks, GET /review-tasks/:id, PATCH .../assign, POST .../resolve|cancel
- * - POST /state-matching/preflight | /batches, GET /state-matching/batches/:id
+ * - POST /state-matching/preflight, POST /state-matching/batches (async job + Step Functions), GET /state-matching/batches/:id
  * - GET /reconciliation/runs/:id
  *
  * Headers: Authorization: Bearer <supabase_access_token>
@@ -518,11 +518,12 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
       const list = records ?? [];
       const ids = list.map((r) => r.id as string);
 
-      const linkByRecord = new Map<string, string>();
+      const linkStatusByRecord = new Map<string, string>();
+      const linkedCompanyByRecord = new Map<string, string>();
       if (ids.length > 0) {
         const { data: links } = await leadsClient
           .from('source_business_company_links')
-          .select('source_business_record_id, link_status')
+          .select('source_business_record_id, link_status, company_id')
           .in('source_business_record_id', ids)
           .eq('is_current', true);
 
@@ -532,18 +533,23 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
           const st = row.link_status as string;
           if (!byRid.has(rid)) byRid.set(rid, new Set());
           byRid.get(rid)!.add(st);
+          if (st === 'linked' && row.company_id) {
+            linkedCompanyByRecord.set(rid, String(row.company_id));
+          }
         }
         for (const [rid, set] of byRid) {
-          if (set.has('linked')) linkByRecord.set(rid, 'linked');
-          else if (set.has('candidate')) linkByRecord.set(rid, 'candidate');
-          else linkByRecord.set(rid, [...set][0] ?? 'none');
+          if (set.has('linked')) linkStatusByRecord.set(rid, 'linked');
+          else if (set.has('candidate')) linkStatusByRecord.set(rid, 'candidate');
+          else linkStatusByRecord.set(rid, [...set][0] ?? 'none');
         }
       }
 
         const enriched = list.map((r) => {
         const payload = (r.raw_payload ?? {}) as Record<string, unknown>;
         const validation = typeof payload.__import_validation === 'string' ? payload.__import_validation : null;
-        const linkStatus = linkByRecord.get(r.id as string) ?? 'none';
+        const linkStatus = linkStatusByRecord.get(r.id as string) ?? 'none';
+        const linked_company_id =
+          linkStatus === 'linked' ? (linkedCompanyByRecord.get(r.id as string) ?? null) : null;
         const sourceRowNumber = typeof payload.__rowNumber === 'number' ? payload.__rowNumber : null;
         const resMeta = (r as { resolution_meta?: Record<string, unknown> }).resolution_meta ?? {};
         const normalized_name_key =
@@ -562,6 +568,7 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
           normalized_name_key,
           inferred_state_region:
             typeof resMeta.inferred_state_region === 'string' ? resMeta.inferred_state_region : null,
+          linked_company_id,
         };
       });
 

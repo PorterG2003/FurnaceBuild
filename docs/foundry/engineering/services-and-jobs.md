@@ -28,7 +28,7 @@ Server-side code for the registry API lives in [`amplify/functions/foundryRegist
 |------------|--------------|--------|
 | `normalize_ingestion_run` | Step Functions `foundry-normalize-ingestion-*` + Lambda chunk worker | Implemented |
 | `bulk_source_resolution` | Stub state machine only | Planned |
-| `state_matching_batch` | Stub state machine only | Planned |
+| `state_matching_batch` | Amplify Step Functions `foundry-state-matching-{env}` (mock Lambda + Utah ECS) | Implemented |
 
 **Orchestration:** **Step Functions** is the primary coordinator for long runs; **SQS** is optional for buffering/fan-out later, not the main orchestration layer.
 

@@ -42,6 +42,8 @@ PROD_SUPABASE_URL=https://<your-prod-project-ref>.supabase.co
 
 **Important**: If the dev branch URL changed, update `DEV_SUPABASE_URL`.
 
+**Align ECS worker SSM prefix:** Recreating a branch or sandbox does not change CDK by itself. Set **`DEV_SECRET_SSM_PREFIX`** and **`PROD_SECRET_SSM_PREFIX`** to the **parent path** of your Amplify secrets folder (full names are `{prefix}/SUPABASE_SECRET_KEY` and `{prefix}/LEADS_SUPABASE_SECRET_KEY`). See [WORKER_SSM_AND_AMPLIFY_SECRETS.md](./WORKER_SSM_AND_AMPLIFY_SECRETS.md).
+
 ### 1.3 Update Frontend Environment Variables
 
 **For Local Development:**
@@ -89,7 +91,7 @@ npm run verify:migrations
 
 ## Step 3: Update Supabase Service Key in AWS SSM
 
-The workers need the new Secret Key stored in AWS SSM Parameter Store:
+The workers need the new Secret Key stored at **`{DEV_SECRET_SSM_PREFIX}/SUPABASE_SECRET_KEY`** from **`infra/workers/.env.local`**. The prefix should be the Amplify folder for your sandbox (see [WORKER_SSM_AND_AMPLIFY_SECRETS.md](./WORKER_SSM_AND_AMPLIFY_SECRETS.md)).
 
 ```bash
 cd infra/workers
@@ -98,8 +100,7 @@ npm run set-secret:dev
 
 This will:
 - Prompt you for the dev branch **Secret Key** (Service Role Key)
-- Store it in SSM Parameter Store at `/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY`
-- The workers will automatically use this when they start
+- Store it at **`{DEV_SECRET_SSM_PREFIX}/SUPABASE_SECRET_KEY`** (or pass `bash scripts/set-supabase-secret.sh --param /full/name dev`)
 
 **Verify the secret was set correctly:**
 ```bash
@@ -124,12 +125,12 @@ npm run deploy:dev
 
 This updates the ECS task definitions with the new Supabase URL (though you still need to restart services).
 
-**Important:** Deploy the worker stack before any Amplify backend deploy that imports worker exports for Smartlead migration. The backend now depends on these worker-stack exports existing in CloudFormation:
+**Important:** Deploy the worker stack before any Amplify backend deploy that imports worker exports for Smartlead migration. The backend depends on these worker-stack exports in CloudFormation, plus SSM parameters for ECS task definition ARNs:
 
 - `FurnaceCluster-dev`
 - `FurnaceWorkerSecurityGroup-dev`
 - `FurnaceWorkerPublicSubnets-dev`
-- `FurnaceSmartleadMigrationTaskDefinition-dev`
+- SSM `/furnace/ecs/dev/smartlead-migration/task-definition-arn` and `/furnace/ecs/dev/utah-scraper/task-definition-arn`
 
 ---
 
@@ -281,6 +282,7 @@ npx ampx sandbox
 
 - [ ] ✅ Updated `infra/workers/.env.local` with new `DEV_SUPABASE_URL`
 - [ ] ✅ Applied migrations to dev branch (`npm run apply:migrations`)
+- [ ] ✅ Confirmed **`DEV_SECRET_SSM_PREFIX`** / **`PROD_SECRET_SSM_PREFIX`** match Amplify’s secret folder ([WORKER_SSM_AND_AMPLIFY_SECRETS.md](./WORKER_SSM_AND_AMPLIFY_SECRETS.md))
 - [ ] ✅ Set new Supabase Secret Key in AWS SSM (`npm run set-secret:dev`)
 - [ ] ✅ Updated CDK stack if URL changed (`npm run deploy:dev`)
 - [ ] ✅ Rebuilt Docker images if needed (`npm run build:dev`)
@@ -301,12 +303,13 @@ CDK_DEFAULT_ACCOUNT=686255981838
 CDK_DEFAULT_REGION=us-west-2
 DEV_SUPABASE_URL=https://<project-ref>-dev.supabase.co
 PROD_SUPABASE_URL=https://<project-ref>.supabase.co
+DEV_SECRET_SSM_PREFIX=/amplify/<your-sandbox-or-app-id>
+PROD_SECRET_SSM_PREFIX=/amplify/<your-prod-or-shared-path>
 ```
 
-### For Workers (Set via SSM - use `npm run set-secret:dev`)
+### For Workers (Secret Key in SSM — use `npm run set-secret:dev`)
 
-- **Dev**: `/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY` (Secret Key)
-- **Prod**: `/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY` (Secret Key)
+Prefix must match the **parent** of `SUPABASE_SECRET_KEY` in Parameter Store; the script writes **`{prefix}/SUPABASE_SECRET_KEY`**. See [WORKER_SSM_AND_AMPLIFY_SECRETS.md](./WORKER_SSM_AND_AMPLIFY_SECRETS.md).
 
 ### For Frontend (.env or Amplify)
 

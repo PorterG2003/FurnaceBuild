@@ -19,6 +19,7 @@ import { fetchEmailAttachment } from './functions/fetchEmailAttachment/resource'
 import { launchSmartleadMigration } from './functions/launchSmartleadMigration/resource';
 import { foundryRegistryApi } from './functions/foundryRegistryApi/resource';
 import { foundryNormalizeJob } from './functions/foundryNormalizeJob/resource';
+import { foundryStateMatchingJob } from './functions/foundryStateMatchingJob/resource';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -36,6 +37,7 @@ const backend = defineBackend({
   launchSmartleadMigration,
   foundryRegistryApi,
   foundryNormalizeJob,
+  foundryStateMatchingJob,
 });
 
 function resolveWorkerEnvironment(): 'dev' | 'prod' {
@@ -137,8 +139,8 @@ launchSmartleadMigrationLambda.addEnvironment(
   cdk.Fn.importValue(`FurnaceCluster-${workerEnvironment}`),
 );
 launchSmartleadMigrationLambda.addEnvironment(
-  'SMARTLEAD_MIGRATION_TASK_DEFINITION',
-  cdk.Fn.importValue(`FurnaceSmartleadMigrationTaskDefinition-${workerEnvironment}`),
+  'SMARTLEAD_MIGRATION_TASK_DEFINITION_PARAM',
+  `/furnace/ecs/${workerEnvironment}/smartlead-migration/task-definition-arn`,
 );
 launchSmartleadMigrationLambda.addEnvironment(
   'SMARTLEAD_MIGRATION_SUBNET_IDS',
@@ -318,6 +320,153 @@ foundryRegistryLambda.addToRolePolicy(
   }),
 );
 
+// Foundry async state matching: mock Lambda + optional Utah ECS (RunTask), orchestrated by Step Functions
+const foundryStateMatchingLambda = backend.foundryStateMatchingJob.resources.lambda as lambda.Function;
+foundryStateMatchingLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
+
+const stateMatchingSfnStack = cdk.Stack.of(foundryStateMatchingLambda);
+
+foundryStateMatchingLambda.addEnvironment(
+  'UTAH_ECS_CLUSTER',
+  cdk.Fn.importValue(`FurnaceCluster-${workerEnvironment}`),
+);
+foundryStateMatchingLambda.addEnvironment(
+  'UTAH_ECS_TASK_DEFINITION_PARAM',
+  `/furnace/ecs/${workerEnvironment}/utah-scraper/task-definition-arn`,
+);
+foundryStateMatchingLambda.addEnvironment(
+  'UTAH_ECS_SUBNET_IDS',
+  cdk.Fn.importValue(`FurnaceWorkerPublicSubnets-${workerEnvironment}`),
+);
+foundryStateMatchingLambda.addEnvironment(
+  'UTAH_ECS_SECURITY_GROUP_ID',
+  cdk.Fn.importValue(`FurnaceWorkerSecurityGroup-${workerEnvironment}`),
+);
+foundryStateMatchingLambda.addEnvironment(
+  'UTAH_ECS_EXECUTION_ROLE_ARN',
+  cdk.Fn.importValue(`FurnaceEcsTaskExecutionRole-${workerEnvironment}`),
+);
+foundryStateMatchingLambda.addEnvironment(
+  'UTAH_ECS_TASK_ROLE_ARN',
+  cdk.Fn.importValue(`FurnaceUtahScraperTaskRole-${workerEnvironment}`),
+);
+
+foundryStateMatchingLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryStateMatchRunUtahEcs',
+    actions: ['ecs:RunTask', 'ecs:DescribeTasks', 'ecs:StopTask'],
+    resources: ['*'],
+  }),
+);
+foundryStateMatchingLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryStateMatchPassUtahTaskRoles',
+    actions: ['iam:PassRole'],
+    resources: [
+      cdk.Fn.importValue(`FurnaceEcsTaskExecutionRole-${workerEnvironment}`),
+      cdk.Fn.importValue(`FurnaceUtahScraperTaskRole-${workerEnvironment}`),
+    ],
+  }),
+);
+foundryStateMatchingLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryStateMatchReadUtahTaskDefArnParam',
+    actions: ['ssm:GetParameter'],
+    resources: [
+      stateMatchingSfnStack.formatArn({
+        service: 'ssm',
+        resource: 'parameter',
+        resourceName: `furnace/ecs/${workerEnvironment}/utah-scraper/task-definition-arn`,
+      }),
+    ],
+  }),
+);
+
+const stateMatchProcessMock = new tasks.LambdaInvoke(stateMatchingSfnStack, 'StateMatchProcessMock', {
+  lambdaFunction: foundryStateMatchingLambda,
+  payload: sfn.TaskInput.fromObject({
+    action: 'processMock',
+    jobId: sfn.JsonPath.stringAt('$.jobId'),
+    reconciliationRunId: sfn.JsonPath.stringAt('$.reconciliationRunId'),
+  }),
+  resultPath: '$.mockStep',
+  payloadResponseOnly: true,
+});
+
+const stateMatchFinalize = new tasks.LambdaInvoke(stateMatchingSfnStack, 'StateMatchFinalize', {
+  lambdaFunction: foundryStateMatchingLambda,
+  payload: sfn.TaskInput.fromObject({
+    action: 'finalize',
+    jobId: sfn.JsonPath.stringAt('$.jobId'),
+    reconciliationRunId: sfn.JsonPath.stringAt('$.reconciliationRunId'),
+  }),
+  resultPath: '$.finalizeStep',
+  payloadResponseOnly: true,
+}).next(new sfn.Succeed(stateMatchingSfnStack, 'FoundryStateMatchingSucceeded'));
+
+const stateMatchFailNotify = new tasks.LambdaInvoke(stateMatchingSfnStack, 'StateMatchFailNotify', {
+  lambdaFunction: foundryStateMatchingLambda,
+  payload: sfn.TaskInput.fromObject({
+    action: 'fail',
+    jobId: sfn.JsonPath.stringAt('$.jobId'),
+    reconciliationRunId: sfn.JsonPath.stringAt('$.reconciliationRunId'),
+    message: sfn.JsonPath.stringAt('$.caughtError.Cause'),
+  }),
+  payloadResponseOnly: true,
+}).next(
+  new sfn.Fail(stateMatchingSfnStack, 'FoundryStateMatchingFailed', {
+    error: 'StateMatchingError',
+    cause: 'Mock, ECS, or finalize step failed',
+  }),
+);
+
+const stateMatchRunUtahEcs = new tasks.LambdaInvoke(stateMatchingSfnStack, 'StateMatchRunUtahEcs', {
+  lambdaFunction: foundryStateMatchingLambda,
+  payload: sfn.TaskInput.fromObject({
+    action: 'runUtahEcs',
+    jobId: sfn.JsonPath.stringAt('$.jobId'),
+    reconciliationRunId: sfn.JsonPath.stringAt('$.reconciliationRunId'),
+  }),
+  resultPath: '$.utahEcsStep',
+  payloadResponseOnly: true,
+});
+
+const stateMatchUtahChoice = new sfn.Choice(stateMatchingSfnStack, 'StateMatchUtahChoice')
+  .when(sfn.Condition.numberEquals('$.utahCount', 0), stateMatchFinalize)
+  .otherwise(stateMatchRunUtahEcs.next(stateMatchFinalize));
+
+stateMatchProcessMock.next(stateMatchUtahChoice);
+stateMatchProcessMock.addCatch(stateMatchFailNotify, { errors: ['States.ALL'], resultPath: '$.caughtError' });
+stateMatchRunUtahEcs.addCatch(stateMatchFailNotify, { errors: ['States.ALL'], resultPath: '$.caughtError' });
+
+const foundryStateMatchingSmLogGroup = new logs.LogGroup(stateMatchingSfnStack, 'FoundryStateMatchingSmLogs', {
+  retention: logs.RetentionDays.TWO_WEEKS,
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
+});
+
+const foundryStateMatchingStateMachine = new sfn.StateMachine(stateMatchingSfnStack, 'FoundryStateMatchingSm', {
+  stateMachineName: `foundry-state-matching-${resolveWorkerEnvironment()}`,
+  definitionBody: sfn.DefinitionBody.fromChainable(stateMatchProcessMock),
+  tracingEnabled: true,
+  timeout: cdk.Duration.hours(2),
+  logs: {
+    destination: foundryStateMatchingSmLogGroup,
+    level: sfn.LogLevel.ERROR,
+  },
+});
+
+foundryRegistryLambda.addEnvironment(
+  'FOUNDRY_STATE_MATCHING_STATE_MACHINE_ARN',
+  foundryStateMatchingStateMachine.stateMachineArn,
+);
+foundryRegistryLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryStartStateMatchingStepFunction',
+    actions: ['states:StartExecution'],
+    resources: [foundryStateMatchingStateMachine.stateMachineArn],
+  }),
+);
+
 backend.addOutput({
   custom: {
     fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
@@ -326,6 +475,7 @@ backend.addOutput({
     launchSmartleadMigrationUrl: launchSmartleadMigrationUrl.url,
     foundryRegistryApiUrl: foundryRegistryUrl.url,
     foundryNormalizeStateMachineArn: foundryNormalizeStateMachine.stateMachineArn,
+    foundryStateMatchingStateMachineArn: foundryStateMatchingStateMachine.stateMachineArn,
   },
 });
 

@@ -144,6 +144,8 @@ Documenting this order avoids hidden behavior when primary location and source d
 
 ## Runner orchestration
 
+**Production orchestration (async):** `POST /state-matching/batches` on the registry API creates a **`foundry_jobs`** row and starts an Amplify-hosted **Step Functions** state machine (`foundry-state-matching-{env}`). The API Lambda only validates and starts execution (short-lived). Steps: **mock connector** batch (Lambda) for companies whose target state is not `UT`, then **Utah ECS** (`workers/utah-scraper` reconciliation entrypoint) for `UT` companies when present, then **finalize** (marks job + reconciliation run complete). Poll **`GET /jobs/:id`** for orchestration status and **`GET /state-matching/batches/:reconciliationRunId`** for business results.
+
 **Orchestrator** (single coordination layer):
 
 - Accept batch input (company ids + optional source context).  

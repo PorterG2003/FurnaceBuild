@@ -18,7 +18,7 @@ fi
 
 # Parse arguments
 ENVIRONMENT="${1:-dev}"
-WORKER="${2:-all}"  # send-worker, scheduler-worker, inbox-checker-worker, smartlead-migration-task, or all
+WORKER="${2:-all}"  # send-worker, scheduler-worker, inbox-checker-worker, smartlead-migration-task, utah-scraper, or all
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 ACCOUNT="${CDK_DEFAULT_ACCOUNT:-686255981838}"
@@ -26,14 +26,14 @@ ACCOUNT="${CDK_DEFAULT_ACCOUNT:-686255981838}"
 # Validate environment
 if [ "$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "prod" ]; then
   echo "❌ Error: Environment must be 'dev' or 'prod'"
-  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|smartlead-migration-task|all]"
+  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|smartlead-migration-task|utah-scraper|all]"
   exit 1
 fi
 
 # Validate worker
-if [ "$WORKER" != "send-worker" ] && [ "$WORKER" != "scheduler-worker" ] && [ "$WORKER" != "inbox-checker-worker" ] && [ "$WORKER" != "smartlead-migration-task" ] && [ "$WORKER" != "all" ]; then
-  echo "❌ Error: Worker must be 'send-worker', 'scheduler-worker', 'inbox-checker-worker', 'smartlead-migration-task', or 'all'"
-  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|smartlead-migration-task|all]"
+if [ "$WORKER" != "send-worker" ] && [ "$WORKER" != "scheduler-worker" ] && [ "$WORKER" != "inbox-checker-worker" ] && [ "$WORKER" != "smartlead-migration-task" ] && [ "$WORKER" != "utah-scraper" ] && [ "$WORKER" != "all" ]; then
+  echo "❌ Error: Worker must be 'send-worker', 'scheduler-worker', 'inbox-checker-worker', 'smartlead-migration-task', 'utah-scraper', or 'all'"
+  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|smartlead-migration-task|utah-scraper|all]"
   exit 1
 fi
 
@@ -58,6 +58,8 @@ get_repo_uri() {
     output_key="SchedulerWorkerRepoUri"
   elif [ "$repo_name" = "smartlead-migration-task" ]; then
     output_key="SmartleadMigrationTaskRepoUri"
+  elif [ "$repo_name" = "utah-scraper" ]; then
+    output_key="UtahScraperTaskRepoUri"
   else
     output_key="InboxCheckerWorkerRepoUri"
   fi
@@ -149,6 +151,7 @@ if [ "$WORKER" = "all" ]; then
   build_and_push_worker "scheduler-worker"
   build_and_push_worker "inbox-checker-worker"
   build_and_push_worker "smartlead-migration-task"
+  build_and_push_worker "utah-scraper"
 else
   build_and_push_worker "$WORKER"
 fi

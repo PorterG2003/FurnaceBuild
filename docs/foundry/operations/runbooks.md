@@ -49,7 +49,7 @@ Operational recipes for Foundry / registry Supabase. CLI and linking: [SUPABASE_
 
 ## Foundry Lambda timeouts or 502 on bulk actions
 
-1. **Reduce batch size:** `POST /resolution/bulk` respects `maxRecords` (default 50, cap 100). `POST /state-matching/batches` allows at most 50 companies per call.
+1. **Reduce batch size:** `POST /resolution/bulk` respects `maxRecords` (default 50, cap 100). `POST /state-matching/batches` allows at most 50 companies per call and runs **asynchronously** (poll `GET /jobs/:id`).
 2. **Split by run:** Normalize with `POST /ingestion-runs/:id/normalize-records` and a lower `limit` if a single run has thousands of rows.
 3. **Prefer async normalize:** `POST /ingestion-runs/:id/jobs/normalize` runs chunk loops in **Step Functions** ([FOUNDRY_ORCHESTRATION.md](../../infrastructure/FOUNDRY_ORCHESTRATION.md)); poll `GET /jobs/:id`.
 

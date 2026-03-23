@@ -13,7 +13,7 @@ Here, **“registry”** / **company intel** means state-entity parsing, `compan
 The Supabase CLI expects **`config.toml` and `migrations/` inside a `supabase/` subfolder** of the workdir (same as the main app). If those files sit at `supabase-leads/config.toml` instead, `migration list` is empty and `db push` applies nothing.
 
 | Path | Role |
-|------|------|
+| ---- | ---- |
 | [`supabase/`](../../supabase/) | Main app database (CLI + migrations) |
 | [`supabase-leads/supabase/`](../../supabase-leads/supabase/) | Registry `config.toml` + `migrations/` |
 | [`lib/supabase/`](../../lib/supabase/) | Runtime client for the **main** app only |
@@ -91,6 +91,28 @@ The app reads registry data through a **Lambda Function URL** in [`amplify/backe
 4. **Auth:** The Lambda validates the Supabase JWT against the **main** project and requires a `user_access_flags` row with `flag_key = 'foundry'` before querying the registry DB.
 
 5. **Async jobs:** Long-running work records progress in **`foundry_jobs`**; the **normalize** workflow runs as **Step Functions + `foundryNormalizeJob`** in [`amplify/backend.ts`](../../amplify/backend.ts). Optional stub machines live in [`infra/foundry/`](../../infra/foundry/). Details: [FOUNDRY_ORCHESTRATION.md](./FOUNDRY_ORCHESTRATION.md).
+
+### ECS Utah scraper (`infra/workers`)
+
+[`infra/workers/bin/workers.ts`](../../infra/workers/bin/workers.ts) wires Utah the same way as the main Supabase URL and secret paths:
+
+**URLs (mirror main-app env pattern):**
+
+- If **`LEADS_SUPABASE_URL`** is set (typical in `.env.local` next to Amplify) and **`DEV_LEADS_SUPABASE_URL`** is not, the dev worker stack uses **`LEADS_SUPABASE_URL`** — same idea as **`EXPO_PUBLIC_SUPABASE_URL`** filling **`DEV_SUPABASE_URL`** for main.
+- **`DEV_LEADS_SUPABASE_URL`** / **`PROD_LEADS_SUPABASE_URL`**, or aliases **`LEADS_SUPABASE_URL_DEV`** / **`LEADS_SUPABASE_URL_PROD`**, work like **`DEV_SUPABASE_URL`** / **`SUPABASE_URL_DEV`**, etc.
+- If **`PROD_LEADS_SUPABASE_URL`** is unset but dev leads URL is set, **WorkerStack-Prod** reuses the dev leads URL and logs a warning (same as main **`PROD_SUPABASE_URL`** behavior).
+
+**Leads secret (same pattern as send-worker / `SUPABASE_SECRET_KEY_PARAM_PATH`):**
+
+The Utah task gets **`LEADS_SUPABASE_SECRET_KEY_PARAM_PATH`** as plain environment (not ECS-injected secrets). At startup, [`workers/utah-scraper/src/run-reconciliation.ts`](../../workers/utah-scraper/src/run-reconciliation.ts) calls SSM **`GetParameter`** (with decryption), like **`workers/send-worker/src/index.ts`** does for the main key. The **Utah task role** is granted **`ssm:GetParameter`** on that parameter ARN only.
+
+Worker CDK uses **one prefix per stack** (`DEV_SECRET_SSM_PREFIX` / `PROD_SECRET_SSM_PREFIX`). When a leads URL is set, the Utah task gets `{prefix}/LEADS_SUPABASE_SECRET_KEY` automatically (same folder as main `SUPABASE_SECRET_KEY`). If your leads key is not under that folder, relocate it in SSM or adjust the CDK — see [WORKER_SSM_AND_AMPLIFY_SECRETS.md](./WORKER_SSM_AND_AMPLIFY_SECRETS.md).
+
+After `npx ampx sandbox secret set LEADS_SUPABASE_SECRET_KEY` (or pipeline deploy), Amplify creates **`{prefix}/LEADS_SUPABASE_SECRET_KEY`** next to the main secret when both use the same Amplify backend folder.
+
+If SSM fetch fails or the parameter is missing, the Utah process logs and exits (no ECS **ResourceInitializationError** from secret injection). If logs show **`foundry_jobs load failed` `Invalid API key`**, the stored value is not the **leads** project’s service role.
+
+To **disable** leads-backed Utah reconciliation in ECS, unset the leads URL for the worker CDK deploy so [`worker-stack.ts`](../../infra/workers/lib/worker-stack.ts) does not set leads env on the Utah task; the scraper then runs without `LEADS_SUPABASE_*` in the container.
 
 ## CI (optional)
 

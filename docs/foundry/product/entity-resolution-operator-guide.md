@@ -11,7 +11,7 @@
 - Import CSV → rows appear under **Imports → records**.
 - **Normalize keys (batch)** writes `resolution_meta` (name key, domain key, inferred US state).
 - **Auto-resolve unresolved** or per-row actions create or link a **company** and set `link_status = linked`.
-- **State matching (mock)** (until real connectors exist): preflight by company, then batch run creates mock registry evidence and reconciliation results.
+- **State matching (UT / FL):** preflight by company; batch run starts ECS scrapers for Utah and/or Florida only (other states are rejected until a connector exists).
 - High-confidence layer-2 matches are **promoted**; ambiguous ones get **entity_match_review** tasks.
 
 ## Ambiguous path

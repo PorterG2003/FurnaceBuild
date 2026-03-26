@@ -1,7 +1,13 @@
+import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { normalizeIngestionRunRecordsChunk } from '@furnace/registry-server';
+import {
+  autoResolveSourceRecord,
+  listSourceRecordIdsPageForIngestionRun,
+  normalizeIngestionRunRecordsChunk,
+} from '@furnace/registry-server';
 
 let cachedClient: SupabaseClient | null = null;
+const lambdaClient = new LambdaClient({});
 
 function getLeadsClient(): SupabaseClient {
   if (cachedClient) return cachedClient;
@@ -27,12 +33,71 @@ type ChunkEvent = {
 type FinalizeEvent = { action: 'finalize'; jobId: string };
 type FailEvent = { action: 'fail'; jobId: string; message?: string };
 
+type AutoResolveEvent = {
+  action: 'auto_resolve_ingestion_run';
+  ingestionRunId: string;
+  cursor: string | null;
+};
+
+async function invokeSelfAsync(payload: AutoResolveEvent): Promise<void> {
+  const name = process.env.AWS_LAMBDA_FUNCTION_NAME?.trim();
+  if (!name) {
+    console.error('AWS_LAMBDA_FUNCTION_NAME missing; cannot chain auto-resolve');
+    return;
+  }
+  await lambdaClient.send(
+    new InvokeCommand({
+      FunctionName: name,
+      InvocationType: 'Event',
+      Payload: Buffer.from(JSON.stringify(payload), 'utf8'),
+    }),
+  );
+}
+
 export const handler = async (
-  event: ChunkEvent | FinalizeEvent | FailEvent,
+  event: ChunkEvent | FinalizeEvent | FailEvent | AutoResolveEvent,
 ): Promise<Record<string, unknown>> => {
+  if ('action' in event && event.action === 'auto_resolve_ingestion_run') {
+    const client = getLeadsClient();
+    const batchSize = Math.min(
+      200,
+      Math.max(1, Number.parseInt(process.env.FOUNDRY_AUTO_RESOLVE_BATCH_SIZE ?? '40', 10) || 40),
+    );
+    const { ingestionRunId, cursor } = event;
+    try {
+      const page = await listSourceRecordIdsPageForIngestionRun(
+        client,
+        ingestionRunId,
+        batchSize,
+        cursor,
+      );
+      for (const id of page.ids) {
+        try {
+          await autoResolveSourceRecord(client, id);
+        } catch (rowErr) {
+          console.error('autoResolveSourceRecord failed', id, rowErr);
+        }
+      }
+      if (!page.done && page.nextCursor != null) {
+        await invokeSelfAsync({
+          action: 'auto_resolve_ingestion_run',
+          ingestionRunId,
+          cursor: page.nextCursor,
+        });
+      }
+    } catch (e) {
+      console.error('auto_resolve_ingestion_run page failed', ingestionRunId, e);
+    }
+    return { ok: true };
+  }
+
   if ('action' in event && event.action === 'finalize') {
     const client = getLeadsClient();
-    const { data: row } = await client.from('foundry_jobs').select('progress').eq('id', event.jobId).maybeSingle();
+    const { data: row } = await client
+      .from('foundry_jobs')
+      .select('progress, payload')
+      .eq('id', event.jobId)
+      .maybeSingle();
     const prev = (row?.progress ?? {}) as Record<string, unknown>;
     await client
       .from('foundry_jobs')
@@ -42,6 +107,22 @@ export const handler = async (
         progress: { ...prev, current_step: 'done' },
       })
       .eq('id', event.jobId);
+
+    const payload = (row?.payload ?? {}) as Record<string, unknown>;
+    const ingestionRunId =
+      typeof payload.ingestion_run_id === 'string' ? payload.ingestion_run_id.trim() : '';
+    if (ingestionRunId) {
+      try {
+        await invokeSelfAsync({
+          action: 'auto_resolve_ingestion_run',
+          ingestionRunId,
+          cursor: null,
+        });
+      } catch (invokeErr) {
+        console.error('Failed to invoke auto_resolve chain', invokeErr);
+      }
+    }
+
     return { ok: true };
   }
 

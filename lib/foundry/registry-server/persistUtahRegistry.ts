@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UtahEntityDetailParsed } from './utah/types.js';
+import { ensureEntityOwnerDedupeReviewTaskForCluster } from './entityOwnerDedupe.js';
+import { normalizeNameKey } from './normalizeSourceRecord.js';
 import { filterMemberPrincipals } from './utah/parseEntityDetailHtml.js';
 
 export const UTAH_SOURCE_TYPE = 'utah_division_corporations';
@@ -74,13 +76,21 @@ export async function persistUtahRegistryPull(
 
   const entityId = ent.id as string;
   for (const p of owners) {
+    const ownerName = p.name.trim() || 'Unknown';
+    const ownerKey = normalizeNameKey(ownerName);
     await leadsClient.from('entity_owners').insert({
       state_entity_id: entityId,
       source_snapshot_id: snapshotId,
-      owner_name: p.name.trim() || 'Unknown',
+      owner_name: ownerName,
       title_role: p.title.trim() || null,
       is_current: true,
+      owner_normalized_key: ownerKey,
     });
+    try {
+      await ensureEntityOwnerDedupeReviewTaskForCluster(leadsClient, entityId, ownerKey);
+    } catch (e) {
+      console.error('ensureEntityOwnerDedupeReviewTaskForCluster failed', e);
+    }
   }
 
   return { snapshot_id: snapshotId, state_entity_id: entityId };

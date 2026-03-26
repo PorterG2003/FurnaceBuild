@@ -1,10 +1,6 @@
 import type { Page } from 'playwright';
-
-/** Strip leading checkmarks / whitespace from enriched CSV company fields */
-export function cleanCompanyNameForSearch(name: string): string {
-  return name.replace(/^[\s✅✓]+/u, '').trim();
-}
 import {
+  cleanCompanyNameForSearch,
   compareToTesterRow,
   filterMemberPrincipals,
   parseEntityDetailHtml,

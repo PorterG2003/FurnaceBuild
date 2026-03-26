@@ -26,7 +26,9 @@ export type UtahEntityDetailParsed = {
   principals: UtahPrincipal[];
 };
 
-export type CompareOutcome = 'match' | 'partial' | 'no_match' | 'skipped';
+import type { CompareOutcome } from '../scrapers/compareTypes.js';
+
+export type { CompareOutcome };
 
 export type TesterCompareResult = {
   outcome: CompareOutcome;

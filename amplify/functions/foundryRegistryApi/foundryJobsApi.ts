@@ -44,6 +44,180 @@ function parseLimit(q: string, max: number, def: number): number {
 
 const sfnClient = new SFNClient({});
 
+/** Outcome for UI `pipeline.normalize` and for mapping to HTTP when starting normalize from the API route. */
+export type NormalizeJobStartOutcome =
+  | { status: 'started'; jobId: string; executionArn: string; reused: boolean }
+  | {
+      status: 'failed';
+      error: string;
+      detail?: string;
+      /** Same semantics as HTTP: 503 = async stack not configured */
+      code?: 'not_configured' | 'not_found' | 'server_error';
+    };
+
+/**
+ * Shared by POST /ingestion-runs/:id/jobs/normalize and post-import pipeline.
+ * Does not throw; returns structured outcome for JSON embedding.
+ */
+export async function startNormalizeIngestionJob(
+  leadsClient: SupabaseClient,
+  runId: string,
+  userId: string,
+  opts?: { batchSize?: number },
+): Promise<NormalizeJobStartOutcome> {
+  const smArn = process.env.FOUNDRY_NORMALIZE_STATE_MACHINE_ARN?.trim();
+  if (!smArn) {
+    return {
+      status: 'failed',
+      error: 'Async normalize is not configured (check Amplify backend / deploy)',
+      code: 'not_configured',
+    };
+  }
+
+  const batchSize = Math.min(2000, Math.max(1, Number(opts?.batchSize) || 500));
+
+  const { data: runRow, error: runErr } = await leadsClient
+    .from('ingestion_runs')
+    .select('id')
+    .eq('id', runId)
+    .maybeSingle();
+  if (runErr) {
+    console.error('ingestion_runs lookup failed', runErr.message);
+    return {
+      status: 'failed',
+      error: 'Failed to verify ingestion run',
+      detail: runErr.message,
+      code: 'server_error',
+    };
+  }
+  if (!runRow) {
+    return {
+      status: 'failed',
+      error: 'Ingestion run not found',
+      code: 'not_found',
+    };
+  }
+
+  const idempotencyKey = `normalize:${runId}:${NORMALIZER_VERSION}`;
+
+  const { data: active, error: activeErr } = await leadsClient
+    .from('foundry_jobs')
+    .select('id, status, step_function_execution_arn')
+    .eq('idempotency_key', idempotencyKey)
+    .in('status', ['queued', 'running'])
+    .maybeSingle();
+
+  if (activeErr) {
+    console.error('foundry_jobs idempotency lookup failed', activeErr.message);
+    return {
+      status: 'failed',
+      error: 'Failed to check existing job',
+      detail: activeErr.message,
+      code: 'server_error',
+    };
+  }
+
+  if (active) {
+    return {
+      status: 'started',
+      jobId: active.id as string,
+      executionArn: active.step_function_execution_arn ?? '',
+      reused: true,
+    };
+  }
+
+  const { data: inserted, error: insErr } = await leadsClient
+    .from('foundry_jobs')
+    .insert({
+      job_type: 'normalize_ingestion_run',
+      status: 'queued',
+      requested_by: userId,
+      payload: { ingestion_run_id: runId, batch_size: batchSize },
+      idempotency_key: idempotencyKey,
+      progress: { current_step: 'queued' },
+    })
+    .select('id')
+    .single();
+
+  if (insErr || !inserted) {
+    if (insErr?.code === '23505') {
+      const { data: again } = await leadsClient
+        .from('foundry_jobs')
+        .select('id, step_function_execution_arn')
+        .eq('idempotency_key', idempotencyKey)
+        .in('status', ['queued', 'running'])
+        .maybeSingle();
+      if (again) {
+        return {
+          status: 'started',
+          jobId: again.id as string,
+          executionArn: again.step_function_execution_arn ?? '',
+          reused: true,
+        };
+      }
+    }
+    console.error('foundry_jobs insert failed', insErr?.message);
+    return {
+      status: 'failed',
+      error: 'Failed to create job',
+      detail: insErr?.message,
+      code: 'server_error',
+    };
+  }
+
+  const jobId = inserted.id as string;
+
+  try {
+    const execName = `norm-${jobId.replace(/-/g, '').slice(0, 12)}-${Date.now()}`;
+    const out = await sfnClient.send(
+      new StartExecutionCommand({
+        stateMachineArn: smArn,
+        name: execName.slice(0, 80),
+        input: JSON.stringify({
+          jobId,
+          ingestionRunId: runId,
+          batchSize,
+          cursor: null,
+        }),
+      }),
+    );
+
+    const executionArn = out.executionArn ?? '';
+    const { error: updErr } = await leadsClient
+      .from('foundry_jobs')
+      .update({
+        status: 'running',
+        step_function_execution_arn: executionArn,
+        started_at: new Date().toISOString(),
+        progress: { current_step: 'running' },
+      })
+      .eq('id', jobId);
+
+    if (updErr) {
+      console.error('foundry_jobs update after start failed', updErr.message);
+    }
+
+    return { status: 'started', jobId, executionArn, reused: false };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('StartExecution failed', msg);
+    await leadsClient
+      .from('foundry_jobs')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_summary: msg,
+      })
+      .eq('id', jobId);
+    return {
+      status: 'failed',
+      error: 'Failed to start workflow',
+      detail: msg,
+      code: 'server_error',
+    };
+  }
+}
+
 export async function handleFoundryJobsRequest(
   leadsClient: SupabaseClient,
   method: string,
@@ -71,21 +245,28 @@ export async function handleFoundryJobsRequest(
   }
 
   if (path === '/state-matching/batches' && method === 'POST') {
-    const parsed = parseJsonBody<{ companyIds?: string[] }>(rawBody);
+    const parsed = parseJsonBody<{ companyIds?: string[]; sourceIngestionRunId?: string }>(rawBody);
     if (!parsed.ok) return parsed.response;
     const ids = parsed.value.companyIds ?? [];
     if (ids.length > 50) return jsonResponse(400, { error: 'At most 50 companies per batch' });
-    return startStateMatchingBatchJob(leadsClient, ids, userId);
+    let sourceIngestionRunId: string | undefined;
+    const rawIngest = parsed.value.sourceIngestionRunId?.trim();
+    if (rawIngest) {
+      if (!UUID_RE.test(rawIngest)) return jsonResponse(400, { error: 'Invalid sourceIngestionRunId' });
+      sourceIngestionRunId = rawIngest;
+    }
+    return startStateMatchingBatchJob(leadsClient, ids, userId, { sourceIngestionRunId });
   }
 
   return null;
 }
 
-/** Async state matching: reconciliation_runs + foundry_jobs + Step Functions (mock Lambda + optional Utah ECS). */
+/** Async state matching: reconciliation_runs + foundry_jobs + Step Functions (Utah + Florida ECS). */
 export async function startStateMatchingBatchJob(
   leadsClient: SupabaseClient,
   companyIds: string[],
   userId: string,
+  opts?: { sourceIngestionRunId?: string },
 ): Promise<FunctionUrlResponse> {
   const smArn = process.env.FOUNDRY_STATE_MATCHING_STATE_MACHINE_ARN?.trim();
   if (!smArn) {
@@ -93,7 +274,17 @@ export async function startStateMatchingBatchJob(
   }
 
   const pre = await stateMatchingPreflight(leadsClient, { companyIds });
-  const { mockCompanyIds, utahCompanyIds } = await bucketCompaniesForMatching(leadsClient, pre.ready);
+  const { utahCompanyIds, floridaCompanyIds, unsupported } = await bucketCompaniesForMatching(
+    leadsClient,
+    pre.ready,
+  );
+  if (unsupported.length > 0) {
+    return jsonResponse(400, {
+      error:
+        'Automated state registry matching supports Utah (UT) and Florida (FL) only. Remove non-UT/FL companies or fix locations.',
+      unsupported,
+    });
+  }
   const versions = stateMatchingJobVersions();
 
   const sortedKey = [...companyIds].sort().join(',');
@@ -112,13 +303,22 @@ export async function startStateMatchingBatchJob(
   }
 
   if (active) {
-    const pl = active.payload as { reconciliation_run_id?: string; preflight?: unknown };
+    const pl = active.payload as {
+      reconciliation_run_id?: string;
+      preflight?: unknown;
+      utah_company_ids?: string[];
+      florida_company_ids?: string[];
+    };
     return jsonResponse(200, {
       jobId: active.id,
       reconciliation_run_id: String(pl.reconciliation_run_id ?? ''),
       executionArn: active.step_function_execution_arn ?? '',
       reused: true,
       preflight: pl.preflight ?? pre,
+      bucket_counts: {
+        utah: pl.utah_company_ids?.length ?? 0,
+        florida: pl.florida_company_ids?.length ?? 0,
+      },
     });
   }
 
@@ -132,8 +332,8 @@ export async function startStateMatchingBatchJob(
       meta: {
         run_kind: 'state_matching_orchestration',
         preflight: pre,
-        mock_company_ids: mockCompanyIds,
         utah_company_ids: utahCompanyIds,
+        florida_company_ids: floridaCompanyIds,
         async: true,
       },
     })
@@ -155,8 +355,11 @@ export async function startStateMatchingBatchJob(
         reconciliation_run_id: reconciliationRunId,
         company_ids: companyIds,
         preflight: pre,
-        mock_company_ids: mockCompanyIds,
         utah_company_ids: utahCompanyIds,
+        florida_company_ids: floridaCompanyIds,
+        ...(opts?.sourceIngestionRunId
+          ? { source_ingestion_run_id: opts.sourceIngestionRunId }
+          : {}),
       },
       idempotency_key: idempotencyKey,
       progress: { current_step: 'queued' },
@@ -173,7 +376,12 @@ export async function startStateMatchingBatchJob(
         .in('status', ['queued', 'running'])
         .maybeSingle();
       if (again) {
-        const pl = again.payload as { reconciliation_run_id?: string; preflight?: unknown };
+        const pl = again.payload as {
+          reconciliation_run_id?: string;
+          preflight?: unknown;
+          utah_company_ids?: string[];
+          florida_company_ids?: string[];
+        };
         await leadsClient.from('reconciliation_runs').delete().eq('id', reconciliationRunId);
         return jsonResponse(200, {
           jobId: again.id,
@@ -181,6 +389,10 @@ export async function startStateMatchingBatchJob(
           executionArn: again.step_function_execution_arn ?? '',
           reused: true,
           preflight: pl.preflight ?? pre,
+          bucket_counts: {
+            utah: pl.utah_company_ids?.length ?? 0,
+            florida: pl.florida_company_ids?.length ?? 0,
+          },
         });
       }
     }
@@ -191,10 +403,12 @@ export async function startStateMatchingBatchJob(
   const jobId = inserted.id as string;
 
   const utahCount = utahCompanyIds.length;
+  const floridaCount = floridaCompanyIds.length;
   const sfnInput = {
     jobId,
     reconciliationRunId,
     utahCount,
+    floridaCount,
   };
 
   try {
@@ -214,7 +428,11 @@ export async function startStateMatchingBatchJob(
         status: 'running',
         step_function_execution_arn: executionArn,
         started_at: new Date().toISOString(),
-        progress: { current_step: 'running', utah_count: utahCount, mock_count: mockCompanyIds.length },
+        progress: {
+          current_step: 'running',
+          utah_count: utahCount,
+          florida_count: floridaCount,
+        },
       })
       .eq('id', jobId);
 
@@ -228,6 +446,10 @@ export async function startStateMatchingBatchJob(
       executionArn,
       reused: false,
       preflight: pre,
+      bucket_counts: {
+        utah: utahCompanyIds.length,
+        florida: floridaCompanyIds.length,
+      },
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -301,125 +523,25 @@ async function handlePostNormalizeJob(
   rawBody: string,
   userId: string,
 ): Promise<FunctionUrlResponse> {
-  const smArn = process.env.FOUNDRY_NORMALIZE_STATE_MACHINE_ARN?.trim();
-  if (!smArn) {
-    return jsonResponse(503, { error: 'Async normalize is not configured (check Amplify backend / deploy)' });
-  }
-
   const parsed = parseJsonBody<{ batchSize?: number }>(rawBody || '{}');
   if (!parsed.ok) return parsed.response;
   const batchSize = Math.min(2000, Math.max(1, Number(parsed.value.batchSize) || 500));
 
-  const { data: runRow, error: runErr } = await leadsClient
-    .from('ingestion_runs')
-    .select('id')
-    .eq('id', runId)
-    .maybeSingle();
-  if (runErr) {
-    console.error('ingestion_runs lookup failed', runErr.message);
-    return jsonResponse(502, { error: 'Failed to verify ingestion run' });
-  }
-  if (!runRow) return jsonResponse(404, { error: 'Ingestion run not found' });
-
-  const idempotencyKey = `normalize:${runId}:${NORMALIZER_VERSION}`;
-
-  const { data: active, error: activeErr } = await leadsClient
-    .from('foundry_jobs')
-    .select('id, status, step_function_execution_arn')
-    .eq('idempotency_key', idempotencyKey)
-    .in('status', ['queued', 'running'])
-    .maybeSingle();
-
-  if (activeErr) {
-    console.error('foundry_jobs idempotency lookup failed', activeErr.message);
-    return jsonResponse(502, { error: 'Failed to check existing job' });
-  }
-
-  if (active) {
+  const outcome = await startNormalizeIngestionJob(leadsClient, runId, userId, { batchSize });
+  if (outcome.status === 'started') {
     return jsonResponse(200, {
-      jobId: active.id,
-      executionArn: active.step_function_execution_arn ?? '',
-      reused: true,
+      jobId: outcome.jobId,
+      executionArn: outcome.executionArn,
+      reused: outcome.reused,
     });
   }
-
-  const { data: inserted, error: insErr } = await leadsClient
-    .from('foundry_jobs')
-    .insert({
-      job_type: 'normalize_ingestion_run',
-      status: 'queued',
-      requested_by: userId,
-      payload: { ingestion_run_id: runId, batch_size: batchSize },
-      idempotency_key: idempotencyKey,
-      progress: { current_step: 'queued' },
-    })
-    .select('id')
-    .single();
-
-  if (insErr || !inserted) {
-    if (insErr?.code === '23505') {
-      const { data: again } = await leadsClient
-        .from('foundry_jobs')
-        .select('id, step_function_execution_arn')
-        .eq('idempotency_key', idempotencyKey)
-        .in('status', ['queued', 'running'])
-        .maybeSingle();
-      if (again) {
-        return jsonResponse(200, {
-          jobId: again.id,
-          executionArn: again.step_function_execution_arn ?? '',
-          reused: true,
-        });
-      }
-    }
-    console.error('foundry_jobs insert failed', insErr?.message);
-    return jsonResponse(502, { error: 'Failed to create job' });
+  if (outcome.code === 'not_configured') {
+    return jsonResponse(503, { error: outcome.error });
   }
-
-  const jobId = inserted.id as string;
-
-  try {
-    const execName = `norm-${jobId.replace(/-/g, '').slice(0, 12)}-${Date.now()}`;
-    const out = await sfnClient.send(
-      new StartExecutionCommand({
-        stateMachineArn: smArn,
-        name: execName.slice(0, 80),
-        input: JSON.stringify({
-          jobId,
-          ingestionRunId: runId,
-          batchSize,
-          cursor: null,
-        }),
-      }),
-    );
-
-    const executionArn = out.executionArn ?? '';
-    const { error: updErr } = await leadsClient
-      .from('foundry_jobs')
-      .update({
-        status: 'running',
-        step_function_execution_arn: executionArn,
-        started_at: new Date().toISOString(),
-        progress: { current_step: 'running' },
-      })
-      .eq('id', jobId);
-
-    if (updErr) {
-      console.error('foundry_jobs update after start failed', updErr.message);
-    }
-
-    return jsonResponse(200, { jobId, executionArn, reused: false });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('StartExecution failed', msg);
-    await leadsClient
-      .from('foundry_jobs')
-      .update({
-        status: 'failed',
-        completed_at: new Date().toISOString(),
-        error_summary: msg,
-      })
-      .eq('id', jobId);
-    return jsonResponse(502, { error: 'Failed to start workflow', detail: msg });
+  if (outcome.code === 'not_found') {
+    return jsonResponse(404, { error: outcome.error });
   }
+  const body: Record<string, string> = { error: outcome.error };
+  if (outcome.detail) body.detail = outcome.detail;
+  return jsonResponse(502, body);
 }

@@ -46,7 +46,10 @@ export default function ImportsPage() {
         <Breadcrumb items={[{ label: 'Foundry', href: '/foundry' }, { label: 'Imports' }]} />
       </View>
       <View className="flex-row flex-wrap items-start justify-between gap-3 mb-2">
-        <PageHeader title="Imports" subtitle="Google Maps CSV ingestion into source_business_records" />
+        <PageHeader
+          title="Imports"
+          subtitle="Each row is one import. Open Results for state lookup and the rest of the pipeline; normalize starts automatically after upload."
+        />
         <Button onPress={() => router.push('/foundry/imports/new')}>New Import</Button>
       </View>
 

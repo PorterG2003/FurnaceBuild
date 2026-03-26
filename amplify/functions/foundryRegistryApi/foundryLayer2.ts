@@ -1,11 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  mergeCompanies,
+  mergeEntityOwners,
+  type MergeCompaniesParams,
+  type MergeEntityOwnersParams,
+} from '@furnace/registry-server';
 
 export {
   bucketCompaniesForMatching,
   deriveTargetStateForCompany,
-  MOCK_PARSER_VERSION,
-  MOCK_SOURCE_TYPE,
-  runMockStateRunner,
   stateMatchingJobVersions,
   stateMatchingPreflight,
 } from '@furnace/registry-server';
@@ -16,13 +19,17 @@ export {
   SCORING_VERSION,
 } from '@furnace/registry-server';
 
-export async function listReviewTasks(leadsClient: SupabaseClient, params: { status?: string; limit: number }) {
+export async function listReviewTasks(
+  leadsClient: SupabaseClient,
+  params: { status?: string; task_type?: string; limit: number },
+) {
   let q = leadsClient
     .from('review_tasks')
     .select('id, task_type, entity_type, entity_id, status, priority, assigned_to, payload, created_at')
     .order('created_at', { ascending: false })
     .limit(params.limit);
   if (params.status) q = q.eq('status', params.status);
+  if (params.task_type) q = q.eq('task_type', params.task_type);
   const { data, error } = await q;
   if (error) throw new Error(error.message);
   return data ?? [];
@@ -41,12 +48,42 @@ export async function resolveReviewTask(
     resolution: Record<string, unknown>;
     chosen_company_id?: string;
     chosen_match_action?: 'promote' | 'reject';
+    company_dedupe_dismiss?: boolean;
+    company_dedupe_merge?: MergeCompaniesParams;
+    entity_owner_dedupe_dismiss?: boolean;
+    entity_owner_dedupe_merge?: MergeEntityOwnersParams;
   },
   actorUserId: string,
 ) {
   const task = await getReviewTask(leadsClient, id);
   if (!task) return { error: 'not_found' as const };
   if (task.status === 'resolved') return { error: 'already_resolved' as const };
+
+  if (task.task_type === 'company_dedupe') {
+    if (body.company_dedupe_dismiss === true) {
+      // resolve only
+    } else {
+      const m = body.company_dedupe_merge;
+      if (!m?.survivor_company_id || !m.other_company_ids?.length) {
+        return { error: 'company_dedupe_merge or company_dedupe_dismiss required' as const };
+      }
+      const r = await mergeCompanies(leadsClient, m);
+      if ('error' in r) return { error: r.error };
+    }
+  }
+
+  if (task.task_type === 'entity_owner_dedupe') {
+    if (body.entity_owner_dedupe_dismiss === true) {
+      // resolve only
+    } else {
+      const m = body.entity_owner_dedupe_merge;
+      if (!m?.survivor_entity_owner_id || !m.other_entity_owner_ids?.length) {
+        return { error: 'entity_owner_dedupe_merge or entity_owner_dedupe_dismiss required' as const };
+      }
+      const r = await mergeEntityOwners(leadsClient, m);
+      if ('error' in r) return { error: r.error };
+    }
+  }
 
   if (task.task_type === 'source_link_review' && task.entity_type === 'source_business_record') {
     const recordId = task.entity_id as string;

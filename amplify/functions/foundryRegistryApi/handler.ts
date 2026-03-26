@@ -2,7 +2,11 @@
  * Foundry registry Lambda (separate Supabase "leads/registry" project).
  *
  * Routes (append to Function URL base):
- * - GET /companies?limit=50
+ * - GET /companies?limit=50&q=substring (optional q: ilike legal_name, min 2 chars, limit capped at 50)
+ * - GET /companies?ids=uuid,uuid (batch by id, max 50; order matches request)
+ * - GET /companies?normalized_key=key (all companies sharing key, max 50)
+ * - GET /entity-owners?ids=... | ?state_entity_id=&owner_normalized_key=
+ * - POST /entity-owners/merge, /entity-owners/delete-preflight, /entity-owners/delete
  * - GET /ingestion-runs?limit=
  * - GET /ingestion-runs/:id
  * - GET /ingestion-runs/:id/records?limit=&offset=&filter= (records include linked_company_id when link_status is linked)
@@ -14,6 +18,7 @@
  * - POST /source-records/:id/candidates/generate | /link | /reject-candidates
  * - POST /resolution/bulk
  * - GET|PATCH /companies/:id, POST /companies/:id/locations, POST /companies (create)
+ * - GET /export/company-owner-leads?limit=&offset=&q=&registry_state=&is_export_ready=&has_current_linked_source=&has_open_review_task=&has_parse_failure_task=&has_current_owner=
  * - GET /review-tasks, GET /review-tasks/:id, PATCH .../assign, POST .../resolve|cancel
  * - POST /state-matching/preflight, POST /state-matching/batches (async job + Step Functions), GET /state-matching/batches/:id
  * - GET /reconciliation/runs/:id
@@ -21,6 +26,8 @@
  * Headers: Authorization: Bearer <supabase_access_token>
  *
  * Writes use the leads Supabase service role after Foundry access checks.
+ *
+ * Entity resolution (candidates, link, bulk resolve) lives in @furnace/registry-server (entityResolution).
  */
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import {
@@ -30,11 +37,12 @@ import {
   type ClassifiedRow,
 } from './validateImport';
 import { dispatchFoundryExtendedRoutes } from './foundryApiRoutes.js';
-import { handleFoundryJobsRequest } from './foundryJobsApi.js';
+import { handleFoundryJobsRequest, startNormalizeIngestionJob } from './foundryJobsApi.js';
 
 const FOUNDRY_FLAG_KEY = 'foundry';
 const MAX_COMPANIES_LIMIT = 100;
 const DEFAULT_COMPANIES_LIMIT = 50;
+const MAX_COMPANIES_SEARCH_LIMIT = 50;
 const MAX_INGESTION_RUNS_LIMIT = 100;
 const DEFAULT_INGESTION_RUNS_LIMIT = 50;
 const MAX_IMPORT_ROWS = 8000;
@@ -112,6 +120,21 @@ function parseOffset(rawQueryString: string): number {
   return n;
 }
 
+/** Escape % and _ so user input is literal inside ILIKE patterns. */
+function escapeIlikePattern(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
+function parseCompaniesListQuery(rawQueryString: string): { limit: number; q: string | null } {
+  const params = new URLSearchParams(rawQueryString || '');
+  const baseLimit = parseLimit(rawQueryString, MAX_COMPANIES_LIMIT, DEFAULT_COMPANIES_LIMIT);
+  const rawQ = params.get('q');
+  const trimmed = rawQ != null ? rawQ.trim() : '';
+  const q = trimmed.length >= 2 ? trimmed : null;
+  const limit = q ? Math.min(baseLimit, MAX_COMPANIES_SEARCH_LIMIT) : baseLimit;
+  return { limit, q };
+}
+
 async function verifyUser(
   supabase: SupabaseClient,
   token: string,
@@ -180,9 +203,15 @@ function rowShouldImport(r: ClassifiedRow, importWarnings: boolean): boolean {
   return true;
 }
 
+type ImportPipelineNormalize =
+  | { status: 'started'; jobId: string; executionArn: string; reused: boolean }
+  | { status: 'failed'; error: string; detail?: string; code?: string }
+  | { status: 'skipped_no_rows' };
+
 async function handleGoogleMapsImport(
   leadsClient: SupabaseClient,
   body: GoogleMapsImportBody,
+  userId: string,
 ): Promise<FunctionUrlResponse> {
   const importName = typeof body.importName === 'string' ? body.importName.trim() : '';
   if (!importName) {
@@ -346,12 +375,34 @@ async function handleGoogleMapsImport(
       addressRaw: r.addressRaw,
     }));
 
+  let pipelineNormalize: ImportPipelineNormalize = { status: 'skipped_no_rows' };
+
+  if (terminalStatus === 'completed' && imported > 0) {
+    const norm = await startNormalizeIngestionJob(leadsClient, runId, userId);
+    if (norm.status === 'started') {
+      pipelineNormalize = {
+        status: 'started',
+        jobId: norm.jobId,
+        executionArn: norm.executionArn,
+        reused: norm.reused,
+      };
+    } else {
+      pipelineNormalize = {
+        status: 'failed',
+        error: norm.error,
+        ...(norm.detail ? { detail: norm.detail } : {}),
+        ...(norm.code ? { code: norm.code } : {}),
+      };
+    }
+  }
+
   return jsonResponse(200, {
     runId,
     stats: finalStats,
     errorSamples,
     parserVersion: PARSER_VERSION,
     ingestVersion: INGEST_VERSION,
+    pipeline: { normalize: pipelineNormalize },
   });
 }
 
@@ -398,12 +449,54 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
 
   if (path === '/companies') {
     if (method === 'GET') {
-      const limit = parseLimit(event.rawQueryString || '', MAX_COMPANIES_LIMIT, DEFAULT_COMPANIES_LIMIT);
-      const { data, error } = await leadsClient
+      const listParams = new URLSearchParams(event.rawQueryString || '');
+      const idsRaw = listParams.get('ids')?.trim();
+      if (idsRaw) {
+        const parts = idsRaw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const unique = [...new Set(parts)].filter((id) => UUID_RE.test(id)).slice(0, 50);
+        if (unique.length === 0) {
+          return jsonResponse(400, { error: 'ids must include at least one valid UUID' });
+        }
+        const { data, error } = await leadsClient
+          .from('companies')
+          .select('id, legal_name, normalized_key, notes, created_at, updated_at')
+          .in('id', unique);
+        if (error) {
+          console.error('companies batch select failed', error.message);
+          return jsonResponse(502, { error: 'Failed to load registry data' });
+        }
+        const byId = new Map((data ?? []).map((row) => [row.id as string, row]));
+        const ordered = unique.map((id) => byId.get(id)).filter(Boolean);
+        return jsonResponse(200, { companies: ordered });
+      }
+
+      const nk = listParams.get('normalized_key')?.trim();
+      if (nk) {
+        const limitNk = Math.min(parseLimit(event.rawQueryString || '', MAX_COMPANIES_LIMIT, 50), 50);
+        const { data, error } = await leadsClient
+          .from('companies')
+          .select('id, legal_name, normalized_key, notes, created_at, updated_at')
+          .eq('normalized_key', nk)
+          .order('id', { ascending: true })
+          .limit(limitNk);
+        if (error) {
+          console.error('companies by normalized_key failed', error.message);
+          return jsonResponse(502, { error: 'Failed to load registry data' });
+        }
+        return jsonResponse(200, { companies: data ?? [] });
+      }
+
+      const { limit, q } = parseCompaniesListQuery(event.rawQueryString || '');
+      let qb = leadsClient
         .from('companies')
-        .select('id, legal_name, normalized_key, notes, created_at, updated_at')
-        .order('updated_at', { ascending: false })
-        .limit(limit);
+        .select('id, legal_name, normalized_key, notes, created_at, updated_at');
+      if (q) {
+        qb = qb.ilike('legal_name', `%${escapeIlikePattern(q)}%`);
+      }
+      const { data, error } = await qb.order('updated_at', { ascending: false }).limit(limit);
 
       if (error) {
         console.error('companies select failed', error.message);
@@ -600,6 +693,7 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
     jobsBody,
     event.rawQueryString || '',
     verified.user.id,
+    leadsSecretKey,
   );
   if (extended) return extended;
 
@@ -608,7 +702,7 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
       const raw = decodeBody(event);
       const parsed = parseJsonBody<GoogleMapsImportBody>(raw);
       if (!parsed.ok) return parsed.response;
-      return handleGoogleMapsImport(leadsClient, parsed.value);
+      return handleGoogleMapsImport(leadsClient, parsed.value, verified.user.id);
     }
     return jsonResponse(405, { error: 'Method not allowed' });
   }

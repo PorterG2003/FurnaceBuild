@@ -12,7 +12,7 @@ Server-side code for the registry API lives in [`amplify/functions/foundryRegist
 | `foundryJobsApi.ts` | `foundry_jobs` + `StartExecution` for normalize workflow |
 | `validateImport.ts` | CSV row classification for import |
 | `entityResolution.ts` | Layer 1: normalize run (re-exports shared normalize), candidates, link, reject, bulk auto-resolve |
-| `foundryLayer2.ts` | Mock state runner, preflight, orchestrated batch, reconciliation scoring hooks, review resolution |
+| `foundryLayer2.ts` | State matching preflight/bucketing re-exports, reconciliation scoring hooks, review resolution |
 | `foundryApiRoutes.ts` | Extended HTTP routes (source records, companies, review, state matching) |
 
 ## Shared package (`@furnace/registry-server`)
@@ -28,7 +28,7 @@ Server-side code for the registry API lives in [`amplify/functions/foundryRegist
 |------------|--------------|--------|
 | `normalize_ingestion_run` | Step Functions `foundry-normalize-ingestion-*` + Lambda chunk worker | Implemented |
 | `bulk_source_resolution` | Stub state machine only | Planned |
-| `state_matching_batch` | Amplify Step Functions `foundry-state-matching-{env}` (mock Lambda + Utah ECS) | Implemented |
+| `state_matching_batch` | Amplify Step Functions `foundry-state-matching-{env}` — **parallel** `ecs:runTask.sync` for Utah + Florida; Lambda only finalize/fail | Implemented |
 
 **Orchestration:** **Step Functions** is the primary coordinator for long runs; **SQS** is optional for buffering/fan-out later, not the main orchestration layer.
 

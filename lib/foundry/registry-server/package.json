@@ -5,6 +5,12 @@
   "type": "module",
   "main": "./index.ts",
   "types": "./index.ts",
+  "scripts": {
+    "test": "node --import tsx --test ./companyDedupe.test.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6"
+  },
   "exports": {
     ".": "./index.ts"
   },

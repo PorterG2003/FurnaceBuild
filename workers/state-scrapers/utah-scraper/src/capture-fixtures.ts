@@ -1,6 +1,6 @@
 /**
  * One-off: load Utah portal, click entity search, run a sample search, save HTML for parser fixtures.
- * Run: npm run capture-fixtures (from workers/utah-scraper)
+ * Run: npm run capture-fixtures (from workers/state-scrapers/utah-scraper)
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURES = path.resolve(__dirname, '../../../lib/foundry/registry-server/fixtures');
+const FIXTURES = path.resolve(__dirname, '../../../../lib/foundry/registry-server/fixtures');
 
 async function main() {
   await mkdir(FIXTURES, { recursive: true });

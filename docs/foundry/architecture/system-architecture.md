@@ -28,7 +28,7 @@ flowchart LR
 - **Main Supabase** (`supabase/`): app auth, `users`, `user_access_flags` (`flag_key = 'foundry'` for UI access), campaigns, etc.
 - **Leads / registry Supabase** (`supabase-leads/`): all Foundry tables listed in [../overview.md](../overview.md), including **`foundry_jobs`** for async job polling.
 - **Foundry UI**: Expo routes under `app/(foundry)/` gated by the main DB flag (see [`app/(foundry)/README.md`](../../../app/(foundry)/README.md)).
-- **Registry API**: AWS Amplify Lambda **Function URL** validates the user’s Supabase JWT against the **main** project, checks `user_access_flags`, then uses **service role** credentials to read/write the registry DB ([SUPABASE_LEADS.md](../../infrastructure/SUPABASE_LEADS.md)). Extended routes cover source-record normalization, layer-1 resolution, review actions, and **mock** state-matching orchestration ([../engineering/registry-api.md](../engineering/registry-api.md)).
+- **Registry API**: AWS Amplify Lambda **Function URL** validates the user’s Supabase JWT against the **main** project, checks `user_access_flags`, then uses **service role** credentials to read/write the registry DB ([SUPABASE_LEADS.md](../../infrastructure/SUPABASE_LEADS.md)). Extended routes cover source-record normalization, layer-1 resolution, review actions, and **Utah/Florida** state-matching orchestration ([../engineering/registry-api.md](../engineering/registry-api.md)).
 - **Async orchestration**: CDK app **`infra/foundry`** — Step Functions + worker Lambdas (normalization today; bulk/state stubs). Deploy and env wiring: [FOUNDRY_ORCHESTRATION.md](../../infrastructure/FOUNDRY_ORCHESTRATION.md). Overview: [../engineering/services-and-jobs.md](../engineering/services-and-jobs.md).
 
 ## Server-side auth model

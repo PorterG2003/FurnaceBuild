@@ -1,0 +1,7 @@
+.env.florida.local
+out/
+node_modules/
+florida-scrape-report.json
+florida-scrape-report.csv
+report.json
+report.csv

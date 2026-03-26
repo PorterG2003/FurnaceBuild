@@ -46,16 +46,22 @@ Access control: main DB **`user_access_flags`** (`flag_key = 'foundry'`). See [`
 - **Purpose:** List pending **`review_tasks`**; resolve **`source_link_review`** (company UUID) and **`entity_match_review`** (promote/reject).  
 - **Workflow:** [../workflows/review-and-adjudication.md](../workflows/review-and-adjudication.md)
 
-## State matching (orchestration / mock)
+## State matching (orchestration / UT–FL)
 
-- **Route:** `/foundry/state-matching` — [`state-matching/index.tsx`](../../../app/(foundry)/foundry/state-matching/index.tsx)  
-- **Purpose:** Preflight and run **mock** state-matching batch (no real registry connectors).  
+- **Route:** `/foundry/state-matching` — [`state-matching/index.tsx`](../../../app/(foundry)/foundry/state-matching/index.tsx) (redirects to imports; panel also on import results)  
+- **Purpose:** Preflight and run **Utah/Florida** state-matching batch via ECS; non-UT/FL ready companies are rejected at API start.  
 - **Workflow:** [../workflows/state-entity-matching.md](../workflows/state-entity-matching.md)
 
 ## Audit / history views
 
 - **Route:** *Planned* (could be tabs on company / match / link detail).  
 - **Purpose:** Read from **`_history`** tables or snapshot JSON in app with service-backed API.
+
+## Export page
+
+- **Route:** `/foundry/export` — [`export.tsx`](../../../app/(foundry)/foundry/export.tsx)  
+- **Purpose:** View and filter **export read model** rows (one row per current `entity_owner` on a **promoted** `company_entity_match`), with explicit readiness columns and CSV download on web.  
+- **API:** `GET /export/company-owner-leads` on the Foundry registry Lambda; backed by view `export_company_owner_leads` in the leads DB.
 
 ## Screens that exist today
 
@@ -64,7 +70,7 @@ Access control: main DB **`user_access_flags`** (`flag_key = 'foundry'`). See [`
 | `/foundry` | `index.tsx` | Placeholder home |
 | `/foundry/upload` | `upload.tsx` | Upload UI (wire to ingest API) |
 | `/foundry/jobs` | `jobs.tsx` | Jobs UI |
-| `/foundry/export` | `export.tsx` | Export UI |
+| `/foundry/export` | `export.tsx` | Export UI (registry-grounded owner rows + CSV) |
 
 ## Related
 

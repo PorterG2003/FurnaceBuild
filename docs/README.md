@@ -28,3 +28,4 @@ Decision records documenting architectural choices and rationale.
 ## 📖 Other Documentation
 
 - **[../SUPABASE_SETUP.md](../SUPABASE_SETUP.md)** - Supabase setup and configuration (located at project root)
+- **[development/WORKTREE_DEV_FLOW.md](./development/WORKTREE_DEV_FLOW.md)** - Git worktrees: symlink `.env.local` and `amplify_outputs.json` from the main clone; Expo/Supabase without running Amplify in the worktree (includes copy-paste paths)

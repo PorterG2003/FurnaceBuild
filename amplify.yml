@@ -10,8 +10,13 @@ backend:
         - cd amplify/functions/enrollmentMetric && npm install && cd - || (echo "Failed to install enrollmentMetric dependencies" && exit 1)
         - cd amplify/functions/sendInvitationEmail && npm install && cd - || (echo "Failed to install sendInvitationEmail dependencies" && exit 1)
         - cd amplify/functions/fetchEmailAttachment && npm install && cd - || (echo "Failed to install fetchEmailAttachment dependencies" && exit 1)
-        - cd amplify/functions/launchSmartleadMigration && npm install && cd - || (echo "Failed to install launchSmartleadMigration dependencies" && exit 1)
-        - cd amplify/functions/foundryStateMatchingJob && npm install && cd - || (echo "Failed to install foundryStateMatchingJob dependencies" && exit 1)
+        - |
+          FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"
+          if [ "$FLAG" != "false" ] && [ "$FLAG" != "0" ]; then
+            cd amplify/functions/launchSmartleadMigration && npm install && cd - || (echo "Failed to install launchSmartleadMigration dependencies" && exit 1)
+          else
+            echo "Skipping launchSmartleadMigration npm install (AMPLIFY_ENABLE_SMARTLEAD_MIGRATION disabled)"
+          fi
         - echo "=== Function dependencies installed successfully ==="
         - |
           PROD_BRANCH="${PROD_BRANCH:-main}"
@@ -21,36 +26,30 @@ backend:
             WORKER_ENVIRONMENT=dev
           fi
           echo "Resolved WORKER_ENVIRONMENT=$WORKER_ENVIRONMENT for branch $AWS_BRANCH"
-          REQUIRED_EXPORTS=(
-            "FurnaceCluster-$WORKER_ENVIRONMENT"
-            "FurnaceWorkerSecurityGroup-$WORKER_ENVIRONMENT"
-            "FurnaceWorkerPublicSubnets-$WORKER_ENVIRONMENT"
-            "FurnaceWorkerVpcId-$WORKER_ENVIRONMENT"
-            "FurnaceWorkerVpcAvailabilityZones-$WORKER_ENVIRONMENT"
-            "FurnaceEcsTaskExecutionRole-$WORKER_ENVIRONMENT"
-            "FurnaceUtahScraperTaskRole-$WORKER_ENVIRONMENT"
-          )
-          for export_name in "${REQUIRED_EXPORTS[@]}"; do
-            export_value=$(aws cloudformation list-exports \
-              --query "Exports[?Name=='${export_name}'].Value | [0]" \
-              --output text)
-            if [ -z "$export_value" ] || [ "$export_value" = "None" ]; then
-              echo "Missing CloudFormation export: $export_name"
-              echo "Deploy infra/workers for $WORKER_ENVIRONMENT before running Amplify backend deployment."
-              exit 1
-            fi
-          done
-          for param in \
-            "/furnace/ecs/$WORKER_ENVIRONMENT/smartlead-migration/task-definition-arn" \
-            "/furnace/ecs/$WORKER_ENVIRONMENT/utah-scraper/task-definition-arn"; do
-            param_value=$(aws ssm get-parameter --name "$param" --query 'Parameter.Value' --output text 2>/dev/null) || true
-            if [ -z "$param_value" ] || [ "$param_value" = "None" ]; then
-              echo "Missing or empty SSM parameter: $param"
-              echo "Deploy infra/workers for $WORKER_ENVIRONMENT before running Amplify backend deployment."
-              exit 1
-            fi
-          done
-          WORKER_ENVIRONMENT="$WORKER_ENVIRONMENT" npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
+          FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"
+          if [ "$FLAG" != "false" ] && [ "$FLAG" != "0" ]; then
+            REQUIRED_EXPORTS=(
+              "FurnaceCluster-$WORKER_ENVIRONMENT"
+              "FurnaceWorkerSecurityGroup-$WORKER_ENVIRONMENT"
+              "FurnaceWorkerPublicSubnets-$WORKER_ENVIRONMENT"
+              "FurnaceSmartleadMigrationTaskDefinition-$WORKER_ENVIRONMENT"
+            )
+            for export_name in "${REQUIRED_EXPORTS[@]}"; do
+              export_value=$(aws cloudformation list-exports \
+                --query "Exports[?Name=='${export_name}'].Value | [0]" \
+                --output text)
+              if [ -z "$export_value" ] || [ "$export_value" = "None" ]; then
+                echo "Missing CloudFormation export: $export_name"
+                echo "Deploy infra/workers for $WORKER_ENVIRONMENT before running Amplify backend deployment."
+                exit 1
+              fi
+            done
+          else
+            echo "Skipping worker stack export check (AMPLIFY_ENABLE_SMARTLEAD_MIGRATION disabled)"
+          fi
+          AMPLIFY_ENABLE_SMARTLEAD_MIGRATION="${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" \
+            WORKER_ENVIRONMENT="$WORKER_ENVIRONMENT" \
+            npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
     build:
       commands:
         - npx ampx generate outputs --branch $AWS_BRANCH --app-id $AWS_APP_ID

@@ -1,14 +1,7 @@
 import { config } from 'dotenv';
 import { defineBackend } from '@aws-amplify/backend';
-
-// Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
-config({ path: '.env.local' });
-config();
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as logs from 'aws-cdk-lib/aws-logs';
-import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
-import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as cdk from 'aws-cdk-lib';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
@@ -17,9 +10,14 @@ import { testMailboxConnection } from './functions/testMailboxConnection/resourc
 import { enrollmentMetric } from './functions/enrollmentMetric/resource';
 import { fetchEmailAttachment } from './functions/fetchEmailAttachment/resource';
 import { launchSmartleadMigration } from './functions/launchSmartleadMigration/resource';
-import { foundryRegistryApi } from './functions/foundryRegistryApi/resource';
-import { foundryNormalizeJob } from './functions/foundryNormalizeJob/resource';
-import { foundryStateMatchingJob } from './functions/foundryStateMatchingJob/resource';
+
+// Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
+config({ path: '.env.local' });
+config();
+
+const smartleadMigrationEnabled = !['false', '0'].includes(
+  (process.env.AMPLIFY_ENABLE_SMARTLEAD_MIGRATION ?? '').toLowerCase(),
+);
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -34,10 +32,7 @@ const backend = defineBackend({
   testMailboxConnection,
   enrollmentMetric,
   fetchEmailAttachment,
-  launchSmartleadMigration,
-  foundryRegistryApi,
-  foundryNormalizeJob,
-  foundryStateMatchingJob,
+  ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
 
 function resolveWorkerEnvironment(): 'dev' | 'prod' {
@@ -130,353 +125,91 @@ const allowPublicTestMailboxInvoke = new lambda.CfnPermission(testMailboxLambda.
 });
 allowPublicTestMailboxInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
-const launchSmartleadMigrationLambda = backend.launchSmartleadMigration.resources.lambda as lambda.Function;
-const workerEnvironment = resolveWorkerEnvironment();
-launchSmartleadMigrationLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
-launchSmartleadMigrationLambda.addEnvironment('WORKER_ENVIRONMENT', workerEnvironment);
-launchSmartleadMigrationLambda.addEnvironment(
-  'SMARTLEAD_MIGRATION_CLUSTER',
-  cdk.Fn.importValue(`FurnaceCluster-${workerEnvironment}`),
-);
-launchSmartleadMigrationLambda.addEnvironment(
-  'SMARTLEAD_MIGRATION_TASK_DEFINITION_PARAM',
-  `/furnace/ecs/${workerEnvironment}/smartlead-migration/task-definition-arn`,
-);
-launchSmartleadMigrationLambda.addEnvironment(
-  'SMARTLEAD_MIGRATION_SUBNET_IDS',
-  cdk.Fn.importValue(`FurnaceWorkerPublicSubnets-${workerEnvironment}`),
-);
-launchSmartleadMigrationLambda.addEnvironment(
-  'SMARTLEAD_MIGRATION_SECURITY_GROUP_ID',
-  cdk.Fn.importValue(`FurnaceWorkerSecurityGroup-${workerEnvironment}`),
-);
-launchSmartleadMigrationLambda.addToRolePolicy(new iam.PolicyStatement({
-  sid: 'AllowRunSmartleadMigrationTasks',
-  actions: [
-    'ecs:RunTask',
-  ],
-  resources: ['*'],
-}));
-launchSmartleadMigrationLambda.addToRolePolicy(new iam.PolicyStatement({
-  sid: 'AllowPassSmartleadMigrationTaskRoles',
-  actions: [
-    'iam:PassRole',
-  ],
-  resources: ['*'],
-}));
-launchSmartleadMigrationLambda.addToRolePolicy(new iam.PolicyStatement({
-  sid: 'AllowSmartleadMigrationParameterStore',
-  actions: [
-    'ssm:PutParameter',
-    'ssm:GetParameter',
-    'ssm:GetParameters',
-  ],
-  resources: ['*'],
-}));
-const launchSmartleadMigrationUrl = launchSmartleadMigrationLambda.addFunctionUrl({
-  authType: lambda.FunctionUrlAuthType.NONE,
-  cors: {
-    allowedOrigins: ['*'],
-    allowedMethods: [lambda.HttpMethod.POST],
-    allowedHeaders: ['Authorization', 'Content-Type'],
-  },
-});
-new lambda.CfnPermission(launchSmartleadMigrationLambda.stack, 'AllowPublicLaunchSmartleadMigrationUrlInvoke', {
-  action: 'lambda:InvokeFunctionUrl',
-  functionName: launchSmartleadMigrationLambda.functionName,
-  principal: '*',
-  functionUrlAuthType: 'NONE',
-});
-const allowPublicLaunchSmartleadMigrationInvoke = new lambda.CfnPermission(
-  launchSmartleadMigrationLambda.stack,
-  'AllowPublicLaunchSmartleadMigrationInvokeViaUrl',
-  {
-    action: 'lambda:InvokeFunction',
+let launchSmartleadMigrationUrlRef: { url: string } | undefined;
+
+if (smartleadMigrationEnabled) {
+  const launchSmartleadMigrationLambda = backend.launchSmartleadMigration!.resources
+    .lambda as lambda.Function;
+  const workerEnvironment = resolveWorkerEnvironment();
+  launchSmartleadMigrationLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+  launchSmartleadMigrationLambda.addEnvironment('WORKER_ENVIRONMENT', workerEnvironment);
+  launchSmartleadMigrationLambda.addEnvironment(
+    'SMARTLEAD_MIGRATION_CLUSTER',
+    cdk.Fn.importValue(`FurnaceCluster-${workerEnvironment}`),
+  );
+  launchSmartleadMigrationLambda.addEnvironment(
+    'SMARTLEAD_MIGRATION_TASK_DEFINITION',
+    cdk.Fn.importValue(`FurnaceSmartleadMigrationTaskDefinition-${workerEnvironment}`),
+  );
+  launchSmartleadMigrationLambda.addEnvironment(
+    'SMARTLEAD_MIGRATION_SUBNET_IDS',
+    cdk.Fn.importValue(`FurnaceWorkerPublicSubnets-${workerEnvironment}`),
+  );
+  launchSmartleadMigrationLambda.addEnvironment(
+    'SMARTLEAD_MIGRATION_SECURITY_GROUP_ID',
+    cdk.Fn.importValue(`FurnaceWorkerSecurityGroup-${workerEnvironment}`),
+  );
+  launchSmartleadMigrationLambda.addToRolePolicy(new iam.PolicyStatement({
+    sid: 'AllowRunSmartleadMigrationTasks',
+    actions: [
+      'ecs:RunTask',
+    ],
+    resources: ['*'],
+  }));
+  launchSmartleadMigrationLambda.addToRolePolicy(new iam.PolicyStatement({
+    sid: 'AllowPassSmartleadMigrationTaskRoles',
+    actions: [
+      'iam:PassRole',
+    ],
+    resources: ['*'],
+  }));
+  launchSmartleadMigrationLambda.addToRolePolicy(new iam.PolicyStatement({
+    sid: 'AllowSmartleadMigrationParameterStore',
+    actions: [
+      'ssm:PutParameter',
+      'ssm:GetParameter',
+      'ssm:GetParameters',
+    ],
+    resources: ['*'],
+  }));
+  const launchSmartleadMigrationUrl = launchSmartleadMigrationLambda.addFunctionUrl({
+    authType: lambda.FunctionUrlAuthType.NONE,
+    cors: {
+      allowedOrigins: ['*'],
+      allowedMethods: [lambda.HttpMethod.POST],
+      allowedHeaders: ['Authorization', 'Content-Type'],
+    },
+  });
+  launchSmartleadMigrationUrlRef = launchSmartleadMigrationUrl;
+  new lambda.CfnPermission(launchSmartleadMigrationLambda.stack, 'AllowPublicLaunchSmartleadMigrationUrlInvoke', {
+    action: 'lambda:InvokeFunctionUrl',
     functionName: launchSmartleadMigrationLambda.functionName,
     principal: '*',
-  },
-);
-allowPublicLaunchSmartleadMigrationInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+    functionUrlAuthType: 'NONE',
+  });
+  const allowPublicLaunchSmartleadMigrationInvoke = new lambda.CfnPermission(
+    launchSmartleadMigrationLambda.stack,
+    'AllowPublicLaunchSmartleadMigrationInvokeViaUrl',
+    {
+      action: 'lambda:InvokeFunction',
+      functionName: launchSmartleadMigrationLambda.functionName,
+      principal: '*',
+    },
+  );
+  allowPublicLaunchSmartleadMigrationInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+}
 
-// Foundry registry API: Function URL + JWT + main-DB foundry flag + leads Supabase reads
-const foundryRegistryLambda = backend.foundryRegistryApi.resources.lambda as lambda.Function;
-foundryRegistryLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
-foundryRegistryLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
-// Lambda Function URL CORS AllowMethods does not accept OPTIONS (CloudFormation validation fails).
-// Preflight is still handled by the runtime / GET allowance; the handler also returns 204 for OPTIONS.
-const foundryRegistryUrl = foundryRegistryLambda.addFunctionUrl({
-  authType: lambda.FunctionUrlAuthType.NONE,
-  cors: {
-    allowedOrigins: ['*'],
-    allowedMethods: [lambda.HttpMethod.GET, lambda.HttpMethod.POST],
-    allowedHeaders: ['Authorization', 'Content-Type'],
-  },
-});
-new lambda.CfnPermission(foundryRegistryLambda.stack, 'AllowPublicFoundryRegistryUrlInvoke', {
-  action: 'lambda:InvokeFunctionUrl',
-  functionName: foundryRegistryLambda.functionName,
-  principal: '*',
-  functionUrlAuthType: 'NONE',
-});
-const allowPublicFoundryRegistryInvoke = new lambda.CfnPermission(
-  foundryRegistryLambda.stack,
-  'AllowPublicFoundryRegistryInvokeViaUrl',
-  {
-    action: 'lambda:InvokeFunction',
-    functionName: foundryRegistryLambda.functionName,
-    principal: '*',
-  },
-);
-allowPublicFoundryRegistryInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
-
-// Foundry async normalize: worker Lambda (Amplify) + Step Functions loop in same stack
-const foundryNormalizeLambda = backend.foundryNormalizeJob.resources.lambda as lambda.Function;
-foundryNormalizeLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
-
-const normalizeSfnStack = cdk.Stack.of(foundryNormalizeLambda);
-
-const foundryNormalizeChunkTask = new tasks.LambdaInvoke(normalizeSfnStack, 'FoundryNormalizeChunk', {
-  lambdaFunction: foundryNormalizeLambda,
-  payload: sfn.TaskInput.fromObject({
-    action: 'chunk',
-    jobId: sfn.JsonPath.stringAt('$.jobId'),
-    ingestionRunId: sfn.JsonPath.stringAt('$.ingestionRunId'),
-    batchSize: sfn.JsonPath.numberAt('$.batchSize'),
-    cursor: sfn.JsonPath.stringAt('$.cursor'),
-  }),
-  resultPath: '$.chunkOut',
-  payloadResponseOnly: true,
-});
-
-const foundryNormalizeFinalizeTask = new tasks.LambdaInvoke(normalizeSfnStack, 'FoundryFinalizeNormalizeJob', {
-  lambdaFunction: foundryNormalizeLambda,
-  payload: sfn.TaskInput.fromObject({
-    action: 'finalize',
-    jobId: sfn.JsonPath.stringAt('$.jobId'),
-  }),
-  resultPath: '$.finalizeOut',
-  payloadResponseOnly: true,
-});
-
-const foundryNormalizeFailNotify = new tasks.LambdaInvoke(normalizeSfnStack, 'FoundryFailNormalizeJob', {
-  lambdaFunction: foundryNormalizeLambda,
-  payload: sfn.TaskInput.fromObject({
-    action: 'fail',
-    jobId: sfn.JsonPath.stringAt('$.jobId'),
-    message: 'Normalize chunk failed',
-  }),
-  payloadResponseOnly: true,
-}).next(
-  new sfn.Fail(normalizeSfnStack, 'FoundryNormalizeFailed', {
-    error: 'NormalizeChunkError',
-    cause: 'Lambda or runtime error',
-  }),
-);
-
-foundryNormalizeChunkTask.addCatch(foundryNormalizeFailNotify, { errors: ['States.ALL'] });
-
-const foundryNormalizeAdvanceCursor = new sfn.Pass(normalizeSfnStack, 'FoundryNormalizeAdvanceCursor', {
-  parameters: {
-    'jobId.$': '$.jobId',
-    'ingestionRunId.$': '$.ingestionRunId',
-    'batchSize.$': '$.batchSize',
-    'cursor.$': '$.chunkOut.nextCursor',
-  },
-});
-
-const foundryNormalizeMoreChunks = new sfn.Choice(normalizeSfnStack, 'FoundryNormalizeMoreChunks')
-  .when(sfn.Condition.booleanEquals('$.chunkOut.done', true), foundryNormalizeFinalizeTask)
-  .otherwise(foundryNormalizeAdvanceCursor);
-
-foundryNormalizeChunkTask.next(foundryNormalizeMoreChunks);
-foundryNormalizeAdvanceCursor.next(foundryNormalizeChunkTask);
-
-foundryNormalizeFinalizeTask.next(new sfn.Succeed(normalizeSfnStack, 'FoundryNormalizeJobSucceeded'));
-
-const foundryNormalizeSmLogGroup = new logs.LogGroup(normalizeSfnStack, 'FoundryNormalizeSmLogs', {
-  retention: logs.RetentionDays.TWO_WEEKS,
-  removalPolicy: cdk.RemovalPolicy.DESTROY,
-});
-
-const foundryNormalizeStateMachine = new sfn.StateMachine(normalizeSfnStack, 'FoundryNormalizeIngestionSm', {
-  stateMachineName: `foundry-normalize-ingestion-${resolveWorkerEnvironment()}`,
-  definitionBody: sfn.DefinitionBody.fromChainable(foundryNormalizeChunkTask),
-  tracingEnabled: true,
-  logs: {
-    destination: foundryNormalizeSmLogGroup,
-    level: sfn.LogLevel.ERROR,
-  },
-});
-
-foundryRegistryLambda.addEnvironment(
-  'FOUNDRY_NORMALIZE_STATE_MACHINE_ARN',
-  foundryNormalizeStateMachine.stateMachineArn,
-);
-foundryRegistryLambda.addToRolePolicy(
-  new iam.PolicyStatement({
-    sid: 'FoundryStartNormalizeStepFunction',
-    actions: ['states:StartExecution'],
-    resources: [foundryNormalizeStateMachine.stateMachineArn],
-  }),
-);
-
-// Foundry async state matching: mock Lambda + optional Utah ECS (RunTask), orchestrated by Step Functions
-const foundryStateMatchingLambda = backend.foundryStateMatchingJob.resources.lambda as lambda.Function;
-foundryStateMatchingLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
-
-const stateMatchingSfnStack = cdk.Stack.of(foundryStateMatchingLambda);
-
-foundryStateMatchingLambda.addEnvironment(
-  'UTAH_ECS_CLUSTER',
-  cdk.Fn.importValue(`FurnaceCluster-${workerEnvironment}`),
-);
-foundryStateMatchingLambda.addEnvironment(
-  'UTAH_ECS_TASK_DEFINITION_PARAM',
-  `/furnace/ecs/${workerEnvironment}/utah-scraper/task-definition-arn`,
-);
-foundryStateMatchingLambda.addEnvironment(
-  'UTAH_ECS_SUBNET_IDS',
-  cdk.Fn.importValue(`FurnaceWorkerPublicSubnets-${workerEnvironment}`),
-);
-foundryStateMatchingLambda.addEnvironment(
-  'UTAH_ECS_SECURITY_GROUP_ID',
-  cdk.Fn.importValue(`FurnaceWorkerSecurityGroup-${workerEnvironment}`),
-);
-foundryStateMatchingLambda.addEnvironment(
-  'UTAH_ECS_EXECUTION_ROLE_ARN',
-  cdk.Fn.importValue(`FurnaceEcsTaskExecutionRole-${workerEnvironment}`),
-);
-foundryStateMatchingLambda.addEnvironment(
-  'UTAH_ECS_TASK_ROLE_ARN',
-  cdk.Fn.importValue(`FurnaceUtahScraperTaskRole-${workerEnvironment}`),
-);
-
-foundryStateMatchingLambda.addToRolePolicy(
-  new iam.PolicyStatement({
-    sid: 'FoundryStateMatchRunUtahEcs',
-    actions: ['ecs:RunTask', 'ecs:DescribeTasks', 'ecs:StopTask'],
-    resources: ['*'],
-  }),
-);
-foundryStateMatchingLambda.addToRolePolicy(
-  new iam.PolicyStatement({
-    sid: 'FoundryStateMatchPassUtahTaskRoles',
-    actions: ['iam:PassRole'],
-    resources: [
-      cdk.Fn.importValue(`FurnaceEcsTaskExecutionRole-${workerEnvironment}`),
-      cdk.Fn.importValue(`FurnaceUtahScraperTaskRole-${workerEnvironment}`),
-    ],
-  }),
-);
-foundryStateMatchingLambda.addToRolePolicy(
-  new iam.PolicyStatement({
-    sid: 'FoundryStateMatchReadUtahTaskDefArnParam',
-    actions: ['ssm:GetParameter'],
-    resources: [
-      stateMatchingSfnStack.formatArn({
-        service: 'ssm',
-        resource: 'parameter',
-        resourceName: `furnace/ecs/${workerEnvironment}/utah-scraper/task-definition-arn`,
-      }),
-    ],
-  }),
-);
-
-const stateMatchProcessMock = new tasks.LambdaInvoke(stateMatchingSfnStack, 'StateMatchProcessMock', {
-  lambdaFunction: foundryStateMatchingLambda,
-  payload: sfn.TaskInput.fromObject({
-    action: 'processMock',
-    jobId: sfn.JsonPath.stringAt('$.jobId'),
-    reconciliationRunId: sfn.JsonPath.stringAt('$.reconciliationRunId'),
-  }),
-  resultPath: '$.mockStep',
-  payloadResponseOnly: true,
-});
-
-const stateMatchFinalize = new tasks.LambdaInvoke(stateMatchingSfnStack, 'StateMatchFinalize', {
-  lambdaFunction: foundryStateMatchingLambda,
-  payload: sfn.TaskInput.fromObject({
-    action: 'finalize',
-    jobId: sfn.JsonPath.stringAt('$.jobId'),
-    reconciliationRunId: sfn.JsonPath.stringAt('$.reconciliationRunId'),
-  }),
-  resultPath: '$.finalizeStep',
-  payloadResponseOnly: true,
-}).next(new sfn.Succeed(stateMatchingSfnStack, 'FoundryStateMatchingSucceeded'));
-
-const stateMatchFailNotify = new tasks.LambdaInvoke(stateMatchingSfnStack, 'StateMatchFailNotify', {
-  lambdaFunction: foundryStateMatchingLambda,
-  payload: sfn.TaskInput.fromObject({
-    action: 'fail',
-    jobId: sfn.JsonPath.stringAt('$.jobId'),
-    reconciliationRunId: sfn.JsonPath.stringAt('$.reconciliationRunId'),
-    message: sfn.JsonPath.stringAt('$.caughtError.Cause'),
-  }),
-  payloadResponseOnly: true,
-}).next(
-  new sfn.Fail(stateMatchingSfnStack, 'FoundryStateMatchingFailed', {
-    error: 'StateMatchingError',
-    cause: 'Mock, ECS, or finalize step failed',
-  }),
-);
-
-const stateMatchRunUtahEcs = new tasks.LambdaInvoke(stateMatchingSfnStack, 'StateMatchRunUtahEcs', {
-  lambdaFunction: foundryStateMatchingLambda,
-  payload: sfn.TaskInput.fromObject({
-    action: 'runUtahEcs',
-    jobId: sfn.JsonPath.stringAt('$.jobId'),
-    reconciliationRunId: sfn.JsonPath.stringAt('$.reconciliationRunId'),
-  }),
-  resultPath: '$.utahEcsStep',
-  payloadResponseOnly: true,
-});
-
-const stateMatchUtahChoice = new sfn.Choice(stateMatchingSfnStack, 'StateMatchUtahChoice')
-  .when(sfn.Condition.numberEquals('$.utahCount', 0), stateMatchFinalize)
-  .otherwise(stateMatchRunUtahEcs.next(stateMatchFinalize));
-
-stateMatchProcessMock.next(stateMatchUtahChoice);
-stateMatchProcessMock.addCatch(stateMatchFailNotify, { errors: ['States.ALL'], resultPath: '$.caughtError' });
-stateMatchRunUtahEcs.addCatch(stateMatchFailNotify, { errors: ['States.ALL'], resultPath: '$.caughtError' });
-
-const foundryStateMatchingSmLogGroup = new logs.LogGroup(stateMatchingSfnStack, 'FoundryStateMatchingSmLogs', {
-  retention: logs.RetentionDays.TWO_WEEKS,
-  removalPolicy: cdk.RemovalPolicy.DESTROY,
-});
-
-const foundryStateMatchingStateMachine = new sfn.StateMachine(stateMatchingSfnStack, 'FoundryStateMatchingSm', {
-  stateMachineName: `foundry-state-matching-${resolveWorkerEnvironment()}`,
-  definitionBody: sfn.DefinitionBody.fromChainable(stateMatchProcessMock),
-  tracingEnabled: true,
-  timeout: cdk.Duration.hours(2),
-  logs: {
-    destination: foundryStateMatchingSmLogGroup,
-    level: sfn.LogLevel.ERROR,
-  },
-});
-
-foundryRegistryLambda.addEnvironment(
-  'FOUNDRY_STATE_MATCHING_STATE_MACHINE_ARN',
-  foundryStateMatchingStateMachine.stateMachineArn,
-);
-foundryRegistryLambda.addToRolePolicy(
-  new iam.PolicyStatement({
-    sid: 'FoundryStartStateMatchingStepFunction',
-    actions: ['states:StartExecution'],
-    resources: [foundryStateMatchingStateMachine.stateMachineArn],
-  }),
-);
+const customOutputs: Record<string, string> = {
+  fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
+  sendInvitationEmailUrl: sendInvitationUrl.url,
+  testMailboxConnectionUrl: testMailboxUrl.url,
+};
+if (launchSmartleadMigrationUrlRef) {
+  customOutputs.launchSmartleadMigrationUrl = launchSmartleadMigrationUrlRef.url;
+}
 
 backend.addOutput({
-  custom: {
-    fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
-    sendInvitationEmailUrl: sendInvitationUrl.url,
-    testMailboxConnectionUrl: testMailboxUrl.url,
-    launchSmartleadMigrationUrl: launchSmartleadMigrationUrl.url,
-    foundryRegistryApiUrl: foundryRegistryUrl.url,
-    foundryNormalizeStateMachineArn: foundryNormalizeStateMachine.stateMachineArn,
-    foundryStateMatchingStateMachineArn: foundryStateMatchingStateMachine.stateMachineArn,
-  },
+  custom: customOutputs,
 });
 
 // Grant enrollmentMetric Lambda permission to publish CloudWatch metrics

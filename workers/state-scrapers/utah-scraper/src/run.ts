@@ -17,7 +17,7 @@ function parseArgs() {
   const argv = process.argv.slice(2);
   let csvPath =
     process.env.INPUT_CSV?.trim() ||
-    path.resolve(__dirname, '../../../UtahLLCOwnerSearchTester.csv');
+    path.resolve(__dirname, '../../../../UtahLLCOwnerSearchTester.csv');
   let outJson =
     process.env.OUTPUT_JSON?.trim() || path.resolve(process.cwd(), 'utah-scrape-report.json');
   let outCsv: string | null = outJson.replace(/\.json$/i, '.csv');

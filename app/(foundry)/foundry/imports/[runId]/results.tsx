@@ -9,6 +9,7 @@ import {
   ImportErrorsTable,
   useImportWizard,
 } from '@/components/foundry/imports';
+import { ImportRunPipelineCard } from '@/components/foundry/pipeline/ImportRunPipelineCard';
 import { fetchIngestionRun } from '@/lib/foundry/registry-client';
 import type { IngestionRunRow } from '@/lib/foundry/registry-types';
 
@@ -72,6 +73,20 @@ export default function ImportResultsPage() {
 
       {error ? <Text className="text-red-400 mb-4 font-instrument text-sm">{error}</Text> : null}
 
+      {lastImportResult?.runId === runId && lastImportResult.pipeline?.normalize.status === 'failed' ? (
+        <View className="mb-4 p-4 rounded-lg border border-red-900/60 bg-red-950/30 w-full self-center" style={{ maxWidth: 960 }}>
+          <Text className="text-red-300 font-instrument-semibold text-sm mb-1">Background normalize failed to start</Text>
+          <Text className="text-red-200/90 font-instrument text-xs leading-5">
+            {lastImportResult.pipeline.normalize.error}
+          </Text>
+          {lastImportResult.pipeline.normalize.detail ? (
+            <Text className="text-red-300/80 font-mono text-[10px] mt-2 leading-4">
+              {lastImportResult.pipeline.normalize.detail}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       {run ? (
         <View className="gap-4 w-full self-center" style={{ maxWidth: 960 }}>
           <ImportResultsSummary status={run.status} stats={run.stats} />
@@ -104,10 +119,23 @@ export default function ImportResultsPage() {
             </Card>
           ) : null}
 
+          <Card variant="card">
+            <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">You are here</Text>
+            <Text className="text-gray-300 font-instrument text-sm leading-5">
+              This page is the hub for this import run. Normalize and auto-link start automatically after import; use the
+              Pipeline below for linking, state lookup, and Queue. Background job status lives under Runs.
+            </Text>
+          </Card>
+
+          <ImportRunPipelineCard
+            ingestionRunId={runId}
+            importPipeline={lastImportResult?.runId === runId ? lastImportResult.pipeline : null}
+          />
+
           <View className="flex-col sm:flex-row flex-wrap gap-2">
             <Button onPress={() => router.push(`/foundry/imports/${runId}/records`)}>View imported records</Button>
-            <Button variant="secondary" onPress={() => router.push('/foundry/jobs')}>
-              Go to resolution queue
+            <Button variant="secondary" onPress={() => router.push('/foundry/queue')}>
+              Open queue
             </Button>
             <Button
               variant="secondary"

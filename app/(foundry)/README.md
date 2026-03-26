@@ -22,6 +22,22 @@ Other product areas can use additional `flag_key` values over time without new t
 
 Users without the flag (or signed out) see a **generic “Page not found”** screen when visiting any `/foundry/*` URL. This is intentional and avoids advertising an admin surface.
 
+## Routes (nav)
+
+| Path | Screen |
+|------|--------|
+| `/foundry` | Dashboard (stats, shortcuts, recent jobs) |
+| `/foundry/imports` | Import runs list; wizard under `imports/new/*` |
+| `/foundry/imports/[runId]/results` | Run summary + **pipeline** (normalize, state matching, queue) |
+| `/foundry/imports/[runId]/records` | Per-run source records |
+| `/foundry/queue` | `review_tasks` queue (filters) |
+| `/foundry/runs` | `foundry_jobs` list (async Step Functions work) |
+| `/foundry/runs/[jobId]` | Job detail |
+| `/foundry/export` | Export placeholder |
+| `/foundry/companies/[id]`, `/foundry/source-records/[id]` | Detail |
+
+**Redirects:** `/foundry/review` → `/foundry/queue`; `/foundry/jobs` → `/foundry/runs`; `/foundry/state-matching` → `/foundry/imports`; `/foundry/upload` → `/foundry/imports`.
+
 ## Related files
 
 - Routes: `app/(foundry)/foundry/`

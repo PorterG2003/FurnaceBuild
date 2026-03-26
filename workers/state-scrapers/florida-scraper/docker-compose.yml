@@ -1,0 +1,43 @@
+# Run from this directory: workers/state-scrapers/florida-scraper/
+# Build context is the repository root (three levels up).
+#
+# CSV:   mkdir -p data out && cp /path/to/input.csv data/input.csv
+#        docker compose --profile csv up --build
+#
+# Reconciliation: copy .env.florida.local.example to .env.florida.local and fill in.
+#   For SSM secret path, add AWS credentials, e.g.:
+#   volumes: - ~/.aws:/home/pwuser/.aws:ro
+#   docker compose --profile reconciliation up --build
+
+name: florida-scraper-local
+
+services:
+  csv:
+    profiles: [csv]
+    image: florida-scraper:local
+    build:
+      context: ../../..
+      dockerfile: workers/state-scrapers/florida-scraper/Dockerfile
+    platform: linux/amd64
+    volumes:
+      - ./data:/data
+      - ./out:/out
+    environment:
+      RATE_MS: "2000"
+      MAX_ROWS: "3"
+      SAVE_RAW_HTML_DIR: /out/raw
+
+  reconciliation:
+    profiles: [reconciliation]
+    image: florida-scraper:local
+    build:
+      context: ../../..
+      dockerfile: workers/state-scrapers/florida-scraper/Dockerfile
+    platform: linux/amd64
+    env_file:
+      - .env.florida.local
+    environment:
+      RUN_MODE: reconciliation
+    # Uncomment for LEADS_SUPABASE_SECRET_KEY_PARAM_PATH (SSM) inside the container:
+    # volumes:
+    #   - ~/.aws:/home/pwuser/.aws:ro

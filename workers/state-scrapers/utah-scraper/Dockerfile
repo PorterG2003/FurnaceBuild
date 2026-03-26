@@ -5,9 +5,9 @@ FROM mcr.microsoft.com/playwright:v1.58.2-noble
 WORKDIR /app
 
 COPY lib/foundry/registry-server ./lib/foundry/registry-server
-COPY workers/utah-scraper ./workers/utah-scraper
+COPY workers/state-scrapers/utah-scraper ./workers/state-scrapers/utah-scraper
 
-WORKDIR /app/workers/utah-scraper
+WORKDIR /app/workers/state-scrapers/utah-scraper
 RUN npm install
 
 ENV NODE_ENV=production

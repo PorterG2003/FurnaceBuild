@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildResolutionMeta } from '@furnace/registry-server';
-
-export { normalizeIngestionRunRecords } from '@furnace/registry-server';
+import { buildResolutionMeta } from './normalizeSourceRecord.js';
+import { ensureCompanyDedupeReviewTaskForNormalizedKey } from './companyDedupe.js';
 
 export const LINKER_VERSION = 'foundry_linker_v1';
+
+const DEFAULT_AUTO_RESOLVE_PAGE = 40;
 
 export async function getSourceRecordDetail(leadsClient: SupabaseClient, id: string) {
   const { data: rec, error } = await leadsClient
@@ -168,6 +169,12 @@ export async function linkSourceToCompany(
     if (error || !co) return { error: 'company_create_failed' as const, message: error?.message };
     companyId = co.id as string;
 
+    try {
+      await ensureCompanyDedupeReviewTaskForNormalizedKey(leadsClient, meta.normalized_name_key);
+    } catch (e) {
+      console.error('ensureCompanyDedupeReviewTaskForNormalizedKey failed', e);
+    }
+
     const state = meta.inferred_state_region;
     if (state || detail.record.address_raw) {
       await leadsClient.from('company_locations').insert({
@@ -195,6 +202,23 @@ export async function linkSourceToCompany(
     .select('id')
     .single();
   if (lerr) return { error: 'link_failed' as const, message: lerr.message };
+
+  await leadsClient
+    .from('review_tasks')
+    .update({
+      status: 'resolved',
+      resolved_at: new Date().toISOString(),
+      resolution: {
+        via: 'source_link_endpoint',
+        company_id: companyId,
+        linker_version: LINKER_VERSION,
+      },
+    })
+    .eq('task_type', 'source_link_review')
+    .eq('entity_type', 'source_business_record')
+    .eq('entity_id', recordId)
+    .eq('status', 'pending');
+
   return { link_id: link?.id, company_id: companyId };
 }
 
@@ -328,4 +352,41 @@ export async function bulkAutoResolve(
     }
   }
   return { results };
+}
+
+/**
+ * Keyset page of source_business_records.id for an ingestion run (ascending id).
+ * Used by async auto-resolve after normalize.
+ */
+export async function listSourceRecordIdsPageForIngestionRun(
+  leadsClient: SupabaseClient,
+  ingestionRunId: string,
+  batchSize: number,
+  cursor: string | null,
+): Promise<{ ids: string[]; nextCursor: string | null; done: boolean }> {
+  const n = Math.min(200, Math.max(1, batchSize || DEFAULT_AUTO_RESOLVE_PAGE));
+  let q = leadsClient
+    .from('source_business_records')
+    .select('id')
+    .eq('ingestion_run_id', ingestionRunId)
+    .order('id', { ascending: true })
+    .limit(n);
+
+  if (cursor) {
+    q = q.gt('id', cursor);
+  }
+
+  const { data: rows, error } = await q;
+  if (error) throw new Error(error.message);
+  const list = rows ?? [];
+  if (list.length === 0) {
+    return { ids: [], nextCursor: null, done: true };
+  }
+  const lastId = list[list.length - 1]!.id as string;
+  const hasMore = list.length === n;
+  return {
+    ids: list.map((r) => r.id as string),
+    nextCursor: hasMore ? lastId : null,
+    done: !hasMore,
+  };
 }

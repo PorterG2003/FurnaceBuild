@@ -104,7 +104,7 @@ The app reads registry data through a **Lambda Function URL** in [`amplify/backe
 
 **Leads secret (same pattern as send-worker / `SUPABASE_SECRET_KEY_PARAM_PATH`):**
 
-The Utah task gets **`LEADS_SUPABASE_SECRET_KEY_PARAM_PATH`** as plain environment (not ECS-injected secrets). At startup, [`workers/utah-scraper/src/run-reconciliation.ts`](../../workers/utah-scraper/src/run-reconciliation.ts) calls SSM **`GetParameter`** (with decryption), like **`workers/send-worker/src/index.ts`** does for the main key. The **Utah task role** is granted **`ssm:GetParameter`** on that parameter ARN only.
+The Utah task gets **`LEADS_SUPABASE_SECRET_KEY_PARAM_PATH`** as plain environment (not ECS-injected secrets). At startup, [`workers/state-scrapers/utah-scraper/src/run-reconciliation.ts`](../../workers/state-scrapers/utah-scraper/src/run-reconciliation.ts) calls SSM **`GetParameter`** (with decryption), like **`workers/send-worker/src/index.ts`** does for the main key. The **Utah task role** is granted **`ssm:GetParameter`** on that parameter ARN only.
 
 Worker CDK uses **one prefix per stack** (`DEV_SECRET_SSM_PREFIX` / `PROD_SECRET_SSM_PREFIX`). When a leads URL is set, the Utah task gets `{prefix}/LEADS_SUPABASE_SECRET_KEY` automatically (same folder as main `SUPABASE_SECRET_KEY`). If your leads key is not under that folder, relocate it in SSM or adjust the CDK — see [WORKER_SSM_AND_AMPLIFY_SECRETS.md](./WORKER_SSM_AND_AMPLIFY_SECRETS.md).
 

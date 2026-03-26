@@ -4,11 +4,11 @@ import { Link, usePathname, type Href } from 'expo-router';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 
 const LINKS: { href: string; label: string }[] = [
-  { href: '/foundry', label: 'Home' },
+  { href: '/foundry', label: 'Dashboard' },
   { href: '/foundry/imports', label: 'Imports' },
-  { href: '/foundry/review', label: 'Review' },
-  { href: '/foundry/state-matching', label: 'State match' },
-  { href: '/foundry/jobs', label: 'Jobs' },
+  { href: '/foundry/queue', label: 'Queue' },
+  { href: '/foundry/dedupe', label: 'Dedupe' },
+  { href: '/foundry/runs', label: 'Runs' },
   { href: '/foundry/export', label: 'Export' },
 ];
 

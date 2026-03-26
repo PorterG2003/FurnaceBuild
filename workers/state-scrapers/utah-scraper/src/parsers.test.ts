@@ -12,7 +12,7 @@ import {
 } from '@furnace/registry-server';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fixtures = path.resolve(__dirname, '../../../lib/foundry/registry-server/fixtures');
+const fixtures = path.resolve(__dirname, '../../../../lib/foundry/registry-server/fixtures');
 
 describe('Utah HTML parsers', () => {
   it('parses entity detail principals', () => {

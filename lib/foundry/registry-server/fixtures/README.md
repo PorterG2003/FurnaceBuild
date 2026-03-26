@@ -29,7 +29,7 @@ Automation: **`page.goto` → click entity-search link → `#BusinessSearch_Inde
 Regenerate with:
 
 ```bash
-cd workers/utah-scraper && npm run capture-fixtures
+cd workers/state-scrapers/utah-scraper && npm run capture-fixtures
 ```
 
 ## curl-only baseline (legacy)

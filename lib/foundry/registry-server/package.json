@@ -6,7 +6,7 @@
   "main": "./index.ts",
   "types": "./index.ts",
   "scripts": {
-    "test": "node --import tsx --test ./*.test.ts"
+    "test": "node --import tsx --test \"./**/*.test.ts\""
   },
   "devDependencies": {
     "tsx": "^4.20.6"

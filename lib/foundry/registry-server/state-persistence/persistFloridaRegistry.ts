@@ -1,15 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { UtahEntityDetailParsed } from './utah/types.js';
-import { ensureEntityOwnerDedupeReviewTaskForCluster } from './entityOwnerDedupe.js';
-import { filterMemberPrincipals } from './utah/parseEntityDetailHtml.js';
+import type { FloridaEntityDetailParsed } from '../florida/types.js';
+import { ensureEntityOwnerDedupeReviewTaskForCluster } from '../dedupe/entityOwnerDedupe.js';
+import { filterFloridaOwnerPeople } from '../florida/parseEntityDetailHtml.js';
 import type { PersistEntityOwnerInput, PersistedEntityOwnerRow } from './ownerDrilldown.js';
 import {
   replaceCurrentEntityOwners,
   upsertStateEntityCurrent,
 } from './persistStateEntityCurrent.js';
 
-export const UTAH_SOURCE_TYPE = 'utah_division_corporations';
-export const UTAH_PARSER_VERSION = 'utah_registry_browser_v1';
+export const FLORIDA_SOURCE_TYPE = 'florida_sunbiz';
+export const FLORIDA_PARSER_VERSION = 'florida_registry_browser_v1';
 
 const MAX_RESPONSE_PAYLOAD_CHARS = 120_000;
 
@@ -18,10 +18,10 @@ function truncatePayload(s: string): string {
   return `${s.slice(0, MAX_RESPONSE_PAYLOAD_CHARS)}\n…[truncated]`;
 }
 
-export type PersistUtahParams = {
+export type PersistFloridaParams = {
   companyId: string;
   lookupKey: string;
-  detail: UtahEntityDetailParsed;
+  detail: FloridaEntityDetailParsed;
   detailHtml: string;
   searchQuery: string;
   hitStatus?: string;
@@ -29,25 +29,28 @@ export type PersistUtahParams = {
   observedAt?: string;
 };
 
-export function ownerRowsForUtahDetail(detail: UtahEntityDetailParsed): PersistEntityOwnerInput[] {
-  return filterMemberPrincipals(detail.principals).map((p) => ({
+export function ownerRowsForFloridaDetail(detail: FloridaEntityDetailParsed): PersistEntityOwnerInput[] {
+  const structured = detail.people.filter((p) => p.source !== 'registered_agent');
+  const rows = structured.map((p) => ({
     ownerName: p.name.trim() || 'Unknown',
     titleRole: p.title.trim() || null,
   }));
+  if (rows.length > 0) return rows;
+  return filterFloridaOwnerPeople(detail).map((name) => ({ ownerName: name.trim() || 'Unknown', titleRole: null }));
 }
 
 /**
- * Insert immutable snapshot + state_entity + owner rows from a Utah detail parse.
+ * Insert immutable snapshot + state_entity + owner rows from a Florida Sunbiz detail parse.
  */
-export async function persistUtahRegistryPull(
+export async function persistFloridaRegistryPull(
   leadsClient: SupabaseClient,
-  params: PersistUtahParams,
+  params: PersistFloridaParams,
 ): Promise<{ snapshot_id: string; state_entity_id: string; inserted: boolean; owners: PersistedEntityOwnerRow[] }> {
   const { data: snap, error: sErr } = await leadsClient
     .from('registry_source_snapshots')
     .insert({
-      source_type: UTAH_SOURCE_TYPE,
-      state: 'UT',
+      source_type: FLORIDA_SOURCE_TYPE,
+      state: 'FL',
       lookup_key: params.lookupKey,
       request_payload: {
         company_id: params.companyId,
@@ -55,33 +58,35 @@ export async function persistUtahRegistryPull(
       },
       response_payload: {
         html_sample: truncatePayload(params.detailHtml),
-        entity_number: params.detail.entityNumber,
+        document_number: params.detail.documentNumber,
         entity_name: params.detail.entityName,
-        principal_count: params.detail.principals.length,
+        people_count: params.detail.people.length,
       },
       parsed_successfully: true,
-      parser_version: UTAH_PARSER_VERSION,
+      parser_version: FLORIDA_PARSER_VERSION,
     })
     .select('id')
     .single();
-  if (sErr || !snap) throw new Error(sErr?.message ?? 'utah snapshot insert failed');
+  if (sErr || !snap) throw new Error(sErr?.message ?? 'florida snapshot insert failed');
 
   const snapshotId = snap.id as string;
   const observedAt = params.observedAt ?? new Date().toISOString();
-  const owners = params.owners ?? ownerRowsForUtahDetail(params.detail);
+  const owners = params.owners ?? ownerRowsForFloridaDetail(params.detail);
 
   const { state_entity_id, inserted } = await upsertStateEntityCurrent(leadsClient, {
-      source_snapshot_id: snapshotId,
-      state: 'UT',
-      registry_entity_id: params.detail.entityNumber || null,
-      legal_name: params.detail.entityName || null,
-      entity_status: params.detail.entityStatus ?? params.hitStatus ?? null,
-      raw_parsed: {
-        principals: params.detail.principals,
-        entity_status: params.detail.entityStatus,
-      },
-      parser_version: UTAH_PARSER_VERSION,
-    });
+    source_snapshot_id: snapshotId,
+    state: 'FL',
+    registry_entity_id: params.detail.documentNumber || null,
+    legal_name: params.detail.entityName || null,
+    entity_status: params.detail.status ?? params.hitStatus ?? null,
+    raw_parsed: {
+      people: params.detail.people,
+      entity_type_label: params.detail.entityTypeLabel,
+      registered_agent_name: params.detail.registeredAgentName,
+      entity_status: params.detail.status,
+    },
+    parser_version: FLORIDA_PARSER_VERSION,
+  });
 
   const insertedOwners = await replaceCurrentEntityOwners(leadsClient, {
     stateEntityId: state_entity_id,

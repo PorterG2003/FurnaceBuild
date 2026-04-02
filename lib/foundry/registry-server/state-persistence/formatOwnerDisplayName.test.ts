@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 import { formatOwnerDisplayName } from './formatOwnerDisplayName.js';
-import { normalizeNameKey } from './normalizeSourceRecord.js';
+import { normalizeNameKey } from '../ingestion/normalizeSourceRecord.js';
 
 describe('formatOwnerDisplayName', () => {
   it('namecases person-like owners', () => {

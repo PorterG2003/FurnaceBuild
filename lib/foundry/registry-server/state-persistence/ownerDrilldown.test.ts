@@ -5,7 +5,7 @@ import {
   buildRegistryEntityKey,
   classifyOwnerName,
   ownerResolutionStatusForSeed,
-} from './index.js';
+} from '../index.js';
 
 describe('owner drilldown helpers', () => {
   it('classifies strong organization markers as entity', () => {

@@ -1,4 +1,4 @@
-import { normalizeNameKey } from './normalizeSourceRecord.js';
+import { normalizeNameKey } from '../ingestion/normalizeSourceRecord.js';
 
 export type OwnerKind = 'entity' | 'person' | 'unknown';
 

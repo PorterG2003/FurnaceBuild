@@ -7,7 +7,7 @@ import {
   type ContactEnrichmentDecisionMetadata,
   type ContactEnrichmentRulesetPreset,
 } from './contactEnrichmentClassifier.js';
-import { classifyOwnerName } from './ownerDrilldown.js';
+import { classifyOwnerName } from '../state-persistence/ownerDrilldown.js';
 
 export type {
   ContactEnrichmentClassifyContext,

@@ -10,6 +10,9 @@ backend:
         - cd amplify/functions/enrollmentMetric && npm install && cd - || (echo "Failed to install enrollmentMetric dependencies" && exit 1)
         - cd amplify/functions/sendInvitationEmail && npm install && cd - || (echo "Failed to install sendInvitationEmail dependencies" && exit 1)
         - cd amplify/functions/fetchEmailAttachment && npm install && cd - || (echo "Failed to install fetchEmailAttachment dependencies" && exit 1)
+        - cd amplify/functions/foundryRegistryApi && npm install && cd - || (echo "Failed to install foundryRegistryApi dependencies" && exit 1)
+        - cd amplify/functions/foundryNormalizeJob && npm install && cd - || (echo "Failed to install foundryNormalizeJob dependencies" && exit 1)
+        - cd amplify/functions/foundryStateMatchingJob && npm install && cd - || (echo "Failed to install foundryStateMatchingJob dependencies" && exit 1)
         - |
           FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"
           if [ "$FLAG" != "false" ] && [ "$FLAG" != "0" ]; then
@@ -26,13 +29,41 @@ backend:
             WORKER_ENVIRONMENT=dev
           fi
           echo "Resolved WORKER_ENVIRONMENT=$WORKER_ENVIRONMENT for branch $AWS_BRANCH"
+          REQUIRED_EXPORTS=(
+            "FurnaceCluster-$WORKER_ENVIRONMENT"
+            "FurnaceWorkerSecurityGroup-$WORKER_ENVIRONMENT"
+            "FurnaceWorkerPublicSubnets-$WORKER_ENVIRONMENT"
+            "FurnaceEcsTaskExecutionRole-$WORKER_ENVIRONMENT"
+            "FurnaceUtahScraperTaskRole-$WORKER_ENVIRONMENT"
+            "FurnaceFloridaScraperTaskRole-$WORKER_ENVIRONMENT"
+          )
+          for export_name in "${REQUIRED_EXPORTS[@]}"; do
+            export_value=$(aws cloudformation list-exports \
+              --query "Exports[?Name=='${export_name}'].Value | [0]" \
+              --output text)
+            if [ -z "$export_value" ] || [ "$export_value" = "None" ]; then
+              echo "Missing CloudFormation export: $export_name"
+              echo "Deploy infra/workers for $WORKER_ENVIRONMENT before running Amplify backend deployment."
+              exit 1
+            fi
+          done
+          REQUIRED_SSM_PARAMS=(
+            "/furnace/ecs/${WORKER_ENVIRONMENT}/utah-scraper/task-definition-arn"
+            "/furnace/ecs/${WORKER_ENVIRONMENT}/florida-scraper/task-definition-arn"
+          )
+          for param_name in "${REQUIRED_SSM_PARAMS[@]}"; do
+            if ! aws ssm get-parameter --name "$param_name" --region "${AWS_REGION:-us-west-2}" &>/dev/null; then
+              echo "Missing SSM parameter: $param_name"
+              echo "Deploy infra/workers for $WORKER_ENVIRONMENT so the state scraper task definition ARN is published."
+              exit 1
+            fi
+          done
           FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"
           if [ "$FLAG" != "false" ] && [ "$FLAG" != "0" ]; then
             REQUIRED_EXPORTS=(
               "FurnaceCluster-$WORKER_ENVIRONMENT"
               "FurnaceWorkerSecurityGroup-$WORKER_ENVIRONMENT"
               "FurnaceWorkerPublicSubnets-$WORKER_ENVIRONMENT"
-              "FurnaceSmartleadMigrationTaskDefinition-$WORKER_ENVIRONMENT"
             )
             for export_name in "${REQUIRED_EXPORTS[@]}"; do
               export_value=$(aws cloudformation list-exports \
@@ -44,6 +75,12 @@ backend:
                 exit 1
               fi
             done
+            TASK_DEF_PARAM="/furnace/ecs/${WORKER_ENVIRONMENT}/smartlead-migration/task-definition-arn"
+            if ! aws ssm get-parameter --name "$TASK_DEF_PARAM" --region "${AWS_REGION:-us-west-2}" &>/dev/null; then
+              echo "Missing SSM parameter: $TASK_DEF_PARAM"
+              echo "Deploy infra/workers for $WORKER_ENVIRONMENT so the Smartlead migration task definition ARN is published."
+              exit 1
+            fi
           else
             echo "Skipping worker stack export check (AMPLIFY_ENABLE_SMARTLEAD_MIGRATION disabled)"
           fi

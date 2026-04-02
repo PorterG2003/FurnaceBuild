@@ -30,6 +30,11 @@ Auth: `Authorization: Bearer <main Supabase access token>`; requires `user_acces
 
 - `GET /companies`, `POST /companies` (create), `GET /companies/:id`, `PATCH /companies/:id`, `POST /companies/:id/locations`
 
+## Export
+
+- `GET /export/company-owner-leads` — owner-row export; one row per current owner on an exportable company target, with company-scoped address and website fields attached.
+- `GET /export/company-chain-people` — chain export; pages by matching company targets, then expands each target through ownership chains to terminal people. Supports `max_depth` and `max_chains`.
+
 ## Review
 
 - `GET /review-tasks?status=&limit=`

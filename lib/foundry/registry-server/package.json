@@ -6,7 +6,7 @@
   "main": "./index.ts",
   "types": "./index.ts",
   "scripts": {
-    "test": "node --import tsx --test ./companyDedupe.test.ts"
+    "test": "node --import tsx --test ./*.test.ts"
   },
   "devDependencies": {
     "tsx": "^4.20.6"
@@ -16,6 +16,7 @@
   },
   "license": "UNLICENSED",
   "dependencies": {
+    "@compwright/namecase": "^3.0.1",
     "@supabase/supabase-js": "^2.99.1"
   }
 }

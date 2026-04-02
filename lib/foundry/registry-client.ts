@@ -2,17 +2,27 @@ import outputs from '@/amplify_outputs.json';
 import { getAccessToken } from '@/lib/services/auth-token';
 import {
   parseCompanyDetailResponse,
+  parseCompanyOwnershipChainsResponse,
+  type ExportCompanyChainPeopleResponse,
   type ParsedCompanyDetail,
+  type CompanyOwnershipChainsResponse,
   type ExportCompanyOwnerLeadsResponse,
   type FoundryJobDetailResponse,
   type FoundryJobsListResponse,
+  type IngestionRunPipelineJobsResponse,
   type IngestionRunDetailResponse,
   type IngestionRunRecordsResponse,
   type IngestionRunsListResponse,
+  type ManualCompaniesListResponse,
+  type ManualEntityOwnersListResponse,
   type NormalizeRunRecordsResponse,
   type PostGoogleMapsImportBody,
   type PostGoogleMapsImportResponse,
+  type PostStartContactEnrichmentJobResponse,
+  type PostStartAutolinkJobResponse,
   type PostStartNormalizeJobResponse,
+  type ContactEnrichmentPreflightOptions,
+  type ContactEnrichmentPreflightResponse,
   type RegistryCompaniesResponse,
   type RegistryEntityOwnersResponse,
   type ReviewTasksListResponse,
@@ -57,6 +67,12 @@ function registryUrl(path: string, search?: Record<string, string | number | und
     }
   }
   return u.toString();
+}
+
+function coerceNonNegativeInt(value: unknown, fallback: number): number {
+  const parsed =
+    typeof value === 'number' ? value : typeof value === 'string' && value.trim().length > 0 ? Number(value) : NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
 }
 
 async function registryFetchJson<T>(
@@ -121,6 +137,37 @@ export async function fetchRegistryCompanies(params?: {
   return body as RegistryCompaniesResponse;
 }
 
+export async function fetchManualCompanies(params?: {
+  limit?: number;
+  offset?: number;
+  q?: string;
+  has_normalized_key?: boolean;
+  has_notes?: boolean;
+  sort_by?: string;
+  sort_direction?: 'asc' | 'desc';
+}): Promise<ManualCompaniesListResponse> {
+  const q = params?.q?.trim();
+  const response = await registryFetchJson<ManualCompaniesListResponse>('companies', {
+    method: 'GET',
+    search: {
+      limit: params?.limit,
+      offset: params?.offset,
+      q: q && q.length >= 2 ? q : undefined,
+      has_normalized_key:
+        params?.has_normalized_key == null ? undefined : String(params.has_normalized_key),
+      has_notes: params?.has_notes == null ? undefined : String(params.has_notes),
+      sort_by: params?.sort_by,
+      sort_direction: params?.sort_direction,
+    },
+  });
+  return {
+    companies: Array.isArray(response.companies) ? response.companies : [],
+    limit: coerceNonNegativeInt(response.limit, params?.limit ?? 0),
+    offset: coerceNonNegativeInt(response.offset, params?.offset ?? 0),
+    total_count: coerceNonNegativeInt(response.total_count, 0),
+  };
+}
+
 /** Batch fetch companies by id (order preserved; max 50 ids). */
 export async function fetchCompaniesByIds(ids: string[]): Promise<RegistryCompaniesResponse> {
   const uniq = [...new Set(ids.filter(Boolean))].slice(0, 50);
@@ -167,10 +214,50 @@ export async function fetchEntityOwnersByCluster(
   });
 }
 
-export async function fetchIngestionRuns(params?: { limit?: number }): Promise<IngestionRunsListResponse> {
+export async function fetchManualEntityOwners(params?: {
+  limit?: number;
+  offset?: number;
+  q?: string;
+  is_current?: boolean;
+  has_owner_normalized_key?: boolean;
+  state_entity_id?: string;
+  sort_by?: string;
+  sort_direction?: 'asc' | 'desc';
+}): Promise<ManualEntityOwnersListResponse> {
+  const q = params?.q?.trim();
+  const stateEntityId = params?.state_entity_id?.trim();
+  const response = await registryFetchJson<ManualEntityOwnersListResponse>('entity-owners', {
+    method: 'GET',
+    search: {
+      limit: params?.limit,
+      offset: params?.offset,
+      q: q && q.length >= 2 ? q : undefined,
+      is_current: params?.is_current == null ? undefined : String(params.is_current),
+      has_owner_normalized_key:
+        params?.has_owner_normalized_key == null ? undefined : String(params.has_owner_normalized_key),
+      state_entity_id: stateEntityId || undefined,
+      sort_by: params?.sort_by,
+      sort_direction: params?.sort_direction,
+    },
+  });
+  return {
+    entity_owners: Array.isArray(response.entity_owners) ? response.entity_owners : [],
+    limit: coerceNonNegativeInt(response.limit, params?.limit ?? 0),
+    offset: coerceNonNegativeInt(response.offset, params?.offset ?? 0),
+    total_count: coerceNonNegativeInt(response.total_count, 0),
+  };
+}
+
+export async function fetchIngestionRuns(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<IngestionRunsListResponse> {
   return registryFetchJson<IngestionRunsListResponse>('ingestion-runs', {
     method: 'GET',
-    search: params?.limit != null ? { limit: params.limit } : undefined,
+    search:
+      params?.limit != null || params?.offset != null
+        ? { limit: params.limit, offset: params.offset }
+        : undefined,
   });
 }
 
@@ -324,6 +411,23 @@ export async function fetchCompanyDetail(companyId: string): Promise<ParsedCompa
   return parseCompanyDetailResponse(body);
 }
 
+export async function fetchCompanyOwnershipChains(
+  companyId: string,
+  params?: { maxDepth?: number; maxChains?: number },
+): Promise<CompanyOwnershipChainsResponse> {
+  const body = await registryFetchJson<unknown>(
+    `companies/${encodeURIComponent(companyId)}/ownership-chains`,
+    {
+      method: 'GET',
+      search: {
+        max_depth: params?.maxDepth,
+        max_chains: params?.maxChains,
+      },
+    },
+  );
+  return parseCompanyOwnershipChainsResponse(body);
+}
+
 export async function fetchReviewTasks(params?: {
   status?: string;
   task_type?: string;
@@ -358,6 +462,8 @@ export async function postReviewTaskResolve(
         last_name?: string | null;
       };
     };
+    contact_enrichment_action?: 'accept_candidate' | 'reject' | 'suppress';
+    chosen_candidate_index?: number;
   },
 ): Promise<{ ok: boolean }> {
   return registryFetchJson(`review-tasks/${encodeURIComponent(taskId)}/resolve`, {
@@ -420,6 +526,19 @@ export async function postStateMatchingBatch(
   return body;
 }
 
+export async function postImportScopedStateMatching(
+  runId: string,
+): Promise<PostStateMatchingBatchResponse> {
+  return registryFetchJson<PostStateMatchingBatchResponse>(
+    `ingestion-runs/${encodeURIComponent(runId)}/state-matching`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    },
+  );
+}
+
 export async function fetchStateMatchingBatch(runId: string): Promise<{
   run: Record<string, unknown>;
   results: Record<string, unknown>[];
@@ -439,6 +558,59 @@ export async function postStartNormalizeIngestionJob(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body ?? {}),
+    },
+  );
+}
+
+export async function postStartAutolinkIngestionJob(
+  runId: string,
+  body?: { batchSize?: number },
+): Promise<PostStartAutolinkJobResponse> {
+  return registryFetchJson<PostStartAutolinkJobResponse>(
+    `ingestion-runs/${encodeURIComponent(runId)}/jobs/autolink`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    },
+  );
+}
+
+export async function postContactEnrichmentPreflight(
+  runId: string,
+  body?: ContactEnrichmentPreflightOptions,
+): Promise<ContactEnrichmentPreflightResponse> {
+  return registryFetchJson<ContactEnrichmentPreflightResponse>(
+    `ingestion-runs/${encodeURIComponent(runId)}/contact-enrichment/preflight`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    },
+  );
+}
+
+export async function postStartContactEnrichmentIngestionJob(
+  runId: string,
+  body?: ContactEnrichmentPreflightOptions,
+): Promise<PostStartContactEnrichmentJobResponse> {
+  return registryFetchJson<PostStartContactEnrichmentJobResponse>(
+    `ingestion-runs/${encodeURIComponent(runId)}/jobs/contact-enrichment`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    },
+  );
+}
+
+export async function fetchIngestionRunPipelineJobs(
+  runId: string,
+): Promise<IngestionRunPipelineJobsResponse> {
+  return registryFetchJson<IngestionRunPipelineJobsResponse>(
+    `ingestion-runs/${encodeURIComponent(runId)}/pipeline-jobs`,
+    {
+      method: 'GET',
     },
   );
 }
@@ -471,6 +643,11 @@ export type ExportCompanyOwnerLeadsParams = {
   has_current_owner?: boolean;
 };
 
+export type ExportCompanyChainPeopleParams = ExportCompanyOwnerLeadsParams & {
+  max_depth?: number;
+  max_chains?: number;
+};
+
 export async function fetchExportCompanyOwnerLeads(
   params?: ExportCompanyOwnerLeadsParams,
 ): Promise<ExportCompanyOwnerLeadsResponse> {
@@ -482,11 +659,39 @@ export async function fetchExportCompanyOwnerLeads(
       offset: params?.offset,
       q: q && q.length >= 2 ? q : undefined,
       registry_state: params?.registry_state?.trim() || undefined,
-      is_export_ready: params?.is_export_ready,
-      has_current_linked_source: params?.has_current_linked_source,
-      has_open_review_task: params?.has_open_review_task,
-      has_parse_failure_task: params?.has_parse_failure_task,
-      has_current_owner: params?.has_current_owner,
+      is_export_ready: params?.is_export_ready == null ? undefined : String(params.is_export_ready),
+      has_current_linked_source:
+        params?.has_current_linked_source == null ? undefined : String(params.has_current_linked_source),
+      has_open_review_task:
+        params?.has_open_review_task == null ? undefined : String(params.has_open_review_task),
+      has_parse_failure_task:
+        params?.has_parse_failure_task == null ? undefined : String(params.has_parse_failure_task),
+      has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
+    },
+  });
+}
+
+export async function fetchExportCompanyChainPeople(
+  params?: ExportCompanyChainPeopleParams,
+): Promise<ExportCompanyChainPeopleResponse> {
+  const q = params?.q?.trim();
+  return registryFetchJson<ExportCompanyChainPeopleResponse>('export/company-chain-people', {
+    method: 'GET',
+    search: {
+      limit: params?.limit,
+      offset: params?.offset,
+      q: q && q.length >= 2 ? q : undefined,
+      registry_state: params?.registry_state?.trim() || undefined,
+      is_export_ready: params?.is_export_ready == null ? undefined : String(params.is_export_ready),
+      has_current_linked_source:
+        params?.has_current_linked_source == null ? undefined : String(params.has_current_linked_source),
+      has_open_review_task:
+        params?.has_open_review_task == null ? undefined : String(params.has_open_review_task),
+      has_parse_failure_task:
+        params?.has_parse_failure_task == null ? undefined : String(params.has_parse_failure_task),
+      has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
+      max_depth: params?.max_depth,
+      max_chains: params?.max_chains,
     },
   });
 }
@@ -520,6 +725,39 @@ export async function collectExportCompanyOwnerLeadsForCsv(
     }
 
     if (res.rows.length < pageSize || all.length >= total_count) {
+      return { rows: all, truncated: false, total_count };
+    }
+    offset += pageSize;
+  }
+}
+
+/** Pages through chain-linked export rows by target page until exhausted or cap reached. */
+export async function collectExportCompanyChainPeopleForCsv(
+  params: Omit<ExportCompanyChainPeopleParams, 'limit' | 'offset'>,
+): Promise<{ rows: ExportCompanyChainPeopleResponse['rows']; truncated: boolean; total_count: number }> {
+  const pageSize = 100;
+  const all: ExportCompanyChainPeopleResponse['rows'] = [];
+  let offset = 0;
+  let total_count = 0;
+
+  for (;;) {
+    const res = await fetchExportCompanyChainPeople({
+      ...params,
+      limit: pageSize,
+      offset,
+    });
+    total_count = res.total_count;
+    all.push(...res.rows);
+
+    if (all.length > MAX_EXPORT_CSV_ROWS) {
+      return {
+        rows: all.slice(0, MAX_EXPORT_CSV_ROWS),
+        truncated: true,
+        total_count,
+      };
+    }
+
+    if (res.targets_returned < pageSize || offset + res.targets_returned >= total_count) {
       return { rows: all, truncated: false, total_count };
     }
     offset += pageSize;

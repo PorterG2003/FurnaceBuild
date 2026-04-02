@@ -60,7 +60,7 @@ export default function FoundryRunsListScreen() {
       <Breadcrumb items={[{ label: 'Foundry', href: '/foundry' }, { label: 'Runs' }]} />
       <PageHeader
         title="Runs"
-        subtitle="Background jobs for this workspace—normalize and state lookup—not the place to approve ambiguous matches (that is Queue)."
+        subtitle="Background jobs for this workspace, including normalize, state matching, and contact enrichment. Approval work still lives in Queue."
       />
 
       {error ? <Text className="text-red-400 mb-3 font-instrument text-sm">{error}</Text> : null}

@@ -24,13 +24,26 @@ export const handler = async (event: FinalizeEvent | FailEvent): Promise<Record<
     const { data: job } = await client.from('foundry_jobs').select('payload, progress').eq('id', event.jobId).maybeSingle();
     const prev = (job?.progress ?? {}) as Record<string, unknown>;
     const payload = (job?.payload ?? {}) as Record<string, unknown>;
+    const { data: outcomeRows, error: outcomeErr } = await client
+      .from('reconciliation_results')
+      .select('outcome')
+      .eq('reconciliation_run_id', event.reconciliationRunId);
+    if (outcomeErr) {
+      throw new Error(outcomeErr.message);
+    }
+    const reconciliationOutcomes = (outcomeRows ?? []).reduce<Record<string, number>>((acc, row) => {
+      const outcome = String(row.outcome ?? '');
+      if (!outcome) return acc;
+      acc[outcome] = (acc[outcome] ?? 0) + 1;
+      return acc;
+    }, {});
 
     await client
       .from('foundry_jobs')
       .update({
         status: 'completed',
         completed_at: new Date().toISOString(),
-        progress: { ...prev, current_step: 'done' },
+        progress: { ...prev, current_step: 'done', reconciliation_outcomes: reconciliationOutcomes },
       })
       .eq('id', event.jobId);
 

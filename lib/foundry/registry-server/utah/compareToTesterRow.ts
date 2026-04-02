@@ -10,9 +10,11 @@ export function compareToTesterRow(
   const reason =
     r.reason === 'no_expected_name'
       ? 'no_expected_name_in_csv'
-      : r.reason === 'no_names_extracted'
-        ? 'no_member_principals'
-        : r.reason;
+      : r.reason === 'no_expected_scrape_ok'
+        ? 'no_expected_scrape_ok'
+        : r.reason === 'no_names_extracted'
+          ? 'no_member_principals'
+          : r.reason;
   return {
     outcome: r.outcome,
     reason,

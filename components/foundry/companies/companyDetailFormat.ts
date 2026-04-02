@@ -30,6 +30,14 @@ export function sourceLinkSortKey(row: CompanySourceLinkRow): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
+/** Ensure a browser-openable http(s) URL from a user-typed or imported website field. */
+export function normalizeWebsiteHref(raw: string): string {
+  const t = raw.trim();
+  if (!t) return '';
+  if (/^https?:\/\//i.test(t)) return t;
+  return `https://${t}`;
+}
+
 export function statusBadgeClass(status: string): string {
   const s = status.toLowerCase();
   if (s === 'linked') return 'text-emerald-400/95 bg-emerald-500/15 border-emerald-500/35';

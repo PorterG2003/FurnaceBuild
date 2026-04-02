@@ -13,13 +13,19 @@ import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { PageHeader, Breadcrumb } from '@/components/ui/layout';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import { Button } from '@/components/ui/button';
-import { fetchCompanyDetail } from '@/lib/foundry/registry-client';
-import type { ParsedCompanyDetail } from '@/lib/foundry/registry-types';
+import { fetchCompanyDetail, fetchCompanyOwnershipChains } from '@/lib/foundry/registry-client';
+import type {
+  CompanyOwnershipChainsResponse,
+  CompanySourceLinkRow,
+  ParsedCompanyDetail,
+} from '@/lib/foundry/registry-types';
 import { CompanyProfilePanel } from '@/components/foundry/companies/CompanyProfilePanel';
 import { CompanyLocationsPanel } from '@/components/foundry/companies/CompanyLocationsPanel';
 import { CompanySourceLinksTimeline } from '@/components/foundry/companies/CompanySourceLinksTimeline';
 import { CompanyEntityMatchesPanel } from '@/components/foundry/companies/CompanyEntityMatchesPanel';
+import { CompanyAssociatedPeoplePanel } from '@/components/foundry/companies/CompanyAssociatedPeoplePanel';
 import { CompanyQuickActions } from '@/components/foundry/companies/CompanyQuickActions';
+import { CompanyOwnershipChainsPanel } from '@/components/foundry/companies/CompanyOwnershipChainsPanel';
 
 function buildSubtitle(detail: ParsedCompanyDetail | null): string | undefined {
   if (!detail?.company) return undefined;
@@ -27,6 +33,18 @@ function buildSubtitle(detail: ParsedCompanyDetail | null): string | undefined {
     (p): p is string => typeof p === 'string' && p.length > 0,
   );
   return parts.length > 0 ? parts.join(' · ') : undefined;
+}
+
+function pickProfileWebsite(links: CompanySourceLinkRow[]): string | null {
+  const norm = (s: string | null | undefined) => {
+    if (typeof s !== 'string') return null;
+    const t = s.trim();
+    return t.length > 0 ? t : null;
+  };
+  const linked = links.find((l) => l.link_status === 'linked' && norm(l.website));
+  if (linked) return norm(linked.website);
+  const any = links.find((l) => norm(l.website));
+  return any ? norm(any.website) : null;
 }
 
 function copyCompanyId(id: string) {
@@ -46,22 +64,48 @@ export default function CompanyDetailPage() {
   const wide = width >= LAYOUT_BREAKPOINT;
 
   const [detail, setDetail] = useState<ParsedCompanyDetail | null>(null);
+  const [ownershipChains, setOwnershipChains] = useState<CompanyOwnershipChainsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [ownershipLoading, setOwnershipLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [ownershipError, setOwnershipError] = useState<string | null>(null);
   const [showRawJson, setShowRawJson] = useState(false);
 
   const load = useCallback(async () => {
     if (!id || typeof id !== 'string') return;
     setError(null);
     setLoading(true);
+    setOwnershipError(null);
+    setOwnershipLoading(true);
     try {
-      const d = await fetchCompanyDetail(id);
-      setDetail(d);
+      const [detailResult, ownershipResult] = await Promise.allSettled([
+        fetchCompanyDetail(id),
+        fetchCompanyOwnershipChains(id, { maxDepth: 6 }),
+      ]);
+
+      if (detailResult.status === 'fulfilled') {
+        setDetail(detailResult.value);
+      } else {
+        throw detailResult.reason;
+      }
+
+      if (ownershipResult.status === 'fulfilled') {
+        setOwnershipChains(ownershipResult.value);
+      } else {
+        setOwnershipError(
+          ownershipResult.reason instanceof Error
+            ? ownershipResult.reason.message
+            : 'Failed to load ownership chains.',
+        );
+        setOwnershipChains(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
       setDetail(null);
+      setOwnershipChains(null);
     } finally {
       setLoading(false);
+      setOwnershipLoading(false);
     }
   }, [id]);
 
@@ -83,27 +127,41 @@ export default function CompanyDetailPage() {
   const title = company?.legal_name?.trim() || 'Company';
   const subtitle = buildSubtitle(detail);
 
+  const profileWebsite = detail ? pickProfileWebsite(detail.source_links) : null;
+
   const mainGrid =
     company != null && detail != null ? (
       wide ? (
         <View className="flex-row items-start gap-5">
           <View className="flex-[0.4] min-w-[280px] max-w-md">
-            <CompanyProfilePanel company={company} />
+            <CompanyProfilePanel company={company} website={profileWebsite} />
           </View>
           <View className="flex-1 min-w-0">
             <CompanyLocationsPanel locations={detail.locations} />
-            <CompanySourceLinksTimeline links={detail.source_links} />
             <CompanyEntityMatchesPanel matches={detail.entity_matches} />
+            <CompanyOwnershipChainsPanel
+              data={ownershipChains}
+              loading={ownershipLoading}
+              error={ownershipError}
+            />
+            <CompanyAssociatedPeoplePanel people={detail.associated_people} />
             <CompanyQuickActions />
+            <CompanySourceLinksTimeline links={detail.source_links} defaultExpanded={false} />
           </View>
         </View>
       ) : (
         <View>
-          <CompanyProfilePanel company={company} />
+          <CompanyProfilePanel company={company} website={profileWebsite} />
           <CompanyLocationsPanel locations={detail.locations} />
-          <CompanySourceLinksTimeline links={detail.source_links} />
           <CompanyEntityMatchesPanel matches={detail.entity_matches} />
+          <CompanyOwnershipChainsPanel
+            data={ownershipChains}
+            loading={ownershipLoading}
+            error={ownershipError}
+          />
+          <CompanyAssociatedPeoplePanel people={detail.associated_people} />
           <CompanyQuickActions />
+          <CompanySourceLinksTimeline links={detail.source_links} defaultExpanded={false} />
         </View>
       )
     ) : !loading && !error ? (

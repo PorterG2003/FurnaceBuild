@@ -2,22 +2,29 @@ import { useCallback, useState } from 'react';
 import { View, ScrollView, Text } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { PageHeader, Breadcrumb } from '@/components/ui/layout';
-import { Button } from '@/components/ui/button';
 import { Tabs, type Tab } from '@/components/ui/tabs';
-import { DedupeTaskCard } from '@/components/foundry/dedupe/DedupeTaskCard';
-import { EntityOwnerDedupeTaskCard } from '@/components/foundry/dedupe/EntityOwnerDedupeTaskCard';
+import { DedupeQueuePanel } from '@/components/foundry/dedupe/DedupeQueuePanel';
+import { ManualCompaniesPanel } from '@/components/foundry/dedupe/ManualCompaniesPanel';
+import { ManualEntityOwnersPanel } from '@/components/foundry/dedupe/ManualEntityOwnersPanel';
 import { fetchReviewTasks } from '@/lib/foundry/registry-client';
 import type { ReviewTaskRow } from '@/lib/foundry/registry-types';
 
-const DEDUPE_TABS: Tab[] = [
+const TABLE_TABS: Tab[] = [
   { id: 'companies', label: 'Companies' },
   { id: 'contacts', label: 'Contacts' },
 ];
 
-type DedupeTab = 'companies' | 'contacts';
+const MODE_TABS: Tab[] = [
+  { id: 'queue', label: 'Queue' },
+  { id: 'manual', label: 'Manual' },
+];
+
+type DedupeTable = 'companies' | 'contacts';
+type DedupeMode = 'queue' | 'manual';
 
 export default function FoundryDedupeScreen() {
-  const [tab, setTab] = useState<DedupeTab>('companies');
+  const [table, setTable] = useState<DedupeTable>('companies');
+  const [mode, setMode] = useState<DedupeMode>('queue');
   const [companyTasks, setCompanyTasks] = useState<ReviewTaskRow[]>([]);
   const [contactTasks, setContactTasks] = useState<ReviewTaskRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,17 +60,18 @@ export default function FoundryDedupeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (tab === 'companies') void loadCompanies();
+      if (mode !== 'queue') return;
+      if (table === 'companies') void loadCompanies();
       else void loadContacts();
-    }, [tab, loadCompanies, loadContacts]),
+    }, [mode, table, loadCompanies, loadContacts]),
   );
 
   const refresh = () => {
-    if (tab === 'companies') void loadCompanies();
+    if (table === 'companies') void loadCompanies();
     else void loadContacts();
   };
 
-  const tasks = tab === 'companies' ? companyTasks : contactTasks;
+  const tasks = table === 'companies' ? companyTasks : contactTasks;
 
   return (
     <ScrollView
@@ -74,46 +82,32 @@ export default function FoundryDedupeScreen() {
       <Breadcrumb items={[{ label: 'Foundry', href: '/foundry' }, { label: 'Deduplication' }]} />
       <PageHeader
         title="Deduplication"
-        subtitle="Companies: merge duplicate registry companies. Contacts: merge duplicate owners from state registry data. Each card is one cluster from the review queue."
+        subtitle="Queue keeps the review-task workflow. Manual lets you search, filter, and work through the full dedupe tables directly."
       />
 
-      <Text className="text-gray-500 font-instrument text-xs uppercase tracking-wider mb-1">Mode</Text>
-      <Tabs tabs={DEDUPE_TABS} activeTab={tab} onTabChange={(id) => setTab(id as DedupeTab)} marginBottom={12} />
+      <Text className="text-gray-500 font-instrument text-xs uppercase tracking-wider mb-1">Tables</Text>
+      <Tabs tabs={TABLE_TABS} activeTab={table} onTabChange={(id) => setTable(id as DedupeTable)} marginBottom={12} />
 
-      {error ? <Text className="text-red-400 mb-3 font-instrument text-sm">{error}</Text> : null}
+      <Text className="text-gray-500 font-instrument text-xs uppercase tracking-wider mb-1">Modes</Text>
+      <Tabs tabs={MODE_TABS} activeTab={mode} onTabChange={(id) => setMode(id as DedupeMode)} marginBottom={12} />
 
-      <View className="flex-row flex-wrap gap-2 items-center mb-4">
-        <Button variant="secondary" size="sm" onPress={() => void refresh()} disabled={loading}>
-          Refresh
-        </Button>
-        <Text className="text-gray-500 font-instrument text-xs">
-          {loading ? 'Loading…' : `${tasks.length} pending task${tasks.length === 1 ? '' : 's'}`}
-        </Text>
-      </View>
-
-      {tab === 'companies'
-        ? companyTasks.map((t) => (
-            <DedupeTaskCard key={t.id} task={t} onTasksChanged={() => void loadCompanies()} />
-          ))
-        : contactTasks.map((t) => (
-            <EntityOwnerDedupeTaskCard key={t.id} task={t} onTasksChanged={() => void loadContacts()} />
-          ))}
-
-      {!loading && tasks.length === 0 && !error ? (
-        <Text className="text-gray-500 font-instrument text-sm leading-5">
-          {tab === 'companies' ? (
-            <>
-              No pending company dedupe tasks. Tasks are created when two or more companies share the same normalized
-              name key (for example after creating a new company from a source row).
-            </>
-          ) : (
-            <>
-              No pending contact dedupe tasks. Tasks are created when two or more registry owners share the same
-              normalized name key on the same state entity (for example after Utah or Florida registry persist).
-            </>
-          )}
-        </Text>
-      ) : null}
+      {mode === 'queue' ? (
+        <DedupeQueuePanel
+          table={table}
+          tasks={tasks}
+          loading={loading}
+          error={error}
+          onRefresh={() => void refresh()}
+          onTasksChanged={() => {
+            if (table === 'companies') void loadCompanies();
+            else void loadContacts();
+          }}
+        />
+      ) : table === 'companies' ? (
+        <ManualCompaniesPanel />
+      ) : (
+        <ManualEntityOwnersPanel />
+      )}
     </ScrollView>
   );
 }

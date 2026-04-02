@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   mergeCompanies,
   mergeEntityOwners,
+  promoteContactEnrichmentPersonToMatch,
   type MergeCompaniesParams,
   type MergeEntityOwnersParams,
 } from '@furnace/registry-server';
@@ -52,6 +53,8 @@ export async function resolveReviewTask(
     company_dedupe_merge?: MergeCompaniesParams;
     entity_owner_dedupe_dismiss?: boolean;
     entity_owner_dedupe_merge?: MergeEntityOwnersParams;
+    contact_enrichment_action?: 'accept_candidate' | 'reject' | 'suppress';
+    chosen_candidate_index?: number;
   },
   actorUserId: string,
 ) {
@@ -129,6 +132,95 @@ export async function resolveReviewTask(
         .from('company_entity_matches')
         .update({ match_status: 'rejected', is_current: false })
         .eq('id', matchId);
+    }
+  }
+
+  if (task.task_type === 'contact_enrichment_review' && task.entity_type === 'contact_enrichment_attempt') {
+    const attemptId = task.entity_id as string;
+    const action = body.contact_enrichment_action;
+    if (!action) {
+      return { error: 'contact_enrichment_action required' as const };
+    }
+
+    const { data: attempt, error: attErr } = await leadsClient
+      .from('contact_enrichment_attempts')
+      .select('id, target_id, response_payload, classification')
+      .eq('id', attemptId)
+      .maybeSingle();
+    if (attErr) return { error: 'attempt_lookup_failed' as const };
+    if (!attempt) return { error: 'not_found' as const };
+
+    const targetId = String(attempt.target_id ?? '');
+    const { data: target, error: targetErr } = await leadsClient
+      .from('contact_enrichment_targets')
+      .select(
+        'id, foundry_job_id, ingestion_run_id, source_name, company_id, entity_owner_id, owner_name, owner_title_role, first_name, last_name, company_legal_name, address_line_1, address_line_2, address_city, address_state, address_postal_code, address_country, lookup_fingerprint, latest_source_observed_at',
+      )
+      .eq('id', targetId)
+      .maybeSingle();
+    if (targetErr || !target) return { error: 'target_not_found' as const };
+
+    const targetRow = {
+      id: String(target.id),
+      foundry_job_id: String(target.foundry_job_id ?? ''),
+      ingestion_run_id: String(target.ingestion_run_id ?? ''),
+      source_name: String(target.source_name ?? ''),
+      company_id: String(target.company_id ?? ''),
+      entity_owner_id: target.entity_owner_id ? String(target.entity_owner_id) : null,
+      owner_name: String(target.owner_name ?? ''),
+      owner_title_role: target.owner_title_role ? String(target.owner_title_role) : null,
+      first_name: String(target.first_name ?? ''),
+      last_name: String(target.last_name ?? ''),
+      company_legal_name: target.company_legal_name ? String(target.company_legal_name) : null,
+      address_line_1: String(target.address_line_1 ?? ''),
+      address_line_2: target.address_line_2 ? String(target.address_line_2) : null,
+      address_city: target.address_city ? String(target.address_city) : null,
+      address_state: target.address_state ? String(target.address_state) : null,
+      address_postal_code: target.address_postal_code ? String(target.address_postal_code) : null,
+      address_country: target.address_country ? String(target.address_country) : null,
+      lookup_fingerprint: String(target.lookup_fingerprint ?? ''),
+      latest_source_observed_at: target.latest_source_observed_at ? String(target.latest_source_observed_at) : null,
+    };
+
+    if (action === 'suppress') {
+      const { error: supErr } = await leadsClient.from('contact_enrichment_suppressions').insert({
+        provider: 'skipsherpa',
+        lookup_type: 'person',
+        company_id: targetRow.company_id,
+        entity_owner_id: targetRow.entity_owner_id,
+        reason: 'operator_suppressed_from_queue',
+        created_by: actorUserId,
+      });
+      if (supErr && supErr.code !== '23505') {
+        return { error: 'suppression_failed' as const };
+      }
+      await leadsClient
+        .from('contact_enrichment_targets')
+        .update({ status: 'skipped_suppressed', skip_reason: 'operator_suppressed_from_queue' })
+        .eq('id', targetRow.id);
+    } else if (action === 'reject') {
+      await leadsClient.from('contact_enrichment_targets').update({ status: 'no_match' }).eq('id', targetRow.id);
+    } else if (action === 'accept_candidate') {
+      const idx = body.chosen_candidate_index;
+      if (typeof idx !== 'number' || !Number.isFinite(idx) || idx < 0) {
+        return { error: 'chosen_candidate_index required' as const };
+      }
+      const payload = attempt.response_payload as { persons?: unknown[] } | null;
+      const persons = Array.isArray(payload?.persons) ? payload!.persons! : [];
+      const person = persons[idx];
+      if (!person || typeof person !== 'object') {
+        return { error: 'invalid_candidate_index' as const };
+      }
+      const { data: existing } = await leadsClient
+        .from('contact_enrichment_matches')
+        .select('id')
+        .eq('attempt_id', attemptId)
+        .maybeSingle();
+      if (existing) {
+        return { error: 'match_already_exists' as const };
+      }
+      await promoteContactEnrichmentPersonToMatch(leadsClient, attemptId, targetRow, person as never);
+      await leadsClient.from('contact_enrichment_targets').update({ status: 'accepted' }).eq('id', targetRow.id);
     }
   }
 

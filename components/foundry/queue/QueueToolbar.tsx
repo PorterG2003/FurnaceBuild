@@ -2,12 +2,18 @@ import { View, Text } from 'react-native';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 
-export type QueueTaskFilter = 'all' | 'source_link_review' | 'entity_match_review' | 'other';
+export type QueueTaskFilter =
+  | 'all'
+  | 'source_link_review'
+  | 'entity_match_review'
+  | 'contact_enrichment_review'
+  | 'other';
 
 const TASK_TABS: Tab[] = [
   { id: 'all', label: 'All' },
   { id: 'source_link_review', label: 'Source link' },
   { id: 'entity_match_review', label: 'Entity match' },
+  { id: 'contact_enrichment_review', label: 'Enrichment' },
   { id: 'other', label: 'Other' },
 ];
 

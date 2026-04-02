@@ -10,6 +10,7 @@ import { isWithinSchedule, isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { getCampaignById, getCampaignMailboxes, getCampaignStatsByDay, getCampaignStatsForCampaigns, type CampaignStatsByDay, type CampaignStats } from '@/lib/supabase/services/campaigns';
+import { getCampaignLeadTablePage, getLeadCount } from '@/lib/supabase/services/leads';
 import { supabase } from '@/lib/supabase/client';
 import { CampaignStatsChart } from '@/components/campaigns/CampaignStatsChart';
 import { DateInput } from '@/components/ui/DateInput';
@@ -74,8 +75,15 @@ export default function CampaignPage() {
   const [leadsCompleted, setLeadsCompleted] = useState(0);
   const [leadsStopped, setLeadsStopped] = useState(0);
   const [leadsPaused, setLeadsPaused] = useState(0);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [leadsLoading, setLeadsLoading] = useState(true);
+  const [leadRows, setLeadRows] = useState<Lead[]>([]);
+  const [leadRowsLoading, setLeadRowsLoading] = useState(false);
+  const [leadRowsError, setLeadRowsError] = useState<string | null>(null);
+  const [leadPage, setLeadPage] = useState(1);
+  const [leadTotalCount, setLeadTotalCount] = useState(0);
+  const [leadSearchQuery, setLeadSearchQuery] = useState('');
+  const [debouncedLeadSearchQuery, setDebouncedLeadSearchQuery] = useState('');
+  const [leadSortColumn, setLeadSortColumn] = useState<string | undefined>('created_at');
+  const [leadSortDirection, setLeadSortDirection] = useState<'asc' | 'desc'>('desc');
   const [activeTab, setActiveTab] = useState<string>('details');
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -86,6 +94,12 @@ export default function CampaignPage() {
   const [campaignStats, setCampaignStats] = useState<CampaignStats | null>(null);
   const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
   const [showCampaignActionsSheet, setShowCampaignActionsSheet] = useState(false);
+  const leadPageSize = 20;
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedLeadSearchQuery(leadSearchQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [leadSearchQuery]);
 
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < LAYOUT_BREAKPOINT;
@@ -147,93 +161,56 @@ export default function CampaignPage() {
         setLeadsPaused(paused);
       }
 
-      // Leads: paginate to get all (PostgREST default max is 1000 rows per request)
-      setLeadsLoading(true);
-      let leadsData: any[] = [];
-      let leadsError: Error | null = null;
-      for (let offset = 0; ; offset += PAGE_SIZE) {
-        const { data: page, error } = await supabase
-          .from('leads')
-          .select('id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, status, created_at')
-          .eq('campaign_id', id)
-          .order('created_at', { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1);
-        if (error) {
-          leadsError = error;
-          break;
-        }
-        leadsData = leadsData.concat(page ?? []);
-        if (!page || page.length < PAGE_SIZE) break;
-      }
-
-      if (leadsError) {
-        setLeadCount(0);
-        setLeads([]);
-        setLeadsNotStarted(0);
-      } else if (leadsData) {
-        const totalLeads = leadsData.length;
+      try {
+        const totalLeads = await getLeadCount({ campaignId: id });
         setLeadCount(totalLeads);
-
-        const notStarted = Math.max(0, totalLeads - enrollmentCount);
-        setLeadsNotStarted(notStarted);
-
-        type StoppedReason = 'replied' | 'bounced' | 'unsubscribed' | 'error';
-        const enrollmentMap = new Map<
-          string,
-          {
-            state: 'active' | 'completed' | 'stopped' | 'paused' | null;
-            current_node_id: string | null;
-            stopped_reason: StoppedReason | null;
-            stopped_error_message: string | null;
-          }
-        >();
-        if (enrollments) {
-          enrollments.forEach((enrollment: any) => {
-            enrollmentMap.set(enrollment.lead_id, {
-              state: enrollment.state as 'active' | 'completed' | 'stopped' | 'paused' | null,
-              current_node_id: enrollment.current_node_id,
-              stopped_reason:
-                enrollment.stopped_reason != null && ['replied', 'bounced', 'unsubscribed', 'error'].includes(enrollment.stopped_reason)
-                  ? (enrollment.stopped_reason as StoppedReason)
-                  : null,
-              stopped_error_message: enrollment.stopped_error_message ?? null,
-            });
-          });
-        }
-        const leadsWithEnrollment: Lead[] = leadsData.map((lead: any) => {
-          const enrollment = enrollmentMap.get(lead.id);
-          return {
-            id: lead.id,
-            email: lead.email || '',
-            name: lead.name,
-            first_name: lead.first_name ?? null,
-            last_name: lead.last_name ?? null,
-            company_name: lead.company_name ?? null,
-            website: lead.website ?? null,
-            linkedin_url: lead.linkedin_url ?? null,
-            company_linkedin_url: lead.company_linkedin_url ?? null,
-            phone_number: lead.phone_number ?? null,
-            source: lead.source ?? null,
-            custom_lead_data: lead.custom_lead_data ?? null,
-            status: lead.status ?? null,
-            enrollment_state: enrollment?.state ?? null,
-            enrollment_current_node_id: enrollment?.current_node_id ?? null,
-            enrollment_stopped_reason: enrollment?.stopped_reason ?? null,
-            enrollment_stopped_error_message: enrollment?.stopped_error_message ?? null,
-            created_at: lead.created_at,
-          };
-        });
-        setLeads(leadsWithEnrollment);
+        setLeadsNotStarted(Math.max(0, totalLeads - enrollmentCount));
+      } catch {
+        setLeadCount(0);
+        setLeadsNotStarted(0);
       }
     } catch (err) {
       console.error('Error loading campaign:', err);
       setLoadError(err instanceof Error ? err.message : 'Failed to load campaign');
       setCampaignStats(null);
     } finally {
-      setLeadsLoading(false);
       if (!silent) setIsLoading(false);
     }
   }, [id]);
+
+  useEffect(() => {
+    if (!id || activeTab !== 'leads') return;
+
+    let cancelled = false;
+    setLeadRowsLoading(true);
+    setLeadRowsError(null);
+
+    getCampaignLeadTablePage(id, {
+      limit: leadPageSize,
+      offset: (leadPage - 1) * leadPageSize,
+      search: debouncedLeadSearchQuery || undefined,
+      sortBy: leadSortColumn,
+      sortDirection: leadSortDirection,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setLeadRows(result.rows);
+        setLeadTotalCount(result.totalCount);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLeadRows([]);
+        setLeadTotalCount(0);
+        setLeadRowsError(err instanceof Error ? err.message : 'Failed to load campaign leads.');
+      })
+      .finally(() => {
+        if (!cancelled) setLeadRowsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, debouncedLeadSearchQuery, id, leadPage, leadSortColumn, leadSortDirection]);
 
   useEffect(() => {
     loadCampaign();
@@ -526,49 +503,57 @@ export default function CampaignPage() {
 
                       <View style={{ flex: isMobile ? undefined : 1, minWidth: 0 }}>
                         <Text className="text-gray-400 font-instrument text-xs mb-3" style={isMobile ? { marginBottom: 8 } : undefined}>Lead Progress</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: isMobile ? 36 : 80, flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
-                          <View style={isMobile ? { width: 100, height: 100, flexShrink: 0 } : undefined}>
-                            <MultiSegmentDial
-                              segments={[
-                                { value: leadsNotStarted, color: '#6b7280' },
-                                { value: leadsInProgress, color: '#3b82f6' },
-                                { value: leadsPaused, color: '#8b5cf6' },
-                                { value: leadsCompleted, color: '#10b981' },
-                                { value: leadsStopped, color: '#f59e0b' },
-                              ]}
-                              total={leadCount}
-                              size={isMobile ? 100 : 150}
-                              strokeWidth={isMobile ? 8 : 10}
-                              centerValue={leadsCompleted + leadsStopped}
-                              centerTotal={leadCount}
-                              centerTopLabel="Completed"
-                              centerBottomLabel="Total"
-                            />
+                        {leadCount === 0 ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: isMobile ? 36 : 80, flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
+                            <View style={isMobile ? { width: 100, height: 100, flexShrink: 0 } : undefined}>
+                              <MultiSegmentDial
+                                segments={[
+                                  { value: leadsNotStarted, color: '#6b7280' },
+                                  { value: leadsInProgress, color: '#3b82f6' },
+                                  { value: leadsPaused, color: '#8b5cf6' },
+                                  { value: leadsCompleted, color: '#10b981' },
+                                  { value: leadsStopped, color: '#f59e0b' },
+                                ]}
+                                total={leadCount}
+                                size={isMobile ? 100 : 150}
+                                strokeWidth={isMobile ? 8 : 10}
+                                centerValue={leadsCompleted + leadsStopped}
+                                centerTotal={leadCount}
+                                centerTopLabel="Completed"
+                                centerBottomLabel="Total"
+                              />
+                            </View>
+                            <Text className={isMobile ? 'text-gray-500 font-instrument text-xs' : 'text-gray-500 font-instrument text-sm'}>No leads</Text>
                           </View>
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            {leadCount === 0 ? (
-                              <Text className={isMobile ? 'text-gray-500 font-instrument text-xs' : 'text-gray-500 font-instrument text-sm'}>No leads</Text>
-                            ) : (
-                              <>
-                                {[
-                                  { label: 'Not Started', color: '#6b7280', value: leadsNotStarted },
-                                  { label: 'In Progress', color: '#3b82f6', value: leadsInProgress },
-                                  { label: 'Paused', color: '#8b5cf6', value: leadsPaused },
-                                  { label: 'Completed', color: '#10b981', value: leadsCompleted },
-                                  { label: 'Stopped', color: '#f59e0b', value: leadsStopped },
-                                ].map(({ label, color, value }, index) => (
-                                  <View key={label} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: index < 4 ? (isMobile ? 4 : 8) : 0 }}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: isMobile ? 4 : 8, flex: 1, minWidth: 0 }}>
-                                      <View style={{ width: isMobile ? 6 : 10, height: isMobile ? 6 : 10, borderRadius: 2, backgroundColor: color }} />
-                                      <Text className={isMobile ? 'text-gray-300 font-instrument text-xs' : 'text-gray-300 font-instrument text-sm'} numberOfLines={1}>{label}</Text>
-                                    </View>
-                                    <Text className={isMobile ? 'text-white font-instrument text-xs' : 'text-white font-instrument text-sm'} style={{ marginLeft: isMobile ? 4 : 0, minWidth: isMobile ? 28 : 60, textAlign: 'right' }} numberOfLines={1}>{value.toLocaleString()}</Text>
-                                  </View>
-                                ))}
-                              </>
-                            )}
-                          </View>
-                        </View>
+                        ) : (
+                          <MultiSegmentDial
+                            segments={[
+                              { value: leadsNotStarted, color: '#6b7280' },
+                              { value: leadsInProgress, color: '#3b82f6' },
+                              { value: leadsPaused, color: '#8b5cf6' },
+                              { value: leadsCompleted, color: '#10b981' },
+                              { value: leadsStopped, color: '#f59e0b' },
+                            ]}
+                            total={leadCount}
+                            size={isMobile ? 100 : 150}
+                            strokeWidth={isMobile ? 8 : 10}
+                            centerValue={leadsCompleted + leadsStopped}
+                            centerTotal={leadCount}
+                            centerTopLabel="Completed"
+                            centerBottomLabel="Total"
+                            legend={{
+                              placement: 'right',
+                              compact: isMobile,
+                              rows: [
+                                { label: 'Not Started', color: '#6b7280', value: leadsNotStarted },
+                                { label: 'In Progress', color: '#3b82f6', value: leadsInProgress },
+                                { label: 'Paused', color: '#8b5cf6', value: leadsPaused },
+                                { label: 'Completed', color: '#10b981', value: leadsCompleted },
+                                { label: 'Stopped', color: '#f59e0b', value: leadsStopped },
+                              ],
+                            }}
+                          />
+                        )}
                       </View>
                     </View>
                   </View>
@@ -612,7 +597,30 @@ export default function CampaignPage() {
 
             {activeTab === 'leads' && (
               <View style={{ marginBottom: 16 }}>
-                <LeadsTable leads={leads} loading={leadsLoading} campaignId={id!} readOnly={isSmartlead} />
+                {leadRowsError ? (
+                  <Alert variant="error" message={leadRowsError} />
+                ) : null}
+                <LeadsTable
+                  leads={leadRows}
+                  loading={leadRowsLoading}
+                  campaignId={id!}
+                  searchQuery={leadSearchQuery}
+                  onSearchChange={(value) => {
+                    setLeadSearchQuery(value);
+                    setLeadPage(1);
+                  }}
+                  currentPage={leadPage}
+                  totalItems={leadTotalCount}
+                  onPageChange={setLeadPage}
+                  sortColumn={leadSortColumn}
+                  sortDirection={leadSortDirection}
+                  onSortChange={(columnKey, direction) => {
+                    setLeadSortColumn(columnKey);
+                    setLeadSortDirection(direction);
+                    setLeadPage(1);
+                  }}
+                  readOnly={isSmartlead}
+                />
               </View>
             )}
 

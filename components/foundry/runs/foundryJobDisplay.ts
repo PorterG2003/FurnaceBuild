@@ -4,6 +4,10 @@ export function formatFoundryJobType(jobType: string): string {
   switch (jobType) {
     case 'normalize_ingestion_run':
       return 'Normalize records';
+    case 'autolink_ingestion_run':
+      return 'Auto-link records';
+    case 'contact_enrichment_import_run':
+      return 'Contact enrichment';
     case 'state_matching_batch':
       return 'State matching';
     case 'bulk_source_resolution':
@@ -14,7 +18,13 @@ export function formatFoundryJobType(jobType: string): string {
 }
 
 export function getIngestionRunIdFromJob(job: FoundryJobRow): string | null {
-  if (job.job_type !== 'normalize_ingestion_run') return null;
+  if (
+    job.job_type !== 'normalize_ingestion_run' &&
+    job.job_type !== 'autolink_ingestion_run' &&
+    job.job_type !== 'contact_enrichment_import_run'
+  ) {
+    return null;
+  }
   const id = job.payload?.ingestion_run_id;
   return typeof id === 'string' && id.length > 0 ? id : null;
 }

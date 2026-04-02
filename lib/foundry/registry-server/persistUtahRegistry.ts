@@ -1,8 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UtahEntityDetailParsed } from './utah/types.js';
 import { ensureEntityOwnerDedupeReviewTaskForCluster } from './entityOwnerDedupe.js';
-import { normalizeNameKey } from './normalizeSourceRecord.js';
 import { filterMemberPrincipals } from './utah/parseEntityDetailHtml.js';
+import type { PersistEntityOwnerInput, PersistedEntityOwnerRow } from './ownerDrilldown.js';
+import {
+  replaceCurrentEntityOwners,
+  upsertStateEntityCurrent,
+} from './persistStateEntityCurrent.js';
 
 export const UTAH_SOURCE_TYPE = 'utah_division_corporations';
 export const UTAH_PARSER_VERSION = 'utah_registry_browser_v1';
@@ -21,7 +25,16 @@ export type PersistUtahParams = {
   detailHtml: string;
   searchQuery: string;
   hitStatus?: string;
+  owners?: PersistEntityOwnerInput[];
+  observedAt?: string;
 };
+
+export function ownerRowsForUtahDetail(detail: UtahEntityDetailParsed): PersistEntityOwnerInput[] {
+  return filterMemberPrincipals(detail.principals).map((p) => ({
+    ownerName: p.name.trim() || 'Unknown',
+    titleRole: p.title.trim() || null,
+  }));
+}
 
 /**
  * Insert immutable snapshot + state_entity + owner rows from a Utah detail parse.
@@ -29,7 +42,7 @@ export type PersistUtahParams = {
 export async function persistUtahRegistryPull(
   leadsClient: SupabaseClient,
   params: PersistUtahParams,
-): Promise<{ snapshot_id: string; state_entity_id: string }> {
+): Promise<{ snapshot_id: string; state_entity_id: string; inserted: boolean; owners: PersistedEntityOwnerRow[] }> {
   const { data: snap, error: sErr } = await leadsClient
     .from('registry_source_snapshots')
     .insert({
@@ -54,11 +67,10 @@ export async function persistUtahRegistryPull(
   if (sErr || !snap) throw new Error(sErr?.message ?? 'utah snapshot insert failed');
 
   const snapshotId = snap.id as string;
-  const owners = filterMemberPrincipals(params.detail.principals);
+  const observedAt = params.observedAt ?? new Date().toISOString();
+  const owners = params.owners ?? ownerRowsForUtahDetail(params.detail);
 
-  const { data: ent, error: eErr } = await leadsClient
-    .from('state_entities')
-    .insert({
+  const { state_entity_id, inserted } = await upsertStateEntityCurrent(leadsClient, {
       source_snapshot_id: snapshotId,
       state: 'UT',
       registry_entity_id: params.detail.entityNumber || null,
@@ -69,29 +81,28 @@ export async function persistUtahRegistryPull(
         entity_status: params.detail.entityStatus,
       },
       parser_version: UTAH_PARSER_VERSION,
-    })
-    .select('id')
-    .single();
-  if (eErr || !ent) throw new Error(eErr?.message ?? 'utah state_entity insert failed');
-
-  const entityId = ent.id as string;
-  for (const p of owners) {
-    const ownerName = p.name.trim() || 'Unknown';
-    const ownerKey = normalizeNameKey(ownerName);
-    await leadsClient.from('entity_owners').insert({
-      state_entity_id: entityId,
-      source_snapshot_id: snapshotId,
-      owner_name: ownerName,
-      title_role: p.title.trim() || null,
-      is_current: true,
-      owner_normalized_key: ownerKey,
     });
+
+  const insertedOwners = await replaceCurrentEntityOwners(leadsClient, {
+    stateEntityId: state_entity_id,
+    sourceSnapshotId: snapshotId,
+    owners,
+    observedAt,
+  });
+
+  for (const owner of insertedOwners) {
+    const ownerKey = owner.owner_normalized_key ?? 'unknown';
     try {
-      await ensureEntityOwnerDedupeReviewTaskForCluster(leadsClient, entityId, ownerKey);
+      await ensureEntityOwnerDedupeReviewTaskForCluster(leadsClient, state_entity_id, ownerKey);
     } catch (e) {
       console.error('ensureEntityOwnerDedupeReviewTaskForCluster failed', e);
     }
   }
 
-  return { snapshot_id: snapshotId, state_entity_id: entityId };
+  return {
+    snapshot_id: snapshotId,
+    state_entity_id,
+    inserted,
+    owners: insertedOwners,
+  };
 }

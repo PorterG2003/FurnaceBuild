@@ -5,6 +5,14 @@ import { Button } from '@/components/ui/button';
 
 export type DedupeMergeField = { key: string; label: string };
 
+export type DedupeMergeReadOnlyRow = {
+  key: string;
+  label: string;
+  /** Per source column; length should match columnLabels */
+  cells: string[];
+  mergedHint: string;
+};
+
 export function DedupeMergeModal({
   visible,
   onClose,
@@ -14,6 +22,8 @@ export function DedupeMergeModal({
   valueMatrix,
   onConfirm,
   busy,
+  readOnlyRows,
+  readOnlyBannerError,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -24,6 +34,8 @@ export function DedupeMergeModal({
   valueMatrix: string[][];
   onConfirm: (merged: Record<string, string>, survivorColumnIndex: number) => void;
   busy: boolean;
+  readOnlyRows?: DedupeMergeReadOnlyRow[];
+  readOnlyBannerError?: string | null;
 }) {
   const [survivorIdx, setSurvivorIdx] = useState(0);
   const [merged, setMerged] = useState<Record<string, string>>({});
@@ -62,7 +74,7 @@ export function DedupeMergeModal({
       visible={visible}
       onClose={onClose}
       title={title}
-      description="Pick the survivor column for defaults, then edit the merged values. Rows are fields; columns are selected records plus merged output."
+      description="Pick the survivor column for defaults, then edit the merged values. Rows are fields; columns are selected records plus merged output. Link, match, and location rows are read-only previews of what will be consolidated onto the survivor."
       maxWidth="4xl"
       footer={footer}
     >
@@ -84,6 +96,10 @@ export function DedupeMergeModal({
           ))}
         </ScrollView>
       </View>
+
+      {readOnlyBannerError ? (
+        <Text className="text-red-400 font-instrument text-xs mb-2">{readOnlyBannerError}</Text>
+      ) : null}
 
       <ScrollView horizontal showsHorizontalScrollIndicator className="max-h-[60vh]">
         <View>
@@ -126,6 +142,33 @@ export function DedupeMergeModal({
               </View>
             </View>
           ))}
+
+          {readOnlyRows && readOnlyRows.length > 0 ? (
+            <>
+              <View className="border-t border-[#2A2A2A] mt-2 pt-3 mb-1">
+                <Text className="text-gray-500 font-instrument text-xs uppercase tracking-wider">
+                  Consolidation preview (read-only)
+                </Text>
+              </View>
+              {readOnlyRows.map((row) => (
+                <View key={row.key} className="flex-row py-2 border-b border-[#1A1A1A] items-start">
+                  <View className="w-28 pr-2">
+                    <Text className="text-gray-500 font-instrument text-xs">{row.label}</Text>
+                  </View>
+                  {columnLabels.map((_, ci) => (
+                    <View key={`${row.key}-${ci}`} className="w-40 px-1">
+                      <Text className="text-gray-300 font-instrument text-xs leading-5" selectable>
+                        {row.cells[ci] ?? '—'}
+                      </Text>
+                    </View>
+                  ))}
+                  <View className="w-44 pl-1">
+                    <Text className="text-gray-500 font-instrument text-xs leading-5">{row.mergedHint}</Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          ) : null}
         </View>
       </ScrollView>
     </BaseModal>

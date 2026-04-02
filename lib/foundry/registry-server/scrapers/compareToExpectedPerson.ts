@@ -18,6 +18,14 @@ export function compareToExpectedPerson(
 ): ExpectedPersonCompareResult {
   const exp = expectedPeopleName?.trim() ?? '';
   if (!exp) {
+    if (scrapedNames.length > 0) {
+      return {
+        outcome: 'match',
+        reason: 'no_expected_scrape_ok',
+        namesFound: scrapedNames,
+        expectedNormalized: '',
+      };
+    }
     return {
       outcome: 'skipped',
       reason: 'no_expected_name',

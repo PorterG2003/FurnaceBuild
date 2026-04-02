@@ -35,6 +35,21 @@ function PayloadSummary({ job }: { job: FoundryJobRow }) {
   if (typeof p.batch_size === 'number') {
     lines.push(`Batch size: ${p.batch_size}`);
   }
+  if (typeof p.freshness_window_days === 'number') {
+    lines.push(`Freshness window: ${p.freshness_window_days} days`);
+  }
+  if (typeof p.force_rerun_recent === 'boolean') {
+    lines.push(`Force rerun recent: ${p.force_rerun_recent ? 'yes' : 'no'}`);
+  }
+  if (typeof p.strong_targets_only === 'boolean') {
+    lines.push(`Strong targets only: ${p.strong_targets_only ? 'yes' : 'no'}`);
+  }
+  if (typeof p.ruleset_preset === 'string') {
+    lines.push(`Enrichment ruleset: ${p.ruleset_preset}`);
+  }
+  if (typeof p.queue_ambiguous_for_review === 'boolean') {
+    lines.push(`Queue ambiguous for review: ${p.queue_ambiguous_for_review ? 'yes' : 'no'}`);
+  }
   const ingest = getIngestionRunIdFromJob(job) ?? getSourceIngestionRunIdFromJob(job);
   if (ingest) lines.push(`Ingestion run: ${ingest}`);
 

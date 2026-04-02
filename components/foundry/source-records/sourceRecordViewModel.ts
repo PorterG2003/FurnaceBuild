@@ -29,6 +29,8 @@ export interface SourceCandidateRow {
   legalName: string;
   normalizedKey: string | null;
   linkScore: number;
+  primaryAddressLine: string | null;
+  linkedSourceWebsites: string[];
 }
 
 export interface SourceRecordMatchConfidence {
@@ -101,6 +103,8 @@ export function buildSourceRecordViewModel(detail: SourceRecordDetailResponse): 
       legalName: co?.legal_name ?? `Company ${cid.slice(0, 8)}…`,
       normalizedKey: co?.normalized_key ?? null,
       linkScore: Number.isFinite(score) ? score : 0,
+      primaryAddressLine: co?.primary_address_line ?? null,
+      linkedSourceWebsites: co?.linked_source_websites ?? [],
     });
   }
   candidates.sort((a, b) => b.linkScore - a.linkScore);

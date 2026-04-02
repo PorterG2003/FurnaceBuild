@@ -23,6 +23,7 @@ export const REVIEW_TASK_TYPES = [
   'entity_owner_dedupe',
   'entity_match_review',
   'parse_failure',
+  'contact_enrichment_review',
 ] as const;
 export type ReviewTaskType = (typeof REVIEW_TASK_TYPES)[number];
 
@@ -36,6 +37,8 @@ export type FoundryJobStatus = (typeof FOUNDRY_JOB_STATUSES)[number];
 /** foundry_jobs.job_type */
 export const FOUNDRY_JOB_TYPES = [
   'normalize_ingestion_run',
+  'autolink_ingestion_run',
+  'contact_enrichment_import_run',
   'bulk_source_resolution',
   'state_matching_batch',
 ] as const;
@@ -44,10 +47,32 @@ export type FoundryJobType = (typeof FOUNDRY_JOB_TYPES)[number];
 /** Optional progress JSON on foundry_jobs (UI / workers). */
 export interface FoundryJobProgress {
   total?: number;
+  total_rows?: number;
+  total_targets?: number;
   processed?: number;
+  rows_processed?: number;
+  targets_processed?: number;
   succeeded?: number;
   failed?: number;
   skipped?: number;
+  normalized_done?: number;
+  normalized_pending?: number;
+  outcome_linked?: number;
+  outcome_needs_review?: number;
+  outcome_failed?: number;
+  outcome_skipped?: number;
+  outcome_accepted?: number;
+  outcome_accepted_by_ruleset?: number;
+  outcome_ambiguous?: number;
+  outcome_ambiguous_reviewable?: number;
+  outcome_ambiguous_low_signal?: number;
+  outcome_no_match?: number;
+  outcome_error?: number;
+  outcome_skipped_recent?: number;
+  in_scope_total?: number;
+  not_applicable_count?: number;
+  companies_with_result?: number;
+  reconciliation_outcomes?: Partial<Record<ReconciliationOutcome, number>>;
   current_step?: string;
   /** Last source_business_records.id processed in normalize chunk loop */
   cursor?: string | null;
@@ -90,6 +115,68 @@ export interface PostStartNormalizeJobResponse {
   reused?: boolean;
 }
 
+export interface PostStartAutolinkJobResponse {
+  jobId: string;
+  executionArn: string;
+  reused?: boolean;
+}
+
+export interface ContactEnrichmentPreflightCounts {
+  linked_companies: number;
+  candidate_owner_rows: number;
+  eligible: number;
+  skipped_recent_lookup: number;
+  skipped_missing_person_name: number;
+  skipped_missing_address: number;
+  skipped_no_current_owner: number;
+  skipped_already_running: number;
+  skipped_suppressed: number;
+  skipped_not_ready: number;
+}
+
+export type ContactEnrichmentRulesetPreset = 'conservative' | 'balanced' | 'aggressive';
+
+export interface ContactEnrichmentPreflightOptions {
+  freshness_window_days?: number;
+  force_rerun_recent?: boolean;
+  strong_targets_only?: boolean;
+  ruleset_preset?: ContactEnrichmentRulesetPreset;
+  queue_ambiguous_for_review?: boolean;
+}
+
+export interface ContactEnrichmentPreflightResponse {
+  ingestion_run_id: string;
+  source_name: string;
+  active_job_id: string | null;
+  options: {
+    freshness_window_days: number;
+    force_rerun_recent: boolean;
+    strong_targets_only: boolean;
+    /** Present once API is deployed with ambiguity system; UI defaults to balanced / false. */
+    ruleset_preset?: ContactEnrichmentRulesetPreset;
+    queue_ambiguous_for_review?: boolean;
+  };
+  counts: ContactEnrichmentPreflightCounts;
+}
+
+export interface PostStartContactEnrichmentJobResponse {
+  jobId: string;
+  executionArn: string;
+  reused?: boolean;
+  preflight: ContactEnrichmentPreflightResponse;
+}
+
+export interface IngestionRunPipelineJobsResponse {
+  ingestion_run_id: string;
+  total_source_rows: number;
+  normalize_job: FoundryJobRow | null;
+  autolink_job: FoundryJobRow | null;
+  contact_enrichment_job: FoundryJobRow | null;
+  state_matching_job: FoundryJobRow | null;
+  state_matching_outcome_counts?: Partial<Record<ReconciliationOutcome, number>> | null;
+  queue_pending_tasks: number | null;
+}
+
 export interface RegistryCompany {
   id: string;
   legal_name: string;
@@ -101,6 +188,13 @@ export interface RegistryCompany {
 
 export interface RegistryCompaniesResponse {
   companies: RegistryCompany[];
+}
+
+export interface ManualCompaniesListResponse {
+  companies: RegistryCompany[];
+  limit: number;
+  offset: number;
+  total_count: number;
 }
 
 /** entity_owners row for Foundry dedupe / batch GET. */
@@ -118,6 +212,13 @@ export interface RegistryEntityOwnerRow {
 
 export interface RegistryEntityOwnersResponse {
   entity_owners: RegistryEntityOwnerRow[];
+}
+
+export interface ManualEntityOwnersListResponse {
+  entity_owners: RegistryEntityOwnerRow[];
+  limit: number;
+  offset: number;
+  total_count: number;
 }
 
 /** ingestion_runs row shape from Foundry API (leads DB). */
@@ -149,6 +250,9 @@ export interface IngestionRunStats {
 
 export interface IngestionRunsListResponse {
   runs: IngestionRunRow[];
+  limit: number;
+  offset: number;
+  total_count: number;
 }
 
 export interface IngestionRunDetailResponse {
@@ -177,6 +281,7 @@ export interface IngestionRunRecordsResponse {
   records: ImportedRecordRow[];
   limit: number;
   offset: number;
+  total_count: number;
 }
 
 export interface GoogleMapsColumnMapPayload {
@@ -223,7 +328,15 @@ export interface PostGoogleMapsImportResponse {
 export interface SourceRecordDetailResponse {
   record: Record<string, unknown>;
   links: Record<string, unknown>[];
-  companiesById: Record<string, { id: string; legal_name: string; normalized_key: string | null }>;
+  companiesById: Record<string, SourceRecordDetailCompanyRow>;
+}
+
+export interface SourceRecordDetailCompanyRow {
+  id: string;
+  legal_name: string;
+  normalized_key: string | null;
+  primary_address_line: string | null;
+  linked_source_websites: string[];
 }
 
 /** Response from POST /source-records/:id/candidates/generate (200). */
@@ -398,6 +511,8 @@ export interface CompanySourceLinkRow {
   link_score: number | null;
   is_current: boolean;
   created_at: string;
+  /** From linked source_business_records.website when returned by company detail API. */
+  website: string | null;
 }
 
 export interface CompanyEntityMatchRow {
@@ -409,12 +524,73 @@ export interface CompanyEntityMatchRow {
   is_current: boolean;
 }
 
+/** Registry officer/owner row linked to the company via a current entity match. */
+export interface CompanyAssociatedPersonRow {
+  id: string;
+  state_entity_id: string;
+  registry_state: string | null;
+  owner_name: string;
+  title_role: string | null;
+  effective_at: string | null;
+  ended_at: string | null;
+  observed_at: string;
+  is_current: boolean;
+  first_name: string | null;
+  last_name: string | null;
+  owner_normalized_key: string | null;
+}
+
+export interface CompanyOwnershipChainPersonStep {
+  kind: 'person';
+  owner_row_id: string;
+  name: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  title_role: string | null;
+}
+
+export interface CompanyOwnershipChainEntityStep {
+  kind: 'entity';
+  owner_row_id: string | null;
+  state_entity_id: string;
+  registry_entity_id: string | null;
+  legal_name: string | null;
+  title_role: string | null;
+  registry_state: string | null;
+  is_target?: boolean;
+}
+
+export type CompanyOwnershipChainStep =
+  | CompanyOwnershipChainPersonStep
+  | CompanyOwnershipChainEntityStep;
+
+export interface CompanyOwnershipChain {
+  depth: number;
+  steps: CompanyOwnershipChainStep[];
+}
+
+export interface CompanyOwnershipChainTarget {
+  company_entity_match_id: string;
+  registry_state: string;
+  state_entity_id: string;
+  registry_entity_id: string | null;
+  legal_name: string | null;
+  chains: CompanyOwnershipChain[];
+}
+
+export interface CompanyOwnershipChainsResponse {
+  company_id: string;
+  max_depth: number;
+  targets: CompanyOwnershipChainTarget[];
+}
+
 /** Normalized company detail for Foundry UI (defensive parse from API JSON). */
 export interface ParsedCompanyDetail {
   company: RegistryCompanyDetailRow | null;
   locations: CompanyLocationRow[];
   source_links: CompanySourceLinkRow[];
   entity_matches: CompanyEntityMatchRow[];
+  associated_people: CompanyAssociatedPersonRow[];
 }
 
 /** @deprecated Use ParsedCompanyDetail — kept for any external references. */
@@ -500,6 +676,12 @@ function parseSourceLinkRow(o: unknown): CompanySourceLinkRow | null {
     link_score: parseNumber(r.link_score),
     is_current: parseBool(r.is_current),
     created_at: parseString(r.created_at),
+    website: (() => {
+      if (r.website == null) return null;
+      const s = parseNullableString(r.website);
+      const t = s?.trim() ?? '';
+      return t.length > 0 ? t : null;
+    })(),
   };
 }
 
@@ -519,11 +701,101 @@ function parseEntityMatchRow(o: unknown): CompanyEntityMatchRow | null {
   };
 }
 
+function parseAssociatedPersonRow(o: unknown): CompanyAssociatedPersonRow | null {
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  const id = parseString(r.id);
+  const state_entity_id = parseString(r.state_entity_id);
+  const owner_name = parseString(r.owner_name);
+  if (!id || !state_entity_id || !owner_name) return null;
+  return {
+    id,
+    state_entity_id,
+    registry_state: r.registry_state == null ? null : parseNullableString(r.registry_state),
+    owner_name,
+    title_role: r.title_role == null ? null : parseNullableString(r.title_role),
+    effective_at: r.effective_at == null ? null : parseNullableString(r.effective_at),
+    ended_at: r.ended_at == null ? null : parseNullableString(r.ended_at),
+    observed_at: parseString(r.observed_at),
+    is_current: parseBool(r.is_current, true),
+    first_name: r.first_name == null ? null : parseNullableString(r.first_name),
+    last_name: r.last_name == null ? null : parseNullableString(r.last_name),
+    owner_normalized_key:
+      r.owner_normalized_key == null ? null : parseNullableString(r.owner_normalized_key),
+  };
+}
+
+function parseOwnershipChainStep(o: unknown): CompanyOwnershipChainStep | null {
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  const kind = parseString(r.kind);
+  if (kind === 'person') {
+    const owner_row_id = parseString(r.owner_row_id);
+    const name = parseString(r.name);
+    if (!owner_row_id || !name) return null;
+    return {
+      kind: 'person',
+      owner_row_id,
+      name,
+      first_name: r.first_name == null ? null : parseNullableString(r.first_name),
+      last_name: r.last_name == null ? null : parseNullableString(r.last_name),
+      title_role: r.title_role == null ? null : parseNullableString(r.title_role),
+    };
+  }
+  if (kind === 'entity') {
+    const state_entity_id = parseString(r.state_entity_id);
+    if (!state_entity_id) return null;
+    return {
+      kind: 'entity',
+      owner_row_id: r.owner_row_id == null ? null : parseNullableString(r.owner_row_id),
+      state_entity_id,
+      registry_entity_id: r.registry_entity_id == null ? null : parseNullableString(r.registry_entity_id),
+      legal_name: r.legal_name == null ? null : parseNullableString(r.legal_name),
+      title_role: r.title_role == null ? null : parseNullableString(r.title_role),
+      registry_state: r.registry_state == null ? null : parseNullableString(r.registry_state),
+      is_target: parseBool(r.is_target, false),
+    };
+  }
+  return null;
+}
+
+function parseOwnershipChain(o: unknown): CompanyOwnershipChain | null {
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  const stepsRaw = r.steps;
+  return {
+    depth: parseNumber(r.depth) ?? 0,
+    steps: Array.isArray(stepsRaw)
+      ? (stepsRaw.map(parseOwnershipChainStep).filter(Boolean) as CompanyOwnershipChainStep[])
+      : [],
+  };
+}
+
+function parseOwnershipChainTarget(o: unknown): CompanyOwnershipChainTarget | null {
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  const company_entity_match_id = parseString(r.company_entity_match_id);
+  const state_entity_id = parseString(r.state_entity_id);
+  if (!company_entity_match_id || !state_entity_id) return null;
+  const chainsRaw = r.chains;
+  return {
+    company_entity_match_id,
+    registry_state: parseString(r.registry_state),
+    state_entity_id,
+    registry_entity_id: r.registry_entity_id == null ? null : parseNullableString(r.registry_entity_id),
+    legal_name: r.legal_name == null ? null : parseNullableString(r.legal_name),
+    chains: Array.isArray(chainsRaw)
+      ? (chainsRaw.map(parseOwnershipChain).filter(Boolean) as CompanyOwnershipChain[])
+      : [],
+  };
+}
+
 export function parseCompanyDetailResponse(raw: unknown): ParsedCompanyDetail {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const locationsRaw = o.locations;
   const linksRaw = o.source_links;
   const matchesRaw = o.entity_matches;
+  const peopleRaw = o.associated_people;
 
   return {
     company: parseCompanyRow(o.company),
@@ -536,10 +808,60 @@ export function parseCompanyDetailResponse(raw: unknown): ParsedCompanyDetail {
     entity_matches: Array.isArray(matchesRaw)
       ? (matchesRaw.map(parseEntityMatchRow).filter(Boolean) as CompanyEntityMatchRow[])
       : [],
+    associated_people: Array.isArray(peopleRaw)
+      ? (peopleRaw.map(parseAssociatedPersonRow).filter(Boolean) as CompanyAssociatedPersonRow[])
+      : [],
   };
 }
 
-/** Row from view `export_company_owner_leads` (Foundry Export). */
+export function parseCompanyOwnershipChainsResponse(raw: unknown): CompanyOwnershipChainsResponse {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const targetsRaw = o.targets;
+  return {
+    company_id: parseString(o.company_id),
+    max_depth: parseNumber(o.max_depth) ?? 0,
+    targets: Array.isArray(targetsRaw)
+      ? (targetsRaw.map(parseOwnershipChainTarget).filter(Boolean) as CompanyOwnershipChainTarget[])
+      : [],
+  };
+}
+
+/** Row from view `export_company_targets` (one row per exportable company target). */
+export interface ExportCompanyTargetRow {
+  company_id: string;
+  legal_name: string;
+  normalized_key: string | null;
+  company_updated_at: string;
+  company_notes: string | null;
+  has_current_linked_source: boolean;
+  linked_source_count: number | null;
+  company_entity_match_id: string;
+  registry_state: string;
+  match_status: string;
+  match_score: number | string | null;
+  match_updated_at: string;
+  state_entity_id: string;
+  entity_source_snapshot_id: string | null;
+  registry_entity_id: string | null;
+  state_entity_state: string;
+  state_entity_legal_name: string | null;
+  address_line_1: string | null;
+  address_line_2: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  address_postal_code: string | null;
+  address_country: string | null;
+  primary_location_city: string | null;
+  primary_location_state: string | null;
+  website: string | null;
+  has_current_owner: boolean;
+  has_promoted_match: boolean;
+  has_open_review_task: boolean;
+  has_parse_failure_task: boolean;
+  is_export_ready: boolean;
+}
+
+/** Row from view `export_company_owner_leads` (one row per current owner, or one null-owner row per target). */
 export interface ExportCompanyOwnerLeadRow {
   company_id: string;
   legal_name: string;
@@ -567,8 +889,15 @@ export interface ExportCompanyOwnerLeadRow {
   entity_source_snapshot_id: string | null;
   provenance_snapshot_id: string | null;
   parser_version: string | null;
+  address_line_1: string | null;
+  address_line_2: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  address_postal_code: string | null;
+  address_country: string | null;
   primary_location_city: string | null;
   primary_location_state: string | null;
+  website: string | null;
   has_current_owner: boolean;
   has_promoted_match: boolean;
   has_open_review_task: boolean;
@@ -580,7 +909,48 @@ export interface ExportCompanyOwnerLeadsResponse {
   rows: ExportCompanyOwnerLeadRow[];
   limit: number;
   offset: number;
+  /** Count of matching owner rows, not distinct companies/targets. */
   total_count: number;
+}
+
+/** Flattened chain export row; each row is a terminal person reached from one company target. */
+export interface ExportCompanyChainPeopleRow {
+  company_id: string;
+  company_legal_name: string;
+  company_entity_match_id: string;
+  registry_state: string;
+  state_entity_id: string;
+  registry_entity_id: string | null;
+  state_entity_legal_name: string | null;
+  address_line_1: string | null;
+  address_line_2: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  address_postal_code: string | null;
+  address_country: string | null;
+  website: string | null;
+  has_current_linked_source: boolean;
+  has_current_owner: boolean;
+  has_open_review_task: boolean;
+  has_parse_failure_task: boolean;
+  is_export_ready: boolean;
+  person_owner_row_id: string;
+  person_name: string;
+  person_first_name: string | null;
+  person_last_name: string | null;
+  person_title_role: string | null;
+  chain_depth: number;
+  linkage_path: string;
+}
+
+export interface ExportCompanyChainPeopleResponse {
+  rows: ExportCompanyChainPeopleRow[];
+  limit: number;
+  offset: number;
+  /** Count of matching company targets (not expanded person rows). */
+  total_count: number;
+  /** Number of company targets included in this page before chain expansion. */
+  targets_returned: number;
 }
 
 /** Mirrors registry-server `CompanyDeleteImpact`. */

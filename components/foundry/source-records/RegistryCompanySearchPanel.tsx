@@ -19,11 +19,17 @@ export function RegistryCompanySearchPanel({
   busyCompanyId,
   disabled,
   variant = 'full',
+  hideIntro = false,
+  flat = false,
 }: {
   onLinkCompany: (companyId: string) => void | Promise<void>;
   busyCompanyId?: string | null;
   disabled?: boolean;
   variant?: 'full' | 'compact';
+  /** Omit title and help copy (parent provides section label). */
+  hideIntro?: boolean;
+  /** No outer chrome—input sits on parent surface. */
+  flat?: boolean;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState('');
@@ -62,20 +68,34 @@ export function RegistryCompanySearchPanel({
       ? 'Search registry (by company name)'
       : 'Search registry for a different company';
 
+  const shell = flat
+    ? 'mb-0'
+    : hideIntro
+      ? 'mb-0 p-2 rounded-lg border border-[#2A2A2A] bg-[#121212]'
+      : 'mb-4 p-3 rounded-lg border border-[#2A2A2A] bg-[#121212]';
+
   return (
-    <View className="mb-4 p-3 rounded-lg border border-[#2A2A2A] bg-[#121212]">
-      <Text className="text-gray-500 font-instrument text-xs uppercase tracking-wider mb-1">{title}</Text>
-      <Text className="text-gray-500 font-instrument text-[11px] leading-5 mb-2">
-        Type at least 2 characters to search existing companies by legal name. Use this when suggestions are wrong or
-        missing.
-      </Text>
+    <View className={shell}>
+      {hideIntro ? null : (
+        <>
+          <Text className="text-gray-500 font-instrument text-xs uppercase tracking-wider mb-1">{title}</Text>
+          <Text className="text-gray-500 font-instrument text-[11px] leading-5 mb-2">
+            Type at least 2 characters to search existing companies by legal name. Use this when suggestions are wrong or
+            missing.
+          </Text>
+        </>
+      )}
       <TextInput
         value={query}
         onChangeText={setQuery}
-        placeholder="Company name…"
+        placeholder="Search by company name…"
         placeholderTextColor="#666"
         editable={!disabled}
-        className="text-gray-200 font-instrument text-sm p-2 rounded border border-[#3A3A3A] bg-[#1A1A1A] mb-2"
+        className={
+          flat
+            ? 'text-neutral-100 font-instrument text-sm px-3 py-2.5 rounded-xl border border-white/[0.08] bg-black/30 mb-2'
+            : 'text-gray-200 font-instrument text-sm p-2 rounded border border-[#3A3A3A] bg-[#1A1A1A] mb-2'
+        }
       />
       {loading ? (
         <View className="py-2 flex-row items-center gap-2">
@@ -93,14 +113,20 @@ export function RegistryCompanySearchPanel({
           return (
             <View
               key={c.id}
-              className="py-2 border-b border-[#2A2A2A] flex-row flex-wrap items-center justify-between gap-2"
+              className={`py-2.5 flex-row flex-wrap items-center justify-between gap-2 ${flat ? 'border-b border-white/[0.06]' : 'border-b border-[#2A2A2A]'}`}
             >
               <View className="flex-1 min-w-[120px]">
-                <Text className="text-gray-200 font-instrument text-xs" numberOfLines={2}>
+                <Text
+                  className={`font-instrument text-sm leading-snug ${flat ? 'text-neutral-100' : 'text-gray-200 text-xs'}`}
+                  numberOfLines={2}
+                >
                   {c.legal_name}
                 </Text>
-                <Text className="text-gray-600 font-mono text-[10px] mt-0.5" numberOfLines={1}>
-                  {c.id}
+                <Text
+                  className={`font-mono text-[10px] mt-0.5 ${flat ? 'text-neutral-600' : 'text-gray-600'}`}
+                  numberOfLines={1}
+                >
+                  {flat ? `${c.id.slice(0, 8)}…` : c.id}
                 </Text>
               </View>
               <View className="flex-row flex-wrap gap-1">

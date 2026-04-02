@@ -4,6 +4,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 
 export interface WorkerStackProps extends cdk.StackProps {
@@ -35,6 +36,17 @@ export interface WorkerStackProps extends cdk.StackProps {
    * Optional Slack Incoming Webhook URL for error reporting. When set, workers will post errors to this channel.
    */
   slackErrorWebhookUrl?: string;
+
+  /**
+   * Optional: Foundry **leads** Supabase URL for Utah ECS reconciliation (writes registry snapshots / state_entities).
+   */
+  leadsSupabaseUrl?: string;
+
+  /**
+   * Optional: SSM parameter name (with leading slash) for the leads project service_role key.
+   * Passed to the Utah container as `LEADS_SUPABASE_SECRET_KEY_PARAM_PATH`; the task fetches at runtime (same pattern as `SUPABASE_SECRET_KEY_PARAM_PATH` on other workers).
+   */
+  leadsSupabaseSecretParamPath?: string;
 }
 
 export class WorkerStack extends cdk.Stack {
@@ -45,11 +57,21 @@ export class WorkerStack extends cdk.Stack {
   public readonly schedulerWorkerRepo: ecr.Repository;
   public readonly inboxCheckerWorkerRepo: ecr.Repository;
   public readonly smartleadMigrationTaskRepo: ecr.Repository;
+  public readonly utahScraperTaskRepo: ecr.Repository;
+  public readonly floridaScraperTaskRepo: ecr.Repository;
 
   constructor(scope: Construct, id: string, props: WorkerStackProps) {
     super(scope, id, props);
 
-    const { environment, supabaseUrl, supabaseSecretKeyParamPath, desiredCount, slackErrorWebhookUrl } = props;
+    const {
+      environment,
+      supabaseUrl,
+      supabaseSecretKeyParamPath,
+      desiredCount,
+      slackErrorWebhookUrl,
+      leadsSupabaseUrl,
+      leadsSupabaseSecretParamPath,
+    } = props;
 
     if (!supabaseSecretKeyParamPath?.trim()) {
       throw new Error(
@@ -110,10 +132,26 @@ export class WorkerStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    const utahScraperTaskRepo = new ecr.Repository(this, 'UtahScraperTaskRepo', {
+      repositoryName: `furnace/utah-scraper-${environment}`,
+      imageScanOnPush: true,
+      lifecycleRules: [{ maxImageCount: 10 }],
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const floridaScraperTaskRepo = new ecr.Repository(this, 'FloridaScraperTaskRepo', {
+      repositoryName: `furnace/florida-scraper-${environment}`,
+      imageScanOnPush: true,
+      lifecycleRules: [{ maxImageCount: 10 }],
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     this.sendWorkerRepo = sendWorkerRepo;
     this.schedulerWorkerRepo = schedulerWorkerRepo;
     this.inboxCheckerWorkerRepo = inboxCheckerWorkerRepo;
     this.smartleadMigrationTaskRepo = smartleadMigrationTaskRepo;
+    this.utahScraperTaskRepo = utahScraperTaskRepo;
+    this.floridaScraperTaskRepo = floridaScraperTaskRepo;
 
     // ============================================
     // VPC & Networking
@@ -161,6 +199,18 @@ export class WorkerStack extends cdk.Stack {
 
     const smartleadMigrationTaskLogGroup = new logs.LogGroup(this, 'SmartleadMigrationTaskLogGroup', {
       logGroupName: `/ecs/furnace/smartlead-migration-task-${environment}`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const utahScraperTaskLogGroup = new logs.LogGroup(this, 'UtahScraperTaskLogGroup', {
+      logGroupName: `/ecs/furnace/utah-scraper-task-${environment}`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const floridaScraperTaskLogGroup = new logs.LogGroup(this, 'FloridaScraperTaskLogGroup', {
+      logGroupName: `/ecs/furnace/florida-scraper-task-${environment}`,
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
@@ -312,6 +362,47 @@ export class WorkerStack extends cdk.Stack {
       ],
     }));
 
+    const utahScraperTaskRole = new iam.Role(this, 'UtahScraperTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      description: `Role for Utah registry scraper ECS tasks (${environment})`,
+    });
+    utahScraperTaskRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'AllowUtahScraperCloudWatchLogs',
+      actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      resources: [utahScraperTaskLogGroup.logGroupArn + ':*'],
+    }));
+
+    const leadsUrlTrim = leadsSupabaseUrl?.trim();
+    const leadsParamTrim = leadsSupabaseSecretParamPath?.trim();
+    const utahLeadsConfigured = Boolean(leadsUrlTrim && leadsParamTrim);
+
+    const floridaScraperTaskRole = new iam.Role(this, 'FloridaScraperTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      description: `Role for Florida Sunbiz registry scraper ECS tasks (${environment})`,
+    });
+    floridaScraperTaskRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'AllowFloridaScraperCloudWatchLogs',
+      actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      resources: [floridaScraperTaskLogGroup.logGroupArn + ':*'],
+    }));
+
+    if (utahLeadsConfigured) {
+      const paramSuffix = leadsParamTrim!.replace(/^\//, '');
+      const leadsSsmPolicy = new iam.PolicyStatement({
+        sid: 'AllowUtahLeadsSecretSsm',
+        actions: ['ssm:GetParameters', 'ssm:GetParameter'],
+        resources: [`arn:aws:ssm:${region}:${account}:parameter/${paramSuffix}`],
+      });
+      utahScraperTaskRole.addToPolicy(leadsSsmPolicy);
+      floridaScraperTaskRole.addToPolicy(
+        new iam.PolicyStatement({
+          sid: 'AllowFloridaLeadsSecretSsm',
+          actions: ['ssm:GetParameters', 'ssm:GetParameter'],
+          resources: [`arn:aws:ssm:${region}:${account}:parameter/${paramSuffix}`],
+        }),
+      );
+    }
+
     // ============================================
     // Send Worker Task Definition & Service
     // ============================================
@@ -461,6 +552,77 @@ export class WorkerStack extends cdk.Stack {
       },
     });
 
+    const utahScraperTaskDefinition = new ecs.FargateTaskDefinition(this, 'UtahScraperTaskDef', {
+      family: `furnace-utah-scraper-task-${environment}`,
+      memoryLimitMiB: 2048,
+      cpu: 1024,
+      taskRole: utahScraperTaskRole,
+      executionRole: taskExecutionRole,
+    });
+    utahScraperTaskDefinition.addContainer('utah-scraper', {
+      image: ecs.ContainerImage.fromEcrRepository(utahScraperTaskRepo, 'latest'),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'utah-scraper',
+        logGroup: utahScraperTaskLogGroup,
+      }),
+      environment: {
+        AWS_REGION: region,
+        INPUT_CSV: '/data/input.csv',
+        OUTPUT_JSON: '/out/utah-scrape-report.json',
+        RATE_MS: '2000',
+        ...(utahLeadsConfigured
+          ? {
+              LEADS_SUPABASE_URL: leadsUrlTrim!,
+              LEADS_SUPABASE_SECRET_KEY_PARAM_PATH: leadsParamTrim!,
+            }
+          : {}),
+      },
+    });
+
+    const floridaScraperTaskDefinition = new ecs.FargateTaskDefinition(this, 'FloridaScraperTaskDef', {
+      family: `furnace-florida-scraper-task-${environment}`,
+      memoryLimitMiB: 2048,
+      cpu: 1024,
+      taskRole: floridaScraperTaskRole,
+      executionRole: taskExecutionRole,
+    });
+    floridaScraperTaskDefinition.addContainer('florida-scraper', {
+      image: ecs.ContainerImage.fromEcrRepository(floridaScraperTaskRepo, 'latest'),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'florida-scraper',
+        logGroup: floridaScraperTaskLogGroup,
+      }),
+      environment: {
+        AWS_REGION: region,
+        INPUT_CSV: '/data/input.csv',
+        OUTPUT_JSON: '/out/florida-scrape-report.json',
+        RATE_MS: '2000',
+        ...(utahLeadsConfigured
+          ? {
+              LEADS_SUPABASE_URL: leadsUrlTrim!,
+              LEADS_SUPABASE_SECRET_KEY_PARAM_PATH: leadsParamTrim!,
+            }
+          : {}),
+      },
+    });
+
+    // Stable SSM names for latest task definition ARNs (Amplify Lambdas read at runtime; avoids CFN export churn).
+    new ssm.StringParameter(this, 'SmartleadMigrationTaskDefinitionArnParam', {
+      parameterName: `/furnace/ecs/${environment}/smartlead-migration/task-definition-arn`,
+      stringValue: smartleadMigrationTaskDefinition.taskDefinitionArn,
+      description: 'Current Smartlead migration ECS task definition ARN for RunTask',
+    });
+    new ssm.StringParameter(this, 'UtahScraperTaskDefinitionArnParam', {
+      parameterName: `/furnace/ecs/${environment}/utah-scraper/task-definition-arn`,
+      stringValue: utahScraperTaskDefinition.taskDefinitionArn,
+      description: 'Current Utah scraper ECS task definition ARN for RunTask',
+    });
+    new ssm.StringParameter(this, 'FloridaScraperTaskDefinitionArnParam', {
+      parameterName: `/furnace/ecs/${environment}/florida-scraper/task-definition-arn`,
+      stringValue: floridaScraperTaskDefinition.taskDefinitionArn,
+      description: 'Current Florida Sunbiz scraper ECS task definition ARN for RunTask',
+    });
+
     // ============================================
     // Outputs
     // ============================================
@@ -489,10 +651,34 @@ export class WorkerStack extends cdk.Stack {
       exportName: `FurnaceSmartleadMigrationTaskRepo-${environment}`,
     });
 
+    new cdk.CfnOutput(this, 'UtahScraperTaskRepoUri', {
+      value: utahScraperTaskRepo.repositoryUri,
+      description: 'ECR repository URI for Utah registry scraper task',
+      exportName: `FurnaceUtahScraperTaskRepo-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'FloridaScraperTaskRepoUri', {
+      value: floridaScraperTaskRepo.repositoryUri,
+      description: 'ECR repository URI for Florida Sunbiz registry scraper task',
+      exportName: `FurnaceFloridaScraperTaskRepo-${environment}`,
+    });
+
     new cdk.CfnOutput(this, 'ClusterName', {
       value: cluster.clusterName,
       description: 'ECS cluster name',
       exportName: `FurnaceCluster-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'WorkerVpcId', {
+      value: vpc.vpcId,
+      description: 'VPC id for Furnace ECS workers (Step Functions / RunTask imports)',
+      exportName: `FurnaceWorkerVpcId-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'WorkerVpcAvailabilityZones', {
+      value: cdk.Fn.join(',', vpc.availabilityZones),
+      description: 'Comma-separated AZs for Furnace worker VPC',
+      exportName: `FurnaceWorkerVpcAvailabilityZones-${environment}`,
     });
 
     new cdk.CfnOutput(this, 'WorkerSecurityGroupId', {
@@ -507,10 +693,22 @@ export class WorkerStack extends cdk.Stack {
       exportName: `FurnaceWorkerPublicSubnets-${environment}`,
     });
 
-    new cdk.CfnOutput(this, 'SmartleadMigrationTaskDefinitionArn', {
-      value: smartleadMigrationTaskDefinition.taskDefinitionArn,
-      description: 'Task definition ARN for Smartlead migration tasks',
-      exportName: `FurnaceSmartleadMigrationTaskDefinition-${environment}`,
+    new cdk.CfnOutput(this, 'EcsTaskExecutionRoleArn', {
+      value: taskExecutionRole.roleArn,
+      description: 'Shared ECS task execution role (image pull, logs, SSM secrets)',
+      exportName: `FurnaceEcsTaskExecutionRole-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'UtahScraperTaskRoleArn', {
+      value: utahScraperTaskRole.roleArn,
+      description: 'Task role for Utah registry scraper containers',
+      exportName: `FurnaceUtahScraperTaskRole-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'FloridaScraperTaskRoleArn', {
+      value: floridaScraperTaskRole.roleArn,
+      description: 'Task role for Florida Sunbiz registry scraper containers',
+      exportName: `FurnaceFloridaScraperTaskRole-${environment}`,
     });
   }
 }

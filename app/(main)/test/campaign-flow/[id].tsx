@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, ActivityIndicator, ScrollView, Pressable, TextInput } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PageLayout } from '@/components/ui/layout';
@@ -29,6 +29,8 @@ export default function TestCampaignViewPage() {
   const [leadsNotStarted, setLeadsNotStarted] = useState<number>(0);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(true);
+  const [leadSearchQuery, setLeadSearchQuery] = useState('');
+  const [leadPage, setLeadPage] = useState(1);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [savingName, setSavingName] = useState(false);
@@ -201,6 +203,26 @@ export default function TestCampaignViewPage() {
 
   const schedule = (campaign.schedule as any) || null;
   const flowData = campaign.flow_data as any;
+  const filteredLeads = useMemo(() => {
+    const q = leadSearchQuery.trim().toLowerCase();
+    if (!q) return leads;
+    const match = (value: string | null | undefined) => (value ?? '').toLowerCase().includes(q);
+    return leads.filter(
+      (lead) =>
+        match(lead.email) ||
+        match(lead.name) ||
+        match(lead.first_name) ||
+        match(lead.last_name) ||
+        match(lead.company_name) ||
+        match(lead.phone_number) ||
+        match(lead.website) ||
+        match(lead.linkedin_url),
+    );
+  }, [leadSearchQuery, leads]);
+  const pagedLeads = useMemo(() => {
+    const start = (leadPage - 1) * 20;
+    return filteredLeads.slice(start, start + 20);
+  }, [filteredLeads, leadPage]);
   
   // Check if current time is within schedule
   const scheduleActive = schedule ? isWithinSchedule(schedule) : true; // Default to active if no schedule
@@ -491,7 +513,19 @@ export default function TestCampaignViewPage() {
         {/* Leads Tab */}
         {activeTab === 'leads' && (
           <View className="mb-4">
-            <LeadsTable leads={leads} loading={leadsLoading} campaignId={id} />
+            <LeadsTable
+              leads={pagedLeads}
+              loading={leadsLoading}
+              campaignId={id}
+              searchQuery={leadSearchQuery}
+              onSearchChange={(value) => {
+                setLeadSearchQuery(value);
+                setLeadPage(1);
+              }}
+              currentPage={leadPage}
+              totalItems={filteredLeads.length}
+              onPageChange={setLeadPage}
+            />
           </View>
         )}
 

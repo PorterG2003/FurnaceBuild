@@ -11,3 +11,4 @@ export * from './inbox';
 export * from './block-list';
 export * from './thread-tags';
 export * from './smartlead-migrations';
+export * from './user-access-flags';

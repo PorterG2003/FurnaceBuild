@@ -1,6 +1,8 @@
 # Furnace Workers Infrastructure
 
-CDK project for deploying ECS worker infrastructure for `send-worker`, `scheduler-worker`, `inbox-checker-worker`, and the ad hoc `smartlead-migration-task` across separate dev and prod environments.
+CDK project for deploying ECS worker infrastructure for `send-worker`, `scheduler-worker`, `inbox-checker-worker`, the ad hoc `smartlead-migration-task`, and ad hoc **state registry scrapers** **`utah-scraper`** and **`florida-scraper`** (Docker under [`workers/state-scrapers/`](../../workers/state-scrapers/)) across separate dev and prod environments.
+
+Shared naming and CDK checklist: [State scraper ECS playbook](../../docs/foundry/engineering/state-scraper-ecs-playbook.md).
 
 ## Prerequisites
 
@@ -63,9 +65,10 @@ npm install
    code .env.local
    ```
 
-3. **Fill in your Supabase URLs:**
+3. **Fill in your Supabase URLs and SSM paths:**
    - Get dev branch URL from Supabase Dashboard → Settings → API (switch to `dev` branch)
    - Get prod branch URL from Supabase Dashboard → Settings → API (switch to `main` branch)
+   - Set **`DEV_SECRET_SSM_PREFIX`** and **`PROD_SECRET_SSM_PREFIX`** (parent SSM path per environment; CDK adds `/SUPABASE_SECRET_KEY` and `/LEADS_SUPABASE_SECRET_KEY`). See [`docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md`](../../docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md).
 
 **That's it!** All npm scripts will automatically load these variables. No need to export them manually.
 
@@ -74,6 +77,7 @@ npm install
 - `CDK_DEFAULT_REGION` - AWS region (default: us-west-2)
 - `DEV_SUPABASE_URL` - Dev branch URL from Supabase
 - `PROD_SUPABASE_URL` - Prod branch URL from Supabase
+- `DEV_SECRET_SSM_PREFIX` / `PROD_SECRET_SSM_PREFIX` - Required for CDK synth (see doc above). Leads paths are derived from the same prefix when leads URLs are set.
 
 **Note:** `.env.local` is git-ignored and won't be committed.
 
@@ -83,18 +87,27 @@ npm install
 
 Amplify owns the app backend and Lambda functions. `infra/workers` owns the ECS cluster, networking, task definitions, and worker images.
 
-The Smartlead migration launcher in `amplify/backend.ts` imports these CloudFormation exports from the worker stack:
+The Smartlead migration launcher and **Foundry async state matching** in `amplify/backend.ts` import CloudFormation exports from the worker stack, including:
 
 - `FurnaceCluster-{env}`
 - `FurnaceWorkerSecurityGroup-{env}`
 - `FurnaceWorkerPublicSubnets-{env}`
-- `FurnaceSmartleadMigrationTaskDefinition-{env}`
+- `FurnaceWorkerVpcId-{env}` and `FurnaceWorkerVpcAvailabilityZones-{env}` (state matching / Step Functions)
+- `FurnaceEcsTaskExecutionRole-{env}`, `FurnaceUtahScraperTaskRole-{env}` (Utah reconciliation via ECS)
 
-Because of that dependency, deploy the matching worker stack before any Amplify backend deploy that includes the Smartlead migration integration:
+Task definition ARNs for **Smartlead migration** and **state scrapers** are not exported (to avoid export churn on every revision). WorkerStack writes them to SSM:
+
+- `/furnace/ecs/{env}/smartlead-migration/task-definition-arn`
+- `/furnace/ecs/{env}/utah-scraper/task-definition-arn`
+- `/furnace/ecs/{env}/florida-scraper/task-definition-arn`
+
+Because of that dependency, deploy the matching worker stack before any Amplify backend deploy that includes those integrations:
 
 - Amplify sandbox / non-production deploys should use worker environment `dev`
 - Amplify production deploys should use worker environment `prod`
 - If those exports are missing, Amplify backend deployment will fail
+
+**Opt out (no worker stack / local sandbox):** set `AMPLIFY_ENABLE_SMARTLEAD_MIGRATION=false` (or `0`) in `.env.local` before `npx ampx sandbox`, or in **Amplify Console → Environment variables** for Hosted builds. That omits the `launchSmartleadMigration` Lambda and skips `Fn.importValue` wiring and the export pre-check in `amplify.yml`. Unset or any other value keeps the default (enabled). For Hosting, use the same variable on branches that deploy without `infra/workers`.
 
 ### Deploy Dev Stack
 
@@ -137,9 +150,9 @@ After deployment, check:
    aws ecs list-services --cluster furnace-cluster-dev
    ```
 
-4. **Smartlead task definition export:**
+4. **Smartlead task definition SSM (RunTask ARN):**
    ```bash
-   aws cloudformation list-exports --query "Exports[?starts_with(Name, 'FurnaceSmartleadMigrationTaskDefinition-')]"
+   aws ssm get-parameter --name "/furnace/ecs/dev/smartlead-migration/task-definition-arn" --query Parameter.Value --output text
    ```
 
 ## Build and Push Docker Images
@@ -206,6 +219,8 @@ The script will:
 - `npm run build:dev:scheduler` - Build scheduler worker for dev
 - `npm run build:dev:inbox-checker` - Build inbox checker worker for dev
 - `npm run build:dev:smartlead` - Build Smartlead migration task image for dev
+- `./scripts/build-and-push.sh dev utah-scraper` - Build Utah registry scraper image for dev (see script for prod)
+- `./scripts/build-and-push.sh dev florida-scraper` - Build Florida Sunbiz scraper image for dev (see script for prod)
 - `npm run build:prod:inbox-checker` - Build inbox checker worker for prod
 - `npm run build:prod:smartlead` - Build Smartlead migration task image for prod
 
@@ -238,6 +253,36 @@ npm run check:env -- dev smartlead
 # Check CloudWatch logs
 npm run check:logs -- dev smartlead
 ```
+
+### Utah registry scraper task
+
+Like Smartlead migration, **`utah-scraper`** is a **RunTask-only** image (no ECS service). Image Dockerfile: `workers/state-scrapers/utah-scraper/Dockerfile`. Exports and SSM:
+
+- `FurnaceUtahScraperTaskRepo-{env}`
+- SSM `/furnace/ecs/{env}/utah-scraper/task-definition-arn` (latest task definition ARN)
+
+Build and push:
+
+```bash
+./scripts/build-and-push.sh dev utah-scraper
+```
+
+Operational details, local CLI, and volume mounts for CSV/output: [docs/foundry/engineering/utah-registry-scraper.md](../../docs/foundry/engineering/utah-registry-scraper.md).
+
+### Florida registry scraper task
+
+Like Utah, **`florida-scraper`** is a **RunTask-only** image (no ECS service). Dockerfile: `workers/state-scrapers/florida-scraper/Dockerfile`.
+
+- `FurnaceFloridaScraperTaskRepo-{env}`
+- SSM `/furnace/ecs/{env}/florida-scraper/task-definition-arn`
+
+Build and push:
+
+```bash
+./scripts/build-and-push.sh dev florida-scraper
+```
+
+The container runs the CSV CLI by default (`INPUT_CSV` / `OUTPUT_JSON`). Foundry Step Functions does not invoke Florida yet; use manual `RunTask` or wire a new branch using the SSM task definition ARN and `FurnaceFloridaScraperTaskRole-{env}`. See [State scraper ECS playbook](../../docs/foundry/engineering/state-scraper-ecs-playbook.md).
 
 ### Inbox Checker Runtime Ownership
 

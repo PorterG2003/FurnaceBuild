@@ -1149,17 +1149,19 @@ export default function AccountPage() {
                 }}
               />
 
-              <ManageBlockListModal
-                visible={blockListModalVisible}
-                onClose={() => setBlockListModalVisible(false)}
-                blockList={blockList}
-                onUnblock={handleUnblock}
-                unblockingId={unblockingId}
-                suppressBouncedEmails={membership?.account?.suppress_bounced_emails !== false}
-                onSuppressBouncedChange={handleSuppressBouncedChange}
-                savingSuppressBounced={savingSuppressBounced}
-                isOwner={!!isOwner}
-              />
+              {membership ? (
+                <ManageBlockListModal
+                  visible={blockListModalVisible}
+                  onClose={() => setBlockListModalVisible(false)}
+                  accountId={membership.account.id}
+                  onUnblock={handleUnblock}
+                  unblockingId={unblockingId}
+                  suppressBouncedEmails={membership.account.suppress_bounced_emails !== false}
+                  onSuppressBouncedChange={handleSuppressBouncedChange}
+                  savingSuppressBounced={savingSuppressBounced}
+                  isOwner={!!isOwner}
+                />
+              ) : null}
 
               <BottomSheet
                 visible={accountSwitcherOpen}

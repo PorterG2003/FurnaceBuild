@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable } from 'react-native';
 import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { LeadActivityModal } from './LeadActivityModal';
+import type { CampaignLeadTableRow } from '@/lib/supabase/services/leads';
 
 /** Same as Lead Source Node Modal Insights tab. */
 const INSIGHTS_COLUMN_MIN_WIDTH = 160;
@@ -35,26 +36,7 @@ export type EnrollmentStoppedReason = 'replied' | 'bounced' | 'unsubscribed' | '
 
 export type LeadStatus = 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
 
-export interface Lead {
-  id: string;
-  email: string;
-  name: string | null;
-  first_name?: string | null;
-  last_name?: string | null;
-  company_name?: string | null;
-  website?: string | null;
-  linkedin_url?: string | null;
-  company_linkedin_url?: string | null;
-  phone_number?: string | null;
-  source?: string | null;
-  custom_lead_data?: Record<string, unknown> | null;
-  status?: LeadStatus | null;
-  enrollment_state: 'active' | 'completed' | 'stopped' | 'paused' | null;
-  enrollment_current_node_id: string | null;
-  enrollment_stopped_reason: EnrollmentStoppedReason | null;
-  enrollment_stopped_error_message: string | null;
-  created_at: string;
-}
+export type Lead = CampaignLeadTableRow;
 
 /** Flattened lead row for the table: record fields + __rowKey (lead.id) and __lead for enrollment/row press. */
 type LeadTableRow = Record<string, string> & { __rowKey: string; __lead: Lead };
@@ -63,6 +45,14 @@ interface LeadsTableProps {
   leads: Lead[];
   loading?: boolean;
   campaignId: string;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
+  currentPage: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+  sortColumn?: string;
+  sortDirection?: 'asc' | 'desc';
+  onSortChange?: (columnKey: string, direction: 'asc' | 'desc') => void;
   /**
    * When true, no add/edit/delete (or other mutating) actions may be shown.
    * Use this for read-only contexts (e.g. Smartlead campaigns). Any future
@@ -71,33 +61,39 @@ interface LeadsTableProps {
   readOnly?: boolean;
 }
 
-const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100, 250];
+const SERVER_SORTABLE_FIELDS = new Set([
+  'email',
+  'name',
+  'first_name',
+  'last_name',
+  'company_name',
+  'website',
+  'linkedin_url',
+  'company_linkedin_url',
+  'phone_number',
+  'source',
+  'status',
+]);
 
-export function LeadsTable({ leads, loading, campaignId, readOnly = false }: LeadsTableProps) {
+export function LeadsTable({
+  leads,
+  loading,
+  campaignId,
+  searchQuery,
+  onSearchChange,
+  currentPage,
+  totalItems,
+  onPageChange,
+  sortColumn,
+  sortDirection,
+  onSortChange,
+  readOnly = false,
+}: LeadsTableProps) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [itemsPerPage, setItemsPerPage] = useState(20);
-
-  const filteredLeads = useMemo(() => {
-    if (!searchQuery.trim()) return leads;
-    const q = searchQuery.toLowerCase();
-    const match = (s: string | null | undefined) => (s ?? '').toLowerCase().includes(q);
-    return leads.filter(
-      (lead) =>
-        match(lead.email) ||
-        match(lead.name) ||
-        match(lead.first_name) ||
-        match(lead.last_name) ||
-        match(lead.company_name) ||
-        match(lead.phone_number) ||
-        match(lead.website) ||
-        match(lead.linkedin_url)
-    );
-  }, [leads, searchQuery]);
 
   // Flatten leads to Record<string, string> (same as Lead Source Node Modal Insights tab)
   const leadsForTable = useMemo((): LeadTableRow[] => {
-    return filteredLeads.map((lead) => {
+    return leads.map((lead) => {
       const record: Record<string, string> = {};
       if (lead.email) record.email = lead.email;
       if (lead.name) record.name = lead.name;
@@ -119,7 +115,7 @@ export function LeadsTable({ leads, loading, campaignId, readOnly = false }: Lea
       }
       return { ...record, __rowKey: lead.id, __lead: lead } as LeadTableRow;
     });
-  }, [filteredLeads]);
+  }, [leads]);
 
   // Insight summary: field list with fill percentage (same pattern as modal)
   const insightSummary = useMemo(() => {
@@ -211,6 +207,7 @@ export function LeadsTable({ leads, loading, campaignId, readOnly = false }: Lea
         INSIGHTS_COLUMN_MAX_WIDTH,
         Math.max(INSIGHTS_COLUMN_MIN_WIDTH, minFromLabel)
       );
+      const isSortable = SERVER_SORTABLE_FIELDS.has(f.field);
       return {
         key: f.field,
         label: formatLeadHeaderLabel(f.field),
@@ -218,8 +215,8 @@ export function LeadsTable({ leads, loading, campaignId, readOnly = false }: Lea
         minWidth,
         maxWidth: INSIGHTS_COLUMN_MAX_WIDTH,
         headerStats: { filled, empty },
-        sortable: true,
-        sortValue: (item) => (item[f.field] ?? '').toLowerCase(),
+        sortable: isSortable,
+        sortValue: isSortable ? (item) => (item[f.field] ?? '').toLowerCase() : undefined,
         render: (item) => (
           <Text className="text-white font-instrument text-sm" numberOfLines={1}>
             {item[f.field] ?? '—'}
@@ -232,8 +229,6 @@ export function LeadsTable({ leads, loading, campaignId, readOnly = false }: Lea
       label: 'Enrollment',
       minWidth: 130,
       flex: 0,
-      sortable: true,
-      sortValue: (item) => item.__lead.enrollment_state || '',
       render: (item) =>
         getStateBadge(
           item.__lead.enrollment_state,
@@ -250,26 +245,8 @@ export function LeadsTable({ leads, loading, campaignId, readOnly = false }: Lea
         <Text className="text-lg font-instrument-semibold text-white">Leads</Text>
         <View className="flex-row items-center gap-2 flex-wrap">
           <Text className="text-gray-400 font-instrument text-sm">
-            {filteredLeads.length} {filteredLeads.length !== 1 ? 'items' : 'item'}
-            {searchQuery.trim() && ` (filtered from ${leads.length} total)`}
+            {totalItems} {totalItems !== 1 ? 'items' : 'item'}
           </Text>
-          <View className="flex-row items-center gap-1">
-            <Text className="text-gray-500 font-instrument text-xs">Per page:</Text>
-            {ITEMS_PER_PAGE_OPTIONS.map((n) => (
-              <Pressable
-                key={n}
-                onPress={() => setItemsPerPage(n)}
-                className="px-2 py-1 rounded border border-[#2A2A2A] active:opacity-70"
-                style={{ backgroundColor: itemsPerPage === n ? '#2A2A2A' : 'transparent' }}
-              >
-                <Text
-                  className={`text-xs font-instrument-medium ${itemsPerPage === n ? 'text-white' : 'text-gray-400'}`}
-                >
-                  {n}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
         </View>
       </View>
       <View className="mb-4">
@@ -277,7 +254,7 @@ export function LeadsTable({ leads, loading, campaignId, readOnly = false }: Lea
           <MagnifyingGlassIcon size={18} color="#6b7280" />
           <TextInput
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={onSearchChange}
             placeholder="Search by email, name, company, phone..."
             placeholderTextColor="#6b7280"
             className="flex-1 ml-2 text-white font-instrument text-sm"
@@ -288,11 +265,18 @@ export function LeadsTable({ leads, loading, campaignId, readOnly = false }: Lea
         items={leadsForTable}
         columns={columns}
         loading={loading}
-        itemsPerPage={itemsPerPage}
+        itemsPerPage={20}
         equalColumnWidths
         emptyMessage="No leads found"
         onRowPress={(row) => setSelectedLead(row.__lead)}
         getItemKey={(row) => row.__rowKey}
+        paginationMode="server"
+        currentPage={currentPage}
+        totalItems={totalItems}
+        onPageChange={onPageChange}
+        sortColumn={sortColumn}
+        sortDirection={sortDirection}
+        onSortChange={onSortChange}
       />
 
       {selectedLead && (

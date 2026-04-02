@@ -275,6 +275,23 @@ export interface Database {
           updated_at?: string;
         };
       };
+      user_access_flags: {
+        Row: {
+          user_id: string;
+          flag_key: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          flag_key: string;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          flag_key?: string;
+          created_at?: string;
+        };
+      };
       invitations: {
         Row: {
           id: string;

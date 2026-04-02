@@ -6,6 +6,19 @@ export interface MultiSegmentDialSegment {
   color: string;
 }
 
+export interface MultiSegmentDialLegendRow {
+  label: string;
+  value: number;
+  color: string;
+}
+
+export interface MultiSegmentDialLegend {
+  placement: 'right' | 'bottom';
+  rows: MultiSegmentDialLegendRow[];
+  secondaryRows?: MultiSegmentDialLegendRow[];
+  compact?: boolean;
+}
+
 interface MultiSegmentDialProps {
   segments: MultiSegmentDialSegment[];
   total: number;
@@ -19,6 +32,65 @@ interface MultiSegmentDialProps {
   /** Optional labels above/below the fraction (e.g. "Completed", "Total"). */
   centerTopLabel?: string;
   centerBottomLabel?: string;
+  legend?: MultiSegmentDialLegend;
+}
+
+function DialLegendRows({
+  rows,
+  compact = false,
+  muted = false,
+  rowGap,
+}: {
+  rows: MultiSegmentDialLegendRow[];
+  compact?: boolean;
+  muted?: boolean;
+  rowGap?: number;
+}) {
+  if (rows.length === 0) return null;
+
+  const swatchSize = compact ? 6 : 10;
+  const resolvedRowGap = rowGap ?? (compact ? 4 : 8);
+  const labelClassName = compact ? 'font-instrument text-xs' : 'font-instrument text-sm';
+  const valueClassName = compact ? 'font-instrument text-xs' : 'font-instrument text-sm';
+
+  return (
+    <View>
+      {rows.map((row, index) => (
+        <View
+          key={`${row.label}-${row.color}-${index}`}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: index < rows.length - 1 ? resolvedRowGap : 0,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: compact ? 4 : 8, flex: 1, minWidth: 0 }}>
+            <View
+              style={{
+                width: swatchSize,
+                height: swatchSize,
+                borderRadius: 2,
+                backgroundColor: row.color,
+              }}
+            />
+            <Text
+              className={`${muted ? 'text-gray-500' : 'text-gray-300'} ${labelClassName}`}
+              numberOfLines={1}
+            >
+              {row.label}
+            </Text>
+          </View>
+          <Text
+            className={`${muted ? 'text-gray-400' : 'text-white'} ${valueClassName}`}
+            style={{ marginLeft: compact ? 4 : 0, minWidth: compact ? 28 : 60, textAlign: 'right' }}
+            numberOfLines={1}
+          >
+            {row.value.toLocaleString()}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
 }
 
 /**
@@ -35,12 +107,14 @@ export function MultiSegmentDial({
   centerTotal,
   centerTopLabel,
   centerBottomLabel,
+  legend,
 }: MultiSegmentDialProps) {
   const strokeWidth = strokeWidthProp ?? 6;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const center = size / 2;
   const effectiveTotal = total > 0 ? total : 0;
+  const dialWidth = label ? size + 40 : size;
 
   const showFraction =
     centerValue !== undefined &&
@@ -88,8 +162,8 @@ export function MultiSegmentDial({
         })
       : null;
 
-  return (
-    <View className="items-center" style={{ width: label ? size + 40 : size }}>
+  const dialContent = (
+    <View className="items-center shrink-0" style={{ width: dialWidth }}>
       <View style={{ width: size, height: size, position: 'relative' }}>
         <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
           <Circle
@@ -182,11 +256,48 @@ export function MultiSegmentDial({
       {label ? (
         <Text
           className="text-gray-400 font-instrument text-xs mt-3 text-center"
-          style={{ width: size + 40 }}
+          style={{ width: dialWidth }}
         >
           {label}
         </Text>
       ) : null}
+    </View>
+  );
+
+  if (!legend) {
+    return dialContent;
+  }
+
+  const legendContent = (
+    <View
+      className={legend.placement === 'right' ? 'flex-1 min-w-0' : 'w-full mt-3'}
+      style={legend.placement === 'right' ? { minWidth: 0 } : undefined}
+    >
+      <DialLegendRows
+        rows={legend.rows}
+        compact={legend.compact}
+        rowGap={legend.placement === 'bottom' ? 0 : undefined}
+      />
+      {legend.secondaryRows?.length ? (
+        <View className={legend.compact ? 'mt-2' : 'mt-3'}>
+          <DialLegendRows
+            rows={legend.secondaryRows}
+            compact={legend.compact}
+            muted
+            rowGap={legend.placement === 'bottom' ? 0 : undefined}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+
+  return (
+    <View
+      className={legend.placement === 'right' ? 'flex-row items-center gap-6' : 'items-center'}
+      style={legend.placement === 'right' ? { minWidth: 0 } : undefined}
+    >
+      {dialContent}
+      {legendContent}
     </View>
   );
 }

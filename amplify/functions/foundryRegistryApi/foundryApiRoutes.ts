@@ -85,6 +85,93 @@ function parseSortDirectionParam(params: URLSearchParams): 'asc' | 'desc' {
 const MAX_EXPORT_LEADS_LIMIT = 100;
 const DEFAULT_EXPORT_LEADS_LIMIT = 50;
 
+const CONTACT_ENRICHMENT_CONFIDENCE_KEYS = [
+  'contact_confidence_tier',
+  'contact_enrichment_top_score',
+  'contact_enrichment_score_margin',
+  'contact_enrichment_reason_summary',
+] as const;
+
+function parseIncludeContactFlags(params: URLSearchParams): {
+  includeContact: boolean;
+  includeContactConfidence: boolean;
+} {
+  const includeContact =
+    params.get('include_contact') === 'true' || params.get('include_contact') === '1';
+  const includeContactConfidence =
+    includeContact &&
+    (params.get('include_contact_confidence') === 'true' ||
+      params.get('include_contact_confidence') === '1');
+  return { includeContact, includeContactConfidence };
+}
+
+function stripContactConfidenceFields(row: Record<string, unknown>): void {
+  for (const k of CONTACT_ENRICHMENT_CONFIDENCE_KEYS) {
+    delete row[k];
+  }
+}
+
+async function loadOwnerContactEnrichmentFlatMap(
+  leadsClient: SupabaseClient,
+  pairs: Array<{ company_id: string; entity_owner_id: string }>,
+  includeConfidence: boolean,
+): Promise<Map<string, Record<string, unknown>>> {
+  const wanted = new Set(pairs.map((p) => `${p.company_id}:${p.entity_owner_id}`));
+  const companyIds = [...new Set(pairs.map((p) => p.company_id))];
+  if (companyIds.length === 0) return new Map();
+
+  const { data, error } = await leadsClient.from('export_owner_contact_enrichment_flat').select('*').in('company_id', companyIds);
+
+  if (error) throw new Error(error.message);
+
+  const map = new Map<string, Record<string, unknown>>();
+  for (const raw of data ?? []) {
+    const row = { ...(raw as Record<string, unknown>) };
+    if (!includeConfidence) stripContactConfidenceFields(row);
+    const cid = row.company_id;
+    const eid = row.entity_owner_id;
+    if (typeof cid !== 'string' || typeof eid !== 'string') continue;
+    const key = `${cid}:${eid}`;
+    if (!wanted.has(key)) continue;
+    map.set(key, row);
+  }
+  return map;
+}
+
+const EXPORT_CONTACT_VALUE_KEYS = [
+  'contact_email_1',
+  'contact_email_2',
+  'contact_email_3',
+  'contact_phone_1',
+  'contact_phone_1_type',
+  'contact_phone_1_is_dnc',
+  'contact_phone_1_dnc_summary',
+  'contact_phone_2',
+  'contact_phone_2_type',
+  'contact_phone_2_is_dnc',
+  'contact_phone_2_dnc_summary',
+  'contact_phone_3',
+  'contact_phone_3_type',
+  'contact_phone_3_is_dnc',
+  'contact_phone_3_dnc_summary',
+] as const;
+
+function applyContactFlatToRow(
+  target: Record<string, unknown>,
+  flat: Record<string, unknown> | undefined,
+  includeConfidence: boolean,
+): void {
+  if (!flat) return;
+  for (const k of EXPORT_CONTACT_VALUE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(flat, k)) target[k] = flat[k];
+  }
+  if (includeConfidence) {
+    for (const k of CONTACT_ENRICHMENT_CONFIDENCE_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(flat, k)) target[k] = flat[k];
+    }
+  }
+}
+
 function parseJsonBody<T>(raw: string): { ok: true; value: T } | { ok: false; response: FunctionUrlResponse } {
   try {
     return { ok: true, value: JSON.parse(raw) as T };
@@ -218,13 +305,14 @@ function clampOwnershipChainLimit(raw: string | null): number {
 function buildExportCompanyOwnerLeadsQuery(
   leadsClient: SupabaseClient,
   params: URLSearchParams,
-  selectClause: string,
   options?: { withCount?: boolean },
 ) {
+  const { includeContact } = parseIncludeContactFlags(params);
+  const table = includeContact ? 'export_company_owner_leads_with_contacts' : 'export_company_owner_leads';
   const selectOptions = options?.withCount ? { count: 'exact' as const } : undefined;
   let qb = selectOptions
-    ? leadsClient.from('export_company_owner_leads').select(selectClause, selectOptions)
-    : leadsClient.from('export_company_owner_leads').select(selectClause);
+    ? leadsClient.from(table).select('*', selectOptions)
+    : leadsClient.from(table).select('*');
   qb = applyExportQueryFilters(qb, params);
 
   return qb
@@ -531,23 +619,40 @@ export async function dispatchFoundryExtendedRoutes(
 ): Promise<FunctionUrlResponse | null> {
   if (path === '/export/company-owner-leads' && method === 'GET') {
     const params = new URLSearchParams(rawQueryString || '');
+    const { includeContact, includeContactConfidence } = parseIncludeContactFlags(params);
     const limit = parseLimit(rawQueryString || '', MAX_EXPORT_LEADS_LIMIT, DEFAULT_EXPORT_LEADS_LIMIT);
     const offset = parseOffsetExport(rawQueryString || '');
     const end = offset + limit - 1;
     const { data, error, count } = await buildExportCompanyOwnerLeadsQuery(
       leadsClient,
       params,
-      '*',
       { withCount: true },
     ).range(offset, end);
 
     if (error) {
-      console.error('export_company_owner_leads failed', error.message);
+      const err = error as { message?: string; code?: string; details?: string; hint?: string };
+      console.error('export_company_owner_leads failed', {
+        message: err.message,
+        code: err.code,
+        details: err.details,
+        hint: err.hint,
+        includeContact,
+      });
       return jsonResponse(502, { error: 'Failed to load export leads' });
     }
 
+    const rawRows = data ?? [];
+    const rows =
+      includeContact && !includeContactConfidence
+        ? rawRows.map((r) => {
+            const row = { ...(r as Record<string, unknown>) };
+            stripContactConfidenceFields(row);
+            return row;
+          })
+        : rawRows;
+
     return jsonResponse(200, {
-      rows: data ?? [],
+      rows,
       limit,
       offset,
       total_count: count ?? 0,
@@ -556,6 +661,7 @@ export async function dispatchFoundryExtendedRoutes(
 
   if (path === '/export/company-chain-people' && method === 'GET') {
     const params = new URLSearchParams(rawQueryString || '');
+    const { includeContact, includeContactConfidence } = parseIncludeContactFlags(params);
     const limit = parseLimit(rawQueryString || '', MAX_EXPORT_LEADS_LIMIT, DEFAULT_EXPORT_LEADS_LIMIT);
     const offset = parseOffsetExport(rawQueryString || '');
     const maxDepth = clampOwnershipChainDepth(params.get('max_depth'));
@@ -625,6 +731,28 @@ export async function dispatchFoundryExtendedRoutes(
         const message = error instanceof Error ? error.message : String(error);
         console.error('export_company_chain_people expand failed', target.company_entity_match_id, message);
         return jsonResponse(502, { error: 'Failed to expand ownership chains for export' });
+      }
+    }
+
+    if (includeContact && rows.length > 0) {
+      try {
+        const pairs = rows.map((r) => ({
+          company_id: String(r.company_id),
+          entity_owner_id: String(r.person_owner_row_id),
+        }));
+        const flatMap = await loadOwnerContactEnrichmentFlatMap(
+          leadsClient,
+          pairs,
+          includeContactConfidence,
+        );
+        for (const row of rows) {
+          const key = `${row.company_id}:${row.person_owner_row_id}`;
+          applyContactFlatToRow(row, flatMap.get(key), includeContactConfidence);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('export_company_chain_people contact enrichment merge failed', message);
+        return jsonResponse(502, { error: 'Failed to load contact enrichment for chain export' });
       }
     }
 

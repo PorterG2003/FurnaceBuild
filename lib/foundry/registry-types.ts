@@ -903,6 +903,27 @@ export interface ExportCompanyOwnerLeadRow {
   has_open_review_task: boolean;
   has_parse_failure_task: boolean;
   is_export_ready: boolean;
+  /** Present when export is requested with `include_contact=true`. */
+  contact_email_1?: string | null;
+  contact_email_2?: string | null;
+  contact_email_3?: string | null;
+  contact_phone_1?: string | null;
+  contact_phone_1_type?: string | null;
+  contact_phone_1_is_dnc?: boolean | null;
+  contact_phone_1_dnc_summary?: string | null;
+  contact_phone_2?: string | null;
+  contact_phone_2_type?: string | null;
+  contact_phone_2_is_dnc?: boolean | null;
+  contact_phone_2_dnc_summary?: string | null;
+  contact_phone_3?: string | null;
+  contact_phone_3_type?: string | null;
+  contact_phone_3_is_dnc?: boolean | null;
+  contact_phone_3_dnc_summary?: string | null;
+  /** Present when `include_contact_confidence=true`. */
+  contact_confidence_tier?: string | null;
+  contact_enrichment_top_score?: number | null;
+  contact_enrichment_score_margin?: number | null;
+  contact_enrichment_reason_summary?: string | null;
 }
 
 export interface ExportCompanyOwnerLeadsResponse {
@@ -941,6 +962,27 @@ export interface ExportCompanyChainPeopleRow {
   person_title_role: string | null;
   chain_depth: number;
   linkage_path: string;
+  /** Present when export is requested with `include_contact=true`. */
+  contact_email_1?: string | null;
+  contact_email_2?: string | null;
+  contact_email_3?: string | null;
+  contact_phone_1?: string | null;
+  contact_phone_1_type?: string | null;
+  contact_phone_1_is_dnc?: boolean | null;
+  contact_phone_1_dnc_summary?: string | null;
+  contact_phone_2?: string | null;
+  contact_phone_2_type?: string | null;
+  contact_phone_2_is_dnc?: boolean | null;
+  contact_phone_2_dnc_summary?: string | null;
+  contact_phone_3?: string | null;
+  contact_phone_3_type?: string | null;
+  contact_phone_3_is_dnc?: boolean | null;
+  contact_phone_3_dnc_summary?: string | null;
+  /** Present when `include_contact_confidence=true`. */
+  contact_confidence_tier?: string | null;
+  contact_enrichment_top_score?: number | null;
+  contact_enrichment_score_margin?: number | null;
+  contact_enrichment_reason_summary?: string | null;
 }
 
 export interface ExportCompanyChainPeopleResponse {

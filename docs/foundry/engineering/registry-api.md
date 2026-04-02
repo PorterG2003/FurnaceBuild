@@ -32,8 +32,15 @@ Auth: `Authorization: Bearer <main Supabase access token>`; requires `user_acces
 
 ## Export
 
-- `GET /export/company-owner-leads` — owner-row export; one row per current owner on an exportable company target, with company-scoped address and website fields attached.
-- `GET /export/company-chain-people` — chain export; pages by matching company targets, then expands each target through ownership chains to terminal people. Supports `max_depth` and `max_chains`.
+- `GET /export/company-owner-leads` — owner-row export; one row per current owner on an exportable company target, with company-scoped address and website fields attached. Query params: `limit`, `offset`, `q` (min 2 chars, `legal_name` ilike), `registry_state`, tri-state flags `is_export_ready`, `has_current_linked_source`, `has_open_review_task`, `has_parse_failure_task`, `has_current_owner` (same as before).
+- `GET /export/company-chain-people` — chain export; pages by matching company targets, then expands each target through ownership chains to terminal people. Supports `max_depth`, `max_chains`, and the same filter params as owner export.
+
+**Optional contact enrichment** (off by default; use `include_contact=true`):
+
+- Adds columns from the **latest** promoted SkipSherpa match per `(company_id, entity_owner_id)` (view `export_owner_contact_enrichment_flat`): `contact_email_1`…`contact_email_3`; for each phone slot (1–3): number (`e164` then `local_format`), `contact_phone_n_type`, `contact_phone_n_is_dnc` (boolean or `null` when unknown / not provided — treat `null` separately from `false` for compliance), and `contact_phone_n_dnc_summary` (JSON text from provider, empty object omitted).
+- `include_contact_confidence=true` (only with `include_contact`): `contact_confidence_tier` (`High` vs `Standard` — `High` when top matcher score ≥ 6 and either a single ranked candidate or margin vs runner-up ≥ 2), `contact_enrichment_top_score`, `contact_enrichment_score_margin`, `contact_enrichment_reason_summary` (comma-separated `ambiguity_reason_codes` from the attempt metadata, often empty for strong matches).
+
+Chain export applies the same enrichment by merging flat rows onto each expanded person row (`person_owner_row_id` = `entity_owner_id` in enrichment tables).
 
 ## Review
 

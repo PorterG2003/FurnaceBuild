@@ -18,7 +18,8 @@
  * - POST /source-records/:id/candidates/generate | /link | /reject-candidates
  * - POST /resolution/bulk
  * - GET|PATCH /companies/:id (GET includes associated_people from entity_owners via current matches), POST /companies/:id/locations, POST /companies (create)
- * - GET /export/company-owner-leads?limit=&offset=&q=&registry_state=&is_export_ready=&has_current_linked_source=&has_open_review_task=&has_parse_failure_task=&has_current_owner=
+ * - GET /export/company-owner-leads?limit=&offset=&q=&registry_state=&is_export_ready=&has_current_linked_source=&has_open_review_task=&has_parse_failure_task=&has_current_owner=&include_contact=&include_contact_confidence=
+ * - GET /export/company-chain-people?...&max_depth=&max_chains=&include_contact=&include_contact_confidence=
  * - GET /review-tasks, GET /review-tasks/:id, PATCH .../assign, POST .../resolve|cancel
  * - POST /state-matching/preflight, POST /state-matching/batches (async job + Step Functions), GET /state-matching/batches/:id
  * - GET /reconciliation/runs/:id

@@ -63,6 +63,8 @@ export default function FoundryExportScreen() {
     mode: 'owner_rows',
     mergePeoplePerCompany: false,
     chainMaxDepth: 6,
+    includeContactEnrichment: false,
+    includeContactConfidence: false,
   });
 
   const [rows, setRows] = useState<ExportCompanyOwnerLeadRow[]>([]);
@@ -110,12 +112,22 @@ export default function FoundryExportScreen() {
     if (pf !== undefined) p.has_parse_failure_task = pf;
     return p;
   }, [debouncedQ, registryState, exportReady, linkedFilter, ownerFilter, reviewFilter, parseFilter]);
+
+  const exportContactApiParams = useMemo(
+    (): Pick<ExportCompanyOwnerLeadsParams, 'include_contact' | 'include_contact_confidence'> => ({
+      include_contact: exportOptions.includeContactEnrichment ? true : undefined,
+      include_contact_confidence: exportOptions.includeContactConfidence ? true : undefined,
+    }),
+    [exportOptions.includeContactEnrichment, exportOptions.includeContactConfidence],
+  );
+
   const chainApiParams = useMemo(
     (): Omit<ExportCompanyChainPeopleParams, 'limit' | 'offset'> => ({
       ...baseApiParams,
+      ...exportContactApiParams,
       max_depth: exportOptions.chainMaxDepth,
     }),
-    [baseApiParams, exportOptions.chainMaxDepth],
+    [baseApiParams, exportContactApiParams, exportOptions.chainMaxDepth],
   );
   const isChainMode = exportOptions.mode === 'chain_people';
   const apiParamsKey = useMemo(
@@ -123,9 +135,17 @@ export default function FoundryExportScreen() {
       JSON.stringify({
         mode: exportOptions.mode,
         chainMaxDepth: exportOptions.chainMaxDepth,
+        includeContactEnrichment: exportOptions.includeContactEnrichment,
+        includeContactConfidence: exportOptions.includeContactConfidence,
         baseApiParams,
       }),
-    [baseApiParams, exportOptions.chainMaxDepth, exportOptions.mode],
+    [
+      baseApiParams,
+      exportOptions.chainMaxDepth,
+      exportOptions.includeContactConfidence,
+      exportOptions.includeContactEnrichment,
+      exportOptions.mode,
+    ],
   );
   const previousApiParamsKeyRef = useRef<string | null>(null);
 
@@ -147,6 +167,7 @@ export default function FoundryExportScreen() {
       } else {
         const res = await fetchExportCompanyOwnerLeads({
           ...baseApiParams,
+          ...exportContactApiParams,
           limit: 50,
           offset: (page - 1) * 50,
         });
@@ -170,7 +191,7 @@ export default function FoundryExportScreen() {
     } finally {
       setLoading(false);
     }
-  }, [baseApiParams, chainApiParams, isChainMode, page]);
+  }, [baseApiParams, chainApiParams, exportContactApiParams, isChainMode, page]);
 
   useEffect(() => {
     const paramsChanged = previousApiParamsKeyRef.current !== apiParamsKey;
@@ -221,9 +242,11 @@ export default function FoundryExportScreen() {
           : 'Preview and CSV keep one row per company/person path discovered during chain expansion.'
         : 'Preview and CSV keep one row per current owner record, with company-scoped contact fields attached.',
       contacts:
-        'Addresses and websites are company-scoped fields carried with every exported row, regardless of whether the export is owner-based or chain-based.',
+        exportOptions.includeContactEnrichment
+          ? 'Matched person emails and phones from contact enrichment are added to the CSV when enabled (optional confidence columns available). Company address and website fields are still included on every row.'
+          : 'Addresses and websites are company-scoped fields carried with every exported row, regardless of whether the export is owner-based or chain-based.',
     }),
-    [exportOptions.mergePeoplePerCompany, isChainMode],
+    [exportOptions.includeContactEnrichment, exportOptions.mergePeoplePerCompany, isChainMode],
   );
 
   const applyExportOptions = useCallback((next: ExportOptionsState) => {
@@ -246,10 +269,15 @@ export default function FoundryExportScreen() {
         const activeChainParams: Omit<ExportCompanyChainPeopleParams, 'limit' | 'offset'> = {
           ...baseApiParams,
           max_depth: nextOptions.chainMaxDepth,
+          include_contact: nextOptions.includeContactEnrichment ? true : undefined,
+          include_contact_confidence: nextOptions.includeContactConfidence ? true : undefined,
         };
         const { rows: allRows, truncated, total_count } = await collectExportCompanyChainPeopleForCsv(activeChainParams);
         const finalRows = nextOptions.mergePeoplePerCompany ? mergeExportChainPeopleRows(allRows) : allRows;
-        const csv = exportCompanyChainPeopleToCsv(finalRows);
+        const csv = exportCompanyChainPeopleToCsv(finalRows, {
+          includeContact: nextOptions.includeContactEnrichment,
+          includeContactConfidence: nextOptions.includeContactConfidence,
+        });
         downloadCsvOnWeb(`foundry-chain-people-export-${d}.csv`, csv);
         setCsvMsg(
           truncated
@@ -261,8 +289,15 @@ export default function FoundryExportScreen() {
               }.`,
         );
       } else {
-        const { rows: allRows, truncated, total_count } = await collectExportCompanyOwnerLeadsForCsv(baseApiParams);
-        const csv = exportCompanyOwnerLeadsToCsv(allRows);
+        const { rows: allRows, truncated, total_count } = await collectExportCompanyOwnerLeadsForCsv({
+          ...baseApiParams,
+          include_contact: nextOptions.includeContactEnrichment ? true : undefined,
+          include_contact_confidence: nextOptions.includeContactConfidence ? true : undefined,
+        });
+        const csv = exportCompanyOwnerLeadsToCsv(allRows, {
+          includeContact: nextOptions.includeContactEnrichment,
+          includeContactConfidence: nextOptions.includeContactConfidence,
+        });
         downloadCsvOnWeb(`foundry-owner-rows-export-${d}.csv`, csv);
         setCsvMsg(
           truncated

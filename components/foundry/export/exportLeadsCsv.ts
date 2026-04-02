@@ -8,6 +8,11 @@ function csvCell(value: unknown): string {
   return s;
 }
 
+export type ExportCsvContactOptions = {
+  includeContact?: boolean;
+  includeContactConfidence?: boolean;
+};
+
 const CSV_HEADER: (keyof ExportCompanyOwnerLeadRow)[] = [
   'company_id',
   'legal_name',
@@ -41,10 +46,42 @@ const CSV_HEADER: (keyof ExportCompanyOwnerLeadRow)[] = [
   'is_export_ready',
 ];
 
-export function exportCompanyOwnerLeadsToCsv(rows: ExportCompanyOwnerLeadRow[]): string {
-  const lines = [CSV_HEADER.join(',')];
+const OWNER_CONTACT_CSV_KEYS: (keyof ExportCompanyOwnerLeadRow)[] = [
+  'contact_email_1',
+  'contact_email_2',
+  'contact_email_3',
+  'contact_phone_1',
+  'contact_phone_1_type',
+  'contact_phone_1_is_dnc',
+  'contact_phone_1_dnc_summary',
+  'contact_phone_2',
+  'contact_phone_2_type',
+  'contact_phone_2_is_dnc',
+  'contact_phone_2_dnc_summary',
+  'contact_phone_3',
+  'contact_phone_3_type',
+  'contact_phone_3_is_dnc',
+  'contact_phone_3_dnc_summary',
+];
+
+const OWNER_CONFIDENCE_CSV_KEYS: (keyof ExportCompanyOwnerLeadRow)[] = [
+  'contact_confidence_tier',
+  'contact_enrichment_top_score',
+  'contact_enrichment_score_margin',
+  'contact_enrichment_reason_summary',
+];
+
+export function exportCompanyOwnerLeadsToCsv(
+  rows: ExportCompanyOwnerLeadRow[],
+  opts?: ExportCsvContactOptions,
+): string {
+  const header = [...CSV_HEADER];
+  if (opts?.includeContact) header.push(...OWNER_CONTACT_CSV_KEYS);
+  if (opts?.includeContact && opts?.includeContactConfidence) header.push(...OWNER_CONFIDENCE_CSV_KEYS);
+
+  const lines = [header.join(',')];
   for (const r of rows) {
-    lines.push(CSV_HEADER.map((k) => csvCell(r[k])).join(','));
+    lines.push(header.map((k) => csvCell(r[k])).join(','));
   }
   return lines.join('\n');
 }
@@ -78,10 +115,42 @@ const CHAIN_PEOPLE_CSV_HEADER: (keyof ExportCompanyChainPeopleRow)[] = [
   'is_export_ready',
 ];
 
-export function exportCompanyChainPeopleToCsv(rows: ExportCompanyChainPeopleRow[]): string {
-  const lines = [CHAIN_PEOPLE_CSV_HEADER.join(',')];
+const CHAIN_CONTACT_CSV_KEYS: (keyof ExportCompanyChainPeopleRow)[] = [
+  'contact_email_1',
+  'contact_email_2',
+  'contact_email_3',
+  'contact_phone_1',
+  'contact_phone_1_type',
+  'contact_phone_1_is_dnc',
+  'contact_phone_1_dnc_summary',
+  'contact_phone_2',
+  'contact_phone_2_type',
+  'contact_phone_2_is_dnc',
+  'contact_phone_2_dnc_summary',
+  'contact_phone_3',
+  'contact_phone_3_type',
+  'contact_phone_3_is_dnc',
+  'contact_phone_3_dnc_summary',
+];
+
+const CHAIN_CONFIDENCE_CSV_KEYS: (keyof ExportCompanyChainPeopleRow)[] = [
+  'contact_confidence_tier',
+  'contact_enrichment_top_score',
+  'contact_enrichment_score_margin',
+  'contact_enrichment_reason_summary',
+];
+
+export function exportCompanyChainPeopleToCsv(
+  rows: ExportCompanyChainPeopleRow[],
+  opts?: ExportCsvContactOptions,
+): string {
+  const header = [...CHAIN_PEOPLE_CSV_HEADER];
+  if (opts?.includeContact) header.push(...CHAIN_CONTACT_CSV_KEYS);
+  if (opts?.includeContact && opts?.includeContactConfidence) header.push(...CHAIN_CONFIDENCE_CSV_KEYS);
+
+  const lines = [header.join(',')];
   for (const r of rows) {
-    lines.push(CHAIN_PEOPLE_CSV_HEADER.map((k) => csvCell(r[k])).join(','));
+    lines.push(header.map((k) => csvCell(r[k])).join(','));
   }
   return lines.join('\n');
 }

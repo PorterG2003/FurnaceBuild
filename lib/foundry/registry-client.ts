@@ -641,6 +641,10 @@ export type ExportCompanyOwnerLeadsParams = {
   has_open_review_task?: boolean;
   has_parse_failure_task?: boolean;
   has_current_owner?: boolean;
+  /** When true, API adds matched contact emails/phones (latest enrichment per owner). */
+  include_contact?: boolean;
+  /** When true (and include_contact), adds score/tier/reason columns. Ignored if include_contact is false. */
+  include_contact_confidence?: boolean;
 };
 
 export type ExportCompanyChainPeopleParams = ExportCompanyOwnerLeadsParams & {
@@ -667,6 +671,8 @@ export async function fetchExportCompanyOwnerLeads(
       has_parse_failure_task:
         params?.has_parse_failure_task == null ? undefined : String(params.has_parse_failure_task),
       has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
+      include_contact: params?.include_contact === true ? 'true' : undefined,
+      include_contact_confidence: params?.include_contact_confidence === true ? 'true' : undefined,
     },
   });
 }
@@ -692,6 +698,8 @@ export async function fetchExportCompanyChainPeople(
       has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
       max_depth: params?.max_depth,
       max_chains: params?.max_chains,
+      include_contact: params?.include_contact === true ? 'true' : undefined,
+      include_contact_confidence: params?.include_contact_confidence === true ? 'true' : undefined,
     },
   });
 }

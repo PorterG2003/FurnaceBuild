@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { normalizeNameKey } from './normalizeSourceRecord.js';
+import { normalizeNameKey } from '../ingestion/normalizeSourceRecord.js';
 
 export interface EntityOwnerDeleteImpact {
   entity_owner_id: string;

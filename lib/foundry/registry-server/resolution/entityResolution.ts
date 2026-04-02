@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { buildResolutionMeta } from './normalizeSourceRecord.js';
-import { ensureCompanyDedupeReviewTaskForNormalizedKey } from './companyDedupe.js';
+import { buildResolutionMeta } from '../ingestion/normalizeSourceRecord.js';
+import { ensureCompanyDedupeReviewTaskForNormalizedKey } from '../dedupe/companyDedupe.js';
 
 export const LINKER_VERSION = 'foundry_linker_v1';
 

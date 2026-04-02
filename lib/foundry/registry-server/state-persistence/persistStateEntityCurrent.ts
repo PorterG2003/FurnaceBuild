@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { formatOwnerDisplayName } from './formatOwnerDisplayName.js';
-import { normalizeNameKey } from './normalizeSourceRecord.js';
+import { normalizeNameKey } from '../ingestion/normalizeSourceRecord.js';
 import type { PersistEntityOwnerInput, PersistedEntityOwnerRow } from './ownerDrilldown.js';
 
 type StateEntityRowInput = {

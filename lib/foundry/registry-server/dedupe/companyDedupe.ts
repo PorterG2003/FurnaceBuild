@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { normalizeNameKey } from './normalizeSourceRecord.js';
+import { normalizeNameKey } from '../ingestion/normalizeSourceRecord.js';
 
 export const MERGE_LINKER_VERSION = 'foundry_company_merge_v1';
 export const MERGE_MATCHER_VERSION = 'foundry_company_merge_v1';

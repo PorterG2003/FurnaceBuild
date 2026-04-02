@@ -1,43 +1,87 @@
 #!/bin/bash
-# Set Supabase Secret Key in SSM Parameter Store
+# Set Supabase Secret Key in SSM Parameter Store at the path you configure (Amplify or manual).
 
 set -e
 
-# Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 INFRA_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+REPO_ROOT="$( cd "$SCRIPT_DIR/../../.." && pwd )"
 
-# Load environment variables
-ENV_FILE="$INFRA_DIR/.env.local"
-if [ -f "$ENV_FILE" ]; then
-  set -a
-  source "$ENV_FILE"
-  set +a
-fi
+for f in "$REPO_ROOT/.env.local" "$REPO_ROOT/.env" "$INFRA_DIR/.env.local"; do
+  if [ -f "$f" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$f"
+    set +a
+  fi
+done
 
-# Parse arguments
-ENVIRONMENT="${1:-dev}"
-SERVICE_KEY="${2}"
+PARAM_PATH=""
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --param)
+      if [ -z "${2:-}" ]; then
+        echo "❌ Error: --param requires a value (full SSM parameter name, e.g. /amplify/.../SUPABASE_SECRET_KEY)"
+        exit 1
+      fi
+      PARAM_PATH="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [dev|prod] [service-key]"
+      echo "       $0 --param /full/ssm/parameter/name [service-key]"
+      echo ""
+      echo "  dev|prod       Uses DEV_SECRET_SSM_PREFIX or PROD_SECRET_SSM_PREFIX + /SUPABASE_SECRET_KEY when --param is omitted."
+      echo "  service-key    Optional; if omitted you are prompted (hidden input)."
+      echo ""
+      echo "Requires DEV_SECRET_SSM_PREFIX / PROD_SECRET_SSM_PREFIX in .env.local unless --param is set."
+      echo "See docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md"
+      exit 0
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+ENVIRONMENT="${ARGS[0]:-dev}"
+SERVICE_KEY="${ARGS[1]:-}"
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 
-# Validate environment
 if [ "$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "prod" ]; then
-  echo "❌ Error: Environment must be 'dev' or 'prod'"
+  echo "❌ Error: Environment must be 'dev' or 'prod' (first positional argument)"
   echo "Usage: $0 [dev|prod] [service-key]"
-  echo ""
-  echo "If service-key is not provided, you will be prompted to enter it."
+  echo "       $0 --param /full/ssm/name [service-key]"
   exit 1
 fi
 
-# Set parameter path based on environment
-if [ "$ENVIRONMENT" = "dev" ]; then
-  PARAM_PATH="/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY"
-else
-  PARAM_PATH="/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY"
+if [ -z "$PARAM_PATH" ]; then
+  if [ "$ENVIRONMENT" = "dev" ]; then
+    PFX="${DEV_SECRET_SSM_PREFIX:-}"
+  else
+    PFX="${PROD_SECRET_SSM_PREFIX:-}"
+  fi
+  if [ -n "$PFX" ]; then
+    PFX="${PFX%/}"
+    PARAM_PATH="${PFX}/SUPABASE_SECRET_KEY"
+  fi
 fi
 
-# Get service key if not provided
+if [ -z "$PARAM_PATH" ]; then
+  echo "❌ Error: No SSM parameter path set."
+  echo "   Set DEV_SECRET_SSM_PREFIX or PROD_SECRET_SSM_PREFIX in infra/workers/.env.local (or pass --param /full/name)."
+  echo "   See docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md"
+  exit 1
+fi
+
+# Normalize: ensure leading slash for display/AWS
+if [[ "$PARAM_PATH" != /* ]]; then
+  PARAM_PATH="/$PARAM_PATH"
+fi
+
 if [ -z "$SERVICE_KEY" ]; then
   echo "📝 Please enter the Supabase Secret Key for $ENVIRONMENT:"
   echo ""
@@ -50,16 +94,15 @@ if [ -z "$SERVICE_KEY" ]; then
   echo "   ⚠️  Important: Use the 'Secret Key' - it bypasses RLS (needed for workers)"
   echo "   ⚠️  Do NOT use the 'Publishable Key' - that's for client-side use only"
   echo ""
-  read -s SERVICE_KEY
+  read -r -s SERVICE_KEY
   echo ""
-  
+
   if [ -z "$SERVICE_KEY" ]; then
     echo "❌ Error: Secret key cannot be empty"
     exit 1
   fi
 fi
 
-# Trim whitespace and newlines (common when pasting)
 SERVICE_KEY=$(echo "$SERVICE_KEY" | tr -d '\n\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
 echo "🔐 Setting SSM parameter..."
@@ -68,7 +111,6 @@ echo "   Environment: $ENVIRONMENT"
 echo "   Region: $REGION"
 echo ""
 
-# Show preview before storing (without exposing full key)
 SECRET_LENGTH=${#SERVICE_KEY}
 FIRST_CHARS="${SERVICE_KEY:0:8}..."
 LAST_CHARS="...${SERVICE_KEY: -8}"
@@ -78,7 +120,6 @@ echo "   Length: $SECRET_LENGTH characters"
 echo "   Preview: $FIRST_CHARS$LAST_CHARS"
 echo ""
 
-# Check if it looks like a Supabase Secret Key (new format: sb_... or legacy JWT: eyJ...)
 if [[ "$SERVICE_KEY" =~ ^sb_ ]]; then
   echo "✅ Format looks valid (Supabase Secret Key - new format)"
 elif [[ "$SERVICE_KEY" =~ ^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ ]]; then
@@ -88,7 +129,7 @@ else
   echo "   Expected: Starts with 'sb_' (new format) or 'eyJ' (legacy JWT format)"
   echo "   Make sure you copied the 'Secret Key' not 'Publishable Key'"
   echo ""
-  read -p "   Continue anyway? (y/n) " -n 1 -r
+  read -r -p "   Continue anyway? (y/n) " -n 1 -r
   echo ""
   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "❌ Cancelled"
@@ -98,7 +139,6 @@ fi
 
 echo ""
 
-# Create or update the parameter
 aws ssm put-parameter \
   --name "$PARAM_PATH" \
   --value "$SERVICE_KEY" \
@@ -127,4 +167,3 @@ else
   echo "❌ Failed to set parameter"
   exit 1
 fi
-

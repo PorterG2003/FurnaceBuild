@@ -1,0 +1,38 @@
+/** Parsed row from Utah business search results grid */
+export type UtahSearchHit = {
+  /** Numeric id passed to GetBusinessSearchResultById */
+  businessId: string;
+  businessReservationNumber: string;
+  /** Display name (first column link text) */
+  entityName: string;
+  /** e.g. 11672536-0160 */
+  entityNumber: string;
+  status: string;
+  entityType: string;
+};
+
+export type UtahPrincipal = {
+  title: string;
+  name: string;
+  address: string;
+  lastUpdated: string;
+};
+
+export type UtahEntityDetailParsed = {
+  entityNumber: string;
+  entityName: string;
+  /** From detail page "Entity Status" when parseable */
+  entityStatus?: string;
+  principals: UtahPrincipal[];
+};
+
+import type { CompareOutcome } from '../scrapers/compareTypes.js';
+
+export type { CompareOutcome };
+
+export type TesterCompareResult = {
+  outcome: CompareOutcome;
+  reason: string;
+  memberNamesFound: string[];
+  expectedNormalized: string;
+};

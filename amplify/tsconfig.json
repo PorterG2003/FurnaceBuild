@@ -12,11 +12,15 @@
     "paths": {
       "$amplify/*": [
         "../.amplify/generated/*"
+      ],
+      "@supabase/supabase-js": [
+        "../node_modules/@supabase/supabase-js"
       ]
     }
   },
   "include": [
-    "**/*.ts"
+    "**/*.ts",
+    "../lib/**/*.d.ts"
   ],
   "exclude": [
     "node_modules",

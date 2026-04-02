@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, ReactNode } from 'react';
 import { ActivityIndicator, View, Text, Pressable, ScrollView } from 'react-native';
 import { ChevronUpIcon, ChevronDownIcon } from 'react-native-heroicons/outline';
 import { Checkbox } from '@/components/ui/Checkbox';
-import { Skeleton } from '@/components/ui/feedback';
+import { Skeleton, useSmoothLoading, type UseSmoothLoadingOptions } from '@/components/ui/feedback';
 import { Tooltip } from '@/components/ui/Tooltip';
 
 /** Extra padding on the left of the first column and right of the last column so content isn't flush to the table edges. */
@@ -43,6 +43,16 @@ interface DataTableProps<T> {
   equalColumnWidths?: boolean;
   /** When true, header row uses vertically centered single-line cells (no stats bar). Default false. */
   compactHeader?: boolean;
+  paginationMode?: 'client' | 'server';
+  currentPage?: number;
+  totalItems?: number;
+  onPageChange?: (page: number) => void;
+  sortColumn?: string;
+  sortDirection?: SortDirection;
+  onSortChange?: (columnKey: string, direction: SortDirection) => void;
+  hidePaginationWhenSinglePage?: boolean;
+  smoothLoading?: boolean;
+  smoothLoadingOptions?: UseSmoothLoadingOptions;
 }
 
 type SortDirection = 'asc' | 'desc';
@@ -62,28 +72,43 @@ export function DataTable<T>({
   renderEmpty,
   equalColumnWidths = false,
   compactHeader = false,
+  paginationMode = 'client',
+  currentPage,
+  totalItems,
+  onPageChange,
+  sortColumn,
+  sortDirection,
+  onSortChange,
+  hidePaginationWhenSinglePage = true,
+  smoothLoading = false,
+  smoothLoadingOptions,
 }: DataTableProps<T>) {
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [internalSortColumn, setInternalSortColumn] = useState<string | null>(null);
   const [tableContainerWidth, setTableContainerWidth] = useState<number>(0);
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [internalSortDirection, setInternalSortDirection] = useState<SortDirection>('asc');
+  const [internalCurrentPage, setInternalCurrentPage] = useState(1);
+  const hasFiniteServerTotal = typeof totalItems === 'number' && Number.isFinite(totalItems);
+  const isServerPagination = paginationEnabled && paginationMode === 'server' && hasFiniteServerTotal && onPageChange != null;
+  const effectiveSortColumn = isServerPagination ? sortColumn ?? null : internalSortColumn;
+  const effectiveSortDirection = isServerPagination ? sortDirection ?? 'asc' : internalSortDirection;
+  const effectiveCurrentPage = isServerPagination ? Math.max(1, currentPage ?? 1) : internalCurrentPage;
 
   useEffect(() => {
-    setCurrentPage(1);
+    setInternalCurrentPage(1);
   }, [itemsPerPage]);
 
   const sortedItems = useMemo(() => {
-    if (!sortColumn) return items;
+    if (isServerPagination || !effectiveSortColumn) return items;
 
-    const column = columns.find((col) => col.key === sortColumn);
+    const column = columns.find((col) => col.key === effectiveSortColumn);
     if (!column || !column.sortable || !column.sortValue) return items;
 
     const sorted = [...items].sort((a, b) => {
       const aValue = column.sortValue!(a);
       const bValue = column.sortValue!(b);
 
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      if (aValue < bValue) return effectiveSortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return effectiveSortDirection === 'asc' ? 1 : -1;
       // Stable sort: break ties by item key so equal-value rows have deterministic order
       const keyA = getItemKey(a);
       const keyB = getItemKey(b);
@@ -91,17 +116,41 @@ export function DataTable<T>({
     });
 
     return sorted;
-  }, [items, sortColumn, sortDirection, columns]);
+  }, [items, effectiveSortColumn, effectiveSortDirection, columns, getItemKey, isServerPagination]);
 
+  const safeServerTotal = isServerPagination ? Math.max(0, Math.floor(totalItems ?? 0)) : items.length;
   const totalPages = paginationEnabled
-    ? Math.max(1, Math.ceil(sortedItems.length / itemsPerPage))
+    ? Math.max(1, Math.ceil((isServerPagination ? safeServerTotal : sortedItems.length) / itemsPerPage))
     : 1;
 
   const visibleItems = useMemo(() => {
     if (!paginationEnabled) return sortedItems;
-    const start = (currentPage - 1) * itemsPerPage;
+    if (isServerPagination) return items;
+    const start = (effectiveCurrentPage - 1) * itemsPerPage;
     return sortedItems.slice(start, start + itemsPerPage);
-  }, [paginationEnabled, sortedItems, currentPage, itemsPerPage]);
+  }, [paginationEnabled, sortedItems, effectiveCurrentPage, itemsPerPage, isServerPagination, items]);
+
+  const totalVisibleItems = isServerPagination ? safeServerTotal : sortedItems.length;
+  const rangeStart = totalVisibleItems === 0 ? 0 : (effectiveCurrentPage - 1) * itemsPerPage + 1;
+  const rangeEnd =
+    totalVisibleItems === 0
+      ? 0
+      : isServerPagination
+        ? Math.min(totalVisibleItems, rangeStart + visibleItems.length - 1)
+        : Math.min(totalVisibleItems, effectiveCurrentPage * itemsPerPage);
+  const smoothSkeleton = useSmoothLoading(loading && items.length === 0, smoothLoadingOptions);
+  const smoothUpdating = useSmoothLoading(loading && items.length > 0, smoothLoadingOptions);
+  const showSkeleton = smoothLoading ? smoothSkeleton : loading && items.length === 0;
+  const showUpdating = smoothLoading ? smoothUpdating : loading && items.length > 0;
+
+  const changePage = (nextPage: number) => {
+    const clampedPage = Math.min(Math.max(1, nextPage), totalPages);
+    if (isServerPagination) {
+      onPageChange?.(clampedPage);
+      return;
+    }
+    setInternalCurrentPage(clampedPage);
+  };
 
   const allSelected =
     selectable &&
@@ -148,14 +197,19 @@ export function DataTable<T>({
   const handleSort = (columnKey: string) => {
     const column = columns.find((col) => col.key === columnKey);
     if (!column || !column.sortable) return;
+    if (isServerPagination && !onSortChange) return;
 
-    if (sortColumn === columnKey) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    const nextDirection: SortDirection =
+      effectiveSortColumn === columnKey && effectiveSortDirection === 'asc' ? 'desc' : 'asc';
+
+    if (isServerPagination) {
+      onSortChange?.(columnKey, nextDirection);
+      changePage(1);
     } else {
-      setSortColumn(columnKey);
-      setSortDirection('asc');
+      setInternalSortColumn(columnKey);
+      setInternalSortDirection(nextDirection);
+      setInternalCurrentPage(1);
     }
-    setCurrentPage(1);
   };
 
   const SortButton = ({ columnKey, label }: { columnKey: string; label: string }) => {
@@ -168,7 +222,7 @@ export function DataTable<T>({
       );
     }
 
-    const isActive = sortColumn === columnKey;
+    const isActive = effectiveSortColumn === columnKey;
     return (
       <Pressable
         onPress={() => handleSort(columnKey)}
@@ -184,7 +238,7 @@ export function DataTable<T>({
         </Text>
         {isActive && (
           <>
-            {sortDirection === 'asc' ? (
+            {effectiveSortDirection === 'asc' ? (
               <ChevronUpIcon size={14} color="#fff" />
             ) : (
               <ChevronDownIcon size={14} color="#fff" />
@@ -282,7 +336,7 @@ export function DataTable<T>({
     );
   };
 
-  if (loading && items.length === 0) {
+  if (showSkeleton) {
     const skeletonColumnCount = columns.length + (selectable ? 1 : 0);
     const skeletonRowCount = 6;
     return (
@@ -339,7 +393,7 @@ export function DataTable<T>({
 
   return (
     <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
-      {loading && items.length > 0 && (
+      {showUpdating && (
         <View className="absolute right-3 top-3 z-10 flex-row items-center gap-2 rounded-full border border-[#2A2A2A] bg-[#111111]/95 px-2.5 py-1.5">
           <ActivityIndicator size="small" color="#9ca3af" />
           <Text className="text-xs text-gray-400 font-instrument">Updating...</Text>
@@ -467,49 +521,54 @@ export function DataTable<T>({
       </View>
 
       {/* Pagination */}
-      {paginationEnabled && totalPages > 1 && (
+      {paginationEnabled && (!hidePaginationWhenSinglePage || totalPages > 1) && totalVisibleItems > 0 && (
         <View className="flex-row items-center justify-between mt-4 pt-4 px-6 pb-4 border-t border-[#2A2A2A]">
-          <Pressable
-            onPress={() => setCurrentPage(Math.max(1, currentPage - 1))}
-            disabled={currentPage === 1}
-            className={`px-4 py-2 rounded-lg border ${
-              currentPage === 1
-                ? 'border-[#2A2A2A] opacity-50'
-                : 'border-[#3A3A3A] active:opacity-70'
-            }`}
-            style={{ backgroundColor: '#1A1A1A' }}
-          >
-            <Text
-              className={`text-sm font-instrument-semibold ${
-                currentPage === 1 ? 'text-gray-500' : 'text-white'
-              }`}
-            >
-              Previous
-            </Text>
-          </Pressable>
-
           <Text className="text-gray-400 font-instrument text-sm">
-            Page {currentPage} of {totalPages}
+            Showing {rangeStart}-{rangeEnd} of {totalVisibleItems}
           </Text>
 
-          <Pressable
-            onPress={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-            disabled={currentPage === totalPages}
-            className={`px-4 py-2 rounded-lg border ${
-              currentPage === totalPages
-                ? 'border-[#2A2A2A] opacity-50'
-                : 'border-[#3A3A3A] active:opacity-70'
-            }`}
-            style={{ backgroundColor: '#1A1A1A' }}
-          >
-            <Text
-              className={`text-sm font-instrument-semibold ${
-                currentPage === totalPages ? 'text-gray-500' : 'text-white'
+          <Text className="text-gray-400 font-instrument text-sm">
+            Page {effectiveCurrentPage} of {totalPages}
+          </Text>
+
+          <View className="flex-row items-center gap-2">
+            <Pressable
+              onPress={() => changePage(effectiveCurrentPage - 1)}
+              disabled={effectiveCurrentPage === 1}
+              className={`px-4 py-2 rounded-lg border ${
+                effectiveCurrentPage === 1
+                  ? 'border-[#2A2A2A] opacity-50'
+                  : 'border-[#3A3A3A] active:opacity-70'
               }`}
+              style={{ backgroundColor: '#1A1A1A' }}
             >
-              Next
-            </Text>
-          </Pressable>
+              <Text
+                className={`text-sm font-instrument-semibold ${
+                  effectiveCurrentPage === 1 ? 'text-gray-500' : 'text-white'
+                }`}
+              >
+                Previous
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => changePage(effectiveCurrentPage + 1)}
+              disabled={effectiveCurrentPage === totalPages}
+              className={`px-4 py-2 rounded-lg border ${
+                effectiveCurrentPage === totalPages
+                  ? 'border-[#2A2A2A] opacity-50'
+                  : 'border-[#3A3A3A] active:opacity-70'
+              }`}
+              style={{ backgroundColor: '#1A1A1A' }}
+            >
+              <Text
+                className={`text-sm font-instrument-semibold ${
+                  effectiveCurrentPage === totalPages ? 'text-gray-500' : 'text-white'
+                }`}
+              >
+                Next
+              </Text>
+            </Pressable>
+          </View>
         </View>
       )}
     </View>

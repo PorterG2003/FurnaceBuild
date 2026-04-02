@@ -96,10 +96,7 @@ export function CreateTagModal({
           </Text>
           <TextInput
             value={name}
-            onChangeText={(t) => {
-              setName(t);
-              setError(null);
-            }}
+            onChangeText={setName}
             placeholder="e.g. Follow up"
             placeholderTextColor="#666"
             autoCapitalize="none"

@@ -126,18 +126,14 @@ docker push $REPO_URI:latest
 
 - `SUPABASE_URL` (required): Supabase project URL
 - `SEND_QUEUE_URL` (required): SQS queue URL for sending message_jobs
-- `SUPABASE_SECRET_KEY_PARAM_PATH` (required): SSM Parameter Store path to fetch `SUPABASE_SECRET_KEY` from
-  - Example: `/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY`
-  - If set, the worker will fetch the secret from Parameter Store at startup
+- `SUPABASE_SECRET_KEY_PARAM_PATH` (required in ECS): **`{prefix}/SUPABASE_SECRET_KEY`** from **`DEV_SECRET_SSM_PREFIX`** / **`PROD_SECRET_SSM_PREFIX`** (see [`docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md`](../../docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md))
 - `AWS_REGION` (optional): AWS region, defaults to `us-west-2`
 
 ### Optional (Local Development)
 
 - `SUPABASE_SECRET_KEY` (optional): Supabase Secret Key
   - Can be provided directly, or fetched from Parameter Store if `SUPABASE_SECRET_KEY_PARAM_PATH` is set
-  - `SUPABASE_SECRET_KEY_PARAM_PATH` (optional): SSM Parameter Store path to fetch `SUPABASE_SECRET_KEY` from
-  - Example: `/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY`
-  - If set, the worker will fetch the secret from Parameter Store at startup
+  - `SUPABASE_SECRET_KEY_PARAM_PATH` (optional): Same as ECS; use your real Amplify/SSM path locally if not passing `SUPABASE_SECRET_KEY` directly
 
 ## Architecture
 

@@ -1,0 +1,11 @@
+{
+  "name": "foundry-state-matching-job",
+  "version": "1.0.0",
+  "description": "Foundry async state matching worker (Step Functions)",
+  "main": "handler.ts",
+  "type": "module",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.99.1"
+  }
+}

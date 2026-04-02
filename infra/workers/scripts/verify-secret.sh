@@ -1,45 +1,89 @@
 #!/bin/bash
-# Verify Supabase Secret Key stored in Parameter Store
+# Verify Supabase Secret Key stored in Parameter Store (path from env or --param).
 
 set -e
 
-# Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 INFRA_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+REPO_ROOT="$( cd "$SCRIPT_DIR/../../.." && pwd )"
 
-# Load environment variables
-ENV_FILE="$INFRA_DIR/.env.local"
-if [ -f "$ENV_FILE" ]; then
-  set -a
-  source "$ENV_FILE"
-  set +a
-fi
+for f in "$REPO_ROOT/.env.local" "$REPO_ROOT/.env" "$INFRA_DIR/.env.local"; do
+  if [ -f "$f" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$f"
+    set +a
+  fi
+done
 
-# Parse arguments
-ENVIRONMENT="${1:-dev}"
+PARAM_PATH=""
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --param)
+      if [ -z "${2:-}" ]; then
+        echo "❌ Error: --param requires a value"
+        exit 1
+      fi
+      PARAM_PATH="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [dev|prod]"
+      echo "       $0 --param /full/ssm/parameter/name"
+      echo ""
+      echo "  dev|prod   Use DEV_SECRET_SSM_PREFIX or PROD_SECRET_SSM_PREFIX + /SUPABASE_SECRET_KEY from env."
+      echo ""
+      echo "See docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md"
+      exit 0
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+ENVIRONMENT="${ARGS[0]:-dev}"
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 
-# Validate environment
 if [ "$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "prod" ]; then
   echo "❌ Error: Environment must be 'dev' or 'prod'"
   echo "Usage: $0 [dev|prod]"
+  echo "       $0 --param /full/ssm/name"
   exit 1
 fi
 
-# Set parameter path based on environment
-if [ "$ENVIRONMENT" = "dev" ]; then
-  PARAM_PATH="/amplify/furnacebuild/dev/SUPABASE_SECRET_KEY"
-  SUPABASE_URL="${DEV_SUPABASE_URL}"
-else
-  PARAM_PATH="/amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY"
-  SUPABASE_URL="${PROD_SUPABASE_URL}"
+if [ -z "$PARAM_PATH" ]; then
+  if [ "$ENVIRONMENT" = "dev" ]; then
+    PFX="${DEV_SECRET_SSM_PREFIX:-}"
+    SUPABASE_URL="${DEV_SUPABASE_URL:-$EXPO_PUBLIC_SUPABASE_URL}"
+  else
+    PFX="${PROD_SECRET_SSM_PREFIX:-}"
+    SUPABASE_URL="${PROD_SUPABASE_URL}"
+  fi
+  if [ -n "$PFX" ]; then
+    PFX="${PFX%/}"
+    PARAM_PATH="${PFX}/SUPABASE_SECRET_KEY"
+  fi
+fi
+
+if [ -z "$PARAM_PATH" ]; then
+  echo "❌ Error: No SSM parameter path set."
+  echo "   Set DEV_SECRET_SSM_PREFIX or PROD_SECRET_SSM_PREFIX in .env.local (or pass --param)."
+  echo "   See docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md"
+  exit 1
+fi
+
+if [[ "$PARAM_PATH" != /* ]]; then
+  PARAM_PATH="/$PARAM_PATH"
 fi
 
 if [ -z "$SUPABASE_URL" ]; then
-  echo "❌ Error: SUPABASE_URL not found in .env.local"
-  echo "   For dev: DEV_SUPABASE_URL"
-  echo "   For prod: PROD_SUPABASE_URL"
+  echo "❌ Error: Supabase URL not found for this environment"
+  echo "   For dev: set DEV_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_URL"
+  echo "   For prod: set PROD_SUPABASE_URL"
   exit 1
 fi
 
@@ -49,7 +93,6 @@ echo "   Parameter: $PARAM_PATH"
 echo "   Region: $REGION"
 echo ""
 
-# Get the secret from Parameter Store
 echo "📥 Fetching secret from Parameter Store..."
 SECRET_VALUE=$(aws ssm get-parameter \
   --name "$PARAM_PATH" \
@@ -64,10 +107,8 @@ if [ -z "$SECRET_VALUE" ] || [ "$SECRET_VALUE" = "None" ]; then
   exit 1
 fi
 
-# Trim the secret (remove any whitespace)
 TRIMMED_SECRET=$(echo "$SECRET_VALUE" | tr -d '\n\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
-# Show some info about the secret (without exposing it)
 SECRET_LENGTH=${#TRIMMED_SECRET}
 FIRST_CHARS="${TRIMMED_SECRET:0:8}..."
 LAST_CHARS="...${TRIMMED_SECRET: -8}"
@@ -77,7 +118,6 @@ echo "   Length: $SECRET_LENGTH characters"
 echo "   Preview: $FIRST_CHARS$LAST_CHARS"
 echo ""
 
-# Check if it looks like a valid Supabase Secret Key
 if [[ "$TRIMMED_SECRET" =~ ^sb_ ]]; then
   echo "✅ Format looks valid (Supabase Secret Key - new format, starts with 'sb_')"
 elif [[ "$TRIMMED_SECRET" =~ ^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ ]]; then
@@ -88,7 +128,6 @@ else
   echo "   Make sure you copied the 'Secret Key' not the 'Publishable Key'"
 fi
 
-# Check for whitespace issues
 ORIGINAL_LENGTH=${#SECRET_VALUE}
 if [ "$ORIGINAL_LENGTH" -ne "$SECRET_LENGTH" ]; then
   echo "⚠️  Warning: Secret contains whitespace/newlines"
@@ -100,16 +139,14 @@ fi
 echo ""
 echo "🧪 Testing Secret Key with Supabase..."
 
-# Test the key by making a simple API call to Supabase
-# For new format (sb_...), use Authorization header with Bearer
-# For legacy JWT format, both apikey and Authorization headers work
+# New sb_publishable_ / sb_secret_ keys: gateway requires apikey; Bearer must match apikey (not JWT).
+# See https://supabase.com/docs/guides/api/api-keys
 if [[ "$TRIMMED_SECRET" =~ ^sb_ ]]; then
-  # New format: use Authorization header
   TEST_RESPONSE=$(curl -s -w "\n%{http_code}" \
+    -H "apikey: $TRIMMED_SECRET" \
     -H "Authorization: Bearer $TRIMMED_SECRET" \
     "${SUPABASE_URL}/rest/v1/" 2>/dev/null || echo "000")
 else
-  # Legacy format: use both apikey and Authorization headers
   TEST_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -H "apikey: $TRIMMED_SECRET" \
     -H "Authorization: Bearer $TRIMMED_SECRET" \
@@ -117,10 +154,8 @@ else
 fi
 
 HTTP_CODE=$(echo "$TEST_RESPONSE" | tail -n 1)
-RESPONSE_BODY=$(echo "$TEST_RESPONSE" | head -n -1)
 
 if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ]; then
-  # 200 or 404 both mean auth worked (404 just means endpoint doesn't exist, but auth passed)
   echo "✅ Secret Key is VALID! Supabase accepted the key"
   echo ""
   echo "📝 Next steps:"
@@ -145,4 +180,3 @@ else
 fi
 
 echo ""
-

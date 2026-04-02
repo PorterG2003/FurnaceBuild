@@ -1,0 +1,56 @@
+{
+  "/FoundryStack-Dev/BulkResolveStubStateMachineArn": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BulkResolveStubStateMachineArn"
+    }
+  ],
+  "/FoundryStack-Dev/StateMatchingStubStateMachineArn": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "StateMatchingStubStateMachineArn"
+    }
+  ],
+  "/FoundryStack-Dev/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    }
+  ],
+  "/FoundryStack-Dev/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    }
+  ],
+  "/FoundryStack-Dev/BulkSourceResolutionStubSm/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BulkSourceResolutionStubSmC5A69CA8"
+    }
+  ],
+  "/FoundryStack-Dev/StateMatchingStubSm/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "StateMatchingStubSm6AF4393F"
+    }
+  ],
+  "/FoundryStack-Dev/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    }
+  ],
+  "/FoundryStack-Dev/BulkSourceResolutionStubSm/Role/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BulkSourceResolutionStubSmRole49A4347C"
+    }
+  ],
+  "/FoundryStack-Dev/StateMatchingStubSm/Role/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "StateMatchingStubSmRole935F2115"
+    }
+  ]
+}

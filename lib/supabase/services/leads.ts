@@ -20,6 +20,40 @@ export interface LeadFilters {
   missingFields?: string[];
 }
 
+export interface CampaignLeadTableRow {
+  id: string;
+  email: string;
+  name: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  company_name?: string | null;
+  website?: string | null;
+  linkedin_url?: string | null;
+  company_linkedin_url?: string | null;
+  phone_number?: string | null;
+  source?: string | null;
+  custom_lead_data?: Record<string, unknown> | null;
+  status?: Lead['status'] | null;
+  enrollment_state: 'active' | 'completed' | 'stopped' | 'paused' | null;
+  enrollment_current_node_id: string | null;
+  enrollment_stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
+  enrollment_stopped_error_message: string | null;
+  created_at: string;
+}
+
+export interface CampaignLeadTableQuery {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
+}
+
+export interface CampaignLeadTableResult {
+  rows: CampaignLeadTableRow[];
+  totalCount: number;
+}
+
 /**
  * Get all leads with optional filters
  */
@@ -76,6 +110,117 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
   }
 
   return data || [];
+}
+
+export async function getCampaignLeadTablePage(
+  campaignId: string,
+  query?: CampaignLeadTableQuery,
+): Promise<CampaignLeadTableResult> {
+  const supportedSortColumns = new Set([
+    'email',
+    'name',
+    'first_name',
+    'last_name',
+    'company_name',
+    'website',
+    'linkedin_url',
+    'company_linkedin_url',
+    'phone_number',
+    'source',
+    'status',
+    'created_at',
+  ]);
+  const sortBy = supportedSortColumns.has(query?.sortBy ?? '') ? query?.sortBy! : 'created_at';
+  const ascending = query?.sortDirection === 'asc';
+  const limit = query?.limit ?? 20;
+  const offset = query?.offset ?? 0;
+  const searchTerm = query?.search?.trim();
+
+  let leadsQuery = supabase
+    .from('leads')
+    .select(
+      'id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, status, created_at',
+      { count: 'exact' },
+    )
+    .eq('campaign_id', campaignId);
+
+  if (searchTerm) {
+    const pattern = `%${searchTerm}%`;
+    leadsQuery = leadsQuery.or(
+      `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern},phone_number.ilike.${pattern},website.ilike.${pattern},linkedin_url.ilike.${pattern}`,
+    );
+  }
+
+  const { data, error, count } = await leadsQuery
+    .order(sortBy, { ascending, nullsFirst: !ascending })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    throw new Error(`Failed to fetch leads: ${error.message}`);
+  }
+
+  const leadRows = (data ?? []) as Array<
+    Pick<
+      CampaignLeadTableRow,
+      | 'id'
+      | 'email'
+      | 'name'
+      | 'first_name'
+      | 'last_name'
+      | 'company_name'
+      | 'website'
+      | 'linkedin_url'
+      | 'company_linkedin_url'
+      | 'phone_number'
+      | 'source'
+      | 'custom_lead_data'
+      | 'status'
+      | 'created_at'
+    >
+  >;
+  const leadIds = leadRows.map((lead) => lead.id);
+  const enrollmentByLeadId = new Map<
+    string,
+    {
+      state: CampaignLeadTableRow['enrollment_state'];
+      current_node_id: string | null;
+      stopped_reason: CampaignLeadTableRow['enrollment_stopped_reason'];
+      stopped_error_message: string | null;
+    }
+  >();
+
+  if (leadIds.length > 0) {
+    const { data: enrollments, error: enrollmentsError } = await supabase
+      .from('enrollments')
+      .select('lead_id, state, current_node_id, stopped_reason, stopped_error_message')
+      .eq('campaign_id', campaignId)
+      .in('lead_id', leadIds);
+    if (enrollmentsError) {
+      throw new Error(`Failed to fetch enrollments: ${enrollmentsError.message}`);
+    }
+    for (const enrollment of enrollments ?? []) {
+      enrollmentByLeadId.set(enrollment.lead_id, {
+        state: enrollment.state as CampaignLeadTableRow['enrollment_state'],
+        current_node_id: enrollment.current_node_id,
+        stopped_reason: enrollment.stopped_reason as CampaignLeadTableRow['enrollment_stopped_reason'],
+        stopped_error_message: enrollment.stopped_error_message,
+      });
+    }
+  }
+
+  return {
+    rows: leadRows.map((lead) => {
+      const enrollment = enrollmentByLeadId.get(lead.id);
+      return {
+        ...lead,
+        enrollment_state: enrollment?.state ?? null,
+        enrollment_current_node_id: enrollment?.current_node_id ?? null,
+        enrollment_stopped_reason: enrollment?.stopped_reason ?? null,
+        enrollment_stopped_error_message: enrollment?.stopped_error_message ?? null,
+      };
+    }),
+    totalCount: count ?? 0,
+  };
 }
 
 export interface LeadCountFilters {

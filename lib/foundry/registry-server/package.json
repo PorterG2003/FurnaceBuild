@@ -1,0 +1,22 @@
+{
+  "name": "@furnace/registry-server",
+  "version": "1.0.0",
+  "description": "Shared Foundry registry DB logic for Amplify Lambda and CDK worker Lambdas",
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "scripts": {
+    "test": "node --import tsx --test \"./**/*.test.ts\""
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6"
+  },
+  "exports": {
+    ".": "./index.ts"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@compwright/namecase": "^3.0.1",
+    "@supabase/supabase-js": "^2.99.1"
+  }
+}

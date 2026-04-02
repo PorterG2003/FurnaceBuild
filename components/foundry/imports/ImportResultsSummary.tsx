@@ -38,12 +38,12 @@ export function ImportResultsSummary({
         </Text>
       </Card>
       <Card variant="card" className="flex-1 min-w-[140px]">
-        <Text className="text-xs text-gray-500 uppercase tracking-wider">Failed / skipped</Text>
-        <Text className="text-lg text-red-400 font-instrument-semibold mt-1">
-          {stats?.failed_rows != null || stats?.skipped_rows != null
-            ? String((stats.failed_rows ?? 0) + (stats.skipped_rows ?? 0))
-            : '—'}
-        </Text>
+        <Text className="text-xs text-gray-500 uppercase tracking-wider">Failed</Text>
+        <Text className="text-lg text-red-400 font-instrument-semibold mt-1">{num(stats, 'failed_rows')}</Text>
+      </Card>
+      <Card variant="card" className="flex-1 min-w-[140px]">
+        <Text className="text-xs text-gray-500 uppercase tracking-wider">Skipped</Text>
+        <Text className="text-lg text-gray-300 font-instrument-semibold mt-1">{num(stats, 'skipped_rows')}</Text>
       </Card>
     </View>
   );

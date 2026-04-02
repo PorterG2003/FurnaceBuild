@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   compareToTesterRow,
   filterMemberPrincipals,
+  ownerRowsForUtahDetail,
   parseEntityDetailHtml,
   parseSearchResultsHtml,
   pickBestSearchHit,
@@ -26,6 +27,8 @@ describe('Utah HTML parsers', () => {
     assert.match(parsed!.principals[0].name, /TANNER.*Mc?MULLIN/i);
     const members = filterMemberPrincipals(parsed!.principals).map((p) => p.name.trim());
     assert.equal(members.length, 1);
+    const rows = ownerRowsForUtahDetail(parsed!);
+    assert.equal(rows[0].titleRole, 'Member');
   });
 
   it('parses search results grid', () => {

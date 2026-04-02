@@ -8,6 +8,7 @@ import { BaseModal } from '@/components/ui/modals/BaseModal';
 import { Tabs } from '@/components/ui/tabs';
 import { Toggle } from '@/components/ui/Toggle';
 import type { BlockListEntry } from '@/lib/supabase/types';
+import { getBlockListPage } from '@/lib/supabase/services/block-list';
 
 const PENDING_UNBLOCK_RESET_MS = 4000;
 const TAB_LIST = 'list';
@@ -16,7 +17,7 @@ const TAB_SETTINGS = 'settings';
 export interface ManageBlockListModalProps {
   visible: boolean;
   onClose: () => void;
-  blockList: BlockListEntry[];
+  accountId: string;
   onUnblock: (entryId: string) => Promise<void>;
   unblockingId: string | null;
   /** When provided, Settings tab shows "Automatically block bounced emails" toggle. */
@@ -29,7 +30,7 @@ export interface ManageBlockListModalProps {
 export function ManageBlockListModal({
   visible,
   onClose,
-  blockList,
+  accountId,
   onUnblock,
   unblockingId,
   suppressBouncedEmails = true,
@@ -39,7 +40,15 @@ export function ManageBlockListModal({
 }: ManageBlockListModalProps) {
   const [activeTab, setActiveTab] = useState(TAB_LIST);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [pendingUnblockId, setPendingUnblockId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [rows, setRows] = useState<BlockListEntry[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loadingRows, setLoadingRows] = useState(false);
+  const [sortColumn, setSortColumn] = useState<string | undefined>('value');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const pageSize = 25;
 
   useEffect(() => {
     if (!visible) setActiveTab(TAB_LIST);
@@ -50,33 +59,60 @@ export function ManageBlockListModal({
   }, [visible]);
 
   useEffect(() => {
+    if (!visible) return;
+    const t = setTimeout(() => setDebouncedSearchQuery(searchQuery.trim()), 250);
+    return () => clearTimeout(t);
+  }, [searchQuery, visible]);
+
+  useEffect(() => {
     if (!pendingUnblockId) return;
     const t = setTimeout(() => setPendingUnblockId(null), PENDING_UNBLOCK_RESET_MS);
     return () => clearTimeout(t);
   }, [pendingUnblockId]);
 
+  const loadPage = useCallback(async () => {
+    if (!visible || activeTab !== TAB_LIST) return;
+    setLoadingRows(true);
+    try {
+      const result = await getBlockListPage(accountId, {
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        search: debouncedSearchQuery || undefined,
+        sortBy:
+          sortColumn === 'value' || sortColumn === 'type' || sortColumn === 'reason'
+            ? sortColumn
+            : 'created_at',
+        sortDirection,
+      });
+      setRows(result.entries);
+      setTotalCount(result.totalCount);
+    } finally {
+      setLoadingRows(false);
+    }
+  }, [accountId, activeTab, debouncedSearchQuery, page, sortColumn, sortDirection, visible]);
+
   const handleUnblockPress = useCallback(
     (entry: BlockListEntry) => {
       if (pendingUnblockId === entry.id) {
-        onUnblock(entry.id);
+        void onUnblock(entry.id).then(() => {
+          void loadPage();
+        });
         setPendingUnblockId(null);
       } else {
         setPendingUnblockId(entry.id);
       }
     },
-    [pendingUnblockId, onUnblock]
+    [loadPage, pendingUnblockId, onUnblock]
   );
 
-  const filteredList = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return blockList;
-    return blockList.filter((e) => e.value.toLowerCase().includes(q));
-  }, [blockList, searchQuery]);
+  useEffect(() => {
+    void loadPage();
+  }, [loadPage]);
 
   const emptyMessage =
-    blockList.length === 0
+    totalCount === 0 && !debouncedSearchQuery
       ? 'No blocked entries.'
-      : `No results for "${searchQuery.trim()}"`;
+      : `No results for "${debouncedSearchQuery}"`;
 
   const columns: TableColumn<BlockListEntry>[] = useMemo(
     () => [
@@ -211,7 +247,10 @@ export function ManageBlockListModal({
               <MagnifyingGlassIcon size={18} color="#6B7280" style={{ marginRight: 8 }} />
               <TextInput
                 value={searchQuery}
-                onChangeText={setSearchQuery}
+                onChangeText={(value) => {
+                  setSearchQuery(value);
+                  setPage(1);
+                }}
                 placeholder="Search blocked entries..."
                 placeholderTextColor="#6B7280"
                 className="flex-1 text-white font-instrument text-sm py-1"
@@ -227,11 +266,23 @@ export function ManageBlockListModal({
               keyboardShouldPersistTaps="handled"
             >
               <DataTable<BlockListEntry>
-                items={filteredList}
+                items={rows}
                 columns={columns}
                 getItemKey={(e) => e.id}
                 emptyMessage={emptyMessage}
-                pagination={false}
+                loading={loadingRows}
+                pagination
+                paginationMode="server"
+                currentPage={page}
+                totalItems={totalCount}
+                onPageChange={setPage}
+                sortColumn={sortColumn}
+                sortDirection={sortDirection}
+                onSortChange={(columnKey, direction) => {
+                  setSortColumn(columnKey);
+                  setSortDirection(direction);
+                  setPage(1);
+                }}
               />
             </ScrollView>
           </>

@@ -23,6 +23,9 @@ export function ExportLeadsTable({
   selectable,
   selectedKeys,
   onSelectionChange,
+  currentPage,
+  totalItems,
+  onPageChange,
 }: {
   rows: ExportCompanyOwnerLeadRow[];
   loading: boolean;
@@ -30,6 +33,9 @@ export function ExportLeadsTable({
   selectable?: boolean;
   selectedKeys?: Set<string>;
   onSelectionChange?: (keys: Set<string>) => void;
+  currentPage: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
 }) {
   const columns = useMemo(
     (): TableColumn<ExportCompanyOwnerLeadRow>[] => [
@@ -126,7 +132,13 @@ export function ExportLeadsTable({
       columns={columns}
       getItemKey={getExportLeadRowKey}
       loading={loading}
-      pagination={false}
+      smoothLoading
+      smoothLoadingOptions={{ delayMs: 120, minVisibleMs: 220 }}
+      pagination
+      paginationMode="server"
+      currentPage={currentPage}
+      totalItems={totalItems}
+      onPageChange={onPageChange}
       compactHeader
       equalColumnWidths={false}
       itemsPerPage={50}

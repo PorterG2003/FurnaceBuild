@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text } from 'react-native';
 import { Button } from '@/components/ui/button';
-import { DataTable, type TableColumn } from '@/components/ui/DataTable';
-import { DedupeMergeModal, type DedupeMergeField } from '@/components/foundry/dedupe/DedupeMergeModal';
+import { DedupeMergeModal } from '@/components/foundry/dedupe/DedupeMergeModal';
 import { DedupeDeleteDialog } from '@/components/foundry/dedupe/DedupeDeleteDialog';
+import { EntityOwnerDedupeTable } from '@/components/foundry/dedupe/EntityOwnerDedupeTable';
+import {
+  buildEntityOwnerMergePayload,
+  entityOwnerMergeFields,
+  getEntityOwnerValueMatrix,
+  getSelectedDeleteTargetId,
+} from '@/components/foundry/dedupe/dedupeManualActions';
 import {
   fetchEntityOwnersByCluster,
   fetchEntityOwnersByIds,
@@ -15,13 +21,6 @@ import {
   type RegistryEntityOwnerRow,
   type ReviewTaskRow,
 } from '@/lib/foundry/registry-types';
-
-const ownerMergeFields: DedupeMergeField[] = [
-  { key: 'owner_name', label: 'Owner name' },
-  { key: 'title_role', label: 'Title / role' },
-  { key: 'first_name', label: 'First name' },
-  { key: 'last_name', label: 'Last name' },
-];
 
 export function EntityOwnerDedupeTaskCard({
   task,
@@ -79,64 +78,10 @@ export function EntityOwnerDedupeTaskCard({
     [rows, selectedKeys],
   );
 
-  const columns = useMemo(
-    (): TableColumn<RegistryEntityOwnerRow>[] => [
-      {
-        key: 'owner',
-        label: 'Owner',
-        flex: 1.4,
-        minWidth: 140,
-        render: (r) => (
-          <View className="min-w-0">
-            <Text className="text-white font-instrument text-sm" numberOfLines={2}>
-              {r.owner_name}
-            </Text>
-            {r.owner_normalized_key ? (
-              <Text className="text-gray-500 font-instrument text-xs mt-0.5" numberOfLines={1}>
-                {r.owner_normalized_key}
-              </Text>
-            ) : null}
-          </View>
-        ),
-      },
-      {
-        key: 'title',
-        label: 'Title',
-        flex: 0.9,
-        minWidth: 90,
-        render: (r) => (
-          <Text className="text-gray-400 font-instrument text-xs" numberOfLines={2}>
-            {r.title_role ?? '—'}
-          </Text>
-        ),
-      },
-      {
-        key: 'names',
-        label: 'Parsed name',
-        flex: 1,
-        minWidth: 100,
-        render: (r) => (
-          <Text className="text-gray-400 font-instrument text-xs" numberOfLines={2}>
-            {[r.first_name, r.last_name].filter(Boolean).join(' ') || '—'}
-          </Text>
-        ),
-      },
-    ],
-    [],
-  );
-
-  const valueMatrix = useMemo(
-    () => [
-      selectedRows.map((r) => r.owner_name),
-      selectedRows.map((r) => r.title_role ?? ''),
-      selectedRows.map((r) => r.first_name ?? ''),
-      selectedRows.map((r) => r.last_name ?? ''),
-    ],
-    [selectedRows],
-  );
+  const valueMatrix = useMemo(() => getEntityOwnerValueMatrix(selectedRows), [selectedRows]);
 
   const canMerge = selectedRows.length >= 2;
-  const deleteTargetId = selectedRows.length === 1 ? selectedRows[0]!.id : null;
+  const deleteTargetId = getSelectedDeleteTargetId(selectedRows);
   const needsDismissOnly = !loading && !loadError && rows.length < 2;
 
   const dismiss = async () => {
@@ -156,22 +101,13 @@ export function EntityOwnerDedupeTaskCard({
 
   const handleMergeConfirm = async (merged: Record<string, string>, survivorIdx: number) => {
     const list = selectedRows;
-    if (list.length < 2) return;
-    const survivor = list[survivorIdx];
-    if (!survivor) return;
-    const others = list.filter((_, i) => i !== survivorIdx).map((r) => r.id);
+    const payload = buildEntityOwnerMergePayload(list, merged, survivorIdx);
+    if (!payload) return;
     setMergeBusy(true);
     setActionErr(null);
     try {
       await postEntityOwnerMerge({
-        survivor_entity_owner_id: survivor.id,
-        other_entity_owner_ids: others,
-        merged: {
-          owner_name: merged.owner_name,
-          title_role: merged.title_role.trim() ? merged.title_role : null,
-          first_name: merged.first_name.trim() ? merged.first_name : null,
-          last_name: merged.last_name.trim() ? merged.last_name : null,
-        },
+        ...payload,
         review_task_id: task.id,
       });
       setMergeOpen(false);
@@ -214,16 +150,9 @@ export function EntityOwnerDedupeTaskCard({
       ) : null}
 
       {!loadError || rows.length > 0 ? (
-        <DataTable<RegistryEntityOwnerRow>
-          items={rows}
-          columns={columns}
-          getItemKey={(r) => r.id}
+        <EntityOwnerDedupeTable
+          rows={rows}
           loading={loading}
-          pagination={false}
-          compactHeader
-          equalColumnWidths={false}
-          itemsPerPage={50}
-          selectable
           selectedKeys={selectedKeys}
           onSelectionChange={setSelectedKeys}
           emptyMessage={loading ? '…' : 'No rows.'}
@@ -252,7 +181,7 @@ export function EntityOwnerDedupeTaskCard({
         onClose={() => setMergeOpen(false)}
         title="Merge contacts (owners)"
         columnLabels={selectedRows.map((r) => r.owner_name.slice(0, 48))}
-        fields={ownerMergeFields}
+        fields={entityOwnerMergeFields}
         valueMatrix={valueMatrix}
         onConfirm={handleMergeConfirm}
         busy={mergeBusy}

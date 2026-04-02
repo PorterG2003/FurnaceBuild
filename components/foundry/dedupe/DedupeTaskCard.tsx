@@ -2,9 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '@/components/ui/button';
-import { DataTable, type TableColumn } from '@/components/ui/DataTable';
-import { DedupeMergeModal, type DedupeMergeField } from '@/components/foundry/dedupe/DedupeMergeModal';
+import { CompanyDedupeTable } from '@/components/foundry/dedupe/CompanyDedupeTable';
+import { DedupeMergeModal, type DedupeMergeReadOnlyRow } from '@/components/foundry/dedupe/DedupeMergeModal';
 import { DedupeDeleteDialog } from '@/components/foundry/dedupe/DedupeDeleteDialog';
+import {
+  buildCompanyMergePayload,
+  buildCompanyMergeReadOnlyRows,
+  companyMergeFields,
+  getCompanyValueMatrix,
+  getSelectedDeleteTargetId,
+  loadCompanyMergePreviewDetails,
+} from '@/components/foundry/dedupe/dedupeManualActions';
 import {
   fetchCompaniesByIds,
   fetchCompaniesByNormalizedKey,
@@ -14,14 +22,10 @@ import {
 } from '@/lib/foundry/registry-client';
 import {
   parseCompanyDedupeTaskPayload,
+  type ParsedCompanyDetail,
   type RegistryCompany,
   type ReviewTaskRow,
 } from '@/lib/foundry/registry-types';
-
-const companyMergeFields: DedupeMergeField[] = [
-  { key: 'legal_name', label: 'Legal name' },
-  { key: 'notes', label: 'Notes' },
-];
 
 export function DedupeTaskCard({
   task,
@@ -40,6 +44,9 @@ export function DedupeTaskCard({
   const [mergeBusy, setMergeBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const [mergePreviewDetails, setMergePreviewDetails] = useState<ParsedCompanyDetail[] | null>(null);
+  const [mergePreviewLoading, setMergePreviewLoading] = useState(false);
+  const [mergePreviewError, setMergePreviewError] = useState<string | null>(null);
 
   const loadCompanies = useCallback(async () => {
     setLoading(true);
@@ -87,56 +94,57 @@ export function DedupeTaskCard({
     if (mergeOpen && selectedKeys.size < 2) setMergeOpen(false);
   }, [mergeOpen, selectedKeys.size]);
 
+  const selectedCompanyIds = useMemo(
+    () => companies.filter((c) => selectedKeys.has(c.id)).map((c) => c.id).join(','),
+    [companies, selectedKeys],
+  );
+
+  useEffect(() => {
+    if (!mergeOpen) {
+      setMergePreviewLoading(false);
+      setMergePreviewDetails(null);
+      setMergePreviewError(null);
+      return;
+    }
+    const ids = selectedCompanyIds.split(',').filter(Boolean);
+    if (ids.length < 2) return;
+
+    let cancelled = false;
+    setMergePreviewLoading(true);
+    setMergePreviewError(null);
+    setMergePreviewDetails(null);
+
+    void loadCompanyMergePreviewDetails(ids)
+      .then((details) => {
+        if (cancelled) return;
+        setMergePreviewDetails(details);
+        setMergePreviewLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setMergePreviewError(e instanceof Error ? e.message : 'Failed to load merge preview');
+        setMergePreviewLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mergeOpen, selectedCompanyIds]);
+
   const selectedCompanies = useMemo(
     () => companies.filter((c) => selectedKeys.has(c.id)),
     [companies, selectedKeys],
   );
 
-  const companyColumns = useMemo(
-    (): TableColumn<RegistryCompany>[] => [
-      {
-        key: 'name',
-        label: 'Company',
-        flex: 1.5,
-        minWidth: 160,
-        render: (c) => (
-          <View className="min-w-0">
-            <Text className="text-white font-instrument text-sm" numberOfLines={2}>
-              {c.legal_name}
-            </Text>
-            {c.normalized_key ? (
-              <Text className="text-gray-500 font-instrument text-xs mt-0.5" numberOfLines={1}>
-                {c.normalized_key}
-              </Text>
-            ) : null}
-          </View>
-        ),
-      },
-      {
-        key: 'notes',
-        label: 'Notes',
-        flex: 1,
-        minWidth: 100,
-        render: (c) => (
-          <Text className="text-gray-400 font-instrument text-xs" numberOfLines={3}>
-            {c.notes ?? '—'}
-          </Text>
-        ),
-      },
-    ],
-    [],
-  );
+  const companyValueMatrix = useMemo(() => getCompanyValueMatrix(selectedCompanies), [selectedCompanies]);
 
-  const companyValueMatrix = useMemo(
-    () => [
-      selectedCompanies.map((c) => c.legal_name),
-      selectedCompanies.map((c) => c.notes ?? ''),
-    ],
-    [selectedCompanies],
-  );
+  const mergeReadOnlyRows = useMemo((): DedupeMergeReadOnlyRow[] | undefined => {
+    if (!mergeOpen) return undefined;
+    return buildCompanyMergeReadOnlyRows(selectedCompanies, mergePreviewLoading, mergePreviewDetails);
+  }, [mergeOpen, selectedCompanies, mergePreviewLoading, mergePreviewDetails]);
 
   const canMerge = selectedCompanies.length >= 2;
-  const deleteTargetId = selectedCompanies.length === 1 ? selectedCompanies[0]!.id : null;
+  const deleteTargetId = getSelectedDeleteTargetId(selectedCompanies);
   const needsDismissOnly = !loading && !loadError && companies.length < 2;
 
   const dismiss = async () => {
@@ -156,20 +164,13 @@ export function DedupeTaskCard({
 
   const handleMergeConfirm = async (merged: Record<string, string>, survivorIdx: number) => {
     const list = selectedCompanies;
-    if (list.length < 2) return;
-    const survivor = list[survivorIdx];
-    if (!survivor) return;
-    const others = list.filter((_, i) => i !== survivorIdx).map((c) => c.id);
+    const payload = buildCompanyMergePayload(list, merged, survivorIdx);
+    if (!payload) return;
     setMergeBusy(true);
     setActionErr(null);
     try {
       await postCompanyMerge({
-        survivor_company_id: survivor.id,
-        other_company_ids: others,
-        merged: {
-          legal_name: merged.legal_name,
-          notes: merged.notes || null,
-        },
+        ...payload,
         review_task_id: task.id,
       });
       setMergeOpen(false);
@@ -211,25 +212,28 @@ export function DedupeTaskCard({
       ) : null}
 
       {!loadError || companies.length > 0 ? (
-        <DataTable<RegistryCompany>
-          items={companies}
-          columns={companyColumns}
-          getItemKey={(c) => c.id}
+        <CompanyDedupeTable
+          rows={companies}
           loading={loading}
-          pagination={false}
-          compactHeader
-          equalColumnWidths={false}
-          itemsPerPage={50}
-          selectable
           selectedKeys={selectedKeys}
           onSelectionChange={setSelectedKeys}
-          emptyMessage={loading ? '…' : 'No rows.'}
           onRowPress={(c) => router.push(`/foundry/companies/${c.id}`)}
+          emptyMessage={loading ? '…' : 'No rows.'}
         />
       ) : null}
 
       <View className="flex-row flex-wrap gap-2 mt-3">
-        <Button variant="default" size="sm" disabled={!canMerge} onPress={() => setMergeOpen(true)}>
+        <Button
+          variant="default"
+          size="sm"
+          disabled={!canMerge}
+          onPress={() => {
+            setMergePreviewLoading(true);
+            setMergePreviewError(null);
+            setMergePreviewDetails(null);
+            setMergeOpen(true);
+          }}
+        >
           Merge selected
         </Button>
         <Button
@@ -254,6 +258,8 @@ export function DedupeTaskCard({
         valueMatrix={companyValueMatrix}
         onConfirm={handleMergeConfirm}
         busy={mergeBusy}
+        readOnlyRows={mergeReadOnlyRows}
+        readOnlyBannerError={mergePreviewError}
       />
 
       <DedupeDeleteDialog

@@ -6,6 +6,28 @@ export const LINKER_VERSION = 'foundry_linker_v1';
 
 const DEFAULT_AUTO_RESOLVE_PAGE = 40;
 
+interface SourceRecordDetailCompanyRow {
+  id: string;
+  legal_name: string;
+  normalized_key: string | null;
+  primary_address_line: string | null;
+  linked_source_websites: string[];
+}
+
+/** One display line from a company_locations row (matches adjudication / company profile needs). */
+function formatLocationLine(loc: {
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  state_region: string | null;
+  postal_code: string | null;
+}): string {
+  const parts = [loc.line1, loc.line2, loc.city, loc.state_region, loc.postal_code]
+    .map((s) => (typeof s === 'string' ? s.trim() : ''))
+    .filter(Boolean);
+  return parts.length ? parts.join(', ') : '';
+}
+
 export async function getSourceRecordDetail(leadsClient: SupabaseClient, id: string) {
   const { data: rec, error } = await leadsClient
     .from('source_business_records')
@@ -24,14 +46,115 @@ export async function getSourceRecordDetail(leadsClient: SupabaseClient, id: str
     .order('created_at', { ascending: false });
 
   const companyIds = [...new Set((links ?? []).filter((l) => l.is_current).map((l) => l.company_id as string))];
-  let companies: Record<string, { id: string; legal_name: string; normalized_key: string | null }> = {};
+  let companies: Record<string, SourceRecordDetailCompanyRow> = {};
   if (companyIds.length > 0) {
     const { data: cos } = await leadsClient
       .from('companies')
       .select('id, legal_name, normalized_key')
       .in('id', companyIds);
     for (const c of cos ?? []) {
-      companies[c.id as string] = c as { id: string; legal_name: string; normalized_key: string | null };
+      const id = c.id as string;
+      companies[id] = {
+        id,
+        legal_name: c.legal_name as string,
+        normalized_key: (c.normalized_key as string | null) ?? null,
+        primary_address_line: null,
+        linked_source_websites: [],
+      };
+    }
+
+    const { data: locRows } = await leadsClient
+      .from('company_locations')
+      .select('company_id, line1, line2, city, state_region, postal_code, is_primary')
+      .in('company_id', companyIds);
+
+    const locsByCompany = new Map<
+      string,
+      {
+        company_id: string;
+        line1: string | null;
+        line2: string | null;
+        city: string | null;
+        state_region: string | null;
+        postal_code: string | null;
+        is_primary: boolean;
+      }[]
+    >();
+    for (const row of locRows ?? []) {
+      const cid = row.company_id as string;
+      const arr = locsByCompany.get(cid) ?? [];
+      arr.push({
+        company_id: cid,
+        line1: (row.line1 as string | null) ?? null,
+        line2: (row.line2 as string | null) ?? null,
+        city: (row.city as string | null) ?? null,
+        state_region: (row.state_region as string | null) ?? null,
+        postal_code: (row.postal_code as string | null) ?? null,
+        is_primary: row.is_primary === true,
+      });
+      locsByCompany.set(cid, arr);
+    }
+    for (const cid of companyIds) {
+      const rows = locsByCompany.get(cid) ?? [];
+      const primary = rows.find((r) => r.is_primary === true) ?? rows[0];
+      let addr: string | null = null;
+      if (primary) {
+        const line = formatLocationLine({
+          line1: primary.line1 as string | null,
+          line2: primary.line2 as string | null,
+          city: primary.city as string | null,
+          state_region: primary.state_region as string | null,
+          postal_code: primary.postal_code as string | null,
+        });
+        addr = line.length > 0 ? line : null;
+      }
+      if (companies[cid]) companies[cid].primary_address_line = addr;
+    }
+
+    const { data: coLinks } = await leadsClient
+      .from('source_business_company_links')
+      .select('company_id, source_business_record_id, created_at')
+      .in('company_id', companyIds)
+      .eq('is_current', true)
+      .order('created_at', { ascending: false });
+
+    const recordOrderByCompany = new Map<string, string[]>();
+    for (const link of coLinks ?? []) {
+      const cid = link.company_id as string;
+      const rid = link.source_business_record_id as string;
+      if (!rid) continue;
+      const arr = recordOrderByCompany.get(cid) ?? [];
+      arr.push(rid);
+      recordOrderByCompany.set(cid, arr);
+    }
+
+    const allRids = [
+      ...new Set((coLinks ?? []).map((l) => l.source_business_record_id as string).filter(Boolean)),
+    ];
+    const idToWebsite = new Map<string, string | null>();
+    if (allRids.length > 0) {
+      const { data: srcRecs } = await leadsClient
+        .from('source_business_records')
+        .select('id, website')
+        .in('id', allRids);
+      for (const r of srcRecs ?? []) {
+        idToWebsite.set(r.id as string, (r.website as string | null) ?? null);
+      }
+    }
+
+    for (const cid of companyIds) {
+      const order = recordOrderByCompany.get(cid) ?? [];
+      const seen = new Set<string>();
+      const urls: string[] = [];
+      for (const rid of order) {
+        const w = idToWebsite.get(rid);
+        const trimmed = typeof w === 'string' ? w.trim() : '';
+        if (trimmed && !seen.has(trimmed)) {
+          seen.add(trimmed);
+          urls.push(trimmed);
+        }
+      }
+      if (companies[cid]) companies[cid].linked_source_websites = urls;
     }
   }
 

@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   filterFloridaOwnerPeople,
+  ownerRowsForFloridaDetail,
   parseFloridaEntityDetailHtml,
   parseFloridaSearchResultsHtml,
   pickBestFloridaSearchHit,
@@ -38,6 +39,8 @@ describe('Florida Sunbiz HTML parsers', () => {
     const owners = filterFloridaOwnerPeople(parsed!);
     assert.ok(owners.length >= 1);
     assert.ok(owners.some((n) => /WIEGAND|BEACHY/i.test(n)));
+    const rows = ownerRowsForFloridaDetail(parsed!);
+    assert.ok(rows.some((row) => row.titleRole));
   });
 
   it('parses corporation officer detail', () => {

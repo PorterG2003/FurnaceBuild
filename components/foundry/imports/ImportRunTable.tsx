@@ -17,7 +17,19 @@ function importDisplayName(config: Record<string, unknown>): string {
   return typeof n === 'string' && n.trim() ? n.trim() : '—';
 }
 
-export function ImportRunTable({ runs, loading }: { runs: IngestionRunRow[]; loading?: boolean }) {
+export function ImportRunTable({
+  runs,
+  loading,
+  currentPage,
+  totalItems,
+  onPageChange,
+}: {
+  runs: IngestionRunRow[];
+  loading?: boolean;
+  currentPage: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+}) {
   const items = useMemo(
     (): Row[] => runs.map((r) => ({ ...r, __key: r.id })),
     [runs],
@@ -129,7 +141,11 @@ export function ImportRunTable({ runs, loading }: { runs: IngestionRunRow[]; loa
       items={items}
       columns={columns}
       getItemKey={(item) => item.__key}
-      pagination={false}
+      pagination
+      paginationMode="server"
+      currentPage={currentPage}
+      totalItems={totalItems}
+      onPageChange={onPageChange}
       compactHeader
       equalColumnWidths={false}
       itemsPerPage={50}

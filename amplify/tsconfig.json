@@ -19,7 +19,8 @@
     }
   },
   "include": [
-    "**/*.ts"
+    "**/*.ts",
+    "../lib/**/*.d.ts"
   ],
   "exclude": [
     "node_modules",

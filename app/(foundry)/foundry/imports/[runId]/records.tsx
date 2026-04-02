@@ -18,23 +18,28 @@ export default function ImportRecordsPage() {
   const router = useRouter();
   const { runId } = useLocalSearchParams<{ runId: string }>();
   const [filter, setFilter] = useState<IngestionRecordsFilter>('all');
+  const [page, setPage] = useState(1);
   const [records, setRecords] = useState<ImportedRecordRow[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const pageSize = 25;
   const load = useCallback(async () => {
     if (!runId || typeof runId !== 'string') return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchIngestionRunRecords(runId, { limit: 500, offset: 0, filter });
+      const res = await fetchIngestionRunRecords(runId, { limit: pageSize, offset: (page - 1) * pageSize, filter });
       setRecords(res.records);
+      setTotalCount(res.total_count);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load records');
       setRecords([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
-  }, [runId, filter]);
+  }, [runId, filter, page]);
 
   useFocusEffect(
     useCallback(() => {
@@ -80,7 +85,10 @@ export default function ImportRecordsPage() {
       <Tabs
         tabs={RECORD_FILTER_TABS}
         activeTab={filter}
-        onTabChange={(id) => setFilter(id as IngestionRecordsFilter)}
+        onTabChange={(id) => {
+          setFilter(id as IngestionRecordsFilter);
+          setPage(1);
+        }}
         marginBottom={12}
       />
 
@@ -88,6 +96,9 @@ export default function ImportRecordsPage() {
         records={records}
         loading={loading}
         onRowPress={(r) => router.push(`/foundry/source-records/${r.id}`)}
+        currentPage={page}
+        totalItems={totalCount}
+        onPageChange={setPage}
       />
     </ScrollView>
   );

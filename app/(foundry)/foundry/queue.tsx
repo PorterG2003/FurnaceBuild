@@ -13,7 +13,11 @@ function matchesFilter(task: ReviewTaskRow, filter: QueueTaskFilter): boolean {
   if (task.task_type === 'company_dedupe' || task.task_type === 'entity_owner_dedupe') return false;
   if (filter === 'all') return true;
   if (filter === 'other') {
-    return task.task_type !== 'source_link_review' && task.task_type !== 'entity_match_review';
+    return (
+      task.task_type !== 'source_link_review' &&
+      task.task_type !== 'entity_match_review' &&
+      task.task_type !== 'contact_enrichment_review'
+    );
   }
   return task.task_type === filter;
 }

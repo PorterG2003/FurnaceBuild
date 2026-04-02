@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput } from 'react-native';
 import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { supabase } from '@/lib/supabase/client';
 import { format } from 'date-fns';
@@ -61,37 +61,54 @@ interface ScheduleTabProps {
   refreshTrigger?: number; // When this changes, reload data
 }
 
-export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
-  const [messageJobs, setMessageJobs] = useState<MessageJob[]>([]);
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>('emails');
-  const [emailSearchQuery, setEmailSearchQuery] = useState('');
-  const [enrollmentSearchQuery, setEnrollmentSearchQuery] = useState('');
+const PAGE_SIZE = 20;
 
-  useEffect(() => {
-    const loadScheduleData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+async function lookupCampaignLeadIds(campaignId: string, searchQuery: string): Promise<string[] | null> {
+  const search = searchQuery.trim();
+  if (!search) return null;
 
-        // Load message jobs (fetch all in chunks due to 1000 row limit)
-        const jobsData: any[] = [];
-        let jobsOffset = 0;
-        const jobsPageSize = 1000;
-        let jobsHasMore = true;
-        
-        while (jobsHasMore) {
-          const { data: jobsPage, error: jobsError } = await supabase
+  const pattern = `%${search}%`;
+  const { data, error } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('campaign_id', campaignId)
+    .or(
+      `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`,
+    )
+    .limit(1000);
+
+  if (error) {
+    throw new Error(`Failed to search leads: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => row.id).filter(Boolean);
+}
+
+async function fetchMessageJobsPage(params: {
+  campaignId: string;
+  page: number;
+  searchQuery: string;
+  sortColumn?: string;
+  sortDirection?: 'asc' | 'desc';
+}): Promise<{ rows: MessageJob[]; totalCount: number }> {
+  const leadIds = await lookupCampaignLeadIds(params.campaignId, params.searchQuery);
+  if (leadIds && leadIds.length === 0) {
+    return { rows: [], totalCount: 0 };
+  }
+
+  const sortBy = params.sortColumn === 'status' ? 'status' : 'scheduled_at';
+  const ascending = params.sortDirection === 'asc';
+  let query = supabase
           .from('message_jobs')
-          .select(`
+    .select(
+      `
             id,
             status,
             scheduled_at,
             reserved_at,
             sent_at,
             interval_id,
+        lead_id,
             message_data,
             error_message,
             retry_count,
@@ -111,38 +128,52 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
               interval_time,
               status
             )
-          `)
-            .eq('campaign_id', campaignId)
-            .range(jobsOffset, jobsOffset + jobsPageSize - 1)
-            .order('created_at', { ascending: false });
+      `,
+      { count: 'exact' },
+    )
+    .eq('campaign_id', params.campaignId);
 
-        if (jobsError) {
-          throw jobsError;
-        }
+  if (leadIds) {
+    query = query.in('lead_id', leadIds);
+  }
 
-          if (jobsPage && jobsPage.length > 0) {
-            jobsData.push(...jobsPage);
-            jobsHasMore = jobsPage.length === jobsPageSize;
-            jobsOffset += jobsPageSize;
-          } else {
-            jobsHasMore = false;
-          }
-        }
+  const { data, error, count } = await query
+    .order(sortBy, { ascending, nullsFirst: !ascending })
+    .range((params.page - 1) * PAGE_SIZE, params.page * PAGE_SIZE - 1);
 
-        // Load enrollments (fetch all in chunks due to 1000 row limit)
-        const enrollmentsData: any[] = [];
-        let enrollmentsOffset = 0;
-        const enrollmentsPageSize = 1000;
-        let enrollmentsHasMore = true;
-        
-        while (enrollmentsHasMore) {
-          const { data: enrollmentsPage, error: enrollmentsError } = await supabase
+  if (error) {
+    throw new Error(`Failed to load message jobs: ${error.message}`);
+  }
+
+  return {
+    rows: ((data ?? []) as MessageJob[]).map((job) => ({ ...job, type: 'message_job' })),
+    totalCount: count ?? 0,
+  };
+}
+
+async function fetchEnrollmentsPage(params: {
+  campaignId: string;
+  page: number;
+  searchQuery: string;
+  sortColumn?: string;
+  sortDirection?: 'asc' | 'desc';
+}): Promise<{ rows: Enrollment[]; totalCount: number }> {
+  const leadIds = await lookupCampaignLeadIds(params.campaignId, params.searchQuery);
+  if (leadIds && leadIds.length === 0) {
+    return { rows: [], totalCount: 0 };
+  }
+
+  const sortBy = params.sortColumn === 'status' ? 'state' : 'next_run_at';
+  const ascending = params.sortDirection === 'asc';
+  let query = supabase
           .from('enrollments')
-          .select(`
+    .select(
+      `
             id,
             state,
             next_run_at,
             current_node_id,
+        lead_id,
             created_at,
             updated_at,
             lead:leads (
@@ -154,76 +185,133 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
               node_type,
               node_data
             )
-          `)
-            .eq('campaign_id', campaignId)
-            .range(enrollmentsOffset, enrollmentsOffset + enrollmentsPageSize - 1)
-            .order('created_at', { ascending: false });
+      `,
+      { count: 'exact' },
+    )
+    .eq('campaign_id', params.campaignId)
+    .not('next_run_at', 'is', null);
 
-        if (enrollmentsError) {
-          throw enrollmentsError;
-          }
+  if (leadIds) {
+    query = query.in('lead_id', leadIds);
+  }
 
-          if (enrollmentsPage && enrollmentsPage.length > 0) {
-            enrollmentsData.push(...enrollmentsPage);
-            enrollmentsHasMore = enrollmentsPage.length === enrollmentsPageSize;
-            enrollmentsOffset += enrollmentsPageSize;
-          } else {
-            enrollmentsHasMore = false;
-          }
-        }
+  const { data, error, count } = await query
+    .order(sortBy, { ascending, nullsFirst: !ascending })
+    .range((params.page - 1) * PAGE_SIZE, params.page * PAGE_SIZE - 1);
 
-        // Add type markers
-        const jobsWithType = (jobsData || []).map(job => ({ ...job, type: 'message_job' as const }));
-        const enrollmentsWithType = (enrollmentsData || []).map(enrollment => ({ ...enrollment, type: 'enrollment' as const }));
+  if (error) {
+    throw new Error(`Failed to load enrollments: ${error.message}`);
+  }
 
-        setMessageJobs(jobsWithType);
-        setEnrollments(enrollmentsWithType);
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to load schedule data';
-        setError(errorMessage);
-        console.error('Error loading schedule data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (campaignId) {
-      loadScheduleData();
-    }
-  }, [campaignId, refreshTrigger]); // Reload when campaignId or refreshTrigger changes
-
-  // Sort message jobs by scheduled_at
-  const sortedMessageJobs = useMemo(() => {
-    return [...messageJobs].sort((a, b) => {
-      return new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime(); // Newest first
-    });
-  }, [messageJobs]);
-
-  // Sort enrollments by next_run_at
-  const sortedEnrollments = useMemo(() => {
-    return [...enrollments]
-      .filter(e => e.next_run_at !== null) // Only show enrollments with next_run_at
-      .sort((a, b) => {
-        return new Date(b.next_run_at!).getTime() - new Date(a.next_run_at!).getTime(); // Newest first
-    });
-  }, [enrollments]);
-
-  const filterByLead = (item: { lead: { email?: string | null; name?: string | null } | null }, q: string) => {
-    if (!q.trim()) return true;
-    const query = q.toLowerCase();
-    const email = item.lead?.email?.toLowerCase() || '';
-    const name = item.lead?.name?.toLowerCase() || '';
-    return email.includes(query) || name.includes(query);
+  return {
+    rows: ((data ?? []) as Enrollment[]).map((enrollment) => ({ ...enrollment, type: 'enrollment' })),
+    totalCount: count ?? 0,
   };
+}
 
-  const filteredMessageJobs = useMemo(
-    () => (emailSearchQuery.trim() ? sortedMessageJobs.filter((item) => filterByLead(item, emailSearchQuery)) : sortedMessageJobs),
-    [sortedMessageJobs, emailSearchQuery]
-  );
-  const filteredEnrollments = useMemo(
-    () => (enrollmentSearchQuery.trim() ? sortedEnrollments.filter((item) => filterByLead(item, enrollmentSearchQuery)) : sortedEnrollments),
-    [sortedEnrollments, enrollmentSearchQuery]
-  );
+export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
+  const [activeTab, setActiveTab] = useState<string>('emails');
+
+  const [messageJobs, setMessageJobs] = useState<MessageJob[]>([]);
+  const [messageJobsLoading, setMessageJobsLoading] = useState(true);
+  const [messageJobsError, setMessageJobsError] = useState<string | null>(null);
+  const [messageJobsTotalCount, setMessageJobsTotalCount] = useState(0);
+  const [emailSearchQuery, setEmailSearchQuery] = useState('');
+  const [debouncedEmailSearchQuery, setDebouncedEmailSearchQuery] = useState('');
+  const [emailPage, setEmailPage] = useState(1);
+  const [emailSortColumn, setEmailSortColumn] = useState<string | undefined>('scheduled');
+  const [emailSortDirection, setEmailSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [enrollmentsLoading, setEnrollmentsLoading] = useState(true);
+  const [enrollmentsError, setEnrollmentsError] = useState<string | null>(null);
+  const [enrollmentsTotalCount, setEnrollmentsTotalCount] = useState(0);
+  const [enrollmentSearchQuery, setEnrollmentSearchQuery] = useState('');
+  const [debouncedEnrollmentSearchQuery, setDebouncedEnrollmentSearchQuery] = useState('');
+  const [enrollmentPage, setEnrollmentPage] = useState(1);
+  const [enrollmentSortColumn, setEnrollmentSortColumn] = useState<string | undefined>('scheduled');
+  const [enrollmentSortDirection, setEnrollmentSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedEmailSearchQuery(emailSearchQuery.trim()), 250);
+    return () => clearTimeout(t);
+  }, [emailSearchQuery]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedEnrollmentSearchQuery(enrollmentSearchQuery.trim()), 250);
+    return () => clearTimeout(t);
+  }, [enrollmentSearchQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMessageJobsLoading(true);
+    setMessageJobsError(null);
+
+    fetchMessageJobsPage({
+      campaignId,
+      page: emailPage,
+      searchQuery: debouncedEmailSearchQuery,
+      sortColumn: emailSortColumn,
+      sortDirection: emailSortDirection,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setMessageJobs(result.rows);
+        setMessageJobsTotalCount(result.totalCount);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setMessageJobs([]);
+        setMessageJobsTotalCount(0);
+        setMessageJobsError(err instanceof Error ? err.message : 'Failed to load email jobs');
+      })
+      .finally(() => {
+        if (!cancelled) setMessageJobsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId, debouncedEmailSearchQuery, emailPage, emailSortColumn, emailSortDirection, refreshTrigger]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setEnrollmentsLoading(true);
+    setEnrollmentsError(null);
+
+    fetchEnrollmentsPage({
+      campaignId,
+      page: enrollmentPage,
+      searchQuery: debouncedEnrollmentSearchQuery,
+      sortColumn: enrollmentSortColumn,
+      sortDirection: enrollmentSortDirection,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setEnrollments(result.rows);
+        setEnrollmentsTotalCount(result.totalCount);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setEnrollments([]);
+        setEnrollmentsTotalCount(0);
+        setEnrollmentsError(err instanceof Error ? err.message : 'Failed to load enrollments');
+      })
+      .finally(() => {
+        if (!cancelled) setEnrollmentsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    campaignId,
+    debouncedEnrollmentSearchQuery,
+    enrollmentPage,
+    enrollmentSortColumn,
+    enrollmentSortDirection,
+    refreshTrigger,
+  ]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -263,26 +351,9 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     }
   };
 
-  if (loading) {
-    return (
-      <View className="flex-1 justify-center items-center py-12">
-        <ActivityIndicator size="large" color="#f85102" />
-        <Text className="mt-4 text-gray-400 font-instrument text-sm">Loading schedule...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View className="bg-red-900/20 border border-red-800 rounded-xl p-6">
-        <Text className="text-red-400 font-instrument text-sm">Error: {error}</Text>
-      </View>
-    );
-  }
-
   const tabs: Tab[] = [
-    { id: 'emails', label: `Emails (${messageJobs.length})` },
-    { id: 'enrollments', label: `Enrollments (${sortedEnrollments.length})` },
+    { id: 'emails', label: `Emails (${messageJobsTotalCount})` },
+    { id: 'enrollments', label: `Enrollments (${enrollmentsTotalCount})` },
   ];
 
   const getStatusBadge = (status: string) => {
@@ -309,8 +380,6 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       label: 'Lead',
       minWidth: 200,
       flex: 1,
-      sortable: true,
-      sortValue: (item) => item.lead?.email?.toLowerCase() || '',
       render: (item) => (
         <View>
           <Text className="text-white font-instrument text-sm" numberOfLines={1}>
@@ -349,13 +418,6 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       label: 'Interval',
       minWidth: 200,
       flex: 1,
-      sortable: true,
-      sortValue: (item) => {
-        if (item.interval) {
-          return new Date(item.interval.interval_time).getTime();
-        }
-        return Number.MAX_SAFE_INTEGER;
-      },
       render: (item) => {
         if (item.interval) {
           return (
@@ -410,8 +472,6 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       label: 'Lead',
       minWidth: 200,
       flex: 1,
-      sortable: true,
-      sortValue: (item) => item.lead?.email?.toLowerCase() || '',
       render: (item) => (
         <View>
           <Text className="text-white font-instrument text-sm" numberOfLines={1}>
@@ -477,8 +537,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
           <View className="flex-row items-center justify-between mb-4">
             <Text className="text-lg font-instrument-semibold text-white">Email Jobs</Text>
             <Text className="text-gray-400 font-instrument text-sm">
-              {filteredMessageJobs.length} {filteredMessageJobs.length !== 1 ? 'items' : 'item'}
-              {emailSearchQuery.trim() && ` (filtered from ${sortedMessageJobs.length} total)`}
+              {messageJobsTotalCount} {messageJobsTotalCount !== 1 ? 'items' : 'item'}
             </Text>
           </View>
           <View className="mb-4">
@@ -486,7 +545,10 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
               <MagnifyingGlassIcon size={18} color="#6b7280" />
               <TextInput
                 value={emailSearchQuery}
-                onChangeText={setEmailSearchQuery}
+                onChangeText={(value) => {
+                  setEmailSearchQuery(value);
+                  setEmailPage(1);
+                }}
                 placeholder="Search by lead email..."
                 placeholderTextColor="#6b7280"
                 className="flex-1 ml-2 text-white font-instrument text-sm"
@@ -494,11 +556,28 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
             </View>
           </View>
           <DataTable
-            items={filteredMessageJobs}
+            items={messageJobs}
             columns={emailColumns}
             emptyMessage="No email jobs found for this campaign"
             getItemKey={(item) => item.id}
+            loading={messageJobsLoading}
+            paginationMode="server"
+            currentPage={emailPage}
+            totalItems={messageJobsTotalCount}
+            onPageChange={setEmailPage}
+            sortColumn={emailSortColumn}
+            sortDirection={emailSortDirection}
+            onSortChange={(columnKey, direction) => {
+              setEmailSortColumn(columnKey);
+              setEmailSortDirection(direction);
+              setEmailPage(1);
+            }}
           />
+          {messageJobsError ? (
+            <View className="bg-red-900/20 border border-red-800 rounded-xl p-4 mt-4">
+              <Text className="text-red-400 font-instrument text-sm">Error: {messageJobsError}</Text>
+            </View>
+          ) : null}
         </>
       )}
 
@@ -507,8 +586,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
           <View className="flex-row items-center justify-between mb-4">
             <Text className="text-lg font-instrument-semibold text-white">Enrollments</Text>
             <Text className="text-gray-400 font-instrument text-sm">
-              {filteredEnrollments.length} {filteredEnrollments.length !== 1 ? 'items' : 'item'}
-              {enrollmentSearchQuery.trim() && ` (filtered from ${sortedEnrollments.length} total)`}
+              {enrollmentsTotalCount} {enrollmentsTotalCount !== 1 ? 'items' : 'item'}
             </Text>
           </View>
           <View className="mb-4">
@@ -516,7 +594,10 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
               <MagnifyingGlassIcon size={18} color="#6b7280" />
               <TextInput
                 value={enrollmentSearchQuery}
-                onChangeText={setEnrollmentSearchQuery}
+                onChangeText={(value) => {
+                  setEnrollmentSearchQuery(value);
+                  setEnrollmentPage(1);
+                }}
                 placeholder="Search by lead email..."
                 placeholderTextColor="#6b7280"
                 className="flex-1 ml-2 text-white font-instrument text-sm"
@@ -524,11 +605,28 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
             </View>
           </View>
           <DataTable
-            items={filteredEnrollments}
+            items={enrollments}
             columns={enrollmentColumns}
             emptyMessage="No enrollments found for this campaign"
             getItemKey={(item) => item.id}
+            loading={enrollmentsLoading}
+            paginationMode="server"
+            currentPage={enrollmentPage}
+            totalItems={enrollmentsTotalCount}
+            onPageChange={setEnrollmentPage}
+            sortColumn={enrollmentSortColumn}
+            sortDirection={enrollmentSortDirection}
+            onSortChange={(columnKey, direction) => {
+              setEnrollmentSortColumn(columnKey);
+              setEnrollmentSortDirection(direction);
+              setEnrollmentPage(1);
+            }}
           />
+          {enrollmentsError ? (
+            <View className="bg-red-900/20 border border-red-800 rounded-xl p-4 mt-4">
+              <Text className="text-red-400 font-instrument text-sm">Error: {enrollmentsError}</Text>
+            </View>
+          ) : null}
         </>
       )}
     </View>

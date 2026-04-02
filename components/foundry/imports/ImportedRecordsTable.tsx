@@ -9,10 +9,16 @@ export function ImportedRecordsTable({
   records,
   loading,
   onRowPress,
+  currentPage,
+  totalItems,
+  onPageChange,
 }: {
   records: ImportedRecordRow[];
   loading?: boolean;
   onRowPress?: (item: ImportedRecordRow) => void;
+  currentPage: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
 }) {
   const items = useMemo(
     (): Row[] => records.map((r) => ({ ...r, __key: r.id })),
@@ -134,7 +140,11 @@ export function ImportedRecordsTable({
       items={items}
       columns={columns}
       getItemKey={(item) => item.__key}
-      pagination={items.length > 25}
+      pagination
+      paginationMode="server"
+      currentPage={currentPage}
+      totalItems={totalItems}
+      onPageChange={onPageChange}
       compactHeader
       equalColumnWidths={false}
       itemsPerPage={25}

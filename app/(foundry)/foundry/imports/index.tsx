@@ -10,23 +10,28 @@ import type { IngestionRunRow } from '@/lib/foundry/registry-types';
 export default function ImportsPage() {
   const router = useRouter();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pageSize = 50;
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetchIngestionRuns({ limit: 80 });
+      const res = await fetchIngestionRuns({ limit: pageSize, offset: (page - 1) * pageSize });
       setRuns(res.runs);
+      setTotalCount(res.total_count);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load imports');
       setRuns([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [page]);
 
   useFocusEffect(
     useCallback(() => {
@@ -57,7 +62,13 @@ export default function ImportsPage() {
         <Text className="text-red-400 font-instrument text-sm mb-4">{error}</Text>
       ) : null}
 
-      <ImportRunTable runs={runs} loading={loading} />
+      <ImportRunTable
+        runs={runs}
+        loading={loading}
+        currentPage={page}
+        totalItems={totalCount}
+        onPageChange={setPage}
+      />
     </ScrollView>
   );
 }

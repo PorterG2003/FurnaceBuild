@@ -18,10 +18,28 @@ export function RenderJobProgressSummary({ progress }: { progress: FoundryJobPro
   const rows: { label: string; value: string }[] = [];
   if (progress.current_step != null) rows.push({ label: 'Current step', value: String(progress.current_step) });
   if (progress.total != null) rows.push({ label: 'Total', value: String(progress.total) });
+  if (progress.total_targets != null) rows.push({ label: 'Total targets', value: String(progress.total_targets) });
   if (progress.processed != null) rows.push({ label: 'Processed', value: String(progress.processed) });
+  if (progress.targets_processed != null) rows.push({ label: 'Processed targets', value: String(progress.targets_processed) });
   if (progress.succeeded != null) rows.push({ label: 'Succeeded', value: String(progress.succeeded) });
   if (progress.failed != null) rows.push({ label: 'Failed', value: String(progress.failed) });
   if (progress.skipped != null) rows.push({ label: 'Skipped', value: String(progress.skipped) });
+  if (progress.outcome_accepted != null) rows.push({ label: 'Accepted', value: String(progress.outcome_accepted) });
+  if (progress.outcome_accepted_by_ruleset != null) {
+    rows.push({ label: 'Accepted (ruleset)', value: String(progress.outcome_accepted_by_ruleset) });
+  }
+  if (progress.outcome_ambiguous != null) rows.push({ label: 'Ambiguous', value: String(progress.outcome_ambiguous) });
+  if (progress.outcome_ambiguous_reviewable != null) {
+    rows.push({ label: 'Ambiguous (reviewable)', value: String(progress.outcome_ambiguous_reviewable) });
+  }
+  if (progress.outcome_ambiguous_low_signal != null) {
+    rows.push({ label: 'Ambiguous (low signal)', value: String(progress.outcome_ambiguous_low_signal) });
+  }
+  if (progress.outcome_no_match != null) rows.push({ label: 'No match', value: String(progress.outcome_no_match) });
+  if (progress.outcome_error != null) rows.push({ label: 'Error', value: String(progress.outcome_error) });
+  if (progress.outcome_skipped_recent != null) {
+    rows.push({ label: 'Skipped recent', value: String(progress.outcome_skipped_recent) });
+  }
   if (progress.cursor != null) rows.push({ label: 'Cursor', value: String(progress.cursor) });
   if (progress.last_chunk != null) {
     rows.push({

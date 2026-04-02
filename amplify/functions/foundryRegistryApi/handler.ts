@@ -17,7 +17,7 @@
  * - GET /jobs, GET /jobs/:id
  * - POST /source-records/:id/candidates/generate | /link | /reject-candidates
  * - POST /resolution/bulk
- * - GET|PATCH /companies/:id, POST /companies/:id/locations, POST /companies (create)
+ * - GET|PATCH /companies/:id (GET includes associated_people from entity_owners via current matches), POST /companies/:id/locations, POST /companies (create)
  * - GET /export/company-owner-leads?limit=&offset=&q=&registry_state=&is_export_ready=&has_current_linked_source=&has_open_review_task=&has_parse_failure_task=&has_current_owner=
  * - GET /review-tasks, GET /review-tasks/:id, PATCH .../assign, POST .../resolve|cancel
  * - POST /state-matching/preflight, POST /state-matching/batches (async job + Step Functions), GET /state-matching/batches/:id
@@ -125,14 +125,44 @@ function escapeIlikePattern(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
-function parseCompaniesListQuery(rawQueryString: string): { limit: number; q: string | null } {
+function parseTriStateBool(v: string | null): boolean | undefined {
+  if (v == null || v === '') return undefined;
+  const lower = v.toLowerCase();
+  if (lower === 'true' || lower === '1') return true;
+  if (lower === 'false' || lower === '0') return false;
+  return undefined;
+}
+
+function parseCompaniesListQuery(rawQueryString: string): {
+  limit: number;
+  offset: number;
+  q: string | null;
+  hasNormalizedKey: boolean | undefined;
+  hasNotes: boolean | undefined;
+  sortBy: 'legal_name' | 'notes' | 'updated_at';
+  sortDirection: 'asc' | 'desc';
+} {
   const params = new URLSearchParams(rawQueryString || '');
   const baseLimit = parseLimit(rawQueryString, MAX_COMPANIES_LIMIT, DEFAULT_COMPANIES_LIMIT);
+  const offset = parseOffset(rawQueryString);
   const rawQ = params.get('q');
   const trimmed = rawQ != null ? rawQ.trim() : '';
   const q = trimmed.length >= 2 ? trimmed : null;
   const limit = q ? Math.min(baseLimit, MAX_COMPANIES_SEARCH_LIMIT) : baseLimit;
-  return { limit, q };
+  return {
+    limit,
+    offset,
+    q,
+    hasNormalizedKey: parseTriStateBool(params.get('has_normalized_key')),
+    hasNotes: parseTriStateBool(params.get('has_notes')),
+    sortBy:
+      params.get('sort_by') === 'name'
+        ? 'legal_name'
+        : params.get('sort_by') === 'notes'
+          ? 'notes'
+          : 'updated_at',
+    sortDirection: params.get('sort_direction') === 'asc' ? 'asc' : 'desc',
+  };
 }
 
 async function verifyUser(
@@ -489,20 +519,35 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
         return jsonResponse(200, { companies: data ?? [] });
       }
 
-      const { limit, q } = parseCompaniesListQuery(event.rawQueryString || '');
+      const { limit, offset, q, hasNormalizedKey, hasNotes, sortBy, sortDirection } = parseCompaniesListQuery(event.rawQueryString || '');
       let qb = leadsClient
         .from('companies')
-        .select('id, legal_name, normalized_key, notes, created_at, updated_at');
+        .select('id, legal_name, normalized_key, notes, created_at, updated_at', { count: 'exact' });
       if (q) {
         qb = qb.ilike('legal_name', `%${escapeIlikePattern(q)}%`);
       }
-      const { data, error } = await qb.order('updated_at', { ascending: false }).limit(limit);
+      if (hasNormalizedKey === true) qb = qb.not('normalized_key', 'is', null);
+      else if (hasNormalizedKey === false) qb = qb.is('normalized_key', null);
+      if (hasNotes === true) qb = qb.not('notes', 'is', null);
+      else if (hasNotes === false) qb = qb.is('notes', null);
+      const end = offset + limit - 1;
+      let ordered = qb.order(sortBy, { ascending: sortDirection === 'asc', nullsFirst: sortDirection !== 'asc' });
+      if (sortBy !== 'updated_at') {
+        ordered = ordered.order('updated_at', { ascending: false });
+      }
+      const { data, error, count } = await ordered.range(offset, end);
 
       if (error) {
         console.error('companies select failed', error.message);
         return jsonResponse(502, { error: 'Failed to load registry data' });
       }
-      return jsonResponse(200, { companies: data ?? [] });
+      // Manual dedupe tables rely on this count for server-side pagination.
+      return jsonResponse(200, {
+        companies: data ?? [],
+        limit,
+        offset,
+        total_count: count ?? 0,
+      });
     }
     if (method === 'POST') {
       const raw = decodeBody(event);
@@ -532,19 +577,21 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
         MAX_INGESTION_RUNS_LIMIT,
         DEFAULT_INGESTION_RUNS_LIMIT,
       );
-      const { data, error } = await leadsClient
+      const offset = parseOffset(event.rawQueryString || '');
+      const { data, error, count } = await leadsClient
         .from('ingestion_runs')
         .select(
           'id, source_name, source_type, status, started_at, completed_at, config, stats, created_at, parser_version, ingest_version',
+          { count: 'exact' },
         )
         .order('started_at', { ascending: false })
-        .limit(limit);
+        .range(offset, offset + limit - 1);
 
       if (error) {
         console.error('ingestion_runs list failed', error.message);
         return jsonResponse(502, { error: 'Failed to load ingestion runs' });
       }
-      return jsonResponse(200, { runs: data ?? [] });
+      return jsonResponse(200, { runs: data ?? [], limit, offset, total_count: count ?? 0 });
     }
     return jsonResponse(405, { error: 'Method not allowed' });
   }
@@ -588,56 +635,40 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
       const params = new URLSearchParams(event.rawQueryString || '');
       const filter = params.get('filter') || 'all';
 
-      let q = leadsClient
-        .from('source_business_records')
-        .select('id, name_raw, website, address_raw, observed_at, ingestion_run_id, raw_payload, resolution_meta')
-        .eq('ingestion_run_id', id)
-        .order('created_at', { ascending: true })
-        .range(offset, offset + limit - 1);
+      const enrichRecords = async (
+        list: Array<Record<string, unknown>>,
+      ): Promise<{
+        rows: Array<Record<string, unknown>>;
+        unresolvedRows: Array<Record<string, unknown>>;
+      }> => {
+        const ids = list.map((r) => r.id as string);
+        const linkStatusByRecord = new Map<string, string>();
+        const linkedCompanyByRecord = new Map<string, string>();
+        if (ids.length > 0) {
+          const { data: links } = await leadsClient
+            .from('source_business_company_links')
+            .select('source_business_record_id, link_status, company_id')
+            .in('source_business_record_id', ids)
+            .eq('is_current', true);
 
-      if (filter === 'missing_website') {
-        q = q.or('website.is.null,website.eq.""');
-      }
-      if (filter === 'warning_only') {
-        q = q.contains('raw_payload', { __import_validation: 'warning' });
-      }
-
-      const { data: records, error: recErr } = await q;
-      if (recErr) {
-        console.error('source_business_records list failed', recErr.message);
-        return jsonResponse(502, { error: 'Failed to load records' });
-      }
-
-      const list = records ?? [];
-      const ids = list.map((r) => r.id as string);
-
-      const linkStatusByRecord = new Map<string, string>();
-      const linkedCompanyByRecord = new Map<string, string>();
-      if (ids.length > 0) {
-        const { data: links } = await leadsClient
-          .from('source_business_company_links')
-          .select('source_business_record_id, link_status, company_id')
-          .in('source_business_record_id', ids)
-          .eq('is_current', true);
-
-        const byRid = new Map<string, Set<string>>();
-        for (const row of links ?? []) {
-          const rid = row.source_business_record_id as string;
-          const st = row.link_status as string;
-          if (!byRid.has(rid)) byRid.set(rid, new Set());
-          byRid.get(rid)!.add(st);
-          if (st === 'linked' && row.company_id) {
-            linkedCompanyByRecord.set(rid, String(row.company_id));
+          const byRid = new Map<string, Set<string>>();
+          for (const row of links ?? []) {
+            const rid = row.source_business_record_id as string;
+            const st = row.link_status as string;
+            if (!byRid.has(rid)) byRid.set(rid, new Set());
+            byRid.get(rid)!.add(st);
+            if (st === 'linked' && row.company_id) {
+              linkedCompanyByRecord.set(rid, String(row.company_id));
+            }
+          }
+          for (const [rid, set] of byRid) {
+            if (set.has('linked')) linkStatusByRecord.set(rid, 'linked');
+            else if (set.has('candidate')) linkStatusByRecord.set(rid, 'candidate');
+            else linkStatusByRecord.set(rid, [...set][0] ?? 'none');
           }
         }
-        for (const [rid, set] of byRid) {
-          if (set.has('linked')) linkStatusByRecord.set(rid, 'linked');
-          else if (set.has('candidate')) linkStatusByRecord.set(rid, 'candidate');
-          else linkStatusByRecord.set(rid, [...set][0] ?? 'none');
-        }
-      }
 
-        const enriched = list.map((r) => {
+        const rows = list.map((r) => {
         const payload = (r.raw_payload ?? {}) as Record<string, unknown>;
         const validation = typeof payload.__import_validation === 'string' ? payload.__import_validation : null;
         const linkStatus = linkStatusByRecord.get(r.id as string) ?? 'none';
@@ -663,14 +694,81 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
             typeof resMeta.inferred_state_region === 'string' ? resMeta.inferred_state_region : null,
           linked_company_id,
         };
-      });
+        });
 
-      let out = enriched;
+        return {
+          rows,
+          unresolvedRows: rows.filter((row) => row.link_status !== 'linked'),
+        };
+      };
+
       if (filter === 'unresolved') {
-        out = out.filter((r) => r.link_status !== 'linked');
+        const batchSize = Math.max(limit, 250);
+        let scanOffset = 0;
+        let totalUnresolved = 0;
+        let pageRows: Array<Record<string, unknown>> = [];
+
+        for (;;) {
+          const { data: batch, error: batchErr } = await leadsClient
+            .from('source_business_records')
+            .select('id, name_raw, website, address_raw, observed_at, ingestion_run_id, raw_payload, resolution_meta')
+            .eq('ingestion_run_id', id)
+            .order('created_at', { ascending: true })
+            .range(scanOffset, scanOffset + batchSize - 1);
+
+          if (batchErr) {
+            console.error('source_business_records unresolved list failed', batchErr.message);
+            return jsonResponse(502, { error: 'Failed to load records' });
+          }
+
+          const list = batch ?? [];
+          const enriched = await enrichRecords(list as Array<Record<string, unknown>>);
+          const unresolvedBatch = enriched.unresolvedRows;
+          const nextTotal = totalUnresolved + unresolvedBatch.length;
+
+          if (offset < nextTotal && pageRows.length < limit) {
+            const startIndex = Math.max(0, offset - totalUnresolved);
+            pageRows = pageRows.concat(unresolvedBatch.slice(startIndex, startIndex + (limit - pageRows.length)));
+          }
+
+          totalUnresolved = nextTotal;
+          if (list.length < batchSize) {
+            return jsonResponse(200, {
+              records: pageRows,
+              limit,
+              offset,
+              total_count: totalUnresolved,
+            });
+          }
+          scanOffset += batchSize;
+        }
       }
 
-      return jsonResponse(200, { records: out, limit, offset });
+      let q = leadsClient
+        .from('source_business_records')
+        .select('id, name_raw, website, address_raw, observed_at, ingestion_run_id, raw_payload, resolution_meta', {
+          count: 'exact',
+        })
+        .eq('ingestion_run_id', id)
+        .order('created_at', { ascending: true })
+        .range(offset, offset + limit - 1);
+
+      if (filter === 'missing_website') {
+        q = q.or('website.is.null,website.eq.""');
+      }
+      if (filter === 'warning_only') {
+        q = q.contains('raw_payload', { __import_validation: 'warning' });
+      }
+
+      const { data: records, error: recErr, count } = await q;
+      if (recErr) {
+        console.error('source_business_records list failed', recErr.message);
+        return jsonResponse(502, { error: 'Failed to load records' });
+      }
+
+      const enriched = await enrichRecords((records ?? []) as Array<Record<string, unknown>>);
+
+      return jsonResponse(200, { records: enriched.rows, limit, offset, total_count: count ?? 0 });
     }
     return jsonResponse(405, { error: 'Method not allowed' });
   }

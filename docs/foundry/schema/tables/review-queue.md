@@ -2,7 +2,7 @@
 
 Table: **`review_tasks`**
 
-Source migrations: [`20260323143000_review_tasks.sql`](../../../../supabase-leads/supabase/migrations/20260323143000_review_tasks.sql), CHECK additions in [`20260324100000_registry_views_checks_grants.sql`](../../../../supabase-leads/supabase/migrations/20260324100000_registry_views_checks_grants.sql)
+Source migrations: [`20260323143000_review_tasks.sql`](../../../../supabase-leads/supabase/migrations/20260323143000_review_tasks.sql), CHECK additions in [`20260324100000_registry_views_checks_grants.sql`](../../../../supabase-leads/supabase/migrations/20260324100000_registry_views_checks_grants.sql), [`20260328120000_review_tasks_entity_owner_dedupe.sql`](../../../../supabase-leads/supabase/migrations/20260328120000_review_tasks_entity_owner_dedupe.sql), [`20260403140000_contact_enrichment_ambiguity_system.sql`](../../../../supabase-leads/supabase/migrations/20260403140000_contact_enrichment_ambiguity_system.sql)
 
 ## Purpose
 
@@ -18,8 +18,10 @@ CHECK constraint: `task_type IN (`
 
 - `source_link_review`
 - `company_dedupe`
+- `entity_owner_dedupe`
 - `entity_match_review`
 - `parse_failure`
+- `contact_enrichment_review`
 
 `)`
 
@@ -33,8 +35,10 @@ CHECK: `status IN ('pending', 'in_progress', 'resolved', 'cancelled')`.
 
 - `source_business_record`
 - `company`
+- `entity_owner`
 - `company_entity_match`
 - `source_business_company_link`
+- `contact_enrichment_attempt` (`entity_id` = `contact_enrichment_attempts.id`)
 
 `entity_id` is a UUID pointing at that table’s primary key. **No database FK** — integrity is **application-enforced**, trading strict referential guarantees for flexibility and simplicity.
 

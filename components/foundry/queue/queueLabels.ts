@@ -10,6 +10,8 @@ export function reviewTaskTitle(taskType: string): string {
       return 'Contact dedupe';
     case 'parse_failure':
       return 'Parse failure';
+    case 'contact_enrichment_review':
+      return 'Contact enrichment review';
     default:
       return taskType;
   }

@@ -16,6 +16,34 @@
 
 **Security:** Same `security_invoker = true` pattern as above.
 
+## `company_contact_projection`
+
+**Definition:** One row per `companies.id`, derived from canonical `company_locations` with fallback to current linked `source_business_records`.
+
+**Purpose:** Reusable company-scoped contact read model for export-safe address and website fields.
+
+**Behavior:**
+- Prefers the primary/current `company_locations` row for structured address fields.
+- Falls back to linked `source_business_records` fields when canonical address fields are missing.
+- Uses `address_raw` only as a last-resort `address_line_1`, with a best-effort US-style parse into city/state/postal when structured source fields are absent.
+- Picks one best current linked website per company.
+
+## `export_company_targets`
+
+**Definition:** One row per current promoted `company_entity_match`, joined to `company_contact_projection`.
+
+**Purpose:** Common company-level export target surface shared by owner export and chain export.
+
+**Behavior:**
+- Carries company identity, promoted match identity, export flags, and company-scoped contact fields.
+- Separates export target/readiness semantics from owner expansion.
+
+## `export_company_owner_leads`
+
+**Definition:** `export_company_targets` left-joined to current `entity_owners`.
+
+**Purpose:** Owner-row export surface; preserves one null-owner row when a company target has no current owners.
+
 ## `updated_at` trigger
 
 **Function:** `registry_update_updated_at_column()` — sets `NEW.updated_at = now()` before update.

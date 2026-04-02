@@ -4,11 +4,13 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { PageHeader, Breadcrumb } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
+import { Alert } from '@/components/ui/feedback/Alert';
 import {
   ImportResultsSummary,
   ImportErrorsTable,
   useImportWizard,
 } from '@/components/foundry/imports';
+import { ImportPipelineDials } from '@/components/foundry/pipeline/ImportPipelineDials';
 import { ImportRunPipelineCard } from '@/components/foundry/pipeline/ImportRunPipelineCard';
 import { fetchIngestionRun } from '@/lib/foundry/registry-client';
 import type { IngestionRunRow } from '@/lib/foundry/registry-types';
@@ -70,7 +72,6 @@ export default function ImportResultsPage() {
           typeof run?.config?.import_name === 'string' ? run.config.import_name : undefined
         }
       />
-
       {error ? <Text className="text-red-400 mb-4 font-instrument text-sm">{error}</Text> : null}
 
       {lastImportResult?.runId === runId && lastImportResult.pipeline?.normalize.status === 'failed' ? (
@@ -89,7 +90,21 @@ export default function ImportResultsPage() {
 
       {run ? (
         <View className="gap-4 w-full self-center" style={{ maxWidth: 960 }}>
+          <Alert
+            variant="info"
+            message="This page is the hub for this import run. Normalize and auto-link start automatically after import; use the next steps below for linking, state matching, and manual contact enrichment. Background job status lives under Runs, and human review items land in Queue."
+          />
           <ImportResultsSummary status={run.status} stats={run.stats} />
+          <ImportPipelineDials ingestionRunId={runId} />
+
+          {errorSamples.length > 0 ? (
+            <Card variant="card">
+              <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">Error sample (skipped rows)</Text>
+              <ImportErrorsTable samples={errorSamples} />
+            </Card>
+          ) : null}
+
+          <ImportRunPipelineCard ingestionRunId={runId} />
 
           <Card variant="card">
             <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">Import metadata</Text>
@@ -103,34 +118,6 @@ export default function ImportResultsPage() {
               <Text className="text-amber-400 font-instrument text-sm mt-2">{run.error_summary}</Text>
             ) : null}
           </Card>
-
-          <Card variant="card">
-            <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">Validation summary (from run)</Text>
-            <Text className="text-gray-400 font-instrument text-sm">
-              Total {run.stats?.total_rows ?? '—'} · Valid {run.stats?.valid_rows ?? '—'} · Warnings{' '}
-              {run.stats?.warning_rows ?? '—'} · Errors {run.stats?.error_rows ?? '—'}
-            </Text>
-          </Card>
-
-          {errorSamples.length > 0 ? (
-            <Card variant="card">
-              <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">Error sample (skipped rows)</Text>
-              <ImportErrorsTable samples={errorSamples} />
-            </Card>
-          ) : null}
-
-          <Card variant="card">
-            <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">You are here</Text>
-            <Text className="text-gray-300 font-instrument text-sm leading-5">
-              This page is the hub for this import run. Normalize and auto-link start automatically after import; use the
-              Pipeline below for linking, state lookup, and Queue. Background job status lives under Runs.
-            </Text>
-          </Card>
-
-          <ImportRunPipelineCard
-            ingestionRunId={runId}
-            importPipeline={lastImportResult?.runId === runId ? lastImportResult.pipeline : null}
-          />
 
           <View className="flex-col sm:flex-row flex-wrap gap-2">
             <Button onPress={() => router.push(`/foundry/imports/${runId}/records`)}>View imported records</Button>

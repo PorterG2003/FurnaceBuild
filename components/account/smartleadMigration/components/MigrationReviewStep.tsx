@@ -20,7 +20,6 @@ import type {
 } from '../types';
 import { formatCount, formatDateTime } from '../utils';
 import { MigrationInlineNotice, MigrationStatusPill } from './MigrationReviewPrimitives';
-import { ReviewSectionPagination } from './ReviewSectionPagination';
 import {
   migrationLeadColumns,
   migrationConversationColumns,
@@ -274,20 +273,18 @@ export function MigrationReviewStep({
         <DataTable<Lead>
           items={leadRows}
           getItemKey={(lead) => lead.id}
-          pagination={false}
+          paginationMode="server"
+          itemsPerPage={REVIEW_PAGE_SIZE}
+          currentPage={leadPage + 1}
+          totalItems={selectedReviewCampaign.leadsImported}
+          onPageChange={(page) => {
+            if (page < leadPage + 1) onLeadPrevious();
+            else if (page > leadPage + 1) onLeadNext();
+          }}
           compactHeader
           loading={showLeadTableLoader}
           emptyMessage={`No imported leads found for ${selectedReviewCampaign.name}.`}
           columns={migrationLeadColumns}
-        />
-
-        <ReviewSectionPagination
-          page={leadPage}
-          pageSize={REVIEW_PAGE_SIZE}
-          totalCount={selectedReviewCampaign.leadsImported}
-          itemCount={leadRows.length}
-          onPrevious={onLeadPrevious}
-          onNext={onLeadNext}
         />
       </View>
     );
@@ -315,20 +312,18 @@ export function MigrationReviewStep({
         <DataTable<EmailThread>
           items={conversationRows}
           getItemKey={(thread) => thread.id}
-          pagination={false}
+          paginationMode="server"
+          itemsPerPage={REVIEW_PAGE_SIZE}
+          currentPage={conversationPage + 1}
+          totalItems={selectedReviewCampaign.conversationsImported}
+          onPageChange={(page) => {
+            if (page < conversationPage + 1) onConversationPrevious();
+            else if (page > conversationPage + 1) onConversationNext();
+          }}
           compactHeader
           loading={showConversationTableLoader}
           emptyMessage={`No imported conversations found for ${selectedReviewCampaign.name}.`}
           columns={migrationConversationColumns}
-        />
-
-        <ReviewSectionPagination
-          page={conversationPage}
-          pageSize={REVIEW_PAGE_SIZE}
-          totalCount={selectedReviewCampaign.conversationsImported}
-          itemCount={conversationRows.length}
-          onPrevious={onConversationPrevious}
-          onNext={onConversationNext}
         />
       </View>
     );

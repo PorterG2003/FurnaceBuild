@@ -21,6 +21,7 @@ export const CONTACT_ENRICHMENT_VERSION = 'contact_enrichment_v1';
 export const DEFAULT_CONTACT_ENRICHMENT_FRESHNESS_DAYS = 90;
 export const MAX_CONTACT_ENRICHMENT_BATCH_SIZE = 25;
 const SOURCE_RECORD_PAGE_SIZE = 1000;
+const SOURCE_RECORD_LINK_CHUNK_SIZE = 200;
 const COMPANY_CHUNK_SIZE = 200;
 const FINGERPRINT_CHUNK_SIZE = 200;
 const SUPPRESSION_CHUNK_SIZE = 200;
@@ -416,15 +417,22 @@ async function listLinkedCompaniesForIngestionRun(
 
     const observedAtByRecordId = new Map(rows.map((row) => [String(row.id), row.observed_at ?? null]));
     const recordIds = rows.map((row) => String(row.id));
-    const { data: links, error: linkErr } = await leadsClient
-      .from('source_business_company_links')
-      .select('company_id, source_business_record_id')
-      .eq('is_current', true)
-      .eq('link_status', 'linked')
-      .in('source_business_record_id', recordIds);
-    if (linkErr) throw new Error(linkErr.message);
+    const links: Array<{ company_id: string | null; source_business_record_id: string | null }> = [];
+    for (let index = 0; index < recordIds.length; index += SOURCE_RECORD_LINK_CHUNK_SIZE) {
+      const chunk = recordIds.slice(index, index + SOURCE_RECORD_LINK_CHUNK_SIZE);
+      const { data, error: linkErr } = await leadsClient
+        .from('source_business_company_links')
+        .select('company_id, source_business_record_id')
+        .eq('is_current', true)
+        .eq('link_status', 'linked')
+        .in('source_business_record_id', chunk);
+      if (linkErr) throw new Error(linkErr.message);
+      if (data?.length) {
+        links.push(...(data as Array<{ company_id: string | null; source_business_record_id: string | null }>));
+      }
+    }
 
-    for (const link of (links ?? []) as Array<{ company_id: string | null; source_business_record_id: string | null }>) {
+    for (const link of links) {
       const companyId = typeof link.company_id === 'string' ? link.company_id : '';
       const sourceRecordId = typeof link.source_business_record_id === 'string' ? link.source_business_record_id : '';
       if (!companyId || !sourceRecordId) continue;

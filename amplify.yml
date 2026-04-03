@@ -56,9 +56,11 @@ backend:
             "/furnace/ecs/${WORKER_ENVIRONMENT}/florida-scraper/task-definition-arn"
           )
           for param_name in "${REQUIRED_SSM_PARAMS[@]}"; do
-            if ! aws ssm get-parameter --name "$param_name" --region "$WORKER_STACK_REGION" &>/dev/null; then
-              echo "Missing SSM parameter: $param_name (region $WORKER_STACK_REGION)"
-              echo "Deploy infra/workers for $WORKER_ENVIRONMENT so the state scraper task definition ARN is published."
+            if ! aws ssm get-parameter --name "$param_name" --region "$WORKER_STACK_REGION" --query Parameter.Name --output text >/dev/null 2>&1; then
+              echo "SSM check failed: $param_name (region $WORKER_STACK_REGION)"
+              aws ssm get-parameter --name "$param_name" --region "$WORKER_STACK_REGION" || true
+              echo "If AccessDenied: add ssm:GetParameter on arn:aws:ssm:${WORKER_STACK_REGION}:*:parameter/furnace/ecs/* to this app’s Amplify build (service) role in IAM."
+              echo "If ParameterNotFound: deploy infra/workers for $WORKER_ENVIRONMENT (publishes task-definition-arn to SSM)."
               exit 1
             fi
           done
@@ -81,9 +83,11 @@ backend:
               fi
             done
             TASK_DEF_PARAM="/furnace/ecs/${WORKER_ENVIRONMENT}/smartlead-migration/task-definition-arn"
-            if ! aws ssm get-parameter --name "$TASK_DEF_PARAM" --region "$WORKER_STACK_REGION" &>/dev/null; then
-              echo "Missing SSM parameter: $TASK_DEF_PARAM (region $WORKER_STACK_REGION)"
-              echo "Deploy infra/workers for $WORKER_ENVIRONMENT so the Smartlead migration task definition ARN is published."
+            if ! aws ssm get-parameter --name "$TASK_DEF_PARAM" --region "$WORKER_STACK_REGION" --query Parameter.Name --output text >/dev/null 2>&1; then
+              echo "SSM check failed: $TASK_DEF_PARAM (region $WORKER_STACK_REGION)"
+              aws ssm get-parameter --name "$TASK_DEF_PARAM" --region "$WORKER_STACK_REGION" || true
+              echo "If AccessDenied: add ssm:GetParameter on arn:aws:ssm:${WORKER_STACK_REGION}:*:parameter/furnace/ecs/* to this app’s Amplify build (service) role in IAM."
+              echo "If ParameterNotFound: deploy infra/workers for $WORKER_ENVIRONMENT so the Smartlead task definition ARN is published to SSM."
               exit 1
             fi
           else

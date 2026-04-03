@@ -1,5 +1,9 @@
 export { BaseModal } from './BaseModal';
-export { BottomSheet } from './BottomSheet';
+export {
+  BottomSheet,
+  BOTTOM_SHEET_MAX_VIEWPORT_RATIO,
+  getBottomSheetBodyScrollMaxHeight,
+} from './BottomSheet';
 export {
   PickerInsideBottomSheetProvider,
   usePickerInsideBottomSheet,

@@ -56,6 +56,36 @@ function SkeletonRow({ index, isLast }: { index: number; isLast: boolean }) {
   );
 }
 
+function CardSkeletonRow({ index }: { index: number }) {
+  return (
+    <StaggeredFadeIn index={index}>
+      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4">
+        <View className="flex-row items-center justify-between gap-3">
+          <View className="flex-1 min-w-0 flex-row flex-wrap items-center gap-2">
+            <Skeleton style={{ width: 140, height: 16, borderRadius: 4, flexShrink: 1 }} />
+            <Skeleton style={{ width: 72, height: 22, borderRadius: 6, flexShrink: 0 }} />
+          </View>
+          <Skeleton style={{ width: 28, height: 28, borderRadius: 6, flexShrink: 0 }} />
+        </View>
+        <Skeleton
+          style={{ width: '100%', height: 14, borderRadius: 4, marginTop: 8, maxWidth: '100%' }}
+        />
+      </View>
+    </StaggeredFadeIn>
+  );
+}
+
+export function SendersCardListSkeleton() {
+  const rowCount = 5;
+  return (
+    <View className="gap-3">
+      {Array.from({ length: rowCount }).map((_, i) => (
+        <CardSkeletonRow key={i} index={i} />
+      ))}
+    </View>
+  );
+}
+
 export function SendersTableSkeleton() {
   const rowCount = 6;
 

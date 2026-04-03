@@ -53,6 +53,15 @@ export default function UITestPage() {
               Info toast
             </Button>
             <Button
+              onPress={() =>
+                toast.notification('New reply in Master Inbox — neutral activity style.')
+              }
+              variant="default"
+              className="bg-[#2A2A2A] border border-[#3A3A3A]"
+            >
+              Notification toast
+            </Button>
+            <Button
               onPress={() => {
                 toast.success('First toast');
                 setTimeout(() => toast.info('Second toast'), 400);

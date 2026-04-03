@@ -4,6 +4,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 
@@ -336,6 +337,20 @@ export class WorkerStack extends cdk.Stack {
       ],
     }));
 
+    const notificationEventsQueue = new sqs.Queue(this, 'NotificationEventsQueue', {
+      queueName: `furnace-notification-events-${environment}`,
+      visibilityTimeout: cdk.Duration.seconds(150),
+      retentionPeriod: cdk.Duration.days(4),
+    });
+
+    inboxCheckerWorkerTaskRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'AllowSendNotificationEventsQueue',
+        actions: ['sqs:SendMessage'],
+        resources: [notificationEventsQueue.queueArn],
+      }),
+    );
+
     const smartleadMigrationTaskRole = new iam.Role(this, 'SmartleadMigrationTaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
       description: `Role for Smartlead migration ECS tasks (${environment})`,
@@ -508,6 +523,7 @@ export class WorkerStack extends cdk.Stack {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
         SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
+        NOTIFICATION_QUEUE_URL: notificationEventsQueue.queueUrl,
         ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
       },
     });
@@ -702,6 +718,18 @@ export class WorkerStack extends cdk.Stack {
       value: vpc.publicSubnets.map((subnet) => subnet.subnetId).join(','),
       description: 'Comma-separated public subnet ids for Furnace ECS workers',
       exportName: `FurnaceWorkerPublicSubnets-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'NotificationEventsQueueUrl', {
+      value: notificationEventsQueue.queueUrl,
+      description: 'SQS URL for notification domain events (Lambda consumer in Amplify)',
+      exportName: `FurnaceNotificationEventsQueueUrl-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'NotificationEventsQueueArn', {
+      value: notificationEventsQueue.queueArn,
+      description: 'SQS ARN for notification domain events',
+      exportName: `FurnaceNotificationEventsQueueArn-${environment}`,
     });
 
     new cdk.CfnOutput(this, 'EcsTaskExecutionRoleArn', {

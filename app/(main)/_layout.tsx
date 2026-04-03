@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { AccountProvider } from '@/contexts/AccountContext';
+import { NotificationToastSubscriber } from '@/components/notifications/NotificationToastSubscriber';
 
 export default function MainLayout() {
   const { user, loading, isRecoverySession } = useAuth();
@@ -23,6 +24,7 @@ export default function MainLayout() {
 
   return (
     <AccountProvider>
+      <NotificationToastSubscriber />
       <Stack
         screenOptions={{
           headerShown: false,

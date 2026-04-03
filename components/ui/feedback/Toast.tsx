@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { View, Text, Animated, Easing, StyleSheet, Platform } from 'react-native';
 
-export type ToastVariant = 'error' | 'success' | 'warning' | 'info';
+export type ToastVariant = 'error' | 'success' | 'warning' | 'info' | 'notification';
 
 const TOAST_DURATION_MS = 4500;
 const SLIDE_OFFSET = 120;
@@ -34,6 +34,10 @@ const variantStyles = {
     container: 'bg-blue-900 border-blue-500',
     text: 'text-blue-100',
   },
+  notification: {
+    container: 'bg-[#2A2A2A] border-[#3A3A3A]',
+    text: 'text-gray-100',
+  },
 };
 
 interface ToastItem {
@@ -48,6 +52,8 @@ interface ToastContextValue {
     error: (message: string) => void;
     warning: (message: string) => void;
     info: (message: string) => void;
+    /** Neutral in-app notification (bell / activity), not success or error */
+    notification: (message: string) => void;
   };
 }
 
@@ -256,6 +262,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
     error: useCallback((message: string) => show(message, 'error'), [show]),
     warning: useCallback((message: string) => show(message, 'warning'), [show]),
     info: useCallback((message: string) => show(message, 'info'), [show]),
+    notification: useCallback((message: string) => show(message, 'notification'), [show]),
   };
 
   const value: ToastContextValue = { toast };

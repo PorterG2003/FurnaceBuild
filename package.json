@@ -10,6 +10,7 @@
     "build:web": "expo export --platform web --output-dir web-build",
     "validate": "bash scripts/validate-expo-build.sh",
     "validate:build": "bash scripts/validate-expo-build.sh",
+    "verify:amplify-yml-installs": "node scripts/verify-amplify-yml-installs.mjs",
     "verify:email-parsing": "tsx scripts/verify-email-parsing.ts",
     "migrate:users": "tsx scripts/migrate-cognito-users-to-supabase-auth.ts",
     "migrate:users:dry": "DRY_RUN=1 tsx scripts/migrate-cognito-users-to-supabase-auth.ts"

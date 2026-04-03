@@ -5,6 +5,7 @@ backend:
     preBuild:
       commands:
         - npm ci
+        - node scripts/verify-amplify-yml-installs.mjs
         - echo "=== Starting function dependency installation ==="
         - cd amplify/functions/testMailboxConnection && npm install && cd - || (echo "Failed to install testMailboxConnection dependencies" && exit 1)
         - cd amplify/functions/enrollmentMetric && npm install && cd - || (echo "Failed to install enrollmentMetric dependencies" && exit 1)
@@ -12,6 +13,8 @@ backend:
         - cd amplify/functions/fetchEmailAttachment && npm install && cd - || (echo "Failed to install fetchEmailAttachment dependencies" && exit 1)
         - cd amplify/functions/foundryRegistryApi && npm install && cd - || (echo "Failed to install foundryRegistryApi dependencies" && exit 1)
         - cd amplify/functions/foundryNormalizeJob && npm install && cd - || (echo "Failed to install foundryNormalizeJob dependencies" && exit 1)
+        - cd amplify/functions/foundryAutolinkJob && npm install && cd - || (echo "Failed to install foundryAutolinkJob dependencies" && exit 1)
+        - cd amplify/functions/foundryContactEnrichmentJob && npm install && cd - || (echo "Failed to install foundryContactEnrichmentJob dependencies" && exit 1)
         - cd amplify/functions/foundryStateMatchingJob && npm install && cd - || (echo "Failed to install foundryStateMatchingJob dependencies" && exit 1)
         - |
           FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"

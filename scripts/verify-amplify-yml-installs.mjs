@@ -4,8 +4,10 @@
  *    - is wired in amplify/backend.ts, or
  *    - uses a local `file:` dependency (covers future functions not yet in backend.ts).
  * 2) Any Lambda that depends on @furnace/registry-server (file: lib/foundry/registry-server) must
- *    also list @compwright/namecase directly — Amplify's esbuild step does not always resolve
- *    transitive deps inside the linked package on CI.
+ *    also list @compwright/namecase directly (Lambda-local node_modules).
+ * 3) Root package.json must list @compwright/namecase — Amplify runs esbuild from the repo root;
+ *    resolution walks up from lib/foundry/registry-server/*.ts, so hoisted root node_modules is
+ *    where the bundler finds the package after `npm ci`.
  *
  * Run: node scripts/verify-amplify-yml-installs.mjs
  * Or:  npm run verify:amplify-yml-installs
@@ -96,6 +98,16 @@ function main() {
   if (errors.length) {
     console.error('verify-amplify-yml-installs: FAILED\n');
     for (const e of errors) console.error(e + '\n');
+    process.exit(1);
+  }
+
+  const rootPkgPath = path.join(root, 'package.json');
+  const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'));
+  if (!rootPkg.dependencies?.['@compwright/namecase']) {
+    console.error(
+      'verify-amplify-yml-installs: FAILED\n' +
+        'Root package.json must include "@compwright/namecase" in dependencies (Amplify esbuild cwd is repo root; registry-server imports resolve via root node_modules after npm ci).\n',
+    );
     process.exit(1);
   }
 

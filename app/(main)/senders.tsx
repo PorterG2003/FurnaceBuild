@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View, useWindowDimensions } from 'react-native';
 import { useAccount } from '@/contexts/AccountContext';
-import { PageLayout } from '@/components/ui/layout';
+import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
-import { useSmoothLoading, useToast } from '@/components/ui/feedback';
+import { Alert, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import {
   ConnectMailboxModal,
@@ -45,6 +45,9 @@ function buildBulkUpdatePayload(
 export default function SendersPage() {
   const { account, user: profile } = useAccount();
   const { toast } = useToast();
+  const { width } = useWindowDimensions();
+  const isMobile = width < LAYOUT_BREAKPOINT;
+  const wasMobileRef = useRef(isMobile);
   const accountId = account?.id ?? null;
 
   const [isLoading, setIsLoading] = useState(true);
@@ -61,6 +64,7 @@ export default function SendersPage() {
   const [testing, setTesting] = useState(false);
   const [testingMailboxId, setTestingMailboxId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
+  const actionsSheetMailboxRef = useRef<Mailbox | null>(null);
   const showSkeleton = useSmoothLoading(isLoading);
 
   const [showEditModal, setShowEditModal] = useState(false);
@@ -74,17 +78,18 @@ export default function SendersPage() {
 
   const [formData, setFormData] = useState<MailboxFormData>(CREATE_MAILBOX_FORM_DATA);
 
-  const loadMailboxes = useCallback(async () => {
+  const loadMailboxes = useCallback(async (options?: { silent?: boolean }) => {
     if (!accountId) return;
 
+    const silent = options?.silent === true;
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       const mailboxesList = await getMailboxesByAccount(accountId);
       setMailboxes(mailboxesList);
     } catch (err) {
       console.error('Failed to load mailboxes:', err);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, [accountId]);
 
@@ -93,6 +98,16 @@ export default function SendersPage() {
       loadMailboxes();
     }
   }, [accountId, loadMailboxes]);
+
+  useEffect(() => {
+    if (isMobile && !wasMobileRef.current) {
+      setSelectedMailboxes(new Set());
+      setShowConnectModal(false);
+      setShowUploadCSVModal(false);
+      setTestResult(null);
+    }
+    wasMobileRef.current = isMobile;
+  }, [isMobile]);
 
   const handleTestConnection = async () => {
     // Validation
@@ -218,7 +233,18 @@ export default function SendersPage() {
     }
   };
 
-  const handleTestMailbox = async (mailbox: Mailbox) => {
+  const handleActionsSheetMailboxChange = useCallback((m: Mailbox | null) => {
+    actionsSheetMailboxRef.current = m;
+    setTestResult(null);
+    setTestResultMailboxEmail(null);
+    setShowTestResultModal(false);
+  }, []);
+
+  const handleTestMailbox = async (
+    mailbox: Mailbox,
+    options?: { fromActionsSheet?: boolean }
+  ) => {
+    const fromSheet = options?.fromActionsSheet === true;
     setTestingMailboxId(mailbox.id);
 
     try {
@@ -236,7 +262,6 @@ export default function SendersPage() {
         imap_use_ssl: mailbox.imap_use_ssl,
       });
 
-      // Update mailbox status based on test result
       const newStatus = result.success ? 'connected' : 'error';
       await updateMailboxStatus(
         mailbox.id,
@@ -246,17 +271,34 @@ export default function SendersPage() {
 
       setTestResult(result);
       setTestResultMailboxEmail(mailbox.email_address);
-      setShowTestResultModal(true);
 
-      // Reload mailboxes to show updated status
-      await loadMailboxes();
+      const showInSheet =
+        fromSheet && actionsSheetMailboxRef.current?.id === mailbox.id;
+      if (!showInSheet) {
+        setShowTestResultModal(true);
+      }
+
+      await loadMailboxes({ silent: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to test mailbox connection';
-      toast.error(message);
-      setTestResult(null);
-      // Update status to error
+      const failure: TestConnectionResult = {
+        success: false,
+        message,
+      };
+
       await updateMailboxStatus(mailbox.id, 'error', message);
-      await loadMailboxes();
+
+      setTestResult(failure);
+      setTestResultMailboxEmail(mailbox.email_address);
+
+      const showInSheet =
+        fromSheet && actionsSheetMailboxRef.current?.id === mailbox.id;
+      if (!showInSheet) {
+        toast.error(message);
+        setShowTestResultModal(true);
+      }
+
+      await loadMailboxes({ silent: true });
     } finally {
       setTestingMailboxId(null);
     }
@@ -401,9 +443,15 @@ export default function SendersPage() {
   const isIndeterminate = selectedMailboxes.size > 0 && selectedMailboxes.size < mailboxes.length;
 
   const openConnectModal = () => {
+    if (isMobile) return;
     setTestResult(null);
     setShowTestResultModal(false);
     setShowConnectModal(true);
+  };
+
+  const openUploadCSVModal = () => {
+    if (isMobile) return;
+    setShowUploadCSVModal(true);
   };
 
   const handleBulkDelete = async (ids: string[]) => {
@@ -418,24 +466,34 @@ export default function SendersPage() {
     }
   };
 
+  const desktopHeaderActions = (
+    <View className="flex-row gap-2">
+      <Button variant="secondary" onPress={openUploadCSVModal}>
+        Upload CSV
+      </Button>
+      <Button onPress={openConnectModal}>Create mailbox</Button>
+    </View>
+  );
+
   return (
-    <PageLayout>
-      <View className="mb-6 flex-row items-center justify-between">
-        <View>
-          <Text className="text-3xl font-instrument-semibold text-white mb-2">Senders</Text>
-          <Text className="text-gray-400 font-instrument">Manage your email mailbox connections</Text>
-        </View>
-        <View className="flex-row gap-2">
-          <Button variant="secondary" onPress={() => setShowUploadCSVModal(true)}>
-            Upload CSV
-          </Button>
-          <Button onPress={openConnectModal}>Create mailbox</Button>
-        </View>
-      </View>
+    <PageLayout mobileLayout="scrollable">
+      <PageHeader
+        title="Senders"
+        subtitle={isMobile ? 'Connected mailboxes' : 'Manage your email mailbox connections'}
+        primaryAction={isMobile ? undefined : desktopHeaderActions}
+      />
+      {isMobile ? (
+        <Alert
+          variant="info"
+          message="To connect new mailboxes or upload a CSV, use Furnace on a desktop browser."
+        />
+      ) : null}
 
       <MailboxesTable
         isLoading={isLoading}
         showSkeleton={showSkeleton}
+        isMobile={isMobile}
+        allowAddMailboxes={!isMobile}
         mailboxes={mailboxes}
         selectedMailboxes={selectedMailboxes}
         toggleMailboxSelection={toggleMailboxSelection}
@@ -450,7 +508,10 @@ export default function SendersPage() {
         onBulkEdit={handleBulkEdit}
         onClearSelection={() => setSelectedMailboxes(new Set())}
         onConnectMailbox={openConnectModal}
-        onUploadCSV={() => setShowUploadCSVModal(true)}
+        onUploadCSV={openUploadCSVModal}
+        onActionsSheetMailboxChange={handleActionsSheetMailboxChange}
+        testResult={testResult}
+        testResultMailboxEmail={testResultMailboxEmail}
       />
 
       <ConnectMailboxModal

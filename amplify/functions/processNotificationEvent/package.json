@@ -1,0 +1,14 @@
+{
+  "name": "processNotificationEvent",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.77.0",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.0",
+    "@types/web-push": "^3.6.4",
+    "typescript": "^5.0.0"
+  }
+}

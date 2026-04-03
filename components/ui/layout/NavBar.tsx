@@ -7,7 +7,6 @@ import { SvgXml } from 'react-native-svg';
 import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon, EnvelopeIcon } from 'react-native-heroicons/outline';
 import { useAccount } from '@/contexts/AccountContext';
 import { WorkspaceSwitcherPopover } from '@/components/ui/WorkspaceSwitcherPopover';
-
 const furnaceLogoFull = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg height="100%" stroke-miterlimit="10" style="fill-rule:nonzero;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;" version="1.1" viewBox="0 0 1584 396" width="100%" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">

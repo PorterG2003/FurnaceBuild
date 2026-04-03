@@ -3,7 +3,6 @@ import { View, ScrollView, useWindowDimensions } from 'react-native';
 import { NavBar } from './NavBar';
 import { BottomNavBar, BOTTOM_NAV_SCROLL_PADDING } from './BottomNavBar';
 import { LAYOUT_BREAKPOINT } from './constants';
-
 export type MobileLayoutMode = 'scrollable' | 'fixed';
 
 interface PageLayoutProps {
@@ -48,7 +47,6 @@ export function PageLayout({
   const { width } = useWindowDimensions();
   const isMobileLayout = width < LAYOUT_BREAKPOINT;
   const mobileLayout: MobileLayoutMode = mobileLayoutProp ?? (scrollable ? 'scrollable' : 'fixed');
-
   if (isMobileLayout) {
     return (
       <View className="flex-1 bg-[#121212]">

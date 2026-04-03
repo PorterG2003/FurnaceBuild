@@ -21,6 +21,20 @@ import {
 
 const isWeb = Platform.OS === 'web';
 
+/** Max sheet height as a fraction of screen height (content can scroll inside below this cap). */
+export const BOTTOM_SHEET_MAX_VIEWPORT_RATIO = 0.92;
+
+/**
+ * Vertical space available for scrollable sheet content (below drag handle, inside sheet padding).
+ * Keep in sync with `sheetStyle` padding and `dragHandleStyle` margins in this file.
+ */
+export function getBottomSheetBodyScrollMaxHeight(screenHeight: number, bottomInset: number): number {
+  const sheetMax = screenHeight * BOTTOM_SHEET_MAX_VIEWPORT_RATIO;
+  const paddingBottom = Math.max(bottomInset, 16);
+  const dragBlock = 4 + 16; // handle height + marginBottom
+  return sheetMax - 12 - paddingBottom - dragBlock;
+}
+
 export interface BottomSheetProps {
   visible: boolean;
   onClose: () => void;
@@ -261,6 +275,9 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
     height: screenHeight,
   };
 
+  const sheetMaxHeight = screenHeight * BOTTOM_SHEET_MAX_VIEWPORT_RATIO;
+  const sheetBodyMaxHeight = getBottomSheetBodyScrollMaxHeight(screenHeight, insets.bottom);
+
   const sheetStyle = {
     backgroundColor: '#1A1A1A',
     borderTopLeftRadius: 20,
@@ -271,6 +288,9 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
     paddingHorizontal: 16,
     paddingBottom: Math.max(insets.bottom, 16),
     minHeight: 120,
+    maxHeight: sheetMaxHeight,
+    width: screenWidth,
+    alignSelf: 'stretch' as const,
     transform: [{ translateY: sheetTranslateY }],
   };
 
@@ -292,8 +312,8 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
     <>
       <View style={dragHandleStyle} />
       <BottomSheetTakeoverContext.Provider value={takeoverContextValue}>
-        <View style={styles.sheetBodyHost}>
-          <Animated.View style={{ flex: 1, opacity: hostOpacity }}>
+        <View style={[styles.sheetBodyHost, { maxHeight: sheetBodyMaxHeight }]}>
+          <Animated.View style={{ flex: 1, minHeight: 0, opacity: hostOpacity }}>
             <PickerInsideBottomSheetProvider value={true}>
               {children}
             </PickerInsideBottomSheetProvider>
@@ -399,7 +419,6 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
 const styles = StyleSheet.create({
   sheetBodyHost: {
     position: 'relative',
-    flexGrow: 1,
     minHeight: 120,
     overflow: 'hidden',
   },

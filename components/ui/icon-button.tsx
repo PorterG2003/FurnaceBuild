@@ -2,8 +2,15 @@ import React from 'react';
 import { TouchableOpacity, Text, TouchableOpacityProps } from 'react-native';
 import { cn } from '@/lib/cn';
 
-export type IconButtonVariant = 'default' | 'secondary' | 'destructive' | 'outline' | 'ghost';
-export type IconButtonSize = 'default' | 'sm' | 'xs';
+export type IconButtonVariant =
+  | 'default'
+  | 'secondary'
+  | 'destructive'
+  | 'outline'
+  | 'ghost'
+  /** Transparent, minimal padding, 20px icon — card/list ⋯ menus (pair with `hitSlop`) */
+  | 'overflow';
+export type IconButtonSize = 'default' | 'sm' | 'xs' | 'inline';
 
 export interface IconButtonProps extends Omit<TouchableOpacityProps, 'children'> {
   icon: React.ComponentType<{ size?: number; color?: string }>;
@@ -18,12 +25,15 @@ const ICON_COLORS: Record<IconButtonVariant, { default: string; disabled: string
   destructive: { default: '#F87171', disabled: 'rgba(248,113,113,0.7)' },
   outline: { default: '#E5E7EB', disabled: 'rgba(229,231,235,0.7)' },
   ghost: { default: '#9CA3AF', disabled: 'rgba(156,163,175,0.7)' },
+  overflow: { default: '#9CA3AF', disabled: 'rgba(156,163,175,0.7)' },
 };
 
+/** Icon px per `size`. `inline` is used internally by `variant="overflow"`. */
 const ICON_SIZES: Record<IconButtonSize, number> = {
   xs: 14,
   sm: 16,
   default: 18,
+  inline: 20,
 };
 
 export function IconButton({
@@ -35,7 +45,8 @@ export function IconButton({
   disabled = false,
   ...props
 }: IconButtonProps) {
-  const iconSize = ICON_SIZES[size];
+  const effectiveSize: IconButtonSize = variant === 'overflow' ? 'inline' : size;
+  const iconSize = ICON_SIZES[effectiveSize];
   const colors = ICON_COLORS[variant];
   const iconColor = disabled ? colors.disabled : colors.default;
 
@@ -51,16 +62,17 @@ export function IconButton({
           'border border-white/20 bg-white/5': variant === 'outline',
           'border border-red-500/30 bg-red-500/20': variant === 'destructive' && !disabled,
           'border border-red-500/20 bg-red-500/10': variant === 'destructive' && disabled,
-          'bg-transparent': variant === 'ghost',
-          'opacity-50': disabled && variant === 'ghost',
+          'bg-transparent': variant === 'ghost' || variant === 'overflow',
+          'opacity-50': disabled && (variant === 'ghost' || variant === 'overflow'),
         },
         {
-          'p-2': size === 'default' && !label,
-          'px-3 py-2 gap-2': size === 'default' && label,
-          'p-1.5': size === 'sm' && !label,
-          'px-2.5 py-1.5 gap-1.5': size === 'sm' && label,
-          'p-1': size === 'xs' && !label,
-          'px-2 py-1 gap-1': size === 'xs' && label,
+          'p-2': effectiveSize === 'default' && !label,
+          'px-3 py-2 gap-2': effectiveSize === 'default' && label,
+          'p-1.5': effectiveSize === 'sm' && !label,
+          'px-2.5 py-1.5 gap-1.5': effectiveSize === 'sm' && label,
+          'p-1': (effectiveSize === 'xs' && !label) || (effectiveSize === 'inline' && !label),
+          'px-2 py-1 gap-1': effectiveSize === 'xs' && label,
+          'px-2 py-1 gap-1.5': effectiveSize === 'inline' && label,
         },
         className
       )}
@@ -77,11 +89,11 @@ export function IconButton({
               'text-white': variant === 'default',
               'text-gray-200': variant === 'secondary' || variant === 'outline',
               'text-red-300': variant === 'destructive',
-              'text-gray-400': variant === 'ghost',
+              'text-gray-400': variant === 'ghost' || variant === 'overflow',
             },
             {
-              'text-sm': size === 'default',
-              'text-xs': size === 'sm' || size === 'xs',
+              'text-sm': effectiveSize === 'default' || effectiveSize === 'inline',
+              'text-xs': effectiveSize === 'sm' || effectiveSize === 'xs',
             }
           )}
         >

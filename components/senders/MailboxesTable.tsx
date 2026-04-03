@@ -1,35 +1,29 @@
+import { useEffect, useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { EmptyState } from '@/components/ui/feedback';
-import { SendersTableSkeleton } from '@/components/skeletons';
+import { MailboxActionsSheet } from './MailboxActionsSheet';
+import { MailboxListCard } from './MailboxListCard';
+import { MailboxStatusPill } from './mailboxStatus';
+import { SendersCardListSkeleton, SendersTableSkeleton } from '@/components/skeletons';
 import { PencilIcon, PlayIcon, TrashIcon } from 'react-native-heroicons/outline';
+import type { TestConnectionResult } from './types';
 import type { Mailbox } from '@/lib/supabase/types';
-
-function getStatusColor(status: string): string {
-  switch (status) {
-    case 'connected':
-      return '#10B981';
-    case 'disconnected':
-      return '#6B7280';
-    case 'error':
-      return '#EF4444';
-    default:
-      return '#6B7280';
-  }
-}
 
 export interface MailboxesTableProps {
   isLoading: boolean;
   showSkeleton: boolean;
+  isMobile: boolean;
+  allowAddMailboxes: boolean;
   mailboxes: Mailbox[];
   selectedMailboxes: Set<string>;
   toggleMailboxSelection: (mailboxId: string) => void;
   toggleSelectAll: () => void;
   isAllSelected: boolean;
   isIndeterminate: boolean;
-  onTestMailbox: (mailbox: Mailbox) => void;
+  onTestMailbox: (mailbox: Mailbox, options?: { fromActionsSheet?: boolean }) => void;
   onEditMailbox: (mailbox: Mailbox) => void;
   onDeleteClick: (mailbox: Mailbox) => void;
   testingMailboxId: string | null;
@@ -38,11 +32,17 @@ export interface MailboxesTableProps {
   onClearSelection: () => void;
   onConnectMailbox: () => void;
   onUploadCSV?: () => void;
+  /** Mobile actions sheet: sync open mailbox for test-result presentation (see senders page). */
+  onActionsSheetMailboxChange?: (mailbox: Mailbox | null) => void;
+  testResult: TestConnectionResult | null;
+  testResultMailboxEmail: string | null;
 }
 
 export function MailboxesTable({
   isLoading,
   showSkeleton,
+  isMobile,
+  allowAddMailboxes,
   mailboxes,
   selectedMailboxes,
   toggleMailboxSelection,
@@ -58,29 +58,98 @@ export function MailboxesTable({
   onClearSelection,
   onConnectMailbox,
   onUploadCSV,
+  onActionsSheetMailboxChange,
+  testResult,
+  testResultMailboxEmail,
 }: MailboxesTableProps) {
+  const [menuMailbox, setMenuMailbox] = useState<Mailbox | null>(null);
+
+  useEffect(() => {
+    if (!isMobile && menuMailbox) {
+      setMenuMailbox(null);
+      onActionsSheetMailboxChange?.(null);
+    }
+  }, [isMobile, menuMailbox, onActionsSheetMailboxChange]);
+
+  /** After silent list refresh, keep the open sheet bound to the latest row (same id). Do not call onActionsSheetMailboxChange here — it clears parent test state. */
+  useEffect(() => {
+    if (menuMailbox == null) return;
+    const fresh = mailboxes.find((m) => m.id === menuMailbox.id);
+    if (fresh == null) {
+      setMenuMailbox(null);
+      onActionsSheetMailboxChange?.(null);
+    } else if (fresh !== menuMailbox) {
+      setMenuMailbox(fresh);
+    }
+  }, [mailboxes, menuMailbox, onActionsSheetMailboxChange]);
+
   if (isLoading || showSkeleton) {
-    return <SendersTableSkeleton />;
+    return isMobile ? <SendersCardListSkeleton /> : <SendersTableSkeleton />;
   }
 
   if (mailboxes.length === 0) {
+    if (allowAddMailboxes) {
+      return (
+        <EmptyState
+          title="No mailboxes"
+          description="Create a mailbox or upload a CSV to add mailboxes."
+          action={
+            <View className="gap-3 w-full items-center">
+              <Button onPress={onConnectMailbox} className="w-full max-w-xs">
+                Create mailbox
+              </Button>
+              {onUploadCSV && (
+                <Button variant="secondary" onPress={onUploadCSV} className="w-full max-w-xs">
+                  Upload CSV
+                </Button>
+              )}
+            </View>
+          }
+        />
+      );
+    }
     return (
       <EmptyState
         title="No mailboxes"
-        description="Create a mailbox or upload a CSV to add mailboxes."
-        action={
-          <View className="gap-3 w-full items-center">
-            <Button onPress={onConnectMailbox} className="w-full max-w-xs">
-              Create mailbox
-            </Button>
-            {onUploadCSV && (
-              <Button variant="secondary" onPress={onUploadCSV} className="w-full max-w-xs">
-                Upload CSV
-              </Button>
-            )}
-          </View>
-        }
+        description="Mailboxes added on desktop will appear here."
       />
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <>
+        <View className="gap-3">
+          {mailboxes.map((mailbox) => (
+            <MailboxListCard
+              key={mailbox.id}
+              mailbox={mailbox}
+              onPressMenu={() => {
+                setMenuMailbox(mailbox);
+                onActionsSheetMailboxChange?.(mailbox);
+              }}
+            />
+          ))}
+        </View>
+        <MailboxActionsSheet
+          visible={menuMailbox != null}
+          mailbox={menuMailbox}
+          onClose={() => {
+            setMenuMailbox(null);
+            onActionsSheetMailboxChange?.(null);
+          }}
+          testingMailboxId={testingMailboxId}
+          testResult={testResult}
+          testResultMailboxEmail={testResultMailboxEmail}
+          onTest={(m) => onTestMailbox(m, { fromActionsSheet: true })}
+          onEdit={onEditMailbox}
+          onDelete={onDeleteClick}
+          onDismissTestResult={() => {
+            setMenuMailbox(null);
+            onActionsSheetMailboxChange?.(null);
+          }}
+        />
+      </>
     );
   }
 
@@ -156,17 +225,7 @@ export function MailboxesTable({
                 <Text className="text-gray-400 font-instrument text-sm">{mailbox.email_address}</Text>
               </View>
               <View className="flex-[1] px-2 py-2 justify-center">
-                <View
-                  className="px-2 py-1 rounded self-start"
-                  style={{ backgroundColor: getStatusColor(mailbox.status) + '20' }}
-                >
-                  <Text
-                    className="text-xs font-instrument-medium capitalize"
-                    style={{ color: getStatusColor(mailbox.status) }}
-                  >
-                    {mailbox.status}
-                  </Text>
-                </View>
+                <MailboxStatusPill status={mailbox.status} />
               </View>
               <View className="flex-[1] px-2 py-2 justify-center">
                 <View className="flex-row gap-1.5">

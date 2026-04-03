@@ -66,40 +66,41 @@ export function BaseModal({
   }, [visible, isMobile]);
 
   if (isMobile) {
-    const sheetContentMaxHeight = contentHeight
-      ? Math.min(contentHeight, 400)
-      : Math.min(400, screenHeight * 0.7);
     return (
       <BottomSheet visible={visible} onClose={onClose}>
-        <View className="border-b border-[#2A2A2A] pb-4 mb-4">
-          <View className="flex-1 min-w-0">
-            <Text className="text-xl font-instrument-semibold text-white" numberOfLines={2}>
-              {title}
-            </Text>
-            {description ? (
-              <Text className="text-gray-400 font-instrument text-sm mt-1" numberOfLines={3}>
-                {description}
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <View className="border-b border-[#2A2A2A] pb-4 mb-4 flex-shrink-0">
+            <View className="min-w-0">
+              <Text className="text-xl font-instrument-semibold text-white" numberOfLines={2}>
+                {title}
               </Text>
-            ) : null}
+              {description ? (
+                <Text className="text-gray-400 font-instrument text-sm mt-1" numberOfLines={3}>
+                  {description}
+                </Text>
+              ) : null}
+            </View>
           </View>
-        </View>
-        {!compact && (
-          <View style={{ maxHeight: sheetContentMaxHeight }}>
+          {!compact && (
             <ScrollView
-              style={{ maxHeight: sheetContentMaxHeight }}
-              contentContainerStyle={{ paddingBottom: (footerMobile ?? footer) ? 12 : 0 }}
+              style={{ flex: 1, minHeight: 0 }}
+              contentContainerStyle={{
+                paddingBottom: (footerMobile ?? footer) ? 12 : 0,
+                flexGrow: 1,
+              }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
+              nestedScrollEnabled
             >
               {children}
             </ScrollView>
-          </View>
-        )}
-        {(footerMobile ?? footer) ? (
-          <View className="pt-4 border-t border-[#2A2A2A] mt-4">
-            {footerMobile ?? footer}
-          </View>
-        ) : null}
+          )}
+          {(footerMobile ?? footer) ? (
+            <View className="pt-4 border-t border-[#2A2A2A] mt-4 flex-shrink-0">
+              {footerMobile ?? footer}
+            </View>
+          ) : null}
+        </View>
       </BottomSheet>
     );
   }

@@ -16,6 +16,7 @@ backend:
         - cd amplify/functions/foundryAutolinkJob && npm install && cd - || (echo "Failed to install foundryAutolinkJob dependencies" && exit 1)
         - cd amplify/functions/foundryContactEnrichmentJob && npm install && cd - || (echo "Failed to install foundryContactEnrichmentJob dependencies" && exit 1)
         - cd amplify/functions/foundryStateMatchingJob && npm install && cd - || (echo "Failed to install foundryStateMatchingJob dependencies" && exit 1)
+        - cd amplify/functions/processNotificationEvent && npm install && cd - || (echo "Failed to install processNotificationEvent dependencies" && exit 1)
         - |
           FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"
           if [ "$FLAG" != "false" ] && [ "$FLAG" != "0" ]; then

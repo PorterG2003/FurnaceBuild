@@ -1,0 +1,252 @@
+import type { SQSEvent, SQSBatchResponse } from 'aws-lambda';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import webpush from 'web-push';
+
+type EmailReceivedPayload = {
+  email_message_id: string;
+  thread_id: string;
+  mailbox_id: string;
+  from_email: string;
+  from_name: string | null;
+  subject: string;
+  received_at: string;
+};
+
+/** Event types this Lambda knows how to process; extend when adding producers. */
+const HANDLED_NOTIFICATION_EVENT_TYPES = new Set<string>(['email.received']);
+
+function getSupabase() {
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !key) throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY');
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+}
+
+function configureWebPush() {
+  const publicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+  const privateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+  if (!publicKey || !privateKey) return false;
+  webpush.setVapidDetails('mailto:support@getfurnace.io', publicKey, privateKey);
+  return true;
+}
+
+async function preferenceEnabled(
+  supabase: SupabaseClient,
+  userId: string,
+  accountId: string,
+  eventType: string,
+  channel: 'in_app' | 'web_push',
+  defaultEnabled: boolean,
+  defaultFrequency: 'instant' | 'muted'
+): Promise<{ enabled: boolean; frequency: string }> {
+  const { data } = await supabase
+    .from('notification_preferences')
+    .select('enabled, frequency')
+    .eq('user_id', userId)
+    .eq('account_id', accountId)
+    .eq('event_type', eventType)
+    .eq('channel', channel)
+    .maybeSingle();
+
+  const row = data as { enabled: boolean; frequency: string | null } | null;
+  if (!row) {
+    return { enabled: defaultEnabled, frequency: defaultFrequency };
+  }
+  return { enabled: row.enabled, frequency: row.frequency ?? 'instant' };
+}
+
+export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
+  const supabase = getSupabase();
+  const webPushReady = configureWebPush();
+  const webOrigin = (process.env.WEB_APP_ORIGIN ?? 'https://build.getfurnace.io').replace(/\/$/, '');
+  const batchItemFailures: { itemIdentifier: string }[] = [];
+
+  for (const record of event.Records) {
+    try {
+      let eventId: string;
+      try {
+        const body = JSON.parse(record.body ?? '{}');
+        eventId = body.eventId;
+      } catch {
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+        continue;
+      }
+      if (!eventId) {
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+        continue;
+      }
+
+      const { data: evt, error: evtError } = await supabase
+        .from('notification_events')
+        .select('id, account_id, event_type, payload')
+        .eq('id', eventId)
+        .maybeSingle();
+
+      if (evtError || !evt) {
+        continue;
+      }
+      if (!HANDLED_NOTIFICATION_EVENT_TYPES.has(String(evt.event_type))) {
+        console.log('[processNotificationEvent] unsupported event_type, skipping', evt.event_type);
+        continue;
+      }
+
+      const payload = evt.payload as EmailReceivedPayload;
+      const { data: mailbox, error: mbError } = await supabase
+        .from('mailboxes')
+        .select('user_id')
+        .eq('id', payload.mailbox_id)
+        .eq('account_id', evt.account_id)
+        .maybeSingle();
+
+      if (mbError || !mailbox?.user_id) {
+        console.error('[processNotificationEvent] mailbox not found', payload.mailbox_id, mbError);
+        continue;
+      }
+
+      const userId = mailbox.user_id as string;
+      const accountId = evt.account_id as string;
+
+      const { data: existing } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('event_id', eventId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (existing) {
+        continue;
+      }
+
+      const inAppPref = await preferenceEnabled(
+        supabase,
+        userId,
+        accountId,
+        'email.received',
+        'in_app',
+        true,
+        'instant'
+      );
+      const pushPrefEarly = await preferenceEnabled(
+        supabase,
+        userId,
+        accountId,
+        'email.received',
+        'web_push',
+        false,
+        'instant'
+      );
+      const wantInApp = inAppPref.enabled && inAppPref.frequency !== 'muted';
+      const wantPush = pushPrefEarly.enabled && pushPrefEarly.frequency !== 'muted';
+      if (!wantInApp && !wantPush) {
+        continue;
+      }
+
+      const fromLabel = payload.from_name
+        ? `${payload.from_name} <${payload.from_email}>`
+        : payload.from_email;
+      const title = 'New email received';
+      const bodyText = payload.subject?.trim() ? `${fromLabel}: ${payload.subject}` : fromLabel;
+      const actionUrl = `/inbox?thread=${encodeURIComponent(payload.thread_id)}`;
+
+      const { data: notif, error: insErr } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: userId,
+          account_id: accountId,
+          event_id: eventId,
+          title,
+          body: bodyText,
+          status: 'unread',
+          action_url: actionUrl,
+        })
+        .select('id')
+        .single();
+
+      if (insErr) {
+        if (insErr.code === '23505') {
+          continue;
+        }
+        console.error('[processNotificationEvent] insert notification', insErr);
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+        continue;
+      }
+
+      if (webPushReady && wantPush) {
+        const { data: subs } = await supabase
+          .from('push_subscriptions')
+          .select('id, endpoint, p256dh, auth')
+          .eq('user_id', userId)
+          .eq('account_id', accountId)
+          .is('revoked_at', null);
+
+        const openUrl = `${webOrigin}${actionUrl}`;
+        const pushPayload = JSON.stringify({
+          title,
+          body: bodyText,
+          url: openUrl,
+          tag: `furnace-${eventId}`,
+        });
+
+        for (const sub of subs ?? []) {
+          const { data: delivery, error: delInsErr } = await supabase
+            .from('notification_deliveries')
+            .insert({
+              notification_id: notif.id,
+              account_id: accountId,
+              channel: 'web_push',
+              provider: 'web_push_vapid',
+              status: 'sending',
+              attempt_count: 1,
+              last_attempt_at: new Date().toISOString(),
+            })
+            .select('id')
+            .single();
+
+          if (delInsErr) {
+            console.error('[processNotificationEvent] delivery row', delInsErr);
+            continue;
+          }
+
+          try {
+            await webpush.sendNotification(
+              {
+                endpoint: sub.endpoint,
+                keys: { p256dh: sub.p256dh, auth: sub.auth },
+              },
+              pushPayload,
+              { TTL: 3600 }
+            );
+            await supabase
+              .from('notification_deliveries')
+              .update({
+                status: 'delivered',
+                delivered_at: new Date().toISOString(),
+              })
+              .eq('id', delivery.id);
+          } catch (pushErr: unknown) {
+            const msg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+            const statusCode = (pushErr as { statusCode?: number })?.statusCode;
+            if (statusCode === 404 || statusCode === 410) {
+              await supabase
+                .from('push_subscriptions')
+                .update({ revoked_at: new Date().toISOString() })
+                .eq('id', sub.id);
+            }
+            await supabase
+              .from('notification_deliveries')
+              .update({
+                status: 'failed',
+                error: msg.slice(0, 2000),
+              })
+              .eq('id', delivery.id);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[processNotificationEvent] record failed', e);
+      batchItemFailures.push({ itemIdentifier: record.messageId });
+    }
+  }
+
+  return { batchItemFailures };
+}

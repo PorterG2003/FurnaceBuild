@@ -19,6 +19,7 @@
     "@10play/react-native-web-webview": "^0.0.3",
     "@10play/tentap-editor": "^1.0.1",
     "@aws-sdk/client-lambda": "^3.932.0",
+    "@compwright/namecase": "^3.0.1",
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo-google-fonts/instrument-sans": "^0.4.2",
     "@expo-google-fonts/inter": "^0.4.2",

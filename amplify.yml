@@ -29,6 +29,9 @@ backend:
             WORKER_ENVIRONMENT=dev
           fi
           echo "Resolved WORKER_ENVIRONMENT=$WORKER_ENVIRONMENT for branch $AWS_BRANCH"
+          # Must match infra/workers CDK region (SSM + CFN exports are regional). Override in Amplify env if needed.
+          WORKER_STACK_REGION="${FURNACE_WORKER_STACK_REGION:-${AWS_REGION:-us-west-2}}"
+          echo "Using WORKER_STACK_REGION=$WORKER_STACK_REGION for worker stack pre-checks"
           REQUIRED_EXPORTS=(
             "FurnaceCluster-$WORKER_ENVIRONMENT"
             "FurnaceWorkerSecurityGroup-$WORKER_ENVIRONMENT"
@@ -39,10 +42,11 @@ backend:
           )
           for export_name in "${REQUIRED_EXPORTS[@]}"; do
             export_value=$(aws cloudformation list-exports \
+              --region "$WORKER_STACK_REGION" \
               --query "Exports[?Name=='${export_name}'].Value | [0]" \
               --output text)
             if [ -z "$export_value" ] || [ "$export_value" = "None" ]; then
-              echo "Missing CloudFormation export: $export_name"
+              echo "Missing CloudFormation export: $export_name (region $WORKER_STACK_REGION)"
               echo "Deploy infra/workers for $WORKER_ENVIRONMENT before running Amplify backend deployment."
               exit 1
             fi
@@ -52,8 +56,8 @@ backend:
             "/furnace/ecs/${WORKER_ENVIRONMENT}/florida-scraper/task-definition-arn"
           )
           for param_name in "${REQUIRED_SSM_PARAMS[@]}"; do
-            if ! aws ssm get-parameter --name "$param_name" --region "${AWS_REGION:-us-west-2}" &>/dev/null; then
-              echo "Missing SSM parameter: $param_name"
+            if ! aws ssm get-parameter --name "$param_name" --region "$WORKER_STACK_REGION" &>/dev/null; then
+              echo "Missing SSM parameter: $param_name (region $WORKER_STACK_REGION)"
               echo "Deploy infra/workers for $WORKER_ENVIRONMENT so the state scraper task definition ARN is published."
               exit 1
             fi
@@ -67,17 +71,18 @@ backend:
             )
             for export_name in "${REQUIRED_EXPORTS[@]}"; do
               export_value=$(aws cloudformation list-exports \
+                --region "$WORKER_STACK_REGION" \
                 --query "Exports[?Name=='${export_name}'].Value | [0]" \
                 --output text)
               if [ -z "$export_value" ] || [ "$export_value" = "None" ]; then
-                echo "Missing CloudFormation export: $export_name"
+                echo "Missing CloudFormation export: $export_name (region $WORKER_STACK_REGION)"
                 echo "Deploy infra/workers for $WORKER_ENVIRONMENT before running Amplify backend deployment."
                 exit 1
               fi
             done
             TASK_DEF_PARAM="/furnace/ecs/${WORKER_ENVIRONMENT}/smartlead-migration/task-definition-arn"
-            if ! aws ssm get-parameter --name "$TASK_DEF_PARAM" --region "${AWS_REGION:-us-west-2}" &>/dev/null; then
-              echo "Missing SSM parameter: $TASK_DEF_PARAM"
+            if ! aws ssm get-parameter --name "$TASK_DEF_PARAM" --region "$WORKER_STACK_REGION" &>/dev/null; then
+              echo "Missing SSM parameter: $TASK_DEF_PARAM (region $WORKER_STACK_REGION)"
               echo "Deploy infra/workers for $WORKER_ENVIRONMENT so the Smartlead migration task definition ARN is published."
               exit 1
             fi

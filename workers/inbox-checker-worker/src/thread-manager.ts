@@ -5,6 +5,7 @@ import {
   extractCandidateEmails,
   classifyBounce,
 } from './bounce-detection/index.js';
+import { emitEmailReceivedNotification } from './emit-notification-event.js';
 
 /**
  * Thread manager for creating email threads and messages
@@ -308,6 +309,17 @@ export class ThreadManager {
     } else {
       console.log(`Reply to reply detected and processed: added to thread ${thread.id}`);
     }
+
+    await emitEmailReceivedNotification(this.supabase, {
+      accountId: thread.account_id,
+      threadId: thread.id,
+      emailMessageId: emailMessage.id,
+      mailboxId: mailbox.id,
+      fromEmail: message.from.address,
+      fromName: message.from.name || null,
+      subject: message.subject,
+      receivedAt: emailMessage.received_at,
+    });
 
     return true;
   }

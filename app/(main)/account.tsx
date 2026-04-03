@@ -7,6 +7,7 @@ import {
   MigrationHistoryModal,
   SmartleadMigrationWizardModal,
 } from '@/components/account/smartleadMigration';
+import { AccountNotificationsSection } from '@/components/account/AccountNotificationsSection';
 import type { BalancedSection } from '@/components/ui/layout';
 import {
   BalancedTwoColumnLayout,
@@ -919,6 +920,8 @@ export default function AccountPage() {
   const sectionTitleClass = isMobile
     ? 'text-lg font-instrument-semibold text-white pb-2 mb-3 border-b border-[#2A2A2A]'
     : 'text-lg font-instrument-semibold text-white pb-2 mb-4 border-b border-[#2A2A2A]';
+  /** Notifications card uses a row header (title + action); border/spacing live on the row. */
+  const sectionNotificationsTitleClass = 'text-lg font-instrument-semibold text-white';
   const sectionCardVariant = 'card';
   const sectionCardClassName = isMobile ? 'mb-5' : 'mb-8 p-5';
 
@@ -941,6 +944,22 @@ export default function AccountPage() {
           />
         ),
       },
+      ...(membership?.account
+        ? [
+            {
+              id: 'notifications',
+              groupLabel: 'Profile & account',
+              content: (
+                <AccountNotificationsSection
+                  accountId={membership.account.id}
+                  cardVariant={sectionCardVariant}
+                  cardClassName={sectionCardClassName}
+                  titleClassName={sectionNotificationsTitleClass}
+                />
+              ),
+            } satisfies BalancedSection,
+          ]
+        : []),
       {
         id: 'company',
         groupLabel: 'Team',
@@ -1026,6 +1045,7 @@ export default function AccountPage() {
     sectionCardVariant,
     sectionCardClassName,
     sectionTitleClass,
+    sectionNotificationsTitleClass,
     nameInput,
     handleNameChange,
     profile,
@@ -1035,6 +1055,7 @@ export default function AccountPage() {
     companyInput,
     handleCompanyChange,
     membership,
+    membership?.account,
     isOwner,
     savingAccount,
     handleSaveAccount,

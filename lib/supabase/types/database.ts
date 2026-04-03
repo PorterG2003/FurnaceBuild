@@ -856,6 +856,205 @@ export interface Database {
           created_at?: string | null;
         };
       };
+      notification_deliveries: {
+        Row: {
+          id: string;
+          notification_id: string;
+          account_id: string;
+          channel: 'in_app' | 'web_push';
+          provider: string;
+          status: 'pending' | 'sending' | 'delivered' | 'failed' | 'skipped';
+          attempt_count: number;
+          last_attempt_at: string | null;
+          delivered_at: string | null;
+          provider_message_id: string | null;
+          error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          notification_id: string;
+          account_id: string;
+          channel: 'in_app' | 'web_push';
+          provider?: string;
+          status?: 'pending' | 'sending' | 'delivered' | 'failed' | 'skipped';
+          attempt_count?: number;
+          last_attempt_at?: string | null;
+          delivered_at?: string | null;
+          provider_message_id?: string | null;
+          error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          notification_id?: string;
+          account_id?: string;
+          channel?: 'in_app' | 'web_push';
+          provider?: string;
+          status?: 'pending' | 'sending' | 'delivered' | 'failed' | 'skipped';
+          attempt_count?: number;
+          last_attempt_at?: string | null;
+          delivered_at?: string | null;
+          provider_message_id?: string | null;
+          error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      notification_events: {
+        Row: {
+          id: string;
+          account_id: string;
+          event_type: string;
+          resource_type: string | null;
+          resource_id: string | null;
+          payload: Json;
+          occurred_at: string;
+          dedupe_key: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          event_type: string;
+          resource_type?: string | null;
+          resource_id?: string | null;
+          payload?: Json;
+          occurred_at?: string;
+          dedupe_key?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          event_type?: string;
+          resource_type?: string | null;
+          resource_id?: string | null;
+          payload?: Json;
+          occurred_at?: string;
+          dedupe_key?: string | null;
+          created_at?: string;
+        };
+      };
+      notification_preferences: {
+        Row: {
+          id: string;
+          user_id: string;
+          account_id: string;
+          event_type: string;
+          channel: 'in_app' | 'web_push';
+          enabled: boolean;
+          frequency: 'instant' | 'digest' | 'muted';
+          quiet_hours: Json | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          account_id: string;
+          event_type: string;
+          channel: 'in_app' | 'web_push';
+          enabled?: boolean;
+          frequency?: 'instant' | 'digest' | 'muted';
+          quiet_hours?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          account_id?: string;
+          event_type?: string;
+          channel?: 'in_app' | 'web_push';
+          enabled?: boolean;
+          frequency?: 'instant' | 'digest' | 'muted';
+          quiet_hours?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          account_id: string;
+          event_id: string;
+          title: string;
+          body: string | null;
+          status: 'unread' | 'read' | 'archived';
+          read_at: string | null;
+          archived_at: string | null;
+          action_url: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          account_id: string;
+          event_id: string;
+          title: string;
+          body?: string | null;
+          status?: 'unread' | 'read' | 'archived';
+          read_at?: string | null;
+          archived_at?: string | null;
+          action_url?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          account_id?: string;
+          event_id?: string;
+          title?: string;
+          body?: string | null;
+          status?: 'unread' | 'read' | 'archived';
+          read_at?: string | null;
+          archived_at?: string | null;
+          action_url?: string | null;
+          created_at?: string;
+        };
+      };
+      push_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          account_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          user_agent: string | null;
+          last_seen_at: string;
+          revoked_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          account_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          user_agent?: string | null;
+          last_seen_at?: string;
+          revoked_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          account_id?: string;
+          endpoint?: string;
+          p256dh?: string;
+          auth?: string;
+          user_agent?: string | null;
+          last_seen_at?: string;
+          revoked_at?: string | null;
+          created_at?: string;
+        };
+      };
     };
     Views: {
       [_ in never]: never;
@@ -899,6 +1098,13 @@ export interface Database {
           smartlead_created_at: string | null;
           attempt_count: number;
         }[];
+      };
+      create_test_notification: {
+        Args: {
+          p_account_id: string;
+          p_payload?: Json;
+        };
+        Returns: string;
       };
     };
     Enums: {

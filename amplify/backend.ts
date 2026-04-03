@@ -1,8 +1,10 @@
 import { config } from 'dotenv';
 import { defineBackend } from '@aws-amplify/backend';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cdk from 'aws-cdk-lib';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
@@ -18,6 +20,7 @@ import { foundryNormalizeJob } from './functions/foundryNormalizeJob/resource';
 import { foundryAutolinkJob } from './functions/foundryAutolinkJob/resource';
 import { foundryContactEnrichmentJob } from './functions/foundryContactEnrichmentJob/resource';
 import { foundryStateMatchingJob } from './functions/foundryStateMatchingJob/resource';
+import { processNotificationEvent } from './functions/processNotificationEvent/resource';
 
 // Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
 config({ path: '.env.local' });
@@ -45,6 +48,7 @@ const backend = defineBackend({
   foundryAutolinkJob,
   foundryContactEnrichmentJob,
   foundryStateMatchingJob,
+  processNotificationEvent,
   ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
 
@@ -678,6 +682,54 @@ if (smartleadMigrationEnabled) {
   allowPublicLaunchSmartleadMigrationInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 }
 
+// Notification pipeline (SQS → processNotificationEvent Lambda):
+// - Default: import queue from infra/workers (export FurnaceNotificationEventsQueueArn-{dev|prod}). Deploy
+//   `cd infra/workers && npm run deploy:dev` (or :prod) before Amplify if you use this mode.
+// - AMPLIFY_EMBED_NOTIFICATION_QUEUE=true: create the queue in this stack (typical for ampx sandbox).
+// - AMPLIFY_NOTIFICATION_QUEUE_ARN=arn:aws:sqs:...: use a specific queue (e.g. copied from AWS console).
+const notificationWorkerEnv = resolveWorkerEnvironment();
+const embedNotificationQueue = ['true', '1', 'yes'].includes(
+  (process.env.AMPLIFY_EMBED_NOTIFICATION_QUEUE ?? '').toLowerCase(),
+);
+const notificationQueueArnFromEnv = process.env.AMPLIFY_NOTIFICATION_QUEUE_ARN?.trim();
+
+let notificationQueue: sqs.IQueue;
+let embeddedNotificationQueue: sqs.Queue | undefined;
+
+if (embedNotificationQueue) {
+  embeddedNotificationQueue = new sqs.Queue(backend.stack, 'EmbeddedNotificationEventsQueue', {
+    visibilityTimeout: cdk.Duration.seconds(150),
+    retentionPeriod: cdk.Duration.days(4),
+  });
+  notificationQueue = embeddedNotificationQueue;
+} else if (notificationQueueArnFromEnv) {
+  notificationQueue = sqs.Queue.fromQueueArn(
+    backend.stack,
+    'ConfiguredNotificationEventsQueue',
+    notificationQueueArnFromEnv,
+  );
+} else {
+  notificationQueue = sqs.Queue.fromQueueArn(
+    backend.stack,
+    'ImportedFurnaceNotificationEventsQueue',
+    cdk.Fn.importValue(`FurnaceNotificationEventsQueueArn-${notificationWorkerEnv}`),
+  );
+}
+
+const processNotificationLambda = backend.processNotificationEvent.resources.lambda as lambda.Function;
+processNotificationLambda.addEnvironment(
+  'WEB_APP_ORIGIN',
+  process.env.WEB_APP_ORIGIN ?? 'https://build.getfurnace.io',
+);
+notificationQueue.grantConsumeMessages(processNotificationLambda);
+processNotificationLambda.addEventSource(
+  new lambdaEventSources.SqsEventSource(notificationQueue, {
+    batchSize: 5,
+    maxBatchingWindow: cdk.Duration.seconds(5),
+    reportBatchItemFailures: true,
+  }),
+);
+
 const customOutputs: Record<string, string> = {
   fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
   sendInvitationEmailUrl: sendInvitationUrl.url,
@@ -690,6 +742,9 @@ const customOutputs: Record<string, string> = {
 };
 if (launchSmartleadMigrationUrlRef) {
   customOutputs.launchSmartleadMigrationUrl = launchSmartleadMigrationUrlRef.url;
+}
+if (embeddedNotificationQueue) {
+  customOutputs.notificationEventsQueueUrl = embeddedNotificationQueue.queueUrl;
 }
 
 backend.addOutput({

@@ -623,6 +623,17 @@ export class WorkerStack extends cdk.Stack {
       description: 'Current Florida Sunbiz scraper ECS task definition ARN for RunTask',
     });
 
+    // Legacy export: older Amplify stacks still use Fn::ImportValue on this name. Removing it
+    // causes WorkerStack updates to fail/rollback while that import exists. Current Amplify code
+    // reads `/furnace/ecs/{env}/smartlead-migration/task-definition-arn` instead; redeploy Amplify
+    // for all branches that still import this, then this output can be deleted.
+    new cdk.CfnOutput(this, 'SmartleadMigrationTaskDefinitionArnLegacyExport', {
+      value: smartleadMigrationTaskDefinition.taskDefinitionArn,
+      description:
+        'Smartlead migration task definition ARN (legacy CFN export; prefer SSM smartlead-migration/task-definition-arn)',
+      exportName: `FurnaceSmartleadMigrationTaskDefinition-${environment}`,
+    });
+
     // ============================================
     // Outputs
     // ============================================

@@ -75,7 +75,7 @@ get_repo_uri() {
   
   # Fallback to querying ECR directly
   if [ -z "$repo_uri" ]; then
-    echo "   Getting repository URI from ECR..."
+    echo "   Getting repository URI from ECR..." >&2
     repo_uri=$(aws ecr describe-repositories \
       --repository-names "furnace/$repo_name-$ENVIRONMENT" \
       --region "$REGION" \
@@ -84,9 +84,10 @@ get_repo_uri() {
   fi
   
   if [ -z "$repo_uri" ] || [ "$repo_uri" = "None" ]; then
-    echo "❌ Error: Could not find ECR repository: furnace/$repo_name-$ENVIRONMENT"
-    echo "   Make sure the CDK stack is deployed: npm run deploy:$ENVIRONMENT"
-    exit 1
+    echo "❌ Error: Could not find ECR repository: furnace/$repo_name-$ENVIRONMENT" >&2
+    echo "   Make sure the CDK stack is deployed: npm run deploy:$ENVIRONMENT" >&2
+    echo "   If the stack is UPDATE_ROLLBACK_COMPLETE, fix the stack then redeploy." >&2
+    return 1
   fi
   
   echo "$repo_uri"
@@ -109,7 +110,9 @@ dockerfile_path_for_worker() {
 build_and_push_worker() {
   local worker_name="$1"
   local repo_uri
-  repo_uri=$(get_repo_uri "$worker_name")
+  if ! repo_uri=$(get_repo_uri "$worker_name"); then
+    exit 1
+  fi
   
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -137,19 +140,15 @@ build_and_push_worker() {
     echo ""
   fi
   
-  # Build image
-  echo "🏗️  Building Docker image for linux/amd64 platform..."
+  # Build and push in one step (--push). Using --load first fails on some Mac/Docker setups with
+  # docker-container drivers: "failed to create temp dir ... read-only file system" during export.
+  echo "🏗️  Building and pushing Docker image (linux/amd64) to ECR..."
   docker buildx build \
     --platform linux/amd64 \
     -f "$(dockerfile_path_for_worker "$worker_name")" \
     -t "$repo_uri:latest" \
-    --load \
+    --push \
     "$PROJECT_ROOT"
-  
-  # Push image
-  echo ""
-  echo "📤 Pushing image to ECR..."
-  docker push "$repo_uri:latest"
   
   echo ""
   echo "✅ Successfully pushed: $repo_uri:latest"

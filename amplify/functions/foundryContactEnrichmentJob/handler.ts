@@ -6,6 +6,7 @@ import {
   listContactEnrichmentTargetsPage,
   MAX_CONTACT_ENRICHMENT_BATCH_SIZE,
   persistContactEnrichmentAttempt,
+  type ContactEnrichmentTargetRow,
 } from '@furnace/registry-server';
 
 let cachedClient: SupabaseClient | null = null;
@@ -158,7 +159,9 @@ export const handler = async (event: ChunkEvent | FinalizeEvent | FailEvent): Pr
     return { done: true, nextCursor: null, scanned: 0 };
   }
 
-  const lookupPayloads = page.targets.map((target) => buildSkipSherpaLookupPayload(target));
+  const lookupPayloads = page.targets.map((target: ContactEnrichmentTargetRow) =>
+    buildSkipSherpaLookupPayload(target),
+  );
   const providerResponse = await callSkipSherpaPersonLookup(apiKey, lookupPayloads);
   const results =
     providerResponse.body &&

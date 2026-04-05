@@ -92,6 +92,7 @@ export interface Database {
           source: string | null;
           smartlead_campaign_id: number | null;
           smartlead_created_at: string | null;
+          deleted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -111,6 +112,7 @@ export interface Database {
           source?: string | null;
           smartlead_campaign_id?: number | null;
           smartlead_created_at?: string | null;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -130,6 +132,7 @@ export interface Database {
           source?: string | null;
           smartlead_campaign_id?: number | null;
           smartlead_created_at?: string | null;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -154,6 +157,7 @@ export interface Database {
           global_lead_id: string | null;
           smartlead_lead_id: number | null;
           status: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
+          deleted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -176,6 +180,7 @@ export interface Database {
           global_lead_id?: string | null;
           smartlead_lead_id?: number | null;
           status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -198,6 +203,7 @@ export interface Database {
           global_lead_id?: string | null;
           smartlead_lead_id?: number | null;
           status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
+          deleted_at?: string | null;
           mailbox_id?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -213,6 +219,7 @@ export interface Database {
           state: 'active' | 'paused' | 'stopped' | 'completed';
           next_run_at: string | null;
           flow_position: Json | null;
+          deleted_at: string | null;
           created_at: string;
           updated_at: string;
           stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
@@ -228,6 +235,7 @@ export interface Database {
           state?: 'active' | 'paused' | 'stopped' | 'completed';
           next_run_at?: string | null;
           flow_position?: Json | null;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
           stopped_reason?: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
@@ -242,6 +250,7 @@ export interface Database {
           state?: 'active' | 'paused' | 'stopped' | 'completed';
           next_run_at?: string | null;
           flow_position?: Json | null;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
           stopped_reason?: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
@@ -634,6 +643,7 @@ export interface Database {
           min_gap_seconds: number | null;
           daily_limit: number | null;
           hourly_limit: number | null;
+          deleted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -662,6 +672,7 @@ export interface Database {
           min_gap_seconds?: number | null;
           daily_limit?: number | null;
           hourly_limit?: number | null;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -690,6 +701,7 @@ export interface Database {
           min_gap_seconds?: number | null;
           daily_limit?: number | null;
           hourly_limit?: number | null;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1072,6 +1084,13 @@ export interface Database {
           p_run_id: string;
         };
         Returns: boolean;
+      };
+      cancel_unsent_campaign_jobs: {
+        Args: {
+          p_campaign_id: string;
+          p_reason?: string;
+        };
+        Returns: number;
       };
       claim_smartlead_migration_run: {
         Args: {

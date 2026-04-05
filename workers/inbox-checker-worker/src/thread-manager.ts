@@ -273,7 +273,8 @@ export class ThreadManager {
       await this.supabase
         .from('enrollments')
         .update({ state: 'stopped', stopped_reason: 'replied', stopped_at: stoppedAt })
-        .eq('id', originalJob.enrollment_id);
+        .eq('id', originalJob.enrollment_id)
+        .is('deleted_at', null);
 
       const isCampaignReply =
         (originalJob as any).message_type !== 'inbox_reply' &&
@@ -724,7 +725,8 @@ export class ThreadManager {
       await this.supabase
         .from('enrollments')
         .update({ state: 'stopped', stopped_reason: 'bounced', stopped_at: stoppedAt })
-        .eq('id', enrollmentId);
+        .eq('id', enrollmentId)
+        .is('deleted_at', null);
     }
 
     console.log(`Bounce detected in mailbox ${mailbox.id}, stopped ${enrollmentsToStop.length} enrollments, severity=${classification.severity}`);
@@ -757,7 +759,8 @@ export class ThreadManager {
       await this.supabase
         .from('enrollments')
         .update({ state: 'stopped', stopped_reason: 'unsubscribed', stopped_at: stoppedAt })
-        .eq('id', enrollmentId);
+        .eq('id', enrollmentId)
+        .is('deleted_at', null);
     }
 
     console.log(`Unsubscribe detected in mailbox ${mailbox.id}, stopped ${enrollmentIds.size} enrollments`);

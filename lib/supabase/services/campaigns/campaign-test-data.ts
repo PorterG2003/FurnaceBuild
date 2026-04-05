@@ -1,6 +1,7 @@
 import { supabase } from '../../client';
 import type { Campaign } from '../../types';
-import { getCampaigns, getCampaignById } from './campaigns';
+import { getCampaigns, getCampaignById, deleteCampaign } from './campaigns';
+import { deleteMailbox } from '../mailboxes';
 
 /**
  * Get test campaigns for a user (campaigns with test mailboxes or test leads).
@@ -26,6 +27,7 @@ export async function getTestCampaigns(userId: string): Promise<Campaign[]> {
   const { data: leadsData, error: leadsError } = await supabase
     .from('leads')
     .select('campaign_id, email')
+    .is('deleted_at', null)
     .in('campaign_id', campaignIds);
 
   if (!leadsError && leadsData) {
@@ -73,11 +75,13 @@ export async function deleteTestCampaign(campaignId: string): Promise<void> {
       continue;
     }
     if (!otherCampaigns || otherCampaigns.length === 0) {
-      const { error: deleteError } = await supabase.from('mailboxes').delete().eq('id', mailboxId);
-      if (deleteError) console.error(`Failed to delete test mailbox ${mailboxId}:`, deleteError);
+      try {
+        await deleteMailbox(mailboxId);
+      } catch (error) {
+        console.error(`Failed to delete test mailbox ${mailboxId}:`, error);
+      }
     }
   }
 
-  const { error: deleteError } = await supabase.from('campaigns').delete().eq('id', campaignId);
-  if (deleteError) throw new Error(`Failed to delete campaign: ${deleteError.message}`);
+  await deleteCampaign(campaignId);
 }

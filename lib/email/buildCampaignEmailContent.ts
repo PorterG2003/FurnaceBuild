@@ -13,11 +13,56 @@ import { stripSignatureStyles } from './strip-signature-styles.js';
  * fragment with no <p> wrappers. Email clients add margin to <p>; using only <br>
  * produces consistent line spacing everywhere.
  */
-function htmlToFragment(html: string): string {
+export function htmlToFragment(html: string): string {
   let out = html.replace(/<\/p>\s*<p[^>]*>/gi, '<br>');
   out = out.replace(/^<p[^>]*>/i, '');
   out = out.replace(/<\/p>\s*$/i, '');
   return out.trim();
+}
+
+export interface MergeInboxComposeHtmlResult {
+  bodyHtmlMerged: string;
+  isHtmlBody: boolean;
+}
+
+/**
+ * Keep inbox reply/forward HTML join behavior aligned with buildCampaignEmailContent.
+ */
+export function mergeInboxComposeHtml(
+  editorBodyHtml: string,
+  mailboxSignatureRaw: string | null | undefined,
+  includeSignature: boolean,
+  options?: ProcessSpintaxOptions
+): MergeInboxComposeHtmlResult {
+  const bodySource = String(editorBodyHtml ?? '');
+  const normalizedSignature =
+    includeSignature && mailboxSignatureRaw?.trim()
+      ? stripSignatureStyles(mailboxSignatureRaw.trim())
+      : '';
+  const bodyPart = bodySource.replace(/\s+$/, '');
+  const sigPart = normalizedSignature.replace(/^\s+/, '');
+  const bodyIsHtml = /<[a-z][\s\S]*>/i.test(bodyPart);
+  const sigIsHtml = /<[a-z][\s\S]*>/i.test(sigPart);
+  const sigPartForHtml = sigPart.replace(/^(\s*<br\s*\/?>\s*)+/gi, '').trimStart();
+
+  let bodyRaw: string;
+  if (normalizedSignature && bodyIsHtml && sigIsHtml) {
+    const bodyFragment = htmlToFragment(bodyPart);
+    const sigFragment = htmlToFragment(sigPartForHtml);
+    bodyRaw = `${bodyFragment}<br><br>${sigFragment}`;
+  } else if (normalizedSignature) {
+    bodyRaw = `${bodyPart}\n\n${sigPart}`;
+  } else if (bodyIsHtml) {
+    bodyRaw = htmlToFragment(bodyPart);
+  } else {
+    bodyRaw = bodySource;
+  }
+
+  const bodyHtmlMerged = processSpintax(bodyRaw, options);
+  return {
+    bodyHtmlMerged,
+    isHtmlBody: /<[a-z][\s\S]*>/i.test(bodyHtmlMerged),
+  };
 }
 
 export interface BuildCampaignEmailContentConfig {
@@ -59,23 +104,12 @@ export function buildCampaignEmailContent(
     config.signature?.trim() ? stripSignatureStyles(config.signature.trim()) : '';
   const bodyPart = bodySource.replace(/\s+$/, '');
   const sigPart = normalizedSignature.replace(/^\s+/, '');
-  const bodyIsHtml = /<[a-z][\s\S]*>/i.test(bodyPart);
-  const sigIsHtml = /<[a-z][\s\S]*>/i.test(sigPart);
-  const sigPartForHtml = sigPart.replace(/^(\s*<br\s*\/?>\s*)+/gi, '').trimStart();
-
-  let bodyRaw: string;
-  if (normalizedSignature && bodyIsHtml && sigIsHtml) {
-    const bodyFragment = htmlToFragment(bodyPart);
-    const sigFragment = htmlToFragment(sigPartForHtml);
-    bodyRaw = `${bodyFragment}<br><br>${sigFragment}`;
-  } else if (normalizedSignature) {
-    bodyRaw = `${bodyPart}\n\n${sigPart}`;
-  } else if (bodyIsHtml) {
-    bodyRaw = htmlToFragment(bodyPart);
-  } else {
-    bodyRaw = bodySource;
-  }
-  const bodySpun = processSpintax(bodyRaw, options);
+  const { bodyHtmlMerged: bodySpun } = mergeInboxComposeHtml(
+    bodySource,
+    config.signature ?? null,
+    Boolean(config.signature?.trim()),
+    options
+  );
   const bodyMerged = mergeTemplate(bodySpun, lead);
   const bodyTextFromConfig =
     typeof config.body_text === 'string' ? config.body_text : null;
@@ -91,9 +125,11 @@ export function buildCampaignEmailContent(
     log('normalizedSignature', normalizedSignature);
     log('bodyPart (trimmed end)', bodyPart);
     log('sigPart (trimmed start)', sigPart);
+    const bodyIsHtml = /<[a-z][\s\S]*>/i.test(bodyPart);
+    const sigIsHtml = /<[a-z][\s\S]*>/i.test(sigPart);
     log('bodyIsHtml / sigIsHtml', { bodyIsHtml, sigIsHtml });
     log('bodyRaw (join used)', bodyIsHtml && sigIsHtml ? '<br><br>' : '\\n\\n');
-    log('bodyRaw (snippet around join)', bodyRaw.slice(Math.max(0, bodyPart.length - 20), bodyPart.length + 60));
+    log('bodyRaw (snippet around join)', bodySpun.slice(Math.max(0, bodyPart.length - 20), bodyPart.length + 60));
     log('bodyMerged (snippet around join)', bodyMerged.slice(Math.max(0, bodyPart.length - 20), bodyPart.length + 120));
   }
 

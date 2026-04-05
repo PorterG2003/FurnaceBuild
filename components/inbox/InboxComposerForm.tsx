@@ -2,10 +2,11 @@ import React from 'react';
 import { View, Text, TextInput, ScrollView, Pressable } from 'react-native';
 import { PaperAirplaneIcon } from 'react-native-heroicons/outline';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { ComposerAttachments } from './ComposerAttachments';
 import { ComposerRichEditor } from './ComposerRichEditor';
-import { buildQuotedForwardThreadHtml } from '@/lib/inbox/quote-utils';
-import type { EmailMessage } from '@/lib/supabase/types';
+import { MessageBody } from './MessageBody';
+import { stripHtml } from '@/lib/email';
 import type { EditorBridge } from '@10play/tentap-editor';
 import type { ComposerAttachmentItem } from './ComposerAttachments';
 import { MAX_ATTACHMENTS, MAX_TOTAL_BYTES, MAX_FILE_BYTES } from './inboxConstants';
@@ -34,10 +35,9 @@ export interface InboxComposerFormProps {
   onFilesSelected: (files: FileList) => void;
   composerAttachmentsLoading: boolean;
   composerAttachmentsSkipMessage: string | null;
-  signatureHtml: string;
-  /** Forward only: messages and subject for quoted HTML */
-  messages: EmailMessage[];
-  forwardThreadSubject: string;
+  includeSignature: boolean;
+  setIncludeSignature: React.Dispatch<React.SetStateAction<boolean>>;
+  forwardQuoteHtml: string;
   /** Actions */
   onSendReply: () => void;
   onSendForward: () => void;
@@ -73,9 +73,9 @@ export function InboxComposerForm({
   onFilesSelected,
   composerAttachmentsLoading,
   composerAttachmentsSkipMessage,
-  signatureHtml,
-  messages,
-  forwardThreadSubject,
+  includeSignature,
+  setIncludeSignature,
+  forwardQuoteHtml,
   onSendReply,
   onSendForward,
   sendingReply,
@@ -147,9 +147,15 @@ export function InboxComposerForm({
             style={inputStyle}
           />
           <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Message</Text>
+          <View className="flex-row items-center gap-2 mb-3">
+            <Checkbox checked={includeSignature} onPress={() => setIncludeSignature((prev) => !prev)} />
+            <Pressable onPress={() => setIncludeSignature((prev) => !prev)}>
+              <Text className="text-gray-300 font-instrument text-sm">Include signature</Text>
+            </Pressable>
+          </View>
           <ComposerRichEditor
             key={`reply${editorKeySuffix}`}
-            initialContent={`<p></p>${signatureHtml}`}
+            initialContent="<p></p>"
             placeholder="Write your reply…"
             editorRef={composerEditorRef}
             minHeight={140}
@@ -208,9 +214,15 @@ export function InboxComposerForm({
           />
           <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">Message</Text>
           <Text className="text-gray-500 font-instrument text-xs mb-1">Add your message above the forwarded content.</Text>
+          <View className="flex-row items-center gap-2 mb-3">
+            <Checkbox checked={includeSignature} onPress={() => setIncludeSignature((prev) => !prev)} />
+            <Pressable onPress={() => setIncludeSignature((prev) => !prev)}>
+              <Text className="text-gray-300 font-instrument text-sm">Include signature</Text>
+            </Pressable>
+          </View>
           <ComposerRichEditor
             key={`forward${editorKeySuffix}`}
-            initialContent={`<p></p>${signatureHtml}${buildQuotedForwardThreadHtml(messages, forwardThreadSubject)}`}
+            initialContent="<p></p>"
             placeholder="Write your message…"
             editorRef={composerEditorRef}
             minHeight={140}
@@ -218,7 +230,14 @@ export function InboxComposerForm({
             onFilesSelected={onFilesSelected}
             renderBetweenToolbarAndContent={attachmentsBlock}
           />
-          <View className="mb-5" />
+          <View className="mt-4 mb-5 rounded-xl border border-[#2A2A2A] bg-[#202020] px-4 py-3">
+            <Text className="text-gray-400 font-instrument-medium text-sm mb-2">Forwarded content</Text>
+            <MessageBody
+              bodyHtml={forwardQuoteHtml}
+              bodyText={null}
+              displayText={stripHtml(forwardQuoteHtml)}
+            />
+          </View>
           <Button
             onPress={onSendForward}
             disabled={sendingForward || !forwardToEmail.trim() || totalAttachmentBytes > MAX_TOTAL_BYTES}

@@ -16,6 +16,7 @@ export async function assignMailboxesToCampaign(
     const campaign = await getCampaignById(campaignId);
     const accountId = campaign?.account_id;
     if (!accountId) throw new Error('Campaign not found or missing account_id');
+    if (campaign.deleted_at) throw new Error('Cannot assign mailboxes to a deleted campaign');
     const assignments = mailboxIds.map((mailboxId) => ({
       campaign_id: campaignId,
       mailbox_id: mailboxId,
@@ -34,5 +35,5 @@ export async function getCampaignMailboxes(campaignId: string): Promise<any[]> {
     .order('created_at', { ascending: true });
 
   if (error) throw new Error(`Failed to fetch campaign mailboxes: ${error.message}`);
-  return (data || []).map((item: any) => item.mailbox);
+  return (data || []).map((item: any) => item.mailbox).filter((mailbox: any) => !mailbox?.deleted_at);
 }

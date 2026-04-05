@@ -47,6 +47,12 @@ export default function MissionControlPage() {
         getCampaignById(id),
         getCampaignMailboxes(id),
       ]);
+      if (data?.deleted_at) {
+        setCampaign(data);
+        setMailboxes([]);
+        setLoadError('This campaign has been deleted.');
+        return;
+      }
       setCampaign(data);
       setMailboxes(mailboxList || []);
       setLoadError(null);

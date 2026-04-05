@@ -12,10 +12,15 @@ import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
 
 export type PendingReplyInfo = {
+  kind: 'reply' | 'forward';
   threadId: string;
   jobId: string;
   isFailed?: boolean;
   errorMessage?: string | null;
+  jobStatus: 'pending' | 'reserved' | 'sending' | 'failed';
+  scheduledAt: string | null;
+  sendWaitReason: string | null;
+  isSendingImmediately?: boolean;
 };
 
 export interface InboxMessageListProps {
@@ -50,8 +55,9 @@ export interface InboxMessageListProps {
   messageActionsLayout?: MessageBubbleActionsLayout;
   onDownloadAttachment: ((emailMessageId: string, part: string, filename: string) => Promise<void>) | undefined;
   onFetchAttachmentPreview: ((emailMessageId: string, part: string) => Promise<Blob | null>) | undefined;
-  pendingReply: PendingReplyInfo | null;
-  onRetryFailedReply: () => void;
+  pendingReplies: PendingReplyInfo[];
+  onRetryFailedReply: (jobId: string) => void;
+  onSendImmediately: (jobId: string) => void;
 }
 
 export function InboxMessageList({
@@ -83,10 +89,19 @@ export function InboxMessageList({
   messageActionsLayout = 'inline',
   onDownloadAttachment,
   onFetchAttachmentPreview,
-  pendingReply,
+  pendingReplies,
   onRetryFailedReply,
+  onSendImmediately,
 }: InboxMessageListProps) {
   if (!selectedThread) return null;
+
+  const pendingByJobId = useMemo(() => {
+    const map = new Map<string, PendingReplyInfo>();
+    for (const p of pendingReplies) {
+      map.set(p.jobId, p);
+    }
+    return map;
+  }, [pendingReplies]);
 
   const hasBlocked = useMemo(
     () => selectedThreadProspectEmails.some((e) => blockedProspectEmails.has(e.trim().toLowerCase())),
@@ -161,11 +176,12 @@ export function InboxMessageList({
                 <DateDivider label={group.label} />
                 {group.messages.map((message) => {
                   const isPendingMessage = message.id.startsWith('pending-');
+                  const pendingJobId = isPendingMessage
+                    ? message.id.slice('pending-'.length)
+                    : null;
                   const pendingInfo =
-                    isPendingMessage &&
-                    pendingReply &&
-                    selectedThreadId === pendingReply.threadId
-                      ? pendingReply
+                    pendingJobId && selectedThreadId
+                      ? pendingByJobId.get(pendingJobId) ?? null
                       : null;
                   return (
                     <MessageBubble
@@ -179,7 +195,22 @@ export function InboxMessageList({
                       isPending={isPendingMessage && !pendingInfo?.isFailed}
                       isFailed={pendingInfo?.isFailed ?? false}
                       errorMessage={pendingInfo?.errorMessage}
-                      onRetry={pendingInfo?.isFailed ? onRetryFailedReply : undefined}
+                      pendingJobStatus={
+                        pendingInfo?.jobStatus === 'failed' ? undefined : pendingInfo?.jobStatus
+                      }
+                      pendingScheduledAt={pendingInfo?.scheduledAt}
+                      pendingSendWaitReason={pendingInfo?.sendWaitReason}
+                      isSendingImmediately={pendingInfo?.isSendingImmediately}
+                      onSendImmediately={
+                        pendingInfo && !pendingInfo.isFailed
+                          ? () => onSendImmediately(pendingInfo.jobId)
+                          : undefined
+                      }
+                      onRetry={
+                        pendingInfo?.isFailed && pendingInfo.kind === 'reply' && pendingJobId
+                          ? () => onRetryFailedReply(pendingJobId)
+                          : undefined
+                      }
                     />
                   );
                 })}

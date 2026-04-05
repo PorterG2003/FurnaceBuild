@@ -10,7 +10,6 @@ export const processNotificationEvent = defineFunction({
   timeoutSeconds: 60,
   memoryMB: 256,
   environment: {
-    EXPO_PUBLIC_SUPABASE_URL: secret('EXPO_PUBLIC_SUPABASE_URL'),
     SUPABASE_SECRET_KEY: secret('SUPABASE_SECRET_KEY'),
     WEB_PUSH_VAPID_PUBLIC_KEY: secret('WEB_PUSH_VAPID_PUBLIC_KEY'),
     WEB_PUSH_VAPID_PRIVATE_KEY: secret('WEB_PUSH_VAPID_PRIVATE_KEY'),

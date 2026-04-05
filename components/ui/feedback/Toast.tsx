@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { View, Text, Animated, Easing, StyleSheet, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type ToastVariant = 'error' | 'success' | 'warning' | 'info' | 'notification';
 
@@ -240,6 +241,7 @@ interface ToastProviderProps {
 }
 
 export function ToastProvider({ children }: ToastProviderProps) {
+  const insets = useSafeAreaInsets();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [exitingId, setExitingId] = useState<string | null>(null);
 
@@ -267,7 +269,12 @@ export function ToastProvider({ children }: ToastProviderProps) {
 
   const value: ToastContextValue = { toast };
 
-  const topInset = Platform.OS === 'web' ? 24 : 48;
+  /** Overlay sits outside the padded root View in _layout; align with safe area + gap below notch/status bar. */
+  const topGap = 12;
+  const topInset =
+    Platform.OS === 'web'
+      ? Math.max(24, insets.top + topGap)
+      : insets.top + topGap;
 
   const displayToasts = toasts;
   const visibleWhenExiting = exitingId ? toasts.filter((t) => t.id !== exitingId) : null;

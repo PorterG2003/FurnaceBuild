@@ -155,7 +155,9 @@ export function AccountNotificationsSection({
       return;
     }
     if (!getWebPushVapidPublicKey()) {
-      toast.error('Alerts on this device are not available right now. Try again later.');
+      toast.error(
+        'This web build has no push key. Add EXPO_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY to Amplify (match Lambda public VAPID key) and redeploy.'
+      );
       return;
     }
     setPushBusy(true);

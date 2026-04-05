@@ -137,6 +137,10 @@ frontend:
           if [ -n "$EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY" ]; then
             echo "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY" >> .env
           fi
+          # Same public key as Amplify secret WEB_PUSH_VAPID_PUBLIC_KEY (embedded at export time for PWA subscribe).
+          if [ -n "$EXPO_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY" ]; then
+            echo "EXPO_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY=$EXPO_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY" >> .env
+          fi
         - npx expo export --platform web --output-dir web-build
   artifacts:
     baseDirectory: web-build

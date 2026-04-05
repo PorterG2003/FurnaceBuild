@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, Animated } from 'react-native';
+import { View, Text, Pressable, Animated, ActivityIndicator } from 'react-native';
 import {
   ArrowUturnLeftIcon,
   ArrowUturnRightIcon,
@@ -16,6 +16,31 @@ import { MessageAttachments } from './MessageAttachments';
 
 export type MessageBubbleActionsLayout = 'inline' | 'overflowSheet';
 
+function formatPendingScheduledTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const dateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (dateOnly.getTime() === today.getTime()) {
+    return `${time} today`;
+  }
+  if (dateOnly.getTime() === tomorrow.getTime()) {
+    return `${time} tomorrow`;
+  }
+  if (Math.abs(dateOnly.getTime() - today.getTime()) < 7 * 24 * 60 * 60 * 1000) {
+    return `${time} ${d.toLocaleDateString([], { weekday: 'short' })}`;
+  }
+  return `${time} ${d.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  })}`;
+}
+
 /** Single message bubble: centered card with avatar and Reply/Forward in header (or overflow menu on mobile) */
 export function MessageBubble({
   message,
@@ -26,6 +51,11 @@ export function MessageBubble({
   isPending,
   isFailed,
   errorMessage,
+  pendingJobStatus,
+  pendingScheduledAt,
+  pendingSendWaitReason,
+  isSendingImmediately,
+  onSendImmediately,
   onRetry,
   messageActionsLayout = 'inline',
 }: {
@@ -37,6 +67,11 @@ export function MessageBubble({
   isPending?: boolean;
   isFailed?: boolean;
   errorMessage?: string | null;
+  pendingJobStatus?: 'pending' | 'reserved' | 'sending';
+  pendingScheduledAt?: string | null;
+  pendingSendWaitReason?: string | null;
+  isSendingImmediately?: boolean;
+  onSendImmediately?: () => void;
   onRetry?: () => void;
   /** `overflowSheet`: three-dots opens a bottom sheet with Reply / Forward (mobile). */
   messageActionsLayout?: MessageBubbleActionsLayout;
@@ -56,6 +91,33 @@ export function MessageBubble({
   const showInlineActions = messageActionsLayout === 'inline' && (canReply || canForward);
   /** Desktop pane uses a centered 92%-width card; mobile inbox uses full width of the padded row. */
   const fullWidthCard = messageActionsLayout === 'overflowSheet';
+  const scheduledAtMs = pendingScheduledAt ? new Date(pendingScheduledAt).getTime() : NaN;
+  const hasFutureSchedule =
+    pendingJobStatus === 'pending' &&
+    Number.isFinite(scheduledAtMs) &&
+    scheduledAtMs > Date.now();
+  const headerStatusText = isFailed
+    ? 'Failed'
+    : !isPending
+      ? formatMessageDate(message.received_at)
+      : pendingJobStatus === 'reserved' || pendingJobStatus === 'sending'
+        ? 'Sending…'
+        : hasFutureSchedule
+          ? 'Scheduled'
+          : 'Waiting to send…';
+  const pendingPrimaryText = hasFutureSchedule && pendingScheduledAt
+    ? `Sends after ${formatPendingScheduledTime(pendingScheduledAt)}`
+    : null;
+  const showPendingCallout =
+    !!(isPending && !isFailed && (pendingPrimaryText || pendingSendWaitReason));
+  const showSendImmediatelyButton =
+    !!(
+      isPending &&
+      !isFailed &&
+      pendingJobStatus === 'pending' &&
+      onSendImmediately &&
+      (hasFutureSchedule || pendingSendWaitReason)
+    );
 
   const borderPulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -147,7 +209,7 @@ export function MessageBubble({
             </View>
             {(!fullWidthCard || isFailed || isPending) && (
               <Text className="text-gray-500 font-instrument text-xs flex-shrink-0 ml-2">
-                {isFailed ? 'Failed' : isPending ? 'Sending…' : formatMessageDate(message.received_at)}
+                {headerStatusText}
               </Text>
             )}
           </View>
@@ -212,6 +274,40 @@ export function MessageBubble({
               <Text className="text-red-400 font-instrument-semibold text-sm mb-1">Failed to send</Text>
               <Text className="text-red-300 font-instrument text-xs">{errorMessage}</Text>
             </View>
+          </View>
+        ) : null}
+        {showPendingCallout ? (
+          <View
+            className="mb-3 rounded-lg p-3"
+            style={{ backgroundColor: 'rgba(243, 68, 13, 0.08)', borderWidth: 1, borderColor: 'rgba(243, 68, 13, 0.16)' }}
+          >
+            {pendingPrimaryText ? (
+              <Text className="text-[#F97316] font-instrument-semibold text-sm">
+                {pendingPrimaryText}
+              </Text>
+            ) : null}
+            {pendingSendWaitReason ? (
+              <Text className="text-orange-200 font-instrument text-xs mt-1">
+                {pendingSendWaitReason}
+              </Text>
+            ) : null}
+            {showSendImmediatelyButton ? (
+              <Pressable
+                onPress={onSendImmediately}
+                disabled={isSendingImmediately}
+                accessibilityLabel="Send now, bypass mailbox send limits for this message"
+                className="mt-3 flex-row items-center justify-center self-start rounded-lg px-3 py-2"
+                style={{ backgroundColor: 'rgba(243, 68, 13, 0.14)' }}
+              >
+                {isSendingImmediately ? (
+                  <ActivityIndicator size="small" color="#F97316" />
+                ) : (
+                  <Text className="font-instrument-medium text-sm" style={{ color: '#F97316' }}>
+                    Send now
+                  </Text>
+                )}
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
         <MessageBody

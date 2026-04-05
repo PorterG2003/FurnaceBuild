@@ -10,6 +10,7 @@ export interface Enrollment {
   state: 'active' | 'paused' | 'stopped' | 'completed';
   next_run_at: string | null;
   flow_position: Record<string, any>;
+  deleted_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -23,6 +24,7 @@ export interface Campaign {
   schedule: CampaignSchedule | null;
   owner_id: string;
   sending_interval_seconds: number;
+  deleted_at?: string | null;
   created_at: string;
 }
 
@@ -40,6 +42,7 @@ export interface Mailbox {
   display_name: string;
   smtp_status: string;
   status: string;
+  deleted_at?: string | null;
 }
 
 export interface MessageJob {
@@ -62,6 +65,7 @@ export interface Lead {
   first_name?: string;
   last_name?: string;
   mailbox_id: string | null;
+  deleted_at?: string | null;
   [key: string]: any;
 }
 

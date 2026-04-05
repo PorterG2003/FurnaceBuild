@@ -248,7 +248,7 @@ export class SchedulerWorker {
       const leadIds = campaignEnrollments.map(e => e.lead_id);
       const { data: leads } = await this.supabase
         .from('leads')
-        .select('id, mailbox_id')
+        .select('id, mailbox_id, deleted_at')
         .in('id', leadIds);
 
       // Get eligible mailboxes for this campaign
@@ -256,12 +256,12 @@ export class SchedulerWorker {
         .from('campaign_mailboxes')
         .select(`
           mailbox_id,
-          mailbox:mailboxes!inner(id, status, smtp_status)
+          mailbox:mailboxes!inner(id, status, smtp_status, deleted_at)
         `)
         .eq('campaign_id', campaignId);
 
       const eligibleMailboxes = campaignMailboxes?.filter((cm: any) => 
-        cm.mailbox?.status === 'connected' && cm.mailbox?.smtp_status === 'active'
+        !cm.mailbox?.deleted_at && cm.mailbox?.status === 'connected' && cm.mailbox?.smtp_status === 'active'
       ) || [];
 
       // Count enrollments per mailbox (existing assignments)
@@ -270,7 +270,9 @@ export class SchedulerWorker {
 
       for (const enrollment of campaignEnrollments) {
         const lead = leads?.find(l => l.id === enrollment.lead_id);
-        if (lead?.mailbox_id) {
+        if (lead?.deleted_at) {
+          unassignedCount++;
+        } else if (lead?.mailbox_id) {
           mailboxCounts.set(lead.mailbox_id, (mailboxCounts.get(lead.mailbox_id) || 0) + 1);
         } else {
           unassignedCount++;
@@ -322,7 +324,7 @@ export class SchedulerWorker {
       const leadIds = campaignEnrollments.map(e => e.lead_id);
       const { data: leads } = await this.supabase
         .from('leads')
-        .select('id, mailbox_id')
+        .select('id, mailbox_id, deleted_at')
         .in('id', leadIds);
 
       // Count successful vs failed (using original indices)
@@ -342,6 +344,9 @@ export class SchedulerWorker {
       const mailboxCounts = new Map<string, number>();
       for (const enrollment of successfulEnrollments) {
         const lead = leads?.find(l => l.id === enrollment.lead_id);
+        if (lead?.deleted_at) {
+          continue;
+        }
         if (lead?.mailbox_id) {
           mailboxCounts.set(lead.mailbox_id, (mailboxCounts.get(lead.mailbox_id) || 0) + 1);
         }
@@ -375,7 +380,7 @@ export class SchedulerWorker {
       console.log(`[ENROLLMENT ${enrollmentId}] Loading campaign ${enrollment.campaign_id.substring(0, 8)}...`);
       const { data: campaign, error: campaignError } = await this.supabase
         .from('campaigns')
-        .select('id, flow_data, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at, status')
+        .select('id, flow_data, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at, status, deleted_at')
         .eq('id', enrollment.campaign_id)
         .single();
 
@@ -383,6 +388,20 @@ export class SchedulerWorker {
         throw new Error(`Campaign ${enrollment.campaign_id} not found: ${campaignError?.message}`);
       }
       console.log(`[ENROLLMENT ${enrollmentId}] Campaign loaded. Account ID: ${campaign.account_id?.substring(0, 8) || 'MISSING'}`);
+
+      if (campaign.deleted_at) {
+        console.log(`[ENROLLMENT ${enrollmentId}] Campaign ${enrollment.campaign_id.substring(0, 8)} has been deleted. Stopping enrollment.`);
+        await this.supabase
+          .from('enrollments')
+          .update({
+            deleted_at: new Date().toISOString(),
+            state: 'stopped',
+            next_run_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', enrollment.id);
+        return;
+      }
 
       if (campaign.status !== 'running') {
         console.log(`[ENROLLMENT ${enrollmentId}] Campaign status is '${campaign.status}'. Skipping processing until campaign is running.`);
@@ -497,6 +516,7 @@ export class SchedulerWorker {
               .select('*')
               .eq('campaign_id', enrollment.campaign_id)
               .eq('flow_node_id', selectedFlowNodeId)
+              .is('deleted_at', null)
               .single();
 
             if (selectedNodeError || !selectedNode) {

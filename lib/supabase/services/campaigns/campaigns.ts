@@ -2,6 +2,7 @@ import { reportErrorToSlack } from '../../../slack/reportErrorToSlack';
 import { supabase } from '../../client';
 import type { Campaign, CampaignInsert, CampaignUpdate } from '../../types';
 import { getAccountMembershipsForUser, getUserById, getUserByExternalId } from '../accounts';
+import { cancelUnsentCampaignJobs } from './campaign-enrollments';
 
 export interface CampaignFilters {
   ownerId?: string;
@@ -13,6 +14,7 @@ export async function getCampaigns(filters?: CampaignFilters): Promise<Campaign[
   let query = supabase
     .from('campaigns')
     .select('*')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false }) as any;
 
   if (filters?.ownerId) query = query.eq('owner_id', filters.ownerId);
@@ -82,6 +84,7 @@ export async function updateCampaign(id: string, updates: CampaignUpdate): Promi
     .from('campaigns')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', id)
+    .is('deleted_at', null)
     .select()
     .single();
   if (error) throw new Error(`Failed to update campaign: ${error.message}`);
@@ -90,6 +93,46 @@ export async function updateCampaign(id: string, updates: CampaignUpdate): Promi
 }
 
 export async function deleteCampaign(id: string): Promise<void> {
-  const { error } = await supabase.from('campaigns').delete().eq('id', id);
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from('campaigns')
+    .update({
+      deleted_at: now,
+      status: 'stopped',
+      updated_at: now,
+    })
+    .eq('id', id)
+    .is('deleted_at', null);
+
   if (error) throw new Error(`Failed to delete campaign: ${error.message}`);
+
+  const [cancelJobsResult, enrollmentsResult, nodesResult] = await Promise.all([
+    cancelUnsentCampaignJobs(id, 'Campaign deleted'),
+    supabase
+      .from('enrollments')
+      .update({
+        deleted_at: now,
+        state: 'stopped',
+        next_run_at: null,
+        updated_at: now,
+      })
+      .eq('campaign_id', id)
+      .is('deleted_at', null),
+    supabase
+      .from('nodes')
+      .update({
+        deleted_at: now,
+        updated_at: now,
+      })
+      .eq('campaign_id', id)
+      .is('deleted_at', null),
+  ]);
+
+  if (enrollmentsResult.error) {
+    throw new Error(`Failed to delete campaign enrollments: ${enrollmentsResult.error.message}`);
+  }
+  if (nodesResult.error) {
+    throw new Error(`Failed to delete campaign nodes: ${nodesResult.error.message}`);
+  }
+  void cancelJobsResult;
 }

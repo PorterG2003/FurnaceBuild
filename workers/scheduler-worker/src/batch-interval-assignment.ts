@@ -22,6 +22,7 @@ export async function batchAssignIntervalJobs(
     .from('campaigns')
     .select('id, jitter_percentage')
     .eq('status', 'running')
+    .is('deleted_at', null)
     .not('sending_interval_seconds', 'is', null);
   
   if (campaignsError) {
@@ -88,6 +89,7 @@ export async function batchAssignIntervalJobs(
         .from('nodes')
         .select('id')
         .eq('campaign_id', campaign.id)
+        .is('deleted_at', null)
         .eq('node_type', 'email');
       
       if (nodesError || !emailNodes || emailNodes.length === 0) {
@@ -103,10 +105,11 @@ export async function batchAssignIntervalJobs(
           id,
           lead_id,
           current_node_id,
-          lead:leads!inner(id, mailbox_id, email, name, first_name, last_name)
+          lead:leads!inner(id, mailbox_id, email, name, first_name, last_name, deleted_at)
         `)
         .eq('campaign_id', campaign.id)
         .eq('state', 'active')
+        .is('deleted_at', null)
         .in('current_node_id', emailNodeIds);
       
       if (enrollmentsError) {
@@ -119,15 +122,17 @@ export async function batchAssignIntervalJobs(
         continue;
       }
       
-      if (!enrollments || enrollments.length === 0) {
+      const activeEnrollments = (enrollments || []).filter((enrollment: any) => !enrollment.lead?.deleted_at);
+
+      if (activeEnrollments.length === 0) {
         continue;
       }
       
       // Filter enrollments that don't already have a message_job for this node.
       // Include 'cancelled' and 'blocked': do not create another job if the only job was cancelled or blocked.
-      const enrollmentsWithoutJobs: typeof enrollments = [];
+      const enrollmentsWithoutJobs: typeof activeEnrollments = [];
       
-      for (const enrollment of enrollments) {
+      for (const enrollment of activeEnrollments) {
         const { data: existingJob } = await supabase
           .from('message_jobs')
           .select('id')
@@ -168,12 +173,12 @@ export async function batchAssignIntervalJobs(
         .from('campaign_mailboxes')
         .select(`
           mailbox_id,
-          mailbox:mailboxes!inner(id, status, smtp_status)
+          mailbox:mailboxes!inner(id, status, smtp_status, deleted_at)
         `)
         .eq('campaign_id', campaign.id);
       
       const eligibleMailboxes = campaignMailboxes?.filter((cm: any) => 
-        cm.mailbox?.status === 'connected' && cm.mailbox?.smtp_status === 'active'
+        !cm.mailbox?.deleted_at && cm.mailbox?.status === 'connected' && cm.mailbox?.smtp_status === 'active'
       ) || [];
       
       if (eligibleMailboxes.length === 0) {
@@ -189,6 +194,7 @@ export async function batchAssignIntervalJobs(
             .from('nodes')
             .select('id, node_data')
             .eq('id', enrollment.current_node_id)
+            .is('deleted_at', null)
             .single();
           
           if (node) {

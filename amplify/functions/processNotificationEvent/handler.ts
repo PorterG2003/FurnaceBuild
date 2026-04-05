@@ -1,6 +1,7 @@
 import type { SQSEvent, SQSBatchResponse } from 'aws-lambda';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
+import { previewNewMessagePlainText } from './emailPreview.js';
 
 type EmailReceivedPayload = {
   email_message_id: string;
@@ -28,6 +29,13 @@ function configureWebPush() {
   if (!publicKey || !privateKey) return false;
   webpush.setVapidDetails('mailto:support@getfurnace.io', publicKey, privateKey);
   return true;
+}
+
+const MAX_NOTIFICATION_BODY_CHARS = 140;
+
+function truncateText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
 async function preferenceEnabled(
@@ -141,11 +149,23 @@ export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
         continue;
       }
 
-      const fromLabel = payload.from_name
-        ? `${payload.from_name} <${payload.from_email}>`
+      const { data: emailMessage } = await supabase
+        .from('email_messages')
+        .select('body_text, body_html')
+        .eq('id', payload.email_message_id)
+        .maybeSingle();
+
+      const fromDisplay = payload.from_name?.trim()
+        ? payload.from_name.trim()
         : payload.from_email;
-      const title = 'New email received';
-      const bodyText = payload.subject?.trim() ? `${fromLabel}: ${payload.subject}` : fromLabel;
+      const title = `New message from ${fromDisplay}`;
+      const previewRaw = previewNewMessagePlainText(
+        emailMessage?.body_text ?? null,
+        emailMessage?.body_html ?? null
+      );
+      const bodyText = previewRaw
+        ? truncateText(previewRaw, MAX_NOTIFICATION_BODY_CHARS)
+        : '';
       const actionUrl = `/inbox?thread=${encodeURIComponent(payload.thread_id)}`;
 
       const { data: notif, error: insErr } = await supabase

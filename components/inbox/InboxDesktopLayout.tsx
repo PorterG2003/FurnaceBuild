@@ -56,8 +56,9 @@ export interface InboxDesktopMessagePaneProps {
   onForward: (message: EmailMessage) => void;
   onDownloadAttachment: ((emailMessageId: string, part: string, filename: string) => Promise<void>) | undefined;
   onFetchAttachmentPreview: ((emailMessageId: string, part: string) => Promise<Blob | null>) | undefined;
-  pendingReply: PendingReplyInfo | null;
-  onRetryFailedReply: () => void;
+  pendingReplies: PendingReplyInfo[];
+  onRetryFailedReply: (jobId: string) => void;
+  onSendImmediately: (jobId: string) => void;
 }
 
 export interface InboxDesktopLayoutOptions {
@@ -128,8 +129,9 @@ export function InboxDesktopLayout({
     onForward,
     onDownloadAttachment,
     onFetchAttachmentPreview,
-    pendingReply,
+    pendingReplies,
     onRetryFailedReply,
+    onSendImmediately,
   } = messagePane;
 
   const { slideAnim, replyPanelWidth } = layout;
@@ -208,8 +210,9 @@ export function InboxDesktopLayout({
               onForward={onForward}
               onDownloadAttachment={onDownloadAttachment}
               onFetchAttachmentPreview={onFetchAttachmentPreview}
-              pendingReply={pendingReply}
+              pendingReplies={pendingReplies}
               onRetryFailedReply={onRetryFailedReply}
+              onSendImmediately={onSendImmediately}
             />
           ) : (
             <View className="flex-1 items-center justify-center px-8">

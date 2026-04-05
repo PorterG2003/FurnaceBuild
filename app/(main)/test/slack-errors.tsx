@@ -11,7 +11,8 @@ import { MegaphoneIcon, ArrowLeftIcon, TrashIcon } from 'react-native-heroicons/
 import { supabase } from '@/lib/supabase/client';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
-import { createMailbox } from '@/lib/supabase/services/mailboxes';
+import { createMailbox, deleteMailbox } from '@/lib/supabase/services/mailboxes';
+import { deleteCampaign } from '@/lib/supabase/services/campaigns';
 import { getAccountMembershipsForUser } from '@/lib/supabase/services/accounts';
 
 type Service = 'scheduler' | 'send' | 'inbox-checker';
@@ -207,8 +208,12 @@ export default function SlackErrorsTestPage() {
         .like('name', `${SLACK_TEST_CAMPAIGN_NAME_PREFIX}%`);
       if (campaigns?.length) {
         for (const c of campaigns) {
-          const { error } = await supabase.from('campaigns').delete().eq('id', c.id);
-          if (!error) deletedCampaigns++;
+          try {
+            await deleteCampaign(c.id);
+            deletedCampaigns++;
+          } catch (error) {
+            console.error(`Failed to delete Slack test campaign ${c.id}:`, error);
+          }
         }
       }
 
@@ -218,8 +223,12 @@ export default function SlackErrorsTestPage() {
         .in('email_address', [SLACK_TEST_MAILBOX_SEND, SLACK_TEST_MAILBOX_INBOX]);
       if (mailboxes?.length) {
         for (const m of mailboxes) {
-          const { error } = await supabase.from('mailboxes').delete().eq('id', m.id);
-          if (!error) deletedMailboxes++;
+          try {
+            await deleteMailbox(m.id);
+            deletedMailboxes++;
+          } catch (error) {
+            console.error(`Failed to delete Slack test mailbox ${m.id}:`, error);
+          }
         }
       }
 

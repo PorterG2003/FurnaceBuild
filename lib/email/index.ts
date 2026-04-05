@@ -21,7 +21,10 @@ export { getLeadVariables, type LeadVariable } from './leadVariables.js';
 export { stripSignatureStyles } from './strip-signature-styles.js';
 export {
   buildCampaignEmailContent,
+  htmlToFragment,
+  mergeInboxComposeHtml,
   type BuildCampaignEmailContentConfig,
   type BuildCampaignEmailContentResult,
   type BuildCampaignEmailContentOptions,
+  type MergeInboxComposeHtmlResult,
 } from './buildCampaignEmailContent.js';

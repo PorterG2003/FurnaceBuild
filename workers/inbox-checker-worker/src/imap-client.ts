@@ -1,6 +1,7 @@
 import { reportErrorToSlack } from '@furnace/slack-lib';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
+import { countReferenceTokens, getHeaderCi, logParseDiagnostics } from './parse-diagnostics.js';
 import type { Mailbox, ProcessedMessage } from './types.js';
 
 /**
@@ -70,7 +71,7 @@ export class ImapClient {
           if (!message) continue;
 
           // Parse message
-          const parsed = await this.parseMessage(uid, message, client);
+          const parsed = await this.parseMessage(uid, message, client, mailbox);
           processedMessages.push(parsed);
         } catch (error) {
           console.error(`Error processing message ${uid} in mailbox ${mailbox.id}:`, error);
@@ -104,7 +105,8 @@ export class ImapClient {
   private async parseMessage(
     uid: number,
     message: any,
-    client: ImapFlow
+    client: ImapFlow,
+    mailbox: Mailbox
   ): Promise<ProcessedMessage> {
     // Download full RFC822 message (part undefined). Options.uid so range is UID not sequence.
     const parsed = await client.download(uid, undefined, { uid: true });
@@ -122,6 +124,30 @@ export class ImapClient {
     const fromHeader = this.addressToFrom(mail.from);
     const toHeader = this.addressesToTo(mail.to);
     const headers = this.mailHeadersToRecord(mail.headers);
+
+    const refs = mail.references;
+    const referencesRawForDiag =
+      refs == null ? null : Array.isArray(refs) ? refs.filter(Boolean).join(' ') : String(refs);
+
+    const mailAddrs = mail as typeof mail & {
+      sender?: { value?: Array<{ address?: string; name?: string }> };
+    };
+
+    logParseDiagnostics({
+      mailboxId: mailbox.id,
+      mailboxEmail: mailbox.email_address,
+      imapUid: uid,
+      subject: mail.subject ?? '',
+      fromAddress: fromHeader.address,
+      fromName: fromHeader.name,
+      replyTo: mail.replyTo,
+      sender: mailAddrs.sender,
+      messageId: mail.messageId ?? null,
+      inReplyTo: mail.inReplyTo ?? null,
+      referencesRaw: referencesRawForDiag,
+      referencesTokenCount: countReferenceTokens(referencesRawForDiag),
+      returnPath: getHeaderCi(headers, 'return-path'),
+    });
 
     // Extract attachments info (use bodyStructure for part IDs - required for on-demand fetch)
     // Helper function to recursively extract attachments with part identifiers
@@ -164,7 +190,6 @@ export class ImapClient {
       ? extractAttachments(message.bodyStructure.childNodes)
       : [];
 
-    const refs = mail.references;
     const references = refs == null ? null : Array.isArray(refs) ? refs[0] ?? null : refs;
 
     const textBody = typeof mail.text === 'string' ? mail.text.trim() : null;

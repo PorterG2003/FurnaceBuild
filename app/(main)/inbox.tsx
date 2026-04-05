@@ -18,7 +18,6 @@ import { fetchAttachment } from '@/lib/services/attachments';
 import { getAccessToken } from '@/lib/services/auth-token';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailMessage } from '@/lib/supabase/types';
-import { signatureToHtml } from '@/lib/inbox';
 import {
   InboxComposerPanel,
   InboxDesktopLayout,
@@ -133,6 +132,9 @@ export default function InboxPage() {
 
   const composer = useInboxComposer({
     accountId,
+    mailboxSignatureRaw: selectedThread?.mailbox_id
+      ? (mailboxes.find((m) => m.id === selectedThread.mailbox_id)?.signature ?? null)
+      : null,
     selectedThreadId,
     selectedThread,
     messages,
@@ -163,7 +165,10 @@ export default function InboxPage() {
     setComposerAttachments,
     composerAttachmentsLoading,
     composerAttachmentsSkipMessage,
-    pendingReply,
+    pendingReplies,
+    includeSignature,
+    setIncludeSignature,
+    forwardQuoteHtml,
     composerEditorRef,
     slideAnim,
     closeComposerPanel,
@@ -171,6 +176,7 @@ export default function InboxPage() {
     openForwardComposer,
     sendReply,
     sendForward,
+    sendPendingImmediately,
     retryFailedReply,
     handleComposerFilesSelected,
   } = composer;
@@ -183,52 +189,47 @@ export default function InboxPage() {
   const selectedThreadIdRef = useRef(selectedThreadId);
   selectedThreadIdRef.current = selectedThreadId;
 
-  const selectedThreadSignatureHtml = useMemo(() => {
-    if (!selectedThread?.mailbox_id) return '';
-    const mb = mailboxes.find((m) => m.id === selectedThread.mailbox_id);
-    return signatureToHtml(mb?.signature);
-  }, [selectedThread?.mailbox_id, mailboxes]);
-
   const displayMessages = useMemo((): EmailMessage[] => {
     if (!selectedThreadId || !selectedThread) return [];
-    if (pendingReply && selectedThreadId === pendingReply.threadId) {
-      const pendingMessage: EmailMessage = {
-        id: `pending-${pendingReply.jobId}`,
-        thread_id: selectedThreadId,
-        account_id: selectedThread.account_id,
-        message_job_id: pendingReply.jobId,
-        direction: 'sent',
-        from_email: pendingReply.fromEmail,
-        from_name: null,
-        to_email: pendingReply.toEmail,
-        to_name: null,
-        cc: null,
-        subject: pendingReply.subject,
-        body_text: pendingReply.bodyText,
-        body_html: pendingReply.bodyHtml,
-        message_id: null,
-        in_reply_to: null,
-        message_references: null,
-        received_at: pendingReply.receivedAt,
-        read_at: null,
-        headers: {},
-        attachments: [],
-        imap_uid: null,
-        created_at: pendingReply.receivedAt,
-        updated_at: pendingReply.receivedAt,
-      };
-      const base = isMobile
-        ? messages.filter((m) => m.thread_id === selectedThreadId)
-        : messages;
-      return [...base, pendingMessage].sort(
-        (a, b) => new Date(a.received_at).getTime() - new Date(b.received_at).getTime()
-      );
+    const threadPending = pendingReplies.filter((p) => p.threadId === selectedThreadId);
+    const pendingMessages: EmailMessage[] = threadPending.map((p) => ({
+      id: `pending-${p.jobId}`,
+      thread_id: selectedThreadId,
+      account_id: selectedThread.account_id,
+      message_job_id: p.jobId,
+      direction: 'sent' as const,
+      from_email: p.fromEmail,
+      from_name: null,
+      to_email: p.toEmail,
+      to_name: null,
+      cc: null,
+      subject: p.subject,
+      body_text: p.bodyText,
+      body_html: p.bodyHtml,
+      message_id: null,
+      in_reply_to: null,
+      message_references: null,
+      received_at: p.receivedAt,
+      read_at: null,
+      headers: {},
+      attachments: [],
+      imap_uid: null,
+      created_at: p.receivedAt,
+      updated_at: p.receivedAt,
+    }));
+    const base = isMobile
+      ? messages.filter((m) => m.thread_id === selectedThreadId)
+      : messages;
+    if (pendingMessages.length === 0) {
+      if (isMobile) {
+        return messages.filter((m) => m.thread_id === selectedThreadId);
+      }
+      return messages;
     }
-    if (isMobile) {
-      return messages.filter((m) => m.thread_id === selectedThreadId);
-    }
-    return messages;
-  }, [selectedThreadId, selectedThread, messages, pendingReply, isMobile]);
+    return [...base, ...pendingMessages].sort(
+      (a, b) => new Date(a.received_at).getTime() - new Date(b.received_at).getTime()
+    );
+  }, [selectedThreadId, selectedThread, messages, pendingReplies, isMobile]);
 
   const scrollMessagesToEnd = useCallback((reason: string, nextHeight?: number) => {
     if (typeof nextHeight === 'number') {
@@ -372,7 +373,7 @@ export default function InboxPage() {
     }
     prevMessagesLengthRef.current = messages.length;
     prevSelectedThreadIdRef.current = selectedThreadId;
-  }, [messages.length, selectedThreadId, pendingReply, composerMode]);
+  }, [messages.length, selectedThreadId, pendingReplies.length, composerMode]);
 
   const handleFetchAttachmentBlob = useCallback(
     async (emailMessageId: string, part: string): Promise<Blob | null> => {
@@ -420,15 +421,22 @@ export default function InboxPage() {
       selectedThread.subject ||
       'Conversation');
 
-  const pendingReplyInfo =
-    pendingReply && selectedThreadId === pendingReply.threadId
-      ? {
-          threadId: pendingReply.threadId,
-          jobId: pendingReply.jobId,
-          isFailed: pendingReply.isFailed,
-          errorMessage: pendingReply.errorMessage,
-        }
-      : null;
+  const pendingRepliesInfo =
+    selectedThreadId == null
+      ? []
+      : pendingReplies
+          .filter((p) => p.threadId === selectedThreadId)
+          .map((p) => ({
+            kind: p.kind,
+            threadId: p.threadId,
+            jobId: p.jobId,
+            isFailed: p.isFailed,
+            errorMessage: p.errorMessage,
+            jobStatus: p.jobStatus,
+            scheduledAt: p.scheduledAt,
+            sendWaitReason: p.sendWaitReason,
+            isSendingImmediately: p.isSendingImmediately,
+          }));
 
   const threadListProps = useMemo(
     () => ({
@@ -508,8 +516,9 @@ export default function InboxPage() {
       onForward: openForwardComposer,
       onDownloadAttachment: FETCH_ATTACHMENT_URL ? handleDownloadAttachment : undefined,
       onFetchAttachmentPreview: FETCH_ATTACHMENT_URL ? handleFetchAttachmentBlob : undefined,
-      pendingReply: pendingReplyInfo,
+      pendingReplies: pendingRepliesInfo,
       onRetryFailedReply: retryFailedReply,
+      onSendImmediately: sendPendingImmediately,
     }),
     [
       threadsLoadingOrNoAccount,
@@ -537,8 +546,9 @@ export default function InboxPage() {
       openForwardComposer,
       handleDownloadAttachment,
       handleFetchAttachmentBlob,
-      pendingReplyInfo,
+      pendingRepliesInfo,
       retryFailedReply,
+      sendPendingImmediately,
     ]
   );
 
@@ -562,9 +572,9 @@ export default function InboxPage() {
       onFilesSelected: handleComposerFilesSelected,
       composerAttachmentsLoading,
       composerAttachmentsSkipMessage,
-      signatureHtml: selectedThreadSignatureHtml,
-      messages,
-      forwardThreadSubject: selectedThread?.subject ?? '(No subject)',
+      includeSignature,
+      setIncludeSignature,
+      forwardQuoteHtml,
       onSendReply: () => sendReply(),
       onSendForward: () => sendForward(),
       sendingReply,
@@ -590,9 +600,9 @@ export default function InboxPage() {
       handleComposerFilesSelected,
       composerAttachmentsLoading,
       composerAttachmentsSkipMessage,
-      selectedThreadSignatureHtml,
-      messages,
-      selectedThread?.subject,
+      includeSignature,
+      setIncludeSignature,
+      forwardQuoteHtml,
       sendReply,
       sendForward,
       sendingReply,

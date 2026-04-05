@@ -14,6 +14,7 @@ export async function getMailboxesByAccount(accountId: string): Promise<Mailbox[
     .from('mailboxes')
     .select('*')
     .eq('account_id', accountId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -31,6 +32,7 @@ export async function getMailboxesByUser(userId: string): Promise<Mailbox[]> {
     .from('mailboxes')
     .select('*')
     .eq('user_id', userId)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -98,6 +100,7 @@ export async function updateMailbox(id: string, updates: MailboxUpdate): Promise
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
+    .is('deleted_at', null)
     .select()
     .single();
 
@@ -116,10 +119,16 @@ export async function updateMailbox(id: string, updates: MailboxUpdate): Promise
  * Delete a mailbox
  */
 export async function deleteMailbox(id: string): Promise<void> {
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from('mailboxes')
-    .delete()
-    .eq('id', id);
+    .update({
+      deleted_at: now,
+      status: 'disconnected',
+      updated_at: now,
+    })
+    .eq('id', id)
+    .is('deleted_at', null);
 
   if (error) {
     throw new Error(`Failed to delete mailbox: ${error.message}`);
@@ -157,6 +166,7 @@ export async function getConnectedMailboxes(accountId: string): Promise<Mailbox[
     .from('mailboxes')
     .select('*')
     .eq('account_id', accountId)
+    .is('deleted_at', null)
     .eq('status', 'connected')
     .order('created_at', { ascending: false });
 

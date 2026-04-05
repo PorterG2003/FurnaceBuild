@@ -35,6 +35,7 @@ export async function getCampaignStatsForCampaigns(
   const { data: enrollmentRows } = await supabase
     .from('enrollments')
     .select('campaign_id, state')
+    .is('deleted_at', null)
     .in('campaign_id', campaignIds);
 
   if (enrollmentRows) {

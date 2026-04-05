@@ -72,6 +72,7 @@ async function lookupCampaignLeadIds(campaignId: string, searchQuery: string): P
     .from('leads')
     .select('id')
     .eq('campaign_id', campaignId)
+    .is('deleted_at', null)
     .or(
       `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`,
     )
@@ -99,7 +100,7 @@ async function fetchMessageJobsPage(params: {
   const sortBy = params.sortColumn === 'status' ? 'status' : 'scheduled_at';
   const ascending = params.sortDirection === 'asc';
   let query = supabase
-          .from('message_jobs')
+    .from('message_jobs')
     .select(
       `
             id,
@@ -131,7 +132,8 @@ async function fetchMessageJobsPage(params: {
       `,
       { count: 'exact' },
     )
-    .eq('campaign_id', params.campaignId);
+    .eq('campaign_id', params.campaignId)
+    .or('message_type.eq.campaign,message_type.is.null');
 
   if (leadIds) {
     query = query.in('lead_id', leadIds);
@@ -166,7 +168,7 @@ async function fetchEnrollmentsPage(params: {
   const sortBy = params.sortColumn === 'status' ? 'state' : 'next_run_at';
   const ascending = params.sortDirection === 'asc';
   let query = supabase
-          .from('enrollments')
+    .from('enrollments')
     .select(
       `
             id,
@@ -189,6 +191,7 @@ async function fetchEnrollmentsPage(params: {
       { count: 'exact' },
     )
     .eq('campaign_id', params.campaignId)
+    .is('deleted_at', null)
     .not('next_run_at', 'is', null);
 
   if (leadIds) {

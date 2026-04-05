@@ -18,9 +18,12 @@ export {
   createReplyJob,
   createForwardJob,
   getMessageJobStatus,
+  getPendingInboxManualJobs,
   getPendingInboxReplyJobs,
+  requestImmediateManualSend,
   type CreateReplyJobParams,
   type CreateForwardJobParams,
   type MessageJobStatus,
+  type PendingInboxManualJob,
   type PendingInboxReplyJob,
 } from './reply-jobs';

@@ -110,6 +110,43 @@ export class SendWorker {
     await this.smtpPool.closeAll();
   }
 
+  private async cancelMessageJob(messageJobId: string, reason: string): Promise<void> {
+    await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'cancelled',
+        error_message: reason,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', messageJobId);
+  }
+
+  /**
+   * check_mailbox_throttle_and_reserve returns success=false when rate limits re-queue the job to pending,
+   * or when the RPC cancels the job (e.g. deleted parent for campaign sends). Log accordingly.
+   */
+  private logThrottleCheckOutcome(
+    jobLabel: string,
+    messageJobId: string,
+    failureReason: string | null | undefined
+  ): void {
+    const fr = failureReason || 'Unknown throttle failure';
+    const requeueReasons = [
+      'Daily throttle limit exceeded',
+      'Hourly throttle limit exceeded',
+      'Minimum gap between sends not met',
+    ];
+    if (requeueReasons.includes(fr)) {
+      console.log(
+        `[SEND WORKER] Throttle check failed for ${jobLabel} ${messageJobId}: ${fr}. Job re-queued for retry.`
+      );
+    } else {
+      console.log(
+        `[SEND WORKER] Throttle check blocked ${jobLabel} ${messageJobId}: ${fr}. (Not a rate-limit retry; job may be cancelled — check message_jobs row.)`
+      );
+    }
+  }
+
   /**
    * Process a single message job (already claimed from database)
    */
@@ -130,22 +167,52 @@ export class SendWorker {
       // 1. Load related data (lead, mailbox, node config)
       const { lead, mailbox, nodeConfig } = await this.loadJobData(messageJob);
 
+      if (lead.deleted_at) {
+        await this.cancelMessageJob(message_job_id, 'Lead deleted');
+        return;
+      }
+      if (mailbox.deleted_at) {
+        await this.cancelMessageJob(message_job_id, 'Mailbox deleted');
+        return;
+      }
+
       // 1b. Block list check — skip campaign sends to blocked addresses
       const { data: campaign } = await this.supabase
         .from('campaigns')
-        .select('account_id, status')
+        .select('account_id, status, deleted_at')
         .eq('id', messageJob.campaign_id)
         .single();
 
-      if (!campaign || campaign.status !== 'running') {
-        console.log(`[SEND WORKER] Campaign ${messageJob.campaign_id} is not running. Cancelling message job ${message_job_id}.`);
-        await this.supabase
-          .from('message_jobs')
-          .update({
-            status: 'cancelled',
-            error_message: `Campaign status is ${campaign?.status || 'unknown'}`,
-          })
-          .eq('id', message_job_id);
+      if (!campaign || campaign.deleted_at || campaign.status !== 'running') {
+        const reason = campaign?.deleted_at
+          ? 'Campaign deleted'
+          : `Campaign status is ${campaign?.status || 'unknown'}`;
+        console.log(`[SEND WORKER] Campaign ${messageJob.campaign_id} is unavailable. Cancelling message job ${message_job_id}.`);
+        await this.cancelMessageJob(message_job_id, reason);
+        return;
+      }
+
+      const [enrollmentResult, nodeResult] = await Promise.all([
+        this.supabase
+          .from('enrollments')
+          .select('deleted_at')
+          .eq('id', messageJob.enrollment_id)
+          .maybeSingle(),
+        messageJob.node_id
+          ? this.supabase
+              .from('nodes')
+              .select('deleted_at')
+              .eq('id', messageJob.node_id)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null } as any),
+      ]);
+
+      if (enrollmentResult.data?.deleted_at) {
+        await this.cancelMessageJob(message_job_id, 'Enrollment deleted');
+        return;
+      }
+      if (nodeResult.data?.deleted_at) {
+        await this.cancelMessageJob(message_job_id, 'Node deleted');
         return;
       }
 
@@ -198,9 +265,7 @@ export class SendWorker {
       const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
 
       if (!result?.success) {
-        // Throttle check failed - RPC re-queued the job with a future scheduled_at
-        const failureReason = result?.failure_reason || 'Unknown throttle failure';
-        console.log(`[SEND WORKER] Throttle check failed for message job ${message_job_id}: ${failureReason}. Job re-queued for retry.`);
+        this.logThrottleCheckOutcome('message job', message_job_id, result?.failure_reason);
         return;
       }
 
@@ -530,6 +595,10 @@ export class SendWorker {
     if (mailboxError || !mailbox) {
       throw new Error(`Failed to load mailbox ${messageJob.mailbox_id}: ${mailboxError?.message}`);
     }
+    if ((mailbox as Mailbox).deleted_at) {
+      await this.cancelMessageJob(message_job_id, 'Mailbox deleted');
+      return;
+    }
 
     // 2. Throttle check (same as campaign)
     const { data: throttleResult, error: throttleError } = await this.supabase
@@ -548,7 +617,7 @@ export class SendWorker {
     }
     const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
     if (!result?.success) {
-      console.log(`[SEND WORKER] Throttle check failed for reply job ${message_job_id}: ${result?.failure_reason}. Job re-queued for retry.`);
+      this.logThrottleCheckOutcome('reply job', message_job_id, result?.failure_reason);
       return;
     }
 
@@ -700,6 +769,10 @@ export class SendWorker {
     if (mailboxError || !mailbox) {
       throw new Error(`Failed to load mailbox ${messageJob.mailbox_id}: ${mailboxError?.message}`);
     }
+    if ((mailbox as Mailbox).deleted_at) {
+      await this.cancelMessageJob(message_job_id, 'Mailbox deleted');
+      return;
+    }
 
     // 2. Throttle check (same as reply)
     const { data: throttleResult, error: throttleError } = await this.supabase
@@ -718,7 +791,7 @@ export class SendWorker {
     }
     const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
     if (!result?.success) {
-      console.log(`[SEND WORKER] Throttle check failed for forward job ${message_job_id}: ${result?.failure_reason}. Job re-queued for retry.`);
+      this.logThrottleCheckOutcome('forward job', message_job_id, result?.failure_reason);
       return;
     }
 

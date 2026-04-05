@@ -23,6 +23,7 @@ export interface Mailbox {
   status: 'connected' | 'disconnected' | 'error';
   last_synced_at: string | null;
   error_message: string | null;
+  deleted_at?: string | null;
   created_at: string;
   updated_at: string;
 }

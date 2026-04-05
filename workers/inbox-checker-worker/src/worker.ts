@@ -90,6 +90,14 @@ export class InboxCheckerWorker {
    */
   private async processMailbox(mailbox: Mailbox): Promise<void> {
     try {
+      if (mailbox.deleted_at) {
+        await this.supabase
+          .from('mailboxes')
+          .update({ imap_claimed_at: null })
+          .eq('id', mailbox.id);
+        return;
+      }
+
       const lastSyncedAt = mailbox.last_synced_at
         ? new Date(mailbox.last_synced_at)
         : null;

@@ -31,17 +31,27 @@ export interface MessageJobStatus {
   id: string;
   status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'blocked';
   error_message: string | null;
+  scheduled_at: string | null;
+  send_wait_reason: string | null;
+  throttle_bypass_next_attempt: boolean;
 }
 
-export interface PendingInboxReplyJob {
+export type PendingInboxManualSource = 'inbox_reply' | 'inbox_forward';
+
+export interface PendingInboxManualJob {
   id: string;
   thread_id: string;
+  created_at: string;
   status: 'pending' | 'reserved' | 'sending' | 'failed';
   error_message: string | null;
+  scheduled_at: string | null;
+  send_wait_reason: string | null;
+  throttle_bypass_next_attempt: boolean;
   message_data: {
-    source: 'inbox_reply';
+    source: PendingInboxManualSource;
     thread_id: string;
-    in_reply_to_message_id: string;
+    in_reply_to_message_id?: string;
+    forwarded_message_id?: string;
     subject: string;
     body_text: string;
     body_html: string;
@@ -91,7 +101,7 @@ export async function createForwardJob(params: CreateForwardJobParams): Promise<
 export async function getMessageJobStatus(jobId: string): Promise<MessageJobStatus | null> {
   const { data, error } = await supabase
     .from('message_jobs')
-    .select('id, status, error_message')
+    .select('id, status, error_message, scheduled_at, send_wait_reason, throttle_bypass_next_attempt')
     .eq('id', jobId)
     .maybeSingle();
   if (error) throw new Error(`Failed to fetch message job status: ${error.message}`);
@@ -100,12 +110,23 @@ export async function getMessageJobStatus(jobId: string): Promise<MessageJobStat
     id: data.id,
     status: data.status as MessageJobStatus['status'],
     error_message: data.error_message,
+    scheduled_at: data.scheduled_at,
+    send_wait_reason: data.send_wait_reason,
+    throttle_bypass_next_attempt: data.throttle_bypass_next_attempt ?? false,
   };
 }
 
-export async function getPendingInboxReplyJobs(
+export async function requestImmediateManualSend(jobId: string): Promise<void> {
+  const { data, error } = await supabase.rpc('request_immediate_manual_send', {
+    p_message_job_id: jobId,
+  });
+  if (error) throw new Error(`Failed to send immediately: ${error.message}`);
+  if (data !== true) throw new Error('Failed to send immediately');
+}
+
+export async function getPendingInboxManualJobs(
   accountId: string
-): Promise<PendingInboxReplyJob[]> {
+): Promise<PendingInboxManualJob[]> {
   const { data: threads, error: threadsError } = await supabase
     .from('email_threads')
     .select('id')
@@ -116,25 +137,35 @@ export async function getPendingInboxReplyJobs(
   const threadIds = threads.map((t) => t.id);
   const { data: jobs, error: jobsError } = await supabase
     .from('message_jobs')
-    .select('id, status, error_message, message_data')
-    .eq('message_type', 'inbox_reply')
+    .select('id, status, error_message, scheduled_at, send_wait_reason, throttle_bypass_next_attempt, message_data, created_at')
+    .in('message_type', ['inbox_reply', 'inbox_forward'])
     .in('status', ['pending', 'reserved', 'sending', 'failed']);
-  if (jobsError) throw new Error(`Failed to fetch pending reply jobs: ${jobsError.message}`);
+  if (jobsError) throw new Error(`Failed to fetch pending manual jobs: ${jobsError.message}`);
   if (!jobs) return [];
 
-  const pendingJobs: PendingInboxReplyJob[] = [];
+  const pendingJobs: PendingInboxManualJob[] = [];
   for (const job of jobs) {
     const md = job.message_data as Record<string, unknown>;
-    if (md?.source === 'inbox_reply' && typeof md.thread_id === 'string' && threadIds.includes(md.thread_id)) {
+    const source = md?.source;
+    if (
+      (source === 'inbox_reply' || source === 'inbox_forward') &&
+      typeof md.thread_id === 'string' &&
+      threadIds.includes(md.thread_id)
+    ) {
       pendingJobs.push({
         id: job.id,
         thread_id: md.thread_id,
-        status: job.status as PendingInboxReplyJob['status'],
+        created_at: job.created_at as string,
+        status: job.status as PendingInboxManualJob['status'],
         error_message: job.error_message,
+        scheduled_at: job.scheduled_at as string | null,
+        send_wait_reason: job.send_wait_reason as string | null,
+        throttle_bypass_next_attempt: job.throttle_bypass_next_attempt ?? false,
         message_data: {
-          source: 'inbox_reply',
+          source,
           thread_id: md.thread_id,
-          in_reply_to_message_id: (md.in_reply_to_message_id as string) ?? '',
+          in_reply_to_message_id: (md.in_reply_to_message_id as string) ?? undefined,
+          forwarded_message_id: (md.forwarded_message_id as string) ?? undefined,
           subject: (md.subject as string) ?? '',
           body_text: (md.body_text as string) ?? '',
           body_html: (md.body_html as string) ?? (md.body_text as string) ?? '',
@@ -146,5 +177,25 @@ export async function getPendingInboxReplyJobs(
       });
     }
   }
+  pendingJobs.sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
   return pendingJobs;
+}
+
+export interface PendingInboxReplyJob extends PendingInboxManualJob {
+  message_data: PendingInboxManualJob['message_data'] & {
+    source: 'inbox_reply';
+    in_reply_to_message_id: string;
+  };
+}
+
+export async function getPendingInboxReplyJobs(
+  accountId: string
+): Promise<PendingInboxReplyJob[]> {
+  const jobs = await getPendingInboxManualJobs(accountId);
+  return jobs.filter(
+    (job): job is PendingInboxReplyJob =>
+      job.message_data.source === 'inbox_reply' && typeof job.message_data.in_reply_to_message_id === 'string'
+  );
 }

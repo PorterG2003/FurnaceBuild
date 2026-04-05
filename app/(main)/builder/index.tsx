@@ -258,6 +258,10 @@ export default function BuilderPage() {
       setIsLoading(true);
       try {
         const data = await getCampaignById(campaignId);
+        if (data?.deleted_at) {
+          router.replace('/campaigns');
+          return;
+        }
         setCampaign(data);
         
         // Extract and parse flow_data

@@ -61,6 +61,7 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
   let query = supabase
     .from('leads')
     .select('*')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false }) as any;
 
   if (filters?.campaignId) {
@@ -142,7 +143,8 @@ export async function getCampaignLeadTablePage(
       'id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, status, created_at',
       { count: 'exact' },
     )
-    .eq('campaign_id', campaignId);
+    .eq('campaign_id', campaignId)
+    .is('deleted_at', null);
 
   if (searchTerm) {
     const pattern = `%${searchTerm}%`;
@@ -194,6 +196,7 @@ export async function getCampaignLeadTablePage(
       .from('enrollments')
       .select('lead_id, state, current_node_id, stopped_reason, stopped_error_message')
       .eq('campaign_id', campaignId)
+      .is('deleted_at', null)
       .in('lead_id', leadIds);
     if (enrollmentsError) {
       throw new Error(`Failed to fetch enrollments: ${enrollmentsError.message}`);
@@ -236,7 +239,8 @@ export interface LeadCountFilters {
 export async function getLeadCount(filters?: LeadCountFilters): Promise<number> {
   let query = supabase
     .from('leads')
-    .select('id', { count: 'exact', head: true }) as any;
+    .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null) as any;
 
   if (filters?.campaignId) {
     query = query.eq('campaign_id', filters.campaignId);
@@ -369,6 +373,7 @@ export async function updateLead(id: string, updates: LeadUpdate): Promise<Lead>
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
+    .is('deleted_at', null)
     .select()
     .single();
 
@@ -387,13 +392,47 @@ export async function updateLead(id: string, updates: LeadUpdate): Promise<Lead>
  * Delete a lead (soft delete - sets status to 'removed')
  */
 export async function deleteLead(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('leads')
-    .update({ status: 'removed', updated_at: new Date().toISOString() })
-    .eq('id', id);
+  const now = new Date().toISOString();
+  const [leadResult, enrollmentsResult, jobsResult] = await Promise.all([
+    supabase
+      .from('leads')
+      .update({
+        status: 'removed',
+        deleted_at: now,
+        updated_at: now,
+      })
+      .eq('id', id)
+      .is('deleted_at', null),
+    supabase
+      .from('enrollments')
+      .update({
+        deleted_at: now,
+        state: 'stopped',
+        next_run_at: null,
+        updated_at: now,
+      })
+      .eq('lead_id', id)
+      .is('deleted_at', null),
+    supabase
+      .from('message_jobs')
+      .update({
+        status: 'cancelled',
+        error_message: 'Lead deleted',
+        updated_at: now,
+      })
+      .eq('lead_id', id)
+      .in('status', ['pending', 'reserved'])
+      .or('message_type.eq.campaign,message_type.is.null'),
+  ]);
 
-  if (error) {
-    throw new Error(`Failed to delete lead: ${error.message}`);
+  if (leadResult.error) {
+    throw new Error(`Failed to delete lead: ${leadResult.error.message}`);
+  }
+  if (enrollmentsResult.error) {
+    throw new Error(`Failed to delete lead enrollments: ${enrollmentsResult.error.message}`);
+  }
+  if (jobsResult.error) {
+    throw new Error(`Failed to cancel deleted lead jobs: ${jobsResult.error.message}`);
   }
 }
 
@@ -401,13 +440,6 @@ export async function deleteLead(id: string): Promise<void> {
  * Hard delete a lead (permanent removal)
  */
 export async function hardDeleteLead(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('leads')
-    .delete()
-    .eq('id', id);
-
-  if (error) {
-    throw new Error(`Failed to delete lead: ${error.message}`);
-  }
+  throw new Error('Hard lead delete is disabled. Use deleteLead() to soft delete the lead.');
 }
 

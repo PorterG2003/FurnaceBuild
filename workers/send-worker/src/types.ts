@@ -71,6 +71,7 @@ export interface Mailbox {
   smtp_connection_limit?: number;
   smtp_messages_per_connection?: number;
   signature?: string | null;
+  deleted_at?: string | null;
   // ... other fields
 }
 
@@ -79,6 +80,7 @@ export interface Lead {
   email: string;
   first_name?: string;
   last_name?: string;
+  deleted_at?: string | null;
   // ... other fields
 }
 

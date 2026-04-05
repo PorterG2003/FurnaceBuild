@@ -55,6 +55,24 @@ backend:
               exit 1
             fi
           done
+          EMBED_NOTIF="$(echo "${AMPLIFY_EMBED_NOTIFICATION_QUEUE:-}" | tr '[:upper:]' '[:lower:]')"
+          if [ "$EMBED_NOTIF" = "true" ] || [ "$EMBED_NOTIF" = "1" ] || [ "$EMBED_NOTIF" = "yes" ]; then
+            echo "Skipping FurnaceNotificationEventsQueueArn check (AMPLIFY_EMBED_NOTIFICATION_QUEUE)"
+          elif [ -n "${AMPLIFY_NOTIFICATION_QUEUE_ARN:-}" ]; then
+            echo "Skipping FurnaceNotificationEventsQueueArn check (AMPLIFY_NOTIFICATION_QUEUE_ARN set)"
+          else
+            NOTIF_EXPORT="FurnaceNotificationEventsQueueArn-$WORKER_ENVIRONMENT"
+            export_value=$(aws cloudformation list-exports \
+              --region "$WORKER_STACK_REGION" \
+              --query "Exports[?Name=='${NOTIF_EXPORT}'].Value | [0]" \
+              --output text)
+            if [ -z "$export_value" ] || [ "$export_value" = "None" ]; then
+              echo "Missing CloudFormation export: $NOTIF_EXPORT (region $WORKER_STACK_REGION)"
+              echo "Deploy infra/workers for $WORKER_ENVIRONMENT so the notification-events queue and this export exist."
+              echo "Or set AMPLIFY_EMBED_NOTIFICATION_QUEUE or AMPLIFY_NOTIFICATION_QUEUE_ARN (see docs/notifications/NOTIFICATIONS.md)."
+              exit 1
+            fi
+          fi
           REQUIRED_SSM_PARAMS=(
             "/furnace/ecs/${WORKER_ENVIRONMENT}/utah-scraper/task-definition-arn"
             "/furnace/ecs/${WORKER_ENVIRONMENT}/florida-scraper/task-definition-arn"

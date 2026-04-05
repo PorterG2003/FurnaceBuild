@@ -11,6 +11,7 @@ export interface DatabaseNode {
   flow_node_id: string; // React Flow ID (e.g., "email-1")
   node_type: string;
   node_data: Record<string, any>;
+  deleted_at?: string | null;
   position_x?: number;
   position_y?: number;
 }
@@ -82,6 +83,7 @@ export async function evaluateFlow(
       .from('nodes')
       .select('*')
       .eq('campaign_id', campaignId)
+      .is('deleted_at', null)
       .eq('node_type', 'leadSource')
       .limit(1);
 
@@ -123,6 +125,7 @@ export async function evaluateFlow(
         .from('nodes')
         .select('*')
         .eq('campaign_id', campaignId)
+        .is('deleted_at', null)
         .in('flow_node_id', targetFlowNodeIds);
 
       if (nextNodesError) {
@@ -163,6 +166,7 @@ export async function evaluateFlow(
       .from('nodes')
       .select('*')
       .eq('campaign_id', campaignId)
+      .is('deleted_at', null)
       .neq('node_type', 'leadSource')
       .order('created_at', { ascending: true })
       .limit(1);
@@ -209,7 +213,19 @@ export async function evaluateFlow(
       campaign_id: campaignId,
       current_node_id: enrollment.current_node_id ?? '',
     });
-    return { nodes: [] };
+    throw new Error(error);
+  }
+
+  if ((currentNode as DatabaseNode).deleted_at) {
+    const error = `Current node ${enrollment.current_node_id} has been deleted for enrollment ${enrollment.id}`;
+    console.error(error);
+    reportErrorToSlack('Deleted node referenced by enrollment', {
+      severity: 'warning',
+      enrollment_id: enrollment.id,
+      campaign_id: campaignId,
+      current_node_id: enrollment.current_node_id ?? '',
+    });
+    throw new Error(error);
   }
 
   // If current node is an email node, check if the message_job has been sent
@@ -271,6 +287,7 @@ export async function evaluateFlow(
     .from('nodes')
     .select('*')
     .eq('campaign_id', campaignId)
+    .is('deleted_at', null)
     .in('flow_node_id', targetFlowNodeIds);
 
   if (nextNodesError) {

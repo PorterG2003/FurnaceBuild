@@ -35,8 +35,9 @@ export interface InboxMobileMessagePaneProps {
   onForward: (message: EmailMessage) => void;
   onDownloadAttachment: ((emailMessageId: string, part: string, filename: string) => Promise<void>) | undefined;
   onFetchAttachmentPreview: ((emailMessageId: string, part: string) => Promise<Blob | null>) | undefined;
-  pendingReply: PendingReplyInfo | null;
-  onRetryFailedReply: () => void;
+  pendingReplies: PendingReplyInfo[];
+  onRetryFailedReply: (jobId: string) => void;
+  onSendImmediately: (jobId: string) => void;
 }
 
 export interface InboxMobileMessageViewMobileProps {
@@ -76,8 +77,9 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
     onForward,
     onDownloadAttachment,
     onFetchAttachmentPreview,
-    pendingReply,
+    pendingReplies,
     onRetryFailedReply,
+    onSendImmediately,
   } = messagePane;
 
   const { mobileMessageViewTitle, onBack, onOpenMessageActions } = mobile;
@@ -163,8 +165,9 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       messageActionsLayout="overflowSheet"
       onDownloadAttachment={onDownloadAttachment}
       onFetchAttachmentPreview={onFetchAttachmentPreview}
-      pendingReply={pendingReply}
+      pendingReplies={pendingReplies}
       onRetryFailedReply={onRetryFailedReply}
+      onSendImmediately={onSendImmediately}
     />
   );
 }

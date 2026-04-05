@@ -77,7 +77,9 @@ export default function NotificationsTestPage() {
       return;
     }
     if (!getWebPushVapidPublicKey()) {
-      toast.error('Alerts on this device are not available right now. Try again later.');
+      toast.error(
+        'Missing EXPO_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY in this build (add in Amplify env for web export, same key as Lambda).'
+      );
       return;
     }
     setPushBusy(true);

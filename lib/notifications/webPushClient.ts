@@ -28,8 +28,13 @@ export async function subscribeWebPush(): Promise<{
   endpoint: string;
   keys: { p256dh: string; auth: string };
 } | null> {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
     return null;
+  }
+  if (!('PushManager' in window)) {
+    throw new Error(
+      'Alerts from this device need the Furnace app on your Home Screen. In Safari, use Share → Add to Home Screen, open that app, then enable alerts here.'
+    );
   }
 
   const vapidPublic = getWebPushVapidPublicKey();
@@ -42,6 +47,7 @@ export async function subscribeWebPush(): Promise<{
     return null;
   }
 
+  await navigator.serviceWorker.register('/sw.js');
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.subscribe({
     userVisibleOnly: true,

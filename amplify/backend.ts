@@ -717,6 +717,7 @@ if (embedNotificationQueue) {
 }
 
 const processNotificationLambda = backend.processNotificationEvent.resources.lambda as lambda.Function;
+processNotificationLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 processNotificationLambda.addEnvironment(
   'WEB_APP_ORIGIN',
   process.env.WEB_APP_ORIGIN ?? 'https://build.getfurnace.io',

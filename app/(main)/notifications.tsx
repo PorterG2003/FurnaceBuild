@@ -20,6 +20,19 @@ import type {
 
 const DESKTOP_CONTENT_MAX_WIDTH = 720;
 
+/** Parse `/inbox?thread=` from stored `action_url` for structured Expo Router navigation. */
+function parseInboxThreadDeepLink(actionUrl: string | null | undefined): { thread: string } | null {
+  if (!actionUrl?.startsWith('/inbox')) return null;
+  try {
+    const u = new URL(actionUrl, 'https://local.invalid');
+    if (u.pathname !== '/inbox') return null;
+    const thread = u.searchParams.get('thread');
+    return thread ? { thread } : null;
+  } catch {
+    return null;
+  }
+}
+
 const breadcrumbItems = [{ label: 'Settings', href: '/account' }, { label: 'Notifications' }];
 
 const NOTIFICATION_TABS: { id: NotificationListFilter; label: string }[] = [
@@ -46,6 +59,11 @@ export default function NotificationsPage() {
     (n: AppNotification) => {
       if (!n.read_at) {
         void markRead(n.id);
+      }
+      const inboxThread = parseInboxThreadDeepLink(n.action_url);
+      if (inboxThread) {
+        router.push({ pathname: '/inbox', params: inboxThread });
+        return;
       }
       const target = n.action_url?.startsWith('/') ? n.action_url : '/inbox';
       router.push(target as `/${string}`);

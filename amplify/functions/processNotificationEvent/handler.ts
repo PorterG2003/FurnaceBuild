@@ -24,11 +24,20 @@ function getSupabase() {
 }
 
 function configureWebPush() {
-  const publicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
-  const privateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+  const publicKey = (
+    process.env.WEB_PUSH_VAPID_PUBLIC_KEY ??
+    process.env.EXPO_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY ??
+    ''
+  ).trim();
+  const privateKey = (process.env.WEB_PUSH_VAPID_PRIVATE_KEY ?? '').trim();
   if (!publicKey || !privateKey) return false;
-  webpush.setVapidDetails('mailto:support@getfurnace.io', publicKey, privateKey);
-  return true;
+  try {
+    webpush.setVapidDetails('mailto:support@getfurnace.io', publicKey, privateKey);
+    return true;
+  } catch (error) {
+    console.error('[processNotificationEvent] invalid web push configuration', error);
+    return false;
+  }
 }
 
 const MAX_NOTIFICATION_BODY_CHARS = 140;

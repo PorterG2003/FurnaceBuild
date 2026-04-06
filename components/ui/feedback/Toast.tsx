@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { View, Text, Animated, Easing, StyleSheet, Platform } from 'react-native';
+import { View, Text, Animated, Easing, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 
 export type ToastVariant = 'error' | 'success' | 'warning' | 'info' | 'notification';
 
@@ -76,6 +77,7 @@ interface ToastItemProps {
   id: string;
   message: string;
   variant: ToastVariant;
+  fullWidth: boolean;
   stackPosition: 0 | 1 | 2;
   zIndex: number;
   onStartExit?: (id: string) => void;
@@ -87,6 +89,7 @@ function ToastItemComponent({
   id,
   message,
   variant,
+  fullWidth,
   stackPosition,
   zIndex,
   onStartExit,
@@ -193,6 +196,7 @@ function ToastItemComponent({
       <Animated.View
         style={[
           itemStyles.animatedInner,
+          fullWidth && itemStyles.animatedInnerFullWidth,
           {
             transform: [{ translateY }],
             opacity,
@@ -201,7 +205,7 @@ function ToastItemComponent({
       >
         <View
           className={`border ${variantStyle.container}`}
-          style={itemStyles.toast}
+          style={[itemStyles.toast, fullWidth ? itemStyles.toastFullWidth : itemStyles.toastFixedWidth]}
         >
           <Text className={`font-instrument-medium ${variantStyle.text}`} style={itemStyles.toastText}>
             {message}
@@ -218,18 +222,27 @@ const itemStyles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
+    width: '100%',
     alignItems: 'center',
   },
   animatedInner: {
     alignSelf: 'center',
   },
+  animatedInnerFullWidth: {
+    width: '100%',
+  },
   toast: {
-    width: TOAST_BASE_WIDTH,
-    maxWidth: '90%',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1,
+  },
+  toastFixedWidth: {
+    width: TOAST_BASE_WIDTH,
+    maxWidth: '100%',
+  },
+  toastFullWidth: {
+    width: '100%',
   },
   toastText: {
     fontSize: 14,
@@ -242,6 +255,7 @@ interface ToastProviderProps {
 
 export function ToastProvider({ children }: ToastProviderProps) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [exitingId, setExitingId] = useState<string | null>(null);
 
@@ -268,6 +282,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
   };
 
   const value: ToastContextValue = { toast };
+  const isMobile = width < LAYOUT_BREAKPOINT;
 
   /** Overlay sits outside the padded root View in _layout; align with safe area + gap below notch/status bar. */
   const topGap = 12;
@@ -283,7 +298,13 @@ export function ToastProvider({ children }: ToastProviderProps) {
     <ToastContext.Provider value={value}>
       {children}
       <View style={[styles.overlay, { top: topInset, pointerEvents: 'none' }]}>
-        <View style={[styles.stackContainer, { pointerEvents: 'box-none' }]}>
+        <View
+          style={[
+            styles.stackContainer,
+            isMobile ? styles.stackContainerMobile : styles.stackContainerDesktop,
+            { pointerEvents: 'box-none' },
+          ]}
+        >
           {displayToasts.map((item, index) => {
             const isExiting = item.id === exitingId;
             const visualIndex = visibleWhenExiting
@@ -299,6 +320,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
                 id={item.id}
                 message={item.message}
                 variant={item.variant}
+                fullWidth={isMobile}
                 stackPosition={stackPosition}
                 zIndex={zIndex}
                 onStartExit={onStartExit}
@@ -325,6 +347,11 @@ const styles = StyleSheet.create({
     position: 'relative',
     minHeight: STACK_MIN_HEIGHT,
     width: '100%',
+  },
+  stackContainerDesktop: {
     maxWidth: TOAST_BASE_WIDTH + 32,
+  },
+  stackContainerMobile: {
+    maxWidth: '100%',
   },
 });

@@ -5,6 +5,7 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } f
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { View } from 'react-native';
+import { AppBootScreen } from '@/components/ui/AppBootScreen';
 import { ToastProvider } from '@/components/ui/feedback';
 import { ConfirmProvider } from '@/components/ui/ConfirmContext';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -44,16 +45,20 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
-  // Render app even if fonts fail (avoids white screen on web)
-  if (!fontsLoaded && !fontError) {
-    return null;
-  }
-
   const safeAreaRootStyle = {
     flex: 1,
     backgroundColor: '#121212',
     paddingTop: 'env(safe-area-inset-top, 0px)' as unknown as number,
   };
+
+  // Render app even if fonts fail (avoids white screen on web)
+  if (!fontsLoaded && !fontError) {
+    return (
+      <View style={safeAreaRootStyle} testID="safe-area-root">
+        <AppBootScreen />
+      </View>
+    );
+  }
 
   return (
     <AuthProvider>

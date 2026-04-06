@@ -3,6 +3,7 @@ import type { View } from 'react-native';
 import { useSmoothLoading } from '@/components/ui/feedback';
 import {
   getThreadsByAccount,
+  getThreadById,
   getMessagesByThread,
   getBlockList,
   isEmailBlockedByEntries,
@@ -28,12 +29,15 @@ export interface UseInboxDataOptions {
    * but this id is still in the list, open it instead of defaulting to the first thread.
    */
   routeThreadId?: string | null;
+  /** Called when `routeThreadId` is set but the thread cannot be loaded for this account. */
+  onRouteThreadUnavailable?: () => void;
 }
 
 export function useInboxData({
   accountId,
   autoSelectFirstThread = true,
   routeThreadId = null,
+  onRouteThreadUnavailable,
 }: UseInboxDataOptions) {
   const [threads, setThreads] = useState<EmailThread[]>([]);
   const [threadsLoading, setThreadsLoading] = useState(true);
@@ -68,6 +72,7 @@ export function useInboxData({
   const initialLoadDoneRef = useRef<string | null>(null);
   const filtersEffectRanRef = useRef(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const routeThreadDeepLinkAttemptRef = useRef<string | null>(null);
 
   const selectedThread = threads.find((t) => t.id === selectedThreadId);
   const threadsLoadingOrNoAccount = threadsLoading || !accountId;
@@ -292,6 +297,42 @@ export function useInboxData({
     loadThreads();
     loadBlockList();
   }, [accountId, loadThreads, loadBlockList, loadMailboxesAndCampaigns]);
+
+  useEffect(() => {
+    if (!routeThreadId) {
+      routeThreadDeepLinkAttemptRef.current = null;
+      return;
+    }
+    if (!accountId || threadsLoading) return;
+    if (threads.some((t) => t.id === routeThreadId)) {
+      routeThreadDeepLinkAttemptRef.current = null;
+      return;
+    }
+    if (routeThreadDeepLinkAttemptRef.current === routeThreadId) return;
+    routeThreadDeepLinkAttemptRef.current = routeThreadId;
+
+    let cancelled = false;
+    void getThreadById(routeThreadId)
+      .then((row) => {
+        if (cancelled) return;
+        if (row && row.account_id === accountId) {
+          setThreads((prev) => {
+            if (prev.some((t) => t.id === row.id)) return prev;
+            const withUnread = { ...row, unread_count: 0 };
+            return [withUnread, ...prev.filter((t) => t.id !== row.id)];
+          });
+        } else {
+          onRouteThreadUnavailable?.();
+        }
+      })
+      .catch(() => {
+        if (!cancelled) onRouteThreadUnavailable?.();
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, threadsLoading, routeThreadId, threads, onRouteThreadUnavailable]);
 
   useEffect(() => {
     if (threads.length === 0) {

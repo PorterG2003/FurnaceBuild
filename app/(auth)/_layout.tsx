@@ -2,6 +2,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { AppBootScreen } from '@/components/ui/AppBootScreen';
 
 export default function AuthLayout() {
   const { user, loading, isRecoverySession } = useAuth();
@@ -30,7 +31,7 @@ export default function AuthLayout() {
     }
   }, [user, loading, isRecoverySession, router, invitation_id]);
 
-  if (loading) return null;
+  if (loading) return <AppBootScreen />;
 
   return (
     <Stack

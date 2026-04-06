@@ -15,8 +15,8 @@ export function normalizeInboxThreadParam(
  * Keeps `?thread=` and `selectedThreadId` aligned in one pass (avoids two effects
  * seeing stale selection and clearing the URL before URL→state runs).
  *
- * Order: invalidate bad params → setParams when selection and URL disagree →
- * hydrate selection from URL when still on list with no selection (deep links).
+ * Order: wait if URL thread not in loaded list yet (useInboxData may fetch by id) →
+ * setParams when selection and URL disagree → hydrate selection from URL when in list.
  */
 export function useInboxThreadRouteSync({
   threadParamRaw,
@@ -40,10 +40,6 @@ export function useInboxThreadRouteSync({
     const inList = (id: string) => threads.some((t) => t.id === id);
 
     if (threadFromUrl && !inList(threadFromUrl)) {
-      router.replace({ pathname: '/inbox', params: {} });
-      if (selectedThreadId === threadFromUrl) {
-        setSelectedThreadId(null);
-      }
       return;
     }
 

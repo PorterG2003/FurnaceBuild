@@ -9,7 +9,7 @@ This worker continuously polls the database for mailboxes that need IMAP checkin
 - Detect bounces (subject/body patterns)
 - Detect unsubscribes (header/body patterns)
 - Create email threads and messages
-- Stop enrollments on reply/bounce/unsubscribe
+- Stop enrollments on reply/unsubscribe, and on **matched** bounces only (bounce recipient must match a recent sent campaign job for that mailbox; unrelated mailbox bounces are ignored for campaigns)
 
 ## Architecture
 

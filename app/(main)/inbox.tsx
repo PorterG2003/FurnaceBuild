@@ -47,10 +47,15 @@ export default function InboxPage() {
   const { width: winWidth, height: winHeight } = useWindowDimensions();
   const isMobile = winWidth < LAYOUT_BREAKPOINT;
 
+  const clearInvalidRouteThread = useCallback(() => {
+    router.replace({ pathname: '/inbox', params: {} });
+  }, [router]);
+
   const inboxData = useInboxData({
     accountId,
     autoSelectFirstThread: !isMobile,
     routeThreadId,
+    onRouteThreadUnavailable: clearInvalidRouteThread,
   });
   const {
     threads,
@@ -727,7 +732,7 @@ export default function InboxPage() {
     >
       {isMobile ? (
         !selectedThreadId ? (
-          <View className="flex-1 bg-[#0D0D0D]">
+          <View className="flex-1">
             <InboxThreadList
               {...threadListProps}
               selectedThreadId={null}

@@ -51,6 +51,7 @@ export interface ProcessedMessage {
 
 export interface MessageJob {
   id: string;
+  account_id: string;
   enrollment_id: string;
   campaign_id: string;
   lead_id: string;
@@ -82,6 +83,6 @@ export interface MessageJob {
   };
   mailboxes?: {
     account_id: string;
-    email_address: string;
-  };
+    email_address: string | null;
+  } | null;
 }

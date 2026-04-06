@@ -7,6 +7,26 @@ import {
 } from './bounce-detection/index.js';
 import { emitEmailReceivedNotification } from './emit-notification-event.js';
 
+type EmailThreadRow = {
+  id: string;
+  account_id: string;
+  mailbox_id: string | null;
+  created_at: string;
+  last_message_at: string | null;
+  message_count?: number | null;
+  participants?: string[] | null;
+  category?: string | null;
+};
+
+type ParentMessageCandidate = {
+  id: string;
+  thread_id: string;
+  message_id: string | null;
+  received_at: string;
+  created_at: string;
+  email_threads: EmailThreadRow | EmailThreadRow[] | null;
+};
+
 /**
  * Thread manager for creating email threads and messages
  */
@@ -23,6 +43,97 @@ export class ThreadManager {
     if (!messageId) return null;
     // Remove brackets and convert to lowercase
     return messageId.trim().replace(/^<|>$/g, '').toLowerCase() || null;
+  }
+
+  private normalizeEmail(email: string | null | undefined): string | null {
+    if (!email) return null;
+    return email.trim().toLowerCase() || null;
+  }
+
+  private unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
+    if (Array.isArray(value)) return value[0] ?? null;
+    return value ?? null;
+  }
+
+  private parseTimestamp(value: string | null | undefined): number {
+    if (!value) return 0;
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  private isUniqueViolation(error: { code?: string; message?: string } | null | undefined): boolean {
+    return error?.code === '23505' || error?.message?.includes('duplicate') === true;
+  }
+
+  private rankReplyJobCandidate(job: MessageJob, mailbox: Mailbox): number {
+    if (job.mailbox_id === mailbox.id) return 0;
+
+    const relatedMailbox = this.unwrapRelation(job.mailboxes);
+    if (
+      relatedMailbox?.account_id === mailbox.account_id &&
+      this.normalizeEmail(relatedMailbox.email_address) === this.normalizeEmail(mailbox.email_address)
+    ) {
+      return 1;
+    }
+
+    return 2;
+  }
+
+  private selectReplyJobCandidate(
+    jobs: MessageJob[],
+    mailbox: Mailbox,
+    searchId: string
+  ): MessageJob | null {
+    const exactMatches = jobs.filter((job) => this.normalizeMessageId(job.provider_message_id) === searchId);
+    if (exactMatches.length === 0) return null;
+
+    return exactMatches.sort((a, b) => {
+      const rankDiff = this.rankReplyJobCandidate(a, mailbox) - this.rankReplyJobCandidate(b, mailbox);
+      if (rankDiff !== 0) return rankDiff;
+
+      const timeDiff =
+        this.parseTimestamp(b.sent_at || b.created_at) -
+        this.parseTimestamp(a.sent_at || a.created_at);
+      if (timeDiff !== 0) return timeDiff;
+
+      return a.id.localeCompare(b.id);
+    })[0] ?? null;
+  }
+
+  private rankParentMessageCandidate(candidate: ParentMessageCandidate, mailbox: Mailbox): number {
+    const thread = this.unwrapRelation(candidate.email_threads);
+    if (!thread) return Number.MAX_SAFE_INTEGER;
+    if (thread.mailbox_id === mailbox.id) return 0;
+    if (!thread.mailbox_id) return 1;
+    return 2;
+  }
+
+  private selectParentMessageCandidate(
+    candidates: ParentMessageCandidate[],
+    mailbox: Mailbox
+  ): ParentMessageCandidate | null {
+    const scopedCandidates = candidates.filter((candidate) => {
+      const thread = this.unwrapRelation(candidate.email_threads);
+      return thread?.account_id === mailbox.account_id;
+    });
+
+    if (scopedCandidates.length === 0) return null;
+
+    return scopedCandidates.sort((a, b) => {
+      const rankDiff = this.rankParentMessageCandidate(a, mailbox) - this.rankParentMessageCandidate(b, mailbox);
+      if (rankDiff !== 0) return rankDiff;
+
+      const aThread = this.unwrapRelation(a.email_threads);
+      const bThread = this.unwrapRelation(b.email_threads);
+      const threadTimeDiff =
+        this.parseTimestamp(aThread?.created_at) - this.parseTimestamp(bThread?.created_at);
+      if (threadTimeDiff !== 0) return threadTimeDiff;
+
+      const messageTimeDiff = this.parseTimestamp(a.received_at) - this.parseTimestamp(b.received_at);
+      if (messageTimeDiff !== 0) return messageTimeDiff;
+
+      return a.id.localeCompare(b.id);
+    })[0] ?? null;
   }
 
   /**
@@ -75,11 +186,15 @@ export class ThreadManager {
     }
 
     // Check if this message already exists (duplicate check)
-    const { data: existingMessage } = await this.supabase
+    const { data: existingMessages } = await this.supabase
       .from('email_messages')
       .select('id, thread_id')
+      .eq('account_id', mailbox.account_id)
       .eq('message_id', normalizedMessageId)
-      .maybeSingle();
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    const existingMessage = existingMessages?.[0];
 
     if (existingMessage) {
       console.log(`[INBOX CHECKER] Message ${normalizedMessageId} already processed, skipping duplicate`);
@@ -104,12 +219,16 @@ export class ThreadManager {
           leads(*),
           mailboxes(account_id, email_address)
         `)
+        .eq('account_id', mailbox.account_id)
         .eq('status', 'sent')
         .or(`provider_message_id.ilike.%${searchId}%,provider_message_id.ilike.%<${searchId}>%`)
-        .limit(1);
+        .limit(10);
 
-      if (!jobError && jobs && jobs.length > 0 && jobs[0]) {
-        foundJob = jobs[0];
+      if (!jobError && jobs && jobs.length > 0) {
+        foundJob = this.selectReplyJobCandidate(jobs as MessageJob[], mailbox, searchId);
+      }
+
+      if (foundJob) {
         break; // Found a match, stop searching
       }
     }
@@ -131,6 +250,7 @@ export class ThreadManager {
           .from('email_threads')
           .select('*')
           .eq('id', existingThreadId)
+          .eq('account_id', mailbox.account_id)
           .single();
         if (threadError || !existingThread) {
           console.error('[INBOX CHECKER] Inbox reply job references missing thread:', existingThreadId, threadError);
@@ -145,20 +265,37 @@ export class ThreadManager {
       // Not a reply to original sent message - check if it's a reply to a received message
       // Check all Message-IDs from In-Reply-To and References against email_messages
       // Since we normalize when storing, we can use eq() for exact match
-      let parentMessage: any = null;
+      let parentMessage: ParentMessageCandidate | null = null;
       for (const searchId of messageIdsToSearch) {
         const { data: messages, error: messageError } = await this.supabase
           .from('email_messages')
           .select(`
             id,
             thread_id,
-            message_id
+            message_id,
+            received_at,
+            created_at,
+            email_threads!inner(
+              id,
+              account_id,
+              mailbox_id,
+              created_at,
+              last_message_at
+            )
           `)
+          .eq('account_id', mailbox.account_id)
           .eq('message_id', searchId)
-          .limit(1);
+          .order('created_at', { ascending: true })
+          .limit(10);
 
-        if (!messageError && messages && messages.length > 0 && messages[0]?.thread_id) {
-          parentMessage = messages[0];
+        if (!messageError && messages && messages.length > 0) {
+          parentMessage = this.selectParentMessageCandidate(
+            messages as ParentMessageCandidate[],
+            mailbox
+          );
+        }
+
+        if (parentMessage?.thread_id) {
           break; // Found a match, stop searching
         }
       }
@@ -332,12 +469,18 @@ export class ThreadManager {
     messageJob: MessageJob,
     mailbox: Mailbox
   ): Promise<any> {
+    const accountId = messageJob.mailboxes?.account_id || mailbox.account_id;
+
     // Check if thread already exists for this message_job
-    const { data: existingThread } = await this.supabase
+    const { data: existingThreads } = await this.supabase
       .from('email_threads')
       .select('*')
+      .eq('account_id', accountId)
       .eq('message_job_id', messageJob.id)
-      .maybeSingle();
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    const existingThread = existingThreads?.[0];
 
     if (existingThread) {
       return existingThread;
@@ -345,14 +488,16 @@ export class ThreadManager {
 
     // Check if a thread already exists for this campaign+lead (handles edge case where
     // a later campaign send arrives after the first reply already created a thread)
-    const { data: existingCampaignThread } = await this.supabase
+    const { data: existingCampaignThreads } = await this.supabase
       .from('email_threads')
       .select('*')
+      .eq('account_id', accountId)
       .eq('campaign_id', messageJob.campaign_id)
       .eq('lead_id', messageJob.lead_id)
       .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+
+    const existingCampaignThread = existingCampaignThreads?.[0];
 
     if (existingCampaignThread) {
       await this.backfillSentMessages(
@@ -369,7 +514,6 @@ export class ThreadManager {
     const messageData = messageJob.message_data || {};
     const templateSubject = messageData.subject || messageData.node_config?.subject || '(No Subject)';
 
-    const accountId = messageJob.mailboxes?.account_id || mailbox.account_id;
     const mailboxEmail = messageJob.mailboxes?.email_address || mailbox.email_address;
     const leadEmail = messageJob.leads?.email || '';
 
@@ -406,6 +550,21 @@ export class ThreadManager {
       .single();
 
     if (threadError) {
+      if (this.isUniqueViolation(threadError)) {
+        const { data: racedThreads, error: reloadError } = await this.supabase
+          .from('email_threads')
+          .select('*')
+          .eq('account_id', accountId)
+          .eq('message_job_id', messageJob.id)
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        const racedThread = racedThreads?.[0];
+        if (!reloadError && racedThread) {
+          return racedThread;
+        }
+      }
+
       console.error('Error creating email_thread:', threadError);
       reportErrorToSlack('Inbox-checker: failed to create email_thread', {
         severity: 'critical',
@@ -455,6 +614,8 @@ export class ThreadManager {
       return;
     }
 
+    const accountId = thread.account_id || mailbox.account_id;
+
     // Get all sent events for these jobs in one query (for merged content)
     const jobIds = sentJobs.map(j => j.id);
     const { data: sentEvents } = await this.supabase
@@ -474,6 +635,7 @@ export class ThreadManager {
     const { data: existingMessages } = await this.supabase
       .from('email_messages')
       .select('message_job_id')
+      .eq('account_id', accountId)
       .eq('thread_id', thread.id)
       .eq('direction', 'sent')
       .in('message_job_id', jobIds);

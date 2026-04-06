@@ -167,7 +167,7 @@ export async function handler(event: SQSEvent): Promise<SQSBatchResponse> {
       const fromDisplay = payload.from_name?.trim()
         ? payload.from_name.trim()
         : payload.from_email;
-      const title = `New message from ${fromDisplay}`;
+      const title = fromDisplay;
       const previewRaw = previewNewMessagePlainText(
         emailMessage?.body_text ?? null,
         emailMessage?.body_html ?? null

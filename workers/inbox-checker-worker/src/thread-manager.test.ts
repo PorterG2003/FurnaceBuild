@@ -42,6 +42,11 @@ class MockQueryBuilder implements PromiseLike<Response> {
     return this;
   }
 
+  upsert(payload: unknown, _options?: Record<string, unknown>) {
+    this.call.insertPayloads.push(payload);
+    return this;
+  }
+
   update(payload: unknown) {
     this.call.insertPayloads.push(payload);
     return this;
@@ -52,6 +57,11 @@ class MockQueryBuilder implements PromiseLike<Response> {
     return this;
   }
 
+  gte(column: string, value: unknown) {
+    this.call.filters.push({ op: 'gte', column, value });
+    return this;
+  }
+
   is(column: string, value: unknown) {
     this.call.filters.push({ op: 'is', column, value });
     return this;
@@ -59,6 +69,11 @@ class MockQueryBuilder implements PromiseLike<Response> {
 
   in(column: string, value: unknown) {
     this.call.filters.push({ op: 'in', column, value });
+    return this;
+  }
+
+  filter(column: string, op: string, value: unknown) {
+    this.call.filters.push({ op: `filter:${op}`, column, value });
     return this;
   }
 
@@ -356,4 +371,216 @@ test('getOrCreateThread reloads the canonical thread after a unique-violation ra
     reloadCall.filters.find((filter) => filter.column === 'message_job_id'),
     { op: 'eq', column: 'message_job_id', value: 'job-1' }
   );
+});
+
+test('handleBounce returns early when bounce already processed (messageId idempotency)', async () => {
+  const supabase = new MockSupabase([{ data: { id: 'existing-bounce-event' } }]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({ messageId: '<same-bounce@mail>' });
+
+  await manager.handleBounce(mailbox, message);
+
+  assert.equal(supabase.calls.length, 1);
+  const ev = supabase.calls[0] as QueryCall;
+  assert.equal(ev.table, 'events');
+  assert.ok(ev.filters.some((f) => f.op === 'filter:cs'));
+});
+
+test('handleBounce returns early when bounce already processed (uid idempotency)', async () => {
+  const supabase = new MockSupabase([{ data: { id: 'existing-bounce-by-uid' } }]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({ messageId: null, uid: 9999 });
+
+  await manager.handleBounce(mailbox, message);
+
+  assert.equal(supabase.calls.length, 1);
+  const ev = supabase.calls[0] as QueryCall;
+  assert.equal(ev.table, 'events');
+  const uidFilter = ev.filters.find(
+    (f) => f.op === 'filter:cs' && f.value && typeof f.value === 'object' && 'bounce_uid' in (f.value as object)
+  );
+  assert.ok(uidFilter);
+});
+
+test('handleBounce does nothing when no recent sent message_jobs', async () => {
+  const supabase = new MockSupabase([{ data: null }, { data: [] }]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({
+    messageId: '<bounce@mail>',
+    from: { address: 'mailer-daemon@example.com' },
+    subject: 'Delivery Status Notification (Failure)',
+    bodyText: '550 failed for lead@example.com',
+  });
+
+  await manager.handleBounce(mailbox, message);
+
+  assert.equal(supabase.calls.length, 2);
+  assert.equal((supabase.calls[1] as QueryCall).table, 'message_jobs');
+  assert.equal(supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc').length, 0);
+});
+
+test('handleBounce unmatched does not call RPC, accounts, block_list, or enrollments', async () => {
+  const supabase = new MockSupabase([
+    { data: null },
+    {
+      data: [
+        {
+          id: 'job-1',
+          campaign_id: 'campaign-1',
+          enrollment_id: 'enrollment-1',
+          lead_id: 'lead-1',
+          sent_at: '2026-04-05T01:00:00.000Z',
+        },
+      ],
+    },
+    { data: [{ id: 'lead-1', email: 'our-lead@example.com' }] },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({
+    messageId: '<bounce@mail>',
+    from: { address: 'mailer-daemon@example.com' },
+    subject: 'Delivery Status Notification (Failure)',
+    bodyText:
+      '550 error. Message could not be delivered to external-warmup@other-domain.com',
+    to: [{ address: mailbox.email_address, name: 'Box' }],
+  });
+
+  await manager.handleBounce(mailbox, message);
+
+  assert.equal(supabase.calls.length, 3);
+  const tables = supabase.calls.map((c) => (c as QueryCall).table);
+  assert.deepEqual(tables, ['events', 'message_jobs', 'leads']);
+  assert.equal(supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc').length, 0);
+});
+
+test('handleBounce matched hard bounce calls record_bounced_event_and_increment, block_list, and stops enrollment', async () => {
+  const supabase = new MockSupabase([
+    { data: null },
+    {
+      data: [
+        {
+          id: 'job-1',
+          campaign_id: 'campaign-1',
+          enrollment_id: 'enrollment-1',
+          lead_id: 'lead-1',
+          sent_at: '2026-04-05T01:00:00.000Z',
+        },
+      ],
+    },
+    { data: [{ id: 'lead-1', email: 'matched-lead@example.com' }] },
+    { data: { suppress_bounced_emails: true } },
+    { data: null, error: null },
+    { data: null, error: null },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({
+    messageId: '<bounce-hard@mail>',
+    from: { address: 'mailer-daemon@example.com' },
+    subject: 'Delivery Status Notification (Failure)',
+    bodyText: '550 5.1.1 User unknown matched-lead@example.com',
+    to: [{ address: mailbox.email_address, name: 'Box' }],
+  });
+
+  await manager.handleBounce(mailbox, message);
+
+  const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
+  assert.equal(rpcCalls.length, 1);
+  assert.equal(rpcCalls[0].fn, 'record_bounced_event_and_increment');
+  assert.equal(rpcCalls[0].args.p_campaign_id, 'campaign-1');
+  assert.equal(rpcCalls[0].args.p_message_job_id, 'job-1');
+
+  const blockCall = supabase.calls.find((c) => (c as QueryCall).table === 'block_list') as QueryCall;
+  assert.ok(blockCall);
+  assert.equal(blockCall.insertPayloads.length, 1);
+
+  const enrollCalls = supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[];
+  assert.equal(enrollCalls.length, 1);
+  assert.match(JSON.stringify(enrollCalls[0].insertPayloads[0]), /"stopped_reason":"bounced"/);
+});
+
+test('handleBounce matched soft bounce does not upsert block_list', async () => {
+  const supabase = new MockSupabase([
+    { data: null },
+    {
+      data: [
+        {
+          id: 'job-soft',
+          campaign_id: 'campaign-1',
+          enrollment_id: 'enrollment-soft',
+          lead_id: 'lead-soft',
+          sent_at: '2026-04-05T01:00:00.000Z',
+        },
+      ],
+    },
+    { data: [{ id: 'lead-soft', email: 'soft-lead@example.com' }] },
+    { data: { suppress_bounced_emails: true } },
+    { data: null, error: null },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({
+    messageId: '<bounce-soft@mail>',
+    from: { address: 'mailer-daemon@example.com' },
+    subject: 'Delivery Status Notification (Failure)',
+    bodyText: '450 4.2.2 soft-lead@example.com try later',
+    to: [{ address: mailbox.email_address, name: 'Box' }],
+  });
+
+  await manager.handleBounce(mailbox, message);
+
+  assert.ok(!supabase.calls.some((c) => (c as QueryCall).table === 'block_list'));
+  const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
+  assert.equal(rpcCalls.length, 1);
+});
+
+test('handleBounce dedupes enrollment stop when multiple matched jobs share enrollment_id', async () => {
+  const supabase = new MockSupabase([
+    { data: null },
+    {
+      data: [
+        {
+          id: 'job-a',
+          campaign_id: 'campaign-1',
+          enrollment_id: 'enrollment-dup',
+          lead_id: 'lead-1',
+          sent_at: '2026-04-05T02:00:00.000Z',
+        },
+        {
+          id: 'job-b',
+          campaign_id: 'campaign-1',
+          enrollment_id: 'enrollment-dup',
+          lead_id: 'lead-1',
+          sent_at: '2026-04-05T01:00:00.000Z',
+        },
+      ],
+    },
+    { data: [{ id: 'lead-1', email: 'dup-lead@example.com' }] },
+    { data: { suppress_bounced_emails: false } },
+    { data: null, error: null },
+    { data: null, error: null },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({
+    messageId: '<bounce-dup@mail>',
+    from: { address: 'mailer-daemon@example.com' },
+    subject: 'Delivery Status Notification (Failure)',
+    bodyText: '550 5.1.1 dup-lead@example.com',
+    to: [{ address: mailbox.email_address, name: 'Box' }],
+  });
+
+  await manager.handleBounce(mailbox, message);
+
+  const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
+  assert.equal(rpcCalls.length, 2);
+  const enrollCalls = supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[];
+  assert.equal(enrollCalls.length, 1);
 });

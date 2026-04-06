@@ -42,10 +42,11 @@ Subset of **replied** that are marked **Interested**. The only way a reply is co
 
 ### Bounce
 
-A **bounce was detected** for a campaign send. Inbox-checker calls `record_bounced_event_and_increment` per matched message_job (or once for a best-guess job when no match). Each bounced event corresponds to one lead/message; **each event = one increment** to `bounce_count` (so multiple leads bouncing in the same campaign each add one).
+A **bounce was detected** for a Furnace campaign send that can be **matched** to a recent sent `message_job` for the same mailbox (failed-recipient email in the bounce lines up with the lead email on that job). Inbox-checker calls `record_bounced_event_and_increment` once per matched job. Each bounced event corresponds to one lead/message_job pair; **each event = one increment** to `bounce_count` (so multiple leads bouncing in the same campaign each add one).
 
 - **Source of truth for backfill:** `events` where `event_type = 'bounced'` and `campaign_id`; `last_bounce_at` from max `created_at` of those events.
-- **Code:** [workers/inbox-checker-worker/src/thread-manager.ts](../../../workers/inbox-checker-worker/src/thread-manager.ts) — `record_bounced_event_and_increment` (atomic event + increment). When the bounce cannot be matched to a specific message_job, a single “best-guess” job is used; that attribution is imprecise and is flagged in the event as `event_data.matched: false`.
+- **Unmatched bounces** (e.g. warmup mail or sends outside Furnace) are **not** written to `events`, do not change `campaign_stats`, and do not stop enrollments. They are logged as structured JSON with `tag: bounce_unmatched` for operators.
+- **Code:** [workers/inbox-checker-worker/src/thread-manager.ts](../../../workers/inbox-checker-worker/src/thread-manager.ts) — `record_bounced_event_and_increment` (atomic event + increment) only after a positive recipient match.
 
 ### Enrollment count
 
@@ -136,7 +137,7 @@ flowchart LR
 - **Excluded from replied:** Replies to inbox_reply/inbox_forward (see `isCampaignReply` in thread-manager).
 - **Positive reply is user-defined:** A reply counts as “positive” only when a user marks the thread as Interested. The per-day chart’s positive-reply count can lag until threads are categorized; that is expected, not a bug.
 - **Positive reply can change:** User sets/clears “Interested” → `update_campaign_stats_positive_reply` (delta) and `update_replied_event_is_positive` so events stay in sync for per-day charts.
-- **Bounce:** Each bounced event = one increment (one per lead/message_job). Best-guess bounces (when the bounce cannot be matched to a specific send) are attributed to a single job and flagged with `event_data.matched: false`; attribution can be imprecise.
+- **Bounce:** Each bounced event = one increment (one per matched lead/message_job). There is no attribution when the bounce cannot be matched to a Furnace send; those cases never create `bounced` events.
 - **Atomicity:** Event insert and stats increment happen in a single RPC per type, so campaign_stats and events do not drift. If you ever need to correct drift (e.g. from an older code path), use `reconcile_campaign_stats` or the script below.
 
 ---

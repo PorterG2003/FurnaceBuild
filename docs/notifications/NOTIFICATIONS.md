@@ -42,11 +42,12 @@
 ## Secrets (Amplify)
 
 ```bash
-npx ampx sandbox secret set WEB_PUSH_VAPID_PUBLIC_KEY
 npx ampx sandbox secret set WEB_PUSH_VAPID_PRIVATE_KEY
 ```
 
-Generate keys (e.g. `npx web-push generate-vapid-keys`). Use the **same** public key in the Expo app:
+The Lambda reads the VAPID public key from deploy-time env, so only the private key needs to be stored as a secret.
+
+Generate keys (e.g. `npx web-push generate-vapid-keys`). Use the **same** public key in the Expo app and Amplify deploy env:
 
 ## App env
 
@@ -63,6 +64,7 @@ WEB_APP_ORIGIN=https://build.getfurnace.io
 ```
 
 Lambda receives `WEB_APP_ORIGIN` at deploy time (defaults to `https://build.getfurnace.io` in `amplify/backend.ts`).
+If the VAPID push config is missing or invalid, Web Push is skipped but in-app notification rows are still created.
 
 ## Local dev without SQS
 

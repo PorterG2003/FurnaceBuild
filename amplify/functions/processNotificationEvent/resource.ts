@@ -11,7 +11,7 @@ export const processNotificationEvent = defineFunction({
   memoryMB: 256,
   environment: {
     SUPABASE_SECRET_KEY: secret('SUPABASE_SECRET_KEY'),
-    WEB_PUSH_VAPID_PUBLIC_KEY: secret('WEB_PUSH_VAPID_PUBLIC_KEY'),
+    WEB_PUSH_VAPID_PUBLIC_KEY: process.env.EXPO_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY ?? '',
     WEB_PUSH_VAPID_PRIVATE_KEY: secret('WEB_PUSH_VAPID_PRIVATE_KEY'),
   },
 });

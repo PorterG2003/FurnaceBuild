@@ -87,7 +87,6 @@ function InstallStepsCard({
 
   return (
     <View className="mt-8 w-full rounded-2xl overflow-hidden border border-white/[0.09]" style={cardShadow}>
-      <View className="h-[3px] w-full bg-brand-orange" />
       <View className="bg-[#161616] px-5 pt-5 pb-4">
         <View className="flex-row items-center gap-3 pb-4 border-b border-white/[0.07]">
           <View className="w-10 h-10 rounded-xl bg-white/[0.06] border border-white/[0.08] items-center justify-center">

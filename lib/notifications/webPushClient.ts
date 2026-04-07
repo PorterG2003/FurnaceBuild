@@ -47,7 +47,7 @@ export async function subscribeWebPush(): Promise<{
     return null;
   }
 
-  await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.subscribe({
     userVisibleOnly: true,

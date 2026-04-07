@@ -1,5 +1,5 @@
 /**
- * PWA service worker: lifecycle + Web Push display and notification click (no fetch caching).
+ * PWA service worker: lifecycle + pass-through fetch (installability) + Web Push.
  *
  * Must stay in sync with app/(main)/_layout.tsx: message type `furnace-notification-navigate`.
  */
@@ -8,6 +8,27 @@ self.addEventListener('install', function () {
 });
 self.addEventListener('activate', function () {
   self.clients.claim();
+});
+
+/**
+ * Pass-through fetch handler so the page is controlled by this worker.
+ * Chrome treats PWAs as installable only when a SW actively handles network;
+ * without this, "Install" / standalone launch from the icon may not work reliably.
+ */
+self.addEventListener('fetch', function (event) {
+  var req = event.request;
+  if (req.method !== 'GET') return;
+  try {
+    var url = new URL(req.url);
+    if (url.origin !== self.location.origin) return;
+  } catch (e) {
+    return;
+  }
+  event.respondWith(
+    fetch(req).catch(function () {
+      return new Response('', { status: 503, statusText: 'Network error' });
+    })
+  );
 });
 
 function resolveNotificationUrl(raw) {

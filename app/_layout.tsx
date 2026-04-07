@@ -9,6 +9,7 @@ import { AppBootScreen } from '@/components/ui/AppBootScreen';
 import { ToastProvider } from '@/components/ui/feedback';
 import { ConfirmProvider } from '@/components/ui/ConfirmContext';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { WebInstallGate } from '@/components/web/WebInstallGate';
 
 // Suppress pointerEvents deprecation from react-native-web (triggered by @react-navigation)
 if (typeof console !== 'undefined' && console.warn) {
@@ -66,6 +67,7 @@ export default function RootLayout() {
         <ConfirmProvider>
           <View style={safeAreaRootStyle} testID="safe-area-root">
             <StatusBar style="auto" />
+            <WebInstallGate />
             <Slot />
           </View>
         </ConfirmProvider>

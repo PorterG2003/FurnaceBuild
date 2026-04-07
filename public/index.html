@@ -52,6 +52,21 @@
     <meta name="apple-mobile-web-app-title" content="Furnace" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <!-- Capture beforeinstallprompt before the JS bundle runs; React mounts too late otherwise. -->
+    <script>
+      (function () {
+        if (typeof window === 'undefined') return;
+        window.__furnaceDeferredInstallPrompt = null;
+        window.addEventListener('beforeinstallprompt', function (e) {
+          e.preventDefault();
+          window.__furnaceDeferredInstallPrompt = e;
+          window.dispatchEvent(new CustomEvent('furnace-deferred-install-prompt'));
+        });
+        window.addEventListener('appinstalled', function () {
+          window.__furnaceDeferredInstallPrompt = null;
+        });
+      })();
+    </script>
     <title>%WEB_TITLE%</title>
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
@@ -88,12 +103,18 @@
     <div id="root"></div>
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function () {
+        // Register as soon as possible (not only on load) so installability is met sooner on Android.
+        function registerSw() {
           navigator.serviceWorker
-            .register('/sw.js')
+            .register('/sw.js', { scope: '/', updateViaCache: 'none' })
             .then(function (reg) { console.log('Service Worker registered', reg.scope); })
             .catch(function (err) { console.error('Service Worker registration failed', err); });
-        });
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', registerSw);
+        } else {
+          registerSw();
+        }
       }
     </script>
   </body>

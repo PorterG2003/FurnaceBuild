@@ -1,5 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { useWindowDimensions, View } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { SignInForm } from '@/components/auth/SignInForm';
 import { SignUpForm } from '@/components/auth/SignUpForm';
@@ -7,11 +8,15 @@ import { ForgotPasswordForm } from '@/components/auth/ForgotPasswordForm';
 import { ConfirmSignUpForm } from '@/components/auth/ConfirmSignUpForm';
 import { ConfirmResetPasswordForm } from '@/components/auth/ConfirmResetPasswordForm';
 import { HeroHeatShimmer, EmberParticlesLite } from '@/components/ui/effects';
+import { Logo } from '@/components/ui/branding';
+import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 
 type AuthState = 'signIn' | 'signUp' | 'confirmSignUp' | 'forgotPassword' | 'confirmResetPassword';
 
 export default function AuthIndex() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const showBrandPanel = width >= LAYOUT_BREAKPOINT;
   const { invitation_id, email: inviteEmail, mode } = useLocalSearchParams<{
     invitation_id?: string;
     email?: string;
@@ -145,16 +150,36 @@ export default function AuthIndex() {
   };
 
   return (
-    <>
-      <HeroHeatShimmer
-        intensity="low"
-        speed="slow"
-        tint="ember"
-        className="flex-1"
+    <View className="flex-1 min-h-full flex-row bg-[#121212]">
+      {showBrandPanel ? (
+        <View className="flex-1 min-h-full min-w-0 relative">
+          <HeroHeatShimmer
+            intensity="low"
+            speed="slow"
+            tint="ember"
+            className="absolute inset-0"
+            midground={<EmberParticlesLite density="low" maxOpacity={0.06} />}
+          >
+            <View className="flex-1 pt-7 pl-5 pr-4 pb-4">
+              <View className="w-full max-w-[220px] self-start">
+                <Logo className="mb-0" variant="white" maxWidth={220} />
+              </View>
+            </View>
+          </HeroHeatShimmer>
+        </View>
+      ) : null}
+      <View
+        className={`flex-1 min-h-full min-w-0 w-full bg-[#121212] ${showBrandPanel ? 'max-w-[680px] border-l border-[#2A2A2A]' : ''}`}
       >
+        {!showBrandPanel ? (
+          <View className="w-full self-start px-5 pt-7 pb-2">
+            <View className="max-w-[220px]">
+              <Logo className="mb-0" variant="white" maxWidth={220} />
+            </View>
+          </View>
+        ) : null}
         {renderForm()}
-      </HeroHeatShimmer>
-      <EmberParticlesLite density="low" maxOpacity={0.06} />
-    </>
+      </View>
+    </View>
   );
 }

@@ -65,6 +65,7 @@ export default function FoundryExportScreen() {
     chainMaxDepth: 6,
     includeContactEnrichment: false,
     includeContactConfidence: false,
+    includeCost: false,
   });
 
   const [rows, setRows] = useState<ExportCompanyOwnerLeadRow[]>([]);
@@ -114,11 +115,15 @@ export default function FoundryExportScreen() {
   }, [debouncedQ, registryState, exportReady, linkedFilter, ownerFilter, reviewFilter, parseFilter]);
 
   const exportContactApiParams = useMemo(
-    (): Pick<ExportCompanyOwnerLeadsParams, 'include_contact' | 'include_contact_confidence'> => ({
+    (): Pick<
+      ExportCompanyOwnerLeadsParams,
+      'include_contact' | 'include_contact_confidence' | 'include_cost'
+    > => ({
       include_contact: exportOptions.includeContactEnrichment ? true : undefined,
       include_contact_confidence: exportOptions.includeContactConfidence ? true : undefined,
+      include_cost: exportOptions.includeCost ? true : undefined,
     }),
-    [exportOptions.includeContactEnrichment, exportOptions.includeContactConfidence],
+    [exportOptions.includeContactEnrichment, exportOptions.includeContactConfidence, exportOptions.includeCost],
   );
 
   const chainApiParams = useMemo(
@@ -137,6 +142,7 @@ export default function FoundryExportScreen() {
         chainMaxDepth: exportOptions.chainMaxDepth,
         includeContactEnrichment: exportOptions.includeContactEnrichment,
         includeContactConfidence: exportOptions.includeContactConfidence,
+        includeCost: exportOptions.includeCost,
         baseApiParams,
       }),
     [
@@ -144,6 +150,7 @@ export default function FoundryExportScreen() {
       exportOptions.chainMaxDepth,
       exportOptions.includeContactConfidence,
       exportOptions.includeContactEnrichment,
+      exportOptions.includeCost,
       exportOptions.mode,
     ],
   );
@@ -271,12 +278,14 @@ export default function FoundryExportScreen() {
           max_depth: nextOptions.chainMaxDepth,
           include_contact: nextOptions.includeContactEnrichment ? true : undefined,
           include_contact_confidence: nextOptions.includeContactConfidence ? true : undefined,
+          include_cost: nextOptions.includeCost ? true : undefined,
         };
         const { rows: allRows, truncated, total_count } = await collectExportCompanyChainPeopleForCsv(activeChainParams);
         const finalRows = nextOptions.mergePeoplePerCompany ? mergeExportChainPeopleRows(allRows) : allRows;
         const csv = exportCompanyChainPeopleToCsv(finalRows, {
           includeContact: nextOptions.includeContactEnrichment,
           includeContactConfidence: nextOptions.includeContactConfidence,
+          includeCost: nextOptions.includeCost,
         });
         downloadCsvOnWeb(`foundry-chain-people-export-${d}.csv`, csv);
         setCsvMsg(
@@ -293,10 +302,12 @@ export default function FoundryExportScreen() {
           ...baseApiParams,
           include_contact: nextOptions.includeContactEnrichment ? true : undefined,
           include_contact_confidence: nextOptions.includeContactConfidence ? true : undefined,
+          include_cost: nextOptions.includeCost ? true : undefined,
         });
         const csv = exportCompanyOwnerLeadsToCsv(allRows, {
           includeContact: nextOptions.includeContactEnrichment,
           includeContactConfidence: nextOptions.includeContactConfidence,
+          includeCost: nextOptions.includeCost,
         });
         downloadCsvOnWeb(`foundry-owner-rows-export-${d}.csv`, csv);
         setCsvMsg(

@@ -13,6 +13,7 @@ export default function ImportProgressPage() {
     importName,
     notes,
     importWarnings,
+    costPerRowInput,
     setLastImportResult,
   } = useImportWizard();
   const started = useRef(false);
@@ -34,6 +35,9 @@ export default function ImportProgressPage() {
     };
     const notesSnapshot = notes.trim() || undefined;
     const warnSnapshot = importWarnings;
+    const costRaw = costPerRowInput.trim();
+    const parsedCost = costRaw === '' ? NaN : Number.parseInt(costRaw, 10);
+    const costPayload = Number.isFinite(parsedCost) && parsedCost >= 0 ? parsedCost : undefined;
 
     if (started.current) return;
     started.current = true;
@@ -49,6 +53,7 @@ export default function ImportProgressPage() {
           importWarnings: warnSnapshot,
           columnMap: columnSnapshot,
           rows: rowsSnapshot,
+          ...(costPayload != null ? { costPerRowCents: costPayload } : {}),
         });
         if (cancelled) return;
         setLastImportResult(res);
@@ -73,6 +78,7 @@ export default function ImportProgressPage() {
     importName,
     notes,
     importWarnings,
+    costPerRowInput,
     router,
     setLastImportResult,
   ]);

@@ -11,7 +11,22 @@ function csvCell(value: unknown): string {
 export type ExportCsvContactOptions = {
   includeContact?: boolean;
   includeContactConfidence?: boolean;
+  includeCost?: boolean;
 };
+
+const EXPORT_COST_CSV_KEYS: (keyof ExportCompanyOwnerLeadRow)[] = [
+  'enrichment_cost_cents',
+  'company_acquisition_cost_cents',
+  'acquisition_cost_per_row_cents',
+  'total_cost_per_row_cents',
+];
+
+const EXPORT_COST_CHAIN_CSV_KEYS: (keyof ExportCompanyChainPeopleRow)[] = [
+  'enrichment_cost_cents',
+  'company_acquisition_cost_cents',
+  'acquisition_cost_per_row_cents',
+  'total_cost_per_row_cents',
+];
 
 const CSV_HEADER: (keyof ExportCompanyOwnerLeadRow)[] = [
   'company_id',
@@ -76,6 +91,7 @@ export function exportCompanyOwnerLeadsToCsv(
   opts?: ExportCsvContactOptions,
 ): string {
   const header = [...CSV_HEADER];
+  if (opts?.includeCost) header.push(...EXPORT_COST_CSV_KEYS);
   if (opts?.includeContact) header.push(...OWNER_CONTACT_CSV_KEYS);
   if (opts?.includeContact && opts?.includeContactConfidence) header.push(...OWNER_CONFIDENCE_CSV_KEYS);
 
@@ -145,6 +161,7 @@ export function exportCompanyChainPeopleToCsv(
   opts?: ExportCsvContactOptions,
 ): string {
   const header = [...CHAIN_PEOPLE_CSV_HEADER];
+  if (opts?.includeCost) header.push(...EXPORT_COST_CHAIN_CSV_KEYS);
   if (opts?.includeContact) header.push(...CHAIN_CONTACT_CSV_KEYS);
   if (opts?.includeContact && opts?.includeContactConfidence) header.push(...CHAIN_CONFIDENCE_CSV_KEYS);
 

@@ -19,6 +19,7 @@ import {
   mergeSourceBusinessRecords,
   normalizeIngestionRunRecords,
   rejectCandidatesForSource,
+  lookupCurrentRate,
   resolveContactEnrichmentOptions,
 } from '@furnace/registry-server';
 import {
@@ -91,6 +92,23 @@ const CONTACT_ENRICHMENT_CONFIDENCE_KEYS = [
   'contact_enrichment_score_margin',
   'contact_enrichment_reason_summary',
 ] as const;
+
+const EXPORT_COST_KEYS = [
+  'enrichment_cost_cents',
+  'company_acquisition_cost_cents',
+  'acquisition_cost_per_row_cents',
+  'total_cost_per_row_cents',
+] as const;
+
+function stripCostFields(row: Record<string, unknown>): void {
+  for (const k of EXPORT_COST_KEYS) {
+    delete row[k];
+  }
+}
+
+function parseIncludeCostFlag(params: URLSearchParams): boolean {
+  return params.get('include_cost') === 'true' || params.get('include_cost') === '1';
+}
 
 function parseIncludeContactFlags(params: URLSearchParams): {
   includeContact: boolean;
@@ -308,7 +326,12 @@ function buildExportCompanyOwnerLeadsQuery(
   options?: { withCount?: boolean },
 ) {
   const { includeContact } = parseIncludeContactFlags(params);
-  const table = includeContact ? 'export_company_owner_leads_with_contacts' : 'export_company_owner_leads';
+  const includeCost = parseIncludeCostFlag(params);
+  const table = includeContact
+    ? 'export_company_owner_leads_with_contacts'
+    : includeCost
+      ? 'export_company_owner_leads_with_cost'
+      : 'export_company_owner_leads';
   const selectOptions = options?.withCount ? { count: 'exact' as const } : undefined;
   let qb = selectOptions
     ? leadsClient.from(table).select('*', selectOptions)
@@ -608,6 +631,26 @@ async function loadOwnershipChainsForTarget(
   return chains;
 }
 
+async function loadExportRowCostMap(
+  leadsClient: SupabaseClient,
+  pairs: Array<{ company_id: string; entity_owner_id: string }>,
+): Promise<Map<string, Record<string, unknown>>> {
+  const out = new Map<string, Record<string, unknown>>();
+  if (pairs.length === 0) return out;
+  const companyIds = [...new Set(pairs.map((p) => p.company_id))];
+  const { data, error } = await leadsClient.from('export_row_cost_summary').select('*').in('company_id', companyIds);
+  if (error) throw new Error(error.message);
+  const wanted = new Set(pairs.map((p) => `${p.company_id}\0${p.entity_owner_id}`));
+  for (const row of data ?? []) {
+    const rec = row as Record<string, unknown>;
+    const cid = String(rec.company_id ?? '');
+    const eid = rec.entity_owner_id == null ? '' : String(rec.entity_owner_id);
+    const key = `${cid}\0${eid}`;
+    if (wanted.has(key)) out.set(key, rec);
+  }
+  return out;
+}
+
 export async function dispatchFoundryExtendedRoutes(
   leadsClient: SupabaseClient,
   method: string,
@@ -617,9 +660,116 @@ export async function dispatchFoundryExtendedRoutes(
   actorUserId: string,
   hmacSecret: string,
 ): Promise<FunctionUrlResponse | null> {
+  if (path === '/cost-rate-cards' && method === 'GET') {
+    const params = new URLSearchParams(rawQueryString || '');
+    const ck = params.get('cost_kind')?.trim();
+    const prov = params.get('provider')?.trim();
+    const prod = params.get('product')?.trim();
+    if (ck && prov && prod) {
+      if (ck !== 'acquisition' && ck !== 'enrichment') {
+        return jsonResponse(400, { error: 'cost_kind must be acquisition or enrichment' });
+      }
+      const rate = await lookupCurrentRate(leadsClient, ck, prov, prod);
+      return jsonResponse(200, { rate });
+    }
+    const { data, error } = await leadsClient
+      .from('cost_rate_cards')
+      .select('*')
+      .is('effective_to', null)
+      .order('cost_kind', { ascending: true })
+      .order('provider', { ascending: true })
+      .order('product', { ascending: true });
+    if (error) {
+      console.error('cost_rate_cards list failed', error.message);
+      return jsonResponse(502, { error: 'Failed to load cost rate cards' });
+    }
+    return jsonResponse(200, { rates: data ?? [] });
+  }
+
+  if (path === '/cost-rate-cards' && method === 'POST') {
+    const parsed = parseJsonBody<{
+      cost_kind: string;
+      provider: string;
+      product: string;
+      unit_price_cents: number;
+      currency?: string;
+      notes?: string;
+      /** When true, set effective_to on any existing current row for this triple. */
+      retire_previous?: boolean;
+    }>(rawBody || '{}');
+    if (!parsed.ok) return parsed.response;
+    const v = parsed.value;
+    if (v.cost_kind !== 'acquisition' && v.cost_kind !== 'enrichment') {
+      return jsonResponse(400, { error: 'cost_kind must be acquisition or enrichment' });
+    }
+    if (!v.provider?.trim() || !v.product?.trim()) {
+      return jsonResponse(400, { error: 'provider and product are required' });
+    }
+    if (typeof v.unit_price_cents !== 'number' || !Number.isFinite(v.unit_price_cents) || v.unit_price_cents < 0) {
+      return jsonResponse(400, { error: 'unit_price_cents must be a non-negative number' });
+    }
+    if (v.retire_previous === true) {
+      await leadsClient
+        .from('cost_rate_cards')
+        .update({ effective_to: new Date().toISOString() })
+        .eq('cost_kind', v.cost_kind)
+        .eq('provider', v.provider.trim())
+        .eq('product', v.product.trim())
+        .is('effective_to', null);
+    }
+    const { data: inserted, error: insErr } = await leadsClient
+      .from('cost_rate_cards')
+      .insert({
+        cost_kind: v.cost_kind,
+        provider: v.provider.trim(),
+        product: v.product.trim(),
+        unit_price_cents: Math.trunc(v.unit_price_cents),
+        currency: typeof v.currency === 'string' && v.currency.trim() ? v.currency.trim().toUpperCase() : 'USD',
+        notes: typeof v.notes === 'string' ? v.notes : null,
+      })
+      .select('id')
+      .single();
+    if (insErr || !inserted) {
+      console.error('cost_rate_cards insert failed', insErr?.message);
+      return jsonResponse(502, { error: 'Failed to create cost rate card' });
+    }
+    return jsonResponse(200, { id: inserted.id });
+  }
+
+  if (path.startsWith('/cost-rate-cards/') && method === 'PATCH') {
+    const id = path.slice('/cost-rate-cards/'.length);
+    if (!UUID_RE.test(id)) return jsonResponse(400, { error: 'Invalid id' });
+    const parsed = parseJsonBody<{
+      unit_price_cents?: number;
+      effective_to?: string | null;
+      notes?: string | null;
+    }>(rawBody || '{}');
+    if (!parsed.ok) return parsed.response;
+    const patch: Record<string, unknown> = {};
+    if (typeof parsed.value.unit_price_cents === 'number' && Number.isFinite(parsed.value.unit_price_cents)) {
+      patch.unit_price_cents = Math.max(0, Math.trunc(parsed.value.unit_price_cents));
+    }
+    if ('effective_to' in parsed.value) {
+      patch.effective_to = parsed.value.effective_to;
+    }
+    if ('notes' in parsed.value) {
+      patch.notes = parsed.value.notes;
+    }
+    if (Object.keys(patch).length === 0) {
+      return jsonResponse(400, { error: 'No fields to update' });
+    }
+    const { error: updErr } = await leadsClient.from('cost_rate_cards').update(patch).eq('id', id);
+    if (updErr) {
+      console.error('cost_rate_cards patch failed', updErr.message);
+      return jsonResponse(502, { error: 'Failed to update cost rate card' });
+    }
+    return jsonResponse(200, { ok: true });
+  }
+
   if (path === '/export/company-owner-leads' && method === 'GET') {
     const params = new URLSearchParams(rawQueryString || '');
     const { includeContact, includeContactConfidence } = parseIncludeContactFlags(params);
+    const includeCost = parseIncludeCostFlag(params);
     const limit = parseLimit(rawQueryString || '', MAX_EXPORT_LEADS_LIMIT, DEFAULT_EXPORT_LEADS_LIMIT);
     const offset = parseOffsetExport(rawQueryString || '');
     const end = offset + limit - 1;
@@ -642,14 +792,16 @@ export async function dispatchFoundryExtendedRoutes(
     }
 
     const rawRows = data ?? [];
-    const rows =
-      includeContact && !includeContactConfidence
-        ? rawRows.map((r) => {
-            const row = { ...(r as Record<string, unknown>) };
-            stripContactConfidenceFields(row);
-            return row;
-          })
-        : rawRows;
+    const rows = rawRows.map((r) => {
+      const row = { ...(r as Record<string, unknown>) };
+      if (includeContact && !includeCost) {
+        stripCostFields(row);
+      }
+      if (includeContact && !includeContactConfidence) {
+        stripContactConfidenceFields(row);
+      }
+      return row;
+    });
 
     return jsonResponse(200, {
       rows,
@@ -662,6 +814,7 @@ export async function dispatchFoundryExtendedRoutes(
   if (path === '/export/company-chain-people' && method === 'GET') {
     const params = new URLSearchParams(rawQueryString || '');
     const { includeContact, includeContactConfidence } = parseIncludeContactFlags(params);
+    const includeCost = parseIncludeCostFlag(params);
     const limit = parseLimit(rawQueryString || '', MAX_EXPORT_LEADS_LIMIT, DEFAULT_EXPORT_LEADS_LIMIT);
     const offset = parseOffsetExport(rawQueryString || '');
     const maxDepth = clampOwnershipChainDepth(params.get('max_depth'));
@@ -734,6 +887,35 @@ export async function dispatchFoundryExtendedRoutes(
       }
     }
 
+    if (includeCost && rows.length > 0) {
+      try {
+        const pairs = rows.map((r) => ({
+          company_id: String(r.company_id),
+          entity_owner_id: String(r.person_owner_row_id),
+        }));
+        const costMap = await loadExportRowCostMap(leadsClient, pairs);
+        for (const row of rows) {
+          const key = `${String(row.company_id)}\0${String(row.person_owner_row_id)}`;
+          const c = costMap.get(key);
+          if (c) {
+            row.enrichment_cost_cents = c.enrichment_cost_cents;
+            row.company_acquisition_cost_cents = c.company_acquisition_cost_cents;
+            row.acquisition_cost_per_row_cents = c.acquisition_cost_per_row_cents;
+            row.total_cost_per_row_cents = c.total_cost_per_row_cents;
+          } else {
+            row.enrichment_cost_cents = 0;
+            row.company_acquisition_cost_cents = 0;
+            row.acquisition_cost_per_row_cents = 0;
+            row.total_cost_per_row_cents = 0;
+          }
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('export_company_chain_people cost merge failed', message);
+        return jsonResponse(502, { error: 'Failed to load export row costs for chain export' });
+      }
+    }
+
     if (includeContact && rows.length > 0) {
       try {
         const pairs = rows.map((r) => ({
@@ -753,6 +935,12 @@ export async function dispatchFoundryExtendedRoutes(
         const message = err instanceof Error ? err.message : String(err);
         console.error('export_company_chain_people contact enrichment merge failed', message);
         return jsonResponse(502, { error: 'Failed to load contact enrichment for chain export' });
+      }
+    }
+
+    if (includeContact && !includeCost) {
+      for (const row of rows) {
+        stripCostFields(row);
       }
     }
 

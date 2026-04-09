@@ -3,13 +3,15 @@ import { StatusBar } from 'expo-status-bar';
 import { useFonts, InstrumentSans_400Regular, InstrumentSans_500Medium, InstrumentSans_600SemiBold, InstrumentSans_700Bold, InstrumentSans_400Regular_Italic, InstrumentSans_500Medium_Italic, InstrumentSans_600SemiBold_Italic, InstrumentSans_700Bold_Italic } from '@expo-google-fonts/instrument-sans';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { AppBootScreen } from '@/components/ui/AppBootScreen';
 import { ToastProvider } from '@/components/ui/feedback';
 import { ConfirmProvider } from '@/components/ui/ConfirmContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { WebInstallGate } from '@/components/web/WebInstallGate';
+
+const MIN_BOOT_MS = 350;
 
 // Suppress pointerEvents deprecation from react-native-web (triggered by @react-navigation)
 if (typeof console !== 'undefined' && console.warn) {
@@ -25,6 +27,7 @@ if (typeof console !== 'undefined' && console.warn) {
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const [minBootElapsed, setMinBootElapsed] = useState(false);
   const [fontsLoaded, fontError] = useFonts({
     InstrumentSans_400Regular,
     InstrumentSans_500Medium,
@@ -41,10 +44,15 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    const timer = setTimeout(() => setMinBootElapsed(true), MIN_BOOT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if ((fontsLoaded || fontError) && minBootElapsed) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [fontsLoaded, fontError, minBootElapsed]);
 
   const safeAreaRootStyle = {
     flex: 1,
@@ -53,7 +61,7 @@ export default function RootLayout() {
   };
 
   // Render app even if fonts fail (avoids white screen on web)
-  if (!fontsLoaded && !fontError) {
+  if (!minBootElapsed || (!fontsLoaded && !fontError)) {
     return (
       <View style={safeAreaRootStyle} testID="safe-area-root">
         <AppBootScreen />

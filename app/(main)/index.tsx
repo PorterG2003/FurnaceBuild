@@ -1,6 +1,6 @@
-import { PageLayout } from '@/components/ui/layout';
+import { Redirect } from 'expo-router';
 
-export default function Dashboard() {
-  return <PageLayout>{null}</PageLayout>;
+/** `/` is not a real screen — send authorized users to the inbox. */
+export default function HomeRedirect() {
+  return <Redirect href="/inbox" />;
 }
-

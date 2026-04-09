@@ -142,6 +142,8 @@ export interface ContactEnrichmentPreflightOptions {
   strong_targets_only?: boolean;
   ruleset_preset?: ContactEnrichmentRulesetPreset;
   queue_ambiguous_for_review?: boolean;
+  /** Cents per billable SkipSherpa lookup; omit to use active rate card. */
+  cost_per_lookup_cents?: number;
 }
 
 export interface ContactEnrichmentPreflightResponse {
@@ -236,6 +238,10 @@ export interface IngestionRunRow {
   created_at: string;
   parser_version: string | null;
   ingest_version: string | null;
+  total_cost_cents?: number | null;
+  cost_per_row_cents?: number | null;
+  cost_rate_card_id?: string | null;
+  cost_is_override?: boolean;
 }
 
 export interface IngestionRunStats {
@@ -297,6 +303,30 @@ export interface PostGoogleMapsImportBody {
   importWarnings: boolean;
   columnMap: GoogleMapsColumnMapPayload;
   rows: Record<string, string>[];
+  /** Cents per successfully imported row; omit to use active rate card for this source. */
+  costPerRowCents?: number;
+}
+
+/** Active rate from GET /cost-rate-cards?cost_kind&provider&product */
+export interface CostRateCardCurrentResponse {
+  rate: { id: string; unitPriceCents: number } | null;
+}
+
+export interface CostRateCardRow {
+  id: string;
+  cost_kind: string;
+  provider: string;
+  product: string;
+  unit_price_cents: number;
+  currency: string;
+  effective_from: string;
+  effective_to: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface CostRateCardsListResponse {
+  rates: CostRateCardRow[];
 }
 
 export interface ImportErrorSample {
@@ -924,6 +954,11 @@ export interface ExportCompanyOwnerLeadRow {
   contact_enrichment_top_score?: number | null;
   contact_enrichment_score_margin?: number | null;
   contact_enrichment_reason_summary?: string | null;
+  /** Present when `include_cost=true` on export API. Values are USD cents unless you add currency later. */
+  enrichment_cost_cents?: number | null;
+  company_acquisition_cost_cents?: number | null;
+  acquisition_cost_per_row_cents?: number | null;
+  total_cost_per_row_cents?: number | null;
 }
 
 export interface ExportCompanyOwnerLeadsResponse {
@@ -983,6 +1018,10 @@ export interface ExportCompanyChainPeopleRow {
   contact_enrichment_top_score?: number | null;
   contact_enrichment_score_margin?: number | null;
   contact_enrichment_reason_summary?: string | null;
+  enrichment_cost_cents?: number | null;
+  company_acquisition_cost_cents?: number | null;
+  acquisition_cost_per_row_cents?: number | null;
+  total_cost_per_row_cents?: number | null;
 }
 
 export interface ExportCompanyChainPeopleResponse {

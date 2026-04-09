@@ -18,8 +18,9 @@
  * - POST /source-records/:id/candidates/generate | /link | /reject-candidates
  * - POST /resolution/bulk
  * - GET|PATCH /companies/:id (GET includes associated_people from entity_owners via current matches), POST /companies/:id/locations, POST /companies (create)
- * - GET /export/company-owner-leads?limit=&offset=&q=&registry_state=&is_export_ready=&has_current_linked_source=&has_open_review_task=&has_parse_failure_task=&has_current_owner=&include_contact=&include_contact_confidence=
- * - GET /export/company-chain-people?...&max_depth=&max_chains=&include_contact=&include_contact_confidence=
+ * - GET /export/company-owner-leads?...&include_contact=&include_contact_confidence=&include_cost=
+ * - GET /export/company-chain-people?...&max_depth=&max_chains=&include_contact=&include_contact_confidence=&include_cost=
+ * - GET /cost-rate-cards | GET /cost-rate-cards?cost_kind=&provider=&product= | POST /cost-rate-cards | PATCH /cost-rate-cards/:id
  * - GET /review-tasks, GET /review-tasks/:id, PATCH .../assign, POST .../resolve|cancel
  * - POST /state-matching/preflight, POST /state-matching/batches (async job + Step Functions), GET /state-matching/batches/:id
  * - GET /reconciliation/runs/:id
@@ -31,6 +32,7 @@
  * Entity resolution (candidates, link, bulk resolve) lives in @furnace/registry-server (entityResolution).
  */
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
+import { resolveRunCost } from '@furnace/registry-server';
 import {
   classifyAllRows,
   summarizeClassification,
@@ -226,6 +228,8 @@ interface GoogleMapsImportBody {
   importWarnings: boolean;
   columnMap: ColumnMap;
   rows: Record<string, string>[];
+  /** Cents per imported row; omit to use active rate card for (acquisition, source, import_row). */
+  costPerRowCents?: number;
 }
 
 function rowShouldImport(r: ClassifiedRow, importWarnings: boolean): boolean {
@@ -323,6 +327,18 @@ async function handleGoogleMapsImport(
   let imported = 0;
   let failed = 0;
 
+  const costOverride =
+    typeof body.costPerRowCents === 'number' && Number.isFinite(body.costPerRowCents)
+      ? Math.trunc(body.costPerRowCents)
+      : undefined;
+  const resolvedIngestionCost = await resolveRunCost(
+    leadsClient,
+    'acquisition',
+    sourceName,
+    'import_row',
+    costOverride,
+  );
+
   try {
     for (let i = 0; i < toInsert.length; i += INSERT_BATCH_SIZE) {
       const chunk = toInsert.slice(i, i + INSERT_BATCH_SIZE);
@@ -363,6 +379,14 @@ async function handleGoogleMapsImport(
           skipped_rows: skippedRows,
         },
         error_summary: 'Import failed during insert',
+        ...(resolvedIngestionCost != null && imported > 0
+          ? {
+              cost_per_row_cents: resolvedIngestionCost.unitPriceCents,
+              total_cost_cents: imported * resolvedIngestionCost.unitPriceCents,
+              cost_rate_card_id: resolvedIngestionCost.rateCardId,
+              cost_is_override: resolvedIngestionCost.isOverride,
+            }
+          : {}),
       })
       .eq('id', runId);
     return jsonResponse(502, { error: 'Import failed during database insert', runId });
@@ -389,6 +413,14 @@ async function handleGoogleMapsImport(
           : imported === 0 && toInsert.length > 0
             ? 'No rows imported'
             : null,
+      ...(resolvedIngestionCost != null && imported > 0
+        ? {
+            cost_per_row_cents: resolvedIngestionCost.unitPriceCents,
+            total_cost_cents: imported * resolvedIngestionCost.unitPriceCents,
+            cost_rate_card_id: resolvedIngestionCost.rateCardId,
+            cost_is_override: resolvedIngestionCost.isOverride,
+          }
+        : {}),
     })
     .eq('id', runId);
 

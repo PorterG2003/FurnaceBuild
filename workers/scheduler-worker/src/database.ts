@@ -1,4 +1,4 @@
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import { formatUnknownError, reportErrorToSlack } from '@furnace/slack-lib';
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { Enrollment } from './types.js';
 
@@ -64,7 +64,7 @@ export class DatabaseClient {
       return enrollments;
     } catch (error) {
       console.error('Error claiming enrollments from database:', error);
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = formatUnknownError(error);
       reportErrorToSlack('Scheduler: error claiming enrollments from database', {
         severity: 'critical',
         error: msg,

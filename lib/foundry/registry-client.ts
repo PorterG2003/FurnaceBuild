@@ -16,6 +16,8 @@ import {
   type ManualCompaniesListResponse,
   type ManualEntityOwnersListResponse,
   type NormalizeRunRecordsResponse,
+  type CostRateCardCurrentResponse,
+  type CostRateCardsListResponse,
   type PostGoogleMapsImportBody,
   type PostGoogleMapsImportResponse,
   type PostStartContactEnrichmentJobResponse,
@@ -339,7 +341,45 @@ export async function postGoogleMapsImport(body: PostGoogleMapsImportBody): Prom
       importWarnings: body.importWarnings,
       columnMap: body.columnMap,
       rows: body.rows,
+      ...(body.costPerRowCents != null && Number.isFinite(body.costPerRowCents)
+        ? { costPerRowCents: Math.trunc(body.costPerRowCents) }
+        : {}),
     }),
+  });
+}
+
+export async function fetchCurrentCostRate(params: {
+  cost_kind: 'acquisition' | 'enrichment';
+  provider: string;
+  product: string;
+}): Promise<CostRateCardCurrentResponse> {
+  return registryFetchJson<CostRateCardCurrentResponse>('cost-rate-cards', {
+    method: 'GET',
+    search: {
+      cost_kind: params.cost_kind,
+      provider: params.provider,
+      product: params.product,
+    },
+  });
+}
+
+export async function fetchCostRateCardsList(): Promise<CostRateCardsListResponse> {
+  return registryFetchJson<CostRateCardsListResponse>('cost-rate-cards', { method: 'GET' });
+}
+
+export async function postCostRateCard(body: {
+  cost_kind: 'acquisition' | 'enrichment';
+  provider: string;
+  product: string;
+  unit_price_cents: number;
+  currency?: string;
+  notes?: string;
+  retire_previous?: boolean;
+}): Promise<{ id: string }> {
+  return registryFetchJson<{ id: string }>('cost-rate-cards', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
 }
 
@@ -645,6 +685,8 @@ export type ExportCompanyOwnerLeadsParams = {
   include_contact?: boolean;
   /** When true (and include_contact), adds score/tier/reason columns. Ignored if include_contact is false. */
   include_contact_confidence?: boolean;
+  /** When true, API adds per-row acquisition/enrichment cost columns (USD cents). */
+  include_cost?: boolean;
 };
 
 export type ExportCompanyChainPeopleParams = ExportCompanyOwnerLeadsParams & {
@@ -673,6 +715,7 @@ export async function fetchExportCompanyOwnerLeads(
       has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
       include_contact: params?.include_contact === true ? 'true' : undefined,
       include_contact_confidence: params?.include_contact_confidence === true ? 'true' : undefined,
+      include_cost: params?.include_cost === true ? 'true' : undefined,
     },
   });
 }
@@ -700,6 +743,7 @@ export async function fetchExportCompanyChainPeople(
       max_chains: params?.max_chains,
       include_contact: params?.include_contact === true ? 'true' : undefined,
       include_contact_confidence: params?.include_contact_confidence === true ? 'true' : undefined,
+      include_cost: params?.include_cost === true ? 'true' : undefined,
     },
   });
 }

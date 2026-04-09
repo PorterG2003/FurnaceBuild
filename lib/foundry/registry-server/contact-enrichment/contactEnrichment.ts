@@ -1001,6 +1001,12 @@ export async function promoteContactEnrichmentPersonToMatch(
   }
 }
 
+export type ContactEnrichmentResolvedCost = {
+  unitPriceCents: number;
+  rateCardId: string | null;
+  isOverride: boolean;
+};
+
 export async function persistContactEnrichmentAttempt(
   leadsClient: SupabaseClient,
   params: {
@@ -1010,9 +1016,25 @@ export async function persistContactEnrichmentAttempt(
     responsePayload: unknown;
     httpStatus: number;
     decision: ContactEnrichmentMatchDecision;
+    /** When set and the attempt is billable (HTTP 2xx), stamped on the row. */
+    resolvedCost?: ContactEnrichmentResolvedCost | null;
   },
 ): Promise<void> {
   const meta = params.decision.metadata;
+  const billable = params.httpStatus >= 200 && params.httpStatus < 300;
+  const rc = params.resolvedCost;
+  const costFields =
+    billable && rc
+      ? {
+          cost_amount_cents: rc.unitPriceCents,
+          cost_rate_card_id: rc.rateCardId,
+          cost_is_override: rc.isOverride,
+        }
+      : {
+          cost_amount_cents: null,
+          cost_rate_card_id: null,
+          cost_is_override: false,
+        };
   const { data: attempt, error: attemptErr } = await leadsClient
     .from('contact_enrichment_attempts')
     .insert({
@@ -1043,7 +1065,8 @@ export async function persistContactEnrichmentAttempt(
       scoring_version: meta?.scoring_version ?? null,
       ruleset_version: meta?.ruleset_version ?? null,
       ruleset_preset: meta?.ruleset_preset ?? null,
-      is_billable_candidate: params.httpStatus >= 200 && params.httpStatus < 300,
+      is_billable_candidate: billable,
+      ...costFields,
       error_summary:
         params.decision.classification === 'error'
           ? JSON.stringify(params.decision.issues?.[0] ?? { message: 'Contact enrichment error' })

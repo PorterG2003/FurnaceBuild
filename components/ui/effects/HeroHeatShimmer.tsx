@@ -8,6 +8,8 @@ type Tint = "none" | "ember";
 type Props = {
   className?: string;
   children?: React.ReactNode;
+  /** Rendered above the background layers but below `children` (e.g. floating particles). */
+  midground?: React.ReactNode;
   intensity?: Intensity;
   speed?: Speed;
   tint?: Tint;
@@ -19,7 +21,8 @@ type Props = {
 // Respects prefers-reduced-motion by disabling shimmer animation.
 export function HeroHeatShimmer({ 
   className, 
-  children, 
+  children,
+  midground,
   intensity = "low",
   speed = "slow",
   tint = "none"
@@ -57,6 +60,12 @@ export function HeroHeatShimmer({
         {/* Bottom glow */}
         <View className="absolute inset-x-0 bottom-0 h-[30vh] w-full bg-[radial-gradient(100%_100%_at_50%_100%,rgba(255,77,0,0.35)_0%,rgba(255,77,0,0.20)_50%,transparent_100%)]" />
       </View>
+
+      {midground ? (
+        <View className="absolute inset-0 z-[5] pointer-events-none overflow-hidden">
+          {midground}
+        </View>
+      ) : null}
 
       {/* Foreground content */}
       <View className="relative z-10 flex-1">{children}</View>

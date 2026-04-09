@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { BaseModal } from '@/components/ui/modals/BaseModal';
 import {
+  fetchCurrentCostRate,
   postContactEnrichmentPreflight,
   postStartContactEnrichmentIngestionJob,
 } from '@/lib/foundry/registry-client';
@@ -123,6 +124,28 @@ export function ContactEnrichmentPanel({ ingestionRunId }: { ingestionRunId: str
     ruleset_preset: 'balanced',
     queue_ambiguous_for_review: false,
   });
+  const [costLookupInput, setCostLookupInput] = useState('');
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void fetchCurrentCostRate({
+      cost_kind: 'enrichment',
+      provider: 'skipsherpa',
+      product: 'person_lookup',
+    })
+      .then((res) => {
+        if (cancelled) return;
+        const cents = res.rate?.unitPriceCents;
+        if (cents != null && Number.isFinite(cents)) {
+          setCostLookupInput((prev) => (prev.trim() === '' ? String(Math.trunc(cents)) : prev));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -209,7 +232,13 @@ export function ContactEnrichmentPanel({ ingestionRunId }: { ingestionRunId: str
                 setBusy(true);
                 setError(null);
                 try {
-                  const response = await postStartContactEnrichmentIngestionJob(ingestionRunId, draft);
+                  const costRaw = costLookupInput.trim();
+                  const parsedCost = costRaw === '' ? NaN : Number.parseInt(costRaw, 10);
+                  const costPerLookupCents = Number.isFinite(parsedCost) && parsedCost >= 0 ? parsedCost : undefined;
+                  const response = await postStartContactEnrichmentIngestionJob(ingestionRunId, {
+                    ...draft,
+                    ...(costPerLookupCents != null ? { cost_per_lookup_cents: costPerLookupCents } : {}),
+                  });
                   setStartedJobId(response.jobId);
                   setStartedReused(Boolean(response.reused));
                   setPreflight(response.preflight);
@@ -279,6 +308,23 @@ export function ContactEnrichmentPanel({ ingestionRunId }: { ingestionRunId: str
               setDraft((current) => ({ ...current, queue_ambiguous_for_review: !current.queue_ambiguous_for_review }))
             }
           />
+
+          <View>
+            <Text className="text-gray-500 font-instrument text-xs uppercase tracking-wider mb-2">
+              Cost per lookup (cents)
+            </Text>
+            <TextInput
+              value={costLookupInput}
+              onChangeText={setCostLookupInput}
+              placeholder="e.g. 15"
+              placeholderTextColor="#6b7280"
+              keyboardType="number-pad"
+              className="border border-[#3A3A3A] rounded-xl px-3 py-2.5 text-white font-instrument text-sm bg-[#202020]"
+            />
+            <Text className="text-gray-500 font-instrument text-xs mt-1 leading-5">
+              Billable HTTP 2xx attempts use this rate. Leave blank to use the active rate card default.
+            </Text>
+          </View>
 
           <View className="rounded-2xl border border-[#2A2A2A] bg-[#161616] px-4 py-4">
             <Text className="text-gray-500 font-instrument text-xs uppercase tracking-wider mb-2">Preview</Text>

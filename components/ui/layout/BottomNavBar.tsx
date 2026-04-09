@@ -23,7 +23,10 @@ const navItems = [
 
 function isActive(path: string, pathname: string | null) {
   if (path === '/campaigns') {
-    return pathname === '/campaigns' || pathname === '/';
+    return pathname === '/campaigns';
+  }
+  if (path === '/inbox') {
+    return pathname === '/inbox' || pathname === '/';
   }
   if (path === '/senders') {
     return pathname === '/senders' || (pathname?.startsWith('/senders/') ?? false);

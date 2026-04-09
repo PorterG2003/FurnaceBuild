@@ -4,6 +4,12 @@ import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/feedback';
+import {
+  authInputClassName,
+  authInputStyle,
+  authLabelClassName,
+  authPlaceholderColor,
+} from '@/components/auth/authFormStyles';
 
 interface SignInFormProps {
   onGoToSignUp: () => void;
@@ -69,7 +75,7 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
       </Text>
 
       <View className="mb-4">
-        <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Email</Text>
+        <Text className={authLabelClassName}>Email</Text>
         <TextInput
           value={email}
           onChangeText={(text) => {
@@ -77,15 +83,11 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
             setError('');
           }}
           placeholder="Enter your email"
+          placeholderTextColor={authPlaceholderColor}
           autoCapitalize="none"
           keyboardType="email-address"
-          className="border border-white/30 rounded-xl px-4 py-4 bg-white/5 backdrop-blur-sm text-base text-white placeholder-gray-300 focus:border-brand-orange focus:ring-0 focus:bg-white/10"
-          style={{
-            borderColor: '#FFFFFF4D',
-            backgroundColor: '#FFFFFF0D',
-            color: '#FFFFFF',
-            borderWidth: 1,
-          }}
+          className={authInputClassName}
+          style={authInputStyle}
           selectionColor="#FF4D00"
           underlineColorAndroid="transparent"
           autoComplete="email"
@@ -93,7 +95,7 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
       </View>
 
       <View className="mb-4">
-        <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Password</Text>
+        <Text className={authLabelClassName}>Password</Text>
         <TextInput
           value={password}
           onChangeText={(text) => {
@@ -101,14 +103,10 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
             setError('');
           }}
           placeholder="Enter your password"
+          placeholderTextColor={authPlaceholderColor}
           secureTextEntry
-          className="border border-white/30 rounded-xl px-4 py-4 bg-white/5 backdrop-blur-sm text-base text-white placeholder-gray-300 focus:border-brand-orange focus:ring-0 focus:bg-white/10"
-          style={{
-            borderColor: '#FFFFFF4D',
-            backgroundColor: '#FFFFFF0D',
-            color: '#FFFFFF',
-            borderWidth: 1,
-          }}
+          className={authInputClassName}
+          style={authInputStyle}
           selectionColor="#FF4D00"
           underlineColorAndroid="transparent"
           autoComplete="password"

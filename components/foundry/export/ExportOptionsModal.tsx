@@ -19,6 +19,8 @@ export interface ExportOptionsState {
   includeContactEnrichment: boolean;
   /** Adds tier/score/reason columns; requires includeContactEnrichment. */
   includeContactConfidence: boolean;
+  /** Adds per-row cost columns (USD cents) to CSV and API when enabled. */
+  includeCost: boolean;
 }
 
 function HintIcon({ title, hint }: { title: string; hint: string }) {
@@ -112,7 +114,7 @@ export function ExportOptionsModal({
   const [draft, setDraft] = useState<ExportOptionsState>(options);
 
   useEffect(() => {
-    if (visible) setDraft(options);
+    if (visible) setDraft({ ...options, includeCost: options.includeCost ?? false });
   }, [options, visible]);
 
   const { previewLine, previewHintFull } = useMemo(() => {
@@ -252,6 +254,16 @@ export function ExportOptionsModal({
           </>
         ) : null}
 
+        <ExportOptionRow
+          label="Include per-row cost (cents)"
+          hint="Adds acquisition split, enrichment, and total cost columns from rate cards and recorded runs. Uses USD cents in API and CSV."
+          trailing={
+            <Toggle
+              value={draft.includeCost}
+              onValueChange={(includeCost) => setDraft((c) => ({ ...c, includeCost }))}
+            />
+          }
+        />
         <ExportOptionRow
           label="Include matched contacts in export"
           hint="Adds up to three emails and three phone numbers per person from the latest accepted enrichment match. Preview table stays compact; columns appear in CSV."

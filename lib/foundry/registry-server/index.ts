@@ -11,6 +11,7 @@ export * from './state-persistence/persistFloridaRegistry.js';
 export * from './state-persistence/persistStateEntityCurrent.js';
 export * from './state-persistence/ownerDrilldown.js';
 export * from './contact-enrichment/contactEnrichment.js';
+export * from './costRateCards.js';
 export * from './scrapers/cleanCompanyNameForSearch.js';
 export * from './scrapers/normalizeNames.js';
 export * from './scrapers/compareTypes.js';

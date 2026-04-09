@@ -134,6 +134,17 @@ export const handler = async (event: ChunkEvent | FinalizeEvent | FailEvent): Pr
         : undefined;
   const queueAmbiguousForReview =
     payload.queue_ambiguous_for_review === true || payload.queueAmbiguousForReview === true;
+
+  const costPerLookupRaw = payload.cost_per_lookup_cents;
+  const resolvedCost =
+    typeof costPerLookupRaw === 'number' && Number.isFinite(costPerLookupRaw)
+      ? {
+          unitPriceCents: Math.max(0, Math.trunc(costPerLookupRaw)),
+          rateCardId: typeof payload.cost_rate_card_id === 'string' ? payload.cost_rate_card_id : null,
+          isOverride: payload.cost_is_override === true,
+        }
+      : null;
+
   if (progress.total_targets == null) {
     const { count, error: countErr } = await client
       .from('contact_enrichment_targets')
@@ -195,6 +206,7 @@ export const handler = async (event: ChunkEvent | FinalizeEvent | FailEvent): Pr
       responsePayload: rawResult ?? providerResponse.body,
       httpStatus: providerResponse.httpStatus,
       decision,
+      resolvedCost,
     });
     progress = applyClassification(progress, decision);
   }

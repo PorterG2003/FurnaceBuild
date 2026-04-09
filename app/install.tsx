@@ -257,7 +257,13 @@ export default function InstallGuideScreen() {
 
   return (
     <>
-      <HeroHeatShimmer intensity="low" speed="slow" tint="ember" className="flex-1">
+      <HeroHeatShimmer
+        intensity="low"
+        speed="slow"
+        tint="ember"
+        className="flex-1"
+        midground={<EmberParticlesLite density="low" maxOpacity={0.06} />}
+      >
         <ScrollView
           className="flex-1"
           contentContainerClassName="grow px-5 py-10 pb-16"
@@ -314,7 +320,6 @@ export default function InstallGuideScreen() {
           </View>
         </ScrollView>
       </HeroHeatShimmer>
-      <EmberParticlesLite density="low" maxOpacity={0.06} />
     </>
   );
 }

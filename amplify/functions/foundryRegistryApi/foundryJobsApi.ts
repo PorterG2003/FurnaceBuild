@@ -11,6 +11,7 @@ import {
   MATCHER_VERSION,
   NORMALIZER_VERSION,
   resolveContactEnrichmentOptions,
+  resolveRunCost,
   stateMatchingJobVersions,
   stateMatchingPreflight,
 } from '@furnace/registry-server';
@@ -486,6 +487,8 @@ export async function startContactEnrichmentIngestionJob(
     batchSize?: number;
     rulesetPreset?: 'conservative' | 'balanced' | 'aggressive';
     queueAmbiguousForReview?: boolean;
+    /** Override cents per lookup; otherwise uses active rate card for skipsherpa/person_lookup. */
+    costPerLookupCents?: number | null;
   },
 ): Promise<ContactEnrichmentJobStartOutcome> {
   const smArn = process.env.FOUNDRY_CONTACT_ENRICHMENT_STATE_MACHINE_ARN?.trim();
@@ -562,6 +565,14 @@ export async function startContactEnrichmentIngestionJob(
     };
   }
 
+  const costResolved = await resolveRunCost(
+    leadsClient,
+    'enrichment',
+    'skipsherpa',
+    'person_lookup',
+    opts?.costPerLookupCents ?? undefined,
+  );
+
   const idempotencyKey = [
     'contact-enrich',
     runId,
@@ -571,6 +582,7 @@ export async function startContactEnrichmentIngestionJob(
     `strong:${resolved.strongTargetsOnly ? 1 : 0}`,
     `ruleset:${resolved.rulesetPreset}`,
     `qamb:${resolved.queueAmbiguousForReview ? 1 : 0}`,
+    `cost:${costResolved?.unitPriceCents ?? 'na'}:ov:${costResolved?.isOverride ? 1 : 0}`,
   ].join(':');
 
   const { data: active, error: activeErr } = await leadsClient
@@ -609,6 +621,13 @@ export async function startContactEnrichmentIngestionJob(
     queue_ambiguous_for_review: resolved.queueAmbiguousForReview,
     contact_enrichment_version: CONTACT_ENRICHMENT_VERSION,
     preflight: preflightResponse,
+    ...(costResolved != null
+      ? {
+          cost_per_lookup_cents: costResolved.unitPriceCents,
+          cost_rate_card_id: costResolved.rateCardId,
+          cost_is_override: costResolved.isOverride,
+        }
+      : {}),
   };
 
   const { data: inserted, error: insErr } = await leadsClient
@@ -1148,12 +1167,18 @@ async function handlePostContactEnrichmentJob(
     batchSize?: number;
     ruleset_preset?: string;
     queue_ambiguous_for_review?: boolean;
+    cost_per_lookup_cents?: number;
   }>(rawBody || '{}');
   if (!parsed.ok) return parsed.response;
 
   const rp = parsed.value.ruleset_preset;
   const rulesetPreset =
     rp === 'conservative' || rp === 'balanced' || rp === 'aggressive' ? rp : undefined;
+
+  const costPerLookup =
+    typeof parsed.value.cost_per_lookup_cents === 'number' && Number.isFinite(parsed.value.cost_per_lookup_cents)
+      ? Math.trunc(parsed.value.cost_per_lookup_cents)
+      : undefined;
 
   const outcome = await startContactEnrichmentIngestionJob(leadsClient, runId, userId, {
     freshnessWindowDays: parsed.value.freshness_window_days,
@@ -1162,6 +1187,7 @@ async function handlePostContactEnrichmentJob(
     batchSize: parsed.value.batchSize,
     rulesetPreset,
     queueAmbiguousForReview: parsed.value.queue_ambiguous_for_review,
+    costPerLookupCents: costPerLookup,
   });
   if (outcome.status === 'started') {
     return jsonResponse(200, {

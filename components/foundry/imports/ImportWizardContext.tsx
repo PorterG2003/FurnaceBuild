@@ -22,6 +22,9 @@ interface ImportWizardContextValue {
   setNotes: (v: string) => void;
   importWarnings: boolean;
   setImportWarnings: (v: boolean) => void;
+  /** Digits only — cents per imported row; empty uses server default rate card. */
+  costPerRowInput: string;
+  setCostPerRowInput: (v: string) => void;
   parsed: ParsedCsv | null;
   setParsed: (v: ParsedCsv | null) => void;
   columnMap: ColumnMappingState | null;
@@ -39,6 +42,7 @@ export function ImportWizardProvider({ children }: { children: React.ReactNode }
   const [importName, setImportName] = useState('');
   const [notes, setNotes] = useState('');
   const [importWarnings, setImportWarnings] = useState(true);
+  const [costPerRowInput, setCostPerRowInput] = useState('');
   const [parsed, setParsed] = useState<ParsedCsv | null>(null);
   const [columnMap, setColumnMap] = useState<ColumnMappingState | null>(null);
   const [lastImportResult, setLastImportResult] = useState<PostGoogleMapsImportResponse | null>(null);
@@ -48,6 +52,7 @@ export function ImportWizardProvider({ children }: { children: React.ReactNode }
     setImportName('');
     setNotes('');
     setImportWarnings(true);
+    setCostPerRowInput('');
     setParsed(null);
     setColumnMap(null);
     setLastImportResult(null);
@@ -63,6 +68,8 @@ export function ImportWizardProvider({ children }: { children: React.ReactNode }
       setNotes,
       importWarnings,
       setImportWarnings,
+      costPerRowInput,
+      setCostPerRowInput,
       parsed,
       setParsed,
       columnMap,
@@ -76,6 +83,7 @@ export function ImportWizardProvider({ children }: { children: React.ReactNode }
       importName,
       notes,
       importWarnings,
+      costPerRowInput,
       parsed,
       columnMap,
       lastImportResult,

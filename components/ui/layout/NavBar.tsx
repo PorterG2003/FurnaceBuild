@@ -122,7 +122,10 @@ export function NavBar() {
 
   const isActive = (path: string) => {
     if (path === '/campaigns') {
-      return pathname === '/campaigns' || pathname === '/';
+      return pathname === '/campaigns';
+    }
+    if (path === '/inbox') {
+      return pathname === '/inbox' || pathname === '/';
     }
     if (path === '/senders') {
       return pathname === '/senders' || pathname?.startsWith('/senders/');

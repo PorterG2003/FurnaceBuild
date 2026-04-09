@@ -159,6 +159,9 @@ export function FoundryDashboard() {
           <Button size="sm" variant="secondary" onPress={() => router.push('/foundry/imports')}>
             All imports
           </Button>
+          <Button size="sm" variant="secondary" onPress={() => router.push('/foundry/cost-settings')}>
+            Cost settings
+          </Button>
           {lastImportRunId ? (
             <>
               <Button

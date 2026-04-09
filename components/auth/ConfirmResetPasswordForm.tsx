@@ -4,6 +4,12 @@ import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/feedback';
+import {
+  authInputClassName,
+  authInputStyle,
+  authLabelClassName,
+  authPlaceholderColor,
+} from '@/components/auth/authFormStyles';
 
 interface ConfirmResetPasswordFormProps {
   email: string;
@@ -12,13 +18,6 @@ interface ConfirmResetPasswordFormProps {
   /** When true, user landed from the reset link and has a recovery session — show the set-new-password form. */
   isRecoverySession?: boolean;
 }
-
-const inputStyle = {
-  borderColor: '#FFFFFF4D',
-  backgroundColor: '#FFFFFF0D',
-  color: '#FFFFFF',
-  borderWidth: 1,
-};
 
 /**
  * Two modes:
@@ -86,7 +85,7 @@ export function ConfirmResetPasswordForm({
         </Text>
 
         <View className="mb-4">
-          <Text className="text-sm font-instrument-medium mb-2 text-gray-300">New Password</Text>
+          <Text className={authLabelClassName}>New Password</Text>
           <TextInput
             value={password}
             onChangeText={(text) => {
@@ -94,9 +93,10 @@ export function ConfirmResetPasswordForm({
               setError('');
             }}
             placeholder="Enter new password"
+            placeholderTextColor={authPlaceholderColor}
             secureTextEntry
-            className="border border-white/30 rounded-xl px-4 py-4 bg-white/5 backdrop-blur-sm text-base text-white placeholder-gray-300 focus:border-brand-orange focus:ring-0 focus:bg-white/10"
-            style={inputStyle}
+            className={authInputClassName}
+            style={authInputStyle}
             selectionColor="#FF4D00"
             underlineColorAndroid="transparent"
             autoComplete="new-password"
@@ -104,7 +104,7 @@ export function ConfirmResetPasswordForm({
         </View>
 
         <View className="mb-4">
-          <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Confirm Password</Text>
+          <Text className={authLabelClassName}>Confirm Password</Text>
           <TextInput
             value={confirmPassword}
             onChangeText={(text) => {
@@ -112,9 +112,10 @@ export function ConfirmResetPasswordForm({
               setError('');
             }}
             placeholder="Confirm new password"
+            placeholderTextColor={authPlaceholderColor}
             secureTextEntry
-            className="border border-white/30 rounded-xl px-4 py-4 bg-white/5 backdrop-blur-sm text-base text-white placeholder-gray-300 focus:border-brand-orange focus:ring-0 focus:bg-white/10"
-            style={inputStyle}
+            className={authInputClassName}
+            style={authInputStyle}
             selectionColor="#FF4D00"
             underlineColorAndroid="transparent"
             autoComplete="new-password"

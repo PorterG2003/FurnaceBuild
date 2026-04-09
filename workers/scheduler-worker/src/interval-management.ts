@@ -29,7 +29,10 @@ export async function maintainCampaignIntervals(
   
   if (error) {
     console.error('[INTERVAL MAINTENANCE] Error loading campaigns:', error);
-    reportErrorToSlack('Scheduler: interval maintenance failed to load campaigns', { severity: 'warning', error: error.message });
+    reportErrorToSlack('Scheduler: interval maintenance failed to load campaigns', {
+      severity: 'warning',
+      error: error.message,
+    });
     return;
   }
   

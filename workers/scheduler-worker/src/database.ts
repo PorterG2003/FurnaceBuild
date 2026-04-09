@@ -65,7 +65,10 @@ export class DatabaseClient {
     } catch (error) {
       console.error('Error claiming enrollments from database:', error);
       const msg = error instanceof Error ? error.message : String(error);
-      reportErrorToSlack('Scheduler: error claiming enrollments from database', { severity: 'critical', error: msg });
+      reportErrorToSlack('Scheduler: error claiming enrollments from database', {
+        severity: 'critical',
+        error: msg,
+      });
       throw error;
     }
   }

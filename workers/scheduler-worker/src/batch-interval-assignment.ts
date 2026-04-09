@@ -27,7 +27,10 @@ export async function batchAssignIntervalJobs(
   
   if (campaignsError) {
     console.error('[BATCH INTERVAL] Error loading campaigns:', campaignsError);
-    reportErrorToSlack('Scheduler: batch interval failed to load campaigns', { severity: 'critical', error: campaignsError.message });
+    reportErrorToSlack('Scheduler: batch interval failed to load campaigns', {
+      severity: 'critical',
+      error: campaignsError.message,
+    });
     return;
   }
   

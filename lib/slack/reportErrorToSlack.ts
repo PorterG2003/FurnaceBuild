@@ -3,9 +3,16 @@
  * No-op if SLACK_ERROR_WEBHOOK_URL is not set. Fire-and-forget: does not throw.
  */
 
+import { mergeConciseGatewayError } from './summarizeUpstreamGatewayError.js';
+
 export interface ReportErrorContext {
   severity?: 'critical' | 'warning';
-  [key: string]: string | undefined;
+  /**
+   * When true (default), Cloudflare/HTML gateway error bodies in `error` are summarized for Slack.
+   * Set false to post the raw `error` string (e.g. debugging).
+   */
+  summarizeGatewayErrors?: boolean;
+  [key: string]: string | boolean | undefined;
 }
 
 /**
@@ -25,12 +32,22 @@ export function reportErrorToSlack(
   const severity = context?.severity ?? 'warning';
   const parts: string[] = [`*[${severity.toUpperCase()}]* ${message}`];
   if (context) {
-    const rest = { ...context };
-    delete rest.severity;
-    for (const [key, value] of Object.entries(rest)) {
-      if (value !== undefined && value !== '') {
-        parts.push(`• ${key}: ${String(value)}`);
+    const summarizeGateway = context.summarizeGatewayErrors !== false;
+    const { severity: _sev, summarizeGatewayErrors: _sum, ...rest } = context;
+
+    let fields: ReportErrorContext = rest;
+
+    if (summarizeGateway && typeof rest.error === 'string' && rest.error.length > 0) {
+      const raw = rest.error;
+      const { error: _err, ...withoutError } = rest;
+      fields = mergeConciseGatewayError(withoutError as ReportErrorContext, raw);
+    }
+
+    for (const [key, value] of Object.entries(fields)) {
+      if (typeof value !== 'string' || value === '') {
+        continue;
       }
+      parts.push(`• ${key}: ${value}`);
     }
   }
   const text = parts.join('\n');

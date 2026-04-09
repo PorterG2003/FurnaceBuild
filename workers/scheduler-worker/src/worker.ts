@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import { formatUnknownError, reportErrorToSlack } from '@furnace/slack-lib';
 import { DatabaseClient } from './database.js';
 import { evaluateFlow } from './flow-evaluation.js';
 import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
@@ -101,7 +101,7 @@ export class SchedulerWorker {
           await this.sleep(this.databaseClient.getPollInterval());
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = formatUnknownError(error);
         const errorStack = error instanceof Error ? error.stack : undefined;
         console.error('Error in scheduler worker main loop:', errorMessage);
         if (errorStack) {

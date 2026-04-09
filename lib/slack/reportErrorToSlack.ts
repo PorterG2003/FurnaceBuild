@@ -60,3 +60,34 @@ export function reportErrorToSlack(
     console.error('[reportErrorToSlack] Failed to post to Slack:', err?.message ?? err);
   });
 }
+
+/**
+ * Stringify thrown values for logs and Slack. Supabase Postgrest/RPC errors are often
+ * plain objects with `message`, not `instanceof Error`, so `String(err)` becomes "[object Object]".
+ */
+export function formatUnknownError(error: unknown): string {
+  if (error === null || error === undefined) {
+    return String(error);
+  }
+  if (error instanceof Error) {
+    return error.message || error.name || String(error);
+  }
+  if (typeof error === 'object') {
+    const o = error as Record<string, unknown>;
+    if (typeof o.message === 'string' && o.message.length > 0) {
+      const parts = [o.message];
+      if (typeof o.code === 'string' && o.code.length > 0) {
+        parts.push(`code=${o.code}`);
+      }
+      if (typeof o.details === 'string' && o.details.length > 0 && o.details !== o.message) {
+        parts.push(o.details);
+      }
+      return parts.join(' | ');
+    }
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}

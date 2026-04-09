@@ -14,10 +14,13 @@ export function summarizeUpstreamGatewayError(raw: string): {
   }
 
   const t = raw.trim();
+  // Full CF error pages include DOCTYPE; edge/minimal 502 pages are often just <html>…<center>cloudflare</center>.
   const looksLikeCloudflareHtml =
-    /<!DOCTYPE html/i.test(t) &&
-    /cloudflare|cf-error-details|cdn-cgi\/styles\/main\.css/i.test(t);
-
+    (/<!DOCTYPE html/i.test(t) &&
+      /cloudflare|cf-error-details|cdn-cgi\/styles\/main\.css/i.test(t)) ||
+    (/<html[\s>]/i.test(t) &&
+      /\bcloudflare\b/i.test(t) &&
+      /\b(50[0-4]|520|521|522|523|524)\b/.test(t));
   if (!looksLikeCloudflareHtml) {
     return null;
   }

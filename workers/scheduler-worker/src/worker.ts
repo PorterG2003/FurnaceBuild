@@ -172,7 +172,10 @@ export class SchedulerWorker {
         
         if (error) {
           console.error('[STALE LOCK CLEANUP] Error:', error);
-          reportErrorToSlack('Scheduler: stale lock cleanup RPC failed', { severity: 'warning', error: error.message });
+          reportErrorToSlack('Scheduler: stale lock cleanup RPC failed', {
+            severity: 'warning',
+            error: error.message,
+          });
         } else if (data > 0) {
           console.log(`[STALE LOCK CLEANUP] Released ${data} stale locks`);
         }
@@ -197,7 +200,10 @@ export class SchedulerWorker {
         
         if (error) {
           console.error('[PROCESSED INTERVAL CHECK] Error:', error);
-          reportErrorToSlack('Scheduler: processed interval check RPC failed', { severity: 'warning', error: error.message });
+          reportErrorToSlack('Scheduler: processed interval check RPC failed', {
+            severity: 'warning',
+            error: error.message,
+          });
         } else if (data > 0) {
           console.log(`[PROCESSED INTERVAL CHECK] Updated ${data} processed interval(s)`);
         }
@@ -610,10 +616,11 @@ export class SchedulerWorker {
       // Store a short clue for the UI (what/where/why); max 500 chars, single line
       const stoppedErrorMessage = errorMessage.replace(/\s+/g, ' ').trim().slice(0, 500) || null;
 
-      reportErrorToSlack(`Enrollment processing error: ${errorMessage}`, {
+      reportErrorToSlack('Enrollment processing error', {
         severity: 'critical',
         enrollment_id: enrollment.id,
         campaign_id: enrollment.campaign_id,
+        error: errorMessage,
       });
 
       // Try to update enrollment state to indicate error (don't fail if this fails)

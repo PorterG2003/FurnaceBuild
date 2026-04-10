@@ -202,6 +202,88 @@ function StateDialCard({
   );
 }
 
+function WebsiteVerificationDialCard({
+  pipeline,
+}: {
+  pipeline: IngestionRunPipelineJobsResponse;
+}) {
+  const job = pipeline.website_verification_job;
+  if (!job) {
+    return (
+      <Card variant="card" className="flex-1 min-w-[220px]">
+        <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">Website verify</Text>
+        <Text className="text-white font-instrument-semibold text-sm mb-2">Website verification not started</Text>
+        <Text className="text-gray-500 font-instrument text-xs leading-5">
+          Run this manually to verify whether the on-file website appears to belong to each linked company.
+        </Text>
+      </Card>
+    );
+  }
+
+  const progress = progressOf(job);
+  const total = Math.max(0, Math.floor(Number(progress.in_scope_total) || 0));
+  const usable =
+    job.status === 'queued' || job.status === 'running'
+      ? clamp(num(progress.outcome_usable), total)
+      : clamp(num(pipeline.website_verification_outcome_counts?.usable), total);
+  const uncertain =
+    job.status === 'queued' || job.status === 'running'
+      ? clamp(num(progress.outcome_uncertain), total)
+      : clamp(num(pipeline.website_verification_outcome_counts?.uncertain), total);
+  const notUsable =
+    job.status === 'queued' || job.status === 'running'
+      ? clamp(num(progress.outcome_not_usable), total)
+      : clamp(num(pipeline.website_verification_outcome_counts?.not_usable), total);
+  const error =
+    job.status === 'queued' || job.status === 'running'
+      ? clamp(num(progress.outcome_error), total)
+      : clamp(num(pipeline.website_verification_outcome_counts?.error), total);
+  const processed = clamp(num(progress.companies_processed), total);
+  const pending = Math.max(0, total - processed);
+  const skipped = Math.max(
+    0,
+    job.status === 'queued' || job.status === 'running'
+      ? num(progress.outcome_skipped)
+      : num(pipeline.website_verification_outcome_counts?.skipped),
+  );
+  const ringTotal = Math.max(total + skipped, pending + usable + uncertain + notUsable + error + skipped);
+
+  return (
+    <Card variant="card" className="flex-1 min-w-[220px]">
+      <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">Website verify</Text>
+      <MultiSegmentDial
+        total={Math.max(ringTotal, 1)}
+        size={132}
+        strokeWidth={10}
+        centerValue={processed}
+        centerTotal={Math.max(total, 1)}
+        centerTopLabel="Processed"
+        centerBottomLabel="Companies"
+        segments={[
+          { value: pending, color: '#6B7280' },
+          { value: usable, color: '#10B981' },
+          { value: uncertain, color: '#8B5CF6' },
+          { value: notUsable, color: '#F59E0B' },
+          { value: error, color: '#EF4444' },
+          { value: skipped, color: '#3B82F6' },
+        ]}
+        legend={{
+          placement: 'bottom',
+          rows: [
+            { label: 'Pending', value: pending, color: '#6B7280' },
+            { label: 'Usable', value: usable, color: '#10B981' },
+            { label: 'Uncertain', value: uncertain, color: '#8B5CF6' },
+            { label: 'Not usable', value: notUsable, color: '#F59E0B' },
+            { label: 'Error', value: error, color: '#EF4444' },
+            { label: 'Skipped', value: skipped, color: '#3B82F6' },
+          ],
+        }}
+      />
+      <Text className="text-gray-500 font-instrument text-xs mt-2">Status: {jobStatusLabel(job)}</Text>
+    </Card>
+  );
+}
+
 export function ImportPipelineDials({ ingestionRunId }: Props) {
   const [pipeline, setPipeline] = useState<IngestionRunPipelineJobsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -313,6 +395,8 @@ export function ImportPipelineDials({ ingestionRunId }: Props) {
           <ContactEnrichmentDialCard pipeline={pipeline} />
 
           <StateDialCard pipeline={pipeline} />
+
+          <WebsiteVerificationDialCard pipeline={pipeline} />
 
           <Card variant="card" className="flex-1 min-w-[220px]">
             <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">Queue</Text>

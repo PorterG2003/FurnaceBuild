@@ -10,6 +10,8 @@ export function formatFoundryJobType(jobType: string): string {
       return 'Contact enrichment';
     case 'state_matching_batch':
       return 'State matching';
+    case 'website_verification_import_run':
+      return 'Website verify';
     case 'bulk_source_resolution':
       return 'Bulk resolution';
     default:

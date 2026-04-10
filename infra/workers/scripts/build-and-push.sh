@@ -18,7 +18,7 @@ fi
 
 # Parse arguments
 ENVIRONMENT="${1:-dev}"
-WORKER="${2:-all}"  # send-worker, scheduler-worker, inbox-checker-worker, smartlead-migration-task, utah-scraper, florida-scraper, or all
+WORKER="${2:-all}"  # send-worker, scheduler-worker, inbox-checker-worker, smartlead-migration-task, utah-scraper, florida-scraper, website-verification, or all
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 ACCOUNT="${CDK_DEFAULT_ACCOUNT:-686255981838}"
@@ -26,14 +26,14 @@ ACCOUNT="${CDK_DEFAULT_ACCOUNT:-686255981838}"
 # Validate environment
 if [ "$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "prod" ]; then
   echo "❌ Error: Environment must be 'dev' or 'prod'"
-  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|smartlead-migration-task|utah-scraper|florida-scraper|all]"
+  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|smartlead-migration-task|utah-scraper|florida-scraper|website-verification|all]"
   exit 1
 fi
 
 # Validate worker
-if [ "$WORKER" != "send-worker" ] && [ "$WORKER" != "scheduler-worker" ] && [ "$WORKER" != "inbox-checker-worker" ] && [ "$WORKER" != "smartlead-migration-task" ] && [ "$WORKER" != "utah-scraper" ] && [ "$WORKER" != "florida-scraper" ] && [ "$WORKER" != "all" ]; then
-  echo "❌ Error: Worker must be 'send-worker', 'scheduler-worker', 'inbox-checker-worker', 'smartlead-migration-task', 'utah-scraper', 'florida-scraper', or 'all'"
-  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|smartlead-migration-task|utah-scraper|florida-scraper|all]"
+if [ "$WORKER" != "send-worker" ] && [ "$WORKER" != "scheduler-worker" ] && [ "$WORKER" != "inbox-checker-worker" ] && [ "$WORKER" != "smartlead-migration-task" ] && [ "$WORKER" != "utah-scraper" ] && [ "$WORKER" != "florida-scraper" ] && [ "$WORKER" != "website-verification" ] && [ "$WORKER" != "all" ]; then
+  echo "❌ Error: Worker must be 'send-worker', 'scheduler-worker', 'inbox-checker-worker', 'smartlead-migration-task', 'utah-scraper', 'florida-scraper', 'website-verification', or 'all'"
+  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|smartlead-migration-task|utah-scraper|florida-scraper|website-verification|all]"
   exit 1
 fi
 
@@ -62,6 +62,8 @@ get_repo_uri() {
     output_key="UtahScraperTaskRepoUri"
   elif [ "$repo_name" = "florida-scraper" ]; then
     output_key="FloridaScraperTaskRepoUri"
+  elif [ "$repo_name" = "website-verification" ]; then
+    output_key="WebsiteVerificationTaskRepoUri"
   else
     output_key="InboxCheckerWorkerRepoUri"
   fi
@@ -99,6 +101,9 @@ dockerfile_path_for_worker() {
   case "$worker_name" in
     utah-scraper|florida-scraper)
       echo "$PROJECT_ROOT/workers/state-scrapers/$worker_name/Dockerfile"
+      ;;
+    website-verification)
+      echo "$PROJECT_ROOT/workers/state-scrapers/website-verification-worker/Dockerfile"
       ;;
     *)
       echo "$PROJECT_ROOT/workers/$worker_name/Dockerfile"
@@ -167,6 +172,7 @@ if [ "$WORKER" = "all" ]; then
   build_and_push_worker "smartlead-migration-task"
   build_and_push_worker "utah-scraper"
   build_and_push_worker "florida-scraper"
+  build_and_push_worker "website-verification"
 else
   build_and_push_worker "$WORKER"
 fi

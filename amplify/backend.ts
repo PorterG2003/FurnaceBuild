@@ -20,6 +20,7 @@ import { foundryNormalizeJob } from './functions/foundryNormalizeJob/resource';
 import { foundryAutolinkJob } from './functions/foundryAutolinkJob/resource';
 import { foundryContactEnrichmentJob } from './functions/foundryContactEnrichmentJob/resource';
 import { foundryStateMatchingJob } from './functions/foundryStateMatchingJob/resource';
+import { foundryWebsiteVerificationJob } from './functions/foundryWebsiteVerificationJob/resource';
 import { processNotificationEvent } from './functions/processNotificationEvent/resource';
 
 // Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
@@ -48,6 +49,7 @@ const backend = defineBackend({
   foundryAutolinkJob,
   foundryContactEnrichmentJob,
   foundryStateMatchingJob,
+  foundryWebsiteVerificationJob,
   processNotificationEvent,
   ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
@@ -383,6 +385,9 @@ const workerPublicSubnetIds = cdk.Fn.split(
 const ecsTaskExecutionRoleArn = cdk.Fn.importValue(`FurnaceEcsTaskExecutionRole-${workerEnvironment}`);
 const utahScraperTaskRoleArn = cdk.Fn.importValue(`FurnaceUtahScraperTaskRole-${workerEnvironment}`);
 const floridaScraperTaskRoleArn = cdk.Fn.importValue(`FurnaceFloridaScraperTaskRole-${workerEnvironment}`);
+const websiteVerificationTaskRoleArn = cdk.Fn.importValue(
+  `FurnaceWebsiteVerificationTaskRole-${workerEnvironment}`,
+);
 const utahScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
   foundryNormalizeStack,
   `/furnace/ecs/${workerEnvironment}/utah-scraper/task-definition-arn`,
@@ -390,6 +395,10 @@ const utahScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParameter
 const floridaScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
   foundryNormalizeStack,
   `/furnace/ecs/${workerEnvironment}/florida-scraper/task-definition-arn`,
+);
+const websiteVerificationTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
+  foundryNormalizeStack,
+  `/furnace/ecs/${workerEnvironment}/website-verification/task-definition-arn`,
 );
 
 function buildStateScraperRunTask(
@@ -548,6 +557,118 @@ const foundryStateMatchingStateMachineArn = cdk.Stack.of(foundryNormalizeStack).
   arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
 });
 
+const foundryWebsiteVerificationLambda = backend.foundryWebsiteVerificationJob.resources.lambda as lambda.Function;
+foundryWebsiteVerificationLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
+
+const foundryWebsiteVerificationRunTask = new sfn.CustomState(foundryNormalizeStack, 'FoundryWebsiteVerificationRunTask', {
+  stateJson: {
+    Type: 'Task',
+    Resource: 'arn:aws:states:::ecs:runTask.sync',
+    ResultPath: '$.ecsTask',
+    Parameters: {
+      LaunchType: 'FARGATE',
+      Cluster: workerClusterName,
+      TaskDefinition: websiteVerificationTaskDefinitionArn,
+      NetworkConfiguration: {
+        AwsvpcConfiguration: {
+          Subnets: workerPublicSubnetIds,
+          SecurityGroups: [workerSecurityGroupId],
+          AssignPublicIp: 'ENABLED',
+        },
+      },
+      Overrides: {
+        ContainerOverrides: [
+          {
+            Name: 'website-verification-worker',
+            Environment: [
+              { Name: 'JOB_ID', 'Value.$': '$.jobId' },
+              { Name: 'COMPANY_IDS_JSON', 'Value.$': 'States.JsonToString($.companyIds)' },
+            ],
+          },
+        ],
+      },
+    },
+  },
+});
+const foundryWebsiteVerificationFinalize = new sfnTasks.LambdaInvoke(
+  foundryNormalizeStack,
+  'FoundryWebsiteVerificationFinalize',
+  {
+    lambdaFunction: foundryWebsiteVerificationLambda,
+    payload: sfn.TaskInput.fromObject({
+      action: 'finalize',
+      'jobId.$': '$.jobId',
+    }),
+    payloadResponseOnly: true,
+  },
+);
+const foundryWebsiteVerificationFail = new sfnTasks.LambdaInvoke(
+  foundryNormalizeStack,
+  'FoundryWebsiteVerificationFail',
+  {
+    lambdaFunction: foundryWebsiteVerificationLambda,
+    payload: sfn.TaskInput.fromObject({
+      action: 'fail',
+      'jobId.$': '$.jobId',
+      'message.$': '$.error.Cause',
+    }),
+    payloadResponseOnly: true,
+  },
+);
+const foundryWebsiteVerificationDone = new sfn.Succeed(foundryNormalizeStack, 'FoundryWebsiteVerificationDone');
+const foundryWebsiteVerificationAfterFail = new sfn.Succeed(
+  foundryNormalizeStack,
+  'FoundryWebsiteVerificationAfterFail',
+);
+foundryWebsiteVerificationFinalize.next(foundryWebsiteVerificationDone);
+foundryWebsiteVerificationFail.next(foundryWebsiteVerificationAfterFail);
+foundryWebsiteVerificationRunTask.addCatch(foundryWebsiteVerificationFail, {
+  errors: [sfn.Errors.ALL],
+  resultPath: '$.error',
+});
+foundryWebsiteVerificationFinalize.addCatch(foundryWebsiteVerificationFail, {
+  errors: [sfn.Errors.ALL],
+  resultPath: '$.error',
+});
+foundryWebsiteVerificationRunTask.next(foundryWebsiteVerificationFinalize);
+
+const foundryWebsiteVerificationStateMachineName = `foundry-website-verification-${workerEnvironment}`;
+const foundryWebsiteVerificationStateMachine = new sfn.StateMachine(
+  foundryNormalizeStack,
+  'FoundryWebsiteVerificationSm',
+  {
+    stateMachineName: foundryWebsiteVerificationStateMachineName,
+    definitionBody: sfn.DefinitionBody.fromChainable(foundryWebsiteVerificationRunTask),
+  },
+);
+foundryWebsiteVerificationStateMachine.role.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryWebsiteVerificationRunEcsTasks',
+    actions: ['ecs:RunTask', 'ecs:DescribeTasks', 'ecs:StopTask'],
+    resources: ['*'],
+  }),
+);
+foundryWebsiteVerificationStateMachine.role.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryWebsiteVerificationEventsForEcsTasks',
+    actions: ['events:PutTargets', 'events:PutRule', 'events:DescribeRule'],
+    resources: ['*'],
+  }),
+);
+foundryWebsiteVerificationStateMachine.role.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryWebsiteVerificationPassEcsRoles',
+    actions: ['iam:PassRole'],
+    resources: [ecsTaskExecutionRoleArn, websiteVerificationTaskRoleArn],
+  }),
+);
+const foundryWebsiteVerificationStateMachineArn = cdk.Stack.of(foundryNormalizeStack).formatArn({
+  service: 'states',
+  resource: 'stateMachine',
+  resourceName: foundryWebsiteVerificationStateMachineName,
+  arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+});
+
 const foundryRegistryLambda = backend.foundryRegistryApi.resources.lambda as lambda.Function;
 foundryRegistryLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 foundryRegistryLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
@@ -555,6 +676,10 @@ foundryRegistryLambda.addEnvironment('FOUNDRY_NORMALIZE_STATE_MACHINE_ARN', foun
 foundryRegistryLambda.addEnvironment('FOUNDRY_AUTOLINK_STATE_MACHINE_ARN', foundryAutolinkStateMachineArn);
 foundryRegistryLambda.addEnvironment('FOUNDRY_CONTACT_ENRICHMENT_STATE_MACHINE_ARN', foundryContactEnrichmentStateMachineArn);
 foundryRegistryLambda.addEnvironment('FOUNDRY_STATE_MATCHING_STATE_MACHINE_ARN', foundryStateMatchingStateMachineArn);
+foundryRegistryLambda.addEnvironment(
+  'FOUNDRY_WEBSITE_VERIFICATION_STATE_MACHINE_ARN',
+  foundryWebsiteVerificationStateMachineArn,
+);
 foundryRegistryLambda.addToRolePolicy(
   new iam.PolicyStatement({
     sid: 'FoundryRegistryStartNormalizeExecution',
@@ -564,6 +689,7 @@ foundryRegistryLambda.addToRolePolicy(
       foundryAutolinkStateMachineArn,
       foundryContactEnrichmentStateMachineArn,
       foundryStateMatchingStateMachineArn,
+      foundryWebsiteVerificationStateMachineArn,
     ],
   }),
 );

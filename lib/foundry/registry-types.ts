@@ -41,8 +41,12 @@ export const FOUNDRY_JOB_TYPES = [
   'contact_enrichment_import_run',
   'bulk_source_resolution',
   'state_matching_batch',
+  'website_verification_import_run',
 ] as const;
 export type FoundryJobType = (typeof FOUNDRY_JOB_TYPES)[number];
+
+export const WEBSITE_VERIFICATION_BANDS = ['usable', 'uncertain', 'not_usable'] as const;
+export type WebsiteVerificationBand = (typeof WEBSITE_VERIFICATION_BANDS)[number];
 
 /** Optional progress JSON on foundry_jobs (UI / workers). */
 export interface FoundryJobProgress {
@@ -69,8 +73,12 @@ export interface FoundryJobProgress {
   outcome_no_match?: number;
   outcome_error?: number;
   outcome_skipped_recent?: number;
+  outcome_usable?: number;
+  outcome_uncertain?: number;
+  outcome_not_usable?: number;
   in_scope_total?: number;
   not_applicable_count?: number;
+  companies_processed?: number;
   companies_with_result?: number;
   reconciliation_outcomes?: Partial<Record<ReconciliationOutcome, number>>;
   current_step?: string;
@@ -168,6 +176,18 @@ export interface PostStartContactEnrichmentJobResponse {
   preflight: ContactEnrichmentPreflightResponse;
 }
 
+export interface WebsiteVerificationPreflightResponse {
+  ready: string[];
+  missing_website: string[];
+}
+
+export interface PostStartWebsiteVerificationJobResponse {
+  jobId: string;
+  executionArn: string;
+  reused?: boolean;
+  preflight: WebsiteVerificationPreflightResponse;
+}
+
 export interface IngestionRunPipelineJobsResponse {
   ingestion_run_id: string;
   total_source_rows: number;
@@ -175,7 +195,11 @@ export interface IngestionRunPipelineJobsResponse {
   autolink_job: FoundryJobRow | null;
   contact_enrichment_job: FoundryJobRow | null;
   state_matching_job: FoundryJobRow | null;
+  website_verification_job: FoundryJobRow | null;
   state_matching_outcome_counts?: Partial<Record<ReconciliationOutcome, number>> | null;
+  website_verification_outcome_counts?:
+    | (Partial<Record<WebsiteVerificationBand, number>> & { error?: number; skipped?: number })
+    | null;
   queue_pending_tasks: number | null;
 }
 
@@ -554,6 +578,35 @@ export interface CompanyEntityMatchRow {
   is_current: boolean;
 }
 
+export interface CompanyWebsiteVerificationPageSignal {
+  url: string;
+  depth: number;
+  title_snippet: string | null;
+  parse_ok: boolean;
+  json_ld_types: string[];
+  sameAs_count?: number;
+  mailto_domain_matches_seed?: boolean | null;
+  footer_copyright_hit?: boolean | null;
+}
+
+export interface CompanyWebsiteVerificationRow {
+  id: string;
+  company_id: string;
+  foundry_job_id: string | null;
+  source_ingestion_run_id: string | null;
+  input_url: string;
+  final_url: string | null;
+  score: number | null;
+  band: WebsiteVerificationBand | null;
+  signals: Record<string, unknown> & { pages?: CompanyWebsiteVerificationPageSignal[] };
+  error: string | null;
+  verifier_version: string;
+  crawl_stats: Record<string, unknown>;
+  verified_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Registry officer/owner row linked to the company via a current entity match. */
 export interface CompanyAssociatedPersonRow {
   id: string;
@@ -621,6 +674,7 @@ export interface ParsedCompanyDetail {
   source_links: CompanySourceLinkRow[];
   entity_matches: CompanyEntityMatchRow[];
   associated_people: CompanyAssociatedPersonRow[];
+  website_verification: CompanyWebsiteVerificationRow | null;
 }
 
 /** @deprecated Use ParsedCompanyDetail — kept for any external references. */
@@ -731,6 +785,71 @@ function parseEntityMatchRow(o: unknown): CompanyEntityMatchRow | null {
   };
 }
 
+function parseWebsiteVerificationPageSignal(o: unknown): CompanyWebsiteVerificationPageSignal | null {
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  const url = parseString(r.url);
+  if (!url) return null;
+  return {
+    url,
+    depth: parseNumber(r.depth) ?? 0,
+    title_snippet: r.title_snippet == null ? null : parseNullableString(r.title_snippet),
+    parse_ok: parseBool(r.parse_ok),
+    json_ld_types: Array.isArray(r.json_ld_types)
+      ? r.json_ld_types.map((item) => parseString(item)).filter(Boolean)
+      : [],
+    sameAs_count: parseNumber(r.sameAs_count) ?? undefined,
+    mailto_domain_matches_seed:
+      typeof r.mailto_domain_matches_seed === 'boolean' ? r.mailto_domain_matches_seed : null,
+    footer_copyright_hit: typeof r.footer_copyright_hit === 'boolean' ? r.footer_copyright_hit : null,
+  };
+}
+
+function parseWebsiteVerificationRow(o: unknown): CompanyWebsiteVerificationRow | null {
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  const id = parseString(r.id);
+  const company_id = parseString(r.company_id);
+  const input_url = parseString(r.input_url);
+  const verifier_version = parseString(r.verifier_version);
+  const verified_at = parseString(r.verified_at);
+  const created_at = parseString(r.created_at);
+  const updated_at = parseString(r.updated_at);
+  if (!id || !company_id || !input_url || !verifier_version || !verified_at || !created_at || !updated_at) {
+    return null;
+  }
+  const signalsRaw = r.signals && typeof r.signals === 'object' ? (r.signals as Record<string, unknown>) : {};
+  const pagesRaw = signalsRaw.pages;
+  return {
+    id,
+    company_id,
+    foundry_job_id: r.foundry_job_id == null ? null : parseNullableString(r.foundry_job_id),
+    source_ingestion_run_id:
+      r.source_ingestion_run_id == null ? null : parseNullableString(r.source_ingestion_run_id),
+    input_url,
+    final_url: r.final_url == null ? null : parseNullableString(r.final_url),
+    score: parseNumber(r.score),
+    band:
+      r.band == null
+        ? null
+        : WEBSITE_VERIFICATION_BANDS.includes(parseString(r.band) as WebsiteVerificationBand)
+          ? (parseString(r.band) as WebsiteVerificationBand)
+          : null,
+    signals: {
+      ...signalsRaw,
+      pages: Array.isArray(pagesRaw)
+        ? (pagesRaw.map(parseWebsiteVerificationPageSignal).filter(Boolean) as CompanyWebsiteVerificationPageSignal[])
+        : [],
+    },
+    error: r.error == null ? null : parseNullableString(r.error),
+    verifier_version,
+    crawl_stats: r.crawl_stats && typeof r.crawl_stats === 'object' ? (r.crawl_stats as Record<string, unknown>) : {},
+    verified_at,
+    created_at,
+    updated_at,
+  };
+}
+
 function parseAssociatedPersonRow(o: unknown): CompanyAssociatedPersonRow | null {
   if (!o || typeof o !== 'object') return null;
   const r = o as Record<string, unknown>;
@@ -826,6 +945,7 @@ export function parseCompanyDetailResponse(raw: unknown): ParsedCompanyDetail {
   const linksRaw = o.source_links;
   const matchesRaw = o.entity_matches;
   const peopleRaw = o.associated_people;
+  const websiteVerificationRaw = o.website_verification;
 
   return {
     company: parseCompanyRow(o.company),
@@ -841,6 +961,7 @@ export function parseCompanyDetailResponse(raw: unknown): ParsedCompanyDetail {
     associated_people: Array.isArray(peopleRaw)
       ? (peopleRaw.map(parseAssociatedPersonRow).filter(Boolean) as CompanyAssociatedPersonRow[])
       : [],
+    website_verification: parseWebsiteVerificationRow(websiteVerificationRaw),
   };
 }
 

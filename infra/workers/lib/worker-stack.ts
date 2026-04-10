@@ -60,6 +60,7 @@ export class WorkerStack extends cdk.Stack {
   public readonly smartleadMigrationTaskRepo: ecr.Repository;
   public readonly utahScraperTaskRepo: ecr.Repository;
   public readonly floridaScraperTaskRepo: ecr.Repository;
+  public readonly websiteVerificationTaskRepo: ecr.Repository;
 
   constructor(scope: Construct, id: string, props: WorkerStackProps) {
     super(scope, id, props);
@@ -146,6 +147,12 @@ export class WorkerStack extends cdk.Stack {
       lifecycleRules: [{ maxImageCount: 10 }],
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+    const websiteVerificationTaskRepo = new ecr.Repository(this, 'WebsiteVerificationTaskRepo', {
+      repositoryName: `furnace/website-verification-${environment}`,
+      imageScanOnPush: true,
+      lifecycleRules: [{ maxImageCount: 10 }],
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
 
     this.sendWorkerRepo = sendWorkerRepo;
     this.schedulerWorkerRepo = schedulerWorkerRepo;
@@ -153,6 +160,7 @@ export class WorkerStack extends cdk.Stack {
     this.smartleadMigrationTaskRepo = smartleadMigrationTaskRepo;
     this.utahScraperTaskRepo = utahScraperTaskRepo;
     this.floridaScraperTaskRepo = floridaScraperTaskRepo;
+    this.websiteVerificationTaskRepo = websiteVerificationTaskRepo;
 
     // ============================================
     // VPC & Networking
@@ -212,6 +220,11 @@ export class WorkerStack extends cdk.Stack {
 
     const floridaScraperTaskLogGroup = new logs.LogGroup(this, 'FloridaScraperTaskLogGroup', {
       logGroupName: `/ecs/furnace/florida-scraper-task-${environment}`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    const websiteVerificationTaskLogGroup = new logs.LogGroup(this, 'WebsiteVerificationTaskLogGroup', {
+      logGroupName: `/ecs/furnace/website-verification-task-${environment}`,
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
@@ -400,6 +413,15 @@ export class WorkerStack extends cdk.Stack {
       actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
       resources: [floridaScraperTaskLogGroup.logGroupArn + ':*'],
     }));
+    const websiteVerificationTaskRole = new iam.Role(this, 'WebsiteVerificationTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      description: `Role for website verification ECS tasks (${environment})`,
+    });
+    websiteVerificationTaskRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'AllowWebsiteVerificationCloudWatchLogs',
+      actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      resources: [websiteVerificationTaskLogGroup.logGroupArn + ':*'],
+    }));
 
     if (utahLeadsConfigured) {
       const paramSuffix = leadsParamTrim!.replace(/^\//, '');
@@ -412,6 +434,13 @@ export class WorkerStack extends cdk.Stack {
       floridaScraperTaskRole.addToPolicy(
         new iam.PolicyStatement({
           sid: 'AllowFloridaLeadsSecretSsm',
+          actions: ['ssm:GetParameters', 'ssm:GetParameter'],
+          resources: [`arn:aws:ssm:${region}:${account}:parameter/${paramSuffix}`],
+        }),
+      );
+      websiteVerificationTaskRole.addToPolicy(
+        new iam.PolicyStatement({
+          sid: 'AllowWebsiteVerificationLeadsSecretSsm',
           actions: ['ssm:GetParameters', 'ssm:GetParameter'],
           resources: [`arn:aws:ssm:${region}:${account}:parameter/${paramSuffix}`],
         }),
@@ -621,6 +650,29 @@ export class WorkerStack extends cdk.Stack {
           : {}),
       },
     });
+    const websiteVerificationTaskDefinition = new ecs.FargateTaskDefinition(this, 'WebsiteVerificationTaskDef', {
+      family: `furnace-website-verification-task-${environment}`,
+      memoryLimitMiB: 2048,
+      cpu: 1024,
+      taskRole: websiteVerificationTaskRole,
+      executionRole: taskExecutionRole,
+    });
+    websiteVerificationTaskDefinition.addContainer('website-verification-worker', {
+      image: ecs.ContainerImage.fromEcrRepository(websiteVerificationTaskRepo, 'latest'),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'website-verification-worker',
+        logGroup: websiteVerificationTaskLogGroup,
+      }),
+      environment: {
+        AWS_REGION: region,
+        ...(utahLeadsConfigured
+          ? {
+              LEADS_SUPABASE_URL: leadsUrlTrim!,
+              LEADS_SUPABASE_SECRET_KEY_PARAM_PATH: leadsParamTrim!,
+            }
+          : {}),
+      },
+    });
 
     // Stable SSM names for latest task definition ARNs (Amplify Lambdas read at runtime; avoids CFN export churn).
     new ssm.StringParameter(this, 'SmartleadMigrationTaskDefinitionArnParam', {
@@ -637,6 +689,11 @@ export class WorkerStack extends cdk.Stack {
       parameterName: `/furnace/ecs/${environment}/florida-scraper/task-definition-arn`,
       stringValue: floridaScraperTaskDefinition.taskDefinitionArn,
       description: 'Current Florida Sunbiz scraper ECS task definition ARN for RunTask',
+    });
+    new ssm.StringParameter(this, 'WebsiteVerificationTaskDefinitionArnParam', {
+      parameterName: `/furnace/ecs/${environment}/website-verification/task-definition-arn`,
+      stringValue: websiteVerificationTaskDefinition.taskDefinitionArn,
+      description: 'Current website verification ECS task definition ARN for RunTask',
     });
 
     // Legacy export: older Amplify stacks still use Fn::ImportValue on this name. Removing it
@@ -688,6 +745,11 @@ export class WorkerStack extends cdk.Stack {
       value: floridaScraperTaskRepo.repositoryUri,
       description: 'ECR repository URI for Florida Sunbiz registry scraper task',
       exportName: `FurnaceFloridaScraperTaskRepo-${environment}`,
+    });
+    new cdk.CfnOutput(this, 'WebsiteVerificationTaskRepoUri', {
+      value: websiteVerificationTaskRepo.repositoryUri,
+      description: 'ECR repository URI for website verification task',
+      exportName: `FurnaceWebsiteVerificationTaskRepo-${environment}`,
     });
 
     new cdk.CfnOutput(this, 'ClusterName', {
@@ -748,6 +810,11 @@ export class WorkerStack extends cdk.Stack {
       value: floridaScraperTaskRole.roleArn,
       description: 'Task role for Florida Sunbiz registry scraper containers',
       exportName: `FurnaceFloridaScraperTaskRole-${environment}`,
+    });
+    new cdk.CfnOutput(this, 'WebsiteVerificationTaskRoleArn', {
+      value: websiteVerificationTaskRole.roleArn,
+      description: 'Task role for website verification containers',
+      exportName: `FurnaceWebsiteVerificationTaskRole-${environment}`,
     });
   }
 }

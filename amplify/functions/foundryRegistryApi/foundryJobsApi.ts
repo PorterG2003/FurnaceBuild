@@ -12,8 +12,11 @@ import {
   NORMALIZER_VERSION,
   resolveContactEnrichmentOptions,
   resolveRunCost,
+  loadWebsiteVerificationBundles,
+  pickWebsiteVerificationTarget,
   stateMatchingJobVersions,
   stateMatchingPreflight,
+  WEBSITE_VERIFIER_VERSION,
 } from '@furnace/registry-server';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -70,6 +73,15 @@ export type ContactEnrichmentJobStartOutcome =
       error: string;
       detail?: string;
       code?: 'not_configured' | 'not_found' | 'not_eligible' | 'server_error';
+      preflight?: unknown;
+    };
+export type WebsiteVerificationJobStartOutcome =
+  | { status: 'started'; jobId: string; executionArn: string; reused: boolean; preflight: unknown }
+  | {
+      status: 'failed';
+      error: string;
+      detail?: string;
+      code?: 'not_configured' | 'not_eligible' | 'server_error';
       preflight?: unknown;
     };
 
@@ -798,6 +810,13 @@ export async function handleFoundryJobsRequest(
     return handlePostImportScopedStateMatching(leadsClient, runId, userId);
   }
 
+  const importWebsiteVerification = path.match(/^\/ingestion-runs\/([^/]+)\/website-verification$/);
+  if (importWebsiteVerification && method === 'POST') {
+    const runId = importWebsiteVerification[1];
+    if (!UUID_RE.test(runId)) return jsonResponse(400, { error: 'Invalid run id' });
+    return handlePostImportScopedWebsiteVerification(leadsClient, runId, userId);
+  }
+
   if (path === '/state-matching/batches' && method === 'POST') {
     const parsed = parseJsonBody<{ companyIds?: string[]; sourceIngestionRunId?: string }>(rawBody);
     if (!parsed.ok) return parsed.response;
@@ -1057,6 +1076,150 @@ export async function startStateMatchingBatchJob(
   }
 }
 
+async function buildWebsiteVerificationPreflight(leadsClient: SupabaseClient, companyIds: string[]) {
+  const bundles = await loadWebsiteVerificationBundles(
+    leadsClient as unknown as Parameters<typeof loadWebsiteVerificationBundles>[0],
+    companyIds,
+  );
+  const ready: string[] = [];
+  const missing_website: string[] = [];
+  for (const bundle of bundles) {
+    if (pickWebsiteVerificationTarget(bundle)) ready.push(bundle.company_id);
+    else missing_website.push(bundle.company_id);
+  }
+  return { ready, missing_website };
+}
+
+export async function startWebsiteVerificationImportJob(
+  leadsClient: SupabaseClient,
+  companyIds: string[],
+  userId: string,
+  opts?: { sourceIngestionRunId?: string; importScoped?: boolean },
+): Promise<FunctionUrlResponse> {
+  const smArn = process.env.FOUNDRY_WEBSITE_VERIFICATION_STATE_MACHINE_ARN?.trim();
+  if (!smArn) {
+    return jsonResponse(503, { error: 'Async website verification is not configured (Amplify backend / Step Functions)' });
+  }
+
+  const uniqueCompanyIds = [...new Set(companyIds)];
+  const preflight = await buildWebsiteVerificationPreflight(leadsClient, uniqueCompanyIds);
+  if (preflight.ready.length === 0) {
+    return jsonResponse(400, {
+      error: 'No linked companies in this import have a website ready for verification.',
+      preflight,
+    });
+  }
+
+  const idempotencyKey =
+    opts?.importScoped && opts.sourceIngestionRunId
+      ? `website-verify-ingestion:${opts.sourceIngestionRunId}:${WEBSITE_VERIFIER_VERSION}`
+      : `website-verify:${createHash('sha256').update(uniqueCompanyIds.sort().join(',')).digest('hex').slice(0, 32)}:${WEBSITE_VERIFIER_VERSION}`;
+
+  const { data: active, error: activeErr } = await leadsClient
+    .from('foundry_jobs')
+    .select('id, status, step_function_execution_arn, payload')
+    .eq('idempotency_key', idempotencyKey)
+    .in('status', ['queued', 'running'])
+    .maybeSingle();
+  if (activeErr) {
+    console.error('website verification idempotency lookup failed', activeErr.message);
+    return jsonResponse(502, { error: 'Failed to check existing job' });
+  }
+  if (active) {
+    const payload = (active.payload ?? {}) as { preflight?: unknown };
+    return jsonResponse(200, {
+      jobId: active.id,
+      executionArn: active.step_function_execution_arn ?? '',
+      reused: true,
+      preflight: payload.preflight ?? preflight,
+    });
+  }
+
+  const { data: inserted, error: insertErr } = await leadsClient
+    .from('foundry_jobs')
+    .insert({
+      job_type: 'website_verification_import_run',
+      status: 'queued',
+      requested_by: userId,
+      payload: {
+        company_ids: uniqueCompanyIds,
+        preflight,
+        ...(opts?.sourceIngestionRunId ? { source_ingestion_run_id: opts.sourceIngestionRunId } : {}),
+      },
+      idempotency_key: idempotencyKey,
+      progress: {
+        current_step: 'queued',
+        in_scope_total: preflight.ready.length,
+        not_applicable_count: preflight.missing_website.length,
+        companies_processed: 0,
+        companies_with_result: 0,
+        outcome_usable: 0,
+        outcome_uncertain: 0,
+        outcome_not_usable: 0,
+        outcome_error: 0,
+        outcome_skipped: preflight.missing_website.length,
+      },
+    })
+    .select('id')
+    .single();
+  if (insertErr || !inserted) {
+    console.error('website verification job insert failed', insertErr?.message);
+    return jsonResponse(502, { error: 'Failed to create job' });
+  }
+
+  const jobId = inserted.id as string;
+  try {
+    const execName = `wv-${jobId.replace(/-/g, '').slice(0, 12)}-${Date.now()}`;
+    const out = await sfnClient.send(
+      new StartExecutionCommand({
+        stateMachineArn: smArn,
+        name: execName.slice(0, 80),
+        input: JSON.stringify({ jobId, companyIds: preflight.ready }),
+      }),
+    );
+    const executionArn = out.executionArn ?? '';
+    const { error: updateErr } = await leadsClient
+      .from('foundry_jobs')
+      .update({
+        status: 'running',
+        started_at: new Date().toISOString(),
+        step_function_execution_arn: executionArn,
+        progress: {
+          current_step: 'running',
+          in_scope_total: preflight.ready.length,
+          not_applicable_count: preflight.missing_website.length,
+          companies_processed: 0,
+          companies_with_result: 0,
+          outcome_usable: 0,
+          outcome_uncertain: 0,
+          outcome_not_usable: 0,
+          outcome_error: 0,
+          outcome_skipped: preflight.missing_website.length,
+        },
+      })
+      .eq('id', jobId);
+    if (updateErr) console.error('website verification job update after start failed', updateErr.message);
+    return jsonResponse(200, {
+      jobId,
+      executionArn,
+      reused: false,
+      preflight,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('Website verification StartExecution failed', msg);
+    await leadsClient
+      .from('foundry_jobs')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_summary: msg,
+      })
+      .eq('id', jobId);
+    return jsonResponse(502, { error: 'Failed to start workflow', detail: msg, preflight });
+  }
+}
+
 async function handleListJobs(leadsClient: SupabaseClient, rawQueryString: string): Promise<FunctionUrlResponse> {
   const limit = parseLimit(rawQueryString, 100, 50);
   const params = new URLSearchParams(rawQueryString || '');
@@ -1239,6 +1402,28 @@ async function getQueuePendingTasksForRun(leadsClient: SupabaseClient, runId: st
   return typeof data === 'number' ? data : null;
 }
 
+async function getWebsiteVerificationOutcomeCounts(
+  leadsClient: SupabaseClient,
+  jobId: string,
+): Promise<Record<string, number>> {
+  const { data, error } = await leadsClient
+    .from('company_website_verifications')
+    .select('band, error')
+    .eq('foundry_job_id', jobId);
+  if (error) throw new Error(error.message);
+  return (data ?? []).reduce<Record<string, number>>((acc, row) => {
+    if (typeof row.error === 'string' && row.error.trim()) {
+      acc.error = (acc.error ?? 0) + 1;
+      return acc;
+    }
+    const band = typeof row.band === 'string' ? row.band : '';
+    if (band === 'usable' || band === 'uncertain' || band === 'not_usable') {
+      acc[band] = (acc[band] ?? 0) + 1;
+    }
+    return acc;
+  }, {});
+}
+
 function stateMatchingRunIdFromJob(job: Awaited<ReturnType<typeof getLatestJobForRun>>): string | null {
   const runId = job?.payload?.reconciliation_run_id;
   return typeof runId === 'string' && runId.trim() ? runId.trim() : null;
@@ -1246,16 +1431,19 @@ function stateMatchingRunIdFromJob(job: Awaited<ReturnType<typeof getLatestJobFo
 
 async function handleGetPipelineJobs(leadsClient: SupabaseClient, runId: string): Promise<FunctionUrlResponse> {
   try {
-    const [totalSourceRows, normalizeJob, autolinkJob, contactEnrichmentJob, stateMatchingJob] = await Promise.all([
+    const [totalSourceRows, normalizeJob, autolinkJob, contactEnrichmentJob, stateMatchingJob, websiteVerificationJob] =
+      await Promise.all([
       countSourceRowsForRun(leadsClient, runId),
       getLatestJobForRun(leadsClient, 'normalize_ingestion_run', { ingestion_run_id: runId }),
       getLatestJobForRun(leadsClient, 'autolink_ingestion_run', { ingestion_run_id: runId }),
       getLatestJobForRun(leadsClient, 'contact_enrichment_import_run', { ingestion_run_id: runId }),
       getLatestJobForRun(leadsClient, 'state_matching_batch', { source_ingestion_run_id: runId }),
+      getLatestJobForRun(leadsClient, 'website_verification_import_run', { source_ingestion_run_id: runId }),
     ]);
 
     let queuePendingTasks: number | null = null;
     let stateMatchingOutcomeCounts: Record<string, number> | null = null;
+    let websiteVerificationOutcomeCounts: Record<string, number> | null = null;
     try {
       queuePendingTasks = await getQueuePendingTasksForRun(leadsClient, runId);
     } catch (queueErr) {
@@ -1274,6 +1462,28 @@ async function handleGetPipelineJobs(leadsClient: SupabaseClient, runId: string)
         console.error('pipeline jobs state matching counts failed', runId, message);
       }
     }
+    if (websiteVerificationJob) {
+      const progress = (websiteVerificationJob.progress ?? {}) as Record<string, unknown>;
+      const progressCounts = {
+        usable: Number(progress.outcome_usable ?? 0),
+        uncertain: Number(progress.outcome_uncertain ?? 0),
+        not_usable: Number(progress.outcome_not_usable ?? 0),
+        error: Number(progress.outcome_error ?? 0),
+        skipped: Number(progress.outcome_skipped ?? 0),
+      };
+      if (websiteVerificationJob.status === 'queued' || websiteVerificationJob.status === 'running') {
+        websiteVerificationOutcomeCounts = progressCounts;
+      } else {
+        try {
+          const terminalCounts = await getWebsiteVerificationOutcomeCounts(leadsClient, String(websiteVerificationJob.id));
+          websiteVerificationOutcomeCounts = { ...terminalCounts, skipped: progressCounts.skipped };
+        } catch (websiteErr) {
+          const message = websiteErr instanceof Error ? websiteErr.message : String(websiteErr);
+          console.error('pipeline jobs website verification counts failed', runId, message);
+          websiteVerificationOutcomeCounts = progressCounts;
+        }
+      }
+    }
 
     return jsonResponse(200, {
       ingestion_run_id: runId,
@@ -1282,7 +1492,9 @@ async function handleGetPipelineJobs(leadsClient: SupabaseClient, runId: string)
       autolink_job: autolinkJob,
       contact_enrichment_job: contactEnrichmentJob,
       state_matching_job: stateMatchingJob,
+      website_verification_job: websiteVerificationJob,
       state_matching_outcome_counts: stateMatchingOutcomeCounts,
+      website_verification_outcome_counts: websiteVerificationOutcomeCounts,
       queue_pending_tasks: queuePendingTasks,
     });
   } catch (e) {
@@ -1299,7 +1511,7 @@ async function handlePostImportScopedStateMatching(
 ): Promise<FunctionUrlResponse> {
   try {
     const companyIds = await collectLinkedCompanyIdsForIngestionRun(leadsClient, runId);
-    return startStateMatchingBatchJob(leadsClient, companyIds, userId, {
+    return await startStateMatchingBatchJob(leadsClient, companyIds, userId, {
       sourceIngestionRunId: runId,
       importScoped: true,
     });
@@ -1307,5 +1519,23 @@ async function handlePostImportScopedStateMatching(
     const message = e instanceof Error ? e.message : String(e);
     console.error('import-scoped state matching failed', message);
     return jsonResponse(502, { error: 'Failed to start import-scoped state matching', detail: message });
+  }
+}
+
+async function handlePostImportScopedWebsiteVerification(
+  leadsClient: SupabaseClient,
+  runId: string,
+  userId: string,
+): Promise<FunctionUrlResponse> {
+  try {
+    const companyIds = await collectLinkedCompanyIdsForIngestionRun(leadsClient, runId);
+    return await startWebsiteVerificationImportJob(leadsClient, companyIds, userId, {
+      sourceIngestionRunId: runId,
+      importScoped: true,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('import-scoped website verification failed', message);
+    return jsonResponse(502, { error: 'Failed to start import-scoped website verification', detail: message });
   }
 }

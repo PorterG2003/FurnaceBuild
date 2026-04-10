@@ -1,4 +1,18 @@
-import type { SkipSherpaLookupPayload } from '../contact-enrichment/contactEnrichment.js';
+export type SkipSherpaLookupPayload = {
+  first_name: string;
+  middle_name: null;
+  last_name: string;
+  age: null;
+  email: null;
+  phone_number: null;
+  mailing_addresses: Array<{
+    street: string;
+    street2: string | null;
+    city: string | null;
+    state: string | null;
+    zipcode: string | null;
+  }>;
+};
 
 export const SKIP_SHERPA_PERSON_URL = 'https://skipsherpa.com/api/beta6/person';
 

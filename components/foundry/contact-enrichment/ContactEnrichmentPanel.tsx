@@ -311,7 +311,7 @@ export function ContactEnrichmentPanel({ ingestionRunId }: { ingestionRunId: str
 
           <View>
             <Text className="text-gray-500 font-instrument text-xs uppercase tracking-wider mb-2">
-              Cost per lookup (cents)
+              Cost per Skip Sherpa hit (cents)
             </Text>
             <TextInput
               value={costLookupInput}
@@ -322,7 +322,8 @@ export function ContactEnrichmentPanel({ ingestionRunId }: { ingestionRunId: str
               className="border border-[#3A3A3A] rounded-xl px-3 py-2.5 text-white font-instrument text-sm bg-[#202020]"
             />
             <Text className="text-gray-500 font-instrument text-xs mt-1 leading-5">
-              Billable HTTP 2xx attempts use this rate. Leave blank to use the active rate card default.
+              One hit is charged when Skip Sherpa returns person data for a row. Leave blank to use the active rate card
+              default.
             </Text>
           </View>
 

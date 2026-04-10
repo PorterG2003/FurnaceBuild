@@ -8,6 +8,15 @@ import {
   type ContactEnrichmentRulesetPreset,
 } from './contactEnrichmentClassifier.js';
 import { classifyOwnerName } from '../state-persistence/ownerDrilldown.js';
+import type { SkipSherpaLookupPayload } from '../skip-sherpa/skipSherpaClient.js';
+
+export {
+  callSkipSherpaPersonLookup,
+  parsePersonResultsArray,
+  skipSherpaPersonRowHasBillableHit,
+  SKIP_SHERPA_PERSON_URL,
+} from '../skip-sherpa/skipSherpaClient.js';
+export type { SkipSherpaPersonLookupResponse, SkipSherpaLookupPayload } from '../skip-sherpa/skipSherpaClient.js';
 
 export type {
   ContactEnrichmentClassifyContext,
@@ -137,22 +146,6 @@ type SuppressionKey = string;
 type LatestAttempt = {
   performedAt: string | null;
   isBillable: boolean;
-};
-
-export type SkipSherpaLookupPayload = {
-  first_name: string;
-  middle_name: null;
-  last_name: string;
-  age: null;
-  email: null;
-  phone_number: null;
-  mailing_addresses: Array<{
-    street: string;
-    street2: string | null;
-    city: string | null;
-    state: string | null;
-    zipcode: string | null;
-  }>;
 };
 
 type SkipSherpaPersonName = {
@@ -813,22 +806,6 @@ export function buildSkipSherpaLookupPayload(target: ContactEnrichmentTargetRow)
   };
 }
 
-export async function callSkipSherpaPersonLookup(
-  apiKey: string,
-  lookups: SkipSherpaLookupPayload[],
-): Promise<{ httpStatus: number; body: unknown }> {
-  const response = await fetch('https://skipsherpa.com/api/beta6/person', {
-    method: 'PUT',
-    headers: {
-      'API-Key': apiKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ person_lookups: lookups }),
-  });
-  const body = (await response.json().catch(() => ({}))) as unknown;
-  return { httpStatus: response.status, body };
-}
-
 export function classifySkipSherpaPersonResult(
   lookup: ContactEnrichmentTargetRow,
   result: SkipSherpaPersonResult | null | undefined,
@@ -1002,7 +979,8 @@ export async function promoteContactEnrichmentPersonToMatch(
 }
 
 export type ContactEnrichmentResolvedCost = {
-  unitPriceCents: number;
+  /** Cents per Skip Sherpa hit (billed when provider returns person data for that lookup). */
+  centsPerHit: number;
   rateCardId: string | null;
   isOverride: boolean;
 };
@@ -1016,19 +994,26 @@ export async function persistContactEnrichmentAttempt(
     responsePayload: unknown;
     httpStatus: number;
     decision: ContactEnrichmentMatchDecision;
-    /** When set and the attempt is billable (HTTP 2xx), stamped on the row. */
+    /**
+     * Skip Sherpa hits billed for this row (0 or 1). When 1 and `resolvedCost` is set,
+     * `cost_amount_cents = hitsBilled * centsPerHit`.
+     */
+    hitsBilled: 0 | 1;
+    /** When set and hitsBilled > 0, cost fields are stamped. */
     resolvedCost?: ContactEnrichmentResolvedCost | null;
   },
 ): Promise<void> {
   const meta = params.decision.metadata;
-  const billable = params.httpStatus >= 200 && params.httpStatus < 300;
+  const hitsBilled = params.hitsBilled === 1 ? 1 : 0;
   const rc = params.resolvedCost;
+  const costCents =
+    hitsBilled > 0 && rc ? Math.max(0, Math.trunc(hitsBilled * rc.centsPerHit)) : null;
   const costFields =
-    billable && rc
+    costCents != null
       ? {
-          cost_amount_cents: rc.unitPriceCents,
-          cost_rate_card_id: rc.rateCardId,
-          cost_is_override: rc.isOverride,
+          cost_amount_cents: costCents,
+          cost_rate_card_id: rc!.rateCardId,
+          cost_is_override: rc!.isOverride,
         }
       : {
           cost_amount_cents: null,
@@ -1059,13 +1044,14 @@ export async function persistContactEnrichmentAttempt(
             ranked_candidates: meta.ranked_candidates,
             ambiguity_kind: meta.ambiguity_kind,
             review_task_eligible: meta.review_task_eligible,
+            hits_billed: hitsBilled,
           }
-        : {},
+        : { hits_billed: hitsBilled },
       matcher_version: meta?.matcher_version ?? null,
       scoring_version: meta?.scoring_version ?? null,
       ruleset_version: meta?.ruleset_version ?? null,
       ruleset_preset: meta?.ruleset_preset ?? null,
-      is_billable_candidate: billable,
+      is_billable_candidate: hitsBilled === 1,
       ...costFields,
       error_summary:
         params.decision.classification === 'error'

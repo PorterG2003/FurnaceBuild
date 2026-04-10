@@ -126,7 +126,9 @@ export default function FoundryCostSettingsScreen() {
             placeholderTextColor="#6b7280"
             className="border border-[#3A3A3A] rounded-lg px-3 py-2 text-white font-instrument text-sm bg-[#121212]"
           />
-          <Text className="text-gray-500 font-instrument text-xs">Unit price (cents)</Text>
+          <Text className="text-gray-500 font-instrument text-xs">
+            Unit price (cents per hit or per row, per product)
+          </Text>
           <TextInput
             value={newCents}
             onChangeText={setNewCents}

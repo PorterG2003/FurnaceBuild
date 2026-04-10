@@ -6,6 +6,7 @@ import {
   listContactEnrichmentTargetsPage,
   MAX_CONTACT_ENRICHMENT_BATCH_SIZE,
   persistContactEnrichmentAttempt,
+  skipSherpaPersonRowHasBillableHit,
   type ContactEnrichmentTargetRow,
 } from '@furnace/registry-server';
 
@@ -135,11 +136,14 @@ export const handler = async (event: ChunkEvent | FinalizeEvent | FailEvent): Pr
   const queueAmbiguousForReview =
     payload.queue_ambiguous_for_review === true || payload.queueAmbiguousForReview === true;
 
-  const costPerLookupRaw = payload.cost_per_lookup_cents;
+  const centsPerHitRaw =
+    typeof payload.cents_per_hit === 'number' && Number.isFinite(payload.cents_per_hit)
+      ? payload.cents_per_hit
+      : payload.cost_per_lookup_cents;
   const resolvedCost =
-    typeof costPerLookupRaw === 'number' && Number.isFinite(costPerLookupRaw)
+    typeof centsPerHitRaw === 'number' && Number.isFinite(centsPerHitRaw)
       ? {
-          unitPriceCents: Math.max(0, Math.trunc(costPerLookupRaw)),
+          centsPerHit: Math.max(0, Math.trunc(centsPerHitRaw)),
           rateCardId: typeof payload.cost_rate_card_id === 'string' ? payload.cost_rate_card_id : null,
           isOverride: payload.cost_is_override === true,
         }
@@ -174,15 +178,15 @@ export const handler = async (event: ChunkEvent | FinalizeEvent | FailEvent): Pr
     buildSkipSherpaLookupPayload(target),
   );
   const providerResponse = await callSkipSherpaPersonLookup(apiKey, lookupPayloads);
-  const results =
-    providerResponse.body &&
-    typeof providerResponse.body === 'object' &&
-    Array.isArray((providerResponse.body as { person_results?: unknown[] }).person_results)
-      ? ((providerResponse.body as { person_results: unknown[] }).person_results as unknown[])
-      : [];
+  const rateRemaining = providerResponse.headers['x-ratelimit-remaining'];
+  if (rateRemaining != null && rateRemaining !== '') {
+    console.log('SkipSherpa rate limit remaining', rateRemaining);
+  }
+  const results = providerResponse.personResults;
 
   for (const [index, target] of page.targets.entries()) {
     const rawResult = results[index];
+    const hitsBilled: 0 | 1 = skipSherpaPersonRowHasBillableHit(providerResponse.httpStatus, rawResult) ? 1 : 0;
     const result =
       rawResult && typeof rawResult === 'object'
         ? (rawResult as Parameters<typeof classifySkipSherpaPersonResult>[1])
@@ -206,6 +210,7 @@ export const handler = async (event: ChunkEvent | FinalizeEvent | FailEvent): Pr
       responsePayload: rawResult ?? providerResponse.body,
       httpStatus: providerResponse.httpStatus,
       decision,
+      hitsBilled,
       resolvedCost,
     });
     progress = applyClassification(progress, decision);

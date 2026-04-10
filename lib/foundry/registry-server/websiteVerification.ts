@@ -41,7 +41,12 @@ function supabaseQueryErrorMessage(
   const bits = [err.message, err.details, err.hint, err.code].filter(
     (x) => x != null && String(x).trim() !== '',
   );
-  return `${ctx}: ${bits.join(' | ')}`;
+  if (bits.length > 0) return `${ctx}: ${bits.join(' | ')}`;
+  try {
+    return `${ctx}: ${JSON.stringify(err)}`;
+  } catch {
+    return `${ctx}: unknown Supabase error`;
+  }
 }
 
 /** PostgREST returns 400 if `.in()` blows the URL; keep batches conservative. */
@@ -789,31 +794,40 @@ export async function loadWebsiteVerificationBundles(
 ): Promise<WebsiteVerificationBundle[]> {
   const uniqueIds = [...new Set(companyIds.filter(Boolean))];
   if (uniqueIds.length === 0) return [];
-  const [companiesRes, locationsRes, linksRes, matchesRes] = await Promise.all([
-    leadsClient.from('companies').select('id, legal_name, normalized_key, notes').in('id', uniqueIds),
-    leadsClient
-      .from('company_locations')
-      .select('id, company_id, line1, line2, city, state_region, postal_code, country, is_primary')
-      .in('company_id', uniqueIds),
-    leadsClient
-      .from('source_business_company_links')
-      .select('company_id, source_business_record_id, link_status, link_score, is_current')
-      .in('company_id', uniqueIds)
-      .eq('is_current', true),
-    leadsClient
-      .from('company_entity_matches')
-      .select('company_id, state_entity_id, registry_state, is_current')
-      .in('company_id', uniqueIds)
-      .eq('is_current', true),
+  const [companyRows, locationRows, linkRows, matchRows] = await Promise.all([
+    selectByIdBatches(leadsClient, 'website verification companies', uniqueIds, async (batch) => {
+      const { data, error } = await leadsClient
+        .from('companies')
+        .select('id, legal_name, normalized_key, notes')
+        .in('id', batch);
+      return { data: data as unknown[] | null, error };
+    }),
+    selectByIdBatches(leadsClient, 'website verification company_locations', uniqueIds, async (batch) => {
+      const { data, error } = await leadsClient
+        .from('company_locations')
+        .select('id, company_id, line1, line2, city, state_region, postal_code, country, is_primary')
+        .in('company_id', batch);
+      return { data: data as unknown[] | null, error };
+    }),
+    selectByIdBatches(leadsClient, 'website verification source_business_company_links', uniqueIds, async (batch) => {
+      const { data, error } = await leadsClient
+        .from('source_business_company_links')
+        .select('company_id, source_business_record_id, link_status, link_score, is_current')
+        .in('company_id', batch)
+        .eq('is_current', true);
+      return { data: data as unknown[] | null, error };
+    }),
+    selectByIdBatches(leadsClient, 'website verification company_entity_matches', uniqueIds, async (batch) => {
+      const { data, error } = await leadsClient
+        .from('company_entity_matches')
+        .select('company_id, state_entity_id, registry_state, is_current')
+        .in('company_id', batch)
+        .eq('is_current', true);
+      return { data: data as unknown[] | null, error };
+    }),
   ]);
-  if (companiesRes.error) throw new Error(supabaseQueryErrorMessage('website verification companies', companiesRes.error));
-  if (locationsRes.error) throw new Error(supabaseQueryErrorMessage('website verification company_locations', locationsRes.error));
-  if (linksRes.error) throw new Error(supabaseQueryErrorMessage('website verification source_business_company_links', linksRes.error));
-  if (matchesRes.error) throw new Error(supabaseQueryErrorMessage('website verification company_entity_matches', matchesRes.error));
-
-  const linkRows = linksRes.data ?? [];
   const sourceRecordIds = uniq(linkRows.map((row) => String(row.source_business_record_id)));
-  const entityIds = uniq((matchesRes.data ?? []).map((row) => String(row.state_entity_id)));
+  const entityIds = uniq(matchRows.map((row) => String(row.state_entity_id)));
 
   // Omit resolution_meta: older leads DBs without that migration return PostgREST 400; verification uses raw_payload for extra URLs.
   const sourceSelect =
@@ -858,9 +872,9 @@ export async function loadWebsiteVerificationBundles(
   }
 
   return uniqueIds.map((companyId) => {
-    const company = (companiesRes.data ?? []).find((row) => String(row.id) === companyId) as Record<string, unknown> | undefined;
-    const matchRows = (matchesRes.data ?? []).filter((row) => String(row.company_id) === companyId);
-    const entityRows = matchRows.map((row) => {
+    const company = companyRows.find((row) => String(row.id) === companyId) as Record<string, unknown> | undefined;
+    const companyMatchRows = matchRows.filter((row) => String(row.company_id) === companyId);
+    const entityRows = companyMatchRows.map((row) => {
       const entity = entitiesById.get(String(row.state_entity_id)) ?? {};
       return {
         id: String(row.state_entity_id),
@@ -898,7 +912,7 @@ export async function loadWebsiteVerificationBundles(
       legal_name: String(company?.legal_name ?? ''),
       normalized_key: company?.normalized_key == null ? null : String(company.normalized_key),
       notes: company?.notes == null ? null : String(company.notes),
-      locations: (locationsRes.data ?? [])
+      locations: locationRows
         .filter((row) => String(row.company_id) === companyId)
         .map((row) => ({
           id: String(row.id),

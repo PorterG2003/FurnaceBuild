@@ -580,10 +580,7 @@ const foundryWebsiteVerificationRunTask = new sfn.CustomState(foundryNormalizeSt
         ContainerOverrides: [
           {
             Name: 'website-verification-worker',
-            Environment: [
-              { Name: 'JOB_ID', 'Value.$': '$.jobId' },
-              { Name: 'COMPANY_IDS_JSON', 'Value.$': 'States.JsonToString($.companyIds)' },
-            ],
+            Environment: [{ Name: 'JOB_ID', 'Value.$': '$.jobId' }],
           },
         ],
       },

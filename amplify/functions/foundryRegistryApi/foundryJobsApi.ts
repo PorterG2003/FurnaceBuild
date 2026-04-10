@@ -1175,7 +1175,7 @@ export async function startWebsiteVerificationImportJob(
       new StartExecutionCommand({
         stateMachineArn: smArn,
         name: execName.slice(0, 80),
-        input: JSON.stringify({ jobId, companyIds: preflight.ready }),
+        input: JSON.stringify({ jobId }),
       }),
     );
     const executionArn = out.executionArn ?? '';

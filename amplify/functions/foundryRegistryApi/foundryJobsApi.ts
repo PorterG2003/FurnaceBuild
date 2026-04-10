@@ -499,7 +499,7 @@ export async function startContactEnrichmentIngestionJob(
     batchSize?: number;
     rulesetPreset?: 'conservative' | 'balanced' | 'aggressive';
     queueAmbiguousForReview?: boolean;
-    /** Override cents per lookup; otherwise uses active rate card for skipsherpa/person_lookup. */
+    /** Override cents per Skip Sherpa hit; otherwise uses active rate card for skipsherpa/person_lookup. */
     costPerLookupCents?: number | null;
   },
 ): Promise<ContactEnrichmentJobStartOutcome> {
@@ -635,6 +635,7 @@ export async function startContactEnrichmentIngestionJob(
     preflight: preflightResponse,
     ...(costResolved != null
       ? {
+          cents_per_hit: costResolved.unitPriceCents,
           cost_per_lookup_cents: costResolved.unitPriceCents,
           cost_rate_card_id: costResolved.rateCardId,
           cost_is_override: costResolved.isOverride,

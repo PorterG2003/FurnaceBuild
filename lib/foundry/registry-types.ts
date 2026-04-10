@@ -150,7 +150,7 @@ export interface ContactEnrichmentPreflightOptions {
   strong_targets_only?: boolean;
   ruleset_preset?: ContactEnrichmentRulesetPreset;
   queue_ambiguous_for_review?: boolean;
-  /** Cents per billable SkipSherpa lookup; omit to use active rate card. */
+  /** Cents per Skip Sherpa hit (billed when person data is returned); omit to use active rate card. */
   cost_per_lookup_cents?: number;
 }
 

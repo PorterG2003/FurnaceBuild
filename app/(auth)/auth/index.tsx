@@ -1,6 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { useWindowDimensions, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { SignInForm } from '@/components/auth/SignInForm';
 import { SignUpForm } from '@/components/auth/SignUpForm';
@@ -16,6 +23,7 @@ type AuthState = 'signIn' | 'signUp' | 'confirmSignUp' | 'forgotPassword' | 'con
 export default function AuthIndex() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const showBrandPanel = width >= LAYOUT_BREAKPOINT;
   const { invitation_id, email: inviteEmail, mode } = useLocalSearchParams<{
     invitation_id?: string;
@@ -149,9 +157,9 @@ export default function AuthIndex() {
     }
   };
 
-  return (
-    <View className="flex-1 min-h-full flex-row bg-[#121212]">
-      {showBrandPanel ? (
+  if (showBrandPanel) {
+    return (
+      <View className="flex-1 min-h-full flex-row bg-[#121212]">
         <View className="flex-1 min-h-full min-w-0 relative">
           <HeroHeatShimmer
             intensity="low"
@@ -167,19 +175,54 @@ export default function AuthIndex() {
             </View>
           </HeroHeatShimmer>
         </View>
-      ) : null}
-      <View
-        className={`flex-1 min-h-full min-w-0 w-full bg-[#121212] ${showBrandPanel ? 'max-w-[680px] border-l border-[#2A2A2A]' : ''}`}
+        <View className="flex-1 min-h-full min-w-0 w-full max-w-[680px] border-l border-[#2A2A2A] bg-[#121212]">
+          {renderForm()}
+        </View>
+      </View>
+    );
+  }
+
+  /** Fixed gap between logo bottom and card top (matches prior layout: 16px). */
+  const logoToCardGap = 16;
+
+  return (
+    <View className="min-h-full flex-1 bg-[#121212]">
+      <View className="absolute inset-0">
+        <HeroHeatShimmer
+          intensity="low"
+          speed="slow"
+          tint="ember"
+          className="absolute inset-0"
+          midground={<EmberParticlesLite density="low" maxOpacity={0.06} />}
+        />
+      </View>
+      <KeyboardAvoidingView
+        className="min-h-full flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {!showBrandPanel ? (
-          <View className="w-full self-start px-5 pt-7 pb-2">
-            <View className="max-w-[220px]">
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: 'center',
+            paddingHorizontal: 16,
+            paddingTop: insets.top + 16,
+            paddingBottom: Math.max(insets.bottom, 16) + 16,
+          }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View className="mx-auto w-full max-w-md items-center">
+            <View className="w-full max-w-[220px] items-center">
               <Logo className="mb-0" variant="white" maxWidth={220} />
             </View>
+            <View style={{ height: logoToCardGap }} />
+            <View className="w-full overflow-hidden rounded-2xl border border-[#2A2A2A] bg-[#121212]">
+              {renderForm()}
+            </View>
           </View>
-        ) : null}
-        {renderForm()}
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

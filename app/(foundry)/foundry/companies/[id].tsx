@@ -134,7 +134,11 @@ export default function CompanyDetailPage() {
       wide ? (
         <View className="flex-row items-start gap-5">
           <View className="flex-[0.4] min-w-[280px] max-w-md">
-            <CompanyProfilePanel company={company} website={profileWebsite} />
+            <CompanyProfilePanel
+              company={company}
+              website={profileWebsite}
+              verification={detail.website_verification}
+            />
           </View>
           <View className="flex-1 min-w-0">
             <CompanyLocationsPanel locations={detail.locations} />
@@ -151,7 +155,11 @@ export default function CompanyDetailPage() {
         </View>
       ) : (
         <View>
-          <CompanyProfilePanel company={company} website={profileWebsite} />
+          <CompanyProfilePanel
+            company={company}
+            website={profileWebsite}
+            verification={detail.website_verification}
+          />
           <CompanyLocationsPanel locations={detail.locations} />
           <CompanyEntityMatchesPanel matches={detail.entity_matches} />
           <CompanyOwnershipChainsPanel

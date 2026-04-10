@@ -16,6 +16,7 @@ backend:
         - cd amplify/functions/foundryAutolinkJob && npm install && cd - || (echo "Failed to install foundryAutolinkJob dependencies" && exit 1)
         - cd amplify/functions/foundryContactEnrichmentJob && npm install && cd - || (echo "Failed to install foundryContactEnrichmentJob dependencies" && exit 1)
         - cd amplify/functions/foundryStateMatchingJob && npm install && cd - || (echo "Failed to install foundryStateMatchingJob dependencies" && exit 1)
+        - cd amplify/functions/foundryWebsiteVerificationJob && npm install && cd - || (echo "Failed to install foundryWebsiteVerificationJob dependencies" && exit 1)
         - cd amplify/functions/processNotificationEvent && npm install && cd - || (echo "Failed to install processNotificationEvent dependencies" && exit 1)
         - |
           FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"
@@ -43,6 +44,7 @@ backend:
             "FurnaceEcsTaskExecutionRole-$WORKER_ENVIRONMENT"
             "FurnaceUtahScraperTaskRole-$WORKER_ENVIRONMENT"
             "FurnaceFloridaScraperTaskRole-$WORKER_ENVIRONMENT"
+            "FurnaceWebsiteVerificationTaskRole-$WORKER_ENVIRONMENT"
           )
           for export_name in "${REQUIRED_EXPORTS[@]}"; do
             export_value=$(aws cloudformation list-exports \
@@ -76,6 +78,7 @@ backend:
           REQUIRED_SSM_PARAMS=(
             "/furnace/ecs/${WORKER_ENVIRONMENT}/utah-scraper/task-definition-arn"
             "/furnace/ecs/${WORKER_ENVIRONMENT}/florida-scraper/task-definition-arn"
+            "/furnace/ecs/${WORKER_ENVIRONMENT}/website-verification/task-definition-arn"
           )
           for param_name in "${REQUIRED_SSM_PARAMS[@]}"; do
             if ! aws ssm get-parameter --name "$param_name" --region "$WORKER_STACK_REGION" --query Parameter.Name --output text >/dev/null 2>&1; then

@@ -92,7 +92,7 @@ export default function ImportResultsPage() {
         <View className="gap-4 w-full self-center" style={{ maxWidth: 960 }}>
           <Alert
             variant="info"
-            message="This page is the hub for this import run. Normalize and auto-link start automatically after import; use the next steps below for linking, state matching, and manual contact enrichment. Background job status lives under Runs, and human review items land in Queue."
+            message="This page is the hub for this import run. Normalize and auto-link start automatically after import; use the next steps below for linking, state matching, website verification, and manual contact enrichment. Background job status lives under Runs, and human review items land in Queue."
           />
           <ImportResultsSummary status={run.status} stats={run.stats} />
           <ImportPipelineDials ingestionRunId={runId} />

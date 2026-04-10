@@ -25,6 +25,7 @@ import {
   type PostStartNormalizeJobResponse,
   type ContactEnrichmentPreflightOptions,
   type ContactEnrichmentPreflightResponse,
+  type PostStartWebsiteVerificationJobResponse,
   type RegistryCompaniesResponse,
   type RegistryEntityOwnersResponse,
   type ReviewTasksListResponse,
@@ -94,9 +95,12 @@ async function registryFetchJson<T>(
       ...rest.headers,
     },
   });
-  const body = (await res.json().catch(() => ({}))) as { error?: string } & Record<string, unknown>;
+  const body = (await res.json().catch(() => ({}))) as { error?: string; detail?: string } & Record<string, unknown>;
   if (!res.ok) {
-    throw new Error((body.error as string) || `Registry request failed (${res.status})`);
+    let msg = (body.error as string) || `Registry request failed (${res.status})`;
+    const detail = typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : '';
+    if (detail) msg = `${msg}: ${detail}`;
+    throw new Error(msg);
   }
   return body as T;
 }
@@ -571,6 +575,19 @@ export async function postImportScopedStateMatching(
 ): Promise<PostStateMatchingBatchResponse> {
   return registryFetchJson<PostStateMatchingBatchResponse>(
     `ingestion-runs/${encodeURIComponent(runId)}/state-matching`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    },
+  );
+}
+
+export async function postImportScopedWebsiteVerification(
+  runId: string,
+): Promise<PostStartWebsiteVerificationJobResponse> {
+  return registryFetchJson<PostStartWebsiteVerificationJobResponse>(
+    `ingestion-runs/${encodeURIComponent(runId)}/website-verification`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

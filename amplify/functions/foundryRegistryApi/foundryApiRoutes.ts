@@ -1550,12 +1550,21 @@ export async function dispatchFoundryExtendedRoutes(
         registry_state: entityIdToRegistryState.get(row.state_entity_id as string) || null,
       }));
     }
+    const { data: websiteVerification, error: websiteVerificationErr } = await leadsClient
+      .from('company_website_verifications')
+      .select('*')
+      .eq('company_id', id)
+      .order('verified_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (websiteVerificationErr) return jsonResponse(502, { error: websiteVerificationErr.message });
     return jsonResponse(200, {
       company: co,
       locations: locs ?? [],
       source_links: sourceLinksOut,
       entity_matches: matches ?? [],
       associated_people: associatedPeople,
+      website_verification: websiteVerification ?? null,
     });
   }
 

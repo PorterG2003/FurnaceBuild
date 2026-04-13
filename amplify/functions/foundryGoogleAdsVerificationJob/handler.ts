@@ -1,5 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { countGoogleAdsVerificationResults } from '@furnace/registry-server';
+import {
+  buildGoogleAdsVerificationProgressSnapshot,
+  loadGoogleAdsVerificationProgressCounts,
+} from '@furnace/registry-server';
 
 let cachedClient: SupabaseClient | null = null;
 
@@ -22,30 +25,22 @@ type FailEvent = { action: 'fail'; jobId: string; message?: string };
 export const handler = async (event: FinalizeEvent | FailEvent): Promise<Record<string, unknown>> => {
   const client = getLeadsClient();
   if (event.action === 'finalize') {
-    const { data: job } = await client.from('foundry_jobs').select('progress').eq('id', event.jobId).maybeSingle();
+    const { data: job } = await client.from('foundry_jobs').select('payload, progress').eq('id', event.jobId).maybeSingle();
+    const payload = (job?.payload ?? {}) as Record<string, unknown>;
     const prev = (job?.progress ?? {}) as Record<string, unknown>;
-    const { data: rows, error } = await client
-      .from('company_google_ads_verifications')
-      .select('result, error')
-      .eq('foundry_job_id', event.jobId);
-    if (error) throw new Error(error.message);
-    const counts = countGoogleAdsVerificationResults(
-      (rows ?? []) as Array<{ result: string | null; error?: string | null }>,
+    const counts = await loadGoogleAdsVerificationProgressCounts(
+      client as unknown as Parameters<typeof loadGoogleAdsVerificationProgressCounts>[0],
+      event.jobId,
     );
     await client
       .from('foundry_jobs')
       .update({
         status: 'completed',
         completed_at: new Date().toISOString(),
-        progress: {
-          ...prev,
+        progress: buildGoogleAdsVerificationProgressSnapshot(payload, counts, {
           current_step: 'done',
-          outcome_yes: counts.yes,
-          outcome_no: counts.no,
-          outcome_unknown: counts.unknown,
-          outcome_error: counts.error,
-          companies_with_result: (rows ?? []).length,
-        },
+          previous: prev,
+        }),
       })
       .eq('id', event.jobId);
     return { ok: true };

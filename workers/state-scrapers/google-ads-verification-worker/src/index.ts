@@ -2,7 +2,8 @@ import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { createClient } from '@supabase/supabase-js';
 import {
   GOOGLE_ADS_VERIFIER_VERSION,
-  countGoogleAdsVerificationResults,
+  buildGoogleAdsVerificationProgressSnapshot,
+  loadGoogleAdsVerificationProgressCounts,
   loadGoogleAdsVerificationTargets,
   pickGoogleAdsVerificationTarget,
 } from '@furnace/registry-server';
@@ -75,12 +76,16 @@ async function main(): Promise<void> {
   const companyIds = Array.isArray(payload.company_ids)
     ? payload.company_ids.filter((item): item is string => typeof item === 'string' && item.length > 0)
     : [];
+  const readyCompanyIds = Array.isArray(payload.ready_company_ids)
+    ? payload.ready_company_ids.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : [];
+  const scopedCompanyIds = readyCompanyIds.length > 0 ? readyCompanyIds : companyIds;
   const sourceIngestionRunId =
     typeof payload.source_ingestion_run_id === 'string' && payload.source_ingestion_run_id.trim().length > 0
       ? payload.source_ingestion_run_id.trim()
       : null;
   const progress = ((jobRow.progress ?? {}) as JobProgress) || {};
-  progress.in_scope_total = progress.in_scope_total ?? companyIds.length;
+  progress.in_scope_total = progress.in_scope_total ?? scopedCompanyIds.length;
   progress.companies_processed = progress.companies_processed ?? 0;
   progress.outcome_yes = progress.outcome_yes ?? 0;
   progress.outcome_no = progress.outcome_no ?? 0;
@@ -91,23 +96,19 @@ async function main(): Promise<void> {
 
   const targets = await loadGoogleAdsVerificationTargets(
     client as unknown as Parameters<typeof loadGoogleAdsVerificationTargets>[0],
-    companyIds,
+    scopedCompanyIds,
   );
 
-  logEvent('worker-start', { jobId, companies: companyIds.length, sourceIngestionRunId });
+  logEvent('worker-start', {
+    jobId,
+    companies: scopedCompanyIds.length,
+    requestedCompanies: companyIds.length,
+    sourceIngestionRunId,
+  });
 
   for (const target of targets) {
     const lookupTarget = pickGoogleAdsVerificationTarget(target);
     if (!lookupTarget) {
-      logEvent('company-skipped', {
-        jobId,
-        companyId: target.company_id,
-        legalName: target.legal_name,
-        reason: 'missing_usable_website_verification',
-      });
-      progress.companies_processed = Number(progress.companies_processed ?? 0) + 1;
-      progress.outcome_skipped = Number(progress.outcome_skipped ?? 0) + 1;
-      await updateJobProgress(client, jobId, progress);
       continue;
     }
 
@@ -122,6 +123,9 @@ async function main(): Promise<void> {
         jobId,
         companyId: target.company_id,
         legalName: target.legal_name,
+        inputUrl: lookupTarget.input_url,
+        searchDomain: lookupTarget.search_domain,
+        advertiserUrl: result.advertiser_url ?? null,
         result: {
           status: result.result,
           advertiserId: result.matched_advertiser_id,
@@ -182,19 +186,18 @@ async function main(): Promise<void> {
     }
   }
 
-  const { data: rows, error: rowsErr } = await (client
-    .from('company_google_ads_verifications') as any)
-    .select('result, error')
-    .eq('foundry_job_id', jobId);
-  if (rowsErr) throw new Error(rowsErr.message);
-  const counts = countGoogleAdsVerificationResults((rows ?? []) as Array<{ result: string | null; error?: string | null }>);
-  await updateJobProgress(client, jobId, {
-    ...progress,
-    outcome_yes: counts.yes,
-    outcome_no: counts.no,
-    outcome_unknown: counts.unknown,
-    outcome_error: counts.error,
-  });
+  const counts = await loadGoogleAdsVerificationProgressCounts(
+    client as unknown as Parameters<typeof loadGoogleAdsVerificationProgressCounts>[0],
+    jobId,
+  );
+  await updateJobProgress(
+    client,
+    jobId,
+    buildGoogleAdsVerificationProgressSnapshot(payload, counts, {
+      current_step: 'running',
+      previous: progress,
+    }) as JobProgress,
+  );
 }
 
 main().catch((error) => {

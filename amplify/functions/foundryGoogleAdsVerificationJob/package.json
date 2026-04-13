@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@compwright/namecase": "^3.0.1",
     "@furnace/registry-server": "file:../../../lib/foundry/registry-server",
     "@supabase/supabase-js": "^2.99.1"
   }

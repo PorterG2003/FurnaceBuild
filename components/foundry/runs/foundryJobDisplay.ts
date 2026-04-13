@@ -12,6 +12,8 @@ export function formatFoundryJobType(jobType: string): string {
       return 'State matching';
     case 'website_verification_import_run':
       return 'Website verify';
+    case 'google_ads_verification_import_run':
+      return 'Google Ads verify';
     case 'bulk_source_resolution':
       return 'Bulk resolution';
     default:

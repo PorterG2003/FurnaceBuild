@@ -138,6 +138,7 @@ export default function CompanyDetailPage() {
               company={company}
               website={profileWebsite}
               verification={detail.website_verification}
+              googleAdsVerification={detail.google_ads_verification}
             />
           </View>
           <View className="flex-1 min-w-0">
@@ -159,6 +160,7 @@ export default function CompanyDetailPage() {
             company={company}
             website={profileWebsite}
             verification={detail.website_verification}
+            googleAdsVerification={detail.google_ads_verification}
           />
           <CompanyLocationsPanel locations={detail.locations} />
           <CompanyEntityMatchesPanel matches={detail.entity_matches} />

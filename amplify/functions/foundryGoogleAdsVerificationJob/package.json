@@ -1,0 +1,9 @@
+{
+  "name": "foundry-google-ads-verification-job",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@furnace/registry-server": "file:../../../lib/foundry/registry-server",
+    "@supabase/supabase-js": "^2.99.1"
+  }
+}

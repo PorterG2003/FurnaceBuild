@@ -13,6 +13,7 @@
     "validate:build": "bash scripts/validate-expo-build.sh",
     "verify:amplify-yml-installs": "node scripts/verify-amplify-yml-installs.mjs",
     "verify:email-parsing": "tsx scripts/verify-email-parsing.ts",
+    "verify:google-ads-transparency": "tsx scripts/verify-google-ads-transparency.ts",
     "migrate:users": "tsx scripts/migrate-cognito-users-to-supabase-auth.ts",
     "migrate:users:dry": "DRY_RUN=1 tsx scripts/migrate-cognito-users-to-supabase-auth.ts"
   },

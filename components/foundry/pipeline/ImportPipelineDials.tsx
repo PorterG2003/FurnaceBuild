@@ -284,6 +284,89 @@ function WebsiteVerificationDialCard({
   );
 }
 
+function GoogleAdsVerificationDialCard({
+  pipeline,
+}: {
+  pipeline: IngestionRunPipelineJobsResponse;
+}) {
+  const job = pipeline.google_ads_verification_job;
+  if (!job) {
+    return (
+      <Card variant="card" className="flex-1 min-w-[220px]">
+        <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">Google Ads</Text>
+        <Text className="text-white font-instrument-semibold text-sm mb-2">Google Ads verification not started</Text>
+        <Text className="text-gray-500 font-instrument text-xs leading-5">
+          Run this manually after website verification when you want to confirm whether the verified domain appears in
+          Google’s ads index.
+        </Text>
+      </Card>
+    );
+  }
+
+  const progress = progressOf(job);
+  const total = Math.max(0, Math.floor(Number(progress.in_scope_total) || 0));
+  const yes =
+    job.status === 'queued' || job.status === 'running'
+      ? clamp(num(progress.outcome_yes), total)
+      : clamp(num(pipeline.google_ads_verification_outcome_counts?.yes), total);
+  const no =
+    job.status === 'queued' || job.status === 'running'
+      ? clamp(num(progress.outcome_no), total)
+      : clamp(num(pipeline.google_ads_verification_outcome_counts?.no), total);
+  const unknown =
+    job.status === 'queued' || job.status === 'running'
+      ? clamp(num(progress.outcome_unknown), total)
+      : clamp(num(pipeline.google_ads_verification_outcome_counts?.unknown), total);
+  const error =
+    job.status === 'queued' || job.status === 'running'
+      ? clamp(num(progress.outcome_error), total)
+      : clamp(num(pipeline.google_ads_verification_outcome_counts?.error), total);
+  const processed = clamp(num(progress.companies_processed), total);
+  const pending = Math.max(0, total - processed);
+  const skipped = Math.max(
+    0,
+    job.status === 'queued' || job.status === 'running'
+      ? num(progress.outcome_skipped)
+      : num(pipeline.google_ads_verification_outcome_counts?.skipped),
+  );
+  const ringTotal = Math.max(total + skipped, pending + yes + no + unknown + error + skipped);
+
+  return (
+    <Card variant="card" className="flex-1 min-w-[220px]">
+      <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">Google Ads</Text>
+      <MultiSegmentDial
+        total={Math.max(ringTotal, 1)}
+        size={132}
+        strokeWidth={10}
+        centerValue={processed}
+        centerTotal={Math.max(total, 1)}
+        centerTopLabel="Processed"
+        centerBottomLabel="Companies"
+        segments={[
+          { value: pending, color: '#6B7280' },
+          { value: yes, color: '#10B981' },
+          { value: no, color: '#F59E0B' },
+          { value: unknown, color: '#8B5CF6' },
+          { value: error, color: '#EF4444' },
+          { value: skipped, color: '#3B82F6' },
+        ]}
+        legend={{
+          placement: 'bottom',
+          rows: [
+            { label: 'Pending', value: pending, color: '#6B7280' },
+            { label: 'Yes', value: yes, color: '#10B981' },
+            { label: 'No', value: no, color: '#F59E0B' },
+            { label: 'Unknown', value: unknown, color: '#8B5CF6' },
+            { label: 'Error', value: error, color: '#EF4444' },
+            { label: 'Skipped', value: skipped, color: '#3B82F6' },
+          ],
+        }}
+      />
+      <Text className="text-gray-500 font-instrument text-xs mt-2">Status: {jobStatusLabel(job)}</Text>
+    </Card>
+  );
+}
+
 export function ImportPipelineDials({ ingestionRunId }: Props) {
   const [pipeline, setPipeline] = useState<IngestionRunPipelineJobsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -397,6 +480,8 @@ export function ImportPipelineDials({ ingestionRunId }: Props) {
           <StateDialCard pipeline={pipeline} />
 
           <WebsiteVerificationDialCard pipeline={pipeline} />
+
+          <GoogleAdsVerificationDialCard pipeline={pipeline} />
 
           <Card variant="card" className="flex-1 min-w-[220px]">
             <Text className="text-xs text-gray-500 uppercase tracking-wider mb-2">Queue</Text>

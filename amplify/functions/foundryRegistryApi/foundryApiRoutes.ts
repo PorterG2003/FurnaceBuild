@@ -1558,6 +1558,14 @@ export async function dispatchFoundryExtendedRoutes(
       .limit(1)
       .maybeSingle();
     if (websiteVerificationErr) return jsonResponse(502, { error: websiteVerificationErr.message });
+    const { data: googleAdsVerification, error: googleAdsVerificationErr } = await leadsClient
+      .from('company_google_ads_verifications')
+      .select('*')
+      .eq('company_id', id)
+      .order('verified_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (googleAdsVerificationErr) return jsonResponse(502, { error: googleAdsVerificationErr.message });
     return jsonResponse(200, {
       company: co,
       locations: locs ?? [],
@@ -1565,6 +1573,7 @@ export async function dispatchFoundryExtendedRoutes(
       entity_matches: matches ?? [],
       associated_people: associatedPeople,
       website_verification: websiteVerification ?? null,
+      google_ads_verification: googleAdsVerification ?? null,
     });
   }
 

@@ -294,6 +294,23 @@ const STATE_ALIASES = Object.entries(STATE_CODE_TO_NAME).flatMap(([code, name]) 
   { code, alias: name },
 ]);
 const HOSTED_SITE_DOMAINS = ['google.com', 'sites.google.com', 'wixsite.com', 'weebly.com', 'squarespace.com', 'webflow.io'];
+const SOCIAL_PROFILE_DOMAINS = [
+  'facebook.com',
+  'instagram.com',
+  'linkedin.com',
+  'twitter.com',
+  'x.com',
+  'youtube.com',
+  'youtu.be',
+  'tiktok.com',
+  'pinterest.com',
+];
+
+function hostMatchesAnyDomain(host: string | null | undefined, domains: string[]): boolean {
+  const normalizedHost = host?.trim().toLowerCase() ?? '';
+  if (!normalizedHost) return false;
+  return domains.some((candidate) => normalizedHost === candidate || normalizedHost.endsWith(`.${candidate}`));
+}
 
 function pageKindWeight(page: WebsiteVerificationExtractedPage): number {
   switch (page.page_kind) {
@@ -602,7 +619,16 @@ function detectStrongGeoMismatch(bundle: WebsiteVerificationBundle, crawl: Websi
 
 function isHostedSite(crawl: WebsiteVerificationCrawlResult): boolean {
   const host = crawl.normalized_domain_key ?? normalizeDomainKey(crawl.final_url ?? crawl.input_url) ?? '';
-  return HOSTED_SITE_DOMAINS.some((candidate) => host === candidate || host.endsWith(`.${candidate}`));
+  return hostMatchesAnyDomain(host, HOSTED_SITE_DOMAINS);
+}
+
+function isSocialProfileSite(crawl: WebsiteVerificationCrawlResult): boolean {
+  const host = crawl.normalized_domain_key ?? normalizeDomainKey(crawl.final_url ?? crawl.input_url) ?? '';
+  return hostMatchesAnyDomain(host, SOCIAL_PROFILE_DOMAINS);
+}
+
+function isDisallowedWebsiteTargetHost(host: string | null | undefined): boolean {
+  return hostMatchesAnyDomain(host, SOCIAL_PROFILE_DOMAINS);
 }
 
 function hasStrongIdentitySignal(name: number, phone: number, geo: number, identifiers: number): boolean {
@@ -614,7 +640,12 @@ function hasBrandConfidentSignal(
   domainBrand: number,
   sourcePrior: number,
   sanity: number,
-  contradictions: { strong_name_mismatch: boolean; strong_geo_mismatch: boolean; hosted_site: boolean },
+  contradictions: {
+    strong_name_mismatch: boolean;
+    strong_geo_mismatch: boolean;
+    hosted_site: boolean;
+    social_profile: boolean;
+  },
 ): boolean {
   return (
     name >= 0.9 &&
@@ -623,7 +654,8 @@ function hasBrandConfidentSignal(
     sanity >= 0.65 &&
     !contradictions.strong_name_mismatch &&
     !contradictions.strong_geo_mismatch &&
-    !contradictions.hosted_site
+    !contradictions.hosted_site &&
+    !contradictions.social_profile
   );
 }
 
@@ -663,17 +695,20 @@ export function scoreWebsiteVerification(
     strong_geo_mismatch: geoMismatch,
     parked_like: parked,
     hosted_site: isHostedSite(crawl),
+    social_profile: isSocialProfileSite(crawl),
   };
   const brandConfident = hasBrandConfidentSignal(name, domainBrand, sourcePrior, sanity, contradictions);
   if (contradictions.strong_name_mismatch) score -= 16;
   if (contradictions.strong_geo_mismatch) score -= 12;
   if (contradictions.hosted_site && !hasStrongIdentitySignal(name, phone, geo, identifiers)) score -= 6;
+  if (contradictions.social_profile) score -= 25;
   if (contradictions.parked_like && !hasStrongIdentitySignal(name, phone, geo, identifiers)) score -= 18;
   if (brandConfident) score += 10;
   score = clamp(score, 0, 100);
 
   const hardStops = {
     fetch_failed: crawl.pages.length === 0 || Boolean(crawl.failed_urls.length && crawl.pages_visited === 0),
+    social_profile: contradictions.social_profile,
     parked_domain:
       contradictions.parked_like &&
       !hasStrongIdentitySignal(name, phone, geo, identifiers) &&
@@ -687,7 +722,7 @@ export function scoreWebsiteVerification(
   };
 
   let band: WebsiteVerificationBand;
-  if (hardStops.fetch_failed || hardStops.parked_domain) {
+  if (hardStops.fetch_failed || hardStops.social_profile || hardStops.parked_domain) {
     band = 'not_usable';
     score = Math.min(score, 40);
   } else if (brandConfident) {
@@ -776,6 +811,7 @@ export function pickWebsiteVerificationTarget(bundle: WebsiteVerificationBundle)
       const normalizedUrl = canonicalizeWebsiteUrl(row.website);
       if (!normalizedUrl) return null;
       const domain = normalizeDomainKey(normalizedUrl);
+      if (isDisallowedWebsiteTargetHost(domain)) return null;
       return {
         url: normalizedUrl,
         domain,

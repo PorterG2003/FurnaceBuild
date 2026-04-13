@@ -21,6 +21,7 @@ import { foundryAutolinkJob } from './functions/foundryAutolinkJob/resource';
 import { foundryContactEnrichmentJob } from './functions/foundryContactEnrichmentJob/resource';
 import { foundryStateMatchingJob } from './functions/foundryStateMatchingJob/resource';
 import { foundryWebsiteVerificationJob } from './functions/foundryWebsiteVerificationJob/resource';
+import { foundryGoogleAdsVerificationJob } from './functions/foundryGoogleAdsVerificationJob/resource';
 import { processNotificationEvent } from './functions/processNotificationEvent/resource';
 
 // Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
@@ -50,6 +51,7 @@ const backend = defineBackend({
   foundryContactEnrichmentJob,
   foundryStateMatchingJob,
   foundryWebsiteVerificationJob,
+  foundryGoogleAdsVerificationJob,
   processNotificationEvent,
   ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
@@ -388,6 +390,9 @@ const floridaScraperTaskRoleArn = cdk.Fn.importValue(`FurnaceFloridaScraperTaskR
 const websiteVerificationTaskRoleArn = cdk.Fn.importValue(
   `FurnaceWebsiteVerificationTaskRole-${workerEnvironment}`,
 );
+const googleAdsVerificationTaskRoleArn = cdk.Fn.importValue(
+  `FurnaceGoogleAdsVerificationTaskRole-${workerEnvironment}`,
+);
 const utahScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
   foundryNormalizeStack,
   `/furnace/ecs/${workerEnvironment}/utah-scraper/task-definition-arn`,
@@ -399,6 +404,10 @@ const floridaScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParame
 const websiteVerificationTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
   foundryNormalizeStack,
   `/furnace/ecs/${workerEnvironment}/website-verification/task-definition-arn`,
+);
+const googleAdsVerificationTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
+  foundryNormalizeStack,
+  `/furnace/ecs/${workerEnvironment}/google-ads-verification/task-definition-arn`,
 );
 
 function buildStateScraperRunTask(
@@ -562,27 +571,48 @@ foundryWebsiteVerificationLambda.addEnvironment('LEADS_SUPABASE_URL', process.en
 
 const foundryWebsiteVerificationRunTask = new sfn.CustomState(foundryNormalizeStack, 'FoundryWebsiteVerificationRunTask', {
   stateJson: {
-    Type: 'Task',
-    Resource: 'arn:aws:states:::ecs:runTask.sync',
-    ResultPath: '$.ecsTask',
+    Type: 'Map',
+    ItemsPath: '$.websiteBatches',
+    MaxConcurrency: 4,
     Parameters: {
-      LaunchType: 'FARGATE',
-      Cluster: workerClusterName,
-      TaskDefinition: websiteVerificationTaskDefinitionArn,
-      NetworkConfiguration: {
-        AwsvpcConfiguration: {
-          Subnets: workerPublicSubnetIds,
-          SecurityGroups: [workerSecurityGroupId],
-          AssignPublicIp: 'ENABLED',
-        },
-      },
-      Overrides: {
-        ContainerOverrides: [
-          {
-            Name: 'website-verification-worker',
-            Environment: [{ Name: 'JOB_ID', 'Value.$': '$.jobId' }],
+      'jobId.$': '$.jobId',
+      'batchTotal.$': '$.batchCount',
+      'batchIndex.$': '$$.Map.Item.Index',
+      'companyIds.$': '$$.Map.Item.Value',
+    },
+    Iterator: {
+      StartAt: 'RunWebsiteVerificationBatch',
+      States: {
+        RunWebsiteVerificationBatch: {
+          Type: 'Task',
+          Resource: 'arn:aws:states:::ecs:runTask.sync',
+          Parameters: {
+            LaunchType: 'FARGATE',
+            Cluster: workerClusterName,
+            TaskDefinition: websiteVerificationTaskDefinitionArn,
+            NetworkConfiguration: {
+              AwsvpcConfiguration: {
+                Subnets: workerPublicSubnetIds,
+                SecurityGroups: [workerSecurityGroupId],
+                AssignPublicIp: 'ENABLED',
+              },
+            },
+            Overrides: {
+              ContainerOverrides: [
+                {
+                  Name: 'website-verification-worker',
+                  Environment: [
+                    { Name: 'JOB_ID', 'Value.$': '$.jobId' },
+                    { Name: 'COMPANY_IDS_JSON', 'Value.$': 'States.JsonToString($.companyIds)' },
+                    { Name: 'BATCH_INDEX', 'Value.$': "States.Format('{}', $.batchIndex)" },
+                    { Name: 'BATCH_TOTAL', 'Value.$': "States.Format('{}', $.batchTotal)" },
+                  ],
+                },
+              ],
+            },
           },
-        ],
+          End: true,
+        },
       },
     },
   },
@@ -666,6 +696,119 @@ const foundryWebsiteVerificationStateMachineArn = cdk.Stack.of(foundryNormalizeS
   arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
 });
 
+const foundryGoogleAdsVerificationLambda = backend.foundryGoogleAdsVerificationJob.resources.lambda as lambda.Function;
+foundryGoogleAdsVerificationLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
+
+const foundryGoogleAdsVerificationRunTask = new sfn.CustomState(
+  foundryNormalizeStack,
+  'FoundryGoogleAdsVerificationRunTask',
+  {
+    stateJson: {
+      Type: 'Task',
+      Resource: 'arn:aws:states:::ecs:runTask.sync',
+      ResultPath: '$.ecsTask',
+      Parameters: {
+        LaunchType: 'FARGATE',
+        Cluster: workerClusterName,
+        TaskDefinition: googleAdsVerificationTaskDefinitionArn,
+        NetworkConfiguration: {
+          AwsvpcConfiguration: {
+            Subnets: workerPublicSubnetIds,
+            SecurityGroups: [workerSecurityGroupId],
+            AssignPublicIp: 'ENABLED',
+          },
+        },
+        Overrides: {
+          ContainerOverrides: [
+            {
+              Name: 'google-ads-verification-worker',
+              Environment: [{ Name: 'JOB_ID', 'Value.$': '$.jobId' }],
+            },
+          ],
+        },
+      },
+    },
+  },
+);
+const foundryGoogleAdsVerificationFinalize = new sfnTasks.LambdaInvoke(
+  foundryNormalizeStack,
+  'FoundryGoogleAdsVerificationFinalize',
+  {
+    lambdaFunction: foundryGoogleAdsVerificationLambda,
+    payload: sfn.TaskInput.fromObject({
+      action: 'finalize',
+      'jobId.$': '$.jobId',
+    }),
+    payloadResponseOnly: true,
+  },
+);
+const foundryGoogleAdsVerificationFail = new sfnTasks.LambdaInvoke(
+  foundryNormalizeStack,
+  'FoundryGoogleAdsVerificationFail',
+  {
+    lambdaFunction: foundryGoogleAdsVerificationLambda,
+    payload: sfn.TaskInput.fromObject({
+      action: 'fail',
+      'jobId.$': '$.jobId',
+      'message.$': '$.error.Cause',
+    }),
+    payloadResponseOnly: true,
+  },
+);
+const foundryGoogleAdsVerificationDone = new sfn.Succeed(foundryNormalizeStack, 'FoundryGoogleAdsVerificationDone');
+const foundryGoogleAdsVerificationAfterFail = new sfn.Succeed(
+  foundryNormalizeStack,
+  'FoundryGoogleAdsVerificationAfterFail',
+);
+foundryGoogleAdsVerificationFinalize.next(foundryGoogleAdsVerificationDone);
+foundryGoogleAdsVerificationFail.next(foundryGoogleAdsVerificationAfterFail);
+foundryGoogleAdsVerificationRunTask.addCatch(foundryGoogleAdsVerificationFail, {
+  errors: [sfn.Errors.ALL],
+  resultPath: '$.error',
+});
+foundryGoogleAdsVerificationFinalize.addCatch(foundryGoogleAdsVerificationFail, {
+  errors: [sfn.Errors.ALL],
+  resultPath: '$.error',
+});
+foundryGoogleAdsVerificationRunTask.next(foundryGoogleAdsVerificationFinalize);
+
+const foundryGoogleAdsVerificationStateMachineName = `foundry-google-ads-verification-${workerEnvironment}`;
+const foundryGoogleAdsVerificationStateMachine = new sfn.StateMachine(
+  foundryNormalizeStack,
+  'FoundryGoogleAdsVerificationSm',
+  {
+    stateMachineName: foundryGoogleAdsVerificationStateMachineName,
+    definitionBody: sfn.DefinitionBody.fromChainable(foundryGoogleAdsVerificationRunTask),
+  },
+);
+foundryGoogleAdsVerificationStateMachine.role.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryGoogleAdsVerificationRunEcsTasks',
+    actions: ['ecs:RunTask', 'ecs:DescribeTasks', 'ecs:StopTask'],
+    resources: ['*'],
+  }),
+);
+foundryGoogleAdsVerificationStateMachine.role.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryGoogleAdsVerificationEventsForEcsTasks',
+    actions: ['events:PutTargets', 'events:PutRule', 'events:DescribeRule'],
+    resources: ['*'],
+  }),
+);
+foundryGoogleAdsVerificationStateMachine.role.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    sid: 'FoundryGoogleAdsVerificationPassEcsRoles',
+    actions: ['iam:PassRole'],
+    resources: [ecsTaskExecutionRoleArn, googleAdsVerificationTaskRoleArn],
+  }),
+);
+const foundryGoogleAdsVerificationStateMachineArn = cdk.Stack.of(foundryNormalizeStack).formatArn({
+  service: 'states',
+  resource: 'stateMachine',
+  resourceName: foundryGoogleAdsVerificationStateMachineName,
+  arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+});
+
 const foundryRegistryLambda = backend.foundryRegistryApi.resources.lambda as lambda.Function;
 foundryRegistryLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 foundryRegistryLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
@@ -677,6 +820,10 @@ foundryRegistryLambda.addEnvironment(
   'FOUNDRY_WEBSITE_VERIFICATION_STATE_MACHINE_ARN',
   foundryWebsiteVerificationStateMachineArn,
 );
+foundryRegistryLambda.addEnvironment(
+  'FOUNDRY_GOOGLE_ADS_VERIFICATION_STATE_MACHINE_ARN',
+  foundryGoogleAdsVerificationStateMachineArn,
+);
 foundryRegistryLambda.addToRolePolicy(
   new iam.PolicyStatement({
     sid: 'FoundryRegistryStartNormalizeExecution',
@@ -687,6 +834,7 @@ foundryRegistryLambda.addToRolePolicy(
       foundryContactEnrichmentStateMachineArn,
       foundryStateMatchingStateMachineArn,
       foundryWebsiteVerificationStateMachineArn,
+      foundryGoogleAdsVerificationStateMachineArn,
     ],
   }),
 );

@@ -42,11 +42,15 @@ export const FOUNDRY_JOB_TYPES = [
   'bulk_source_resolution',
   'state_matching_batch',
   'website_verification_import_run',
+  'google_ads_verification_import_run',
 ] as const;
 export type FoundryJobType = (typeof FOUNDRY_JOB_TYPES)[number];
 
 export const WEBSITE_VERIFICATION_BANDS = ['usable', 'uncertain', 'not_usable'] as const;
 export type WebsiteVerificationBand = (typeof WEBSITE_VERIFICATION_BANDS)[number];
+
+export const GOOGLE_ADS_VERIFICATION_RESULTS = ['yes', 'no', 'unknown'] as const;
+export type GoogleAdsVerificationResult = (typeof GOOGLE_ADS_VERIFICATION_RESULTS)[number];
 
 /** Optional progress JSON on foundry_jobs (UI / workers). */
 export interface FoundryJobProgress {
@@ -76,10 +80,19 @@ export interface FoundryJobProgress {
   outcome_usable?: number;
   outcome_uncertain?: number;
   outcome_not_usable?: number;
+  outcome_yes?: number;
+  outcome_no?: number;
+  outcome_unknown?: number;
   in_scope_total?: number;
   not_applicable_count?: number;
   companies_processed?: number;
   companies_with_result?: number;
+  batch_size?: number | null;
+  batches_total?: number | null;
+  batches_completed?: number | null;
+  batches_failed?: number | null;
+  max_concurrency?: number | null;
+  last_progress_refresh_at?: string | null;
   reconciliation_outcomes?: Partial<Record<ReconciliationOutcome, number>>;
   current_step?: string;
   /** Last source_business_records.id processed in normalize chunk loop */
@@ -188,6 +201,18 @@ export interface PostStartWebsiteVerificationJobResponse {
   preflight: WebsiteVerificationPreflightResponse;
 }
 
+export interface GoogleAdsVerificationPreflightResponse {
+  ready: string[];
+  missing_verified_website: string[];
+}
+
+export interface PostStartGoogleAdsVerificationJobResponse {
+  jobId: string;
+  executionArn: string;
+  reused?: boolean;
+  preflight: GoogleAdsVerificationPreflightResponse;
+}
+
 export interface IngestionRunPipelineJobsResponse {
   ingestion_run_id: string;
   total_source_rows: number;
@@ -196,9 +221,13 @@ export interface IngestionRunPipelineJobsResponse {
   contact_enrichment_job: FoundryJobRow | null;
   state_matching_job: FoundryJobRow | null;
   website_verification_job: FoundryJobRow | null;
+  google_ads_verification_job: FoundryJobRow | null;
   state_matching_outcome_counts?: Partial<Record<ReconciliationOutcome, number>> | null;
   website_verification_outcome_counts?:
     | (Partial<Record<WebsiteVerificationBand, number>> & { error?: number; skipped?: number })
+    | null;
+  google_ads_verification_outcome_counts?:
+    | (Partial<Record<GoogleAdsVerificationResult, number>> & { error?: number; skipped?: number })
     | null;
   queue_pending_tasks: number | null;
 }
@@ -607,6 +636,27 @@ export interface CompanyWebsiteVerificationRow {
   updated_at: string;
 }
 
+export interface CompanyGoogleAdsVerificationRow {
+  id: string;
+  company_id: string;
+  website_verification_id: string | null;
+  foundry_job_id: string | null;
+  source_ingestion_run_id: string | null;
+  input_url: string;
+  search_domain: string;
+  result: GoogleAdsVerificationResult | null;
+  matched_advertiser_id: string | null;
+  matched_advertiser_name: string | null;
+  advertiser_url: string | null;
+  signals: Record<string, unknown>;
+  error: string | null;
+  verifier_version: string;
+  lookup_stats: Record<string, unknown>;
+  verified_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Registry officer/owner row linked to the company via a current entity match. */
 export interface CompanyAssociatedPersonRow {
   id: string;
@@ -675,6 +725,7 @@ export interface ParsedCompanyDetail {
   entity_matches: CompanyEntityMatchRow[];
   associated_people: CompanyAssociatedPersonRow[];
   website_verification: CompanyWebsiteVerificationRow | null;
+  google_ads_verification: CompanyGoogleAdsVerificationRow | null;
 }
 
 /** @deprecated Use ParsedCompanyDetail — kept for any external references. */
@@ -850,6 +901,52 @@ function parseWebsiteVerificationRow(o: unknown): CompanyWebsiteVerificationRow 
   };
 }
 
+function parseGoogleAdsVerificationRow(o: unknown): CompanyGoogleAdsVerificationRow | null {
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  const id = parseString(r.id);
+  const company_id = parseString(r.company_id);
+  const input_url = parseString(r.input_url);
+  const search_domain = parseString(r.search_domain);
+  const verifier_version = parseString(r.verifier_version);
+  const verified_at = parseString(r.verified_at);
+  const created_at = parseString(r.created_at);
+  const updated_at = parseString(r.updated_at);
+  if (!id || !company_id || !input_url || !search_domain || !verifier_version || !verified_at || !created_at || !updated_at) {
+    return null;
+  }
+  return {
+    id,
+    company_id,
+    website_verification_id:
+      r.website_verification_id == null ? null : parseNullableString(r.website_verification_id),
+    foundry_job_id: r.foundry_job_id == null ? null : parseNullableString(r.foundry_job_id),
+    source_ingestion_run_id:
+      r.source_ingestion_run_id == null ? null : parseNullableString(r.source_ingestion_run_id),
+    input_url,
+    search_domain,
+    result:
+      r.result == null
+        ? null
+        : GOOGLE_ADS_VERIFICATION_RESULTS.includes(parseString(r.result) as GoogleAdsVerificationResult)
+          ? (parseString(r.result) as GoogleAdsVerificationResult)
+          : null,
+    matched_advertiser_id:
+      r.matched_advertiser_id == null ? null : parseNullableString(r.matched_advertiser_id),
+    matched_advertiser_name:
+      r.matched_advertiser_name == null ? null : parseNullableString(r.matched_advertiser_name),
+    advertiser_url: r.advertiser_url == null ? null : parseNullableString(r.advertiser_url),
+    signals: r.signals && typeof r.signals === 'object' ? (r.signals as Record<string, unknown>) : {},
+    error: r.error == null ? null : parseNullableString(r.error),
+    verifier_version,
+    lookup_stats:
+      r.lookup_stats && typeof r.lookup_stats === 'object' ? (r.lookup_stats as Record<string, unknown>) : {},
+    verified_at,
+    created_at,
+    updated_at,
+  };
+}
+
 function parseAssociatedPersonRow(o: unknown): CompanyAssociatedPersonRow | null {
   if (!o || typeof o !== 'object') return null;
   const r = o as Record<string, unknown>;
@@ -946,6 +1043,7 @@ export function parseCompanyDetailResponse(raw: unknown): ParsedCompanyDetail {
   const matchesRaw = o.entity_matches;
   const peopleRaw = o.associated_people;
   const websiteVerificationRaw = o.website_verification;
+  const googleAdsVerificationRaw = o.google_ads_verification;
 
   return {
     company: parseCompanyRow(o.company),
@@ -962,6 +1060,7 @@ export function parseCompanyDetailResponse(raw: unknown): ParsedCompanyDetail {
       ? (peopleRaw.map(parseAssociatedPersonRow).filter(Boolean) as CompanyAssociatedPersonRow[])
       : [],
     website_verification: parseWebsiteVerificationRow(websiteVerificationRaw),
+    google_ads_verification: parseGoogleAdsVerificationRow(googleAdsVerificationRaw),
   };
 }
 

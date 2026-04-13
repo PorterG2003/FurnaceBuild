@@ -25,6 +25,7 @@ import {
   type PostStartNormalizeJobResponse,
   type ContactEnrichmentPreflightOptions,
   type ContactEnrichmentPreflightResponse,
+  type PostStartGoogleAdsVerificationJobResponse,
   type PostStartWebsiteVerificationJobResponse,
   type RegistryCompaniesResponse,
   type RegistryEntityOwnersResponse,
@@ -588,6 +589,19 @@ export async function postImportScopedWebsiteVerification(
 ): Promise<PostStartWebsiteVerificationJobResponse> {
   return registryFetchJson<PostStartWebsiteVerificationJobResponse>(
     `ingestion-runs/${encodeURIComponent(runId)}/website-verification`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    },
+  );
+}
+
+export async function postImportScopedGoogleAdsVerification(
+  runId: string,
+): Promise<PostStartGoogleAdsVerificationJobResponse> {
+  return registryFetchJson<PostStartGoogleAdsVerificationJobResponse>(
+    `ingestion-runs/${encodeURIComponent(runId)}/google-ads-verification`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

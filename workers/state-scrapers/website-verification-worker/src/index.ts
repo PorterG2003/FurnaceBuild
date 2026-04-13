@@ -6,9 +6,10 @@ import { createClient } from '@supabase/supabase-js';
 import { chromium, type Browser, type Page } from 'playwright';
 import {
   WEBSITE_VERIFIER_VERSION,
+  buildWebsiteVerificationProgressSnapshot,
   canonicalizeWebsiteUrl,
-  countWebsiteVerificationBands,
   loadWebsiteVerificationBundles,
+  loadWebsiteVerificationProgressCounts,
   normalizeComparableText,
   pickWebsiteVerificationTarget,
   scoreWebsiteVerification,
@@ -47,6 +48,7 @@ const MAX_DEPTH = 3;
 const MAX_PAGES = 25;
 const NAV_TIMEOUT_MS = 45_000;
 const SETTLE_TIMEOUT_MS = 5_000;
+const COMPANY_TIMEOUT_MS = 10 * 60_000;
 const VIEWPORT = { width: 1280, height: 720 };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -135,6 +137,38 @@ function classifyPageFailure(message: string): PageFailureKind {
 
 function trimPageFailureMessage(message: string): string {
   return message.split('\n')[0]?.trim() || message;
+}
+
+function companyTimeoutMessage(companyId: string, inputUrl: string): string {
+  return `company verification timed out after ${Math.round(COMPANY_TIMEOUT_MS / 60_000)} minutes for ${companyId} (${inputUrl})`;
+}
+
+async function runCompanyWithTimeout<T>(
+  page: Page,
+  bundle: WebsiteVerificationBundle,
+  inputUrl: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const startedAt = Date.now();
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const elapsedMs = Date.now() - startedAt;
+      logEvent('company-timeout', {
+        companyId: bundle.company_id,
+        inputUrl,
+        elapsed_ms: elapsedMs,
+        timeout_ms: COMPANY_TIMEOUT_MS,
+      });
+      void page.close().catch(() => {});
+      reject(new Error(companyTimeoutMessage(bundle.company_id, inputUrl)));
+    }, COMPANY_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([task(), timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 function isRetryableNavigationFailure(message: string): boolean {
@@ -413,6 +447,28 @@ async function updateJobProgress(client: any, jobId: string, progress: JobProgre
   }
 }
 
+async function refreshWebsiteVerificationProgress(
+  client: any,
+  jobId: string,
+  payload: Record<string, unknown>,
+  previous: JobProgress,
+  currentStep: string,
+): Promise<JobProgress> {
+  const counts = await loadWebsiteVerificationProgressCounts(
+    client as unknown as Parameters<typeof loadWebsiteVerificationProgressCounts>[0],
+    jobId,
+  );
+  const progress = buildWebsiteVerificationProgressSnapshot(payload, counts, {
+    current_step: currentStep,
+    previous,
+  }) as JobProgress;
+  const { error } = await (client.from('foundry_jobs') as any).update({ progress }).eq('id', jobId);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return progress;
+}
+
 async function main(): Promise<void> {
   const { url, key, jobId } = await loadSecret();
   const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -427,6 +483,14 @@ async function main(): Promise<void> {
   const payload = (jobRow.payload ?? {}) as Record<string, unknown>;
   const progress = ((jobRow.progress ?? {}) as JobProgress) || {};
   const envCompanyIds = process.env.COMPANY_IDS_JSON?.trim();
+  const batchIndex =
+    Number.isFinite(Number(process.env.BATCH_INDEX)) && process.env.BATCH_INDEX != null
+      ? Math.max(0, Math.trunc(Number(process.env.BATCH_INDEX)))
+      : null;
+  const batchTotal =
+    Number.isFinite(Number(process.env.BATCH_TOTAL)) && process.env.BATCH_TOTAL != null
+      ? Math.max(1, Math.trunc(Number(process.env.BATCH_TOTAL)))
+      : null;
   const companyIds = (() => {
     if (envCompanyIds) {
       try {
@@ -436,9 +500,10 @@ async function main(): Promise<void> {
         // fall through to payload
       }
     }
-    return Array.isArray(payload.company_ids)
-      ? payload.company_ids.filter((item): item is string => typeof item === 'string' && item.length > 0)
-      : [];
+    if (Array.isArray(payload.ready_company_ids)) {
+      return payload.ready_company_ids.filter((item): item is string => typeof item === 'string' && item.length > 0);
+    }
+    return Array.isArray(payload.company_ids) ? payload.company_ids.filter((item): item is string => typeof item === 'string' && item.length > 0) : [];
   })();
   const sourceIngestionRunId =
     typeof payload.source_ingestion_run_id === 'string' && payload.source_ingestion_run_id.trim().length > 0
@@ -454,7 +519,14 @@ async function main(): Promise<void> {
   progress.outcome_skipped = progress.outcome_skipped ?? 0;
   progress.companies_with_result = progress.companies_with_result ?? 0;
 
-  logEvent('worker-start', { jobId, companies: companyIds.length, sourceIngestionRunId });
+  logEvent('worker-start', {
+    jobId,
+    companies: companyIds.length,
+    sourceIngestionRunId,
+    batch_index: batchIndex,
+    batch_total: batchTotal,
+    batch_size: companyIds.length,
+  });
   const bundles = await loadWebsiteVerificationBundles(
     client as unknown as Parameters<typeof loadWebsiteVerificationBundles>[0],
     companyIds,
@@ -467,64 +539,69 @@ async function main(): Promise<void> {
       logEvent('company-start', {
         jobId,
         companyId: bundle.company_id,
+        batch_index: batchIndex,
+        batch_total: batchTotal,
         company: bundleLogView(bundle, inputUrl),
       });
       if (!inputUrl) {
         logEvent('company-skipped', {
           jobId,
           companyId: bundle.company_id,
+          batch_index: batchIndex,
+          batch_total: batchTotal,
           reason: 'missing_input_url',
           company: bundleLogView(bundle, inputUrl),
         });
-        progress.companies_processed = Number(progress.companies_processed ?? 0) + 1;
-        progress.outcome_skipped = Number(progress.outcome_skipped ?? 0) + 1;
+        progress.last_progress_refresh_at = new Date().toISOString();
         await updateJobProgress(client, jobId, progress);
         continue;
       }
       const page = await context.newPage();
       page.setDefaultTimeout(NAV_TIMEOUT_MS);
       try {
-        const crawl = await crawlWebsite(page, bundle, inputUrl);
-        const scored = scoreWebsiteVerification(bundle, crawl);
-        logEvent('company-result', {
-          jobId,
-          companyId: bundle.company_id,
-          company: bundleLogView(bundle, inputUrl),
-          crawl: crawlLogView(crawl),
-          result: scoreLogView(scored),
+        await runCompanyWithTimeout(page, bundle, inputUrl, async () => {
+          const crawl = await crawlWebsite(page, bundle, inputUrl);
+          const scored = scoreWebsiteVerification(bundle, crawl);
+          logEvent('company-result', {
+            jobId,
+            companyId: bundle.company_id,
+            batch_index: batchIndex,
+            batch_total: batchTotal,
+            company: bundleLogView(bundle, inputUrl),
+            crawl: crawlLogView(crawl),
+            result: scoreLogView(scored),
+          });
+          const { error } = await (client.from('company_website_verifications') as any).upsert({
+            company_id: bundle.company_id,
+            foundry_job_id: jobId,
+            source_ingestion_run_id: sourceIngestionRunId,
+            input_url: crawl.input_url,
+            final_url: crawl.final_url,
+            score: scored.score,
+            band: scored.band,
+            signals: scored.signals,
+            verifier_version: WEBSITE_VERIFIER_VERSION,
+            crawl_stats: scored.crawl_stats,
+            verified_at: new Date().toISOString(),
+          }, { onConflict: 'foundry_job_id,company_id', ignoreDuplicates: false });
+          if (error) throw new Error(error.message);
+          const refreshed = await refreshWebsiteVerificationProgress(client, jobId, payload, progress, 'running');
+          Object.assign(progress, refreshed);
         });
-        const { error } = await (client.from('company_website_verifications') as any).insert({
-          company_id: bundle.company_id,
-          foundry_job_id: jobId,
-          source_ingestion_run_id: sourceIngestionRunId,
-          input_url: crawl.input_url,
-          final_url: crawl.final_url,
-          score: scored.score,
-          band: scored.band,
-          signals: scored.signals,
-          verifier_version: WEBSITE_VERIFIER_VERSION,
-          crawl_stats: scored.crawl_stats,
-          verified_at: new Date().toISOString(),
-        });
-        if (error) throw new Error(error.message);
-        progress.companies_processed = Number(progress.companies_processed ?? 0) + 1;
-        progress.companies_with_result = Number(progress.companies_with_result ?? 0) + 1;
-        if (scored.band === 'usable') progress.outcome_usable = Number(progress.outcome_usable ?? 0) + 1;
-        if (scored.band === 'uncertain') progress.outcome_uncertain = Number(progress.outcome_uncertain ?? 0) + 1;
-        if (scored.band === 'not_usable') progress.outcome_not_usable = Number(progress.outcome_not_usable ?? 0) + 1;
-        await updateJobProgress(client, jobId, progress);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         logEvent('company-result', {
           jobId,
           companyId: bundle.company_id,
+          batch_index: batchIndex,
+          batch_total: batchTotal,
           company: bundleLogView(bundle, inputUrl),
           result: {
             band: 'error',
             error: trimPageFailureMessage(message),
           },
         });
-        await (client.from('company_website_verifications') as any).insert({
+        await (client.from('company_website_verifications') as any).upsert({
           company_id: bundle.company_id,
           foundry_job_id: jobId,
           source_ingestion_run_id: sourceIngestionRunId,
@@ -537,29 +614,15 @@ async function main(): Promise<void> {
           verifier_version: WEBSITE_VERIFIER_VERSION,
           crawl_stats: { pages_visited: 0, max_depth_reached: 0, failed_urls: [inputUrl] },
           verified_at: new Date().toISOString(),
-        });
-        progress.companies_processed = Number(progress.companies_processed ?? 0) + 1;
-        progress.companies_with_result = Number(progress.companies_with_result ?? 0) + 1;
-        progress.outcome_error = Number(progress.outcome_error ?? 0) + 1;
-        await updateJobProgress(client, jobId, progress);
+        }, { onConflict: 'foundry_job_id,company_id', ignoreDuplicates: false });
+        const refreshed = await refreshWebsiteVerificationProgress(client, jobId, payload, progress, 'running');
+        Object.assign(progress, refreshed);
       } finally {
         await page.close().catch(() => {});
       }
     }
-
-    const { data: rows, error: rowsErr } = await (client
-      .from('company_website_verifications') as any)
-      .select('band, error')
-      .eq('foundry_job_id', jobId);
-    if (rowsErr) throw new Error(rowsErr.message);
-    const counts = countWebsiteVerificationBands((rows ?? []) as Array<{ band: string | null; error?: string | null }>);
-    await updateJobProgress(client, jobId, {
-      ...progress,
-      outcome_usable: counts.usable,
-      outcome_uncertain: counts.uncertain,
-      outcome_not_usable: counts.not_usable,
-      outcome_error: counts.error,
-    });
+    const refreshed = await refreshWebsiteVerificationProgress(client, jobId, payload, progress, 'running');
+    Object.assign(progress, refreshed);
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});

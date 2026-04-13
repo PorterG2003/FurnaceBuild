@@ -61,6 +61,7 @@ export class WorkerStack extends cdk.Stack {
   public readonly utahScraperTaskRepo: ecr.Repository;
   public readonly floridaScraperTaskRepo: ecr.Repository;
   public readonly websiteVerificationTaskRepo: ecr.Repository;
+  public readonly googleAdsVerificationTaskRepo: ecr.Repository;
 
   constructor(scope: Construct, id: string, props: WorkerStackProps) {
     super(scope, id, props);
@@ -153,6 +154,12 @@ export class WorkerStack extends cdk.Stack {
       lifecycleRules: [{ maxImageCount: 10 }],
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+    const googleAdsVerificationTaskRepo = new ecr.Repository(this, 'GoogleAdsVerificationTaskRepo', {
+      repositoryName: `furnace/google-ads-verification-${environment}`,
+      imageScanOnPush: true,
+      lifecycleRules: [{ maxImageCount: 10 }],
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
 
     this.sendWorkerRepo = sendWorkerRepo;
     this.schedulerWorkerRepo = schedulerWorkerRepo;
@@ -161,6 +168,7 @@ export class WorkerStack extends cdk.Stack {
     this.utahScraperTaskRepo = utahScraperTaskRepo;
     this.floridaScraperTaskRepo = floridaScraperTaskRepo;
     this.websiteVerificationTaskRepo = websiteVerificationTaskRepo;
+    this.googleAdsVerificationTaskRepo = googleAdsVerificationTaskRepo;
 
     // ============================================
     // VPC & Networking
@@ -225,6 +233,11 @@ export class WorkerStack extends cdk.Stack {
     });
     const websiteVerificationTaskLogGroup = new logs.LogGroup(this, 'WebsiteVerificationTaskLogGroup', {
       logGroupName: `/ecs/furnace/website-verification-task-${environment}`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    const googleAdsVerificationTaskLogGroup = new logs.LogGroup(this, 'GoogleAdsVerificationTaskLogGroup', {
+      logGroupName: `/ecs/furnace/google-ads-verification-task-${environment}`,
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
@@ -422,6 +435,15 @@ export class WorkerStack extends cdk.Stack {
       actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
       resources: [websiteVerificationTaskLogGroup.logGroupArn + ':*'],
     }));
+    const googleAdsVerificationTaskRole = new iam.Role(this, 'GoogleAdsVerificationTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      description: `Role for Google Ads verification ECS tasks (${environment})`,
+    });
+    googleAdsVerificationTaskRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'AllowGoogleAdsVerificationCloudWatchLogs',
+      actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      resources: [googleAdsVerificationTaskLogGroup.logGroupArn + ':*'],
+    }));
 
     if (utahLeadsConfigured) {
       const paramSuffix = leadsParamTrim!.replace(/^\//, '');
@@ -441,6 +463,13 @@ export class WorkerStack extends cdk.Stack {
       websiteVerificationTaskRole.addToPolicy(
         new iam.PolicyStatement({
           sid: 'AllowWebsiteVerificationLeadsSecretSsm',
+          actions: ['ssm:GetParameters', 'ssm:GetParameter'],
+          resources: [`arn:aws:ssm:${region}:${account}:parameter/${paramSuffix}`],
+        }),
+      );
+      googleAdsVerificationTaskRole.addToPolicy(
+        new iam.PolicyStatement({
+          sid: 'AllowGoogleAdsVerificationLeadsSecretSsm',
           actions: ['ssm:GetParameters', 'ssm:GetParameter'],
           resources: [`arn:aws:ssm:${region}:${account}:parameter/${paramSuffix}`],
         }),
@@ -673,6 +702,29 @@ export class WorkerStack extends cdk.Stack {
           : {}),
       },
     });
+    const googleAdsVerificationTaskDefinition = new ecs.FargateTaskDefinition(this, 'GoogleAdsVerificationTaskDef', {
+      family: `furnace-google-ads-verification-task-${environment}`,
+      memoryLimitMiB: 2048,
+      cpu: 1024,
+      taskRole: googleAdsVerificationTaskRole,
+      executionRole: taskExecutionRole,
+    });
+    googleAdsVerificationTaskDefinition.addContainer('google-ads-verification-worker', {
+      image: ecs.ContainerImage.fromEcrRepository(googleAdsVerificationTaskRepo, 'latest'),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'google-ads-verification-worker',
+        logGroup: googleAdsVerificationTaskLogGroup,
+      }),
+      environment: {
+        AWS_REGION: region,
+        ...(utahLeadsConfigured
+          ? {
+              LEADS_SUPABASE_URL: leadsUrlTrim!,
+              LEADS_SUPABASE_SECRET_KEY_PARAM_PATH: leadsParamTrim!,
+            }
+          : {}),
+      },
+    });
 
     // Stable SSM names for latest task definition ARNs (Amplify Lambdas read at runtime; avoids CFN export churn).
     new ssm.StringParameter(this, 'SmartleadMigrationTaskDefinitionArnParam', {
@@ -694,6 +746,11 @@ export class WorkerStack extends cdk.Stack {
       parameterName: `/furnace/ecs/${environment}/website-verification/task-definition-arn`,
       stringValue: websiteVerificationTaskDefinition.taskDefinitionArn,
       description: 'Current website verification ECS task definition ARN for RunTask',
+    });
+    new ssm.StringParameter(this, 'GoogleAdsVerificationTaskDefinitionArnParam', {
+      parameterName: `/furnace/ecs/${environment}/google-ads-verification/task-definition-arn`,
+      stringValue: googleAdsVerificationTaskDefinition.taskDefinitionArn,
+      description: 'Current Google Ads verification ECS task definition ARN for RunTask',
     });
 
     // Legacy export: older Amplify stacks still use Fn::ImportValue on this name. Removing it
@@ -750,6 +807,11 @@ export class WorkerStack extends cdk.Stack {
       value: websiteVerificationTaskRepo.repositoryUri,
       description: 'ECR repository URI for website verification task',
       exportName: `FurnaceWebsiteVerificationTaskRepo-${environment}`,
+    });
+    new cdk.CfnOutput(this, 'GoogleAdsVerificationTaskRepoUri', {
+      value: googleAdsVerificationTaskRepo.repositoryUri,
+      description: 'ECR repository URI for Google Ads verification task',
+      exportName: `FurnaceGoogleAdsVerificationTaskRepo-${environment}`,
     });
 
     new cdk.CfnOutput(this, 'ClusterName', {
@@ -815,6 +877,11 @@ export class WorkerStack extends cdk.Stack {
       value: websiteVerificationTaskRole.roleArn,
       description: 'Task role for website verification containers',
       exportName: `FurnaceWebsiteVerificationTaskRole-${environment}`,
+    });
+    new cdk.CfnOutput(this, 'GoogleAdsVerificationTaskRoleArn', {
+      value: googleAdsVerificationTaskRole.roleArn,
+      description: 'Task role for Google Ads verification containers',
+      exportName: `FurnaceGoogleAdsVerificationTaskRole-${environment}`,
     });
   }
 }

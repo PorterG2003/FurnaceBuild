@@ -26,6 +26,9 @@ function PayloadSummary({ job }: { job: FoundryJobRow }) {
   if (Array.isArray(p.company_ids)) {
     lines.push(`Company IDs: ${p.company_ids.length}`);
   }
+  if (Array.isArray(p.ready_company_ids)) {
+    lines.push(`Ready company IDs: ${p.ready_company_ids.length}`);
+  }
   if (Array.isArray(p.utah_company_ids)) {
     lines.push(`Utah company IDs: ${p.utah_company_ids.length}`);
   }
@@ -34,6 +37,12 @@ function PayloadSummary({ job }: { job: FoundryJobRow }) {
   }
   if (typeof p.batch_size === 'number') {
     lines.push(`Batch size: ${p.batch_size}`);
+  }
+  if (typeof p.batch_count === 'number') {
+    lines.push(`Batch count: ${p.batch_count}`);
+  }
+  if (typeof p.map_max_concurrency === 'number') {
+    lines.push(`Max concurrency: ${p.map_max_concurrency}`);
   }
   if (typeof p.freshness_window_days === 'number') {
     lines.push(`Freshness window: ${p.freshness_window_days} days`);

@@ -37,8 +37,22 @@ export function RenderJobProgressSummary({ progress }: { progress: FoundryJobPro
   }
   if (progress.outcome_no_match != null) rows.push({ label: 'No match', value: String(progress.outcome_no_match) });
   if (progress.outcome_error != null) rows.push({ label: 'Error', value: String(progress.outcome_error) });
+  if (progress.outcome_usable != null) rows.push({ label: 'Usable', value: String(progress.outcome_usable) });
+  if (progress.outcome_uncertain != null) rows.push({ label: 'Uncertain', value: String(progress.outcome_uncertain) });
+  if (progress.outcome_not_usable != null) rows.push({ label: 'Not usable', value: String(progress.outcome_not_usable) });
   if (progress.outcome_skipped_recent != null) {
     rows.push({ label: 'Skipped recent', value: String(progress.outcome_skipped_recent) });
+  }
+  if (progress.in_scope_total != null) rows.push({ label: 'In scope total', value: String(progress.in_scope_total) });
+  if (progress.companies_processed != null) rows.push({ label: 'Companies processed', value: String(progress.companies_processed) });
+  if (progress.companies_with_result != null) {
+    rows.push({ label: 'Companies with result', value: String(progress.companies_with_result) });
+  }
+  if (progress.batch_size != null) rows.push({ label: 'Batch size', value: String(progress.batch_size) });
+  if (progress.batches_total != null) rows.push({ label: 'Batches total', value: String(progress.batches_total) });
+  if (progress.max_concurrency != null) rows.push({ label: 'Max concurrency', value: String(progress.max_concurrency) });
+  if (progress.last_progress_refresh_at != null) {
+    rows.push({ label: 'Last progress refresh', value: String(progress.last_progress_refresh_at) });
   }
   if (progress.cursor != null) rows.push({ label: 'Cursor', value: String(progress.cursor) });
   if (progress.last_chunk != null) {

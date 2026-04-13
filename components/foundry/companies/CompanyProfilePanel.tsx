@@ -1,5 +1,9 @@
 import { View, Text, Pressable, Linking } from 'react-native';
-import type { CompanyWebsiteVerificationRow, RegistryCompanyDetailRow } from '@/lib/foundry/registry-types';
+import type {
+  CompanyGoogleAdsVerificationRow,
+  CompanyWebsiteVerificationRow,
+  RegistryCompanyDetailRow,
+} from '@/lib/foundry/registry-types';
 import { formatDetailTimestamp, dash, normalizeWebsiteHref } from './companyDetailFormat';
 
 function verificationTone(verification: CompanyWebsiteVerificationRow | null | undefined): string {
@@ -14,11 +18,13 @@ export function CompanyProfilePanel({
   company,
   website,
   verification,
+  googleAdsVerification,
 }: {
   company: RegistryCompanyDetailRow;
   /** Prefer a linked source row’s website; omitted when unknown. */
   website?: string | null;
   verification?: CompanyWebsiteVerificationRow | null;
+  googleAdsVerification?: CompanyGoogleAdsVerificationRow | null;
 }) {
   const webHref = website?.trim() ? normalizeWebsiteHref(website.trim()) : '';
 
@@ -52,6 +58,33 @@ export function CompanyProfilePanel({
           </Text>
           {verification.error ? (
             <Text className="text-red-300/90 font-instrument text-xs mt-2 leading-5">{verification.error}</Text>
+          ) : null}
+        </View>
+      ) : (
+        <Text className="text-gray-500 font-instrument text-sm mb-4">Not verified</Text>
+      )}
+      <Text className="text-gray-500 font-instrument text-xs mb-1">Google Ads verification</Text>
+      {googleAdsVerification ? (
+        <View className="mb-4">
+          <View className={`self-start px-2 py-1 rounded-full border ${
+            googleAdsVerification.result === 'yes'
+              ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'
+              : googleAdsVerification.result === 'no'
+                ? 'text-amber-300 bg-amber-500/10 border-amber-500/30'
+                : 'text-gray-300 bg-gray-500/10 border-gray-500/30'
+          }`}>
+            <Text className="font-instrument text-xs">
+              {googleAdsVerification.result ?? 'unknown'}
+              {googleAdsVerification.matched_advertiser_name ? ` · ${googleAdsVerification.matched_advertiser_name}` : ''}
+            </Text>
+          </View>
+          <Text className="text-gray-500 font-instrument text-xs mt-2">
+            {formatDetailTimestamp(googleAdsVerification.verified_at)}
+          </Text>
+          {googleAdsVerification.error ? (
+            <Text className="text-red-300/90 font-instrument text-xs mt-2 leading-5">
+              {googleAdsVerification.error}
+            </Text>
           ) : null}
         </View>
       ) : (

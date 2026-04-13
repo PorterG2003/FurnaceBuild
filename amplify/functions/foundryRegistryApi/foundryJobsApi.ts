@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  buildGoogleAdsVerificationProgressSnapshot,
   buildWebsiteVerificationProgressSnapshot,
   buildContactEnrichmentPreflight,
   bucketCompaniesForMatching,
@@ -26,7 +27,7 @@ import {
   WEBSITE_VERIFICATION_BATCH_SIZE_MIN,
   WEBSITE_VERIFICATION_MAP_MAX_CONCURRENCY_DEFAULT,
   GOOGLE_ADS_VERIFIER_VERSION,
-  countGoogleAdsVerificationResults,
+  loadGoogleAdsVerificationProgressCounts,
 } from '@furnace/registry-server';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -155,6 +156,45 @@ async function refreshWebsiteVerificationJobProgress(
   );
   const progress = buildWebsiteVerificationProgressSnapshot(payload, counts, {
     current_step: websiteVerificationCurrentStep(String(job.status ?? ''), previous),
+    previous,
+  });
+  if (persist) {
+    const { error } = await leadsClient.from('foundry_jobs').update({ progress }).eq('id', jobId);
+    if (error) throw new Error(error.message);
+  }
+  return {
+    ...job,
+    progress,
+  };
+}
+
+function googleAdsVerificationCurrentStep(
+  status: string,
+  previous: Record<string, unknown> | null | undefined,
+): string {
+  if (status === 'completed') return 'done';
+  if (status === 'failed') return 'failed';
+  if (status === 'queued') return 'queued';
+  const existing = typeof previous?.current_step === 'string' && previous.current_step.trim() ? previous.current_step.trim() : null;
+  return existing ?? 'running';
+}
+
+async function refreshGoogleAdsVerificationJobProgress(
+  leadsClient: SupabaseClient,
+  job: Record<string, unknown>,
+  persist = false,
+): Promise<Record<string, unknown>> {
+  if (String(job.job_type ?? '') !== 'google_ads_verification_import_run') return job;
+  const jobId = String(job.id ?? '');
+  if (!jobId) return job;
+  const payload = job.payload && typeof job.payload === 'object' ? (job.payload as Record<string, unknown>) : {};
+  const previous = job.progress && typeof job.progress === 'object' ? (job.progress as Record<string, unknown>) : {};
+  const counts = await loadGoogleAdsVerificationProgressCounts(
+    leadsClient as unknown as Parameters<typeof loadGoogleAdsVerificationProgressCounts>[0],
+    jobId,
+  );
+  const progress = buildGoogleAdsVerificationProgressSnapshot(payload, counts, {
+    current_step: googleAdsVerificationCurrentStep(String(job.status ?? ''), previous),
     previous,
   });
   if (persist) {
@@ -1369,22 +1409,28 @@ export async function startGoogleAdsVerificationImportJob(
       requested_by: userId,
       payload: {
         company_ids: uniqueCompanyIds,
+        ready_company_ids: preflight.ready,
         preflight,
         ...(opts?.sourceIngestionRunId ? { source_ingestion_run_id: opts.sourceIngestionRunId } : {}),
       },
       idempotency_key: idempotencyKey,
-      progress: {
-        current_step: 'queued',
-        in_scope_total: preflight.ready.length,
-        not_applicable_count: preflight.missing_verified_website.length,
-        companies_processed: 0,
-        companies_with_result: 0,
-        outcome_yes: 0,
-        outcome_no: 0,
-        outcome_unknown: 0,
-        outcome_error: 0,
-        outcome_skipped: preflight.missing_verified_website.length,
-      },
+      progress: buildGoogleAdsVerificationProgressSnapshot(
+        {
+          company_ids: uniqueCompanyIds,
+          ready_company_ids: preflight.ready,
+          preflight,
+          ...(opts?.sourceIngestionRunId ? { source_ingestion_run_id: opts.sourceIngestionRunId } : {}),
+        },
+        {
+          companies_processed: 0,
+          companies_with_result: 0,
+          outcome_yes: 0,
+          outcome_no: 0,
+          outcome_unknown: 0,
+          outcome_error: 0,
+        },
+        { current_step: 'queued' },
+      ),
     })
     .select('id')
     .single();
@@ -1410,18 +1456,23 @@ export async function startGoogleAdsVerificationImportJob(
         status: 'running',
         started_at: new Date().toISOString(),
         step_function_execution_arn: executionArn,
-        progress: {
-          current_step: 'running',
-          in_scope_total: preflight.ready.length,
-          not_applicable_count: preflight.missing_verified_website.length,
-          companies_processed: 0,
-          companies_with_result: 0,
-          outcome_yes: 0,
-          outcome_no: 0,
-          outcome_unknown: 0,
-          outcome_error: 0,
-          outcome_skipped: preflight.missing_verified_website.length,
-        },
+        progress: buildGoogleAdsVerificationProgressSnapshot(
+          {
+            company_ids: uniqueCompanyIds,
+            ready_company_ids: preflight.ready,
+            preflight,
+            ...(opts?.sourceIngestionRunId ? { source_ingestion_run_id: opts.sourceIngestionRunId } : {}),
+          },
+          {
+            companies_processed: 0,
+            companies_with_result: 0,
+            outcome_yes: 0,
+            outcome_no: 0,
+            outcome_unknown: 0,
+            outcome_error: 0,
+          },
+          { current_step: 'running' },
+        ),
       })
       .eq('id', jobId);
     if (updateErr) console.error('google ads verification job update after start failed', updateErr.message);
@@ -1647,18 +1698,6 @@ async function getWebsiteVerificationOutcomeCounts(
   };
 }
 
-async function getGoogleAdsVerificationOutcomeCounts(
-  leadsClient: SupabaseClient,
-  jobId: string,
-): Promise<Record<string, number>> {
-  const { data, error } = await leadsClient
-    .from('company_google_ads_verifications')
-    .select('result, error')
-    .eq('foundry_job_id', jobId);
-  if (error) throw new Error(error.message);
-  return countGoogleAdsVerificationResults((data ?? []) as Array<{ result: string | null; error?: string | null }>);
-}
-
 function stateMatchingRunIdFromJob(job: Awaited<ReturnType<typeof getLatestJobForRun>>): string | null {
   const runId = job?.payload?.reconciliation_run_id;
   return typeof runId === 'string' && runId.trim() ? runId.trim() : null;
@@ -1686,6 +1725,9 @@ async function handleGetPipelineJobs(leadsClient: SupabaseClient, runId: string)
     const websiteVerificationJob = websiteVerificationJobRaw
       ? await refreshWebsiteVerificationJobProgress(leadsClient, websiteVerificationJobRaw as unknown as Record<string, unknown>, false)
       : websiteVerificationJobRaw;
+    const googleAdsVerificationJobRefreshed = googleAdsVerificationJob
+      ? await refreshGoogleAdsVerificationJobProgress(leadsClient, googleAdsVerificationJob as unknown as Record<string, unknown>, false)
+      : googleAdsVerificationJob;
 
     let queuePendingTasks: number | null = null;
     let stateMatchingOutcomeCounts: Record<string, number> | null = null;
@@ -1730,8 +1772,8 @@ async function handleGetPipelineJobs(leadsClient: SupabaseClient, runId: string)
         websiteVerificationOutcomeCounts = progressCounts;
       }
     }
-    if (googleAdsVerificationJob) {
-      const progress = (googleAdsVerificationJob.progress ?? {}) as Record<string, unknown>;
+    if (googleAdsVerificationJobRefreshed) {
+      const progress = (googleAdsVerificationJobRefreshed.progress ?? {}) as Record<string, unknown>;
       const progressCounts = {
         yes: Number(progress.outcome_yes ?? 0),
         no: Number(progress.outcome_no ?? 0),
@@ -1739,21 +1781,7 @@ async function handleGetPipelineJobs(leadsClient: SupabaseClient, runId: string)
         error: Number(progress.outcome_error ?? 0),
         skipped: Number(progress.outcome_skipped ?? 0),
       };
-      if (googleAdsVerificationJob.status === 'queued' || googleAdsVerificationJob.status === 'running') {
-        googleAdsVerificationOutcomeCounts = progressCounts;
-      } else {
-        try {
-          const terminalCounts = await getGoogleAdsVerificationOutcomeCounts(
-            leadsClient,
-            String(googleAdsVerificationJob.id),
-          );
-          googleAdsVerificationOutcomeCounts = { ...terminalCounts, skipped: progressCounts.skipped };
-        } catch (googleAdsErr) {
-          const message = googleAdsErr instanceof Error ? googleAdsErr.message : String(googleAdsErr);
-          console.error('pipeline jobs google ads verification counts failed', runId, message);
-          googleAdsVerificationOutcomeCounts = progressCounts;
-        }
-      }
+      googleAdsVerificationOutcomeCounts = progressCounts;
     }
 
     return jsonResponse(200, {
@@ -1764,7 +1792,7 @@ async function handleGetPipelineJobs(leadsClient: SupabaseClient, runId: string)
       contact_enrichment_job: contactEnrichmentJob,
       state_matching_job: stateMatchingJob,
       website_verification_job: websiteVerificationJob,
-      google_ads_verification_job: googleAdsVerificationJob,
+      google_ads_verification_job: googleAdsVerificationJobRefreshed,
       state_matching_outcome_counts: stateMatchingOutcomeCounts,
       website_verification_outcome_counts: websiteVerificationOutcomeCounts,
       google_ads_verification_outcome_counts: googleAdsVerificationOutcomeCounts,

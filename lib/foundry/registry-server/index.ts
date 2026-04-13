@@ -15,6 +15,7 @@ export * from './costRateCards.js';
 export * from './websiteVerification.js';
 export * from './websiteVerificationProgress.js';
 export * from './googleAdsVerification.js';
+export * from './googleAdsVerificationProgress.js';
 export * from './scrapers/cleanCompanyNameForSearch.js';
 export * from './scrapers/normalizeNames.js';
 export * from './scrapers/compareTypes.js';

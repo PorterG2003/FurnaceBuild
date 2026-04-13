@@ -572,6 +572,9 @@ foundryWebsiteVerificationLambda.addEnvironment('LEADS_SUPABASE_URL', process.en
 const foundryWebsiteVerificationRunTask = new sfn.CustomState(foundryNormalizeStack, 'FoundryWebsiteVerificationRunTask', {
   stateJson: {
     Type: 'Map',
+    // Map output is an array of per-batch ECS results; without ResultPath it replaces the whole input and `jobId` is lost,
+    // so Finalize would not mark foundry_jobs completed.
+    ResultPath: '$.websiteVerificationMapResults',
     ItemsPath: '$.websiteBatches',
     MaxConcurrency: 4,
     Parameters: {

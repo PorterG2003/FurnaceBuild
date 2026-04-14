@@ -18,6 +18,7 @@ backend:
         - cd amplify/functions/foundryStateMatchingJob && npm install && cd - || (echo "Failed to install foundryStateMatchingJob dependencies" && exit 1)
         - cd amplify/functions/foundryWebsiteVerificationJob && npm install && cd - || (echo "Failed to install foundryWebsiteVerificationJob dependencies" && exit 1)
         - cd amplify/functions/foundryGoogleAdsVerificationJob && npm install && cd - || (echo "Failed to install foundryGoogleAdsVerificationJob dependencies" && exit 1)
+        - cd amplify/functions/foundryCsvBuilderExportJob && npm install && cd - || (echo "Failed to install foundryCsvBuilderExportJob dependencies" && exit 1)
         - cd amplify/functions/processNotificationEvent && npm install && cd - || (echo "Failed to install processNotificationEvent dependencies" && exit 1)
         - |
           FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"

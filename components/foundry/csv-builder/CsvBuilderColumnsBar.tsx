@@ -1,6 +1,6 @@
 import { ScrollView, View, Text } from 'react-native';
 import { Button } from '@/components/ui/button';
-import type { CsvBuilderColumnRow } from '@/lib/foundry/registry-types';
+import type { CsvBuilderColumnRow, CsvBuilderToolJobRow } from '@/lib/foundry/registry-types';
 
 function statusColor(status: string): string {
   if (status === 'failed') return 'text-red-400';
@@ -11,14 +11,17 @@ function statusColor(status: string): string {
 
 export function CsvBuilderColumnsBar({
   columns,
+  toolJobs,
   onRerunJob,
   rerunningJobId,
 }: {
   columns: CsvBuilderColumnRow[];
+  toolJobs?: CsvBuilderToolJobRow[];
   onRerunJob?: (toolJobId: string) => Promise<void>;
   rerunningJobId?: string | null;
 }) {
   const sourceColumns = columns.filter((column) => column.kind === 'source');
+  const toolJobsById = new Map((toolJobs ?? []).map((job) => [job.id, job]));
   const groupedToolColumns = Array.from(
     columns
       .filter((column) => column.kind === 'tool_output' && column.tool_job_id)
@@ -41,6 +44,11 @@ export function CsvBuilderColumnsBar({
         {groupedToolColumns.map(([toolJobId, jobColumns]) => {
           const primary = [...jobColumns].sort((a, b) => a.position - b.position)[0];
           const groupLabel = primary.label.split(':')[0]?.trim() || primary.label;
+          const toolJob = toolJobsById.get(toolJobId);
+          const rowsCompleted = toolJob?.rows_completed ?? null;
+          const rowsTotal = toolJob?.rows_total ?? null;
+          const rowsFailed = toolJob?.rows_failed ?? null;
+          const status = toolJob?.status ?? primary.status;
           return (
             <View key={toolJobId} className="border border-[#2A2A2A] rounded-lg px-3 py-2 bg-[#181818] min-w-[220px]">
               <Text className="text-white font-instrument-medium text-sm" numberOfLines={1}>
@@ -49,9 +57,14 @@ export function CsvBuilderColumnsBar({
               <Text className="text-gray-500 font-instrument text-[11px] mt-1">
                 {jobColumns.length} outputs · {primary.tool_type ? primary.tool_type.replace(/_/g, ' ') : 'tool'}
               </Text>
-              <Text className={`${statusColor(primary.status)} font-instrument text-[11px] mt-1`}>
-                {primary.status.replace(/_/g, ' ')}
+              <Text className={`${statusColor(status)} font-instrument text-[11px] mt-1`}>
+                {status.replace(/_/g, ' ')}
               </Text>
+              {rowsTotal != null ? (
+                <Text className="text-gray-500 font-instrument text-[11px] mt-1">
+                  {rowsCompleted ?? 0} / {rowsTotal} rows{rowsFailed ? ` · ${rowsFailed} failed` : ''}
+                </Text>
+              ) : null}
               {onRerunJob ? (
                 <View className="mt-2 self-start">
                   <Button

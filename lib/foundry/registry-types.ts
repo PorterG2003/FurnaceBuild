@@ -315,6 +315,9 @@ export interface CsvBuilderColumnJobRow {
   rows_total: number | null;
   rows_completed: number | null;
   rows_failed: number | null;
+  batch_size: number | null;
+  batch_count: number | null;
+  max_concurrency: number | null;
   error_summary: string | null;
   started_at: string | null;
   completed_at: string | null;

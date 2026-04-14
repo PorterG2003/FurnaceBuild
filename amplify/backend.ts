@@ -584,57 +584,115 @@ const foundryStateMatchingStateMachineArn = cdk.Stack.of(foundryNormalizeStack).
 const foundryWebsiteVerificationLambda = backend.foundryWebsiteVerificationJob.resources.lambda as lambda.Function;
 foundryWebsiteVerificationLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
 
-const foundryWebsiteVerificationRunTask = new sfn.CustomState(foundryNormalizeStack, 'FoundryWebsiteVerificationRunTask', {
-  stateJson: {
-    Type: 'Map',
-    // Map output is an array of per-batch ECS results; without ResultPath it replaces the whole input and `jobId` is lost,
-    // so Finalize would not mark foundry_jobs completed.
-    ResultPath: '$.websiteVerificationMapResults',
-    ItemsPath: '$.websiteBatches',
-    MaxConcurrency: 4,
-    Parameters: {
-      'jobId.$': '$.jobId',
-      'batchTotal.$': '$.batchCount',
-      'batchIndex.$': '$$.Map.Item.Index',
-      'companyIds.$': '$$.Map.Item.Value',
-    },
-    Iterator: {
-      StartAt: 'RunWebsiteVerificationBatch',
-      States: {
-        RunWebsiteVerificationBatch: {
-          Type: 'Task',
-          Resource: 'arn:aws:states:::ecs:runTask.sync',
-          Parameters: {
-            LaunchType: 'FARGATE',
-            Cluster: workerClusterName,
-            TaskDefinition: websiteVerificationTaskDefinitionArn,
-            NetworkConfiguration: {
-              AwsvpcConfiguration: {
-                Subnets: workerPublicSubnetIds,
-                SecurityGroups: [workerSecurityGroupId],
-                AssignPublicIp: 'ENABLED',
+const foundryWebsiteVerificationImportRunTask = new sfn.CustomState(
+  foundryNormalizeStack,
+  'FoundryWebsiteVerificationImportRunTask',
+  {
+    stateJson: {
+      Type: 'Map',
+      ResultPath: '$.websiteVerificationMapResults',
+      ItemsPath: '$.websiteBatches',
+      MaxConcurrencyPath: '$.mapMaxConcurrency',
+      Parameters: {
+        'jobId.$': '$.jobId',
+        'batchTotal.$': '$.batchCount',
+        'batchIndex.$': '$$.Map.Item.Index',
+        'companyIds.$': '$$.Map.Item.Value',
+      },
+      Iterator: {
+        StartAt: 'RunWebsiteVerificationImportBatch',
+        States: {
+          RunWebsiteVerificationImportBatch: {
+            Type: 'Task',
+            Resource: 'arn:aws:states:::ecs:runTask.sync',
+            Parameters: {
+              LaunchType: 'FARGATE',
+              Cluster: workerClusterName,
+              TaskDefinition: websiteVerificationTaskDefinitionArn,
+              NetworkConfiguration: {
+                AwsvpcConfiguration: {
+                  Subnets: workerPublicSubnetIds,
+                  SecurityGroups: [workerSecurityGroupId],
+                  AssignPublicIp: 'ENABLED',
+                },
+              },
+              Overrides: {
+                ContainerOverrides: [
+                  {
+                    Name: 'website-verification-worker',
+                    Environment: [
+                      { Name: 'JOB_ID', 'Value.$': '$.jobId' },
+                      { Name: 'COMPANY_IDS_JSON', 'Value.$': 'States.JsonToString($.companyIds)' },
+                      { Name: 'BATCH_INDEX', 'Value.$': "States.Format('{}', $.batchIndex)" },
+                      { Name: 'BATCH_TOTAL', 'Value.$': "States.Format('{}', $.batchTotal)" },
+                    ],
+                  },
+                ],
               },
             },
-            Overrides: {
-              ContainerOverrides: [
-                {
-                  Name: 'website-verification-worker',
-                  Environment: [
-                    { Name: 'JOB_ID', 'Value.$': '$.jobId' },
-                    { Name: 'COMPANY_IDS_JSON', 'Value.$': 'States.JsonToString($.companyIds)' },
-                    { Name: 'BATCH_INDEX', 'Value.$': "States.Format('{}', $.batchIndex)" },
-                    { Name: 'BATCH_TOTAL', 'Value.$': "States.Format('{}', $.batchTotal)" },
-                  ],
-                },
-              ],
-            },
+            End: true,
           },
-          End: true,
         },
       },
     },
   },
-});
+);
+const foundryWebsiteVerificationCsvBuilderRunTask = new sfn.CustomState(
+  foundryNormalizeStack,
+  'FoundryWebsiteVerificationCsvBuilderRunTask',
+  {
+    stateJson: {
+      Type: 'Map',
+      ResultPath: '$.csvBuilderWebsiteVerificationMapResults',
+      ItemsPath: '$.csvBuilderBatchIds',
+      MaxConcurrencyPath: '$.mapMaxConcurrency',
+      Parameters: {
+        'jobId.$': '$.jobId',
+        'batchTotal.$': '$.batchCount',
+        'batchIndex.$': '$$.Map.Item.Index',
+        'csvBuilderBatchId.$': '$$.Map.Item.Value',
+      },
+      Iterator: {
+        StartAt: 'RunCsvBuilderWebsiteVerificationBatch',
+        States: {
+          RunCsvBuilderWebsiteVerificationBatch: {
+            Type: 'Task',
+            Resource: 'arn:aws:states:::ecs:runTask.sync',
+            Parameters: {
+              LaunchType: 'FARGATE',
+              Cluster: workerClusterName,
+              TaskDefinition: websiteVerificationTaskDefinitionArn,
+              NetworkConfiguration: {
+                AwsvpcConfiguration: {
+                  Subnets: workerPublicSubnetIds,
+                  SecurityGroups: [workerSecurityGroupId],
+                  AssignPublicIp: 'ENABLED',
+                },
+              },
+              Overrides: {
+                ContainerOverrides: [
+                  {
+                    Name: 'website-verification-worker',
+                    Environment: [
+                      { Name: 'JOB_ID', 'Value.$': '$.jobId' },
+                      { Name: 'CSV_BUILDER_BATCH_ID', 'Value.$': '$.csvBuilderBatchId' },
+                      { Name: 'BATCH_INDEX', 'Value.$': "States.Format('{}', $.batchIndex)" },
+                      { Name: 'BATCH_TOTAL', 'Value.$': "States.Format('{}', $.batchTotal)" },
+                    ],
+                  },
+                ],
+              },
+            },
+            End: true,
+          },
+        },
+      },
+    },
+  },
+);
+const foundryWebsiteVerificationChooseFlow = new sfn.Choice(foundryNormalizeStack, 'FoundryWebsiteVerificationChooseFlow')
+  .when(sfn.Condition.isPresent('$.csvBuilderBatchIds[0]'), foundryWebsiteVerificationCsvBuilderRunTask)
+  .otherwise(foundryWebsiteVerificationImportRunTask);
 const foundryWebsiteVerificationFinalize = new sfnTasks.LambdaInvoke(
   foundryNormalizeStack,
   'FoundryWebsiteVerificationFinalize',
@@ -667,7 +725,11 @@ const foundryWebsiteVerificationAfterFail = new sfn.Succeed(
 );
 foundryWebsiteVerificationFinalize.next(foundryWebsiteVerificationDone);
 foundryWebsiteVerificationFail.next(foundryWebsiteVerificationAfterFail);
-foundryWebsiteVerificationRunTask.addCatch(foundryWebsiteVerificationFail, {
+foundryWebsiteVerificationImportRunTask.addCatch(foundryWebsiteVerificationFail, {
+  errors: [sfn.Errors.ALL],
+  resultPath: '$.error',
+});
+foundryWebsiteVerificationCsvBuilderRunTask.addCatch(foundryWebsiteVerificationFail, {
   errors: [sfn.Errors.ALL],
   resultPath: '$.error',
 });
@@ -675,7 +737,8 @@ foundryWebsiteVerificationFinalize.addCatch(foundryWebsiteVerificationFail, {
   errors: [sfn.Errors.ALL],
   resultPath: '$.error',
 });
-foundryWebsiteVerificationRunTask.next(foundryWebsiteVerificationFinalize);
+foundryWebsiteVerificationImportRunTask.next(foundryWebsiteVerificationFinalize);
+foundryWebsiteVerificationCsvBuilderRunTask.next(foundryWebsiteVerificationFinalize);
 
 const foundryWebsiteVerificationStateMachineName = `foundry-website-verification-${workerEnvironment}`;
 const foundryWebsiteVerificationStateMachine = new sfn.StateMachine(
@@ -683,7 +746,7 @@ const foundryWebsiteVerificationStateMachine = new sfn.StateMachine(
   'FoundryWebsiteVerificationSm',
   {
     stateMachineName: foundryWebsiteVerificationStateMachineName,
-    definitionBody: sfn.DefinitionBody.fromChainable(foundryWebsiteVerificationRunTask),
+    definitionBody: sfn.DefinitionBody.fromChainable(foundryWebsiteVerificationChooseFlow),
   },
 );
 foundryWebsiteVerificationStateMachine.role.addToPrincipalPolicy(
@@ -717,9 +780,9 @@ const foundryWebsiteVerificationStateMachineArn = cdk.Stack.of(foundryNormalizeS
 const foundryGoogleAdsVerificationLambda = backend.foundryGoogleAdsVerificationJob.resources.lambda as lambda.Function;
 foundryGoogleAdsVerificationLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
 
-const foundryGoogleAdsVerificationRunTask = new sfn.CustomState(
+const foundryGoogleAdsVerificationImportRunTask = new sfn.CustomState(
   foundryNormalizeStack,
-  'FoundryGoogleAdsVerificationRunTask',
+  'FoundryGoogleAdsVerificationImportRunTask',
   {
     stateJson: {
       Type: 'Task',
@@ -748,6 +811,62 @@ const foundryGoogleAdsVerificationRunTask = new sfn.CustomState(
     },
   },
 );
+const foundryGoogleAdsVerificationCsvBuilderRunTask = new sfn.CustomState(
+  foundryNormalizeStack,
+  'FoundryGoogleAdsVerificationCsvBuilderRunTask',
+  {
+    stateJson: {
+      Type: 'Map',
+      ResultPath: '$.csvBuilderGoogleAdsMapResults',
+      ItemsPath: '$.csvBuilderBatchIds',
+      MaxConcurrencyPath: '$.mapMaxConcurrency',
+      Parameters: {
+        'jobId.$': '$.jobId',
+        'batchTotal.$': '$.batchCount',
+        'batchIndex.$': '$$.Map.Item.Index',
+        'csvBuilderBatchId.$': '$$.Map.Item.Value',
+      },
+      Iterator: {
+        StartAt: 'RunCsvBuilderGoogleAdsBatch',
+        States: {
+          RunCsvBuilderGoogleAdsBatch: {
+            Type: 'Task',
+            Resource: 'arn:aws:states:::ecs:runTask.sync',
+            Parameters: {
+              LaunchType: 'FARGATE',
+              Cluster: workerClusterName,
+              TaskDefinition: googleAdsVerificationTaskDefinitionArn,
+              NetworkConfiguration: {
+                AwsvpcConfiguration: {
+                  Subnets: workerPublicSubnetIds,
+                  SecurityGroups: [workerSecurityGroupId],
+                  AssignPublicIp: 'ENABLED',
+                },
+              },
+              Overrides: {
+                ContainerOverrides: [
+                  {
+                    Name: 'google-ads-verification-worker',
+                    Environment: [
+                      { Name: 'JOB_ID', 'Value.$': '$.jobId' },
+                      { Name: 'CSV_BUILDER_BATCH_ID', 'Value.$': '$.csvBuilderBatchId' },
+                      { Name: 'BATCH_INDEX', 'Value.$': "States.Format('{}', $.batchIndex)" },
+                      { Name: 'BATCH_TOTAL', 'Value.$': "States.Format('{}', $.batchTotal)" },
+                    ],
+                  },
+                ],
+              },
+            },
+            End: true,
+          },
+        },
+      },
+    },
+  },
+);
+const foundryGoogleAdsVerificationChooseFlow = new sfn.Choice(foundryNormalizeStack, 'FoundryGoogleAdsVerificationChooseFlow')
+  .when(sfn.Condition.isPresent('$.csvBuilderBatchIds[0]'), foundryGoogleAdsVerificationCsvBuilderRunTask)
+  .otherwise(foundryGoogleAdsVerificationImportRunTask);
 const foundryGoogleAdsVerificationFinalize = new sfnTasks.LambdaInvoke(
   foundryNormalizeStack,
   'FoundryGoogleAdsVerificationFinalize',
@@ -780,7 +899,11 @@ const foundryGoogleAdsVerificationAfterFail = new sfn.Succeed(
 );
 foundryGoogleAdsVerificationFinalize.next(foundryGoogleAdsVerificationDone);
 foundryGoogleAdsVerificationFail.next(foundryGoogleAdsVerificationAfterFail);
-foundryGoogleAdsVerificationRunTask.addCatch(foundryGoogleAdsVerificationFail, {
+foundryGoogleAdsVerificationImportRunTask.addCatch(foundryGoogleAdsVerificationFail, {
+  errors: [sfn.Errors.ALL],
+  resultPath: '$.error',
+});
+foundryGoogleAdsVerificationCsvBuilderRunTask.addCatch(foundryGoogleAdsVerificationFail, {
   errors: [sfn.Errors.ALL],
   resultPath: '$.error',
 });
@@ -788,7 +911,8 @@ foundryGoogleAdsVerificationFinalize.addCatch(foundryGoogleAdsVerificationFail, 
   errors: [sfn.Errors.ALL],
   resultPath: '$.error',
 });
-foundryGoogleAdsVerificationRunTask.next(foundryGoogleAdsVerificationFinalize);
+foundryGoogleAdsVerificationImportRunTask.next(foundryGoogleAdsVerificationFinalize);
+foundryGoogleAdsVerificationCsvBuilderRunTask.next(foundryGoogleAdsVerificationFinalize);
 
 const foundryGoogleAdsVerificationStateMachineName = `foundry-google-ads-verification-${workerEnvironment}`;
 const foundryGoogleAdsVerificationStateMachine = new sfn.StateMachine(
@@ -796,7 +920,7 @@ const foundryGoogleAdsVerificationStateMachine = new sfn.StateMachine(
   'FoundryGoogleAdsVerificationSm',
   {
     stateMachineName: foundryGoogleAdsVerificationStateMachineName,
-    definitionBody: sfn.DefinitionBody.fromChainable(foundryGoogleAdsVerificationRunTask),
+    definitionBody: sfn.DefinitionBody.fromChainable(foundryGoogleAdsVerificationChooseFlow),
   },
 );
 foundryGoogleAdsVerificationStateMachine.role.addToPrincipalPolicy(

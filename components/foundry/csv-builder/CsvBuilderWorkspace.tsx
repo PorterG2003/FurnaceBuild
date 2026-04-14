@@ -1,6 +1,6 @@
 import { View } from 'react-native';
 import { Card } from '@/components/ui/Card';
-import type { CsvBuilderColumnRow, CsvBuilderHydratedRow, CsvBuilderRunRow } from '@/lib/foundry/registry-types';
+import type { CsvBuilderColumnRow, CsvBuilderHydratedRow, CsvBuilderRunRow, CsvBuilderToolJobRow } from '@/lib/foundry/registry-types';
 import { CsvBuilderColumnsBar } from './CsvBuilderColumnsBar';
 import { CsvBuilderTable } from './CsvBuilderTable';
 import { CsvBuilderToolPanel } from './CsvBuilderToolPanel';
@@ -8,6 +8,7 @@ import { CsvBuilderToolPanel } from './CsvBuilderToolPanel';
 export function CsvBuilderWorkspace({
   run,
   columns,
+  toolJobs,
   rows,
   loadingRows = false,
   onRefresh,
@@ -22,6 +23,7 @@ export function CsvBuilderWorkspace({
 }: {
   run: CsvBuilderRunRow;
   columns: CsvBuilderColumnRow[];
+  toolJobs: CsvBuilderToolJobRow[];
   rows: CsvBuilderHydratedRow[];
   loadingRows?: boolean;
   onRefresh: () => Promise<void>;
@@ -37,7 +39,7 @@ export function CsvBuilderWorkspace({
   return (
     <View className="gap-4">
       <Card variant="card">
-        <CsvBuilderColumnsBar columns={columns} onRerunJob={onRerunJob} rerunningJobId={rerunningJobId} />
+        <CsvBuilderColumnsBar columns={columns} toolJobs={toolJobs} onRerunJob={onRerunJob} rerunningJobId={rerunningJobId} />
       </Card>
       <View className="gap-4 xl:flex-row">
         <View className="flex-1 min-w-0">

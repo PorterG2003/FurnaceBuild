@@ -1,3 +1,4 @@
+import { Linking } from 'react-native';
 import type { FoundryJobRow } from '@/lib/foundry/registry-types';
 
 export function formatFoundryJobType(jobType: string): string {
@@ -14,6 +15,12 @@ export function formatFoundryJobType(jobType: string): string {
       return 'Website verify';
     case 'google_ads_verification_import_run':
       return 'Google Ads verify';
+    case 'csv_builder_website_verification':
+      return 'CSV Builder website verify';
+    case 'csv_builder_google_ads_verification':
+      return 'CSV Builder Google Ads';
+    case 'csv_builder_export':
+      return 'CSV Builder export';
     case 'bulk_source_resolution':
       return 'Bulk resolution';
     default:
@@ -36,4 +43,15 @@ export function getIngestionRunIdFromJob(job: FoundryJobRow): string | null {
 export function getSourceIngestionRunIdFromJob(job: FoundryJobRow): string | null {
   const id = job.payload?.source_ingestion_run_id;
   return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+/** Completed CSV Builder export jobs expose a presigned URL (expires ~15 minutes). */
+export function getCsvBuilderExportDownloadUrl(job: FoundryJobRow): string | null {
+  if (job.job_type !== 'csv_builder_export' || job.status !== 'completed') return null;
+  const url = job.progress?.download_url;
+  return typeof url === 'string' && url.trim().length > 0 ? url.trim() : null;
+}
+
+export function openCsvBuilderExportDownload(url: string): void {
+  void Linking.openURL(url);
 }

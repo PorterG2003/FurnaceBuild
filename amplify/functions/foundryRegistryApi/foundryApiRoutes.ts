@@ -4,12 +4,22 @@ import {
   buildContactEnrichmentPreflight,
   bulkAutoResolve,
   companyDeleteImpactFingerprint,
+  createCsvBuilderColumn,
+  createCsvBuilderToolJob,
+  createCsvBuilderRun,
   entityOwnerDeleteImpactFingerprint,
+  getCsvBuilderColumn,
+  getCsvBuilderToolJob,
+  getCsvBuilderRun,
   generateCandidatesForSourceRecord,
   getSourceRecordDetail,
   isCompanyDeleteSafe,
   isEntityOwnerDeleteSafe,
   isSourceRecordDeleteSafe,
+  listCsvBuilderColumns,
+  listCsvBuilderRows,
+  listCsvBuilderRuns,
+  listCsvBuilderToolJobs,
   linkSourceToCompany,
   loadCompanyDeleteImpact,
   loadEntityOwnerDeleteImpact,
@@ -19,6 +29,8 @@ import {
   mergeSourceBusinessRecords,
   normalizeIngestionRunRecords,
   rejectCandidatesForSource,
+  rerunCsvBuilderColumn,
+  rerunCsvBuilderToolJob,
   lookupCurrentRate,
   resolveContactEnrichmentOptions,
 } from '@furnace/registry-server';
@@ -29,6 +41,12 @@ import {
   resolveReviewTask,
   stateMatchingPreflight,
 } from './foundryLayer2.js';
+import { startCsvBuilderExportJob, startCsvBuilderToolJob } from './foundryJobsApi.js';
+import type {
+  CsvBuilderCellValue,
+  CsvBuilderFilter,
+  CsvBuilderToolJobConfig,
+} from '../../../lib/foundry/registry-types.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -81,6 +99,82 @@ function parseTriStateBoolParam(params: URLSearchParams, key: string): boolean |
 
 function parseSortDirectionParam(params: URLSearchParams): 'asc' | 'desc' {
   return params.get('sort_direction') === 'asc' ? 'asc' : 'desc';
+}
+
+function parseJsonParam<T>(params: URLSearchParams, key: string, fallback: T): T {
+  const raw = params.get(key);
+  if (!raw || !raw.trim()) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function isCsvBuilderColumnDataType(
+  value: unknown,
+): value is 'text' | 'number' | 'boolean' | 'date' | 'datetime' | 'json' {
+  return (
+    value === 'text' ||
+    value === 'number' ||
+    value === 'boolean' ||
+    value === 'date' ||
+    value === 'datetime' ||
+    value === 'json'
+  );
+}
+
+function isCsvBuilderToolType(
+  value: unknown,
+): value is 'website_verification' | 'google_ads_verification' | 'state_matching' | 'contact_enrichment' {
+  return (
+    value === 'website_verification' ||
+    value === 'google_ads_verification' ||
+    value === 'state_matching' ||
+    value === 'contact_enrichment'
+  );
+}
+
+function isCsvBuilderFilterOperator(
+  value: unknown,
+): value is 'contains' | 'equals' | 'empty' | 'not_empty' | 'gt' | 'gte' | 'lt' | 'lte' | 'before' | 'after' {
+  return (
+    value === 'contains' ||
+    value === 'equals' ||
+    value === 'empty' ||
+    value === 'not_empty' ||
+    value === 'gt' ||
+    value === 'gte' ||
+    value === 'lt' ||
+    value === 'lte' ||
+    value === 'before' ||
+    value === 'after'
+  );
+}
+
+function coerceCsvBuilderCellValue(value: unknown): CsvBuilderCellValue {
+  if (value === undefined) return null;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
+    return value;
+  }
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'object') return value as Record<string, unknown>;
+  return String(value);
+}
+
+async function assertAccountMembership(
+  mainClient: SupabaseClient,
+  actorUserId: string,
+  accountId: string,
+): Promise<boolean> {
+  const { data, error } = await mainClient
+    .from('account_users')
+    .select('id')
+    .eq('user_id', actorUserId)
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return Boolean(data);
 }
 
 const MAX_EXPORT_LEADS_LIMIT = 100;
@@ -652,6 +746,7 @@ async function loadExportRowCostMap(
 }
 
 export async function dispatchFoundryExtendedRoutes(
+  mainClient: SupabaseClient,
   leadsClient: SupabaseClient,
   method: string,
   path: string,
@@ -660,6 +755,343 @@ export async function dispatchFoundryExtendedRoutes(
   actorUserId: string,
   hmacSecret: string,
 ): Promise<FunctionUrlResponse | null> {
+  if (path === '/csv-builder/runs' && method === 'GET') {
+    const params = new URLSearchParams(rawQueryString || '');
+    const accountId = params.get('account_id')?.trim() || '';
+    if (!UUID_RE.test(accountId)) return jsonResponse(400, { error: 'account_id is required' });
+    try {
+      const allowed = await assertAccountMembership(mainClient, actorUserId, accountId);
+      if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
+      const limit = parseLimit(rawQueryString || '', 100, 25);
+      const offset = parseOffsetExport(rawQueryString || '');
+      const result = await listCsvBuilderRuns(
+        leadsClient as unknown as Parameters<typeof listCsvBuilderRuns>[0],
+        accountId,
+        { limit, offset },
+      );
+      return jsonResponse(200, result);
+    } catch (error) {
+      return jsonResponse(502, { error: error instanceof Error ? error.message : 'Failed to load CSV Builder runs' });
+    }
+  }
+
+  if (path === '/csv-builder/runs' && method === 'POST') {
+    const parsed = parseJsonBody<{
+      account_id: string;
+      name: string;
+      source_file_name: string;
+      source_file_size_bytes?: number | null;
+      source_file_mime_type?: string | null;
+      headers: Array<{ key: string; label: string; data_type?: string }>;
+      rows: Array<Record<string, unknown>>;
+    }>(rawBody || '{}');
+    if (!parsed.ok) return parsed.response;
+    const accountId = parsed.value.account_id?.trim() || '';
+    if (!UUID_RE.test(accountId)) return jsonResponse(400, { error: 'account_id is required' });
+    try {
+      const allowed = await assertAccountMembership(mainClient, actorUserId, accountId);
+      if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
+      const typedHeaders = parsed.value.headers.map((header) => ({
+        key: String(header.key ?? '').trim(),
+        label: String(header.label ?? '').trim(),
+        data_type: isCsvBuilderColumnDataType(header.data_type) ? header.data_type : undefined,
+      }));
+      const typedRows: Array<Record<string, CsvBuilderCellValue>> = parsed.value.rows.map((row) => {
+        const typedRow: Record<string, CsvBuilderCellValue> = {};
+        for (const [key, value] of Object.entries(row ?? {})) {
+          typedRow[key] = coerceCsvBuilderCellValue(value);
+        }
+        return typedRow;
+      });
+      const result = await createCsvBuilderRun(leadsClient as unknown as Parameters<typeof createCsvBuilderRun>[0], actorUserId, {
+        name: parsed.value.name,
+        source_file_name: parsed.value.source_file_name,
+        source_file_size_bytes: parsed.value.source_file_size_bytes,
+        source_file_mime_type: parsed.value.source_file_mime_type,
+        headers: typedHeaders,
+        rows: typedRows,
+        account_id: accountId,
+      });
+      return jsonResponse(200, result);
+    } catch (error) {
+      return jsonResponse(400, { error: error instanceof Error ? error.message : 'Failed to create CSV Builder run' });
+    }
+  }
+
+  const csvBuilderRunMatch = path.match(/^\/csv-builder\/runs\/([^/]+)$/);
+  if (csvBuilderRunMatch) {
+    const runId = csvBuilderRunMatch[1];
+    if (!UUID_RE.test(runId)) return jsonResponse(400, { error: 'Invalid run id' });
+    if (method === 'GET') {
+      try {
+        const run = await getCsvBuilderRun(leadsClient as unknown as Parameters<typeof getCsvBuilderRun>[0], runId);
+        if (!run) return jsonResponse(404, { error: 'CSV Builder run not found' });
+        const allowed = await assertAccountMembership(mainClient, actorUserId, run.account_id);
+        if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
+        return jsonResponse(200, { run });
+      } catch (error) {
+        return jsonResponse(502, { error: error instanceof Error ? error.message : 'Failed to load CSV Builder run' });
+      }
+    }
+    return jsonResponse(405, { error: 'Method not allowed' });
+  }
+
+  const csvBuilderRunColumnsMatch = path.match(/^\/csv-builder\/runs\/([^/]+)\/columns$/);
+  if (csvBuilderRunColumnsMatch) {
+    const runId = csvBuilderRunColumnsMatch[1];
+    if (!UUID_RE.test(runId)) return jsonResponse(400, { error: 'Invalid run id' });
+    try {
+      const run = await getCsvBuilderRun(leadsClient as unknown as Parameters<typeof getCsvBuilderRun>[0], runId);
+      if (!run) return jsonResponse(404, { error: 'CSV Builder run not found' });
+      const allowed = await assertAccountMembership(mainClient, actorUserId, run.account_id);
+      if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
+      if (method === 'GET') {
+        const columns = await listCsvBuilderColumns(leadsClient as unknown as Parameters<typeof listCsvBuilderColumns>[0], runId);
+        return jsonResponse(200, { columns });
+      }
+      if (method === 'POST') {
+        const parsed = parseJsonBody<{
+          label: string;
+          tool_type: string;
+          input_column_ids: string[];
+          tool_config?: Record<string, unknown>;
+        }>(rawBody || '{}');
+        if (!parsed.ok) return parsed.response;
+        if (!isCsvBuilderToolType(parsed.value.tool_type)) {
+          return jsonResponse(400, { error: 'Unsupported CSV Builder tool type' });
+        }
+        const result = await createCsvBuilderColumn(
+          leadsClient as unknown as Parameters<typeof createCsvBuilderColumn>[0],
+          runId,
+          {
+            label: parsed.value.label,
+            tool_type: parsed.value.tool_type,
+            input_column_ids: parsed.value.input_column_ids,
+            tool_config: parsed.value.tool_config,
+          },
+        );
+        return jsonResponse(200, result);
+      }
+    } catch (error) {
+      return jsonResponse(400, { error: error instanceof Error ? error.message : 'Failed to load CSV Builder columns' });
+    }
+    return jsonResponse(405, { error: 'Method not allowed' });
+  }
+
+  const csvBuilderRunRowsMatch = path.match(/^\/csv-builder\/runs\/([^/]+)\/rows$/);
+  if (csvBuilderRunRowsMatch) {
+    const runId = csvBuilderRunRowsMatch[1];
+    if (!UUID_RE.test(runId)) return jsonResponse(400, { error: 'Invalid run id' });
+    if (method !== 'GET') return jsonResponse(405, { error: 'Method not allowed' });
+    try {
+      const run = await getCsvBuilderRun(leadsClient as unknown as Parameters<typeof getCsvBuilderRun>[0], runId);
+      if (!run) return jsonResponse(404, { error: 'CSV Builder run not found' });
+      const allowed = await assertAccountMembership(mainClient, actorUserId, run.account_id);
+      if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
+      const params = new URLSearchParams(rawQueryString || '');
+      const limit = parseLimit(rawQueryString || '', 250, 50);
+      const offset = parseOffsetExport(rawQueryString || '');
+      const columnKeys = params
+        .getAll('column_key')
+        .flatMap((value) => value.split(','))
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const sortBy = params.get('sort_by')?.trim() || undefined;
+      const sortDirection = parseSortDirectionParam(params);
+      type TypedCsvBuilderFilter = {
+        column_key: string;
+        operator: 'contains' | 'equals' | 'empty' | 'not_empty' | 'gt' | 'gte' | 'lt' | 'lte' | 'before' | 'after';
+        value: string | number | boolean | null;
+      };
+      const filters: CsvBuilderFilter[] = parseJsonParam(params, 'filters', [] as Array<Record<string, unknown>>)
+        .map((filter) => ({
+          column_key: String(filter.column_key ?? '').trim(),
+          operator: String(filter.operator ?? '').trim(),
+          value: filter.value,
+        }))
+        .filter(
+          (filter): filter is { column_key: string; operator: TypedCsvBuilderFilter['operator']; value: unknown } =>
+            Boolean(filter.column_key) && isCsvBuilderFilterOperator(filter.operator),
+        )
+        .map((filter) => ({
+          column_key: filter.column_key,
+          operator: filter.operator,
+          value:
+            typeof filter.value === 'string' ||
+            typeof filter.value === 'number' ||
+            typeof filter.value === 'boolean' ||
+            filter.value == null
+              ? filter.value
+              : null,
+        }));
+      const result = await listCsvBuilderRows(leadsClient as unknown as Parameters<typeof listCsvBuilderRows>[0], runId, {
+        limit,
+        offset,
+        columnKeys,
+        sortBy,
+        sortDirection,
+        filters,
+      });
+      return jsonResponse(200, result);
+    } catch (error) {
+      return jsonResponse(400, { error: error instanceof Error ? error.message : 'Failed to load CSV Builder rows' });
+    }
+  }
+
+  const csvBuilderRunToolJobsMatch = path.match(/^\/csv-builder\/runs\/([^/]+)\/tool-jobs$/);
+  if (csvBuilderRunToolJobsMatch) {
+    const runId = csvBuilderRunToolJobsMatch[1];
+    if (!UUID_RE.test(runId)) return jsonResponse(400, { error: 'Invalid run id' });
+    try {
+      const run = await getCsvBuilderRun(leadsClient as unknown as Parameters<typeof getCsvBuilderRun>[0], runId);
+      if (!run) return jsonResponse(404, { error: 'CSV Builder run not found' });
+      const allowed = await assertAccountMembership(mainClient, actorUserId, run.account_id);
+      if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
+      if (method === 'GET') {
+        const jobs = await listCsvBuilderToolJobs(
+          leadsClient as unknown as Parameters<typeof listCsvBuilderToolJobs>[0],
+          runId,
+        );
+        return jsonResponse(200, { jobs });
+      }
+      if (method === 'POST') {
+        const parsed = parseJsonBody<{
+          label?: string;
+          tool_type: string;
+          config: CsvBuilderToolJobConfig;
+        }>(rawBody || '{}');
+        if (!parsed.ok) return parsed.response;
+        if (!isCsvBuilderToolType(parsed.value.tool_type)) {
+          return jsonResponse(400, { error: 'Unsupported CSV Builder tool type' });
+        }
+        const result = await createCsvBuilderToolJob(
+          leadsClient as unknown as Parameters<typeof createCsvBuilderToolJob>[0],
+          runId,
+          {
+            label: typeof parsed.value.label === 'string' ? parsed.value.label : undefined,
+            tool_type: parsed.value.tool_type,
+            config: parsed.value.config,
+          },
+        );
+        const startResult = await startCsvBuilderToolJob(leadsClient, result.job.id, actorUserId);
+        const startBody = startResult.body ? JSON.parse(startResult.body) : {};
+        if (startResult.statusCode >= 400) {
+          return jsonResponse(startResult.statusCode, {
+            error: startBody.error ?? 'Failed to start CSV Builder tool job',
+            detail: startBody.detail,
+            job: result.job,
+            columns: result.columns,
+          });
+        }
+        return jsonResponse(200, {
+          job: startBody.job ?? result.job,
+          columns: result.columns,
+          foundry_job: startBody.foundry_job ?? null,
+          reused: Boolean(startBody.reused),
+        });
+      }
+    } catch (error) {
+      return jsonResponse(400, { error: error instanceof Error ? error.message : 'Failed to manage CSV Builder tool jobs' });
+    }
+    return jsonResponse(405, { error: 'Method not allowed' });
+  }
+
+  const csvBuilderToolJobRerunMatch = path.match(/^\/csv-builder\/tool-jobs\/([^/]+)\/rerun$/);
+  if (csvBuilderToolJobRerunMatch) {
+    const jobId = csvBuilderToolJobRerunMatch[1];
+    if (!UUID_RE.test(jobId)) return jsonResponse(400, { error: 'Invalid tool job id' });
+    if (method !== 'POST') return jsonResponse(405, { error: 'Method not allowed' });
+    const parsed = parseJsonBody<{ config?: CsvBuilderToolJobConfig }>(rawBody || '{}');
+    if (!parsed.ok) return parsed.response;
+    try {
+      const toolJob = await getCsvBuilderToolJob(
+        leadsClient as unknown as Parameters<typeof getCsvBuilderToolJob>[0],
+        jobId,
+      );
+      if (!toolJob) return jsonResponse(404, { error: 'CSV Builder tool job not found' });
+      const run = await getCsvBuilderRun(leadsClient as unknown as Parameters<typeof getCsvBuilderRun>[0], toolJob.run_id);
+      if (!run) return jsonResponse(404, { error: 'CSV Builder run not found' });
+      const allowed = await assertAccountMembership(mainClient, actorUserId, run.account_id);
+      if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
+      const refreshed = await rerunCsvBuilderToolJob(
+        leadsClient as unknown as Parameters<typeof rerunCsvBuilderToolJob>[0],
+        jobId,
+        parsed.value,
+      );
+      const startResult = await startCsvBuilderToolJob(leadsClient, refreshed.job.id, actorUserId);
+      const startBody = startResult.body ? JSON.parse(startResult.body) : {};
+      if (startResult.statusCode >= 400) {
+        return jsonResponse(startResult.statusCode, {
+          error: startBody.error ?? 'Failed to rerun CSV Builder tool job',
+          detail: startBody.detail,
+          job: refreshed.job,
+          columns: refreshed.columns,
+        });
+      }
+      return jsonResponse(200, {
+        job: startBody.job ?? refreshed.job,
+        columns: refreshed.columns,
+        foundry_job: startBody.foundry_job ?? null,
+        reused: Boolean(startBody.reused),
+      });
+    } catch (error) {
+      return jsonResponse(400, { error: error instanceof Error ? error.message : 'Failed to rerun CSV Builder tool job' });
+    }
+  }
+
+  const csvBuilderRerunMatch = path.match(/^\/csv-builder\/columns\/([^/]+)\/rerun$/);
+  if (csvBuilderRerunMatch) {
+    const columnId = csvBuilderRerunMatch[1];
+    if (!UUID_RE.test(columnId)) return jsonResponse(400, { error: 'Invalid column id' });
+    if (method !== 'POST') return jsonResponse(405, { error: 'Method not allowed' });
+    const parsed = parseJsonBody<{ tool_config?: Record<string, unknown> }>(rawBody || '{}');
+    if (!parsed.ok) return parsed.response;
+    try {
+      const column = await getCsvBuilderColumn(leadsClient as unknown as Parameters<typeof getCsvBuilderColumn>[0], columnId);
+      if (!column) return jsonResponse(404, { error: 'CSV Builder column not found' });
+      const run = await getCsvBuilderRun(leadsClient as unknown as Parameters<typeof getCsvBuilderRun>[0], column.run_id);
+      if (!run) return jsonResponse(404, { error: 'CSV Builder run not found' });
+      const allowed = await assertAccountMembership(mainClient, actorUserId, run.account_id);
+      if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
+      const refreshed = await rerunCsvBuilderColumn(
+        leadsClient as unknown as Parameters<typeof rerunCsvBuilderColumn>[0],
+        columnId,
+        parsed.value,
+      );
+      return jsonResponse(200, refreshed);
+    } catch (error) {
+      return jsonResponse(400, { error: error instanceof Error ? error.message : 'Failed to rerun CSV Builder column' });
+    }
+  }
+
+  const csvBuilderExportMatch = path.match(/^\/csv-builder\/runs\/([^/]+)\/export$/);
+  if (csvBuilderExportMatch) {
+    const runId = csvBuilderExportMatch[1];
+    if (!UUID_RE.test(runId)) return jsonResponse(400, { error: 'Invalid run id' });
+    if (method !== 'POST') return jsonResponse(405, { error: 'Method not allowed' });
+    const parsed = parseJsonBody<{
+      column_keys?: string[];
+      sort_by?: string;
+      sort_direction?: 'asc' | 'desc';
+      filters?: unknown[];
+    }>(rawBody || '{}');
+    if (!parsed.ok) return parsed.response;
+    try {
+      const run = await getCsvBuilderRun(leadsClient as unknown as Parameters<typeof getCsvBuilderRun>[0], runId);
+      if (!run) return jsonResponse(404, { error: 'CSV Builder run not found' });
+      const allowed = await assertAccountMembership(mainClient, actorUserId, run.account_id);
+      if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
+      return await startCsvBuilderExportJob(leadsClient, runId, actorUserId, {
+        columnKeys: Array.isArray(parsed.value.column_keys) ? parsed.value.column_keys : [],
+        sortBy: typeof parsed.value.sort_by === 'string' ? parsed.value.sort_by : undefined,
+        sortDirection: parsed.value.sort_direction === 'asc' ? 'asc' : 'desc',
+        filters: Array.isArray(parsed.value.filters) ? parsed.value.filters : [],
+      });
+    } catch (error) {
+      return jsonResponse(400, { error: error instanceof Error ? error.message : 'Failed to start CSV Builder export' });
+    }
+  }
+
   if (path === '/cost-rate-cards' && method === 'GET') {
     const params = new URLSearchParams(rawQueryString || '');
     const ck = params.get('cost_kind')?.trim();

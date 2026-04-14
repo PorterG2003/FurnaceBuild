@@ -10,7 +10,7 @@ const OUTER_EDGE_PADDING_X = 24;
 
 export interface TableColumn<T> {
   key: string;
-  label: string;
+  label: ReactNode;
   minWidth?: number;
   maxWidth?: number;
   flex?: number;
@@ -212,30 +212,37 @@ export function DataTable<T>({
     }
   };
 
-  const SortButton = ({ columnKey, label }: { columnKey: string; label: string }) => {
+  const SortButton = ({ columnKey, label }: { columnKey: string; label: ReactNode }) => {
     const column = columns.find((col) => col.key === columnKey);
     if (!column || !column.sortable) {
-      return (
-        <Text className="text-gray-400 font-instrument-semibold text-xs uppercase" style={{ textAlign: 'left' }}>
-          {label}
-        </Text>
-      );
+      if (typeof label === 'string' || typeof label === 'number') {
+        return (
+          <Text className="text-gray-400 font-instrument-semibold text-xs uppercase" style={{ textAlign: 'left' }}>
+            {label}
+          </Text>
+        );
+      }
+      return <View className="self-start">{label}</View>;
     }
 
     const isActive = effectiveSortColumn === columnKey;
     return (
       <Pressable
         onPress={() => handleSort(columnKey)}
-        className="flex-row items-center gap-1 pl-0 pr-3 py-2 active:opacity-70"
+        className="flex-row items-center gap-1 pl-0 pr-3 py-2 active:opacity-70 max-w-full"
       >
-        <Text
-          className={`text-xs font-instrument-semibold ${
-            isActive ? 'text-white' : 'text-gray-400'
-          }`}
-          style={{ textAlign: 'left' }}
-        >
-          {label}
-        </Text>
+        {typeof label === 'string' || typeof label === 'number' ? (
+          <Text
+            className={`text-xs font-instrument-semibold ${
+              isActive ? 'text-white' : 'text-gray-400'
+            }`}
+            style={{ textAlign: 'left' }}
+          >
+            {label}
+          </Text>
+        ) : (
+          <View className="flex-1 min-w-0 flex-row items-center">{label}</View>
+        )}
         {isActive && (
           <>
             {effectiveSortDirection === 'asc' ? (

@@ -37,6 +37,25 @@ import {
   type SourceRecordDeletePreflightResponse,
   type SourceRecordsListResponse,
   type CompanyMergeResponse,
+  type CsvBuilderFilter,
+  type CsvBuilderColumnsResponse,
+  type CsvBuilderToolJobsResponse,
+  type CsvBuilderRowsQuery,
+  type CsvBuilderRowsResponse,
+  type CsvBuilderRunDetailResponse,
+  type CsvBuilderRunsListResponse,
+  type PostCreateCsvBuilderColumnBody,
+  type PostCreateCsvBuilderColumnResponse,
+  type PostCreateCsvBuilderRunBody,
+  type PostCreateCsvBuilderRunResponse,
+  type PostCreateCsvBuilderToolJobBody,
+  type PostCreateCsvBuilderToolJobResponse,
+  type PostCsvBuilderExportBody,
+  type PostCsvBuilderExportResponse,
+  type PostRerunCsvBuilderColumnBody,
+  type PostRerunCsvBuilderColumnResponse,
+  type PostRerunCsvBuilderToolJobBody,
+  type PostRerunCsvBuilderToolJobResponse,
   type EntityOwnerDeletePreflightResponse,
   type EntityOwnerMergeResponse,
   type SourceRecordsMergeResponse,
@@ -699,6 +718,131 @@ export async function fetchFoundryJobs(params?: {
   return registryFetchJson<FoundryJobsListResponse>('jobs', {
     method: 'GET',
     search: { status: params?.status, limit: params?.limit },
+  });
+}
+
+function encodeCsvBuilderFilters(filters?: CsvBuilderFilter[]): string | undefined {
+  if (!Array.isArray(filters) || filters.length === 0) return undefined;
+  return JSON.stringify(filters);
+}
+
+export async function fetchCsvBuilderRuns(params: {
+  account_id: string;
+  limit?: number;
+  offset?: number;
+}): Promise<CsvBuilderRunsListResponse> {
+  return registryFetchJson<CsvBuilderRunsListResponse>('csv-builder/runs', {
+    method: 'GET',
+    search: {
+      account_id: params.account_id,
+      limit: params.limit,
+      offset: params.offset,
+    },
+  });
+}
+
+export async function fetchCsvBuilderRun(runId: string): Promise<CsvBuilderRunDetailResponse> {
+  return registryFetchJson<CsvBuilderRunDetailResponse>(`csv-builder/runs/${encodeURIComponent(runId)}`, {
+    method: 'GET',
+  });
+}
+
+export async function createCsvBuilderRun(
+  body: PostCreateCsvBuilderRunBody & { account_id: string },
+): Promise<PostCreateCsvBuilderRunResponse> {
+  return registryFetchJson<PostCreateCsvBuilderRunResponse>('csv-builder/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchCsvBuilderColumns(runId: string): Promise<CsvBuilderColumnsResponse> {
+  return registryFetchJson<CsvBuilderColumnsResponse>(`csv-builder/runs/${encodeURIComponent(runId)}/columns`, {
+    method: 'GET',
+  });
+}
+
+export async function fetchCsvBuilderToolJobs(runId: string): Promise<CsvBuilderToolJobsResponse> {
+  return registryFetchJson<CsvBuilderToolJobsResponse>(`csv-builder/runs/${encodeURIComponent(runId)}/tool-jobs`, {
+    method: 'GET',
+  });
+}
+
+export async function fetchCsvBuilderRows(
+  runId: string,
+  query: CsvBuilderRowsQuery,
+): Promise<CsvBuilderRowsResponse> {
+  const search: Record<string, string | number | undefined | null> = {
+    limit: query.limit,
+    offset: query.offset,
+    sort_by: query.sortBy,
+    sort_direction: query.sortDirection,
+    filters: encodeCsvBuilderFilters(query.filters),
+  };
+  for (const columnKey of query.columnKeys ?? []) {
+    if (!columnKey?.trim()) continue;
+    const existing = search.column_key;
+    search.column_key = existing ? `${existing},${columnKey}` : columnKey;
+  }
+  return registryFetchJson<CsvBuilderRowsResponse>(`csv-builder/runs/${encodeURIComponent(runId)}/rows`, {
+    method: 'GET',
+    search,
+  });
+}
+
+export async function createCsvBuilderColumn(
+  runId: string,
+  body: PostCreateCsvBuilderColumnBody,
+): Promise<PostCreateCsvBuilderColumnResponse> {
+  return registryFetchJson<PostCreateCsvBuilderColumnResponse>(`csv-builder/runs/${encodeURIComponent(runId)}/columns`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function createCsvBuilderToolJob(
+  runId: string,
+  body: PostCreateCsvBuilderToolJobBody,
+): Promise<PostCreateCsvBuilderToolJobResponse> {
+  return registryFetchJson<PostCreateCsvBuilderToolJobResponse>(`csv-builder/runs/${encodeURIComponent(runId)}/tool-jobs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function rerunCsvBuilderColumn(
+  columnId: string,
+  body?: PostRerunCsvBuilderColumnBody,
+): Promise<PostRerunCsvBuilderColumnResponse> {
+  return registryFetchJson<PostRerunCsvBuilderColumnResponse>(`csv-builder/columns/${encodeURIComponent(columnId)}/rerun`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  });
+}
+
+export async function rerunCsvBuilderToolJob(
+  jobId: string,
+  body?: PostRerunCsvBuilderToolJobBody,
+): Promise<PostRerunCsvBuilderToolJobResponse> {
+  return registryFetchJson<PostRerunCsvBuilderToolJobResponse>(`csv-builder/tool-jobs/${encodeURIComponent(jobId)}/rerun`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  });
+}
+
+export async function postCsvBuilderExport(
+  runId: string,
+  body?: PostCsvBuilderExportBody,
+): Promise<PostCsvBuilderExportResponse> {
+  return registryFetchJson<PostCsvBuilderExportResponse>(`csv-builder/runs/${encodeURIComponent(runId)}/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
   });
 }
 

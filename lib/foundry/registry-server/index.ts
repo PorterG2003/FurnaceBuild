@@ -20,6 +20,8 @@ export * from './csv-builder/csvBuilderRuns.js';
 export * from './csv-builder/csvBuilderColumns.js';
 export * from './csv-builder/csvBuilderRows.js';
 export * from './csv-builder/csvBuilderToolJobs.js';
+export * from './csv-builder/toolJobBatches.js';
+export * from './csv-builder/toolJobProgress.js';
 export * from './csv-builder/builderWebsiteVerification.js';
 export * from './csv-builder/builderGoogleAdsVerification.js';
 export * from './csv-builder/toolManifest.js';

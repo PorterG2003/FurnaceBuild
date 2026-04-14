@@ -1,6 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
+  buildCsvBuilderWebsiteVerificationToolJobProgressSnapshot,
   buildWebsiteVerificationProgressSnapshot,
+  loadCsvBuilderWebsiteVerificationToolJobProgressCounts,
   loadWebsiteVerificationProgressCounts,
 } from '@furnace/registry-server';
 
@@ -32,15 +34,26 @@ export const handler = async (event: FinalizeEvent | FailEvent): Promise<Record<
       ? payload.csv_builder_tool_job_id.trim()
       : null;
   if (csvBuilderToolJobId) {
-    const rowsFailed = Math.max(0, Math.trunc(Number(prev.rows_failed ?? 0) || 0));
-    const status = rowsFailed > 0 ? 'partial' : 'completed';
+    const counts = await loadCsvBuilderWebsiteVerificationToolJobProgressCounts(
+      client as unknown as Parameters<typeof loadCsvBuilderWebsiteVerificationToolJobProgressCounts>[0],
+      csvBuilderToolJobId,
+    );
+    const status =
+      counts.rows_completed >= counts.rows_total
+        ? counts.rows_failed > 0
+          ? 'partial'
+          : 'completed'
+        : 'partial';
     if (event.action === 'finalize') {
       await client
         .from('foundry_jobs')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),
-          progress: { ...prev, current_step: 'done' },
+          progress: buildCsvBuilderWebsiteVerificationToolJobProgressSnapshot(payload, counts, {
+            status: 'completed',
+            previous: prev,
+          }),
         })
         .eq('id', event.jobId);
       await client
@@ -48,11 +61,20 @@ export const handler = async (event: FinalizeEvent | FailEvent): Promise<Record<
         .update({
           status,
           completed_at: new Date().toISOString(),
-          rows_completed: Number(prev.rows_processed ?? 0) || 0,
-          rows_failed: rowsFailed,
-          error_summary: rowsFailed > 0 ? `${rowsFailed} rows failed` : null,
+          rows_total: counts.rows_total,
+          rows_completed: counts.rows_completed,
+          rows_failed: counts.rows_failed,
+          error_summary: counts.rows_failed > 0 ? `${counts.rows_failed} rows failed` : null,
         })
         .eq('id', csvBuilderToolJobId);
+      await client
+        .from('csv_builder_tool_job_batches')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('tool_job_id', csvBuilderToolJobId)
+        .eq('status', 'running');
       const { data: toolJob } = await client
         .from('csv_builder_column_jobs')
         .select('output_column_ids')
@@ -71,7 +93,10 @@ export const handler = async (event: FinalizeEvent | FailEvent): Promise<Record<
         status: 'failed',
         completed_at: new Date().toISOString(),
         error_summary: message,
-        progress: { ...prev, current_step: 'failed' },
+        progress: buildCsvBuilderWebsiteVerificationToolJobProgressSnapshot(payload, counts, {
+          status: 'failed',
+          previous: prev,
+        }),
       })
       .eq('id', event.jobId);
     await client
@@ -79,9 +104,21 @@ export const handler = async (event: FinalizeEvent | FailEvent): Promise<Record<
       .update({
         status: 'failed',
         completed_at: new Date().toISOString(),
+        rows_total: counts.rows_total,
+        rows_completed: counts.rows_completed,
+        rows_failed: counts.rows_failed,
         error_summary: message,
       })
       .eq('id', csvBuilderToolJobId);
+    await client
+      .from('csv_builder_tool_job_batches')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_summary: message,
+      })
+      .eq('tool_job_id', csvBuilderToolJobId)
+      .in('status', ['queued', 'running']);
     const { data: toolJob } = await client
       .from('csv_builder_column_jobs')
       .select('output_column_ids')

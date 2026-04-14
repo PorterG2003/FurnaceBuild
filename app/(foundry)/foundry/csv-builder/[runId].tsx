@@ -8,11 +8,12 @@ import {
   fetchCsvBuilderColumns,
   fetchCsvBuilderRows,
   fetchCsvBuilderRun,
+  fetchCsvBuilderToolJobs,
   fetchFoundryJob,
   postCsvBuilderExport,
   rerunCsvBuilderToolJob,
 } from '@/lib/foundry/registry-client';
-import type { CsvBuilderColumnRow, CsvBuilderHydratedRow, CsvBuilderRunRow } from '@/lib/foundry/registry-types';
+import type { CsvBuilderColumnRow, CsvBuilderHydratedRow, CsvBuilderRunRow, CsvBuilderToolJobRow } from '@/lib/foundry/registry-types';
 import { CsvBuilderExportModal, CsvBuilderWorkspace } from '@/components/foundry/csv-builder';
 import {
   getCsvBuilderExportDownloadUrl,
@@ -25,6 +26,7 @@ export default function CsvBuilderRunPage() {
   const { runId } = useLocalSearchParams<{ runId: string }>();
   const [run, setRun] = useState<CsvBuilderRunRow | null>(null);
   const [columns, setColumns] = useState<CsvBuilderColumnRow[]>([]);
+  const [toolJobs, setToolJobs] = useState<CsvBuilderToolJobRow[]>([]);
   const [rows, setRows] = useState<CsvBuilderHydratedRow[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [page, setPage] = useState(1);
@@ -44,18 +46,27 @@ export default function CsvBuilderRunPage() {
     () => columns.filter((column) => column.visible).map((column) => column.key),
     [columns],
   );
+  const exportBlockingColumns = useMemo(
+    () =>
+      columns.filter(
+        (column) => column.visible && column.kind === 'tool_output' && (column.status === 'queued' || column.status === 'running'),
+      ),
+    [columns],
+  );
 
   const load = useCallback(async () => {
     if (!runId || typeof runId !== 'string') return;
     setLoading(true);
     setError(null);
     try {
-      const [runResult, columnsResult] = await Promise.all([
+      const [runResult, columnsResult, toolJobsResult] = await Promise.all([
         fetchCsvBuilderRun(runId),
         fetchCsvBuilderColumns(runId),
+        fetchCsvBuilderToolJobs(runId),
       ]);
       setRun(runResult.run);
       setColumns(columnsResult.columns);
+      setToolJobs(toolJobsResult.jobs);
       const columnKeys = columnsResult.columns.filter((column) => column.visible).map((column) => column.key);
       const rowsResult = await fetchCsvBuilderRows(runId, {
         limit: 50,
@@ -70,6 +81,7 @@ export default function CsvBuilderRunPage() {
       setError(e instanceof Error ? e.message : 'Failed to load CSV Builder run');
       setRun(null);
       setColumns([]);
+      setToolJobs([]);
       setRows([]);
       setTotalRows(0);
     } finally {
@@ -148,6 +160,7 @@ export default function CsvBuilderRunPage() {
   }
 
   const exportInFlight = Boolean(watchedExportJobId);
+  const exportBlocked = exportBlockingColumns.length > 0;
 
   return (
     <>
@@ -169,7 +182,7 @@ export default function CsvBuilderRunPage() {
               <Button
                 size="sm"
                 variant="secondary"
-                disabled={exportBusy || exportInFlight || !run}
+                disabled={exportBusy || exportInFlight || !run || exportBlocked}
                 onPress={async () => {
                   if (!run) return;
                   setExportBusy(true);
@@ -201,11 +214,18 @@ export default function CsvBuilderRunPage() {
           }
         />
         {error ? <Alert variant="error" message={error} /> : null}
+        {exportBlocked ? (
+          <Alert
+            variant="warning"
+            message={`Finish running tool columns before export: ${exportBlockingColumns.map((column) => column.label).join(', ')}`}
+          />
+        ) : null}
         {!run && !error ? <Text className="text-gray-500 font-instrument">Loading…</Text> : null}
         {run ? (
           <CsvBuilderWorkspace
             run={run}
             columns={columns}
+            toolJobs={toolJobs}
             rows={rows}
             loadingRows={loading}
             onRefresh={load}

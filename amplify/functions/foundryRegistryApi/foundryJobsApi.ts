@@ -4,14 +4,20 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   buildGoogleAdsVerificationProgressSnapshot,
   buildWebsiteVerificationProgressSnapshot,
+  buildCsvBuilderGoogleAdsToolJobProgressSnapshot,
+  buildCsvBuilderWebsiteVerificationToolJobProgressSnapshot,
   buildContactEnrichmentPreflight,
   bucketCompaniesForMatching,
   CONTACT_ENRICHMENT_VERSION,
+  csvBuilderToolBatchSize,
+  csvBuilderToolMapMaxConcurrency,
   getReconciliationOutcomeCounts,
   insertContactEnrichmentTargetsForJob,
   LINKER_VERSION,
   MATCHER_VERSION,
   NORMALIZER_VERSION,
+  planCsvBuilderToolJobBatches,
+  resetCsvBuilderToolJobExecutionArtifacts,
   resolveContactEnrichmentOptions,
   resolveRunCost,
   loadWebsiteVerificationBundles,
@@ -1547,9 +1553,36 @@ export async function startCsvBuilderExportJob(
   if (runErr) return jsonResponse(502, { error: 'Failed to load CSV Builder run' });
   if (!run) return jsonResponse(404, { error: 'CSV Builder run not found' });
 
+  const { data: columnsData, error: columnsErr } = await leadsClient
+    .from('csv_builder_columns')
+    .select('key, label, kind, status, visible')
+    .eq('run_id', runId);
+  if (columnsErr) return jsonResponse(502, { error: 'Failed to load CSV Builder columns' });
+  const columns = Array.isArray(columnsData) ? columnsData : [];
+  const requestedColumnKeys =
+    Array.isArray(options?.columnKeys) && options.columnKeys.length > 0
+      ? options.columnKeys.filter(Boolean)
+      : columns.filter((column) => column.visible).map((column) => String(column.key));
+  const blockingColumns = columns.filter(
+    (column) =>
+      requestedColumnKeys.includes(String(column.key)) &&
+      column.kind === 'tool_output' &&
+      (column.status === 'queued' || column.status === 'running'),
+  );
+  if (blockingColumns.length > 0) {
+    return jsonResponse(400, {
+      error: 'Finish running tool columns before exporting this CSV Builder run.',
+      blocking_columns: blockingColumns.map((column) => ({
+        key: column.key,
+        label: column.label,
+        status: column.status,
+      })),
+    });
+  }
+
   const payload = {
     run_id: runId,
-    column_keys: Array.isArray(options?.columnKeys) ? options.columnKeys.filter(Boolean) : [],
+    column_keys: requestedColumnKeys,
     sort_by: options?.sortBy ?? null,
     sort_direction: options?.sortDirection === 'asc' ? 'asc' : 'desc',
     filters: Array.isArray(options?.filters) ? options.filters : [],
@@ -1658,13 +1691,6 @@ export async function startCsvBuilderToolJob(
       error: `Async ${isWebsite ? 'website verification' : 'Google Ads verification'} is not configured (Amplify backend / Step Functions)`,
     });
   }
-  const payload = {
-    csv_builder_tool_job_id: toolJob.id,
-    run_id: toolJob.run_id,
-    tool_type: toolType,
-    output_column_ids: toolJob.output_column_ids ?? [],
-    config: toolJob.config ?? {},
-  };
   const idempotencyKey = `csv_builder_tool_job:${toolJob.id}:${toolType}:${String(toolJob.result_parser_version ?? 'v1')}`;
   const { data: activeJob, error: activeErr } = await leadsClient
     .from('foundry_jobs')
@@ -1689,20 +1715,36 @@ export async function startCsvBuilderToolJob(
     });
   }
 
-  const totalRows = await countCsvBuilderRowsForRun(leadsClient, toolJob.run_id);
   const jobType = isWebsite ? 'csv_builder_website_verification' : 'csv_builder_google_ads_verification';
+  const batchSize = csvBuilderToolBatchSize();
+  const maxConcurrency = csvBuilderToolMapMaxConcurrency();
   const { data: inserted, error: insertErr } = await leadsClient
     .from('foundry_jobs')
     .insert({
       job_type: jobType,
       status: 'queued',
       requested_by: userId,
-      payload,
+      payload: {
+        csv_builder_tool_job_id: toolJob.id,
+        run_id: toolJob.run_id,
+        tool_type: toolType,
+        output_column_ids: toolJob.output_column_ids ?? [],
+        config: toolJob.config ?? {},
+        rows_total: 0,
+        batch_size: batchSize,
+        batch_count: 0,
+        map_max_concurrency: maxConcurrency,
+      },
       progress: {
         current_step: 'queued',
-        total_rows: totalRows,
+        total_rows: 0,
         rows_processed: 0,
         rows_failed: 0,
+        batch_size: batchSize,
+        batches_total: 0,
+        batches_completed: 0,
+        batches_failed: 0,
+        max_concurrency: maxConcurrency,
       },
       idempotency_key: idempotencyKey,
     })
@@ -1711,23 +1753,140 @@ export async function startCsvBuilderToolJob(
   if (insertErr || !inserted) return jsonResponse(502, { error: 'Failed to create tool job workflow' });
 
   const foundryJobId = inserted.id as string;
-  await leadsClient
-    .from('csv_builder_column_jobs')
-    .update({
-      foundry_job_id: foundryJobId,
-      status: 'queued',
-      rows_total: totalRows,
-      rows_completed: 0,
-      rows_failed: 0,
-      error_summary: null,
-      started_at: null,
-      completed_at: null,
-    })
-    .eq('id', toolJob.id);
-  await leadsClient
-    .from('csv_builder_columns')
-    .update({ status: 'queued' })
-    .in('id', toolJob.output_column_ids ?? []);
+  let planned: Awaited<ReturnType<typeof planCsvBuilderToolJobBatches>>;
+  let queuedProgress: Record<string, unknown>;
+  let payload: Record<string, unknown>;
+  try {
+    await resetCsvBuilderToolJobExecutionArtifacts(
+      leadsClient as unknown as Parameters<typeof resetCsvBuilderToolJobExecutionArtifacts>[0],
+      toolJob.id,
+    );
+    planned = await planCsvBuilderToolJobBatches(
+      leadsClient as unknown as Parameters<typeof planCsvBuilderToolJobBatches>[0],
+      {
+        toolJobId: toolJob.id,
+        foundryJobId,
+        runId: toolJob.run_id,
+        batchSize,
+      },
+    );
+    if (planned.batchCount === 0 || planned.rowCount === 0) {
+      throw new Error('CSV Builder run has no rows available for tool execution');
+    }
+    queuedProgress = isWebsite
+      ? buildCsvBuilderWebsiteVerificationToolJobProgressSnapshot(
+          {
+            csv_builder_tool_job_id: toolJob.id,
+            run_id: toolJob.run_id,
+            tool_type: toolType,
+            output_column_ids: toolJob.output_column_ids ?? [],
+            config: toolJob.config ?? {},
+            rows_total: planned.rowCount,
+            batch_size: planned.batchSize,
+            batch_count: planned.batchCount,
+            map_max_concurrency: planned.maxConcurrency,
+          },
+          {
+            rows_total: planned.rowCount,
+            rows_completed: 0,
+            rows_failed: 0,
+            batches_total: planned.batchCount,
+            batches_completed: 0,
+            batches_failed: 0,
+            outcome_usable: 0,
+            outcome_uncertain: 0,
+            outcome_not_usable: 0,
+            outcome_error: 0,
+          },
+          { status: 'queued' },
+        )
+      : buildCsvBuilderGoogleAdsToolJobProgressSnapshot(
+          {
+            csv_builder_tool_job_id: toolJob.id,
+            run_id: toolJob.run_id,
+            tool_type: toolType,
+            output_column_ids: toolJob.output_column_ids ?? [],
+            config: toolJob.config ?? {},
+            rows_total: planned.rowCount,
+            batch_size: planned.batchSize,
+            batch_count: planned.batchCount,
+            map_max_concurrency: planned.maxConcurrency,
+          },
+          {
+            rows_total: planned.rowCount,
+            rows_completed: 0,
+            rows_failed: 0,
+            batches_total: planned.batchCount,
+            batches_completed: 0,
+            batches_failed: 0,
+            outcome_yes: 0,
+            outcome_no: 0,
+            outcome_unknown: 0,
+            outcome_error: 0,
+          },
+          { status: 'queued' },
+        );
+    payload = {
+      csv_builder_tool_job_id: toolJob.id,
+      run_id: toolJob.run_id,
+      tool_type: toolType,
+      output_column_ids: toolJob.output_column_ids ?? [],
+      config: toolJob.config ?? {},
+      rows_total: planned.rowCount,
+      batch_size: planned.batchSize,
+      batch_count: planned.batchCount,
+      map_max_concurrency: planned.maxConcurrency,
+      batch_ids: planned.batchIds,
+    };
+    const { error: jobMetaErr } = await leadsClient
+      .from('foundry_jobs')
+      .update({ payload, progress: queuedProgress })
+      .eq('id', foundryJobId);
+    if (jobMetaErr) throw new Error(jobMetaErr.message);
+    await leadsClient
+      .from('csv_builder_column_jobs')
+      .update({
+        foundry_job_id: foundryJobId,
+        status: 'queued',
+        rows_total: planned.rowCount,
+        rows_completed: 0,
+        rows_failed: 0,
+        batch_size: planned.batchSize,
+        batch_count: planned.batchCount,
+        max_concurrency: planned.maxConcurrency,
+        error_summary: null,
+        started_at: null,
+        completed_at: null,
+      })
+      .eq('id', toolJob.id);
+    await leadsClient
+      .from('csv_builder_columns')
+      .update({ status: 'queued' })
+      .in('id', toolJob.output_column_ids ?? []);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await leadsClient
+      .from('foundry_jobs')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_summary: msg,
+      })
+      .eq('id', foundryJobId);
+    await leadsClient
+      .from('csv_builder_column_jobs')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_summary: msg,
+      })
+      .eq('id', toolJob.id);
+    await leadsClient
+      .from('csv_builder_columns')
+      .update({ status: 'failed' })
+      .in('id', toolJob.output_column_ids ?? []);
+    return jsonResponse(502, { error: 'Failed to prepare tool workflow', detail: msg });
+  }
 
   try {
     const execName = `${isWebsite ? 'csvwv' : 'csvgav'}-${foundryJobId.replace(/-/g, '').slice(0, 20)}-${Date.now()}`.slice(0, 80);
@@ -1735,26 +1894,41 @@ export async function startCsvBuilderToolJob(
       new StartExecutionCommand({
         stateMachineArn: smArn,
         name: execName,
-        input: JSON.stringify(
-          isWebsite
-            ? {
-                jobId: foundryJobId,
-                websiteBatches: [[]],
-                batchCount: 1,
-                mapMaxConcurrency: 1,
-              }
-            : { jobId: foundryJobId },
-        ),
+        input: JSON.stringify({
+          jobId: foundryJobId,
+          csvBuilderBatchIds: planned.batchIds,
+          batchCount: planned.batchCount,
+          mapMaxConcurrency: planned.maxConcurrency,
+        }),
       }),
     );
     const executionArn = out.executionArn ?? '';
     const startedAt = new Date().toISOString();
-    const progress = {
-      current_step: 'running',
-      total_rows: totalRows,
-      rows_processed: 0,
-      rows_failed: 0,
-    };
+    const progress = isWebsite
+      ? buildCsvBuilderWebsiteVerificationToolJobProgressSnapshot(payload, {
+          rows_total: planned.rowCount,
+          rows_completed: 0,
+          rows_failed: 0,
+          batches_total: planned.batchCount,
+          batches_completed: 0,
+          batches_failed: 0,
+          outcome_usable: 0,
+          outcome_uncertain: 0,
+          outcome_not_usable: 0,
+          outcome_error: 0,
+        }, { status: 'running', previous: queuedProgress, refreshed_at: startedAt })
+      : buildCsvBuilderGoogleAdsToolJobProgressSnapshot(payload, {
+          rows_total: planned.rowCount,
+          rows_completed: 0,
+          rows_failed: 0,
+          batches_total: planned.batchCount,
+          batches_completed: 0,
+          batches_failed: 0,
+          outcome_yes: 0,
+          outcome_no: 0,
+          outcome_unknown: 0,
+          outcome_error: 0,
+        }, { status: 'running', previous: queuedProgress, refreshed_at: startedAt });
     const { data: runningJob, error: updateErr } = await leadsClient
       .from('foundry_jobs')
       .update({
@@ -1783,9 +1957,12 @@ export async function startCsvBuilderToolJob(
         ...toolJob,
         foundry_job_id: foundryJobId,
         status: 'running',
-        rows_total: totalRows,
+        rows_total: planned.rowCount,
         rows_completed: 0,
         rows_failed: 0,
+        batch_size: planned.batchSize,
+        batch_count: planned.batchCount,
+        max_concurrency: planned.maxConcurrency,
         started_at: startedAt,
       },
       foundry_job: runningJob,

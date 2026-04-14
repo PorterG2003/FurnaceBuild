@@ -132,18 +132,37 @@ export async function listCsvBuilderRows(
   const noFilter = !Array.isArray(query.filters) || query.filters.length === 0;
   const noSort = !query.sortBy || query.sortBy === 'row_number';
   if (noFilter && noSort) {
-    const { data, error, count } = await leadsClient
-      .from('csv_builder_rows')
-      .select('id, row_number, source_values, tool_values, row_status', { count: 'exact' })
-      .eq('run_id', runId)
-      .order('row_number', { ascending: query.sortDirection !== 'desc' })
-      .range(query.offset ?? 0, (query.offset ?? 0) + query.limit - 1);
-    if (error) throw new Error(error.message);
+    const offset = query.offset ?? 0;
+    const requestedLimit = Math.max(1, query.limit);
+    const rows: RowRecord[] = [];
+    let totalCount = 0;
+    let nextOffset = offset;
+    let remaining = requestedLimit;
+
+    while (remaining > 0) {
+      const pageSize = Math.min(SCAN_BATCH_SIZE, remaining);
+      const { data, error, count } = await leadsClient
+        .from('csv_builder_rows')
+        .select('id, row_number, source_values, tool_values, row_status', { count: rows.length === 0 ? 'exact' : undefined })
+        .eq('run_id', runId)
+        .order('row_number', { ascending: query.sortDirection !== 'desc' })
+        .range(nextOffset, nextOffset + pageSize - 1);
+      if (error) throw new Error(error.message);
+      if (rows.length === 0) totalCount = count ?? 0;
+
+      const batch = (data ?? []) as unknown as RowRecord[];
+      rows.push(...batch);
+      if (batch.length < pageSize) break;
+
+      nextOffset += pageSize;
+      remaining -= pageSize;
+    }
+
     return {
-      rows: ((data ?? []) as unknown as RowRecord[]).map((row) => hydrateRow(row, requestedKeys)),
-      limit: query.limit,
-      offset: query.offset ?? 0,
-      total_count: count ?? 0,
+      rows: rows.map((row) => hydrateRow(row, requestedKeys)),
+      limit: requestedLimit,
+      offset,
+      total_count: totalCount,
       visible_column_keys: visibleColumnKeys,
     };
   }

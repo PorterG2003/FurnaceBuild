@@ -9,8 +9,10 @@ import type { FoundryJobRow } from '@/lib/foundry/registry-types';
 import { FoundryJobStatusBadge } from '@/components/foundry/runs/FoundryJobStatusBadge';
 import {
   formatFoundryJobType,
+  getCsvBuilderExportDownloadUrl,
   getIngestionRunIdFromJob,
   getSourceIngestionRunIdFromJob,
+  openCsvBuilderExportDownload,
 } from '@/components/foundry/runs/foundryJobDisplay';
 
 type StatusFilter = 'all' | 'queued' | 'running' | 'completed' | 'failed';
@@ -86,6 +88,7 @@ export default function FoundryRunsListScreen() {
           const ingestId = getIngestionRunIdFromJob(job);
           const sourceIngest = getSourceIngestionRunIdFromJob(job);
           const runLinkId = ingestId ?? sourceIngest;
+          const csvExportUrl = getCsvBuilderExportDownloadUrl(job);
           return (
             <View key={job.id} className="p-3 rounded-lg border border-[#2A2A2A] bg-[#1A1A1A]">
               <Pressable
@@ -110,6 +113,21 @@ export default function FoundryRunsListScreen() {
                   </Text>
                 ) : null}
               </Pressable>
+              {csvExportUrl ? (
+                <View className="mt-2">
+                  <Button
+                    variant="link"
+                    size="xs"
+                    className="self-start px-0"
+                    onPress={() => openCsvBuilderExportDownload(csvExportUrl)}
+                  >
+                    Download CSV
+                  </Button>
+                  <Text className="text-gray-600 font-instrument text-[10px] mt-1 leading-4">
+                    Link expires after ~15 minutes; start a new export from CSV Builder if it fails.
+                  </Text>
+                </View>
+              ) : null}
               {runLinkId ? (
                 <Button
                   variant="link"

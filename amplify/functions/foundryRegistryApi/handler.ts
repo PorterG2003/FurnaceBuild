@@ -818,6 +818,7 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
   if (jobsResponse) return jobsResponse;
 
   const extended = await dispatchFoundryExtendedRoutes(
+    mainClient,
     leadsClient,
     method,
     path,

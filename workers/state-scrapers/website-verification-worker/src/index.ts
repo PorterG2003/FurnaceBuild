@@ -6,12 +6,17 @@ import { createClient } from '@supabase/supabase-js';
 import { chromium, type Browser, type Page } from 'playwright';
 import {
   WEBSITE_VERIFIER_VERSION,
+  buildCsvBuilderWebsiteVerificationBundle,
+  buildCsvBuilderWebsiteVerificationErrorResult,
+  buildCsvBuilderWebsiteVerificationRowResult,
   buildWebsiteVerificationProgressSnapshot,
   canonicalizeWebsiteUrl,
+  extractCsvBuilderToolOutputValue,
   loadWebsiteVerificationBundles,
   loadWebsiteVerificationProgressCounts,
   normalizeComparableText,
   pickWebsiteVerificationTarget,
+  pickCsvBuilderWebsiteInputUrl,
   scoreWebsiteVerification,
   type WebsiteVerificationBundle,
   type WebsiteVerificationCrawlResult,
@@ -469,6 +474,187 @@ async function refreshWebsiteVerificationProgress(
   return progress;
 }
 
+type CsvBuilderRowRecord = {
+  id: string;
+  row_number: number;
+  source_values: Record<string, unknown>;
+  tool_values: Record<string, unknown>;
+  row_status: string;
+};
+
+type CsvBuilderOutputColumn = {
+  id: string;
+  key: string;
+  tool_output_key: string | null;
+};
+
+async function scanCsvBuilderRows(client: any, runId: string): Promise<CsvBuilderRowRecord[]> {
+  const rows: CsvBuilderRowRecord[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await client
+      .from('csv_builder_rows')
+      .select('id, row_number, source_values, tool_values, row_status')
+      .eq('run_id', runId)
+      .order('row_number', { ascending: true })
+      .range(from, from + 499);
+    if (error) throw new Error(error.message);
+    const batch = (data ?? []) as CsvBuilderRowRecord[];
+    rows.push(...batch);
+    if (batch.length < 500) break;
+    from += 500;
+  }
+  return rows;
+}
+
+function csvBuilderRowValues(
+  row: CsvBuilderRowRecord,
+  columnIdToKey: Map<string, string>,
+  inputMapping: Record<string, string>,
+): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const [inputKey, columnId] of Object.entries(inputMapping)) {
+    const columnKey = columnIdToKey.get(columnId);
+    if (!columnKey) continue;
+    if (Object.prototype.hasOwnProperty.call(row.tool_values ?? {}, columnKey)) {
+      values[inputKey] = row.tool_values[columnKey];
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(row.source_values ?? {}, columnKey)) {
+      values[inputKey] = row.source_values[columnKey];
+      continue;
+    }
+    values[inputKey] = null;
+  }
+  return values;
+}
+
+async function updateCsvBuilderWebsiteProgress(
+  client: any,
+  jobId: string,
+  toolJobId: string,
+  progress: {
+    rows_total: number;
+    rows_processed: number;
+    rows_failed: number;
+    outcome_usable: number;
+    outcome_uncertain: number;
+    outcome_not_usable: number;
+  },
+): Promise<void> {
+  await updateJobProgress(client, jobId, {
+    current_step: 'running',
+    total_rows: progress.rows_total,
+    rows_processed: progress.rows_processed,
+    rows_failed: progress.rows_failed,
+    outcome_usable: progress.outcome_usable,
+    outcome_uncertain: progress.outcome_uncertain,
+    outcome_not_usable: progress.outcome_not_usable,
+  });
+  const status =
+    progress.rows_processed >= progress.rows_total
+      ? progress.rows_failed > 0
+        ? 'partial'
+        : 'completed'
+      : 'running';
+  const { error } = await client
+    .from('csv_builder_column_jobs')
+    .update({
+      status,
+      rows_total: progress.rows_total,
+      rows_completed: progress.rows_processed,
+      rows_failed: progress.rows_failed,
+      completed_at: progress.rows_processed >= progress.rows_total ? new Date().toISOString() : null,
+      error_summary: progress.rows_failed > 0 ? `${progress.rows_failed} rows failed` : null,
+    })
+    .eq('id', toolJobId);
+  if (error) throw new Error(error.message);
+}
+
+async function runCsvBuilderWebsiteVerification(client: any, jobId: string, payload: Record<string, unknown>): Promise<void> {
+  const toolJobId =
+    typeof payload.csv_builder_tool_job_id === 'string' && payload.csv_builder_tool_job_id.trim().length > 0
+      ? payload.csv_builder_tool_job_id.trim()
+      : null;
+  const runId = typeof payload.run_id === 'string' && payload.run_id.trim().length > 0 ? payload.run_id.trim() : null;
+  if (!toolJobId || !runId) throw new Error('Missing CSV Builder tool job payload');
+  const { data: toolJob, error: toolJobErr } = await client
+    .from('csv_builder_column_jobs')
+    .select('*')
+    .eq('id', toolJobId)
+    .maybeSingle();
+  if (toolJobErr || !toolJob) throw new Error(toolJobErr?.message ?? `CSV Builder tool job ${toolJobId} not found`);
+  const { data: columnsData, error: columnsErr } = await client
+    .from('csv_builder_columns')
+    .select('id, key, tool_output_key')
+    .eq('run_id', runId);
+  if (columnsErr) throw new Error(columnsErr.message);
+  const columns = (columnsData ?? []) as Array<{ id: string; key: string; tool_output_key: string | null }>;
+  const columnIdToKey = new Map(columns.map((column) => [column.id, column.key]));
+  const outputColumns = columns.filter((column) => (toolJob.output_column_ids ?? []).includes(column.id)) as CsvBuilderOutputColumn[];
+  const rows = await scanCsvBuilderRows(client, runId);
+  const progress = {
+    rows_total: rows.length,
+    rows_processed: 0,
+    rows_failed: 0,
+    outcome_usable: 0,
+    outcome_uncertain: 0,
+    outcome_not_usable: 0,
+  };
+  await updateCsvBuilderWebsiteProgress(client, jobId, toolJobId, progress);
+  const browser = await launchBrowser();
+  const context = await browser.newContext({ viewport: VIEWPORT, ignoreHTTPSErrors: true });
+  try {
+    for (const row of rows) {
+      const rowValues = csvBuilderRowValues(row, columnIdToKey, (toolJob.config?.input_mapping ?? {}) as Record<string, string>);
+      const bundle = buildCsvBuilderWebsiteVerificationBundle(rowValues, toolJob.config, row.id);
+      const inputUrl = pickCsvBuilderWebsiteInputUrl(rowValues, toolJob.config);
+      const page = await context.newPage();
+      page.setDefaultTimeout(NAV_TIMEOUT_MS);
+      let result: Record<string, unknown>;
+      let failed = false;
+      try {
+        if (!inputUrl) {
+          failed = true;
+          result = buildCsvBuilderWebsiteVerificationErrorResult(null, 'Missing website input');
+        } else {
+          const crawl = await runCompanyWithTimeout(page, bundle, inputUrl, async () => await crawlWebsite(page, bundle, inputUrl));
+          const scored = scoreWebsiteVerification(bundle, crawl);
+          result = buildCsvBuilderWebsiteVerificationRowResult({ crawl, scored });
+          if (scored.band === 'usable') progress.outcome_usable += 1;
+          else if (scored.band === 'uncertain') progress.outcome_uncertain += 1;
+          else progress.outcome_not_usable += 1;
+        }
+      } catch (error) {
+        failed = true;
+        const message = error instanceof Error ? trimPageFailureMessage(error.message) : String(error);
+        result = buildCsvBuilderWebsiteVerificationErrorResult(inputUrl, message);
+      } finally {
+        await page.close().catch(() => {});
+      }
+      if (failed) progress.rows_failed += 1;
+      progress.rows_processed += 1;
+      const patch: Record<string, unknown> = {};
+      for (const column of outputColumns) {
+        if (!column.tool_output_key) continue;
+        patch[column.key] = extractCsvBuilderToolOutputValue('website_verification', column.tool_output_key, result) ?? null;
+      }
+      const { error: rowErr } = await client
+        .from('csv_builder_rows')
+        .update({
+          tool_values: { ...(row.tool_values ?? {}), ...patch },
+          row_status: failed ? 'partial' : 'ready',
+        })
+        .eq('id', row.id);
+      if (rowErr) throw new Error(rowErr.message);
+      await updateCsvBuilderWebsiteProgress(client, jobId, toolJobId, progress);
+    }
+  } finally {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+  }
+}
+
 async function main(): Promise<void> {
   const { url, key, jobId } = await loadSecret();
   const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -481,6 +667,10 @@ async function main(): Promise<void> {
     throw new Error(jobErr?.message || `Job ${jobId} not found`);
   }
   const payload = (jobRow.payload ?? {}) as Record<string, unknown>;
+  if (typeof payload.csv_builder_tool_job_id === 'string' && payload.csv_builder_tool_job_id.trim().length > 0) {
+    await runCsvBuilderWebsiteVerification(client, jobId, payload);
+    return;
+  }
   const progress = ((jobRow.progress ?? {}) as JobProgress) || {};
   const envCompanyIds = process.env.COMPANY_IDS_JSON?.trim();
   const batchIndex =

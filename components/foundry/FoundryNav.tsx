@@ -10,6 +10,7 @@ const LINKS: { href: string; label: string }[] = [
   { href: '/foundry/dedupe', label: 'Dedupe' },
   { href: '/foundry/runs', label: 'Runs' },
   { href: '/foundry/export', label: 'Export' },
+  { href: '/foundry/csv-builder', label: 'CSV Builder' },
 ];
 
 function NavLink({ href, label, horizontal }: { href: string; label: string; horizontal: boolean }) {

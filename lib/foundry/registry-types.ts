@@ -43,14 +43,121 @@ export const FOUNDRY_JOB_TYPES = [
   'state_matching_batch',
   'website_verification_import_run',
   'google_ads_verification_import_run',
+  'csv_builder_website_verification',
+  'csv_builder_google_ads_verification',
+  'csv_builder_export',
 ] as const;
 export type FoundryJobType = (typeof FOUNDRY_JOB_TYPES)[number];
+
+export const CSV_BUILDER_RUN_STATUSES = ['draft', 'ready', 'running', 'errored', 'archived'] as const;
+export type CsvBuilderRunStatus = (typeof CSV_BUILDER_RUN_STATUSES)[number];
+
+export const CSV_BUILDER_COLUMN_KINDS = ['source', 'tool_output', 'system'] as const;
+export type CsvBuilderColumnKind = (typeof CSV_BUILDER_COLUMN_KINDS)[number];
+
+export const CSV_BUILDER_COLUMN_DATA_TYPES = ['text', 'number', 'boolean', 'date', 'datetime', 'json'] as const;
+export type CsvBuilderColumnDataType = (typeof CSV_BUILDER_COLUMN_DATA_TYPES)[number];
+
+export const CSV_BUILDER_COLUMN_STATUSES = [
+  'ready',
+  'queued',
+  'running',
+  'completed',
+  'partial',
+  'failed',
+  'cancelled',
+] as const;
+export type CsvBuilderColumnStatus = (typeof CSV_BUILDER_COLUMN_STATUSES)[number];
+
+export const CSV_BUILDER_ROW_STATUSES = ['ready', 'partial', 'errored'] as const;
+export type CsvBuilderRowStatus = (typeof CSV_BUILDER_ROW_STATUSES)[number];
+
+export const CSV_BUILDER_COLUMN_JOB_MODES = ['create_column', 'rerun_column'] as const;
+export type CsvBuilderColumnJobMode = (typeof CSV_BUILDER_COLUMN_JOB_MODES)[number];
+
+export type CsvBuilderToolType =
+  | 'website_verification'
+  | 'google_ads_verification'
+  | 'state_matching'
+  | 'contact_enrichment';
+
+export const CSV_BUILDER_FILTER_OPERATORS = [
+  'contains',
+  'equals',
+  'empty',
+  'not_empty',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'before',
+  'after',
+] as const;
+export type CsvBuilderFilterOperator = (typeof CSV_BUILDER_FILTER_OPERATORS)[number];
 
 export const WEBSITE_VERIFICATION_BANDS = ['usable', 'uncertain', 'not_usable'] as const;
 export type WebsiteVerificationBand = (typeof WEBSITE_VERIFICATION_BANDS)[number];
 
 export const GOOGLE_ADS_VERIFICATION_RESULTS = ['yes', 'no', 'unknown'] as const;
 export type GoogleAdsVerificationResult = (typeof GOOGLE_ADS_VERIFICATION_RESULTS)[number];
+
+export interface CsvBuilderToolManifestInput {
+  key: string;
+  label: string;
+  description?: string;
+  required: boolean;
+  accepts_column_kinds?: CsvBuilderColumnKind[];
+}
+
+export interface CsvBuilderToolManifestOutput {
+  key: string;
+  label: string;
+  description?: string;
+  data_type: CsvBuilderColumnDataType;
+  default_selected: boolean;
+  is_raw_json?: boolean;
+}
+
+export interface CsvBuilderToolManifestDependency {
+  tool_type: CsvBuilderToolType;
+  label: string;
+  optional?: boolean;
+}
+
+export interface CsvBuilderToolManifest {
+  tool_type: CsvBuilderToolType;
+  label: string;
+  description: string;
+  supported: boolean;
+  inputs: CsvBuilderToolManifestInput[];
+  outputs: CsvBuilderToolManifestOutput[];
+  dependencies?: CsvBuilderToolManifestDependency[];
+}
+
+export interface CsvBuilderToolJobConfigBase {
+  input_mapping: Record<string, string>;
+  selected_outputs: string[];
+  include_raw_json?: boolean;
+  depends_on_job_id?: string | null;
+  result_parser_version?: string | null;
+}
+
+export interface CsvBuilderWebsiteVerificationConfig extends CsvBuilderToolJobConfigBase {
+  tool_type: 'website_verification';
+}
+
+export interface CsvBuilderGoogleAdsVerificationConfig extends CsvBuilderToolJobConfigBase {
+  tool_type: 'google_ads_verification';
+}
+
+export interface CsvBuilderGenericToolConfig extends CsvBuilderToolJobConfigBase {
+  tool_type: CsvBuilderToolType;
+}
+
+export type CsvBuilderToolJobConfig =
+  | CsvBuilderWebsiteVerificationConfig
+  | CsvBuilderGoogleAdsVerificationConfig
+  | CsvBuilderGenericToolConfig;
 
 /** Optional progress JSON on foundry_jobs (UI / workers). */
 export interface FoundryJobProgress {
@@ -95,6 +202,8 @@ export interface FoundryJobProgress {
   last_progress_refresh_at?: string | null;
   reconciliation_outcomes?: Partial<Record<ReconciliationOutcome, number>>;
   current_step?: string;
+  /** Presigned S3 GET for CSV Builder export (short-lived). */
+  download_url?: string;
   /** Last source_business_records.id processed in normalize chunk loop */
   cursor?: string | null;
   last_chunk?: { updated: number; scanned: number };
@@ -128,6 +237,206 @@ export interface FoundryJobDetailResponse {
 
 export interface FoundryJobsListResponse {
   jobs: FoundryJobRow[];
+}
+
+export type CsvBuilderCellValue = string | number | boolean | null | Record<string, unknown> | unknown[];
+
+export interface CsvBuilderRunRow {
+  id: string;
+  account_id: string;
+  created_by: string | null;
+  name: string;
+  status: CsvBuilderRunStatus;
+  source_file_name: string;
+  source_file_size_bytes: number | null;
+  source_file_mime_type: string | null;
+  source_row_count: number;
+  source_column_count: number;
+  visible_column_count: number;
+  last_exported_at: string | null;
+  last_activity_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CsvBuilderColumnRow {
+  id: string;
+  run_id: string;
+  key: string;
+  label: string;
+  kind: CsvBuilderColumnKind;
+  data_type: CsvBuilderColumnDataType;
+  position: number;
+  visible: boolean;
+  description: string | null;
+  tool_type: CsvBuilderToolType | null;
+  tool_job_id: string | null;
+  tool_output_key: string | null;
+  tool_output_label: string | null;
+  tool_config: Record<string, unknown>;
+  input_column_ids: string[];
+  status: CsvBuilderColumnStatus;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CsvBuilderRowRow {
+  id: string;
+  run_id: string;
+  row_number: number;
+  source_values: Record<string, CsvBuilderCellValue>;
+  tool_values: Record<string, CsvBuilderCellValue>;
+  row_status: CsvBuilderRowStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CsvBuilderHydratedRow {
+  id: string;
+  row_number: number;
+  row_status: CsvBuilderRowStatus;
+  values: Record<string, CsvBuilderCellValue>;
+}
+
+export interface CsvBuilderColumnJobRow {
+  id: string;
+  run_id: string;
+  column_id: string;
+  foundry_job_id: string | null;
+  tool_type: string;
+  mode: CsvBuilderColumnJobMode;
+  config: Record<string, unknown>;
+  input_column_ids: string[];
+  output_column_ids: string[];
+  selected_output_keys: string[];
+  result_parser_version: string | null;
+  status: FoundryJobStatus | 'partial';
+  rows_total: number | null;
+  rows_completed: number | null;
+  rows_failed: number | null;
+  error_summary: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export type CsvBuilderToolJobRow = CsvBuilderColumnJobRow;
+
+export interface CsvBuilderFilter {
+  column_key: string;
+  operator: CsvBuilderFilterOperator;
+  value?: string | number | boolean | null;
+}
+
+export interface CsvBuilderRowsQuery {
+  limit: number;
+  offset?: number;
+  columnKeys?: string[];
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
+  filters?: CsvBuilderFilter[];
+}
+
+export interface PostCreateCsvBuilderRunBody {
+  name: string;
+  source_file_name: string;
+  source_file_size_bytes?: number | null;
+  source_file_mime_type?: string | null;
+  headers: Array<{
+    key: string;
+    label: string;
+    data_type?: CsvBuilderColumnDataType;
+  }>;
+  rows: Array<Record<string, CsvBuilderCellValue>>;
+}
+
+export interface CsvBuilderRunsListResponse {
+  runs: CsvBuilderRunRow[];
+  limit: number;
+  offset: number;
+  total_count: number;
+}
+
+export interface CsvBuilderRunDetailResponse {
+  run: CsvBuilderRunRow;
+}
+
+export interface CsvBuilderColumnsResponse {
+  columns: CsvBuilderColumnRow[];
+}
+
+export interface CsvBuilderRowsResponse {
+  rows: CsvBuilderHydratedRow[];
+  limit: number;
+  offset: number;
+  total_count: number;
+  visible_column_keys: string[];
+}
+
+export interface PostCreateCsvBuilderRunResponse {
+  run: CsvBuilderRunRow;
+  columns: CsvBuilderColumnRow[];
+}
+
+export interface PostCreateCsvBuilderColumnBody {
+  label: string;
+  tool_type: CsvBuilderToolType;
+  input_column_ids: string[];
+  tool_config?: Record<string, unknown>;
+}
+
+export interface PostCreateCsvBuilderColumnResponse {
+  column: CsvBuilderColumnRow;
+  column_job: CsvBuilderColumnJobRow | null;
+}
+
+export interface PostRerunCsvBuilderColumnBody {
+  tool_config?: Record<string, unknown>;
+}
+
+export interface PostRerunCsvBuilderColumnResponse {
+  column: CsvBuilderColumnRow;
+  column_job: CsvBuilderColumnJobRow | null;
+}
+
+export interface CsvBuilderToolJobsResponse {
+  jobs: CsvBuilderToolJobRow[];
+}
+
+export interface PostCreateCsvBuilderToolJobBody {
+  label?: string;
+  tool_type: CsvBuilderToolType;
+  config: CsvBuilderToolJobConfig;
+}
+
+export interface PostCreateCsvBuilderToolJobResponse {
+  job: CsvBuilderToolJobRow;
+  columns: CsvBuilderColumnRow[];
+  foundry_job: FoundryJobRow | null;
+}
+
+export interface PostRerunCsvBuilderToolJobBody {
+  config?: CsvBuilderToolJobConfig;
+}
+
+export interface PostRerunCsvBuilderToolJobResponse {
+  job: CsvBuilderToolJobRow;
+  columns: CsvBuilderColumnRow[];
+  foundry_job: FoundryJobRow | null;
+}
+
+export interface PostCsvBuilderExportBody {
+  column_keys?: string[];
+  sort_by?: string;
+  sort_direction?: 'asc' | 'desc';
+  filters?: CsvBuilderFilter[];
+}
+
+export interface PostCsvBuilderExportResponse {
+  jobId: string;
+  executionArn: string;
+  reused?: boolean;
 }
 
 export interface PostStartNormalizeJobResponse {

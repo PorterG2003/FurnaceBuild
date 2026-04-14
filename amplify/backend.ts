@@ -6,6 +6,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cdk from 'aws-cdk-lib';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { auth } from './auth/resource';
@@ -22,6 +23,7 @@ import { foundryContactEnrichmentJob } from './functions/foundryContactEnrichmen
 import { foundryStateMatchingJob } from './functions/foundryStateMatchingJob/resource';
 import { foundryWebsiteVerificationJob } from './functions/foundryWebsiteVerificationJob/resource';
 import { foundryGoogleAdsVerificationJob } from './functions/foundryGoogleAdsVerificationJob/resource';
+import { foundryCsvBuilderExportJob } from './functions/foundryCsvBuilderExportJob/resource';
 import { processNotificationEvent } from './functions/processNotificationEvent/resource';
 
 // Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
@@ -52,6 +54,7 @@ const backend = defineBackend({
   foundryStateMatchingJob,
   foundryWebsiteVerificationJob,
   foundryGoogleAdsVerificationJob,
+  foundryCsvBuilderExportJob,
   processNotificationEvent,
   ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
@@ -151,10 +154,22 @@ const workerEnvironment = resolveWorkerEnvironment();
 const foundryNormalizeLambda = backend.foundryNormalizeJob.resources.lambda as lambda.Function;
 const foundryAutolinkLambda = backend.foundryAutolinkJob.resources.lambda as lambda.Function;
 const foundryContactEnrichmentLambda = backend.foundryContactEnrichmentJob.resources.lambda as lambda.Function;
+const foundryCsvBuilderExportLambda = backend.foundryCsvBuilderExportJob.resources.lambda as lambda.Function;
 const foundryNormalizeStack = foundryNormalizeLambda.stack;
 foundryNormalizeLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
 foundryAutolinkLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
 foundryContactEnrichmentLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
+foundryCsvBuilderExportLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
+
+const csvBuilderExportBucket = new s3.Bucket(foundryNormalizeStack, 'CsvBuilderExportBucket', {
+  blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+  encryption: s3.BucketEncryption.S3_MANAGED,
+  enforceSSL: true,
+  versioned: false,
+  removalPolicy: cdk.RemovalPolicy.RETAIN,
+});
+csvBuilderExportBucket.grantReadWrite(foundryCsvBuilderExportLambda);
+foundryCsvBuilderExportLambda.addEnvironment('CSV_BUILDER_EXPORT_BUCKET', csvBuilderExportBucket.bucketName);
 
 // fromJsonPathAt('$') with payloadResponseOnly synthesizes a literal "$" payload (CDK renderObject skips non-objects).
 const foundryNormalizeChunk = new sfnTasks.LambdaInvoke(foundryNormalizeStack, 'FoundryNormalizeChunk', {
@@ -812,6 +827,44 @@ const foundryGoogleAdsVerificationStateMachineArn = cdk.Stack.of(foundryNormaliz
   arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
 });
 
+const foundryCsvBuilderExportRun = new sfnTasks.LambdaInvoke(foundryNormalizeStack, 'FoundryCsvBuilderExportRun', {
+  lambdaFunction: foundryCsvBuilderExportLambda,
+  payload: sfn.TaskInput.fromObject({
+    'jobId.$': '$.jobId',
+    'runId.$': '$.runId',
+  }),
+  payloadResponseOnly: true,
+});
+const foundryCsvBuilderExportFail = new sfnTasks.LambdaInvoke(foundryNormalizeStack, 'FoundryCsvBuilderExportFail', {
+  lambdaFunction: foundryCsvBuilderExportLambda,
+  payload: sfn.TaskInput.fromObject({
+    action: 'fail',
+    'jobId.$': '$.jobId',
+    'message.$': '$.error.Cause',
+  }),
+  payloadResponseOnly: true,
+});
+const foundryCsvBuilderExportDone = new sfn.Succeed(foundryNormalizeStack, 'FoundryCsvBuilderExportDone');
+const foundryCsvBuilderExportAfterFail = new sfn.Succeed(foundryNormalizeStack, 'FoundryCsvBuilderExportAfterFail');
+foundryCsvBuilderExportRun.next(foundryCsvBuilderExportDone);
+foundryCsvBuilderExportFail.next(foundryCsvBuilderExportAfterFail);
+foundryCsvBuilderExportRun.addCatch(foundryCsvBuilderExportFail, {
+  errors: [sfn.Errors.ALL],
+  resultPath: '$.error',
+});
+
+const foundryCsvBuilderExportStateMachineName = `foundry-csv-builder-export-${workerEnvironment}`;
+const foundryCsvBuilderExportStateMachine = new sfn.StateMachine(foundryNormalizeStack, 'FoundryCsvBuilderExportSm', {
+  stateMachineName: foundryCsvBuilderExportStateMachineName,
+  definitionBody: sfn.DefinitionBody.fromChainable(foundryCsvBuilderExportRun),
+});
+const foundryCsvBuilderExportStateMachineArn = cdk.Stack.of(foundryNormalizeStack).formatArn({
+  service: 'states',
+  resource: 'stateMachine',
+  resourceName: foundryCsvBuilderExportStateMachineName,
+  arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+});
+
 const foundryRegistryLambda = backend.foundryRegistryApi.resources.lambda as lambda.Function;
 foundryRegistryLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 foundryRegistryLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
@@ -827,6 +880,10 @@ foundryRegistryLambda.addEnvironment(
   'FOUNDRY_GOOGLE_ADS_VERIFICATION_STATE_MACHINE_ARN',
   foundryGoogleAdsVerificationStateMachineArn,
 );
+foundryRegistryLambda.addEnvironment(
+  'FOUNDRY_CSV_BUILDER_EXPORT_STATE_MACHINE_ARN',
+  foundryCsvBuilderExportStateMachineArn,
+);
 foundryRegistryLambda.addToRolePolicy(
   new iam.PolicyStatement({
     sid: 'FoundryRegistryStartNormalizeExecution',
@@ -838,6 +895,7 @@ foundryRegistryLambda.addToRolePolicy(
       foundryStateMatchingStateMachineArn,
       foundryWebsiteVerificationStateMachineArn,
       foundryGoogleAdsVerificationStateMachineArn,
+      foundryCsvBuilderExportStateMachineArn,
     ],
   }),
 );

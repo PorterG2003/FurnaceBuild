@@ -20,6 +20,8 @@ export function RenderJobProgressSummary({ progress }: { progress: FoundryJobPro
   if (progress.total != null) rows.push({ label: 'Total', value: String(progress.total) });
   if (progress.total_targets != null) rows.push({ label: 'Total targets', value: String(progress.total_targets) });
   if (progress.processed != null) rows.push({ label: 'Processed', value: String(progress.processed) });
+  if (progress.rows_processed != null) rows.push({ label: 'Rows processed', value: String(progress.rows_processed) });
+  if (progress.total_rows != null) rows.push({ label: 'Total rows', value: String(progress.total_rows) });
   if (progress.targets_processed != null) rows.push({ label: 'Processed targets', value: String(progress.targets_processed) });
   if (progress.succeeded != null) rows.push({ label: 'Succeeded', value: String(progress.succeeded) });
   if (progress.failed != null) rows.push({ label: 'Failed', value: String(progress.failed) });
@@ -37,6 +39,9 @@ export function RenderJobProgressSummary({ progress }: { progress: FoundryJobPro
   }
   if (progress.outcome_no_match != null) rows.push({ label: 'No match', value: String(progress.outcome_no_match) });
   if (progress.outcome_error != null) rows.push({ label: 'Error', value: String(progress.outcome_error) });
+  if (progress.outcome_yes != null) rows.push({ label: 'Yes', value: String(progress.outcome_yes) });
+  if (progress.outcome_no != null) rows.push({ label: 'No', value: String(progress.outcome_no) });
+  if (progress.outcome_unknown != null) rows.push({ label: 'Unknown', value: String(progress.outcome_unknown) });
   if (progress.outcome_usable != null) rows.push({ label: 'Usable', value: String(progress.outcome_usable) });
   if (progress.outcome_uncertain != null) rows.push({ label: 'Uncertain', value: String(progress.outcome_uncertain) });
   if (progress.outcome_not_usable != null) rows.push({ label: 'Not usable', value: String(progress.outcome_not_usable) });

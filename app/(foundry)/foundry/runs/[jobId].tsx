@@ -8,8 +8,10 @@ import type { FoundryJobRow } from '@/lib/foundry/registry-types';
 import { FoundryJobStatusBadge } from '@/components/foundry/runs/FoundryJobStatusBadge';
 import {
   formatFoundryJobType,
+  getCsvBuilderExportDownloadUrl,
   getIngestionRunIdFromJob,
   getSourceIngestionRunIdFromJob,
+  openCsvBuilderExportDownload,
 } from '@/components/foundry/runs/foundryJobDisplay';
 import {
   FloridaPerCompanyBlock,
@@ -62,6 +64,10 @@ function PayloadSummary({ job }: { job: FoundryJobRow }) {
   const ingest = getIngestionRunIdFromJob(job) ?? getSourceIngestionRunIdFromJob(job);
   if (ingest) lines.push(`Ingestion run: ${ingest}`);
 
+  if (job.job_type === 'csv_builder_export' && typeof p.run_id === 'string' && p.run_id.trim()) {
+    lines.push(`CSV Builder run: ${p.run_id}`);
+  }
+
   if (lines.length === 0) {
     return <Text className="text-gray-500 font-instrument text-xs">No summary fields on payload.</Text>;
   }
@@ -109,6 +115,7 @@ export default function FoundryRunDetailScreen() {
   }
 
   const ingestId = job ? getIngestionRunIdFromJob(job) ?? getSourceIngestionRunIdFromJob(job) : null;
+  const csvExportUrl = job ? getCsvBuilderExportDownloadUrl(job) : null;
   const utahList = job?.progress?.utah_per_company;
   const floridaList = job?.progress?.florida_per_company;
 
@@ -180,6 +187,17 @@ export default function FoundryRunDetailScreen() {
             >
               Open related import run
             </Button>
+          ) : null}
+
+          {csvExportUrl ? (
+            <View className="gap-1">
+              <Button variant="secondary" size="sm" className="self-start" onPress={() => openCsvBuilderExportDownload(csvExportUrl)}>
+                Download CSV
+              </Button>
+              <Text className="text-gray-600 font-instrument text-xs leading-5">
+                Presigned link expires after ~15 minutes. Start a new export from CSV Builder if the download fails.
+              </Text>
+            </View>
           ) : null}
 
           <View className="p-3 rounded-lg border border-[#2A2A2A] bg-[#1A1A1A]">

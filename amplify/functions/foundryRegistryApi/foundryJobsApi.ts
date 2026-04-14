@@ -16,6 +16,7 @@ import {
   resolveRunCost,
   loadWebsiteVerificationBundles,
   loadWebsiteVerificationProgressCounts,
+  getCsvBuilderToolJob,
   loadGoogleAdsVerificationTargets,
   pickWebsiteVerificationTarget,
   pickGoogleAdsVerificationTarget,
@@ -104,12 +105,37 @@ export type GoogleAdsVerificationJobStartOutcome =
       code?: 'not_configured' | 'not_eligible' | 'server_error';
       preflight?: unknown;
     };
+export type CsvBuilderExportJobStartOutcome =
+  | { status: 'started'; jobId: string; executionArn: string; reused: boolean }
+  | {
+      status: 'failed';
+      error: string;
+      detail?: string;
+      code?: 'not_configured' | 'not_found' | 'server_error';
+    };
+export type CsvBuilderToolJobStartOutcome =
+  | { status: 'started'; jobId: string; executionArn: string; reused: boolean }
+  | {
+      status: 'failed';
+      error: string;
+      detail?: string;
+      code?: 'not_configured' | 'not_found' | 'server_error';
+    };
 
 async function countSourceRowsForRun(leadsClient: SupabaseClient, runId: string): Promise<number> {
   const { count, error } = await leadsClient
     .from('source_business_records')
     .select('id', { count: 'exact', head: true })
     .eq('ingestion_run_id', runId);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+async function countCsvBuilderRowsForRun(leadsClient: SupabaseClient, runId: string): Promise<number> {
+  const { count, error } = await leadsClient
+    .from('csv_builder_rows')
+    .select('id', { count: 'exact', head: true })
+    .eq('run_id', runId);
   if (error) throw new Error(error.message);
   return count ?? 0;
 }
@@ -1497,6 +1523,300 @@ export async function startGoogleAdsVerificationImportJob(
   }
 }
 
+export async function startCsvBuilderExportJob(
+  leadsClient: SupabaseClient,
+  runId: string,
+  userId: string,
+  options?: {
+    columnKeys?: string[];
+    sortBy?: string;
+    sortDirection?: 'asc' | 'desc';
+    filters?: unknown[];
+  },
+): Promise<FunctionUrlResponse> {
+  const smArn = process.env.FOUNDRY_CSV_BUILDER_EXPORT_STATE_MACHINE_ARN?.trim();
+  if (!smArn) {
+    return jsonResponse(503, { error: 'Async CSV Builder export is not configured (Amplify backend / Step Functions)' });
+  }
+
+  const { data: run, error: runErr } = await leadsClient
+    .from('csv_builder_runs')
+    .select('id')
+    .eq('id', runId)
+    .maybeSingle();
+  if (runErr) return jsonResponse(502, { error: 'Failed to load CSV Builder run' });
+  if (!run) return jsonResponse(404, { error: 'CSV Builder run not found' });
+
+  const payload = {
+    run_id: runId,
+    column_keys: Array.isArray(options?.columnKeys) ? options.columnKeys.filter(Boolean) : [],
+    sort_by: options?.sortBy ?? null,
+    sort_direction: options?.sortDirection === 'asc' ? 'asc' : 'desc',
+    filters: Array.isArray(options?.filters) ? options.filters : [],
+  };
+  const idempotencyHash = createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 20);
+  const idempotencyKey = `csv_builder_export:${runId}:${idempotencyHash}`;
+
+  const { data: activeJob, error: activeErr } = await leadsClient
+    .from('foundry_jobs')
+    .select('id, step_function_execution_arn')
+    .eq('idempotency_key', idempotencyKey)
+    .in('status', ['queued', 'running'])
+    .maybeSingle();
+  if (activeErr) return jsonResponse(502, { error: 'Failed to check existing export job' });
+  if (activeJob) {
+    return jsonResponse(200, {
+      jobId: activeJob.id,
+      executionArn: activeJob.step_function_execution_arn ?? '',
+      reused: true,
+    });
+  }
+
+  const totalRows = await countCsvBuilderRowsForRun(leadsClient, runId);
+  const { data: inserted, error: insertErr } = await leadsClient
+    .from('foundry_jobs')
+    .insert({
+      job_type: 'csv_builder_export',
+      status: 'queued',
+      requested_by: userId,
+      payload,
+      progress: {
+        current_step: 'queued',
+        total_rows: totalRows,
+        rows_processed: 0,
+      },
+      idempotency_key: idempotencyKey,
+    })
+    .select('id')
+    .single();
+  if (insertErr || !inserted) {
+    return jsonResponse(502, { error: 'Failed to create export job' });
+  }
+
+  const jobId = inserted.id as string;
+  try {
+    const execName = `csvexp-${jobId.replace(/-/g, '').slice(0, 20)}-${Date.now()}`.slice(0, 80);
+    const out = await sfnClient.send(
+      new StartExecutionCommand({
+        stateMachineArn: smArn,
+        name: execName,
+        input: JSON.stringify({ jobId, runId }),
+      }),
+    );
+    const executionArn = out.executionArn ?? '';
+    const { error: updateErr } = await leadsClient
+      .from('foundry_jobs')
+      .update({
+        status: 'running',
+        started_at: new Date().toISOString(),
+        step_function_execution_arn: executionArn,
+        progress: {
+          current_step: 'running',
+          total_rows: totalRows,
+          rows_processed: 0,
+        },
+      })
+      .eq('id', jobId);
+    if (updateErr) console.error('csv builder export job update after start failed', updateErr.message);
+    return jsonResponse(200, { jobId, executionArn, reused: false });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('CSV Builder export StartExecution failed', msg);
+    await leadsClient
+      .from('foundry_jobs')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_summary: msg,
+      })
+      .eq('id', jobId);
+    return jsonResponse(502, { error: 'Failed to start workflow', detail: msg });
+  }
+}
+
+export async function startCsvBuilderToolJob(
+  leadsClient: SupabaseClient,
+  toolJobId: string,
+  userId: string,
+): Promise<FunctionUrlResponse> {
+  const toolJob = await getCsvBuilderToolJob(
+    leadsClient as unknown as Parameters<typeof getCsvBuilderToolJob>[0],
+    toolJobId,
+  );
+  if (!toolJob) return jsonResponse(404, { error: 'CSV Builder tool job not found' });
+  const toolType = String(toolJob.tool_type ?? '').trim();
+  const isWebsite = toolType === 'website_verification';
+  const isGoogleAds = toolType === 'google_ads_verification';
+  if (!isWebsite && !isGoogleAds) {
+    return jsonResponse(400, { error: `CSV Builder tool type ${toolType} is not supported for async execution` });
+  }
+  const smArn = isWebsite
+    ? process.env.FOUNDRY_WEBSITE_VERIFICATION_STATE_MACHINE_ARN?.trim()
+    : process.env.FOUNDRY_GOOGLE_ADS_VERIFICATION_STATE_MACHINE_ARN?.trim();
+  if (!smArn) {
+    return jsonResponse(503, {
+      error: `Async ${isWebsite ? 'website verification' : 'Google Ads verification'} is not configured (Amplify backend / Step Functions)`,
+    });
+  }
+  const payload = {
+    csv_builder_tool_job_id: toolJob.id,
+    run_id: toolJob.run_id,
+    tool_type: toolType,
+    output_column_ids: toolJob.output_column_ids ?? [],
+    config: toolJob.config ?? {},
+  };
+  const idempotencyKey = `csv_builder_tool_job:${toolJob.id}:${toolType}:${String(toolJob.result_parser_version ?? 'v1')}`;
+  const { data: activeJob, error: activeErr } = await leadsClient
+    .from('foundry_jobs')
+    .select('*')
+    .eq('idempotency_key', idempotencyKey)
+    .in('status', ['queued', 'running'])
+    .maybeSingle();
+  if (activeErr) return jsonResponse(502, { error: 'Failed to check existing tool job' });
+  if (activeJob) {
+    await leadsClient
+      .from('csv_builder_column_jobs')
+      .update({
+        foundry_job_id: activeJob.id,
+        status: activeJob.status,
+        started_at: activeJob.started_at ?? null,
+      })
+      .eq('id', toolJob.id);
+    return jsonResponse(200, {
+      job: toolJob,
+      foundry_job: activeJob,
+      reused: true,
+    });
+  }
+
+  const totalRows = await countCsvBuilderRowsForRun(leadsClient, toolJob.run_id);
+  const jobType = isWebsite ? 'csv_builder_website_verification' : 'csv_builder_google_ads_verification';
+  const { data: inserted, error: insertErr } = await leadsClient
+    .from('foundry_jobs')
+    .insert({
+      job_type: jobType,
+      status: 'queued',
+      requested_by: userId,
+      payload,
+      progress: {
+        current_step: 'queued',
+        total_rows: totalRows,
+        rows_processed: 0,
+        rows_failed: 0,
+      },
+      idempotency_key: idempotencyKey,
+    })
+    .select('*')
+    .single();
+  if (insertErr || !inserted) return jsonResponse(502, { error: 'Failed to create tool job workflow' });
+
+  const foundryJobId = inserted.id as string;
+  await leadsClient
+    .from('csv_builder_column_jobs')
+    .update({
+      foundry_job_id: foundryJobId,
+      status: 'queued',
+      rows_total: totalRows,
+      rows_completed: 0,
+      rows_failed: 0,
+      error_summary: null,
+      started_at: null,
+      completed_at: null,
+    })
+    .eq('id', toolJob.id);
+  await leadsClient
+    .from('csv_builder_columns')
+    .update({ status: 'queued' })
+    .in('id', toolJob.output_column_ids ?? []);
+
+  try {
+    const execName = `${isWebsite ? 'csvwv' : 'csvgav'}-${foundryJobId.replace(/-/g, '').slice(0, 20)}-${Date.now()}`.slice(0, 80);
+    const out = await sfnClient.send(
+      new StartExecutionCommand({
+        stateMachineArn: smArn,
+        name: execName,
+        input: JSON.stringify(
+          isWebsite
+            ? {
+                jobId: foundryJobId,
+                websiteBatches: [[]],
+                batchCount: 1,
+                mapMaxConcurrency: 1,
+              }
+            : { jobId: foundryJobId },
+        ),
+      }),
+    );
+    const executionArn = out.executionArn ?? '';
+    const startedAt = new Date().toISOString();
+    const progress = {
+      current_step: 'running',
+      total_rows: totalRows,
+      rows_processed: 0,
+      rows_failed: 0,
+    };
+    const { data: runningJob, error: updateErr } = await leadsClient
+      .from('foundry_jobs')
+      .update({
+        status: 'running',
+        started_at: startedAt,
+        step_function_execution_arn: executionArn,
+        progress,
+      })
+      .eq('id', foundryJobId)
+      .select('*')
+      .single();
+    if (updateErr) return jsonResponse(502, { error: 'Failed to update tool workflow after start' });
+    await leadsClient
+      .from('csv_builder_column_jobs')
+      .update({
+        status: 'running',
+        started_at: startedAt,
+      })
+      .eq('id', toolJob.id);
+    await leadsClient
+      .from('csv_builder_columns')
+      .update({ status: 'running' })
+      .in('id', toolJob.output_column_ids ?? []);
+    return jsonResponse(200, {
+      job: {
+        ...toolJob,
+        foundry_job_id: foundryJobId,
+        status: 'running',
+        rows_total: totalRows,
+        rows_completed: 0,
+        rows_failed: 0,
+        started_at: startedAt,
+      },
+      foundry_job: runningJob,
+      reused: false,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await leadsClient
+      .from('foundry_jobs')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_summary: msg,
+      })
+      .eq('id', foundryJobId);
+    await leadsClient
+      .from('csv_builder_column_jobs')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_summary: msg,
+      })
+      .eq('id', toolJob.id);
+    await leadsClient
+      .from('csv_builder_columns')
+      .update({ status: 'failed' })
+      .in('id', toolJob.output_column_ids ?? []);
+    return jsonResponse(502, { error: 'Failed to start tool workflow', detail: msg });
+  }
+}
+
 async function handleListJobs(leadsClient: SupabaseClient, rawQueryString: string): Promise<FunctionUrlResponse> {
   const limit = parseLimit(rawQueryString, 100, 50);
   const params = new URLSearchParams(rawQueryString || '');
@@ -1533,10 +1853,13 @@ async function handleGetJob(leadsClient: SupabaseClient, id: string): Promise<Fu
     return jsonResponse(502, { error: 'Failed to load job' });
   }
   if (!data) return jsonResponse(404, { error: 'Job not found' });
+  const jobType = String(data.job_type ?? '');
   const job =
-    String(data.job_type ?? '') === 'website_verification_import_run'
+    jobType === 'website_verification_import_run'
       ? await refreshWebsiteVerificationJobProgress(leadsClient, data as unknown as Record<string, unknown>, false)
-      : data;
+      : jobType === 'google_ads_verification_import_run'
+        ? await refreshGoogleAdsVerificationJobProgress(leadsClient, data as unknown as Record<string, unknown>, false)
+        : data;
   return jsonResponse(200, { job });
 }
 

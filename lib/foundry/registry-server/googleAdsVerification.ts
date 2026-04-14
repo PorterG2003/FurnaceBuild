@@ -99,7 +99,11 @@ export function normalizeGoogleAdsSearchDomain(raw: string | null | undefined): 
   if (!canonical) return null;
   try {
     const url = new URL(canonical);
-    const hostname = url.hostname.toLowerCase().replace(/^www\./, '').trim();
+    const hostname = url.hostname
+      .toLowerCase()
+      .replace(/\.$/, '')
+      .replace(/^www\./, '')
+      .trim();
     return hostname || null;
   } catch {
     return null;

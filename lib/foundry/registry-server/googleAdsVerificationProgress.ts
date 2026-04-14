@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { countGoogleAdsVerificationResults } from './googleAdsVerification.js';
 
 export interface GoogleAdsVerificationProgressCounts {
   companies_processed: number;
@@ -40,20 +39,18 @@ export async function loadGoogleAdsVerificationProgressCounts(
   jobId: string,
 ): Promise<GoogleAdsVerificationProgressCounts> {
   const { data, error } = await leadsClient
-    .from('company_google_ads_verifications')
-    .select('result, error')
-    .eq('foundry_job_id', jobId);
+    .rpc('get_google_ads_verification_job_progress', { p_job_id: jobId })
+    .single();
   if (error) throw new Error(error.message);
-  const rows = (data ?? []) as Array<{ result: string | null; error?: string | null }>;
-  const counts = countGoogleAdsVerificationResults(rows);
-  const companiesProcessed = rows.length;
+  const row = (data ?? {}) as Record<string, unknown>;
+  const companiesProcessed = Math.max(0, Math.trunc(Number(row.companies_processed ?? 0) || 0));
   return {
     companies_processed: companiesProcessed,
     companies_with_result: companiesProcessed,
-    outcome_yes: Math.max(0, Math.trunc(Number(counts.yes ?? 0) || 0)),
-    outcome_no: Math.max(0, Math.trunc(Number(counts.no ?? 0) || 0)),
-    outcome_unknown: Math.max(0, Math.trunc(Number(counts.unknown ?? 0) || 0)),
-    outcome_error: Math.max(0, Math.trunc(Number(counts.error ?? 0) || 0)),
+    outcome_yes: Math.max(0, Math.trunc(Number(row.outcome_yes ?? 0) || 0)),
+    outcome_no: Math.max(0, Math.trunc(Number(row.outcome_no ?? 0) || 0)),
+    outcome_unknown: Math.max(0, Math.trunc(Number(row.outcome_unknown ?? 0) || 0)),
+    outcome_error: Math.max(0, Math.trunc(Number(row.outcome_error ?? 0) || 0)),
   };
 }
 

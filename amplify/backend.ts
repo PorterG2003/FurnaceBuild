@@ -590,7 +590,7 @@ const foundryWebsiteVerificationImportRunTask = new sfn.CustomState(
   {
     stateJson: {
       Type: 'Map',
-      ResultPath: '$.websiteVerificationMapResults',
+      ResultPath: null,
       ItemsPath: '$.websiteBatches',
       MaxConcurrencyPath: '$.mapMaxConcurrency',
       Parameters: {
@@ -643,7 +643,7 @@ const foundryWebsiteVerificationCsvBuilderRunTask = new sfn.CustomState(
   {
     stateJson: {
       Type: 'Map',
-      ResultPath: '$.csvBuilderWebsiteVerificationMapResults',
+      ResultPath: null,
       ItemsPath: '$.csvBuilderBatchIds',
       MaxConcurrencyPath: '$.mapMaxConcurrency',
       Parameters: {
@@ -787,7 +787,7 @@ const foundryGoogleAdsVerificationImportRunTask = new sfn.CustomState(
     stateJson: {
       Type: 'Task',
       Resource: 'arn:aws:states:::ecs:runTask.sync',
-      ResultPath: '$.ecsTask',
+      ResultPath: null,
       Parameters: {
         LaunchType: 'FARGATE',
         Cluster: workerClusterName,
@@ -817,7 +817,7 @@ const foundryGoogleAdsVerificationCsvBuilderRunTask = new sfn.CustomState(
   {
     stateJson: {
       Type: 'Map',
-      ResultPath: '$.csvBuilderGoogleAdsMapResults',
+      ResultPath: null,
       ItemsPath: '$.csvBuilderBatchIds',
       MaxConcurrencyPath: '$.mapMaxConcurrency',
       Parameters: {

@@ -1,11 +1,20 @@
 import { BaseNode } from './BaseNode';
 import { nodeIcons } from './nodeMetadata';
 
+interface EmailVariant {
+  id?: string;
+  label?: string;
+  subject?: string;
+  template?: string;
+  isActive?: boolean;
+}
+
 interface EmailNodeData {
   label?: string;
   subject?: string;
   template?: string;
   mailboxId?: string;
+  variants?: EmailVariant[];
 }
 
 interface EmailNodeProps {
@@ -16,6 +25,10 @@ interface EmailNodeProps {
 
 function EmailNode({ data, selected, id }: EmailNodeProps) {
   const displayLabel = data.label || 'Send Email';
+  const previewSubject =
+    data.variants && data.variants.length > 0
+      ? (data.variants.find((v) => v.isActive !== false) ?? data.variants[0])?.subject
+      : data.subject;
   const IconComponent = nodeIcons.email;
   
   const handleEdit = () => {
@@ -27,16 +40,16 @@ function EmailNode({ data, selected, id }: EmailNodeProps) {
   
   return (
     <BaseNode label={displayLabel} onEdit={handleEdit} icon={IconComponent && <IconComponent size={16} color="#f85102" />}>
-      {data.subject && (
+      {previewSubject ? (
         <div style={{
           color: '#9CA3AF',
           fontSize: '12px',
           textAlign: 'center',
           fontFamily: 'Instrument Sans, system-ui, sans-serif',
         }}>
-          {data.subject}
+          {previewSubject}
         </div>
-      )}
+      ) : null}
     </BaseNode>
   );
 }

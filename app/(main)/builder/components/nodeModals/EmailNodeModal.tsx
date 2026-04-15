@@ -1,14 +1,29 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Pressable, Platform, ScrollView, type ViewStyle } from 'react-native';
 import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/feedback/Alert';
 import { Select } from '@/components/ui/forms';
-import { CodeBracketIcon, EyeIcon, ExclamationTriangleIcon } from 'react-native-heroicons/outline';
+import {
+  CodeBracketIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  PlusIcon,
+  TrashIcon,
+} from 'react-native-heroicons/outline';
 import { EmailBodyEditor } from '../EmailBodyEditor';
 import { EmailPreviewModal } from './EmailPreviewModal';
 import { getLeadVariables, extractVariableKeys, extractMalformedVariables, type LeadVariable } from '@/lib/email/index';
 import { getLeadCount } from '@/lib/supabase/services/leads';
+import {
+  type EmailNodeVariant,
+  generateEmailVariantId,
+  labelForVariantIndex,
+  normalizeLegacyEmailNodeData,
+  sortVariantsForRoundRobin,
+} from '@/lib/email/emailNodeVariants';
+
+const MAX_VARIANTS = 20;
 
 interface VariableInputProps {
   label: string;
@@ -44,7 +59,6 @@ const VariableInput = ({
 
   const handleSelectVariable = (token: string) => {
     const currentValue = value || '';
-
     const nextValue =
       variant === 'subject'
         ? currentValue
@@ -53,15 +67,12 @@ const VariableInput = ({
         : currentValue
           ? `${currentValue}${currentValue.endsWith('\n') ? '' : '\n'}${token}`
           : token;
-
     onChange(nextValue);
   };
 
   return (
     <View style={{ marginBottom: 24 }}>
-      <Text className="text-sm font-instrument-medium mb-2 text-gray-300">
-        {label}
-      </Text>
+      <Text className="text-sm font-instrument-medium mb-2 text-gray-300">{label}</Text>
       <View style={{ position: 'relative' }}>
         <TextInput
           value={value}
@@ -96,9 +107,7 @@ const VariableInput = ({
             searchValue={variableSearch}
             placeholder="Variables"
             searchPlaceholder="Search variables…"
-            emptyMessage={(hasSearch) =>
-              hasSearch ? 'No matching variables.' : 'No variables.'
-            }
+            emptyMessage={(hasSearch) => (hasSearch ? 'No matching variables.' : 'No variables.')}
             listMaxHeight={320}
             noMargin={true}
             size="compact"
@@ -127,7 +136,6 @@ const VariableInput = ({
   );
 };
 
-/** Convert plain text template to HTML for TipTap (one <p> per line). */
 function templateToHtml(template: string): string {
   if (!template || !template.trim()) return '<p></p>';
   const lines = template.split(/\r?\n/);
@@ -142,46 +150,122 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Check if string looks like HTML (has tags). */
 function isHtml(str: string): boolean {
   return /<[a-z][\s\S]*>/i.test(str);
 }
 
-interface EmailNodeModalProps {
+const BODY_PREVIEW_MAX = 80;
+
+function stripHtmlForPreview(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Plain-text snippet for variant rail (template, body_text, or stripped body_html). */
+function variantBodyPreview(v: EmailNodeVariant): string {
+  const raw =
+    (v.body_text && v.body_text.trim()) ||
+    (v.body_html ? stripHtmlForPreview(v.body_html) : '') ||
+    (v.template && v.template.trim()) ||
+    '';
+  const oneLine = raw.replace(/\r?\n/g, ' ').trim();
+  if (!oneLine) return '';
+  return oneLine.length > BODY_PREVIEW_MAX ? `${oneLine.slice(0, BODY_PREVIEW_MAX)}…` : oneLine;
+}
+
+type RailPressableState = { pressed: boolean; hovered?: boolean };
+
+function variantRailIconStyle(
+  disabled: boolean,
+  kind: 'neutral' | 'danger',
+  state: RailPressableState
+): ViewStyle {
+  const hovered = !!state.hovered;
+  const pressed = state.pressed;
+  const active = !disabled && (pressed || (Platform.OS === 'web' && hovered));
+  const bg = disabled
+    ? 'transparent'
+    : active
+      ? kind === 'danger'
+        ? 'rgba(248,113,113,0.18)'
+        : 'rgba(255,255,255,0.12)'
+      : 'transparent';
+  const scale = active ? 1.08 : 1;
+  const web: ViewStyle =
+    Platform.OS === 'web'
+      ? ({ cursor: disabled ? 'default' : 'pointer' } as ViewStyle)
+      : {};
+  return {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+    opacity: disabled ? 0.35 : 1,
+    backgroundColor: bg,
+    transform: [{ scale }],
+    ...web,
+  };
+}
+
+function addVariantCardStyle(disabled: boolean, state: RailPressableState): ViewStyle {
+  const hovered = !!state.hovered;
+  const pressed = state.pressed;
+  const active = !disabled && (pressed || (Platform.OS === 'web' && hovered));
+  const web: ViewStyle =
+    Platform.OS === 'web'
+      ? ({ cursor: disabled ? 'default' : 'pointer' } as ViewStyle)
+      : {};
+  return {
+    borderRadius: 8,
+    marginTop: 2,
+    marginBottom: 0,
+    borderWidth: 1,
+    borderColor: active ? 'rgba(255,255,255,0.22)' : '#2A2A2A',
+    backgroundColor: active ? 'rgba(255,255,255,0.06)' : '#1A1A1A',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    opacity: disabled ? 0.4 : 1,
+    transform: [{ scale: active ? 1.02 : 1 }],
+    ...web,
+  };
+}
+
+export interface EmailNodeModalProps {
   visible: boolean;
   onClose: () => void;
-  onSave: (data: {
-    label?: string;
-    subject?: string;
-    template?: string;
-    body_html?: string;
-    body_text?: string;
-  }) => void;
+  onSave: (data: Record<string, unknown>) => void;
   initialData?: {
     label?: string;
     subject?: string;
     template?: string;
     body_html?: string;
     body_text?: string;
+    mailboxId?: string;
+    variants?: EmailNodeVariant[];
     campaignId?: string;
     customFieldKeys?: string[];
     mappedStandardFieldKeys?: string[];
+    /** Campaign lifecycle: draft = pre-start */
+    campaignStatus?: 'draft' | 'running' | 'paused' | 'stopped';
   };
 }
 
-function EmailNodeModal({
-  visible,
-  onClose,
-  onSave,
-  initialData,
-}: EmailNodeModalProps) {
+function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModalProps) {
+  const isPostStart = initialData?.campaignStatus != null && initialData.campaignStatus !== 'draft';
+
   const [label, setLabel] = useState(initialData?.label || 'Send Email');
-  const [subject, setSubject] = useState(initialData?.subject || '');
-  const [template, setTemplate] = useState(initialData?.template || '');
+  const [variants, setVariants] = useState<EmailNodeVariant[]>([]);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const bodyEditorRef = useRef<{ getHTML: () => string; getText: () => string } | null>(null);
 
   const [previewOpen, setPreviewOpen] = useState(false);
-  /** Snapshot of config when opening preview (subject, bodyHtml, bodyText, template). */
   const [previewConfig, setPreviewConfig] = useState<{
     subject: string;
     body_html?: string;
@@ -189,28 +273,39 @@ function EmailNodeModal({
     template: string;
   } | null>(null);
 
+  const selectedVariant = useMemo(
+    () => variants.find((v) => v.id === selectedVariantId) ?? variants[0],
+    [variants, selectedVariantId]
+  );
+
+  const subject = selectedVariant?.subject ?? '';
+  const template = selectedVariant?.template ?? '';
+
   const initialBodyContent = useMemo(() => {
-    const html = initialData?.body_html;
-    const tmpl = initialData?.template;
+    const html = selectedVariant?.body_html;
+    const tmpl = selectedVariant?.template;
     if (html && isHtml(html)) return html;
     if (tmpl) return templateToHtml(tmpl);
     return '<p></p>';
-  }, [initialData?.body_html, initialData?.template]);
+  }, [selectedVariant?.body_html, selectedVariant?.template, selectedVariantId]);
 
   useEffect(() => {
-    if (visible && initialData) {
-      setLabel(initialData.label ?? 'Send Email');
-      setSubject(initialData.subject ?? '');
-      setTemplate(initialData.template ?? '');
+    if (!visible || !initialData) return;
+    setLabel(initialData.label ?? 'Send Email');
+    const { variants: v, legacyFields } = normalizeLegacyEmailNodeData(
+      initialData as Record<string, unknown>
+    );
+    const sorted = sortVariantsForRoundRobin(v);
+    setVariants(sorted);
+    setSelectedVariantId(sorted[0]?.id ?? null);
+    if (legacyFields.mailboxId != null) {
+      /* mailbox kept in save payload via variants merge */
     }
   }, [visible, initialData]);
 
   const leadVariables = useMemo(
     () =>
-      getLeadVariables(
-        initialData?.mappedStandardFieldKeys,
-        initialData?.customFieldKeys
-      ),
+      getLeadVariables(initialData?.mappedStandardFieldKeys, initialData?.customFieldKeys),
     [initialData?.mappedStandardFieldKeys, initialData?.customFieldKeys]
   );
 
@@ -236,27 +331,29 @@ function EmailNodeModal({
 
   const hasInvalidVars = unknownKeys.length > 0 || malformedVars.length > 0;
 
-  const [missingValueCount, setMissingValueCount] = useState<number | null>(null);
-  const countTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Only run the count query for variable keys that actually exist in the schema
   const knownVariableKeys = useMemo(
     () => variableKeys.filter((k) => validKeys.has(k)),
     [variableKeys, validKeys]
   );
 
+  const [missingValueCount, setMissingValueCount] = useState<number | null>(null);
+  const countTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (countTimerRef.current) clearTimeout(countTimerRef.current);
-
     if (!visible || !initialData?.campaignId || knownVariableKeys.length === 0) {
       setMissingValueCount(null);
       return;
     }
     let cancelled = false;
     countTimerRef.current = setTimeout(() => {
-      getLeadCount({ campaignId: initialData.campaignId, missingFields: knownVariableKeys })
-        .then((count) => { if (!cancelled) setMissingValueCount(count); })
-        .catch(() => { if (!cancelled) setMissingValueCount(null); });
+      getLeadCount({ campaignId: initialData.campaignId!, missingFields: knownVariableKeys })
+        .then((count) => {
+          if (!cancelled) setMissingValueCount(count);
+        })
+        .catch(() => {
+          if (!cancelled) setMissingValueCount(null);
+        });
     }, 500);
     return () => {
       cancelled = true;
@@ -264,20 +361,112 @@ function EmailNodeModal({
     };
   }, [visible, initialData?.campaignId, knownVariableKeys]);
 
-  const showMissingWarning = knownVariableKeys.length > 0 && missingValueCount != null && missingValueCount > 0;
+  const showMissingWarning =
+    knownVariableKeys.length > 0 && missingValueCount != null && missingValueCount > 0;
+
+  const updateSelectedVariant = useCallback(
+    (patch: Partial<EmailNodeVariant>) => {
+      if (!selectedVariantId) return;
+      setVariants((prev) =>
+        prev.map((v) => (v.id === selectedVariantId ? { ...v, ...patch } : v))
+      );
+    },
+    [selectedVariantId]
+  );
+
+  const handleAddVariant = () => {
+    if (variants.length >= MAX_VARIANTS) return;
+    const nextOrder = variants.length === 0 ? 0 : Math.max(...variants.map((v) => v.order)) + 1;
+    const id = generateEmailVariantId();
+    const newV: EmailNodeVariant = {
+      id,
+      label: labelForVariantIndex(variants.length),
+      subject: '',
+      template: '',
+      isActive: true,
+      order: nextOrder,
+    };
+    setVariants((prev) => sortVariantsForRoundRobin([...prev, newV]));
+    setSelectedVariantId(id);
+  };
+
+  const handleDeleteVariant = (id: string) => {
+    if (isPostStart) return;
+    setVariants((prev) => {
+      const next = prev.filter((v) => v.id !== id);
+      if (next.length === 0) return prev;
+      const deleted = prev.find((v) => v.id === id);
+      let out = next;
+      if (deleted?.isActive && next.every((v) => !v.isActive)) {
+        out = next.map((v, i) => (i === 0 ? { ...v, isActive: true } : v));
+      }
+      const sorted = sortVariantsForRoundRobin(out);
+      if (selectedVariantId === id) {
+        setSelectedVariantId(sorted[0]?.id ?? null);
+      }
+      return sorted;
+    });
+  };
+
+  const handleToggleActive = (id: string) => {
+    setVariants((prev) => {
+      const target = prev.find((v) => v.id === id);
+      if (!target) return prev;
+      if (target.isActive && prev.filter((v) => v.isActive).length <= 1) {
+        return prev;
+      }
+      return sortVariantsForRoundRobin(
+        prev.map((v) => (v.id === id ? { ...v, isActive: !v.isActive } : v))
+      );
+    });
+  };
 
   const handleSave = () => {
+    const active = variants.filter((v) => v.isActive);
+    if (active.length === 0) {
+      return;
+    }
     const bodyHtml = bodyEditorRef.current?.getHTML?.();
     const bodyText = bodyEditorRef.current?.getText?.();
+    const merged = variants.map((v) => {
+      if (v.id === selectedVariantId) {
+        return {
+          ...v,
+          template: Platform.OS === 'web' ? (bodyText ?? v.template) : v.template,
+          body_html: bodyHtml ?? v.body_html,
+          body_text: bodyText ?? v.body_text,
+        };
+      }
+      return v;
+    });
+    const sorted = sortVariantsForRoundRobin(merged);
+    const withSystemLabels = sorted.map((v, i) => ({
+      ...v,
+      label: labelForVariantIndex(i),
+    }));
     onSave({
       label,
-      subject,
-      template: bodyText ?? template,
-      body_html: bodyHtml ?? undefined,
-      body_text: bodyText ?? undefined,
+      mailboxId: (initialData as { mailboxId?: string })?.mailboxId ?? '',
+      variants: withSystemLabels,
     });
     onClose();
   };
+
+  const handleOpenPreview = () => {
+    const bodyHtml = bodyEditorRef.current?.getHTML?.();
+    const bodyText = bodyEditorRef.current?.getText?.();
+    setPreviewConfig({
+      subject,
+      body_html: bodyHtml ?? undefined,
+      body_text: bodyText ?? undefined,
+      template: bodyText ?? template,
+    });
+    setPreviewOpen(true);
+  };
+
+  const sortedVariantsUi = useMemo(() => sortVariantsForRoundRobin(variants), [variants]);
+  const activeCount = useMemo(() => variants.filter((v) => v.isActive).length, [variants]);
+  const addVariantDisabled = variants.length >= MAX_VARIANTS;
 
   const footer = (
     <ModalFooter>
@@ -292,203 +481,259 @@ function EmailNodeModal({
 
   const footerMobile = (
     <ModalFooter>
-      <Button onPress={handleSave}>
-        Save
-      </Button>
+      <Button onPress={handleSave}>Save</Button>
     </ModalFooter>
   );
 
-  const handleOpenPreview = () => {
-    const bodyHtml = bodyEditorRef.current?.getHTML?.();
-    const bodyText = bodyEditorRef.current?.getText?.();
-    setPreviewConfig({
-      subject,
-      body_html: bodyHtml ?? undefined,
-      body_text: bodyText ?? undefined,
-      template: bodyText ?? template,
-    });
-    setPreviewOpen(true);
-  };
-
   return (
     <>
-    <BaseModal
-      visible={visible}
-      onClose={onClose}
-      title="Configure Email Node"
-      description="Personalize cold outreach emails using lead data from the connected bucket."
-      footer={footer}
-      footerMobile={footerMobile}
-      maxWidth="full"
-      height={typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.9) : 900}
-    >
-      <View className="gap-5">
-        {hasInvalidVars && (
-          <Alert
-            variant="error"
-            message={`The following variables are invalid or don't exist: ${[...unknownKeys.map((k) => `{{${k}}}`), ...malformedVars].join(', ')}. Check spelling or use the Variables menu.`}
-          />
-        )}
-        {showMissingWarning && (
-          <Alert
-            variant="warning"
-            message="Some leads may have empty values for the variables you're using. Preview to see which leads have missing data."
-            actionText="Preview"
-            onAction={handleOpenPreview}
-          />
-        )}
-        <View>
-          <Text className="text-sm font-instrument-medium mb-2 text-gray-300">
-            Label
-          </Text>
-          <TextInput
-            value={label}
-            onChangeText={setLabel}
-            placeholder="Node label"
-            placeholderTextColor="#666"
-            className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
-            style={{
-              borderColor: '#FFFFFF4D',
-              backgroundColor: '#FFFFFF0D',
-              color: '#FFFFFF',
-              borderWidth: 1,
-            }}
-            selectionColor="#FF4D00"
-            underlineColorAndroid="transparent"
-          />
-        </View>
-
-        <View>
-          <VariableInput
-            label="Subject"
-            value={subject}
-            onChange={setSubject}
-            placeholder="e.g. Quick idea for {{first_name}} (or leave empty to continue thread)"
-            variant="subject"
-            variables={leadVariables}
-          />
-          <Text className="text-xs text-gray-500 mt-1.5">
-            Leave empty on follow-up emails to use the first email's subject and keep replies in the same thread.
-          </Text>
-        </View>
-
-        {Platform.OS === 'web' ? (
-          <EmailBodyEditor
-            key={visible ? 'open' : 'closed'}
-            initialContent={initialBodyContent}
-            editorRef={bodyEditorRef}
-            variables={leadVariables}
-            placeholder="Hi {{first_name}},\n\nLoved what you're building at {{company_name}}..."
-            minHeight={220}
-            label="Email Body"
-            onContentChange={(text) => setTemplate(text)}
-            trailingElement={
-              <TouchableOpacity
-                onPress={handleOpenPreview}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  borderRadius: 12,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderWidth: 1,
-                  borderColor: hasInvalidVars
-                    ? 'rgba(239,68,68,0.4)'
-                    : showMissingWarning
-                      ? 'rgba(245,158,11,0.4)'
-                      : 'rgba(255,255,255,0.16)',
-                  backgroundColor: hasInvalidVars
-                    ? 'rgba(239,68,68,0.2)'
-                    : showMissingWarning
-                      ? 'rgba(245,158,11,0.2)'
-                      : 'rgba(255,255,255,0.08)',
-                }}
-                activeOpacity={0.7}
-              >
-                {hasInvalidVars ? (
-                  <ExclamationTriangleIcon size={18} color="#EF4444" />
-                ) : showMissingWarning ? (
-                  <ExclamationTriangleIcon size={18} color="#F59E0B" />
-                ) : (
-                  <EyeIcon size={18} color="#FFFFFF" />
-                )}
-                <Text
-                  className="text-sm font-instrument-medium"
-                  style={{ color: hasInvalidVars ? '#EF4444' : showMissingWarning ? '#F59E0B' : '#FFFFFF' }}
-                >
-                  Preview
-                </Text>
-              </TouchableOpacity>
-            }
-          />
-        ) : (
-          <>
-            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 }}>
-              <TouchableOpacity
-                onPress={handleOpenPreview}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  borderRadius: 12,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderWidth: 1,
-                  borderColor: hasInvalidVars
-                    ? 'rgba(239,68,68,0.4)'
-                    : showMissingWarning
-                      ? 'rgba(245,158,11,0.4)'
-                      : 'rgba(255,255,255,0.16)',
-                  backgroundColor: hasInvalidVars
-                    ? 'rgba(239,68,68,0.2)'
-                    : showMissingWarning
-                      ? 'rgba(245,158,11,0.2)'
-                      : 'rgba(255,255,255,0.08)',
-                }}
-                activeOpacity={0.7}
-              >
-                {hasInvalidVars ? (
-                  <ExclamationTriangleIcon size={18} color="#EF4444" />
-                ) : showMissingWarning ? (
-                  <ExclamationTriangleIcon size={18} color="#F59E0B" />
-                ) : (
-                  <EyeIcon size={18} color="#FFFFFF" />
-                )}
-                <Text
-                  className="text-sm font-instrument-medium"
-                  style={{ color: hasInvalidVars ? '#EF4444' : showMissingWarning ? '#F59E0B' : '#FFFFFF' }}
-                >
-                  Preview
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <VariableInput
-              label="Email Body"
-              value={template}
-              onChange={setTemplate}
-              placeholder="Hi {{first_name}},\n\nLoved what you're building at {{company_name}}..."
-              multiline
-              minHeight={220}
-              variant="body"
-              variables={leadVariables}
+      <BaseModal
+        visible={visible}
+        onClose={onClose}
+        title="Configure Email Node"
+        description="A/B variants rotate per send. Edit one variant at a time."
+        footer={footer}
+        footerMobile={footerMobile}
+        maxWidth="full"
+        height={typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.9) : 900}
+      >
+        <View style={{ flex: 1, flexDirection: 'column', gap: 16, minHeight: 0 }}>
+          <View style={{ flexShrink: 0 }}>
+            <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Node label</Text>
+            <TextInput
+              value={label}
+              onChangeText={setLabel}
+              placeholder="Node label"
+              placeholderTextColor="#666"
+              className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
+              style={{
+                borderColor: '#FFFFFF4D',
+                backgroundColor: '#FFFFFF0D',
+                color: '#FFFFFF',
+                borderWidth: 1,
+              }}
+              selectionColor="#FF4D00"
             />
-          </>
-        )}
-      </View>
-    </BaseModal>
+          </View>
 
-    <EmailPreviewModal
-      visible={previewOpen}
-      onClose={() => setPreviewOpen(false)}
-      config={previewConfig}
-      campaignId={initialData?.campaignId}
-      variableKeys={variableKeys}
-    />
+          <View
+            style={{
+              flex: 1,
+              flexDirection: Platform.OS === 'web' ? 'row' : 'column',
+              gap: 16,
+              minHeight: 0,
+            }}
+          >
+            <View
+              style={{
+                width: Platform.OS === 'web' ? 280 : undefined,
+                alignSelf: Platform.OS === 'web' ? 'stretch' : undefined,
+                flexShrink: 0,
+                maxHeight: Platform.OS === 'web' ? undefined : 280,
+              }}
+            >
+              <Text className="text-xs text-gray-500 mb-2 font-instrument">Variants</Text>
+
+              <ScrollView
+                style={{ flex: 1, minHeight: 0 }}
+                contentContainerStyle={{ paddingBottom: 8 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {sortedVariantsUi.map((v, index) => {
+                    const letter = labelForVariantIndex(index);
+                    const subj = v.subject?.trim() ?? '';
+                    const bodyPv = variantBodyPreview(v);
+                    const toggleDisabled = v.isActive && activeCount <= 1;
+                    const deleteDisabled = isPostStart || variants.length <= 1;
+                    const isSelected = selectedVariantId === v.id;
+                    return (
+                      <View
+                        key={v.id}
+                        style={{
+                          position: 'relative',
+                          borderRadius: 8,
+                          marginBottom: 6,
+                          borderWidth: 1,
+                          borderColor: isSelected ? '#F3440D' : '#2A2A2A',
+                          backgroundColor: isSelected ? 'rgba(243,68,13,0.15)' : '#1A1A1A',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <View
+                          style={{
+                            position: 'absolute',
+                            top: 4,
+                            right: 4,
+                            zIndex: 2,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 0,
+                          }}
+                          pointerEvents="box-none"
+                        >
+                          <Pressable
+                            onPress={() => handleToggleActive(v.id)}
+                            disabled={toggleDisabled}
+                            accessibilityRole="button"
+                            accessibilityLabel={v.isActive ? `Deactivate variant ${letter}` : `Activate variant ${letter}`}
+                            accessibilityState={{ disabled: toggleDisabled }}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 2 }}
+                            style={(s) => variantRailIconStyle(toggleDisabled, 'neutral', s as RailPressableState)}
+                          >
+                            {v.isActive ? (
+                              <EyeSlashIcon size={15} color={toggleDisabled ? '#666' : '#FFFFFF'} />
+                            ) : (
+                              <EyeIcon size={15} color="#FFFFFF" />
+                            )}
+                          </Pressable>
+                          <Pressable
+                            onPress={() => handleDeleteVariant(v.id)}
+                            disabled={deleteDisabled}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Delete variant ${letter}`}
+                            accessibilityState={{ disabled: deleteDisabled }}
+                            hitSlop={{ top: 6, bottom: 6, left: 2, right: 6 }}
+                            style={(s) => variantRailIconStyle(deleteDisabled, 'danger', s as RailPressableState)}
+                          >
+                            <TrashIcon size={15} color={deleteDisabled ? '#666' : '#f87171'} />
+                          </Pressable>
+                        </View>
+
+                        <TouchableOpacity
+                          onPress={() => setSelectedVariantId(v.id)}
+                          activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Select variant ${letter}`}
+                          accessibilityState={{ selected: isSelected }}
+                          style={{
+                            paddingVertical: 12,
+                            paddingLeft: 10,
+                            paddingRight: 56,
+                            minHeight: 44,
+                          }}
+                        >
+                          <View className="flex-row items-center flex-wrap gap-2 mb-1 pr-1">
+                            <Text className="text-white font-instrument-semibold text-sm">{letter}</Text>
+                            {!v.isActive && (
+                              <Text className="text-gray-500 text-xs font-instrument bg-[#2A2A2A] px-1.5 py-0.5 rounded">
+                                Inactive
+                              </Text>
+                            )}
+                          </View>
+                          <Text
+                            className="text-gray-300 font-instrument text-xs"
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {subj ? subj : '(No subject)'}
+                          </Text>
+                          <Text
+                            className="text-gray-500 font-instrument text-xs mt-0.5"
+                            numberOfLines={2}
+                            ellipsizeMode="tail"
+                          >
+                            {bodyPv ? bodyPv : '—'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+
+                <Pressable
+                  onPress={handleAddVariant}
+                  disabled={addVariantDisabled}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add variant"
+                  accessibilityState={{ disabled: addVariantDisabled }}
+                  style={(s) => addVariantCardStyle(addVariantDisabled, s as RailPressableState)}
+                >
+                  <PlusIcon size={18} color={addVariantDisabled ? '#666' : '#FFFFFF'} />
+                  <Text
+                    className={`font-instrument-medium text-sm ${addVariantDisabled ? 'text-gray-500' : 'text-gray-200'}`}
+                  >
+                    Add variant
+                  </Text>
+                </Pressable>
+              </ScrollView>
+            </View>
+
+            <View style={{ flex: 1, minWidth: 0 }} className="gap-4">
+            {hasInvalidVars && (
+              <Alert
+                variant="error"
+                message={`Invalid variables: ${[...unknownKeys.map((k) => `{{${k}}}`), ...malformedVars].join(', ')}`}
+              />
+            )}
+            {showMissingWarning && (
+              <Alert
+                variant="warning"
+                message="Some leads may have empty values for the variables you're using."
+                actionText="Preview"
+                onAction={handleOpenPreview}
+              />
+            )}
+
+            {selectedVariant && (
+              <>
+                <View>
+                  <VariableInput
+                    label="Subject"
+                    value={subject}
+                    onChange={(s) => updateSelectedVariant({ subject: s })}
+                    placeholder="e.g. Quick idea for {{first_name}} (or leave empty to continue thread)"
+                    variant="subject"
+                    variables={leadVariables}
+                  />
+                  <Text className="text-xs text-gray-500 mt-1.5">
+                    Leave empty on follow-ups to keep the same thread.
+                  </Text>
+                </View>
+
+                {Platform.OS === 'web' ? (
+                  <EmailBodyEditor
+                    key={selectedVariantId ?? 'none'}
+                    initialContent={initialBodyContent}
+                    editorRef={bodyEditorRef}
+                    variables={leadVariables}
+                    placeholder="Hi {{first_name}},..."
+                    minHeight={220}
+                    label="Email Body"
+                    onContentChange={(text) => updateSelectedVariant({ template: text })}
+                    trailingElement={
+                      <TouchableOpacity onPress={handleOpenPreview} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' }}>
+                        <EyeIcon size={18} color="#FFFFFF" />
+                        <Text className="text-sm text-white">Preview</Text>
+                      </TouchableOpacity>
+                    }
+                  />
+                ) : (
+                  <VariableInput
+                    label="Email Body"
+                    value={template}
+                    onChange={(t) => updateSelectedVariant({ template: t })}
+                    multiline
+                    minHeight={220}
+                    variant="body"
+                    variables={leadVariables}
+                  />
+                )}
+              </>
+            )}
+          </View>
+          </View>
+        </View>
+      </BaseModal>
+
+      <EmailPreviewModal
+        visible={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        config={previewConfig}
+        campaignId={initialData?.campaignId}
+        variableKeys={variableKeys}
+      />
     </>
   );
 }
 
 export { EmailNodeModal };
 export default EmailNodeModal;
-

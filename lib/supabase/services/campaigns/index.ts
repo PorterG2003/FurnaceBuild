@@ -13,6 +13,10 @@ export {
   type CampaignStats,
   type CampaignStatsByDay,
 } from './campaign-stats';
+export {
+  getCampaignVariantStats,
+  type CampaignVariantStatRow,
+} from './campaign-variant-stats';
 export { assignMailboxesToCampaign, getCampaignMailboxes } from './campaign-mailboxes';
 export {
   ensureCampaignEnrollmentsForLeads,

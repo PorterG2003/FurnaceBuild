@@ -1,4 +1,5 @@
 import { Node } from '@xyflow/react';
+import { generateEmailVariantId, labelForVariantIndex } from '@/lib/email/emailNodeVariants';
 
 /**
  * Generate a unique ID for nodes
@@ -20,14 +21,25 @@ export function createEmailNode(
     mailboxId?: string;
   }
 ): Node {
+  const variantId = generateEmailVariantId();
   return {
     id: generateId(),
     type: 'email',
     data: {
       label: data?.label || 'Send Email',
-      subject: data?.subject || '',
-      template: data?.template || '',
       mailboxId: data?.mailboxId || '',
+      variants: [
+        {
+          id: variantId,
+          label: labelForVariantIndex(0),
+          subject: data?.subject || '',
+          template: data?.template || '',
+          body_html: undefined,
+          body_text: undefined,
+          isActive: true,
+          order: 0,
+        },
+      ],
     },
     position,
   };

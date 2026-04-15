@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable, ScrollView, useWindowDimensions, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PageLayout, DetailPageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { LoadingState, Alert } from '@/components/ui/feedback';
@@ -9,7 +9,16 @@ import { Tabs, type Tab } from '@/components/ui/tabs';
 import { isWithinSchedule, isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { getCampaignById, getCampaignMailboxes, getCampaignStatsByDay, getCampaignStatsForCampaigns, type CampaignStatsByDay, type CampaignStats } from '@/lib/supabase/services/campaigns';
+import {
+  getCampaignById,
+  getCampaignMailboxes,
+  getCampaignStatsByDay,
+  getCampaignStatsForCampaigns,
+  getCampaignVariantStats,
+  type CampaignStatsByDay,
+  type CampaignStats,
+  type CampaignVariantStatRow,
+} from '@/lib/supabase/services/campaigns';
 import { getCampaignLeadTablePage, getLeadCount } from '@/lib/supabase/services/leads';
 import { supabase } from '@/lib/supabase/client';
 import { CampaignStatsChart } from '@/components/campaigns/CampaignStatsChart';
@@ -17,9 +26,20 @@ import { DateInput } from '@/components/ui/DateInput';
 import type { Campaign } from '@/lib/supabase/types';
 import { format } from 'date-fns';
 import { utcToZonedTime } from 'date-fns-tz';
-import { ArrowPathIcon, RocketLaunchIcon, PencilSquareIcon } from 'react-native-heroicons/outline';
+import {
+  ArrowPathIcon,
+  ArrowUturnLeftIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  PaperAirplaneIcon,
+  PencilSquareIcon,
+  RectangleStackIcon,
+  RocketLaunchIcon,
+} from 'react-native-heroicons/outline';
 import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { BottomSheet } from '@/components/ui/modals/BottomSheet';
+import { LEGACY_EMAIL_VARIANT_ID, sortVariantsForRoundRobin } from '@/lib/email/emailNodeVariants';
+import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
 
 const tabs: Tab[] = [
   { id: 'details', label: 'Details' },
@@ -61,6 +81,47 @@ function fillMissingStatsByDay(
   return filled;
 }
 
+function statLookup(
+  stats: CampaignVariantStatRow[],
+  flowNodeId: string | null,
+  variantId: string
+): { sent: number; replied: number; positiveReply: number; bounced: number } {
+  const row = stats.find(
+    (s) => s.flowNodeId === flowNodeId && s.variantId === variantId
+  );
+  return {
+    sent: row?.sent ?? 0,
+    replied: row?.replied ?? 0,
+    positiveReply: row?.positiveReply ?? 0,
+    bounced: row?.bounced ?? 0,
+  };
+}
+
+/** Full-width table: five equal flex columns with a shared min width so none dominates. */
+const VARIANT_PERF_COL_MIN = 72;
+const variantPerfCol = {
+  flex: 1,
+  minWidth: VARIANT_PERF_COL_MIN,
+  flexShrink: 1,
+  paddingRight: 8,
+} as const;
+const variantPerfHeaderLabelWeb = Platform.select({
+  web: { whiteSpace: 'nowrap' as const },
+  default: {},
+});
+
+/** Variant performance table — stats match CampaignStatsChart; variant column uses one neutral hue. */
+const VARIANT_PERF_COLORS = {
+  variant: { header: '#94a3b8', value: '#94a3b8' },
+  sent: { header: CAMPAIGN_STAT_COLORS.sent, value: CAMPAIGN_STAT_COLORS.sent },
+  reply: { header: CAMPAIGN_STAT_COLORS.replied, value: CAMPAIGN_STAT_COLORS.replied },
+  interested: {
+    header: CAMPAIGN_STAT_COLORS.positiveReply,
+    value: CAMPAIGN_STAT_COLORS.positiveReply,
+  },
+  bounce: { header: CAMPAIGN_STAT_COLORS.bounce, value: CAMPAIGN_STAT_COLORS.bounce },
+} as const;
+
 export default function CampaignPage() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -92,6 +153,8 @@ export default function CampaignPage() {
   const [statsStartDate, setStatsStartDate] = useState<string | null>(null);
   const [statsEndDate, setStatsEndDate] = useState<string | null>(null);
   const [campaignStats, setCampaignStats] = useState<CampaignStats | null>(null);
+  const [variantStats, setVariantStats] = useState<CampaignVariantStatRow[]>([]);
+  const [variantStatsLoading, setVariantStatsLoading] = useState(false);
   const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
   const [showCampaignActionsSheet, setShowCampaignActionsSheet] = useState(false);
   const leadPageSize = 20;
@@ -290,6 +353,29 @@ export default function CampaignPage() {
       loadStatsByDay(false);
     }
   }, [statsStartDate, statsEndDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!id || activeTab !== 'details' || !campaign || isSmartlead) {
+      setVariantStats([]);
+      return;
+    }
+    let cancelled = false;
+    setVariantStatsLoading(true);
+    getCampaignVariantStats(id)
+      .then((rows) => {
+        if (!cancelled) setVariantStats(rows);
+      })
+      .catch((err) => {
+        console.error('Variant stats:', err);
+        if (!cancelled) setVariantStats([]);
+      })
+      .finally(() => {
+        if (!cancelled) setVariantStatsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, campaign, activeTab, refreshKey, isSmartlead]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -561,6 +647,294 @@ export default function CampaignPage() {
                       </View>
                     </View>
                   </View>
+                  {!isSmartlead && flowData?.nodes && (
+                    <View style={{ borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingTop: 24, marginTop: 24 }}>
+                      <Text className="text-lg font-instrument-semibold text-white mb-3">Variant performance</Text>
+                      {variantStatsLoading ? (
+                        <Text className="text-gray-500 font-instrument text-sm">Loading variant stats…</Text>
+                      ) : (
+                        <View style={{ width: '100%', alignSelf: 'stretch' }}>
+                            {(flowData.nodes as any[])
+                              .filter((n) => n.type === 'email')
+                              .map((node: any) => {
+                                const flowId = node.id as string;
+                                const rawVariants = node.data?.variants;
+                                const variants =
+                                  Array.isArray(rawVariants) && rawVariants.length > 0
+                                    ? sortVariantsForRoundRobin(
+                                        rawVariants.map((v: any, i: number) => ({
+                                          id: String(v.id ?? `${flowId}-v-${i}`),
+                                          label: String(v.label ?? '?'),
+                                          subject: String(v.subject ?? ''),
+                                          template: String(v.template ?? ''),
+                                          isActive: v.isActive !== false,
+                                          order: typeof v.order === 'number' ? v.order : i,
+                                        }))
+                                      )
+                                    : [
+                                        {
+                                          id: LEGACY_EMAIL_VARIANT_ID,
+                                          label: 'A',
+                                          subject: String(node.data?.subject ?? ''),
+                                          template: String(node.data?.template ?? ''),
+                                          isActive: true,
+                                          order: 0,
+                                        },
+                                      ];
+                                const nodeTitle = node.data?.label || 'Send Email';
+                                return (
+                                  <View key={flowId} style={{ marginBottom: 20 }}>
+                                    <Text className="text-white font-instrument-medium text-sm mb-2">{nodeTitle}</Text>
+                                    <View
+                                      style={{
+                                        width: '100%',
+                                        alignSelf: 'stretch',
+                                        borderWidth: 1,
+                                        borderColor: '#2A2A2A',
+                                        borderRadius: 8,
+                                        overflow: 'hidden',
+                                      }}
+                                    >
+                                      <View
+                                        style={{
+                                          flexDirection: 'row',
+                                          flexWrap: 'nowrap',
+                                          width: '100%',
+                                          backgroundColor: '#252525',
+                                          paddingVertical: 12,
+                                          paddingHorizontal: 12,
+                                          borderBottomWidth: 1,
+                                          borderBottomColor: '#2A2A2A',
+                                          alignItems: 'center',
+                                        }}
+                                      >
+                                        <View style={variantPerfCol}>
+                                          <View
+                                            style={{
+                                              flexDirection: 'row',
+                                              alignItems: 'center',
+                                              justifyContent: 'flex-start',
+                                              gap: 6,
+                                            }}
+                                          >
+                                            <RectangleStackIcon
+                                              size={15}
+                                              color={VARIANT_PERF_COLORS.variant.header}
+                                            />
+                                            <Text
+                                              style={{
+                                                flex: 1,
+                                                minWidth: 0,
+                                                color: VARIANT_PERF_COLORS.variant.header,
+                                                fontSize: 11,
+                                                textAlign: 'left',
+                                                fontWeight: '600',
+                                                ...variantPerfHeaderLabelWeb,
+                                              }}
+                                              numberOfLines={1}
+                                            >
+                                              Variant
+                                            </Text>
+                                          </View>
+                                        </View>
+                                        <View style={variantPerfCol}>
+                                          <View
+                                            style={{
+                                              flexDirection: 'row',
+                                              alignItems: 'center',
+                                              justifyContent: 'flex-start',
+                                              gap: 6,
+                                            }}
+                                          >
+                                            <PaperAirplaneIcon size={15} color={VARIANT_PERF_COLORS.sent.header} />
+                                            <Text
+                                              style={{
+                                                flex: 1,
+                                                minWidth: 0,
+                                                color: VARIANT_PERF_COLORS.sent.header,
+                                                fontSize: 11,
+                                                textAlign: 'left',
+                                                fontWeight: '600',
+                                                ...variantPerfHeaderLabelWeb,
+                                              }}
+                                              numberOfLines={1}
+                                            >
+                                              Sent
+                                            </Text>
+                                          </View>
+                                        </View>
+                                        <View style={variantPerfCol}>
+                                          <View
+                                            style={{
+                                              flexDirection: 'row',
+                                              alignItems: 'center',
+                                              justifyContent: 'flex-start',
+                                              gap: 6,
+                                            }}
+                                          >
+                                            <ArrowUturnLeftIcon size={15} color={VARIANT_PERF_COLORS.reply.header} />
+                                            <Text
+                                              style={{
+                                                flex: 1,
+                                                minWidth: 0,
+                                                color: VARIANT_PERF_COLORS.reply.header,
+                                                fontSize: 11,
+                                                textAlign: 'left',
+                                                fontWeight: '600',
+                                                ...variantPerfHeaderLabelWeb,
+                                              }}
+                                              numberOfLines={1}
+                                            >
+                                              Replied
+                                            </Text>
+                                          </View>
+                                        </View>
+                                        <View style={variantPerfCol}>
+                                          <View
+                                            style={{
+                                              flexDirection: 'row',
+                                              alignItems: 'center',
+                                              justifyContent: 'flex-start',
+                                              gap: 6,
+                                            }}
+                                          >
+                                            <CheckCircleIcon size={15} color={VARIANT_PERF_COLORS.interested.header} />
+                                            <Text
+                                              style={{
+                                                flex: 1,
+                                                minWidth: 0,
+                                                color: VARIANT_PERF_COLORS.interested.header,
+                                                fontSize: 11,
+                                                textAlign: 'left',
+                                                fontWeight: '600',
+                                                ...variantPerfHeaderLabelWeb,
+                                              }}
+                                              numberOfLines={1}
+                                            >
+                                              Interested
+                                            </Text>
+                                          </View>
+                                        </View>
+                                        <View style={{ ...variantPerfCol, paddingRight: 0 }}>
+                                          <View
+                                            style={{
+                                              flexDirection: 'row',
+                                              alignItems: 'center',
+                                              justifyContent: 'flex-start',
+                                              gap: 6,
+                                            }}
+                                          >
+                                            <ExclamationTriangleIcon size={15} color={VARIANT_PERF_COLORS.bounce.header} />
+                                            <Text
+                                              style={{
+                                                flex: 1,
+                                                minWidth: 0,
+                                                color: VARIANT_PERF_COLORS.bounce.header,
+                                                fontSize: 11,
+                                                textAlign: 'left',
+                                                fontWeight: '600',
+                                                ...variantPerfHeaderLabelWeb,
+                                              }}
+                                              numberOfLines={1}
+                                            >
+                                              Bounced
+                                            </Text>
+                                          </View>
+                                        </View>
+                                      </View>
+                                      {variants.map((v, rowIndex) => {
+                                        const counts = statLookup(variantStats, flowId, v.id);
+                                        const isLastRow = rowIndex === variants.length - 1;
+                                        return (
+                                          <View
+                                            key={v.id}
+                                            style={{
+                                              flexDirection: 'row',
+                                              flexWrap: 'nowrap',
+                                              width: '100%',
+                                              alignItems: 'center',
+                                              paddingVertical: 10,
+                                              paddingHorizontal: 12,
+                                              opacity: v.isActive ? 1 : 0.55,
+                                              ...(isLastRow
+                                                ? {}
+                                                : { borderBottomWidth: 1, borderBottomColor: '#1f1f1f' }),
+                                            }}
+                                          >
+                                            <View style={variantPerfCol}>
+                                              <Text
+                                                style={{
+                                                  color: VARIANT_PERF_COLORS.variant.value,
+                                                  fontSize: 14,
+                                                  textAlign: 'left',
+                                                  fontWeight: '600',
+                                                }}
+                                                numberOfLines={1}
+                                                ellipsizeMode="tail"
+                                              >
+                                                {v.label}
+                                                {!v.isActive ? ' (off)' : ''}
+                                              </Text>
+                                            </View>
+                                            <View style={variantPerfCol}>
+                                              <Text
+                                                style={{
+                                                  color: VARIANT_PERF_COLORS.sent.value,
+                                                  fontSize: 14,
+                                                  textAlign: 'left',
+                                                  fontWeight: '600',
+                                                }}
+                                              >
+                                                {counts.sent}
+                                              </Text>
+                                            </View>
+                                            <View style={variantPerfCol}>
+                                              <Text
+                                                style={{
+                                                  color: VARIANT_PERF_COLORS.reply.value,
+                                                  fontSize: 14,
+                                                  textAlign: 'left',
+                                                  fontWeight: '600',
+                                                }}
+                                              >
+                                                {counts.replied}
+                                              </Text>
+                                            </View>
+                                            <View style={variantPerfCol}>
+                                              <Text
+                                                style={{
+                                                  color: VARIANT_PERF_COLORS.interested.value,
+                                                  fontSize: 14,
+                                                  textAlign: 'left',
+                                                  fontWeight: '600',
+                                                }}
+                                              >
+                                                {counts.positiveReply}
+                                              </Text>
+                                            </View>
+                                            <View style={{ ...variantPerfCol, paddingRight: 0 }}>
+                                              <Text
+                                                style={{
+                                                  color: VARIANT_PERF_COLORS.bounce.value,
+                                                  fontSize: 14,
+                                                  textAlign: 'left',
+                                                  fontWeight: '600',
+                                                }}
+                                              >
+                                                {counts.bounced}
+                                              </Text>
+                                            </View>
+                                          </View>
+                                        );
+                                      })}
+                                    </View>
+                                  </View>
+                                );
+                              })}
+                        </View>
+                      )}
+                    </View>
+                  )}
                   <View style={{ borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingTop: 24, marginTop: 24 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
                       <View>

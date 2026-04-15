@@ -36,6 +36,7 @@ export interface MessageJob {
   retry_count: number;
   message_data: {
     node_config?: any;
+    variant?: { id?: string; label_snapshot?: string };
     lead_data?: any;
     campaign_data?: any;
     source?: 'inbox_reply' | 'inbox_forward';
@@ -55,6 +56,8 @@ export interface MessageJob {
   sqs_message_id: string | null;
   created_at: string;
   updated_at: string;
+  /** Chosen A/B variant UUID at job creation (matches flow_data variants[].id). */
+  variant_id?: string | null;
 }
 
 export interface Mailbox {

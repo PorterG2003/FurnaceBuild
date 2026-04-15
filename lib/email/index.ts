@@ -28,3 +28,13 @@ export {
   type BuildCampaignEmailContentOptions,
   type MergeInboxComposeHtmlResult,
 } from './buildCampaignEmailContent.js';
+
+export {
+  generateEmailVariantId,
+  labelForVariantIndex,
+  normalizeLegacyEmailNodeData,
+  sortVariantsForRoundRobin,
+  activeVariantsSorted,
+  LEGACY_EMAIL_VARIANT_ID,
+  type EmailNodeVariant,
+} from './emailNodeVariants';

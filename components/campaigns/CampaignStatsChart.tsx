@@ -2,18 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Platform, ScrollView, useWindowDimensions, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native';
 import { BarChart, type barDataItem } from 'react-native-gifted-charts';
 import type { CampaignStatsByDay } from '@/lib/supabase/services/campaigns';
+import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
 import { format, parseISO } from 'date-fns';
 import { Tooltip } from '@/components/ui/Tooltip';
 
 const CHART_HEIGHT = 220;
 /** Extra space below chart so x-axis labels with descenders (e.g. "Aug", "Sep") are not clipped */
 const CHART_X_LABEL_PADDING_BOTTOM = 14;
-const COLORS = {
-  sent: '#a78bfa',
-  replied: '#14b8a6',
-  positiveReply: '#10b981',
-  bounce: '#f59e0b',
-};
+const COLORS = CAMPAIGN_STAT_COLORS;
 const BAR_LABELS = ['Sent', 'Replied', 'Positive', 'Bounced'] as const;
 type BarLabelType = (typeof BAR_LABELS)[number];
 const GROUP_BAR_WIDTH = 14;

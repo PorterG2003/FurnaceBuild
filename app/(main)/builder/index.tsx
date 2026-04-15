@@ -560,6 +560,7 @@ export default function BuilderPage() {
           modalData = {
             ...editingNode.data,
             campaignId: campaignId,
+            campaignStatus: campaign?.status,
             customFieldKeys,
             mappedStandardFieldKeys:
               mappedStandardFieldKeys.length > 0

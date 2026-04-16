@@ -12,6 +12,8 @@ export type ExportCsvContactOptions = {
   includeContact?: boolean;
   includeContactConfidence?: boolean;
   includeCost?: boolean;
+  /** When true, append latest Google Ads verification columns (company-scoped). */
+  includeGoogleAdsVerification?: boolean;
 };
 
 const EXPORT_COST_CSV_KEYS: (keyof ExportCompanyOwnerLeadRow)[] = [
@@ -86,6 +88,16 @@ const OWNER_CONFIDENCE_CSV_KEYS: (keyof ExportCompanyOwnerLeadRow)[] = [
   'contact_enrichment_reason_summary',
 ];
 
+const GOOGLE_ADS_OWNER_CSV_KEYS: (keyof ExportCompanyOwnerLeadRow)[] = [
+  'google_ads_verification_result',
+  'google_ads_search_domain',
+  'google_ads_matched_advertiser_name',
+  'google_ads_advertiser_url',
+  'google_ads_latest_ad_last_shown_at',
+  'google_ads_verified_at',
+  'google_ads_verification_error',
+];
+
 export function exportCompanyOwnerLeadsToCsv(
   rows: ExportCompanyOwnerLeadRow[],
   opts?: ExportCsvContactOptions,
@@ -94,6 +106,7 @@ export function exportCompanyOwnerLeadsToCsv(
   if (opts?.includeCost) header.push(...EXPORT_COST_CSV_KEYS);
   if (opts?.includeContact) header.push(...OWNER_CONTACT_CSV_KEYS);
   if (opts?.includeContact && opts?.includeContactConfidence) header.push(...OWNER_CONFIDENCE_CSV_KEYS);
+  if (opts?.includeGoogleAdsVerification) header.push(...GOOGLE_ADS_OWNER_CSV_KEYS);
 
   const lines = [header.join(',')];
   for (const r of rows) {
@@ -156,6 +169,16 @@ const CHAIN_CONFIDENCE_CSV_KEYS: (keyof ExportCompanyChainPeopleRow)[] = [
   'contact_enrichment_reason_summary',
 ];
 
+const GOOGLE_ADS_CHAIN_CSV_KEYS: (keyof ExportCompanyChainPeopleRow)[] = [
+  'google_ads_verification_result',
+  'google_ads_search_domain',
+  'google_ads_matched_advertiser_name',
+  'google_ads_advertiser_url',
+  'google_ads_latest_ad_last_shown_at',
+  'google_ads_verified_at',
+  'google_ads_verification_error',
+];
+
 export function exportCompanyChainPeopleToCsv(
   rows: ExportCompanyChainPeopleRow[],
   opts?: ExportCsvContactOptions,
@@ -164,6 +187,7 @@ export function exportCompanyChainPeopleToCsv(
   if (opts?.includeCost) header.push(...EXPORT_COST_CHAIN_CSV_KEYS);
   if (opts?.includeContact) header.push(...CHAIN_CONTACT_CSV_KEYS);
   if (opts?.includeContact && opts?.includeContactConfidence) header.push(...CHAIN_CONFIDENCE_CSV_KEYS);
+  if (opts?.includeGoogleAdsVerification) header.push(...GOOGLE_ADS_CHAIN_CSV_KEYS);
 
   const lines = [header.join(',')];
   for (const r of rows) {

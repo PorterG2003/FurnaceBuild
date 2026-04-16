@@ -21,6 +21,8 @@ export interface ExportOptionsState {
   includeContactConfidence: boolean;
   /** Adds per-row cost columns (USD cents) to CSV and API when enabled. */
   includeCost: boolean;
+  /** Adds latest Google Ads verification columns (company-scoped) to downloaded CSV and API rows; preview stays compact. */
+  includeGoogleAdsVerification: boolean;
 }
 
 function HintIcon({ title, hint }: { title: string; hint: string }) {
@@ -114,7 +116,12 @@ export function ExportOptionsModal({
   const [draft, setDraft] = useState<ExportOptionsState>(options);
 
   useEffect(() => {
-    if (visible) setDraft({ ...options, includeCost: options.includeCost ?? false });
+    if (visible)
+      setDraft({
+        ...options,
+        includeCost: options.includeCost ?? false,
+        includeGoogleAdsVerification: options.includeGoogleAdsVerification ?? false,
+      });
   }, [options, visible]);
 
   const { previewLine, previewHintFull } = useMemo(() => {
@@ -136,8 +143,11 @@ export function ExportOptionsModal({
     const contactNote = draft.includeContactEnrichment
       ? ' Contact columns are included in downloaded CSV (not all columns are shown in the preview table).'
       : '';
+    const googleAdsNote = draft.includeGoogleAdsVerification
+      ? ' Google Ads verification columns are included in downloaded CSV only (not shown in the preview table).'
+      : '';
 
-    return { previewLine: line, previewHintFull: full + contactNote };
+    return { previewLine: line, previewHintFull: full + contactNote + googleAdsNote };
   }, [draft]);
 
   const depthHint =
@@ -261,6 +271,18 @@ export function ExportOptionsModal({
             <Toggle
               value={draft.includeCost}
               onValueChange={(includeCost) => setDraft((c) => ({ ...c, includeCost }))}
+            />
+          }
+        />
+        <ExportOptionRow
+          label="Include Google Ads verification in CSV"
+          hint="Adds the latest Transparency Center verification per company (result, domain, matched advertiser, verified time). Columns appear in downloaded CSV only; preview stays compact."
+          trailing={
+            <Toggle
+              value={draft.includeGoogleAdsVerification}
+              onValueChange={(includeGoogleAdsVerification) =>
+                setDraft((c) => ({ ...c, includeGoogleAdsVerification }))
+              }
             />
           }
         />

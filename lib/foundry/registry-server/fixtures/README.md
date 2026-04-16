@@ -32,6 +32,28 @@ Regenerate with:
 cd workers/state-scrapers/utah-scraper && npm run capture-fixtures
 ```
 
+# Iowa Secretary of State — Business Entities Search (fixtures)
+
+## Production approach
+
+Live HTML is best captured with **Playwright** in a full browser session (Akamai often blocks `curl` on `search.aspx`). Entry: [Iowa Business Entities Search](https://sos.iowa.gov/search/business/).
+
+## Page flow
+
+1. **Search** — By business name or business number; results grid columns **Business No.**, **Name**, **Status**, **Type** (see [search help](https://sos.iowa.gov/businesses/business-entities-search-help)).
+2. **Summary** — `summary.aspx` — overview (legal name, status, type/chapter, agent, principal office).
+3. **Officers** — `officers.aspx` — grid **Name**, **Address1**, **Address2**, **City**, **State**, **Zip**, **Type**, **Director**.
+
+## Fixture files (checked in)
+
+| File | Description |
+|------|-------------|
+| `iowa-business-search-results.html` | Search results `GridView`-style table with two sample rows (LLC + DBA). |
+| `iowa-entity-summary-sample.html` | Summary regions: overview, names, registered agent, principal office. |
+| `iowa-entity-officers-sample.html` | Officers grid with two officer rows (Member / Manager). |
+
+Sanitized fictional entity **PRAIRIE HOME SERVICES LLC** / business no. **714000** — structure matches public page regions; replace with Playwright captures when maintaining scrapers.
+
 ## curl-only baseline (legacy)
 
 ```bash

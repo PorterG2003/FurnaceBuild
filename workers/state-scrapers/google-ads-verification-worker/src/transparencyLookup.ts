@@ -36,6 +36,7 @@ export interface GoogleAdsTransparencyLookupResult {
   matched_advertiser_id: string | null;
   matched_advertiser_name: string | null;
   advertiser_url: string | null;
+  latest_ad_last_shown_at: string | null;
   signals: JsonObject;
   lookup_stats: JsonObject;
   error?: string | null;
@@ -156,6 +157,30 @@ function extractAdvertiserIdFromHref(href: string | null | undefined): string | 
   return match?.[0] ?? null;
 }
 
+function dedupeHrefs(hrefs: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const href of hrefs) {
+    if (typeof href !== 'string' || href.length === 0 || seen.has(href)) continue;
+    seen.add(href);
+    out.push(href);
+  }
+  return out;
+}
+
+function parseLastShownDateLabel(bodyText: string): string | null {
+  const match = bodyText.match(/Last shown:\s*([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})/);
+  return match?.[1] ?? null;
+}
+
+function normalizeLastShownDate(bodyText: string): string | null {
+  const label = parseLastShownDateLabel(bodyText);
+  if (!label) return null;
+  const timestamp = Date.parse(`${label} UTC`);
+  if (!Number.isFinite(timestamp)) return null;
+  return new Date(timestamp).toISOString().slice(0, 10);
+}
+
 function parseAdvertiserNameFromBody(bodyText: string): string | null {
   const lines = bodyText
     .split('\n')
@@ -261,6 +286,70 @@ async function captureAdvertiserPageSummary(page: Page): Promise<{ advertiser_na
   };
 }
 
+async function expandResultsToFullCreativeList(page: Page): Promise<boolean> {
+  const seeAllButton = page.getByRole('button', { name: /see all ads/i }).first();
+  if (!(await seeAllButton.isVisible().catch(() => false))) return false;
+  const clicked = await seeAllButton.click({ timeout: NAV_TIMEOUT_MS }).then(() => true).catch(() => false);
+  if (!clicked) return false;
+  await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
+  return true;
+}
+
+async function collectCreativeHrefs(page: Page): Promise<string[]> {
+  const hrefs = await page.locator('a[href*="/creative/"]').evaluateAll((nodes) =>
+    nodes
+      .map((node) => node.getAttribute('href'))
+      .filter((href): href is string => typeof href === 'string' && href.length > 0),
+  );
+  return dedupeHrefs(hrefs);
+}
+
+async function captureTopCreativeLastShown(
+  page: Page,
+  creativeHref: string | null,
+  region: string,
+): Promise<{
+  latestAdLastShownAt: string | null;
+  creativeDetailUrl: string | null;
+  creativeSummary: JsonObject | null;
+}> {
+  if (!creativeHref) {
+    return {
+      latestAdLastShownAt: null,
+      creativeDetailUrl: null,
+      creativeSummary: null,
+    };
+  }
+  const creativeUrl = creativeHref.startsWith('http')
+    ? creativeHref
+    : `https://adstransparency.google.com${creativeHref}`;
+  try {
+    await page.goto(creativeUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
+    await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+    const lastShownLabel = parseLastShownDateLabel(bodyText);
+    return {
+      latestAdLastShownAt: normalizeLastShownDate(bodyText),
+      creativeDetailUrl: creativeUrl,
+      creativeSummary: {
+        page_title: trimText(await page.title().catch(() => ''), 120),
+        body_snippet: trimText(bodyText, 360),
+        last_shown_label: lastShownLabel,
+        region,
+      },
+    };
+  } catch (error) {
+    return {
+      latestAdLastShownAt: null,
+      creativeDetailUrl: creativeUrl,
+      creativeSummary: {
+        error: error instanceof Error ? error.message : String(error),
+        region,
+      },
+    };
+  }
+}
+
 export async function runGoogleAdsTransparencyLookup(
   options: GoogleAdsTransparencyLookupOptions,
 ): Promise<GoogleAdsTransparencyLookupResult> {
@@ -307,6 +396,7 @@ export async function runGoogleAdsTransparencyLookup(
         matched_advertiser_id: null,
         matched_advertiser_name: null,
         advertiser_url: null,
+        latest_ad_last_shown_at: null,
         signals: {
           exact_suggestion_found: false,
           suggestion_domains: domainSuggestions.slice(0, 10).map((candidate) => candidate.domain),
@@ -326,15 +416,14 @@ export async function runGoogleAdsTransparencyLookup(
     await clickExactDomainSuggestion(page, searchDomain);
     const resultsScreenshot = await maybeSaveScreenshot(page, options.outputDir ?? null, `results-${searchDomain}.png`);
     const resultsSummary = await captureResultsPageSummary(page);
-    const advertiserLinks = await page.locator('a[href*="/advertiser/AR"]').evaluateAll((nodes) =>
-      nodes
-        .map((node) => node.getAttribute('href'))
-        .filter((href): href is string => typeof href === 'string' && href.length > 0),
-    );
-    const firstAdvertiserId = extractAdvertiserIdFromHref(advertiserLinks[0] ?? null);
+    const expandedResults = await expandResultsToFullCreativeList(page);
+    const creativeHrefs = await collectCreativeHrefs(page);
+    const firstCreativeHref = creativeHrefs[0] ?? null;
+    const firstAdvertiserId = extractAdvertiserIdFromHref(firstCreativeHref);
     const advertiserUrl = firstAdvertiserId
       ? `https://adstransparency.google.com/advertiser/${firstAdvertiserId}?region=${encodeURIComponent(region)}`
       : null;
+    const topCreative = await captureTopCreativeLastShown(page, firstCreativeHref, region);
 
     let matchedAdvertiserName: string | null = null;
     let advertiserPageSummary: JsonObject | null = null;
@@ -353,27 +442,31 @@ export async function runGoogleAdsTransparencyLookup(
     }
 
     return {
-      result: advertiserLinks.length > 0 ? 'yes' : 'no',
+      result: creativeHrefs.length > 0 ? 'yes' : 'no',
       input_domain: options.domain,
       search_domain: searchDomain,
       matched_advertiser_id: firstAdvertiserId,
       matched_advertiser_name: matchedAdvertiserName,
       advertiser_url: advertiserUrl,
+      latest_ad_last_shown_at: topCreative.latestAdLastShownAt,
       signals: {
         exact_suggestion_found: true,
         suggestion_path: exactSuggestion.raw_path,
         suggestion_domains: domainSuggestions.slice(0, 10).map((candidate) => candidate.domain),
         raw_body_preview: trimText(rawBody, 320),
         results_page: resultsSummary,
+        top_creative: topCreative.creativeSummary,
         advertiser_page: advertiserPageSummary,
       },
       lookup_stats: {
         home_url: homeUrl,
         results_url: `https://adstransparency.google.com/?region=${encodeURIComponent(region)}&domain=${encodeURIComponent(searchDomain)}`,
+        expanded_results: expandedResults,
         elapsed_ms: Date.now() - startedAt,
         suggestion_candidate_count: domainSuggestions.length,
-        creative_link_count: advertiserLinks.length,
-        creative_link_samples: advertiserLinks.slice(0, 5),
+        creative_link_count: creativeHrefs.length,
+        creative_link_samples: creativeHrefs.slice(0, 5),
+        top_creative_detail_url: topCreative.creativeDetailUrl,
         home_screenshot: homeScreenshot,
         results_screenshot: resultsScreenshot,
         advertiser_screenshot: advertiserScreenshot,
@@ -387,13 +480,14 @@ export async function runGoogleAdsTransparencyLookup(
     return {
       result: 'unknown',
       input_domain: options.domain,
-      search_domain,
+      search_domain: searchDomain,
       matched_advertiser_id: null,
       matched_advertiser_name: null,
       advertiser_url: null,
+      latest_ad_last_shown_at: null,
       error: message,
       signals: {
-        search_domain,
+        search_domain: searchDomain,
       },
       lookup_stats: {
         elapsed_ms: Date.now() - startedAt,

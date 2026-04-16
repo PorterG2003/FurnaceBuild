@@ -74,6 +74,13 @@ const GOOGLE_ADS_INPUTS: CsvBuilderToolManifestInput[] = [
 
 const GOOGLE_ADS_OUTPUTS: CsvBuilderToolManifestOutput[] = [
   { key: 'result', label: 'Google Ads result', description: 'Yes, no, or unknown.', data_type: 'text', default_selected: true },
+  {
+    key: 'latest_ad_last_shown_at',
+    label: 'Latest ad last shown',
+    description: 'Date from the first Google Ads creative in Transparency Center results.',
+    data_type: 'date',
+    default_selected: false,
+  },
   { key: 'search_domain', label: 'Search domain', description: 'Normalized domain used for the Transparency Center lookup.', data_type: 'text', default_selected: false },
   { key: 'advertiser_name', label: 'Advertiser name', description: 'Matched advertiser name when available.', data_type: 'text', default_selected: false },
   { key: 'advertiser_url', label: 'Advertiser URL', description: 'Matched advertiser URL when available.', data_type: 'text', default_selected: false },

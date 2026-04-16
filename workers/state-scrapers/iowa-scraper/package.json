@@ -1,0 +1,22 @@
+{
+  "name": "@furnace/iowa-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "query": "tsx src/run-query.ts",
+    "compare-csv": "tsx src/run-csv-compare.ts",
+    "compare-to-readable-csv": "tsx src/jsonl-to-compare-csv.ts"
+  },
+  "dependencies": {
+    "@furnace/registry-server": "file:../../../lib/foundry/registry-server",
+    "csv-parse": "^5.6.0",
+    "playwright": "^1.58.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

@@ -862,6 +862,8 @@ export type ExportCompanyOwnerLeadsParams = {
   include_contact_confidence?: boolean;
   /** When true, API adds per-row acquisition/enrichment cost columns (USD cents). */
   include_cost?: boolean;
+  /** When true, API adds latest Google Ads verification columns (company-scoped). */
+  include_google_ads_verification?: boolean;
 };
 
 export type ExportCompanyChainPeopleParams = ExportCompanyOwnerLeadsParams & {
@@ -891,6 +893,8 @@ export async function fetchExportCompanyOwnerLeads(
       include_contact: params?.include_contact === true ? 'true' : undefined,
       include_contact_confidence: params?.include_contact_confidence === true ? 'true' : undefined,
       include_cost: params?.include_cost === true ? 'true' : undefined,
+      include_google_ads_verification:
+        params?.include_google_ads_verification === true ? 'true' : undefined,
     },
   });
 }
@@ -919,6 +923,8 @@ export async function fetchExportCompanyChainPeople(
       include_contact: params?.include_contact === true ? 'true' : undefined,
       include_contact_confidence: params?.include_contact_confidence === true ? 'true' : undefined,
       include_cost: params?.include_cost === true ? 'true' : undefined,
+      include_google_ads_verification:
+        params?.include_google_ads_verification === true ? 'true' : undefined,
     },
   });
 }

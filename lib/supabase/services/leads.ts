@@ -436,6 +436,36 @@ export async function deleteLead(id: string): Promise<void> {
   }
 }
 
+export interface DeleteLeadAttemptFailure {
+  id: string;
+  error: string;
+}
+
+/**
+ * Remove multiple leads using the same semantics as {@link deleteLead}, one at a time.
+ * Best-effort: failures do not roll back other leads; callers should surface partial results.
+ */
+export async function deleteLeadsBestEffort(ids: string[]): Promise<{
+  succeeded: string[];
+  failed: DeleteLeadAttemptFailure[];
+}> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const succeeded: string[] = [];
+  const failed: DeleteLeadAttemptFailure[] = [];
+  for (const id of unique) {
+    try {
+      await deleteLead(id);
+      succeeded.push(id);
+    } catch (err) {
+      failed.push({
+        id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { succeeded, failed };
+}
+
 /**
  * Hard delete a lead (permanent removal)
  */

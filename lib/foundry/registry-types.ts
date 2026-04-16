@@ -960,6 +960,7 @@ export interface CompanyGoogleAdsVerificationRow {
   matched_advertiser_id: string | null;
   matched_advertiser_name: string | null;
   advertiser_url: string | null;
+  latest_ad_last_shown_at: string | null;
   signals: Record<string, unknown>;
   error: string | null;
   verifier_version: string;
@@ -1248,6 +1249,8 @@ function parseGoogleAdsVerificationRow(o: unknown): CompanyGoogleAdsVerification
     matched_advertiser_name:
       r.matched_advertiser_name == null ? null : parseNullableString(r.matched_advertiser_name),
     advertiser_url: r.advertiser_url == null ? null : parseNullableString(r.advertiser_url),
+    latest_ad_last_shown_at:
+      r.latest_ad_last_shown_at == null ? null : parseNullableString(r.latest_ad_last_shown_at),
     signals: r.signals && typeof r.signals === 'object' ? (r.signals as Record<string, unknown>) : {},
     error: r.error == null ? null : parseNullableString(r.error),
     verifier_version,
@@ -1491,6 +1494,14 @@ export interface ExportCompanyOwnerLeadRow {
   company_acquisition_cost_cents?: number | null;
   acquisition_cost_per_row_cents?: number | null;
   total_cost_per_row_cents?: number | null;
+  /** Present when export is requested with `include_google_ads_verification=true` (latest row per company). */
+  google_ads_verification_result?: string | null;
+  google_ads_search_domain?: string | null;
+  google_ads_matched_advertiser_name?: string | null;
+  google_ads_advertiser_url?: string | null;
+  google_ads_latest_ad_last_shown_at?: string | null;
+  google_ads_verified_at?: string | null;
+  google_ads_verification_error?: string | null;
 }
 
 export interface ExportCompanyOwnerLeadsResponse {
@@ -1554,6 +1565,14 @@ export interface ExportCompanyChainPeopleRow {
   company_acquisition_cost_cents?: number | null;
   acquisition_cost_per_row_cents?: number | null;
   total_cost_per_row_cents?: number | null;
+  /** Present when export is requested with `include_google_ads_verification=true` (latest row per company). */
+  google_ads_verification_result?: string | null;
+  google_ads_search_domain?: string | null;
+  google_ads_matched_advertiser_name?: string | null;
+  google_ads_advertiser_url?: string | null;
+  google_ads_latest_ad_last_shown_at?: string | null;
+  google_ads_verified_at?: string | null;
+  google_ads_verification_error?: string | null;
 }
 
 export interface ExportCompanyChainPeopleResponse {

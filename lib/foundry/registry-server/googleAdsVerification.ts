@@ -50,6 +50,7 @@ export interface GoogleAdsVerificationInsertRow {
   matched_advertiser_id?: string | null;
   matched_advertiser_name?: string | null;
   advertiser_url?: string | null;
+  latest_ad_last_shown_at?: string | null;
   signals?: JsonObject;
   error?: string | null;
   verifier_version: string;

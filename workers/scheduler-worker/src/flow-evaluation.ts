@@ -22,6 +22,13 @@ export interface DatabaseNode {
 export interface FlowEvaluationResult {
   nodes: DatabaseNode[];
   waitingForEmail?: boolean; // True if no nodes because waiting for email to be sent
+  /**
+   * True when a Supabase read failed. Caller must retry (bump next_run_at), not treat
+   * empty `nodes` as flow complete.
+   */
+  evaluationFailed?: boolean;
+  /** Short error detail when evaluationFailed is true */
+  evaluationError?: string;
 }
 
 /**
@@ -95,7 +102,7 @@ export async function evaluateFlow(
         campaign_id: campaignId,
         error: error.message,
       });
-      return { nodes: [] };
+      return { nodes: [], evaluationFailed: true, evaluationError: error.message };
     }
 
     if (entryNodes && entryNodes.length > 0) {
@@ -136,7 +143,7 @@ export async function evaluateFlow(
           campaign_id: campaignId,
           error: nextNodesError.message,
         });
-        return { nodes: [] };
+        return { nodes: [], evaluationFailed: true, evaluationError: nextNodesError.message };
       }
 
       // Filter out leadSource nodes (they should only be entry points, not in traversal)
@@ -179,7 +186,7 @@ export async function evaluateFlow(
         campaign_id: campaignId,
         error: firstError.message,
       });
-      return { nodes: [] };
+      return { nodes: [], evaluationFailed: true, evaluationError: firstError.message };
     }
 
     if (firstNodes && firstNodes.length > 0) {
@@ -292,7 +299,13 @@ export async function evaluateFlow(
 
   if (nextNodesError) {
     console.error(`Error loading next nodes: ${nextNodesError.message}`);
-    return { nodes: [] };
+    reportErrorToSlack('Database error loading next nodes (flow traversal)', {
+      severity: 'critical',
+      enrollment_id: enrollment.id,
+      campaign_id: campaignId,
+      error: nextNodesError.message,
+    });
+    return { nodes: [], evaluationFailed: true, evaluationError: nextNodesError.message };
   }
 
   // Filter out leadSource nodes (they should only be entry points, not in traversal)

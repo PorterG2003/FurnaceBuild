@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Business Entities Search — Iowa Secretary of State (fixture)</title>
+  </head>
+  <body>
+    <!--
+      Structure aligned with Iowa SOS Business Entities Search results grid
+      (Business No., Name, Status, Type). Captured/sanitized for parser contract tests.
+      IDs mirror common ASP.NET GridView client IDs; column labels match public help text.
+    -->
+    <form name="aspnetForm" method="post">
+      <table
+        cellspacing="0"
+        cellpadding="4"
+        rules="all"
+        border="1"
+        id="ctl00_MainContent_gvResults"
+        style="width: 100%; border-collapse: collapse"
+      >
+        <thead>
+          <tr>
+            <th scope="col">Business No.</th>
+            <th scope="col">Name</th>
+            <th scope="col">Status</th>
+            <th scope="col">Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="summary.aspx?q=L20241234">714000</a></td>
+            <td>PRAIRIE HOME SERVICES LLC</td>
+            <td>Active</td>
+            <td>L</td>
+          </tr>
+          <tr>
+            <td><a href="summary.aspx?q=F20240001">714001</a></td>
+            <td>PRAIRIE HOME DBA OWL CAFE</td>
+            <td>Active</td>
+            <td>DF</td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
+  </body>
+</html>

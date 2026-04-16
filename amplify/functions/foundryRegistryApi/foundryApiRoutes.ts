@@ -204,6 +204,13 @@ function parseIncludeCostFlag(params: URLSearchParams): boolean {
   return params.get('include_cost') === 'true' || params.get('include_cost') === '1';
 }
 
+function parseIncludeGoogleAdsVerificationFlag(params: URLSearchParams): boolean {
+  return (
+    params.get('include_google_ads_verification') === 'true' ||
+    params.get('include_google_ads_verification') === '1'
+  );
+}
+
 function parseIncludeContactFlags(params: URLSearchParams): {
   includeContact: boolean;
   includeContactConfidence: boolean;
@@ -281,6 +288,67 @@ function applyContactFlatToRow(
     for (const k of CONTACT_ENRICHMENT_CONFIDENCE_KEYS) {
       if (Object.prototype.hasOwnProperty.call(flat, k)) target[k] = flat[k];
     }
+  }
+}
+
+async function loadLatestGoogleAdsVerificationByCompanyMap(
+  leadsClient: SupabaseClient,
+  companyIds: string[],
+): Promise<Map<string, Record<string, unknown>>> {
+  if (companyIds.length === 0) return new Map();
+  const { data, error } = await leadsClient
+    .from('company_google_ads_verifications')
+    .select(
+      'company_id, result, search_domain, matched_advertiser_name, advertiser_url, latest_ad_last_shown_at, verified_at, error',
+    )
+    .in('company_id', companyIds);
+  if (error) throw new Error(error.message);
+  const best = new Map<string, { t: number; row: Record<string, unknown> }>();
+  for (const raw of data ?? []) {
+    const r = raw as Record<string, unknown>;
+    const cid = r.company_id;
+    if (typeof cid !== 'string') continue;
+    const at = Date.parse(String(r.verified_at ?? ''));
+    const t = Number.isFinite(at) ? at : 0;
+    const prev = best.get(cid);
+    if (!prev || t >= prev.t) best.set(cid, { t, row: r });
+  }
+  return new Map([...best.entries()].map(([cid, { row }]) => [cid, row]));
+}
+
+function applyGoogleAdsVerificationFieldsToExportRow(
+  target: Record<string, unknown>,
+  v: Record<string, unknown> | undefined,
+): void {
+  if (!v) {
+    target.google_ads_verification_result = null;
+    target.google_ads_search_domain = null;
+    target.google_ads_matched_advertiser_name = null;
+    target.google_ads_advertiser_url = null;
+    target.google_ads_verified_at = null;
+    target.google_ads_verification_error = null;
+    return;
+  }
+  target.google_ads_verification_result = v.result ?? null;
+  target.google_ads_search_domain = v.search_domain ?? null;
+  target.google_ads_matched_advertiser_name = v.matched_advertiser_name ?? null;
+  target.google_ads_advertiser_url = v.advertiser_url ?? null;
+  target.google_ads_latest_ad_last_shown_at = v.latest_ad_last_shown_at ?? null;
+  target.google_ads_verified_at = v.verified_at ?? null;
+  target.google_ads_verification_error = v.error ?? null;
+}
+
+async function mergeGoogleAdsVerificationsIntoExportRows(
+  leadsClient: SupabaseClient,
+  rows: Record<string, unknown>[],
+): Promise<void> {
+  const companyIds = [
+    ...new Set(rows.map((r) => r.company_id).filter((id): id is string => typeof id === 'string')),
+  ];
+  const map = await loadLatestGoogleAdsVerificationByCompanyMap(leadsClient, companyIds);
+  for (const row of rows) {
+    const cid = row.company_id;
+    applyGoogleAdsVerificationFieldsToExportRow(row, typeof cid === 'string' ? map.get(cid) : undefined);
   }
 }
 
@@ -1202,6 +1270,7 @@ export async function dispatchFoundryExtendedRoutes(
     const params = new URLSearchParams(rawQueryString || '');
     const { includeContact, includeContactConfidence } = parseIncludeContactFlags(params);
     const includeCost = parseIncludeCostFlag(params);
+    const includeGoogleAds = parseIncludeGoogleAdsVerificationFlag(params);
     const limit = parseLimit(rawQueryString || '', MAX_EXPORT_LEADS_LIMIT, DEFAULT_EXPORT_LEADS_LIMIT);
     const offset = parseOffsetExport(rawQueryString || '');
     const end = offset + limit - 1;
@@ -1235,6 +1304,16 @@ export async function dispatchFoundryExtendedRoutes(
       return row;
     });
 
+    if (includeGoogleAds && rows.length > 0) {
+      try {
+        await mergeGoogleAdsVerificationsIntoExportRows(leadsClient, rows);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('export_company_owner_leads google ads merge failed', message);
+        return jsonResponse(502, { error: 'Failed to load Google Ads verifications for export' });
+      }
+    }
+
     return jsonResponse(200, {
       rows,
       limit,
@@ -1247,6 +1326,7 @@ export async function dispatchFoundryExtendedRoutes(
     const params = new URLSearchParams(rawQueryString || '');
     const { includeContact, includeContactConfidence } = parseIncludeContactFlags(params);
     const includeCost = parseIncludeCostFlag(params);
+    const includeGoogleAds = parseIncludeGoogleAdsVerificationFlag(params);
     const limit = parseLimit(rawQueryString || '', MAX_EXPORT_LEADS_LIMIT, DEFAULT_EXPORT_LEADS_LIMIT);
     const offset = parseOffsetExport(rawQueryString || '');
     const maxDepth = clampOwnershipChainDepth(params.get('max_depth'));
@@ -1373,6 +1453,16 @@ export async function dispatchFoundryExtendedRoutes(
     if (includeContact && !includeCost) {
       for (const row of rows) {
         stripCostFields(row);
+      }
+    }
+
+    if (includeGoogleAds && rows.length > 0) {
+      try {
+        await mergeGoogleAdsVerificationsIntoExportRows(leadsClient, rows);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('export_company_chain_people google ads merge failed', message);
+        return jsonResponse(502, { error: 'Failed to load Google Ads verifications for chain export' });
       }
     }
 

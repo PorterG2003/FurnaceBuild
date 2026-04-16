@@ -1,4 +1,3 @@
-import { normalizePersonName } from '../scrapers/normalizeNames.js';
 import type { FloridaEntityDetailParsed, FloridaPersonRole } from './types.js';
 
 function decodeEntities(html: string): string {
@@ -76,69 +75,4 @@ export function parseFloridaEntityDetailHtml(html: string): FloridaEntityDetailP
     registeredAgentName: parseRegisteredAgentName(html),
     people,
   };
-}
-
-const LAWYER_TITLE_RE = /attorney|counsel/i;
-const LAWYER_NAME_RE =
-  /\b(P\.?\s*A\.?|L\.L\.P\.|LLP|ATTORNEYS?\b|ATTORNEY\b|AT\s+LAW|LAW\s+(OFFICES?|FIRM|GROUP)|\bESQ\b)/i;
-const STATUTORY_AGENT_RE =
-  /\b(CORPORATION\s+SERVICE|CSC-?|CT\s+CORPORATION|REGISTERED\s+AGENTS?\b|INCORP\s+SERVICES|LEGALINC|ZOOM|NW\s+REGISTERED|UNITED\s+AGENT|URS\s+AGENTS?|PRESTIGE\s+LEGAL)\b/i;
-
-function isLawyerContext(name: string, title: string): boolean {
-  if (LAWYER_TITLE_RE.test(title)) return true;
-  return LAWYER_NAME_RE.test(name);
-}
-
-function isCorporateStatutoryAgent(name: string): boolean {
-  const u = name.toUpperCase();
-  if (STATUTORY_AGENT_RE.test(u)) return true;
-  if (/\b(LLC|L\.L\.C\.|INC\.?|CORP\.?|CORPORATION)\b/.test(u)) return true;
-  return false;
-}
-
-function shouldUseRegisteredIndividual(name: string): boolean {
-  const t = name.trim();
-  if (t.length < 3) return false;
-  if (/,\s*[A-Za-z]/.test(t)) return true;
-  const parts = normalizePersonName(t).split(' ').filter((x) => x.length > 1);
-  return parts.length >= 2;
-}
-
-function dedupeNames(names: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const n of names) {
-    const k = normalizePersonName(n);
-    if (!k || seen.has(k)) continue;
-    seen.add(k);
-    out.push(n.trim());
-  }
-  return out;
-}
-
-/**
- * Owner-like names for enrichment: officers / authorized persons, plus individual registered agents.
- * Drops obvious law-firm and statutory filing shops.
- */
-export function filterFloridaOwnerPeople(detail: FloridaEntityDetailParsed): string[] {
-  const fromOffices = detail.people.filter((p) => p.source !== 'registered_agent');
-  let names = dedupeNames(
-    fromOffices.filter((p) => !isLawyerContext(p.name, p.title)).map((p) => p.name.trim()),
-  );
-
-  if (names.length === 0) {
-    names = dedupeNames(fromOffices.map((p) => p.name.trim()));
-  }
-
-  const ra = detail.registeredAgentName?.trim();
-  if (ra && !isCorporateStatutoryAgent(ra) && !isLawyerContext(ra, 'Registered Agent')) {
-    if (shouldUseRegisteredIndividual(ra)) {
-      const raNorm = normalizePersonName(ra);
-      if (!names.some((n) => normalizePersonName(n) === raNorm)) {
-        names.push(ra);
-      }
-    }
-  }
-
-  return names;
 }

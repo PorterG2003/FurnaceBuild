@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import {
+  isTransientUpstreamGatewayErrorMessage,
+  reportErrorToSlack,
+} from '@furnace/slack-lib';
 import type { Enrollment } from './types.js';
 
 /**
@@ -209,10 +212,29 @@ export async function evaluateFlow(
     .select('*')
     .eq('id', enrollment.current_node_id)
     .eq('campaign_id', campaignId)
-    .single();
+    .maybeSingle();
 
-  if (currentNodeError || !currentNode) {
-    const error = `Current node ${enrollment.current_node_id} not found for enrollment ${enrollment.id}: ${currentNodeError?.message || 'Node not found'}`;
+  if (currentNodeError) {
+    const errorMessage = currentNodeError.message || 'Unknown database error';
+    const error = `Error loading current node ${enrollment.current_node_id} for enrollment ${enrollment.id}: ${errorMessage}`;
+    console.error(error);
+
+    if (isTransientUpstreamGatewayErrorMessage(errorMessage)) {
+      return { nodes: [], evaluationFailed: true, evaluationError: errorMessage };
+    }
+
+    reportErrorToSlack('Database error loading current node during flow evaluation', {
+      severity: 'critical',
+      enrollment_id: enrollment.id,
+      campaign_id: campaignId,
+      current_node_id: enrollment.current_node_id ?? '',
+      error: errorMessage,
+    });
+    return { nodes: [], evaluationFailed: true, evaluationError: errorMessage };
+  }
+
+  if (!currentNode) {
+    const error = `Current node ${enrollment.current_node_id} not found for enrollment ${enrollment.id}: Node not found`;
     console.error(error);
     reportErrorToSlack('Missing node in database (enrollment references non-existent node)', {
       severity: 'critical',

@@ -9,7 +9,7 @@ import {
 } from './persistStateEntityCurrent.js';
 
 export const IOWA_SOURCE_TYPE = 'iowa_sos_business_entities';
-export const IOWA_PARSER_VERSION = 'iowa_registry_browser_v1';
+export const IOWA_PARSER_VERSION = 'iowa_registry_browser_v2';
 
 const MAX_RESPONSE_PAYLOAD_CHARS = 120_000;
 

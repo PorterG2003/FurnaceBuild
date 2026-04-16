@@ -4,11 +4,11 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+  type IowaEntityDetailParsed,
   ownerRowsForIowaDetail,
   parseIowaEntityDetailHtml,
   parseIowaOfficersHtml,
   parseIowaSearchResultsHtml,
-  parseIowaSummaryHtml,
   parseIowaSummaryHtml,
   pickBestIowaSearchHit,
 } from '@furnace/registry-server';
@@ -76,5 +76,28 @@ describe('Iowa SOS HTML parsers', () => {
     const owners = ownerRowsForIowaDetail(detail!);
     assert.ok(owners.some((o) => /RIVERA/i.test(o.ownerName) && (o.titleRole ?? '').includes('Director')));
     assert.ok(owners.some((o) => /MICHAELS/i.test(o.ownerName)));
+  });
+
+  it('uses individual registered agent when officer list is empty', () => {
+    const detail: IowaEntityDetailParsed = {
+      businessNumber: '999',
+      legalName: 'EXAMPLE LLC',
+      officers: [],
+      registeredAgentName: 'Sarah Jane Martinez',
+    };
+    const owners = ownerRowsForIowaDetail(detail);
+    assert.equal(owners.length, 1);
+    assert.equal(owners[0]!.ownerName, 'Sarah Jane Martinez');
+    assert.equal(owners[0]!.titleRole, 'Registered Agent');
+  });
+
+  it('does not use corporate registered agent as owner fallback', () => {
+    const detail: IowaEntityDetailParsed = {
+      businessNumber: '999',
+      legalName: 'EXAMPLE LLC',
+      officers: [],
+      registeredAgentName: 'C T CORPORATION SYSTEM',
+    };
+    assert.equal(ownerRowsForIowaDetail(detail).length, 0);
   });
 });

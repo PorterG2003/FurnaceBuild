@@ -125,17 +125,12 @@ export class InboxCheckerWorker {
 
       for (const message of messages) {
         try {
+          const isUnsubscribe = this.messageProcessor.isUnsubscribe(message);
+
           // Check for bounce
           if (this.messageProcessor.isBounce(message)) {
             await this.threadManager.handleBounce(mailbox, message);
             bounces++;
-            continue;
-          }
-
-          // Check for unsubscribe
-          if (this.messageProcessor.isUnsubscribe(message)) {
-            await this.threadManager.handleUnsubscribe(mailbox, message);
-            unsubscribes++;
             continue;
           }
 
@@ -144,10 +139,25 @@ export class InboxCheckerWorker {
             const handled = await this.threadManager.handleReply(mailbox, message);
             if (handled) {
               replies++;
+              if (isUnsubscribe) {
+                await this.threadManager.autoBlockUnsubscribe(mailbox, message);
+                unsubscribes++;
+              }
             } else {
               // Not a reply to our message - might be spam or unrelated
               console.log(`[INBOX CHECKER] Message ${message.messageId} has In-Reply-To but doesn't match any sent message`);
+              if (isUnsubscribe) {
+                await this.threadManager.autoBlockUnsubscribe(mailbox, message);
+                unsubscribes++;
+              }
             }
+            continue;
+          }
+
+          // Check for unsubscribe
+          if (isUnsubscribe) {
+            await this.threadManager.autoBlockUnsubscribe(mailbox, message);
+            unsubscribes++;
           }
         } catch (error) {
           console.error(`[INBOX CHECKER] Error processing message in mailbox ${mailbox.id}:`, error);

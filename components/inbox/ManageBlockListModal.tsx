@@ -158,7 +158,13 @@ export function ManageBlockListModal({
         sortValue: (e) => e.reason ?? '',
         render: (entry) => (
           <Text className="text-gray-400 text-sm font-instrument">
-            {entry.reason === 'bounced' ? 'Bounced' : entry.reason === 'manual' ? 'Manual' : '—'}
+            {entry.reason === 'bounced'
+              ? 'Bounced'
+              : entry.reason === 'manual'
+                ? 'Manual'
+                : entry.reason === 'unsubscribed'
+                  ? 'Unsubscribed'
+                  : '—'}
           </Text>
         ),
       },

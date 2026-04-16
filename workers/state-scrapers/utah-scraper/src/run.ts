@@ -1,5 +1,10 @@
 /**
  * Utah entity scrape + compare to UtahLLCOwnerSearchTester.csv
+ *
+ * **Testing / baseline only** — not production persistence. `compareToTesterRow` receives
+ * `memberNames`: trimmed `ownerName` from each row returned by `scrapeUtahRow` →
+ * `ownerRowsForUtahDetail` from `@furnace/registry-server` (same as production `entity_owners`).
+ *
  * Usage: npx tsx src/run.ts [path/to.csv] [--out report.json]
  */
 import { mkdir, writeFile } from 'node:fs/promises';

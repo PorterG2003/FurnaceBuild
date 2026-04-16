@@ -1,5 +1,10 @@
 /**
  * Florida Sunbiz entity scrape + compare to FloridaLLCOwnerSearchTester.csv
+ *
+ * **Testing / baseline only** — not production persistence. `compareToTesterRow` receives
+ * `memberNames`: trimmed `ownerName` from each row returned by `scrapeFloridaRow` →
+ * `ownerRowsForFloridaDetail` from `@furnace/registry-server` (same as production `entity_owners`).
+ *
  * Usage: npx tsx src/run.ts [path/to.csv] [--out report.json]
  *
  * Cloudflare: if headless times out, run with FLORIDA_HEADFUL=1 (requires local Chrome).

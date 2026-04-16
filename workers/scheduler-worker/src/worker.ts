@@ -1,5 +1,9 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { formatUnknownError, reportErrorToSlack } from '@furnace/slack-lib';
+import {
+  formatUnknownError,
+  isTransientUpstreamGatewayErrorMessage,
+  reportErrorToSlack,
+} from '@furnace/slack-lib';
 import { DatabaseClient } from './database.js';
 import { evaluateFlow } from './flow-evaluation.js';
 import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
@@ -453,7 +457,30 @@ export class SchedulerWorker {
         campaign.flow_data,
         this.supabase
       );
-      
+
+      if (evaluationResult.evaluationFailed) {
+        const deferMs = 60_000;
+        const nextRun = new Date(Date.now() + deferMs).toISOString();
+        console.warn(
+          `[ENROLLMENT ${enrollmentId}] Flow evaluation failed (database read). Deferring retry in ${deferMs / 1000}s: ${evaluationResult.evaluationError ?? 'unknown'}`
+        );
+        reportErrorToSlack('Scheduler: flow evaluation deferred (database read failed)', {
+          severity: 'warning',
+          enrollment_id: enrollment.id,
+          campaign_id: enrollment.campaign_id,
+          error: evaluationResult.evaluationError ?? 'Could not load flow nodes',
+        });
+        await this.supabase
+          .from('enrollments')
+          .update({
+            next_run_at: nextRun,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', enrollment.id)
+          .eq('state', 'active');
+        return;
+      }
+
       const nextNodes = evaluationResult.nodes;
       console.log(`[ENROLLMENT ${enrollmentId}] Flow evaluation complete. Found ${nextNodes.length} next node(s)`);
       if (nextNodes.length > 0) {
@@ -605,12 +632,46 @@ export class SchedulerWorker {
       }
 
       // Real error - log and handle
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = formatUnknownError(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
-      
+
       console.error(`Error processing enrollment ${enrollment.id}:`, errorMessage);
       if (errorStack) {
         console.error('Stack trace:', errorStack);
+      }
+
+      if (isTransientUpstreamGatewayErrorMessage(errorMessage)) {
+        const deferMs = 120_000;
+        const nextRun = new Date(Date.now() + deferMs).toISOString();
+        console.warn(
+          `[ENROLLMENT ${enrollmentId}] Transient upstream error; deferring enrollment retry in ${deferMs / 1000}s`
+        );
+        reportErrorToSlack('Scheduler: enrollment processing deferred (transient upstream)', {
+          severity: 'warning',
+          enrollment_id: enrollment.id,
+          campaign_id: enrollment.campaign_id,
+          error: errorMessage,
+        });
+        try {
+          await this.supabase
+            .from('enrollments')
+            .update({
+              next_run_at: nextRun,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', enrollment.id)
+            .eq('state', 'active');
+        } catch (deferUpdateError) {
+          console.error(`Failed to defer enrollment ${enrollment.id} after transient error:`, deferUpdateError);
+          const deferMsg = formatUnknownError(deferUpdateError);
+          reportErrorToSlack('Scheduler: failed to defer enrollment after transient upstream error', {
+            severity: 'warning',
+            enrollment_id: enrollment.id,
+            campaign_id: enrollment.campaign_id,
+            error: deferMsg,
+          });
+        }
+        return;
       }
 
       // Store a short clue for the UI (what/where/why); max 500 chars, single line
@@ -639,7 +700,7 @@ export class SchedulerWorker {
           .eq('id', enrollment.id);
       } catch (updateError) {
         console.error(`Failed to update enrollment ${enrollment.id} after error:`, updateError);
-        const updateMsg = updateError instanceof Error ? updateError.message : String(updateError);
+        const updateMsg = formatUnknownError(updateError);
         reportErrorToSlack('Scheduler: failed to update enrollment state after error', {
           severity: 'warning',
           enrollment_id: enrollment.id,

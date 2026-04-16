@@ -36,9 +36,26 @@ export function summarizeUpstreamGatewayError(raw: string): {
   const error = `Transient HTTP ${code} from Supabase (Cloudflare could not get a valid response from origin). Not a bug in our query or scheduler logic.`;
 
   const action =
-    'No immediate fix on our side if this is occasional — the scheduler will retry on the next tick. If it happens often: check https://status.supabase.com/, your Supabase project logs and metrics, and when contacting Supabase support include the Ray ID below.';
+    'If this is occasional, retry after a short backoff. If it happens often: check https://status.supabase.com/, your Supabase project logs and metrics, and when contacting Supabase support include the Ray ID below.';
 
   return rayId ? { error, action, ray_id: rayId } : { error, action };
+}
+
+/**
+ * True when `message` is (or was derived from) a Cloudflare/Supabase gateway HTML error,
+ * including our summarized one-liner after mergeConciseGatewayError.
+ */
+export function isTransientUpstreamGatewayErrorMessage(message: string): boolean {
+  if (typeof message !== 'string' || message.length === 0) {
+    return false;
+  }
+  if (summarizeUpstreamGatewayError(message)) {
+    return true;
+  }
+  return (
+    message.includes('Transient HTTP') &&
+    message.includes('Cloudflare could not get a valid response from origin')
+  );
 }
 
 /**

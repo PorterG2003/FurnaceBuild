@@ -75,11 +75,12 @@ export function ConfirmDeleteModal({
       description={description || defaultDescription}
       maxWidth="sm"
       footer={
-        <ModalFooter>
-          <Button variant="outline" onPress={handleClose} disabled={isLoading}>
+        <ModalFooter layout="inline">
+          <Button fullWidth variant="outline" onPress={handleClose} disabled={isLoading}>
             {cancelLabel}
           </Button>
           <Button
+            fullWidth
             variant="destructive"
             onPress={handleConfirm}
             disabled={isLoading || !isConfirmed}

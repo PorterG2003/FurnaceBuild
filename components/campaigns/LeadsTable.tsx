@@ -59,6 +59,10 @@ interface LeadsTableProps {
    * mutating UI must be hidden or disabled when readOnly is true.
    */
   readOnly?: boolean;
+  /** When true with `selectedKeys` / `onSelectionChange`, shows row checkboxes (page-scoped select-all). */
+  selectable?: boolean;
+  selectedKeys?: Set<string>;
+  onSelectionChange?: (keys: Set<string>) => void;
 }
 
 const SERVER_SORTABLE_FIELDS = new Set([
@@ -88,8 +92,12 @@ export function LeadsTable({
   sortDirection,
   onSortChange,
   readOnly = false,
+  selectable = false,
+  selectedKeys,
+  onSelectionChange,
 }: LeadsTableProps) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const selectionActive = selectable && selectedKeys != null && selectedKeys.size > 0;
 
   // Flatten leads to Record<string, string> (same as Lead Source Node Modal Insights tab)
   const leadsForTable = useMemo((): LeadTableRow[] => {
@@ -268,7 +276,13 @@ export function LeadsTable({
         itemsPerPage={20}
         equalColumnWidths
         emptyMessage="No leads found"
-        onRowPress={(row) => setSelectedLead(row.__lead)}
+        onRowPress={
+          selectionActive
+            ? undefined
+            : (row) => {
+                setSelectedLead(row.__lead);
+              }
+        }
         getItemKey={(row) => row.__rowKey}
         paginationMode="server"
         currentPage={currentPage}
@@ -277,6 +291,9 @@ export function LeadsTable({
         sortColumn={sortColumn}
         sortDirection={sortDirection}
         onSortChange={onSortChange}
+        selectable={selectable && !!selectedKeys && !!onSelectionChange}
+        selectedKeys={selectedKeys}
+        onSelectionChange={onSelectionChange}
       />
 
       {selectedLead && (

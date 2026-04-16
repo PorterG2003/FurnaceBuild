@@ -3,4 +3,8 @@ export {
   formatUnknownError,
   type ReportErrorContext,
 } from './reportErrorToSlack.js';
-export { mergeConciseGatewayError, summarizeUpstreamGatewayError } from './summarizeUpstreamGatewayError.js';
+export {
+  mergeConciseGatewayError,
+  summarizeUpstreamGatewayError,
+  isTransientUpstreamGatewayErrorMessage,
+} from './summarizeUpstreamGatewayError.js';

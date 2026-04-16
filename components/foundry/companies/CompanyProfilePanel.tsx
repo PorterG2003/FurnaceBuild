@@ -81,6 +81,11 @@ export function CompanyProfilePanel({
           <Text className="text-gray-500 font-instrument text-xs mt-2">
             {formatDetailTimestamp(googleAdsVerification.verified_at)}
           </Text>
+          {googleAdsVerification.latest_ad_last_shown_at ? (
+            <Text className="text-gray-400 font-instrument text-xs mt-2">
+              Latest ad last shown: {googleAdsVerification.latest_ad_last_shown_at}
+            </Text>
+          ) : null}
           {googleAdsVerification.error ? (
             <Text className="text-red-300/90 font-instrument text-xs mt-2 leading-5">
               {googleAdsVerification.error}

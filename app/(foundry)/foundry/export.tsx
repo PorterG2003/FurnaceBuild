@@ -66,6 +66,7 @@ export default function FoundryExportScreen() {
     includeContactEnrichment: false,
     includeContactConfidence: false,
     includeCost: false,
+    includeGoogleAdsVerification: false,
   });
 
   const [rows, setRows] = useState<ExportCompanyOwnerLeadRow[]>([]);
@@ -252,8 +253,17 @@ export default function FoundryExportScreen() {
         exportOptions.includeContactEnrichment
           ? 'Matched person emails and phones from contact enrichment are added to the CSV when enabled (optional confidence columns available). Company address and website fields are still included on every row.'
           : 'Addresses and websites are company-scoped fields carried with every exported row, regardless of whether the export is owner-based or chain-based.',
+      googleAds:
+        exportOptions.includeGoogleAdsVerification
+          ? 'Latest Google Ads verification per company is included in the downloaded CSV only (not in the preview table).'
+          : 'Google Ads verification columns are omitted unless you enable them in Export setup.',
     }),
-    [exportOptions.includeContactEnrichment, exportOptions.mergePeoplePerCompany, isChainMode],
+    [
+      exportOptions.includeContactEnrichment,
+      exportOptions.includeGoogleAdsVerification,
+      exportOptions.mergePeoplePerCompany,
+      isChainMode,
+    ],
   );
 
   const applyExportOptions = useCallback((next: ExportOptionsState) => {
@@ -279,6 +289,7 @@ export default function FoundryExportScreen() {
           include_contact: nextOptions.includeContactEnrichment ? true : undefined,
           include_contact_confidence: nextOptions.includeContactConfidence ? true : undefined,
           include_cost: nextOptions.includeCost ? true : undefined,
+          include_google_ads_verification: nextOptions.includeGoogleAdsVerification ? true : undefined,
         };
         const { rows: allRows, truncated, total_count } = await collectExportCompanyChainPeopleForCsv(activeChainParams);
         const finalRows = nextOptions.mergePeoplePerCompany ? mergeExportChainPeopleRows(allRows) : allRows;
@@ -286,6 +297,7 @@ export default function FoundryExportScreen() {
           includeContact: nextOptions.includeContactEnrichment,
           includeContactConfidence: nextOptions.includeContactConfidence,
           includeCost: nextOptions.includeCost,
+          includeGoogleAdsVerification: nextOptions.includeGoogleAdsVerification,
         });
         downloadCsvOnWeb(`foundry-chain-people-export-${d}.csv`, csv);
         setCsvMsg(
@@ -303,11 +315,13 @@ export default function FoundryExportScreen() {
           include_contact: nextOptions.includeContactEnrichment ? true : undefined,
           include_contact_confidence: nextOptions.includeContactConfidence ? true : undefined,
           include_cost: nextOptions.includeCost ? true : undefined,
+          include_google_ads_verification: nextOptions.includeGoogleAdsVerification ? true : undefined,
         });
         const csv = exportCompanyOwnerLeadsToCsv(allRows, {
           includeContact: nextOptions.includeContactEnrichment,
           includeContactConfidence: nextOptions.includeContactConfidence,
           includeCost: nextOptions.includeCost,
+          includeGoogleAdsVerification: nextOptions.includeGoogleAdsVerification,
         });
         downloadCsvOnWeb(`foundry-owner-rows-export-${d}.csv`, csv);
         setCsvMsg(

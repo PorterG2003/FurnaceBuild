@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { buildCampaignEmailContent, type LeadLike } from '@furnace/email-lib';
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import { formatUnknownError, reportErrorToSlack } from '@furnace/slack-lib';
 import { DatabaseClient } from './database.js';
 import { sendEmail, sendReplyEmail } from './email.js';
 import type { ReplyEmailOptions } from './email.js';
@@ -78,7 +78,7 @@ export class SendWorker {
         }
       } catch (error) {
         console.error('[SEND WORKER] Error in main loop:', error);
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = formatUnknownError(error);
         reportErrorToSlack(`Send-worker main loop error: ${msg}`, { severity: 'critical' });
         await this.sleep(5000);
       }
@@ -290,7 +290,7 @@ export class SendWorker {
           { deterministic: false }
         );
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = formatUnknownError(err);
         reportErrorToSlack('Send-worker: campaign email content build/parse failed (initial email may not render correctly)', {
           severity: 'critical',
           message_job_id: message_job_id,
@@ -326,7 +326,7 @@ export class SendWorker {
               { deterministic: false }
             );
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
+            const msg = formatUnknownError(err);
             reportErrorToSlack('Send-worker: first-email subject/content parse failed (thread follow-up)', {
               severity: 'warning',
               message_job_id: message_job_id,
@@ -427,7 +427,7 @@ export class SendWorker {
       } catch (error) {
         // Log error but don't fail the send
         console.error(`[SEND WORKER] Error updating enrollment ${messageJob.enrollment_id}:`, error);
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = formatUnknownError(error);
         reportErrorToSlack('Send-worker: failed to update enrollment next_run_at', {
           severity: 'warning',
           enrollment_id: messageJob.enrollment_id,
@@ -459,7 +459,7 @@ export class SendWorker {
       } catch (error) {
         // Log error but don't fail the send
         console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, error);
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = formatUnknownError(error);
         reportErrorToSlack('Send-worker: check_and_update_processed_intervals failed', {
           severity: 'warning',
           campaign_id: messageJob.campaign_id,
@@ -516,9 +516,7 @@ export class SendWorker {
       console.error(`[SEND WORKER] Error processing message job ${messageJob.id}:`, error);
       
       // Mark job as failed with error message
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : String(error);
+      const errorMessage = formatUnknownError(error);
 
       reportErrorToSlack(`Send-worker failed to process message job: ${errorMessage}`, {
         severity: 'critical',
@@ -556,7 +554,7 @@ export class SendWorker {
       } catch (updateError) {
         // Log but don't throw - we've already logged the original error
         console.error(`[SEND WORKER] Failed to update message job ${messageJob.id} status to failed:`, updateError);
-        const updateMsg = updateError instanceof Error ? updateError.message : String(updateError);
+        const updateMsg = formatUnknownError(updateError);
         reportErrorToSlack('Send-worker: failed to mark message_job as failed', {
           severity: 'critical',
           message_job_id: messageJob.id,

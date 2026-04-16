@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, useWindowDimensions, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PageLayout, DetailPageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
-import { LoadingState, Alert } from '@/components/ui/feedback';
+import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
 import { MultiSegmentDial } from '@/components/ui/multi-segment-dial';
 import { FlowDiagram, LeadsTable, ScheduleTab, type Lead } from '@/components/campaigns';
 import { Tabs, type Tab } from '@/components/ui/tabs';
@@ -19,7 +19,7 @@ import {
   type CampaignStats,
   type CampaignVariantStatRow,
 } from '@/lib/supabase/services/campaigns';
-import { getCampaignLeadTablePage, getLeadCount } from '@/lib/supabase/services/leads';
+import { getCampaignLeadTablePage, getLeadCount, deleteLeadsBestEffort } from '@/lib/supabase/services/leads';
 import { supabase } from '@/lib/supabase/client';
 import { CampaignStatsChart } from '@/components/campaigns/CampaignStatsChart';
 import { DateInput } from '@/components/ui/DateInput';
@@ -38,6 +38,8 @@ import {
 } from 'react-native-heroicons/outline';
 import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { BottomSheet } from '@/components/ui/modals/BottomSheet';
+import { ConfirmModal } from '@/components/ui/modals/ConfirmModal';
+import { Button } from '@/components/ui/button';
 import { LEGACY_EMAIL_VARIANT_ID, sortVariantsForRoundRobin } from '@/lib/email/emailNodeVariants';
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
 
@@ -111,15 +113,16 @@ const variantPerfHeaderLabelWeb = Platform.select({
 });
 
 /** Variant performance table — stats match CampaignStatsChart; variant column uses one neutral hue. */
+/** Use `cell` not `value` for body text colors: Reanimated warns on `.value` inside inline `style` objects. */
 const VARIANT_PERF_COLORS = {
-  variant: { header: '#94a3b8', value: '#94a3b8' },
-  sent: { header: CAMPAIGN_STAT_COLORS.sent, value: CAMPAIGN_STAT_COLORS.sent },
-  reply: { header: CAMPAIGN_STAT_COLORS.replied, value: CAMPAIGN_STAT_COLORS.replied },
+  variant: { header: '#94a3b8', cell: '#94a3b8' },
+  sent: { header: CAMPAIGN_STAT_COLORS.sent, cell: CAMPAIGN_STAT_COLORS.sent },
+  reply: { header: CAMPAIGN_STAT_COLORS.replied, cell: CAMPAIGN_STAT_COLORS.replied },
   interested: {
     header: CAMPAIGN_STAT_COLORS.positiveReply,
-    value: CAMPAIGN_STAT_COLORS.positiveReply,
+    cell: CAMPAIGN_STAT_COLORS.positiveReply,
   },
-  bounce: { header: CAMPAIGN_STAT_COLORS.bounce, value: CAMPAIGN_STAT_COLORS.bounce },
+  bounce: { header: CAMPAIGN_STAT_COLORS.bounce, cell: CAMPAIGN_STAT_COLORS.bounce },
 } as const;
 
 export default function CampaignPage() {
@@ -157,6 +160,15 @@ export default function CampaignPage() {
   const [variantStatsLoading, setVariantStatsLoading] = useState(false);
   const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
   const [showCampaignActionsSheet, setShowCampaignActionsSheet] = useState(false);
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(() => new Set());
+  const [leadsRefreshNonce, setLeadsRefreshNonce] = useState(0);
+  const [bulkRemovingLeads, setBulkRemovingLeads] = useState(false);
+  const [leadRemoveConfirmOpen, setLeadRemoveConfirmOpen] = useState(false);
+  const [leadRemoveBanner, setLeadRemoveBanner] = useState<{
+    variant: 'warning' | 'error';
+    message: string;
+  } | null>(null);
+  const { toast } = useToast();
   const leadPageSize = 20;
 
   useEffect(() => {
@@ -277,7 +289,89 @@ export default function CampaignPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, debouncedLeadSearchQuery, id, leadPage, leadSortColumn, leadSortDirection]);
+  }, [activeTab, debouncedLeadSearchQuery, id, leadPage, leadSortColumn, leadSortDirection, leadsRefreshNonce]);
+
+  useEffect(() => {
+    setSelectedLeadIds(new Set());
+  }, [debouncedLeadSearchQuery, leadSortColumn, leadSortDirection]);
+
+  useEffect(() => {
+    setLeadRemoveBanner(null);
+  }, [debouncedLeadSearchQuery, leadSortColumn, leadSortDirection]);
+
+  useEffect(() => {
+    if (activeTab !== 'leads') {
+      setSelectedLeadIds(new Set());
+      setLeadRemoveConfirmOpen(false);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!leadRemoveBanner) return;
+    const t = setTimeout(() => setLeadRemoveBanner(null), 12000);
+    return () => clearTimeout(t);
+  }, [leadRemoveBanner]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(Math.max(0, leadTotalCount) / leadPageSize));
+    if (leadPage > totalPages) {
+      setLeadPage(totalPages);
+    }
+  }, [leadTotalCount, leadPage, leadPageSize]);
+
+  const performRemoveSelectedLeads = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0 || !id) return;
+      setBulkRemovingLeads(true);
+      setLeadRemoveBanner(null);
+      try {
+        const { succeeded, failed } = await deleteLeadsBestEffort(ids);
+        setSelectedLeadIds((prev) => {
+          const next = new Set(prev);
+          succeeded.forEach((leadId) => next.delete(leadId));
+          return next;
+        });
+        setLeadsRefreshNonce((n) => n + 1);
+        await loadCampaign(true);
+        const emailById = new Map(leadRows.map((row) => [row.id, row.email] as const));
+        if (failed.length === 0) {
+          toast.success(`Removed ${succeeded.length} lead(s) from this campaign.`);
+        } else {
+          const detail = failed
+            .slice(0, 5)
+            .map((f) => `• ${emailById.get(f.id) ?? f.id}: ${f.error}`)
+            .join('\n');
+          const more = failed.length > 5 ? ` …and ${failed.length - 5} more.` : '';
+          setLeadRemoveBanner({
+            variant: succeeded.length > 0 ? 'warning' : 'error',
+            message:
+              succeeded.length > 0
+                ? `Removed ${succeeded.length} lead(s). ${failed.length} failed: ${detail}${more}`
+                : `${failed.length} lead(s) could not be removed: ${detail}${more}`,
+          });
+        }
+      } catch (err) {
+        setLeadRemoveBanner({
+          variant: 'error',
+          message: err instanceof Error ? err.message : 'Removal failed.',
+        });
+      } finally {
+        setBulkRemovingLeads(false);
+      }
+    },
+    [id, leadRows, loadCampaign, toast],
+  );
+
+  const openLeadRemoveConfirm = useCallback(() => {
+    if (selectedLeadIds.size === 0 || !id) return;
+    setLeadRemoveConfirmOpen(true);
+  }, [id, selectedLeadIds.size]);
+
+  const handleConfirmRemoveLeads = useCallback(() => {
+    setLeadRemoveConfirmOpen(false);
+    const ids = [...selectedLeadIds];
+    void performRemoveSelectedLeads(ids);
+  }, [performRemoveSelectedLeads, selectedLeadIds]);
 
   useEffect(() => {
     loadCampaign();
@@ -864,7 +958,7 @@ export default function CampaignPage() {
                                             <View style={variantPerfCol}>
                                               <Text
                                                 style={{
-                                                  color: VARIANT_PERF_COLORS.variant.value,
+                                                  color: VARIANT_PERF_COLORS.variant.cell,
                                                   fontSize: 14,
                                                   textAlign: 'left',
                                                   fontWeight: '600',
@@ -879,7 +973,7 @@ export default function CampaignPage() {
                                             <View style={variantPerfCol}>
                                               <Text
                                                 style={{
-                                                  color: VARIANT_PERF_COLORS.sent.value,
+                                                  color: VARIANT_PERF_COLORS.sent.cell,
                                                   fontSize: 14,
                                                   textAlign: 'left',
                                                   fontWeight: '600',
@@ -891,7 +985,7 @@ export default function CampaignPage() {
                                             <View style={variantPerfCol}>
                                               <Text
                                                 style={{
-                                                  color: VARIANT_PERF_COLORS.reply.value,
+                                                  color: VARIANT_PERF_COLORS.reply.cell,
                                                   fontSize: 14,
                                                   textAlign: 'left',
                                                   fontWeight: '600',
@@ -903,7 +997,7 @@ export default function CampaignPage() {
                                             <View style={variantPerfCol}>
                                               <Text
                                                 style={{
-                                                  color: VARIANT_PERF_COLORS.interested.value,
+                                                  color: VARIANT_PERF_COLORS.interested.cell,
                                                   fontSize: 14,
                                                   textAlign: 'left',
                                                   fontWeight: '600',
@@ -915,7 +1009,7 @@ export default function CampaignPage() {
                                             <View style={{ ...variantPerfCol, paddingRight: 0 }}>
                                               <Text
                                                 style={{
-                                                  color: VARIANT_PERF_COLORS.bounce.value,
+                                                  color: VARIANT_PERF_COLORS.bounce.cell,
                                                   fontSize: 14,
                                                   textAlign: 'left',
                                                   fontWeight: '600',
@@ -978,6 +1072,30 @@ export default function CampaignPage() {
                 {leadRowsError ? (
                   <Alert variant="error" message={leadRowsError} />
                 ) : null}
+                {leadRemoveBanner ? (
+                  <Alert
+                    variant={leadRemoveBanner.variant}
+                    message={leadRemoveBanner.message}
+                    className="mb-3"
+                    actionText="Dismiss"
+                    onAction={() => setLeadRemoveBanner(null)}
+                  />
+                ) : null}
+                {!isSmartlead && selectedLeadIds.size > 0 ? (
+                  <View className="mb-3 flex-row flex-wrap items-center justify-between gap-3 rounded-xl border border-[#2A2A2A] bg-[#1A1A1A] px-4 py-3">
+                    <Text className="text-sm text-gray-400 font-instrument">
+                      {selectedLeadIds.size} selected
+                    </Text>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={bulkRemovingLeads}
+                      onPress={openLeadRemoveConfirm}
+                    >
+                      {bulkRemovingLeads ? 'Removing…' : 'Remove from campaign'}
+                    </Button>
+                  </View>
+                ) : null}
                 <LeadsTable
                   leads={leadRows}
                   loading={leadRowsLoading}
@@ -998,6 +1116,9 @@ export default function CampaignPage() {
                     setLeadPage(1);
                   }}
                   readOnly={isSmartlead}
+                  selectable={!isSmartlead}
+                  selectedKeys={selectedLeadIds}
+                  onSelectionChange={setSelectedLeadIds}
                 />
               </View>
             )}
@@ -1043,6 +1164,16 @@ export default function CampaignPage() {
           ) : null}
         </>
       )}
+      <ConfirmModal
+        visible={leadRemoveConfirmOpen}
+        onClose={() => setLeadRemoveConfirmOpen(false)}
+        onConfirm={handleConfirmRemoveLeads}
+        title="Remove leads from campaign?"
+        message={`This will remove ${selectedLeadIds.size} lead(s) from this campaign and cancel pending sends. Sent emails and inbox history stay. If one lead fails, others may still be removed.`}
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        confirmVariant="destructive"
+      />
       <SmartleadRestrictedModal
         visible={showSmartleadRestrictedModal}
         onClose={() => setShowSmartleadRestrictedModal(false)}

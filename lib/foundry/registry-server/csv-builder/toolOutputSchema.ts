@@ -37,6 +37,7 @@ export function extractCsvBuilderToolOutputValue(
   }
   if (toolType === 'google_ads_verification') {
     if (outputKey === 'result') return result.result ?? null;
+    if (outputKey === 'latest_ad_last_shown_at') return result.latest_ad_last_shown_at ?? null;
     if (outputKey === 'search_domain') return result.search_domain ?? null;
     if (outputKey === 'advertiser_name') return result.advertiser_name ?? null;
     if (outputKey === 'advertiser_url') return result.advertiser_url ?? null;

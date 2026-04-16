@@ -73,6 +73,7 @@ export function buildCsvBuilderGoogleAdsRowResult(args: {
   matched_advertiser_name: string | null;
   advertiser_url: string | null;
   matched_advertiser_id: string | null;
+  latest_ad_last_shown_at: string | null;
   signals: Record<string, unknown>;
   lookup_stats: Record<string, unknown>;
   error?: string | null;
@@ -84,6 +85,7 @@ export function buildCsvBuilderGoogleAdsRowResult(args: {
     advertiser_name: args.matched_advertiser_name,
     advertiser_url: args.advertiser_url,
     advertiser_id: args.matched_advertiser_id,
+    latest_ad_last_shown_at: args.latest_ad_last_shown_at,
     signals: args.signals,
     lookup_stats: args.lookup_stats,
     error: args.error ?? null,
@@ -98,6 +100,7 @@ export function buildCsvBuilderGoogleAdsSkippedResult(message: string): Record<s
     advertiser_name: null,
     advertiser_url: null,
     advertiser_id: null,
+    latest_ad_last_shown_at: null,
     signals: {},
     lookup_stats: {},
     error: message,

@@ -25,6 +25,42 @@ export function ConfirmModal({
   cancelLabel = 'Cancel',
   confirmVariant = 'default',
 }: ConfirmModalProps) {
+  const confirmButton =
+    confirmVariant === 'destructive' ? (
+      <Pressable
+        onPress={onConfirm}
+        style={{
+          width: '100%',
+          alignSelf: 'stretch',
+          paddingVertical: 12,
+          paddingHorizontal: 24,
+          borderRadius: 12,
+          backgroundColor: 'rgba(239, 68, 68, 0.2)',
+          borderWidth: 1,
+          borderColor: 'rgba(239, 68, 68, 0.4)',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Text className="font-instrument-medium text-base" style={{ color: '#F87171' }}>
+          {confirmLabel}
+        </Text>
+      </Pressable>
+    ) : (
+      <Button fullWidth onPress={onConfirm}>
+        {confirmLabel}
+      </Button>
+    );
+
+  const footer = (
+    <ModalFooter layout="inline">
+      <Button fullWidth onPress={onClose} variant="secondary">
+        {cancelLabel}
+      </Button>
+      {confirmButton}
+    </ModalFooter>
+  );
+
   return (
     <BaseModal
       visible={visible}
@@ -33,59 +69,8 @@ export function ConfirmModal({
       description={message}
       maxWidth="sm"
       compact
-      footer={
-        <ModalFooter>
-          <Button onPress={onClose} variant="secondary">
-            {cancelLabel}
-          </Button>
-          {confirmVariant === 'destructive' ? (
-            <Pressable
-              onPress={onConfirm}
-              style={{
-                paddingVertical: 12,
-                paddingHorizontal: 24,
-                borderRadius: 12,
-                backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                borderWidth: 1,
-                borderColor: 'rgba(239, 68, 68, 0.4)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text className="font-instrument-medium text-base" style={{ color: '#F87171' }}>
-                {confirmLabel}
-              </Text>
-            </Pressable>
-          ) : (
-            <Button onPress={onConfirm}>{confirmLabel}</Button>
-          )}
-        </ModalFooter>
-      }
-      footerMobile={
-        <ModalFooter>
-          {confirmVariant === 'destructive' ? (
-            <Pressable
-              onPress={onConfirm}
-              style={{
-                paddingVertical: 12,
-                paddingHorizontal: 24,
-                borderRadius: 12,
-                backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                borderWidth: 1,
-                borderColor: 'rgba(239, 68, 68, 0.4)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text className="font-instrument-medium text-base" style={{ color: '#F87171' }}>
-                {confirmLabel}
-              </Text>
-            </Pressable>
-          ) : (
-            <Button onPress={onConfirm}>{confirmLabel}</Button>
-          )}
-        </ModalFooter>
-      }
+      footer={footer}
+      footerMobile={footer}
     />
   );
 }

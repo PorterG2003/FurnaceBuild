@@ -3,8 +3,8 @@ import { chromium } from 'playwright';
 import {
   cleanCompanyNameForSearch,
   compareToTesterRow,
-  filterFloridaOwnerPeople,
   type PersistEntityOwnerInput,
+  ownerRowsForFloridaDetail,
   parseFloridaEntityDetailHtml,
   parseFloridaSearchResultsHtml,
   pickBestFloridaSearchHit,
@@ -167,19 +167,6 @@ export async function ensureFloridaSearchReady(page: Page, isFirst: boolean): Pr
   await ensureResultsOrForm(page, isFirst);
 }
 
-function ownersForFloridaDetail(detail: FloridaEntityDetailParsed): PersistEntityOwnerInput[] {
-  const structured = detail.people.filter((p) => p.source !== 'registered_agent');
-  const rows = structured.map((p) => ({
-    ownerName: p.name.trim() || 'Unknown',
-    titleRole: p.title.trim() || null,
-  }));
-  if (rows.length > 0) return rows;
-  return filterFloridaOwnerPeople(detail).map((name) => ({
-    ownerName: name.trim() || 'Unknown',
-    titleRole: null,
-  }));
-}
-
 async function submitEntityNameSearch(page: Page, query: string): Promise<void> {
   logSunbiz('submit-search-start', { queryLen: query.length });
   // Sunbiz repeats #SearchTerm (invalid duplicate ids). Pick a form whose search field is actually visible
@@ -245,7 +232,7 @@ export async function openFloridaSearchHit(page: Page, hit: FloridaSearchHit): P
     searchQuery: '',
     entityNumber: detail.documentNumber || hit.documentNumber,
     entityName: detail.entityName || hit.entityName,
-    owners: ownersForFloridaDetail(detail),
+    owners: ownerRowsForFloridaDetail(detail),
     parsedDetail: detail,
     detailHtml,
     hitStatus: hit.status,

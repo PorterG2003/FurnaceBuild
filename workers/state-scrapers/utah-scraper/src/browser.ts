@@ -2,7 +2,7 @@ import type { Page } from 'playwright';
 import {
   cleanCompanyNameForSearch,
   compareToTesterRow,
-  filterMemberPrincipals,
+  ownerRowsForUtahDetail,
   parseEntityDetailHtml,
   parseSearchResultsHtml,
   pickBestSearchHit,
@@ -96,13 +96,6 @@ export async function ensureUtahSearchForm(page: Page, isFirst: boolean): Promis
   await returnToSearch(page);
 }
 
-function ownersForUtahDetail(detail: UtahEntityDetailParsed): PersistEntityOwnerInput[] {
-  return filterMemberPrincipals(detail.principals).map((p) => ({
-    ownerName: p.name.trim(),
-    titleRole: p.title.trim() || null,
-  }));
-}
-
 async function runUtahSearch(page: Page, query: string): Promise<ReturnType<typeof pickBestSearchHit>> {
   await waitForUserActionJitter(page);
   await page.locator('#BusinessSearch_Index_rdContains').check();
@@ -161,7 +154,7 @@ export async function openUtahSearchHit(page: Page, hit: UtahSearchHit): Promise
     searchQuery: '',
     entityNumber: detail.entityNumber || hit.entityNumber,
     entityName: detail.entityName || hit.entityName,
-    owners: ownersForUtahDetail(detail),
+    owners: ownerRowsForUtahDetail(detail),
     parsedDetail: detail,
     detailHtml,
     hitStatus: hit.status,

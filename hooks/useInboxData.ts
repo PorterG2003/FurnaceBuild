@@ -151,7 +151,10 @@ export function useInboxData({
       setMessagesLoading(true);
     }
     try {
-      const list = await getMessagesByThread(threadId);
+      const [list] = await Promise.all([
+        getMessagesByThread(threadId),
+        loadBlockList(),
+      ]);
       setMessages(list);
     } catch (err) {
       if (!options?.silent) {
@@ -162,7 +165,7 @@ export function useInboxData({
         setMessagesLoading(false);
       }
     }
-  }, []);
+  }, [loadBlockList]);
 
   const loadThreads = useCallback(
     async (options?: { append?: boolean }) => {

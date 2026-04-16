@@ -1,5 +1,10 @@
 /**
- * Batch Iowa SOS scrape for companies in a CSV; compare officers to Apify "people" name.
+ * Batch Iowa SOS scrape for companies in a CSV; compare registry names to Apify "people" name.
+ *
+ * **Testing / baseline only** — not production. The name list fed to `compareToExpectedPerson` is
+ * **officer names plus registered agent when present** (broader than `ownerRowsForIowaDetail`, which
+ * persists officers only). Use that to gauge recall vs CSV contacts; persistence policy lives in
+ * `@furnace/registry-server` (`ownerRowsForIowaDetail` + `persistIowaRegistryPull`).
  *
  * Usage:
  *   npm run compare-csv -- [path/to.csv]

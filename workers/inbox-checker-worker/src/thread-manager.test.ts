@@ -340,6 +340,54 @@ test('handleReply scopes duplicate detection and job lookup to the mailbox accou
   );
 });
 
+test('handleReply treats inbound unsubscribe-like replies as normal replies', async () => {
+  const existingThread = {
+    id: 'thread-1',
+    account_id: 'account-1',
+    mailbox_id: 'mailbox-1',
+    message_count: 1,
+    participants: ['porterg@furnaceoutbound.com', 'lead@example.com'],
+    category: null,
+  };
+  const supabase = new MockSupabase([
+    { data: [] },
+    {
+      data: [
+        createMessageJob({
+          message_data: { source: 'inbox_reply', thread_id: 'thread-1' } as any,
+        } as any),
+      ],
+    },
+    { data: existingThread, error: null },
+    { data: { id: 'email-message-1', received_at: '2026-04-06T02:58:50.000Z' }, error: null },
+    { count: 2, error: null },
+    { data: null, error: null },
+    { data: { id: 'notification-event-row-1' }, error: null },
+    { data: { id: 'notification-event-1' }, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({
+    bodyText: 'Please unsubscribe me from future emails.',
+    subject: 'unsubscribe',
+  });
+
+  const handled = await manager.handleReply(mailbox, message);
+
+  assert.equal(handled, true);
+  assert.ok(supabase.calls.some((call) => (call as QueryCall).table === 'enrollments'));
+
+  const insertedMessage = supabase.calls.find(
+    (call) => (call as QueryCall).table === 'email_messages' && (call as QueryCall).insertPayloads.length > 0
+  ) as QueryCall | undefined;
+  assert.ok(insertedMessage);
+
+  const notificationInsert = supabase.calls.find(
+    (call) => (call as QueryCall).table === 'notification_events'
+  ) as QueryCall | undefined;
+  assert.ok(notificationInsert);
+});
+
 test('getOrCreateThread reloads the canonical thread after a unique-violation race', async () => {
   const canonicalThread = {
     id: 'thread-1',
@@ -502,6 +550,53 @@ test('handleBounce matched hard bounce calls record_bounced_event_and_increment,
   const enrollCalls = supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[];
   assert.equal(enrollCalls.length, 1);
   assert.match(JSON.stringify(enrollCalls[0].insertPayloads[0]), /"stopped_reason":"bounced"/);
+});
+
+test('autoBlockUnsubscribe auto-blocks only the matched sender and does not stop enrollments', async () => {
+  const supabase = new MockSupabase([
+    {
+      data: [
+        {
+          id: 'job-1',
+          campaign_id: 'campaign-1',
+          enrollment_id: 'enrollment-1',
+          lead_id: 'lead-1',
+          sent_at: '2026-04-05T01:00:00.000Z',
+        },
+        {
+          id: 'job-2',
+          campaign_id: 'campaign-1',
+          enrollment_id: 'enrollment-2',
+          lead_id: 'lead-2',
+          sent_at: '2026-04-05T00:00:00.000Z',
+        },
+      ],
+    },
+    {
+      data: [
+        { id: 'lead-1', email: 'matched-lead@example.com' },
+        { id: 'lead-2', email: 'other-lead@example.com' },
+      ],
+    },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({
+    from: { address: 'matched-lead@example.com', name: 'Matched Lead' },
+    subject: 'unsubscribe',
+    bodyText: 'Please unsubscribe me',
+    to: [{ address: mailbox.email_address, name: 'Box' }],
+  });
+
+  await manager.autoBlockUnsubscribe(mailbox, message);
+
+  const blockCall = supabase.calls.find((c) => (c as QueryCall).table === 'block_list') as QueryCall | undefined;
+  assert.ok(blockCall);
+  assert.equal(blockCall.insertPayloads.length, 1);
+  assert.match(JSON.stringify(blockCall.insertPayloads[0]), /"value":"matched-lead@example.com"/);
+  assert.match(JSON.stringify(blockCall.insertPayloads[0]), /"reason":"unsubscribed"/);
+  assert.ok(!supabase.calls.some((c) => (c as QueryCall).table === 'enrollments'));
 });
 
 test('handleBounce matched soft bounce does not upsert block_list', async () => {

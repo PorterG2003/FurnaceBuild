@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UtahEntityDetailParsed } from '../utah/types.js';
 import { ensureEntityOwnerDedupeReviewTaskForCluster } from '../dedupe/entityOwnerDedupe.js';
-import { filterMemberPrincipals } from '../utah/parseEntityDetailHtml.js';
+import { eligibleIndividualRegisteredAgentName } from '../scrapers/registeredAgentPerson.js';
+import { filterMemberPrincipals, utahPrincipalTitleIsMemberLike } from '../utah/parseEntityDetailHtml.js';
 import type { PersistEntityOwnerInput, PersistedEntityOwnerRow } from './ownerDrilldown.js';
 import {
   replaceCurrentEntityOwners,
@@ -9,7 +10,7 @@ import {
 } from './persistStateEntityCurrent.js';
 
 export const UTAH_SOURCE_TYPE = 'utah_division_corporations';
-export const UTAH_PARSER_VERSION = 'utah_registry_browser_v1';
+export const UTAH_PARSER_VERSION = 'utah_registry_browser_v2';
 
 const MAX_RESPONSE_PAYLOAD_CHARS = 120_000;
 
@@ -29,11 +30,38 @@ export type PersistUtahParams = {
   observedAt?: string;
 };
 
+/**
+ * Utah `entity_owners` from the principals grid.
+ *
+ * **Registered agent:** Utah has no separate RA field; RA may appear as a principal row. When the
+ * entity has any member/manager/authorized-person row, **registered-agent principals are omitted**
+ * (RA is not a fallback alongside real principals). If only RA-style rows remain, keep a row only
+ * when {@link eligibleIndividualRegisteredAgentName} passes on the name.
+ *
+ * **Titles:** use the site title when present; normalize “registered agent” to **`Registered Agent`**;
+ * use **`Officer`** when the title cell is blank.
+ */
 export function ownerRowsForUtahDetail(detail: UtahEntityDetailParsed): PersistEntityOwnerInput[] {
-  return filterMemberPrincipals(detail.principals).map((p) => ({
-    ownerName: p.name.trim() || 'Unknown',
-    titleRole: p.title.trim() || null,
-  }));
+  let principals = filterMemberPrincipals(detail.principals);
+  const hasMemberLike = principals.some(utahPrincipalTitleIsMemberLike);
+  if (hasMemberLike) {
+    principals = principals.filter((p) => !/registered\s*agent/i.test(p.title.trim()));
+  }
+
+  const rows = principals.map((p) => {
+    const rawTitle = (p.title ?? '').trim();
+    const titleRole = rawTitle
+      ? /registered\s*agent/i.test(rawTitle)
+        ? 'Registered Agent'
+        : rawTitle
+      : 'Officer';
+    return { ownerName: p.name.trim() || 'Unknown', titleRole };
+  });
+
+  return rows.filter((r) => {
+    if (r.titleRole !== 'Registered Agent') return true;
+    return eligibleIndividualRegisteredAgentName(r.ownerName);
+  });
 }
 
 /**

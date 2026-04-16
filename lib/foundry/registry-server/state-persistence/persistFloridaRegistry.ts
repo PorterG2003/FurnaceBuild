@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FloridaEntityDetailParsed } from '../florida/types.js';
+import { ownerRowsForFloridaDetail } from '../florida/floridaOwnerRows.js';
 import { ensureEntityOwnerDedupeReviewTaskForCluster } from '../dedupe/entityOwnerDedupe.js';
-import { filterFloridaOwnerPeople } from '../florida/parseEntityDetailHtml.js';
 import type { PersistEntityOwnerInput, PersistedEntityOwnerRow } from './ownerDrilldown.js';
 import {
   replaceCurrentEntityOwners,
@@ -9,7 +9,7 @@ import {
 } from './persistStateEntityCurrent.js';
 
 export const FLORIDA_SOURCE_TYPE = 'florida_sunbiz';
-export const FLORIDA_PARSER_VERSION = 'florida_registry_browser_v1';
+export const FLORIDA_PARSER_VERSION = 'florida_registry_browser_v2';
 
 const MAX_RESPONSE_PAYLOAD_CHARS = 120_000;
 
@@ -29,15 +29,7 @@ export type PersistFloridaParams = {
   observedAt?: string;
 };
 
-export function ownerRowsForFloridaDetail(detail: FloridaEntityDetailParsed): PersistEntityOwnerInput[] {
-  const structured = detail.people.filter((p) => p.source !== 'registered_agent');
-  const rows = structured.map((p) => ({
-    ownerName: p.name.trim() || 'Unknown',
-    titleRole: p.title.trim() || null,
-  }));
-  if (rows.length > 0) return rows;
-  return filterFloridaOwnerPeople(detail).map((name) => ({ ownerName: name.trim() || 'Unknown', titleRole: null }));
-}
+export { ownerRowsForFloridaDetail } from '../florida/floridaOwnerRows.js';
 
 /**
  * Insert immutable snapshot + state_entity + owner rows from a Florida Sunbiz detail parse.

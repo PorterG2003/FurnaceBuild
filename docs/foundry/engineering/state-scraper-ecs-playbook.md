@@ -1,6 +1,6 @@
 # State scraper ECS playbook
 
-Checklist for adding or operating **registry browser scrapers** on Fargate (Utah, Florida, future states). State-specific behavior (portals, parsers) lives in code and per-state docs; this page is the **shared infra contract**.
+Checklist for adding or operating **registry browser scrapers** on Fargate (Utah, Florida, future states). State-specific behavior (portals, parsers) lives in code and per-state docs; this page is the **shared infra contract**. For **data semantics** (officers vs RA, `raw_parsed` vs `entity_owners`, parser versioning, compare parity), follow [State registry scraper contract](./state-registry-scraper-contract.md).
 
 ## Repository layout
 

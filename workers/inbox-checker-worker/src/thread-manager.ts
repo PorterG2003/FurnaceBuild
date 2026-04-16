@@ -884,34 +884,62 @@ export class ThreadManager {
   /**
    * Handle an unsubscribe message
    */
-  async handleUnsubscribe(mailbox: Mailbox, message: ProcessedMessage): Promise<void> {
-    // Similar to bounce - find recent enrollments and stop them
-    const recipientEmail = message.to[0]?.address;
-    if (!recipientEmail) return;
+  async autoBlockUnsubscribe(mailbox: Mailbox, message: ProcessedMessage): Promise<void> {
+    const senderEmail = this.normalizeEmail(message.from.address);
+    if (!senderEmail) return;
 
-    // Find recent sent message_jobs to this recipient
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Scope to recent sent jobs for this mailbox, then match by the actual sender email.
     const { data: recentJobs } = await this.supabase
       .from('message_jobs')
-      .select('enrollment_id')
+      .select('id, campaign_id, enrollment_id, lead_id, sent_at')
       .eq('mailbox_id', mailbox.id)
       .eq('status', 'sent')
-      .gte('sent_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()) // Last 30 days
+      .gte('sent_at', since)
       .order('sent_at', { ascending: false })
       .limit(100);
 
     if (!recentJobs || recentJobs.length === 0) return;
 
-    // Stop enrollments for this recipient
-    const enrollmentIds = new Set(recentJobs.map(j => j.enrollment_id));
-    const stoppedAt = new Date().toISOString();
-    for (const enrollmentId of enrollmentIds) {
-      await this.supabase
-        .from('enrollments')
-        .update({ state: 'stopped', stopped_reason: 'unsubscribed', stopped_at: stoppedAt })
-        .eq('id', enrollmentId)
-        .is('deleted_at', null);
+    const leadIds = [...new Set(recentJobs.map((job: any) => job.lead_id))];
+    const { data: leads } = await this.supabase
+      .from('leads')
+      .select('id, email')
+      .in('id', leadIds);
+
+    const leadEmailById = new Map(
+      (leads || []).map((lead: any) => [lead.id, this.normalizeEmail(lead.email)])
+    );
+    const matchedJobs = recentJobs.filter(
+      (job: any) => leadEmailById.get(job.lead_id) === senderEmail
+    );
+
+    if (matchedJobs.length === 0) {
+      console.log(
+        JSON.stringify({
+          tag: 'unsubscribe_unmatched',
+          mailboxId: mailbox.id,
+          mailboxEmail: mailbox.email_address,
+          senderEmail,
+          recentSentJobCount: recentJobs.length,
+        })
+      );
+      return;
     }
 
-    console.log(`Unsubscribe detected in mailbox ${mailbox.id}, stopped ${enrollmentIds.size} enrollments`);
+    await this.supabase.from('block_list').upsert(
+      {
+        account_id: mailbox.account_id,
+        value: senderEmail,
+        type: 'email',
+        reason: 'unsubscribed',
+      },
+      { onConflict: 'account_id,value,type', ignoreDuplicates: true }
+    );
+
+    console.log(
+      `Auto-blocked unsubscribe sender in mailbox ${mailbox.id}: ${senderEmail}, matchedJobs=${matchedJobs.length}`
+    );
   }
 }

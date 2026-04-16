@@ -64,6 +64,11 @@ export function parseEntityDetailHtml(html: string): UtahEntityDetailParsed | nu
 
 const OWNER_LIKE_TITLES = new Set(['member', 'manager', 'authorized person', 'managing member']);
 
+/** True when the principal’s title is member / manager / authorized person (not RA-only). */
+export function utahPrincipalTitleIsMemberLike(principal: UtahPrincipal): boolean {
+  return OWNER_LIKE_TITLES.has(principal.title.trim().toLowerCase());
+}
+
 /** Principals treated as owner-like for CSV comparison (Utah often lists Manager). */
 export function filterMemberPrincipals(principals: UtahPrincipal[]): UtahPrincipal[] {
   const owners = principals.filter((p) => OWNER_LIKE_TITLES.has(p.title.trim().toLowerCase()));

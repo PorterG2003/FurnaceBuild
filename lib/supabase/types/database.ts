@@ -92,6 +92,7 @@ export interface Database {
           source: string | null;
           smartlead_campaign_id: number | null;
           smartlead_created_at: string | null;
+          current_flow_version_number: number;
           deleted_at: string | null;
           created_at: string;
           updated_at: string;
@@ -112,6 +113,7 @@ export interface Database {
           source?: string | null;
           smartlead_campaign_id?: number | null;
           smartlead_created_at?: string | null;
+          current_flow_version_number?: number;
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -132,9 +134,48 @@ export interface Database {
           source?: string | null;
           smartlead_campaign_id?: number | null;
           smartlead_created_at?: string | null;
+          current_flow_version_number?: number;
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+      };
+      campaign_flow_versions: {
+        Row: {
+          id: string;
+          campaign_id: string;
+          account_id: string;
+          version_number: number;
+          flow_data: Json | null;
+          flow_hash: string | null;
+          changed_at: string;
+          changed_by_user_id: string | null;
+          change_source: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          campaign_id: string;
+          account_id: string;
+          version_number: number;
+          flow_data?: Json | null;
+          flow_hash?: string | null;
+          changed_at?: string;
+          changed_by_user_id?: string | null;
+          change_source?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          campaign_id?: string;
+          account_id?: string;
+          version_number?: number;
+          flow_data?: Json | null;
+          flow_hash?: string | null;
+          changed_at?: string;
+          changed_by_user_id?: string | null;
+          change_source?: string;
+          created_at?: string;
         };
       };
       leads: {
@@ -216,6 +257,7 @@ export interface Database {
           account_id: string;
           lead_id: string;
           current_node_id: string | null;
+          current_flow_version_number: number | null;
           state: 'active' | 'paused' | 'stopped' | 'completed';
           next_run_at: string | null;
           flow_position: Json | null;
@@ -232,6 +274,7 @@ export interface Database {
           account_id: string;
           lead_id: string;
           current_node_id?: string | null;
+          current_flow_version_number?: number | null;
           state?: 'active' | 'paused' | 'stopped' | 'completed';
           next_run_at?: string | null;
           flow_position?: Json | null;
@@ -247,6 +290,7 @@ export interface Database {
           campaign_id?: string;
           lead_id?: string;
           current_node_id?: string | null;
+          current_flow_version_number?: number | null;
           state?: 'active' | 'paused' | 'stopped' | 'completed';
           next_run_at?: string | null;
           flow_position?: Json | null;
@@ -1089,6 +1133,22 @@ export interface Database {
         Args: {
           p_campaign_id: string;
           p_reason?: string;
+        };
+        Returns: number;
+      };
+      resume_campaign_and_reschedule_jobs: {
+        Args: {
+          p_campaign_id: string;
+          p_pause_reason?: string;
+        };
+        Returns: {
+          revived_jobs: number;
+          rescheduled_jobs: number;
+        }[];
+      };
+      stop_campaign_and_stop_enrollments: {
+        Args: {
+          p_campaign_id: string;
         };
         Returns: number;
       };

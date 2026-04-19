@@ -16,6 +16,7 @@ import type { Enrollment } from '../types.js';
 export async function handleDataSenderNode(
   enrollment: Enrollment,
   node: any,
+  flowVersionNumber: number | null,
   supabase: SupabaseClient
 ): Promise<void> {
   // 1. Extract data sender config from node.node_data
@@ -43,6 +44,7 @@ export async function handleDataSenderNode(
     .from('enrollments')
     .update({
       current_node_id: node.id,
+      current_flow_version_number: flowVersionNumber,
       next_run_at: nextRunAt,
     })
     .eq('id', enrollment.id);

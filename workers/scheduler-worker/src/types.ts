@@ -7,6 +7,7 @@ export interface Enrollment {
   campaign_id: string;
   lead_id: string;
   current_node_id: string | null;
+  current_flow_version_number?: number | null;
   state: 'active' | 'paused' | 'stopped' | 'completed';
   next_run_at: string | null;
   flow_position: Record<string, any>;
@@ -21,6 +22,7 @@ export interface Campaign {
     nodes: any[];
     edges: any[];
   };
+  current_flow_version_number?: number | null;
   schedule: CampaignSchedule | null;
   owner_id: string;
   sending_interval_seconds: number;

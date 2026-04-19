@@ -32,6 +32,8 @@ Updates to **`state_entities`** archive the previous row to **`state_entity_hist
 
 - `source_type`, `state`, `lookup_key` — how you queried.
 - `retrieved_at` — when evidence was obtained.
+- `elapsed_ms` — persisted runtime usage when the pull was costed under the unified ledger.
+- `cost_record_id`, `cost_status` — canonical direct-cost link + cost lifecycle marker for that immutable pull.
 
 **`state_entities`**
 
@@ -49,9 +51,11 @@ Updates to **`state_entities`** archive the previous row to **`state_entity_hist
 
 - `source_snapshot_id` on `state_entities` is **nullable** — handle entities created from legacy imports.
 - Deleting a snapshot may set FK to NULL (`ON DELETE SET NULL`) on `state_entities` / `entity_owners`; prefer never deleting snapshots in production.
+- snapshot rows are append-only evidence, but they may now carry cost linkage metadata for the direct pull that created them.
 
 ## Related
 
 - [reconciliation.md](reconciliation.md)
 - [owners.md](owners.md)
 - [../schema-overview.md](../schema-overview.md)
+- [../../engineering/cost-records.md](../../engineering/cost-records.md)

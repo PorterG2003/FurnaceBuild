@@ -37,4 +37,4 @@ export {
   activeVariantsSorted,
   LEGACY_EMAIL_VARIANT_ID,
   type EmailNodeVariant,
-} from './emailNodeVariants';
+} from './emailNodeVariants.js';

@@ -143,33 +143,71 @@ export class SchedulerWorker {
     }
   }
 
+  private startSingleFlightInterval(options: {
+    taskName: string;
+    intervalMs: number;
+    runImmediately?: boolean;
+    task: () => Promise<void>;
+    onError: (error: unknown) => void;
+  }): ReturnType<typeof setInterval> {
+    let isRunning = false;
+
+    const runTask = async () => {
+      if (!this.running) {
+        return;
+      }
+
+      if (isRunning) {
+        console.log(`[${options.taskName}] Previous run still in progress; skipping overlapping tick`);
+        return;
+      }
+
+      isRunning = true;
+      try {
+        await options.task();
+      } catch (error) {
+        options.onError(error);
+      } finally {
+        isRunning = false;
+      }
+    };
+
+    if (options.runImmediately) {
+      void runTask();
+    }
+
+    return setInterval(() => {
+      void runTask();
+    }, options.intervalMs);
+  }
+
   /**
    * Start interval maintenance background task
    */
   private startIntervalMaintenance(): void {
-    // Run immediately, then every minute
-    maintainCampaignIntervals(this.supabase).catch(err => {
-      console.error('[INTERVAL MAINTENANCE] Error:', err);
-      const msg = err instanceof Error ? err.message : String(err);
-      reportErrorToSlack('Scheduler: interval maintenance failed', { severity: 'warning', error: msg });
-    });
-
-    this.intervalMaintenanceTimer = setInterval(() => {
-      maintainCampaignIntervals(this.supabase).catch(err => {
+    this.intervalMaintenanceTimer = this.startSingleFlightInterval({
+      taskName: 'INTERVAL MAINTENANCE',
+      intervalMs: 60000,
+      runImmediately: true,
+      task: async () => {
+        await maintainCampaignIntervals(this.supabase);
+      },
+      onError: (err) => {
         console.error('[INTERVAL MAINTENANCE] Error:', err);
         const msg = err instanceof Error ? err.message : String(err);
         reportErrorToSlack('Scheduler: interval maintenance failed', { severity: 'warning', error: msg });
-      });
-    }, 60000); // 1 minute
+      },
+    });
   }
 
   /**
    * Start stale lock cleanup background task
    */
   private startStaleLockCleanup(): void {
-    // Run every 5 minutes
-    this.staleLockCleanupTimer = setInterval(async () => {
-      try {
+    this.staleLockCleanupTimer = this.startSingleFlightInterval({
+      taskName: 'STALE LOCK CLEANUP',
+      intervalMs: 300000,
+      task: async () => {
         const { data, error } = await this.supabase.rpc('cleanup_stale_interval_locks', {
           p_lock_timeout_minutes: 5
         });
@@ -183,21 +221,23 @@ export class SchedulerWorker {
         } else if (data > 0) {
           console.log(`[STALE LOCK CLEANUP] Released ${data} stale locks`);
         }
-      } catch (error) {
+      },
+      onError: (error) => {
         console.error('[STALE LOCK CLEANUP] Error:', error);
         const msg = error instanceof Error ? error.message : String(error);
         reportErrorToSlack('Scheduler: stale lock cleanup failed', { severity: 'warning', error: msg });
-      }
-    }, 300000); // 5 minutes
+      },
+    });
   }
 
   /**
    * Start processed interval check background task
    */
   private startProcessedIntervalCheck(): void {
-    // Run every minute to check for completed intervals
-    this.processedIntervalCheckTimer = setInterval(async () => {
-      try {
+    this.processedIntervalCheckTimer = this.startSingleFlightInterval({
+      taskName: 'PROCESSED INTERVAL CHECK',
+      intervalMs: 60000,
+      task: async () => {
         const { data, error } = await this.supabase.rpc('check_and_update_processed_intervals', {
           p_campaign_id: null // Check all campaigns
         });
@@ -211,32 +251,32 @@ export class SchedulerWorker {
         } else if (data > 0) {
           console.log(`[PROCESSED INTERVAL CHECK] Updated ${data} processed interval(s)`);
         }
-      } catch (error) {
+      },
+      onError: (error) => {
         console.error('[PROCESSED INTERVAL CHECK] Error:', error);
         const msg = error instanceof Error ? error.message : String(error);
         reportErrorToSlack('Scheduler: processed interval check failed', { severity: 'warning', error: msg });
-      }
-    }, 60000); // 1 minute
+      },
+    });
   }
 
   /**
    * Start batch interval assignment background task
    */
   private startBatchIntervalAssignment(): void {
-    // Run immediately, then every 30 seconds
-    batchAssignIntervalJobs(this.supabase, this.mailboxRotationIndex).catch(err => {
-      console.error('[BATCH INTERVAL] Error:', err);
-      const msg = err instanceof Error ? err.message : String(err);
-      reportErrorToSlack('Scheduler: batch interval assignment failed', { severity: 'critical', error: msg });
-    });
-
-    this.batchIntervalAssignmentTimer = setInterval(() => {
-      batchAssignIntervalJobs(this.supabase, this.mailboxRotationIndex).catch(err => {
+    this.batchIntervalAssignmentTimer = this.startSingleFlightInterval({
+      taskName: 'BATCH INTERVAL',
+      intervalMs: 30000,
+      runImmediately: true,
+      task: async () => {
+        await batchAssignIntervalJobs(this.supabase, this.mailboxRotationIndex);
+      },
+      onError: (err) => {
         console.error('[BATCH INTERVAL] Error:', err);
         const msg = err instanceof Error ? err.message : String(err);
         reportErrorToSlack('Scheduler: batch interval assignment failed', { severity: 'critical', error: msg });
-      });
-    }, 30000); // 30 seconds
+      },
+    });
   }
 
   /**
@@ -390,7 +430,7 @@ export class SchedulerWorker {
       console.log(`[ENROLLMENT ${enrollmentId}] Loading campaign ${enrollment.campaign_id.substring(0, 8)}...`);
       const { data: campaign, error: campaignError } = await this.supabase
         .from('campaigns')
-        .select('id, flow_data, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at, status, deleted_at')
+        .select('id, flow_data, current_flow_version_number, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at, status, deleted_at')
         .eq('id', enrollment.campaign_id)
         .single();
 
@@ -448,6 +488,7 @@ export class SchedulerWorker {
       const jitterPercentage = campaign.jitter_percentage ?? 
                                 account?.jitter_percentage ?? 
                                 10.0; // Default 10%
+      const activeFlowVersionNumber = campaign.current_flow_version_number ?? 0;
 
       // 3. Evaluate flow - find next node(s) (loads from database)
       console.log(`[ENROLLMENT ${enrollmentId}] Evaluating flow. Current node: ${enrollment.current_node_id?.substring(0, 8) || 'null (entry point)'}`);
@@ -500,7 +541,10 @@ export class SchedulerWorker {
         console.log(`[ENROLLMENT ${enrollmentId}] No next nodes found. Marking enrollment as completed.`);
         await this.supabase
           .from('enrollments')
-          .update({ state: 'completed' })
+          .update({
+            state: 'completed',
+            current_flow_version_number: activeFlowVersionNumber || enrollment.current_flow_version_number || null,
+          })
           .eq('id', enrollment.id);
         return;
       }
@@ -516,7 +560,10 @@ export class SchedulerWorker {
           // Job creation will be handled by batch interval assignment process
           await this.supabase
             .from('enrollments')
-            .update({ current_node_id: node.id })
+            .update({
+              current_node_id: node.id,
+              current_flow_version_number: activeFlowVersionNumber,
+            })
             .eq('id', enrollment.id);
           
           console.log(`[ENROLLMENT ${enrollmentId}] Email node reached. Updated current_node_id to ${node.id.substring(0, 8)}. Job will be created by batch process.`);
@@ -528,6 +575,7 @@ export class SchedulerWorker {
             enrollment,
             node,
             campaign.schedule,
+            activeFlowVersionNumber,
             this.supabase
           );
           console.log(`[ENROLLMENT ${enrollmentId}] WaitTime node processed. Updated next_run_at.`);
@@ -566,6 +614,7 @@ export class SchedulerWorker {
                 .from('enrollments')
                 .update({
                   current_node_id: node.id,
+                  current_flow_version_number: activeFlowVersionNumber,
                   next_run_at: new Date(Date.now() + 60000).toISOString(), // Retry in 1 minute
                 })
                 .eq('id', enrollment.id);
@@ -573,7 +622,10 @@ export class SchedulerWorker {
               // Update enrollment to AICategorizer node, then process the selected node
               await this.supabase
                 .from('enrollments')
-                .update({ current_node_id: node.id })
+                .update({
+                  current_node_id: node.id,
+                  current_flow_version_number: activeFlowVersionNumber,
+                })
                 .eq('id', enrollment.id);
 
               // Set next_run_at to process the selected node immediately
@@ -581,6 +633,7 @@ export class SchedulerWorker {
                 .from('enrollments')
                 .update({
                   current_node_id: selectedNode.id,
+                  current_flow_version_number: activeFlowVersionNumber,
                   next_run_at: new Date().toISOString(),
                 })
                 .eq('id', enrollment.id);
@@ -591,6 +644,7 @@ export class SchedulerWorker {
               .from('enrollments')
               .update({
                 current_node_id: node.id,
+                current_flow_version_number: activeFlowVersionNumber,
                 next_run_at: new Date(Date.now() + 60000).toISOString(), // Retry in 1 minute
               })
               .eq('id', enrollment.id);
@@ -598,7 +652,7 @@ export class SchedulerWorker {
         } else if (node.node_type === 'dataSender') {
           console.log(`[ENROLLMENT ${enrollmentId}] Handling DataSender node...`);
           // Handle DataSender node (placeholder)
-          await handleDataSenderNode(enrollment, node, this.supabase);
+          await handleDataSenderNode(enrollment, node, activeFlowVersionNumber, this.supabase);
           console.log(`[ENROLLMENT ${enrollmentId}] DataSender node processed.`);
         } else if (node.node_type === 'leadSource') {
           // LeadSource is an entry point, not a traversal node
@@ -606,7 +660,10 @@ export class SchedulerWorker {
           console.warn(`[ENROLLMENT ${enrollmentId}] LeadSource node encountered during traversal - marking as completed`);
           await this.supabase
             .from('enrollments')
-            .update({ state: 'completed' })
+            .update({
+              state: 'completed',
+              current_flow_version_number: activeFlowVersionNumber || enrollment.current_flow_version_number || null,
+            })
             .eq('id', enrollment.id);
         } else {
           // Handle other node types (unknown types)
@@ -616,6 +673,7 @@ export class SchedulerWorker {
             .from('enrollments')
             .update({
               current_node_id: node.id,
+              current_flow_version_number: activeFlowVersionNumber,
               next_run_at: new Date().toISOString(),
             })
             .eq('id', enrollment.id);

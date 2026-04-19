@@ -282,18 +282,20 @@ export async function evaluateFlow(
     
     const messageJob = messageJobs[0]; // Get the (should be only) message_job
     
-    // Check if the message_job has been sent or is terminal (cancelled = e.g. block list; don't retry)
+    // Only sent email jobs advance an active enrollment. A cancelled job must be paired
+    // with an enrollment-level terminal transition elsewhere; it is never a node-level skip.
     const isSent = messageJob.sent_at !== null || messageJob.status === 'sent';
-    const isTerminal = messageJob.status === 'cancelled' || messageJob.status === 'failed' || messageJob.status === 'blocked';
+    const advancesWithoutSend =
+      messageJob.status === 'failed' || messageJob.status === 'blocked';
     
-    if (!isSent && !isTerminal) {
+    if (!isSent && !advancesWithoutSend) {
       // Email not sent yet and not terminal - don't advance to next node
       // Send worker will update enrollment.next_run_at when email is sent, triggering re-evaluation
       console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has unsent message_job. Waiting for send worker...`);
       return { nodes: [], waitingForEmail: true };
     }
     
-    if (isTerminal) {
+    if (advancesWithoutSend) {
       console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job ${messageJob.status}. Proceeding to next node.`);
     } else {
       console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job sent. Proceeding to next node.`);

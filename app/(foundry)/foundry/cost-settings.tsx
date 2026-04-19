@@ -18,6 +18,8 @@ export default function FoundryCostSettingsScreen() {
   const [newProvider, setNewProvider] = useState('');
   const [newProduct, setNewProduct] = useState('');
   const [newCents, setNewCents] = useState('');
+  const [newUsageUnit, setNewUsageUnit] = useState('row');
+  const [newUnitQuantity, setNewUnitQuantity] = useState('1');
   const [newNotes, setNewNotes] = useState('');
 
   const load = useCallback(async () => {
@@ -72,7 +74,7 @@ export default function FoundryCostSettingsScreen() {
                     {r.cost_kind} · {r.provider} · {r.product}
                   </Text>
                   <Text className="text-gray-400 font-instrument text-xs mt-1">
-                    {r.unit_price_cents} {r.currency} / unit
+                    {r.unit_price_cents} {r.currency} / {r.unit_quantity} {r.usage_unit}
                   </Text>
                   {r.notes ? (
                     <Text className="text-gray-500 font-instrument text-xs mt-1">{r.notes}</Text>
@@ -137,6 +139,25 @@ export default function FoundryCostSettingsScreen() {
             keyboardType="number-pad"
             className="border border-[#3A3A3A] rounded-lg px-3 py-2 text-white font-instrument text-sm bg-[#121212]"
           />
+          <Text className="text-gray-500 font-instrument text-xs">Usage unit (e.g. row, lookup, ms)</Text>
+          <TextInput
+            value={newUsageUnit}
+            onChangeText={setNewUsageUnit}
+            placeholder="row"
+            placeholderTextColor="#6b7280"
+            className="border border-[#3A3A3A] rounded-lg px-3 py-2 text-white font-instrument text-sm bg-[#121212]"
+          />
+          <Text className="text-gray-500 font-instrument text-xs">
+            Unit quantity covered by the price above (e.g. 1 row, 3600000 ms)
+          </Text>
+          <TextInput
+            value={newUnitQuantity}
+            onChangeText={setNewUnitQuantity}
+            placeholder="1"
+            placeholderTextColor="#6b7280"
+            keyboardType="number-pad"
+            className="border border-[#3A3A3A] rounded-lg px-3 py-2 text-white font-instrument text-sm bg-[#121212]"
+          />
           <Text className="text-gray-500 font-instrument text-xs">Notes (optional)</Text>
           <TextInput
             value={newNotes}
@@ -150,8 +171,13 @@ export default function FoundryCostSettingsScreen() {
             disabled={busy || !newProvider.trim() || !newProduct.trim()}
             onPress={async () => {
               const n = Number.parseInt(newCents.trim(), 10);
+              const q = Number.parseInt(newUnitQuantity.trim(), 10);
               if (!Number.isFinite(n) || n < 0) {
                 Alert.alert('Invalid price', 'Enter a non-negative integer cents value.');
+                return;
+              }
+              if (!newUsageUnit.trim() || !Number.isFinite(q) || q <= 0) {
+                Alert.alert('Invalid unit', 'Enter a usage unit and a positive integer unit quantity.');
                 return;
               }
               setBusy(true);
@@ -161,12 +187,16 @@ export default function FoundryCostSettingsScreen() {
                   provider: newProvider.trim(),
                   product: newProduct.trim(),
                   unit_price_cents: n,
+                  usage_unit: newUsageUnit.trim(),
+                  unit_quantity: q,
                   notes: newNotes.trim() || undefined,
                   retire_previous: true,
                 });
                 setNewProvider('');
                 setNewProduct('');
                 setNewCents('');
+                setNewUsageUnit('row');
+                setNewUnitQuantity('1');
                 setNewNotes('');
                 await load();
                 Alert.alert('Saved', 'New rate card created.');

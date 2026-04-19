@@ -3,7 +3,7 @@ import { View, Platform, Text, Pressable } from 'react-native';
 import { Breadcrumb } from '@/components/ui/layout';
 import { NavBar } from '@/components/ui/layout/NavBar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { getCampaignById, updateCampaign } from '@/lib/supabase/services/campaigns';
+import { getCampaignById, updateCampaignFlowData } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
 import { isSmartleadCampaign } from '@/lib/campaigns/utils';
@@ -306,9 +306,7 @@ export default function BuilderPage() {
       
       setSaveStatus('saving');
       try {
-        await updateCampaign(campaignId, {
-          flow_data: { nodes, edges } as any,
-        });
+        await updateCampaignFlowData(campaignId, { nodes, edges } as any, 'builder');
         setSaveStatus('saved');
         // Reset to idle after 2 seconds
         setTimeout(() => {

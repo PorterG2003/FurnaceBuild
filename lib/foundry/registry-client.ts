@@ -396,6 +396,8 @@ export async function postCostRateCard(body: {
   provider: string;
   product: string;
   unit_price_cents: number;
+  usage_unit?: string;
+  unit_quantity?: number;
   currency?: string;
   notes?: string;
   retire_previous?: boolean;

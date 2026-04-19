@@ -44,6 +44,18 @@
 
 **Purpose:** Owner-row export surface; preserves one null-owner row when a company target has no current owners.
 
+## `export_row_cost_summary`
+
+**Definition:** Owner-grain cost view sourced from canonical `cost_records`.
+
+**Purpose:** Provide one export-ready cost surface that combines:
+
+- direct owner enrichment (Skip Sherpa)
+- evenly allocated company-level enrichment (website verification, Google Ads verification)
+- evenly allocated company-level acquisition (imports, registry pull costs)
+
+This view is the cost source for owner, contact, and chain exports in v1.
+
 ## `updated_at` trigger
 
 **Function:** `registry_update_updated_at_column()` — sets `NEW.updated_at = now()` before update.
@@ -81,3 +93,4 @@
 
 - [indexes-and-constraints.md](indexes-and-constraints.md)
 - [tables/reconciliation.md](tables/reconciliation.md)
+- [../engineering/export-cost-allocation.md](../engineering/export-cost-allocation.md)

@@ -2,6 +2,31 @@ import { reportErrorToSlack } from '@furnace/slack-lib';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { selectMailbox } from './mailbox-selection.js';
 
+type ExistingMessageJobPair = {
+  enrollment_id: string;
+  node_id: string;
+};
+
+async function loadExistingMessageJobPairSet(
+  supabase: SupabaseClient,
+  candidatePairs: ExistingMessageJobPair[],
+): Promise<Set<string>> {
+  if (candidatePairs.length === 0) {
+    return new Set();
+  }
+
+  const { data, error } = await supabase.rpc('get_existing_message_job_pairs', {
+    p_pairs: candidatePairs,
+  });
+
+  if (error) {
+    throw new Error(`Failed to load existing message job pairs: ${error.message}`);
+  }
+
+  const existingPairs = Array.isArray(data) ? (data as ExistingMessageJobPair[]) : [];
+  return new Set(existingPairs.map((pair) => `${pair.enrollment_id}:${pair.node_id}`));
+}
+
 /**
  * Batch assign jobs to intervals for campaigns
  * 
@@ -133,21 +158,19 @@ export async function batchAssignIntervalJobs(
       
       // Filter enrollments that don't already have a message_job for this node.
       // Include 'cancelled' and 'blocked': do not create another job if the only job was cancelled or blocked.
-      const enrollmentsWithoutJobs: typeof activeEnrollments = [];
-      
-      for (const enrollment of activeEnrollments) {
-        const { data: existingJob } = await supabase
-          .from('message_jobs')
-          .select('id')
-          .eq('enrollment_id', enrollment.id)
-          .eq('node_id', enrollment.current_node_id)
-          .in('status', ['pending', 'reserved', 'sending', 'sent', 'failed', 'cancelled', 'blocked'])
-          .maybeSingle();
-        
-        if (!existingJob) {
-          enrollmentsWithoutJobs.push(enrollment);
-        }
-      }
+      const candidatePairs = activeEnrollments
+        .filter((enrollment) => Boolean(enrollment.current_node_id))
+        .map((enrollment) => ({
+          enrollment_id: enrollment.id,
+          node_id: enrollment.current_node_id as string,
+        }));
+
+      const existingJobPairSet = await loadExistingMessageJobPairSet(supabase, candidatePairs);
+      const enrollmentsWithoutJobs = activeEnrollments.filter(
+        (enrollment) =>
+          !enrollment.current_node_id ||
+          !existingJobPairSet.has(`${enrollment.id}:${enrollment.current_node_id}`),
+      );
       
       if (enrollmentsWithoutJobs.length === 0) {
         continue;
@@ -190,19 +213,35 @@ export async function batchAssignIntervalJobs(
       }
       
       // Get node data for message_data
+      const uniqueNodeIds = [...new Set(
+        enrollmentsWithoutJobs
+          .map((enrollment) => enrollment.current_node_id)
+          .filter((nodeId): nodeId is string => Boolean(nodeId))
+      )];
       const nodeIdToNodeData = new Map<string, any>();
-      for (const enrollment of enrollmentsWithoutJobs) {
-        if (enrollment.current_node_id && !nodeIdToNodeData.has(enrollment.current_node_id)) {
-          const { data: node } = await supabase
-            .from('nodes')
-            .select('id, node_data')
-            .eq('id', enrollment.current_node_id)
-            .is('deleted_at', null)
-            .single();
-          
-          if (node) {
-            nodeIdToNodeData.set(enrollment.current_node_id, node);
-          }
+
+      if (uniqueNodeIds.length > 0) {
+        const { data: nodes, error: nodesLookupError } = await supabase
+          .from('nodes')
+          .select('id, node_data')
+          .in('id', uniqueNodeIds)
+          .is('deleted_at', null);
+
+        if (nodesLookupError) {
+          console.error(
+            `[BATCH INTERVAL] Error loading node data for campaign ${campaign.id.substring(0, 8)}:`,
+            nodesLookupError,
+          );
+          reportErrorToSlack('Scheduler: batch interval failed to load node data', {
+            severity: 'warning',
+            campaign_id: campaign.id,
+            error: nodesLookupError.message,
+          });
+          continue;
+        }
+
+        for (const node of nodes || []) {
+          nodeIdToNodeData.set(node.id, node);
         }
       }
       

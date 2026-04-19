@@ -13,7 +13,8 @@ import {
   getCampaignMailboxes,
   updateCampaign,
   backfillCampaignEnrollments,
-  cancelUnsentCampaignJobs,
+  resumeCampaignAndRescheduleJobs,
+  stopCampaignAndStopEnrollments,
 } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import {
@@ -115,7 +116,6 @@ export default function MissionControlPage() {
     setIsPausing(true);
     try {
       await updateCampaign(id, { status: 'paused' });
-      await cancelUnsentCampaignJobs(id, 'Campaign paused');
       await loadCampaign(true);
     } catch (err) {
       console.error('Error pausing campaign:', err);
@@ -128,7 +128,7 @@ export default function MissionControlPage() {
     if (!id) return;
     setIsStarting(true);
     try {
-      await updateCampaign(id, { status: 'running' });
+      await resumeCampaignAndRescheduleJobs(id);
       await loadCampaign(true);
     } catch (err) {
       console.error('Error resuming campaign:', err);
@@ -141,8 +141,7 @@ export default function MissionControlPage() {
     if (!id) return;
     setIsStopping(true);
     try {
-      await updateCampaign(id, { status: 'stopped' });
-      await cancelUnsentCampaignJobs(id, 'Campaign stopped');
+      await stopCampaignAndStopEnrollments(id);
       await loadCampaign(true);
     } catch (err) {
       console.error('Error stopping campaign:', err);

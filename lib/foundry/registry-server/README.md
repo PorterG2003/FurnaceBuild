@@ -28,6 +28,7 @@ Avoid deep imports (e.g. `@furnace/registry-server/ingestion/...`) so internal f
 | `reconciliation/` | Company ↔ state entity matching versions and batch matching |
 | `state-persistence/` | Persist state registry snapshots, owners, display-name helpers (UT, FL, IA, …) |
 | `contact-enrichment/` | SkipSherpa enrichment + classification rulesets |
+| `costRateCards.ts` | Shared rate-card lookup, cost math, and canonical `cost_records` write helpers |
 | `scrapers/` | Shared name/compare helpers for state parsers |
 | `utah/` | Utah SOS HTML parsing and hit picking |
 | `florida/` | Florida Sunbiz HTML parsing and hit picking |
@@ -50,3 +51,4 @@ npm test
 - [Foundry services and jobs](../../../docs/foundry/engineering/services-and-jobs.md) — how API, this package, and orchestration connect
 - [Registry API](../../../docs/foundry/engineering/registry-api.md) — HTTP surface
 - [State scraper ECS playbook](../../../docs/foundry/engineering/state-scraper-ecs-playbook.md) — Docker build context and `registry-server` copy
+- [Unified cost records](../../../docs/foundry/engineering/cost-records.md) — shared cost ledger, source ownership, export allocation

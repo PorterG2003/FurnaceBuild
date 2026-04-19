@@ -7,8 +7,8 @@ Scheduler worker for processing enrollments and creating message jobs.
 This worker:
 - Polls Supabase database continuously for enrollments ready to process
 - Evaluates campaign flows to find next nodes
-- Creates message_jobs for email nodes
-- Pushes message_job IDs to SQS send_queue
+- Moves enrollments onto email nodes, then creates `message_jobs` through batch interval assignment
+- Uses a batched duplicate check for `message_jobs` instead of one lookup per enrollment
 - Updates enrollment.next_run_at for wait/delay nodes
 - Auto-scales based on enrollment count
 
@@ -139,6 +139,8 @@ docker push $REPO_URI:latest
 
 - **Continuous Polling**: Workers poll Supabase database every 5 seconds (configurable)
 - **Batch Processing**: Processes up to 100 enrollments per poll (configurable)
+- **Single-Flight Background Tasks**: Interval maintenance, stale lock cleanup, processed-interval checks, and batch interval assignment skip overlapping ticks if a prior run is still active
+- **Batched Duplicate Filtering**: Batch interval assignment asks Supabase for existing `(enrollment_id, node_id)` pairs in one RPC-backed lookup before calling `batch_assign_jobs_to_interval`
 - **Auto-Scaling**: Scales based on enrollment count metric (1-20 workers)
 - **Error Handling**: Individual enrollment errors don't stop worker processing
 
@@ -147,9 +149,10 @@ docker push $REPO_URI:latest
 1. **Make code changes** in `src/`
 2. **Install/update dependencies** (if you added any): `cd workers/scheduler-worker && npm install`
 3. **Build TypeScript**: `npm run build`
-4. **Test locally** (optional): `npm start` (requires env vars)
-5. **Build and push Docker image**: From repo root, run `./workers/scheduler-worker/push-to-ecr.sh`
-6. **Deploy to ECS** (via Amplify): ECS will automatically use the new `latest` image on next task start
+4. **Run scheduler tests**: `node --import tsx --test src/flow-evaluation.test.ts src/batch-interval-assignment.test.ts src/worker.test.ts`
+5. **Test locally** (optional): `npm start` (requires env vars)
+6. **Build and push Docker image**: From `infra/workers`, run `npm run build:dev:scheduler` or `npm run build:prod:scheduler`
+7. **Restart services**: From `infra/workers`, run `npm run restart:dev` or `npm run restart:prod`
 
 ## Troubleshooting
 
@@ -178,4 +181,10 @@ docker push $REPO_URI:latest
 - Verify enrollments exist with `state = 'active'` and `next_run_at <= NOW()`
 - Check database connection (Supabase URL and service key)
 - Verify worker is running: `aws ecs list-tasks --cluster furnace-cluster --service-name <scheduler-worker-service-name>`
+
+### Frequent Supabase 502/503 errors from `message_jobs`
+
+- Confirm the scheduler image includes the batched duplicate lookup change and the matching migration
+- Verify the `get_existing_message_job_pairs` RPC exists and the `idx_message_jobs_enrollment_node_status` index has been applied
+- Check logs for repeated `Previous run still in progress; skipping overlapping tick` messages to identify a slow background task without creating more load
 

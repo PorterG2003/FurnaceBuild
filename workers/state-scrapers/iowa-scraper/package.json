@@ -6,13 +6,16 @@
   "scripts": {
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "query": "tsx src/run-query.ts",
+    "reconciliation": "tsx src/run-reconciliation.ts",
     "compare-csv": "tsx src/run-csv-compare.ts",
     "compare-to-readable-csv": "tsx src/jsonl-to-compare-csv.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-ssm": "^3.1031.0",
     "@furnace/registry-server": "file:../../../lib/foundry/registry-server",
+    "@supabase/supabase-js": "^2.103.3",
     "csv-parse": "^5.6.0",
-    "playwright": "^1.58.2"
+    "playwright": "1.58.2"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

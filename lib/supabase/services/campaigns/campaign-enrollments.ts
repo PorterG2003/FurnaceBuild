@@ -64,3 +64,44 @@ export async function cancelUnsentCampaignJobs(
   if (error) throw new Error(`Failed to cancel unsent campaign jobs: ${error.message}`);
   return typeof data === 'number' ? data : 0;
 }
+
+export interface ResumeCampaignResult {
+  revived_jobs: number;
+  rescheduled_jobs: number;
+}
+
+export interface StopCampaignResult {
+  stopped_enrollments: number;
+}
+
+export async function resumeCampaignAndRescheduleJobs(
+  campaignId: string,
+  pauseReason: string = 'Campaign paused'
+): Promise<ResumeCampaignResult> {
+  const { data, error } = await supabase.rpc('resume_campaign_and_reschedule_jobs', {
+    p_campaign_id: campaignId,
+    p_pause_reason: pauseReason,
+  });
+
+  if (error) throw new Error(`Failed to resume campaign: ${error.message}`);
+
+  const result = Array.isArray(data) ? data[0] : data;
+  return {
+    revived_jobs: typeof result?.revived_jobs === 'number' ? result.revived_jobs : 0,
+    rescheduled_jobs: typeof result?.rescheduled_jobs === 'number' ? result.rescheduled_jobs : 0,
+  };
+}
+
+export async function stopCampaignAndStopEnrollments(
+  campaignId: string
+): Promise<StopCampaignResult> {
+  const { data, error } = await supabase.rpc('stop_campaign_and_stop_enrollments', {
+    p_campaign_id: campaignId,
+  });
+
+  if (error) throw new Error(`Failed to stop campaign: ${error.message}`);
+
+  return {
+    stopped_enrollments: typeof data === 'number' ? data : 0,
+  };
+}

@@ -26,38 +26,47 @@ These are **separated** for scalability and reliability.
 ## Part 1: Scheduler
 
 ### What is it?
-A **Lambda function** that runs **every 30-60 seconds** (triggered by CloudWatch Events).
+A long-running **ECS worker** with:
+- a continuous enrollment-claim loop
+- guarded periodic background tasks for interval maintenance and cleanup
+- batch interval assignment for email nodes
 
 ### What does it do?
-1. **Queries database**: "Find all enrollments where `next_run_at <= NOW()` and `state = 'active'`"
+1. **Claims enrollments atomically**: `claim_enrollments_ready` returns active enrollments whose `next_run_at <= NOW()`
 2. **For each enrollment**:
    - Loads the flow graph (from `campaigns.flow_data` or `nodes` table)
    - Figures out: "What node should execute next?"
    - **If it's an email node**:
-     - Creates a `message_job` record in the database
-     - Pushes `{message_job_id}` to the **send_queue** (SQS)
+     - Updates `enrollment.current_node_id` to that email node
+     - Lets **batch interval assignment** create the `message_job` record
+     - Uses one batched duplicate lookup for many `(enrollment_id, node_id)` pairs before calling `batch_assign_jobs_to_interval`
    - **If it's a wait node**:
      - Updates `enrollment.next_run_at` = NOW() + wait_duration
      - (No job created yet - will be evaluated next scheduler run)
    - **If it's a branch/conditional node**:
      - Evaluates the condition
      - Updates `enrollment.current_node_id` to the next node
-3. **Done** - runs again in 30-60 seconds
+3. **Background maintenance**:
+   - interval maintenance runs on a periodic timer
+   - processed-interval checks run on a periodic timer
+   - stale lock cleanup runs on a periodic timer
+   - each timer is **single-flight**, so slow runs do not overlap and amplify load
 
 ### Key Points:
 - ✅ **Fast**: Just makes decisions, doesn't send emails
-- ✅ **Stateless**: Doesn't hold connections or state
-- ✅ **Scales**: Single instance handles thousands of enrollments
-- ✅ **Deterministic**: Always runs, even if workers are busy
+- ✅ **Database-safe**: Enrollment claiming is atomic and duplicate email-job checks are batched
+- ✅ **Scales**: Avoids one `message_jobs` lookup per enrollment when a campaign backlog builds up
+- ✅ **Load-aware**: Background tasks skip overlapping ticks instead of piling more work onto Supabase
 
 ### Example:
 ```
-Scheduler runs at 2:00:00 PM
-  → Finds 50 enrollments ready
-  → 30 have email nodes next → Creates 30 message_jobs → Pushes 30 messages to send_queue
-  → 20 have wait nodes next → Updates their next_run_at to 2:05:00 PM
-  → Done in 5 seconds
-  → Runs again at 2:01:00 PM
+Scheduler worker loop claims 50 enrollments
+  → 30 move onto email nodes
+  → Batch interval assignment gathers those 30 pairs
+  → One batched duplicate lookup removes already-satisfied pairs
+  → Remaining jobs are created atomically by batch_assign_jobs_to_interval
+  → 20 wait nodes update next_run_at
+  → Background maintenance continues on guarded timers
 ```
 
 ---

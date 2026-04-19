@@ -59,6 +59,7 @@ export const handler = async (event: FinalizeEvent | FailEvent): Promise<Record<
           job_id: event.jobId,
           utah_per_company: prev.utah_per_company,
           florida_per_company: prev.florida_per_company,
+          iowa_per_company: prev.iowa_per_company,
         },
       })
       .eq('id', event.reconciliationRunId);

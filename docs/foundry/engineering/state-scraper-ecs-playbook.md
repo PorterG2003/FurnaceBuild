@@ -4,8 +4,8 @@ Checklist for adding or operating **registry browser scrapers** on Fargate (Utah
 
 ## Repository layout
 
-- Worker code: `workers/state-scrapers/{state}-scraper/` (e.g. `utah-scraper`, `florida-scraper`).
-- Shared parsers and comparison helpers: [`lib/foundry/registry-server/`](../../../lib/foundry/registry-server/) (`scrapers/`, `utah/`, `florida/`, etc.).
+- Worker code: `workers/state-scrapers/{state}-scraper/` (e.g. `utah-scraper`, `florida-scraper`, `iowa-scraper`).
+- Shared parsers and comparison helpers: [`lib/foundry/registry-server/`](../../../lib/foundry/registry-server/) (`scrapers/`, `utah/`, `florida/`, `iowa/`, etc.).
 - Docker **build context** is always the **repository root** (so Dockerfiles can `COPY lib/foundry/registry-server` and `COPY workers/state-scrapers/...`).
 
 ## Dockerfile
@@ -16,14 +16,14 @@ Checklist for adding or operating **registry browser scrapers** on Fargate (Utah
 - **CMD patterns:**
   - **CSV batch:** `npx tsx src/run.ts "$INPUT_CSV" --out "$OUTPUT_JSON"` (Florida today).
   - **Reconciliation:** Utah uses a shell branch on `RUN_MODE=reconciliation` → `run-reconciliation.ts`; new states should follow the same pattern when Step Functions / jobs are wired.
-- **Florida only:** The image installs **Xvfb** and **Chrome for Testing** (`npx playwright install chrome`, same Playwright version as the base tag) and runs the scraper under **`xvfb-run`** via [`docker-entrypoint.sh`](../../../workers/state-scrapers/florida-scraper/docker-entrypoint.sh) so Sunbiz’s headed Playwright fallback (`channel: 'chrome'`) has a virtual display on Fargate. Rebuild and push the image after changing this setup.
+- **Florida and Iowa:** The image installs **Xvfb** and **Chrome for Testing** (`npx playwright install chrome`, same Playwright version as the base tag) and runs the scraper through a [`docker-entrypoint.sh`](../../../workers/state-scrapers/florida-scraper/docker-entrypoint.sh)-style wrapper so headed Playwright (`channel: 'chrome'`) has a virtual display on Fargate. Rebuild and push the image after changing this setup.
 
 ## WorkerStack (CDK)
 
 In [`infra/workers/lib/worker-stack.ts`](../../../infra/workers/lib/worker-stack.ts), for each state scraper:
 
 | Item | Convention |
-|------|------------|
+| ------ | ------------ |
 | ECR repository | `furnace/{state}-scraper-${environment}` |
 | Log group | `/ecs/furnace/{state}-scraper-task-${environment}` |
 | Task definition family | `furnace-{state}-scraper-task-${environment}` |

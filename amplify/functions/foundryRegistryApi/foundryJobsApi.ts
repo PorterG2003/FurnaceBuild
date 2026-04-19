@@ -720,6 +720,7 @@ export async function startContactEnrichmentIngestionJob(
     'skipsherpa',
     'person_lookup',
     opts?.costPerLookupCents ?? undefined,
+    { usageUnit: 'lookup', unitQuantity: 1 },
   );
 
   const idempotencyKey = [
@@ -979,7 +980,7 @@ export async function handleFoundryJobsRequest(
   return null;
 }
 
-/** Async state matching: reconciliation_runs + foundry_jobs + Step Functions (Utah + Florida ECS). */
+/** Async state matching: reconciliation_runs + foundry_jobs + Step Functions (Utah + Florida + Iowa ECS). */
 export async function startStateMatchingBatchJob(
   leadsClient: SupabaseClient,
   companyIds: string[],
@@ -996,20 +997,20 @@ export async function startStateMatchingBatchJob(
     leadsClient as unknown as Parameters<typeof stateMatchingPreflight>[0],
     { companyIds },
   );
-  const { utahCompanyIds, floridaCompanyIds, unsupported } = await bucketCompaniesForMatching(
+  const { utahCompanyIds, floridaCompanyIds, iowaCompanyIds, unsupported } = await bucketCompaniesForMatching(
     leadsClient as unknown as Parameters<typeof bucketCompaniesForMatching>[0],
     pre.ready,
   );
   if (unsupported.length > 0) {
     return jsonResponse(400, {
       error:
-        'Automated state registry matching supports Utah (UT) and Florida (FL) only. Remove non-UT/FL companies or fix locations.',
+        'Automated state registry matching supports Utah (UT), Florida (FL), and Iowa (IA) only. Remove unsupported companies or fix locations.',
       unsupported,
     });
   }
   const versions = stateMatchingJobVersions();
   const uniqueCompanyIds = [...new Set(companyIds)];
-  const inScopeTotal = new Set([...utahCompanyIds, ...floridaCompanyIds]).size;
+  const inScopeTotal = new Set([...utahCompanyIds, ...floridaCompanyIds, ...iowaCompanyIds]).size;
   const notApplicableCount = Math.max(0, uniqueCompanyIds.length - inScopeTotal);
   const sortedKey = [...uniqueCompanyIds].sort().join(',');
   const idempotencyKey =
@@ -1035,6 +1036,7 @@ export async function startStateMatchingBatchJob(
       preflight?: unknown;
       utah_company_ids?: string[];
       florida_company_ids?: string[];
+      iowa_company_ids?: string[];
     };
     return jsonResponse(200, {
       jobId: active.id,
@@ -1045,6 +1047,7 @@ export async function startStateMatchingBatchJob(
       bucket_counts: {
         utah: pl.utah_company_ids?.length ?? 0,
         florida: pl.florida_company_ids?.length ?? 0,
+        iowa: pl.iowa_company_ids?.length ?? 0,
       },
     });
   }
@@ -1061,6 +1064,7 @@ export async function startStateMatchingBatchJob(
         preflight: pre,
         utah_company_ids: utahCompanyIds,
         florida_company_ids: floridaCompanyIds,
+        iowa_company_ids: iowaCompanyIds,
         async: true,
       },
     })
@@ -1086,6 +1090,8 @@ export async function startStateMatchingBatchJob(
         utah_batches: buildCompanyBatches(utahCompanyIds, 25),
         florida_company_ids: floridaCompanyIds,
         florida_batches: buildCompanyBatches(floridaCompanyIds, 25),
+        iowa_company_ids: iowaCompanyIds,
+        iowa_batches: buildCompanyBatches(iowaCompanyIds, 25),
         ...(opts?.sourceIngestionRunId
           ? { source_ingestion_run_id: opts.sourceIngestionRunId }
           : {}),
@@ -1095,6 +1101,7 @@ export async function startStateMatchingBatchJob(
         current_step: 'queued',
         utah_count: utahCompanyIds.length,
         florida_count: floridaCompanyIds.length,
+        iowa_count: iowaCompanyIds.length,
         in_scope_total: inScopeTotal,
         not_applicable_count: notApplicableCount,
         companies_with_result: 0,
@@ -1117,6 +1124,7 @@ export async function startStateMatchingBatchJob(
           preflight?: unknown;
           utah_company_ids?: string[];
           florida_company_ids?: string[];
+          iowa_company_ids?: string[];
         };
         await leadsClient.from('reconciliation_runs').delete().eq('id', reconciliationRunId);
         return jsonResponse(200, {
@@ -1128,6 +1136,7 @@ export async function startStateMatchingBatchJob(
           bucket_counts: {
             utah: pl.utah_company_ids?.length ?? 0,
             florida: pl.florida_company_ids?.length ?? 0,
+            iowa: pl.iowa_company_ids?.length ?? 0,
           },
         });
       }
@@ -1140,15 +1149,19 @@ export async function startStateMatchingBatchJob(
 
   const utahCount = utahCompanyIds.length;
   const floridaCount = floridaCompanyIds.length;
+  const iowaCount = iowaCompanyIds.length;
   const utahBatches = buildCompanyBatches(utahCompanyIds, 25);
   const floridaBatches = buildCompanyBatches(floridaCompanyIds, 25);
+  const iowaBatches = buildCompanyBatches(iowaCompanyIds, 25);
   const sfnInput = {
     jobId,
     reconciliationRunId,
     utahCount,
     floridaCount,
+    iowaCount,
     utahBatches,
     floridaBatches,
+    iowaBatches,
   };
 
   try {
@@ -1172,6 +1185,7 @@ export async function startStateMatchingBatchJob(
           current_step: 'running',
           utah_count: utahCount,
           florida_count: floridaCount,
+          iowa_count: iowaCount,
           in_scope_total: inScopeTotal,
           not_applicable_count: notApplicableCount,
           companies_with_result: 0,
@@ -1192,6 +1206,7 @@ export async function startStateMatchingBatchJob(
       bucket_counts: {
         utah: utahCompanyIds.length,
         florida: floridaCompanyIds.length,
+        iowa: iowaCompanyIds.length,
       },
     });
   } catch (e) {

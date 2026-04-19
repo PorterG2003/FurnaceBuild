@@ -607,6 +607,8 @@ export interface IngestionRunRow {
   cost_per_row_cents?: number | null;
   cost_rate_card_id?: string | null;
   cost_is_override?: boolean;
+  cost_record_id?: string | null;
+  cost_status?: string;
 }
 
 export interface IngestionRunStats {
@@ -672,9 +674,16 @@ export interface PostGoogleMapsImportBody {
   costPerRowCents?: number;
 }
 
+export interface CostRateCardCurrentRow {
+  id: string;
+  unitPriceCents: number;
+  usageUnit: string;
+  unitQuantity: number;
+}
+
 /** Active rate from GET /cost-rate-cards?cost_kind&provider&product */
 export interface CostRateCardCurrentResponse {
-  rate: { id: string; unitPriceCents: number } | null;
+  rate: CostRateCardCurrentRow | null;
 }
 
 export interface CostRateCardRow {
@@ -683,6 +692,8 @@ export interface CostRateCardRow {
   provider: string;
   product: string;
   unit_price_cents: number;
+  usage_unit: string;
+  unit_quantity: number;
   currency: string;
   effective_from: string;
   effective_to: string | null;
@@ -935,6 +946,9 @@ export interface CompanyWebsiteVerificationRow {
   company_id: string;
   foundry_job_id: string | null;
   source_ingestion_run_id: string | null;
+  cost_record_id: string | null;
+  cost_status: string;
+  elapsed_ms: number | null;
   input_url: string;
   final_url: string | null;
   score: number | null;
@@ -954,6 +968,9 @@ export interface CompanyGoogleAdsVerificationRow {
   website_verification_id: string | null;
   foundry_job_id: string | null;
   source_ingestion_run_id: string | null;
+  cost_record_id: string | null;
+  cost_status: string;
+  elapsed_ms: number | null;
   input_url: string;
   search_domain: string;
   result: GoogleAdsVerificationResult | null;
@@ -1190,6 +1207,9 @@ function parseWebsiteVerificationRow(o: unknown): CompanyWebsiteVerificationRow 
     foundry_job_id: r.foundry_job_id == null ? null : parseNullableString(r.foundry_job_id),
     source_ingestion_run_id:
       r.source_ingestion_run_id == null ? null : parseNullableString(r.source_ingestion_run_id),
+    cost_record_id: r.cost_record_id == null ? null : parseNullableString(r.cost_record_id),
+    cost_status: parseString(r.cost_status ?? 'pre_cost_implementation_or_not_backfilled'),
+    elapsed_ms: parseNumber(r.elapsed_ms),
     input_url,
     final_url: r.final_url == null ? null : parseNullableString(r.final_url),
     score: parseNumber(r.score),
@@ -1236,6 +1256,9 @@ function parseGoogleAdsVerificationRow(o: unknown): CompanyGoogleAdsVerification
     foundry_job_id: r.foundry_job_id == null ? null : parseNullableString(r.foundry_job_id),
     source_ingestion_run_id:
       r.source_ingestion_run_id == null ? null : parseNullableString(r.source_ingestion_run_id),
+    cost_record_id: r.cost_record_id == null ? null : parseNullableString(r.cost_record_id),
+    cost_status: parseString(r.cost_status ?? 'pre_cost_implementation_or_not_backfilled'),
+    elapsed_ms: parseNumber(r.elapsed_ms),
     input_url,
     search_domain,
     result:
@@ -1489,11 +1512,18 @@ export interface ExportCompanyOwnerLeadRow {
   contact_enrichment_top_score?: number | null;
   contact_enrichment_score_margin?: number | null;
   contact_enrichment_reason_summary?: string | null;
-  /** Present when `include_cost=true` on export API. Values are USD cents unless you add currency later. */
+  /** Present when `include_cost=true` on export API. Values are exact USD cents and may be fractional. */
   enrichment_cost_cents?: number | null;
+  company_enrichment_cost_cents?: number | null;
+  enrichment_cost_per_row_cents?: number | null;
   company_acquisition_cost_cents?: number | null;
   acquisition_cost_per_row_cents?: number | null;
   total_cost_per_row_cents?: number | null;
+  company_export_row_count?: number | null;
+  company_website_verification_cost_cents?: number | null;
+  company_google_ads_verification_cost_cents?: number | null;
+  company_import_acquisition_cost_cents?: number | null;
+  company_registry_acquisition_cost_cents?: number | null;
   /** Present when export is requested with `include_google_ads_verification=true` (latest row per company). */
   google_ads_verification_result?: string | null;
   google_ads_search_domain?: string | null;
@@ -1561,10 +1591,18 @@ export interface ExportCompanyChainPeopleRow {
   contact_enrichment_top_score?: number | null;
   contact_enrichment_score_margin?: number | null;
   contact_enrichment_reason_summary?: string | null;
+  /** Present when `include_cost=true` on export API. Values are exact USD cents and may be fractional. */
   enrichment_cost_cents?: number | null;
+  company_enrichment_cost_cents?: number | null;
+  enrichment_cost_per_row_cents?: number | null;
   company_acquisition_cost_cents?: number | null;
   acquisition_cost_per_row_cents?: number | null;
   total_cost_per_row_cents?: number | null;
+  company_export_row_count?: number | null;
+  company_website_verification_cost_cents?: number | null;
+  company_google_ads_verification_cost_cents?: number | null;
+  company_import_acquisition_cost_cents?: number | null;
+  company_registry_acquisition_cost_cents?: number | null;
   /** Present when export is requested with `include_google_ads_verification=true` (latest row per company). */
   google_ads_verification_result?: string | null;
   google_ads_search_domain?: string | null;

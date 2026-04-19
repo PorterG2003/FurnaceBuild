@@ -17,6 +17,7 @@ export type AccountUserUpdate = Database['public']['Tables']['account_users']['U
 export type Campaign = Database['public']['Tables']['campaigns']['Row'];
 export type CampaignInsert = Database['public']['Tables']['campaigns']['Insert'];
 export type CampaignUpdate = Database['public']['Tables']['campaigns']['Update'];
+export type CampaignFlowVersion = Database['public']['Tables']['campaign_flow_versions']['Row'];
 
 export type Lead = Database['public']['Tables']['leads']['Row'];
 export type LeadInsert = Database['public']['Tables']['leads']['Insert'];

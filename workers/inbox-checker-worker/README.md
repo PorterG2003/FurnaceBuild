@@ -88,6 +88,7 @@ bash scripts/scale-services.sh dev 1 1 1
 
 - **CloudWatch Logs**: `/ecs/furnace/inbox-checker-worker-{environment}`
 - **Metrics**: Mailboxes processed, messages found, replies/bounces/unsubscribes detected
+- **Slack alerts**: retryable read-path issues post once immediately, then summarize repeated occurrences with counts on the next hourly rollover; critical mailbox/config failures still post immediately every time
 
 ## Performance
 

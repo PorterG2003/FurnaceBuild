@@ -143,13 +143,14 @@ docker push $REPO_URI:latest
 - **Batched Duplicate Filtering**: Batch interval assignment asks Supabase for existing `(enrollment_id, node_id)` pairs in one RPC-backed lookup before calling `batch_assign_jobs_to_interval`
 - **Auto-Scaling**: Scales based on enrollment count metric (1-20 workers)
 - **Error Handling**: Individual enrollment errors don't stop worker processing
+- **Alerting**: Retryable Supabase/read-path noise now sends one immediate Slack alert, then worker-local summaries with occurrence counts (default 60m window). Critical/non-retryable failures still alert immediately without aggregation.
 
 ## Development Workflow
 
 1. **Make code changes** in `src/`
 2. **Install/update dependencies** (if you added any): `cd workers/scheduler-worker && npm install`
 3. **Build TypeScript**: `npm run build`
-4. **Run scheduler tests**: `node --import tsx --test src/flow-evaluation.test.ts src/batch-interval-assignment.test.ts src/worker.test.ts`
+4. **Run scheduler tests**: `npm test`
 5. **Test locally** (optional): `npm start` (requires env vars)
 6. **Build and push Docker image**: From `infra/workers`, run `npm run build:dev:scheduler` or `npm run build:prod:scheduler`
 7. **Restart services**: From `infra/workers`, run `npm run restart:dev` or `npm run restart:prod`
@@ -187,4 +188,5 @@ docker push $REPO_URI:latest
 - Confirm the scheduler image includes the batched duplicate lookup change and the matching migration
 - Verify the `get_existing_message_job_pairs` RPC exists and the `idx_message_jobs_enrollment_node_status` index has been applied
 - Check logs for repeated `Previous run still in progress; skipping overlapping tick` messages to identify a slow background task without creating more load
+- In Slack, expect one immediate warning for a retryable scheduler issue, then a later summary showing `occurrences`, `first_seen`, and `last_seen` for the same aggregation key
 

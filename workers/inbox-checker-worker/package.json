@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "backfill:reparse": "tsx src/backfill-reparse.ts",
-    "test": "node --import tsx --test src/thread-manager.test.ts"
+    "test": "node --import tsx --test src/thread-manager.test.ts src/worker.test.ts"
   },
   "dependencies": {
     "@furnace/slack-lib": "file:../../lib/slack",

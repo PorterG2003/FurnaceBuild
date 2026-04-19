@@ -57,6 +57,7 @@ A long-running **ECS worker** with:
 - ✅ **Database-safe**: Enrollment claiming is atomic and duplicate email-job checks are batched
 - ✅ **Scales**: Avoids one `message_jobs` lookup per enrollment when a campaign backlog builds up
 - ✅ **Load-aware**: Background tasks skip overlapping ticks instead of piling more work onto Supabase
+- ✅ **Alert-aware**: Retryable scheduler noise is routed through a shared Slack policy engine that sends one immediate warning plus later summaries with counts, while critical failures remain immediate
 
 ### Example:
 ```

@@ -5,6 +5,7 @@ After the inbox checker processes a reply, verify that:
 1. **Thread linking** — reply is correctly linked to the original sent message
 2. **Enrollment stopping** — enrollment is stopped when a reply is detected
 3. **Message parsing** — all message data (headers, body, attachments) is captured correctly
+4. **Alerting behavior** — retryable inbox-checker noise should post once immediately, then summarize repeats with counts instead of flooding Slack
 
 ---
 
@@ -167,6 +168,21 @@ LIMIT 10;
 - Verify the `message_job.enrollment_id` is not null
 - Check if the enrollment was already stopped before the reply
 - Use the "pending replies" query above to see if the inbox checker has run yet
+
+---
+
+## Alert Verification
+
+When validating inbox-checker deployments, also confirm the worker alerting contract:
+
+1. Trigger or locate a retryable inbox-checker failure (for example a transient Supabase read-path error).
+2. Confirm Slack posts one immediate warning.
+3. If the same issue continues, confirm the channel does not get flooded on every loop iteration.
+4. On the next rollover for that aggregation key, confirm the summary includes:
+   - `occurrences`
+   - `first_seen`
+   - `last_seen`
+5. Trigger or inspect a non-retryable failure and confirm it still posts as a critical alert immediately.
 
 ---
 

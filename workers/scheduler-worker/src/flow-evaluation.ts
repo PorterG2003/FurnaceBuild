@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  isTransientUpstreamGatewayErrorMessage,
+  isRetryableSupabaseReadError,
   reportErrorToSlack,
 } from '@furnace/slack-lib';
 import type { Enrollment } from './types.js';
@@ -219,7 +219,7 @@ export async function evaluateFlow(
     const error = `Error loading current node ${enrollment.current_node_id} for enrollment ${enrollment.id}: ${errorMessage}`;
     console.error(error);
 
-    if (isTransientUpstreamGatewayErrorMessage(errorMessage)) {
+    if (isRetryableSupabaseReadError(errorMessage)) {
       return { nodes: [], evaluationFailed: true, evaluationError: errorMessage };
     }
 

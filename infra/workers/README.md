@@ -155,6 +155,12 @@ After deployment, check:
    aws ssm get-parameter --name "/furnace/ecs/dev/smartlead-migration/task-definition-arn" --query Parameter.Value --output text
    ```
 
+5. **Shared alerting behavior:**
+   - first retryable worker incident posts immediately
+   - repeated retryable incidents stop flooding Slack
+   - later summary posts include counts/timestamps for the same worker-local aggregation key
+   - critical failures still post immediately without aggregation delay
+
 ## Build and Push Docker Images
 
 After deploying the stacks, build and push Docker images to ECR:

@@ -1,5 +1,9 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import {
+  formatUnknownError,
+  isRetryableSupabaseReadError,
+  reportErrorToSlack,
+} from '@furnace/slack-lib';
 import pLimit from 'p-limit';
 import { DatabaseClient } from './database.js';
 import { ImapClient } from './imap-client.js';
@@ -78,8 +82,17 @@ export class InboxCheckerWorker {
         }
       } catch (error) {
         console.error('[INBOX CHECKER] Error in main loop:', error);
-        const msg = error instanceof Error ? error.message : String(error);
-        reportErrorToSlack(`Inbox-checker main loop error: ${msg}`, { severity: 'critical' });
+        const msg = formatUnknownError(error);
+        const retryable = isRetryableSupabaseReadError(msg);
+        reportErrorToSlack('Inbox-checker main loop error', {
+          severity: retryable ? 'warning' : 'critical',
+          error: msg,
+          alertPolicy: retryable ? 'transient_retryable_warning' : 'critical_failure',
+          aggregationKey: retryable ? 'inbox-checker-main-loop:retryable' : undefined,
+          summaryFields: {
+            worker: 'inbox-checker',
+          },
+        });
         await this.sleep(5000); // Wait before retrying
       }
     }

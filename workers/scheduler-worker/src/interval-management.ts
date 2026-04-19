@@ -1,4 +1,7 @@
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import {
+  isRetryableSupabaseReadError,
+  reportErrorToSlack,
+} from '@furnace/slack-lib';
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { CampaignSchedule } from './types.js';
 import { isWithinSchedule, calculateNextAllowedTime } from './scheduling.js';
@@ -32,6 +35,14 @@ export async function maintainCampaignIntervals(
     reportErrorToSlack('Scheduler: interval maintenance failed to load campaigns', {
       severity: 'warning',
       error: error.message,
+      alertPolicy: isRetryableSupabaseReadError(error.message)
+        ? 'transient_retryable_warning'
+        : 'persistent_config_warning',
+      aggregationKey: 'scheduler-interval-maintenance-load-campaigns',
+      summaryFields: {
+        worker: 'scheduler',
+        operation: 'maintainCampaignIntervals',
+      },
     });
     return;
   }
@@ -61,6 +72,13 @@ export async function maintainCampaignIntervals(
         severity: 'warning',
         campaign_id: campaign.id,
         error: msg,
+        alertPolicy: isRetryableSupabaseReadError(msg)
+          ? 'transient_retryable_warning'
+          : 'persistent_config_warning',
+        aggregationKey: `scheduler-interval-maintenance-campaign:${campaign.id}`,
+        summaryFields: {
+          campaign_id: campaign.id,
+        },
       });
     }
   }

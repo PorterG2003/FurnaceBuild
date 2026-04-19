@@ -58,6 +58,7 @@ Look for:
 - `[DATABASE] Claimed X mailbox(es) to check`
 - `[INBOX CHECKER] Processing mailbox...`
 - `[INBOX CHECKER] Found X new message(s)`
+- Slack: one immediate retryable warning, then later summaries with `occurrences`, `first_seen`, and `last_seen` instead of one post per loop
 
 ---
 

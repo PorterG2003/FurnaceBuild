@@ -1,4 +1,8 @@
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import {
+  formatUnknownError,
+  isRetryableSupabaseReadError,
+  reportErrorToSlack,
+} from '@furnace/slack-lib';
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { ProcessedMessage, Mailbox, MessageJob } from './types.js';
 import {
@@ -359,6 +363,15 @@ export class ThreadManager {
         severity: 'critical',
         thread_id: thread.id,
         error: messageError.message,
+        alertPolicy: isRetryableSupabaseReadError(messageError.message)
+          ? 'transient_retryable_warning'
+          : 'critical_failure',
+        aggregationKey: isRetryableSupabaseReadError(messageError.message)
+          ? `inbox-create-email-message:${thread.id}`
+          : undefined,
+        summaryFields: {
+          thread_id: thread.id,
+        },
       });
       throw messageError;
     }
@@ -437,6 +450,13 @@ export class ThreadManager {
             campaign_id: originalJob.campaign_id,
             message_job_id: originalJob.id,
             error: error.message,
+            alertPolicy: isRetryableSupabaseReadError(error.message)
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: `inbox-record-replied:${originalJob.campaign_id}`,
+            summaryFields: {
+              campaign_id: originalJob.campaign_id,
+            },
           });
         } else if (!inserted) {
           console.log(`[INBOX CHECKER] Reply already processed for message_job ${originalJob.id}, skipping event and stats`);
@@ -570,6 +590,15 @@ export class ThreadManager {
         severity: 'critical',
         message_job_id: messageJob.id,
         error: threadError.message,
+        alertPolicy: isRetryableSupabaseReadError(threadError.message)
+          ? 'transient_retryable_warning'
+          : 'critical_failure',
+        aggregationKey: isRetryableSupabaseReadError(threadError.message)
+          ? `inbox-create-email-thread:${messageJob.id}`
+          : undefined,
+        summaryFields: {
+          message_job_id: messageJob.id,
+        },
       });
       throw threadError;
     }
@@ -706,11 +735,19 @@ export class ThreadManager {
           continue; // Race condition, skip
         }
         console.error(`Error backfilling sent message for job ${job.id}:`, insertError);
+        const errorMessage = formatUnknownError(insertError);
         reportErrorToSlack('Inbox-checker: backfill sent message failed', {
           severity: 'warning',
           message_job_id: job.id,
           thread_id: thread.id,
-          error: insertError.message,
+          error: errorMessage,
+          alertPolicy: isRetryableSupabaseReadError(errorMessage)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: `inbox-backfill-sent-message:${thread.id}`,
+          summaryFields: {
+            thread_id: thread.id,
+          },
         });
       } else {
         insertedCount++;
@@ -853,6 +890,13 @@ export class ThreadManager {
           campaign_id: job.campaign_id,
           message_job_id: job.id,
           error: error.message,
+          alertPolicy: isRetryableSupabaseReadError(error.message)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: `inbox-record-bounced:${job.campaign_id}`,
+          summaryFields: {
+            campaign_id: job.campaign_id,
+          },
         });
       }
       if (classification.severity === 'hard' && suppressBouncedEmails) {

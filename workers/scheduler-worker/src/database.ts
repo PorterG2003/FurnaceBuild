@@ -1,4 +1,8 @@
-import { formatUnknownError, reportErrorToSlack } from '@furnace/slack-lib';
+import {
+  formatUnknownError,
+  isRetryableSupabaseReadError,
+  reportErrorToSlack,
+} from '@furnace/slack-lib';
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { Enrollment } from './types.js';
 
@@ -50,10 +54,6 @@ export class DatabaseClient {
 
       if (error) {
         console.error('[DATABASE] Error claiming enrollments:', error);
-        reportErrorToSlack('Scheduler: failed to claim enrollments from database', {
-          severity: 'critical',
-          error: error.message,
-        });
         throw error;
       }
 
@@ -66,8 +66,18 @@ export class DatabaseClient {
       console.error('Error claiming enrollments from database:', error);
       const msg = formatUnknownError(error);
       reportErrorToSlack('Scheduler: error claiming enrollments from database', {
-        severity: 'critical',
+        severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
         error: msg,
+        alertPolicy: isRetryableSupabaseReadError(msg)
+          ? 'transient_retryable_warning'
+          : 'critical_failure',
+        aggregationKey: isRetryableSupabaseReadError(msg)
+          ? 'scheduler-claim-enrollments'
+          : undefined,
+        summaryFields: {
+          worker: 'scheduler',
+          operation: 'claim_enrollments_ready',
+        },
       });
       throw error;
     }

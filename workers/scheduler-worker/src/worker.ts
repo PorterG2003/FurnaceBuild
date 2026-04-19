@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
   formatUnknownError,
+  isRetryableSupabaseReadError,
   isTransientUpstreamGatewayErrorMessage,
   reportErrorToSlack,
 } from '@furnace/slack-lib';
@@ -195,7 +196,18 @@ export class SchedulerWorker {
       onError: (err) => {
         console.error('[INTERVAL MAINTENANCE] Error:', err);
         const msg = err instanceof Error ? err.message : String(err);
-        reportErrorToSlack('Scheduler: interval maintenance failed', { severity: 'warning', error: msg });
+        reportErrorToSlack('Scheduler: interval maintenance failed', {
+          severity: 'warning',
+          error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: 'scheduler-interval-maintenance',
+          summaryFields: {
+            worker: 'scheduler',
+            operation: 'maintainCampaignIntervals',
+          },
+        });
       },
     });
   }
@@ -217,6 +229,14 @@ export class SchedulerWorker {
           reportErrorToSlack('Scheduler: stale lock cleanup RPC failed', {
             severity: 'warning',
             error: error.message,
+            alertPolicy: isRetryableSupabaseReadError(error.message)
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: 'scheduler-stale-lock-cleanup',
+            summaryFields: {
+              worker: 'scheduler',
+              operation: 'cleanup_stale_interval_locks',
+            },
           });
         } else if (data > 0) {
           console.log(`[STALE LOCK CLEANUP] Released ${data} stale locks`);
@@ -225,7 +245,18 @@ export class SchedulerWorker {
       onError: (error) => {
         console.error('[STALE LOCK CLEANUP] Error:', error);
         const msg = error instanceof Error ? error.message : String(error);
-        reportErrorToSlack('Scheduler: stale lock cleanup failed', { severity: 'warning', error: msg });
+        reportErrorToSlack('Scheduler: stale lock cleanup failed', {
+          severity: 'warning',
+          error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: 'scheduler-stale-lock-cleanup',
+          summaryFields: {
+            worker: 'scheduler',
+            operation: 'cleanup_stale_interval_locks',
+          },
+        });
       },
     });
   }
@@ -247,6 +278,14 @@ export class SchedulerWorker {
           reportErrorToSlack('Scheduler: processed interval check RPC failed', {
             severity: 'warning',
             error: error.message,
+            alertPolicy: isRetryableSupabaseReadError(error.message)
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: 'scheduler-processed-interval-check',
+            summaryFields: {
+              worker: 'scheduler',
+              operation: 'check_and_update_processed_intervals',
+            },
           });
         } else if (data > 0) {
           console.log(`[PROCESSED INTERVAL CHECK] Updated ${data} processed interval(s)`);
@@ -255,7 +294,18 @@ export class SchedulerWorker {
       onError: (error) => {
         console.error('[PROCESSED INTERVAL CHECK] Error:', error);
         const msg = error instanceof Error ? error.message : String(error);
-        reportErrorToSlack('Scheduler: processed interval check failed', { severity: 'warning', error: msg });
+        reportErrorToSlack('Scheduler: processed interval check failed', {
+          severity: 'warning',
+          error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: 'scheduler-processed-interval-check',
+          summaryFields: {
+            worker: 'scheduler',
+            operation: 'check_and_update_processed_intervals',
+          },
+        });
       },
     });
   }
@@ -274,7 +324,18 @@ export class SchedulerWorker {
       onError: (err) => {
         console.error('[BATCH INTERVAL] Error:', err);
         const msg = err instanceof Error ? err.message : String(err);
-        reportErrorToSlack('Scheduler: batch interval assignment failed', { severity: 'critical', error: msg });
+        reportErrorToSlack('Scheduler: batch interval assignment failed', {
+          severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
+          error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: 'scheduler-batch-interval-assignment',
+          summaryFields: {
+            worker: 'scheduler',
+            operation: 'batchAssignIntervalJobs',
+          },
+        });
       },
     });
   }
@@ -476,12 +537,33 @@ export class SchedulerWorker {
         .single();
 
       if (accountError) {
-        console.warn(`Account ${campaign.account_id} not found for campaign ${enrollment.campaign_id}, using default jitter: ${accountError?.message}`);
-        reportErrorToSlack('Missing account for campaign (using default jitter)', {
-          severity: 'warning',
-          campaign_id: enrollment.campaign_id,
-          account_id: campaign.account_id,
+        const retryableAccountRead = isRetryableSupabaseReadError({
+          message: accountError.message,
+          details: (accountError as any).details,
+          hint: (accountError as any).hint,
+          code: (accountError as any).code,
+          status: (accountError as any).status,
         });
+
+        if (retryableAccountRead) {
+          console.warn(
+            `Retryable account lookup error for campaign ${enrollment.campaign_id}, using default jitter: ${accountError.message}`
+          );
+        } else {
+          console.warn(`Account ${campaign.account_id} not found for campaign ${enrollment.campaign_id}, using default jitter: ${accountError.message}`);
+          reportErrorToSlack('Missing account for campaign (using default jitter)', {
+            severity: 'warning',
+            campaign_id: enrollment.campaign_id,
+            account_id: campaign.account_id,
+            error: accountError.message,
+            alertPolicy: 'persistent_config_warning',
+            aggregationKey: `missing-account:${enrollment.campaign_id}:${campaign.account_id}`,
+            summaryFields: {
+              campaign_id: enrollment.campaign_id,
+              account_id: campaign.account_id,
+            },
+          });
+        }
       }
 
       // Determine jitter: campaign > account > default (10%)
@@ -502,15 +584,31 @@ export class SchedulerWorker {
       if (evaluationResult.evaluationFailed) {
         const deferMs = 60_000;
         const nextRun = new Date(Date.now() + deferMs).toISOString();
+        const evaluationError = evaluationResult.evaluationError ?? 'Could not load flow nodes';
+        const retryableReadError = isRetryableSupabaseReadError(evaluationError);
         console.warn(
           `[ENROLLMENT ${enrollmentId}] Flow evaluation failed (database read). Deferring retry in ${deferMs / 1000}s: ${evaluationResult.evaluationError ?? 'unknown'}`
         );
-        reportErrorToSlack('Scheduler: flow evaluation deferred (database read failed)', {
-          severity: 'warning',
-          enrollment_id: enrollment.id,
-          campaign_id: enrollment.campaign_id,
-          error: evaluationResult.evaluationError ?? 'Could not load flow nodes',
-        });
+        reportErrorToSlack(
+          retryableReadError
+            ? 'Scheduler: enrollment processing deferred (retryable read-path error)'
+            : 'Scheduler: flow evaluation deferred (database read failed)',
+          {
+            severity: 'warning',
+            enrollment_id: enrollment.id,
+            campaign_id: enrollment.campaign_id,
+            error: evaluationError,
+            alertPolicy: retryableReadError
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: retryableReadError
+              ? `scheduler-retryable-read:${enrollment.campaign_id}`
+              : `scheduler-flow-evaluation:${enrollment.campaign_id}:${evaluationError}`,
+            summaryFields: {
+              campaign_id: enrollment.campaign_id,
+            },
+          }
+        );
         await this.supabase
           .from('enrollments')
           .update({
@@ -606,8 +704,15 @@ export class SchedulerWorker {
               reportErrorToSlack('Scheduler: selected node not found (flow inconsistency)', {
                 severity: 'warning',
                 enrollment_id: enrollment.id,
+          campaign_id: enrollment.campaign_id,
                 flow_node_id: selectedFlowNodeId,
                 error: errMsg,
+          alertPolicy: 'persistent_config_warning',
+          aggregationKey: `scheduler-selected-node-missing:${enrollment.campaign_id}:${selectedFlowNodeId}`,
+          summaryFields: {
+            campaign_id: enrollment.campaign_id,
+            flow_node_id: selectedFlowNodeId,
+          },
               });
               // Update enrollment to AICategorizer node and set next_run_at for retry
               await this.supabase
@@ -709,6 +814,11 @@ export class SchedulerWorker {
           enrollment_id: enrollment.id,
           campaign_id: enrollment.campaign_id,
           error: errorMessage,
+          alertPolicy: 'transient_retryable_warning',
+          aggregationKey: `scheduler-transient-upstream:${enrollment.campaign_id}`,
+          summaryFields: {
+            campaign_id: enrollment.campaign_id,
+          },
         });
         try {
           await this.supabase
@@ -727,6 +837,13 @@ export class SchedulerWorker {
             enrollment_id: enrollment.id,
             campaign_id: enrollment.campaign_id,
             error: deferMsg,
+            alertPolicy: isRetryableSupabaseReadError(deferMsg)
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: `scheduler-failed-defer:${enrollment.campaign_id}`,
+            summaryFields: {
+              campaign_id: enrollment.campaign_id,
+            },
           });
         }
         return;
@@ -764,6 +881,13 @@ export class SchedulerWorker {
           enrollment_id: enrollment.id,
           campaign_id: enrollment.campaign_id,
           error: updateMsg,
+          alertPolicy: isRetryableSupabaseReadError(updateMsg)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: `scheduler-update-enrollment-after-error:${enrollment.campaign_id}`,
+          summaryFields: {
+            campaign_id: enrollment.campaign_id,
+          },
         });
       }
 

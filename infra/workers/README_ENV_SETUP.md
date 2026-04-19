@@ -39,6 +39,11 @@ The **send-worker** (and scheduler / inbox-checker workers) need:
 | `AWS_REGION` | CDK deploy | e.g. `us-west-2` |
 | `DEV_SLACK_ERROR_WEBHOOK_URL` / `PROD_SLACK_ERROR_WEBHOOK_URL` | CDK deploy (optional) | When set in `.env.local`, errors from workers are posted to Slack. Use **both** for different channels: dev workers (`deploy:dev`) use `DEV_`, prod workers (`deploy:prod`) use `PROD_`. Fallback: `SLACK_ERROR_WEBHOOK_URL` is used for both if the env-specific one is not set. |
 
+When the Slack webhook is configured, worker alerts now use a shared policy engine:
+- retryable/transient warnings post immediately once, then send a later summary with `occurrences`, `first_seen`, and `last_seen`
+- persistent configuration warnings use the same first-alert-plus-summary pattern
+- critical failures stay loud and bypass aggregation by default
+
 These are **baked into the ECS task definition** when you run:
 
 ```bash
@@ -60,6 +65,19 @@ So if you see **"Missing SUPABASE_SECRET_KEY"** in send-worker logs:
    npm run restart:dev   # or restart:prod
    ```
    This runs `--force-new-deployment` for send-worker, scheduler, and inbox-checker.
+
+## Alert Rollout Check
+
+After deploying worker changes that affect alerting:
+
+1. `npm run restart:dev` or `npm run restart:prod`
+2. `npm run check:services`
+3. `npm run check:logs`
+4. Confirm in Slack that:
+   - the first retryable incident still posts immediately
+   - repeats stop flooding the channel
+   - the next summary includes counts and timestamps
+   - critical failures still post immediately without waiting for a summary
 
 ## How It Works
 

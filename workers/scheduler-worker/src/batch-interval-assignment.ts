@@ -1,4 +1,7 @@
-import { reportErrorToSlack } from '@furnace/slack-lib';
+import {
+  isRetryableSupabaseReadError,
+  reportErrorToSlack,
+} from '@furnace/slack-lib';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { selectMailbox } from './mailbox-selection.js';
 
@@ -55,6 +58,16 @@ export async function batchAssignIntervalJobs(
     reportErrorToSlack('Scheduler: batch interval failed to load campaigns', {
       severity: 'critical',
       error: campaignsError.message,
+      alertPolicy: isRetryableSupabaseReadError(campaignsError.message)
+        ? 'transient_retryable_warning'
+        : 'critical_failure',
+      aggregationKey: isRetryableSupabaseReadError(campaignsError.message)
+        ? 'scheduler-batch-interval-load-campaigns'
+        : undefined,
+      summaryFields: {
+        worker: 'scheduler',
+        operation: 'batchAssignIntervalJobs',
+      },
     });
     return;
   }
@@ -85,6 +98,13 @@ export async function batchAssignIntervalJobs(
           severity: 'warning',
           campaign_id: campaign.id,
           error: intervalsError.message,
+          alertPolicy: isRetryableSupabaseReadError(intervalsError.message)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: `scheduler-batch-interval-check-intervals:${campaign.id}`,
+          summaryFields: {
+            campaign_id: campaign.id,
+          },
         });
         continue;
       }
@@ -146,6 +166,13 @@ export async function batchAssignIntervalJobs(
           severity: 'warning',
           campaign_id: campaign.id,
           error: enrollmentsError.message,
+          alertPolicy: isRetryableSupabaseReadError(enrollmentsError.message)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: `scheduler-batch-interval-load-enrollments:${campaign.id}`,
+          summaryFields: {
+            campaign_id: campaign.id,
+          },
         });
         continue;
       }
@@ -236,6 +263,13 @@ export async function batchAssignIntervalJobs(
             severity: 'warning',
             campaign_id: campaign.id,
             error: nodesLookupError.message,
+            alertPolicy: isRetryableSupabaseReadError(nodesLookupError.message)
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: `scheduler-batch-interval-load-node-data:${campaign.id}`,
+            summaryFields: {
+              campaign_id: campaign.id,
+            },
           });
           continue;
         }
@@ -326,6 +360,15 @@ export async function batchAssignIntervalJobs(
           severity: 'critical',
           campaign_id: campaign.id,
           error: rpcError.message,
+          alertPolicy: isRetryableSupabaseReadError(rpcError.message)
+            ? 'transient_retryable_warning'
+            : 'critical_failure',
+          aggregationKey: isRetryableSupabaseReadError(rpcError.message)
+            ? `scheduler-batch-interval-rpc:${campaign.id}`
+            : undefined,
+          summaryFields: {
+            campaign_id: campaign.id,
+          },
         });
         continue;
       }
@@ -345,6 +388,15 @@ export async function batchAssignIntervalJobs(
         severity: 'critical',
         campaign_id: campaign.id,
         error: msg,
+        alertPolicy: isRetryableSupabaseReadError(msg)
+          ? 'transient_retryable_warning'
+          : 'critical_failure',
+        aggregationKey: isRetryableSupabaseReadError(msg)
+          ? `scheduler-batch-interval-process-campaign:${campaign.id}`
+          : undefined,
+        summaryFields: {
+          campaign_id: campaign.id,
+        },
       });
     }
   }

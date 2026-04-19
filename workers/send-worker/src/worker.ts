@@ -1,6 +1,10 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { buildCampaignEmailContent, type LeadLike } from '@furnace/email-lib';
-import { formatUnknownError, reportErrorToSlack } from '@furnace/slack-lib';
+import {
+  formatUnknownError,
+  isRetryableSupabaseReadError,
+  reportErrorToSlack,
+} from '@furnace/slack-lib';
 import { DatabaseClient } from './database.js';
 import { sendEmail, sendReplyEmail } from './email.js';
 import type { ReplyEmailOptions } from './email.js';
@@ -79,7 +83,16 @@ export class SendWorker {
       } catch (error) {
         console.error('[SEND WORKER] Error in main loop:', error);
         const msg = formatUnknownError(error);
-        reportErrorToSlack(`Send-worker main loop error: ${msg}`, { severity: 'critical' });
+        const retryable = isRetryableSupabaseReadError(msg);
+        reportErrorToSlack('Send-worker main loop error', {
+          severity: retryable ? 'warning' : 'critical',
+          error: msg,
+          alertPolicy: retryable ? 'transient_retryable_warning' : 'critical_failure',
+          aggregationKey: retryable ? 'send-worker-main-loop:retryable' : undefined,
+          summaryFields: {
+            worker: 'send-worker',
+          },
+        });
         await this.sleep(5000);
       }
     }
@@ -332,6 +345,11 @@ export class SendWorker {
           message_job_id: message_job_id,
           campaign_id: messageJob.campaign_id,
           error: msg,
+          alertPolicy: 'persistent_config_warning',
+          aggregationKey: `send-worker-campaign-content-parse:${messageJob.campaign_id}`,
+          summaryFields: {
+            campaign_id: messageJob.campaign_id,
+          },
         });
         throw err;
       }
@@ -368,6 +386,11 @@ export class SendWorker {
               message_job_id: message_job_id,
               campaign_id: messageJob.campaign_id,
               error: msg,
+          alertPolicy: 'persistent_config_warning',
+          aggregationKey: `send-worker-thread-followup-parse:${messageJob.campaign_id}`,
+          summaryFields: {
+            campaign_id: messageJob.campaign_id,
+          },
             });
             throw err;
           }
@@ -456,6 +479,13 @@ export class SendWorker {
             enrollment_id: messageJob.enrollment_id,
             message_job_id: message_job_id,
             error: enrollmentError.message,
+            alertPolicy: isRetryableSupabaseReadError(enrollmentError.message)
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: `send-worker-enrollment-next-run:${messageJob.campaign_id}`,
+            summaryFields: {
+              campaign_id: messageJob.campaign_id,
+            },
           });
         } else {
           console.log(`[SEND WORKER] Updated enrollment ${messageJob.enrollment_id} next_run_at to trigger scheduler re-evaluation`);
@@ -469,6 +499,13 @@ export class SendWorker {
           enrollment_id: messageJob.enrollment_id,
           message_job_id: message_job_id,
           error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: `send-worker-enrollment-next-run:${messageJob.campaign_id}`,
+          summaryFields: {
+            campaign_id: messageJob.campaign_id,
+          },
         });
       }
 
@@ -488,6 +525,13 @@ export class SendWorker {
             campaign_id: messageJob.campaign_id,
             message_job_id: message_job_id,
             error: processedError.message,
+            alertPolicy: isRetryableSupabaseReadError(processedError.message)
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: `send-worker-processed-intervals:${messageJob.campaign_id}`,
+            summaryFields: {
+              campaign_id: messageJob.campaign_id,
+            },
           });
         } else if (processedCount && processedCount > 0) {
           console.log(`[SEND WORKER] Marked ${processedCount} interval(s) as processed for campaign ${messageJob.campaign_id}`);
@@ -501,6 +545,13 @@ export class SendWorker {
           campaign_id: messageJob.campaign_id,
           message_job_id: message_job_id,
           error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: `send-worker-processed-intervals:${messageJob.campaign_id}`,
+          summaryFields: {
+            campaign_id: messageJob.campaign_id,
+          },
         });
       }
 
@@ -528,6 +579,13 @@ export class SendWorker {
             campaign_id: messageJob.campaign_id,
             message_job_id: messageJob.id,
             error: error.message,
+            alertPolicy: isRetryableSupabaseReadError(error.message)
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: `send-worker-record-sent:${messageJob.campaign_id}`,
+            summaryFields: {
+              campaign_id: messageJob.campaign_id,
+            },
           });
         }
       } else {
@@ -554,10 +612,20 @@ export class SendWorker {
       // Mark job as failed with error message
       const errorMessage = formatUnknownError(error);
 
-      reportErrorToSlack(`Send-worker failed to process message job: ${errorMessage}`, {
-        severity: 'critical',
+      const retryableJobError = isRetryableSupabaseReadError(errorMessage);
+      reportErrorToSlack('Send-worker failed to process message job', {
+        severity: retryableJobError ? 'warning' : 'critical',
+        error: errorMessage,
         message_job_id: messageJob.id,
         enrollment_id: messageJob.enrollment_id,
+        campaign_id: messageJob.campaign_id,
+        alertPolicy: retryableJobError ? 'transient_retryable_warning' : 'critical_failure',
+        aggregationKey: retryableJobError
+          ? `send-worker-process-message-job:${messageJob.campaign_id}`
+          : undefined,
+        summaryFields: {
+          campaign_id: messageJob.campaign_id,
+        },
       });
       
       try {
@@ -592,10 +660,20 @@ export class SendWorker {
         console.error(`[SEND WORKER] Failed to update message job ${messageJob.id} status to failed:`, updateError);
         const updateMsg = formatUnknownError(updateError);
         reportErrorToSlack('Send-worker: failed to mark message_job as failed', {
-          severity: 'critical',
+          severity: isRetryableSupabaseReadError(updateMsg) ? 'warning' : 'critical',
           message_job_id: messageJob.id,
           enrollment_id: messageJob.enrollment_id,
           error: updateMsg,
+          campaign_id: messageJob.campaign_id,
+          alertPolicy: isRetryableSupabaseReadError(updateMsg)
+            ? 'transient_retryable_warning'
+            : 'critical_failure',
+          aggregationKey: isRetryableSupabaseReadError(updateMsg)
+            ? `send-worker-mark-failed:${messageJob.campaign_id}`
+            : undefined,
+          summaryFields: {
+            campaign_id: messageJob.campaign_id,
+          },
         });
       }
       
@@ -687,6 +765,11 @@ export class SendWorker {
         severity: 'warning',
         message_job_id: message_job_id,
         thread_id: threadId,
+        alertPolicy: 'persistent_config_warning',
+        aggregationKey: `send-worker-empty-reply-body:${threadId}`,
+        summaryFields: {
+          thread_id: threadId,
+        },
       });
     }
     let providerMessageId: string;
@@ -860,6 +943,11 @@ export class SendWorker {
         severity: 'warning',
         message_job_id: message_job_id,
         thread_id: threadId,
+        alertPolicy: 'persistent_config_warning',
+        aggregationKey: `send-worker-empty-forward-body:${threadId}`,
+        summaryFields: {
+          thread_id: threadId,
+        },
       });
     }
     try {

@@ -1,8 +1,9 @@
 import { reportErrorToSlack } from '../../../slack/reportErrorToSlack';
 import { supabase } from '../../client';
-import type { Campaign, CampaignInsert, CampaignUpdate } from '../../types';
+import type { Campaign, CampaignFlowVersion, CampaignInsert, CampaignUpdate } from '../../types';
 import { getAccountMembershipsForUser, getUserById, getUserByExternalId } from '../accounts';
-import { cancelUnsentCampaignJobs } from './campaign-enrollments';
+
+export type { CampaignFlowVersion };
 
 export interface CampaignFilters {
   ownerId?: string;
@@ -92,6 +93,34 @@ export async function updateCampaign(id: string, updates: CampaignUpdate): Promi
   return data;
 }
 
+export async function updateCampaignFlowData(
+  id: string,
+  flowData: Campaign['flow_data'],
+  changeSource: string = 'builder'
+): Promise<Campaign> {
+  const { data, error } = await supabase.rpc('update_campaign_flow_data', {
+    p_campaign_id: id,
+    p_flow_data: flowData,
+    p_change_source: changeSource,
+  });
+
+  if (error) throw new Error(`Failed to update campaign flow: ${error.message}`);
+  const campaign = Array.isArray(data) ? data[0] : data;
+  if (!campaign) throw new Error('Failed to update campaign flow: No data returned');
+  return campaign as Campaign;
+}
+
+export async function getCampaignFlowVersions(campaignId: string): Promise<CampaignFlowVersion[]> {
+  const { data, error } = await supabase
+    .from('campaign_flow_versions')
+    .select('id, campaign_id, account_id, version_number, flow_data, flow_hash, changed_at, changed_by_user_id, change_source, created_at')
+    .eq('campaign_id', campaignId)
+    .order('version_number', { ascending: false });
+
+  if (error) throw new Error(`Failed to fetch campaign flow versions: ${error.message}`);
+  return (data || []) as CampaignFlowVersion[];
+}
+
 export async function deleteCampaign(id: string): Promise<void> {
   const now = new Date().toISOString();
   const { error } = await supabase
@@ -106,8 +135,7 @@ export async function deleteCampaign(id: string): Promise<void> {
 
   if (error) throw new Error(`Failed to delete campaign: ${error.message}`);
 
-  const [cancelJobsResult, enrollmentsResult, nodesResult] = await Promise.all([
-    cancelUnsentCampaignJobs(id, 'Campaign deleted'),
+  const [enrollmentsResult, nodesResult] = await Promise.all([
     supabase
       .from('enrollments')
       .update({
@@ -134,5 +162,4 @@ export async function deleteCampaign(id: string): Promise<void> {
   if (nodesResult.error) {
     throw new Error(`Failed to delete campaign nodes: ${nodesResult.error.message}`);
   }
-  void cancelJobsResult;
 }

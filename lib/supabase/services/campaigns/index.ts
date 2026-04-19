@@ -3,7 +3,10 @@ export {
   getCampaignById,
   createCampaign,
   updateCampaign,
+  updateCampaignFlowData,
+  getCampaignFlowVersions,
   deleteCampaign,
+  type CampaignFlowVersion,
   type CampaignFilters,
 } from './campaigns';
 export {
@@ -22,6 +25,10 @@ export {
   ensureCampaignEnrollmentsForLeads,
   backfillCampaignEnrollments,
   cancelUnsentCampaignJobs,
+  resumeCampaignAndRescheduleJobs,
+  stopCampaignAndStopEnrollments,
+  type ResumeCampaignResult,
+  type StopCampaignResult,
 } from './campaign-enrollments';
 export { isCampaignOwner, hasCampaignAccess } from './campaign-access';
 export { getTestCampaigns, deleteTestCampaign } from './campaign-test-data';

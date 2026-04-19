@@ -19,6 +19,7 @@ export async function handleWaitTimeNode(
   enrollment: Enrollment,
   node: any,
   schedule: CampaignSchedule | null,
+  flowVersionNumber: number | null,
   supabase: SupabaseClient
 ): Promise<void> {
   // 1. Extract wait duration from node.node_data (canonical: wait_duration_seconds set by builder)
@@ -41,6 +42,7 @@ export async function handleWaitTimeNode(
       .from('enrollments')
       .update({
         current_node_id: node.id,
+        current_flow_version_number: flowVersionNumber,
         next_run_at: nextRunAt,
       })
       .eq('id', enrollment.id);
@@ -75,6 +77,7 @@ export async function handleWaitTimeNode(
     .from('enrollments')
     .update({
       current_node_id: node.id,
+      current_flow_version_number: flowVersionNumber,
       next_run_at: nextRunAt,
     })
     .eq('id', enrollment.id);

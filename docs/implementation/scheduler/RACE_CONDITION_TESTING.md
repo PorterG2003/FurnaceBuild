@@ -6,6 +6,44 @@
 
 ---
 
+## Scheduler Load Remediation Checks
+
+These checks complement the throttle tests below after the scheduler batching changes land.
+
+### Verify duplicate suppression still holds
+
+**Goal**: Confirm repeated scheduler passes do not create duplicate `message_jobs` for the same `(enrollment_id, node_id)` pair.
+
+**Verification SQL**:
+```sql
+SELECT
+  enrollment_id,
+  node_id,
+  COUNT(*) AS job_count
+FROM message_jobs
+WHERE created_at > NOW() - INTERVAL '30 minutes'
+GROUP BY enrollment_id, node_id
+HAVING COUNT(*) > 1;
+```
+
+Expected result: **0 rows** for the campaign under test unless a separate product flow intentionally recreates jobs for a later node revisit.
+
+### Verify the batched lookup replaced the request storm
+
+**Goal**: Confirm scheduler load no longer scales as one `message_jobs` REST request per waiting enrollment.
+
+**Checks**:
+1. In worker logs, verify batch interval assignment still runs regularly.
+2. If a batch run is slow, expect log lines similar to `Previous run still in progress; skipping overlapping tick` instead of multiple overlapping runs.
+3. In Supabase logs, compare before/after volume for `/rest/v1/message_jobs?...enrollment_id=eq...&node_id=eq...`.
+
+Expected result:
+- far fewer `message_jobs` REST reads
+- fewer 502/503/504 responses
+- no corresponding increase in duplicate jobs
+
+---
+
 ## Test Scenarios
 
 ### Scenario 1: Min Gap Enforcement (Most Critical)

@@ -37,6 +37,18 @@ export function mergeStateMatchingOutcomeProgress(
   };
 }
 
+export async function patchFoundryJobProgress(
+  leadsClient: LeadsClient,
+  jobId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const { error } = await leadsClient.rpc('merge_foundry_job_progress', {
+    p_job_id: jobId,
+    p_patch: patch,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function getReconciliationOutcomeCounts(
   leadsClient: LeadsClient,
   reconciliationRunId: string,
@@ -53,29 +65,12 @@ export async function flushStateMatchingJobOutcomeProgress(
   jobId: string,
   reconciliationRunId: string,
 ): Promise<{ reconciliationOutcomes: ReconciliationOutcomeCounts; companiesWithResult: number }> {
-  const [reconciliationOutcomes, jobResult] = await Promise.all([
-    getReconciliationOutcomeCounts(leadsClient, reconciliationRunId),
-    leadsClient.from('foundry_jobs').select('progress').eq('id', jobId).maybeSingle(),
-  ]);
-
-  if (jobResult.error) {
-    throw new Error(jobResult.error.message);
-  }
-
-  const progress = mergeStateMatchingOutcomeProgress(
-    (jobResult.data?.progress ?? {}) as Record<string, unknown>,
+  const reconciliationOutcomes = await getReconciliationOutcomeCounts(leadsClient, reconciliationRunId);
+  const progressPatch = mergeStateMatchingOutcomeProgress(
+    undefined,
     reconciliationOutcomes,
   );
-  const { error: updateErr } = await leadsClient
-    .from('foundry_jobs')
-    .update({
-      status: 'running',
-      progress,
-    })
-    .eq('id', jobId);
-  if (updateErr) {
-    throw new Error(updateErr.message);
-  }
+  await patchFoundryJobProgress(leadsClient, jobId, progressPatch);
 
   return {
     reconciliationOutcomes,

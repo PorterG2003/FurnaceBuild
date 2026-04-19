@@ -129,7 +129,7 @@ export async function stateMatchingPreflight(
 }
 
 /**
- * Split preflight-ready companies by supported registry automation (UT / FL ECS only).
+ * Split preflight-ready companies by supported registry automation (UT / FL / IA ECS).
  */
 export async function bucketCompaniesForMatching(
   leadsClient: SupabaseClient,
@@ -137,19 +137,22 @@ export async function bucketCompaniesForMatching(
 ): Promise<{
   utahCompanyIds: string[];
   floridaCompanyIds: string[];
+  iowaCompanyIds: string[];
   unsupported: { company_id: string; state: string }[];
 }> {
   const utahCompanyIds: string[] = [];
   const floridaCompanyIds: string[] = [];
+  const iowaCompanyIds: string[] = [];
   const unsupported: { company_id: string; state: string }[] = [];
   const targetStates = await loadTargetStatesForCompanies(leadsClient, readyCompanyIds);
   for (const id of readyCompanyIds) {
     const st = targetStates.get(id) ?? null;
     if (st === 'UT') utahCompanyIds.push(id);
     else if (st === 'FL') floridaCompanyIds.push(id);
+    else if (st === 'IA') iowaCompanyIds.push(id);
     else if (st) unsupported.push({ company_id: id, state: st });
   }
-  return { utahCompanyIds, floridaCompanyIds, unsupported };
+  return { utahCompanyIds, floridaCompanyIds, iowaCompanyIds, unsupported };
 }
 
 export function stateMatchingJobVersions() {

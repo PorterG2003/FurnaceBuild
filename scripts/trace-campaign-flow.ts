@@ -28,7 +28,7 @@ async function main() {
   // 1. Campaign
   const { data: campaign, error: campErr } = await supabase
     .from('campaigns')
-    .select('id, status, sending_interval_seconds, flow_data, last_completed_interval_time')
+    .select('id, status, sending_interval_seconds, current_flow_version_number, flow_data, last_completed_interval_time')
     .eq('id', CAMPAIGN_ID)
     .single();
 
@@ -40,6 +40,7 @@ async function main() {
   console.log('--- Campaign ---');
   console.log('  status:', campaign.status);
   console.log('  sending_interval_seconds:', campaign.sending_interval_seconds);
+  console.log('  current_flow_version_number:', campaign.current_flow_version_number);
   console.log('  last_completed_interval_time:', campaign.last_completed_interval_time);
   const edges = (campaign.flow_data as any)?.edges as any[] | undefined;
   console.log('  flow_data.edges count:', edges?.length ?? 0);
@@ -72,7 +73,7 @@ async function main() {
   // 3. Enrollments
   const { data: enrollments, error: enrollErr } = await supabase
     .from('enrollments')
-    .select('id, lead_id, current_node_id, state, next_run_at, created_at, updated_at')
+    .select('id, lead_id, current_node_id, current_flow_version_number, state, next_run_at, created_at, updated_at')
     .eq('campaign_id', CAMPAIGN_ID)
     .order('created_at', { ascending: true });
 
@@ -89,6 +90,7 @@ async function main() {
     const nextRunReady = e.next_run_at ? e.next_run_at <= now : false;
     console.log('  enrollment', e.id.slice(0, 8), 'lead', e.lead_id?.slice(0, 8));
     console.log('    state:', e.state, '| current_node_id:', e.current_node_id?.slice(0, 8) || 'null', cur ? `(${cur.flow_node_id} ${cur.node_type})` : '');
+    console.log('    current_flow_version_number:', e.current_flow_version_number ?? 'null');
     console.log('    next_run_at:', e.next_run_at, nextRunReady ? '(ready for claim)' : '(future)');
     console.log('    updated_at:', e.updated_at);
   }
@@ -97,7 +99,7 @@ async function main() {
   // 4. Message jobs
   const { data: jobs, error: jobsErr } = await supabase
     .from('message_jobs')
-    .select('id, enrollment_id, node_id, status, scheduled_at, sent_at, interval_id, created_at, message_type')
+    .select('id, enrollment_id, node_id, status, scheduled_at, sent_at, interval_id, created_at, message_type, flow_version_number')
     .eq('campaign_id', CAMPAIGN_ID)
     .order('created_at', { ascending: true });
 
@@ -111,13 +113,39 @@ async function main() {
   for (const j of jobs || []) {
     const node = nodeById.get(j.node_id || '');
     console.log('  job', j.id.slice(0, 8), 'enrollment', j.enrollment_id?.slice(0, 8), 'node', j.node_id?.slice(0, 8), node ? `(${node.flow_node_id})` : '');
-    console.log('    status:', j.status, '| message_type:', j.message_type ?? 'null');
+    console.log('    status:', j.status, '| message_type:', j.message_type ?? 'null', '| flow_version_number:', j.flow_version_number ?? 'null');
     console.log('    scheduled_at:', j.scheduled_at, '| sent_at:', j.sent_at ?? 'null');
     console.log('    interval_id:', j.interval_id?.slice(0, 8) ?? 'null', '| created_at:', j.created_at);
   }
   console.log('');
 
-  // 5. Campaign intervals (recent)
+  const { data: versions, error: versionsErr } = await supabase
+    .from('campaign_flow_versions')
+    .select('version_number, changed_at, changed_by_user_id, change_source, flow_hash')
+    .eq('campaign_id', CAMPAIGN_ID)
+    .order('version_number', { ascending: false })
+    .limit(10);
+
+  if (!versionsErr && versions?.length) {
+    console.log('--- Flow versions (latest 10) ---');
+    for (const version of versions) {
+      console.log(
+        '  version',
+        version.version_number,
+        '| changed_at:',
+        version.changed_at,
+        '| source:',
+        version.change_source,
+        '| changed_by:',
+        version.changed_by_user_id?.slice(0, 8) ?? 'null',
+        '| hash:',
+        version.flow_hash ?? 'null'
+      );
+    }
+    console.log('');
+  }
+
+  // 6. Campaign intervals (recent)
   const { data: intervals, error: intErr } = await supabase
     .from('campaign_intervals')
     .select('id, interval_time, status, locked_at, locked_by')
@@ -133,7 +161,7 @@ async function main() {
     console.log('');
   }
 
-  // 6. Summary / possible causes
+  // 7. Summary / possible causes
   console.log('--- Possible causes (second email never sent) ---');
   const running = campaign.status === 'running';
   if (!running) {

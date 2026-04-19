@@ -29,7 +29,7 @@
 - `flow_position` - JSONB snapshot of where they are in the graph
 
 **Used By**:
-- **Scheduler Lambda**: Queries for enrollments where `next_run_at <= NOW()` to decide what to do next
+- **Scheduler worker (ECS)**: Claims enrollments where `next_run_at <= NOW()` to decide what to do next
 - **Event Processor**: Updates enrollment state when replies/bounces occur
 - **Flow Evaluation**: Determines next node(s) to execute
 
@@ -52,7 +52,7 @@ enrollment {
 
 **What it is**:
 - **One record per email send action**
-- Created by the scheduler when it evaluates an enrollment and finds an email node
+- Created by batch interval assignment after the scheduler moves an enrollment onto an email node
 - Represents a specific email that needs to be sent
 - Queued for execution by send workers
 
@@ -60,13 +60,13 @@ enrollment {
 - `enrollment_id` - Which enrollment this job belongs to
 - `lead_id`, `campaign_id`, `mailbox_id`
 - `node_id` - The email node that should be executed
-- `status` - 'pending', 'reserved', 'sending', 'sent', 'failed'
+- `status` - 'pending', 'reserved', 'sending', 'sent', 'failed', 'cancelled', 'blocked'
 - `scheduled_at` - When the email should be sent (respects pacing/jitter)
 - `message_data` - JSONB with subject, body, template variables
 - `provider_message_id` - SMTP Message-ID (for reply detection)
 
 **Used By**:
-- **Scheduler Lambda**: Creates these when it finds email nodes
+- **Scheduler worker (ECS)**: Filters email-node enrollments in batch, suppresses duplicates, and creates these through interval assignment
 - **Send Workers**: Pull from queue, execute the send, update status
 - **Inbox Workers**: Match replies using `provider_message_id`
 
@@ -172,7 +172,7 @@ lead_states (multiple records):
 1. Lead added → Create ONE enrollment (state='active', at first node)
 2. Scheduler runs → Queries: "Find enrollments where next_run_at <= NOW()"
 3. Scheduler evaluates flow → 
-   - If email node: Creates MESSAGE_JOB, pushes to SQS
+   - If email node: Updates `current_node_id`, then batch interval assignment creates MESSAGE_JOB after a batched duplicate check
    - If wait node: Updates enrollment.next_run_at
    - If branch: Updates enrollment.current_node_id
 4. Send worker → Pulls MESSAGE_JOB from queue → Sends email → Updates job status

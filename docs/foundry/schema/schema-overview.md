@@ -22,6 +22,7 @@ Migrations live in [`supabase-leads/supabase/migrations/`](../../../supabase-lea
 | Reconciliation | `company_entity_matches`, `company_entity_match_history`, `reconciliation_runs`, `reconciliation_results` |
 | Owners | `entity_owners`, `entity_owner_history` |
 | Review | `review_tasks` |
+| Costing | `cost_rate_cards`, `cost_records` |
 | Canonical audit | `company_history`, `company_location_history` |
 
 ## Current / live tables vs history tables
@@ -40,6 +41,7 @@ Migrations live in [`supabase-leads/supabase/migrations/`](../../../supabase-lea
 - `entity_owners.state_entity_id` → `state_entities`
 - `company_entity_matches` → `companies`, `state_entities`
 - `reconciliation_results.reconciliation_run_id` → `reconciliation_runs`
+- direct cost source rows → `cost_records` through `cost_record_id`
 
 ## Important uniqueness rules
 
@@ -73,3 +75,4 @@ Details: [../engineering/security-and-access.md](../engineering/security-and-acc
 - [tables/reconciliation.md](tables/reconciliation.md)
 - [tables/owners.md](tables/owners.md)
 - [tables/review-queue.md](tables/review-queue.md)
+- [../engineering/cost-records.md](../engineering/cost-records.md)

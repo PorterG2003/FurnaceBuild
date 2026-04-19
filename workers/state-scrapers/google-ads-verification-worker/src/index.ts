@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -11,7 +12,10 @@ import {
   loadGoogleAdsVerificationProgressCounts,
   loadGoogleAdsVerificationTargets,
   pickGoogleAdsVerificationTarget,
+  computeCostAmountMicros,
+  insertDirectCostRecord,
   resolveCsvBuilderGoogleAdsLookupTarget,
+  resolveRunCost,
   csvBuilderGoogleAdsSkipReason,
 } from '@furnace/registry-server';
 import { runGoogleAdsTransparencyLookup } from './transparencyLookup.js';
@@ -353,6 +357,14 @@ async function runCsvBuilderGoogleAdsVerification(
 async function main(): Promise<void> {
   const { url, key, jobId } = await loadSecret();
   const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const runtimeCost = await resolveRunCost(
+    client as any,
+    'enrichment',
+    'furnace_runtime',
+    'google_ads_verification_ms',
+    undefined,
+    { usageUnit: 'ms', unitQuantity: 3600000 },
+  );
   const { data: jobRow, error: jobErr } = await client
     .from('foundry_jobs')
     .select('payload, progress')
@@ -427,7 +439,20 @@ async function main(): Promise<void> {
           error: result.error ?? null,
         },
       });
+      const verificationId = randomUUID();
+      const verifiedAt = new Date().toISOString();
+      const elapsedMs =
+        typeof result.lookup_stats?.elapsed_ms === 'number' && Number.isFinite(result.lookup_stats.elapsed_ms)
+          ? Math.max(0, Math.trunc(result.lookup_stats.elapsed_ms))
+          : null;
+      const initialCostStatus =
+        result.error == null && elapsedMs != null && runtimeCost != null
+          ? 'costed'
+          : result.error == null
+            ? 'failed_or_not_costed'
+            : 'failed_or_not_costed';
       const { error } = await (client.from('company_google_ads_verifications') as any).insert({
+        id: verificationId,
         company_id: target.company_id,
         website_verification_id: target.website_verification_id,
         foundry_job_id: jobId,
@@ -443,9 +468,49 @@ async function main(): Promise<void> {
         error: result.error ?? null,
         verifier_version: GOOGLE_ADS_VERIFIER_VERSION,
         lookup_stats: result.lookup_stats,
-        verified_at: new Date().toISOString(),
+        elapsed_ms: elapsedMs,
+        cost_status: initialCostStatus,
+        verified_at: verifiedAt,
       });
       if (error) throw new Error(error.message);
+      if (result.error == null && elapsedMs != null && runtimeCost != null) {
+        try {
+          const costRecord = await insertDirectCostRecord(client as any, {
+            costKind: 'enrichment',
+            provider: 'furnace_runtime',
+            product: 'google_ads_verification_ms',
+            usageQuantity: elapsedMs,
+            usageUnit: 'ms',
+            costAmountMicros: computeCostAmountMicros({
+              usageQuantity: elapsedMs,
+              unitPriceCents: runtimeCost.unitPriceCents,
+              unitQuantity: runtimeCost.unitQuantity,
+            }),
+            costRateCardId: runtimeCost.rateCardId,
+            costIsOverride: runtimeCost.isOverride,
+            estimationKind: 'runtime_estimate',
+            sourceEntityType: 'company_google_ads_verification',
+            sourceEntityId: verificationId,
+            companyId: target.company_id,
+            ingestionRunId: sourceIngestionRunId,
+            foundryJobId: jobId,
+            meta: {
+              result: result.result,
+              search_domain: lookupTarget.search_domain,
+            },
+            createdAt: verifiedAt,
+          });
+          const { error: updError } = await (client.from('company_google_ads_verifications') as any)
+            .update({ cost_record_id: costRecord.id, cost_status: 'costed' })
+            .eq('id', verificationId);
+          if (updError) throw new Error(updError.message);
+        } catch (costError) {
+          console.error('google ads cost write failed', verificationId, costError);
+          await (client.from('company_google_ads_verifications') as any)
+            .update({ cost_status: 'failed_or_not_costed' })
+            .eq('id', verificationId);
+        }
+      }
       progress.companies_processed = Number(progress.companies_processed ?? 0) + 1;
       progress.companies_with_result = Number(progress.companies_with_result ?? 0) + 1;
       if (result.result === 'yes') progress.outcome_yes = Number(progress.outcome_yes ?? 0) + 1;
@@ -457,7 +522,9 @@ async function main(): Promise<void> {
       await updateJobProgress(client, jobId, progress);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const verificationId = randomUUID();
       await (client.from('company_google_ads_verifications') as any).insert({
+        id: verificationId,
         company_id: target.company_id,
         website_verification_id: target.website_verification_id,
         foundry_job_id: jobId,
@@ -473,6 +540,7 @@ async function main(): Promise<void> {
         error: message,
         verifier_version: GOOGLE_ADS_VERIFIER_VERSION,
         lookup_stats: { final_url: null },
+        cost_status: 'failed_or_not_costed',
         verified_at: new Date().toISOString(),
       });
       progress.companies_processed = Number(progress.companies_processed ?? 0) + 1;

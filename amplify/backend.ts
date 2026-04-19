@@ -402,6 +402,7 @@ const workerPublicSubnetIds = cdk.Fn.split(
 const ecsTaskExecutionRoleArn = cdk.Fn.importValue(`FurnaceEcsTaskExecutionRole-${workerEnvironment}`);
 const utahScraperTaskRoleArn = cdk.Fn.importValue(`FurnaceUtahScraperTaskRole-${workerEnvironment}`);
 const floridaScraperTaskRoleArn = cdk.Fn.importValue(`FurnaceFloridaScraperTaskRole-${workerEnvironment}`);
+const iowaScraperTaskRoleArn = cdk.Fn.importValue(`FurnaceIowaScraperTaskRole-${workerEnvironment}`);
 const websiteVerificationTaskRoleArn = cdk.Fn.importValue(
   `FurnaceWebsiteVerificationTaskRole-${workerEnvironment}`,
 );
@@ -415,6 +416,10 @@ const utahScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParameter
 const floridaScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
   foundryNormalizeStack,
   `/furnace/ecs/${workerEnvironment}/florida-scraper/task-definition-arn`,
+);
+const iowaScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
+  foundryNormalizeStack,
+  `/furnace/ecs/${workerEnvironment}/iowa-scraper/task-definition-arn`,
 );
 const websiteVerificationTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
   foundryNormalizeStack,
@@ -430,12 +435,16 @@ function buildStateScraperRunTask(
   containerName: string,
   taskDefinitionArn: string,
 ): sfn.CustomState {
-  const itemsPath = containerName === 'utah-scraper' ? '$.utahBatches' : '$.floridaBatches';
-  const taskStateName = containerName === 'utah-scraper' ? 'RunUtahBatch' : 'RunFloridaBatch';
+  const config =
+    containerName === 'utah-scraper'
+      ? { itemsPath: '$.utahBatches', taskStateName: 'RunUtahBatch' }
+      : containerName === 'florida-scraper'
+        ? { itemsPath: '$.floridaBatches', taskStateName: 'RunFloridaBatch' }
+        : { itemsPath: '$.iowaBatches', taskStateName: 'RunIowaBatch' };
   return new sfn.CustomState(foundryNormalizeStack, id, {
     stateJson: {
       Type: 'Map',
-      ItemsPath: itemsPath,
+      ItemsPath: config.itemsPath,
       MaxConcurrency: 1,
       Parameters: {
         'jobId.$': '$.jobId',
@@ -443,9 +452,9 @@ function buildStateScraperRunTask(
         'companyIds.$': '$$.Map.Item.Value',
       },
       Iterator: {
-        StartAt: taskStateName,
+        StartAt: config.taskStateName,
         States: {
-          [taskStateName]: {
+          [config.taskStateName]: {
             Type: 'Task',
             Resource: 'arn:aws:states:::ecs:runTask.sync',
             Parameters: {
@@ -495,17 +504,27 @@ const foundryStateMatchingFloridaTask = buildStateScraperRunTask(
   'florida-scraper',
   floridaScraperTaskDefinitionArn,
 );
+const foundryStateMatchingIowaTask = buildStateScraperRunTask(
+  'FoundryStateMatchingRunIowaTask',
+  'iowa-scraper',
+  iowaScraperTaskDefinitionArn,
+);
 const foundryStateMatchingSkipUtah = new sfn.Pass(foundryNormalizeStack, 'FoundryStateMatchingSkipUtah');
 const foundryStateMatchingSkipFlorida = new sfn.Pass(foundryNormalizeStack, 'FoundryStateMatchingSkipFlorida');
+const foundryStateMatchingSkipIowa = new sfn.Pass(foundryNormalizeStack, 'FoundryStateMatchingSkipIowa');
 const foundryStateMatchingUtahChoice = new sfn.Choice(foundryNormalizeStack, 'FoundryStateMatchingUtahChoice')
   .when(sfn.Condition.numberGreaterThan('$.utahCount', 0), foundryStateMatchingUtahTask)
   .otherwise(foundryStateMatchingSkipUtah);
 const foundryStateMatchingFloridaChoice = new sfn.Choice(foundryNormalizeStack, 'FoundryStateMatchingFloridaChoice')
   .when(sfn.Condition.numberGreaterThan('$.floridaCount', 0), foundryStateMatchingFloridaTask)
   .otherwise(foundryStateMatchingSkipFlorida);
+const foundryStateMatchingIowaChoice = new sfn.Choice(foundryNormalizeStack, 'FoundryStateMatchingIowaChoice')
+  .when(sfn.Condition.numberGreaterThan('$.iowaCount', 0), foundryStateMatchingIowaTask)
+  .otherwise(foundryStateMatchingSkipIowa);
 const foundryStateMatchingParallel = new sfn.Parallel(foundryNormalizeStack, 'FoundryStateMatchingParallel');
 foundryStateMatchingParallel.branch(foundryStateMatchingUtahChoice);
 foundryStateMatchingParallel.branch(foundryStateMatchingFloridaChoice);
+foundryStateMatchingParallel.branch(foundryStateMatchingIowaChoice);
 
 const foundryStateMatchingFinalize = new sfnTasks.LambdaInvoke(
   foundryNormalizeStack,
@@ -571,7 +590,7 @@ foundryStateMatchingStateMachine.role.addToPrincipalPolicy(
   new iam.PolicyStatement({
     sid: 'FoundryStateMatchingPassEcsRoles',
     actions: ['iam:PassRole'],
-    resources: [ecsTaskExecutionRoleArn, utahScraperTaskRoleArn, floridaScraperTaskRoleArn],
+    resources: [ecsTaskExecutionRoleArn, utahScraperTaskRoleArn, floridaScraperTaskRoleArn, iowaScraperTaskRoleArn],
   }),
 );
 const foundryStateMatchingStateMachineArn = cdk.Stack.of(foundryNormalizeStack).formatArn({

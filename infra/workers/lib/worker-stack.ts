@@ -60,6 +60,7 @@ export class WorkerStack extends cdk.Stack {
   public readonly smartleadMigrationTaskRepo: ecr.Repository;
   public readonly utahScraperTaskRepo: ecr.Repository;
   public readonly floridaScraperTaskRepo: ecr.Repository;
+  public readonly iowaScraperTaskRepo: ecr.Repository;
   public readonly websiteVerificationTaskRepo: ecr.Repository;
   public readonly googleAdsVerificationTaskRepo: ecr.Repository;
 
@@ -148,6 +149,12 @@ export class WorkerStack extends cdk.Stack {
       lifecycleRules: [{ maxImageCount: 10 }],
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+    const iowaScraperTaskRepo = new ecr.Repository(this, 'IowaScraperTaskRepo', {
+      repositoryName: `furnace/iowa-scraper-${environment}`,
+      imageScanOnPush: true,
+      lifecycleRules: [{ maxImageCount: 10 }],
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
     const websiteVerificationTaskRepo = new ecr.Repository(this, 'WebsiteVerificationTaskRepo', {
       repositoryName: `furnace/website-verification-${environment}`,
       imageScanOnPush: true,
@@ -167,6 +174,7 @@ export class WorkerStack extends cdk.Stack {
     this.smartleadMigrationTaskRepo = smartleadMigrationTaskRepo;
     this.utahScraperTaskRepo = utahScraperTaskRepo;
     this.floridaScraperTaskRepo = floridaScraperTaskRepo;
+    this.iowaScraperTaskRepo = iowaScraperTaskRepo;
     this.websiteVerificationTaskRepo = websiteVerificationTaskRepo;
     this.googleAdsVerificationTaskRepo = googleAdsVerificationTaskRepo;
 
@@ -228,6 +236,11 @@ export class WorkerStack extends cdk.Stack {
 
     const floridaScraperTaskLogGroup = new logs.LogGroup(this, 'FloridaScraperTaskLogGroup', {
       logGroupName: `/ecs/furnace/florida-scraper-task-${environment}`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    const iowaScraperTaskLogGroup = new logs.LogGroup(this, 'IowaScraperTaskLogGroup', {
+      logGroupName: `/ecs/furnace/iowa-scraper-task-${environment}`,
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
@@ -426,6 +439,15 @@ export class WorkerStack extends cdk.Stack {
       actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
       resources: [floridaScraperTaskLogGroup.logGroupArn + ':*'],
     }));
+    const iowaScraperTaskRole = new iam.Role(this, 'IowaScraperTaskRole', {
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      description: `Role for Iowa registry scraper ECS tasks (${environment})`,
+    });
+    iowaScraperTaskRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'AllowIowaScraperCloudWatchLogs',
+      actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      resources: [iowaScraperTaskLogGroup.logGroupArn + ':*'],
+    }));
     const websiteVerificationTaskRole = new iam.Role(this, 'WebsiteVerificationTaskRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
       description: `Role for website verification ECS tasks (${environment})`,
@@ -456,6 +478,13 @@ export class WorkerStack extends cdk.Stack {
       floridaScraperTaskRole.addToPolicy(
         new iam.PolicyStatement({
           sid: 'AllowFloridaLeadsSecretSsm',
+          actions: ['ssm:GetParameters', 'ssm:GetParameter'],
+          resources: [`arn:aws:ssm:${region}:${account}:parameter/${paramSuffix}`],
+        }),
+      );
+      iowaScraperTaskRole.addToPolicy(
+        new iam.PolicyStatement({
+          sid: 'AllowIowaLeadsSecretSsm',
           actions: ['ssm:GetParameters', 'ssm:GetParameter'],
           resources: [`arn:aws:ssm:${region}:${account}:parameter/${paramSuffix}`],
         }),
@@ -679,6 +708,32 @@ export class WorkerStack extends cdk.Stack {
           : {}),
       },
     });
+    const iowaScraperTaskDefinition = new ecs.FargateTaskDefinition(this, 'IowaScraperTaskDef', {
+      family: `furnace-iowa-scraper-task-${environment}`,
+      memoryLimitMiB: 2048,
+      cpu: 1024,
+      taskRole: iowaScraperTaskRole,
+      executionRole: taskExecutionRole,
+    });
+    iowaScraperTaskDefinition.addContainer('iowa-scraper', {
+      image: ecs.ContainerImage.fromEcrRepository(iowaScraperTaskRepo, 'latest'),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'iowa-scraper',
+        logGroup: iowaScraperTaskLogGroup,
+      }),
+      environment: {
+        AWS_REGION: region,
+        INPUT_CSV: '/data/input.csv',
+        OUTPUT_JSON: '/out/iowa-scrape-report.json',
+        RATE_MS: '2000',
+        ...(utahLeadsConfigured
+          ? {
+              LEADS_SUPABASE_URL: leadsUrlTrim!,
+              LEADS_SUPABASE_SECRET_KEY_PARAM_PATH: leadsParamTrim!,
+            }
+          : {}),
+      },
+    });
     const websiteVerificationTaskDefinition = new ecs.FargateTaskDefinition(this, 'WebsiteVerificationTaskDef', {
       family: `furnace-website-verification-task-${environment}`,
       memoryLimitMiB: 2048,
@@ -742,6 +797,11 @@ export class WorkerStack extends cdk.Stack {
       stringValue: floridaScraperTaskDefinition.taskDefinitionArn,
       description: 'Current Florida Sunbiz scraper ECS task definition ARN for RunTask',
     });
+    new ssm.StringParameter(this, 'IowaScraperTaskDefinitionArnParam', {
+      parameterName: `/furnace/ecs/${environment}/iowa-scraper/task-definition-arn`,
+      stringValue: iowaScraperTaskDefinition.taskDefinitionArn,
+      description: 'Current Iowa scraper ECS task definition ARN for RunTask',
+    });
     new ssm.StringParameter(this, 'WebsiteVerificationTaskDefinitionArnParam', {
       parameterName: `/furnace/ecs/${environment}/website-verification/task-definition-arn`,
       stringValue: websiteVerificationTaskDefinition.taskDefinitionArn,
@@ -802,6 +862,11 @@ export class WorkerStack extends cdk.Stack {
       value: floridaScraperTaskRepo.repositoryUri,
       description: 'ECR repository URI for Florida Sunbiz registry scraper task',
       exportName: `FurnaceFloridaScraperTaskRepo-${environment}`,
+    });
+    new cdk.CfnOutput(this, 'IowaScraperTaskRepoUri', {
+      value: iowaScraperTaskRepo.repositoryUri,
+      description: 'ECR repository URI for Iowa registry scraper task',
+      exportName: `FurnaceIowaScraperTaskRepo-${environment}`,
     });
     new cdk.CfnOutput(this, 'WebsiteVerificationTaskRepoUri', {
       value: websiteVerificationTaskRepo.repositoryUri,
@@ -872,6 +937,11 @@ export class WorkerStack extends cdk.Stack {
       value: floridaScraperTaskRole.roleArn,
       description: 'Task role for Florida Sunbiz registry scraper containers',
       exportName: `FurnaceFloridaScraperTaskRole-${environment}`,
+    });
+    new cdk.CfnOutput(this, 'IowaScraperTaskRoleArn', {
+      value: iowaScraperTaskRole.roleArn,
+      description: 'Task role for Iowa registry scraper containers',
+      exportName: `FurnaceIowaScraperTaskRole-${environment}`,
     });
     new cdk.CfnOutput(this, 'WebsiteVerificationTaskRoleArn', {
       value: websiteVerificationTaskRole.roleArn,

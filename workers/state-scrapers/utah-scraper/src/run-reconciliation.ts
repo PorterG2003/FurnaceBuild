@@ -11,9 +11,10 @@ import {
   buildOwnerQueryKey,
   buildRegistryEntityKey,
   classifyOwnerName,
+  resolveRunCost,
   flushStateMatchingJobOutcomeProgress,
-  mergeStateMatchingOutcomeProgress,
   ownerResolutionStatusForSeed,
+  patchFoundryJobProgress,
   persistUtahRegistryPull,
   reconcileCompanyToStateEntity,
   stateMatchingProgressFlushStride,
@@ -199,6 +200,14 @@ async function main() {
   const client = createClient(leadsUrl, leadsSecretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  const runtimeCost = await resolveRunCost(
+    client as any,
+    'acquisition',
+    'furnace_runtime',
+    'utah_registry_pull_ms',
+    undefined,
+    { usageUnit: 'ms', unitQuantity: 3600000 },
+  );
 
   const { data: jobRow, error: jobErr } = await client
     .from('foundry_jobs')
@@ -284,6 +293,7 @@ async function main() {
         'Name - People - Results': '',
       };
 
+      const rootStartedAt = Date.now();
       const r = await scrapeUtahEntityByName(page, {
         query: (row['Company Name'] ?? '').trim(),
         enrichQuery: (row['Enrich company'] ?? '').trim(),
@@ -330,6 +340,10 @@ async function main() {
             searchQuery: r.searchQuery,
             hitStatus: r.hitStatus,
             owners: rootOwners,
+            elapsedMs: Math.max(0, Date.now() - rootStartedAt),
+            resolvedCost: runtimeCost,
+            foundryJobId: jobIdResolved,
+            reconciliationRunId: reconciliationId,
           },
         );
 
@@ -380,6 +394,7 @@ async function main() {
             ownerName: item.ownerNameRaw,
             depth: item.depth,
           });
+          const childStartedAt = Date.now();
           const child = await scrapeUtahEntityByName(page, {
             query: item.ownerNameRaw,
             isFirst: false,
@@ -448,6 +463,10 @@ async function main() {
               searchQuery: child.searchQuery,
               hitStatus: child.hitStatus,
               owners: childOwners,
+              elapsedMs: Math.max(0, Date.now() - childStartedAt),
+              resolvedCost: runtimeCost,
+              foundryJobId: jobIdResolved,
+              reconciliationRunId: reconciliationId,
             },
           );
           resolvedByRegistryKey.set(registryKey, persistedChild.state_entity_id);
@@ -525,22 +544,15 @@ async function main() {
     jobIdResolved,
     reconciliationId,
   );
-  const { data: job } = await client.from('foundry_jobs').select('progress').eq('id', jobIdResolved).maybeSingle();
-  const prev = mergeStateMatchingOutcomeProgress(
-    (job?.progress ?? {}) as Record<string, unknown>,
-    reconciliationOutcomes,
+  await patchFoundryJobProgress(
+    client as unknown as Parameters<typeof patchFoundryJobProgress>[0],
+    jobIdResolved,
+    {
+      ...mergeStateMatchingOutcomeProgress(undefined, reconciliationOutcomes),
+      current_step: 'utah_ecs_done',
+      utah_per_company: perCompany,
+    },
   );
-  await client
-    .from('foundry_jobs')
-    .update({
-      status: 'running',
-      progress: {
-        ...prev,
-        current_step: 'utah_ecs_done',
-        utah_per_company: perCompany,
-      },
-    })
-    .eq('id', jobIdResolved);
 
   console.log(
     JSON.stringify({ jobId: jobIdResolved, utahCompanies: companyIds.length, perCompany: perCompany.length }),

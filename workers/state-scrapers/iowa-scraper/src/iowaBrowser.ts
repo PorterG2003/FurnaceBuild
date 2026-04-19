@@ -15,6 +15,7 @@ export type IowaCompanyScrapeResult = {
   hits: IowaSearchHit[];
   pick: PickIowaHitResult;
   detail: IowaEntityDetailParsed | null;
+  detailHtml?: string;
   officerNames: string[];
   registeredAgentName?: string;
   /** Set when Iowa SOS shows the rate-limit / captcha interstitial (e.g. “bird flew away”). */
@@ -28,6 +29,7 @@ function empty(extra?: Partial<IowaCompanyScrapeResult>): IowaCompanyScrapeResul
     hits: extra?.hits ?? [],
     pick: extra?.pick ?? { hit: null, ambiguous: false, candidates: [] },
     detail: extra?.detail ?? null,
+      detailHtml: extra?.detailHtml,
     officerNames: extra?.officerNames ?? [],
     registeredAgentName: extra?.registeredAgentName,
     rateLimited: extra?.rateLimited,
@@ -122,12 +124,14 @@ async function scrapeIowaCompanyAttempt(page: Page, query: string): Promise<Iowa
     const detail = parseIowaEntityDetailHtml(summaryHtml, officersHtml);
     const officerNames = (detail?.officers ?? []).map((o) => o.name.trim()).filter(Boolean);
     const registeredAgentName = detail?.registeredAgentName?.trim();
+    const detailHtml = `${summaryHtml}\n<!-- IOWA_OFFICERS_SPLIT -->\n${officersHtml}`;
 
     return {
       query,
       hits,
       pick,
       detail,
+      detailHtml,
       officerNames,
       registeredAgentName: registeredAgentName || undefined,
     };

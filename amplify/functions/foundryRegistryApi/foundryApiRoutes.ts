@@ -189,9 +189,16 @@ const CONTACT_ENRICHMENT_CONFIDENCE_KEYS = [
 
 const EXPORT_COST_KEYS = [
   'enrichment_cost_cents',
+  'company_enrichment_cost_cents',
+  'enrichment_cost_per_row_cents',
   'company_acquisition_cost_cents',
   'acquisition_cost_per_row_cents',
   'total_cost_per_row_cents',
+  'company_export_row_count',
+  'company_website_verification_cost_cents',
+  'company_google_ads_verification_cost_cents',
+  'company_import_acquisition_cost_cents',
+  'company_registry_acquisition_cost_cents',
 ] as const;
 
 function stripCostFields(row: Record<string, unknown>): void {
@@ -1192,6 +1199,8 @@ export async function dispatchFoundryExtendedRoutes(
       provider: string;
       product: string;
       unit_price_cents: number;
+      usage_unit?: string;
+      unit_quantity?: number;
       currency?: string;
       notes?: string;
       /** When true, set effective_to on any existing current row for this triple. */
@@ -1207,6 +1216,12 @@ export async function dispatchFoundryExtendedRoutes(
     }
     if (typeof v.unit_price_cents !== 'number' || !Number.isFinite(v.unit_price_cents) || v.unit_price_cents < 0) {
       return jsonResponse(400, { error: 'unit_price_cents must be a non-negative number' });
+    }
+    if (v.usage_unit != null && (!v.usage_unit.trim() || v.usage_unit.trim().length > 64)) {
+      return jsonResponse(400, { error: 'usage_unit must be a non-empty string' });
+    }
+    if (v.unit_quantity != null && (!Number.isFinite(v.unit_quantity) || v.unit_quantity <= 0)) {
+      return jsonResponse(400, { error: 'unit_quantity must be a positive number' });
     }
     if (v.retire_previous === true) {
       await leadsClient
@@ -1224,6 +1239,11 @@ export async function dispatchFoundryExtendedRoutes(
         provider: v.provider.trim(),
         product: v.product.trim(),
         unit_price_cents: Math.trunc(v.unit_price_cents),
+        usage_unit: typeof v.usage_unit === 'string' && v.usage_unit.trim() ? v.usage_unit.trim() : 'row',
+        unit_quantity:
+          typeof v.unit_quantity === 'number' && Number.isFinite(v.unit_quantity)
+            ? Math.max(1, Math.trunc(v.unit_quantity))
+            : 1,
         currency: typeof v.currency === 'string' && v.currency.trim() ? v.currency.trim().toUpperCase() : 'USD',
         notes: typeof v.notes === 'string' ? v.notes : null,
       })
@@ -1241,6 +1261,8 @@ export async function dispatchFoundryExtendedRoutes(
     if (!UUID_RE.test(id)) return jsonResponse(400, { error: 'Invalid id' });
     const parsed = parseJsonBody<{
       unit_price_cents?: number;
+      usage_unit?: string;
+      unit_quantity?: number;
       effective_to?: string | null;
       notes?: string | null;
     }>(rawBody || '{}');
@@ -1248,6 +1270,12 @@ export async function dispatchFoundryExtendedRoutes(
     const patch: Record<string, unknown> = {};
     if (typeof parsed.value.unit_price_cents === 'number' && Number.isFinite(parsed.value.unit_price_cents)) {
       patch.unit_price_cents = Math.max(0, Math.trunc(parsed.value.unit_price_cents));
+    }
+    if (typeof parsed.value.usage_unit === 'string' && parsed.value.usage_unit.trim()) {
+      patch.usage_unit = parsed.value.usage_unit.trim();
+    }
+    if (typeof parsed.value.unit_quantity === 'number' && Number.isFinite(parsed.value.unit_quantity)) {
+      patch.unit_quantity = Math.max(1, Math.trunc(parsed.value.unit_quantity));
     }
     if ('effective_to' in parsed.value) {
       patch.effective_to = parsed.value.effective_to;
@@ -1411,14 +1439,28 @@ export async function dispatchFoundryExtendedRoutes(
           const c = costMap.get(key);
           if (c) {
             row.enrichment_cost_cents = c.enrichment_cost_cents;
+            row.company_enrichment_cost_cents = c.company_enrichment_cost_cents;
+            row.enrichment_cost_per_row_cents = c.enrichment_cost_per_row_cents;
             row.company_acquisition_cost_cents = c.company_acquisition_cost_cents;
             row.acquisition_cost_per_row_cents = c.acquisition_cost_per_row_cents;
             row.total_cost_per_row_cents = c.total_cost_per_row_cents;
+            row.company_export_row_count = c.company_export_row_count;
+            row.company_website_verification_cost_cents = c.company_website_verification_cost_cents;
+            row.company_google_ads_verification_cost_cents = c.company_google_ads_verification_cost_cents;
+            row.company_import_acquisition_cost_cents = c.company_import_acquisition_cost_cents;
+            row.company_registry_acquisition_cost_cents = c.company_registry_acquisition_cost_cents;
           } else {
             row.enrichment_cost_cents = 0;
+            row.company_enrichment_cost_cents = 0;
+            row.enrichment_cost_per_row_cents = 0;
             row.company_acquisition_cost_cents = 0;
             row.acquisition_cost_per_row_cents = 0;
             row.total_cost_per_row_cents = 0;
+            row.company_export_row_count = 0;
+            row.company_website_verification_cost_cents = 0;
+            row.company_google_ads_verification_cost_cents = 0;
+            row.company_import_acquisition_cost_cents = 0;
+            row.company_registry_acquisition_cost_cents = 0;
           }
         }
       } catch (err) {
@@ -2225,6 +2267,7 @@ export async function dispatchFoundryExtendedRoutes(
       automation_buckets: {
         utah_company_ids: buckets.utahCompanyIds,
         florida_company_ids: buckets.floridaCompanyIds,
+        iowa_company_ids: buckets.iowaCompanyIds,
         unsupported: buckets.unsupported,
       },
     });

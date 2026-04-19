@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   classifySkipSherpaPersonResult as classifySkipSherpaPersonResultCore,
@@ -9,6 +9,7 @@ import {
 } from './contactEnrichmentClassifier.js';
 import { classifyOwnerName } from '../state-persistence/ownerDrilldown.js';
 import type { SkipSherpaLookupPayload } from '../skip-sherpa/skipSherpaClient.js';
+import { insertDirectCostRecord, type CostStatus } from '../costRateCards.js';
 
 export {
   callSkipSherpaPersonLookup,
@@ -1008,6 +1009,39 @@ export async function persistContactEnrichmentAttempt(
   const rc = params.resolvedCost;
   const costCents =
     hitsBilled > 0 && rc ? Math.max(0, Math.trunc(hitsBilled * rc.centsPerHit)) : null;
+  const attemptId = randomUUID();
+  let costRecordId: string | null = null;
+  let costStatus: CostStatus = 'failed_or_not_costed';
+
+  if (params.decision.classification !== 'error') {
+    const shouldWriteZeroCost = hitsBilled === 0;
+    const shouldWritePricedCost = hitsBilled > 0 && rc != null;
+    if (shouldWriteZeroCost || shouldWritePricedCost) {
+      const insertedCost = await insertDirectCostRecord(leadsClient, {
+        costKind: 'enrichment',
+        provider: CONTACT_ENRICHMENT_PROVIDER,
+        product: 'person_lookup',
+        usageQuantity: hitsBilled,
+        usageUnit: 'lookup',
+        costAmountMicros: Math.max(0, Math.trunc((costCents ?? 0) * 10000)),
+        costRateCardId: rc?.rateCardId ?? null,
+        costIsOverride: rc?.isOverride ?? false,
+        estimationKind: 'vendor_direct',
+        sourceEntityType: 'contact_enrichment_attempt',
+        sourceEntityId: attemptId,
+        companyId: params.target.company_id,
+        ingestionRunId: params.target.ingestion_run_id,
+        foundryJobId: params.jobId,
+        meta: {
+          entity_owner_id: params.target.entity_owner_id,
+          hits_billed: hitsBilled,
+        },
+        createdAt: new Date().toISOString(),
+      });
+      costRecordId = insertedCost.id;
+      costStatus = 'costed';
+    }
+  }
   const costFields =
     costCents != null
       ? {
@@ -1023,6 +1057,7 @@ export async function persistContactEnrichmentAttempt(
   const { data: attempt, error: attemptErr } = await leadsClient
     .from('contact_enrichment_attempts')
     .insert({
+      id: attemptId,
       foundry_job_id: params.jobId,
       target_id: params.target.id,
       ingestion_run_id: params.target.ingestion_run_id,
@@ -1052,6 +1087,8 @@ export async function persistContactEnrichmentAttempt(
       ruleset_version: meta?.ruleset_version ?? null,
       ruleset_preset: meta?.ruleset_preset ?? null,
       is_billable_candidate: hitsBilled === 1,
+      cost_record_id: costRecordId,
+      cost_status: costStatus,
       ...costFields,
       error_summary:
         params.decision.classification === 'error'
@@ -1061,10 +1098,15 @@ export async function persistContactEnrichmentAttempt(
     .select('id')
     .single();
   if (attemptErr || !attempt) throw new Error(attemptErr?.message ?? 'Failed to insert enrichment attempt');
-  const attemptId = String(attempt.id);
+  const insertedAttemptId = String(attempt.id);
 
   if (params.decision.classification === 'accepted_strong_match' && params.decision.matchedPerson) {
-    await promoteContactEnrichmentPersonToMatch(leadsClient, attemptId, params.target, params.decision.matchedPerson);
+    await promoteContactEnrichmentPersonToMatch(
+      leadsClient,
+      insertedAttemptId,
+      params.target,
+      params.decision.matchedPerson,
+    );
   }
 
   if (

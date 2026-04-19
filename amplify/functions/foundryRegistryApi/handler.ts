@@ -32,7 +32,12 @@
  * Entity resolution (candidates, link, bulk resolve) lives in @furnace/registry-server (entityResolution).
  */
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
-import { resolveRunCost } from '@furnace/registry-server';
+import {
+  computeCostAmountMicros,
+  insertDirectCostRecord,
+  resolveRunCost,
+  type CostStatus,
+} from '@furnace/registry-server';
 import {
   classifyAllRows,
   summarizeClassification,
@@ -337,7 +342,36 @@ async function handleGoogleMapsImport(
     sourceName,
     'import_row',
     costOverride,
+    { usageUnit: 'row', unitQuantity: 1 },
   );
+
+  async function maybeCreateImportCostRecord(importedRows: number) {
+    if (importedRows <= 0 || resolvedIngestionCost == null) return null;
+    const costAmountMicros = computeCostAmountMicros({
+      usageQuantity: importedRows,
+      unitPriceCents: resolvedIngestionCost.unitPriceCents,
+      unitQuantity: resolvedIngestionCost.unitQuantity,
+    });
+    return insertDirectCostRecord(leadsClient, {
+      costKind: 'acquisition',
+      provider: sourceName,
+      product: 'import_row',
+      usageQuantity: importedRows,
+      usageUnit: resolvedIngestionCost.usageUnit,
+      costAmountMicros,
+      costRateCardId: resolvedIngestionCost.rateCardId,
+      costIsOverride: resolvedIngestionCost.isOverride,
+      estimationKind: 'fixed_rate',
+      sourceEntityType: 'ingestion_run',
+      sourceEntityId: runId,
+      ingestionRunId: runId,
+      meta: {
+        unit_price_cents: resolvedIngestionCost.unitPriceCents,
+        unit_quantity: resolvedIngestionCost.unitQuantity,
+        source_name: sourceName,
+      },
+    });
+  }
 
   try {
     for (let i = 0; i < toInsert.length; i += INSERT_BATCH_SIZE) {
@@ -367,6 +401,8 @@ async function handleGoogleMapsImport(
     }
   } catch (e) {
     console.error('import exception', e);
+    const costRecord = await maybeCreateImportCostRecord(imported);
+    const costStatus: CostStatus = costRecord ? 'costed' : 'failed_or_not_costed';
     await leadsClient
       .from('ingestion_runs')
       .update({
@@ -379,10 +415,12 @@ async function handleGoogleMapsImport(
           skipped_rows: skippedRows,
         },
         error_summary: 'Import failed during insert',
+        cost_record_id: costRecord?.id ?? null,
+        cost_status: costStatus,
         ...(resolvedIngestionCost != null && imported > 0
           ? {
               cost_per_row_cents: resolvedIngestionCost.unitPriceCents,
-              total_cost_cents: imported * resolvedIngestionCost.unitPriceCents,
+              total_cost_cents: costRecord?.costAmountCents ?? imported * resolvedIngestionCost.unitPriceCents,
               cost_rate_card_id: resolvedIngestionCost.rateCardId,
               cost_is_override: resolvedIngestionCost.isOverride,
             }
@@ -401,12 +439,16 @@ async function handleGoogleMapsImport(
 
   const terminalStatus =
     toInsert.length > 0 && imported === 0 ? 'failed' : 'completed';
+  const costRecord = await maybeCreateImportCostRecord(imported);
+  const costStatus: CostStatus = costRecord ? 'costed' : 'failed_or_not_costed';
   const { error: updErr } = await leadsClient
     .from('ingestion_runs')
     .update({
       status: terminalStatus,
       completed_at: new Date().toISOString(),
       stats: finalStats,
+      cost_record_id: costRecord?.id ?? null,
+      cost_status: costStatus,
       error_summary:
         failed > 0
           ? `${failed} row(s) failed to insert`
@@ -416,7 +458,7 @@ async function handleGoogleMapsImport(
       ...(resolvedIngestionCost != null && imported > 0
         ? {
             cost_per_row_cents: resolvedIngestionCost.unitPriceCents,
-            total_cost_cents: imported * resolvedIngestionCost.unitPriceCents,
+            total_cost_cents: costRecord?.costAmountCents ?? imported * resolvedIngestionCost.unitPriceCents,
             cost_rate_card_id: resolvedIngestionCost.rateCardId,
             cost_is_override: resolvedIngestionCost.isOverride,
           }

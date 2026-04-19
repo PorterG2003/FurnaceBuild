@@ -121,6 +121,32 @@ export class SendWorker {
       .eq('id', messageJobId);
   }
 
+  private async cancelCampaignMessageJob(messageJob: MessageJob, reason: string): Promise<void> {
+    const now = new Date().toISOString();
+
+    await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'cancelled',
+        error_message: reason,
+        updated_at: now,
+      })
+      .eq('id', messageJob.id);
+
+    await this.supabase
+      .from('enrollments')
+      .update({
+        state: 'stopped',
+        next_run_at: null,
+        stopped_reason: 'error',
+        stopped_at: now,
+        stopped_error_message: reason,
+        updated_at: now,
+      })
+      .eq('id', messageJob.enrollment_id)
+      .in('state', ['active', 'paused']);
+  }
+
   /**
    * check_mailbox_throttle_and_reserve returns success=false when rate limits re-queue the job to pending,
    * or when the RPC cancels the job (e.g. deleted parent for campaign sends). Log accordingly.
@@ -168,11 +194,11 @@ export class SendWorker {
       const { lead, mailbox, nodeConfig } = await this.loadJobData(messageJob);
 
       if (lead.deleted_at) {
-        await this.cancelMessageJob(message_job_id, 'Lead deleted');
+        await this.cancelCampaignMessageJob(messageJob, 'Lead deleted');
         return;
       }
       if (mailbox.deleted_at) {
-        await this.cancelMessageJob(message_job_id, 'Mailbox deleted');
+        await this.cancelCampaignMessageJob(messageJob, 'Mailbox deleted');
         return;
       }
 
@@ -183,13 +209,23 @@ export class SendWorker {
         .eq('id', messageJob.campaign_id)
         .single();
 
-      if (!campaign || campaign.deleted_at || campaign.status !== 'running') {
+      const canFinishClaimedJob =
+        campaign &&
+        !campaign.deleted_at &&
+        (campaign.status === 'running' || campaign.status === 'paused' || campaign.status === 'stopped');
+
+      if (!canFinishClaimedJob) {
         const reason = campaign?.deleted_at
           ? 'Campaign deleted'
           : `Campaign status is ${campaign?.status || 'unknown'}`;
         console.log(`[SEND WORKER] Campaign ${messageJob.campaign_id} is unavailable. Cancelling message job ${message_job_id}.`);
-        await this.cancelMessageJob(message_job_id, reason);
+        await this.cancelCampaignMessageJob(messageJob, reason);
         return;
+      }
+      if (campaign.status !== 'running') {
+        console.log(
+          `[SEND WORKER] Campaign ${messageJob.campaign_id} is ${campaign.status}. Finishing already-claimed job ${message_job_id}.`
+        );
       }
 
       const [enrollmentResult, nodeResult] = await Promise.all([
@@ -208,11 +244,11 @@ export class SendWorker {
       ]);
 
       if (enrollmentResult.data?.deleted_at) {
-        await this.cancelMessageJob(message_job_id, 'Enrollment deleted');
+        await this.cancelCampaignMessageJob(messageJob, 'Enrollment deleted');
         return;
       }
       if (nodeResult.data?.deleted_at) {
-        await this.cancelMessageJob(message_job_id, 'Node deleted');
+        await this.cancelCampaignMessageJob(messageJob, 'Node deleted');
         return;
       }
 

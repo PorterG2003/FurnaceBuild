@@ -44,6 +44,20 @@ TS: `REVIEW_TASK_TYPES`
 
 `running` | `completed` | `failed` | `cancelled`
 
+## Direct-cost source table `cost_status`
+
+Used on:
+
+- `ingestion_runs`
+- `contact_enrichment_attempts`
+- `company_website_verifications`
+- `company_google_ads_verifications`
+- `registry_source_snapshots`
+
+Values:
+
+`costed` | `failed_or_not_costed` | `pre_cost_implementation_or_not_backfilled`
+
 ## `reconciliation_runs.status`
 
 `running` | `completed` | `failed`

@@ -25,6 +25,8 @@ Downstream matching (`source_business_company_links`) needs stable pointers to �
 - `source_name`, `source_type` — identify the pipeline.
 - `ingest_version`, `parser_version` — correlate code behavior with rows.
 - `error_summary` — human-readable failure summary when `status = failed`.
+- `cost_record_id`, `cost_status` — canonical direct-cost pointer + cost lifecycle marker.
+- legacy compatibility fields remain during migration: `cost_per_row_cents`, `total_cost_cents`, `cost_rate_card_id`, `cost_is_override`.
 
 ### Constraints and rules
 
@@ -34,7 +36,8 @@ Downstream matching (`source_business_company_links`) needs stable pointers to �
 
 1. Insert run with `status = running`.
 2. Insert many `source_business_records` with `ingestion_run_id`.
-3. Update `stats`, set `completed_at`, `status = completed` (or mark `failed` / `cancelled`).
+3. Finalize the run and, when priced, write one canonical direct row in `cost_records`.
+4. Update `stats`, `completed_at`, `status`, `cost_record_id`, and `cost_status`.
 
 ### Example workflow
 
@@ -72,3 +75,4 @@ A CSV upload creates run `R`, streams 10k rows into `source_business_records`, t
 
 - [source-resolution.md](source-resolution.md) — links from records to `companies`
 - [../views-and-triggers.md](../views-and-triggers.md) — `updated_at` triggers
+- [../../engineering/cost-records.md](../../engineering/cost-records.md)

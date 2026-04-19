@@ -19,6 +19,9 @@ import {
   normalizeComparableText,
   pickWebsiteVerificationTarget,
   pickCsvBuilderWebsiteInputUrl,
+  computeCostAmountMicros,
+  insertDirectCostRecord,
+  resolveRunCost,
   scoreWebsiteVerification,
   type WebsiteVerificationBundle,
   type WebsiteVerificationCrawlResult,
@@ -707,6 +710,14 @@ async function runCsvBuilderWebsiteVerification(
 async function main(): Promise<void> {
   const { url, key, jobId } = await loadSecret();
   const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const runtimeCost = await resolveRunCost(
+    client as any,
+    'enrichment',
+    'furnace_runtime',
+    'website_verification_ms',
+    undefined,
+    { usageUnit: 'ms', unitQuantity: 3600000 },
+  );
   const { data: jobRow, error: jobErr } = await client
     .from('foundry_jobs')
     .select('payload, progress')
@@ -774,6 +785,7 @@ async function main(): Promise<void> {
   const context = await browser.newContext({ viewport: VIEWPORT, ignoreHTTPSErrors: true });
   try {
     for (const bundle of bundles) {
+      const verificationStartedAt = Date.now();
       const inputUrl = pickWebsiteVerificationTarget(bundle);
       logEvent('company-start', {
         jobId,
@@ -801,6 +813,8 @@ async function main(): Promise<void> {
         await runCompanyWithTimeout(page, bundle, inputUrl, async () => {
           const crawl = await crawlWebsite(page, bundle, inputUrl);
           const scored = scoreWebsiteVerification(bundle, crawl);
+          const verifiedAt = new Date().toISOString();
+          const elapsedMs = Math.max(0, Date.now() - verificationStartedAt);
           logEvent('company-result', {
             jobId,
             companyId: bundle.company_id,
@@ -810,7 +824,7 @@ async function main(): Promise<void> {
             crawl: crawlLogView(crawl),
             result: scoreLogView(scored),
           });
-          const { error } = await (client.from('company_website_verifications') as any).upsert({
+          const { data: written, error } = await (client.from('company_website_verifications') as any).upsert({
             company_id: bundle.company_id,
             foundry_job_id: jobId,
             source_ingestion_run_id: sourceIngestionRunId,
@@ -821,14 +835,54 @@ async function main(): Promise<void> {
             signals: scored.signals,
             verifier_version: WEBSITE_VERIFIER_VERSION,
             crawl_stats: scored.crawl_stats,
-            verified_at: new Date().toISOString(),
-          }, { onConflict: 'foundry_job_id,company_id', ignoreDuplicates: false });
+            elapsed_ms: elapsedMs,
+            cost_status: runtimeCost != null ? 'costed' : 'failed_or_not_costed',
+            verified_at: verifiedAt,
+          }, { onConflict: 'foundry_job_id,company_id', ignoreDuplicates: false }).select('id').single();
           if (error) throw new Error(error.message);
+          const verificationId = String(written?.id ?? '');
+          if (!verificationId) throw new Error('Website verification upsert did not return an id');
+          if (runtimeCost != null) {
+            try {
+              const costRecord = await insertDirectCostRecord(client as any, {
+                costKind: 'enrichment',
+                provider: 'furnace_runtime',
+                product: 'website_verification_ms',
+                usageQuantity: elapsedMs,
+                usageUnit: 'ms',
+                costAmountMicros: computeCostAmountMicros({
+                  usageQuantity: elapsedMs,
+                  unitPriceCents: runtimeCost.unitPriceCents,
+                  unitQuantity: runtimeCost.unitQuantity,
+                }),
+                costRateCardId: runtimeCost.rateCardId,
+                costIsOverride: runtimeCost.isOverride,
+                estimationKind: 'runtime_estimate',
+                sourceEntityType: 'company_website_verification',
+                sourceEntityId: verificationId,
+                companyId: bundle.company_id,
+                ingestionRunId: sourceIngestionRunId,
+                foundryJobId: jobId,
+                meta: { band: scored.band },
+                createdAt: verifiedAt,
+              });
+              const { error: updError } = await (client.from('company_website_verifications') as any)
+                .update({ cost_record_id: costRecord.id, cost_status: 'costed' })
+                .eq('id', verificationId);
+              if (updError) throw new Error(updError.message);
+            } catch (costError) {
+              console.error('website verification cost write failed', verificationId, costError);
+              await (client.from('company_website_verifications') as any)
+                .update({ cost_status: 'failed_or_not_costed' })
+                .eq('id', verificationId);
+            }
+          }
           const refreshed = await refreshWebsiteVerificationProgress(client, jobId, payload, progress, 'running');
           Object.assign(progress, refreshed);
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const elapsedMs = Math.max(0, Date.now() - verificationStartedAt);
         logEvent('company-result', {
           jobId,
           companyId: bundle.company_id,
@@ -852,6 +906,8 @@ async function main(): Promise<void> {
           error: message,
           verifier_version: WEBSITE_VERIFIER_VERSION,
           crawl_stats: { pages_visited: 0, max_depth_reached: 0, failed_urls: [inputUrl] },
+          elapsed_ms: elapsedMs,
+          cost_status: 'failed_or_not_costed',
           verified_at: new Date().toISOString(),
         }, { onConflict: 'foundry_job_id,company_id', ignoreDuplicates: false });
         const refreshed = await refreshWebsiteVerificationProgress(client, jobId, payload, progress, 'running');

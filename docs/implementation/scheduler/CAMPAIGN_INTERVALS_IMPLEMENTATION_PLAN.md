@@ -24,15 +24,17 @@ Scheduler → Calculate slot → Apply jitter → Atomic slot check → Create j
 Scheduler → Lock interval → Check mailbox → Create job
 ```
 
-### Worker Architecture (No Changes Needed)
+### Worker Architecture
 
-**Key Point**: We don't need more workers! Each scheduler worker instance runs multiple parallel tasks:
+**Key Point**: We don't need more workers, but we do need tighter load control inside each scheduler worker instance:
 
 1. **Main Loop** (existing): Processes enrollments in parallel using `Promise.allSettled`
-2. **Interval Maintenance** (new): Background timer that runs every minute
-3. **Stale Lock Cleanup** (new): Background timer that runs every 5 minutes
+2. **Interval Maintenance**: Background timer that runs every minute
+3. **Processed Interval Check**: Background timer that runs every minute
+4. **Stale Lock Cleanup**: Background timer that runs every 5 minutes
+5. **Batch Interval Assignment**: Background timer that runs every 30 seconds
 
-All tasks run concurrently in the same worker instance using async/parallel processing. The worker instances themselves can still auto-scale (2-20 instances based on enrollment count), but each instance handles all three tasks concurrently.
+All tasks run in the same worker instance, but each periodic task should be **single-flight**. If a timer fires while the previous run is still active, the worker should skip that overlapping tick instead of stacking more Supabase work onto the system.
 
 ## Phase 1: Database Schema
 
@@ -118,8 +120,13 @@ CREATE INDEX IF NOT EXISTS idx_message_jobs_mailbox_interval
   ON message_jobs(mailbox_id, interval_id) 
   WHERE interval_id IS NOT NULL;
 
+CREATE INDEX IF NOT EXISTS idx_message_jobs_enrollment_node_status
+  ON message_jobs(enrollment_id, node_id, status);
+
 COMMENT ON COLUMN message_jobs.interval_id IS 'Campaign interval this message_job belongs to. Ensures one mailbox per interval.';
 ```
+
+The additional `(enrollment_id, node_id, status)` index supports the scheduler's batched duplicate-check path before `batch_assign_jobs_to_interval` runs. That lookup should use one RPC-backed query for many candidate pairs instead of one REST query per enrollment.
 
 ### 1.3 Create Atomic Interval Assignment Function
 

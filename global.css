@@ -638,6 +638,16 @@ input[type="password"]:focus {
   color: #F3440D;
 }
 
+.message-body-html a,
+.message-body-html a * {
+  color: #F3440D !important;
+}
+
+.message-body-html,
+.message-body-html * {
+  background-color: transparent !important;
+}
+
 .message-body-html p {
   margin: 0.75em 0;
 }

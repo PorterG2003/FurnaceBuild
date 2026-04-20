@@ -15,8 +15,24 @@ export interface DatabaseNode {
   node_type: string;
   node_data: Record<string, any>;
   deleted_at?: string | null;
+  created_at?: string;
   position_x?: number;
   position_y?: number;
+}
+
+export interface LatestMessageJobStatus {
+  id: string;
+  enrollment_id: string;
+  node_id: string;
+  sent_at: string | null;
+  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'blocked' | 'cancelled';
+  created_at?: string;
+}
+
+export interface FlowEvaluationSharedContext {
+  nodesById?: Map<string, DatabaseNode>;
+  nodesByFlowNodeId?: Map<string, DatabaseNode>;
+  latestMessageJobByPair?: Map<string, LatestMessageJobStatus>;
 }
 
 /**
@@ -32,6 +48,54 @@ export interface FlowEvaluationResult {
   evaluationFailed?: boolean;
   /** Short error detail when evaluationFailed is true */
   evaluationError?: string;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message?: unknown }).message ?? 'Unknown database error');
+  }
+
+  return String(error);
+}
+
+function toRetryableReadInput(error: unknown) {
+  if (typeof error === 'object' && error !== null) {
+    return {
+      message: 'message' in error ? String((error as any).message ?? '') : undefined,
+      code: 'code' in error ? String((error as any).code ?? '') : undefined,
+      details: 'details' in error ? String((error as any).details ?? '') : undefined,
+      hint: 'hint' in error ? String((error as any).hint ?? '') : undefined,
+      status:
+        typeof (error as any).status === 'number'
+          ? (error as any).status
+          : undefined,
+      name: 'name' in error ? String((error as any).name ?? '') : undefined,
+    };
+  }
+
+  return getErrorMessage(error);
+}
+
+function buildReadFailureResult(error: unknown): FlowEvaluationResult {
+  return {
+    nodes: [],
+    evaluationFailed: true,
+    evaluationError: getErrorMessage(error),
+  };
+}
+
+function getMessageJobPairKey(enrollmentId: string, nodeId: string): string {
+  return `${enrollmentId}:${nodeId}`;
+}
+
+function sortNodesByCreatedAt(nodes: DatabaseNode[]): DatabaseNode[] {
+  return [...nodes].sort((left, right) =>
+    (left.created_at ?? '').localeCompare(right.created_at ?? ''),
+  );
 }
 
 /**
@@ -53,7 +117,8 @@ export async function evaluateFlow(
   enrollment: Enrollment,
   campaignId: string,
   flowData: any,
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  sharedContext?: FlowEvaluationSharedContext,
 ): Promise<FlowEvaluationResult> {
   const enrollmentId = enrollment.id.substring(0, 8);
   console.log(`[FLOW ${enrollmentId}] Evaluating flow. Campaign: ${campaignId.substring(0, 8)}, Current node: ${enrollment.current_node_id?.substring(0, 8) || 'null'}`);
@@ -88,28 +153,39 @@ export async function evaluateFlow(
   // Handle entry point (no current_node_id)
   if (!enrollment.current_node_id) {
     console.log(`[FLOW ${enrollmentId}] Entry point detected. Finding leadSource node...`);
-    // Find entry node from database (usually leadSource node)
-    const { data: entryNodes, error } = await supabase
-      .from('nodes')
-      .select('*')
-      .eq('campaign_id', campaignId)
-      .is('deleted_at', null)
-      .eq('node_type', 'leadSource')
-      .limit(1);
+    const preloadedNodes = sharedContext?.nodesById
+      ? Array.from(sharedContext.nodesById.values())
+      : null;
+    let leadSourceNode: DatabaseNode | undefined;
 
-    if (error) {
-      console.error(`[FLOW ${enrollmentId}] Error loading entry node: ${error.message}`);
-      reportErrorToSlack('Database error loading entry node', {
-        severity: 'critical',
-        enrollment_id: enrollment.id,
-        campaign_id: campaignId,
-        error: error.message,
-      });
-      return { nodes: [], evaluationFailed: true, evaluationError: error.message };
+    if (preloadedNodes) {
+      leadSourceNode = preloadedNodes.find((node) => node.node_type === 'leadSource');
+    } else {
+      const { data: entryNodes, error } = await supabase
+        .from('nodes')
+        .select('*')
+        .eq('campaign_id', campaignId)
+        .is('deleted_at', null)
+        .eq('node_type', 'leadSource')
+        .limit(1);
+
+      if (error) {
+        console.error(`[FLOW ${enrollmentId}] Error loading entry node: ${error.message}`);
+        if (!isRetryableSupabaseReadError(toRetryableReadInput(error))) {
+          reportErrorToSlack('Database error loading entry node', {
+            severity: 'critical',
+            enrollment_id: enrollment.id,
+            campaign_id: campaignId,
+            error: error.message,
+          });
+        }
+        return buildReadFailureResult(error);
+      }
+
+      leadSourceNode = (entryNodes?.[0] as DatabaseNode | undefined) ?? undefined;
     }
 
-    if (entryNodes && entryNodes.length > 0) {
-      const leadSourceNode = entryNodes[0] as DatabaseNode;
+    if (leadSourceNode) {
       console.log(`[FLOW ${enrollmentId}] Found leadSource node: ${leadSourceNode.flow_node_id}`);
       
       // Find edges starting from leadSource node's flow_node_id
@@ -131,33 +207,47 @@ export async function evaluateFlow(
       console.log(`[FLOW ${enrollmentId}] Target flow node IDs: ${targetFlowNodeIds.join(', ')}`);
 
       // Load corresponding database nodes by flow_node_id
-      const { data: nextNodes, error: nextNodesError } = await supabase
-        .from('nodes')
-        .select('*')
-        .eq('campaign_id', campaignId)
-        .is('deleted_at', null)
-        .in('flow_node_id', targetFlowNodeIds);
+      let nextNodes: DatabaseNode[] = [];
 
-      if (nextNodesError) {
-        console.error(`[FLOW ${enrollmentId}] Error loading nodes after leadSource: ${nextNodesError.message}`);
-        reportErrorToSlack('Database error loading nodes after leadSource', {
-          severity: 'critical',
-          enrollment_id: enrollment.id,
-          campaign_id: campaignId,
-          error: nextNodesError.message,
-        });
-        return { nodes: [], evaluationFailed: true, evaluationError: nextNodesError.message };
+      if (sharedContext?.nodesByFlowNodeId) {
+        nextNodes = targetFlowNodeIds
+          .map((targetFlowNodeId: string) =>
+            sharedContext.nodesByFlowNodeId?.get(targetFlowNodeId),
+          )
+          .filter((node: DatabaseNode | undefined): node is DatabaseNode => Boolean(node));
+      } else {
+        const { data, error: nextNodesError } = await supabase
+          .from('nodes')
+          .select('*')
+          .eq('campaign_id', campaignId)
+          .is('deleted_at', null)
+          .in('flow_node_id', targetFlowNodeIds);
+
+        if (nextNodesError) {
+          console.error(`[FLOW ${enrollmentId}] Error loading nodes after leadSource: ${nextNodesError.message}`);
+          if (!isRetryableSupabaseReadError(toRetryableReadInput(nextNodesError))) {
+            reportErrorToSlack('Database error loading nodes after leadSource', {
+              severity: 'critical',
+              enrollment_id: enrollment.id,
+              campaign_id: campaignId,
+              error: nextNodesError.message,
+            });
+          }
+          return buildReadFailureResult(nextNodesError);
+        }
+
+        nextNodes = (data ?? []) as DatabaseNode[];
       }
 
       // Filter out leadSource nodes (they should only be entry points, not in traversal)
-      const filteredNodes = (nextNodes || []).filter(
+      const filteredNodes = nextNodes.filter(
         (node: any) => node.node_type !== 'leadSource'
       ) as DatabaseNode[];
 
       // Log warning if leadSource nodes were filtered out
-      if (filteredNodes.length < (nextNodes || []).length) {
+      if (filteredNodes.length < nextNodes.length) {
         console.warn(
-          `[FLOW ${enrollmentId}] Filtered out ${(nextNodes || []).length - filteredNodes.length} leadSource node(s) from entry point traversal`
+          `[FLOW ${enrollmentId}] Filtered out ${nextNodes.length - filteredNodes.length} leadSource node(s) from entry point traversal`
         );
       }
 
@@ -172,29 +262,42 @@ export async function evaluateFlow(
       enrollment_id: enrollment.id,
       campaign_id: campaignId,
     });
-    const { data: firstNodes, error: firstError } = await supabase
-      .from('nodes')
-      .select('*')
-      .eq('campaign_id', campaignId)
-      .is('deleted_at', null)
-      .neq('node_type', 'leadSource')
-      .order('created_at', { ascending: true })
-      .limit(1);
+    if (preloadedNodes) {
+      const firstNode = sortNodesByCreatedAt(
+        preloadedNodes.filter((node) => node.node_type !== 'leadSource'),
+      )[0];
 
-    if (firstError) {
-      console.error(`[FLOW ${enrollmentId}] Error loading first node: ${firstError.message}`);
-      reportErrorToSlack('Database error loading first node', {
-        severity: 'critical',
-        enrollment_id: enrollment.id,
-        campaign_id: campaignId,
-        error: firstError.message,
-      });
-      return { nodes: [], evaluationFailed: true, evaluationError: firstError.message };
-    }
+      if (firstNode) {
+        console.log(`[FLOW ${enrollmentId}] Using first non-leadSource node as entry: ${firstNode.flow_node_id}`);
+        return { nodes: [firstNode] };
+      }
+    } else {
+      const { data: firstNodes, error: firstError } = await supabase
+        .from('nodes')
+        .select('*')
+        .eq('campaign_id', campaignId)
+        .is('deleted_at', null)
+        .neq('node_type', 'leadSource')
+        .order('created_at', { ascending: true })
+        .limit(1);
 
-    if (firstNodes && firstNodes.length > 0) {
-      console.log(`[FLOW ${enrollmentId}] Using first non-leadSource node as entry: ${firstNodes[0].flow_node_id}`);
-      return { nodes: [firstNodes[0] as DatabaseNode] };
+      if (firstError) {
+        console.error(`[FLOW ${enrollmentId}] Error loading first node: ${firstError.message}`);
+        if (!isRetryableSupabaseReadError(toRetryableReadInput(firstError))) {
+          reportErrorToSlack('Database error loading first node', {
+            severity: 'critical',
+            enrollment_id: enrollment.id,
+            campaign_id: campaignId,
+            error: firstError.message,
+          });
+        }
+        return buildReadFailureResult(firstError);
+      }
+
+      if (firstNodes && firstNodes.length > 0) {
+        console.log(`[FLOW ${enrollmentId}] Using first non-leadSource node as entry: ${firstNodes[0].flow_node_id}`);
+        return { nodes: [firstNodes[0] as DatabaseNode] };
+      }
     }
 
     console.warn(`[FLOW ${enrollmentId}] No entry point nodes found for campaign ${campaignId.substring(0, 8)}. Flow cannot be evaluated.`);
@@ -207,20 +310,29 @@ export async function evaluateFlow(
   }
   
   // Load current node from database to get its flow_node_id
-  const { data: currentNode, error: currentNodeError } = await supabase
-    .from('nodes')
-    .select('*')
-    .eq('id', enrollment.current_node_id)
-    .eq('campaign_id', campaignId)
-    .maybeSingle();
+  let currentNode: DatabaseNode | null = null;
+  let currentNodeError: { message: string } | null = null;
+
+  if (sharedContext?.nodesById) {
+    currentNode = sharedContext.nodesById.get(enrollment.current_node_id) ?? null;
+  } else {
+    const response = await supabase
+      .from('nodes')
+      .select('*')
+      .eq('id', enrollment.current_node_id)
+      .eq('campaign_id', campaignId)
+      .maybeSingle();
+    currentNode = (response.data as DatabaseNode | null) ?? null;
+    currentNodeError = response.error;
+  }
 
   if (currentNodeError) {
     const errorMessage = currentNodeError.message || 'Unknown database error';
     const error = `Error loading current node ${enrollment.current_node_id} for enrollment ${enrollment.id}: ${errorMessage}`;
     console.error(error);
 
-    if (isRetryableSupabaseReadError(errorMessage)) {
-      return { nodes: [], evaluationFailed: true, evaluationError: errorMessage };
+    if (isRetryableSupabaseReadError(toRetryableReadInput(currentNodeError))) {
+      return buildReadFailureResult(currentNodeError);
     }
 
     reportErrorToSlack('Database error loading current node during flow evaluation', {
@@ -230,7 +342,7 @@ export async function evaluateFlow(
       current_node_id: enrollment.current_node_id ?? '',
       error: errorMessage,
     });
-    return { nodes: [], evaluationFailed: true, evaluationError: errorMessage };
+    return buildReadFailureResult(currentNodeError);
   }
 
   if (!currentNode) {
@@ -260,33 +372,51 @@ export async function evaluateFlow(
   // If current node is an email node, check if the message_job has been sent
   // We should not advance to the next node until the email is actually sent
   if (currentNode.node_type === 'email') {
-    const { data: messageJobs, error: messageJobsError } = await supabase
-      .from('message_jobs')
-      .select('id, sent_at, status')
-      .eq('enrollment_id', enrollment.id)
-      .eq('node_id', currentNode.id)
-      .order('created_at', { ascending: false })
-      .limit(1); // In normal flow, there should be only one
-    
-    if (messageJobsError) {
-      console.error(`[FLOW ${enrollmentId}] Error checking message job for email node ${currentNode.id.substring(0, 8)}: ${messageJobsError.message}`);
-      // Don't advance if we can't check - safer to wait
-      return { nodes: [], waitingForEmail: true };
+    let latestMessageJob: LatestMessageJobStatus | null = null;
+
+    if (sharedContext?.latestMessageJobByPair) {
+      latestMessageJob =
+        sharedContext.latestMessageJobByPair.get(
+          getMessageJobPairKey(enrollment.id, currentNode.id),
+        ) ?? null;
+    } else {
+      const { data: messageJobs, error: messageJobsError } = await supabase
+        .from('message_jobs')
+        .select('id, enrollment_id, node_id, sent_at, status, created_at')
+        .eq('enrollment_id', enrollment.id)
+        .eq('node_id', currentNode.id)
+        .order('created_at', { ascending: false })
+        .limit(1); // In normal flow, there should be only one
+
+      if (messageJobsError) {
+        console.error(`[FLOW ${enrollmentId}] Error checking message job for email node ${currentNode.id.substring(0, 8)}: ${messageJobsError.message}`);
+        if (!isRetryableSupabaseReadError(toRetryableReadInput(messageJobsError))) {
+          reportErrorToSlack('Database error loading latest message job (flow email gate)', {
+            severity: 'critical',
+            enrollment_id: enrollment.id,
+            campaign_id: campaignId,
+            current_node_id: currentNode.id,
+            error: messageJobsError.message,
+          });
+        }
+        return buildReadFailureResult(messageJobsError);
+      }
+
+      latestMessageJob = ((messageJobs ?? [])[0] as LatestMessageJobStatus | undefined) ?? null;
     }
-    
-    if (!messageJobs || messageJobs.length === 0) {
+
+    if (!latestMessageJob) {
       // No message_job found - shouldn't happen in normal flow, but don't advance
       console.warn(`[FLOW ${enrollmentId}] No message_job found for email node ${currentNode.id.substring(0, 8)} (enrollment ${enrollment.id.substring(0, 8)})`);
       return { nodes: [], waitingForEmail: true };
     }
-    
-    const messageJob = messageJobs[0]; // Get the (should be only) message_job
-    
+
     // Only sent email jobs advance an active enrollment. A cancelled job must be paired
     // with an enrollment-level terminal transition elsewhere; it is never a node-level skip.
-    const isSent = messageJob.sent_at !== null || messageJob.status === 'sent';
+    const isSent =
+      latestMessageJob.sent_at !== null || latestMessageJob.status === 'sent';
     const advancesWithoutSend =
-      messageJob.status === 'failed' || messageJob.status === 'blocked';
+      latestMessageJob.status === 'failed' || latestMessageJob.status === 'blocked';
     
     if (!isSent && !advancesWithoutSend) {
       // Email not sent yet and not terminal - don't advance to next node
@@ -296,7 +426,7 @@ export async function evaluateFlow(
     }
     
     if (advancesWithoutSend) {
-      console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job ${messageJob.status}. Proceeding to next node.`);
+      console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job ${latestMessageJob.status}. Proceeding to next node.`);
     } else {
       console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job sent. Proceeding to next node.`);
     }
@@ -314,33 +444,47 @@ export async function evaluateFlow(
   const targetFlowNodeIds = nextEdges.map((edge: any) => edge.target);
 
   // Load corresponding database nodes by flow_node_id
-  const { data: nextNodes, error: nextNodesError } = await supabase
-    .from('nodes')
-    .select('*')
-    .eq('campaign_id', campaignId)
-    .is('deleted_at', null)
-    .in('flow_node_id', targetFlowNodeIds);
+  let nextNodes: DatabaseNode[] = [];
 
-  if (nextNodesError) {
-    console.error(`Error loading next nodes: ${nextNodesError.message}`);
-    reportErrorToSlack('Database error loading next nodes (flow traversal)', {
-      severity: 'critical',
-      enrollment_id: enrollment.id,
-      campaign_id: campaignId,
-      error: nextNodesError.message,
-    });
-    return { nodes: [], evaluationFailed: true, evaluationError: nextNodesError.message };
+  if (sharedContext?.nodesByFlowNodeId) {
+    nextNodes = targetFlowNodeIds
+      .map((targetFlowNodeId: string) =>
+        sharedContext.nodesByFlowNodeId?.get(targetFlowNodeId),
+      )
+      .filter((node: DatabaseNode | undefined): node is DatabaseNode => Boolean(node));
+  } else {
+    const { data, error: nextNodesError } = await supabase
+      .from('nodes')
+      .select('*')
+      .eq('campaign_id', campaignId)
+      .is('deleted_at', null)
+      .in('flow_node_id', targetFlowNodeIds);
+
+    if (nextNodesError) {
+      console.error(`Error loading next nodes: ${nextNodesError.message}`);
+      if (!isRetryableSupabaseReadError(toRetryableReadInput(nextNodesError))) {
+        reportErrorToSlack('Database error loading next nodes (flow traversal)', {
+          severity: 'critical',
+          enrollment_id: enrollment.id,
+          campaign_id: campaignId,
+          error: nextNodesError.message,
+        });
+      }
+      return buildReadFailureResult(nextNodesError);
+    }
+
+    nextNodes = (data ?? []) as DatabaseNode[];
   }
 
   // Filter out leadSource nodes (they should only be entry points, not in traversal)
-  const filteredNodes = (nextNodes || []).filter(
+  const filteredNodes = nextNodes.filter(
     (node: any) => node.node_type !== 'leadSource'
   ) as DatabaseNode[];
 
   // Log warning if leadSource nodes were filtered out
-  if (filteredNodes.length < (nextNodes || []).length) {
+  if (filteredNodes.length < nextNodes.length) {
     console.warn(
-      `Filtered out ${(nextNodes || []).length - filteredNodes.length} leadSource node(s) from traversal for enrollment ${enrollment.id}`
+      `Filtered out ${nextNodes.length - filteredNodes.length} leadSource node(s) from traversal for enrollment ${enrollment.id}`
     );
   }
 

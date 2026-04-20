@@ -34,12 +34,14 @@ A long-running **ECS worker** with:
 ### What does it do?
 1. **Claims enrollments atomically**: `claim_enrollments_ready` returns active enrollments whose `next_run_at <= NOW()`
 2. **For each enrollment**:
-   - Loads the flow graph (from `campaigns.flow_data` or `nodes` table)
+   - Groups claimed enrollments by campaign and preloads the shared campaign/account/node context once per campaign batch
+   - Reuses a batched latest-`message_jobs` view for email-node gating instead of issuing one read per enrollment
    - Figures out: "What node should execute next?"
    - **If it's an email node**:
      - Updates `enrollment.current_node_id` to that email node
      - Lets **batch interval assignment** create the `message_job` record
      - Uses one batched duplicate lookup for many `(enrollment_id, node_id)` pairs before calling `batch_assign_jobs_to_interval`
+     - Reuses a preloaded eligible mailbox pool for round-robin assignment instead of requerying mailbox eligibility per lead
    - **If it's a wait node**:
      - Updates `enrollment.next_run_at` = NOW() + wait_duration
      - (No job created yet - will be evaluated next scheduler run)
@@ -55,8 +57,8 @@ A long-running **ECS worker** with:
 ### Key Points:
 - ✅ **Fast**: Just makes decisions, doesn't send emails
 - ✅ **Database-safe**: Enrollment claiming is atomic and duplicate email-job checks are batched
-- ✅ **Scales**: Avoids one `message_jobs` lookup per enrollment when a campaign backlog builds up
-- ✅ **Load-aware**: Background tasks skip overlapping ticks instead of piling more work onto Supabase
+- ✅ **Scales**: Avoids one `campaigns`, `accounts`, or `message_jobs` lookup per enrollment when a campaign backlog builds up
+- ✅ **Load-aware**: Background tasks skip overlapping ticks, full claim batches briefly pace before re-polling, and mailbox debug queries are opt-in
 - ✅ **Alert-aware**: Retryable scheduler noise is routed through a shared Slack policy engine that sends one immediate warning plus later summaries with counts, while critical failures remain immediate
 
 ### Example:

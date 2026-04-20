@@ -36,6 +36,23 @@ Scheduler → Lock interval → Check mailbox → Create job
 
 All tasks run in the same worker instance, but each periodic task should be **single-flight**. If a timer fires while the previous run is still active, the worker should skip that overlapping tick instead of stacking more Supabase work onto the system.
 
+### Second-Round Load Reduction
+
+The first round removed the worst duplicate `message_jobs` existence checks, but production logs still showed hot campaigns repeatedly hitting:
+- `campaigns?...id=eq.<campaign>`
+- `accounts?...id=eq.<account>`
+- `message_jobs?...enrollment_id=eq.<enrollment>&node_id=eq.<node>`
+
+The follow-up scheduler pass reduces that remaining fan-out by:
+
+1. grouping each claimed batch by `campaign_id`
+2. preloading campaign/account/node context once per campaign batch
+3. preloading latest email-gate `message_jobs` status once per batch
+4. reusing eligible mailbox pools inside batch interval assignment
+5. adding a short post-batch pacing delay after full claim batches
+
+This second round is intentionally scheduler-local. It keeps the existing interval model and alert aggregation behavior, but removes the remaining read amplification that was turning brief Supabase wobble windows into repeated scheduler warnings.
+
 ## Phase 1: Database Schema
 
 ### 1.1 Create `campaign_intervals` Table

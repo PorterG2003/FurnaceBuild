@@ -3,12 +3,33 @@ import {
   reportErrorToSlack,
 } from '@furnace/slack-lib';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { selectMailbox } from './mailbox-selection.js';
+import {
+  getEligibleMailboxes,
+  selectMailboxFromPool,
+  type CampaignMailboxRow,
+} from './mailbox-selection.js';
 
 type ExistingMessageJobPair = {
   enrollment_id: string;
   node_id: string;
 };
+
+type CampaignAccountRelation =
+  | {
+      jitter_percentage?: number | null;
+    }
+  | Array<{
+      jitter_percentage?: number | null;
+    }>
+  | null;
+
+function getAccountJitter(accounts: CampaignAccountRelation): number | null {
+  if (Array.isArray(accounts)) {
+    return accounts[0]?.jitter_percentage ?? null;
+  }
+
+  return accounts?.jitter_percentage ?? null;
+}
 
 async function loadExistingMessageJobPairSet(
   supabase: SupabaseClient,
@@ -48,7 +69,7 @@ export async function batchAssignIntervalJobs(
   // Get all campaigns with available/scheduled intervals
   const { data: campaigns, error: campaignsError } = await supabase
     .from('campaigns')
-    .select('id, jitter_percentage')
+    .select('id, jitter_percentage, account_id, accounts(jitter_percentage)')
     .eq('status', 'running')
     .is('deleted_at', null)
     .not('sending_interval_seconds', 'is', null);
@@ -82,13 +103,14 @@ export async function batchAssignIntervalJobs(
   
   for (const campaign of campaigns) {
     try {
-      // Check if campaign has any available/scheduled intervals
+      // Load the earliest future incomplete interval. If the earliest one is locked,
+      // later intervals are blocked anyway, so we can skip this campaign.
       const { data: intervals, error: intervalsError } = await supabase
         .from('campaign_intervals')
         .select('id, interval_time, status')
         .eq('campaign_id', campaign.id)
         .gt('interval_time', now)
-        .in('status', ['available', 'scheduled'])
+        .neq('status', 'completed')
         .order('interval_time', { ascending: true })
         .limit(1);
       
@@ -109,24 +131,13 @@ export async function batchAssignIntervalJobs(
         continue;
       }
       
-      // Skip if no available/scheduled intervals
+      // Skip if no future incomplete interval is available/scheduled.
       if (!intervals || intervals.length === 0) {
         continue;
       }
-      
-      // Check if first interval is blocked by incomplete previous intervals
+
       const firstInterval = intervals[0];
-      const { data: blockingIntervals } = await supabase
-        .from('campaign_intervals')
-        .select('id')
-        .eq('campaign_id', campaign.id)
-        .lt('interval_time', firstInterval.interval_time)
-        .gte('interval_time', now)
-        .neq('status', 'completed')
-        .limit(1);
-      
-      if (blockingIntervals && blockingIntervals.length > 0) {
-        // Interval is blocked - skip this campaign
+      if (!['available', 'scheduled'].includes(firstInterval.status)) {
         continue;
       }
       
@@ -205,21 +216,10 @@ export async function batchAssignIntervalJobs(
       
       console.log(`[BATCH INTERVAL] Campaign ${campaign.id.substring(0, 8)}: Found ${enrollmentsWithoutJobs.length} enrollment(s) ready for email jobs`);
       
-      // Get account jitter if campaign doesn't have one (need this before creating jobs)
-      let jitterPercentage = campaign.jitter_percentage;
-      if (!jitterPercentage) {
-        const { data: campaignWithAccount } = await supabase
-          .from('campaigns')
-          .select('account_id, accounts(jitter_percentage)')
-          .eq('id', campaign.id)
-          .single();
-        
-        if (campaignWithAccount && (campaignWithAccount as any).accounts) {
-          jitterPercentage = (campaignWithAccount as any).accounts.jitter_percentage || 10.0;
-        } else {
-          jitterPercentage = 10.0;
-        }
-      }
+      const jitterPercentage =
+        campaign.jitter_percentage ??
+        getAccountJitter((campaign as any).accounts) ??
+        10.0;
       
       // Get eligible mailboxes for this campaign
       const { data: campaignMailboxes } = await supabase
@@ -229,10 +229,10 @@ export async function batchAssignIntervalJobs(
           mailbox:mailboxes!inner(id, status, smtp_status, deleted_at)
         `)
         .eq('campaign_id', campaign.id);
-      
-      const eligibleMailboxes = campaignMailboxes?.filter((cm: any) => 
-        !cm.mailbox?.deleted_at && cm.mailbox?.status === 'connected' && cm.mailbox?.smtp_status === 'active'
-      ) || [];
+
+      const eligibleMailboxes = getEligibleMailboxes(
+        (campaignMailboxes as CampaignMailboxRow[] | null) ?? [],
+      );
       
       if (eligibleMailboxes.length === 0) {
         console.warn(`[BATCH INTERVAL] Campaign ${campaign.id.substring(0, 8)} has no eligible mailboxes`);
@@ -294,7 +294,7 @@ export async function batchAssignIntervalJobs(
         
         if (!mailboxId) {
           // No mailbox assigned - use round-robin
-          const selectedMailbox = await selectMailbox(campaign.id, supabase, rotationIndex);
+          const selectedMailbox = selectMailboxFromPool(campaign.id, eligibleMailboxes, rotationIndex);
           if (!selectedMailbox) {
             console.warn(`[BATCH INTERVAL] No mailbox available for enrollment ${enrollment.id.substring(0, 8)}`);
             continue;

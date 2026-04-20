@@ -79,6 +79,9 @@ export class DatabaseClient {
           operation: 'claim_enrollments_ready',
         },
       });
+      if (typeof error === 'object' && error !== null) {
+        (error as any).reportedToSlack = true;
+      }
       throw error;
     }
   }
@@ -88,6 +91,10 @@ export class DatabaseClient {
    */
   getPollInterval(): number {
     return this.pollIntervalMs;
+  }
+
+  getBatchSize(): number {
+    return this.batchSize;
   }
 }
 

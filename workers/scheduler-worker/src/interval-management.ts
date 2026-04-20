@@ -26,7 +26,7 @@ export async function maintainCampaignIntervals(
   // Also get last_completed_interval_time for sequential processing
   const { data: campaigns, error } = await supabase
     .from('campaigns')
-    .select('id, sending_interval_seconds, created_at, schedule, last_completed_interval_time')
+    .select('id, account_id, sending_interval_seconds, created_at, schedule, last_completed_interval_time')
     .eq('status', 'running')
     .not('sending_interval_seconds', 'is', null);
   
@@ -58,6 +58,7 @@ export async function maintainCampaignIntervals(
       console.log(`[INTERVAL MAINTENANCE] Processing campaign ${campaign.id.substring(0, 8)} (last_completed: ${campaign.last_completed_interval_time || 'NULL'})`);
       await ensureCampaignIntervals(
         campaign.id,
+        campaign.account_id,
         campaign.sending_interval_seconds,
         campaign.created_at,
         campaign.schedule as CampaignSchedule | null,
@@ -90,6 +91,7 @@ export async function maintainCampaignIntervals(
  */
 async function ensureCampaignIntervals(
   campaignId: string,
+  accountId: string | null,
   intervalSeconds: number,
   campaignStartTime: string,
   schedule: CampaignSchedule | null,
@@ -152,6 +154,7 @@ async function ensureCampaignIntervals(
   // Create intervals starting from the calculated start point
   await createCampaignIntervals(
     campaignId,
+    accountId,
     startFrom,
     intervalsToCreate,
     intervalSeconds,
@@ -166,21 +169,16 @@ async function ensureCampaignIntervals(
  */
 async function createCampaignIntervals(
   campaignId: string,
+  accountId: string | null,
   startFrom: Date,
   count: number,
   intervalSeconds: number,
   schedule: CampaignSchedule | null,
   supabase: SupabaseClient
 ): Promise<void> {
-  const { data: campaign, error: campError } = await supabase
-    .from('campaigns')
-    .select('account_id')
-    .eq('id', campaignId)
-    .single();
-  if (campError || !campaign?.account_id) {
-    throw new Error(`Campaign ${campaignId} not found or missing account_id: ${campError?.message}`);
+  if (!accountId) {
+    throw new Error(`Campaign ${campaignId} is missing account_id`);
   }
-  const accountId = campaign.account_id;
 
   const intervals: { campaign_id: string; account_id: string; interval_time: string; status: string }[] = [];
   let currentTime = new Date(startFrom);

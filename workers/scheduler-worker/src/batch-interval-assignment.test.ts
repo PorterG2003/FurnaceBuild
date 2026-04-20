@@ -151,6 +151,8 @@ function createCampaign(overrides: Record<string, unknown> = {}) {
   return {
     id: campaignId,
     jitter_percentage: 12,
+    account_id: 'account-1',
+    accounts: { jitter_percentage: 7 },
     ...overrides,
   };
 }
@@ -176,8 +178,7 @@ function createEnrollment(id: string, overrides: Record<string, unknown> = {}) {
 test('batchAssignIntervalJobs batches existing job lookup before interval RPC', async () => {
   const supabase = new MockSupabase([
     { data: [createCampaign()] }, // campaigns
-    { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] }, // intervals
-    { data: [] }, // blocking intervals
+    { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] }, // earliest incomplete interval
     { data: [{ id: nodeId }] }, // email nodes
     {
       data: [
@@ -235,7 +236,6 @@ test('batchAssignIntervalJobs skips batch RPC when all candidates already have j
   const supabase = new MockSupabase([
     { data: [createCampaign()] },
     { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] },
-    { data: [] },
     { data: [{ id: nodeId }] },
     { data: [createEnrollment('enrollment-existing')] },
     {
@@ -252,8 +252,7 @@ test('batchAssignIntervalJobs skips batch RPC when all candidates already have j
 test('batchAssignIntervalJobs preserves round-robin mailbox selection for unassigned leads', async () => {
   const supabase = new MockSupabase([
     { data: [createCampaign()] }, // campaigns
-    { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] }, // intervals
-    { data: [] }, // blocking intervals
+    { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] }, // earliest incomplete interval
     { data: [{ id: nodeId }, { id: otherNodeId }] }, // email nodes
     {
       data: [
@@ -280,12 +279,6 @@ test('batchAssignIntervalJobs preserves round-robin mailbox selection for unassi
       ],
     }, // campaign_mailboxes for eligibility
     { data: [{ id: otherNodeId, node_data: { subject: 'Hi' } }] }, // nodes data
-    {
-      data: [
-        { mailbox: { id: 'mailbox-1', status: 'connected', smtp_status: 'active' } },
-        { mailbox: { id: 'mailbox-2', status: 'connected', smtp_status: 'active' } },
-      ],
-    }, // selectMailbox campaign_mailboxes
     { data: null, error: null }, // update leads mailbox_id
     {
       data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
@@ -307,4 +300,10 @@ test('batchAssignIntervalJobs preserves round-robin mailbox selection for unassi
   );
   assert.ok(leadUpdate);
   assert.deepEqual(leadUpdate.updates, [{ mailbox_id: 'mailbox-2' }]);
+
+  const mailboxQueries = supabase.calls.filter(
+    (call): call is QueryCall =>
+      call.kind === 'query' && call.table === 'campaign_mailboxes',
+  );
+  assert.equal(mailboxQueries.length, 1);
 });

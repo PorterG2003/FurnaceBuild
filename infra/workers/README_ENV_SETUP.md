@@ -68,7 +68,7 @@ So if you see **"Missing SUPABASE_SECRET_KEY"** in send-worker logs:
 
 ## Alert Rollout Check
 
-After deploying worker changes that affect alerting:
+After deploying worker changes that affect alerting or scheduler load-shaping:
 
 1. `npm run restart:dev` or `npm run restart:prod`
 2. `npm run check:services`
@@ -78,6 +78,11 @@ After deploying worker changes that affect alerting:
    - repeats stop flooding the channel
    - the next summary includes counts and timestamps
    - critical failures still post immediately without waiting for a summary
+5. Confirm in logs that:
+   - scheduler batches preload campaign/account/node context instead of repeatedly fetching the same campaign/account rows
+   - email-node flow evaluation is no longer issuing one `message_jobs` read per enrollment
+   - batch interval assignment reuses one eligible mailbox pool per campaign
+   - full scheduler batches show a short pacing gap before the next claim cycle during backlog
 
 ## How It Works
 

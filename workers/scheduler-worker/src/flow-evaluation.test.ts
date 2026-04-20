@@ -256,7 +256,7 @@ test('evaluateFlow waits on cancelled email jobs instead of advancing', async ()
   });
 });
 
-test('evaluateFlow waits when message job lookup errors', async () => {
+test('evaluateFlow defers when message job lookup errors', async () => {
   const supabase = createSupabaseForEmailNodeQuery({
     messageJobsError: { message: 'temporary lookup failure' },
   });
@@ -270,7 +270,8 @@ test('evaluateFlow waits when message job lookup errors', async () => {
 
   assert.deepEqual(result, {
     nodes: [],
-    waitingForEmail: true,
+    evaluationFailed: true,
+    evaluationError: 'temporary lookup failure',
   });
 });
 
@@ -375,4 +376,61 @@ test('evaluateFlow uses newest-first ordering for multiple message jobs', async 
   assert.deepEqual(orderCalls, [
     { column: 'created_at', options: { ascending: false } },
   ]);
+});
+
+test('evaluateFlow uses preloaded nodes and message jobs without extra reads', async () => {
+  const currentNode = {
+    id: enrollment.current_node_id!,
+    campaign_id: enrollment.campaign_id,
+    flow_node_id: 'email-1',
+    node_type: 'email',
+    node_data: {},
+    deleted_at: null,
+  };
+  const nextNode = {
+    id: 'a901edbf-bdfd-4cad-90ab-434a946bf97c',
+    campaign_id: enrollment.campaign_id,
+    flow_node_id: 'wait-1',
+    node_type: 'wait',
+    node_data: {},
+    deleted_at: null,
+  };
+
+  const supabase = {
+    from() {
+      throw new Error('evaluateFlow should not query Supabase when shared context is provided');
+    },
+  };
+
+  const result = await evaluateFlow(
+    enrollment,
+    enrollment.campaign_id,
+    { edges: [{ source: 'email-1', target: 'wait-1' }] },
+    supabase as any,
+    {
+      nodesById: new Map([
+        [currentNode.id, currentNode],
+        [nextNode.id, nextNode],
+      ]),
+      nodesByFlowNodeId: new Map([
+        [currentNode.flow_node_id, currentNode],
+        [nextNode.flow_node_id, nextNode],
+      ]),
+      latestMessageJobByPair: new Map([
+        [
+          `${enrollment.id}:${currentNode.id}`,
+          {
+            id: 'job-1',
+            enrollment_id: enrollment.id,
+            node_id: currentNode.id,
+            sent_at: '2026-04-17T00:00:00.000Z',
+            status: 'sent',
+          },
+        ],
+      ]),
+    },
+  );
+
+  assert.equal(result.waitingForEmail, undefined);
+  assert.deepEqual(result.nodes.map((node) => node.id), ['a901edbf-bdfd-4cad-90ab-434a946bf97c']);
 });

@@ -6,17 +6,88 @@ import {
   reportErrorToSlack,
 } from '@furnace/slack-lib';
 import { DatabaseClient } from './database.js';
-import { evaluateFlow } from './flow-evaluation.js';
+import {
+  evaluateFlow,
+  type DatabaseNode,
+  type FlowEvaluationSharedContext,
+  type LatestMessageJobStatus,
+} from './flow-evaluation.js';
 import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
 import { handleAICategorizerNode } from './node-handlers/ai-categorizer-handler.js';
 import { handleDataSenderNode } from './node-handlers/data-sender-handler.js';
 import { maintainCampaignIntervals } from './interval-management.js';
 import { batchAssignIntervalJobs } from './batch-interval-assignment.js';
-import type { Enrollment } from './types.js';
+import type { CampaignSchedule, Enrollment } from './types.js';
 
 export interface WorkerConfig {
   supabase: SupabaseClient;
   databaseClient: DatabaseClient;
+}
+
+type CampaignAccountRelation =
+  | {
+      jitter_percentage?: number | null;
+    }
+  | Array<{
+      jitter_percentage?: number | null;
+    }>
+  | null;
+
+type SchedulerCampaignRecord = {
+  id: string;
+  flow_data: {
+    nodes: any[];
+    edges: any[];
+  };
+  current_flow_version_number?: number | null;
+  schedule: CampaignSchedule | null;
+  owner_id: string;
+  account_id: string | null;
+  jitter_percentage?: number | null;
+  sending_interval_seconds?: number | null;
+  created_at: string;
+  status: string;
+  deleted_at?: string | null;
+  accounts?: CampaignAccountRelation;
+};
+
+interface CampaignEnrollmentBatchItem {
+  enrollment: Enrollment;
+  originalIndex: number;
+}
+
+interface CampaignProcessingContext extends FlowEvaluationSharedContext {
+  campaign: SchedulerCampaignRecord | null;
+  jitterPercentage: number;
+  accountMissingConfig: boolean;
+}
+
+const FULL_BATCH_BACKOFF_MS = 750;
+
+function toRetryableReadInput(error: unknown) {
+  if (typeof error === 'object' && error !== null) {
+    return {
+      message: 'message' in error ? String((error as any).message ?? '') : undefined,
+      code: 'code' in error ? String((error as any).code ?? '') : undefined,
+      details: 'details' in error ? String((error as any).details ?? '') : undefined,
+      hint: 'hint' in error ? String((error as any).hint ?? '') : undefined,
+      status:
+        typeof (error as any).status === 'number'
+          ? (error as any).status
+          : undefined,
+      name: 'name' in error ? String((error as any).name ?? '') : undefined,
+    };
+  }
+
+  return formatUnknownError(error);
+}
+
+function getAccountJitter(accounts: CampaignAccountRelation | undefined): number | null {
+  if (Array.isArray(accounts)) {
+    return accounts[0]?.jitter_percentage ?? null;
+  }
+
+  return accounts?.jitter_percentage ?? null;
 }
 
 /**
@@ -27,6 +98,8 @@ export class SchedulerWorker {
   private databaseClient: DatabaseClient;
   private running: boolean = false;
   private mailboxRotationIndex: number = 0; // For round-robin mailbox selection
+  private readonly mailboxDistributionDebugEnabled =
+    process.env.SCHEDULER_LOG_MAILBOX_DISTRIBUTION === 'true';
   private intervalMaintenanceTimer?: ReturnType<typeof setInterval>;
   private staleLockCleanupTimer?: ReturnType<typeof setInterval>;
   private processedIntervalCheckTimer?: ReturnType<typeof setInterval>;
@@ -69,18 +142,51 @@ export class SchedulerWorker {
             console.log(`[SCHEDULER] Enrollment: ${e.id} | State: ${e.state} | Current Node: ${e.current_node_id?.substring(0, 8) || 'null'} | Next Run: ${e.next_run_at}`);
           });
 
-          // Log mailbox distribution before processing
-          await this.logMailboxDistribution(enrollments);
+          const campaignGroups = this.groupEnrollmentsByCampaign(enrollments);
+          const campaignContexts = await this.loadCampaignContexts(campaignGroups);
 
-          // Process enrollments in parallel (with concurrency limit if needed)
-          // Pass rotationIndex based on batch index to ensure proper distribution even with parallel processing
-          const results = await Promise.allSettled(
-            enrollments.map((enrollment, index) => {
-              // Calculate rotationIndex based on batch index to ensure proper round-robin even with parallel processing
-              // Use current mailboxRotationIndex as base, then increment for each enrollment in batch
-              const rotationIndex = this.mailboxRotationIndex + index;
-              return this.processEnrollment(enrollment, rotationIndex);
-            })
+          if (this.mailboxDistributionDebugEnabled) {
+            await this.logMailboxDistribution(enrollments);
+          }
+
+          const results: PromiseSettledResult<void>[] = new Array(enrollments.length);
+          const reportedMissingAccountWarnings = new Set<string>();
+
+          await Promise.all(
+            Array.from(campaignGroups.entries()).map(async ([campaignId, batchItems]) => {
+              const context = campaignContexts.get(campaignId);
+
+              if (
+                context?.campaign?.account_id &&
+                context.accountMissingConfig &&
+                !reportedMissingAccountWarnings.has(campaignId)
+              ) {
+                reportedMissingAccountWarnings.add(campaignId);
+                reportErrorToSlack('Missing account for campaign (using default jitter)', {
+                  severity: 'warning',
+                  campaign_id: campaignId,
+                  account_id: context.campaign.account_id,
+                  error: 'Account jitter configuration unavailable; using default jitter.',
+                  alertPolicy: 'persistent_config_warning',
+                  aggregationKey: `missing-account:${campaignId}:${context.campaign.account_id}`,
+                  summaryFields: {
+                    campaign_id: campaignId,
+                    account_id: context.campaign.account_id,
+                  },
+                });
+              }
+
+              const groupResults = await Promise.allSettled(
+                batchItems.map(({ enrollment }) => this.processEnrollment(enrollment, context))
+              );
+
+              groupResults.forEach((result, resultIndex) => {
+                const originalIndex = batchItems[resultIndex]?.originalIndex;
+                if (originalIndex !== undefined) {
+                  results[originalIndex] = result;
+                }
+              });
+            }),
           );
           
           // Update mailboxRotationIndex after processing batch
@@ -93,7 +199,9 @@ export class SchedulerWorker {
           console.log(`[SCHEDULER] Processed ${enrollments.length} enrollment(s): ${successful} successful, ${failed} failed`);
           
           // Log mailbox distribution after processing
-          await this.logMailboxDistributionAfterProcessing(enrollments, results);
+          if (this.mailboxDistributionDebugEnabled) {
+            await this.logMailboxDistributionAfterProcessing(enrollments, results);
+          }
           
           // Log any failures
           results.forEach((result, index) => {
@@ -101,6 +209,10 @@ export class SchedulerWorker {
               console.error(`[SCHEDULER] Failed to process enrollment ${enrollments[index].id}:`, result.reason);
             }
           });
+
+          if (enrollments.length >= this.databaseClient.getBatchSize()) {
+            await this.sleep(FULL_BATCH_BACKOFF_MS);
+          }
         } else {
           // No enrollments ready - wait before next poll
           await this.sleep(this.databaseClient.getPollInterval());
@@ -112,10 +224,26 @@ export class SchedulerWorker {
         if (errorStack) {
           console.error('Stack trace:', errorStack);
         }
-        reportErrorToSlack('Scheduler worker main loop error (fatal)', {
-          severity: 'critical',
-          error: errorMessage,
-        });
+        const retryableReadError = isRetryableSupabaseReadError(toRetryableReadInput(error));
+        if (!(error as any)?.reportedToSlack) {
+          reportErrorToSlack(
+            retryableReadError
+              ? 'Scheduler worker main loop deferred (retryable read-path error)'
+              : 'Scheduler worker main loop error (fatal)',
+            {
+              severity: retryableReadError ? 'warning' : 'critical',
+              error: errorMessage,
+              alertPolicy: retryableReadError
+                ? 'transient_retryable_warning'
+                : 'critical_failure',
+              aggregationKey: retryableReadError ? 'scheduler-main-loop' : undefined,
+              summaryFields: {
+                worker: 'scheduler',
+                operation: 'main-loop',
+              },
+            },
+          );
+        }
         await this.sleep(5000);
       }
     }
@@ -180,6 +308,145 @@ export class SchedulerWorker {
     return setInterval(() => {
       void runTask();
     }, options.intervalMs);
+  }
+
+  private groupEnrollmentsByCampaign(
+    enrollments: Enrollment[],
+  ): Map<string, CampaignEnrollmentBatchItem[]> {
+    const campaignGroups = new Map<string, CampaignEnrollmentBatchItem[]>();
+
+    enrollments.forEach((enrollment, originalIndex) => {
+      const existing = campaignGroups.get(enrollment.campaign_id) ?? [];
+      existing.push({ enrollment, originalIndex });
+      campaignGroups.set(enrollment.campaign_id, existing);
+    });
+
+    return campaignGroups;
+  }
+
+  private async loadCampaignContexts(
+    campaignGroups: Map<string, CampaignEnrollmentBatchItem[]>,
+  ): Promise<Map<string, CampaignProcessingContext>> {
+    const campaignIds = Array.from(campaignGroups.keys());
+    if (campaignIds.length === 0) {
+      return new Map();
+    }
+
+    const { data: campaigns, error: campaignsError } = await this.supabase
+      .from('campaigns')
+      .select(
+        'id, flow_data, current_flow_version_number, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at, status, deleted_at, accounts(jitter_percentage)',
+      )
+      .in('id', campaignIds);
+
+    if (campaignsError) {
+      throw campaignsError;
+    }
+
+    const { data: nodes, error: nodesError } = await this.supabase
+      .from('nodes')
+      .select('*')
+      .in('campaign_id', campaignIds)
+      .is('deleted_at', null);
+
+    if (nodesError) {
+      throw nodesError;
+    }
+
+    const nodesByCampaignId = new Map<string, DatabaseNode[]>();
+    for (const node of (nodes ?? []) as DatabaseNode[]) {
+      const existing = nodesByCampaignId.get(node.campaign_id) ?? [];
+      existing.push(node);
+      nodesByCampaignId.set(node.campaign_id, existing);
+    }
+
+    const currentEmailPairs: Array<{ enrollment_id: string; node_id: string }> = [];
+    for (const [campaignId, batchItems] of campaignGroups.entries()) {
+      const campaignNodesById = new Map(
+        (nodesByCampaignId.get(campaignId) ?? []).map((node) => [node.id, node]),
+      );
+
+      for (const { enrollment } of batchItems) {
+        if (!enrollment.current_node_id) {
+          continue;
+        }
+
+        const currentNode = campaignNodesById.get(enrollment.current_node_id);
+        if (currentNode?.node_type === 'email') {
+          currentEmailPairs.push({
+            enrollment_id: enrollment.id,
+            node_id: currentNode.id,
+          });
+        }
+      }
+    }
+
+    const latestMessageJobByPair = await this.loadLatestMessageJobs(currentEmailPairs);
+    const campaignById = new Map(
+      ((campaigns ?? []) as SchedulerCampaignRecord[]).map((campaign) => [campaign.id, campaign]),
+    );
+
+    const contexts = new Map<string, CampaignProcessingContext>();
+    for (const campaignId of campaignIds) {
+      const campaign = campaignById.get(campaignId) ?? null;
+      const campaignNodes = nodesByCampaignId.get(campaignId) ?? [];
+      const accountJitter = getAccountJitter(campaign?.accounts);
+
+      contexts.set(campaignId, {
+        campaign,
+        jitterPercentage: campaign?.jitter_percentage ?? accountJitter ?? 10.0,
+        accountMissingConfig: Boolean(
+          campaign &&
+            campaign.jitter_percentage == null &&
+            campaign.account_id &&
+            accountJitter === null,
+        ),
+        nodesById: new Map(campaignNodes.map((node) => [node.id, node])),
+        nodesByFlowNodeId: new Map(
+          campaignNodes.map((node) => [node.flow_node_id, node]),
+        ),
+        latestMessageJobByPair,
+      });
+    }
+
+    return contexts;
+  }
+
+  private async loadLatestMessageJobs(
+    pairs: Array<{ enrollment_id: string; node_id: string }>,
+  ): Promise<Map<string, LatestMessageJobStatus>> {
+    if (pairs.length === 0) {
+      return new Map();
+    }
+
+    const pairKeys = new Set(
+      pairs.map((pair) => `${pair.enrollment_id}:${pair.node_id}`),
+    );
+    const enrollmentIds = [...new Set(pairs.map((pair) => pair.enrollment_id))];
+    const nodeIds = [...new Set(pairs.map((pair) => pair.node_id))];
+
+    const { data, error } = await this.supabase
+      .from('message_jobs')
+      .select('id, enrollment_id, node_id, sent_at, status, created_at')
+      .in('enrollment_id', enrollmentIds)
+      .in('node_id', nodeIds)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const latestByPair = new Map<string, LatestMessageJobStatus>();
+    for (const row of (data ?? []) as LatestMessageJobStatus[]) {
+      const pairKey = `${row.enrollment_id}:${row.node_id}`;
+      if (!pairKeys.has(pairKey) || latestByPair.has(pairKey)) {
+        continue;
+      }
+
+      latestByPair.set(pairKey, row);
+    }
+
+    return latestByPair;
   }
 
   /**
@@ -478,27 +745,22 @@ export class SchedulerWorker {
   /**
    * Process a single enrollment: evaluate flow, create jobs, update state
    * Migrated from Lambda handler
-   * 
-   * @param enrollment - Enrollment to process
-   * @param rotationIndex - Rotation index for mailbox selection (passed from batch processing)
    */
-  private async processEnrollment(enrollment: Enrollment, rotationIndex: number): Promise<void> {
+  private async processEnrollment(
+    enrollment: Enrollment,
+    context?: CampaignProcessingContext,
+  ): Promise<void> {
     const enrollmentId = enrollment.id.substring(0, 8);
     console.log(`[ENROLLMENT ${enrollment.id}] Starting processing... (state: ${enrollment.state}, current_node: ${enrollment.current_node_id?.substring(0, 8) || 'null'})`);
     
     try {
-      // 1. Load campaign and flow graph (including account_id and jitter_percentage)
-      console.log(`[ENROLLMENT ${enrollmentId}] Loading campaign ${enrollment.campaign_id.substring(0, 8)}...`);
-      const { data: campaign, error: campaignError } = await this.supabase
-        .from('campaigns')
-        .select('id, flow_data, current_flow_version_number, schedule, owner_id, account_id, jitter_percentage, sending_interval_seconds, created_at, status, deleted_at')
-        .eq('id', enrollment.campaign_id)
-        .single();
-
-      if (campaignError || !campaign) {
-        throw new Error(`Campaign ${enrollment.campaign_id} not found: ${campaignError?.message}`);
+      const campaign = context?.campaign;
+      if (!campaign) {
+        throw new Error(`Campaign ${enrollment.campaign_id} not found`);
       }
-      console.log(`[ENROLLMENT ${enrollmentId}] Campaign loaded. Account ID: ${campaign.account_id?.substring(0, 8) || 'MISSING'}`);
+      console.log(
+        `[ENROLLMENT ${enrollmentId}] Using preloaded campaign ${enrollment.campaign_id.substring(0, 8)}. Account ID: ${campaign.account_id?.substring(0, 8) || 'MISSING'}`,
+      );
 
       if (campaign.deleted_at) {
         console.log(`[ENROLLMENT ${enrollmentId}] Campaign ${enrollment.campaign_id.substring(0, 8)} has been deleted. Stopping enrollment.`);
@@ -529,47 +791,6 @@ export class SchedulerWorker {
         throw new Error(`Campaign ${enrollment.campaign_id} has no account_id. Campaigns must be associated with an account.`);
       }
 
-      // 2.5. Load account jitter configuration
-      const { data: account, error: accountError } = await this.supabase
-        .from('accounts')
-        .select('jitter_percentage')
-        .eq('id', campaign.account_id)
-        .single();
-
-      if (accountError) {
-        const retryableAccountRead = isRetryableSupabaseReadError({
-          message: accountError.message,
-          details: (accountError as any).details,
-          hint: (accountError as any).hint,
-          code: (accountError as any).code,
-          status: (accountError as any).status,
-        });
-
-        if (retryableAccountRead) {
-          console.warn(
-            `Retryable account lookup error for campaign ${enrollment.campaign_id}, using default jitter: ${accountError.message}`
-          );
-        } else {
-          console.warn(`Account ${campaign.account_id} not found for campaign ${enrollment.campaign_id}, using default jitter: ${accountError.message}`);
-          reportErrorToSlack('Missing account for campaign (using default jitter)', {
-            severity: 'warning',
-            campaign_id: enrollment.campaign_id,
-            account_id: campaign.account_id,
-            error: accountError.message,
-            alertPolicy: 'persistent_config_warning',
-            aggregationKey: `missing-account:${enrollment.campaign_id}:${campaign.account_id}`,
-            summaryFields: {
-              campaign_id: enrollment.campaign_id,
-              account_id: campaign.account_id,
-            },
-          });
-        }
-      }
-
-      // Determine jitter: campaign > account > default (10%)
-      const jitterPercentage = campaign.jitter_percentage ?? 
-                                account?.jitter_percentage ?? 
-                                10.0; // Default 10%
       const activeFlowVersionNumber = campaign.current_flow_version_number ?? 0;
 
       // 3. Evaluate flow - find next node(s) (loads from database)
@@ -578,7 +799,8 @@ export class SchedulerWorker {
         enrollment,
         enrollment.campaign_id,
         campaign.flow_data,
-        this.supabase
+        this.supabase,
+        context,
       );
 
       if (evaluationResult.evaluationFailed) {
@@ -689,32 +911,73 @@ export class SchedulerWorker {
           console.log(`[ENROLLMENT ${enrollmentId}] AICategorizer selected flow node: ${selectedFlowNodeId || 'none'}`);
 
           if (selectedFlowNodeId) {
-            // Load the selected node from database
-            const { data: selectedNode, error: selectedNodeError } = await this.supabase
-              .from('nodes')
-              .select('*')
-              .eq('campaign_id', enrollment.campaign_id)
-              .eq('flow_node_id', selectedFlowNodeId)
-              .is('deleted_at', null)
-              .single();
+            let selectedNode = context?.nodesByFlowNodeId?.get(selectedFlowNodeId) ?? null;
+            let selectedNodeError: { message: string } | null = null;
 
-            if (selectedNodeError || !selectedNode) {
-              const errMsg = selectedNodeError?.message ?? 'Node not found';
-              console.error(`Selected node ${selectedFlowNodeId} not found: ${errMsg}`);
+            if (!selectedNode && !context?.nodesByFlowNodeId) {
+              const response = await this.supabase
+                .from('nodes')
+                .select('*')
+                .eq('campaign_id', enrollment.campaign_id)
+                .eq('flow_node_id', selectedFlowNodeId)
+                .is('deleted_at', null)
+                .single();
+              selectedNode = response.data as DatabaseNode | null;
+              selectedNodeError = response.error;
+            }
+
+            if (selectedNodeError) {
+              const retryableSelectedNodeRead = isRetryableSupabaseReadError(
+                toRetryableReadInput(selectedNodeError),
+              );
+              const errMsg = selectedNodeError.message ?? 'Node lookup failed';
+              console.error(`Selected node ${selectedFlowNodeId} lookup failed: ${errMsg}`);
+              reportErrorToSlack(
+                retryableSelectedNodeRead
+                  ? 'Scheduler: selected node lookup deferred (retryable read-path error)'
+                  : 'Scheduler: selected node lookup failed',
+                {
+                  severity: 'warning',
+                  enrollment_id: enrollment.id,
+                  campaign_id: enrollment.campaign_id,
+                  flow_node_id: selectedFlowNodeId,
+                  error: errMsg,
+                  alertPolicy: retryableSelectedNodeRead
+                    ? 'transient_retryable_warning'
+                    : 'persistent_config_warning',
+                  aggregationKey: retryableSelectedNodeRead
+                    ? `scheduler-selected-node-read:${enrollment.campaign_id}`
+                    : `scheduler-selected-node-lookup:${enrollment.campaign_id}:${selectedFlowNodeId}`,
+                  summaryFields: {
+                    campaign_id: enrollment.campaign_id,
+                    flow_node_id: selectedFlowNodeId,
+                  },
+                },
+              );
+              // Update enrollment to AICategorizer node and set next_run_at for retry
+              await this.supabase
+                .from('enrollments')
+                .update({
+                  current_node_id: node.id,
+                  current_flow_version_number: activeFlowVersionNumber,
+                  next_run_at: new Date(Date.now() + 60000).toISOString(), // Retry in 1 minute
+                })
+                .eq('id', enrollment.id);
+            } else if (!selectedNode) {
+              console.error(`Selected node ${selectedFlowNodeId} not found: Node not found`);
               reportErrorToSlack('Scheduler: selected node not found (flow inconsistency)', {
                 severity: 'warning',
                 enrollment_id: enrollment.id,
-          campaign_id: enrollment.campaign_id,
+                campaign_id: enrollment.campaign_id,
                 flow_node_id: selectedFlowNodeId,
-                error: errMsg,
-          alertPolicy: 'persistent_config_warning',
-          aggregationKey: `scheduler-selected-node-missing:${enrollment.campaign_id}:${selectedFlowNodeId}`,
-          summaryFields: {
-            campaign_id: enrollment.campaign_id,
-            flow_node_id: selectedFlowNodeId,
-          },
+                error: 'Node not found',
+                alertPolicy: 'persistent_config_warning',
+                aggregationKey: `scheduler-selected-node-missing:${enrollment.campaign_id}:${selectedFlowNodeId}`,
+                summaryFields: {
+                  campaign_id: enrollment.campaign_id,
+                  flow_node_id: selectedFlowNodeId,
+                },
               });
-              // Update enrollment to AICategorizer node and set next_run_at for retry
               await this.supabase
                 .from('enrollments')
                 .update({
@@ -833,6 +1096,55 @@ export class SchedulerWorker {
           console.error(`Failed to defer enrollment ${enrollment.id} after transient error:`, deferUpdateError);
           const deferMsg = formatUnknownError(deferUpdateError);
           reportErrorToSlack('Scheduler: failed to defer enrollment after transient upstream error', {
+            severity: 'warning',
+            enrollment_id: enrollment.id,
+            campaign_id: enrollment.campaign_id,
+            error: deferMsg,
+            alertPolicy: isRetryableSupabaseReadError(deferMsg)
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: `scheduler-failed-defer:${enrollment.campaign_id}`,
+            summaryFields: {
+              campaign_id: enrollment.campaign_id,
+            },
+          });
+        }
+        return;
+      }
+
+      const retryableReadError = isRetryableSupabaseReadError(
+        toRetryableReadInput(error),
+      );
+      if (retryableReadError) {
+        const deferMs = 60_000;
+        const nextRun = new Date(Date.now() + deferMs).toISOString();
+        console.warn(
+          `[ENROLLMENT ${enrollmentId}] Retryable read-path failure; deferring enrollment retry in ${deferMs / 1000}s`,
+        );
+        reportErrorToSlack('Scheduler: enrollment processing deferred (retryable read-path error)', {
+          severity: 'warning',
+          enrollment_id: enrollment.id,
+          campaign_id: enrollment.campaign_id,
+          error: errorMessage,
+          alertPolicy: 'transient_retryable_warning',
+          aggregationKey: `scheduler-retryable-read:${enrollment.campaign_id}`,
+          summaryFields: {
+            campaign_id: enrollment.campaign_id,
+          },
+        });
+        try {
+          await this.supabase
+            .from('enrollments')
+            .update({
+              next_run_at: nextRun,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', enrollment.id)
+            .eq('state', 'active');
+        } catch (deferUpdateError) {
+          console.error(`Failed to defer enrollment ${enrollment.id} after retryable read failure:`, deferUpdateError);
+          const deferMsg = formatUnknownError(deferUpdateError);
+          reportErrorToSlack('Scheduler: failed to defer enrollment after retryable read failure', {
             severity: 'warning',
             enrollment_id: enrollment.id,
             campaign_id: enrollment.campaign_id,

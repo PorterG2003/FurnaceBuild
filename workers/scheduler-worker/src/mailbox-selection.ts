@@ -1,6 +1,43 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import type { Mailbox } from './types.js';
 
+export interface CampaignMailboxRow {
+  mailbox_id: string;
+  mailbox: Mailbox | null;
+}
+
+export function getEligibleMailboxes(campaignMailboxes: CampaignMailboxRow[]): Mailbox[] {
+  return campaignMailboxes
+    .map((item) => item.mailbox)
+    .filter(
+      (mailbox): mailbox is Mailbox =>
+        mailbox !== null &&
+        !mailbox.deleted_at &&
+        mailbox.status === 'connected' &&
+        mailbox.smtp_status === 'active',
+    );
+}
+
+export function selectMailboxFromPool(
+  campaignId: string,
+  availableMailboxes: Mailbox[],
+  rotationIndex: number = 0,
+): Mailbox | null {
+  if (availableMailboxes.length === 0) {
+    console.warn(`No available (active/connected) mailboxes for campaign ${campaignId}`);
+    return null;
+  }
+
+  const selectedIndex = rotationIndex % availableMailboxes.length;
+  const selectedMailbox = availableMailboxes[selectedIndex] as Mailbox;
+
+  console.log(
+    `[MAILBOX DIST] Campaign ${campaignId.substring(0, 8)}: Selected mailbox ${selectedMailbox.id.substring(0, 8)} (index ${selectedIndex}/${availableMailboxes.length}, rotationIndex: ${rotationIndex})`,
+  );
+
+  return selectedMailbox;
+}
+
 /**
  * Select a mailbox for sending using round-robin load balancing
  * 
@@ -35,27 +72,11 @@ export async function selectMailbox(
     console.warn(`No mailboxes assigned to campaign ${campaignId}`);
     return null;
   }
-  
-  // Extract mailbox objects from the join result
-  // Filter to only active/connected mailboxes
-  const availableMailboxes = mailboxes
-    .map((item: any) => item.mailbox)
-    .filter((mailbox: Mailbox) => 
-      mailbox.status === 'connected' && 
-      mailbox.smtp_status === 'active'
-    );
-  
-  if (availableMailboxes.length === 0) {
-    console.warn(`No available (active/connected) mailboxes for campaign ${campaignId}`);
-    return null;
-  }
-  
-  // Round-robin selection: rotate through available mailboxes
-  const selectedIndex = rotationIndex % availableMailboxes.length;
-  const selectedMailbox = availableMailboxes[selectedIndex] as Mailbox;
-  
-  console.log(`[MAILBOX DIST] Campaign ${campaignId.substring(0, 8)}: Selected mailbox ${selectedMailbox.id.substring(0, 8)} (index ${selectedIndex}/${availableMailboxes.length}, rotationIndex: ${rotationIndex})`);
-  
-  return selectedMailbox;
+
+  return selectMailboxFromPool(
+    campaignId,
+    getEligibleMailboxes(mailboxes as unknown as CampaignMailboxRow[]),
+    rotationIndex,
+  );
 }
 

@@ -279,8 +279,9 @@ export async function batchAssignIntervalJobs(
         }
       }
       
-      // Prepare job data - assign mailboxes
-      const jobData: any[] = [];
+      // Prepare one candidate per mailbox for the current earliest interval.
+      // Later candidates for the same mailbox cannot be scheduled into this interval anyway.
+      const jobDataByMailbox = new Map<string, any>();
       let rotationIndex = globalRotationIndex;
       
       for (const enrollment of enrollmentsWithoutJobs) {
@@ -331,7 +332,11 @@ export async function batchAssignIntervalJobs(
           },
         };
         
-        jobData.push({
+        if (jobDataByMailbox.has(mailboxId)) {
+          continue;
+        }
+
+        jobDataByMailbox.set(mailboxId, {
           enrollment_id: enrollment.id,
           lead_id: enrollment.lead_id,
           mailbox_id: mailboxId,
@@ -340,6 +345,8 @@ export async function batchAssignIntervalJobs(
           jitter_percentage: jitterPercentage,
         });
       }
+
+      const jobData = [...jobDataByMailbox.values()];
       
       if (jobData.length === 0) {
         continue;
@@ -352,6 +359,7 @@ export async function batchAssignIntervalJobs(
           p_campaign_id: campaign.id,
           p_job_data: jobData,
           p_worker_id: workerId,
+          p_required_mailbox_count: eligibleMailboxes.length,
         });
       
       if (rpcError) {

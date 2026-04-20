@@ -141,9 +141,11 @@ docker push $REPO_URI:latest
 - **Batch Processing**: Processes up to 100 enrollments per poll (configurable)
 - **Shared Campaign Context**: Each claim batch groups enrollments by `campaign_id`, preloads campaigns/accounts/nodes once, and reuses that context across the batch
 - **Batched Email-Gate Reads**: The worker preloads latest `message_jobs` status for email-node enrollments so flow evaluation does not issue one lookup per enrollment
-- **Single-Flight Background Tasks**: Interval maintenance, stale lock cleanup, processed-interval checks, and batch interval assignment skip overlapping ticks if a prior run is still active
+- **Single-Flight Background Tasks**: Interval maintenance, stale lock cleanup, and batch interval assignment skip overlapping ticks if a prior run is still active
 - **Mailbox Reuse**: Batch interval assignment reuses a preloaded eligible mailbox pool instead of requerying mailbox eligibility for every unassigned lead
 - **Batched Duplicate Filtering**: Batch interval assignment asks Supabase for existing `(enrollment_id, node_id)` pairs in one RPC-backed lookup before calling `batch_assign_jobs_to_interval`
+- **Interval-Local Completion**: Batch interval assignment stamps `required_mailbox_count` onto the interval, and `message_jobs` triggers maintain assigned/terminal counters so completion no longer depends on a periodic reconciliation scan
+- **One Candidate Per Mailbox**: The scheduler only sends one candidate job per mailbox into the current interval RPC because later candidates for the same mailbox cannot be scheduled into that interval
 - **Backlog Pacing**: Full claim batches add a short post-batch delay to avoid tight-loop hammering during transient Supabase incidents
 - **Auto-Scaling**: Scales based on enrollment count metric (1-20 workers)
 - **Error Handling**: Individual enrollment errors don't stop worker processing
@@ -195,6 +197,7 @@ docker push $REPO_URI:latest
 - Confirm the scheduler image includes the batched duplicate lookup change and the matching migration
 - Verify the `get_existing_message_job_pairs` RPC exists and the `idx_message_jobs_enrollment_node_status` index has been applied
 - Check logs for repeated `Previous run still in progress; skipping overlapping tick` messages to identify a slow background task without creating more load
+- Verify the interval-progress migration is applied so `campaign_intervals.required_mailbox_count`, `assigned_mailbox_count`, `expected_job_count`, and `terminal_job_count` stay in sync without `check_and_update_processed_intervals` running on a timer
 - Check that retryable campaign/account/message-job transport failures are labeled as retryable read-path issues, not as missing campaign/account data
 - In Slack, expect one immediate warning for a retryable scheduler issue, then a later summary showing `occurrences`, `first_seen`, and `last_seen` for the same aggregation key
 

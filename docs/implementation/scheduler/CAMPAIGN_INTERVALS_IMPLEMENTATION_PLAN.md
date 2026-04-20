@@ -30,9 +30,10 @@ Scheduler → Lock interval → Check mailbox → Create job
 
 1. **Main Loop** (existing): Processes enrollments in parallel using `Promise.allSettled`
 2. **Interval Maintenance**: Background timer that runs every minute
-3. **Processed Interval Check**: Background timer that runs every minute
-4. **Stale Lock Cleanup**: Background timer that runs every 5 minutes
-5. **Batch Interval Assignment**: Background timer that runs every 30 seconds
+3. **Stale Lock Cleanup**: Background timer that runs every 5 minutes
+4. **Batch Interval Assignment**: Background timer that runs every 30 seconds
+
+Interval completion is no longer a separate periodic scan. The scheduler stamps each interval with its required mailbox count during assignment, and database-side `message_jobs` triggers maintain assigned/terminal counters so the interval can complete as soon as the last terminal job lands.
 
 All tasks run in the same worker instance, but each periodic task should be **single-flight**. If a timer fires while the previous run is still active, the worker should skip that overlapping tick instead of stacking more Supabase work onto the system.
 
@@ -50,6 +51,8 @@ The follow-up scheduler pass reduces that remaining fan-out by:
 3. preloading latest email-gate `message_jobs` status once per batch
 4. reusing eligible mailbox pools inside batch interval assignment
 5. adding a short post-batch pacing delay after full claim batches
+6. reducing each interval-assignment RPC payload to one candidate per mailbox, which matches the one-mailbox-per-interval invariant
+7. replacing repeated processed-interval scans with trigger-backed interval-local progress counters
 
 This second round is intentionally scheduler-local. It keeps the existing interval model and alert aggregation behavior, but removes the remaining read amplification that was turning brief Supabase wobble windows into repeated scheduler warnings.
 

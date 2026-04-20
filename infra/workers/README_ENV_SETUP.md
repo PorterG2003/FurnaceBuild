@@ -82,6 +82,8 @@ After deploying worker changes that affect alerting or scheduler load-shaping:
    - scheduler batches preload campaign/account/node context instead of repeatedly fetching the same campaign/account rows
    - email-node flow evaluation is no longer issuing one `message_jobs` read per enrollment
    - batch interval assignment reuses one eligible mailbox pool per campaign
+   - batch interval assignment only sends one candidate per mailbox into the interval RPC
+   - interval completion is driven by `campaign_intervals` progress counters rather than a recurring processed-interval timer
    - full scheduler batches show a short pacing gap before the next claim cycle during backlog
 
 ## How It Works

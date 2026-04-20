@@ -102,7 +102,6 @@ export class SchedulerWorker {
     process.env.SCHEDULER_LOG_MAILBOX_DISTRIBUTION === 'true';
   private intervalMaintenanceTimer?: ReturnType<typeof setInterval>;
   private staleLockCleanupTimer?: ReturnType<typeof setInterval>;
-  private processedIntervalCheckTimer?: ReturnType<typeof setInterval>;
   private batchIntervalAssignmentTimer?: ReturnType<typeof setInterval>;
 
   constructor(config: WorkerConfig) {
@@ -122,9 +121,6 @@ export class SchedulerWorker {
     
     // Start stale lock cleanup (runs every 5 minutes)
     this.startStaleLockCleanup();
-    
-    // Start processed interval check (runs every minute)
-    this.startProcessedIntervalCheck();
     
     // Start batch interval assignment (runs every 30 seconds)
     this.startBatchIntervalAssignment();
@@ -263,9 +259,6 @@ export class SchedulerWorker {
     }
     if (this.staleLockCleanupTimer) {
       clearInterval(this.staleLockCleanupTimer);
-    }
-    if (this.processedIntervalCheckTimer) {
-      clearInterval(this.processedIntervalCheckTimer);
     }
     if (this.batchIntervalAssignmentTimer) {
       clearInterval(this.batchIntervalAssignmentTimer);
@@ -522,55 +515,6 @@ export class SchedulerWorker {
           summaryFields: {
             worker: 'scheduler',
             operation: 'cleanup_stale_interval_locks',
-          },
-        });
-      },
-    });
-  }
-
-  /**
-   * Start processed interval check background task
-   */
-  private startProcessedIntervalCheck(): void {
-    this.processedIntervalCheckTimer = this.startSingleFlightInterval({
-      taskName: 'PROCESSED INTERVAL CHECK',
-      intervalMs: 60000,
-      task: async () => {
-        const { data, error } = await this.supabase.rpc('check_and_update_processed_intervals', {
-          p_campaign_id: null // Check all campaigns
-        });
-        
-        if (error) {
-          console.error('[PROCESSED INTERVAL CHECK] Error:', error);
-          reportErrorToSlack('Scheduler: processed interval check RPC failed', {
-            severity: 'warning',
-            error: error.message,
-            alertPolicy: isRetryableSupabaseReadError(error.message)
-              ? 'transient_retryable_warning'
-              : 'persistent_config_warning',
-            aggregationKey: 'scheduler-processed-interval-check',
-            summaryFields: {
-              worker: 'scheduler',
-              operation: 'check_and_update_processed_intervals',
-            },
-          });
-        } else if (data > 0) {
-          console.log(`[PROCESSED INTERVAL CHECK] Updated ${data} processed interval(s)`);
-        }
-      },
-      onError: (error) => {
-        console.error('[PROCESSED INTERVAL CHECK] Error:', error);
-        const msg = error instanceof Error ? error.message : String(error);
-        reportErrorToSlack('Scheduler: processed interval check failed', {
-          severity: 'warning',
-          error: msg,
-          alertPolicy: isRetryableSupabaseReadError(msg)
-            ? 'transient_retryable_warning'
-            : 'persistent_config_warning',
-          aggregationKey: 'scheduler-processed-interval-check',
-          summaryFields: {
-            worker: 'scheduler',
-            operation: 'check_and_update_processed_intervals',
           },
         });
       },

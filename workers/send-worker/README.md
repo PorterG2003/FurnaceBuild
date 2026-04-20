@@ -9,6 +9,7 @@ This worker:
 - Loads job details from Supabase
 - Sends emails via SMTP
 - Updates job status and creates events
+- Relies on trigger-backed `campaign_intervals` progress counters so campaign interval completion happens on terminal `message_jobs` updates instead of an extra reconciliation RPC
 
 ## Project Structure
 

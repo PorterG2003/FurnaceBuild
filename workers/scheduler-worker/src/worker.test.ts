@@ -144,13 +144,11 @@ test('SchedulerWorker.stop clears background timers', () => {
   const timerHandles = [
     { id: 'interval-maintenance' },
     { id: 'stale-lock-cleanup' },
-    { id: 'processed-interval-check' },
     { id: 'batch-interval-assignment' },
   ];
   (worker as any).intervalMaintenanceTimer = timerHandles[0];
   (worker as any).staleLockCleanupTimer = timerHandles[1];
-  (worker as any).processedIntervalCheckTimer = timerHandles[2];
-  (worker as any).batchIntervalAssignmentTimer = timerHandles[3];
+  (worker as any).batchIntervalAssignmentTimer = timerHandles[2];
 
   const originalClearInterval = global.clearInterval;
   const cleared: unknown[] = [];
@@ -315,7 +313,6 @@ test('SchedulerWorker shapes load after a full claim batch', async () => {
   const sleeps: number[] = [];
   (worker as any).startIntervalMaintenance = () => {};
   (worker as any).startStaleLockCleanup = () => {};
-  (worker as any).startProcessedIntervalCheck = () => {};
   (worker as any).startBatchIntervalAssignment = () => {};
   (worker as any).loadCampaignContexts = async () =>
     new Map([

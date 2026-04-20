@@ -509,53 +509,8 @@ export class SendWorker {
         });
       }
 
-      // 6c. Check if interval should be marked as processed (immediate, not waiting for scheduler timer)
-      // This makes interval completion happen immediately instead of waiting up to 1 minute
-      try {
-        const { data: processedCount, error: processedError } = await this.supabase
-          .rpc('check_and_update_processed_intervals', {
-            p_campaign_id: messageJob.campaign_id
-          });
-        
-        if (processedError) {
-          // Log error but don't fail the send (email is already sent)
-          console.error(`[SEND WORKER] Failed to check processed intervals for campaign ${messageJob.campaign_id}:`, processedError);
-          reportErrorToSlack('Send-worker: check_and_update_processed_intervals failed', {
-            severity: 'warning',
-            campaign_id: messageJob.campaign_id,
-            message_job_id: message_job_id,
-            error: processedError.message,
-            alertPolicy: isRetryableSupabaseReadError(processedError.message)
-              ? 'transient_retryable_warning'
-              : 'persistent_config_warning',
-            aggregationKey: `send-worker-processed-intervals:${messageJob.campaign_id}`,
-            summaryFields: {
-              campaign_id: messageJob.campaign_id,
-            },
-          });
-        } else if (processedCount && processedCount > 0) {
-          console.log(`[SEND WORKER] Marked ${processedCount} interval(s) as processed for campaign ${messageJob.campaign_id}`);
-        }
-      } catch (error) {
-        // Log error but don't fail the send
-        console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, error);
-        const msg = formatUnknownError(error);
-        reportErrorToSlack('Send-worker: check_and_update_processed_intervals failed', {
-          severity: 'warning',
-          campaign_id: messageJob.campaign_id,
-          message_job_id: message_job_id,
-          error: msg,
-          alertPolicy: isRetryableSupabaseReadError(msg)
-            ? 'transient_retryable_warning'
-            : 'persistent_config_warning',
-          aggregationKey: `send-worker-processed-intervals:${messageJob.campaign_id}`,
-          summaryFields: {
-            campaign_id: messageJob.campaign_id,
-          },
-        });
-      }
-
-      // 7. Create event record and update campaign_stats (atomic for campaign sends)
+      // 7. Interval completion is now maintained by message_jobs trigger-backed counters.
+      // Create the sent event and campaign stats after the terminal status write.
       const eventData = {
         provider_message_id: providerMessageId,
         sent_at: new Date().toISOString(),
@@ -639,22 +594,6 @@ export class SendWorker {
         
         console.log(`[SEND WORKER] Marked message job ${messageJob.id} as failed`);
 
-        // Only update processed intervals for campaign jobs (not inbox reply/forward)
-        if (isCampaignMessageJob(messageJob)) {
-          try {
-            const { data: processedCount, error: processedError } = await this.supabase
-              .rpc('check_and_update_processed_intervals', {
-                p_campaign_id: messageJob.campaign_id
-              });
-            if (processedError) {
-              console.error(`[SEND WORKER] Failed to check processed intervals for campaign ${messageJob.campaign_id}:`, processedError);
-            } else if (processedCount && processedCount > 0) {
-              console.log(`[SEND WORKER] Marked ${processedCount} interval(s) as processed for campaign ${messageJob.campaign_id}`);
-            }
-          } catch (processedCheckError) {
-            console.error(`[SEND WORKER] Error checking processed intervals for campaign ${messageJob.campaign_id}:`, processedCheckError);
-          }
-        }
       } catch (updateError) {
         // Log but don't throw - we've already logged the original error
         console.error(`[SEND WORKER] Failed to update message job ${messageJob.id} status to failed:`, updateError);

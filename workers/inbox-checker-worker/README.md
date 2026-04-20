@@ -17,6 +17,7 @@ This worker continuously polls the database for mailboxes that need IMAP checkin
 - **Polling**: Atomic claiming via `claim_mailboxes_to_check()` RPC function
 - **Processing**: Parallel processing (10 mailboxes at a time per worker)
 - **Scaling**: Horizontal scaling (multiple workers)
+- **Claim path**: Mailbox claiming now uses a single candidate-selection/update pass with an index aligned to `imap_claimed_at` and `last_synced_at`
 
 ## Environment Variables
 

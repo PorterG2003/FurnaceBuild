@@ -42,6 +42,8 @@ A long-running **ECS worker** with:
      - Lets **batch interval assignment** create the `message_job` record
      - Uses one batched duplicate lookup for many `(enrollment_id, node_id)` pairs before calling `batch_assign_jobs_to_interval`
      - Reuses a preloaded eligible mailbox pool for round-robin assignment instead of requerying mailbox eligibility per lead
+     - Only sends one candidate per mailbox into the current interval RPC, because one mailbox can only occupy one slot in that interval
+     - Stamps `required_mailbox_count` onto the interval while `message_jobs` triggers maintain interval-local progress counters
    - **If it's a wait node**:
      - Updates `enrollment.next_run_at` = NOW() + wait_duration
      - (No job created yet - will be evaluated next scheduler run)
@@ -50,7 +52,6 @@ A long-running **ECS worker** with:
      - Updates `enrollment.current_node_id` to the next node
 3. **Background maintenance**:
    - interval maintenance runs on a periodic timer
-   - processed-interval checks run on a periodic timer
    - stale lock cleanup runs on a periodic timer
    - each timer is **single-flight**, so slow runs do not overlap and amplify load
 
@@ -59,6 +60,7 @@ A long-running **ECS worker** with:
 - ✅ **Database-safe**: Enrollment claiming is atomic and duplicate email-job checks are batched
 - ✅ **Scales**: Avoids one `campaigns`, `accounts`, or `message_jobs` lookup per enrollment when a campaign backlog builds up
 - ✅ **Load-aware**: Background tasks skip overlapping ticks, full claim batches briefly pace before re-polling, and mailbox debug queries are opt-in
+- ✅ **Interval-aware**: Completion is maintained from assignment and terminal send events instead of a repeated campaign-wide reconciliation scan
 - ✅ **Alert-aware**: Retryable scheduler noise is routed through a shared Slack policy engine that sends one immediate warning plus later summaries with counts, while critical failures remain immediate
 
 ### Example:

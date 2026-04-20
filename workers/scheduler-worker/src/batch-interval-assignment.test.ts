@@ -230,6 +230,7 @@ test('batchAssignIntervalJobs batches existing job lookup before interval RPC', 
   assert.equal(jobData[0].enrollment_id, 'enrollment-new');
   assert.equal(jobData[0].node_id, nodeId);
   assert.equal(jobData[0].mailbox_id, 'mailbox-2');
+  assert.equal(rpcCalls[1].args.p_required_mailbox_count, 2);
 });
 
 test('batchAssignIntervalJobs skips batch RPC when all candidates already have jobs', async () => {
@@ -294,6 +295,7 @@ test('batchAssignIntervalJobs preserves round-robin mailbox selection for unassi
   const jobData = batchRpc.args.p_job_data as Array<Record<string, unknown>>;
   assert.equal(jobData.length, 1);
   assert.equal(jobData[0].mailbox_id, 'mailbox-2');
+  assert.equal(batchRpc.args.p_required_mailbox_count, 2);
 
   const leadUpdate = supabase.calls.find(
     (call): call is QueryCall => call.kind === 'query' && call.table === 'leads',
@@ -306,4 +308,50 @@ test('batchAssignIntervalJobs preserves round-robin mailbox selection for unassi
       call.kind === 'query' && call.table === 'campaign_mailboxes',
   );
   assert.equal(mailboxQueries.length, 1);
+});
+
+test('batchAssignIntervalJobs only keeps one candidate per mailbox for the current interval', async () => {
+  const supabase = new MockSupabase([
+    { data: [createCampaign()] },
+    { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] },
+    { data: [{ id: nodeId }] },
+    {
+      data: [
+        createEnrollment('enrollment-a'),
+        createEnrollment('enrollment-b', {
+          lead_id: 'lead-b',
+          lead: {
+            id: 'lead-b',
+            mailbox_id: 'mailbox-1',
+            email: 'b@example.com',
+            name: 'Lead B',
+            first_name: 'Lead',
+            last_name: 'B',
+            deleted_at: null,
+          },
+        }),
+      ],
+    },
+    { data: [] },
+    {
+      data: [
+        { mailbox_id: 'mailbox-1', mailbox: { id: 'mailbox-1', status: 'connected', smtp_status: 'active', deleted_at: null } },
+      ],
+    },
+    { data: [{ id: nodeId, node_data: { subject: 'Hello' } }] },
+    {
+      data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
+    },
+  ]);
+
+  await batchAssignIntervalJobs(supabase as any, 0);
+
+  const rpcCalls = supabase.calls.filter((call): call is RpcCall => call.kind === 'rpc');
+  const batchRpc = rpcCalls.find((call) => call.fn === 'batch_assign_jobs_to_interval');
+  assert.ok(batchRpc);
+
+  const jobData = batchRpc.args.p_job_data as Array<Record<string, unknown>>;
+  assert.equal(jobData.length, 1);
+  assert.equal(jobData[0].mailbox_id, 'mailbox-1');
+  assert.equal(batchRpc.args.p_required_mailbox_count, 1);
 });

@@ -2,7 +2,13 @@ import React, { useMemo, useState } from 'react';
 import { Text, View, Platform, Pressable } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { EllipsisHorizontalIcon } from 'react-native-heroicons/outline';
-import { sanitizeEmailBody, hasResidualEncodingArtifacts } from '@/lib/email/index';
+import {
+  sanitizeEmailBody,
+  hasResidualEncodingArtifacts,
+  normalizeEmailHtmlForDarkMode,
+  MAILBOX_RENDER_TEXT_COLOR,
+  MAILBOX_RENDER_LINK_COLOR,
+} from '@/lib/email/index';
 
 /** Strip script tags from HTML for safe rendering. */
 function stripScripts(html: string): string {
@@ -69,7 +75,7 @@ export function MessageBody({
     !hasMeaningfulHtmlMarkup &&
     hasResidualEncodingArtifacts(htmlTextOnly) &&
     cleanDisplayText.length > 0;
-  const safeHtmlForRender = stripUnresolvableCidImages(safeHtml).html;
+  const safeHtmlForRender = normalizeEmailHtmlForDarkMode(stripUnresolvableCidImages(safeHtml).html);
   const hasCollapsedThread = useMemo(() => {
     if (!fullText) return false;
     if (fullText.length <= cleanDisplayText.length) return false;
@@ -115,9 +121,9 @@ export function MessageBody({
       <!DOCTYPE html>
       <html>
         <head><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
-        <body style="margin:0;padding:0;color:#D1D5DB;font-size:14px;line-height:1.6;background:transparent;">
+        <body style="margin:0;padding:0;color:${MAILBOX_RENDER_TEXT_COLOR};font-size:14px;line-height:1.6;background:transparent;">
           <div>${safeHtmlForRender}</div>
-          <style>img{max-width:100%;height:auto;border-radius:8px;display:block;margin:0.5em 0;}a{color:#F3440D;}</style>
+          <style>img{max-width:100%;height:auto;border-radius:8px;display:block;margin:0.5em 0;}a,a *{color:${MAILBOX_RENDER_LINK_COLOR} !important;}body,body *{background-color:transparent !important;}</style>
         </body>
       </html>
     `;

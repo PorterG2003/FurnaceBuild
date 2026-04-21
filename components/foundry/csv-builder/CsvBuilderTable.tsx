@@ -8,7 +8,7 @@ import {
   NoSymbolIcon,
   XCircleIcon,
 } from 'react-native-heroicons/outline';
-import { DataTable, type TableColumn } from '@/components/ui/DataTable';
+import { DataTable, TableHeaderLabel, type TableColumn } from '@/components/ui/DataTable';
 import { Tooltip } from '@/components/ui/Tooltip';
 import type { CsvBuilderColumnStatus, CsvBuilderColumnRow, CsvBuilderHydratedRow } from '@/lib/foundry/registry-types';
 
@@ -160,12 +160,9 @@ export function CsvBuilderTable({
         const headerActive = sortColumn === column.key;
         const headerLabel: ReactNode = (
           <View className="flex-row items-center gap-1.5 min-w-0 flex-1">
-            <Text
-              className={`text-xs font-instrument-semibold uppercase flex-shrink ${headerActive ? 'text-white' : 'text-gray-400'}`}
-              numberOfLines={1}
-            >
+            <TableHeaderLabel active={headerActive} className="flex-shrink">
               {column.label}
-            </Text>
+            </TableHeaderLabel>
             <CsvColumnStatusHeaderIcon status={column.status} />
           </View>
         );
@@ -193,6 +190,7 @@ export function CsvBuilderTable({
       getItemKey={(item) => item.__key}
       loading={loading}
       emptyMessage="No rows available"
+      fillAvailableWidth
       pagination
       itemsPerPage={50}
       compactHeader

@@ -188,9 +188,13 @@ export function LeadsTable({
     return (
       <View className="self-start">
         <View className="px-3 py-1.5 rounded-md" style={{ backgroundColor: colors.bg }}>
-          <Text className="text-xs font-instrument-semibold" style={{ color: colors.text }}>
-            {colors.label}
-          </Text>
+            <Text
+              className="text-xs font-instrument-semibold"
+              numberOfLines={1}
+              style={{ color: colors.text }}
+            >
+              {colors.label}
+            </Text>
         </View>
         {errorClue && (
           <Text
@@ -235,7 +239,7 @@ export function LeadsTable({
     const enrollmentColumn: TableColumn<LeadTableRow> = {
       key: 'enrollment_state',
       label: 'Enrollment',
-      minWidth: 130,
+      minWidth: 176,
       flex: 0,
       render: (item) =>
         getStateBadge(
@@ -274,7 +278,7 @@ export function LeadsTable({
         columns={columns}
         loading={loading}
         itemsPerPage={20}
-        equalColumnWidths
+        widthMode="equal-fill"
         emptyMessage="No leads found"
         onRowPress={
           selectionActive

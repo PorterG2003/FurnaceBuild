@@ -381,8 +381,6 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     {
       key: 'lead',
       label: 'Lead',
-      minWidth: 200,
-      flex: 1,
       render: (item) => (
         <View>
           <Text className="text-white font-instrument text-sm" numberOfLines={1}>
@@ -399,8 +397,6 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     {
       key: 'scheduled',
       label: 'Scheduled',
-      minWidth: 180,
-      flex: 1,
       sortable: true,
       sortValue: (item) => new Date(item.scheduled_at).getTime(),
       render: (item) => (
@@ -419,8 +415,6 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     {
       key: 'interval',
       label: 'Interval',
-      minWidth: 200,
-      flex: 1,
       render: (item) => {
         if (item.interval) {
           return (
@@ -441,7 +435,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       key: 'status',
       label: 'Status',
       minWidth: 130,
-      flex: 0,
+      maxWidth: 160,
       sortable: true,
       sortValue: (item) => item.status,
       render: (item) => getStatusBadge(item.status),
@@ -449,8 +443,6 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     {
       key: 'details',
       label: 'Details',
-      minWidth: 160,
-      flex: 0,
       render: (item) => (
         <View>
               {item.mailbox && (
@@ -473,8 +465,6 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     {
       key: 'lead',
       label: 'Lead',
-      minWidth: 200,
-      flex: 1,
       render: (item) => (
         <View>
           <Text className="text-white font-instrument text-sm" numberOfLines={1}>
@@ -491,8 +481,6 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     {
       key: 'scheduled',
       label: 'Next Run',
-      minWidth: 180,
-      flex: 1,
       sortable: true,
       sortValue: (item) => new Date(item.next_run_at || '').getTime(),
       render: (item) => (
@@ -509,7 +497,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       key: 'status',
       label: 'Status',
       minWidth: 130,
-      flex: 0,
+      maxWidth: 160,
       sortable: true,
       sortValue: (item) => item.state,
       render: (item) => getStatusBadge(item.state),
@@ -517,8 +505,6 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     {
       key: 'details',
       label: 'Node Type',
-      minWidth: 160,
-      flex: 0,
       render: (item) => (
         <View>
               {item.node && (
@@ -561,9 +547,12 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
           <DataTable
             items={messageJobs}
             columns={emailColumns}
+            widthMode="content-aware"
             emptyMessage="No email jobs found for this campaign"
             getItemKey={(item) => item.id}
             loading={messageJobsLoading}
+            smoothLoading
+            smoothLoadingOptions={{ delayMs: 120, minVisibleMs: 220 }}
             paginationMode="server"
             currentPage={emailPage}
             totalItems={messageJobsTotalCount}
@@ -610,9 +599,12 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
           <DataTable
             items={enrollments}
             columns={enrollmentColumns}
+            widthMode="content-aware"
             emptyMessage="No enrollments found for this campaign"
             getItemKey={(item) => item.id}
             loading={enrollmentsLoading}
+            smoothLoading
+            smoothLoadingOptions={{ delayMs: 120, minVisibleMs: 220 }}
             paginationMode="server"
             currentPage={enrollmentPage}
             totalItems={enrollmentsTotalCount}

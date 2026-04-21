@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import type { ExportCompanyChainPeopleRow, ExportCompanyOwnerLeadRow } from '@/lib/foundry/registry-types';
@@ -120,6 +120,43 @@ export function ExportPreviewTable({
   rangeLabel: string;
   onPageChange: (page: number) => void;
 }) {
+  const debugLoggedRef = useRef(false);
+
+  useEffect(() => {
+    if (debugLoggedRef.current || rows.length === 0) return;
+    debugLoggedRef.current = true;
+    const firstRow = rows[0];
+    // #region agent log
+    fetch('http://127.0.0.1:7447/ingest/0a9c766e-cfbc-4a65-8b11-aa0dd657a9e5', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Debug-Session-Id': 'a13dbb',
+      },
+      body: JSON.stringify({
+        sessionId: 'a13dbb',
+        runId: `export-preview-${Date.now()}`,
+        hypothesisId: 'H11',
+        location: 'components/foundry/export/ExportPreviewTable.tsx',
+        message: 'Export first row content lengths',
+        data: {
+          mode,
+          rowCount: rows.length,
+          lengths: {
+            company: firstRow.company_name.length,
+            person: firstRow.person_name?.length ?? 0,
+            address: firstRow.address_text?.length ?? 0,
+            website: firstRow.website?.length ?? 0,
+            path: firstRow.linkage_path?.length ?? 0,
+            registryEntity: firstRow.registry_entity_id?.length ?? 0,
+          },
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [mode, rows]);
+
   const columns = useMemo(
     (): TableColumn<ExportPreviewRow>[] => {
       const baseColumns: TableColumn<ExportPreviewRow>[] = [
@@ -261,9 +298,9 @@ export function ExportPreviewTable({
         loading={loading}
         smoothLoading
         smoothLoadingOptions={{ delayMs: 120, minVisibleMs: 220 }}
+        widthMode="weighted-fill"
         pagination={false}
         compactHeader
-        equalColumnWidths={false}
         onRowPress={onRowPress}
         emptyMessage="No rows match these filters."
       />

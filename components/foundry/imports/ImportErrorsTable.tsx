@@ -66,6 +66,7 @@ export function ImportErrorsTable({ samples }: { samples: ImportErrorSample[] })
       items={items}
       columns={columns}
       getItemKey={(item) => item.__key}
+      fillAvailableWidth
       pagination={false}
       compactHeader
       equalColumnWidths={false}

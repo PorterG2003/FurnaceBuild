@@ -85,6 +85,7 @@ export function CompanyDedupeTable({
       columns={columns}
       getItemKey={getCompanyDedupeRowKey}
       loading={loading}
+      fillAvailableWidth
       pagination={serverMode}
       paginationMode={serverMode ? 'server' : 'client'}
       currentPage={currentPage}

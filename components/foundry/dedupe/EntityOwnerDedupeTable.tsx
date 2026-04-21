@@ -108,6 +108,7 @@ export function EntityOwnerDedupeTable({
       columns={columns}
       getItemKey={getEntityOwnerDedupeRowKey}
       loading={loading}
+      fillAvailableWidth
       pagination={serverMode}
       paginationMode={serverMode ? 'server' : 'client'}
       currentPage={currentPage}

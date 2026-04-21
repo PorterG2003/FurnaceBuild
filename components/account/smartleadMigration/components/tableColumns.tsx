@@ -34,7 +34,6 @@ export const campaignSelectionColumns: TableColumn<CampaignRow>[] = [
     key: 'campaign',
     label: 'Campaign',
     flex: 1,
-    minWidth: 180,
     render: (row) => (
       <View className="flex-row items-center">
         {row.depth === 1 && <Text className="text-gray-600 text-sm mr-1.5">↳</Text>}
@@ -71,7 +70,6 @@ export const migrationResultColumns: TableColumn<CampaignMigrationResult>[] = [
     key: 'campaign',
     label: 'Campaign',
     flex: 2,
-    minWidth: 140,
     render: (row) => (
       <Text
         className={`text-sm font-instrument-medium ${row.status === 'succeeded' ? 'text-white' : 'text-red-300'}`}
@@ -133,7 +131,6 @@ export const migrationResultColumns: TableColumn<CampaignMigrationResult>[] = [
     key: 'notes',
     label: 'Error',
     flex: 3,
-    minWidth: 120,
     render: (row) => (
       <Text
         className={`text-xs font-instrument ${row.status === 'failed' ? 'text-red-400/80' : 'text-neutral-600'}`}
@@ -156,7 +153,6 @@ export const migrationLeadColumns: TableColumn<Lead>[] = [
     key: 'email',
     label: 'Email',
     flex: 2,
-    minWidth: 220,
     render: (lead) => (
       <Text className="text-sm text-white font-instrument-medium" numberOfLines={1}>
         {lead.email ?? '—'}
@@ -167,7 +163,6 @@ export const migrationLeadColumns: TableColumn<Lead>[] = [
     key: 'name',
     label: 'Name',
     flex: 1.5,
-    minWidth: 180,
     render: (lead) => (
       <Text className="text-xs text-neutral-300 font-instrument" numberOfLines={1}>
         {getLeadDisplayName(lead) || '—'}
@@ -192,7 +187,6 @@ export const migrationConversationColumns: TableColumn<EmailThread>[] = [
     key: 'subject',
     label: 'Subject',
     flex: 2,
-    minWidth: 220,
     render: (thread) => (
       <Text className="text-sm text-white font-instrument-medium" numberOfLines={1}>
         {thread.subject || 'No subject'}
@@ -203,7 +197,6 @@ export const migrationConversationColumns: TableColumn<EmailThread>[] = [
     key: 'participants',
     label: 'Participants',
     flex: 1.5,
-    minWidth: 220,
     render: (thread) => (
       <Text className="text-xs text-neutral-300 font-instrument" numberOfLines={1}>
         {formatParticipants(thread.participants)}

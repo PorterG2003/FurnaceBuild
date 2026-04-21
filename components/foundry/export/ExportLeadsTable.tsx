@@ -134,13 +134,13 @@ export function ExportLeadsTable({
       loading={loading}
       smoothLoading
       smoothLoadingOptions={{ delayMs: 120, minVisibleMs: 220 }}
+      widthMode="weighted-fill"
       pagination
       paginationMode="server"
       currentPage={currentPage}
       totalItems={totalItems}
       onPageChange={onPageChange}
       compactHeader
-      equalColumnWidths={false}
       itemsPerPage={50}
       onRowPress={onRowPress}
       emptyMessage="No rows match these filters."

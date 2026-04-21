@@ -141,13 +141,13 @@ export function ImportRunTable({
       items={items}
       columns={columns}
       getItemKey={(item) => item.__key}
+      widthMode="weighted-fill"
       pagination
       paginationMode="server"
       currentPage={currentPage}
       totalItems={totalItems}
       onPageChange={onPageChange}
       compactHeader
-      equalColumnWidths={false}
       itemsPerPage={50}
     />
   );

@@ -1123,11 +1123,16 @@ export default function CampaignPage() {
               </View>
             )}
 
-            {activeTab === 'schedule' && (
-              <View style={{ marginBottom: 16 }}>
+            <View
+              style={{
+                display: activeTab === 'schedule' ? 'flex' : 'none',
+                marginBottom: activeTab === 'schedule' ? 16 : 0,
+              }}
+            >
+              {campaign ? (
                 <ScheduleTab campaignId={id!} refreshTrigger={refreshKey} />
-              </View>
-            )}
+              ) : null}
+            </View>
     </View>
   ) : null;
 

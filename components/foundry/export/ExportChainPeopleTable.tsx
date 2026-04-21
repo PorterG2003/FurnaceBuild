@@ -85,9 +85,9 @@ export function ExportChainPeopleTable({
         loading={loading}
         smoothLoading
         smoothLoadingOptions={{ delayMs: 120, minVisibleMs: 220 }}
+      widthMode="weighted-fill"
         pagination={false}
         compactHeader
-        equalColumnWidths={false}
         onRowPress={onRowPress}
         emptyMessage="No chain-linked people match these filters."
       />

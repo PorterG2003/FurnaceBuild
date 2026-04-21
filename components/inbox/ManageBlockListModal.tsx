@@ -171,6 +171,7 @@ export function ManageBlockListModal({
       {
         key: 'actions',
         label: '',
+        align: 'end',
         flex: 1,
         render: (entry) => (
           <Button
@@ -178,7 +179,6 @@ export function ManageBlockListModal({
             size="xs"
             onPress={() => handleUnblockPress(entry)}
             disabled={unblockingId === entry.id}
-            className="self-start"
           >
             {unblockingId === entry.id
               ? 'Unblocking...'
@@ -277,6 +277,7 @@ export function ManageBlockListModal({
                 getItemKey={(e) => e.id}
                 emptyMessage={emptyMessage}
                 loading={loadingRows}
+                widthMode="weighted-fill"
                 pagination
                 paginationMode="server"
                 currentPage={page}

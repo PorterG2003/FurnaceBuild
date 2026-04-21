@@ -105,6 +105,7 @@ export function ImportPreviewTable({ rows }: { rows: ClassifiedRow[] }) {
       items={items}
       columns={columns}
       getItemKey={(item) => item.__key}
+      fillAvailableWidth
       pagination={items.length > 40}
       compactHeader
       equalColumnWidths={false}

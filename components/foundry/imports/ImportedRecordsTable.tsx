@@ -140,6 +140,7 @@ export function ImportedRecordsTable({
       items={items}
       columns={columns}
       getItemKey={(item) => item.__key}
+      fillAvailableWidth
       pagination
       paginationMode="server"
       currentPage={currentPage}

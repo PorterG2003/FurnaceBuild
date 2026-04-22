@@ -4,6 +4,7 @@ import {
   parseCompanyDetailResponse,
   parseCompanyOwnershipChainsResponse,
   type ExportCompanyChainPeopleResponse,
+  type ExportCompanySummaryResponse,
   type ParsedCompanyDetail,
   type CompanyOwnershipChainsResponse,
   type ExportCompanyOwnerLeadsResponse,
@@ -81,11 +82,24 @@ function registryBaseUrl(): string {
   return FOUNDRY_REGISTRY_API_URL.replace(/\/?$/, '/');
 }
 
-function registryUrl(path: string, search?: Record<string, string | number | undefined | null>): string {
+type RegistrySearchValue =
+  | string
+  | number
+  | undefined
+  | null
+  | Array<string | number | undefined | null>;
+
+function registryUrl(path: string, search?: Record<string, RegistrySearchValue>): string {
   const base = registryBaseUrl();
   const u = new URL(path.replace(/^\//, ''), base);
   if (search) {
     for (const [k, v] of Object.entries(search)) {
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item != null && item !== '') u.searchParams.append(k, String(item));
+        }
+        continue;
+      }
       if (v != null && v !== '') u.searchParams.set(k, String(v));
     }
   }
@@ -100,7 +114,7 @@ function coerceNonNegativeInt(value: unknown, fallback: number): number {
 
 async function registryFetchJson<T>(
   path: string,
-  init: RequestInit & { search?: Record<string, string | number | undefined | null> },
+  init: RequestInit & { search?: Record<string, RegistrySearchValue> },
 ): Promise<T> {
   const token = await getAccessToken();
   if (!token) {
@@ -852,12 +866,24 @@ export type ExportCompanyOwnerLeadsParams = {
   limit?: number;
   offset?: number;
   q?: string;
-  registry_state?: string;
+  legal_name_q?: string;
+  has_legal_name?: boolean;
+  registry_state?: string | string[];
   is_export_ready?: boolean;
   has_current_linked_source?: boolean;
   has_open_review_task?: boolean;
   has_parse_failure_task?: boolean;
   has_current_owner?: boolean;
+  has_website?: boolean;
+  has_company_notes?: boolean;
+  has_normalized_key?: boolean;
+  address_state?: string;
+  address_city?: string;
+  address_postal_code?: string;
+  primary_location_state?: string;
+  primary_location_city?: string;
+  owner_title_q?: string;
+  google_ads_result?: 'yes' | 'no' | 'unknown';
   /** When true, API adds matched contact emails/phones (latest enrichment per owner). */
   include_contact?: boolean;
   /** When true (and include_contact), adds score/tier/reason columns. Ignored if include_contact is false. */
@@ -873,17 +899,26 @@ export type ExportCompanyChainPeopleParams = ExportCompanyOwnerLeadsParams & {
   max_chains?: number;
 };
 
+export type ExportCompanySummaryParams = Omit<ExportCompanyOwnerLeadsParams, 'owner_title_q' | 'include_contact' | 'include_contact_confidence'>;
+
 export async function fetchExportCompanyOwnerLeads(
   params?: ExportCompanyOwnerLeadsParams,
 ): Promise<ExportCompanyOwnerLeadsResponse> {
   const q = params?.q?.trim();
+  const legalNameQ = params?.legal_name_q?.trim();
+  const ownerTitleQ = params?.owner_title_q?.trim();
+  const registryState = Array.isArray(params?.registry_state)
+    ? params.registry_state.map((value) => value.trim()).filter(Boolean)
+    : params?.registry_state?.trim();
   return registryFetchJson<ExportCompanyOwnerLeadsResponse>('export/company-owner-leads', {
     method: 'GET',
     search: {
       limit: params?.limit,
       offset: params?.offset,
       q: q && q.length >= 2 ? q : undefined,
-      registry_state: params?.registry_state?.trim() || undefined,
+      legal_name_q: legalNameQ && legalNameQ.length >= 2 ? legalNameQ : undefined,
+      has_legal_name: params?.has_legal_name == null ? undefined : String(params.has_legal_name),
+      registry_state: Array.isArray(registryState) ? (registryState.length > 0 ? registryState : undefined) : registryState || undefined,
       is_export_ready: params?.is_export_ready == null ? undefined : String(params.is_export_ready),
       has_current_linked_source:
         params?.has_current_linked_source == null ? undefined : String(params.has_current_linked_source),
@@ -892,6 +927,16 @@ export async function fetchExportCompanyOwnerLeads(
       has_parse_failure_task:
         params?.has_parse_failure_task == null ? undefined : String(params.has_parse_failure_task),
       has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
+      has_website: params?.has_website == null ? undefined : String(params.has_website),
+      has_company_notes: params?.has_company_notes == null ? undefined : String(params.has_company_notes),
+      has_normalized_key: params?.has_normalized_key == null ? undefined : String(params.has_normalized_key),
+      address_state: params?.address_state?.trim() || undefined,
+      address_city: params?.address_city?.trim() || undefined,
+      address_postal_code: params?.address_postal_code?.trim() || undefined,
+      primary_location_state: params?.primary_location_state?.trim() || undefined,
+      primary_location_city: params?.primary_location_city?.trim() || undefined,
+      owner_title_q: ownerTitleQ && ownerTitleQ.length >= 2 ? ownerTitleQ : undefined,
+      google_ads_result: params?.google_ads_result,
       include_contact: params?.include_contact === true ? 'true' : undefined,
       include_contact_confidence: params?.include_contact_confidence === true ? 'true' : undefined,
       include_cost: params?.include_cost === true ? 'true' : undefined,
@@ -905,13 +950,20 @@ export async function fetchExportCompanyChainPeople(
   params?: ExportCompanyChainPeopleParams,
 ): Promise<ExportCompanyChainPeopleResponse> {
   const q = params?.q?.trim();
+  const legalNameQ = params?.legal_name_q?.trim();
+  const ownerTitleQ = params?.owner_title_q?.trim();
+  const registryState = Array.isArray(params?.registry_state)
+    ? params.registry_state.map((value) => value.trim()).filter(Boolean)
+    : params?.registry_state?.trim();
   return registryFetchJson<ExportCompanyChainPeopleResponse>('export/company-chain-people', {
     method: 'GET',
     search: {
       limit: params?.limit,
       offset: params?.offset,
       q: q && q.length >= 2 ? q : undefined,
-      registry_state: params?.registry_state?.trim() || undefined,
+      legal_name_q: legalNameQ && legalNameQ.length >= 2 ? legalNameQ : undefined,
+      has_legal_name: params?.has_legal_name == null ? undefined : String(params.has_legal_name),
+      registry_state: Array.isArray(registryState) ? (registryState.length > 0 ? registryState : undefined) : registryState || undefined,
       is_export_ready: params?.is_export_ready == null ? undefined : String(params.is_export_ready),
       has_current_linked_source:
         params?.has_current_linked_source == null ? undefined : String(params.has_current_linked_source),
@@ -920,6 +972,16 @@ export async function fetchExportCompanyChainPeople(
       has_parse_failure_task:
         params?.has_parse_failure_task == null ? undefined : String(params.has_parse_failure_task),
       has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
+      has_website: params?.has_website == null ? undefined : String(params.has_website),
+      has_company_notes: params?.has_company_notes == null ? undefined : String(params.has_company_notes),
+      has_normalized_key: params?.has_normalized_key == null ? undefined : String(params.has_normalized_key),
+      address_state: params?.address_state?.trim() || undefined,
+      address_city: params?.address_city?.trim() || undefined,
+      address_postal_code: params?.address_postal_code?.trim() || undefined,
+      primary_location_state: params?.primary_location_state?.trim() || undefined,
+      primary_location_city: params?.primary_location_city?.trim() || undefined,
+      owner_title_q: ownerTitleQ && ownerTitleQ.length >= 2 ? ownerTitleQ : undefined,
+      google_ads_result: params?.google_ads_result,
       max_depth: params?.max_depth,
       max_chains: params?.max_chains,
       include_contact: params?.include_contact === true ? 'true' : undefined,
@@ -931,7 +993,48 @@ export async function fetchExportCompanyChainPeople(
   });
 }
 
-const MAX_EXPORT_CSV_ROWS = 5000;
+export async function fetchExportCompanySummary(
+  params?: ExportCompanySummaryParams,
+): Promise<ExportCompanySummaryResponse> {
+  const q = params?.q?.trim();
+  const legalNameQ = params?.legal_name_q?.trim();
+  const registryState = Array.isArray(params?.registry_state)
+    ? params.registry_state.map((value) => value.trim()).filter(Boolean)
+    : params?.registry_state?.trim();
+  return registryFetchJson<ExportCompanySummaryResponse>('export/company-summary', {
+    method: 'GET',
+    search: {
+      limit: params?.limit,
+      offset: params?.offset,
+      q: q && q.length >= 2 ? q : undefined,
+      legal_name_q: legalNameQ && legalNameQ.length >= 2 ? legalNameQ : undefined,
+      has_legal_name: params?.has_legal_name == null ? undefined : String(params.has_legal_name),
+      registry_state: Array.isArray(registryState) ? (registryState.length > 0 ? registryState : undefined) : registryState || undefined,
+      is_export_ready: params?.is_export_ready == null ? undefined : String(params.is_export_ready),
+      has_current_linked_source:
+        params?.has_current_linked_source == null ? undefined : String(params.has_current_linked_source),
+      has_open_review_task:
+        params?.has_open_review_task == null ? undefined : String(params.has_open_review_task),
+      has_parse_failure_task:
+        params?.has_parse_failure_task == null ? undefined : String(params.has_parse_failure_task),
+      has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
+      has_website: params?.has_website == null ? undefined : String(params.has_website),
+      has_company_notes: params?.has_company_notes == null ? undefined : String(params.has_company_notes),
+      has_normalized_key: params?.has_normalized_key == null ? undefined : String(params.has_normalized_key),
+      address_state: params?.address_state?.trim() || undefined,
+      address_city: params?.address_city?.trim() || undefined,
+      address_postal_code: params?.address_postal_code?.trim() || undefined,
+      primary_location_state: params?.primary_location_state?.trim() || undefined,
+      primary_location_city: params?.primary_location_city?.trim() || undefined,
+      google_ads_result: params?.google_ads_result,
+      include_cost: params?.include_cost === true ? 'true' : undefined,
+      include_google_ads_verification:
+        params?.include_google_ads_verification === true ? 'true' : undefined,
+    },
+  });
+}
+
+const MAX_EXPORT_CSV_ROWS = 20000;
 
 /** Pages through export leads with the same filters until exhausted or cap reached. */
 export async function collectExportCompanyOwnerLeadsForCsv(
@@ -993,6 +1096,38 @@ export async function collectExportCompanyChainPeopleForCsv(
     }
 
     if (res.targets_returned < pageSize || offset + res.targets_returned >= total_count) {
+      return { rows: all, truncated: false, total_count };
+    }
+    offset += pageSize;
+  }
+}
+
+export async function collectExportCompanySummaryForCsv(
+  params: Omit<ExportCompanySummaryParams, 'limit' | 'offset'>,
+): Promise<{ rows: ExportCompanySummaryResponse['rows']; truncated: boolean; total_count: number }> {
+  const pageSize = 100;
+  const all: ExportCompanySummaryResponse['rows'] = [];
+  let offset = 0;
+  let total_count = 0;
+
+  for (;;) {
+    const res = await fetchExportCompanySummary({
+      ...params,
+      limit: pageSize,
+      offset,
+    });
+    total_count = res.total_count;
+    all.push(...res.rows);
+
+    if (all.length > MAX_EXPORT_CSV_ROWS) {
+      return {
+        rows: all.slice(0, MAX_EXPORT_CSV_ROWS),
+        truncated: true,
+        total_count,
+      };
+    }
+
+    if (res.rows.length < pageSize || all.length >= total_count) {
       return { rows: all, truncated: false, total_count };
     }
     offset += pageSize;

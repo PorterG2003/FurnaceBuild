@@ -33,6 +33,7 @@ interface SelectPropsBase<T> {
   loadingMessage?: string;
   noMargin?: boolean;
   size?: 'default' | 'compact';
+  panelSize?: 'default' | 'compact';
   dropdownMinWidth?: number;
   dropdownMaxWidth?: number;
   /** Optional: return hex color for item to show a colored dot next to the label (list and trigger). */
@@ -76,6 +77,8 @@ const triggerStyle = {
   backgroundColor: '#FFFFFF0D',
   borderWidth: 1,
 };
+const noSelectStyle = Platform.OS === 'web' ? ({ userSelect: 'none' } as const) : undefined;
+const textInputWebStyle = Platform.OS === 'web' ? ({ userSelect: 'text' } as const) : undefined;
 
 const sizeStyles = {
   default: {
@@ -102,6 +105,37 @@ const sizeStyles = {
   },
 } as const;
 
+const panelSizeStyles = {
+  default: {
+    panelPadding: 10,
+    searchRadius: 10,
+    searchPaddingX: 10,
+    searchPaddingY: 8,
+    searchMarginBottom: 8,
+    searchIconSize: 16,
+    searchTextSize: 14,
+    loadingTextClassName: 'text-sm' as const,
+    emptyPrimaryTextClassName: 'text-sm' as const,
+    emptySecondaryTextClassName: 'text-xs' as const,
+    rowPrimaryTextClassName: 'text-sm' as const,
+    rowSecondaryTextClassName: 'text-xs' as const,
+  },
+  compact: {
+    panelPadding: 8,
+    searchRadius: 8,
+    searchPaddingX: 8,
+    searchPaddingY: 6,
+    searchMarginBottom: 6,
+    searchIconSize: 14,
+    searchTextSize: 12,
+    loadingTextClassName: 'text-xs' as const,
+    emptyPrimaryTextClassName: 'text-xs' as const,
+    emptySecondaryTextClassName: 'text-[11px]' as const,
+    rowPrimaryTextClassName: 'text-xs' as const,
+    rowSecondaryTextClassName: 'text-[11px]' as const,
+  },
+} as const;
+
 export function Select<T>({
   items,
   getItemId,
@@ -120,6 +154,7 @@ export function Select<T>({
   noMargin = false,
   searchable = true,
   size = 'default',
+  panelSize = size,
   dropdownMinWidth,
   dropdownMaxWidth,
   getItemColor,
@@ -127,6 +162,7 @@ export function Select<T>({
   renderTrigger,
 }: SelectProps<T>) {
   const sz = sizeStyles[size];
+  const panel = panelSizeStyles[panelSize];
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isCompactLayout = screenWidth < LAYOUT_BREAKPOINT;
   const insideSheet = usePickerInsideBottomSheet();
@@ -242,22 +278,23 @@ export function Select<T>({
 
   const renderListPanel = useCallback(
     (listScrollMax: number = listMaxHeight) => (
-    <View style={{ padding: 10 }}>
+    <View style={{ padding: panel.panelPadding, ...noSelectStyle }}>
       {searchable && (
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: '#FFFFFF0D',
-            borderRadius: 10,
+            borderRadius: panel.searchRadius,
             borderWidth: 1,
             borderColor: '#FFFFFF4D',
-            paddingHorizontal: 10,
-            paddingVertical: 8,
-            marginBottom: 8,
+            paddingHorizontal: panel.searchPaddingX,
+            paddingVertical: panel.searchPaddingY,
+            marginBottom: panel.searchMarginBottom,
+            ...noSelectStyle,
           }}
         >
-          <MagnifyingGlassIcon size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+          <MagnifyingGlassIcon size={panel.searchIconSize} color="#9CA3AF" style={{ marginRight: 8 }} />
           <TextInput
             ref={searchInputRef}
             value={searchValue}
@@ -267,9 +304,10 @@ export function Select<T>({
             style={{
               flex: 1,
               color: '#FFFFFF',
-              fontSize: 14,
+              fontSize: panel.searchTextSize,
               fontFamily: 'Instrument Sans, system-ui, sans-serif',
               paddingVertical: 0,
+              ...textInputWebStyle,
             }}
             selectionColor="#FF4D00"
             underlineColorAndroid="transparent"
@@ -279,7 +317,8 @@ export function Select<T>({
       {loading ? (
         <View style={{ paddingVertical: 24, alignItems: 'center' }}>
           <Text
-            className="text-gray-500 text-sm"
+            selectable={false}
+            className={`text-gray-500 ${panel.loadingTextClassName}`}
             style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
           >
             {loadingMessage}
@@ -296,7 +335,8 @@ export function Select<T>({
           }}
         >
           <Text
-            className="text-gray-400 text-sm"
+            selectable={false}
+            className={`text-gray-400 ${panel.emptyPrimaryTextClassName}`}
             style={{
               fontFamily: 'Instrument Sans, system-ui, sans-serif',
               textAlign: 'center',
@@ -307,7 +347,8 @@ export function Select<T>({
           </Text>
           {hasSearchText && (
             <Text
-              className="text-gray-500 text-xs mt-1"
+              selectable={false}
+              className={`text-gray-500 mt-1 ${panel.emptySecondaryTextClassName}`}
               style={{
                 fontFamily: 'Instrument Sans, system-ui, sans-serif',
                 textAlign: 'center',
@@ -333,7 +374,7 @@ export function Select<T>({
               <TouchableOpacity
                 key={id}
                 onPress={() => handleSelect(id, item)}
-                style={rowStyle(isSelected, itemColor)}
+                style={{ ...rowStyle(isSelected, itemColor), ...noSelectStyle }}
               >
                 {itemColorVariant === 'dot' && getItemColor && itemColor ? (
                   <View
@@ -350,7 +391,8 @@ export function Select<T>({
                 ) : null}
                 <View style={{ flex: 1 }}>
                   <Text
-                    className="text-white font-instrument-medium text-sm"
+                    selectable={false}
+                    className={`text-white font-instrument-medium ${panel.rowPrimaryTextClassName}`}
                     style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
                     numberOfLines={1}
                   >
@@ -358,7 +400,8 @@ export function Select<T>({
                   </Text>
                   {secondary != null && secondary !== '' && (
                     <Text
-                      className="text-gray-400 text-xs mt-0.5"
+                      selectable={false}
+                      className={`text-gray-400 mt-0.5 ${panel.rowSecondaryTextClassName}`}
                       style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
                       numberOfLines={1}
                     >
@@ -391,6 +434,7 @@ export function Select<T>({
       rowStyle,
       handleSelect,
       listMaxHeight,
+      panel,
     ]
   );
 
@@ -425,6 +469,7 @@ export function Select<T>({
     <View style={{ marginBottom: noMargin ? 0 : 12 }}>
       {label != null && (
         <Text
+          selectable={false}
           className="text-xs font-instrument-medium mb-2 text-gray-400"
           style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
         >
@@ -461,6 +506,7 @@ export function Select<T>({
                   borderColor: `${triggerColor}66`,
                 }
               : { ...triggerStyle, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', ...sz.trigger },
+            noSelectStyle,
           ]}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 10 }}>
@@ -478,6 +524,7 @@ export function Select<T>({
               />
             ) : null}
             <Text
+              selectable={false}
               className={`${sz.triggerTextClassName} text-white`}
               style={{
                 fontFamily: 'Instrument Sans, system-ui, sans-serif',

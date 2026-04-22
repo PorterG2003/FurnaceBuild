@@ -17,9 +17,17 @@ interface TabsProps {
   layout?: 'content' | 'equal';
   /** Bottom margin of the tab bar. Default 16. Use 0 for tight layouts (e.g. mobile modals). */
   marginBottom?: number;
+  textSize?: number;
 }
 
-export function Tabs({ tabs, activeTab, onTabChange, layout = 'content', marginBottom = 16 }: TabsProps) {
+export function Tabs({
+  tabs,
+  activeTab,
+  onTabChange,
+  layout = 'content',
+  marginBottom = 16,
+  textSize = 14,
+}: TabsProps) {
   const [tabPositions, setTabPositions] = useState<Array<number | null>>([]);
   const [tabWidths, setTabWidths] = useState<Array<number | null>>([]);
   const [tabTextWidths, setTabTextWidths] = useState<Array<number | null>>([]);
@@ -212,7 +220,7 @@ export function Tabs({ tabs, activeTab, onTabChange, layout = 'content', marginB
               }
               style={{
                 color: isActive ? '#FFFFFF' : '#9ca3af',
-                fontSize: 14,
+                fontSize: textSize,
                 fontFamily: 'Instrument Sans, system-ui, sans-serif',
                 fontWeight: isActive ? '600' : '500',
               }}

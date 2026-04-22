@@ -231,6 +231,19 @@ function parseIncludeContactFlags(params: URLSearchParams): {
   return { includeContact, includeContactConfidence };
 }
 
+function readTextFilter(params: URLSearchParams, key: string): string | undefined {
+  const value = params.get(key)?.trim();
+  return value ? value : undefined;
+}
+
+function readCsvTextFilter(params: URLSearchParams, key: string): string[] {
+  return params
+    .getAll(key)
+    .flatMap((value) => value.split(','))
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 function stripContactConfidenceFields(row: Record<string, unknown>): void {
   for (const k of CONTACT_ENRICHMENT_CONFIDENCE_KEYS) {
     delete row[k];
@@ -357,6 +370,27 @@ async function mergeGoogleAdsVerificationsIntoExportRows(
     const cid = row.company_id;
     applyGoogleAdsVerificationFieldsToExportRow(row, typeof cid === 'string' ? map.get(cid) : undefined);
   }
+}
+
+async function loadCompanyIdsForGoogleAdsResult(
+  leadsClient: SupabaseClient,
+  result: 'yes' | 'no' | 'unknown',
+): Promise<string[]> {
+  const { data, error } = await leadsClient
+    .from('company_google_ads_verifications')
+    .select('company_id, result, verified_at')
+    .order('verified_at', { ascending: false });
+  if (error) throw new Error(error.message);
+
+  const seen = new Set<string>();
+  const matches: string[] = [];
+  for (const raw of data ?? []) {
+    const companyId = typeof raw.company_id === 'string' ? raw.company_id : '';
+    if (!companyId || seen.has(companyId)) continue;
+    seen.add(companyId);
+    if (raw.result === result) matches.push(companyId);
+  }
+  return matches;
 }
 
 function parseJsonBody<T>(raw: string): { ok: true; value: T } | { ok: false; response: FunctionUrlResponse } {
@@ -489,7 +523,7 @@ function clampOwnershipChainLimit(raw: string | null): number {
   return Math.min(MAX_OWNERSHIP_CHAIN_LIMIT, n);
 }
 
-function buildExportCompanyOwnerLeadsQuery(
+async function buildExportCompanyOwnerLeadsQuery(
   leadsClient: SupabaseClient,
   params: URLSearchParams,
   options?: { withCount?: boolean },
@@ -505,15 +539,18 @@ function buildExportCompanyOwnerLeadsQuery(
   let qb = selectOptions
     ? leadsClient.from(table).select('*', selectOptions)
     : leadsClient.from(table).select('*');
-  qb = applyExportQueryFilters(qb, params);
+  qb = applyExportQueryFilters(qb, params, { supportsOwnerTitle: true });
+  qb = await applyGoogleAdsResultFilter(leadsClient, qb, params);
 
-  return qb
-    .order('company_updated_at', { ascending: false })
-    .order('match_updated_at', { ascending: false })
-    .order('entity_owner_id', { ascending: true, nullsFirst: false });
+  return {
+    qb: qb
+      .order('company_updated_at', { ascending: false })
+      .order('match_updated_at', { ascending: false })
+      .order('entity_owner_id', { ascending: true, nullsFirst: false }),
+  };
 }
 
-function buildExportCompanyTargetsQuery(
+async function buildExportCompanyTargetsQuery(
   leadsClient: SupabaseClient,
   params: URLSearchParams,
   selectClause: string,
@@ -523,23 +560,57 @@ function buildExportCompanyTargetsQuery(
   let qb = selectOptions
     ? leadsClient.from('export_company_targets').select(selectClause, selectOptions)
     : leadsClient.from('export_company_targets').select(selectClause);
-  qb = applyExportQueryFilters(qb, params);
-  return qb
-    .order('company_updated_at', { ascending: false })
-    .order('match_updated_at', { ascending: false })
-    .order('company_entity_match_id', { ascending: true });
+  qb = applyExportQueryFilters(qb, params, { supportsOwnerTitle: false });
+  qb = await applyGoogleAdsResultFilter(leadsClient, qb, params);
+  return {
+    qb: qb
+      .order('company_updated_at', { ascending: false })
+      .order('match_updated_at', { ascending: false })
+      .order('company_entity_match_id', { ascending: true }),
+  };
 }
 
-function applyExportQueryFilters(qb: any, params: URLSearchParams) {
+async function applyGoogleAdsResultFilter(
+  leadsClient: SupabaseClient,
+  qb: any,
+  params: URLSearchParams,
+) {
+  const googleAdsResult = params.get('google_ads_result');
+  if (googleAdsResult !== 'yes' && googleAdsResult !== 'no' && googleAdsResult !== 'unknown') {
+    return qb;
+  }
+
+  const companyIds = await loadCompanyIdsForGoogleAdsResult(leadsClient, googleAdsResult);
+  if (companyIds.length === 0) {
+    return qb.eq('company_id', '00000000-0000-0000-0000-000000000000');
+  }
+  return qb.in('company_id', companyIds);
+}
+
+function applyExportQueryFilters(
+  qb: any,
+  params: URLSearchParams,
+  options?: { supportsOwnerTitle?: boolean },
+) {
   const qSearch = params.get('q')?.trim() ?? '';
-  const registryState = params.get('registry_state')?.trim();
+  const legalNameQ = readTextFilter(params, 'legal_name_q');
+  const registryStates = readCsvTextFilter(params, 'registry_state').map((value) => value.toUpperCase());
 
   if (qSearch.length >= 2) {
     qb = qb.ilike('legal_name', `%${escapeIlikePatternExport(qSearch)}%`);
   }
-  if (registryState) {
-    qb = qb.eq('registry_state', registryState.toUpperCase());
+  if (legalNameQ && legalNameQ.length >= 2) {
+    qb = qb.ilike('legal_name', `%${escapeIlikePatternExport(legalNameQ)}%`);
   }
+  if (registryStates.length === 1) {
+    qb = qb.eq('registry_state', registryStates[0]);
+  } else if (registryStates.length > 1) {
+    qb = qb.in('registry_state', [...new Set(registryStates)]);
+  }
+
+  const hasLegalName = parseTriStateBoolParam(params, 'has_legal_name');
+  if (hasLegalName === true) qb = qb.not('legal_name', 'is', null).neq('legal_name', '');
+  else if (hasLegalName === false) qb = qb.or('legal_name.is.null,legal_name.eq.""');
 
   const isExportReady = parseTriStateBoolParam(params, 'is_export_ready');
   if (isExportReady !== undefined) qb = qb.eq('is_export_ready', isExportReady);
@@ -555,6 +626,44 @@ function applyExportQueryFilters(qb: any, params: URLSearchParams) {
 
   const hasCurrentOwner = parseTriStateBoolParam(params, 'has_current_owner');
   if (hasCurrentOwner !== undefined) qb = qb.eq('has_current_owner', hasCurrentOwner);
+
+  const hasWebsite = parseTriStateBoolParam(params, 'has_website');
+  if (hasWebsite === true) qb = qb.not('website', 'is', null);
+  else if (hasWebsite === false) qb = qb.is('website', null);
+
+  const hasCompanyNotes = parseTriStateBoolParam(params, 'has_company_notes');
+  if (hasCompanyNotes === true) qb = qb.not('company_notes', 'is', null);
+  else if (hasCompanyNotes === false) qb = qb.is('company_notes', null);
+
+  const hasNormalizedKey = parseTriStateBoolParam(params, 'has_normalized_key');
+  if (hasNormalizedKey === true) qb = qb.not('normalized_key', 'is', null);
+  else if (hasNormalizedKey === false) qb = qb.is('normalized_key', null);
+
+  const addressState = readTextFilter(params, 'address_state');
+  if (addressState) qb = qb.ilike('address_state', `%${escapeIlikePatternExport(addressState)}%`);
+
+  const addressCity = readTextFilter(params, 'address_city');
+  if (addressCity) qb = qb.ilike('address_city', `%${escapeIlikePatternExport(addressCity)}%`);
+
+  const addressPostalCode = readTextFilter(params, 'address_postal_code');
+  if (addressPostalCode) qb = qb.ilike('address_postal_code', `%${escapeIlikePatternExport(addressPostalCode)}%`);
+
+  const primaryLocationState = readTextFilter(params, 'primary_location_state');
+  if (primaryLocationState) {
+    qb = qb.ilike('primary_location_state', `%${escapeIlikePatternExport(primaryLocationState)}%`);
+  }
+
+  const primaryLocationCity = readTextFilter(params, 'primary_location_city');
+  if (primaryLocationCity) {
+    qb = qb.ilike('primary_location_city', `%${escapeIlikePatternExport(primaryLocationCity)}%`);
+  }
+
+  if (options?.supportsOwnerTitle) {
+    const ownerTitleQ = readTextFilter(params, 'owner_title_q');
+    if (ownerTitleQ && ownerTitleQ.length >= 2) {
+      qb = qb.ilike('title_role', `%${escapeIlikePatternExport(ownerTitleQ)}%`);
+    }
+  }
 
   return qb;
 }
@@ -589,7 +698,7 @@ async function listExportChainTargetsPage(
   offset: number,
 ): Promise<{ targets: ExportChainTargetRow[]; total_count: number }> {
   const end = offset + limit - 1;
-  const { data, error, count } = await buildExportCompanyTargetsQuery(
+  const { qb: targetQuery } = await buildExportCompanyTargetsQuery(
     leadsClient,
     params,
     [
@@ -617,7 +726,8 @@ async function listExportChainTargetsPage(
       'is_export_ready',
     ].join(', '),
     { withCount: true },
-  ).range(offset, end);
+  );
+  const { data, error, count } = await targetQuery.range(offset, end);
   if (error) throw new Error(error.message);
 
   const rows = Array.isArray(data) ? (data as unknown as Record<string, unknown>[]) : [];
@@ -646,6 +756,55 @@ async function listExportChainTargetsPage(
       has_parse_failure_task: Boolean(row.has_parse_failure_task),
       is_export_ready: Boolean(row.is_export_ready),
     })),
+    total_count: count ?? 0,
+  };
+}
+
+async function listExportCompanySummaryPage(
+  leadsClient: SupabaseClient,
+  params: URLSearchParams,
+  limit: number,
+  offset: number,
+): Promise<{ rows: Record<string, unknown>[]; total_count: number }> {
+  const end = offset + limit - 1;
+  const { qb: targetQuery } = await buildExportCompanyTargetsQuery(
+    leadsClient,
+    params,
+    [
+      'company_id',
+      'legal_name',
+      'normalized_key',
+      'company_updated_at',
+      'company_notes',
+      'linked_source_count',
+      'company_entity_match_id',
+      'registry_state',
+      'match_score',
+      'match_updated_at',
+      'state_entity_id',
+      'registry_entity_id',
+      'state_entity_legal_name',
+      'address_line_1',
+      'address_line_2',
+      'address_city',
+      'address_state',
+      'address_postal_code',
+      'address_country',
+      'primary_location_city',
+      'primary_location_state',
+      'website',
+      'has_current_linked_source',
+      'has_current_owner',
+      'has_open_review_task',
+      'has_parse_failure_task',
+      'is_export_ready',
+    ].join(', '),
+    { withCount: true },
+  );
+  const { data, error, count } = await targetQuery.range(offset, end);
+  if (error) throw new Error(error.message);
+  return {
+    rows: Array.isArray(data) ? (data as unknown as Record<string, unknown>[]) : [],
     total_count: count ?? 0,
   };
 }
@@ -816,6 +975,24 @@ async function loadExportRowCostMap(
     const eid = rec.entity_owner_id == null ? '' : String(rec.entity_owner_id);
     const key = `${cid}\0${eid}`;
     if (wanted.has(key)) out.set(key, rec);
+  }
+  return out;
+}
+
+async function loadExportCompanyCostMap(
+  leadsClient: SupabaseClient,
+  companyIds: string[],
+): Promise<Map<string, Record<string, unknown>>> {
+  const out = new Map<string, Record<string, unknown>>();
+  const wanted = [...new Set(companyIds.filter(Boolean))];
+  if (wanted.length === 0) return out;
+  const { data, error } = await leadsClient.from('export_row_cost_summary').select('*').in('company_id', wanted);
+  if (error) throw new Error(error.message);
+  for (const row of data ?? []) {
+    const rec = row as Record<string, unknown>;
+    const companyId = typeof rec.company_id === 'string' ? rec.company_id : '';
+    if (!companyId || out.has(companyId)) continue;
+    out.set(companyId, rec);
   }
   return out;
 }
@@ -1302,11 +1479,12 @@ export async function dispatchFoundryExtendedRoutes(
     const limit = parseLimit(rawQueryString || '', MAX_EXPORT_LEADS_LIMIT, DEFAULT_EXPORT_LEADS_LIMIT);
     const offset = parseOffsetExport(rawQueryString || '');
     const end = offset + limit - 1;
-    const { data, error, count } = await buildExportCompanyOwnerLeadsQuery(
+    const { qb: ownerQuery } = await buildExportCompanyOwnerLeadsQuery(
       leadsClient,
       params,
       { withCount: true },
-    ).range(offset, end);
+    );
+    const { data, error, count } = await ownerQuery.range(offset, end);
 
     if (error) {
       const err = error as { message?: string; code?: string; details?: string; hint?: string };
@@ -1320,8 +1498,8 @@ export async function dispatchFoundryExtendedRoutes(
       return jsonResponse(502, { error: 'Failed to load export leads' });
     }
 
-    const rawRows = data ?? [];
-    const rows = rawRows.map((r) => {
+    const rawRows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+    const rows = rawRows.map((r: Record<string, unknown>) => {
       const row = { ...(r as Record<string, unknown>) };
       if (includeContact && !includeCost) {
         stripCostFields(row);
@@ -1350,6 +1528,71 @@ export async function dispatchFoundryExtendedRoutes(
     });
   }
 
+  if (path === '/export/company-summary' && method === 'GET') {
+    const params = new URLSearchParams(rawQueryString || '');
+    const includeCost = parseIncludeCostFlag(params);
+    const includeGoogleAds = parseIncludeGoogleAdsVerificationFlag(params);
+    const limit = parseLimit(rawQueryString || '', MAX_EXPORT_LEADS_LIMIT, DEFAULT_EXPORT_LEADS_LIMIT);
+    const offset = parseOffsetExport(rawQueryString || '');
+
+    let rows: Record<string, unknown>[] = [];
+    let total_count = 0;
+    try {
+      const paged = await listExportCompanySummaryPage(leadsClient, params, limit, offset);
+      rows = paged.rows.map((row) => ({ ...row }));
+      total_count = paged.total_count;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('export_company_summary failed', message);
+      return jsonResponse(502, { error: 'Failed to load company export rows' });
+    }
+
+    if (includeCost && rows.length > 0) {
+      try {
+        const costMap = await loadExportCompanyCostMap(
+          leadsClient,
+          rows.map((row) => String(row.company_id ?? '')),
+        );
+        for (const row of rows) {
+          const cost = costMap.get(String(row.company_id ?? ''));
+          if (!cost) continue;
+          row.enrichment_cost_cents = cost.enrichment_cost_cents ?? 0;
+          row.company_enrichment_cost_cents = cost.company_enrichment_cost_cents ?? 0;
+          row.enrichment_cost_per_row_cents = cost.enrichment_cost_per_row_cents ?? 0;
+          row.company_acquisition_cost_cents = cost.company_acquisition_cost_cents ?? 0;
+          row.acquisition_cost_per_row_cents = cost.acquisition_cost_per_row_cents ?? 0;
+          row.total_cost_per_row_cents = cost.total_cost_per_row_cents ?? 0;
+          row.company_export_row_count = cost.company_export_row_count ?? 0;
+          row.company_website_verification_cost_cents = cost.company_website_verification_cost_cents ?? 0;
+          row.company_google_ads_verification_cost_cents = cost.company_google_ads_verification_cost_cents ?? 0;
+          row.company_import_acquisition_cost_cents = cost.company_import_acquisition_cost_cents ?? 0;
+          row.company_registry_acquisition_cost_cents = cost.company_registry_acquisition_cost_cents ?? 0;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('export_company_summary cost merge failed', message);
+        return jsonResponse(502, { error: 'Failed to load export row costs for company export' });
+      }
+    }
+
+    if (includeGoogleAds && rows.length > 0) {
+      try {
+        await mergeGoogleAdsVerificationsIntoExportRows(leadsClient, rows);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('export_company_summary google ads merge failed', message);
+        return jsonResponse(502, { error: 'Failed to load Google Ads verifications for company export' });
+      }
+    }
+
+    return jsonResponse(200, {
+      rows,
+      limit,
+      offset,
+      total_count,
+    });
+  }
+
   if (path === '/export/company-chain-people' && method === 'GET') {
     const params = new URLSearchParams(rawQueryString || '');
     const { includeContact, includeContactConfidence } = parseIncludeContactFlags(params);
@@ -1359,6 +1602,7 @@ export async function dispatchFoundryExtendedRoutes(
     const offset = parseOffsetExport(rawQueryString || '');
     const maxDepth = clampOwnershipChainDepth(params.get('max_depth'));
     const maxChains = clampOwnershipChainLimit(params.get('max_chains'));
+    const ownerTitleQ = readTextFilter(params, 'owner_title_q');
 
     let targets: ExportChainTargetRow[] = [];
     let total_count = 0;
@@ -1495,6 +1739,16 @@ export async function dispatchFoundryExtendedRoutes(
     if (includeContact && !includeCost) {
       for (const row of rows) {
         stripCostFields(row);
+      }
+    }
+
+    if (ownerTitleQ && ownerTitleQ.length >= 2) {
+      const matcher = ownerTitleQ.toLowerCase();
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        const title = String(rows[index].person_title_role ?? '').toLowerCase();
+        if (!title.includes(matcher)) {
+          rows.splice(index, 1);
+        }
       }
     }
 

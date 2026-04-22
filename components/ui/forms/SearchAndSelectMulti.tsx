@@ -25,6 +25,9 @@ import {
 } from '@/components/ui/modals';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 
+const noSelectStyle = Platform.OS === 'web' ? ({ userSelect: 'none' } as const) : undefined;
+const textInputWebStyle = Platform.OS === 'web' ? ({ userSelect: 'text' } as const) : undefined;
+
 export interface SearchAndSelectMultiProps<T> {
   items: T[];
   getItemId: (item: T) => string;
@@ -39,6 +42,9 @@ export interface SearchAndSelectMultiProps<T> {
   emptyMessage?: (hasSearch: boolean) => string;
   /** Optional: return hex color for item to show a colored dot next to the label */
   getItemColor?: (item: T) => string | null | undefined;
+  noMargin?: boolean;
+  size?: 'default' | 'compact';
+  panelSize?: 'default' | 'compact';
 }
 
 export function SearchAndSelectMulti<T>({
@@ -53,7 +59,66 @@ export function SearchAndSelectMulti<T>({
   listMaxHeight = 200,
   emptyMessage = (hasSearch: boolean) => (hasSearch ? 'No results' : 'No options'),
   getItemColor,
+  noMargin = false,
+  size = 'default',
+  panelSize = size,
 }: SearchAndSelectMultiProps<T>) {
+  const triggerSizing =
+    size === 'compact'
+      ? {
+          borderRadius: 8,
+          paddingHorizontal: 10,
+          paddingVertical: 6,
+          minHeight: 32,
+          textClassName: 'text-xs',
+          chevronSize: 14,
+        }
+      : {
+          borderRadius: 12,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+          minHeight: 44,
+          textClassName: 'text-sm',
+          chevronSize: 18,
+        };
+
+  const panelSizing =
+    panelSize === 'compact'
+      ? {
+          panelPadding: 8,
+          searchRadius: 8,
+          searchPaddingX: 8,
+          searchPaddingY: 6,
+          searchMarginBottom: 6,
+          searchIconSize: 14,
+          searchTextSize: 12,
+          rowGap: 8,
+          rowPaddingY: 7,
+          rowPaddingX: 10,
+          rowRadius: 8,
+          rowMarginBottom: 4,
+          checkboxSize: 16,
+          checkboxRadius: 4,
+          rowTextClassName: 'text-xs',
+        }
+      : {
+          panelPadding: 10,
+          searchRadius: 10,
+          searchPaddingX: 10,
+          searchPaddingY: 8,
+          searchMarginBottom: 8,
+          searchIconSize: 16,
+          searchTextSize: 14,
+          rowGap: 10,
+          rowPaddingY: 10,
+          rowPaddingX: 12,
+          rowRadius: 12,
+          rowMarginBottom: 6,
+          checkboxSize: 18,
+          checkboxRadius: 4,
+          rowTextClassName: 'text-sm',
+        };
+
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isCompactLayout = screenWidth < LAYOUT_BREAKPOINT;
   const insideSheet = usePickerInsideBottomSheet();
@@ -122,21 +187,22 @@ export function SearchAndSelectMulti<T>({
 
   const renderListPanel = useCallback(
     (listScrollMax: number = listMaxHeight) => (
-    <View style={{ padding: 10 }}>
+    <View style={{ padding: panelSizing.panelPadding, ...noSelectStyle }}>
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
           backgroundColor: '#FFFFFF0D',
-          borderRadius: 10,
+          borderRadius: panelSizing.searchRadius,
           borderWidth: 1,
           borderColor: '#FFFFFF4D',
-          paddingHorizontal: 10,
-          paddingVertical: 8,
-          marginBottom: 8,
+          paddingHorizontal: panelSizing.searchPaddingX,
+          paddingVertical: panelSizing.searchPaddingY,
+          marginBottom: panelSizing.searchMarginBottom,
+          ...noSelectStyle,
         }}
       >
-        <MagnifyingGlassIcon size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+        <MagnifyingGlassIcon size={panelSizing.searchIconSize} color="#9CA3AF" style={{ marginRight: 8 }} />
         <TextInput
           value={search}
           onChangeText={setSearch}
@@ -145,9 +211,10 @@ export function SearchAndSelectMulti<T>({
           style={{
             flex: 1,
             color: '#FFFFFF',
-            fontSize: 14,
+            fontSize: panelSizing.searchTextSize,
             fontFamily: 'Instrument Sans, system-ui, sans-serif',
             paddingVertical: 0,
+            ...textInputWebStyle,
           }}
           selectionColor="#FF4D00"
           underlineColorAndroid="transparent"
@@ -164,6 +231,7 @@ export function SearchAndSelectMulti<T>({
           }}
         >
           <Text
+            selectable={false}
             className="text-gray-400 text-sm"
             style={{
               fontFamily: 'Instrument Sans, system-ui, sans-serif',
@@ -175,6 +243,7 @@ export function SearchAndSelectMulti<T>({
           </Text>
           {search.trim().length > 0 && (
             <Text
+              selectable={false}
               className="text-gray-500 text-xs mt-1"
               style={{
                 fontFamily: 'Instrument Sans, system-ui, sans-serif',
@@ -202,21 +271,22 @@ export function SearchAndSelectMulti<T>({
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  gap: 10,
-                  paddingVertical: 10,
-                  paddingHorizontal: 12,
-                  borderRadius: 12,
-                  marginBottom: 6,
+                  gap: panelSizing.rowGap,
+                  paddingVertical: panelSizing.rowPaddingY,
+                  paddingHorizontal: panelSizing.rowPaddingX,
+                  borderRadius: panelSizing.rowRadius,
+                  marginBottom: panelSizing.rowMarginBottom,
                   borderWidth: 1,
                   backgroundColor: isSelected ? 'rgba(243, 68, 13, 0.14)' : '#121212',
                   borderColor: isSelected ? 'rgba(243, 68, 13, 0.4)' : '#2A2A2A',
+                  ...noSelectStyle,
                 }}
               >
                 <View
                   style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 4,
+                    width: panelSizing.checkboxSize,
+                    height: panelSizing.checkboxSize,
+                    borderRadius: panelSizing.checkboxRadius,
                     borderWidth: 1,
                     borderColor: isSelected ? '#F3440D' : '#4B5563',
                     backgroundColor: isSelected ? 'rgba(243, 68, 13, 0.3)' : 'transparent',
@@ -224,7 +294,7 @@ export function SearchAndSelectMulti<T>({
                     justifyContent: 'center',
                   }}
                 >
-                  {isSelected && <Text className="text-orange-500 text-xs font-bold">✓</Text>}
+                  {isSelected && <Text selectable={false} className="text-orange-500 text-xs font-bold">✓</Text>}
                 </View>
                 {getItemColor ? (
                   (() => {
@@ -243,7 +313,11 @@ export function SearchAndSelectMulti<T>({
                     ) : null;
                   })()
                 ) : null}
-                <Text className="text-white font-instrument-medium text-sm flex-1" numberOfLines={1}>
+                <Text
+                  selectable={false}
+                  className={`text-white font-instrument-medium ${panelSizing.rowTextClassName} flex-1`}
+                  numberOfLines={1}
+                >
                   {getItemLabel(item)}
                 </Text>
               </Pressable>
@@ -264,6 +338,7 @@ export function SearchAndSelectMulti<T>({
       getItemColor,
       toggleItem,
       listMaxHeight,
+      panelSizing,
     ]
   );
 
@@ -295,9 +370,11 @@ export function SearchAndSelectMulti<T>({
   ]);
 
   return (
-    <View style={{ marginBottom: 12 }}>
+    <View style={{ marginBottom: noMargin ? 0 : 12 }}>
       {label != null && (
-        <Text className="text-xs font-instrument-medium mb-2 text-gray-400">{label}</Text>
+        <Text selectable={false} className="text-xs font-instrument-medium mb-2 text-gray-400">
+          {label}
+        </Text>
       )}
       <Pressable
         ref={triggerRef}
@@ -306,23 +383,25 @@ export function SearchAndSelectMulti<T>({
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          borderRadius: 12,
-          paddingHorizontal: 14,
-          paddingVertical: 12,
-          minHeight: 44,
+          borderRadius: triggerSizing.borderRadius,
+          paddingHorizontal: triggerSizing.paddingHorizontal,
+          paddingVertical: triggerSizing.paddingVertical,
+          minHeight: triggerSizing.minHeight,
           borderWidth: 1,
           borderColor: '#FFFFFF4D',
           backgroundColor: '#FFFFFF0D',
+          ...noSelectStyle,
         }}
       >
         <Text
-          className="text-sm font-instrument flex-1"
+          selectable={false}
+          className={`${triggerSizing.textClassName} font-instrument flex-1`}
           style={{ color: value.length > 0 ? '#FFFFFF' : '#666666' }}
           numberOfLines={1}
         >
           {displayText}
         </Text>
-        <ChevronDownIcon size={18} color="#9CA3AF" />
+        <ChevronDownIcon size={triggerSizing.chevronSize} color="#9CA3AF" />
       </Pressable>
 
       {isCompactLayout ? (

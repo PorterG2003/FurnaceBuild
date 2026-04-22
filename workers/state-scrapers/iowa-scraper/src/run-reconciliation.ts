@@ -4,13 +4,14 @@
  *      LEADS_SUPABASE_SECRET_KEY or LEADS_SUPABASE_SECRET_KEY_PARAM_PATH.
  */
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { chromium } from 'playwright';
 import {
   buildDrilldownWorkItem,
   buildOwnerQueryKey,
   buildRegistryEntityKey,
   classifyOwnerName,
+  compareToExpectedPerson,
   flushStateMatchingJobOutcomeProgress,
   ownerResolutionStatusForSeed,
   ownerRowsForIowaDetail,
@@ -38,6 +39,17 @@ type DrilldownStats = {
   drilldown_max_depth_count: number;
 };
 
+type ImportedContactSummary = {
+  sourceRecordId: string | null;
+  sourceRowNumber: number | null;
+  observedAt: string | null;
+  companyName: string | null;
+  contactName: string | null;
+  contactTitle: string | null;
+  phone: string | null;
+  city: string | null;
+};
+
 function logRec(event: string, data?: Record<string, unknown>): void {
   console.log(JSON.stringify({ source: 'iowa-reconciliation', event, at: new Date().toISOString(), ...data }));
 }
@@ -60,6 +72,83 @@ function emptyDrilldownStats(): DrilldownStats {
     drilldown_parse_failed_count: 0,
     drilldown_cycle_skipped_count: 0,
     drilldown_max_depth_count: 0,
+  };
+}
+
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function firstNonEmptyString(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function firstFiniteNumber(obj: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+async function loadLatestLinkedSourceContactSummary(
+  client: SupabaseClient,
+  companyId: string,
+): Promise<ImportedContactSummary | null> {
+  const { data: linkRow, error: linkErr } = await client
+    .from('source_business_company_links')
+    .select('source_business_record_id, updated_at, created_at')
+    .eq('company_id', companyId)
+    .eq('is_current', true)
+    .eq('link_status', 'linked')
+    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (linkErr || !linkRow?.source_business_record_id) {
+    return null;
+  }
+
+  const sourceRecordId = String(linkRow.source_business_record_id);
+  const { data: sourceRow, error: sourceErr } = await client
+    .from('source_business_records')
+    .select('id, observed_at, raw_payload')
+    .eq('id', sourceRecordId)
+    .maybeSingle();
+  if (sourceErr || !sourceRow) {
+    return null;
+  }
+
+  const raw = asObject(sourceRow.raw_payload);
+  return {
+    sourceRecordId: String(sourceRow.id),
+    sourceRowNumber: firstFiniteNumber(raw, ['__rowNumber']),
+    observedAt: typeof sourceRow.observed_at === 'string' ? sourceRow.observed_at : null,
+    companyName: firstNonEmptyString(raw, ['Company Name', 'company_name', 'name', 'Name']),
+    contactName: firstNonEmptyString(raw, [
+      'Name - People - Results',
+      'Contact Name',
+      'contact_name',
+      'Owner Name',
+      'owner_name',
+    ]),
+    contactTitle: firstNonEmptyString(raw, [
+      'Title - People - Results',
+      'Contact Title',
+      'contact_title',
+      'Title',
+      'title',
+    ]),
+    phone: firstNonEmptyString(raw, ['phone', 'Phone']),
+    city: firstNonEmptyString(raw, ['city', 'City']),
   };
 }
 
@@ -296,6 +385,7 @@ async function main() {
       }
 
       const legalName = (co.legal_name as string) ?? '';
+      const importedContact = await loadLatestLinkedSourceContactSummary(client, companyId);
       const r = await scrapeIowaCompanyFromSearchForm(page, legalName.trim());
       if (r.rateLimited || /iowa_rate_limit/.test(r.error ?? '')) {
         logRec('rate-limit-cooldown', {
@@ -307,6 +397,9 @@ async function main() {
       }
       logRec('company-scrape-finished', {
         companyId,
+        companyName: legalName,
+        importedContactName: importedContact?.contactName ?? null,
+        importedContactTitle: importedContact?.contactTitle ?? null,
         error: r.error ?? null,
         hitCount: r.hits.length,
         ambiguous: r.pick.ambiguous,
@@ -341,6 +434,34 @@ async function main() {
         logRec('company-persist-start', { companyId });
         const drilldownStats = emptyDrilldownStats();
         const rootOwners = classifyOwnersForPersistence(ownerRowsForIowaDetail(r.detail), 0);
+        const registryContactNames = [...new Set([...r.officerNames, ...(r.registeredAgentName ? [r.registeredAgentName] : [])])];
+        const importedContactCompare =
+          importedContact?.contactName != null
+            ? compareToExpectedPerson(registryContactNames, importedContact.contactName)
+            : null;
+        logRec('company-verification', {
+          companyId,
+          companyName: legalName,
+          sourceRecordId: importedContact?.sourceRecordId ?? null,
+          sourceRowNumber: importedContact?.sourceRowNumber ?? null,
+          importedCompanyName: importedContact?.companyName ?? null,
+          importedContactName: importedContact?.contactName ?? null,
+          importedContactTitle: importedContact?.contactTitle ?? null,
+          importedPhone: importedContact?.phone ?? null,
+          importedCity: importedContact?.city ?? null,
+          registryLegalName: r.detail.legalName ?? null,
+          registryStatus: r.detail.status ?? null,
+          officerNames: r.officerNames,
+          registeredAgentName: r.registeredAgentName ?? null,
+          registryContactNames,
+          persistedOwnerRows: rootOwners.map((owner) => ({
+            ownerName: owner.ownerName,
+            titleRole: owner.titleRole,
+            ownerKind: owner.ownerKind ?? null,
+            resolutionStatus: owner.resolutionStatus ?? null,
+          })),
+          importedContactCompare,
+        });
         const { state_entity_id, owners: persistedRootOwners } = await persistIowaRegistryPull(
           client as unknown as Parameters<typeof persistIowaRegistryPull>[0],
           {
@@ -517,11 +638,29 @@ async function main() {
         );
         perCompany.push({
           companyId,
+          companyName: legalName,
           state: 'IA',
           state_entity_id,
           root_state_entity_id: state_entity_id,
+          sourceRecordId: importedContact?.sourceRecordId ?? null,
+          sourceRowNumber: importedContact?.sourceRowNumber ?? null,
+          importedContactName: importedContact?.contactName ?? null,
+          importedContactTitle: importedContact?.contactTitle ?? null,
+          registryContactNames,
+          importedContactCompare,
           ...drilldownStats,
           ...recon,
+        });
+        logRec('company-result', {
+          companyId,
+          companyName: legalName,
+          outcome: recon.outcome,
+          reconciliationDetails: recon.details ?? null,
+          importedContactName: importedContact?.contactName ?? null,
+          importedContactTitle: importedContact?.contactTitle ?? null,
+          registryLegalName: r.detail.legalName ?? null,
+          registryContactNames,
+          importedContactCompare,
         });
         if (recon.outcome !== 'error') {
           await noteOutcomePersisted();

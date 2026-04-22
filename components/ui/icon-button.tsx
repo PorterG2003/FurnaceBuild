@@ -17,6 +17,11 @@ export interface IconButtonProps extends Omit<TouchableOpacityProps, 'children'>
   label?: string;
   variant?: IconButtonVariant;
   size?: IconButtonSize;
+  /**
+   * When set (and `label` is omitted), use a fixed square footprint and `rounded-xl` to align with
+   * `Button` in toolbars (`h-10 w-10` for `sm`, `h-11 w-11` for `default`, icon centered).
+   */
+  matchButtonPadding?: 'sm' | 'default';
 }
 
 const ICON_COLORS: Record<IconButtonVariant, { default: string; disabled: string }> = {
@@ -43,17 +48,23 @@ export function IconButton({
   size = 'default',
   className,
   disabled = false,
+  matchButtonPadding,
   ...props
 }: IconButtonProps) {
   const effectiveSize: IconButtonSize = variant === 'overflow' ? 'inline' : size;
   const iconSize = ICON_SIZES[effectiveSize];
   const colors = ICON_COLORS[variant];
   const iconColor = disabled ? colors.disabled : colors.default;
+  const useButtonPadding =
+    !label &&
+    matchButtonPadding != null &&
+    (matchButtonPadding === 'sm' ? size === 'sm' : size === 'default');
 
   return (
     <TouchableOpacity
       className={cn(
-        'items-center justify-center rounded-lg font-instrument-medium flex-row',
+        'items-center justify-center font-instrument-medium flex-row',
+        useButtonPadding ? 'rounded-xl' : 'rounded-lg',
         {
           'bg-brand-orange': variant === 'default' && !disabled,
           'bg-brand-orange/50': variant === 'default' && disabled,
@@ -65,15 +76,19 @@ export function IconButton({
           'bg-transparent': variant === 'ghost' || variant === 'overflow',
           'opacity-50': disabled && (variant === 'ghost' || variant === 'overflow'),
         },
-        {
-          'p-2': effectiveSize === 'default' && !label,
-          'px-3 py-2 gap-2': effectiveSize === 'default' && label,
-          'p-1.5': effectiveSize === 'sm' && !label,
-          'px-2.5 py-1.5 gap-1.5': effectiveSize === 'sm' && label,
-          'p-1': (effectiveSize === 'xs' && !label) || (effectiveSize === 'inline' && !label),
-          'px-2 py-1 gap-1': effectiveSize === 'xs' && label,
-          'px-2 py-1 gap-1.5': effectiveSize === 'inline' && label,
-        },
+        useButtonPadding && matchButtonPadding === 'sm'
+          ? { 'h-10 w-10 shrink-0 p-0': true }
+          : useButtonPadding && matchButtonPadding === 'default'
+            ? { 'h-11 w-11 shrink-0 p-0': true }
+            : {
+                'p-2': effectiveSize === 'default' && !label,
+                'px-3 py-2 gap-2': effectiveSize === 'default' && label,
+                'p-1.5': effectiveSize === 'sm' && !label,
+                'px-2.5 py-1.5 gap-1.5': effectiveSize === 'sm' && label,
+                'p-1': (effectiveSize === 'xs' && !label) || (effectiveSize === 'inline' && !label),
+                'px-2 py-1 gap-1': effectiveSize === 'xs' && label,
+                'px-2 py-1 gap-1.5': effectiveSize === 'inline' && label,
+              },
         className
       )}
       activeOpacity={0.8}

@@ -20,7 +20,7 @@ function summarizeStateMatchingBatchResponse(r: PostStateMatchingBatchResponse):
     if (already.length > 0) {
       return (
         `None of your ${already.length} companies will run registry automation: each already has a promoted match for its target state (from company locations). ` +
-        `To exercise Utah or Florida ECS, choose companies that are not yet promoted for that state—or adjust/reject the existing match in the registry first.`
+        `To exercise Utah, Florida, or Iowa ECS, choose companies that are not yet promoted for that state—or adjust/reject the existing match in the registry first.`
       );
     }
     if (missing.length > 0) {
@@ -33,11 +33,12 @@ function summarizeStateMatchingBatchResponse(r: PostStateMatchingBatchResponse):
 
   const bc = r.bucket_counts;
   if (!bc) return null;
+  const total = bc.utah + bc.florida + bc.iowa;
   return (
-    `Routed (ready companies only): Utah ECS ${bc.utah}, Florida ECS ${bc.florida}. ` +
-    (bc.florida === 0 && bc.utah === 0
+    `Routed (ready companies only): Utah ECS ${bc.utah}, Florida ECS ${bc.florida}, Iowa ECS ${bc.iowa}. ` +
+    (total === 0
       ? 'No browser ECS tasks will run—finalize only.'
-      : 'Watch ECS in the worker account for Utah then Florida when both have companies.')
+      : 'Watch Runs for progress while any routed ECS tasks complete.')
   );
 }
 
@@ -57,8 +58,8 @@ export function StateMatchingPanel({ ingestionRunId }: Props) {
     <View className="mt-2">
       <Text className="text-gray-300 font-instrument-semibold text-sm mb-2">State registry matching</Text>
       <Text className="text-gray-500 font-instrument text-xs mb-3 leading-5">
-        Start one background job for all linked companies in this import. Automated registry matching supports Utah (UT)
-        and Florida (FL) only, and companies that already have a promoted match or no target state are skipped
+        Start one background job for all linked companies in this import. Automated registry matching supports Utah (UT),
+        Florida (FL), and Iowa (IA) only, and companies that already have a promoted match or no target state are skipped
         automatically. Watch Runs for progress; if we are unsure about a match, check Queue.
       </Text>
 

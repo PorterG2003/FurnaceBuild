@@ -38,8 +38,13 @@ export interface CampaignLeadTableRow {
   enrollment_current_node_id: string | null;
   enrollment_stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
   enrollment_stopped_error_message: string | null;
+  reply_category: 'Interested' | 'Not Interested' | null;
   created_at: string;
 }
+
+export type CampaignLeadStatusFilterValue = NonNullable<CampaignLeadTableRow['status']>;
+export type CampaignLeadEnrollmentFilterValue = NonNullable<CampaignLeadTableRow['enrollment_state']> | 'not_started';
+export type CampaignLeadReplyCategoryFilterValue = NonNullable<CampaignLeadTableRow['reply_category']> | 'not_categorized';
 
 export interface CampaignLeadTableQuery {
   limit?: number;
@@ -47,11 +52,296 @@ export interface CampaignLeadTableQuery {
   search?: string;
   sortBy?: string;
   sortDirection?: 'asc' | 'desc';
+  statuses?: CampaignLeadStatusFilterValue[];
+  enrollmentStates?: CampaignLeadEnrollmentFilterValue[];
+  replyCategories?: CampaignLeadReplyCategoryFilterValue[];
+  leadIds?: string[];
 }
 
 export interface CampaignLeadTableResult {
   rows: CampaignLeadTableRow[];
   totalCount: number;
+}
+
+const CAMPAIGN_LEAD_TABLE_SELECT =
+  'id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, status, created_at';
+
+const CAMPAIGN_LEAD_TABLE_SORT_COLUMNS = new Set([
+  'email',
+  'name',
+  'first_name',
+  'last_name',
+  'company_name',
+  'website',
+  'linkedin_url',
+  'company_linkedin_url',
+  'phone_number',
+  'source',
+  'status',
+  'created_at',
+]);
+
+type CampaignLeadBaseRow = Pick<
+  CampaignLeadTableRow,
+  | 'id'
+  | 'email'
+  | 'name'
+  | 'first_name'
+  | 'last_name'
+  | 'company_name'
+  | 'website'
+  | 'linkedin_url'
+  | 'company_linkedin_url'
+  | 'phone_number'
+  | 'source'
+  | 'custom_lead_data'
+  | 'status'
+  | 'created_at'
+>;
+
+function getCampaignLeadTableSortBy(sortBy?: string): keyof CampaignLeadBaseRow {
+  return CAMPAIGN_LEAD_TABLE_SORT_COLUMNS.has(sortBy ?? '')
+    ? (sortBy as keyof CampaignLeadBaseRow)
+    : 'created_at';
+}
+
+function buildCampaignLeadTableQuery(
+  campaignId: string,
+  query?: CampaignLeadTableQuery,
+  includeCount = false,
+  scopedLeadIds?: string[] | null,
+) {
+  const searchTerm = query?.search?.trim();
+  let leadsQuery = supabase
+    .from('leads')
+    .select(CAMPAIGN_LEAD_TABLE_SELECT, includeCount ? { count: 'exact' } : undefined)
+    .eq('campaign_id', campaignId)
+    .is('deleted_at', null);
+
+  if (searchTerm) {
+    const pattern = `%${searchTerm}%`;
+    leadsQuery = leadsQuery.or(
+      `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern},phone_number.ilike.${pattern},website.ilike.${pattern},linkedin_url.ilike.${pattern}`,
+    );
+  }
+
+  if (query?.statuses?.length) {
+    leadsQuery = leadsQuery.in('status', query.statuses);
+  }
+
+  if (scopedLeadIds) {
+    leadsQuery = leadsQuery.in('id', scopedLeadIds);
+  }
+
+  return leadsQuery;
+}
+
+async function fetchCampaignLeadEnrollmentMap(campaignId: string, leadIds: string[]) {
+  const enrollmentByLeadId = new Map<
+    string,
+    {
+      state: CampaignLeadTableRow['enrollment_state'];
+      current_node_id: string | null;
+      stopped_reason: CampaignLeadTableRow['enrollment_stopped_reason'];
+      stopped_error_message: string | null;
+    }
+  >();
+
+  if (leadIds.length === 0) return enrollmentByLeadId;
+
+  const { data: enrollments, error: enrollmentsError } = await supabase
+    .from('enrollments')
+    .select('lead_id, state, current_node_id, stopped_reason, stopped_error_message')
+    .eq('campaign_id', campaignId)
+    .is('deleted_at', null)
+    .in('lead_id', leadIds);
+
+  if (enrollmentsError) {
+    throw new Error(`Failed to fetch enrollments: ${enrollmentsError.message}`);
+  }
+
+  for (const enrollment of enrollments ?? []) {
+    enrollmentByLeadId.set(enrollment.lead_id, {
+      state: enrollment.state as CampaignLeadTableRow['enrollment_state'],
+      current_node_id: enrollment.current_node_id,
+      stopped_reason: enrollment.stopped_reason as CampaignLeadTableRow['enrollment_stopped_reason'],
+      stopped_error_message: enrollment.stopped_error_message,
+    });
+  }
+
+  return enrollmentByLeadId;
+}
+
+async function fetchCampaignLeadIds(campaignId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('campaign_id', campaignId)
+    .is('deleted_at', null);
+
+  if (error) {
+    throw new Error(`Failed to fetch lead ids: ${error.message}`);
+  }
+
+  return (data ?? []).map((lead) => lead.id);
+}
+
+function intersectLeadIdSets(baseLeadIds: Set<string> | null, nextLeadIds: Set<string>): Set<string> {
+  if (baseLeadIds === null) return new Set(nextLeadIds);
+  return new Set([...baseLeadIds].filter((leadId) => nextLeadIds.has(leadId)));
+}
+
+async function resolveCampaignLeadScopeIds(
+  campaignId: string,
+  query?: CampaignLeadTableQuery,
+): Promise<string[] | null> {
+  let scopedLeadIds: Set<string> | null = query?.leadIds ? new Set(query.leadIds.filter(Boolean)) : null;
+
+  if (query?.leadIds && scopedLeadIds.size === 0) {
+    return [];
+  }
+
+  const hasEnrollmentFilter = !!query?.enrollmentStates?.length;
+  const hasReplyCategoryFilter = !!query?.replyCategories?.length;
+
+  if (!hasEnrollmentFilter && !hasReplyCategoryFilter) {
+    return scopedLeadIds ? Array.from(scopedLeadIds) : null;
+  }
+
+  let campaignLeadIds: string[] | null = null;
+
+  if (hasEnrollmentFilter) {
+    const includeNotStarted = query!.enrollmentStates!.includes('not_started');
+    const matchedEnrollmentStates = new Set(
+      query!.enrollmentStates!.filter(
+      (state): state is NonNullable<CampaignLeadTableRow['enrollment_state']> => state !== 'not_started',
+      ),
+    );
+
+    const { data: enrollments, error: enrollmentsError } = await supabase
+      .from('enrollments')
+      .select('lead_id, state')
+      .eq('campaign_id', campaignId)
+      .is('deleted_at', null);
+
+    if (enrollmentsError) {
+      throw new Error(`Failed to fetch enrollments: ${enrollmentsError.message}`);
+    }
+
+    const enrolledLeadIds = new Set<string>();
+    const matchedLeadIds = new Set<string>();
+
+    for (const enrollment of enrollments ?? []) {
+      if (!enrollment.lead_id) continue;
+      enrolledLeadIds.add(enrollment.lead_id);
+      if (matchedEnrollmentStates.has(enrollment.state as NonNullable<CampaignLeadTableRow['enrollment_state']>)) {
+        matchedLeadIds.add(enrollment.lead_id);
+      }
+    }
+
+    if (includeNotStarted) {
+      campaignLeadIds ??= await fetchCampaignLeadIds(campaignId);
+      for (const leadId of campaignLeadIds) {
+        if (!enrolledLeadIds.has(leadId)) {
+          matchedLeadIds.add(leadId);
+        }
+      }
+    }
+
+    scopedLeadIds = intersectLeadIdSets(scopedLeadIds, matchedLeadIds);
+  }
+
+  if (hasReplyCategoryFilter) {
+    campaignLeadIds ??= await fetchCampaignLeadIds(campaignId);
+    const replyCategoryByLeadId = await fetchCampaignLeadReplyCategoryMap(campaignId, campaignLeadIds);
+    const includeNotCategorized = query!.replyCategories!.includes('not_categorized');
+    const matchedReplyCategories = new Set(
+      query!.replyCategories!.filter(
+        (category): category is NonNullable<CampaignLeadTableRow['reply_category']> => category !== 'not_categorized',
+      ),
+    );
+    const matchedLeadIds = new Set<string>();
+
+    for (const leadId of campaignLeadIds) {
+      const replyCategory = replyCategoryByLeadId.get(leadId) ?? null;
+      if (replyCategory === null) {
+        if (includeNotCategorized) matchedLeadIds.add(leadId);
+        continue;
+      }
+      if (matchedReplyCategories.has(replyCategory)) {
+        matchedLeadIds.add(leadId);
+      }
+    }
+
+    scopedLeadIds = intersectLeadIdSets(scopedLeadIds, matchedLeadIds);
+  }
+
+  return Array.from(scopedLeadIds);
+}
+
+async function fetchCampaignLeadReplyCategoryMap(campaignId: string, leadIds: string[]) {
+  const replyCategoryByLeadId = new Map<string, CampaignLeadTableRow['reply_category']>();
+
+  if (leadIds.length === 0) return replyCategoryByLeadId;
+
+  const { data: threads, error: threadsError } = await supabase
+    .from('email_threads')
+    .select('lead_id, category, last_message_at')
+    .eq('campaign_id', campaignId)
+    .eq('has_reply', true)
+    .in('lead_id', leadIds);
+
+  if (threadsError) {
+    throw new Error(`Failed to fetch reply categories: ${threadsError.message}`);
+  }
+
+  const latestThreadByLeadId = new Map<string, { lastMessageAt: string; category: CampaignLeadTableRow['reply_category'] }>();
+
+  for (const thread of threads ?? []) {
+    if (!thread.lead_id) continue;
+    const existing = latestThreadByLeadId.get(thread.lead_id);
+    if (!existing || thread.last_message_at > existing.lastMessageAt) {
+      latestThreadByLeadId.set(thread.lead_id, {
+        lastMessageAt: thread.last_message_at,
+        category:
+          thread.category === 'Interested' || thread.category === 'Not Interested'
+            ? thread.category
+            : null,
+      });
+    }
+  }
+
+  for (const [leadId, value] of latestThreadByLeadId.entries()) {
+    replyCategoryByLeadId.set(leadId, value.category);
+  }
+
+  return replyCategoryByLeadId;
+}
+
+function mapCampaignLeadTableRows(
+  leadRows: CampaignLeadBaseRow[],
+  enrollmentByLeadId: Map<
+    string,
+    {
+      state: CampaignLeadTableRow['enrollment_state'];
+      current_node_id: string | null;
+      stopped_reason: CampaignLeadTableRow['enrollment_stopped_reason'];
+      stopped_error_message: string | null;
+    }
+  >,
+  replyCategoryByLeadId: Map<string, CampaignLeadTableRow['reply_category']>,
+): CampaignLeadTableRow[] {
+  return leadRows.map((lead) => {
+    const enrollment = enrollmentByLeadId.get(lead.id);
+    return {
+      ...lead,
+      enrollment_state: enrollment?.state ?? null,
+      enrollment_current_node_id: enrollment?.current_node_id ?? null,
+      enrollment_stopped_reason: enrollment?.stopped_reason ?? null,
+      enrollment_stopped_error_message: enrollment?.stopped_error_message ?? null,
+      reply_category: replyCategoryByLeadId.get(lead.id) ?? null,
+    };
+  });
 }
 
 /**
@@ -117,41 +407,16 @@ export async function getCampaignLeadTablePage(
   campaignId: string,
   query?: CampaignLeadTableQuery,
 ): Promise<CampaignLeadTableResult> {
-  const supportedSortColumns = new Set([
-    'email',
-    'name',
-    'first_name',
-    'last_name',
-    'company_name',
-    'website',
-    'linkedin_url',
-    'company_linkedin_url',
-    'phone_number',
-    'source',
-    'status',
-    'created_at',
-  ]);
-  const sortBy = supportedSortColumns.has(query?.sortBy ?? '') ? query?.sortBy! : 'created_at';
+  const sortBy = getCampaignLeadTableSortBy(query?.sortBy);
   const ascending = query?.sortDirection === 'asc';
   const limit = query?.limit ?? 20;
   const offset = query?.offset ?? 0;
-  const searchTerm = query?.search?.trim();
-
-  let leadsQuery = supabase
-    .from('leads')
-    .select(
-      'id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, status, created_at',
-      { count: 'exact' },
-    )
-    .eq('campaign_id', campaignId)
-    .is('deleted_at', null);
-
-  if (searchTerm) {
-    const pattern = `%${searchTerm}%`;
-    leadsQuery = leadsQuery.or(
-      `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern},phone_number.ilike.${pattern},website.ilike.${pattern},linkedin_url.ilike.${pattern}`,
-    );
+  const scopedLeadIds = await resolveCampaignLeadScopeIds(campaignId, query);
+  if (scopedLeadIds?.length === 0) {
+    return { rows: [], totalCount: 0 };
   }
+
+  const leadsQuery = buildCampaignLeadTableQuery(campaignId, query, true, scopedLeadIds);
 
   const { data, error, count } = await leadsQuery
     .order(sortBy, { ascending, nullsFirst: !ascending })
@@ -161,69 +426,59 @@ export async function getCampaignLeadTablePage(
     throw new Error(`Failed to fetch leads: ${error.message}`);
   }
 
-  const leadRows = (data ?? []) as Array<
-    Pick<
-      CampaignLeadTableRow,
-      | 'id'
-      | 'email'
-      | 'name'
-      | 'first_name'
-      | 'last_name'
-      | 'company_name'
-      | 'website'
-      | 'linkedin_url'
-      | 'company_linkedin_url'
-      | 'phone_number'
-      | 'source'
-      | 'custom_lead_data'
-      | 'status'
-      | 'created_at'
-    >
-  >;
+  const leadRows = (data ?? []) as CampaignLeadBaseRow[];
   const leadIds = leadRows.map((lead) => lead.id);
-  const enrollmentByLeadId = new Map<
-    string,
-    {
-      state: CampaignLeadTableRow['enrollment_state'];
-      current_node_id: string | null;
-      stopped_reason: CampaignLeadTableRow['enrollment_stopped_reason'];
-      stopped_error_message: string | null;
-    }
-  >();
-
-  if (leadIds.length > 0) {
-    const { data: enrollments, error: enrollmentsError } = await supabase
-      .from('enrollments')
-      .select('lead_id, state, current_node_id, stopped_reason, stopped_error_message')
-      .eq('campaign_id', campaignId)
-      .is('deleted_at', null)
-      .in('lead_id', leadIds);
-    if (enrollmentsError) {
-      throw new Error(`Failed to fetch enrollments: ${enrollmentsError.message}`);
-    }
-    for (const enrollment of enrollments ?? []) {
-      enrollmentByLeadId.set(enrollment.lead_id, {
-        state: enrollment.state as CampaignLeadTableRow['enrollment_state'],
-        current_node_id: enrollment.current_node_id,
-        stopped_reason: enrollment.stopped_reason as CampaignLeadTableRow['enrollment_stopped_reason'],
-        stopped_error_message: enrollment.stopped_error_message,
-      });
-    }
-  }
+  const enrollmentByLeadId = await fetchCampaignLeadEnrollmentMap(
+    campaignId,
+    leadIds,
+  );
+  const replyCategoryByLeadId = await fetchCampaignLeadReplyCategoryMap(campaignId, leadIds);
 
   return {
-    rows: leadRows.map((lead) => {
-      const enrollment = enrollmentByLeadId.get(lead.id);
-      return {
-        ...lead,
-        enrollment_state: enrollment?.state ?? null,
-        enrollment_current_node_id: enrollment?.current_node_id ?? null,
-        enrollment_stopped_reason: enrollment?.stopped_reason ?? null,
-        enrollment_stopped_error_message: enrollment?.stopped_error_message ?? null,
-      };
-    }),
+    rows: mapCampaignLeadTableRows(leadRows, enrollmentByLeadId, replyCategoryByLeadId),
     totalCount: count ?? 0,
   };
+}
+
+export async function getCampaignLeadTableExportRows(
+  campaignId: string,
+  query?: Omit<CampaignLeadTableQuery, 'limit' | 'offset'>,
+): Promise<CampaignLeadTableRow[]> {
+  const sortBy = getCampaignLeadTableSortBy(query?.sortBy);
+  const ascending = query?.sortDirection === 'asc';
+  const pageSize = 500;
+  const rows: CampaignLeadTableRow[] = [];
+  const scopedLeadIds = await resolveCampaignLeadScopeIds(campaignId, query);
+
+  if (scopedLeadIds?.length === 0) {
+    return rows;
+  }
+
+  for (let offset = 0; ; offset += pageSize) {
+    const leadsQuery = buildCampaignLeadTableQuery(campaignId, query, false, scopedLeadIds);
+    const { data, error } = await leadsQuery
+      .order(sortBy, { ascending, nullsFirst: !ascending })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) {
+      throw new Error(`Failed to fetch leads: ${error.message}`);
+    }
+
+    const leadRows = (data ?? []) as CampaignLeadBaseRow[];
+    if (leadRows.length === 0) break;
+    const leadIds = leadRows.map((lead) => lead.id);
+
+    const enrollmentByLeadId = await fetchCampaignLeadEnrollmentMap(
+      campaignId,
+      leadIds,
+    );
+    const replyCategoryByLeadId = await fetchCampaignLeadReplyCategoryMap(campaignId, leadIds);
+    rows.push(...mapCampaignLeadTableRows(leadRows, enrollmentByLeadId, replyCategoryByLeadId));
+
+    if (leadRows.length < pageSize) break;
+  }
+
+  return rows;
 }
 
 export interface LeadCountFilters {

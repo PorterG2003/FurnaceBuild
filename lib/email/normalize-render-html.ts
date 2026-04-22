@@ -244,7 +244,7 @@ function normalizeStyleTags(html: string): string {
 
     const normalizedColors = withoutBackgrounds.replace(
       /(^|[;{]\s*)(color)(\s*:\s*[^;}{]+)(?=;|}|$)/gi,
-      (full, prefix, property, rawValue) => {
+      (full: string, prefix: string, property: string, rawValue: string) => {
         const value = rawValue.replace(/^\s*:\s*/, '').trim();
         if (!shouldForceReadableColor(value)) return full;
         return `${prefix}${property}: ${MAILBOX_RENDER_TEXT_COLOR}`;

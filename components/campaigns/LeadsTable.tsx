@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type ReactNode } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
 import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
@@ -63,6 +63,8 @@ interface LeadsTableProps {
   selectable?: boolean;
   selectedKeys?: Set<string>;
   onSelectionChange?: (keys: Set<string>) => void;
+  headerSummary?: ReactNode;
+  headerActions?: ReactNode;
 }
 
 const SERVER_SORTABLE_FIELDS = new Set([
@@ -95,6 +97,8 @@ export function LeadsTable({
   selectable = false,
   selectedKeys,
   onSelectionChange,
+  headerSummary,
+  headerActions,
 }: LeadsTableProps) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const selectionActive = selectable && selectedKeys != null && selectedKeys.size > 0;
@@ -209,7 +213,24 @@ export function LeadsTable({
     );
   };
 
-  // Dynamic columns from insight summary (same as modal) + optional Enrollment column
+  const getReplyCategoryBadge = (replyCategory: Lead['reply_category']) => {
+    const config =
+      replyCategory === 'Interested'
+        ? { bg: '#10b98120', text: '#10b981', label: 'Interested' }
+        : replyCategory === 'Not Interested'
+          ? { bg: '#ef444420', text: '#f87171', label: 'Not Interested' }
+          : { bg: '#6b728020', text: '#9ca3af', label: 'Not Categorized' };
+
+    return (
+      <View className="self-start px-3 py-1.5 rounded-md" style={{ backgroundColor: config.bg }}>
+        <Text className="text-xs font-instrument-semibold" style={{ color: config.text }}>
+          {config.label}
+        </Text>
+      </View>
+    );
+  };
+
+  // Dynamic columns from insight summary (same as modal) + fixed campaign columns
   const columns = useMemo((): TableColumn<LeadTableRow>[] => {
     const dataColumns: TableColumn<LeadTableRow>[] = insightSummary.fields.map((f) => {
       const filled = Math.round(insightSummary.totalRows * (f.percentage / 100));
@@ -248,21 +269,31 @@ export function LeadsTable({
           item.__lead.enrollment_stopped_error_message
         ),
     };
-    return [...dataColumns, enrollmentColumn];
+    const replyCategoryColumn: TableColumn<LeadTableRow> = {
+      key: 'reply_category',
+      label: 'Reply Category',
+      minWidth: 164,
+      flex: 0,
+      render: (item) => getReplyCategoryBadge(item.__lead.reply_category),
+    };
+    return [...dataColumns, enrollmentColumn, replyCategoryColumn];
   }, [insightSummary]);
 
   return (
     <>
       <View className="flex-row items-center justify-between mb-4 flex-wrap gap-2">
         <Text className="text-lg font-instrument-semibold text-white">Leads</Text>
-        <View className="flex-row items-center gap-2 flex-wrap">
-          <Text className="text-gray-400 font-instrument text-sm">
-            {totalItems} {totalItems !== 1 ? 'items' : 'item'}
-          </Text>
+        <View className="flex-row items-center justify-end gap-2 flex-wrap">
+          {headerSummary ?? (
+            <Text className="text-gray-400 font-instrument text-sm">
+              {totalItems} {totalItems !== 1 ? 'items' : 'item'}
+            </Text>
+          )}
+          {headerActions}
         </View>
       </View>
       <View className="mb-4">
-        <View className="flex-row items-center bg-[#0A0A0A] border border-[#2A2A2A] rounded-lg px-3 py-2">
+        <View className="flex-row items-center min-h-10 bg-[#0A0A0A] border border-[#2A2A2A] rounded-xl px-3 py-2">
           <MagnifyingGlassIcon size={18} color="#6b7280" />
           <TextInput
             value={searchQuery}

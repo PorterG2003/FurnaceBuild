@@ -52,11 +52,11 @@ Chain export applies the same enrichment by merging flat rows onto each expanded
 
 ## State matching (async)
 
-- `POST /state-matching/preflight` — body `{ companyIds: string[] }` (synchronous). Response includes **`automation_buckets`** (`utah_company_ids`, `florida_company_ids`, **`unsupported`** with `{ company_id, state }` for ready companies not UT/FL).
-- `POST /state-matching/batches` — body `{ companyIds: string[] }` (max 50); creates **`reconciliation_runs`** + **`foundry_jobs`** (`job_type: state_matching_batch`), starts **Step Functions** (`foundry-state-matching-{env}`). Returns **`{ jobId, reconciliation_run_id, executionArn, reused?, preflight, bucket_counts: { utah, florida } }`**. Returns **400** if any preflight-ready company’s target state is not **UT** or **FL** (body includes **`unsupported`**). Returns **503** if `FOUNDRY_STATE_MATCHING_STATE_MACHINE_ARN` is not configured. Poll **`GET /jobs/:id`** and **`GET /state-matching/batches/:reconciliation_run_id`** for completion.
+- `POST /state-matching/preflight` — body `{ companyIds: string[] }` (synchronous). Response includes **`automation_buckets`** (`utah_company_ids`, `florida_company_ids`, `iowa_company_ids`, **`unsupported`** with `{ company_id, state }` for ready companies not UT/FL/IA).
+- `POST /state-matching/batches` — body `{ companyIds: string[] }` (max 50); creates **`reconciliation_runs`** + **`foundry_jobs`** (`job_type: state_matching_batch`), starts **Step Functions** (`foundry-state-matching-{env}`). Returns **`{ jobId, reconciliation_run_id, executionArn, reused?, preflight, bucket_counts: { utah, florida, iowa } }`**. Returns **400** if any preflight-ready company’s target state is not **UT**, **FL**, or **IA** (body includes **`unsupported`**). Returns **503** if `FOUNDRY_STATE_MATCHING_STATE_MACHINE_ARN` is not configured. Poll **`GET /jobs/:id`** and **`GET /state-matching/batches/:reconciliation_run_id`** for completion.
 - `GET /state-matching/batches/:id` — `reconciliation_runs` + `reconciliation_results`
 
-Flow: **Utah** and **Florida** companies run in **ECS** (state scraper images, `run-reconciliation.ts`) when their counts are non-zero; otherwise the workflow skips straight to **finalize**. Requires worker-stack exports (cluster, subnets, task definitions, execution + task role ARNs per state) and optional **leads** SSM secret on the tasks for DB writes.
+Flow: **Utah**, **Florida**, and **Iowa** companies run in **ECS** (state scraper images, `run-reconciliation.ts`) when their counts are non-zero; otherwise the workflow skips straight to **finalize**. Requires worker-stack exports (cluster, subnets, task definitions, execution + task role ARNs per state) and optional **leads** SSM secret on the tasks for DB writes.
 
 ## Reconciliation
 

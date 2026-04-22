@@ -1,6 +1,25 @@
 import { supabase } from '../client';
 import type { Lead, LeadInsert, LeadUpdate } from '../types';
 
+/** PostgREST encodes `.in()` as a long query string; keep chunks under typical proxy URL limits. */
+const POSTGREST_IN_CHUNK_SIZE = 100;
+
+function chunkIds<T>(ids: T[], chunkSize: number): T[][] {
+  if (chunkSize <= 0) return [ids];
+  const chunks: T[][] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    chunks.push(ids.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+/** PostgREST `.in('id', …)` on GET becomes a huge URL; use RPC with uuid[] in JSON body instead. */
+function campaignScopedLeadIdsNeedRpc(scopedLeadIds: string[] | null | undefined): boolean {
+  return scopedLeadIds != null && scopedLeadIds.length > POSTGREST_IN_CHUNK_SIZE;
+}
+
+const SUPABASE_PAGE_RANGE_SIZE = 1000;
+
 /**
  * Lead service for database operations.
  * For getLeadDisplayName and generateGlobalLeadId use @/lib/leads.
@@ -149,18 +168,29 @@ async function fetchCampaignLeadEnrollmentMap(campaignId: string, leadIds: strin
 
   if (leadIds.length === 0) return enrollmentByLeadId;
 
-  const { data: enrollments, error: enrollmentsError } = await supabase
-    .from('enrollments')
-    .select('lead_id, state, current_node_id, stopped_reason, stopped_error_message')
-    .eq('campaign_id', campaignId)
-    .is('deleted_at', null)
-    .in('lead_id', leadIds);
+  const enrollments: {
+    lead_id: string;
+    state: string | null;
+    current_node_id: string | null;
+    stopped_reason: string | null;
+    stopped_error_message: string | null;
+  }[] = [];
 
-  if (enrollmentsError) {
-    throw new Error(`Failed to fetch enrollments: ${enrollmentsError.message}`);
+  for (const idChunk of chunkIds(leadIds, POSTGREST_IN_CHUNK_SIZE)) {
+    const { data: chunk, error: enrollmentsError } = await supabase
+      .from('enrollments')
+      .select('lead_id, state, current_node_id, stopped_reason, stopped_error_message')
+      .eq('campaign_id', campaignId)
+      .is('deleted_at', null)
+      .in('lead_id', idChunk);
+
+    if (enrollmentsError) {
+      throw new Error(`Failed to fetch enrollments: ${enrollmentsError.message}`);
+    }
+    if (chunk?.length) enrollments.push(...chunk);
   }
 
-  for (const enrollment of enrollments ?? []) {
+  for (const enrollment of enrollments) {
     enrollmentByLeadId.set(enrollment.lead_id, {
       state: enrollment.state as CampaignLeadTableRow['enrollment_state'],
       current_node_id: enrollment.current_node_id,
@@ -173,17 +203,28 @@ async function fetchCampaignLeadEnrollmentMap(campaignId: string, leadIds: strin
 }
 
 async function fetchCampaignLeadIds(campaignId: string): Promise<string[]> {
-  const { data, error } = await supabase
-    .from('leads')
-    .select('id')
-    .eq('campaign_id', campaignId)
-    .is('deleted_at', null);
+  const ids: string[] = [];
+  for (let from = 0; ; from += SUPABASE_PAGE_RANGE_SIZE) {
+    const to = from + SUPABASE_PAGE_RANGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('campaign_id', campaignId)
+      .is('deleted_at', null)
+      .order('id', { ascending: true })
+      .range(from, to);
 
-  if (error) {
-    throw new Error(`Failed to fetch lead ids: ${error.message}`);
+    if (error) {
+      throw new Error(`Failed to fetch lead ids: ${error.message}`);
+    }
+    const chunk = data ?? [];
+    if (chunk.length === 0) break;
+    for (const row of chunk) {
+      ids.push(row.id);
+    }
+    if (chunk.length < SUPABASE_PAGE_RANGE_SIZE) break;
   }
-
-  return (data ?? []).map((lead) => lead.id);
+  return ids;
 }
 
 function intersectLeadIdSets(baseLeadIds: Set<string> | null, nextLeadIds: Set<string>): Set<string> {
@@ -218,20 +259,29 @@ async function resolveCampaignLeadScopeIds(
       ),
     );
 
-    const { data: enrollments, error: enrollmentsError } = await supabase
-      .from('enrollments')
-      .select('lead_id, state')
-      .eq('campaign_id', campaignId)
-      .is('deleted_at', null);
+    const enrollments: { lead_id: string | null; state: string | null }[] = [];
+    for (let from = 0; ; from += SUPABASE_PAGE_RANGE_SIZE) {
+      const to = from + SUPABASE_PAGE_RANGE_SIZE - 1;
+      const { data: chunk, error: enrollmentsError } = await supabase
+        .from('enrollments')
+        .select('lead_id, state')
+        .eq('campaign_id', campaignId)
+        .is('deleted_at', null)
+        .order('id', { ascending: true })
+        .range(from, to);
 
-    if (enrollmentsError) {
-      throw new Error(`Failed to fetch enrollments: ${enrollmentsError.message}`);
+      if (enrollmentsError) {
+        throw new Error(`Failed to fetch enrollments: ${enrollmentsError.message}`);
+      }
+      if (!chunk?.length) break;
+      enrollments.push(...chunk);
+      if (chunk.length < SUPABASE_PAGE_RANGE_SIZE) break;
     }
 
     const enrolledLeadIds = new Set<string>();
     const matchedLeadIds = new Set<string>();
 
-    for (const enrollment of enrollments ?? []) {
+    for (const enrollment of enrollments) {
       if (!enrollment.lead_id) continue;
       enrolledLeadIds.add(enrollment.lead_id);
       if (matchedEnrollmentStates.has(enrollment.state as NonNullable<CampaignLeadTableRow['enrollment_state']>)) {
@@ -276,7 +326,7 @@ async function resolveCampaignLeadScopeIds(
     scopedLeadIds = intersectLeadIdSets(scopedLeadIds, matchedLeadIds);
   }
 
-  return Array.from(scopedLeadIds);
+  return Array.from(scopedLeadIds ?? new Set<string>());
 }
 
 async function fetchCampaignLeadReplyCategoryMap(campaignId: string, leadIds: string[]) {
@@ -284,20 +334,47 @@ async function fetchCampaignLeadReplyCategoryMap(campaignId: string, leadIds: st
 
   if (leadIds.length === 0) return replyCategoryByLeadId;
 
-  const { data: threads, error: threadsError } = await supabase
-    .from('email_threads')
-    .select('lead_id, category, last_message_at')
-    .eq('campaign_id', campaignId)
-    .eq('has_reply', true)
-    .in('lead_id', leadIds);
+  if (leadIds.length > POSTGREST_IN_CHUNK_SIZE) {
+    const { data, error } = await supabase.rpc('latest_reply_category_by_campaign', {
+      p_campaign_id: campaignId,
+    });
+    if (error) {
+      throw new Error(`Failed to fetch reply categories: ${error.message}`);
+    }
+    for (const row of data ?? []) {
+      if (!row.lead_id) continue;
+      const cat = row.reply_category;
+      replyCategoryByLeadId.set(
+        row.lead_id,
+        cat === 'Interested' || cat === 'Not Interested' ? cat : null,
+      );
+    }
+    return replyCategoryByLeadId;
+  }
 
-  if (threadsError) {
-    throw new Error(`Failed to fetch reply categories: ${threadsError.message}`);
+  const threads: {
+    lead_id: string | null;
+    category: string | null;
+    last_message_at: string;
+  }[] = [];
+
+  for (const idChunk of chunkIds(leadIds, POSTGREST_IN_CHUNK_SIZE)) {
+    const { data: chunk, error: threadsError } = await supabase
+      .from('email_threads')
+      .select('lead_id, category, last_message_at')
+      .eq('campaign_id', campaignId)
+      .eq('has_reply', true)
+      .in('lead_id', idChunk);
+
+    if (threadsError) {
+      throw new Error(`Failed to fetch reply categories: ${threadsError.message}`);
+    }
+    if (chunk?.length) threads.push(...chunk);
   }
 
   const latestThreadByLeadId = new Map<string, { lastMessageAt: string; category: CampaignLeadTableRow['reply_category'] }>();
 
-  for (const thread of threads ?? []) {
+  for (const thread of threads) {
     if (!thread.lead_id) continue;
     const existing = latestThreadByLeadId.get(thread.lead_id);
     if (!existing || thread.last_message_at > existing.lastMessageAt) {
@@ -342,6 +419,57 @@ function mapCampaignLeadTableRows(
       reply_category: replyCategoryByLeadId.get(lead.id) ?? null,
     };
   });
+}
+
+async function fetchCampaignLeadsTablePageRpc(
+  campaignId: string,
+  query: CampaignLeadTableQuery | undefined,
+  scopedLeadIds: string[],
+  sortBy: keyof CampaignLeadBaseRow,
+  ascending: boolean,
+  limit: number,
+  offset: number,
+): Promise<{ rows: CampaignLeadBaseRow[]; totalCount: number }> {
+  const search = query?.search?.trim();
+  const statuses = query?.statuses?.length ? query.statuses.map(String) : null;
+
+  const { data, error } = await supabase.rpc('campaign_leads_table_page', {
+    p_campaign_id: campaignId,
+    p_scoped_ids: scopedLeadIds,
+    p_statuses: statuses,
+    p_search: search && search.length > 0 ? search : null,
+    p_sort: String(sortBy),
+    p_asc: ascending,
+    p_limit: limit,
+    p_offset: offset,
+  });
+
+  if (error) {
+    throw new Error(`Failed to fetch leads: ${error.message}`);
+  }
+
+  const rowsRaw = data ?? [];
+  const totalCount =
+    rowsRaw.length > 0 && rowsRaw[0].total_count != null ? Number(rowsRaw[0].total_count) : 0;
+
+  const rows: CampaignLeadBaseRow[] = rowsRaw.map((r) => ({
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    first_name: r.first_name,
+    last_name: r.last_name,
+    company_name: r.company_name,
+    website: r.website,
+    linkedin_url: r.linkedin_url,
+    company_linkedin_url: r.company_linkedin_url,
+    phone_number: r.phone_number,
+    source: r.source,
+    custom_lead_data: r.custom_lead_data as Record<string, unknown> | null,
+    status: r.status as CampaignLeadBaseRow['status'],
+    created_at: r.created_at,
+  }));
+
+  return { rows, totalCount };
 }
 
 /**
@@ -416,17 +544,35 @@ export async function getCampaignLeadTablePage(
     return { rows: [], totalCount: 0 };
   }
 
-  const leadsQuery = buildCampaignLeadTableQuery(campaignId, query, true, scopedLeadIds);
+  let leadRows: CampaignLeadBaseRow[];
+  let totalCount: number;
 
-  const { data, error, count } = await leadsQuery
-    .order(sortBy, { ascending, nullsFirst: !ascending })
-    .range(offset, offset + limit - 1);
+  if (campaignScopedLeadIdsNeedRpc(scopedLeadIds)) {
+    const r = await fetchCampaignLeadsTablePageRpc(
+      campaignId,
+      query,
+      scopedLeadIds,
+      sortBy,
+      ascending,
+      limit,
+      offset,
+    );
+    leadRows = r.rows;
+    totalCount = r.totalCount;
+  } else {
+    const leadsQuery = buildCampaignLeadTableQuery(campaignId, query, true, scopedLeadIds);
+    const { data, error, count } = await leadsQuery
+      .order(sortBy, { ascending, nullsFirst: !ascending })
+      .range(offset, offset + limit - 1);
 
-  if (error) {
-    throw new Error(`Failed to fetch leads: ${error.message}`);
+    if (error) {
+      throw new Error(`Failed to fetch leads: ${error.message}`);
+    }
+
+    leadRows = (data ?? []) as CampaignLeadBaseRow[];
+    totalCount = count ?? 0;
   }
 
-  const leadRows = (data ?? []) as CampaignLeadBaseRow[];
   const leadIds = leadRows.map((lead) => lead.id);
   const enrollmentByLeadId = await fetchCampaignLeadEnrollmentMap(
     campaignId,
@@ -436,7 +582,7 @@ export async function getCampaignLeadTablePage(
 
   return {
     rows: mapCampaignLeadTableRows(leadRows, enrollmentByLeadId, replyCategoryByLeadId),
-    totalCount: count ?? 0,
+    totalCount,
   };
 }
 
@@ -451,6 +597,27 @@ export async function getCampaignLeadTableExportRows(
   const scopedLeadIds = await resolveCampaignLeadScopeIds(campaignId, query);
 
   if (scopedLeadIds?.length === 0) {
+    return rows;
+  }
+
+  if (campaignScopedLeadIdsNeedRpc(scopedLeadIds)) {
+    for (let offset = 0; ; offset += pageSize) {
+      const { rows: leadRows } = await fetchCampaignLeadsTablePageRpc(
+        campaignId,
+        query,
+        scopedLeadIds,
+        sortBy,
+        ascending,
+        pageSize,
+        offset,
+      );
+      if (leadRows.length === 0) break;
+      const leadIds = leadRows.map((lead) => lead.id);
+      const enrollmentByLeadId = await fetchCampaignLeadEnrollmentMap(campaignId, leadIds);
+      const replyCategoryByLeadId = await fetchCampaignLeadReplyCategoryMap(campaignId, leadIds);
+      rows.push(...mapCampaignLeadTableRows(leadRows, enrollmentByLeadId, replyCategoryByLeadId));
+      if (leadRows.length < pageSize) break;
+    }
     return rows;
   }
 
@@ -554,15 +721,15 @@ export async function getLeadById(id: string): Promise<Lead | null> {
  */
 export async function getLeadsByIds(ids: string[]): Promise<Lead[]> {
   if (ids.length === 0) return [];
-  const { data, error } = await supabase
-    .from('leads')
-    .select('*')
-    .in('id', ids);
-
-  if (error) {
-    throw new Error(`Failed to fetch leads: ${error.message}`);
+  const out: Lead[] = [];
+  for (const chunk of chunkIds(ids, POSTGREST_IN_CHUNK_SIZE)) {
+    const { data, error } = await supabase.from('leads').select('*').in('id', chunk);
+    if (error) {
+      throw new Error(`Failed to fetch leads: ${error.message}`);
+    }
+    out.push(...(data ?? []));
   }
-  return data ?? [];
+  return out;
 }
 
 /**

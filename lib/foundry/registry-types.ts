@@ -1449,6 +1449,37 @@ export interface ExportCompanyTargetRow {
   is_export_ready: boolean;
 }
 
+export interface ExportCompanySummaryRow extends ExportCompanyTargetRow {
+  /** Present when `include_cost=true` on export API. */
+  enrichment_cost_cents?: number | null;
+  company_enrichment_cost_cents?: number | null;
+  enrichment_cost_per_row_cents?: number | null;
+  company_acquisition_cost_cents?: number | null;
+  acquisition_cost_per_row_cents?: number | null;
+  total_cost_per_row_cents?: number | null;
+  company_export_row_count?: number | null;
+  company_website_verification_cost_cents?: number | null;
+  company_google_ads_verification_cost_cents?: number | null;
+  company_import_acquisition_cost_cents?: number | null;
+  company_registry_acquisition_cost_cents?: number | null;
+  /** Present when `include_google_ads_verification=true` (latest row per company). */
+  google_ads_verification_result?: string | null;
+  google_ads_search_domain?: string | null;
+  google_ads_matched_advertiser_name?: string | null;
+  google_ads_advertiser_url?: string | null;
+  google_ads_latest_ad_last_shown_at?: string | null;
+  google_ads_verified_at?: string | null;
+  google_ads_verification_error?: string | null;
+}
+
+export interface ExportCompanySummaryResponse {
+  rows: ExportCompanySummaryRow[];
+  limit: number;
+  offset: number;
+  /** Count of matching company targets / company-mode rows. */
+  total_count: number;
+}
+
 /** Row from view `export_company_owner_leads` (one row per current owner, or one null-owner row per target). */
 export interface ExportCompanyOwnerLeadRow {
   company_id: string;

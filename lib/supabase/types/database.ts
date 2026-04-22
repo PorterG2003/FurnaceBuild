@@ -1185,6 +1185,39 @@ export interface Database {
         };
         Returns: string;
       };
+      latest_reply_category_by_campaign: {
+        Args: { p_campaign_id: string };
+        Returns: { lead_id: string; reply_category: string | null }[];
+      };
+      campaign_leads_table_page: {
+        Args: {
+          p_campaign_id: string;
+          p_scoped_ids: string[];
+          p_statuses: string[] | null;
+          p_search: string | null;
+          p_sort: string;
+          p_asc: boolean;
+          p_limit: number;
+          p_offset: number;
+        };
+        Returns: {
+          id: string;
+          email: string | null;
+          name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+          company_name: string | null;
+          website: string | null;
+          linkedin_url: string | null;
+          company_linkedin_url: string | null;
+          phone_number: string | null;
+          source: string | null;
+          custom_lead_data: Json | null;
+          status: string;
+          created_at: string;
+          total_count: number;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;

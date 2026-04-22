@@ -1,10 +1,20 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, useWindowDimensions, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { PageLayout, DetailPageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
 import { MultiSegmentDial } from '@/components/ui/multi-segment-dial';
-import { FlowDiagram, LeadsTable, ScheduleTab, type Lead } from '@/components/campaigns';
+import {
+  CampaignLeadFiltersModal,
+  EMPTY_CAMPAIGN_LEAD_FILTERS,
+  LeadsTable,
+  ScheduleTab,
+  countActiveCampaignLeadFilters,
+  type CampaignLeadFilters,
+  type Lead,
+  FlowDiagram,
+} from '@/components/campaigns';
+import { downloadCsvOnWeb, exportCampaignLeadsToCsv } from '@/components/campaigns/exportCampaignLeadsCsv';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { isWithinSchedule, isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
@@ -19,7 +29,12 @@ import {
   type CampaignStats,
   type CampaignVariantStatRow,
 } from '@/lib/supabase/services/campaigns';
-import { getCampaignLeadTablePage, getLeadCount, deleteLeadsBestEffort } from '@/lib/supabase/services/leads';
+import {
+  getCampaignLeadTablePage,
+  getCampaignLeadTableExportRows,
+  getLeadCount,
+  deleteLeadsBestEffort,
+} from '@/lib/supabase/services/leads';
 import { supabase } from '@/lib/supabase/client';
 import { CampaignStatsChart } from '@/components/campaigns/CampaignStatsChart';
 import { DateInput } from '@/components/ui/DateInput';
@@ -31,6 +46,7 @@ import {
   ArrowUturnLeftIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
+  FunnelIcon,
   PaperAirplaneIcon,
   PencilSquareIcon,
   RectangleStackIcon,
@@ -40,6 +56,7 @@ import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { BottomSheet } from '@/components/ui/modals/BottomSheet';
 import { ConfirmModal } from '@/components/ui/modals/ConfirmModal';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { LEGACY_EMAIL_VARIANT_ID, sortVariantsForRoundRobin } from '@/lib/email/emailNodeVariants';
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
 
@@ -99,6 +116,17 @@ function statLookup(
   };
 }
 
+function formatCampaignLeadExportFilename(campaignName: string | null | undefined, campaignId: string): string {
+  const baseName = (campaignName ?? 'campaign-leads')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50);
+  const safeBaseName = baseName || 'campaign-leads';
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  return `${safeBaseName}-${campaignId}-${timestamp}.csv`;
+}
+
 /** Full-width table: five equal flex columns with a shared min width so none dominates. */
 const VARIANT_PERF_COL_MIN = 72;
 const variantPerfCol = {
@@ -146,6 +174,8 @@ export default function CampaignPage() {
   const [leadTotalCount, setLeadTotalCount] = useState(0);
   const [leadSearchQuery, setLeadSearchQuery] = useState('');
   const [debouncedLeadSearchQuery, setDebouncedLeadSearchQuery] = useState('');
+  const [leadFilters, setLeadFilters] = useState<CampaignLeadFilters>(EMPTY_CAMPAIGN_LEAD_FILTERS);
+  const [leadFiltersOpen, setLeadFiltersOpen] = useState(false);
   const [leadSortColumn, setLeadSortColumn] = useState<string | undefined>('created_at');
   const [leadSortDirection, setLeadSortDirection] = useState<'asc' | 'desc'>('desc');
   const [activeTab, setActiveTab] = useState<string>('details');
@@ -163,6 +193,7 @@ export default function CampaignPage() {
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(() => new Set());
   const [leadsRefreshNonce, setLeadsRefreshNonce] = useState(0);
   const [bulkRemovingLeads, setBulkRemovingLeads] = useState(false);
+  const [exportingLeads, setExportingLeads] = useState(false);
   const [leadRemoveConfirmOpen, setLeadRemoveConfirmOpen] = useState(false);
   const [leadRemoveBanner, setLeadRemoveBanner] = useState<{
     variant: 'warning' | 'error';
@@ -179,6 +210,16 @@ export default function CampaignPage() {
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < LAYOUT_BREAKPOINT;
   const isSmartlead = isSmartleadCampaign(campaign);
+  const activeLeadFilterCount = useMemo(() => countActiveCampaignLeadFilters(leadFilters), [leadFilters]);
+  const leadFilterKey = useMemo(
+    () =>
+      JSON.stringify({
+        statuses: [...leadFilters.statuses].sort(),
+        enrollmentStates: [...leadFilters.enrollmentStates].sort(),
+        replyCategories: [...leadFilters.replyCategories].sort(),
+      }),
+    [leadFilters],
+  );
 
   const loadCampaign = useCallback(async (silent = false) => {
     if (!id) return;
@@ -270,6 +311,9 @@ export default function CampaignPage() {
       search: debouncedLeadSearchQuery || undefined,
       sortBy: leadSortColumn,
       sortDirection: leadSortDirection,
+      statuses: leadFilters.statuses.length > 0 ? leadFilters.statuses : undefined,
+      enrollmentStates: leadFilters.enrollmentStates.length > 0 ? leadFilters.enrollmentStates : undefined,
+      replyCategories: leadFilters.replyCategories.length > 0 ? leadFilters.replyCategories : undefined,
     })
       .then((result) => {
         if (cancelled) return;
@@ -289,20 +333,25 @@ export default function CampaignPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, debouncedLeadSearchQuery, id, leadPage, leadSortColumn, leadSortDirection, leadsRefreshNonce]);
+  }, [activeTab, debouncedLeadSearchQuery, id, leadFilterKey, leadFilters.enrollmentStates, leadFilters.statuses, leadPage, leadSortColumn, leadSortDirection, leadsRefreshNonce]);
 
   useEffect(() => {
     setSelectedLeadIds(new Set());
-  }, [debouncedLeadSearchQuery, leadSortColumn, leadSortDirection]);
+  }, [debouncedLeadSearchQuery, leadFilterKey, leadSortColumn, leadSortDirection]);
 
   useEffect(() => {
     setLeadRemoveBanner(null);
-  }, [debouncedLeadSearchQuery, leadSortColumn, leadSortDirection]);
+  }, [debouncedLeadSearchQuery, leadFilterKey, leadSortColumn, leadSortDirection]);
+
+  useEffect(() => {
+    setLeadPage(1);
+  }, [leadFilterKey]);
 
   useEffect(() => {
     if (activeTab !== 'leads') {
       setSelectedLeadIds(new Set());
       setLeadRemoveConfirmOpen(false);
+      setLeadFiltersOpen(false);
     }
   }, [activeTab]);
 
@@ -372,6 +421,61 @@ export default function CampaignPage() {
     const ids = [...selectedLeadIds];
     void performRemoveSelectedLeads(ids);
   }, [performRemoveSelectedLeads, selectedLeadIds]);
+
+  const handleExportLeads = useCallback(async () => {
+    if (!id || exportingLeads) return;
+    if (Platform.OS !== 'web') {
+      toast.info('Lead export is currently available on web only.');
+      return;
+    }
+
+    setExportingLeads(true);
+    try {
+      const exportingSelectedLeads = selectedLeadIds.size > 0;
+      const rows = await getCampaignLeadTableExportRows(id, {
+        search: exportingSelectedLeads ? undefined : debouncedLeadSearchQuery || undefined,
+        sortBy: leadSortColumn,
+        sortDirection: leadSortDirection,
+        statuses: exportingSelectedLeads || leadFilters.statuses.length === 0 ? undefined : leadFilters.statuses,
+        enrollmentStates:
+          exportingSelectedLeads || leadFilters.enrollmentStates.length === 0
+            ? undefined
+            : leadFilters.enrollmentStates,
+        replyCategories:
+          exportingSelectedLeads || leadFilters.replyCategories.length === 0
+            ? undefined
+            : leadFilters.replyCategories,
+        leadIds: exportingSelectedLeads ? [...selectedLeadIds] : undefined,
+      });
+
+      if (rows.length === 0) {
+        toast.info(exportingSelectedLeads ? 'No selected leads to export.' : 'No leads match the current filters.');
+        return;
+      }
+
+      const csv = exportCampaignLeadsToCsv(rows);
+      downloadCsvOnWeb(formatCampaignLeadExportFilename(campaign?.name, id), csv);
+      toast.success(
+        exportingSelectedLeads ? `Exported ${rows.length} selected lead(s).` : `Exported ${rows.length} lead(s).`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to export leads.');
+    } finally {
+      setExportingLeads(false);
+    }
+  }, [
+    campaign?.name,
+    debouncedLeadSearchQuery,
+    exportingLeads,
+    id,
+    leadFilters.enrollmentStates,
+    leadFilters.replyCategories,
+    leadFilters.statuses,
+    leadSortColumn,
+    leadSortDirection,
+    selectedLeadIds,
+    toast,
+  ]);
 
   useEffect(() => {
     loadCampaign();
@@ -1081,21 +1185,6 @@ export default function CampaignPage() {
                     onAction={() => setLeadRemoveBanner(null)}
                   />
                 ) : null}
-                {!isSmartlead && selectedLeadIds.size > 0 ? (
-                  <View className="mb-3 flex-row flex-wrap items-center justify-between gap-3 rounded-xl border border-[#2A2A2A] bg-[#1A1A1A] px-4 py-3">
-                    <Text className="text-sm text-gray-400 font-instrument">
-                      {selectedLeadIds.size} selected
-                    </Text>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      disabled={bulkRemovingLeads}
-                      onPress={openLeadRemoveConfirm}
-                    >
-                      {bulkRemovingLeads ? 'Removing…' : 'Remove from campaign'}
-                    </Button>
-                  </View>
-                ) : null}
                 <LeadsTable
                   leads={leadRows}
                   loading={leadRowsLoading}
@@ -1119,6 +1208,63 @@ export default function CampaignPage() {
                   selectable={!isSmartlead}
                   selectedKeys={selectedLeadIds}
                   onSelectionChange={setSelectedLeadIds}
+                  headerSummary={
+                    <Text className="text-gray-400 font-instrument text-sm">
+                      {selectedLeadIds.size > 0
+                        ? `${selectedLeadIds.size} selected`
+                        : `${leadTotalCount} ${leadTotalCount === 1 ? 'lead' : 'leads'} match current filters`}
+                    </Text>
+                  }
+                  headerActions={
+                    <>
+                      <View className="relative">
+                        <IconButton
+                          icon={FunnelIcon}
+                          variant="secondary"
+                          size="sm"
+                          matchButtonPadding="sm"
+                          accessibilityLabel="Open lead filters"
+                          onPress={() => setLeadFiltersOpen(true)}
+                        />
+                        {activeLeadFilterCount > 0 ? (
+                          <View className="absolute -top-1 -right-1 min-w-[18px] min-h-[18px] px-1 items-center justify-center rounded-full bg-brand-orange border border-[#1A1A1A]">
+                            <Text className="text-white font-instrument-semibold text-[10px] leading-none">
+                              {activeLeadFilterCount}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {Platform.OS === 'web' ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="min-h-10"
+                          disabled={exportingLeads || leadRowsLoading || (selectedLeadIds.size === 0 && leadTotalCount === 0)}
+                          onPress={() => void handleExportLeads()}
+                        >
+                          {exportingLeads ? 'Exporting…' : selectedLeadIds.size > 0 ? 'Export selected' : 'Export'}
+                        </Button>
+                      ) : null}
+                      {!isSmartlead && selectedLeadIds.size > 0 ? (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="min-h-10"
+                          disabled={bulkRemovingLeads}
+                          onPress={openLeadRemoveConfirm}
+                        >
+                          {bulkRemovingLeads ? 'Removing…' : 'Remove from campaign'}
+                        </Button>
+                      ) : null}
+                    </>
+                  }
+                />
+                <CampaignLeadFiltersModal
+                  visible={leadFiltersOpen}
+                  filters={leadFilters}
+                  onChange={setLeadFilters}
+                  onClose={() => setLeadFiltersOpen(false)}
+                  onClear={() => setLeadFilters(EMPTY_CAMPAIGN_LEAD_FILTERS)}
                 />
               </View>
             )}

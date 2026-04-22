@@ -554,7 +554,7 @@ export type PostStateMatchingBatchResponse = {
   reused: boolean;
   preflight: unknown;
   /** How many companies were routed to each runner (from preflight-ready set only). */
-  bucket_counts?: { utah: number; florida: number };
+  bucket_counts?: { utah: number; florida: number; iowa: number };
 };
 
 export async function postStateMatchingBatch(

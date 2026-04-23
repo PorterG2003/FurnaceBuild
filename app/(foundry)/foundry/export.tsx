@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -220,13 +219,8 @@ export default function FoundryExportScreen() {
     Omit<ExportCompanyOwnerLeadsParams, 'limit' | 'offset' | 'include_contact' | 'include_contact_confidence' | 'include_cost' | 'include_google_ads_verification'> => {
     const p: Omit<ExportCompanyOwnerLeadsParams, 'limit' | 'offset'> = {};
     if (debouncedQ.length >= 2) p.q = debouncedQ;
-    if (effectiveFilters.companyNameQuery.trim().length >= 2) {
+    if (effectiveFilters.companyNameQuery.trim().length > 0) {
       p.legal_name_q = effectiveFilters.companyNameQuery.trim();
-    }
-    if (effectiveFilters.companyNameBlankFilter === 'yes') {
-      p.has_legal_name = false;
-    } else if (effectiveFilters.companyNameBlankFilter === 'no') {
-      p.has_legal_name = true;
     }
     if (effectiveFilters.registryState.length > 0) p.registry_state = effectiveFilters.registryState;
     if (effectiveFilters.exportReady === 'ready') p.is_export_ready = true;
@@ -254,7 +248,7 @@ export default function FoundryExportScreen() {
     if (effectiveFilters.primaryLocationCity.trim()) {
       p.primary_location_city = effectiveFilters.primaryLocationCity.trim();
     }
-    if (presentationMode === 'contact' && effectiveFilters.ownerTitleQuery.trim().length >= 2) {
+    if (presentationMode === 'contact' && effectiveFilters.ownerTitleQuery.trim().length > 0) {
       p.owner_title_q = effectiveFilters.ownerTitleQuery.trim();
     }
     if (effectiveFilters.googleAdsResult !== 'any') {
@@ -557,15 +551,8 @@ export default function FoundryExportScreen() {
             ]}
             activeTab={presentationMode}
             onTabChange={(id) => setPresentationMode(id as ExportPresentationMode)}
-            layout="equal"
             marginBottom={12}
           />
-
-          <Link href="/foundry/queue" asChild>
-            <Pressable className="mb-3 self-start">
-              <Text className="text-brand-orange font-instrument text-sm underline">Open review queue</Text>
-            </Pressable>
-          </Link>
 
           {error ? <Text className="text-red-400 mb-2 font-instrument text-sm">{error}</Text> : null}
           {csvMsg ? <Text className="text-emerald-400/90 mb-2 font-instrument text-sm">{csvMsg}</Text> : null}

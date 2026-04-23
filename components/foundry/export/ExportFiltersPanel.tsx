@@ -232,14 +232,6 @@ export function ExportFiltersPanel({
             autoCapitalize="words"
           />
         </FilterField>
-
-        <FilterField label="Name blank">
-          <TriSelect
-            value={filters.companyNameBlankFilter}
-            onChange={(value) => patch({ companyNameBlankFilter: value })}
-            placeholder="Any"
-          />
-        </FilterField>
       </FilterSection>
 
       <FilterSection

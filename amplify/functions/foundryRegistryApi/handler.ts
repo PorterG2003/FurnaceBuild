@@ -94,9 +94,19 @@ function response(
 }
 
 function jsonResponse(statusCode: number, data: object): FunctionUrlResponse {
-  return response(statusCode, JSON.stringify(data), {
-    'Content-Type': 'application/json',
-  });
+  let body: string;
+  try {
+    body = JSON.stringify(data, (_key, value) => (typeof value === 'bigint' ? value.toString() : value));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('handler jsonResponse stringify failed', message);
+    body = JSON.stringify({
+      error: 'Failed to encode JSON response',
+      detail: message,
+    });
+    return response(500, body, { 'Content-Type': 'application/json' });
+  }
+  return response(statusCode, body, { 'Content-Type': 'application/json' });
 }
 
 function getAuthHeader(event: FunctionUrlEvent): string | null {
@@ -859,16 +869,23 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
   );
   if (jobsResponse) return jobsResponse;
 
-  const extended = await dispatchFoundryExtendedRoutes(
-    mainClient,
-    leadsClient,
-    method,
-    path,
-    jobsBody,
-    event.rawQueryString || '',
-    verified.user.id,
-    leadsSecretKey,
-  );
+  let extended: Awaited<ReturnType<typeof dispatchFoundryExtendedRoutes>> = null;
+  try {
+    extended = await dispatchFoundryExtendedRoutes(
+      mainClient,
+      leadsClient,
+      method,
+      path,
+      jobsBody,
+      event.rawQueryString || '',
+      verified.user.id,
+      leadsSecretKey,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('dispatchFoundryExtendedRoutes failed', path, message);
+    return jsonResponse(500, { error: 'Foundry registry handler failed', detail: message });
+  }
   if (extended) return extended;
 
   if (path === '/imports/google-maps') {

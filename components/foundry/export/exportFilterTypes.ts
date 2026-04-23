@@ -9,7 +9,6 @@ export type ExportGoogleAdsResultFilter = 'any' | 'yes' | 'no' | 'unknown';
 export interface ExportFiltersState {
   exportReady: ExportReadyFilter;
   companyNameQuery: string;
-  companyNameBlankFilter: ExportTriFilter;
   registryState: string[];
   linkedFilter: ExportTriFilter;
   reviewFilter: ExportTriFilter;
@@ -32,7 +31,6 @@ export const DEFAULT_EXPORT_READY: ExportReadyFilter = 'ready';
 export const DEFAULT_EXPORT_FILTERS: ExportFiltersState = {
   exportReady: DEFAULT_EXPORT_READY,
   companyNameQuery: '',
-  companyNameBlankFilter: 'any',
   registryState: [],
   linkedFilter: 'any',
   reviewFilter: 'any',
@@ -73,7 +71,6 @@ export function countNonDefaultExportFilters(
   let n = 0;
   if (visibleFilters.exportReady !== DEFAULT_EXPORT_READY) n += 1;
   if (visibleFilters.companyNameQuery.trim().length > 0) n += 1;
-  if (visibleFilters.companyNameBlankFilter !== 'any') n += 1;
   if (visibleFilters.registryState.length > 0) n += 1;
   if (visibleFilters.linkedFilter !== 'any') n += 1;
   if (visibleFilters.reviewFilter !== 'any') n += 1;

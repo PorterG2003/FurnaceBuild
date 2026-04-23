@@ -129,13 +129,23 @@ async function registryFetchJson<T>(
       ...rest.headers,
     },
   });
-  const body = (await res.json().catch(() => ({}))) as { error?: string; detail?: string } & Record<string, unknown>;
   if (!res.ok) {
+    const rawText = await res.text();
+    let body = {} as { error?: string; detail?: string } & Record<string, unknown>;
+    try {
+      if (rawText.trim()) body = JSON.parse(rawText) as typeof body;
+    } catch {
+      /* leave body as {} */
+    }
     let msg = (body.error as string) || `Registry request failed (${res.status})`;
     const detail = typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : '';
     if (detail) msg = `${msg}: ${detail}`;
+    if (!body.error && !detail && rawText.length > 0 && rawText.length < 500) {
+      msg = `${msg}: ${rawText.trim()}`;
+    }
     throw new Error(msg);
   }
+  const body = (await res.json().catch(() => ({}))) as T & Record<string, unknown>;
   return body as T;
 }
 
@@ -916,7 +926,7 @@ export async function fetchExportCompanyOwnerLeads(
       limit: params?.limit,
       offset: params?.offset,
       q: q && q.length >= 2 ? q : undefined,
-      legal_name_q: legalNameQ && legalNameQ.length >= 2 ? legalNameQ : undefined,
+      legal_name_q: legalNameQ || undefined,
       has_legal_name: params?.has_legal_name == null ? undefined : String(params.has_legal_name),
       registry_state: Array.isArray(registryState) ? (registryState.length > 0 ? registryState : undefined) : registryState || undefined,
       is_export_ready: params?.is_export_ready == null ? undefined : String(params.is_export_ready),
@@ -935,7 +945,7 @@ export async function fetchExportCompanyOwnerLeads(
       address_postal_code: params?.address_postal_code?.trim() || undefined,
       primary_location_state: params?.primary_location_state?.trim() || undefined,
       primary_location_city: params?.primary_location_city?.trim() || undefined,
-      owner_title_q: ownerTitleQ && ownerTitleQ.length >= 2 ? ownerTitleQ : undefined,
+      owner_title_q: ownerTitleQ || undefined,
       google_ads_result: params?.google_ads_result,
       include_contact: params?.include_contact === true ? 'true' : undefined,
       include_contact_confidence: params?.include_contact_confidence === true ? 'true' : undefined,
@@ -961,7 +971,7 @@ export async function fetchExportCompanyChainPeople(
       limit: params?.limit,
       offset: params?.offset,
       q: q && q.length >= 2 ? q : undefined,
-      legal_name_q: legalNameQ && legalNameQ.length >= 2 ? legalNameQ : undefined,
+      legal_name_q: legalNameQ || undefined,
       has_legal_name: params?.has_legal_name == null ? undefined : String(params.has_legal_name),
       registry_state: Array.isArray(registryState) ? (registryState.length > 0 ? registryState : undefined) : registryState || undefined,
       is_export_ready: params?.is_export_ready == null ? undefined : String(params.is_export_ready),
@@ -980,7 +990,7 @@ export async function fetchExportCompanyChainPeople(
       address_postal_code: params?.address_postal_code?.trim() || undefined,
       primary_location_state: params?.primary_location_state?.trim() || undefined,
       primary_location_city: params?.primary_location_city?.trim() || undefined,
-      owner_title_q: ownerTitleQ && ownerTitleQ.length >= 2 ? ownerTitleQ : undefined,
+      owner_title_q: ownerTitleQ || undefined,
       google_ads_result: params?.google_ads_result,
       max_depth: params?.max_depth,
       max_chains: params?.max_chains,
@@ -1007,7 +1017,7 @@ export async function fetchExportCompanySummary(
       limit: params?.limit,
       offset: params?.offset,
       q: q && q.length >= 2 ? q : undefined,
-      legal_name_q: legalNameQ && legalNameQ.length >= 2 ? legalNameQ : undefined,
+      legal_name_q: legalNameQ || undefined,
       has_legal_name: params?.has_legal_name == null ? undefined : String(params.has_legal_name),
       registry_state: Array.isArray(registryState) ? (registryState.length > 0 ? registryState : undefined) : registryState || undefined,
       is_export_ready: params?.is_export_ready == null ? undefined : String(params.is_export_ready),

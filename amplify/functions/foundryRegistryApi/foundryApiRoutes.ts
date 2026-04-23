@@ -58,9 +58,25 @@ interface FunctionUrlResponse {
 }
 
 function jsonResponse(statusCode: number, data: object): FunctionUrlResponse {
+  let body: string;
+  try {
+    body = JSON.stringify(data, (_key, value) => (typeof value === 'bigint' ? value.toString() : value));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('jsonResponse stringify failed', message);
+    body = JSON.stringify({
+      error: 'Failed to encode JSON response',
+      detail: message,
+    });
+    return {
+      statusCode: 500,
+      body,
+      headers: { 'Content-Type': 'application/json' },
+    };
+  }
   return {
     statusCode,
-    body: JSON.stringify(data),
+    body,
     headers: { 'Content-Type': 'application/json' },
   };
 }
@@ -528,19 +544,23 @@ async function buildExportCompanyOwnerLeadsQuery(
   params: URLSearchParams,
   options?: { withCount?: boolean },
 ) {
-  const { includeContact } = parseIncludeContactFlags(params);
   const includeCost = parseIncludeCostFlag(params);
-  const table = includeContact
-    ? 'export_company_owner_leads_with_contacts'
-    : includeCost
-      ? 'export_company_owner_leads_with_cost'
-      : 'export_company_owner_leads';
+  /** Contact columns are merged in the route handler (avoids one heavy join view for PostgREST). */
+  const table = includeCost ? 'export_company_owner_leads_with_cost' : 'export_company_owner_leads';
   const selectOptions = options?.withCount ? { count: 'exact' as const } : undefined;
   let qb = selectOptions
     ? leadsClient.from(table).select('*', selectOptions)
     : leadsClient.from(table).select('*');
   qb = applyExportQueryFilters(qb, params, { supportsOwnerTitle: true });
-  qb = await applyGoogleAdsResultFilter(leadsClient, qb, params);
+  const googleAdsResult = params.get('google_ads_result');
+  if (googleAdsResult === 'yes' || googleAdsResult === 'no' || googleAdsResult === 'unknown') {
+    const companyIds = await loadCompanyIdsForGoogleAdsResult(leadsClient, googleAdsResult);
+    if (companyIds.length === 0) {
+      qb = qb.eq('company_id', '00000000-0000-0000-0000-000000000000');
+    } else {
+      qb = qb.in('company_id', companyIds);
+    }
+  }
 
   return {
     qb: qb
@@ -561,30 +581,21 @@ async function buildExportCompanyTargetsQuery(
     ? leadsClient.from('export_company_targets').select(selectClause, selectOptions)
     : leadsClient.from('export_company_targets').select(selectClause);
   qb = applyExportQueryFilters(qb, params, { supportsOwnerTitle: false });
-  qb = await applyGoogleAdsResultFilter(leadsClient, qb, params);
+  const googleAdsResultTargets = params.get('google_ads_result');
+  if (googleAdsResultTargets === 'yes' || googleAdsResultTargets === 'no' || googleAdsResultTargets === 'unknown') {
+    const companyIds = await loadCompanyIdsForGoogleAdsResult(leadsClient, googleAdsResultTargets);
+    if (companyIds.length === 0) {
+      qb = qb.eq('company_id', '00000000-0000-0000-0000-000000000000');
+    } else {
+      qb = qb.in('company_id', companyIds);
+    }
+  }
   return {
     qb: qb
       .order('company_updated_at', { ascending: false })
       .order('match_updated_at', { ascending: false })
       .order('company_entity_match_id', { ascending: true }),
   };
-}
-
-async function applyGoogleAdsResultFilter(
-  leadsClient: SupabaseClient,
-  qb: any,
-  params: URLSearchParams,
-) {
-  const googleAdsResult = params.get('google_ads_result');
-  if (googleAdsResult !== 'yes' && googleAdsResult !== 'no' && googleAdsResult !== 'unknown') {
-    return qb;
-  }
-
-  const companyIds = await loadCompanyIdsForGoogleAdsResult(leadsClient, googleAdsResult);
-  if (companyIds.length === 0) {
-    return qb.eq('company_id', '00000000-0000-0000-0000-000000000000');
-  }
-  return qb.in('company_id', companyIds);
 }
 
 function applyExportQueryFilters(
@@ -599,7 +610,7 @@ function applyExportQueryFilters(
   if (qSearch.length >= 2) {
     qb = qb.ilike('legal_name', `%${escapeIlikePatternExport(qSearch)}%`);
   }
-  if (legalNameQ && legalNameQ.length >= 2) {
+  if (legalNameQ) {
     qb = qb.ilike('legal_name', `%${escapeIlikePatternExport(legalNameQ)}%`);
   }
   if (registryStates.length === 1) {
@@ -660,7 +671,7 @@ function applyExportQueryFilters(
 
   if (options?.supportsOwnerTitle) {
     const ownerTitleQ = readTextFilter(params, 'owner_title_q');
-    if (ownerTitleQ && ownerTitleQ.length >= 2) {
+    if (ownerTitleQ) {
       qb = qb.ilike('title_role', `%${escapeIlikePatternExport(ownerTitleQ)}%`);
     }
   }
@@ -1495,20 +1506,54 @@ export async function dispatchFoundryExtendedRoutes(
         hint: err.hint,
         includeContact,
       });
-      return jsonResponse(502, { error: 'Failed to load export leads' });
+      const detail =
+        typeof err.message === 'string' && err.message.trim() ? err.message.trim() : undefined;
+      return jsonResponse(502, {
+        error: 'Failed to load export leads',
+        ...(detail ? { detail } : {}),
+      });
     }
 
     const rawRows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
-    const rows = rawRows.map((r: Record<string, unknown>) => {
-      const row = { ...(r as Record<string, unknown>) };
+    const rows = rawRows.map((r: Record<string, unknown>) => ({ ...(r as Record<string, unknown>) }));
+
+    if (includeContact && rows.length > 0) {
+      try {
+        const pairs = rows
+          .map((row) => ({
+            company_id: typeof row.company_id === 'string' ? row.company_id : '',
+            entity_owner_id: typeof row.entity_owner_id === 'string' ? row.entity_owner_id : '',
+          }))
+          .filter((p) => p.company_id.length > 0 && p.entity_owner_id.length > 0);
+        const flatMap = await loadOwnerContactEnrichmentFlatMap(
+          leadsClient,
+          pairs,
+          includeContactConfidence,
+        );
+        for (const row of rows) {
+          const cid = row.company_id;
+          const eid = row.entity_owner_id;
+          if (typeof cid !== 'string' || typeof eid !== 'string' || !cid || !eid) continue;
+          applyContactFlatToRow(row, flatMap.get(`${cid}:${eid}`), includeContactConfidence);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('export_company_owner_leads contact merge failed', message);
+        return jsonResponse(502, {
+          error: 'Failed to load contact enrichment for export',
+          detail: message,
+        });
+      }
+    }
+
+    for (const row of rows) {
       if (includeContact && !includeCost) {
         stripCostFields(row);
       }
       if (includeContact && !includeContactConfidence) {
         stripContactConfidenceFields(row);
       }
-      return row;
-    });
+    }
 
     if (includeGoogleAds && rows.length > 0) {
       try {
@@ -1742,7 +1787,7 @@ export async function dispatchFoundryExtendedRoutes(
       }
     }
 
-    if (ownerTitleQ && ownerTitleQ.length >= 2) {
+    if (ownerTitleQ) {
       const matcher = ownerTitleQ.toLowerCase();
       for (let index = rows.length - 1; index >= 0; index -= 1) {
         const title = String(rows[index].person_title_role ?? '').toLowerCase();

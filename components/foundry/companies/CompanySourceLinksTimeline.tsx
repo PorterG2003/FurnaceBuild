@@ -80,6 +80,11 @@ export function CompanySourceLinksTimeline({
                         </Text>
                       </Pressable>
                     ) : null}
+                    {row.phone ? (
+                      <Text className="text-gray-400 font-instrument text-sm mb-1" numberOfLines={2}>
+                        {row.phone}
+                      </Text>
+                    ) : null}
                     <Text className="text-gray-600 font-mono text-[10px] mb-2">{row.source_business_record_id}</Text>
                     <Link href={`/foundry/source-records/${row.source_business_record_id}`} asChild>
                       <Pressable className="self-start">

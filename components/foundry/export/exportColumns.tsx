@@ -130,6 +130,16 @@ export const EXPORT_COLUMN_DEFINITIONS: ExportColumnDefinition[] = [
     render: (row) => textCell(row.website, 'text-gray-400 font-instrument text-xs'),
   },
   {
+    key: 'listing_phone',
+    label: 'Listing phone',
+    group: 'Company',
+    modes: ['contact', 'company'],
+    defaultVisibleFor: [],
+    minWidth: 150,
+    flex: 0.85,
+    render: (row) => textCell(row.listing_phone, 'text-gray-400 font-instrument text-xs'),
+  },
+  {
     key: 'address',
     label: 'Address',
     group: 'Location',

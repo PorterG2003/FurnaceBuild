@@ -30,7 +30,8 @@ export default function ImportColumnMappingPage() {
     columnMap.addressRawHeader &&
     parsed.headers.includes(columnMap.nameRawHeader) &&
     parsed.headers.includes(columnMap.addressRawHeader) &&
-    (!columnMap.websiteHeader || parsed.headers.includes(columnMap.websiteHeader));
+    (!columnMap.websiteHeader || parsed.headers.includes(columnMap.websiteHeader)) &&
+    (!columnMap.phoneHeader || parsed.headers.includes(columnMap.phoneHeader));
 
   const onContinue = () => {
     if (!canContinue) {

@@ -9,6 +9,7 @@ export interface SourceRecordImportedFields {
   sourceName: string | null;
   nameRaw: string;
   website: string | null;
+  phone: string | null;
   addressRaw: string | null;
   ingestionRunId: string | null;
   observedAt: string | null;
@@ -70,6 +71,7 @@ export function buildSourceRecordViewModel(detail: SourceRecordDetailResponse): 
     sourceName: str(rec.source_name),
     nameRaw: str(rec.name_raw) ?? '—',
     website: str(rec.website),
+    phone: str(rec.phone),
     addressRaw: str(rec.address_raw),
     ingestionRunId: str(rec.ingestion_run_id),
     observedAt: str(rec.observed_at),

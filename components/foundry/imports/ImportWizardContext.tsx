@@ -11,6 +11,8 @@ export interface ColumnMappingState {
   addressRawHeader: string;
   /** null = column not mapped (optional website) */
   websiteHeader: string | null;
+  /** null = column not mapped (optional listing phone) */
+  phoneHeader: string | null;
 }
 
 interface ImportWizardContextValue {

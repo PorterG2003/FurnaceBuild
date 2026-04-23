@@ -17,16 +17,20 @@ function verificationTone(verification: CompanyWebsiteVerificationRow | null | u
 export function CompanyProfilePanel({
   company,
   website,
+  listingPhone,
   verification,
   googleAdsVerification,
 }: {
   company: RegistryCompanyDetailRow;
-  /** Prefer a linked source row’s website; omitted when unknown. */
+  /** Rolled listing website from company_contact_projection. */
   website?: string | null;
+  /** Rolled listing phone from company_contact_projection. */
+  listingPhone?: string | null;
   verification?: CompanyWebsiteVerificationRow | null;
   googleAdsVerification?: CompanyGoogleAdsVerificationRow | null;
 }) {
   const webHref = website?.trim() ? normalizeWebsiteHref(website.trim()) : '';
+  const phoneHref = listingPhone?.trim() ? `tel:${listingPhone.trim()}` : '';
 
   return (
     <View className="p-4 rounded-lg border border-[#2A2A2A] bg-[#1A1A1A]">
@@ -40,6 +44,16 @@ export function CompanyProfilePanel({
         <Pressable onPress={() => webHref && void Linking.openURL(webHref)} className="mb-4 self-start">
           <Text className="text-brand-orange font-instrument text-sm underline" numberOfLines={3}>
             {website.trim()}
+          </Text>
+        </Pressable>
+      ) : (
+        <Text className="text-gray-500 font-instrument text-sm mb-4">{dash(null)}</Text>
+      )}
+      <Text className="text-gray-500 font-instrument text-xs mb-1">Listing phone</Text>
+      {listingPhone?.trim() ? (
+        <Pressable onPress={() => phoneHref && void Linking.openURL(phoneHref)} className="mb-4 self-start">
+          <Text className="text-brand-orange font-instrument text-sm underline" numberOfLines={2}>
+            {listingPhone.trim()}
           </Text>
         </Pressable>
       ) : (

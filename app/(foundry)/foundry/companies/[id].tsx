@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { fetchCompanyDetail, fetchCompanyOwnershipChains } from '@/lib/foundry/registry-client';
 import type {
   CompanyOwnershipChainsResponse,
-  CompanySourceLinkRow,
   ParsedCompanyDetail,
 } from '@/lib/foundry/registry-types';
 import { CompanyProfilePanel } from '@/components/foundry/companies/CompanyProfilePanel';
@@ -33,18 +32,6 @@ function buildSubtitle(detail: ParsedCompanyDetail | null): string | undefined {
     (p): p is string => typeof p === 'string' && p.length > 0,
   );
   return parts.length > 0 ? parts.join(' · ') : undefined;
-}
-
-function pickProfileWebsite(links: CompanySourceLinkRow[]): string | null {
-  const norm = (s: string | null | undefined) => {
-    if (typeof s !== 'string') return null;
-    const t = s.trim();
-    return t.length > 0 ? t : null;
-  };
-  const linked = links.find((l) => l.link_status === 'linked' && norm(l.website));
-  if (linked) return norm(linked.website);
-  const any = links.find((l) => norm(l.website));
-  return any ? norm(any.website) : null;
 }
 
 function copyCompanyId(id: string) {
@@ -126,8 +113,8 @@ export default function CompanyDetailPage() {
   const company = detail?.company;
   const title = company?.legal_name?.trim() || 'Company';
   const subtitle = buildSubtitle(detail);
-
-  const profileWebsite = detail ? pickProfileWebsite(detail.source_links) : null;
+  const profileWebsite = detail?.contact_projection?.website ?? null;
+  const profileListingPhone = detail?.contact_projection?.listing_phone ?? null;
 
   const mainGrid =
     company != null && detail != null ? (
@@ -137,6 +124,7 @@ export default function CompanyDetailPage() {
             <CompanyProfilePanel
               company={company}
               website={profileWebsite}
+              listingPhone={profileListingPhone}
               verification={detail.website_verification}
               googleAdsVerification={detail.google_ads_verification}
             />
@@ -159,6 +147,7 @@ export default function CompanyDetailPage() {
           <CompanyProfilePanel
             company={company}
             website={profileWebsite}
+            listingPhone={profileListingPhone}
             verification={detail.website_verification}
             googleAdsVerification={detail.google_ads_verification}
           />

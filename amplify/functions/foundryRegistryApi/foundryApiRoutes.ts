@@ -520,6 +520,7 @@ type ExportChainTargetRow = {
   address_postal_code: string | null;
   address_country: string | null;
   website: string | null;
+  listing_phone: string | null;
   has_current_linked_source: boolean;
   has_current_owner: boolean;
   has_open_review_task: boolean;
@@ -642,6 +643,10 @@ function applyExportQueryFilters(
   if (hasWebsite === true) qb = qb.not('website', 'is', null);
   else if (hasWebsite === false) qb = qb.is('website', null);
 
+  const hasListingPhone = parseTriStateBoolParam(params, 'has_listing_phone');
+  if (hasListingPhone === true) qb = qb.not('listing_phone', 'is', null);
+  else if (hasListingPhone === false) qb = qb.is('listing_phone', null);
+
   const hasCompanyNotes = parseTriStateBoolParam(params, 'has_company_notes');
   if (hasCompanyNotes === true) qb = qb.not('company_notes', 'is', null);
   else if (hasCompanyNotes === false) qb = qb.is('company_notes', null);
@@ -730,6 +735,7 @@ async function listExportChainTargetsPage(
       'address_postal_code',
       'address_country',
       'website',
+      'listing_phone',
       'has_current_linked_source',
       'has_current_owner',
       'has_open_review_task',
@@ -761,6 +767,7 @@ async function listExportChainTargetsPage(
       address_postal_code: readNullableString(row.address_postal_code),
       address_country: readNullableString(row.address_country),
       website: readNullableString(row.website),
+      listing_phone: readNullableString(row.listing_phone),
       has_current_linked_source: Boolean(row.has_current_linked_source),
       has_current_owner: Boolean(row.has_current_owner),
       has_open_review_task: Boolean(row.has_open_review_task),
@@ -804,6 +811,7 @@ async function listExportCompanySummaryPage(
       'primary_location_city',
       'primary_location_state',
       'website',
+      'listing_phone',
       'has_current_linked_source',
       'has_current_owner',
       'has_open_review_task',
@@ -1695,6 +1703,7 @@ export async function dispatchFoundryExtendedRoutes(
             address_postal_code: target.address_postal_code,
             address_country: target.address_country,
             website: target.website,
+            listing_phone: target.listing_phone,
             has_current_linked_source: target.has_current_linked_source,
             has_current_owner: target.has_current_owner,
             has_open_review_task: target.has_open_review_task,
@@ -2129,7 +2138,7 @@ export async function dispatchFoundryExtendedRoutes(
     let qb = leadsClient
       .from('source_business_records')
       .select(
-        'id, ingestion_run_id, source_name, name_raw, website, address_raw, observed_at, created_at, resolution_meta',
+        'id, ingestion_run_id, source_name, name_raw, website, phone, address_raw, observed_at, created_at, resolution_meta',
         { count: 'exact' },
       );
     if (runId && UUID_RE.test(runId)) qb = qb.eq('ingestion_run_id', runId);
@@ -2373,20 +2382,31 @@ export async function dispatchFoundryExtendedRoutes(
       .eq('is_current', true);
     const recordIds = [...new Set((links ?? []).map((l) => String(l.source_business_record_id)))];
     const websiteByRecordId = new Map<string, string | null>();
+    const phoneByRecordId = new Map<string, string | null>();
     if (recordIds.length > 0) {
       const { data: recs } = await leadsClient
         .from('source_business_records')
-        .select('id, website')
+        .select('id, website, phone')
         .in('id', recordIds);
       for (const r of recs ?? []) {
         const w = r.website as string | null | undefined;
         const t = typeof w === 'string' ? w.trim() : '';
         websiteByRecordId.set(String(r.id), t.length > 0 ? t : null);
+        const phone = r.phone as string | null | undefined;
+        const trimmedPhone = typeof phone === 'string' ? phone.trim() : '';
+        phoneByRecordId.set(String(r.id), trimmedPhone.length > 0 ? trimmedPhone : null);
       }
     }
+    const { data: contactProjection, error: contactProjectionErr } = await leadsClient
+      .from('company_contact_projection')
+      .select('website, listing_phone, website_source_kind, listing_phone_source_kind')
+      .eq('company_id', id)
+      .maybeSingle();
+    if (contactProjectionErr) return jsonResponse(502, { error: contactProjectionErr.message });
     const sourceLinksOut = (links ?? []).map((l) => ({
       ...l,
       website: websiteByRecordId.get(String(l.source_business_record_id)) ?? null,
+      phone: phoneByRecordId.get(String(l.source_business_record_id)) ?? null,
     }));
     const { data: matches } = await leadsClient
       .from('company_entity_matches')
@@ -2432,6 +2452,7 @@ export async function dispatchFoundryExtendedRoutes(
     return jsonResponse(200, {
       company: co,
       locations: locs ?? [],
+      contact_projection: contactProjection ?? null,
       source_links: sourceLinksOut,
       entity_matches: matches ?? [],
       associated_people: associatedPeople,

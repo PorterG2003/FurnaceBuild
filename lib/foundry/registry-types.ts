@@ -636,6 +636,7 @@ export interface ImportedRecordRow {
   id: string;
   name_raw: string;
   website: string | null;
+  phone: string | null;
   address_raw: string | null;
   observed_at: string;
   ingestion_run_id: string;
@@ -661,6 +662,7 @@ export interface GoogleMapsColumnMapPayload {
   nameRawHeader: string;
   addressRawHeader: string;
   websiteHeader: string | null;
+  phoneHeader: string | null;
 }
 
 export interface PostGoogleMapsImportBody {
@@ -919,6 +921,15 @@ export interface CompanySourceLinkRow {
   created_at: string;
   /** From linked source_business_records.website when returned by company detail API. */
   website: string | null;
+  /** From linked source_business_records.phone when returned by company detail API. */
+  phone: string | null;
+}
+
+export interface CompanyContactProjectionRollup {
+  website: string | null;
+  listing_phone: string | null;
+  website_source_kind: string | null;
+  listing_phone_source_kind: string | null;
 }
 
 export interface CompanyEntityMatchRow {
@@ -1051,6 +1062,7 @@ export interface CompanyOwnershipChainsResponse {
 export interface ParsedCompanyDetail {
   company: RegistryCompanyDetailRow | null;
   locations: CompanyLocationRow[];
+  contact_projection: CompanyContactProjectionRollup | null;
   source_links: CompanySourceLinkRow[];
   entity_matches: CompanyEntityMatchRow[];
   associated_people: CompanyAssociatedPersonRow[];
@@ -1147,6 +1159,34 @@ function parseSourceLinkRow(o: unknown): CompanySourceLinkRow | null {
       const t = s?.trim() ?? '';
       return t.length > 0 ? t : null;
     })(),
+    phone: (() => {
+      if (r.phone == null) return null;
+      const s = parseNullableString(r.phone);
+      const t = s?.trim() ?? '';
+      return t.length > 0 ? t : null;
+    })(),
+  };
+}
+
+function parseCompanyContactProjectionRollup(o: unknown): CompanyContactProjectionRollup | null {
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  return {
+    website: (() => {
+      if (r.website == null) return null;
+      const s = parseNullableString(r.website);
+      const t = s?.trim() ?? '';
+      return t.length > 0 ? t : null;
+    })(),
+    listing_phone: (() => {
+      if (r.listing_phone == null) return null;
+      const s = parseNullableString(r.listing_phone);
+      const t = s?.trim() ?? '';
+      return t.length > 0 ? t : null;
+    })(),
+    website_source_kind: r.website_source_kind == null ? null : parseNullableString(r.website_source_kind),
+    listing_phone_source_kind:
+      r.listing_phone_source_kind == null ? null : parseNullableString(r.listing_phone_source_kind),
   };
 }
 
@@ -1377,6 +1417,7 @@ function parseOwnershipChainTarget(o: unknown): CompanyOwnershipChainTarget | nu
 export function parseCompanyDetailResponse(raw: unknown): ParsedCompanyDetail {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const locationsRaw = o.locations;
+  const contactProjectionRaw = o.contact_projection;
   const linksRaw = o.source_links;
   const matchesRaw = o.entity_matches;
   const peopleRaw = o.associated_people;
@@ -1388,6 +1429,7 @@ export function parseCompanyDetailResponse(raw: unknown): ParsedCompanyDetail {
     locations: Array.isArray(locationsRaw)
       ? (locationsRaw.map(parseLocationRow).filter(Boolean) as CompanyLocationRow[])
       : [],
+    contact_projection: parseCompanyContactProjectionRollup(contactProjectionRaw),
     source_links: Array.isArray(linksRaw)
       ? (linksRaw.map(parseSourceLinkRow).filter(Boolean) as CompanySourceLinkRow[])
       : [],
@@ -1442,6 +1484,7 @@ export interface ExportCompanyTargetRow {
   primary_location_city: string | null;
   primary_location_state: string | null;
   website: string | null;
+  listing_phone: string | null;
   has_current_owner: boolean;
   has_promoted_match: boolean;
   has_open_review_task: boolean;
@@ -1517,6 +1560,7 @@ export interface ExportCompanyOwnerLeadRow {
   primary_location_city: string | null;
   primary_location_state: string | null;
   website: string | null;
+  listing_phone: string | null;
   has_current_owner: boolean;
   has_promoted_match: boolean;
   has_open_review_task: boolean;
@@ -1589,6 +1633,7 @@ export interface ExportCompanyChainPeopleRow {
   address_postal_code: string | null;
   address_country: string | null;
   website: string | null;
+  listing_phone: string | null;
   has_current_linked_source: boolean;
   has_current_owner: boolean;
   has_open_review_task: boolean;

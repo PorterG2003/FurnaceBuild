@@ -235,6 +235,8 @@ export default function FoundryExportScreen() {
     if (pf !== undefined) p.has_parse_failure_task = pf;
     const hasWebsite = triToParam(effectiveFilters.hasWebsiteFilter);
     if (hasWebsite !== undefined) p.has_website = hasWebsite;
+    const hasListingPhone = triToParam(effectiveFilters.hasListingPhoneFilter);
+    if (hasListingPhone !== undefined) p.has_listing_phone = hasListingPhone;
     const hasNotes = triToParam(effectiveFilters.hasNotesFilter);
     if (hasNotes !== undefined) p.has_company_notes = hasNotes;
     const hasNormalizedKey = triToParam(effectiveFilters.hasNormalizedKeyFilter);

@@ -317,7 +317,7 @@ export async function fetchIngestionRun(runId: string): Promise<IngestionRunDeta
   });
 }
 
-export type IngestionRecordsFilter = 'all' | 'unresolved' | 'missing_website' | 'warning_only';
+export type IngestionRecordsFilter = 'all' | 'unresolved' | 'missing_website' | 'missing_phone' | 'warning_only';
 
 export async function fetchIngestionRunRecords(
   runId: string,
@@ -885,6 +885,7 @@ export type ExportCompanyOwnerLeadsParams = {
   has_parse_failure_task?: boolean;
   has_current_owner?: boolean;
   has_website?: boolean;
+  has_listing_phone?: boolean;
   has_company_notes?: boolean;
   has_normalized_key?: boolean;
   address_state?: string;
@@ -938,6 +939,7 @@ export async function fetchExportCompanyOwnerLeads(
         params?.has_parse_failure_task == null ? undefined : String(params.has_parse_failure_task),
       has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
       has_website: params?.has_website == null ? undefined : String(params.has_website),
+      has_listing_phone: params?.has_listing_phone == null ? undefined : String(params.has_listing_phone),
       has_company_notes: params?.has_company_notes == null ? undefined : String(params.has_company_notes),
       has_normalized_key: params?.has_normalized_key == null ? undefined : String(params.has_normalized_key),
       address_state: params?.address_state?.trim() || undefined,
@@ -983,6 +985,7 @@ export async function fetchExportCompanyChainPeople(
         params?.has_parse_failure_task == null ? undefined : String(params.has_parse_failure_task),
       has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
       has_website: params?.has_website == null ? undefined : String(params.has_website),
+      has_listing_phone: params?.has_listing_phone == null ? undefined : String(params.has_listing_phone),
       has_company_notes: params?.has_company_notes == null ? undefined : String(params.has_company_notes),
       has_normalized_key: params?.has_normalized_key == null ? undefined : String(params.has_normalized_key),
       address_state: params?.address_state?.trim() || undefined,
@@ -1029,6 +1032,7 @@ export async function fetchExportCompanySummary(
         params?.has_parse_failure_task == null ? undefined : String(params.has_parse_failure_task),
       has_current_owner: params?.has_current_owner == null ? undefined : String(params.has_current_owner),
       has_website: params?.has_website == null ? undefined : String(params.has_website),
+      has_listing_phone: params?.has_listing_phone == null ? undefined : String(params.has_listing_phone),
       has_company_notes: params?.has_company_notes == null ? undefined : String(params.has_company_notes),
       has_normalized_key: params?.has_normalized_key == null ? undefined : String(params.has_normalized_key),
       address_state: params?.address_state?.trim() || undefined,

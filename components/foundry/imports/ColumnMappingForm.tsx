@@ -29,7 +29,7 @@ function SampleCells({
 }
 
 export function ColumnMappingForm({ headers, sampleRows, value, onChange }: ColumnMappingFormProps) {
-  const websiteItems = useMemo(() => [NONE_ID, ...headers], [headers]);
+  const optionalItems = useMemo(() => [NONE_ID, ...headers], [headers]);
 
   return (
     <View className="gap-4">
@@ -72,7 +72,7 @@ export function ColumnMappingForm({ headers, sampleRows, value, onChange }: Colu
       <Card variant="card">
         <Select<string>
           searchable={false}
-          items={websiteItems}
+          items={optionalItems}
           getItemId={(c) => c}
           getItemLabel={(c) => ({ primary: c === NONE_ID ? '(none)' : c })}
           value={value.websiteHeader === null ? NONE_ID : value.websiteHeader}
@@ -87,6 +87,26 @@ export function ColumnMappingForm({ headers, sampleRows, value, onChange }: Colu
           noMargin
         />
         {value.websiteHeader ? <SampleCells rows={sampleRows} header={value.websiteHeader} /> : null}
+      </Card>
+
+      <Card variant="card">
+        <Select<string>
+          searchable={false}
+          items={optionalItems}
+          getItemId={(c) => c}
+          getItemLabel={(c) => ({ primary: c === NONE_ID ? '(none)' : c })}
+          value={value.phoneHeader === null ? NONE_ID : value.phoneHeader}
+          onChange={(id) =>
+            onChange({
+              ...value,
+              phoneHeader: !id || id === NONE_ID ? null : id,
+            })
+          }
+          label="Phone → phone (optional)"
+          placeholder="Select column…"
+          noMargin
+        />
+        {value.phoneHeader ? <SampleCells rows={sampleRows} header={value.phoneHeader} /> : null}
       </Card>
     </View>
   );

@@ -11,6 +11,7 @@ const RECORD_FILTER_TABS: Tab[] = [
   { id: 'all', label: 'All' },
   { id: 'unresolved', label: 'Unresolved' },
   { id: 'missing_website', label: 'No website' },
+  { id: 'missing_phone', label: 'No phone' },
   { id: 'warning_only', label: 'Warnings' },
 ];
 

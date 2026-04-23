@@ -289,6 +289,7 @@ async function handleGoogleMapsImport(
     nameRawHeader: columnMap.nameRawHeader,
     addressRawHeader: columnMap.addressRawHeader,
     websiteHeader: columnMap.websiteHeader ?? null,
+    phoneHeader: columnMap.phoneHeader ?? null,
   });
   const summary = summarizeClassification(classified);
 
@@ -304,6 +305,7 @@ async function handleGoogleMapsImport(
       name_raw: columnMap.nameRawHeader,
       address_raw: columnMap.addressRawHeader,
       website: columnMap.websiteHeader ?? undefined,
+      phone: columnMap.phoneHeader ?? undefined,
     },
     parser_version: PARSER_VERSION,
     ingest_version: INGEST_VERSION,
@@ -393,6 +395,7 @@ async function handleGoogleMapsImport(
         name_raw: r.nameRaw,
         address_raw: r.addressRaw || null,
         website: r.websiteRaw,
+        phone: r.phoneRaw,
         raw_payload: {
           ...r.rawRow,
           __rowNumber: r.rowNumber,
@@ -767,6 +770,7 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
           id: r.id,
           name_raw: r.name_raw,
           website: r.website,
+          phone: r.phone ?? null,
           address_raw: r.address_raw,
           observed_at: r.observed_at,
           ingestion_run_id: r.ingestion_run_id,
@@ -796,7 +800,7 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
         for (;;) {
           const { data: batch, error: batchErr } = await leadsClient
             .from('source_business_records')
-            .select('id, name_raw, website, address_raw, observed_at, ingestion_run_id, raw_payload, resolution_meta')
+            .select('id, name_raw, website, phone, address_raw, observed_at, ingestion_run_id, raw_payload, resolution_meta')
             .eq('ingestion_run_id', id)
             .order('created_at', { ascending: true })
             .range(scanOffset, scanOffset + batchSize - 1);
@@ -831,7 +835,7 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
 
       let q = leadsClient
         .from('source_business_records')
-        .select('id, name_raw, website, address_raw, observed_at, ingestion_run_id, raw_payload, resolution_meta', {
+        .select('id, name_raw, website, phone, address_raw, observed_at, ingestion_run_id, raw_payload, resolution_meta', {
           count: 'exact',
         })
         .eq('ingestion_run_id', id)
@@ -840,6 +844,9 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
 
       if (filter === 'missing_website') {
         q = q.or('website.is.null,website.eq.""');
+      }
+      if (filter === 'missing_phone') {
+        q = q.or('phone.is.null,phone.eq.""');
       }
       if (filter === 'warning_only') {
         q = q.contains('raw_payload', { __import_validation: 'warning' });

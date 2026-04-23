@@ -28,6 +28,7 @@ export default function ImportPreviewPage() {
       nameRawHeader: columnMap.nameRawHeader,
       addressRawHeader: columnMap.addressRawHeader,
       websiteHeader: columnMap.websiteHeader,
+      phoneHeader: columnMap.phoneHeader,
     };
   }, [columnMap]);
 

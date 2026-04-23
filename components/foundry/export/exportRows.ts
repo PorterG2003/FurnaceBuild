@@ -31,6 +31,7 @@ export interface ExportRow {
   primary_location_city: string | null;
   primary_location_state: string | null;
   website: string | null;
+  listing_phone: string | null;
   has_current_linked_source: boolean;
   has_current_owner: boolean;
   has_open_review_task: boolean;
@@ -105,6 +106,7 @@ function baseRow(row: Pick<ExportRow, 'row_key' | 'data_mode' | 'company_id' | '
     primary_location_city: null,
     primary_location_state: null,
     website: null,
+    listing_phone: null,
     has_current_linked_source: false,
     has_current_owner: false,
     has_open_review_task: false,
@@ -187,6 +189,7 @@ export function normalizeOwnerLeadRows(rows: ExportCompanyOwnerLeadRow[]): Expor
     primary_location_city: row.primary_location_city,
     primary_location_state: row.primary_location_state,
     website: row.website,
+    listing_phone: row.listing_phone,
     has_current_linked_source: row.has_current_linked_source,
     has_current_owner: row.has_current_owner,
     has_open_review_task: row.has_open_review_task,
@@ -257,6 +260,7 @@ export function normalizeChainPeopleRows(rows: ExportCompanyChainPeopleRow[]): E
     address_postal_code: row.address_postal_code,
     address_country: row.address_country,
     website: row.website,
+    listing_phone: row.listing_phone,
     has_current_linked_source: row.has_current_linked_source,
     has_current_owner: row.has_current_owner,
     has_open_review_task: row.has_open_review_task,
@@ -337,6 +341,7 @@ export function normalizeCompanySummaryRows(rows: ExportCompanySummaryRow[]): Ex
     primary_location_city: row.primary_location_city,
     primary_location_state: row.primary_location_state,
     website: row.website,
+    listing_phone: row.listing_phone,
     has_current_linked_source: row.has_current_linked_source,
     has_current_owner: row.has_current_owner,
     has_open_review_task: row.has_open_review_task,

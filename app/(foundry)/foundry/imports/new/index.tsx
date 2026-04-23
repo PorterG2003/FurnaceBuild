@@ -35,6 +35,7 @@ export default function NewGoogleMapsImportPage() {
           nameRawHeader: '',
           addressRawHeader: '',
           websiteHeader: null,
+          phoneHeader: null,
         });
       } catch (e) {
         Alert.alert('Invalid CSV', e instanceof Error ? e.message : 'Could not parse file.');
@@ -74,7 +75,7 @@ export default function NewGoogleMapsImportPage() {
       </View>
       <PageHeader
         title="New Import"
-        subtitle="Google Maps CSV — business name, domain/website, and address columns"
+        subtitle="Google Maps CSV — business name, domain/website, phone, and address columns"
       />
 
       <View className="mt-4 gap-4 max-w-[720px] w-full self-center">
@@ -101,7 +102,7 @@ export default function NewGoogleMapsImportPage() {
           <Card variant="card">
             <Text className="text-white font-instrument-medium text-sm">{csvFileName}</Text>
             <Text className="text-gray-500 font-instrument text-xs mt-1">
-              Upload a CSV containing business name, domain, and address columns.
+              Upload a CSV containing business name, domain, phone, and address columns.
             </Text>
           </Card>
         ) : null}

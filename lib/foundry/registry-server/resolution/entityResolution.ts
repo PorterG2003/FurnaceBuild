@@ -32,7 +32,7 @@ export async function getSourceRecordDetail(leadsClient: SupabaseClient, id: str
   const { data: rec, error } = await leadsClient
     .from('source_business_records')
     .select(
-      'id, ingestion_run_id, source_name, name_raw, website, address_raw, raw_payload, resolution_meta, observed_at, created_at',
+      'id, ingestion_run_id, source_name, name_raw, website, phone, address_raw, raw_payload, resolution_meta, observed_at, created_at',
     )
     .eq('id', id)
     .maybeSingle();

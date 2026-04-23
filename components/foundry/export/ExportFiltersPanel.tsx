@@ -311,6 +311,14 @@ export function ExportFiltersPanel({
           />
         </FilterField>
 
+        <FilterField label="Has listing phone">
+          <TriSelect
+            value={filters.hasListingPhoneFilter}
+            onChange={(value) => patch({ hasListingPhoneFilter: value })}
+            placeholder="Any"
+          />
+        </FilterField>
+
         <FilterField label="Google Ads result">
           <GoogleAdsResultSelect
             value={filters.googleAdsResult}

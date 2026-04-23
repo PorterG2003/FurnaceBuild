@@ -9,6 +9,7 @@ export interface ColumnMap {
   nameRawHeader: string;
   addressRawHeader: string;
   websiteHeader: string | null;
+  phoneHeader: string | null;
 }
 
 export interface ClassifiedRow {
@@ -16,6 +17,7 @@ export interface ClassifiedRow {
   nameRaw: string;
   addressRaw: string;
   websiteRaw: string | null;
+  phoneRaw: string | null;
   normalizedWebsitePreview: string;
   status: RowValidationStatus;
   issues: string[];
@@ -106,7 +108,9 @@ export function classifyAllRows(
     const nameRaw = getCell(row, columnMap.nameRawHeader);
     const addressRaw = getCell(row, columnMap.addressRawHeader);
     const websiteRaw = columnMap.websiteHeader ? getCell(row, columnMap.websiteHeader) : '';
+    const phoneRaw = columnMap.phoneHeader ? getCell(row, columnMap.phoneHeader) : '';
     const websiteOrNull = websiteRaw === '' ? null : websiteRaw;
+    const phoneOrNull = phoneRaw === '' ? null : phoneRaw;
     const normalizedWebsitePreview = normalizeWebsitePreview(websiteRaw);
 
     const issues: string[] = [];
@@ -127,6 +131,7 @@ export function classifyAllRows(
         nameRaw,
         addressRaw,
         websiteRaw: websiteOrNull,
+        phoneRaw: phoneOrNull,
         normalizedWebsitePreview,
         status,
         issues,
@@ -159,6 +164,7 @@ export function classifyAllRows(
       nameRaw,
       addressRaw,
       websiteRaw: websiteOrNull,
+      phoneRaw: phoneOrNull,
       normalizedWebsitePreview,
       status,
       issues,

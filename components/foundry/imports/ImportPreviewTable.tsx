@@ -45,6 +45,17 @@ export function ImportPreviewTable({ rows }: { rows: ClassifiedRow[] }) {
         ),
       },
       {
+        key: 'phone',
+        label: 'Phone',
+        flex: 0.8,
+        minWidth: 72,
+        render: (item) => (
+          <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
+            {item.phoneRaw ?? '—'}
+          </Text>
+        ),
+      },
+      {
         key: 'addr',
         label: 'Address',
         flex: 1,

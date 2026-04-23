@@ -47,6 +47,11 @@ export function SourceImportedRowSummary({
             {imported.website}
           </Text>
         ) : null}
+        {imported.phone ? (
+          <Text className="text-gray-300 font-instrument text-sm mt-1" numberOfLines={2}>
+            {imported.phone}
+          </Text>
+        ) : null}
         {imported.addressRaw ? (
           <Text className="text-neutral-400 font-instrument text-sm mt-1.5 leading-5" numberOfLines={4}>
             {imported.addressRaw}
@@ -118,6 +123,11 @@ export function SourceImportedRowSummary({
         </Text>
       ) : (
         <Text className="text-neutral-600 font-instrument text-sm mt-2">No website</Text>
+      )}
+      {imported.phone ? (
+        <Text className="text-gray-300 font-instrument text-sm mt-1">{imported.phone}</Text>
+      ) : (
+        <Text className="text-neutral-600 font-instrument text-sm mt-1">No phone</Text>
       )}
       {imported.addressRaw ? (
         <Text className="text-neutral-400 font-instrument text-sm mt-1.5 leading-5" numberOfLines={4}>

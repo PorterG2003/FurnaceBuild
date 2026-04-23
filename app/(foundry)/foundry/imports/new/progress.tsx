@@ -32,6 +32,7 @@ export default function ImportProgressPage() {
       nameRawHeader: cm.nameRawHeader,
       addressRawHeader: cm.addressRawHeader,
       websiteHeader: cm.websiteHeader,
+      phoneHeader: cm.phoneHeader,
     };
     const notesSnapshot = notes.trim() || undefined;
     const warnSnapshot = importWarnings;

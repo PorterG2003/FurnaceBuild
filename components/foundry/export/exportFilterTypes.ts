@@ -14,6 +14,7 @@ export interface ExportFiltersState {
   reviewFilter: ExportTriFilter;
   parseFilter: ExportTriFilter;
   hasWebsiteFilter: ExportTriFilter;
+  hasListingPhoneFilter: ExportTriFilter;
   hasNotesFilter: ExportTriFilter;
   hasNormalizedKeyFilter: ExportTriFilter;
   addressState: string;
@@ -36,6 +37,7 @@ export const DEFAULT_EXPORT_FILTERS: ExportFiltersState = {
   reviewFilter: 'any',
   parseFilter: 'any',
   hasWebsiteFilter: 'any',
+  hasListingPhoneFilter: 'any',
   hasNotesFilter: 'any',
   hasNormalizedKeyFilter: 'any',
   addressState: '',
@@ -76,6 +78,7 @@ export function countNonDefaultExportFilters(
   if (visibleFilters.reviewFilter !== 'any') n += 1;
   if (visibleFilters.parseFilter !== 'any') n += 1;
   if (visibleFilters.hasWebsiteFilter !== 'any') n += 1;
+  if (visibleFilters.hasListingPhoneFilter !== 'any') n += 1;
   if (visibleFilters.hasNotesFilter !== 'any') n += 1;
   if (visibleFilters.hasNormalizedKeyFilter !== 'any') n += 1;
   if (visibleFilters.addressState.trim().length > 0) n += 1;

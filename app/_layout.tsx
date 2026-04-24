@@ -5,6 +5,7 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } f
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppBootScreen } from '@/components/ui/AppBootScreen';
 import { ToastProvider } from '@/components/ui/feedback';
 import { ConfirmProvider } from '@/components/ui/ConfirmContext';
@@ -63,24 +64,28 @@ export default function RootLayout() {
   // Render app even if fonts fail (avoids white screen on web)
   if (!minBootElapsed || (!fontsLoaded && !fontError)) {
     return (
-      <View style={safeAreaRootStyle} testID="safe-area-root">
-        <AppBootScreen />
-      </View>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <View style={safeAreaRootStyle} testID="safe-area-root">
+          <AppBootScreen />
+        </View>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <ConfirmProvider>
-          <View style={safeAreaRootStyle} testID="safe-area-root">
-            <StatusBar style="auto" />
-            <WebInstallGate />
-            <Slot />
-          </View>
-        </ConfirmProvider>
-      </ToastProvider>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <ToastProvider>
+          <ConfirmProvider>
+            <View style={safeAreaRootStyle} testID="safe-area-root">
+              <StatusBar style="auto" />
+              <WebInstallGate />
+              <Slot />
+            </View>
+          </ConfirmProvider>
+        </ToastProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }
 

@@ -16,6 +16,7 @@ export {
   type CampaignStats,
   type CampaignStatsByDay,
 } from './campaign-stats';
+export { getCampaignsListSummary, type CampaignListSummary } from './campaign-list-summary';
 export {
   getCampaignVariantStats,
   type CampaignVariantStatRow,

@@ -52,7 +52,7 @@ A **bounce was detected** for a Furnace campaign send that can be **matched** to
 
 Total **enrollments** for the campaign. Not stored in `campaign_stats`; computed in the app from the `enrollments` table.
 
-- **Code:** [lib/supabase/services/campaigns.ts](../../../lib/supabase/services/campaigns.ts) — `getCampaignStatsForCampaigns` queries `enrollments` and merges with `campaign_stats`.
+- **Code:** For the **campaigns list**, [lib/supabase/services/campaigns/campaign-list-summary.ts](../../../lib/supabase/services/campaigns/campaign-list-summary.ts) — `getCampaignsListSummary` calls the `campaigns_list_summary` RPC (server-side aggregates; avoids PostgREST row caps on raw enrollment lists). For **campaign detail** and other callers, [lib/supabase/services/campaigns/campaign-stats.ts](../../../lib/supabase/services/campaigns/campaign-stats.ts) — `getCampaignStatsForCampaigns` queries `enrollments` and merges with `campaign_stats`.
 
 ### Campaign list completion percentage
 
@@ -74,7 +74,7 @@ This gives two "halves" of progress: reaching people contributes up to 50%, and 
 
 Edge case: if there are no enrollments, total is set to 1 to avoid division by zero, resulting in 0%.
 
-- **Code:** `getCampaignStatsForCampaigns` in [lib/supabase/services/campaigns.ts](../../../lib/supabase/services/campaigns.ts) computes `enrollmentCount`, `terminalEnrollmentCount`, and `contactedEnrollmentCount`. The `CampaignCard` in [app/(main)/campaigns.tsx](../../../app/(main)/campaigns.tsx) uses `reachedCount = max(contactedCount, terminalCount)` so enrollments that are terminal without a sent email still count, then passes `value = reachedCount + terminalCount` and `total = enrollmentCount * 2` (or 1) to `ProgressDial`.
+- **Code:** The list page loads aggregated counts via `getCampaignsListSummary` (RPC). The `CampaignCard` in [app/(main)/campaigns.tsx](../../../app/(main)/campaigns.tsx) uses `reachedCount = max(contactedCount, terminalCount)` so enrollments that are terminal without a sent email still count, then passes `value = reachedCount + terminalCount` and `total = enrollmentCount * 2` (or 1) to `ProgressDial`.
 
 ---
 
@@ -125,7 +125,9 @@ flowchart LR
 
 ## How the app reads stats
 
-- **List/card totals and campaign detail summary:** `getCampaignStatsForCampaigns(campaignIds)` in [lib/supabase/services/campaigns.ts](../../../lib/supabase/services/campaigns.ts). Makes three queries: `enrollments` (total + terminal counts per campaign), `get_campaign_contacted_counts` RPC (contacted count per campaign), and `campaign_stats` (sent/replied/positive_reply/bounce/last_bounce_at). Used by [app/(main)/campaigns.tsx](../../../app/(main)/campaigns.tsx) and [app/(main)/campaigns/[id].tsx](../../../app/(main)/campaigns/[id].tsx).
+- **List/card totals:** `getCampaignsListSummary(accountId)` in [lib/supabase/services/campaigns/campaign-list-summary.ts](../../../lib/supabase/services/campaigns/campaign-list-summary.ts) — one `campaigns_list_summary` RPC (enrollment aggregates, contacted counts, `campaign_stats`, `has_flow`). Used by [app/(main)/campaigns.tsx](../../../app/(main)/campaigns.tsx).
+
+- **Campaign detail summary:** `getCampaignStatsForCampaigns(campaignIds)` in [lib/supabase/services/campaigns/campaign-stats.ts](../../../lib/supabase/services/campaigns/campaign-stats.ts). Makes three queries: `enrollments` (total + terminal counts per campaign), `get_campaign_contacted_counts` RPC (contacted count per campaign), and `campaign_stats` (sent/replied/positive_reply/bounce/last_bounce_at). Used by [app/(main)/campaigns/[id].tsx](../../../app/(main)/campaigns/[id].tsx).
 
 - **Per-day chart:** `getCampaignStatsByDay(campaignId, start, end)` in the same service. Queries **events** only (`event_type` in sent, replied, bounced), buckets by date; for replied, positive count uses `event_data.is_positive`. Used by [components/campaigns/CampaignStatsChart.tsx](../../../components/campaigns/CampaignStatsChart.tsx).
 
@@ -167,6 +169,7 @@ One-time backfill: [supabase/migrations/20260216000002_backfill_campaign_stats.s
 
 - **Atomic (event + stats in one transaction):** `record_sent_event_and_increment`, `record_replied_event_and_increment`, `record_bounced_event_and_increment`.
 - **Contacted count (completion dial):** `get_campaign_contacted_counts(p_campaign_ids UUID[])` — returns per-campaign count of distinct enrollments with ≥1 sent campaign email.
+- **Campaigns list (aggregated row per campaign):** `campaigns_list_summary(p_account_id UUID)` — list-only columns plus enrollment/terminal/contacted aggregates and `campaign_stats` counts (same semantics as the former list client merge; avoids raw enrollment list truncation).
 - **Reconciliation:** `reconcile_campaign_stats(p_campaign_id)` — pass NULL for all campaigns.
 - **Positive reply (user override):** `update_campaign_stats_positive_reply(p_campaign_id, p_delta)`, `update_replied_event_is_positive(p_campaign_id, p_message_job_id, p_is_positive)`.
 - **Legacy (still present, used by reconciliation):** `increment_campaign_stats_sent`, `increment_campaign_stats_replied`, `increment_campaign_stats_bounce` — workers now use the atomic RPCs above.
@@ -177,7 +180,7 @@ One-time backfill: [supabase/migrations/20260216000002_backfill_campaign_stats.s
 
 ### Key code
 
-- **Types and reads:** [lib/supabase/services/campaigns.ts](../../../lib/supabase/services/campaigns.ts) — `CampaignStats`, `getCampaignStatsForCampaigns`, `getCampaignStatsByDay`.
+- **Types and reads:** [lib/supabase/services/campaigns/index.ts](../../../lib/supabase/services/campaigns/index.ts) — re-exports `CampaignStats`, `getCampaignStatsForCampaigns`, `getCampaignStatsByDay`, `getCampaignsListSummary`, `CampaignListSummary`.
 - **Positive reply (user override):** [lib/supabase/services/inbox.ts](../../../lib/supabase/services/inbox.ts) — `updateThreadCategory`.
 - **Sent:** [workers/send-worker/src/worker.ts](../../../workers/send-worker/src/worker.ts) — `record_sent_event_and_increment`.
 - **Replied, bounce:** [workers/inbox-checker-worker/src/thread-manager.ts](../../../workers/inbox-checker-worker/src/thread-manager.ts) — `record_replied_event_and_increment`, `record_bounced_event_and_increment`.

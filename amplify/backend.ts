@@ -25,6 +25,8 @@ import { foundryWebsiteVerificationJob } from './functions/foundryWebsiteVerific
 import { foundryGoogleAdsVerificationJob } from './functions/foundryGoogleAdsVerificationJob/resource';
 import { foundryCsvBuilderExportJob } from './functions/foundryCsvBuilderExportJob/resource';
 import { processNotificationEvent } from './functions/processNotificationEvent/resource';
+import { fluxGenerate } from './functions/fluxGenerate/resource';
+import { fluxEditorChat } from './functions/fluxEditorChat/resource';
 
 // Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
 config({ path: '.env.local' });
@@ -56,6 +58,8 @@ const backend = defineBackend({
   foundryGoogleAdsVerificationJob,
   foundryCsvBuilderExportJob,
   processNotificationEvent,
+  fluxGenerate,
+  fluxEditorChat,
   ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
 
@@ -1082,6 +1086,84 @@ const allowPublicFoundryRegistryInvoke = new lambda.CfnPermission(
 );
 allowPublicFoundryRegistryInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
+// Flux: generate personalized prospect pages (Function URL + Supabase JWT)
+const fluxGenerateLambda = backend.fluxGenerate.resources.lambda as lambda.Function;
+fluxGenerateLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+fluxGenerateLambda.addEnvironment(
+  'FLUX_OPENROUTER_MODEL',
+  process.env.FLUX_OPENROUTER_MODEL ?? 'anthropic/claude-opus-4.7',
+);
+const openRouterReferer = process.env.FLUX_OPENROUTER_HTTP_REFERER?.trim();
+if (openRouterReferer) {
+  fluxGenerateLambda.addEnvironment('FLUX_OPENROUTER_HTTP_REFERER', openRouterReferer);
+}
+const openRouterTitle = process.env.FLUX_OPENROUTER_TITLE?.trim();
+if (openRouterTitle) {
+  fluxGenerateLambda.addEnvironment('FLUX_OPENROUTER_TITLE', openRouterTitle);
+}
+const fluxGenerateUrl = fluxGenerateLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(fluxGenerateLambda.stack, 'AllowPublicFluxGenerateUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: fluxGenerateLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicFluxGenerateInvoke = new lambda.CfnPermission(
+  fluxGenerateLambda.stack,
+  'AllowPublicFluxGenerateInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: fluxGenerateLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicFluxGenerateInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+// Flux: editor chat (Function URL + Supabase JWT)
+const fluxEditorChatLambda = backend.fluxEditorChat.resources.lambda as lambda.Function;
+fluxEditorChatLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+fluxEditorChatLambda.addEnvironment(
+  'FLUX_OPENROUTER_MODEL',
+  process.env.FLUX_OPENROUTER_MODEL ?? 'anthropic/claude-opus-4.7',
+);
+if (openRouterReferer) {
+  fluxEditorChatLambda.addEnvironment('FLUX_OPENROUTER_HTTP_REFERER', openRouterReferer);
+}
+if (openRouterTitle) {
+  fluxEditorChatLambda.addEnvironment('FLUX_OPENROUTER_TITLE', openRouterTitle);
+}
+const fluxEditorChatUrl = fluxEditorChatLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(fluxEditorChatLambda.stack, 'AllowPublicFluxEditorChatUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: fluxEditorChatLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicFluxEditorChatInvoke = new lambda.CfnPermission(
+  fluxEditorChatLambda.stack,
+  'AllowPublicFluxEditorChatInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: fluxEditorChatLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicFluxEditorChatInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
 let launchSmartleadMigrationUrlRef: { url: string } | undefined;
 
 if (smartleadMigrationEnabled) {
@@ -1215,6 +1297,8 @@ const customOutputs: Record<string, string> = {
   foundryAutolinkStateMachineArn: foundryAutolinkStateMachineArn,
   foundryContactEnrichmentStateMachineArn: foundryContactEnrichmentStateMachineArn,
   foundryStateMatchingStateMachineArn: foundryStateMatchingStateMachineArn,
+  fluxGenerateUrl: fluxGenerateUrl.url,
+  fluxEditorChatUrl: fluxEditorChatUrl.url,
 };
 if (launchSmartleadMigrationUrlRef) {
   customOutputs.launchSmartleadMigrationUrl = launchSmartleadMigrationUrlRef.url;

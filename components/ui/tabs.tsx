@@ -6,6 +6,9 @@ export interface Tab {
   label: string;
 }
 
+/** `brand` = orange indicator (default). `indigo` = Flux-style muted indigo pill behind the active tab. */
+export type TabsColor = 'brand' | 'indigo';
+
 interface TabsProps {
   tabs: Tab[];
   activeTab: string;
@@ -18,6 +21,42 @@ interface TabsProps {
   /** Bottom margin of the tab bar. Default 16. Use 0 for tight layouts (e.g. mobile modals). */
   marginBottom?: number;
   textSize?: number;
+  /** Visual variant for indicator and label contrast. Default matches historical brand orange tabs. */
+  color?: TabsColor;
+}
+
+const TAB_COLORS: Record<
+  TabsColor,
+  {
+    indicator: string;
+    activeLabel: string;
+    inactiveLabel: string;
+  }
+> = {
+  brand: {
+    indicator: '#f85102',
+    activeLabel: '#FFFFFF',
+    inactiveLabel: '#9ca3af',
+  },
+  indigo: {
+    indicator: 'rgba(99, 102, 241, 0.25)',
+    activeLabel: '#FFFFFF',
+    inactiveLabel: '#6b7280',
+  },
+};
+
+function indicatorShadowStyle(color: TabsColor): Record<string, unknown> {
+  if (color === 'indigo') return {};
+  if (typeof window !== 'undefined') {
+    return { boxShadow: '0px 2px 4px rgba(0,0,0,0.25)' };
+  }
+  return {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  };
 }
 
 export function Tabs({
@@ -27,7 +66,9 @@ export function Tabs({
   layout = 'content',
   marginBottom = 16,
   textSize = 14,
+  color = 'brand',
 }: TabsProps) {
+  const palette = TAB_COLORS[color];
   const [tabPositions, setTabPositions] = useState<Array<number | null>>([]);
   const [tabWidths, setTabWidths] = useState<Array<number | null>>([]);
   const [tabTextWidths, setTabTextWidths] = useState<Array<number | null>>([]);
@@ -160,12 +201,10 @@ export function Tabs({
             top: INDICATOR_INSET,
             bottom: INDICATOR_INSET,
             borderRadius: 8,
-            backgroundColor: '#f85102',
+            backgroundColor: palette.indicator,
             width: tabIndicatorWidth,
             transform: [{ translateX: indicatorTranslateX }],
-            ...(typeof window !== 'undefined'
-              ? { boxShadow: '0px 2px 4px rgba(0,0,0,0.25)' }
-              : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 4 }),
+            ...indicatorShadowStyle(color),
           }}
         />
       )}
@@ -203,6 +242,7 @@ export function Tabs({
               paddingVertical: 8,
               paddingHorizontal: isEqual ? TAB_HORIZONTAL_PADDING : 0,
               zIndex: 1,
+              ...(color === 'indigo' && isEqual ? { minHeight: 44 } : null),
             }}
           >
             <Text
@@ -219,7 +259,7 @@ export function Tabs({
                   : undefined
               }
               style={{
-                color: isActive ? '#FFFFFF' : '#9ca3af',
+                color: isActive ? palette.activeLabel : palette.inactiveLabel,
                 fontSize: textSize,
                 fontFamily: 'Instrument Sans, system-ui, sans-serif',
                 fontWeight: isActive ? '600' : '500',

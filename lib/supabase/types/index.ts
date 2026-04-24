@@ -66,3 +66,11 @@ export type SmartleadMigrationCampaignUpdate = Database['public']['Tables']['sma
 export type SmartleadMigrationEvent = Database['public']['Tables']['smartlead_migration_events']['Row'];
 export type SmartleadMigrationEventInsert = Database['public']['Tables']['smartlead_migration_events']['Insert'];
 export type SmartleadMigrationEventUpdate = Database['public']['Tables']['smartlead_migration_events']['Update'];
+
+// Flux (personalized prospect landing pages) — domain types in lib/flux/types.ts
+export type {
+  FluxCampaignRow,
+  FluxCampaignTemplateRow,
+  FluxProspectRow,
+  FluxProspectPageRow,
+} from '@/lib/flux/types';

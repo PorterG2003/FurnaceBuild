@@ -7,30 +7,30 @@
   "display": "standalone",
   "theme_color": "#f3440d",
   "background_color": "#121212",
-  "dir": "left",
+  "dir": "ltr",
   "lang": "en-US",
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/icon512_maskable.png",
+      "src": "/web-app-manifest-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icon512_maskable.png",
+      "src": "/web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icon512_rounded.png",
+      "src": "/web-app-manifest-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon512_rounded.png",
+      "src": "/web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"

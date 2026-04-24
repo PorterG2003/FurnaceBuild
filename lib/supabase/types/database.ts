@@ -1218,6 +1218,24 @@ export interface Database {
           total_count: number;
         }[];
       };
+      campaigns_list_summary: {
+        Args: { p_account_id: string };
+        Returns: {
+          id: string;
+          name: string;
+          status: string;
+          created_at: string;
+          source: string | null;
+          has_flow: boolean;
+          sent_count: number;
+          replied_count: number;
+          positive_reply_count: number;
+          bounce_count: number;
+          enrollment_count: number;
+          terminal_enrollment_count: number;
+          contacted_enrollment_count: number;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;

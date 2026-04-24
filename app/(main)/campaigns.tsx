@@ -11,8 +11,12 @@ import { CampaignListSkeleton } from '@/components/skeletons';
 import { BaseModal, ConfirmDeleteModal, ModalFooter } from '@/components/ui/modals';
 import { useRouter } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
-import { getCampaigns, createCampaign, deleteCampaign, getCampaignStatsForCampaigns, type CampaignStats } from '@/lib/supabase/services/campaigns';
-import type { Campaign } from '@/lib/supabase/types';
+import {
+  createCampaign,
+  deleteCampaign,
+  getCampaignsListSummary,
+  type CampaignListSummary,
+} from '@/lib/supabase/services/campaigns';
 import {
   PlusIcon,
   TrashIcon,
@@ -133,43 +137,28 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
 }
 
 interface CampaignCardProps {
-  campaign: Campaign;
-  stats?: CampaignStats;
+  campaign: CampaignListSummary;
   onDelete: (id: string) => Promise<void>;
   isDeleting: boolean;
 }
 
-function hasFlow(campaign: Campaign): boolean {
-  if (!campaign?.flow_data) return false;
-  try {
-    const fd =
-      typeof campaign.flow_data === 'string'
-        ? JSON.parse(campaign.flow_data)
-        : campaign.flow_data;
-    const nodes = Array.isArray((fd as any)?.nodes) ? (fd as any).nodes : [];
-    return nodes.length > 0;
-  } catch {
-    return false;
-  }
-}
-
-function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardProps) {
+function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSmartleadModal, setShowSmartleadModal] = useState(false);
   const isMobileLayout = screenWidth < LAYOUT_BREAKPOINT;
   const isDraft = campaign.status === 'draft';
-  const draftHasFlow = hasFlow(campaign);
+  const draftHasFlow = campaign.hasFlow;
   const isSmartlead = isSmartleadCampaign(campaign);
 
-  const sentCount = stats?.sentCount ?? 0;
-  const repliedCount = stats?.repliedCount ?? 0;
-  const positiveReplyCount = stats?.positiveReplyCount ?? 0;
-  const bounceCount = stats?.bounceCount ?? 0;
-  const enrollmentCount = stats?.enrollmentCount ?? 0;
-  const contactedCount = stats?.contactedEnrollmentCount ?? 0;
-  const terminalCount = stats?.terminalEnrollmentCount ?? 0;
+  const sentCount = campaign.sentCount;
+  const repliedCount = campaign.repliedCount;
+  const positiveReplyCount = campaign.positiveReplyCount;
+  const bounceCount = campaign.bounceCount;
+  const enrollmentCount = campaign.enrollmentCount;
+  const contactedCount = campaign.contactedEnrollmentCount;
+  const terminalCount = campaign.terminalEnrollmentCount;
   // Use max(contacted, terminal) for "reached" so enrollments that are terminal without
   // a sent email (e.g. stopped before first send) still count toward completion.
   const reachedCount = Math.max(contactedCount, terminalCount);
@@ -262,7 +251,7 @@ function CampaignCard({ campaign, stats, onDelete, isDeleting }: CampaignCardPro
           </Text>
         )}
         <Text className="text-gray-500 font-instrument text-sm">
-          Created {formatDate(campaign.created_at)}
+          Created {formatDate(campaign.createdAt)}
         </Text>
       </View>
     </View>
@@ -423,8 +412,7 @@ export default function CampaignsPage() {
   const { toast } = useToast();
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [campaignStats, setCampaignStats] = useState<Record<string, CampaignStats>>({});
+  const [campaigns, setCampaigns] = useState<CampaignListSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -439,10 +427,8 @@ export default function CampaignsPage() {
     setIsLoading(true);
     setError('');
     try {
-      const data = await getCampaigns({ accountId: account.id });
+      const data = await getCampaignsListSummary(account.id);
       setCampaigns(data);
-      const stats = await getCampaignStatsForCampaigns(data.map((c) => c.id));
-      setCampaignStats(stats);
     } catch (err: any) {
       setError(err.message || 'Failed to load campaigns');
       console.error('Error loading campaigns:', err);
@@ -558,7 +544,6 @@ export default function CampaignsPage() {
             <CampaignCard
               key={campaign.id}
               campaign={campaign}
-              stats={campaignStats[campaign.id]}
               onDelete={handleDeleteCampaign}
               isDeleting={deletingId === campaign.id}
             />

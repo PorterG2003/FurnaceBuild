@@ -7,6 +7,7 @@ import { BenefitsBlock } from './BenefitsBlock';
 import { TestimonialBlock } from './TestimonialBlock';
 import { CtaBlock } from './CtaBlock';
 import { TannersTaxStrategyBlock } from './TannersTaxStrategyBlock';
+import { SocialMediaPlanBlock } from './SocialMediaPlanBlock';
 
 interface BlockRendererProps {
   block: Block;
@@ -45,6 +46,8 @@ export function BlockRenderer({ block, assets }: BlockRendererProps) {
       return <CtaBlock props={block.props} />;
     case 'tanners_tax_strategy':
       return <TannersTaxStrategyBlock props={block.props} />;
+    case 'social_media_plan':
+      return <SocialMediaPlanBlock props={block.props} />;
     default:
       return null;
   }

@@ -12,13 +12,21 @@ import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/feedback';
 import type { FluxChatMessage } from '@/lib/flux/editor/reducer';
 
+function isNeedsNewBlockMessage(content: string): boolean {
+  return /^needs new block:/i.test(content.trim());
+}
+
 interface FluxChatPanelProps {
   messages: FluxChatMessage[];
   lastSummary: string[] | null;
+  showLastSummary?: boolean;
   sending: boolean;
   error: string | null;
   canUndo: boolean;
   chatConfigured: boolean;
+  emptyStateText?: string;
+  composerPlaceholder?: string;
+  footer?: React.ReactNode;
   onSend: (text: string) => Promise<void>;
   onUndo: () => void;
 }
@@ -26,10 +34,14 @@ interface FluxChatPanelProps {
 export function FluxChatPanel({
   messages,
   lastSummary,
+  showLastSummary = false,
   sending,
   error,
   canUndo,
   chatConfigured,
+  emptyStateText = 'Start by describing the audience, the deliverable, and why the page should feel custom to each lead.',
+  composerPlaceholder = 'Ask Flux to shape the campaign…',
+  footer,
   onSend,
   onUndo,
 }: FluxChatPanelProps) {
@@ -48,19 +60,16 @@ export function FluxChatPanel({
       className="flex-1"
       style={{ minHeight: 0 }}
     >
-      <Text className="text-gray-400 text-xs font-instrument mb-2">
-        Describe changes in plain language. Applied edits update the Manual tab and preview; use Undo for the last chat batch.
-      </Text>
       {!chatConfigured ? (
         <Alert
           variant="warning"
           message="Editor chat URL is not configured. Deploy the backend or set EXPO_PUBLIC_FLUX_EDITOR_CHAT_URL."
-          className="mb-2"
+          className="mb-1.5"
         />
       ) : null}
-      {error ? <Alert variant="error" message={error} className="mb-2" /> : null}
-      {lastSummary && lastSummary.length > 0 ? (
-        <View className="mb-3 border border-[#2A2A2A] rounded-xl p-3 bg-[#141414]">
+      {error ? <Alert variant="error" message={error} className="mb-1.5" /> : null}
+      {showLastSummary && lastSummary && lastSummary.length > 0 ? (
+        <View className="mb-2 border border-[#2A2A2A] rounded-xl p-2.5 bg-[#141414]">
           <Text className="text-gray-500 text-xs uppercase tracking-wider font-instrument-semibold mb-1">
             Last applied
           </Text>
@@ -72,31 +81,51 @@ export function FluxChatPanel({
         </View>
       ) : null}
       <ScrollView
-        className="flex-1 mb-3 border border-[#2A2A2A] rounded-xl bg-[#111]"
+        className="flex-1 mb-2 rounded-xl"
         style={{ minHeight: 0 }}
-        contentContainerStyle={{ padding: 12, paddingBottom: 16, flexGrow: messages.length === 0 ? 1 : undefined }}
+        contentContainerStyle={{ padding: 10, paddingBottom: 12, flexGrow: messages.length === 0 ? 1 : undefined }}
         keyboardShouldPersistTaps="handled"
       >
         {messages.length === 0 ? (
-          <Text className="text-gray-500 text-sm font-instrument text-center py-8">
-            Try: &quot;Set campaign name to Q4 outbound&quot; or &quot;Add a hero block&quot; or &quot;Rewrite hero headline for fintech CFOs&quot;.
+          <Text className="text-gray-500 text-sm font-instrument text-center py-6">
+            {emptyStateText}
           </Text>
         ) : (
           messages.map((m) => (
             <View
               key={m.id}
-              className={`mb-3 max-w-[95%] ${m.role === 'user' ? 'self-end' : 'self-start'}`}
+              className={`mb-2 max-w-[95%] ${m.role === 'user' ? 'self-end' : 'self-start'}`}
             >
+              {(() => {
+                const isBlockedState = m.role === 'assistant' && isNeedsNewBlockMessage(m.content);
+                return (
               <View
-                className={`rounded-xl px-3 py-2 ${
-                  m.role === 'user' ? 'bg-indigo-600/35 border border-indigo-500/40' : 'bg-[#1f1f1f] border border-[#333]'
+                className={`rounded-xl px-2.5 py-2 ${
+                  m.role === 'user'
+                    ? 'bg-indigo-600/35 border border-indigo-500/40'
+                    : isBlockedState
+                      ? 'bg-amber-500/10 border border-amber-500/30'
+                      : 'bg-[#1f1f1f] border border-[#333]'
                 }`}
               >
                 <Text className="text-gray-500 text-[10px] font-instrument-semibold uppercase mb-1">
                   {m.role === 'user' ? 'You' : 'Assistant'}
                 </Text>
+                {isBlockedState ? (
+                  <Text className="text-amber-200 text-[10px] font-instrument-semibold uppercase mb-1">
+                    Missing block capability
+                  </Text>
+                ) : null}
                 <Text className="text-gray-100 text-sm font-instrument leading-5">{m.content}</Text>
+                {isBlockedState ? (
+                  <Text className="text-amber-100/80 text-xs font-instrument leading-5 mt-2">
+                    Flux is pausing here instead of inventing a fake block. Build the primitive, then
+                    return to this campaign and continue the same thread.
+                  </Text>
+                ) : null}
               </View>
+                );
+              })()}
             </View>
           ))
         )}
@@ -110,7 +139,7 @@ export function FluxChatPanel({
       <View className="flex-row gap-2 items-end">
         <TextInput
           className="flex-1 text-white text-sm font-instrument bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-3 py-3 min-h-[48px] max-h-[120px]"
-          placeholder="Message…"
+          placeholder={composerPlaceholder}
           placeholderTextColor="#666"
           value={draft}
           onChangeText={setDraft}
@@ -123,7 +152,8 @@ export function FluxChatPanel({
           Send
         </Button>
       </View>
-      <View className="mt-2 items-center">
+      {footer ? <View className="mt-2">{footer}</View> : null}
+      <View className="mt-1 items-center">
         <Button variant="link" size="xs" onPress={onUndo} disabled={!canUndo}>
           Undo last chat change
         </Button>

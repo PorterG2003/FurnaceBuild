@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Text, TextInput, View, Pressable, Platform } from 'react-native';
-import { ChevronDownIcon, ChevronRightIcon } from 'react-native-heroicons/outline';
 import { Button } from '@/components/ui/button';
+import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { SearchAndSelectMulti } from '@/components/ui/forms/SearchAndSelectMulti';
 import { Select } from '@/components/ui/forms/Select';
 import { Tabs, type Tab } from '@/components/ui/tabs';
@@ -37,53 +37,6 @@ const TRI_FILTER_OPTIONS = [
   { id: 'yes', label: 'Yes' },
   { id: 'no', label: 'No' },
 ];
-
-function FilterSection({
-  title,
-  open,
-  onToggle,
-  children,
-}: {
-  title: string;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <View
-      className="border-b border-[#252525] pb-2"
-      style={{
-        alignSelf: 'stretch',
-        ...(Platform.OS === 'web' ? { userSelect: 'none' as const } : {}),
-      }}
-    >
-      <Pressable
-        onPress={onToggle}
-        className="flex-row items-center justify-between py-1.5"
-        style={{
-          minWidth: 0,
-          ...(Platform.OS === 'web' ? { userSelect: 'none' as const } : {}),
-        }}
-      >
-        <Text selectable={false} className="text-gray-300 font-instrument-semibold text-xs uppercase tracking-wider">
-          {title}
-        </Text>
-        {open ? <ChevronDownIcon size={14} color="#9ca3af" /> : <ChevronRightIcon size={14} color="#9ca3af" />}
-      </Pressable>
-      {open ? (
-        <View
-          className="gap-2 pt-1"
-          style={{
-            alignSelf: 'stretch',
-            ...(Platform.OS === 'web' ? { userSelect: 'none' as const } : {}),
-          }}
-        >
-          {children}
-        </View>
-      ) : null}
-    </View>
-  );
-}
 
 function FilterField({
   label,
@@ -223,7 +176,7 @@ export function ExportFiltersPanel({
         ...(Platform.OS === 'web' ? { userSelect: 'none' as const } : {}),
       }}
     >
-      <FilterSection title="Company" open={openSections.includes('Company')} onToggle={() => toggleSection('Company')}>
+      <CollapsibleSection title="Company" open={openSections.includes('Company')} onToggle={() => toggleSection('Company')}>
         <FilterField label="Name includes">
           <Input
             value={filters.companyNameQuery}
@@ -232,9 +185,9 @@ export function ExportFiltersPanel({
             autoCapitalize="words"
           />
         </FilterField>
-      </FilterSection>
+      </CollapsibleSection>
 
-      <FilterSection
+      <CollapsibleSection
         title="Geography"
         open={openSections.includes('Geography')}
         onToggle={() => toggleSection('Geography')}
@@ -280,10 +233,10 @@ export function ExportFiltersPanel({
             />
           </View>
         </FilterField>
-      </FilterSection>
+      </CollapsibleSection>
 
       {mode === 'contact' ? (
-        <FilterSection title="Owner" open={openSections.includes('Owner')} onToggle={() => toggleSection('Owner')}>
+        <CollapsibleSection title="Owner" open={openSections.includes('Owner')} onToggle={() => toggleSection('Owner')}>
           <FilterField label="Has owner row">
             <TriSelect value={filters.ownerFilter} onChange={(value) => patch({ ownerFilter: value })} placeholder="Any" />
           </FilterField>
@@ -295,10 +248,10 @@ export function ExportFiltersPanel({
               placeholder="e.g. CEO"
             />
           </FilterField>
-        </FilterSection>
+        </CollapsibleSection>
       ) : null}
 
-      <FilterSection
+      <CollapsibleSection
         title="Enrichments"
         open={openSections.includes('Enrichments')}
         onToggle={() => toggleSection('Enrichments')}
@@ -325,9 +278,9 @@ export function ExportFiltersPanel({
             onChange={(value) => patch({ googleAdsResult: value })}
           />
         </FilterField>
-      </FilterSection>
+      </CollapsibleSection>
 
-      <FilterSection title="Advanced" open={openSections.includes('Advanced')} onToggle={() => toggleSection('Advanced')}>
+      <CollapsibleSection title="Advanced" open={openSections.includes('Advanced')} onToggle={() => toggleSection('Advanced')}>
         <View className="gap-1.5">
           <FilterField label="Readiness">
             <Tabs
@@ -356,7 +309,7 @@ export function ExportFiltersPanel({
             />
           </FilterField>
         </View>
-      </FilterSection>
+      </CollapsibleSection>
 
       {showActions ? (
         <View className="flex-row gap-1.5 pt-1">

@@ -9,7 +9,8 @@ export type BlockType =
   | 'benefits'
   | 'testimonial'
   | 'cta'
-  | 'tanners_tax_strategy';
+  | 'tanners_tax_strategy'
+  | 'social_media_plan';
 
 export interface BlockBase {
   id: string;
@@ -100,6 +101,33 @@ export interface TannersTaxStrategyBlock extends BlockBase {
   props: TannersTaxStrategyBlockProps;
 }
 
+export interface SocialMediaPlanDay {
+  /** e.g. IG, TikTok, FB, or a combo label like "IG + TikTok" */
+  platform: string;
+  post_type: string;
+  hook: string;
+  cta?: string;
+}
+
+export interface SocialMediaPlanWeek {
+  theme: string;
+  days: SocialMediaPlanDay[];
+}
+
+export interface SocialMediaPlanBlockProps {
+  inferred_vertical: string;
+  inferred_vertical_rationale: string;
+  positioning_summary: string;
+  weeks: SocialMediaPlanWeek[];
+  cta_ladder: string[];
+  platform_mix_note: string;
+}
+
+export interface SocialMediaPlanBlock extends BlockBase {
+  type: 'social_media_plan';
+  props: SocialMediaPlanBlockProps;
+}
+
 export type Block =
   | HeroBlock
   | SocialProofBlock
@@ -107,7 +135,8 @@ export type Block =
   | BenefitsBlock
   | TestimonialBlock
   | CtaBlock
-  | TannersTaxStrategyBlock;
+  | TannersTaxStrategyBlock
+  | SocialMediaPlanBlock;
 
 // ---------------------------------------------------------------------------
 // Content assets (referenced by blocks)
@@ -162,6 +191,17 @@ export interface PageConfig {
 
 export type FluxPageStatus = 'draft' | 'live' | 'archived';
 
+export interface FluxCampaignChatState {
+  messages: Array<{
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    summary?: string[];
+  }>;
+  lastSummary: string[] | null;
+  updatedAt: string | null;
+}
+
 export interface FluxCampaignRow {
   id: string;
   account_id: string;
@@ -178,6 +218,7 @@ export interface FluxCampaignTemplateRow {
   content_assets: ContentAsset[];
   copy_slots: string[];
   constraints: string;
+  chat_state: FluxCampaignChatState | null;
   created_at: string;
   updated_at: string;
 }

@@ -74,6 +74,7 @@ export function ConfirmDeleteModal({
       title={title}
       description={description || defaultDescription}
       maxWidth="sm"
+      compact={!requireConfirmation}
       footer={
         <ModalFooter layout="inline">
           <Button fullWidth variant="outline" onPress={handleClose} disabled={isLoading}>

@@ -6,3 +6,4 @@ export { BenefitsBlock } from './BenefitsBlock';
 export { TestimonialBlock } from './TestimonialBlock';
 export { CtaBlock } from './CtaBlock';
 export { TannersTaxStrategyBlock } from './TannersTaxStrategyBlock';
+export { SocialMediaPlanBlock } from './SocialMediaPlanBlock';

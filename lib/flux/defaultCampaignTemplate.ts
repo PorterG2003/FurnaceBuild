@@ -55,6 +55,40 @@ export function makeFluxDefaultBlock(type: BlockType, order: number): Block {
           defaultQualificationMode: 'passive',
         },
       };
+    case 'social_media_plan':
+      return {
+        id,
+        type,
+        order,
+        props: {
+          inferred_vertical: 'your vertical',
+          inferred_vertical_rationale:
+            'Replace with one honest sentence tied to what you actually know about this lead (site, notes, industry).',
+          positioning_summary:
+            'Replace with a short paragraph: tone, topics to lean into, and what to avoid for this vertical on social.',
+          weeks: [
+            {
+              theme: 'Week 1 theme (e.g. proof + pain)',
+              days: [
+                { platform: 'IG', post_type: 'Reel', hook: 'Day 1 hook — specific, not generic.' },
+                { platform: 'TikTok', post_type: 'Short video', hook: 'Day 2 hook — pattern interrupt.' },
+                { platform: 'IG + FB', post_type: 'Carousel', hook: 'Day 3 hook — teach one clear thing.', cta: 'Save' },
+              ],
+            },
+            {
+              theme: 'Week 2 theme (e.g. objection handling)',
+              days: [
+                { platform: 'IG', post_type: 'Story', hook: 'Day 1 — poll or question sticker.' },
+                { platform: 'FB', post_type: 'Static', hook: 'Day 2 — myth vs reality.' },
+                { platform: 'IG', post_type: 'Reel', hook: 'Day 3 — before/after or mini case.', cta: 'DM “PLAN”' },
+              ],
+            },
+          ],
+          cta_ladder: ['Follow for daily tips', 'DM a keyword for the asset', 'Book a consult'],
+          platform_mix_note:
+            'Replace with one line on why IG / TikTok / FB weighting fits this vertical and offer (e.g. discovery vs trust vs retargeting).',
+        },
+      };
   }
 }
 

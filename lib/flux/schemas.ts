@@ -61,6 +61,27 @@ const tannersTaxStrategyBlockPropsSchema = z.object({
   defaultQualificationMode: tannersTaxQualificationModeSchema.optional(),
 });
 
+const socialMediaPlanDaySchema = z.object({
+  platform: z.string(),
+  post_type: z.string(),
+  hook: z.string(),
+  cta: z.string().optional(),
+});
+
+const socialMediaPlanWeekSchema = z.object({
+  theme: z.string(),
+  days: z.array(socialMediaPlanDaySchema),
+});
+
+const socialMediaPlanBlockPropsSchema = z.object({
+  inferred_vertical: z.string(),
+  inferred_vertical_rationale: z.string(),
+  positioning_summary: z.string(),
+  weeks: z.array(socialMediaPlanWeekSchema),
+  cta_ladder: z.array(z.string()),
+  platform_mix_note: z.string(),
+});
+
 // ---------------------------------------------------------------------------
 // Block schemas (discriminated union)
 // ---------------------------------------------------------------------------
@@ -112,6 +133,12 @@ const tannersTaxStrategyBlockSchema = z.object({
   props: tannersTaxStrategyBlockPropsSchema,
 });
 
+const socialMediaPlanBlockSchema = z.object({
+  ...blockBase,
+  type: z.literal('social_media_plan'),
+  props: socialMediaPlanBlockPropsSchema,
+});
+
 export const blockSchema = z.discriminatedUnion('type', [
   heroBlockSchema,
   socialProofBlockSchema,
@@ -120,6 +147,7 @@ export const blockSchema = z.discriminatedUnion('type', [
   testimonialBlockSchema,
   ctaBlockSchema,
   tannersTaxStrategyBlockSchema,
+  socialMediaPlanBlockSchema,
 ]);
 
 // ---------------------------------------------------------------------------

@@ -118,6 +118,7 @@ const blockTypeSchema = z.enum([
   'testimonial',
   'cta',
   'tanners_tax_strategy',
+  'social_media_plan',
 ]);
 
 const fluxEditorOperationSchema = z.discriminatedUnion('type', [
@@ -177,7 +178,7 @@ const fluxEditorChatResponseSchema = z.object({
 
 const FLUX_FLAG_KEY = 'flux';
 
-const SYSTEM_PROMPT = `You are a Flux campaign editor assistant. The user edits a landing-page template (blocks, assets, LLM copy slots) and a preview prospect (not saved to DB until they click Save).
+const SYSTEM_PROMPT = `You are a Flux campaign editor assistant. The user is designing a reverse lead magnet inside a reusable page template. Your job is not only to edit blocks: you must help the user think through the campaign methodology before the page is treated as ready.
 
 Rules:
 - Return ONLY valid JSON (no markdown fences) with this exact shape:
@@ -185,7 +186,7 @@ Rules:
 - "operations" is an ordered list of small edits. Each item is a discriminated object with "type" and fields as follows:
   - {"type":"campaign.setName","value":string}
   - {"type":"campaign.setOfferDescription","value":string}
-  - {"type":"block.add","blockType":"hero"|"social_proof"|"case_study"|"benefits"|"testimonial"|"cta"|"tanners_tax_strategy","index"?:number}
+  - {"type":"block.add","blockType":"hero"|"social_proof"|"case_study"|"benefits"|"testimonial"|"cta"|"tanners_tax_strategy"|"social_media_plan","index"?:number}
   - {"type":"block.remove","blockId":string}
   - {"type":"block.updateProps","blockId":string,"props":object} — merge props into the existing block; use only keys valid for that block type
   - {"type":"block.reorder","blockIds":string[]} — full permutation of existing ids
@@ -196,12 +197,37 @@ Rules:
   - {"type":"preview.patchProspect","patch":{...partial prospect fields...}}
   - {"type":"preview.patchBrand","patch":{primaryColor?,accentColor?,fontFamily?,logoUrl?}}
 
+Methodology you should help the user define:
+- WHO_ITS_FOR: the ICP / role / situation
+- INPUTS: what the page already knows from the lead (URL, company, notes, etc.)
+- DELIVERABLE: the tangible thing the reader gets in under ~60 seconds
+- HOOK: why this decision-maker says yes now
+- WOW: what makes the page feel bespoke
+- 60S_TEST: the one thing the reader should understand or be able to do after a short scroll
+- HONESTY: what must not be invented and how to handle missing facts
+
+Conversation behavior:
+- If one or more of those dimensions is still unclear and the user is ideating, ask 1-2 targeted questions in assistantMessage and return "operations": [].
+- Once the user has given enough signal, consolidate the methodology into template.setConstraints using the section labels above. Keep the constraints readable and specific.
+- When helpful, also update campaign.setOfferDescription, template.setCopySlots, blocks, and assets so the template matches the methodology.
+- Prefer a small number of thoughtful edits over a giant speculative rewrite.
+- If a high-quality result requires a block capability that Flux does not currently have, do NOT invent a new block type and do NOT fake it with weak generic blocks. Instead return "operations": [] and use assistantMessage with this exact prefix:
+  Needs new block:
+  Then explain:
+  - the proposed block name
+  - what the block should do
+  - the inputs it needs
+  - the output it should render
+  - why the current block library is insufficient
+  - that the user can come back after the block is built and continue this same chat thread
+
 Copy / rewrite rules:
 - Only suggest new marketing copy via block.updateProps on text fields that appear in the current copy_slots list (or obvious template text like headlines if copy_slots is empty and the user asked for copy).
 - Do not invent block ids; use ids from the provided template blocks.
+- Do not invent facts, customer logos, or metrics. If the user wants proof but none exists, use constraints or assets that honestly frame the limitation.
 - If the user asks for broad personalization preview, set requiresAiPreview true when you change blocks, assets, copy_slots, constraints, or non-brand preview prospect fields (they will need "Rerender with AI" in the app).
 
-If the user message is conversational with no edits, return "operations": [].`;
+If the user message is conversational with no edits, it is valid to return "operations": [].`;
 
 function extractJsonObjectFromLlmText(text: string): string | null {
   const trimmed = text.trim();

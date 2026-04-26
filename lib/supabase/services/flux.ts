@@ -9,8 +9,10 @@ import type {
   ContentAsset,
   PageConfig,
   BrandProfile,
+  FluxCampaignChatState,
 } from '@/lib/flux/types';
 import { getDefaultFluxTemplatePayload, getEmptyFluxTemplatePayload } from '@/lib/flux/defaultCampaignTemplate';
+import { normalizeFluxCampaignChatState } from '@/lib/flux/fluxCampaignChatState';
 
 // ---------------------------------------------------------------------------
 // Campaigns
@@ -89,7 +91,11 @@ export async function getFluxTemplate(campaignId: string): Promise<FluxCampaignT
     .eq('campaign_id', campaignId)
     .maybeSingle();
   if (error) throw error;
-  return data as FluxCampaignTemplateRow | null;
+  if (!data) return null;
+  return {
+    ...(data as FluxCampaignTemplateRow),
+    chat_state: normalizeFluxCampaignChatState((data as { chat_state?: unknown }).chat_state),
+  };
 }
 
 export async function upsertFluxTemplate(
@@ -99,24 +105,46 @@ export async function upsertFluxTemplate(
     content_assets: ContentAsset[];
     copy_slots: string[];
     constraints: string;
+    chat_state?: FluxCampaignChatState | null;
   },
 ): Promise<FluxCampaignTemplateRow> {
+  const payload: Record<string, unknown> = {
+    campaign_id: campaignId,
+    blocks: template.blocks as any,
+    content_assets: template.content_assets as any,
+    copy_slots: template.copy_slots,
+    constraints: template.constraints,
+  };
+  if ('chat_state' in template) {
+    payload.chat_state = (template.chat_state as any) ?? null;
+  }
   const { data, error } = await supabase
     .from('flux_campaign_templates')
-    .upsert(
-      {
-        campaign_id: campaignId,
-        blocks: template.blocks as any,
-        content_assets: template.content_assets as any,
-        copy_slots: template.copy_slots,
-        constraints: template.constraints,
-      },
-      { onConflict: 'campaign_id' },
-    )
+    .upsert(payload, { onConflict: 'campaign_id' })
     .select()
     .single();
   if (error) throw error;
-  return data as FluxCampaignTemplateRow;
+  return {
+    ...(data as FluxCampaignTemplateRow),
+    chat_state: normalizeFluxCampaignChatState((data as { chat_state?: unknown }).chat_state),
+  };
+}
+
+export async function updateFluxTemplateChatState(
+  campaignId: string,
+  chatState: FluxCampaignChatState | null,
+): Promise<FluxCampaignTemplateRow> {
+  const { data, error } = await supabase
+    .from('flux_campaign_templates')
+    .update({ chat_state: (chatState as any) ?? null })
+    .eq('campaign_id', campaignId)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return {
+    ...(data as FluxCampaignTemplateRow),
+    chat_state: normalizeFluxCampaignChatState((data as { chat_state?: unknown }).chat_state),
+  };
 }
 
 // ---------------------------------------------------------------------------

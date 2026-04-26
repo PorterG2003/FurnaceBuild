@@ -124,6 +124,30 @@ export const blockSchema = z.discriminatedUnion('type', [
       defaultQualificationMode: z.enum(TANNERS_QUALIFICATION_MODES).optional(),
     }),
   }),
+  z.object({
+    ...blockBase,
+    type: z.literal('social_media_plan'),
+    props: z.object({
+      inferred_vertical: z.string(),
+      inferred_vertical_rationale: z.string(),
+      positioning_summary: z.string(),
+      weeks: z.array(
+        z.object({
+          theme: z.string(),
+          days: z.array(
+            z.object({
+              platform: z.string(),
+              post_type: z.string(),
+              hook: z.string(),
+              cta: z.string().optional(),
+            }),
+          ),
+        }),
+      ),
+      cta_ladder: z.array(z.string()),
+      platform_mix_note: z.string(),
+    }),
+  }),
 ]);
 
 export const themeConfigSchema = z.object({

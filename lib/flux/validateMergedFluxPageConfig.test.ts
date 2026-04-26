@@ -166,3 +166,53 @@ test('formatMergedFluxSemanticIssuesForRepair caps length', () => {
   assert.ok(s.length <= 121);
   assert.ok(s.endsWith('…'));
 });
+
+test('social_media_plan with filled scaffold passes semantic checks', () => {
+  const merged = page([
+    {
+      id: 's1',
+      type: 'social_media_plan',
+      order: 0,
+      props: {
+        inferred_vertical: 'vertical',
+        inferred_vertical_rationale: 'because',
+        positioning_summary: 'sound like this',
+        weeks: [
+          {
+            theme: 'Week 1',
+            days: [{ platform: 'IG', post_type: 'Reel', hook: 'A real hook line.' }],
+          },
+        ],
+        cta_ladder: ['Follow', 'Book'],
+        platform_mix_note: 'IG-first for this ICP.',
+      },
+    },
+  ]);
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.deepEqual(issues, []);
+});
+
+test('social_media_plan empty day hook fails', () => {
+  const merged = page([
+    {
+      id: 's1',
+      type: 'social_media_plan',
+      order: 0,
+      props: {
+        inferred_vertical: 'vertical',
+        inferred_vertical_rationale: 'because',
+        positioning_summary: 'sound',
+        weeks: [
+          {
+            theme: 'Week 1',
+            days: [{ platform: 'IG', post_type: 'Reel', hook: '   ' }],
+          },
+        ],
+        cta_ladder: ['Follow'],
+        platform_mix_note: 'note',
+      },
+    },
+  ]);
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.ok(issues.some((s) => /hook is empty/.test(s)));
+});

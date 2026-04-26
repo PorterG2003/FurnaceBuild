@@ -9,6 +9,7 @@ export const blockTypeSchema = z.enum([
   'testimonial',
   'cta',
   'tanners_tax_strategy',
+  'social_media_plan',
 ]);
 
 /** Remote + chat-validated editor operations (subset of internal reducer actions). */

@@ -293,7 +293,9 @@ const SYSTEM_PROMPT = `You are a conversion landing page personalizer. You recei
 Do NOT add, remove, or reorder blocks. Work strictly within the template structure.
 Every block from the template MUST appear in your output with the same id, type, and order.
 
-For tanners_tax_strategy blocks only: if you set props.defaultQualificationMode, it MUST be exactly one of: "passive", "reps", or "str" (never "active" or other labels—use "reps" for real-estate-professional-style qualification).`;
+For tanners_tax_strategy blocks only: if you set props.defaultQualificationMode, it MUST be exactly one of: "passive", "reps", or "str" (never "active" or other labels—use "reps" for real-estate-professional-style qualification).
+
+For social_media_plan blocks: keep props.weeks as a calendar (each week has theme + days with platform, post_type, hook, optional cta). Set inferred_vertical and inferred_vertical_rationale from real prospect signals (no invented proof). Keep cta_ladder as an ordered escalation and platform_mix_note as one concrete sentence on channel mix.`;
 
 function buildUserPrompt(
   template: { blocks: unknown[]; content_assets: unknown[]; copy_slots: string[]; constraints: string },

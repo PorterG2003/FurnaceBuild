@@ -398,7 +398,6 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
         onConfirm={handleDelete}
         title="Delete campaign?"
         itemName={campaign.name}
-        confirmLabel="Delete campaign"
         isLoading={isDeleting}
         requireConfirmation={false}
       />

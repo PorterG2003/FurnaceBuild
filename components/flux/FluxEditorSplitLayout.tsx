@@ -5,17 +5,16 @@ import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 
 export type FluxEditorSplitTab = 'editor' | 'preview';
-
-const SPLIT_TABS: Tab[] = [
-  { id: 'editor', label: 'Editor' },
-  { id: 'preview', label: 'Preview' },
-];
+export type FluxEditorSplitVariant = 'ideation' | 'studio';
 
 interface FluxEditorSplitLayoutProps {
+  variant?: FluxEditorSplitVariant;
   /** Renders above the split (full width). */
   header?: React.ReactNode;
   /** Main editor body (wrapped in a column ScrollView on wide; same on narrow Editor tab). */
   editor: React.ReactNode;
+  /** Optional label for the editor tab on narrow layouts. */
+  editorLabel?: string;
   /** When false, editor renders in a fixed-height column and manages its own internal scroll. */
   editorScrollable?: boolean;
   /** Live preview (wrapped in a column ScrollView on wide; Preview tab on narrow). */
@@ -30,8 +29,10 @@ interface FluxEditorSplitLayoutProps {
 }
 
 export function FluxEditorSplitLayout({
+  variant = 'studio',
   header,
   editor,
+  editorLabel = 'Chat',
   editorScrollable = true,
   preview,
   previewOverlay,
@@ -40,12 +41,16 @@ export function FluxEditorSplitLayout({
   const { width } = useWindowDimensions();
   const isWide = width >= LAYOUT_BREAKPOINT;
   const [narrowTab, setNarrowTab] = useState<FluxEditorSplitTab>('editor');
+  const isIdeation = variant === 'ideation';
 
-  const editorContentPadding = isWide ? 16 : 0;
+  const editorContentPadding = isWide ? 8 : 0;
 
-  const tabBar = !isWide ? (
+  const tabBar = !isWide && !isIdeation ? (
     <Tabs
-      tabs={SPLIT_TABS}
+      tabs={[
+        { id: 'editor', label: editorLabel },
+        { id: 'preview', label: 'Preview' },
+      ]}
       activeTab={narrowTab}
       onTabChange={(id) => setNarrowTab(id as FluxEditorSplitTab)}
       layout="equal"
@@ -56,7 +61,7 @@ export function FluxEditorSplitLayout({
 
   const editorScrollContentStyle = {
     padding: editorContentPadding,
-    paddingBottom: 32,
+    paddingBottom: isWide ? 20 : 16,
     flexGrow: 1,
   };
 
@@ -108,12 +113,18 @@ export function FluxEditorSplitLayout({
     return (
       <View className="flex-1">
         {header}
-        <View className="flex-1 flex-row" style={{ minHeight: 0 }}>
-          <View className="border-r border-[#2A2A2A]" style={{ flex: 1, minWidth: 0 }}>
+        {isIdeation ? (
+          <View className="flex-1" style={{ minHeight: 0 }}>
             {editorPane}
           </View>
-          <View style={{ flex: 2, minWidth: 0 }}>{previewPane}</View>
-        </View>
+        ) : (
+          <View className="flex-1 flex-row" style={{ minHeight: 0 }}>
+            <View className="border-r border-[#2A2A2A]" style={{ flex: 1, minWidth: 0 }}>
+              {editorPane}
+            </View>
+            <View style={{ flex: 2, minWidth: 0 }}>{previewPane}</View>
+          </View>
+        )}
       </View>
     );
   }
@@ -121,9 +132,9 @@ export function FluxEditorSplitLayout({
   return (
     <View className="flex-1">
       {header}
-      <View className="flex-1 px-4 pt-2" style={{ minHeight: 0 }}>
+      <View className="flex-1 px-3 pt-1.5" style={{ minHeight: 0 }}>
         {tabBar}
-        {narrowTab === 'editor' ? editorPane : previewPane}
+        {isIdeation || narrowTab === 'editor' ? editorPane : previewPane}
       </View>
     </View>
   );

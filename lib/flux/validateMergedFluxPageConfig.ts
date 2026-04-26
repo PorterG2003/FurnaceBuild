@@ -90,6 +90,35 @@ export function getMergedFluxPageConfigSemanticIssues(
         }
         break;
       }
+      case 'social_media_plan': {
+        const p = block.props;
+        if (!p.inferred_vertical.trim()) push(block, 'inferred_vertical is empty');
+        if (!p.inferred_vertical_rationale.trim()) push(block, 'inferred_vertical_rationale is empty');
+        if (!p.positioning_summary.trim()) push(block, 'positioning_summary is empty');
+        if (!p.platform_mix_note.trim()) push(block, 'platform_mix_note is empty');
+        if (!Array.isArray(p.cta_ladder) || !p.cta_ladder.some((s) => typeof s === 'string' && s.trim())) {
+          push(block, 'cta_ladder must include at least one non-empty step');
+        }
+        if (!Array.isArray(p.weeks) || p.weeks.length < 1) {
+          push(block, 'weeks must have at least one week');
+        } else if (p.weeks.length > 4) {
+          push(block, 'weeks should be at most 4 for this block');
+        } else {
+          p.weeks.forEach((week, wi) => {
+            if (!week.theme.trim()) push(block, `weeks[${wi}].theme is empty`);
+            if (!Array.isArray(week.days) || week.days.length < 1) {
+              push(block, `weeks[${wi}].days must have at least one day`);
+            } else {
+              week.days.forEach((day, di) => {
+                if (!day.platform.trim()) push(block, `weeks[${wi}].days[${di}].platform is empty`);
+                if (!day.post_type.trim()) push(block, `weeks[${wi}].days[${di}].post_type is empty`);
+                if (!day.hook.trim()) push(block, `weeks[${wi}].days[${di}].hook is empty`);
+              });
+            }
+          });
+        }
+        break;
+      }
       default:
         break;
     }

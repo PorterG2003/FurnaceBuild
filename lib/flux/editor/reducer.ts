@@ -2,13 +2,8 @@ import type { Block, ContentAsset, FluxPreviewProspectInput } from '@/lib/flux/t
 import { applyFluxEditorOperation, type FluxEditorDocumentState } from '@/lib/flux/editor/applyOperations';
 import type { FluxEditorOperation } from '@/lib/flux/editor/schemas';
 import { makeFluxDefaultBlock } from '@/lib/flux/defaultCampaignTemplate';
-
-export interface FluxChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  summary?: string[];
-}
+import type { FluxCampaignChatMessage, FluxCampaignChatState } from '@/lib/flux/fluxCampaignChatState';
+export type FluxChatMessage = FluxCampaignChatMessage;
 
 export interface FluxEditorUndoSnapshot {
   name: string;
@@ -41,6 +36,8 @@ export type FluxCampaignEditorAction =
         contentAssets: ContentAsset[];
         copySlots: string;
         constraints: string;
+        /** Persisted editor chat from `flux_campaign_templates.chat_state` (normalized). */
+        chatState: FluxCampaignChatState;
         /** When omitted, existing preview prospect is preserved (matches legacy load behavior). */
         previewProspect?: FluxPreviewProspectInput;
       };
@@ -69,6 +66,7 @@ export type FluxCampaignEditorAction =
   | { type: 'chat.setSending'; value: boolean }
   | { type: 'chat.setError'; value: string | null }
   | { type: 'chat.clearMessages' }
+  | { type: 'chat.restore'; value: FluxCampaignChatState | null }
   | { type: 'chat.applyRemoteOperations'; operations: FluxEditorOperation[] }
   | { type: 'chat.undoLast' };
 
@@ -124,7 +122,8 @@ export function fluxCampaignEditorReducer(
   action: FluxCampaignEditorAction,
 ): FluxCampaignEditorState {
   switch (action.type) {
-    case 'hydrate':
+    case 'hydrate': {
+      const { chatState } = action.payload;
       return {
         ...state,
         name: action.payload.name,
@@ -134,12 +133,13 @@ export function fluxCampaignEditorReducer(
         copySlots: action.payload.copySlots,
         constraints: action.payload.constraints,
         previewProspect: action.payload.previewProspect ?? state.previewProspect,
-        chatMessages: [],
+        chatMessages: chatState.messages,
+        chatLastSummary: chatState.lastSummary,
         chatUndoSnapshot: null,
-        chatLastSummary: null,
         chatError: null,
         chatSending: false,
       };
+    }
     case 'campaign.setName':
       return { ...state, name: action.value };
     case 'campaign.setOfferDescription':
@@ -247,6 +247,15 @@ export function fluxCampaignEditorReducer(
         ...state,
         chatMessages: [],
         chatLastSummary: null,
+        chatError: null,
+        chatUndoSnapshot: null,
+      };
+    case 'chat.restore':
+      return {
+        ...state,
+        chatMessages: action.value?.messages ?? [],
+        chatLastSummary: action.value?.lastSummary ?? null,
+        chatSending: false,
         chatError: null,
         chatUndoSnapshot: null,
       };

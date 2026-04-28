@@ -19,7 +19,9 @@ backend:
         - cd amplify/functions/foundryWebsiteVerificationJob && npm install && cd - || (echo "Failed to install foundryWebsiteVerificationJob dependencies" && exit 1)
         - cd amplify/functions/foundryGoogleAdsVerificationJob && npm install && cd - || (echo "Failed to install foundryGoogleAdsVerificationJob dependencies" && exit 1)
         - cd amplify/functions/foundryCsvBuilderExportJob && npm install && cd - || (echo "Failed to install foundryCsvBuilderExportJob dependencies" && exit 1)
+        - cd amplify/functions/googlePlaces && npm install && cd - || (echo "Failed to install googlePlaces dependencies" && exit 1)
         - cd amplify/functions/processNotificationEvent && npm install && cd - || (echo "Failed to install processNotificationEvent dependencies" && exit 1)
+        - cd amplify/functions/fluxCompetitorAuditStart && npm install && cd - || (echo "Failed to install fluxCompetitorAuditStart dependencies" && exit 1)
         - cd amplify/functions/fluxGenerate && npm install && cd - || (echo "Failed to install fluxGenerate dependencies" && exit 1)
         - cd amplify/functions/fluxEditorChat && npm install && cd - || (echo "Failed to install fluxEditorChat dependencies" && exit 1)
         - |

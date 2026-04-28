@@ -1,6 +1,7 @@
 import { getAccessToken } from '@/lib/services/auth-token';
 import { getFluxGenerateUrl } from './fluxGenerateUrl';
-import type { FluxPreviewProspectInput, FluxPreviewTemplateInput, PageConfig } from './types';
+import type { FluxPreviewProspectInput, FluxPreviewTemplateInput, FluxSellerProfileInput, PageConfig } from './types';
+import type { FluxBrandingPolicy } from './fluxBrandingPolicy';
 import { coercePageConfig } from './coercePageConfig';
 
 export type FluxGenerateResult =
@@ -90,6 +91,8 @@ export async function callFluxPreviewGenerate(params: {
   campaignId: string;
   prospect: FluxPreviewProspectInput;
   template: FluxPreviewTemplateInput;
+  seller_profile?: FluxSellerProfileInput;
+  branding_policy?: FluxBrandingPolicy;
 }): Promise<FluxPreviewGenerateResult> {
   const url = getFluxGenerateUrl();
   if (!url) {
@@ -117,6 +120,7 @@ export async function callFluxPreviewGenerate(params: {
       company_size: params.prospect.company_size ?? null,
       email_notes: params.prospect.email_notes ?? null,
       brand_profile: params.prospect.brand_profile,
+      website_intel: params.prospect.website_intel ?? null,
     },
     template: {
       blocks: params.template.blocks,
@@ -124,6 +128,8 @@ export async function callFluxPreviewGenerate(params: {
       copy_slots: params.template.copy_slots,
       constraints: params.template.constraints,
     },
+    ...(params.seller_profile ? { seller_profile: params.seller_profile } : {}),
+    ...(params.branding_policy ? { branding_policy: params.branding_policy } : {}),
   };
 
   let res: Response;

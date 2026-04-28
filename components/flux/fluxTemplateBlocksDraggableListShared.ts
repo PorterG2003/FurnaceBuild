@@ -20,4 +20,6 @@ export interface FluxTemplateBlocksDraggableListProps {
     updateProps: (id: string, props: Record<string, unknown>) => void,
     assets: ContentAsset[],
   ) => ReactNode;
+  /** When false, hide remove control (e.g. prospect page blocks). Default true. */
+  allowRemoveBlocks?: boolean;
 }

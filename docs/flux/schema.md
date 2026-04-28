@@ -49,7 +49,6 @@ One row per prospect (person at a company you're targeting).
 | `company_size` | text | |
 | `email_notes` | text | Pasted email thread context |
 | `brand_profile` | jsonb | `BrandProfile` (manual in v1) |
-| `logo_path` | text | |
 | `created_at` | timestamptz | |
 
 ### `flux_prospect_pages`

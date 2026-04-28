@@ -11,6 +11,11 @@ import {
   formatMergedFluxSemanticIssuesForRepair,
   getMergedFluxPageConfigSemanticIssues,
 } from '../../../lib/flux/validateMergedFluxPageConfig';
+import { computeTheme } from '../../../lib/flux/computeTheme';
+import { mergeBrandProfileWithWebsiteIntel } from '../../../lib/flux/mergeBrandProfileWithWebsiteIntel';
+import { resolveFluxPageBrandInputs } from '../../../lib/flux/resolveFluxPageBrandInputs';
+import { normalizeFluxBrandingPolicy } from '../../../lib/flux/fluxBrandingPolicy';
+import { formatFluxCopyBudgetsForPrompt } from '../../../lib/flux/fluxCopyBudgets';
 
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -239,56 +244,16 @@ function getFluxGenerateOpenRouterResponseFormat(): OpenRouterResponseFormat {
 }
 
 // ---------------------------------------------------------------------------
-// Theme computation (mirrored from lib/flux/computeTheme)
-// ---------------------------------------------------------------------------
-
-function hexToRgb(hex: string) {
-  const m = hex.replace('#', '').match(/^([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
-  if (!m) return null;
-  return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
-}
-
-function rgbToHex(r: number, g: number, b: number) {
-  return '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
-}
-
-function relativeLuminance(r: number, g: number, b: number) {
-  const [rs, gs, bs] = [r, g, b].map((c) => {
-    const s = c / 255;
-    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
-}
-
-function tint(hex: string, factor: number) {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return '#f5f5f5';
-  return rgbToHex(rgb.r + (255 - rgb.r) * factor, rgb.g + (255 - rgb.g) * factor, rgb.b + (255 - rgb.b) * factor);
-}
-
-function computeTheme(brand: { primaryColor?: string; accentColor?: string; fontFamily?: string; logoUrl?: string }) {
-  const primary =
-    typeof brand.primaryColor === 'string' && brand.primaryColor.length > 0 ? brand.primaryColor : '#4f46e5';
-  const accentRaw = typeof brand.accentColor === 'string' && brand.accentColor.length > 0 ? brand.accentColor : primary;
-  const accent = accentRaw;
-  const bg = tint(primary, 0.92);
-  const bgRgb = hexToRgb(bg);
-  const bgLum = bgRgb ? relativeLuminance(bgRgb.r, bgRgb.g, bgRgb.b) : 0.9;
-  const textColor = bgLum > 0.5 ? '#1a1a1a' : '#f5f5f5';
-  const fontFamily =
-    typeof brand.fontFamily === 'string' && brand.fontFamily.length > 0 ? brand.fontFamily : 'Inter';
-  const logoUrl = typeof brand.logoUrl === 'string' && brand.logoUrl.length > 0 ? brand.logoUrl : undefined;
-  return { primaryColor: primary, accentColor: accent, backgroundColor: bg, textColor, fontFamily, logoUrl };
-}
-
-// ---------------------------------------------------------------------------
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT = `You are a conversion landing page personalizer. You receive a campaign template (blocks with base copy) and prospect context. Your job:
+const SYSTEM_PROMPT = `You are a conversion landing page personalizer. You receive a campaign template (blocks with base copy), prospect context (the page recipient), and optional Seller context (the organization running the campaign). Your job:
+- Never confuse Seller with Prospect: all personalized copy speaks to the Prospect; use Seller only for voice, credibility, and offer framing when Seller context is provided.
 - Rewrite the copy_slots to speak directly to this prospect (when copy_slots is empty, still fill every visible marketing string in block props from prospect context—no blank or placeholder copy)
+- Prefer **tight** marketing copy: short sentences, one idea per line where possible, and headlines that would fit a mobile hero without long wraps. Follow the Copy length section's **Target** values as your default; do not pad or elaborate to fill space.
 - Select the most relevant content_assets for case study / testimonial blocks: props.assetId must be an exact "id" from content_assets of matching type when such assets exist; if there are none of that type, set assetId to "" (empty block)
 - Return a complete PageConfig JSON
+- Pick theme.blockStylePreset from exactly one of: "classic", "minimal", "elevated", "outlined", "soft". These are full layout systems, not just colors: classic = centered marketing sections, minimal = editorial/enterprise layouts, elevated = modern SaaS split panels and feature cards, outlined = report-like trust/compliance layouts, soft = approachable conversational panels.
 
 Do NOT add, remove, or reorder blocks. Work strictly within the template structure.
 Every block from the template MUST appear in your output with the same id, type, and order.
@@ -299,12 +264,43 @@ For social_media_plan blocks: keep props.weeks as a calendar (each week has them
 
 function buildUserPrompt(
   template: { blocks: unknown[]; content_assets: unknown[]; copy_slots: string[]; constraints: string },
-  prospect: { name: string; company: string; role?: string; industry?: string; company_size?: string; email_notes?: string; url?: string },
+  prospect: {
+    name: string;
+    company: string;
+    role?: string;
+    industry?: string;
+    company_size?: string;
+    email_notes?: string;
+    url?: string;
+    website_intel?: WebsiteIntelPromptShape | null;
+  },
   theme: ReturnType<typeof computeTheme>,
+  sellerSection?: string,
 ) {
   const copySlotSection = template.copy_slots.length
     ? `Fields you MUST personalize (copy_slots): ${template.copy_slots.join(', ')}`
     : `There is no copy_slots list: still rewrite every user-visible string in each block's props using the prospect context. Do not leave empty strings for hero/CTA headlines, subheadlines, CTA labels, benefit titles/descriptions, or other body copy—replace template placeholders with real copy.`;
+  const websiteIntelSection = prospect.website_intel
+    ? `Website intelligence (evidence-backed; do not invent facts beyond this):
+${JSON.stringify(
+  {
+    normalized_domain_key: prospect.website_intel.normalized_domain_key ?? null,
+    final_url: prospect.website_intel.final_url ?? null,
+    business_summary: prospect.website_intel.extracted_profile?.business_summary ?? null,
+    brand_name: prospect.website_intel.extracted_profile?.brand_name ?? null,
+    services: prospect.website_intel.extracted_profile?.services ?? [],
+    audience_segments: prospect.website_intel.extracted_profile?.audience_segments ?? [],
+    industries_served: prospect.website_intel.extracted_profile?.industries_served ?? [],
+    locations_served: prospect.website_intel.extracted_profile?.locations_served ?? [],
+    tone: prospect.website_intel.extracted_profile?.tone ?? null,
+    confidence: prospect.website_intel.extracted_profile?.confidence ?? 'low',
+    evidence_urls: prospect.website_intel.extracted_profile?.evidence_urls ?? [],
+    hero_image_candidates: prospect.website_intel.hero_image_candidates ?? [],
+  },
+  null,
+  2,
+)}`
+    : 'Website intelligence: (none)';
   return `Rules from the campaign creator:
 ${template.constraints || '(none)'}
 
@@ -325,12 +321,16 @@ Industry: ${prospect.industry || 'unknown'} | Size: ${prospect.company_size || '
 Their words from email thread: "${prospect.email_notes || '(no notes)'}"
 Company URL: ${prospect.url || '(none)'}
 
+${websiteIntelSection}
+${sellerSection ? `${sellerSection}\n` : ''}
 Theme to use:
 ${JSON.stringify(theme, null, 2)}
 
+${formatFluxCopyBudgetsForPrompt()}
+
 Return ONLY valid JSON matching this schema:
 {
-  "theme": { "primaryColor": string, "accentColor": string, "backgroundColor": string, "textColor": string, "fontFamily": string, "logoUrl"?: string },
+  "theme": { "primaryColor": string, "accentColor": string, "backgroundColor": string, "textColor": string, "fontFamily": string, "logoUrl"?: string, "blockStylePreset"?: "classic" | "minimal" | "elevated" | "outlined" | "soft" },
   "prospectName": string,
   "companyName": string,
   "blocks": [ { "id": string, "type": string, "order": number, "props": { ... } }, ... ]
@@ -342,6 +342,7 @@ Return ONLY valid JSON matching this schema:
 // ---------------------------------------------------------------------------
 
 const FLUX_FLAG_KEY = 'flux';
+const MAX_INLINE_WEBSITE_INTEL_BYTES = 12 * 1024;
 
 function normalizeTemplateRow(row: Record<string, unknown>) {
   const blocks = Array.isArray(row.blocks) ? row.blocks : [];
@@ -356,35 +357,29 @@ function normalizeTemplateRow(row: Record<string, unknown>) {
   return { ...row, blocks, content_assets, copy_slots, constraints };
 }
 
-function parseBrandProfile(raw: unknown): Record<string, unknown> {
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
-  if (typeof raw === 'string') {
-    try {
-      const o = JSON.parse(raw) as unknown;
-      if (o && typeof o === 'object' && !Array.isArray(o)) return o as Record<string, unknown>;
-    } catch {
-      /* ignore */
-    }
-  }
-  return {};
-}
-
-function brandFieldsForTheme(raw: unknown): {
-  primaryColor?: string;
-  accentColor?: string;
-  fontFamily?: string;
-  logoUrl?: string;
-} {
-  const o = parseBrandProfile(raw);
-  return {
-    primaryColor: typeof o.primaryColor === 'string' ? o.primaryColor : undefined,
-    accentColor: typeof o.accentColor === 'string' ? o.accentColor : undefined,
-    fontFamily: typeof o.fontFamily === 'string' ? o.fontFamily : undefined,
-    logoUrl: typeof o.logoUrl === 'string' ? o.logoUrl : undefined,
-  };
-}
-
 type NormalizedTemplate = ReturnType<typeof normalizeTemplateRow>;
+
+type WebsiteIntelPromptShape = {
+  normalized_domain_key?: string | null;
+  site_assets?: {
+    logo_candidates?: string[];
+    theme_color?: string | null;
+    brand_color_candidates?: string[];
+  } | null;
+  extracted_profile?: {
+    business_summary?: string | null;
+    brand_name?: string | null;
+    audience_segments?: string[];
+    services?: string[];
+    industries_served?: string[];
+    locations_served?: string[];
+    tone?: string | null;
+    confidence?: 'low' | 'medium' | 'high';
+    evidence_urls?: string[];
+  } | null;
+  hero_image_candidates?: string[];
+  final_url?: string | null;
+};
 
 /** Prospect fields used for LLM prompt + theme (inline preview or DB row). */
 type ProspectPromptShape = {
@@ -396,7 +391,152 @@ type ProspectPromptShape = {
   email_notes: string | null;
   url: string | null;
   brand_profile: unknown;
+  website_intel?: WebsiteIntelPromptShape | null;
 };
+
+/** Campaign runner — DB row fields or preview body override. */
+type CampaignSellerContext = {
+  displayName: string;
+  tagline: string;
+  websiteUrl: string;
+  sellerBrandProfile: unknown;
+  sellerWebsiteIntel: unknown;
+  brandingPolicy: unknown;
+};
+
+function buildSellerPromptSection(ctx: CampaignSellerContext | null | undefined): string | undefined {
+  if (!ctx) return undefined;
+  const intel = parseWebsiteIntelSnapshot(ctx.sellerWebsiteIntel);
+  const websiteIntelSection = intel
+    ? `Seller website intelligence (evidence-backed; do not invent facts beyond this):
+${JSON.stringify(
+  {
+    normalized_domain_key: intel.normalized_domain_key ?? null,
+    final_url: intel.final_url ?? null,
+    business_summary: intel.extracted_profile?.business_summary ?? null,
+    brand_name: intel.extracted_profile?.brand_name ?? null,
+    services: intel.extracted_profile?.services ?? [],
+    audience_segments: intel.extracted_profile?.audience_segments ?? [],
+    industries_served: intel.extracted_profile?.industries_served ?? [],
+    locations_served: intel.extracted_profile?.locations_served ?? [],
+    tone: intel.extracted_profile?.tone ?? null,
+    confidence: intel.extracted_profile?.confidence ?? 'low',
+    evidence_urls: intel.extracted_profile?.evidence_urls ?? [],
+    hero_image_candidates: intel.hero_image_candidates ?? [],
+  },
+  null,
+  2,
+)}`
+    : 'Seller website intelligence: (none)';
+  return `Seller (organization running this campaign — not the page recipient):
+Display name: ${ctx.displayName || '(none)'}
+Tagline: ${ctx.tagline || '(none)'}
+Website: ${ctx.websiteUrl || '(none)'}
+${websiteIntelSection}
+Branding policy (controls merged page chrome): ${JSON.stringify(normalizeFluxBrandingPolicy(ctx.brandingPolicy), null, 2)}`;
+}
+
+function campaignRowToSellerContext(row: Record<string, unknown>): CampaignSellerContext {
+  return {
+    displayName: typeof row.seller_display_name === 'string' ? row.seller_display_name : '',
+    tagline: typeof row.seller_tagline === 'string' ? row.seller_tagline : '',
+    websiteUrl: typeof row.seller_website_url === 'string' ? row.seller_website_url : '',
+    sellerBrandProfile: row.seller_brand_profile ?? null,
+    sellerWebsiteIntel: row.seller_website_intel_snapshot ?? null,
+    brandingPolicy: row.branding_policy ?? null,
+  };
+}
+
+function mergeSellerPreviewOverrides(
+  base: CampaignSellerContext | null,
+  bodySeller: unknown,
+  bodyPolicy: unknown,
+): CampaignSellerContext | null {
+  const hadBase = base != null;
+  const hadBodySeller = bodySeller != null && typeof bodySeller === 'object' && !Array.isArray(bodySeller);
+  const hadBodyPolicy = bodyPolicy !== undefined && bodyPolicy !== null;
+  if (!hadBase && !hadBodySeller && !hadBodyPolicy) return null;
+
+  let ctx: CampaignSellerContext = base ?? {
+    displayName: '',
+    tagline: '',
+    websiteUrl: '',
+    sellerBrandProfile: null,
+    sellerWebsiteIntel: null,
+    brandingPolicy: null,
+  };
+  if (hadBodySeller) {
+    const b = bodySeller as Record<string, unknown>;
+    ctx = {
+      displayName: typeof b.displayName === 'string' ? b.displayName : ctx.displayName,
+      tagline: typeof b.tagline === 'string' ? b.tagline : ctx.tagline,
+      websiteUrl: typeof b.websiteUrl === 'string' ? b.websiteUrl : ctx.websiteUrl,
+      sellerBrandProfile: b.brand_profile !== undefined ? b.brand_profile : ctx.sellerBrandProfile,
+      sellerWebsiteIntel: b.website_intel !== undefined ? b.website_intel : ctx.sellerWebsiteIntel,
+      brandingPolicy: ctx.brandingPolicy,
+    };
+  }
+  if (hadBodyPolicy) {
+    ctx = { ...ctx, brandingPolicy: bodyPolicy };
+  }
+  return { ...ctx, brandingPolicy: normalizeFluxBrandingPolicy(ctx.brandingPolicy) as unknown };
+}
+
+function trimStringArray(value: unknown, limit: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).slice(0, limit);
+}
+
+function parseWebsiteIntelSnapshot(raw: unknown): WebsiteIntelPromptShape | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const extractedRaw =
+    obj.extracted_profile && typeof obj.extracted_profile === 'object' && !Array.isArray(obj.extracted_profile)
+      ? (obj.extracted_profile as Record<string, unknown>)
+      : null;
+  return {
+    normalized_domain_key: typeof obj.normalized_domain_key === 'string' ? obj.normalized_domain_key : null,
+    site_assets:
+      obj.site_assets && typeof obj.site_assets === 'object' && !Array.isArray(obj.site_assets)
+        ? {
+            logo_candidates: trimStringArray((obj.site_assets as Record<string, unknown>).logo_candidates, 5),
+            theme_color:
+              typeof (obj.site_assets as Record<string, unknown>).theme_color === 'string'
+                ? String((obj.site_assets as Record<string, unknown>).theme_color)
+                : null,
+            brand_color_candidates: trimStringArray(
+              (obj.site_assets as Record<string, unknown>).brand_color_candidates,
+              6,
+            ),
+          }
+        : null,
+    extracted_profile: extractedRaw
+      ? {
+          business_summary:
+            typeof extractedRaw.business_summary === 'string' ? extractedRaw.business_summary : null,
+          brand_name: typeof extractedRaw.brand_name === 'string' ? extractedRaw.brand_name : null,
+          audience_segments: trimStringArray(extractedRaw.audience_segments, 6),
+          services: trimStringArray(extractedRaw.services, 8),
+          industries_served: trimStringArray(extractedRaw.industries_served, 6),
+          locations_served: trimStringArray(extractedRaw.locations_served, 6),
+          tone: typeof extractedRaw.tone === 'string' ? extractedRaw.tone : null,
+          confidence:
+            extractedRaw.confidence === 'low' ||
+            extractedRaw.confidence === 'medium' ||
+            extractedRaw.confidence === 'high'
+              ? extractedRaw.confidence
+              : 'low',
+          evidence_urls: trimStringArray(extractedRaw.evidence_urls, 6),
+        }
+      : null,
+    hero_image_candidates: trimStringArray(obj.hero_image_candidates, 5),
+    final_url: typeof obj.final_url === 'string' ? obj.final_url : null,
+  };
+}
+
+function pickServerHeroImageUrl(websiteIntel: WebsiteIntelPromptShape | null): string | null {
+  return websiteIntel?.hero_image_candidates?.[0] ?? null;
+}
 
 async function assertUserCanAccessCampaign(
   db: SupabaseClient,
@@ -448,6 +588,7 @@ function extractJsonObjectFromLlmText(text: string): string | null {
 async function runLlmPageConfig(params: {
   template: NormalizedTemplate;
   prospect: ProspectPromptShape;
+  campaignSeller?: CampaignSellerContext | null;
   openRouterApiKey: string;
   openRouterModel: string;
   openRouterReferer?: string;
@@ -456,7 +597,22 @@ async function runLlmPageConfig(params: {
   | { ok: true; pageConfig: z.infer<typeof pageConfigSchema>; modelUsed: string }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
-  const theme = computeTheme(brandFieldsForTheme(params.prospect.brand_profile));
+  const websiteIntel = parseWebsiteIntelSnapshot(params.prospect.website_intel);
+  const prospectMerged = mergeBrandProfileWithWebsiteIntel(
+    params.prospect.brand_profile as any,
+    websiteIntel as any,
+  );
+  const sellerCtx = params.campaignSeller;
+  const sellerIntelParsed = sellerCtx ? parseWebsiteIntelSnapshot(sellerCtx.sellerWebsiteIntel) : null;
+  const sellerMerged = sellerCtx
+    ? mergeBrandProfileWithWebsiteIntel(sellerCtx.sellerBrandProfile as any, sellerIntelParsed as any)
+    : null;
+  const policy = sellerCtx ? normalizeFluxBrandingPolicy(sellerCtx.brandingPolicy) : null;
+  const resolvedBrand =
+    sellerCtx && sellerMerged && policy
+      ? resolveFluxPageBrandInputs({ policy, prospectBrand: prospectMerged, sellerBrand: sellerMerged })
+      : prospectMerged;
+  const theme = computeTheme(resolvedBrand);
   const prospectForPrompt: Parameters<typeof buildUserPrompt>[1] = {
     name: params.prospect.name,
     company: params.prospect.company,
@@ -465,6 +621,7 @@ async function runLlmPageConfig(params: {
     company_size: params.prospect.company_size ?? undefined,
     email_notes: params.prospect.email_notes ?? undefined,
     url: params.prospect.url ?? undefined,
+    website_intel: websiteIntel,
   };
   const templateForPrompt = {
     blocks: params.template.blocks as unknown[],
@@ -472,7 +629,8 @@ async function runLlmPageConfig(params: {
     copy_slots: params.template.copy_slots as string[],
     constraints: typeof params.template.constraints === 'string' ? params.template.constraints : '',
   };
-  const baseUser = buildUserPrompt(templateForPrompt, prospectForPrompt, theme);
+  const sellerSection = buildSellerPromptSection(params.campaignSeller ?? null);
+  const baseUser = buildUserPrompt(templateForPrompt, prospectForPrompt, theme, sellerSection);
   const maxAttempts = 3;
   let lastIssue = '';
   let modelUsed = params.openRouterModel;
@@ -544,6 +702,7 @@ async function runLlmPageConfig(params: {
       serverTheme: theme,
       prospectName: params.prospect.name,
       companyName: params.prospect.company,
+      serverHeroImageUrl: pickServerHeroImageUrl(websiteIntel),
     });
     const semanticIssues = getMergedFluxPageConfigSemanticIssues(merged, params.template.content_assets);
     if (semanticIssues.length > 0) {
@@ -680,7 +839,18 @@ async function handleRequest(event: any) {
       email_notes: typeof pr.email_notes === 'string' ? pr.email_notes : null,
       url: typeof pr.url === 'string' ? pr.url : null,
       brand_profile: pr.brand_profile,
+      website_intel: null,
     };
+    if (pr.website_intel != null) {
+      const bytes = JSON.stringify(pr.website_intel).length;
+      if (bytes > MAX_INLINE_WEBSITE_INTEL_BYTES) {
+        return response(400, {
+          error: 'Preview website_intel is too large',
+          code: 'PREVIEW_WEBSITE_INTEL_TOO_LARGE',
+        });
+      }
+      prospectInline.website_intel = parseWebsiteIntelSnapshot(pr.website_intel);
+    }
 
     const { data: templateRaw, error: templateErr } = await db
       .from('flux_campaign_templates')
@@ -711,9 +881,24 @@ async function handleRequest(event: any) {
       } as Record<string, unknown>);
     }
 
+    const { data: campaignRow, error: campLoadErr } = await db
+      .from('flux_campaigns')
+      .select('*')
+      .eq('id', campaignId)
+      .maybeSingle();
+    if (campLoadErr) {
+      return response(500, { error: 'Database error loading campaign', details: campLoadErr.message });
+    }
+    const campaignSeller = mergeSellerPreviewOverrides(
+      campaignRow ? campaignRowToSellerContext(campaignRow as Record<string, unknown>) : null,
+      body.seller_profile,
+      body.branding_policy,
+    );
+
     const llm = await runLlmPageConfig({
       template,
       prospect: prospectInline,
+      campaignSeller,
       openRouterApiKey,
       openRouterModel,
       openRouterReferer: openRouterReferer || undefined,
@@ -756,6 +941,18 @@ async function handleRequest(event: any) {
 
   const template = normalizeTemplateRow(templateRaw as Record<string, unknown>);
 
+  const { data: campaignRowForSeller, error: campaignRowErr } = await db
+    .from('flux_campaigns')
+    .select('*')
+    .eq('id', campaignId)
+    .maybeSingle();
+  if (campaignRowErr) {
+    return response(500, { error: 'Database error loading campaign', details: campaignRowErr.message });
+  }
+  const campaignSellerPersisted = campaignRowForSeller
+    ? campaignRowToSellerContext(campaignRowForSeller as Record<string, unknown>)
+    : null;
+
   const { data: prospect, error: prospectErr } = await db
     .from('flux_prospects')
     .select('*')
@@ -774,7 +971,11 @@ async function handleRequest(event: any) {
 
   const llm = await runLlmPageConfig({
     template,
-    prospect: prospect as ProspectPromptShape,
+    prospect: {
+      ...(prospect as ProspectPromptShape),
+      website_intel: parseWebsiteIntelSnapshot((prospect as Record<string, unknown>).website_intel_snapshot),
+    },
+    campaignSeller: campaignSellerPersisted,
     openRouterApiKey,
     openRouterModel,
     openRouterReferer: openRouterReferer || undefined,

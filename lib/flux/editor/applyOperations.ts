@@ -3,8 +3,11 @@ import type {
   Block,
   ContentAsset,
   FluxPreviewProspectInput,
+  FluxSellerProfileInput,
 } from '@/lib/flux/types';
 import type { FluxEditorOperation } from '@/lib/flux/editor/schemas';
+import type { FluxBrandingPolicy } from '@/lib/flux/fluxBrandingPolicy';
+import { normalizeFluxBrandingPolicy } from '@/lib/flux/fluxBrandingPolicy';
 
 export interface FluxEditorDocumentState {
   name: string;
@@ -14,6 +17,8 @@ export interface FluxEditorDocumentState {
   copySlots: string;
   constraints: string;
   previewProspect: FluxPreviewProspectInput;
+  sellerProfile: FluxSellerProfileInput;
+  brandingPolicy: FluxBrandingPolicy;
   editingBlockId: string | null;
 }
 
@@ -77,6 +82,30 @@ export function applyFluxEditorOperation(
         ...state,
         contentAssets: state.contentAssets.filter((a) => a.id !== op.assetId),
       };
+    case 'asset.update': {
+      const { assetId, patch } = op;
+      return {
+        ...state,
+        contentAssets: state.contentAssets.map((a) => {
+          if (a.id !== assetId) return a;
+          return {
+            ...a,
+            ...(patch.type !== undefined ? { type: patch.type } : {}),
+            ...(patch.title !== undefined ? { title: patch.title } : {}),
+            ...(patch.body !== undefined ? { body: patch.body } : {}),
+            ...(patch.metric !== undefined
+              ? { metric: patch.metric === null ? undefined : patch.metric }
+              : {}),
+            ...(patch.attribution !== undefined
+              ? { attribution: patch.attribution === null ? undefined : patch.attribution }
+              : {}),
+            ...(patch.imageUrl !== undefined
+              ? { imageUrl: patch.imageUrl === null ? undefined : patch.imageUrl }
+              : {}),
+          };
+        }),
+      };
+    }
     case 'template.setCopySlots':
       return { ...state, copySlots: op.value.join(', ') };
     case 'template.setConstraints':
@@ -101,6 +130,31 @@ export function applyFluxEditorOperation(
             ...op.patch,
           },
         },
+      };
+    case 'seller.patchProfile':
+      return {
+        ...state,
+        sellerProfile: {
+          ...state.sellerProfile,
+          ...op.patch,
+        },
+      };
+    case 'seller.patchBrand':
+      return {
+        ...state,
+        sellerProfile: {
+          ...state.sellerProfile,
+          brand_profile: {
+            primaryColor: state.sellerProfile.brand_profile?.primaryColor ?? '#4f46e5',
+            ...state.sellerProfile.brand_profile,
+            ...op.patch,
+          },
+        },
+      };
+    case 'branding.setPolicy':
+      return {
+        ...state,
+        brandingPolicy: normalizeFluxBrandingPolicy(op.policy),
       };
     default:
       return state;

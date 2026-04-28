@@ -9,10 +9,40 @@ import type {
   ContentAsset,
   PageConfig,
   BrandProfile,
-  FluxCampaignChatState,
+  FluxWebsiteIntelSnapshot,
+  FluxEditorChatSubjectType,
 } from '@/lib/flux/types';
 import { getDefaultFluxTemplatePayload, getEmptyFluxTemplatePayload } from '@/lib/flux/defaultCampaignTemplate';
-import { normalizeFluxCampaignChatState } from '@/lib/flux/fluxCampaignChatState';
+import {
+  emptyFluxCampaignChatState,
+  normalizeFluxCampaignChatState,
+  type FluxCampaignChatState,
+} from '@/lib/flux/fluxCampaignChatState';
+import {
+  emptyFluxProspectPageChatState,
+  normalizeFluxProspectPageChatState,
+  type FluxProspectPageChatState,
+} from '@/lib/flux/fluxProspectPageChatState';
+import { parseFluxCampaignRowFromDb } from '@/lib/flux/campaignSeller';
+import { brandingPolicyToJson, type FluxBrandingPolicy } from '@/lib/flux/fluxBrandingPolicy';
+
+async function upsertFluxEditorChat(params: {
+  accountId: string;
+  subjectType: FluxEditorChatSubjectType;
+  subjectId: string;
+  state: unknown;
+}): Promise<void> {
+  const { error } = await supabase.from('flux_editor_chats' as any).upsert(
+    {
+      account_id: params.accountId,
+      subject_type: params.subjectType,
+      subject_id: params.subjectId,
+      state: params.state as any,
+    },
+    { onConflict: 'subject_type,subject_id' },
+  );
+  if (error) throw error;
+}
 
 // ---------------------------------------------------------------------------
 // Campaigns
@@ -25,7 +55,7 @@ export async function getFluxCampaigns(accountId: string): Promise<FluxCampaignR
     .eq('account_id', accountId)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as FluxCampaignRow[];
+  return (data ?? []).map((row) => parseFluxCampaignRowFromDb(row as Record<string, unknown>));
 }
 
 export async function getFluxCampaignById(id: string): Promise<FluxCampaignRow | null> {
@@ -35,7 +65,7 @@ export async function getFluxCampaignById(id: string): Promise<FluxCampaignRow |
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
-  return data as FluxCampaignRow | null;
+  return data ? parseFluxCampaignRowFromDb(data as Record<string, unknown>) : null;
 }
 
 export async function createFluxCampaign(
@@ -49,7 +79,7 @@ export async function createFluxCampaign(
     .select()
     .single();
   if (error) throw error;
-  const campaign = data as FluxCampaignRow;
+  const campaign = parseFluxCampaignRowFromDb(data as Record<string, unknown>);
   await upsertFluxTemplate(campaign.id, getEmptyFluxTemplatePayload());
   return campaign;
 }
@@ -61,18 +91,37 @@ export async function ensureFluxTemplateExists(campaignId: string): Promise<Flux
   return upsertFluxTemplate(campaignId, getDefaultFluxTemplatePayload());
 }
 
+export type UpdateFluxCampaignInput = {
+  name?: string;
+  offer_description?: string | null;
+  seller_display_name?: string | null;
+  seller_tagline?: string | null;
+  seller_website_url?: string | null;
+  seller_brand_profile?: BrandProfile | null;
+  seller_website_domain_key?: string | null;
+  seller_foundry_company_id?: string | null;
+  seller_website_intel_snapshot?: FluxWebsiteIntelSnapshot | null;
+  seller_website_intel_auto_filled_at?: string | null;
+  branding_policy?: FluxBrandingPolicy;
+};
+
 export async function updateFluxCampaign(
   id: string,
-  updates: { name?: string; offer_description?: string | null },
+  updates: UpdateFluxCampaignInput,
 ): Promise<FluxCampaignRow> {
+  const { branding_policy, ...rest } = updates;
+  const payload: Record<string, unknown> = { ...rest };
+  if (branding_policy) {
+    payload.branding_policy = brandingPolicyToJson(branding_policy);
+  }
   const { data, error } = await supabase
     .from('flux_campaigns')
-    .update(updates)
+    .update(payload)
     .eq('id', id)
     .select()
     .single();
   if (error) throw error;
-  return data as FluxCampaignRow;
+  return parseFluxCampaignRowFromDb(data as Record<string, unknown>);
 }
 
 export async function deleteFluxCampaign(id: string): Promise<void> {
@@ -92,9 +141,21 @@ export async function getFluxTemplate(campaignId: string): Promise<FluxCampaignT
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
+  const row = data as FluxCampaignTemplateRow & { chat_state?: unknown };
+  const { data: chatRow, error: chatErr } = await supabase
+    .from('flux_editor_chats' as any)
+    .select('state')
+    .eq('subject_type', 'campaign_template')
+    .eq('subject_id', row.id)
+    .maybeSingle();
+  if (chatErr) throw chatErr;
+  const legacy = row.chat_state;
+  const chat_state = normalizeFluxCampaignChatState(
+    chatRow != null ? (chatRow as { state: unknown }).state : legacy,
+  );
   return {
-    ...(data as FluxCampaignTemplateRow),
-    chat_state: normalizeFluxCampaignChatState((data as { chat_state?: unknown }).chat_state),
+    ...row,
+    chat_state,
   };
 }
 
@@ -118,33 +179,39 @@ export async function upsertFluxTemplate(
   if ('chat_state' in template) {
     payload.chat_state = (template.chat_state as any) ?? null;
   }
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('flux_campaign_templates')
     .upsert(payload, { onConflict: 'campaign_id' })
     .select()
     .single();
   if (error) throw error;
-  return {
-    ...(data as FluxCampaignTemplateRow),
-    chat_state: normalizeFluxCampaignChatState((data as { chat_state?: unknown }).chat_state),
-  };
+  const merged = await getFluxTemplate(campaignId);
+  if (!merged) throw new Error('Template missing after upsert');
+  return merged;
 }
 
 export async function updateFluxTemplateChatState(
   campaignId: string,
   chatState: FluxCampaignChatState | null,
 ): Promise<FluxCampaignTemplateRow> {
-  const { data, error } = await supabase
+  const campaign = await getFluxCampaignById(campaignId);
+  if (!campaign) throw new Error('Campaign not found');
+  const { data: t, error } = await supabase
     .from('flux_campaign_templates')
-    .update({ chat_state: (chatState as any) ?? null })
+    .select('id')
     .eq('campaign_id', campaignId)
-    .select('*')
     .single();
   if (error) throw error;
-  return {
-    ...(data as FluxCampaignTemplateRow),
-    chat_state: normalizeFluxCampaignChatState((data as { chat_state?: unknown }).chat_state),
-  };
+  const templateId = (t as { id: string }).id;
+  await upsertFluxEditorChat({
+    accountId: campaign.account_id,
+    subjectType: 'campaign_template',
+    subjectId: templateId,
+    state: chatState ?? emptyFluxCampaignChatState(),
+  });
+  const next = await getFluxTemplate(campaignId);
+  if (!next) throw new Error('Template not found after chat save');
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +259,10 @@ export async function createFluxProspect(prospect: {
   company_size?: string;
   email_notes?: string;
   brand_profile?: BrandProfile;
-  logo_path?: string;
+  foundry_company_id?: string | null;
+  website_domain_key?: string | null;
+  website_intel_snapshot?: FluxWebsiteIntelSnapshot | null;
+  website_intel_auto_filled_at?: string | null;
 }): Promise<FluxProspectRow> {
   const { data, error } = await supabase
     .from('flux_prospects')
@@ -207,12 +277,56 @@ export async function createFluxProspect(prospect: {
       company_size: prospect.company_size ?? null,
       email_notes: prospect.email_notes ?? null,
       brand_profile: (prospect.brand_profile as any) ?? null,
-      logo_path: prospect.logo_path ?? null,
+      foundry_company_id: prospect.foundry_company_id ?? null,
+      website_domain_key: prospect.website_domain_key ?? null,
+      website_intel_snapshot: (prospect.website_intel_snapshot as any) ?? null,
+      website_intel_auto_filled_at: prospect.website_intel_auto_filled_at ?? null,
     })
     .select()
     .single();
   if (error) throw error;
   return data as FluxProspectRow;
+}
+
+export type UpdateFluxProspectInput = {
+  name?: string;
+  company?: string;
+  role?: string | null;
+  url?: string | null;
+  industry?: string | null;
+  company_size?: string | null;
+  email_notes?: string | null;
+  brand_profile?: BrandProfile | null;
+};
+
+export async function updateFluxProspect(
+  id: string,
+  updates: UpdateFluxProspectInput,
+): Promise<FluxProspectRow> {
+  const row: Record<string, unknown> = {};
+  if (updates.name !== undefined) row.name = updates.name;
+  if (updates.company !== undefined) row.company = updates.company;
+  if (updates.role !== undefined) row.role = updates.role;
+  if (updates.url !== undefined) row.url = updates.url;
+  if (updates.industry !== undefined) row.industry = updates.industry;
+  if (updates.company_size !== undefined) row.company_size = updates.company_size;
+  if (updates.email_notes !== undefined) row.email_notes = updates.email_notes;
+  if (updates.brand_profile !== undefined) {
+    row.brand_profile = updates.brand_profile === null ? null : (updates.brand_profile as any);
+  }
+  const { data, error } = await supabase
+    .from('flux_prospects')
+    .update(row)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as FluxProspectRow;
+}
+
+export async function deleteFluxProspect(id: string): Promise<void> {
+  const { error } = await supabase.from('flux_prospects').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,12 +429,56 @@ export async function updateFluxPageStatus(
   return data as FluxProspectPageRow;
 }
 
-export async function checkSlugAvailable(slug: string): Promise<boolean> {
+/** Slug is free if unused, or only used by `excludePageId` (same page keeping its slug). */
+export async function checkSlugAvailable(slug: string, excludePageId?: string): Promise<boolean> {
+  const trimmed = slug.trim();
+  if (!trimmed) return false;
+  const { data, error } = await supabase.from('flux_prospect_pages').select('id').eq('slug', trimmed);
+  if (error) throw error;
+  const rows = data ?? [];
+  if (rows.length === 0) return true;
+  if (excludePageId && rows.length === 1 && rows[0].id === excludePageId) return true;
+  return false;
+}
+
+export async function updateFluxPageSlug(pageId: string, slug: string): Promise<FluxProspectPageRow> {
   const { data, error } = await supabase
     .from('flux_prospect_pages')
-    .select('id')
-    .eq('slug', slug)
+    .update({ slug: slug.trim() })
+    .eq('id', pageId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as FluxProspectPageRow;
+}
+
+// ---------------------------------------------------------------------------
+// Editor chats (flux_editor_chats)
+// ---------------------------------------------------------------------------
+
+export async function getFluxProspectPageEditorChat(
+  prospectPageId: string,
+): Promise<FluxProspectPageChatState> {
+  const { data, error } = await supabase
+    .from('flux_editor_chats' as any)
+    .select('state')
+    .eq('subject_type', 'prospect_page')
+    .eq('subject_id', prospectPageId)
     .maybeSingle();
   if (error) throw error;
-  return data == null;
+  if (!data) return emptyFluxProspectPageChatState();
+  return normalizeFluxProspectPageChatState((data as { state: unknown }).state);
+}
+
+export async function updateFluxProspectPageEditorChat(
+  accountId: string,
+  prospectPageId: string,
+  chatState: FluxProspectPageChatState,
+): Promise<void> {
+  await upsertFluxEditorChat({
+    accountId,
+    subjectType: 'prospect_page',
+    subjectId: prospectPageId,
+    state: chatState,
+  });
 }

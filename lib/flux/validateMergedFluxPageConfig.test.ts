@@ -12,6 +12,7 @@ const theme = {
   backgroundColor: '#eeeeee',
   textColor: '#000000',
   fontFamily: 'Inter',
+  blockStylePreset: 'classic' as const,
 } as const;
 
 function page(blocks: PageConfig['blocks']): PageConfig {
@@ -39,6 +40,26 @@ test('valid hero-only merged config passes with empty content_assets', () => {
   ]);
   const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
   assert.deepEqual(issues, []);
+});
+
+test('semantic issues include copy budget when hero headline exceeds hard max', () => {
+  const merged = page([
+    {
+      id: 'h1',
+      type: 'hero',
+      order: 0,
+      props: {
+        headline: 'x'.repeat(89),
+        subheadline: 'There',
+        ctaText: 'Go',
+        ctaUrl: 'https://example.com',
+      },
+    },
+  ]);
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0]!, /exceeds hard max 88/);
+  assert.match(issues[0]!, /target 56/);
 });
 
 test('empty hero headline fails', () => {

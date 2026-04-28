@@ -1,5 +1,9 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import type { ThemeConfig } from '@/lib/flux/types';
+import {
+  getFluxPresentationTokens,
+  type FluxPresentationTokens,
+} from '@/lib/flux/fluxPresentationTokens';
 
 const DEFAULT_THEME: ThemeConfig = {
   primaryColor: '#4f46e5',
@@ -10,9 +14,16 @@ const DEFAULT_THEME: ThemeConfig = {
 };
 
 const FluxThemeContext = createContext<ThemeConfig>(DEFAULT_THEME);
+const FluxPresentationContext = createContext<FluxPresentationTokens>(
+  getFluxPresentationTokens(DEFAULT_THEME),
+);
 
 export function useFluxTheme(): ThemeConfig {
   return useContext(FluxThemeContext);
+}
+
+export function useFluxPresentation(): FluxPresentationTokens {
+  return useContext(FluxPresentationContext);
 }
 
 export function FluxThemeProvider({
@@ -22,9 +33,13 @@ export function FluxThemeProvider({
   theme: ThemeConfig;
   children: React.ReactNode;
 }) {
+  const presentation = useMemo(() => getFluxPresentationTokens(theme), [theme]);
+
   return (
     <FluxThemeContext.Provider value={theme}>
-      {children}
+      <FluxPresentationContext.Provider value={presentation}>
+        {children}
+      </FluxPresentationContext.Provider>
     </FluxThemeContext.Provider>
   );
 }

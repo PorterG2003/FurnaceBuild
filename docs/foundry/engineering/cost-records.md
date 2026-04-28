@@ -32,6 +32,7 @@ Store the direct cost where the work actually happened:
 - imports: `ingestion_runs`
 - Skip Sherpa: `contact_enrichment_attempts`
 - website verification: `company_website_verifications`
+- website intelligence LLM calls: `company_website_intelligence`
 - Google Ads verification: `company_google_ads_verifications`
 - state registry pulls: `registry_source_snapshots`
 

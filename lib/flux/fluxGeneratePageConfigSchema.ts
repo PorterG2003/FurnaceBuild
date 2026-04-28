@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FLUX_BLOCK_STYLE_PRESETS } from './fluxPresentationTokens';
 
 /**
  * Zod schemas for Flux `fluxGenerate` PageConfig output (shared with Lambda via relative import).
@@ -64,6 +65,7 @@ export const blockSchema = z.discriminatedUnion('type', [
       subheadline: z.string(),
       ctaText: z.string(),
       ctaUrl: z.string(),
+      heroImageUrl: z.string().optional(),
     }),
   }),
   z.object({
@@ -157,6 +159,7 @@ export const themeConfigSchema = z.object({
   textColor: z.string(),
   fontFamily: z.string(),
   logoUrl: z.string().optional(),
+  blockStylePreset: z.enum(FLUX_BLOCK_STYLE_PRESETS).optional(),
 });
 
 export const pageConfigSchema = z.object({

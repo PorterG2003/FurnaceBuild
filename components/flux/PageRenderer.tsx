@@ -4,6 +4,7 @@ import type { PageConfig, ContentAsset } from '@/lib/flux/types';
 import { FluxGoogleFontWebLinks } from './FluxGoogleFontWebLinks';
 import { FluxThemeProvider } from './FluxThemeProvider';
 import { BlockRenderer } from './blocks/BlockRenderer';
+import { getFluxPresentationTokens } from '@/lib/flux/fluxPresentationTokens';
 
 interface PageRendererProps {
   config: PageConfig;
@@ -29,13 +30,13 @@ export function PageRenderer({
 }: PageRendererProps) {
   const theme = config.theme ?? FALLBACK_THEME;
   const blocks = Array.isArray(config.blocks) ? config.blocks : [];
-  const ringColor = theme.accentColor || theme.primaryColor || '#6366f1';
+  const presentation = getFluxPresentationTokens(theme);
 
   const inner = (
     <FluxThemeProvider theme={theme}>
       <View className="w-full" style={{ backgroundColor: theme.backgroundColor }}>
         {theme.logoUrl ? (
-          <View className="w-full py-4 px-6 flex-row items-center" style={{ backgroundColor: '#ffffff' }}>
+          <View className="w-full py-4 px-6 flex-row items-center" style={presentation.logoBar}>
             <Image
               source={{ uri: theme.logoUrl }}
               className="h-8 w-32"
@@ -52,14 +53,7 @@ export function PageRenderer({
                 key={block.id}
                 style={
                   highlighted
-                    ? {
-                        borderWidth: 2,
-                        borderColor: ringColor,
-                        marginHorizontal: 4,
-                        marginVertical: 2,
-                        borderRadius: 10,
-                        overflow: 'hidden',
-                      }
+                    ? presentation.highlightFrame
                     : undefined
                 }
               >

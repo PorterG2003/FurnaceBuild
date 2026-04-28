@@ -19,10 +19,16 @@ Given a prefix (no trailing slash), CDK and helper scripts use:
 |--------|---------------------|
 | Main Supabase service role | `{prefix}/SUPABASE_SECRET_KEY` |
 | Registry / leads service role | `{prefix}/LEADS_SUPABASE_SECRET_KEY` |
+| Foundry website intelligence (OpenRouter, ECS) | `{prefix}/FOUNDRY_OPENROUTER_API_KEY` |
+| Google Places API (New), `googlePlaces` Lambda only | `{prefix}/GOOGLE_PLACES_API_KEY` |
+
+Set the Foundry key with Amplify (same prefix as other sandbox secrets), for example: `npx ampx sandbox secret set FOUNDRY_OPENROUTER_API_KEY`. Flux LLM uses a separate secret: `OPENROUTER_API_KEY`.
+
+For Flux / Foundry address autocomplete and place details, set a [Maps Platform](https://console.cloud.google.com/google/maps-apis) API key with **Places API (New)** enabled, then: `npx ampx sandbox secret set GOOGLE_PLACES_API_KEY` (use the same command in your deploy pipeline for production). The key is read only by the `googlePlaces` Lambda, not the Expo client.
 
 Examples:
 
-- Prefix `/amplify/furnacebuild/porter-sandbox-387f79dcc1` → main key at `.../SUPABASE_SECRET_KEY`, leads at `.../LEADS_SUPABASE_SECRET_KEY`.
+- Prefix `/amplify/furnacebuild/porter-sandbox-387f79dcc1` → main key at `.../SUPABASE_SECRET_KEY`, leads at `.../LEADS_SUPABASE_SECRET_KEY`, Foundry OpenRouter at `.../FOUNDRY_OPENROUTER_API_KEY`.
 - Prefix `/amplify/shared/d1jtp0rz0l9mcn` → prod-style shared folder (your account may differ).
 
 If your leads key lives under a **different** prefix than main, this repo’s worker CDK cannot express that with a single prefix; you would need a code change (separate prefix for leads) or relocate parameters in SSM.
@@ -56,10 +62,11 @@ Copy the row you want, remove the trailing `/SUPABASE_SECRET_KEY`, and use the r
 ## Alignment checklist
 
 1. `npx ampx sandbox secret set SUPABASE_SECRET_KEY` (and `LEADS_SUPABASE_SECRET_KEY` if needed).
-2. Confirm parameters exist under one folder per environment (`.../SUPABASE_SECRET_KEY`, `.../LEADS_SUPABASE_SECRET_KEY`).
-3. Set **`DEV_SECRET_SSM_PREFIX`** / **`PROD_SECRET_SSM_PREFIX`** accordingly.
-4. `npm run deploy:dev` (and prod when ready) from **`infra/workers`**.
-5. `npm run set-secret:dev` writes **`{DEV_SECRET_SSM_PREFIX}/SUPABASE_SECRET_KEY`** unless you pass **`--param`**.
+2. `npx ampx sandbox secret set FOUNDRY_OPENROUTER_API_KEY` when using Foundry website intelligence on ECS (optional if that worker is unused).
+3. Confirm parameters exist under one folder per environment (`.../SUPABASE_SECRET_KEY`, `.../LEADS_SUPABASE_SECRET_KEY`, `.../GOOGLE_PLACES_API_KEY` when using the Places proxy, and `.../FOUNDRY_OPENROUTER_API_KEY` when applicable).
+4. Set **`DEV_SECRET_SSM_PREFIX`** / **`PROD_SECRET_SSM_PREFIX`** accordingly.
+5. `npm run deploy:dev` (and prod when ready) from **`infra/workers`**.
+6. `npm run set-secret:dev` writes **`{DEV_SECRET_SSM_PREFIX}/SUPABASE_SECRET_KEY`** unless you pass **`--param`**.
 
 ## Related docs
 

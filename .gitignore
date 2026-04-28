@@ -25,6 +25,7 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+workers/state-scrapers/website-verification-worker/tmp/
 
 # macOS
 .DS_Store

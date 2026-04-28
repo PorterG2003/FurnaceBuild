@@ -32,6 +32,8 @@ import {
   rerunCsvBuilderColumn,
   rerunCsvBuilderToolJob,
   lookupCurrentRate,
+  normalizeWebsiteInputUrl,
+  registrableDomainKeyFromUrl,
   resolveContactEnrichmentOptions,
 } from '@furnace/registry-server';
 import {
@@ -41,7 +43,11 @@ import {
   resolveReviewTask,
   stateMatchingPreflight,
 } from './foundryLayer2.js';
-import { startCsvBuilderExportJob, startCsvBuilderToolJob } from './foundryJobsApi.js';
+import {
+  startCsvBuilderExportJob,
+  startCsvBuilderToolJob,
+  startWebsiteVerificationImportJob,
+} from './foundryJobsApi.js';
 import type {
   CsvBuilderCellValue,
   CsvBuilderFilter,
@@ -213,6 +219,7 @@ const EXPORT_COST_KEYS = [
   'company_export_row_count',
   'company_website_verification_cost_cents',
   'company_google_ads_verification_cost_cents',
+  'company_website_intelligence_cost_cents',
   'company_import_acquisition_cost_cents',
   'company_registry_acquisition_cost_cents',
 ] as const;
@@ -415,6 +422,82 @@ function parseJsonBody<T>(raw: string): { ok: true; value: T } | { ok: false; re
   } catch {
     return { ok: false, response: jsonResponse(400, { error: 'Invalid JSON body' }) };
   }
+}
+
+const WEBSITE_INTEL_STALE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function isWebsiteIntelStale(crawledAt: string | null | undefined): boolean {
+  if (!crawledAt) return false;
+  const parsed = Date.parse(crawledAt);
+  return Number.isFinite(parsed) ? Date.now() - parsed > WEBSITE_INTEL_STALE_MS : false;
+}
+
+function deriveShellCompanyName(domainKey: string): string {
+  const hostLabel = domainKey.split('.').filter(Boolean)[0] ?? domainKey;
+  return hostLabel
+    .split(/[-_]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || domainKey;
+}
+
+function sanitizeWebsiteSiteAssets(siteAssets: Record<string, unknown> | null | undefined) {
+  const obj = siteAssets && typeof siteAssets === 'object' ? siteAssets : {};
+  const logoCandidates = Array.isArray(obj.logo_candidates)
+    ? obj.logo_candidates
+        .map((item) => (item && typeof item === 'object' && typeof (item as Record<string, unknown>).url === 'string'
+          ? String((item as Record<string, unknown>).url)
+          : null))
+        .filter((item): item is string => Boolean(item))
+        .slice(0, 8)
+    : [];
+  const brandColors = Array.isArray(obj.brand_color_candidates)
+    ? obj.brand_color_candidates
+        .map((item) => (item && typeof item === 'object' && typeof (item as Record<string, unknown>).color === 'string'
+          ? String((item as Record<string, unknown>).color)
+          : null))
+        .filter((item): item is string => Boolean(item))
+        .slice(0, 8)
+    : [];
+  const organizationNames = Array.isArray(obj.organization_names)
+    ? obj.organization_names.filter((item): item is string => typeof item === 'string').slice(0, 8)
+    : [];
+  const socialProfiles = Array.isArray(obj.social_profiles)
+    ? obj.social_profiles.filter((item): item is string => typeof item === 'string').slice(0, 8)
+    : [];
+  const contact = obj.contact && typeof obj.contact === 'object' ? (obj.contact as Record<string, unknown>) : {};
+  return {
+    logo_candidates: logoCandidates,
+    theme_color: typeof obj.theme_color === 'string' ? obj.theme_color : null,
+    brand_color_candidates: brandColors,
+    organization_names: organizationNames,
+    social_profiles: socialProfiles,
+    contact_counts: {
+      phones: Array.isArray(contact.phones) ? contact.phones.length : 0,
+      emails: Array.isArray(contact.emails) ? contact.emails.length : 0,
+      addresses: Array.isArray(contact.addresses) ? contact.addresses.length : 0,
+    },
+  };
+}
+
+function sanitizeWebsiteExtractedProfile(profile: Record<string, unknown> | null | undefined) {
+  const obj = profile && typeof profile === 'object' ? profile : {};
+  const asStrings = (value: unknown, limit: number) =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(0, limit) : [];
+  return {
+    business_summary: typeof obj.business_summary === 'string' ? obj.business_summary : null,
+    brand_name: typeof obj.brand_name === 'string' ? obj.brand_name : null,
+    audience_segments: asStrings(obj.audience_segments, 12),
+    services: asStrings(obj.services, 12),
+    industries_served: asStrings(obj.industries_served, 12),
+    locations_served: asStrings(obj.locations_served, 12),
+    tone: typeof obj.tone === 'string' ? obj.tone : null,
+    confidence:
+      obj.confidence === 'low' || obj.confidence === 'medium' || obj.confidence === 'high'
+        ? obj.confidence
+        : 'low',
+    evidence_urls: asStrings(obj.evidence_urls, 8),
+  };
 }
 
 function signCompanyDeleteConfirm(companyId: string, fingerprint: string, secret: string): string {
@@ -1026,6 +1109,160 @@ export async function dispatchFoundryExtendedRoutes(
   actorUserId: string,
   hmacSecret: string,
 ): Promise<FunctionUrlResponse | null> {
+  if (path === '/website-intelligence/by-domain' && method === 'GET') {
+    const params = new URLSearchParams(rawQueryString || '');
+    const rawUrl = params.get('url');
+    const normalizedUrl = normalizeWebsiteInputUrl(rawUrl);
+    const normalizedDomainKey = registrableDomainKeyFromUrl(normalizedUrl);
+    if (!normalizedUrl || !normalizedDomainKey) {
+      return jsonResponse(400, { error: 'A valid public http(s) url is required.' });
+    }
+
+    const { data: crawl, error: crawlError } = await leadsClient
+      .from('company_website_crawls')
+      .select(
+        'id, company_id, final_url, normalized_domain_key, site_assets, crawled_at, pages_visited, error',
+      )
+      .eq('normalized_domain_key', normalizedDomainKey)
+      .is('error', null)
+      .gt('pages_visited', 0)
+      .order('crawled_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (crawlError) return jsonResponse(502, { error: crawlError.message });
+    if (!crawl) {
+      return jsonResponse(200, { normalized_domain_key: normalizedDomainKey, hit: false });
+    }
+
+    const [{ data: intelligence, error: intelligenceError }, { data: verification, error: verificationError }] =
+      await Promise.all([
+        leadsClient
+          .from('company_website_intelligence')
+          .select('extracted_profile, llm_status')
+          .eq('website_crawl_id', crawl.id)
+          .eq('llm_status', 'completed')
+          .order('generated_at', { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle(),
+        leadsClient
+          .from('company_website_verifications')
+          .select('band')
+          .eq('website_crawl_id', crawl.id)
+          .order('verified_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+    if (intelligenceError) return jsonResponse(502, { error: intelligenceError.message });
+    if (verificationError) return jsonResponse(502, { error: verificationError.message });
+
+    const siteAssets = sanitizeWebsiteSiteAssets((crawl.site_assets ?? {}) as Record<string, unknown>);
+    const heroImageCandidates =
+      crawl.site_assets &&
+      typeof crawl.site_assets === 'object' &&
+      Array.isArray((crawl.site_assets as Record<string, unknown>).hero_image_candidates)
+        ? ((crawl.site_assets as Record<string, unknown>).hero_image_candidates as unknown[])
+            .filter((item): item is string => typeof item === 'string')
+            .slice(0, 5)
+        : [];
+
+    return jsonResponse(200, {
+      normalized_domain_key: normalizedDomainKey,
+      hit: true,
+      crawled_at: crawl.crawled_at,
+      stale: isWebsiteIntelStale(crawl.crawled_at as string | null | undefined),
+      company_id: crawl.company_id,
+      site_assets: siteAssets,
+      extracted_profile: sanitizeWebsiteExtractedProfile(
+        (intelligence?.extracted_profile ?? {}) as Record<string, unknown>,
+      ),
+      hero_image_candidates: heroImageCandidates,
+      final_url: crawl.final_url,
+      verification_band: verification?.band ?? null,
+    });
+  }
+
+  if (path === '/website-intelligence/scrape' && method === 'POST') {
+    const parsed = parseJsonBody<{ url?: string; force?: boolean }>(rawBody || '{}');
+    if (!parsed.ok) return parsed.response;
+
+    const normalizedUrl = normalizeWebsiteInputUrl(parsed.value.url ?? null);
+    const normalizedDomainKey = registrableDomainKeyFromUrl(normalizedUrl);
+    if (!normalizedUrl || !normalizedDomainKey) {
+      return jsonResponse(400, { error: 'A valid public http(s) url is required.' });
+    }
+
+    const { data: latestCrawl, error: latestCrawlError } = await leadsClient
+      .from('company_website_crawls')
+      .select('id, company_id, crawled_at')
+      .eq('normalized_domain_key', normalizedDomainKey)
+      .is('error', null)
+      .gt('pages_visited', 0)
+      .order('crawled_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestCrawlError) return jsonResponse(502, { error: latestCrawlError.message });
+
+    const force = parsed.value.force === true;
+    if (latestCrawl && !force && !isWebsiteIntelStale(latestCrawl.crawled_at as string | null | undefined)) {
+      return jsonResponse(200, {
+        jobId: '',
+        reused: true,
+        company_id: latestCrawl.company_id,
+        preflight: { ready: [latestCrawl.company_id], missing_website: [] },
+      });
+    }
+
+    let companyId = '';
+    const { data: existingShell, error: existingShellError } = await leadsClient
+      .from('companies')
+      .select('id')
+      .eq('shell_domain_key', normalizedDomainKey)
+      .maybeSingle();
+    if (existingShellError) return jsonResponse(502, { error: existingShellError.message });
+    if (existingShell?.id) {
+      companyId = String(existingShell.id);
+    } else {
+      const { data: insertedShell, error: insertShellError } = await leadsClient
+        .from('companies')
+        .insert({
+          legal_name: deriveShellCompanyName(normalizedDomainKey),
+          notes: 'flux:website_shell',
+          is_flux_domain_shell: true,
+          shell_domain_key: normalizedDomainKey,
+        })
+        .select('id')
+        .single();
+      if (insertShellError || !insertedShell?.id) {
+        const { data: racedShell, error: racedShellError } = await leadsClient
+          .from('companies')
+          .select('id')
+          .eq('shell_domain_key', normalizedDomainKey)
+          .maybeSingle();
+        if (racedShellError || !racedShell?.id) {
+          return jsonResponse(502, { error: insertShellError?.message ?? 'Failed to create shell company' });
+        }
+        companyId = String(racedShell.id);
+      } else {
+        companyId = String(insertedShell.id);
+      }
+    }
+
+    const { error: sourceError } = await leadsClient
+      .from('flux_company_website_sources')
+      .upsert({
+        company_id: companyId,
+        input_url: normalizedUrl,
+        normalized_domain_key: normalizedDomainKey,
+        created_by: actorUserId,
+        last_scrape_requested_at: new Date().toISOString(),
+      });
+    if (sourceError) return jsonResponse(502, { error: sourceError.message });
+
+    return await startWebsiteVerificationImportJob(leadsClient, [companyId], actorUserId, {
+      importScoped: false,
+    });
+  }
+
   if (path === '/csv-builder/runs' && method === 'GET') {
     const params = new URLSearchParams(rawQueryString || '');
     const accountId = params.get('account_id')?.trim() || '';
@@ -1618,6 +1855,7 @@ export async function dispatchFoundryExtendedRoutes(
           row.company_export_row_count = cost.company_export_row_count ?? 0;
           row.company_website_verification_cost_cents = cost.company_website_verification_cost_cents ?? 0;
           row.company_google_ads_verification_cost_cents = cost.company_google_ads_verification_cost_cents ?? 0;
+          row.company_website_intelligence_cost_cents = cost.company_website_intelligence_cost_cents ?? 0;
           row.company_import_acquisition_cost_cents = cost.company_import_acquisition_cost_cents ?? 0;
           row.company_registry_acquisition_cost_cents = cost.company_registry_acquisition_cost_cents ?? 0;
         }
@@ -1745,6 +1983,7 @@ export async function dispatchFoundryExtendedRoutes(
             row.company_export_row_count = c.company_export_row_count;
             row.company_website_verification_cost_cents = c.company_website_verification_cost_cents;
             row.company_google_ads_verification_cost_cents = c.company_google_ads_verification_cost_cents;
+            row.company_website_intelligence_cost_cents = c.company_website_intelligence_cost_cents;
             row.company_import_acquisition_cost_cents = c.company_import_acquisition_cost_cents;
             row.company_registry_acquisition_cost_cents = c.company_registry_acquisition_cost_cents;
           } else {
@@ -1757,6 +1996,7 @@ export async function dispatchFoundryExtendedRoutes(
             row.company_export_row_count = 0;
             row.company_website_verification_cost_cents = 0;
             row.company_google_ads_verification_cost_cents = 0;
+            row.company_website_intelligence_cost_cents = 0;
             row.company_import_acquisition_cost_cents = 0;
             row.company_registry_acquisition_cost_cents = 0;
           }
@@ -2441,6 +2681,27 @@ export async function dispatchFoundryExtendedRoutes(
       .limit(1)
       .maybeSingle();
     if (websiteVerificationErr) return jsonResponse(502, { error: websiteVerificationErr.message });
+    const { data: websiteCrawl, error: websiteCrawlErr } = await leadsClient
+      .from('company_website_crawls')
+      .select(
+        'id, company_id, foundry_job_id, source_ingestion_run_id, input_url, final_url, normalized_domain_key, crawl_version, max_depth, max_pages, pages_visited, max_depth_reached, failed_urls, parked, site_assets, elapsed_ms, error, crawled_at, created_at, updated_at',
+      )
+      .eq('company_id', id)
+      .order('crawled_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (websiteCrawlErr) return jsonResponse(502, { error: websiteCrawlErr.message });
+    const { data: websiteIntelligence, error: websiteIntelligenceErr } = await leadsClient
+      .from('company_website_intelligence')
+      .select(
+        'id, company_id, website_crawl_id, foundry_job_id, source_ingestion_run_id, cost_record_id, cost_status, input_hash, brief_version, prompt_version, model_provider, model, llm_status, site_brief, extracted_profile, llm_usage, error, generated_at, created_at, updated_at',
+      )
+      .eq('company_id', id)
+      .order('generated_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (websiteIntelligenceErr) return jsonResponse(502, { error: websiteIntelligenceErr.message });
     const { data: googleAdsVerification, error: googleAdsVerificationErr } = await leadsClient
       .from('company_google_ads_verifications')
       .select('*')
@@ -2457,6 +2718,8 @@ export async function dispatchFoundryExtendedRoutes(
       entity_matches: matches ?? [],
       associated_people: associatedPeople,
       website_verification: websiteVerification ?? null,
+      website_crawl: websiteCrawl ?? null,
+      website_intelligence: websiteIntelligence ?? null,
       google_ads_verification: googleAdsVerification ?? null,
     });
   }

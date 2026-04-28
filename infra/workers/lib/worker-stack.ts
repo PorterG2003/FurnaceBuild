@@ -48,6 +48,12 @@ export interface WorkerStackProps extends cdk.StackProps {
    * Passed to the Utah container as `LEADS_SUPABASE_SECRET_KEY_PARAM_PATH`; the task fetches at runtime (same pattern as `SUPABASE_SECRET_KEY_PARAM_PATH` on other workers).
    */
   leadsSupabaseSecretParamPath?: string;
+
+  /**
+   * Optional: SSM parameter name (with leading slash) for the Foundry OpenRouter API key (website intelligence ECS task).
+   * Same Amplify secret name segment: `FOUNDRY_OPENROUTER_API_KEY`.
+   */
+  foundryOpenRouterApiKeyParamPath?: string;
 }
 
 export class WorkerStack extends cdk.Stack {
@@ -75,6 +81,7 @@ export class WorkerStack extends cdk.Stack {
       slackErrorWebhookUrl,
       leadsSupabaseUrl,
       leadsSupabaseSecretParamPath,
+      foundryOpenRouterApiKeyParamPath,
     } = props;
 
     if (!supabaseSecretKeyParamPath?.trim()) {
@@ -428,6 +435,7 @@ export class WorkerStack extends cdk.Stack {
 
     const leadsUrlTrim = leadsSupabaseUrl?.trim();
     const leadsParamTrim = leadsSupabaseSecretParamPath?.trim();
+    const foundryOpenRouterParamTrim = foundryOpenRouterApiKeyParamPath?.trim();
     const utahLeadsConfigured = Boolean(leadsUrlTrim && leadsParamTrim);
 
     const floridaScraperTaskRole = new iam.Role(this, 'FloridaScraperTaskRole', {
@@ -501,6 +509,16 @@ export class WorkerStack extends cdk.Stack {
           sid: 'AllowGoogleAdsVerificationLeadsSecretSsm',
           actions: ['ssm:GetParameters', 'ssm:GetParameter'],
           resources: [`arn:aws:ssm:${region}:${account}:parameter/${paramSuffix}`],
+        }),
+      );
+    }
+    if (foundryOpenRouterParamTrim) {
+      const foundryOpenRouterParamSuffix = foundryOpenRouterParamTrim.replace(/^\//, '');
+      websiteVerificationTaskRole.addToPolicy(
+        new iam.PolicyStatement({
+          sid: 'AllowWebsiteVerificationFoundryOpenRouterSecretSsm',
+          actions: ['ssm:GetParameters', 'ssm:GetParameter'],
+          resources: [`arn:aws:ssm:${region}:${account}:parameter/${foundryOpenRouterParamSuffix}`],
         }),
       );
     }
@@ -753,6 +771,11 @@ export class WorkerStack extends cdk.Stack {
           ? {
               LEADS_SUPABASE_URL: leadsUrlTrim!,
               LEADS_SUPABASE_SECRET_KEY_PARAM_PATH: leadsParamTrim!,
+            }
+          : {}),
+        ...(foundryOpenRouterParamTrim
+          ? {
+              FOUNDRY_OPENROUTER_API_KEY_PARAM_PATH: foundryOpenRouterParamTrim,
             }
           : {}),
       },

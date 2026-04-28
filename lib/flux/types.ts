@@ -1,3 +1,7 @@
+import type { FluxBlockStylePreset } from './fluxPresentationTokens';
+import type { FluxBrandingPolicy } from './fluxBrandingPolicy';
+import type { FluxCampaignChatState } from './fluxCampaignChatState';
+
 // ---------------------------------------------------------------------------
 // Block types (discriminated union)
 // ---------------------------------------------------------------------------
@@ -23,6 +27,7 @@ export interface HeroBlockProps {
   subheadline: string;
   ctaText: string;
   ctaUrl: string;
+  heroImageUrl?: string;
 }
 export interface HeroBlock extends BlockBase {
   type: 'hero';
@@ -163,6 +168,7 @@ export interface BrandProfile {
   accentColor?: string;
   fontFamily?: string;
   logoUrl?: string;
+  blockStylePreset?: FluxBlockStylePreset;
 }
 
 export interface ThemeConfig {
@@ -172,6 +178,55 @@ export interface ThemeConfig {
   textColor: string;
   fontFamily: string;
   logoUrl?: string;
+  blockStylePreset?: FluxBlockStylePreset;
+}
+
+export interface FluxWebsiteIntelSnapshot {
+  normalized_domain_key: string;
+  hit: boolean;
+  crawled_at?: string;
+  stale?: boolean;
+  company_id?: string;
+  site_assets?: {
+    logo_candidates: string[];
+    theme_color: string | null;
+    brand_color_candidates: string[];
+    organization_names: string[];
+    social_profiles: string[];
+    contact_counts: {
+      phones: number;
+      emails: number;
+      addresses: number;
+    };
+  };
+  extracted_profile?: {
+    business_summary: string | null;
+    brand_name: string | null;
+    audience_segments: string[];
+    services: string[];
+    industries_served: string[];
+    locations_served: string[];
+    tone: string | null;
+    confidence: 'low' | 'medium' | 'high';
+    evidence_urls: string[];
+  };
+  hero_image_candidates?: string[];
+  final_url?: string | null;
+  verification_band?: 'usable' | 'uncertain' | 'not_usable' | null;
+  industry_guess?: string | null;
+}
+
+/** Campaign seller (runner) — camelCase for editor / API payloads. */
+export interface FluxSellerProfileInput {
+  displayName: string;
+  tagline: string;
+  websiteUrl: string;
+  brand_profile: BrandProfile | null;
+  website_intel: FluxWebsiteIntelSnapshot | null;
+  /** Registry / scrape — persisted on `flux_campaigns`. */
+  websiteDomainKey?: string | null;
+  foundryCompanyId?: string | null;
+  websiteIntelAutoFilledAt?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,22 +246,20 @@ export interface PageConfig {
 
 export type FluxPageStatus = 'draft' | 'live' | 'archived';
 
-export interface FluxCampaignChatState {
-  messages: Array<{
-    id: string;
-    role: 'user' | 'assistant';
-    content: string;
-    summary?: string[];
-  }>;
-  lastSummary: string[] | null;
-  updatedAt: string | null;
-}
-
 export interface FluxCampaignRow {
   id: string;
   account_id: string;
   name: string;
   offer_description: string | null;
+  seller_display_name: string | null;
+  seller_tagline: string | null;
+  seller_website_url: string | null;
+  seller_brand_profile: BrandProfile | null;
+  seller_website_domain_key: string | null;
+  seller_foundry_company_id: string | null;
+  seller_website_intel_snapshot: FluxWebsiteIntelSnapshot | null;
+  seller_website_intel_auto_filled_at: string | null;
+  branding_policy: FluxBrandingPolicy;
   created_at: string;
   updated_at: string;
 }
@@ -235,7 +288,10 @@ export interface FluxProspectRow {
   company_size: string | null;
   email_notes: string | null;
   brand_profile: BrandProfile | null;
-  logo_path: string | null;
+  foundry_company_id: string | null;
+  website_domain_key: string | null;
+  website_intel_snapshot: FluxWebsiteIntelSnapshot | null;
+  website_intel_auto_filled_at: string | null;
   created_at: string;
 }
 
@@ -249,6 +305,7 @@ export interface FluxPreviewProspectInput {
   company_size?: string | null;
   email_notes?: string | null;
   brand_profile: BrandProfile | null;
+  website_intel?: FluxWebsiteIntelSnapshot | null;
 }
 
 /** Template snapshot sent with preview generate (matches campaign template row shape). */
@@ -272,4 +329,17 @@ export interface FluxProspectPageRow {
   published_at: string | null;
   last_viewed_at: string | null;
   view_count: number;
+}
+
+/** Row in `flux_editor_chats` — one thread per template or prospect page. */
+export type FluxEditorChatSubjectType = 'campaign_template' | 'prospect_page';
+
+export interface FluxEditorChatRow {
+  id: string;
+  account_id: string;
+  subject_type: FluxEditorChatSubjectType;
+  subject_id: string;
+  state: unknown;
+  created_at: string;
+  updated_at: string;
 }

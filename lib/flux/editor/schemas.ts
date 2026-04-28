@@ -1,5 +1,18 @@
 import { z } from 'zod';
 import { contentAssetSchema } from '@/lib/flux/schemas';
+import { FLUX_BLOCK_STYLE_PRESETS } from '@/lib/flux/fluxPresentationTokens';
+
+const fluxPageThemeSchema = z.enum(['prospect', 'seller', 'merge']);
+const fluxBrandFieldSourceSchema = z.enum(['prospect', 'seller', 'merge']);
+
+export const fluxBrandingPolicySchema = z.object({
+  v: z.literal(1),
+  pageTheme: fluxPageThemeSchema,
+  logoFrom: fluxBrandFieldSourceSchema.optional(),
+  colorsFrom: fluxBrandFieldSourceSchema.optional(),
+  fontFrom: fluxBrandFieldSourceSchema.optional(),
+  blockStyleFrom: fluxBrandFieldSourceSchema.optional(),
+});
 
 export const blockTypeSchema = z.enum([
   'hero',
@@ -34,6 +47,18 @@ export const fluxEditorOperationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('asset.add'), asset: contentAssetSchema }),
   z.object({ type: z.literal('asset.remove'), assetId: z.string().min(1) }),
   z.object({
+    type: z.literal('asset.update'),
+    assetId: z.string().min(1),
+    patch: z.object({
+      type: z.enum(['case_study', 'testimonial', 'stat']).optional(),
+      title: z.string().optional(),
+      body: z.string().optional(),
+      metric: z.string().nullable().optional(),
+      attribution: z.string().nullable().optional(),
+      imageUrl: z.string().nullable().optional(),
+    }),
+  }),
+  z.object({
     type: z.literal('template.setCopySlots'),
     value: z.array(z.string()),
   }),
@@ -57,7 +82,30 @@ export const fluxEditorOperationSchema = z.discriminatedUnion('type', [
       accentColor: z.string().optional(),
       fontFamily: z.string().optional(),
       logoUrl: z.string().optional(),
+      blockStylePreset: z.enum(FLUX_BLOCK_STYLE_PRESETS).optional(),
     }),
+  }),
+  z.object({
+    type: z.literal('seller.patchProfile'),
+    patch: z.object({
+      displayName: z.string().optional(),
+      tagline: z.string().optional(),
+      websiteUrl: z.string().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal('seller.patchBrand'),
+    patch: z.object({
+      primaryColor: z.string().optional(),
+      accentColor: z.string().optional(),
+      fontFamily: z.string().optional(),
+      logoUrl: z.string().optional(),
+      blockStylePreset: z.enum(FLUX_BLOCK_STYLE_PRESETS).optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal('branding.setPolicy'),
+    policy: fluxBrandingPolicySchema,
   }),
 ]);
 

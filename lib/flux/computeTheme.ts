@@ -1,4 +1,9 @@
 import type { BrandProfile, ThemeConfig } from './types';
+import {
+  DEFAULT_FLUX_BLOCK_STYLE_PRESET,
+  FLUX_BLOCK_STYLE_PRESETS,
+  type FluxBlockStylePreset,
+} from './fluxPresentationTokens';
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const match = hex.replace('#', '').match(/^([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
@@ -46,5 +51,8 @@ export function computeTheme(brand: BrandProfile): ThemeConfig {
     textColor,
     fontFamily: brand.fontFamily || 'Inter',
     logoUrl: brand.logoUrl,
+    blockStylePreset: FLUX_BLOCK_STYLE_PRESETS.includes(brand.blockStylePreset as FluxBlockStylePreset)
+      ? (brand.blockStylePreset as FluxBlockStylePreset)
+      : DEFAULT_FLUX_BLOCK_STYLE_PRESET,
   };
 }

@@ -57,7 +57,7 @@ export interface CampaignLeadTableRow {
   enrollment_current_node_id: string | null;
   enrollment_stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
   enrollment_stopped_error_message: string | null;
-  reply_category: 'Interested' | 'Not Interested' | null;
+  reply_category: 'Interested' | 'Neutral' | 'Not Interested' | null;
   created_at: string;
 }
 
@@ -346,7 +346,7 @@ async function fetchCampaignLeadReplyCategoryMap(campaignId: string, leadIds: st
       const cat = row.reply_category;
       replyCategoryByLeadId.set(
         row.lead_id,
-        cat === 'Interested' || cat === 'Not Interested' ? cat : null,
+        cat === 'Interested' || cat === 'Neutral' || cat === 'Not Interested' ? cat : null,
       );
     }
     return replyCategoryByLeadId;
@@ -381,8 +381,10 @@ async function fetchCampaignLeadReplyCategoryMap(campaignId: string, leadIds: st
       latestThreadByLeadId.set(thread.lead_id, {
         lastMessageAt: thread.last_message_at,
         category:
-          thread.category === 'Interested' || thread.category === 'Not Interested'
-            ? thread.category
+          thread.category === 'Interested' ||
+          thread.category === 'Neutral' ||
+          thread.category === 'Not Interested'
+            ? (thread.category as CampaignLeadTableRow['reply_category'])
             : null,
       });
     }

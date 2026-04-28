@@ -257,11 +257,18 @@ export function Select<T>({
         borderWidth: 1,
       };
       if (itemColorVariant === 'tint' && itemColor) {
+        // Keep category tint identical for selected vs unselected so the swatch matches
+        // the closed trigger (which uses `${color}66`); do not intensify border on select.
         return {
           ...base,
           backgroundColor: hexToTranslucentBackground(itemColor),
-          borderColor: isSelected ? `${itemColor}CC` : `${itemColor}66`,
+          borderColor: `${itemColor}66`,
         };
+      }
+      // Tint + no item color (e.g. "No category"): same neutral row when selected or not —
+      // avoids orange highlight that disagrees with the closed trigger chrome.
+      if (itemColorVariant === 'tint' && !itemColor) {
+        return { ...base, backgroundColor: '#121212', borderColor: '#2A2A2A' };
       }
       if (isSelected) {
         return { ...base, backgroundColor: 'rgba(243, 68, 13, 0.14)', borderColor: 'rgba(243, 68, 13, 0.4)' };

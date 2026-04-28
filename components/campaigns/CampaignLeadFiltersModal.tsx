@@ -39,6 +39,7 @@ const ENROLLMENT_OPTIONS: Array<{ value: CampaignLeadEnrollmentFilterValue; labe
 
 const REPLY_CATEGORY_OPTIONS: Array<{ value: CampaignLeadReplyCategoryFilterValue; label: string }> = [
   { value: 'Interested', label: 'Interested' },
+  { value: 'Neutral', label: 'Neutral' },
   { value: 'Not Interested', label: 'Not Interested' },
   { value: 'not_categorized', label: 'Not Categorized' },
 ];

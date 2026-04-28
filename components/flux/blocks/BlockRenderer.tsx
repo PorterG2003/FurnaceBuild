@@ -8,6 +8,7 @@ import { TestimonialBlock } from './TestimonialBlock';
 import { CtaBlock } from './CtaBlock';
 import { TannersTaxStrategyBlock } from './TannersTaxStrategyBlock';
 import { SocialMediaPlanBlock } from './SocialMediaPlanBlock';
+import { CompetitorAdAuditBlock } from './CompetitorAdAuditBlock';
 
 interface BlockRendererProps {
   block: Block;
@@ -48,6 +49,8 @@ export function BlockRenderer({ block, assets }: BlockRendererProps) {
       return <TannersTaxStrategyBlock props={block.props} />;
     case 'social_media_plan':
       return <SocialMediaPlanBlock props={block.props} />;
+    case 'competitor_ad_audit':
+      return <CompetitorAdAuditBlock props={block.props} />;
     default:
       return null;
   }

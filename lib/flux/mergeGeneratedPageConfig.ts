@@ -33,6 +33,19 @@ export function mergeGeneratedPageConfigWithTemplate(params: {
   const mergedBlocks: Block[] = templateBlocks.map((tb) => {
     const llm = byId.get(tb.id);
     if (llm && llm.type === tb.type) {
+      if (tb.type === 'competitor_ad_audit' && llm.type === 'competitor_ad_audit') {
+        const heading =
+          typeof llm.props.heading === 'string' && llm.props.heading.trim()
+            ? llm.props.heading.trim()
+            : tb.props.heading;
+        return {
+          ...tb,
+          props: {
+            ...tb.props,
+            heading,
+          },
+        } as Block;
+      }
       if (tb.type === 'hero' && llm.type === 'hero') {
         return {
           ...tb,

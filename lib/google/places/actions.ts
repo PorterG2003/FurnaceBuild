@@ -10,6 +10,22 @@ const AUTOCOMPLETE_FIELD_MASK =
 const PLACE_DETAILS_FIELD_MASK =
   'id,displayName,formattedAddress,location,addressComponents,internationalPhoneNumber,websiteUri';
 
+/** Text search (New) — narrow field mask for competitor discovery. */
+const SEARCH_TEXT_FIELD_MASK =
+  'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.websiteUri';
+
+export interface PlacesSearchTextInput {
+  textQuery: string;
+  languageCode?: string;
+  maxResultCount?: number;
+  /** Center + radius in meters (Places API circle bias). */
+  locationBias: {
+    latitude: number;
+    longitude: number;
+    radiusMeters: number;
+  };
+}
+
 export interface PlacesAutocompleteInput {
   input: string;
   /** ISO 3166-1 alpha-2, upper-case, e.g. `US`. */
@@ -44,6 +60,38 @@ export async function placesAutocomplete(
 }
 
 /** `placeId` may be `ChIJ...` or `places/ChIJ...`. */
+/** Places API (New) — `places:searchText`. */
+export async function placesSearchText(apiKey: string, input: PlacesSearchTextInput): Promise<PlacesFetchResult> {
+  const q = input.textQuery.trim();
+  if (!q) {
+    return { ok: false, status: 400, message: 'textQuery is required' };
+  }
+  const { latitude, longitude, radiusMeters } = input.locationBias;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radiusMeters)) {
+    return { ok: false, status: 400, message: 'locationBias requires finite latitude, longitude, radiusMeters' };
+  }
+
+  const body: Record<string, unknown> = {
+    textQuery: q,
+    languageCode: input.languageCode?.trim() || 'en-US',
+    maxResultCount: Math.min(20, Math.max(1, input.maxResultCount ?? 20)),
+    locationBias: {
+      circle: {
+        center: { latitude, longitude },
+        radius: radiusMeters,
+      },
+    },
+  };
+
+  return placesFetch({
+    path: 'places:searchText',
+    method: 'POST',
+    apiKey,
+    fieldMask: SEARCH_TEXT_FIELD_MASK,
+    body,
+  });
+}
+
 export async function placesGetDetails(apiKey: string, placeId: string): Promise<PlacesFetchResult> {
   const raw = placeId.trim();
   if (!raw) {

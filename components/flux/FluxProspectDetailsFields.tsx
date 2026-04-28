@@ -6,6 +6,8 @@ import {
   FLUX_BLOCK_STYLE_PRESET_OPTIONS,
   type FluxBlockStylePreset,
 } from '@/lib/flux/fluxPresentationTokens';
+import type { FluxServiceArea } from '@/lib/flux/types';
+import { FluxServiceAreaField } from '@/components/flux/FluxServiceAreaField';
 
 export interface FluxProspectDetailsFieldValues {
   name: string;
@@ -20,6 +22,8 @@ export interface FluxProspectDetailsFieldValues {
   brand_fontFamily: string;
   brand_logoUrl: string;
   brand_blockStylePreset: FluxBlockStylePreset;
+  /** Center for competitor audit (Google Places). */
+  service_area: FluxServiceArea | null;
 }
 
 /** Prospect-row fields that can be copied into `PageConfig` (names + brand → theme). */
@@ -174,6 +178,12 @@ export function FluxProspectDetailsFields({
         multiline
         textAlignVertical="top"
       />
+      <FluxServiceAreaField
+        value={values.service_area}
+        onChange={(next) => onChange({ service_area: next })}
+        labelClassName={labelClassName}
+        inputClassName={inputClassName}
+      />
         </>
       ) : null}
 
@@ -279,6 +289,7 @@ export function fluxProspectRowToFieldValues(row: {
   company_size: string | null;
   email_notes: string | null;
   brand_profile: import('@/lib/flux/types').BrandProfile | null;
+  service_area?: import('@/lib/flux/types').FluxServiceArea | null;
 }): FluxProspectDetailsFieldValues {
   const bp = row.brand_profile;
   return {
@@ -294,6 +305,7 @@ export function fluxProspectRowToFieldValues(row: {
     brand_fontFamily: bp?.fontFamily ?? 'Inter',
     brand_logoUrl: bp?.logoUrl ?? '',
     brand_blockStylePreset: (bp?.blockStylePreset ?? 'classic') as FluxBlockStylePreset,
+    service_area: row.service_area ?? null,
   };
 }
 

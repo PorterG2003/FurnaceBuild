@@ -103,6 +103,8 @@ const prodLeadsSecretParamPath = prodLeadsSupabaseUrl
   : undefined;
 const devFoundryOpenRouterApiKeyParamPath = ssmParamUnderPrefix(devSecretSsmPrefix, 'FOUNDRY_OPENROUTER_API_KEY');
 const prodFoundryOpenRouterApiKeyParamPath = ssmParamUnderPrefix(prodSecretSsmPrefix, 'FOUNDRY_OPENROUTER_API_KEY');
+const devGooglePlacesApiKeyParamPath = ssmParamUnderPrefix(devSecretSsmPrefix, 'GOOGLE_PLACES_API_KEY');
+const prodGooglePlacesApiKeyParamPath = ssmParamUnderPrefix(prodSecretSsmPrefix, 'GOOGLE_PLACES_API_KEY');
 
 // Dev Stack
 new WorkerStack(app, 'WorkerStack-Dev', {
@@ -115,6 +117,7 @@ new WorkerStack(app, 'WorkerStack-Dev', {
   supabaseSecretKeyParamPath: devSupabaseSecretKeyParamPath,
   slackErrorWebhookUrl: devSlackErrorWebhookUrl,
   foundryOpenRouterApiKeyParamPath: devFoundryOpenRouterApiKeyParamPath,
+  googlePlacesApiKeyParamPath: devGooglePlacesApiKeyParamPath,
   ...(devLeadsSupabaseUrl
     ? { leadsSupabaseUrl: devLeadsSupabaseUrl, leadsSupabaseSecretParamPath: devLeadsSecretParamPath }
     : {}),
@@ -136,6 +139,7 @@ new WorkerStack(app, 'WorkerStack-Prod', {
   supabaseSecretKeyParamPath: prodSupabaseSecretKeyParamPath,
   slackErrorWebhookUrl: prodSlackErrorWebhookUrl,
   foundryOpenRouterApiKeyParamPath: prodFoundryOpenRouterApiKeyParamPath,
+  googlePlacesApiKeyParamPath: prodGooglePlacesApiKeyParamPath,
   ...(prodLeadsSupabaseUrl
     ? { leadsSupabaseUrl: prodLeadsSupabaseUrl, leadsSupabaseSecretParamPath: prodLeadsSecretParamPath }
     : {}),

@@ -14,7 +14,8 @@ export type BlockType =
   | 'testimonial'
   | 'cta'
   | 'tanners_tax_strategy'
-  | 'social_media_plan';
+  | 'social_media_plan'
+  | 'competitor_ad_audit';
 
 export interface BlockBase {
   id: string;
@@ -133,6 +134,35 @@ export interface SocialMediaPlanBlock extends BlockBase {
   props: SocialMediaPlanBlockProps;
 }
 
+export type CompetitorAdAuditStatus = 'pending' | 'running' | 'ready' | 'error';
+
+export interface CompetitorAdExampleProps {
+  headline: string;
+  body: string;
+  sourceUrl: string;
+  imageUrl?: string;
+}
+
+export interface CompetitorAdAuditRowProps {
+  name: string;
+  mapImageUrl: string;
+  adsSummary: string;
+  examples: CompetitorAdExampleProps[];
+}
+
+export interface CompetitorAdAuditBlockProps {
+  heading: string;
+  status: CompetitorAdAuditStatus;
+  errorMessage?: string;
+  lastAuditAt?: string;
+  competitors: CompetitorAdAuditRowProps[];
+}
+
+export interface CompetitorAdAuditBlock extends BlockBase {
+  type: 'competitor_ad_audit';
+  props: CompetitorAdAuditBlockProps;
+}
+
 export type Block =
   | HeroBlock
   | SocialProofBlock
@@ -141,7 +171,8 @@ export type Block =
   | TestimonialBlock
   | CtaBlock
   | TannersTaxStrategyBlock
-  | SocialMediaPlanBlock;
+  | SocialMediaPlanBlock
+  | CompetitorAdAuditBlock;
 
 // ---------------------------------------------------------------------------
 // Content assets (referenced by blocks)
@@ -276,6 +307,15 @@ export interface FluxCampaignTemplateRow {
   updated_at: string;
 }
 
+/** Google Places–derived center for competitor audit (see `service_area` column). */
+export interface FluxServiceArea {
+  placeId: string;
+  displayName?: string;
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface FluxProspectRow {
   id: string;
   account_id: string;
@@ -292,7 +332,28 @@ export interface FluxProspectRow {
   website_domain_key: string | null;
   website_intel_snapshot: FluxWebsiteIntelSnapshot | null;
   website_intel_auto_filled_at: string | null;
+  service_area: FluxServiceArea | null;
   created_at: string;
+}
+
+export type FluxAsyncJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+/** Row in `flux_async_jobs` (main Supabase). */
+export interface FluxAsyncJobRow {
+  id: string;
+  account_id: string;
+  job_type: string;
+  subject_type: string;
+  subject_id: string;
+  payload: { block_id?: string; audit_config_version?: string } & Record<string, unknown>;
+  status: FluxAsyncJobStatus;
+  error_message: string | null;
+  external_execution_arn: string | null;
+  result: unknown;
+  idempotency_key: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 /** Inline prospect for campaign editor preview (POST `fluxGenerate` with `preview: true`). */

@@ -355,6 +355,19 @@ async function runCsvBuilderGoogleAdsVerification(
 }
 
 async function main(): Promise<void> {
+  const jobKind = process.env.JOB_KIND?.trim();
+  if (jobKind === 'flux_competitor_audit') {
+    const raw = process.env.FLUX_AUDIT_JOB_JSON?.trim();
+    if (!raw) throw new Error('Missing FLUX_AUDIT_JOB_JSON');
+    const parsed = JSON.parse(raw) as { jobId?: string };
+    const jobId = typeof parsed.jobId === 'string' ? parsed.jobId.trim() : '';
+    if (!jobId) throw new Error('FLUX_AUDIT_JOB_JSON.jobId required');
+    const region = process.env.AWS_REGION || 'us-west-2';
+    const { runFluxCompetitorAuditJob } = await import('./fluxCompetitorAuditRun.js');
+    await runFluxCompetitorAuditJob({ jobId, awsRegion: region });
+    return;
+  }
+
   const { url, key, jobId } = await loadSecret();
   const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const runtimeCost = await resolveRunCost(

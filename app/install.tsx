@@ -211,7 +211,7 @@ function cardPlatformIcon(env: ClientEnvironment): HeroIcon {
 
 const LOGO_SOURCE =
   Platform.OS === 'web'
-    ? ({ uri: '/web-app-manifest-512x512.png' } as const)
+    ? ({ uri: '/icon512_rounded.png' } as const)
     : (require('../assets/icon.png') as number);
 
 export default function InstallGuideScreen() {

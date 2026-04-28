@@ -55,6 +55,17 @@ export function makeFluxDefaultBlock(type: BlockType, order: number): Block {
           defaultQualificationMode: 'passive',
         },
       };
+    case 'competitor_ad_audit':
+      return {
+        id,
+        type,
+        order,
+        props: {
+          heading: 'Competitor ad audit',
+          status: 'pending',
+          competitors: [],
+        },
+      };
     case 'social_media_plan':
       return {
         id,

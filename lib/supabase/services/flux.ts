@@ -11,6 +11,8 @@ import type {
   BrandProfile,
   FluxWebsiteIntelSnapshot,
   FluxEditorChatSubjectType,
+  FluxAsyncJobRow,
+  FluxServiceArea,
 } from '@/lib/flux/types';
 import { getDefaultFluxTemplatePayload, getEmptyFluxTemplatePayload } from '@/lib/flux/defaultCampaignTemplate';
 import {
@@ -263,6 +265,7 @@ export async function createFluxProspect(prospect: {
   website_domain_key?: string | null;
   website_intel_snapshot?: FluxWebsiteIntelSnapshot | null;
   website_intel_auto_filled_at?: string | null;
+  service_area?: FluxServiceArea | null;
 }): Promise<FluxProspectRow> {
   const { data, error } = await supabase
     .from('flux_prospects')
@@ -281,6 +284,7 @@ export async function createFluxProspect(prospect: {
       website_domain_key: prospect.website_domain_key ?? null,
       website_intel_snapshot: (prospect.website_intel_snapshot as any) ?? null,
       website_intel_auto_filled_at: prospect.website_intel_auto_filled_at ?? null,
+      service_area: (prospect.service_area as any) ?? null,
     })
     .select()
     .single();
@@ -297,6 +301,7 @@ export type UpdateFluxProspectInput = {
   company_size?: string | null;
   email_notes?: string | null;
   brand_profile?: BrandProfile | null;
+  service_area?: FluxServiceArea | null;
 };
 
 export async function updateFluxProspect(
@@ -314,6 +319,9 @@ export async function updateFluxProspect(
   if (updates.brand_profile !== undefined) {
     row.brand_profile = updates.brand_profile === null ? null : (updates.brand_profile as any);
   }
+  if (updates.service_area !== undefined) {
+    row.service_area = updates.service_area === null ? null : (updates.service_area as any);
+  }
   const { data, error } = await supabase
     .from('flux_prospects')
     .update(row)
@@ -327,6 +335,16 @@ export async function updateFluxProspect(
 export async function deleteFluxProspect(id: string): Promise<void> {
   const { error } = await supabase.from('flux_prospects').delete().eq('id', id);
   if (error) throw error;
+}
+
+export async function getFluxAsyncJob(jobId: string): Promise<FluxAsyncJobRow | null> {
+  const { data, error } = await supabase
+    .from('flux_async_jobs' as any)
+    .select('*')
+    .eq('id', jobId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as FluxAsyncJobRow | null;
 }
 
 // ---------------------------------------------------------------------------

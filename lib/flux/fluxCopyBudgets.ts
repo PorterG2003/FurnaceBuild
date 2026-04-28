@@ -128,6 +128,11 @@ const SMP: Record<
   },
 };
 
+const COMPETITOR: Record<FluxCopyBudgetTier, { heading: FluxCopyFieldBudget }> = {
+  tight: { heading: { label: 'competitor_ad_audit.heading', ...B(36, 72) } },
+  standard: { heading: { label: 'competitor_ad_audit.heading', ...B(44, 88) } },
+};
+
 function pushLengthViolation(
   out: string[],
   block: Block,
@@ -225,6 +230,11 @@ export function getFluxCopyBudgetViolations(merged: PageConfig): string[] {
             }
           }
         }
+        break;
+      }
+      case 'competitor_ad_audit': {
+        const c = COMPETITOR[tier];
+        pushLengthViolation(out, block, 'props.heading', block.props.heading.length, c.heading, tier);
         break;
       }
       default:

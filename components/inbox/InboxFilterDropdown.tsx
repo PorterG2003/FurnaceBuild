@@ -16,8 +16,7 @@ import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import { resolveTagColor } from '@/lib/inbox/tag-colors';
 import { NO_CATEGORY_FILTER } from '@/lib/supabase/services/inbox';
-
-const THREAD_CATEGORIES = ['Interested', 'Not Interested'];
+import { THREAD_CATEGORIES } from './inboxConstants';
 const DATE_OPTIONS = [
   { id: 'all', name: 'All' },
   { id: '7d', name: 'Last 7 days' },

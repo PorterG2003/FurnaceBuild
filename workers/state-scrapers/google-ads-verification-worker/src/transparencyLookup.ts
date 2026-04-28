@@ -501,3 +501,122 @@ export async function runGoogleAdsTransparencyLookup(
     if (createdBrowser) await browser.close().catch(() => {});
   }
 }
+
+export interface TransparencyCreativeSampleRow {
+  sourceUrl: string;
+  headline: string;
+  body: string;
+}
+
+/** One browser session: Transparency search → creative count + up to `maxSamples` creative detail excerpts. */
+export async function runGoogleAdsTransparencyAuditSamples(
+  options: GoogleAdsTransparencyLookupOptions & { maxSamples?: number },
+): Promise<{
+  searchDomain: string;
+  creativeCount: number;
+  latestAdLastShownAt: string | null;
+  samples: TransparencyCreativeSampleRow[];
+  outcome: 'ok' | 'transparency_no_match' | 'transparency_zero_creatives' | 'playwright_error';
+  message?: string;
+}> {
+  const maxSamples = Math.min(3, Math.max(1, options.maxSamples ?? 2));
+  const searchDomain = normalizeGoogleAdsSearchDomain(options.domain);
+  if (!searchDomain) {
+    return {
+      searchDomain: '',
+      creativeCount: 0,
+      latestAdLastShownAt: null,
+      samples: [],
+      outcome: 'playwright_error',
+      message: 'Invalid domain',
+    };
+  }
+  const region = options.region?.trim() || 'US';
+  const timeoutMs = Math.max(5_000, Number(options.timeoutMs) || 15_000);
+  const slowMoMs = Math.max(0, Number(options.slowMoMs) || 0);
+  const createdBrowser = !options.browser;
+  const browser =
+    options.browser ??
+    (await chromium.launch({
+      headless: options.headless ?? false,
+      channel: options.channel ?? 'chrome',
+      slowMo: slowMoMs || undefined,
+      args: ['--disable-blink-features=AutomationControlled'],
+    }));
+  const createdContext = !options.context;
+  const context =
+    options.context ??
+    (await browser.newContext({
+      viewport: VIEWPORT,
+      ignoreHTTPSErrors: true,
+    }));
+  const page = await context.newPage();
+  page.setDefaultTimeout(NAV_TIMEOUT_MS);
+  const samples: TransparencyCreativeSampleRow[] = [];
+  try {
+    await openSearchPage(page, region);
+    const { parsedBody } = await fetchSuggestions(page, searchDomain, timeoutMs);
+    const domainSuggestions = dedupeDomainSuggestions(collectDomainSuggestions(parsedBody));
+    const exactSuggestion = domainSuggestions.find((candidate) => candidate.domain === searchDomain) ?? null;
+    if (!exactSuggestion) {
+      return {
+        searchDomain,
+        creativeCount: 0,
+        latestAdLastShownAt: null,
+        samples: [],
+        outcome: 'transparency_no_match',
+      };
+    }
+    await clickExactDomainSuggestion(page, searchDomain);
+    await expandResultsToFullCreativeList(page);
+    const creativeHrefs = dedupeHrefs(await collectCreativeHrefs(page));
+    const creativeCount = creativeHrefs.length;
+    if (creativeCount === 0) {
+      return {
+        searchDomain,
+        creativeCount: 0,
+        latestAdLastShownAt: null,
+        samples: [],
+        outcome: 'transparency_zero_creatives',
+      };
+    }
+    const firstCap = await captureTopCreativeLastShown(page, creativeHrefs[0] ?? null, region);
+    const latestAdLastShownAt = firstCap.latestAdLastShownAt;
+    for (const href of creativeHrefs.slice(0, maxSamples)) {
+      const cap = await captureTopCreativeLastShown(page, href, region);
+      const url =
+        cap.creativeDetailUrl ?? (href.startsWith('http') ? href : `https://adstransparency.google.com${href}`);
+      const bodyText =
+        cap.creativeSummary && typeof cap.creativeSummary.body_snippet === 'string'
+          ? cap.creativeSummary.body_snippet
+          : '';
+      const firstLine = bodyText.split('\n').map((l) => l.trim()).filter(Boolean)[0] ?? bodyText.slice(0, 120);
+      samples.push({
+        sourceUrl: url,
+        headline: firstLine.slice(0, 200),
+        body: bodyText.slice(0, 400),
+      });
+    }
+    return {
+      searchDomain,
+      creativeCount,
+      latestAdLastShownAt,
+      samples,
+      outcome: 'ok',
+    };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      searchDomain,
+      creativeCount: 0,
+      latestAdLastShownAt: null,
+      samples: [],
+      outcome: 'playwright_error',
+      message,
+    };
+  } finally {
+    await page.close().catch(() => {});
+    if (createdContext) await context.close().catch(() => {});
+    if (createdBrowser) await browser.close().catch(() => {});
+  }
+}

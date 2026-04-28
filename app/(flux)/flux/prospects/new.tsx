@@ -12,7 +12,7 @@ import {
   checkSlugAvailable,
   ensureFluxTemplateExists,
 } from '@/lib/supabase/services/flux';
-import type { FluxCampaignRow, BrandProfile, FluxWebsiteIntelSnapshot } from '@/lib/flux/types';
+import type { FluxCampaignRow, BrandProfile, FluxWebsiteIntelSnapshot, FluxServiceArea } from '@/lib/flux/types';
 import { callFluxGenerate } from '@/lib/flux/callFluxGenerate';
 import { getFluxGenerateUrl } from '@/lib/flux/fluxGenerateUrl';
 import { FLUX_GOOGLE_FONT_NAMES } from '@/lib/flux/googleFontsCatalog';
@@ -82,6 +82,7 @@ export default function NewProspect() {
     logoUrl: false,
     industry: false,
   });
+  const [serviceArea, setServiceArea] = useState<FluxServiceArea | null>(null);
 
   // Slug
   const [slug, setSlug] = useState('');
@@ -200,6 +201,7 @@ export default function NewProspect() {
       brand_fontFamily: fontFamily,
       brand_logoUrl: logoUrl,
       brand_blockStylePreset: brandBlockStylePreset,
+      service_area: serviceArea,
     }),
     [
       contactName,
@@ -214,6 +216,7 @@ export default function NewProspect() {
       fontFamily,
       logoUrl,
       brandBlockStylePreset,
+      serviceArea,
     ],
   );
 
@@ -230,6 +233,7 @@ export default function NewProspect() {
     if (patch.brand_fontFamily !== undefined) setFontFamily(patch.brand_fontFamily);
     if (patch.brand_logoUrl !== undefined) setLogoUrl(patch.brand_logoUrl);
     if (patch.brand_blockStylePreset !== undefined) setBrandBlockStylePreset(patch.brand_blockStylePreset);
+    if (patch.service_area !== undefined) setServiceArea(patch.service_area);
   }, []);
 
   const handleSubmit = async () => {
@@ -268,6 +272,7 @@ export default function NewProspect() {
         website_domain_key: websiteDomainKey,
         website_intel_snapshot: persistedWebsiteIntel,
         website_intel_auto_filled_at: persistedWebsiteIntel ? websiteIntelAutoFilledAt : null,
+        service_area: serviceArea,
       });
 
       await createFluxPage({

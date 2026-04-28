@@ -3,8 +3,9 @@
  */
 
 export const THREAD_CATEGORY_COLORS: Record<string, string> = {
-  Interested: '#34D399',    // emerald – positive, engaged
-  'Not Interested': '#94A3B8', // slate – muted, inactive
+  Interested: '#34D399', // emerald – positive, engaged
+  Neutral: '#94A3B8', // slate gray – non-committal
+  'Not Interested': '#EA580C', // orange-600 – red-orange, negative intent
 };
 
 /**

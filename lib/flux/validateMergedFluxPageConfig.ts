@@ -2,6 +2,7 @@ import type { Block, ContentAssetType, PageConfig } from './types';
 import { getFluxCopyBudgetViolations } from './fluxCopyBudgets';
 
 const HTTP_PREFIX = /^https?:\/\//i;
+const TRANSPARENCY_PREFIX = 'https://adstransparency.google.com/';
 
 function parseContentAssetRows(raw: unknown[]): { id: string; type: ContentAssetType }[] {
   const out: { id: string; type: ContentAssetType }[] = [];
@@ -120,6 +121,36 @@ export function getMergedFluxPageConfigSemanticIssues(
               });
             }
           });
+        }
+        break;
+      }
+      case 'competitor_ad_audit': {
+        if (!block.props.heading.trim()) push(block, 'heading is empty');
+        if (block.props.status === 'ready') {
+          const p = block.props;
+          if (p.competitors.length !== 3) {
+            push(block, 'competitors must have exactly 3 rows when status is ready');
+          }
+          for (let i = 0; i < p.competitors.length; i += 1) {
+            const row = p.competitors[i]!;
+            if (!row.name?.trim()) push(block, `competitors[${i}].name is empty`);
+            if (!row.mapImageUrl?.trim() || !HTTP_PREFIX.test(row.mapImageUrl.trim())) {
+              push(block, `competitors[${i}].mapImageUrl must be an http(s) URL`);
+            }
+            if (!row.adsSummary?.trim()) push(block, `competitors[${i}].adsSummary is empty`);
+            if (!Array.isArray(row.examples) || row.examples.length !== 2) {
+              push(block, `competitors[${i}].examples must have exactly 2 items`);
+            } else {
+              row.examples.forEach((ex, j) => {
+                if (!ex.headline?.trim()) push(block, `competitors[${i}].examples[${j}].headline is empty`);
+                if (!ex.body?.trim()) push(block, `competitors[${i}].examples[${j}].body is empty`);
+                const u = ex.sourceUrl?.trim() ?? '';
+                if (!u.startsWith(TRANSPARENCY_PREFIX)) {
+                  push(block, `competitors[${i}].examples[${j}].sourceUrl must start with ${TRANSPARENCY_PREFIX}`);
+                }
+              });
+            }
+          }
         }
         break;
       }

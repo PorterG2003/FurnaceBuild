@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-ssm": "^3.700.0",
+    "@furnace/google-places": "file:../../../lib/google/places",
     "@furnace/registry-server": "file:../../../lib/foundry/registry-server",
     "@supabase/supabase-js": "^2.99.1",
     "playwright": "1.58.2"

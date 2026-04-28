@@ -1,4 +1,4 @@
-import type { Block, PageConfig, ThemeConfig } from './types';
+import type { Block, CompetitorAdAuditBlock, PageConfig, ThemeConfig } from './types';
 import {
   DEFAULT_FLUX_BLOCK_STYLE_PRESET,
   FLUX_BLOCK_STYLE_PRESETS,
@@ -39,6 +39,41 @@ export function coercePageConfig(raw: unknown): PageConfig | null {
 /** True when `page_config` has at least one block and can be shown publicly. */
 export function hasRenderableFluxPageConfig(raw: unknown): boolean {
   return coercePageConfig(raw) != null;
+}
+
+const HTTP_PREFIX = /^https?:\/\//i;
+const TRANSPARENCY_PREFIX = 'https://adstransparency.google.com/';
+
+function competitorAuditBlockPublishable(block: CompetitorAdAuditBlock): boolean {
+  const p = block.props;
+  if (p.status !== 'ready' || p.competitors.length !== 3) return false;
+  for (const row of p.competitors) {
+    if (!row.name?.trim()) return false;
+    if (!row.mapImageUrl?.trim() || !HTTP_PREFIX.test(row.mapImageUrl.trim())) return false;
+    if (!row.adsSummary?.trim()) return false;
+    if (!Array.isArray(row.examples) || row.examples.length !== 2) return false;
+    for (const ex of row.examples) {
+      if (!ex.headline?.trim() || !ex.body?.trim() || !ex.sourceUrl?.trim()) return false;
+      const u = ex.sourceUrl.trim();
+      if (!u.startsWith(TRANSPARENCY_PREFIX)) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * True when the page may go **live**: renderable, and every `competitor_ad_audit` block is audit-complete per plan.
+ */
+export function canPublishFluxProspectPage(raw: unknown): boolean {
+  if (!hasRenderableFluxPageConfig(raw)) return false;
+  const c = coercePageConfig(raw);
+  if (!c) return false;
+  for (const block of c.blocks) {
+    if (block.type === 'competitor_ad_audit' && !competitorAuditBlockPublishable(block)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export interface BuildTemplatePreviewPageConfigOptions {

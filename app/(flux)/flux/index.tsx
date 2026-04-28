@@ -24,7 +24,10 @@ import {
   deleteFluxProspect,
 } from '@/lib/supabase/services/flux';
 import type { FluxCampaignRow, FluxProspectPageRow } from '@/lib/flux/types';
-import { hasRenderableFluxPageConfig } from '@/lib/flux/coercePageConfig';
+import {
+  hasRenderableFluxPageConfig,
+  canPublishFluxProspectPage,
+} from '@/lib/flux/coercePageConfig';
 import { formatFluxListDate } from '@/lib/flux/formatFluxListDate';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -234,6 +237,13 @@ export default function FluxDashboard() {
                           {p.status === 'live' && !hasRenderableFluxPageConfig(p.page_config) ? (
                             <View className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/30">
                               <Text className="text-xs font-instrument-semibold text-amber-200">no content</Text>
+                            </View>
+                          ) : null}
+                          {p.status === 'live' &&
+                          hasRenderableFluxPageConfig(p.page_config) &&
+                          !canPublishFluxProspectPage(p.page_config) ? (
+                            <View className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/30">
+                              <Text className="text-xs font-instrument-semibold text-amber-200">audit pending</Text>
                             </View>
                           ) : null}
                           <Text className="text-gray-500 text-xs font-instrument">{p.view_count} views</Text>

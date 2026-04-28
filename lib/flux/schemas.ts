@@ -84,6 +84,28 @@ const socialMediaPlanBlockPropsSchema = z.object({
   platform_mix_note: z.string(),
 });
 
+const competitorAdExamplePropsSchema = z.object({
+  headline: z.string(),
+  body: z.string(),
+  sourceUrl: z.string(),
+  imageUrl: z.string().optional(),
+});
+
+const competitorAdAuditRowPropsSchema = z.object({
+  name: z.string(),
+  mapImageUrl: z.string(),
+  adsSummary: z.string(),
+  examples: z.array(competitorAdExamplePropsSchema),
+});
+
+const competitorAdAuditBlockPropsSchema = z.object({
+  heading: z.string(),
+  status: z.enum(['pending', 'running', 'ready', 'error']),
+  errorMessage: z.string().optional(),
+  lastAuditAt: z.string().optional(),
+  competitors: z.array(competitorAdAuditRowPropsSchema),
+});
+
 // ---------------------------------------------------------------------------
 // Block schemas (discriminated union)
 // ---------------------------------------------------------------------------
@@ -141,6 +163,12 @@ const socialMediaPlanBlockSchema = z.object({
   props: socialMediaPlanBlockPropsSchema,
 });
 
+const competitorAdAuditBlockSchema = z.object({
+  ...blockBase,
+  type: z.literal('competitor_ad_audit'),
+  props: competitorAdAuditBlockPropsSchema,
+});
+
 export const blockSchema = z.discriminatedUnion('type', [
   heroBlockSchema,
   socialProofBlockSchema,
@@ -150,6 +178,7 @@ export const blockSchema = z.discriminatedUnion('type', [
   ctaBlockSchema,
   tannersTaxStrategyBlockSchema,
   socialMediaPlanBlockSchema,
+  competitorAdAuditBlockSchema,
 ]);
 
 // ---------------------------------------------------------------------------

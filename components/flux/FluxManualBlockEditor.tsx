@@ -11,6 +11,7 @@ export const FLUX_MANUAL_BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   cta: 'CTA',
   tanners_tax_strategy: 'Tax strategy calculator',
   social_media_plan: 'Social media plan',
+  competitor_ad_audit: 'Competitor ad audit',
 };
 
 export const FLUX_ALL_BLOCK_TYPES: BlockType[] = [
@@ -22,6 +23,7 @@ export const FLUX_ALL_BLOCK_TYPES: BlockType[] = [
   'cta',
   'tanners_tax_strategy',
   'social_media_plan',
+  'competitor_ad_audit',
 ];
 
 export function fluxManualBlockSummary(block: Block): string {
@@ -42,6 +44,8 @@ export function fluxManualBlockSummary(block: Block): string {
       return block.props.heading || '(calculator)';
     case 'social_media_plan':
       return block.props.inferred_vertical || '(social plan)';
+    case 'competitor_ad_audit':
+      return `${block.props.heading?.trim() || 'Audit'} (${block.props.status})`;
   }
 }
 
@@ -505,6 +509,32 @@ export function renderFluxManualBlockEditor(
           >
             <Text className="text-gray-400 text-xs">+ Add week</Text>
           </Pressable>
+        </View>
+      );
+    }
+    case 'competitor_ad_audit': {
+      const p = block.props;
+      return (
+        <View className="gap-1">
+          <Text className="text-gray-400 text-xs">Section heading</Text>
+          <TextInput
+            className={inputClass}
+            value={p.heading}
+            onChangeText={(value) => updateProps(block.id, { heading: value })}
+            placeholder="Competitor ad audit"
+            placeholderTextColor="#555"
+          />
+          <Text className="text-gray-500 text-xs font-instrument mt-2">
+            Status: {p.status}
+            {p.lastAuditAt ? ` · Last run: ${p.lastAuditAt}` : ''}
+          </Text>
+          {p.errorMessage ? (
+            <Text className="text-red-400 text-xs font-instrument">{p.errorMessage}</Text>
+          ) : null}
+          <Text className="text-gray-500 text-xs font-instrument leading-5 mt-1">
+            Maps and ad samples are produced by the audit. Set the prospect service area, save the prospect,
+            then use Run competitor audit on the prospect page.
+          </Text>
         </View>
       );
     }

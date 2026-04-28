@@ -4,6 +4,7 @@ import { ChevronDownIcon, NoSymbolIcon } from 'react-native-heroicons/outline';
 import { Select } from '@/components/ui/forms';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
+import { THREAD_CATEGORIES } from './inboxConstants';
 
 /** Sticky header: left = prospect name + email; right = toolbar (campaign chip, Block, tags, category) */
 export function MessagePanelHeader({
@@ -18,7 +19,7 @@ export function MessagePanelHeader({
   onOpenTagsPanel,
   category,
   onSetCategory,
-  categoryOptions = ['Interested', 'Not Interested'],
+  categoryOptions = [...THREAD_CATEGORIES],
   showToolbar = true,
   showTitleAndEmail = true,
 }: {

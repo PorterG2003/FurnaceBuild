@@ -54,6 +54,12 @@ export interface WorkerStackProps extends cdk.StackProps {
    * Same Amplify secret name segment: `FOUNDRY_OPENROUTER_API_KEY`.
    */
   foundryOpenRouterApiKeyParamPath?: string;
+
+  /**
+   * Optional: SSM path for Google Places / Static Maps API key (same key; Flux competitor audit ECS path).
+   * Same Amplify secret segment as `GOOGLE_PLACES_API_KEY` in Amplify.
+   */
+  googlePlacesApiKeyParamPath?: string;
 }
 
 export class WorkerStack extends cdk.Stack {
@@ -82,6 +88,7 @@ export class WorkerStack extends cdk.Stack {
       leadsSupabaseUrl,
       leadsSupabaseSecretParamPath,
       foundryOpenRouterApiKeyParamPath,
+      googlePlacesApiKeyParamPath,
     } = props;
 
     if (!supabaseSecretKeyParamPath?.trim()) {
@@ -474,6 +481,13 @@ export class WorkerStack extends cdk.Stack {
       actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
       resources: [googleAdsVerificationTaskLogGroup.logGroupArn + ':*'],
     }));
+    googleAdsVerificationTaskRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'AllowGoogleAdsVerificationAmplifySsm',
+        actions: ['ssm:GetParameters', 'ssm:GetParameter'],
+        resources: [`arn:aws:ssm:${region}:${account}:parameter/amplify/*`],
+      }),
+    );
 
     if (utahLeadsConfigured) {
       const paramSuffix = leadsParamTrim!.replace(/^\//, '');
@@ -787,6 +801,7 @@ export class WorkerStack extends cdk.Stack {
       taskRole: googleAdsVerificationTaskRole,
       executionRole: taskExecutionRole,
     });
+    const googlePlacesKeyParamTrim = googlePlacesApiKeyParamPath?.trim();
     googleAdsVerificationTaskDefinition.addContainer('google-ads-verification-worker', {
       image: ecs.ContainerImage.fromEcrRepository(googleAdsVerificationTaskRepo, 'latest'),
       logging: ecs.LogDrivers.awsLogs({
@@ -795,6 +810,11 @@ export class WorkerStack extends cdk.Stack {
       }),
       environment: {
         AWS_REGION: region,
+        FLUX_SUPABASE_URL: supabaseUrl,
+        FLUX_SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
+        ...(googlePlacesKeyParamTrim
+          ? { GOOGLE_PLACES_API_KEY_PARAM_PATH: googlePlacesKeyParamTrim }
+          : {}),
         ...(utahLeadsConfigured
           ? {
               LEADS_SUPABASE_URL: leadsUrlTrim!,

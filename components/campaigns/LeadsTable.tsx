@@ -216,10 +216,12 @@ export function LeadsTable({
   const getReplyCategoryBadge = (replyCategory: Lead['reply_category']) => {
     const config =
       replyCategory === 'Interested'
-        ? { bg: '#10b98120', text: '#10b981', label: 'Interested' }
-        : replyCategory === 'Not Interested'
-          ? { bg: '#ef444420', text: '#f87171', label: 'Not Interested' }
-          : { bg: '#6b728020', text: '#9ca3af', label: 'Not Categorized' };
+        ? { bg: '#34D39922', text: '#34D399', label: 'Interested' }
+        : replyCategory === 'Neutral'
+          ? { bg: '#94A3B822', text: '#94A3B8', label: 'Neutral' }
+          : replyCategory === 'Not Interested'
+            ? { bg: '#EA580C22', text: '#EA580C', label: 'Not Interested' }
+            : { bg: '#6b728020', text: '#9ca3af', label: 'Not Categorized' };
 
     return (
       <View className="self-start px-3 py-1.5 rounded-md" style={{ backgroundColor: config.bg }}>

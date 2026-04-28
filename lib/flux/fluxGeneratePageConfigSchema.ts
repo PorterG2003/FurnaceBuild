@@ -35,6 +35,21 @@ export function normalizeFluxLlmPageConfigBeforeZod(input: unknown): unknown {
   const nextBlocks = blocks.map((block) => {
     if (block == null || typeof block !== 'object' || Array.isArray(block)) return block;
     const b = block as Record<string, unknown>;
+    if (b.type === 'competitor_ad_audit') {
+      const props = b.props;
+      if (props == null || typeof props !== 'object' || Array.isArray(props)) return block;
+      const p = props as Record<string, unknown>;
+      const heading = typeof p.heading === 'string' ? p.heading : '';
+      changed = true;
+      return {
+        ...b,
+        props: {
+          heading,
+          status: 'pending',
+          competitors: [],
+        },
+      };
+    }
     if (b.type !== 'tanners_tax_strategy') return block;
     const props = b.props;
     if (props == null || typeof props !== 'object' || Array.isArray(props)) return block;
@@ -148,6 +163,31 @@ export const blockSchema = z.discriminatedUnion('type', [
       ),
       cta_ladder: z.array(z.string()),
       platform_mix_note: z.string(),
+    }),
+  }),
+  z.object({
+    ...blockBase,
+    type: z.literal('competitor_ad_audit'),
+    props: z.object({
+      heading: z.string(),
+      status: z.enum(['pending', 'running', 'ready', 'error']),
+      errorMessage: z.string().optional(),
+      lastAuditAt: z.string().optional(),
+      competitors: z.array(
+        z.object({
+          name: z.string(),
+          mapImageUrl: z.string(),
+          adsSummary: z.string(),
+          examples: z.array(
+            z.object({
+              headline: z.string(),
+              body: z.string(),
+              sourceUrl: z.string(),
+              imageUrl: z.string().optional(),
+            }),
+          ),
+        }),
+      ),
     }),
   }),
 ]);

@@ -27,6 +27,7 @@ import { processNotificationEvent } from './functions/processNotificationEvent/r
 import { fluxGenerate } from './functions/fluxGenerate/resource';
 import { fluxEditorChat } from './functions/fluxEditorChat/resource';
 import { googlePlaces } from './functions/googlePlaces/resource';
+import { fluxCompetitorAuditStart } from './functions/fluxCompetitorAuditStart/resource';
 
 // Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
 config({ path: '.env.local' });
@@ -61,6 +62,7 @@ const backend = defineBackend({
   fluxGenerate,
   fluxEditorChat,
   googlePlaces,
+  fluxCompetitorAuditStart,
   ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
 
@@ -963,6 +965,71 @@ const foundryGoogleAdsVerificationStateMachineArn = cdk.Stack.of(foundryNormaliz
   arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
 });
 
+/** Flux prospect page: Places → transparency → rank → static map (google-ads-verification ECS task). */
+const fluxCompetitorAuditRunEcs = new sfn.CustomState(foundryNormalizeStack, 'FluxCompetitorAuditRunEcs', {
+  stateJson: {
+    Type: 'Task',
+    Resource: 'arn:aws:states:::ecs:runTask.sync',
+    ResultPath: null,
+    Parameters: {
+      LaunchType: 'FARGATE',
+      Cluster: workerClusterName,
+      TaskDefinition: googleAdsVerificationTaskFamily,
+      NetworkConfiguration: {
+        AwsvpcConfiguration: {
+          Subnets: workerPublicSubnetIds,
+          SecurityGroups: [workerSecurityGroupId],
+          AssignPublicIp: 'ENABLED',
+        },
+      },
+      Overrides: {
+        ContainerOverrides: [
+          {
+            Name: 'google-ads-verification-worker',
+            Environment: [
+              { Name: 'JOB_KIND', Value: 'flux_competitor_audit' },
+              { Name: 'FLUX_AUDIT_JOB_JSON', 'Value.$': 'States.JsonToString($)' },
+            ],
+          },
+        ],
+      },
+    },
+    End: true,
+  },
+});
+const fluxCompetitorAuditStateMachineName = `flux-competitor-audit-${workerEnvironment}`;
+const fluxCompetitorAuditStateMachine = new sfn.StateMachine(foundryNormalizeStack, 'FluxCompetitorAuditSm', {
+  stateMachineName: fluxCompetitorAuditStateMachineName,
+  definitionBody: sfn.DefinitionBody.fromChainable(fluxCompetitorAuditRunEcs),
+});
+fluxCompetitorAuditStateMachine.role.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    sid: 'FluxCompetitorAuditRunEcsTasks',
+    actions: ['ecs:RunTask', 'ecs:DescribeTasks', 'ecs:StopTask'],
+    resources: ['*'],
+  }),
+);
+fluxCompetitorAuditStateMachine.role.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    sid: 'FluxCompetitorAuditEventsForEcsTasks',
+    actions: ['events:PutTargets', 'events:PutRule', 'events:DescribeRule'],
+    resources: ['*'],
+  }),
+);
+fluxCompetitorAuditStateMachine.role.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    sid: 'FluxCompetitorAuditPassEcsRoles',
+    actions: ['iam:PassRole'],
+    resources: [ecsTaskExecutionRoleArn, googleAdsVerificationTaskRoleArn],
+  }),
+);
+const fluxCompetitorAuditStateMachineArn = cdk.Stack.of(foundryNormalizeStack).formatArn({
+  service: 'states',
+  resource: 'stateMachine',
+  resourceName: fluxCompetitorAuditStateMachineName,
+  arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+});
+
 const foundryCsvBuilderExportRun = new sfnTasks.LambdaInvoke(foundryNormalizeStack, 'FoundryCsvBuilderExportRun', {
   lambdaFunction: foundryCsvBuilderExportLambda,
   payload: sfn.TaskInput.fromObject({
@@ -1181,6 +1248,44 @@ const allowPublicGooglePlacesInvoke = new lambda.CfnPermission(
 );
 allowPublicGooglePlacesInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
+const fluxCompetitorAuditStartLambda = backend.fluxCompetitorAuditStart.resources.lambda as lambda.Function;
+fluxCompetitorAuditStartLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+fluxCompetitorAuditStartLambda.addEnvironment(
+  'FLUX_COMPETITOR_AUDIT_STATE_MACHINE_ARN',
+  fluxCompetitorAuditStateMachineArn,
+);
+fluxCompetitorAuditStartLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    sid: 'FluxCompetitorAuditStartExecution',
+    actions: ['states:StartExecution'],
+    resources: [fluxCompetitorAuditStateMachineArn],
+  }),
+);
+const fluxCompetitorAuditStartUrl = fluxCompetitorAuditStartLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(fluxCompetitorAuditStartLambda.stack, 'AllowPublicFluxCompetitorAuditStartUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: fluxCompetitorAuditStartLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicFluxCompetitorAuditStartInvoke = new lambda.CfnPermission(
+  fluxCompetitorAuditStartLambda.stack,
+  'AllowPublicFluxCompetitorAuditStartInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: fluxCompetitorAuditStartLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicFluxCompetitorAuditStartInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
 let launchSmartleadMigrationUrlRef: { url: string } | undefined;
 
 if (smartleadMigrationEnabled) {
@@ -1317,6 +1422,7 @@ const customOutputs: Record<string, string> = {
   fluxGenerateUrl: fluxGenerateUrl.url,
   fluxEditorChatUrl: fluxEditorChatUrl.url,
   googlePlacesUrl: googlePlacesUrl.url,
+  fluxCompetitorAuditStartUrl: fluxCompetitorAuditStartUrl.url,
 };
 if (launchSmartleadMigrationUrlRef) {
   customOutputs.launchSmartleadMigrationUrl = launchSmartleadMigrationUrlRef.url;

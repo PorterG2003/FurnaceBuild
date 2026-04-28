@@ -38,6 +38,7 @@ import {
   updateFluxProspect,
   checkSlugAvailable,
   updateFluxPageSlug,
+  getFluxAsyncJob,
 } from '@/lib/supabase/services/flux';
 import type {
   FluxProspectRow,
@@ -47,11 +48,18 @@ import type {
   FluxPageStatus,
   PageConfig,
 } from '@/lib/flux/types';
-import { coercePageConfig, hasRenderableFluxPageConfig } from '@/lib/flux/coercePageConfig';
+import {
+  coercePageConfig,
+  hasRenderableFluxPageConfig,
+  canPublishFluxProspectPage,
+} from '@/lib/flux/coercePageConfig';
 import { getFluxGenerateUrl } from '@/lib/flux/fluxGenerateUrl';
 import { getFluxEditorChatUrl } from '@/lib/flux/fluxEditorChatUrl';
 import { callFluxGenerate } from '@/lib/flux/callFluxGenerate';
 import { callFluxEditorChat } from '@/lib/flux/callFluxEditorChat';
+import { callFluxCompetitorAuditStart } from '@/lib/flux/callFluxCompetitorAuditStart';
+import { getFluxCompetitorAuditStartUrl } from '@/lib/flux/fluxCompetitorAuditStartUrl';
+import { isValidFluxServiceArea } from '@/lib/flux/fluxServiceArea';
 import { getMergedFluxPageConfigSemanticIssues } from '@/lib/flux/validateMergedFluxPageConfig';
 import {
   applyProspectChatOperations,
@@ -111,6 +119,8 @@ export default function ProspectDetail() {
   const [slugCheckAvailable, setSlugCheckAvailable] = useState<boolean | null>(null);
   const [slugChecking, setSlugChecking] = useState(false);
   const [savingSlug, setSavingSlug] = useState(false);
+  const [auditPollJobId, setAuditPollJobId] = useState<string | null>(null);
+  const [auditBusyBlockId, setAuditBusyBlockId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -145,6 +155,29 @@ export default function ProspectDetail() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!auditPollJobId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const row = await getFluxAsyncJob(auditPollJobId);
+        if (cancelled || !row) return;
+        if (row.status === 'succeeded' || row.status === 'failed' || row.status === 'cancelled') {
+          setAuditPollJobId(null);
+          await load();
+        }
+      } catch {
+        /* transient */
+      }
+    };
+    void tick();
+    const iv = setInterval(() => void tick(), 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [auditPollJobId, load]);
 
   useEffect(() => {
     if (page?.slug != null) {
@@ -187,6 +220,13 @@ export default function ProspectDetail() {
       Alert.alert(
         'Generate first',
         'Run Generate or Regenerate so this page has blocks and copy. Only then can it go live—the public URL reads the saved page config.',
+      );
+      return;
+    }
+    if (status === 'live' && !canPublishFluxProspectPage(page.page_config)) {
+      Alert.alert(
+        'Competitor audit incomplete',
+        'This page includes a competitor ad audit block that is not finished yet. Run the audit from the prospect editor and wait until it shows Ready, then save the page before going live.',
       );
       return;
     }
@@ -384,6 +424,7 @@ export default function ProspectDetail() {
         company_size: prospectDraft.company_size.trim() || null,
         email_notes: prospectDraft.email_notes.trim() || null,
         brand_profile: fluxProspectFieldValuesToBrandProfile(prospectDraft),
+        service_area: prospectDraft.service_area,
       });
       setProspect(updated);
       setProspectDraft(fluxProspectRowToFieldValues(updated));
@@ -552,6 +593,37 @@ export default function ProspectDetail() {
     [chatSending, prospectChat, saveProspectChatToDb, toast],
   );
 
+  const handleStartCompetitorAudit = useCallback(
+    async (blockId: string) => {
+      if (!page || auditBusyBlockId || auditPollJobId) return;
+      if (pageDirty) {
+        toast.error('Save page changes before running the audit.');
+        return;
+      }
+      if (prospectRowDirty) {
+        toast.error('Save prospect (including service area) before running the audit.');
+        return;
+      }
+      if (!prospect || !isValidFluxServiceArea(prospect.service_area)) {
+        toast.error('Set and save a service area on the prospect first.');
+        return;
+      }
+      setAuditBusyBlockId(blockId);
+      try {
+        const r = await callFluxCompetitorAuditStart({ pageId: page.id, blockId });
+        if (!r.ok) {
+          toast.error(r.message);
+          return;
+        }
+        setAuditPollJobId(r.jobId);
+        toast.success('Audit started. This screen refreshes when the job finishes.');
+      } finally {
+        setAuditBusyBlockId(null);
+      }
+    },
+    [auditBusyBlockId, auditPollJobId, page, pageDirty, prospect, prospectRowDirty, toast],
+  );
+
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center">
@@ -617,6 +689,17 @@ export default function ProspectDetail() {
             </View>
           )}
 
+          {page?.status === 'live' &&
+            hasRenderableFluxPageConfig(page.page_config) &&
+            !canPublishFluxProspectPage(page.page_config) && (
+              <View className="border border-amber-500/40 bg-amber-500/10 rounded-xl p-4 mb-4">
+                <Text className="text-amber-100 text-sm font-instrument leading-5">
+                  Status is <Text className="font-instrument-semibold">live</Text> but a competitor ad audit block is not
+                  complete. Finish the audit (or switch to draft) so the public page matches your quality bar.
+                </Text>
+              </View>
+            )}
+
           {page && (
             <View className="border border-[#2A2A2A] rounded-xl p-4 bg-[#1A1A1A] mb-4">
               <View className="mb-3">
@@ -668,7 +751,8 @@ export default function ProspectDetail() {
                     }`}
                     onPress={() => handleStatusChange(s)}
                     disabled={
-                      statusUpdating || (s === 'live' && !hasRenderableFluxPageConfig(page.page_config))
+                      statusUpdating ||
+                      (s === 'live' && !canPublishFluxProspectPage(page.page_config))
                     }
                   >
                     <Text
@@ -692,6 +776,52 @@ export default function ProspectDetail() {
                     </Text>
                   )}
                 </View>
+              </View>
+            </View>
+          )}
+
+          {hasPageConfig && page && draftPageConfig && draftPageConfig.blocks.some((b) => b.type === 'competitor_ad_audit') && (
+            <View className="border border-indigo-500/25 bg-indigo-500/5 rounded-xl p-4 mb-4">
+              <Text className="text-white text-sm font-instrument-semibold mb-1">Competitor ad audit</Text>
+              <Text className="text-gray-400 text-xs font-instrument mb-3 leading-5">
+                Uses the prospect service area (saved on the prospect row). Save prospect and page before starting.
+                Polling refreshes this page when the job completes.
+              </Text>
+              {!getFluxCompetitorAuditStartUrl() ? (
+                <Text className="text-amber-200/90 text-xs font-instrument mb-2">
+                  Deploy Amplify so amplify_outputs.json includes custom.fluxCompetitorAuditStartUrl (or set
+                  EXPO_PUBLIC_FLUX_COMPETITOR_AUDIT_START_URL).
+                </Text>
+              ) : null}
+              <View className="gap-2">
+                {draftPageConfig.blocks
+                  .filter((b) => b.type === 'competitor_ad_audit')
+                  .map((b) => (
+                    <View key={b.id} className="flex-row flex-wrap items-center gap-2">
+                      <Text className="text-gray-300 text-xs font-instrument flex-1 min-w-[140px]">
+                        {b.props.heading?.trim() || 'Audit block'} · {b.props.status}
+                      </Text>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={
+                          auditBusyBlockId === b.id ||
+                          Boolean(auditPollJobId) ||
+                          prospectRowDirty ||
+                          pageDirty ||
+                          !isValidFluxServiceArea(prospect.service_area) ||
+                          b.props.status === 'running'
+                        }
+                        onPress={() => void handleStartCompetitorAudit(b.id)}
+                      >
+                        {auditBusyBlockId === b.id
+                          ? 'Starting…'
+                          : b.props.status === 'running'
+                            ? 'Running…'
+                            : 'Run audit'}
+                      </Button>
+                    </View>
+                  ))}
               </View>
             </View>
           )}

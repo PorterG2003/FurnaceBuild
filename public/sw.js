@@ -51,7 +51,7 @@ self.addEventListener('push', function (event) {
     body: data.body || '',
     data: { url: data.url || '/' },
     tag: data.tag || 'furnace-notification',
-    icon: '/web-app-manifest-512x512.png',
+    icon: '/icon512_rounded.png',
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });

@@ -2,6 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFluxEditorOperations, fluxEditorChatResponseSchema } from './schemas.js';
 
+test('parseFluxEditorOperations accepts block.add competitor_ad_audit', () => {
+  const r = parseFluxEditorOperations([{ type: 'block.add', blockType: 'competitor_ad_audit' }]);
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.operations[0]?.type, 'block.add');
+});
+
 test('parseFluxEditorOperations accepts valid ops', () => {
   const r = parseFluxEditorOperations([
     { type: 'campaign.setName', value: 'X' },

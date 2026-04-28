@@ -128,7 +128,7 @@ export default function NotificationsTestPage() {
       const reg = await navigator.serviceWorker.ready;
       await reg.showNotification('Furnace test (service worker)', {
         body: 'Same SW as VAPID push delivery — this call is local, not from the server.',
-        icon: '/web-app-manifest-512x512.png',
+        icon: '/icon512_rounded.png',
         data: { url: '/test/notifications' },
         tag: 'furnace-test-notification',
       });

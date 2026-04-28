@@ -6,9 +6,14 @@ test('parseFluxEditorOperations accepts valid ops', () => {
   const r = parseFluxEditorOperations([
     { type: 'campaign.setName', value: 'X' },
     { type: 'block.remove', blockId: 'abc' },
+    {
+      type: 'asset.update',
+      assetId: 'a1',
+      patch: { title: 'T', imageUrl: 'https://x.example/logo.png' },
+    },
   ]);
   assert.equal(r.ok, true);
-  if (r.ok) assert.equal(r.operations.length, 2);
+  if (r.ok) assert.equal(r.operations.length, 3);
 });
 
 test('parseFluxEditorOperations rejects invalid op', () => {

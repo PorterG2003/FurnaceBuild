@@ -121,6 +121,18 @@ const blockTypeSchema = z.enum([
   'social_media_plan',
 ]);
 
+const fluxBlockStylePresetSchema = z.enum(['classic', 'glass', 'minimal']);
+const fluxPageThemeSchema = z.enum(['prospect', 'seller', 'merge']);
+const fluxBrandFieldSourceSchema = z.enum(['prospect', 'seller', 'merge']);
+const fluxBrandingPolicySchema = z.object({
+  v: z.literal(1),
+  pageTheme: fluxPageThemeSchema,
+  logoFrom: fluxBrandFieldSourceSchema.optional(),
+  colorsFrom: fluxBrandFieldSourceSchema.optional(),
+  fontFrom: fluxBrandFieldSourceSchema.optional(),
+  blockStyleFrom: fluxBrandFieldSourceSchema.optional(),
+});
+
 const fluxEditorOperationSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('campaign.setName'), value: z.string() }),
   z.object({ type: z.literal('campaign.setOfferDescription'), value: z.string() }),
@@ -141,6 +153,18 @@ const fluxEditorOperationSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('asset.add'), asset: contentAssetSchema }),
   z.object({ type: z.literal('asset.remove'), assetId: z.string().min(1) }),
+  z.object({
+    type: z.literal('asset.update'),
+    assetId: z.string().min(1),
+    patch: z.object({
+      type: z.enum(['case_study', 'testimonial', 'stat']).optional(),
+      title: z.string().optional(),
+      body: z.string().optional(),
+      metric: z.string().nullable().optional(),
+      attribution: z.string().nullable().optional(),
+      imageUrl: z.string().nullable().optional(),
+    }),
+  }),
   z.object({
     type: z.literal('template.setCopySlots'),
     value: z.array(z.string()),
@@ -165,7 +189,30 @@ const fluxEditorOperationSchema = z.discriminatedUnion('type', [
       accentColor: z.string().optional(),
       fontFamily: z.string().optional(),
       logoUrl: z.string().optional(),
+      blockStylePreset: fluxBlockStylePresetSchema.optional(),
     }),
+  }),
+  z.object({
+    type: z.literal('seller.patchProfile'),
+    patch: z.object({
+      displayName: z.string().optional(),
+      tagline: z.string().optional(),
+      websiteUrl: z.string().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal('seller.patchBrand'),
+    patch: z.object({
+      primaryColor: z.string().optional(),
+      accentColor: z.string().optional(),
+      fontFamily: z.string().optional(),
+      logoUrl: z.string().optional(),
+      blockStylePreset: fluxBlockStylePresetSchema.optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal('branding.setPolicy'),
+    policy: fluxBrandingPolicySchema,
   }),
 ]);
 
@@ -192,10 +239,18 @@ Rules:
   - {"type":"block.reorder","blockIds":string[]} — full permutation of existing ids
   - {"type":"asset.add","asset":{id,type,title,body,...}}
   - {"type":"asset.remove","assetId":string}
+  - {"type":"asset.update","assetId":string,"patch":{title?,body?,metric?,attribution?,imageUrl?,type?}}
   - {"type":"template.setCopySlots","value":string[]} — field names the personalization LLM may rewrite
   - {"type":"template.setConstraints","value":string}
-  - {"type":"preview.patchProspect","patch":{...partial prospect fields...}}
-  - {"type":"preview.patchBrand","patch":{primaryColor?,accentColor?,fontFamily?,logoUrl?}}
+  - {"type":"preview.patchProspect","patch":{...partial prospect fields...}} — sample recipient only (not the seller)
+  - {"type":"preview.patchBrand","patch":{primaryColor?,accentColor?,fontFamily?,logoUrl?,blockStylePreset?}} — preview recipient page chrome for template preview
+  - {"type":"seller.patchProfile","patch":{displayName?,tagline?,websiteUrl?}} — organization running the campaign
+  - {"type":"seller.patchBrand","patch":{primaryColor?,accentColor?,fontFamily?,logoUrl?,blockStylePreset?}} — seller's brand tokens
+  - {"type":"branding.setPolicy","policy":{"v":1,"pageTheme":"prospect"|"seller"|"merge","logoFrom"?,"colorsFrom"?,"fontFrom"?,"blockStyleFrom"?}} — which side wins when merging seller + preview recipient brands for the preview
+
+Actors (never conflate):
+- **Seller** = seller_profile in the JSON + seller intel — who runs the campaign and whose offer/credibility is on the line.
+- **PreviewRecipient** = preview_prospect — fictional or stand-in company/person to preview personalization only.
 
 Methodology you should help the user define:
 - WHO_ITS_FOR: the ICP / role / situation
@@ -237,6 +292,68 @@ function extractJsonObjectFromLlmText(text: string): string | null {
   const end = candidate.lastIndexOf('}');
   if (start === -1 || end === -1 || end <= start) return null;
   return candidate.slice(start, end + 1);
+}
+
+const PROSPECT_PAGE_ALLOWED_OPERATION_TYPES = new Set<string>([
+  'block.updateProps',
+  'block.reorder',
+  'preview.patchBrand',
+  'preview.patchProspect',
+]);
+
+const PROSPECT_PAGE_SYSTEM_PROMPT = `You are a Flux assistant editing ONE personalized prospect landing page (already generated). The JSON editor state includes page_config (theme, prospect-facing names, blocks) and content_assets from the campaign (read-only catalog for case study/testimonial picks). When present, seller_profile and branding_policy are read-only context for the campaign runner — do NOT return seller.patchProfile, seller.patchBrand, or branding.setPolicy operations (they are not allowed in this mode).
+
+Rules:
+- Return ONLY valid JSON (no markdown fences) with shape {"assistantMessage": string, "operations": array, "summary"?: string[], "requiresAiPreview"?: boolean}
+- Allowed operations ONLY:
+  - {"type":"block.updateProps","blockId":string,"props":object} — merge props into the existing block; use only keys valid for that block type; do not invent block ids
+  - {"type":"block.reorder","blockIds":string[]} — full permutation of existing block ids
+  - {"type":"preview.patchBrand","patch":{primaryColor?,accentColor?,fontFamily?,logoUrl?,blockStylePreset?}}
+  - {"type":"preview.patchProspect","patch":{name?,company?,...}} — prefer name/company for on-page personalization
+- Do NOT use: campaign.*, template.*, asset.*, block.add, block.remove
+- Do not invent facts, logos, or metrics. Keep URLs honest (http/https).
+- Prefer a small number of targeted edits. If the user is only conversing, return "operations": [].
+- If a capability is missing from Flux blocks, return operations: [] and prefix assistantMessage with: Needs new block:`;
+
+async function assertUserCanAccessProspectPage(
+  db: SupabaseClient,
+  userId: string,
+  prospectPageId: string,
+  expectedCampaignId: string,
+): Promise<{ ok: true } | { ok: false; status: number; body: Record<string, unknown> }> {
+  const { data: page, error } = await db
+    .from('flux_prospect_pages')
+    .select('id, account_id, campaign_id')
+    .eq('id', prospectPageId)
+    .maybeSingle();
+  if (error) {
+    return {
+      ok: false,
+      status: 500,
+      body: { error: 'Database error loading prospect page', details: error.message },
+    };
+  }
+  if (!page) {
+    return { ok: false, status: 404, body: { error: 'Prospect page not found', code: 'NO_PROSPECT_PAGE' } };
+  }
+  if ((page as { campaign_id: string }).campaign_id !== expectedCampaignId) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: 'prospectPageId does not match campaignId', code: 'CAMPAIGN_MISMATCH' },
+    };
+  }
+  const accountId = (page as { account_id: string }).account_id;
+  const { data: membership } = await db
+    .from('account_users')
+    .select('user_id')
+    .eq('user_id', userId)
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (!membership) {
+    return { ok: false, status: 403, body: { error: 'Forbidden', code: 'PROSPECT_PAGE_ACCESS_DENIED' } };
+  }
+  return { ok: true };
 }
 
 async function assertUserCanAccessCampaign(
@@ -353,10 +470,21 @@ async function handleRequest(event: Record<string, unknown>) {
     return response(400, { error: 'Missing campaignId' });
   }
 
+  const prospectPageIdRaw = body.prospectPageId;
+  const prospectPageId =
+    typeof prospectPageIdRaw === 'string' ? prospectPageIdRaw.trim() : '';
+
   const db = createClient(supabaseUrl, supabaseSecretKey);
-  const access = await assertUserCanAccessCampaign(db, user.id, campaignId);
-  if (!access.ok) {
-    return response(access.status, access.body);
+  if (prospectPageId) {
+    const pageAccess = await assertUserCanAccessProspectPage(db, user.id, prospectPageId, campaignId);
+    if (!pageAccess.ok) {
+      return response(pageAccess.status, pageAccess.body);
+    }
+  } else {
+    const access = await assertUserCanAccessCampaign(db, user.id, campaignId);
+    if (!access.ok) {
+      return response(access.status, access.body);
+    }
   }
 
   const messagesRaw = body.messages;
@@ -391,10 +519,12 @@ async function handleRequest(event: Record<string, unknown>) {
 
   const userPayload = `Current editor state (JSON):\n${JSON.stringify(editor, null, 2)}\n\nRecent messages (JSON):\n${JSON.stringify(transcript, null, 2)}\n\nRespond to the latest user request.`;
 
+  const systemPrompt = prospectPageId ? PROSPECT_PAGE_SYSTEM_PROMPT : SYSTEM_PROMPT;
+
   const r = await openRouterChatWithModelFallbacks({
     apiKey: openRouterApiKey,
     model: openRouterModel,
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     user: userPayload,
     referer: openRouterReferer || undefined,
     title: openRouterTitle || undefined,
@@ -434,8 +564,16 @@ async function handleRequest(event: Record<string, unknown>) {
     });
   }
 
+  let operations = zr.data.operations;
+  if (prospectPageId) {
+    operations = operations.filter((op) => PROSPECT_PAGE_ALLOWED_OPERATION_TYPES.has(op.type));
+  }
+
   return response(200, {
-    ...zr.data,
+    assistantMessage: zr.data.assistantMessage,
+    operations,
+    summary: zr.data.summary,
+    requiresAiPreview: zr.data.requiresAiPreview,
     model: r.modelUsed,
   });
 }

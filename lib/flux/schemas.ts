@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FLUX_BLOCK_STYLE_PRESETS } from './fluxPresentationTokens';
 
 // ---------------------------------------------------------------------------
 // Block prop schemas
@@ -9,6 +10,7 @@ const heroBlockPropsSchema = z.object({
   subheadline: z.string(),
   ctaText: z.string(),
   ctaUrl: z.string(),
+  heroImageUrl: z.string().optional(),
 });
 
 const socialProofBlockPropsSchema = z.object({
@@ -161,6 +163,7 @@ export const themeConfigSchema = z.object({
   textColor: z.string(),
   fontFamily: z.string(),
   logoUrl: z.string().optional(),
+  blockStylePreset: z.enum(FLUX_BLOCK_STYLE_PRESETS).optional(),
 });
 
 export const pageConfigSchema = z.object({
@@ -179,6 +182,7 @@ export const brandProfileSchema = z.object({
   accentColor: z.string().optional(),
   fontFamily: z.string().optional(),
   logoUrl: z.string().optional(),
+  blockStylePreset: z.enum(FLUX_BLOCK_STYLE_PRESETS).optional(),
 });
 
 // ---------------------------------------------------------------------------

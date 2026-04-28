@@ -1,4 +1,5 @@
 import type { Block, ContentAssetType, PageConfig } from './types';
+import { getFluxCopyBudgetViolations } from './fluxCopyBudgets';
 
 const HTTP_PREFIX = /^https?:\/\//i;
 
@@ -39,12 +40,15 @@ export function getMergedFluxPageConfigSemanticIssues(
   for (const block of merged.blocks) {
     switch (block.type) {
       case 'hero': {
-        const { headline, subheadline, ctaText, ctaUrl } = block.props;
+        const { headline, subheadline, ctaText, ctaUrl, heroImageUrl } = block.props;
         if (!headline.trim()) push(block, 'headline is empty');
         if (!subheadline.trim()) push(block, 'subheadline is empty');
         if (!ctaText.trim()) push(block, 'ctaText is empty');
         if (!ctaUrl.trim()) push(block, 'ctaUrl is empty');
         else if (!HTTP_PREFIX.test(ctaUrl.trim())) push(block, 'ctaUrl must start with http:// or https://');
+        if (heroImageUrl && !HTTP_PREFIX.test(heroImageUrl.trim())) {
+          push(block, 'heroImageUrl must start with http:// or https://');
+        }
         break;
       }
       case 'cta': {
@@ -123,6 +127,8 @@ export function getMergedFluxPageConfigSemanticIssues(
         break;
     }
   }
+
+  issues.push(...getFluxCopyBudgetViolations(merged));
 
   return issues;
 }

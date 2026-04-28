@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
@@ -17,12 +17,28 @@ import {
   loadWebsiteVerificationBundles,
   loadWebsiteVerificationProgressCounts,
   normalizeComparableText,
+  normalizeWebsiteInputUrl,
   pickWebsiteVerificationTarget,
+  registrableDomainKeyFromUrl,
   pickCsvBuilderWebsiteInputUrl,
   computeCostAmountMicros,
   insertDirectCostRecord,
   resolveRunCost,
   scoreWebsiteVerification,
+  WEBSITE_INTELLIGENCE_DEFAULT_MODEL,
+  WEBSITE_INTELLIGENCE_MODEL_PROVIDER,
+  buildWebsiteIntelligenceValidationReport,
+  buildWebsiteSiteBrief,
+  hashWebsiteIntelligenceInput,
+  normalizeWebsiteExtractedProfile,
+  upsertCompanyWebsiteCrawl,
+  upsertCompanyWebsiteIntelligence,
+  type WebsiteCrawlPage,
+  type WebsiteExtractedProfile,
+  type WebsiteIntelligenceCrawlResult,
+  type WebsiteIntelligenceValidationReport,
+  type WebsiteSiteAssets,
+  type WebsiteSiteBrief,
   type WebsiteVerificationBundle,
   type WebsiteVerificationCrawlResult,
   type WebsiteVerificationExtractedPage,
@@ -43,7 +59,29 @@ type JobProgress = Record<string, unknown> & {
 };
 
 type RawExtractedPage = WebsiteVerificationExtractedPage & {
+  headings: string[];
+  main_text: string;
+  text_char_count: number;
+  links?: Array<{ href: string; text: string }>;
+  images: Array<{ src: string; alt: string | null; width?: number; height?: number }>;
+  json_ld: unknown[];
+  emails: string[];
+  favicon_urls: string[];
+  logo_candidates: string[];
+  hero_image_candidates: string[];
+  theme_color: string | null;
+  brand_color_candidates: Array<{ color: string; source: 'css' | 'meta' | 'logo' | 'dominant_page'; count?: number }>;
   same_origin_links: Array<{ href: string; text: string }>;
+};
+
+type WebsiteWorkerCrawlResult = WebsiteVerificationCrawlResult & {
+  pages: RawExtractedPage[];
+};
+
+type WebsiteIntelligenceLlmCost = {
+  costAmountMicros: number;
+  usageQuantity: number;
+  meta: Record<string, unknown>;
 };
 
 type PageFailureKind =
@@ -60,6 +98,8 @@ const NAV_TIMEOUT_MS = 45_000;
 const SETTLE_TIMEOUT_MS = 5_000;
 const COMPANY_TIMEOUT_MS = 10 * 60_000;
 const VIEWPORT = { width: 1280, height: 720 };
+const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_MODEL = process.env.WEBSITE_INTELLIGENCE_OPENROUTER_MODEL?.trim() || WEBSITE_INTELLIGENCE_DEFAULT_MODEL;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let extractPageBrowserSource: string | null = null;
@@ -74,32 +114,8 @@ function logEvent(event: string, data?: Record<string, unknown>): void {
   console.log(JSON.stringify({ source: 'website-verification', event, at: new Date().toISOString(), ...data }));
 }
 
-function registrableDomainKeyFromUrl(raw: string | null | undefined): string | null {
-  const url = canonicalizeWebsiteUrl(raw);
-  if (!url) return null;
-  try {
-    const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
-    const parts = hostname.split('.').filter(Boolean);
-    if (parts.length <= 2) return hostname;
-    return parts.slice(-2).join('.');
-  } catch {
-    return null;
-  }
-}
-
 function normalizeCrawlUrl(raw: string): string | null {
-  const canonical = canonicalizeWebsiteUrl(raw);
-  if (!canonical) return null;
-  try {
-    const url = new URL(canonical);
-    url.hash = '';
-    if (url.pathname !== '/' && url.pathname.endsWith('/')) {
-      url.pathname = url.pathname.replace(/\/+$/, '');
-    }
-    return url.toString();
-  } catch {
-    return null;
-  }
+  return normalizeWebsiteInputUrl(raw);
 }
 
 function isSameSite(seedDomain: string | null, candidateUrl: string): boolean {
@@ -116,10 +132,11 @@ function classifyPageKind(url: string, ...hints: Array<string | null | undefined
     }
   })();
   const haystack = normalizeComparableText([path, ...hints].filter(Boolean).join(' '));
-  if (!path || path === '/' || path === '/home') return 'home';
+  if (!path || path === '/' || /^\/home(?:[-_/a-z0-9]*)?$/.test(path)) return 'home';
   if (/(contact|contact us|get in touch|request a quote)/.test(haystack)) return 'contact';
+  if (/(service|services|software|tools|products|solutions|platform|pricing|industries)/.test(haystack)) return 'services';
+  if (/(team|staff|leadership|crew|meet the|management|board of directors|founder)/.test(haystack)) return 'team';
   if (/(about|our story|who we are|company)/.test(haystack)) return 'about';
-  if (/(team|staff|leadership|crew|meet the)/.test(haystack)) return 'team';
   if (/(location|locations|office|offices|find us|visit us)/.test(haystack)) return 'locations';
   if (/(privacy|terms|ccpa|cookie|legal|policy)/.test(haystack)) return 'policy';
   if (/(blog|post|article|news|press|insights)/.test(haystack)) return 'blog';
@@ -200,6 +217,443 @@ function truncateText(value: string | null | undefined, max = 140): string | nul
   return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 3)}...`;
 }
 
+function compactText(value: string | null | undefined): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function uniqStrings(values: Array<string | null | undefined>, max = 50): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const trimmed = compactText(value);
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function safeJsonParseObject(raw: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try {
+        const parsed = JSON.parse(raw.slice(start, end + 1));
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function toWebsiteCrawlPage(page: RawExtractedPage): WebsiteCrawlPage {
+  return {
+    url: page.url,
+    final_url: page.final_url,
+    depth: page.depth,
+    page_kind: page.page_kind === 'other' && /(service|solution|what we do)/i.test(`${page.url} ${page.title ?? ''} ${page.h1 ?? ''}`)
+      ? 'services'
+      : page.page_kind ?? 'other',
+    title: page.title,
+    meta_description: page.meta_description,
+    h1: page.h1,
+    headings: uniqStrings(page.headings ?? [], 32),
+    main_text: compactText(page.main_text || page.visible_text).slice(0, 8_000),
+    visible_text: compactText(page.visible_text).slice(0, 8_000),
+    text_char_count: Number(page.text_char_count ?? compactText(page.main_text || page.visible_text).length) || 0,
+    links: (page.same_origin_links ?? []).slice(0, 120).map((link) => ({
+      href: link.href,
+      text: compactText(link.text).slice(0, 160),
+    })),
+    images: (page.images ?? []).slice(0, 80),
+    json_ld: (page.json_ld ?? []).slice(0, 25),
+    phones: uniqStrings([...(page.tel_numbers ?? []), ...(page.json_ld_phones ?? [])], 20),
+    emails: uniqStrings([...(page.emails ?? []), ...(page.json_ld_emails ?? [])], 20),
+    social_links: uniqStrings([...(page.social_links ?? []), ...(page.same_as ?? [])], 30),
+    canonical_url: page.canonical_url,
+    parse_ok: page.parse_ok,
+    error: page.error ?? null,
+  };
+}
+
+function buildWebsiteSiteAssets(pages: RawExtractedPage[]): WebsiteSiteAssets {
+  const logoCandidates: WebsiteSiteAssets['logo_candidates'] = [];
+  const heroImageCandidates: string[] = [];
+  const addLogo = (url: string | null | undefined, source: WebsiteSiteAssets['logo_candidates'][number]['source'], confidence: number) => {
+    const normalized = typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
+    if (!normalized || logoCandidates.some((item) => item.url === normalized)) return;
+    logoCandidates.push({ url: normalized, source, confidence });
+  };
+  const addHero = (url: string | null | undefined) => {
+    const normalized = typeof url === 'string' && /^https:\/\//i.test(url) ? url : null;
+    if (!normalized || heroImageCandidates.includes(normalized)) return;
+    heroImageCandidates.push(normalized);
+  };
+  for (const page of pages) {
+    for (const url of page.logo_candidates ?? []) addLogo(url, 'img', 0.78);
+    for (const url of page.hero_image_candidates ?? []) addHero(url);
+    for (const url of page.favicon_urls ?? []) addLogo(url, 'favicon', 0.35);
+  }
+  const colorCounts = new Map<string, { color: string; source: 'css' | 'meta' | 'logo' | 'dominant_page'; count: number }>();
+  for (const page of pages) {
+    if (page.theme_color) {
+      colorCounts.set(page.theme_color, { color: page.theme_color, source: 'meta', count: 99 });
+    }
+    for (const color of page.brand_color_candidates ?? []) {
+      const current = colorCounts.get(color.color);
+      colorCounts.set(color.color, {
+        color: color.color,
+        source: color.source ?? 'css',
+        count: (current?.count ?? 0) + (color.count ?? 1),
+      });
+    }
+  }
+  const orgNames = uniqStrings(
+    pages.flatMap((page) => [
+      page.og_site_name,
+      ...(page.json_ld_names ?? []),
+      ...(page.json_ld_legal_names ?? []),
+      ...(page.parent_organization_names ?? []),
+    ]),
+    20,
+  );
+  return {
+    logo_candidates: logoCandidates.sort((a, b) => b.confidence - a.confidence).slice(0, 12),
+    hero_image_candidates: heroImageCandidates.slice(0, 5),
+    favicon_urls: uniqStrings(pages.flatMap((page) => page.favicon_urls ?? []), 12),
+    theme_color: pages.map((page) => page.theme_color).find((value): value is string => Boolean(value)) ?? null,
+    brand_color_candidates: [...colorCounts.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 16),
+    organization_names: orgNames,
+    social_profiles: uniqStrings(pages.flatMap((page) => [...(page.social_links ?? []), ...(page.same_as ?? [])]), 30),
+    contact: {
+      phones: uniqStrings(pages.flatMap((page) => [...(page.tel_numbers ?? []), ...(page.json_ld_phones ?? [])]), 20),
+      emails: uniqStrings(pages.flatMap((page) => [...(page.emails ?? []), ...(page.json_ld_emails ?? [])]), 20),
+      addresses: uniqStrings(pages.flatMap((page) => page.json_ld_addresses ?? []), 20),
+    },
+  };
+}
+
+function toWebsiteIntelligenceCrawl(crawl: WebsiteWorkerCrawlResult): WebsiteIntelligenceCrawlResult {
+  const pages = crawl.pages.map(toWebsiteCrawlPage);
+  return {
+    input_url: crawl.input_url,
+    final_url: crawl.final_url,
+    normalized_domain_key: crawl.normalized_domain_key,
+    pages,
+    failed_urls: crawl.failed_urls,
+    pages_visited: crawl.pages_visited,
+    max_depth_reached: crawl.max_depth_reached,
+    parked: crawl.parked,
+    site_assets: buildWebsiteSiteAssets(crawl.pages),
+  };
+}
+
+function buildEmptyWebsiteIntelligenceCrawl(inputUrl: string, error: string): WebsiteIntelligenceCrawlResult {
+  return {
+    input_url: inputUrl,
+    final_url: null,
+    normalized_domain_key: registrableDomainKeyFromUrl(inputUrl),
+    pages: [],
+    failed_urls: [inputUrl],
+    pages_visited: 0,
+    max_depth_reached: 0,
+    parked: false,
+    site_assets: {
+      logo_candidates: [],
+      hero_image_candidates: [],
+      favicon_urls: [],
+      theme_color: null,
+      brand_color_candidates: [],
+      organization_names: [],
+      social_profiles: [],
+      contact: { phones: [], emails: [], addresses: [] },
+    },
+  };
+}
+
+function buildOpenRouterMessages(siteBrief: WebsiteSiteBrief): { system: string; user: string; inputHash: string } {
+  const inputHash = hashWebsiteIntelligenceInput(siteBrief);
+  return {
+    inputHash,
+    system:
+      'You extract concise business intelligence from a compact website crawl brief. Return strict JSON only. Use only evidence in the brief. Prefer null or empty arrays over guesses.',
+    user: JSON.stringify({
+      task: 'Summarize what this business does, who it serves, services, industries, locations, tone, confidence, and supporting URLs.',
+      output_schema: {
+        business_summary: 'string|null, <= 80 words',
+        brand_name: 'string|null',
+        audience_segments: 'string[], customer/person/company types served by this business; use concise labels like home buyers, homeowners, small businesses, marketing teams',
+        services: 'string[]',
+        industries_served: 'string[]',
+        locations_served: 'string[]',
+        tone: 'string|null',
+        confidence: 'low|medium|high',
+        evidence_urls: 'string[] from top_pages.url only',
+      },
+      site_brief: siteBrief,
+    }),
+  };
+}
+
+function enrichProfileFromBrief(profile: WebsiteExtractedProfile, siteBrief: WebsiteSiteBrief): WebsiteExtractedProfile {
+  const text = compactText(
+    [
+      profile.business_summary,
+      profile.services.join(' '),
+      siteBrief.services_terms.join(' '),
+      siteBrief.top_pages.map((page) => [page.title, page.h1, page.headings.join(' '), page.snippet].join(' ')).join(' '),
+    ].join(' '),
+  ).toLowerCase();
+  const audience = [...profile.audience_segments];
+  const addAudience = (value: string) => {
+    if (!audience.some((item) => item.toLowerCase() === value.toLowerCase())) audience.push(value);
+  };
+  if (audience.length === 0) {
+    if (/(home builder|custom home|floor plan|dream home|new home|construction)/.test(text)) {
+      addAudience('Home buyers');
+      addAudience('Prospective homeowners');
+    } else if (/(marketing|sales|crm|customer platform|customer support|business)/.test(text)) {
+      addAudience('Businesses');
+      addAudience('Customer-facing teams');
+    }
+  }
+  return { ...profile, audience_segments: audience.slice(0, 12) };
+}
+
+async function openRouterWebsiteProfile(params: {
+  apiKey: string;
+  model: string;
+  siteBrief: WebsiteSiteBrief;
+}): Promise<{ profile: WebsiteExtractedProfile; usage: Record<string, unknown>; inputHash: string; llmInputChars: number }> {
+  const messages = buildOpenRouterMessages(params.siteBrief);
+  const requestBody = {
+    model: params.model,
+    messages: [
+      { role: 'system', content: messages.system },
+      { role: 'user', content: messages.user },
+    ],
+    temperature: 0.1,
+    max_tokens: 1200,
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'WebsiteExtractedProfile',
+        strict: true,
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'business_summary',
+            'brand_name',
+            'audience_segments',
+            'services',
+            'industries_served',
+            'locations_served',
+            'tone',
+            'confidence',
+            'evidence_urls',
+          ],
+          properties: {
+            business_summary: { type: ['string', 'null'] },
+            brand_name: { type: ['string', 'null'] },
+            audience_segments: { type: 'array', items: { type: 'string' } },
+            services: { type: 'array', items: { type: 'string' } },
+            industries_served: { type: 'array', items: { type: 'string' } },
+            locations_served: { type: 'array', items: { type: 'string' } },
+            tone: { type: ['string', 'null'] },
+            confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+            evidence_urls: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      },
+    },
+  };
+  const response = await fetch(OPENROUTER_CHAT_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://furnace.ai',
+      'X-OpenRouter-Title': 'Furnace Foundry Website Intelligence',
+    },
+    body: JSON.stringify(requestBody),
+  });
+  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  const usage = body.usage && typeof body.usage === 'object' ? body.usage as Record<string, unknown> : {};
+  const text = Array.isArray(body.choices)
+    ? ((body.choices[0] as { message?: { content?: unknown } } | undefined)?.message?.content)
+    : null;
+  if (!response.ok) {
+    const err = body.error && typeof body.error === 'object' && 'message' in body.error
+      ? String((body.error as { message?: unknown }).message)
+      : `OpenRouter HTTP ${response.status}`;
+    throw new Error(err);
+  }
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new Error('OpenRouter returned no completion text');
+  }
+  const parsed = safeJsonParseObject(text);
+  const normalizedProfile = normalizeWebsiteExtractedProfile(parsed);
+  const profile = normalizedProfile ? enrichProfileFromBrief(normalizedProfile, params.siteBrief) : null;
+  if (!profile) throw new Error('OpenRouter profile failed schema normalization');
+  const crawledUrls = new Set(params.siteBrief.top_pages.map((page) => page.url));
+  profile.evidence_urls = profile.evidence_urls.filter((url) => crawledUrls.has(url));
+  return {
+    profile,
+    usage,
+    inputHash: messages.inputHash,
+    llmInputChars: messages.system.length + messages.user.length,
+  };
+}
+
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function integerUsageTokenCount(value: unknown): number | null {
+  const n = finiteNumber(value);
+  if (n == null || n < 0) return null;
+  return Math.trunc(n);
+}
+
+function extractWebsiteIntelligenceLlmCost(
+  llmUsage: Record<string, unknown>,
+  model: string,
+): WebsiteIntelligenceLlmCost | null {
+  const openRouterCostUsd = finiteNumber(llmUsage.cost);
+  if (openRouterCostUsd == null || openRouterCostUsd < 0) return null;
+
+  const promptTokens = integerUsageTokenCount(llmUsage.prompt_tokens);
+  const completionTokens = integerUsageTokenCount(llmUsage.completion_tokens);
+  const totalTokens =
+    integerUsageTokenCount(llmUsage.total_tokens) ??
+    (promptTokens != null || completionTokens != null ? (promptTokens ?? 0) + (completionTokens ?? 0) : 0);
+
+  return {
+    costAmountMicros: Math.round(openRouterCostUsd * 1_000_000),
+    usageQuantity: totalTokens,
+    meta: {
+      model,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: totalTokens,
+      openrouter_cost_usd: openRouterCostUsd,
+    },
+  };
+}
+
+async function updateWebsiteIntelligenceCostStatus(
+  client: any,
+  intelligenceId: string,
+  patch: { cost_record_id?: string | null; cost_status: 'costed' | 'failed_or_not_costed' },
+): Promise<void> {
+  const { error } = await (client.from('company_website_intelligence') as any)
+    .update(patch)
+    .eq('id', intelligenceId);
+  if (error) throw new Error(error.message);
+}
+
+async function persistWebsiteIntelligenceLlmCost(args: {
+  client: any;
+  intelligenceId: string;
+  existingCostRecordId: string | null;
+  companyId: string;
+  ingestionRunId: string | null;
+  foundryJobId: string | null;
+  llmStatus: 'not_run' | 'completed' | 'failed' | 'skipped';
+  llmUsage: Record<string, unknown>;
+  model: string;
+  createdAt: string | null;
+}): Promise<void> {
+  const cost = args.llmStatus === 'completed'
+    ? extractWebsiteIntelligenceLlmCost(args.llmUsage, args.model)
+    : null;
+
+  if (!cost) {
+    await updateWebsiteIntelligenceCostStatus(args.client, args.intelligenceId, {
+      cost_status: 'failed_or_not_costed',
+    });
+    return;
+  }
+
+  try {
+    if (args.existingCostRecordId) {
+      const { data, error } = await (args.client.from('cost_records') as any)
+        .update({
+          usage_quantity: cost.usageQuantity,
+          usage_unit: 'token',
+          cost_amount_micros: cost.costAmountMicros,
+          cost_rate_card_id: null,
+          cost_is_override: false,
+          estimation_kind: 'vendor_direct',
+          company_id: args.companyId,
+          ingestion_run_id: args.ingestionRunId,
+          foundry_job_id: args.foundryJobId,
+          meta: cost.meta,
+        })
+        .eq('id', args.existingCostRecordId)
+        .eq('record_kind', 'direct')
+        .eq('source_entity_type', 'company_website_intelligence')
+        .eq('source_entity_id', args.intelligenceId)
+        .select('id')
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data?.id) throw new Error(`Linked website intelligence cost record ${args.existingCostRecordId} was not found`);
+      await updateWebsiteIntelligenceCostStatus(args.client, args.intelligenceId, {
+        cost_record_id: args.existingCostRecordId,
+        cost_status: 'costed',
+      });
+      return;
+    }
+
+    const costRecord = await insertDirectCostRecord(args.client as any, {
+      costKind: 'enrichment',
+      provider: 'openrouter',
+      product: 'website_intelligence_llm',
+      usageQuantity: cost.usageQuantity,
+      usageUnit: 'token',
+      costAmountMicros: cost.costAmountMicros,
+      costRateCardId: null,
+      costIsOverride: false,
+      estimationKind: 'vendor_direct',
+      sourceEntityType: 'company_website_intelligence',
+      sourceEntityId: args.intelligenceId,
+      companyId: args.companyId,
+      ingestionRunId: args.ingestionRunId,
+      foundryJobId: args.foundryJobId,
+      meta: cost.meta,
+      createdAt: args.createdAt ?? new Date().toISOString(),
+    });
+    await updateWebsiteIntelligenceCostStatus(args.client, args.intelligenceId, {
+      cost_record_id: costRecord.id,
+      cost_status: 'costed',
+    });
+  } catch (costError) {
+    console.error('website intelligence cost write failed', args.intelligenceId, costError);
+    if (!args.existingCostRecordId) {
+      await updateWebsiteIntelligenceCostStatus(args.client, args.intelligenceId, {
+        cost_status: 'failed_or_not_costed',
+      });
+    }
+  }
+}
+
 function bundleLogView(bundle: WebsiteVerificationBundle, inputUrl: string | null) {
   return {
     company_id: bundle.company_id,
@@ -277,6 +731,7 @@ function scoreLinkPriority(bundle: WebsiteVerificationBundle, url: string, text:
   let score = 0;
   const kind = classifyPageKind(url, text);
   if (kind === 'home') score += 8;
+  if (kind === 'services') score += 12;
   if (kind === 'contact' || kind === 'about' || kind === 'team' || kind === 'locations') score += 10;
   if (kind === 'listing') score += 4;
   if (kind === 'project') score += 2;
@@ -353,7 +808,7 @@ async function crawlWebsite(
   page: Page,
   bundle: WebsiteVerificationBundle,
   inputUrl: string,
-): Promise<WebsiteVerificationCrawlResult> {
+): Promise<WebsiteWorkerCrawlResult> {
   const normalizedSeed = normalizeCrawlUrl(inputUrl);
   if (!normalizedSeed) {
     throw new Error(`Invalid input URL: ${inputUrl}`);
@@ -374,7 +829,7 @@ async function crawlWebsite(
     try {
       const extracted = await visitUrl(page, normalizedUrl, next.depth);
       pages.push(extracted);
-      finalUrl = extracted.final_url || finalUrl;
+      finalUrl = finalUrl || extracted.final_url;
       seedDomain = registrableDomainKeyFromUrl(finalUrl ?? normalizedSeed) ?? seedDomain;
       if (pages.length >= MAX_PAGES || next.depth >= MAX_DEPTH) continue;
       const candidates = extracted.same_origin_links
@@ -429,11 +884,13 @@ async function crawlWebsite(
   };
 }
 
-async function loadSecret(): Promise<{ url: string; key: string; jobId: string }> {
+async function loadSecret(): Promise<{ url: string; key: string; jobId: string; openRouterApiKey: string | null }> {
   const url = process.env.LEADS_SUPABASE_URL?.trim();
   const jobId = process.env.JOB_ID?.trim();
   let key = process.env.LEADS_SUPABASE_SECRET_KEY?.trim();
   const paramPath = process.env.LEADS_SUPABASE_SECRET_KEY_PARAM_PATH?.trim();
+  let openRouterApiKey = process.env.FOUNDRY_OPENROUTER_API_KEY?.trim() || null;
+  const openRouterParamPath = process.env.FOUNDRY_OPENROUTER_API_KEY_PARAM_PATH?.trim();
   const region = process.env.AWS_REGION || 'us-west-2';
   if (!url || !jobId) {
     throw new Error('Missing LEADS_SUPABASE_URL or JOB_ID');
@@ -444,7 +901,10 @@ async function loadSecret(): Promise<{ url: string; key: string; jobId: string }
   if (!key) {
     throw new Error('Missing LEADS_SUPABASE_SECRET_KEY or LEADS_SUPABASE_SECRET_KEY_PARAM_PATH');
   }
-  return { url, key, jobId };
+  if (!openRouterApiKey && openRouterParamPath) {
+    openRouterApiKey = await fetchSecretFromParameterStore(openRouterParamPath, region);
+  }
+  return { url, key, jobId, openRouterApiKey };
 }
 
 async function updateJobProgress(client: any, jobId: string, progress: JobProgress): Promise<void> {
@@ -578,6 +1038,243 @@ async function refreshCsvBuilderWebsiteProgress(
   return progress;
 }
 
+async function persistCrawlAndIntelligence(args: {
+  client: any;
+  bundle: WebsiteVerificationBundle;
+  jobId: string;
+  sourceIngestionRunId: string | null;
+  crawl: WebsiteIntelligenceCrawlResult;
+  elapsedMs: number;
+  openRouterApiKey: string | null;
+  crawlError?: string | null;
+}): Promise<{
+  crawlId: string | null;
+  intelligenceId: string | null;
+  validationReport: WebsiteIntelligenceValidationReport;
+  siteBrief: WebsiteSiteBrief;
+}> {
+  const siteBrief = buildWebsiteSiteBrief(args.crawl);
+  const inputHash = hashWebsiteIntelligenceInput(siteBrief);
+  let crawlId: string | null = null;
+  let intelligenceId: string | null = null;
+  let profile: WebsiteExtractedProfile | null = null;
+  let llmStatus: 'not_run' | 'completed' | 'failed' | 'skipped' = 'not_run';
+  let llmUsage: Record<string, unknown> = {};
+  let llmError: string | null = null;
+  let llmInputChars = JSON.stringify(siteBrief).length;
+  const crawlWrite = await upsertCompanyWebsiteCrawl(args.client, {
+    companyId: args.bundle.company_id,
+    foundryJobId: args.jobId,
+    sourceIngestionRunId: args.sourceIngestionRunId,
+    crawl: args.crawl,
+    maxDepth: MAX_DEPTH,
+    maxPages: MAX_PAGES,
+    elapsedMs: args.elapsedMs,
+    error: args.crawlError ?? null,
+  });
+  crawlId = crawlWrite.id;
+  if (args.crawl.pages_visited === 0) {
+    llmStatus = 'skipped';
+    llmError = args.crawlError ?? 'No crawl pages available for LLM profile';
+  } else if (!args.openRouterApiKey) {
+    llmStatus = 'failed';
+    llmError = 'Missing FOUNDRY_OPENROUTER_API_KEY or FOUNDRY_OPENROUTER_API_KEY_PARAM_PATH';
+  } else {
+    try {
+      const llm = await openRouterWebsiteProfile({
+        apiKey: args.openRouterApiKey,
+        model: OPENROUTER_MODEL,
+        siteBrief,
+      });
+      profile = llm.profile;
+      llmUsage = llm.usage;
+      llmInputChars = llm.llmInputChars;
+      llmStatus = 'completed';
+    } catch (error) {
+      llmStatus = 'failed';
+      llmError = error instanceof Error ? trimPageFailureMessage(error.message) : String(error);
+    }
+  }
+  const generatedAt = llmStatus === 'completed' ? new Date().toISOString() : null;
+  const intelligence = await upsertCompanyWebsiteIntelligence(args.client, {
+    companyId: args.bundle.company_id,
+    websiteCrawlId: crawlId,
+    foundryJobId: args.jobId,
+    sourceIngestionRunId: args.sourceIngestionRunId,
+    inputHash,
+    siteBrief,
+    extractedProfile: profile,
+    llmStatus,
+    llmUsage,
+    error: llmError,
+    modelProvider: WEBSITE_INTELLIGENCE_MODEL_PROVIDER,
+    model: OPENROUTER_MODEL,
+    generatedAt,
+  });
+  intelligenceId = intelligence.id;
+  await persistWebsiteIntelligenceLlmCost({
+    client: args.client,
+    intelligenceId,
+    existingCostRecordId: intelligence.costRecordId,
+    companyId: args.bundle.company_id,
+    ingestionRunId: args.sourceIngestionRunId,
+    foundryJobId: args.jobId,
+    llmStatus,
+    llmUsage,
+    model: OPENROUTER_MODEL,
+    createdAt: generatedAt,
+  });
+  const validationReport = buildWebsiteIntelligenceValidationReport({
+    crawl: args.crawl,
+    siteBrief,
+    profile,
+    llmInputChars,
+    persisted: {
+      crawlId,
+      intelligenceId,
+    },
+  });
+  logEvent('website-intelligence-result', {
+    companyId: args.bundle.company_id,
+    crawlId,
+    intelligenceId,
+    llm_status: llmStatus,
+    validation: {
+      ok: validationReport.ok,
+      errors: validationReport.errors,
+      warnings: validationReport.warnings,
+      metrics: validationReport.metrics,
+    },
+  });
+  return { crawlId, intelligenceId, validationReport, siteBrief };
+}
+
+function slugForUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    return `${url.hostname}${url.pathname}`.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'site';
+  } catch {
+    return raw.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'site';
+  }
+}
+
+function localBundleForUrl(url: string): WebsiteVerificationBundle {
+  let host = 'Local Website';
+  try {
+    host = new URL(canonicalizeWebsiteUrl(url) ?? url).hostname.replace(/^www\./, '');
+  } catch {
+    // keep fallback
+  }
+  return {
+    company_id: `local:${slugForUrl(url)}`,
+    legal_name: host,
+    normalized_key: host.toLowerCase().replace(/[^a-z0-9]+/g, ''),
+    notes: 'local_website_intelligence_validation',
+    locations: [],
+    source_records: [
+      {
+        source_business_record_id: `local-source:${slugForUrl(url)}`,
+        link_status: 'linked',
+        link_score: 1,
+        website: url,
+        phone: null,
+        address_raw: null,
+        line1: null,
+        city: null,
+        state_region: null,
+        postal_code: null,
+        categories: [],
+        raw_payload: {},
+        resolution_meta: {},
+      },
+    ],
+    registry_entities: [],
+    owners: [],
+  };
+}
+
+async function runLocalWebsiteIntelligence(): Promise<void> {
+  const rawUrls = process.argv.slice(2).filter((arg) => /^https?:\/\//i.test(arg) || /^[a-z0-9.-]+\.[a-z]{2,}/i.test(arg));
+  const envUrls = process.env.LOCAL_WEBSITE_URLS_JSON?.trim()
+    ? JSON.parse(process.env.LOCAL_WEBSITE_URLS_JSON) as unknown
+    : [];
+  const urls = [
+    ...rawUrls,
+    ...(Array.isArray(envUrls) ? envUrls.filter((item): item is string => typeof item === 'string') : []),
+  ].map((url) => canonicalizeWebsiteUrl(url)).filter((url): url is string => Boolean(url));
+  if (urls.length === 0) {
+    throw new Error('Provide URLs as CLI args or LOCAL_WEBSITE_URLS_JSON for RUN_MODE=local-intelligence');
+  }
+  const outputRoot = process.env.WEBSITE_INTELLIGENCE_OUTPUT_DIR?.trim() || join(process.cwd(), 'tmp/website-intelligence-runs');
+  mkdirSync(outputRoot, { recursive: true });
+  const browser = await launchBrowser();
+  const context = await browser.newContext({ viewport: VIEWPORT, ignoreHTTPSErrors: true });
+  try {
+    for (const inputUrl of urls) {
+      const startedAt = Date.now();
+      const slug = slugForUrl(inputUrl);
+      const outputDir = join(outputRoot, slug);
+      mkdirSync(outputDir, { recursive: true });
+      const bundle = localBundleForUrl(inputUrl);
+      const page = await context.newPage();
+      page.setDefaultTimeout(NAV_TIMEOUT_MS);
+      let intelligenceCrawl: WebsiteIntelligenceCrawlResult;
+      let siteBrief: WebsiteSiteBrief;
+      let profile: WebsiteExtractedProfile | null = null;
+      let llmOutput: Record<string, unknown> = {};
+      let llmInputChars = 0;
+      try {
+        const crawl = await runCompanyWithTimeout(page, bundle, inputUrl, async () => await crawlWebsite(page, bundle, inputUrl));
+        intelligenceCrawl = toWebsiteIntelligenceCrawl(crawl);
+        siteBrief = buildWebsiteSiteBrief(intelligenceCrawl);
+        const llmMessages = buildOpenRouterMessages(siteBrief);
+        llmInputChars = llmMessages.system.length + llmMessages.user.length;
+        if (process.env.FOUNDRY_OPENROUTER_API_KEY?.trim()) {
+          const llm = await openRouterWebsiteProfile({
+            apiKey: process.env.FOUNDRY_OPENROUTER_API_KEY.trim(),
+            model: OPENROUTER_MODEL,
+            siteBrief,
+          });
+          profile = llm.profile;
+          llmOutput = { status: 'completed', profile, usage: llm.usage, model: OPENROUTER_MODEL };
+          llmInputChars = llm.llmInputChars;
+        } else {
+          llmOutput = { status: 'skipped', error: 'Missing FOUNDRY_OPENROUTER_API_KEY for local LLM run', model: OPENROUTER_MODEL };
+        }
+      } catch (error) {
+        const message = error instanceof Error ? trimPageFailureMessage(error.message) : String(error);
+        intelligenceCrawl = buildEmptyWebsiteIntelligenceCrawl(inputUrl, message);
+        siteBrief = buildWebsiteSiteBrief(intelligenceCrawl);
+        llmOutput = { status: 'failed', error: message, model: OPENROUTER_MODEL };
+      } finally {
+        await page.close().catch(() => {});
+      }
+      const validationReport = buildWebsiteIntelligenceValidationReport({
+        crawl: intelligenceCrawl,
+        siteBrief,
+        profile,
+        llmInputChars,
+      });
+      writeFileSync(join(outputDir, 'crawl.json'), JSON.stringify(intelligenceCrawl, null, 2));
+      writeFileSync(join(outputDir, 'site-brief.json'), JSON.stringify(siteBrief, null, 2));
+      writeFileSync(join(outputDir, 'llm-input.json'), JSON.stringify(buildOpenRouterMessages(siteBrief), null, 2));
+      writeFileSync(join(outputDir, 'llm-output.json'), JSON.stringify(llmOutput, null, 2));
+      writeFileSync(join(outputDir, 'validation-report.json'), JSON.stringify(validationReport, null, 2));
+      logEvent('local-website-intelligence-result', {
+        inputUrl,
+        outputDir,
+        elapsed_ms: Date.now() - startedAt,
+        ok: validationReport.ok,
+        errors: validationReport.errors,
+        warnings: validationReport.warnings,
+      });
+    }
+  } finally {
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
+  }
+}
+
 async function runCsvBuilderWebsiteVerification(
   client: any,
   jobId: string,
@@ -708,7 +1405,11 @@ async function runCsvBuilderWebsiteVerification(
 }
 
 async function main(): Promise<void> {
-  const { url, key, jobId } = await loadSecret();
+  if (process.env.RUN_MODE === 'local-intelligence') {
+    await runLocalWebsiteIntelligence();
+    return;
+  }
+  const { url, key, jobId, openRouterApiKey } = await loadSecret();
   const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const runtimeCost = await resolveRunCost(
     client as any,
@@ -812,9 +1513,19 @@ async function main(): Promise<void> {
       try {
         await runCompanyWithTimeout(page, bundle, inputUrl, async () => {
           const crawl = await crawlWebsite(page, bundle, inputUrl);
+          const elapsedMs = Math.max(0, Date.now() - verificationStartedAt);
+          const intelligenceCrawl = toWebsiteIntelligenceCrawl(crawl);
+          const intelligence = await persistCrawlAndIntelligence({
+            client,
+            bundle,
+            jobId,
+            sourceIngestionRunId,
+            crawl: intelligenceCrawl,
+            elapsedMs,
+            openRouterApiKey,
+          });
           const scored = scoreWebsiteVerification(bundle, crawl);
           const verifiedAt = new Date().toISOString();
-          const elapsedMs = Math.max(0, Date.now() - verificationStartedAt);
           logEvent('company-result', {
             jobId,
             companyId: bundle.company_id,
@@ -823,10 +1534,13 @@ async function main(): Promise<void> {
             company: bundleLogView(bundle, inputUrl),
             crawl: crawlLogView(crawl),
             result: scoreLogView(scored),
+            website_crawl_id: intelligence.crawlId,
+            website_intelligence_id: intelligence.intelligenceId,
           });
           const { data: written, error } = await (client.from('company_website_verifications') as any).upsert({
             company_id: bundle.company_id,
             foundry_job_id: jobId,
+            website_crawl_id: intelligence.crawlId,
             source_ingestion_run_id: sourceIngestionRunId,
             input_url: crawl.input_url,
             final_url: crawl.final_url,
@@ -838,34 +1552,64 @@ async function main(): Promise<void> {
             elapsed_ms: elapsedMs,
             cost_status: runtimeCost != null ? 'costed' : 'failed_or_not_costed',
             verified_at: verifiedAt,
-          }, { onConflict: 'foundry_job_id,company_id', ignoreDuplicates: false }).select('id').single();
+          }, { onConflict: 'foundry_job_id,company_id', ignoreDuplicates: false }).select('id, cost_record_id').single();
           if (error) throw new Error(error.message);
           const verificationId = String(written?.id ?? '');
           if (!verificationId) throw new Error('Website verification upsert did not return an id');
           if (runtimeCost != null) {
             try {
-              const costRecord = await insertDirectCostRecord(client as any, {
-                costKind: 'enrichment',
-                provider: 'furnace_runtime',
-                product: 'website_verification_ms',
+              const costAmountMicros = computeCostAmountMicros({
                 usageQuantity: elapsedMs,
-                usageUnit: 'ms',
-                costAmountMicros: computeCostAmountMicros({
-                  usageQuantity: elapsedMs,
-                  unitPriceCents: runtimeCost.unitPriceCents,
-                  unitQuantity: runtimeCost.unitQuantity,
-                }),
-                costRateCardId: runtimeCost.rateCardId,
-                costIsOverride: runtimeCost.isOverride,
-                estimationKind: 'runtime_estimate',
-                sourceEntityType: 'company_website_verification',
-                sourceEntityId: verificationId,
-                companyId: bundle.company_id,
-                ingestionRunId: sourceIngestionRunId,
-                foundryJobId: jobId,
-                meta: { band: scored.band },
-                createdAt: verifiedAt,
+                unitPriceCents: runtimeCost.unitPriceCents,
+                unitQuantity: runtimeCost.unitQuantity,
               });
+              const existingVerificationCostRecordId =
+                written?.cost_record_id == null ? null : String(written.cost_record_id);
+              const costRecord = existingVerificationCostRecordId
+                ? await (async () => {
+                    const { data, error: costUpdateError } = await (client.from('cost_records') as any)
+                      .update({
+                        usage_quantity: elapsedMs,
+                        usage_unit: 'ms',
+                        cost_amount_micros: costAmountMicros,
+                        cost_rate_card_id: runtimeCost.rateCardId,
+                        cost_is_override: runtimeCost.isOverride,
+                        estimation_kind: 'runtime_estimate',
+                        company_id: bundle.company_id,
+                        ingestion_run_id: sourceIngestionRunId,
+                        foundry_job_id: jobId,
+                        meta: { band: scored.band, website_crawl_id: intelligence.crawlId },
+                      })
+                      .eq('id', existingVerificationCostRecordId)
+                      .eq('record_kind', 'direct')
+                      .eq('source_entity_type', 'company_website_verification')
+                      .eq('source_entity_id', verificationId)
+                      .select('id')
+                      .maybeSingle();
+                    if (costUpdateError) throw new Error(costUpdateError.message);
+                    if (!data?.id) {
+                      throw new Error(`Linked website verification cost record ${existingVerificationCostRecordId} was not found`);
+                    }
+                    return { id: existingVerificationCostRecordId };
+                  })()
+                : await insertDirectCostRecord(client as any, {
+                    costKind: 'enrichment',
+                    provider: 'furnace_runtime',
+                    product: 'website_verification_ms',
+                    usageQuantity: elapsedMs,
+                    usageUnit: 'ms',
+                    costAmountMicros,
+                    costRateCardId: runtimeCost.rateCardId,
+                    costIsOverride: runtimeCost.isOverride,
+                    estimationKind: 'runtime_estimate',
+                    sourceEntityType: 'company_website_verification',
+                    sourceEntityId: verificationId,
+                    companyId: bundle.company_id,
+                    ingestionRunId: sourceIngestionRunId,
+                    foundryJobId: jobId,
+                    meta: { band: scored.band, website_crawl_id: intelligence.crawlId },
+                    createdAt: verifiedAt,
+                  });
               const { error: updError } = await (client.from('company_website_verifications') as any)
                 .update({ cost_record_id: costRecord.id, cost_status: 'costed' })
                 .eq('id', verificationId);
@@ -883,6 +1627,29 @@ async function main(): Promise<void> {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const elapsedMs = Math.max(0, Date.now() - verificationStartedAt);
+        let crawlId: string | null = null;
+        let intelligenceId: string | null = null;
+        try {
+          const failedCrawl = buildEmptyWebsiteIntelligenceCrawl(inputUrl, message);
+          const persisted = await persistCrawlAndIntelligence({
+            client,
+            bundle,
+            jobId,
+            sourceIngestionRunId,
+            crawl: failedCrawl,
+            elapsedMs,
+            openRouterApiKey,
+            crawlError: message,
+          });
+          crawlId = persisted.crawlId;
+          intelligenceId = persisted.intelligenceId;
+        } catch (persistError) {
+          logEvent('website-intelligence-persist-failed', {
+            jobId,
+            companyId: bundle.company_id,
+            error: persistError instanceof Error ? trimPageFailureMessage(persistError.message) : String(persistError),
+          });
+        }
         logEvent('company-result', {
           jobId,
           companyId: bundle.company_id,
@@ -893,10 +1660,13 @@ async function main(): Promise<void> {
             band: 'error',
             error: trimPageFailureMessage(message),
           },
+          website_crawl_id: crawlId,
+          website_intelligence_id: intelligenceId,
         });
         await (client.from('company_website_verifications') as any).upsert({
           company_id: bundle.company_id,
           foundry_job_id: jobId,
+          website_crawl_id: crawlId,
           source_ingestion_run_id: sourceIngestionRunId,
           input_url: inputUrl,
           final_url: null,

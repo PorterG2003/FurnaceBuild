@@ -25,6 +25,7 @@ export function FluxTemplateBlocksDraggableList({
   updateBlockProps,
   contentAssets,
   renderBlockEditor,
+  allowRemoveBlocks = true,
 }: FluxTemplateBlocksDraggableListProps) {
   const data = useMemo(() => sortBlocksByOrder(blocks), [blocks]);
 
@@ -93,13 +94,15 @@ export function FluxTemplateBlocksDraggableList({
                               {blockSummary(block)}
                             </Text>
                           </Pressable>
-                          <Pressable
-                            className="px-3 min-w-[44px] min-h-[44px] justify-center items-center"
-                            onPress={() => onRemove(block.id)}
-                            accessibilityLabel="Remove block"
-                          >
-                            <Text className="text-red-400 text-base">✕</Text>
-                          </Pressable>
+                          {allowRemoveBlocks ? (
+                            <Pressable
+                              className="px-3 min-w-[44px] min-h-[44px] justify-center items-center"
+                              onPress={() => onRemove(block.id)}
+                              accessibilityLabel="Remove block"
+                            >
+                              <Text className="text-red-400 text-base">✕</Text>
+                            </Pressable>
+                          ) : null}
                         </View>
                         {editingBlockId === block.id ? (
                           <View className="border-t border-[#2A2A2A] px-4 py-4 bg-[#1A1A1A]">

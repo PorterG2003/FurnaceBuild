@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, Linking } from 'react-native';
 import type { TannersTaxQualificationMode, TannersTaxStrategyBlockProps } from '@/lib/flux/types';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
-import { useFluxTheme } from '../FluxThemeProvider';
+import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 import {
   computeTannersTaxScenarioNumbers,
   canShowW2OffsetIllustration,
@@ -34,8 +34,12 @@ const OFFSET_SCENARIO_OPTIONS: { value: OffsetScenarioKey; label: string }[] = [
 
 export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBlockProps }) {
   const theme = useFluxTheme();
-  const cardBg = '#ffffff';
-  const muted = '#666666';
+  const presentation = useFluxPresentation();
+  const mutedStyle = {
+    color: theme.textColor,
+    opacity: presentation.mutedTextOpacity,
+    fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400'),
+  };
 
   const [purchaseStr, setPurchaseStr] = useState(String(props.defaultPurchasePrice ?? 500_000));
   const [landStr, setLandStr] = useState(String(props.defaultLandValue ?? 150_000));
@@ -80,55 +84,112 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
         })
       : null;
 
-  const inputClass =
-    'text-[#1a1a1a] bg-white border border-[#e5e5e5] rounded-lg px-3 py-2 text-sm mb-2 w-full';
+  const inputClass = 'px-3 py-2 text-sm mb-2 w-full';
+  const headingFont = fluxPreviewFontFamily(theme.fontFamily, '600');
+  const complexLayout = presentation.layouts.complex;
+  const innerFrameStyle =
+    complexLayout === 'document'
+      ? { borderTopWidth: 1, borderBottomWidth: 1, borderColor: theme.primaryColor, paddingVertical: 28 }
+      : complexLayout === 'soft'
+        ? presentation.tintedCard
+        : undefined;
+  const headingAlignClass = complexLayout === 'cards' || complexLayout === 'soft' ? 'text-center' : 'text-left';
+  const sectionLabel =
+    complexLayout === 'dashboard'
+      ? 'Interactive model'
+      : complexLayout === 'document'
+        ? 'Tax strategy worksheet'
+        : complexLayout === 'editorial'
+          ? 'Scenario notes'
+          : 'Strategy calculator';
+  const workingCardStyle = complexLayout === 'dashboard' ? presentation.strongCard : presentation.card;
 
   return (
-    <View className="w-full py-12 px-6 items-center" style={{ backgroundColor: theme.backgroundColor }}>
-      <View className="w-full max-w-3xl">
+    <View
+      className={
+        complexLayout === 'document'
+          ? 'w-full py-10 px-5 md:px-10 items-center'
+          : complexLayout === 'dashboard'
+            ? 'w-full py-14 px-4 md:px-8 items-center'
+            : 'w-full py-12 px-6 items-center'
+      }
+      style={{ backgroundColor: complexLayout === 'document' ? presentation.surfaceColor : theme.backgroundColor }}
+    >
+      <View
+        className={
+          complexLayout === 'dashboard'
+            ? 'w-full max-w-5xl'
+            : complexLayout === 'editorial' || complexLayout === 'document'
+              ? 'w-full max-w-4xl'
+              : 'w-full max-w-3xl'
+        }
+        style={innerFrameStyle}
+      >
+        <Text className={`text-xs uppercase tracking-[3px] mb-3 ${headingAlignClass}`} style={{ color: theme.primaryColor, fontFamily: headingFont }}>
+          {sectionLabel}
+        </Text>
         <Text
-          className="text-2xl mb-2 text-center"
-          style={{ color: theme.textColor, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}
+          className={`text-2xl md:text-4xl mb-2 ${headingAlignClass}`}
+          style={{ color: theme.textColor, fontFamily: headingFont }}
         >
           {props.heading}
         </Text>
         {props.subheadline ? (
           <Text
-            className="text-base mb-6 text-center leading-6"
-            style={{ color: muted, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}
+            className={`text-base mb-6 leading-6 ${headingAlignClass}`}
+            style={mutedStyle}
           >
             {props.subheadline}
           </Text>
         ) : null}
 
-        <View className="rounded-xl p-4 md:p-5 mb-4" style={{ backgroundColor: cardBg }}>
+        <View className="p-4 md:p-5 mb-4" style={workingCardStyle}>
           <Text
             className="text-xs uppercase tracking-wide mb-2"
-            style={{ color: muted, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}
+            style={{
+              color: theme.textColor,
+              opacity: presentation.mutedTextOpacity,
+              fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600'),
+            }}
           >
             Your inputs
           </Text>
-          <Text className="text-gray-500 text-xs mb-1">Purchase price</Text>
+          <Text className="text-xs mb-1" style={mutedStyle}>Purchase price</Text>
           <TextInput
             className={inputClass}
+            style={{
+              ...presentation.input,
+              color: theme.textColor,
+              fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400'),
+            }}
             keyboardType="decimal-pad"
             value={purchaseStr}
             onChangeText={setPurchaseStr}
             placeholder="500000"
             placeholderTextColor="#999"
           />
-          <Text className="text-gray-500 text-xs mb-1">Land value (not depreciated)</Text>
+          <Text className="text-xs mb-1" style={mutedStyle}>Land value (not depreciated)</Text>
           <TextInput
             className={inputClass}
+            style={{
+              ...presentation.input,
+              color: theme.textColor,
+              fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400'),
+            }}
             keyboardType="decimal-pad"
             value={landStr}
             onChangeText={setLandStr}
             placeholder="150000"
             placeholderTextColor="#999"
           />
-          <Text className="text-gray-500 text-xs mb-1">Marginal tax rate (%)</Text>
+          <Text className="text-xs mb-1" style={mutedStyle}>Marginal tax rate (%)</Text>
           <TextInput
             className={inputClass}
+            style={{
+              ...presentation.input,
+              color: theme.textColor,
+              fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400'),
+            }}
             keyboardType="decimal-pad"
             value={taxPercentStr}
             onChangeText={setTaxPercentStr}
@@ -136,13 +197,15 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
             placeholderTextColor="#999"
           />
 
-          <Text className="text-gray-500 text-xs mb-2 mt-3">Qualification (for W-2 illustration)</Text>
+          <Text className="text-xs mb-2 mt-3" style={mutedStyle}>Qualification (for W-2 illustration)</Text>
           <View className="flex-row flex-wrap gap-2 mb-2">
             {QUALIFICATION_OPTIONS.map((opt) => (
               <Pressable
                 key={opt.value}
-                className="px-3 py-2 rounded-lg border"
+                className="px-3 py-2"
                 style={{
+                  borderRadius: presentation.radii.chip,
+                  borderWidth: 1,
                   borderColor: qualification === opt.value ? theme.primaryColor : '#e5e5e5',
                   backgroundColor: qualification === opt.value ? theme.primaryColor + '18' : '#fafafa',
                 }}
@@ -159,23 +222,28 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
           </View>
 
           {qualification === 'passive' ? (
-            <Text className="text-xs leading-5 mb-2" style={{ color: muted, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
+            <Text className="text-xs leading-5 mb-2" style={mutedStyle}>
               By default, rental losses are generally passive: they typically offset rental income first, not W-2
               wages, unless you qualify under rules such as REPS or a qualifying STR. Figures below are illustrative
               deductions and estimated tax impact at your entered rate — not a guarantee of usable savings against
               your paycheck.
             </Text>
           ) : (
-            <Text className="text-xs leading-5 mb-2" style={{ color: muted, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
+            <Text className="text-xs leading-5 mb-2" style={mutedStyle}>
               REPS / STR framing: the PDF illustrates how qualifying households may use real estate paper losses
               against combined income (including W-2) when rules are met. This tool does not verify hours or material
               participation — consult a tax professional.
             </Text>
           )}
 
-          <Text className="text-gray-500 text-xs mb-1">W-2 income (optional)</Text>
+          <Text className="text-xs mb-1" style={mutedStyle}>W-2 income (optional)</Text>
           <TextInput
             className={inputClass}
+            style={{
+              ...presentation.input,
+              color: theme.textColor,
+              fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400'),
+            }}
             keyboardType="decimal-pad"
             value={w2Str}
             onChangeText={setW2Str}
@@ -185,13 +253,15 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
 
           {canShowW2OffsetIllustration(qualification) && numbers ? (
             <>
-              <Text className="text-gray-500 text-xs mb-2 mt-2">W-2 offset uses Year 1 deduction from</Text>
+              <Text className="text-xs mb-2 mt-2" style={mutedStyle}>W-2 offset uses Year 1 deduction from</Text>
               <View className="flex-row flex-wrap gap-2">
                 {OFFSET_SCENARIO_OPTIONS.map((opt) => (
                   <Pressable
                     key={opt.value}
-                    className="px-2 py-1.5 rounded-lg border"
+                    className="px-2 py-1.5"
                     style={{
+                      borderRadius: presentation.radii.chip,
+                      borderWidth: 1,
                       borderColor: offsetScenario === opt.value ? theme.primaryColor : '#e5e5e5',
                       backgroundColor: offsetScenario === opt.value ? theme.primaryColor + '18' : '#fafafa',
                     }}
@@ -208,38 +278,38 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
         </View>
 
         {!numbers ? (
-          <Text className="text-center text-sm" style={{ color: muted, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
+          <Text className="text-center text-sm" style={mutedStyle}>
             Enter valid numbers (purchase must exceed land value; tax rate 0–100%).
           </Text>
         ) : (
           <>
-            <View className="rounded-xl p-4 md:p-5 mb-4" style={{ backgroundColor: cardBg }}>
-              <Text className="text-sm mb-3" style={{ color: '#1a1a1a', fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
+            <View className="p-4 md:p-5 mb-4" style={complexLayout === 'document' ? presentation.strongCard : presentation.card}>
+              <Text className="text-sm mb-3" style={{ color: theme.textColor, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
                 Depreciable building: {formatUsd(numbers.depreciableBuilding)}
               </Text>
               <View className="border-t border-[#eee] pt-3 gap-2">
                 <View className="flex-row justify-between flex-wrap">
-                  <Text className="text-xs flex-1 pr-2" style={{ color: muted, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
+                  <Text className="text-xs flex-1 pr-2" style={mutedStyle}>
                     Standard — annual (27.5 yr)
                   </Text>
-                  <Text className="text-xs" style={{ color: '#1a1a1a', fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
+                  <Text className="text-xs" style={{ color: theme.textColor, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
                     {formatUsd(numbers.standardAnnualDeduction)} / yr · est. {formatUsd(numbers.estimatedTaxImpactStandard)}{' '}
                     tax impact
                   </Text>
                 </View>
                 <View className="flex-row justify-between flex-wrap">
-                  <Text className="text-xs flex-1 pr-2" style={{ color: muted, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
+                  <Text className="text-xs flex-1 pr-2" style={mutedStyle}>
                     Cost seg — 25% of building (Year 1)
                   </Text>
-                  <Text className="text-xs" style={{ color: '#1a1a1a', fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
+                  <Text className="text-xs" style={{ color: theme.textColor, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
                     {formatUsd(numbers.costSeg25YearOneDeduction)} · est. {formatUsd(numbers.estimatedTaxImpactCostSeg25)}
                   </Text>
                 </View>
                 <View className="flex-row justify-between flex-wrap">
-                  <Text className="text-xs flex-1 pr-2" style={{ color: muted, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
+                  <Text className="text-xs flex-1 pr-2" style={mutedStyle}>
                     Cost seg — 30% of building (Year 1)
                   </Text>
-                  <Text className="text-xs" style={{ color: '#1a1a1a', fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
+                  <Text className="text-xs" style={{ color: theme.textColor, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
                     {formatUsd(numbers.costSeg30YearOneDeduction)} · est. {formatUsd(numbers.estimatedTaxImpactCostSeg30)}
                   </Text>
                 </View>
@@ -247,18 +317,18 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
             </View>
 
             {w2Illustration ? (
-              <View className="rounded-xl p-4 md:p-5 mb-4" style={{ backgroundColor: cardBg, borderWidth: 1, borderColor: theme.primaryColor + '40' }}>
+              <View className="p-4 md:p-5 mb-4" style={presentation.strongCard}>
                 <Text className="text-sm mb-2" style={{ color: theme.primaryColor, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
                   W-2 offset illustration
                 </Text>
-                <Text className="text-xs mb-2" style={{ color: muted, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
+                <Text className="text-xs mb-2" style={mutedStyle}>
                   Using {OFFSET_SCENARIO_OPTIONS.find((o) => o.value === offsetScenario)?.label}: loss{' '}
                   {formatUsd(yearOneForOffset)} vs W-2 {formatUsd(w2Income)} at {taxPercent}% marginal (illustrative).
                 </Text>
-                <Text className="text-sm" style={{ color: '#1a1a1a', fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
+                <Text className="text-sm" style={{ color: theme.textColor, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
                   Taxable income after offset: ~{formatUsd(w2Illustration.taxableIncomeAfter)}
                 </Text>
-                <Text className="text-sm mt-1" style={{ color: '#1a1a1a', fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
+                <Text className="text-sm mt-1" style={{ color: theme.textColor, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
                   Estimated tax impact from usable loss: ~{formatUsd(w2Illustration.estimatedTaxImpactFromLoss)}
                 </Text>
               </View>
@@ -267,14 +337,14 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
           </>
         )}
 
-        <Text className="text-xs leading-5 mb-4" style={{ color: muted, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '400') }}>
+        <Text className="text-xs leading-5 mb-4" style={mutedStyle}>
           {props.disclaimer}
         </Text>
 
         {props.ctaText && props.ctaUrl ? (
           <Pressable
-            className="rounded-lg px-6 py-3 self-center"
-            style={{ backgroundColor: theme.primaryColor }}
+            className={complexLayout === 'editorial' || complexLayout === 'document' ? 'px-6 py-3 self-start' : 'px-6 py-3 self-center'}
+            style={presentation.primaryButton}
             onPress={() => props.ctaUrl && Linking.openURL(props.ctaUrl)}
           >
             <Text className="text-base" style={{ color: '#ffffff', fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>

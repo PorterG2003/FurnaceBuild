@@ -17,7 +17,7 @@ export function parseTemplateBlocksForMerge(blocks: unknown[]): Block[] {
  * After the LLM returns a schema-valid PageConfig, align it with the campaign template:
  * - Output block list matches template order and ids; `id` / `type` / `order` always come from the template.
  * - When the model returns a block with the same `id` and `type`, use its `props`; otherwise keep template props.
- * - Theme and display names come from the server (brand-derived theme + prospect fields), not the model.
+ * - Brand colors and display names come from the server; the model may choose a constrained presentation preset.
  */
 export function mergeGeneratedPageConfigWithTemplate(params: {
   templateBlocks: unknown[];
@@ -25,6 +25,7 @@ export function mergeGeneratedPageConfigWithTemplate(params: {
   serverTheme: ThemeConfig;
   prospectName: string;
   companyName: string;
+  serverHeroImageUrl?: string | null;
 }): PageConfig {
   const templateBlocks = parseTemplateBlocksForMerge(params.templateBlocks);
   const byId = new Map(params.llmPageConfig.blocks.map((b) => [b.id, b]));
@@ -32,13 +33,34 @@ export function mergeGeneratedPageConfigWithTemplate(params: {
   const mergedBlocks: Block[] = templateBlocks.map((tb) => {
     const llm = byId.get(tb.id);
     if (llm && llm.type === tb.type) {
+      if (tb.type === 'hero' && llm.type === 'hero') {
+        return {
+          ...tb,
+          props: {
+            ...llm.props,
+            ...(params.serverHeroImageUrl ? { heroImageUrl: params.serverHeroImageUrl } : {}),
+          },
+        } as Block;
+      }
       return { ...tb, props: llm.props } as Block;
+    }
+    if (tb.type === 'hero' && params.serverHeroImageUrl) {
+      return {
+        ...tb,
+        props: {
+          ...tb.props,
+          heroImageUrl: params.serverHeroImageUrl,
+        },
+      } as Block;
     }
     return tb;
   });
 
   return {
-    theme: params.serverTheme,
+    theme: {
+      ...params.serverTheme,
+      blockStylePreset: params.llmPageConfig.theme.blockStylePreset ?? params.serverTheme.blockStylePreset,
+    },
     prospectName: params.prospectName,
     companyName: params.companyName,
     blocks: mergedBlocks,

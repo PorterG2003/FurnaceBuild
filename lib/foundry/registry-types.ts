@@ -513,6 +513,52 @@ export interface PostStartWebsiteVerificationJobResponse {
   preflight: WebsiteVerificationPreflightResponse;
 }
 
+export interface WebsiteIntelPublicSiteAssets {
+  logo_candidates: string[];
+  theme_color: string | null;
+  brand_color_candidates: string[];
+  organization_names: string[];
+  social_profiles: string[];
+  contact_counts: {
+    phones: number;
+    emails: number;
+    addresses: number;
+  };
+}
+
+export interface WebsiteIntelPublicExtractedProfile {
+  business_summary: string | null;
+  brand_name: string | null;
+  audience_segments: string[];
+  services: string[];
+  industries_served: string[];
+  locations_served: string[];
+  tone: string | null;
+  confidence: 'low' | 'medium' | 'high';
+  evidence_urls: string[];
+}
+
+export interface WebsiteIntelLookupResponse {
+  normalized_domain_key: string;
+  hit: boolean;
+  crawled_at?: string;
+  stale?: boolean;
+  company_id?: string;
+  site_assets?: WebsiteIntelPublicSiteAssets;
+  extracted_profile?: WebsiteIntelPublicExtractedProfile;
+  hero_image_candidates?: string[];
+  final_url?: string | null;
+  verification_band?: 'usable' | 'uncertain' | 'not_usable' | null;
+}
+
+export interface WebsiteIntelScrapeResponse {
+  jobId: string;
+  executionArn?: string;
+  reused: boolean;
+  company_id?: string;
+  preflight?: WebsiteVerificationPreflightResponse;
+}
+
 export interface GoogleAdsVerificationPreflightResponse {
   ready: string[];
   missing_verified_website: string[];
@@ -957,6 +1003,7 @@ export interface CompanyWebsiteVerificationRow {
   company_id: string;
   foundry_job_id: string | null;
   source_ingestion_run_id: string | null;
+  website_crawl_id: string | null;
   cost_record_id: string | null;
   cost_status: string;
   elapsed_ms: number | null;
@@ -969,6 +1016,52 @@ export interface CompanyWebsiteVerificationRow {
   verifier_version: string;
   crawl_stats: Record<string, unknown>;
   verified_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanyWebsiteCrawlRow {
+  id: string;
+  company_id: string;
+  foundry_job_id: string | null;
+  source_ingestion_run_id: string | null;
+  input_url: string;
+  final_url: string | null;
+  normalized_domain_key: string | null;
+  crawl_version: string;
+  max_depth: number;
+  max_pages: number;
+  pages_visited: number;
+  max_depth_reached: number;
+  failed_urls: string[];
+  parked: boolean;
+  site_assets: Record<string, unknown>;
+  elapsed_ms: number | null;
+  error: string | null;
+  crawled_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanyWebsiteIntelligenceRow {
+  id: string;
+  company_id: string;
+  website_crawl_id: string | null;
+  foundry_job_id: string | null;
+  source_ingestion_run_id: string | null;
+  cost_record_id: string | null;
+  cost_status: string;
+  input_hash: string;
+  brief_version: string;
+  prompt_version: string;
+  model_provider: string;
+  model: string;
+  llm_status: string;
+  site_brief: Record<string, unknown>;
+  extracted_profile: Record<string, unknown>;
+  llm_usage: Record<string, unknown>;
+  error: string | null;
+  generated_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1067,6 +1160,8 @@ export interface ParsedCompanyDetail {
   entity_matches: CompanyEntityMatchRow[];
   associated_people: CompanyAssociatedPersonRow[];
   website_verification: CompanyWebsiteVerificationRow | null;
+  website_crawl: CompanyWebsiteCrawlRow | null;
+  website_intelligence: CompanyWebsiteIntelligenceRow | null;
   google_ads_verification: CompanyGoogleAdsVerificationRow | null;
 }
 
@@ -1247,6 +1342,7 @@ function parseWebsiteVerificationRow(o: unknown): CompanyWebsiteVerificationRow 
     foundry_job_id: r.foundry_job_id == null ? null : parseNullableString(r.foundry_job_id),
     source_ingestion_run_id:
       r.source_ingestion_run_id == null ? null : parseNullableString(r.source_ingestion_run_id),
+    website_crawl_id: r.website_crawl_id == null ? null : parseNullableString(r.website_crawl_id),
     cost_record_id: r.cost_record_id == null ? null : parseNullableString(r.cost_record_id),
     cost_status: parseString(r.cost_status ?? 'pre_cost_implementation_or_not_backfilled'),
     elapsed_ms: parseNumber(r.elapsed_ms),
@@ -1269,6 +1365,88 @@ function parseWebsiteVerificationRow(o: unknown): CompanyWebsiteVerificationRow 
     verifier_version,
     crawl_stats: r.crawl_stats && typeof r.crawl_stats === 'object' ? (r.crawl_stats as Record<string, unknown>) : {},
     verified_at,
+    created_at,
+    updated_at,
+  };
+}
+
+function parseWebsiteCrawlRow(o: unknown): CompanyWebsiteCrawlRow | null {
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  const id = parseString(r.id);
+  const company_id = parseString(r.company_id);
+  const input_url = parseString(r.input_url);
+  const crawl_version = parseString(r.crawl_version);
+  const crawled_at = parseString(r.crawled_at);
+  const created_at = parseString(r.created_at);
+  const updated_at = parseString(r.updated_at);
+  if (!id || !company_id || !input_url || !crawl_version || !crawled_at || !created_at || !updated_at) {
+    return null;
+  }
+  return {
+    id,
+    company_id,
+    foundry_job_id: r.foundry_job_id == null ? null : parseNullableString(r.foundry_job_id),
+    source_ingestion_run_id:
+      r.source_ingestion_run_id == null ? null : parseNullableString(r.source_ingestion_run_id),
+    input_url,
+    final_url: r.final_url == null ? null : parseNullableString(r.final_url),
+    normalized_domain_key: r.normalized_domain_key == null ? null : parseNullableString(r.normalized_domain_key),
+    crawl_version,
+    max_depth: parseNumber(r.max_depth) ?? 0,
+    max_pages: parseNumber(r.max_pages) ?? 0,
+    pages_visited: parseNumber(r.pages_visited) ?? 0,
+    max_depth_reached: parseNumber(r.max_depth_reached) ?? 0,
+    failed_urls: Array.isArray(r.failed_urls) ? r.failed_urls.map((item) => parseString(item)).filter(Boolean) : [],
+    parked: parseBool(r.parked),
+    site_assets: r.site_assets && typeof r.site_assets === 'object' ? (r.site_assets as Record<string, unknown>) : {},
+    elapsed_ms: parseNumber(r.elapsed_ms),
+    error: r.error == null ? null : parseNullableString(r.error),
+    crawled_at,
+    created_at,
+    updated_at,
+  };
+}
+
+function parseWebsiteIntelligenceRow(o: unknown): CompanyWebsiteIntelligenceRow | null {
+  if (!o || typeof o !== 'object') return null;
+  const r = o as Record<string, unknown>;
+  const id = parseString(r.id);
+  const company_id = parseString(r.company_id);
+  const input_hash = parseString(r.input_hash);
+  const brief_version = parseString(r.brief_version);
+  const prompt_version = parseString(r.prompt_version);
+  const model_provider = parseString(r.model_provider);
+  const model = parseString(r.model);
+  const llm_status = parseString(r.llm_status);
+  const created_at = parseString(r.created_at);
+  const updated_at = parseString(r.updated_at);
+  if (!id || !company_id || !input_hash || !brief_version || !prompt_version || !model_provider || !model || !llm_status || !created_at || !updated_at) {
+    return null;
+  }
+  return {
+    id,
+    company_id,
+    website_crawl_id: r.website_crawl_id == null ? null : parseNullableString(r.website_crawl_id),
+    foundry_job_id: r.foundry_job_id == null ? null : parseNullableString(r.foundry_job_id),
+    source_ingestion_run_id:
+      r.source_ingestion_run_id == null ? null : parseNullableString(r.source_ingestion_run_id),
+    cost_record_id: r.cost_record_id == null ? null : parseNullableString(r.cost_record_id),
+    cost_status: parseString(r.cost_status) ?? 'pre_cost_implementation_or_not_backfilled',
+    input_hash,
+    brief_version,
+    prompt_version,
+    model_provider,
+    model,
+    llm_status,
+    site_brief: r.site_brief && typeof r.site_brief === 'object' ? (r.site_brief as Record<string, unknown>) : {},
+    extracted_profile:
+      r.extracted_profile && typeof r.extracted_profile === 'object'
+        ? (r.extracted_profile as Record<string, unknown>)
+        : {},
+    llm_usage: r.llm_usage && typeof r.llm_usage === 'object' ? (r.llm_usage as Record<string, unknown>) : {},
+    error: r.error == null ? null : parseNullableString(r.error),
+    generated_at: r.generated_at == null ? null : parseNullableString(r.generated_at),
     created_at,
     updated_at,
   };
@@ -1422,6 +1600,8 @@ export function parseCompanyDetailResponse(raw: unknown): ParsedCompanyDetail {
   const matchesRaw = o.entity_matches;
   const peopleRaw = o.associated_people;
   const websiteVerificationRaw = o.website_verification;
+  const websiteCrawlRaw = o.website_crawl;
+  const websiteIntelligenceRaw = o.website_intelligence;
   const googleAdsVerificationRaw = o.google_ads_verification;
 
   return {
@@ -1440,6 +1620,8 @@ export function parseCompanyDetailResponse(raw: unknown): ParsedCompanyDetail {
       ? (peopleRaw.map(parseAssociatedPersonRow).filter(Boolean) as CompanyAssociatedPersonRow[])
       : [],
     website_verification: parseWebsiteVerificationRow(websiteVerificationRaw),
+    website_crawl: parseWebsiteCrawlRow(websiteCrawlRaw),
+    website_intelligence: parseWebsiteIntelligenceRow(websiteIntelligenceRaw),
     google_ads_verification: parseGoogleAdsVerificationRow(googleAdsVerificationRaw),
   };
 }
@@ -1503,6 +1685,7 @@ export interface ExportCompanySummaryRow extends ExportCompanyTargetRow {
   company_export_row_count?: number | null;
   company_website_verification_cost_cents?: number | null;
   company_google_ads_verification_cost_cents?: number | null;
+  company_website_intelligence_cost_cents?: number | null;
   company_import_acquisition_cost_cents?: number | null;
   company_registry_acquisition_cost_cents?: number | null;
   /** Present when `include_google_ads_verification=true` (latest row per company). */
@@ -1597,6 +1780,7 @@ export interface ExportCompanyOwnerLeadRow {
   company_export_row_count?: number | null;
   company_website_verification_cost_cents?: number | null;
   company_google_ads_verification_cost_cents?: number | null;
+  company_website_intelligence_cost_cents?: number | null;
   company_import_acquisition_cost_cents?: number | null;
   company_registry_acquisition_cost_cents?: number | null;
   /** Present when export is requested with `include_google_ads_verification=true` (latest row per company). */
@@ -1677,6 +1861,7 @@ export interface ExportCompanyChainPeopleRow {
   company_export_row_count?: number | null;
   company_website_verification_cost_cents?: number | null;
   company_google_ads_verification_cost_cents?: number | null;
+  company_website_intelligence_cost_cents?: number | null;
   company_import_acquisition_cost_cents?: number | null;
   company_registry_acquisition_cost_cents?: number | null;
   /** Present when export is requested with `include_google_ads_verification=true` (latest row per company). */

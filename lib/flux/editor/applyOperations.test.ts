@@ -49,3 +49,28 @@ test('block.reorder reindexes orders', () => {
   assert.equal(s.blocks[1].id, 'a');
   assert.equal(s.blocks[1].order, 1);
 });
+
+test('asset.update patches fields on matching asset', () => {
+  let s = {
+    ...baseDoc(),
+    contentAssets: [
+      {
+        id: 'x',
+        type: 'case_study' as const,
+        title: 'Old',
+        body: 'B',
+        metric: 'm',
+      },
+    ],
+  };
+  s = applyFluxEditorOperations(s, [
+    {
+      type: 'asset.update',
+      assetId: 'x',
+      patch: { title: 'New', metric: null, imageUrl: 'https://img' },
+    },
+  ]);
+  assert.equal(s.contentAssets[0].title, 'New');
+  assert.equal(s.contentAssets[0].metric, undefined);
+  assert.equal(s.contentAssets[0].imageUrl, 'https://img');
+});

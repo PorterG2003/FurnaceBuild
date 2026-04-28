@@ -1,20 +1,24 @@
-import type { Block, ContentAsset, FluxPreviewProspectInput } from '@/lib/flux/types';
+import type {
+  Block,
+  ContentAsset,
+  FluxPreviewProspectInput,
+  FluxSellerProfileInput,
+  FluxWebsiteIntelSnapshot,
+} from '@/lib/flux/types';
+import type { FluxBrandingPolicy } from '@/lib/flux/fluxBrandingPolicy';
+import type { FluxBlockStylePreset } from '@/lib/flux/fluxPresentationTokens';
 import { applyFluxEditorOperation, type FluxEditorDocumentState } from '@/lib/flux/editor/applyOperations';
 import type { FluxEditorOperation } from '@/lib/flux/editor/schemas';
 import { makeFluxDefaultBlock } from '@/lib/flux/defaultCampaignTemplate';
-import type { FluxCampaignChatMessage, FluxCampaignChatState } from '@/lib/flux/fluxCampaignChatState';
+import { emptyFluxSellerProfile } from '@/lib/flux/campaignSeller';
+import { defaultFluxBrandingPolicy, normalizeFluxBrandingPolicy } from '@/lib/flux/fluxBrandingPolicy';
+import {
+  getLastFluxChatSummary,
+  type FluxCampaignChatMessage,
+  type FluxCampaignChatState,
+  type FluxEditorCheckpoint,
+} from '@/lib/flux/fluxCampaignChatState';
 export type FluxChatMessage = FluxCampaignChatMessage;
-
-export interface FluxEditorUndoSnapshot {
-  name: string;
-  offerDescription: string;
-  blocks: Block[];
-  contentAssets: ContentAsset[];
-  copySlots: string;
-  constraints: string;
-  previewProspect: FluxPreviewProspectInput;
-  editingBlockId: string | null;
-}
 
 export interface FluxCampaignEditorState extends FluxEditorDocumentState {
   previewProspectOpen: boolean;
@@ -22,8 +26,7 @@ export interface FluxCampaignEditorState extends FluxEditorDocumentState {
   chatSending: boolean;
   chatError: string | null;
   chatLastSummary: string[] | null;
-  /** Snapshot before the last chat-applied operation batch (for one-step undo). */
-  chatUndoSnapshot: FluxEditorUndoSnapshot | null;
+  chatCheckpoints: Record<string, FluxEditorCheckpoint>;
 }
 
 export type FluxCampaignEditorAction =
@@ -40,8 +43,32 @@ export type FluxCampaignEditorAction =
         chatState: FluxCampaignChatState;
         /** When omitted, existing preview prospect is preserved (matches legacy load behavior). */
         previewProspect?: FluxPreviewProspectInput;
+        sellerProfile?: FluxSellerProfileInput;
+        brandingPolicy?: FluxBrandingPolicy;
       };
     }
+  | {
+      type: 'seller.patchProfile';
+      patch: Partial<Pick<FluxSellerProfileInput, 'displayName' | 'tagline' | 'websiteUrl'>>;
+    }
+  | {
+      type: 'seller.patchBrand';
+      patch: {
+        primaryColor?: string;
+        accentColor?: string;
+        fontFamily?: string;
+        logoUrl?: string;
+        blockStylePreset?: FluxBlockStylePreset;
+      };
+    }
+  | { type: 'seller.setIntel'; value: FluxWebsiteIntelSnapshot | null }
+  | {
+      type: 'seller.setMeta';
+      patch: Partial<
+        Pick<FluxSellerProfileInput, 'websiteDomainKey' | 'foundryCompanyId' | 'websiteIntelAutoFilledAt'>
+      >;
+    }
+  | { type: 'branding.setPolicy'; value: FluxBrandingPolicy }
   | { type: 'campaign.setName'; value: string }
   | { type: 'campaign.setOfferDescription'; value: string }
   | { type: 'block.add'; blockType: Block['type']; index?: number }
@@ -50,25 +77,38 @@ export type FluxCampaignEditorAction =
   | { type: 'block.setBlocks'; blocks: Block[] }
   | { type: 'asset.add'; asset: ContentAsset }
   | { type: 'asset.remove'; assetId: string }
+  | {
+      type: 'asset.update';
+      assetId: string;
+      patch: Partial<
+        Pick<ContentAsset, 'type' | 'title' | 'body' | 'metric' | 'attribution' | 'imageUrl'>
+      >;
+    }
   | { type: 'template.setCopySlotsText'; value: string }
   | { type: 'template.setConstraints'; value: string }
   | { type: 'preview.patchProspect'; patch: Partial<FluxPreviewProspectInput> }
   | {
       type: 'preview.patchBrand';
-      patch: { primaryColor?: string; accentColor?: string; fontFamily?: string; logoUrl?: string };
+      patch: {
+        primaryColor?: string;
+        accentColor?: string;
+        fontFamily?: string;
+        logoUrl?: string;
+        blockStylePreset?: FluxBlockStylePreset;
+      };
     }
   | { type: 'preview.setProspect'; value: FluxPreviewProspectInput }
   | { type: 'ui.setPreviewProspectOpen'; value: boolean }
   | { type: 'ui.setEditingBlockId'; value: string | null }
   | { type: 'ui.toggleEditingBlock'; blockId: string }
-  | { type: 'chat.appendUser'; id: string; content: string }
+  | { type: 'chat.appendUser'; id: string; content: string; checkpoint: FluxEditorCheckpoint }
   | { type: 'chat.appendAssistant'; id: string; content: string; summary?: string[] }
   | { type: 'chat.setSending'; value: boolean }
   | { type: 'chat.setError'; value: string | null }
   | { type: 'chat.clearMessages' }
   | { type: 'chat.restore'; value: FluxCampaignChatState | null }
   | { type: 'chat.applyRemoteOperations'; operations: FluxEditorOperation[] }
-  | { type: 'chat.undoLast' };
+  | { type: 'chat.rewindToCheckpoint'; messageId: string };
 
 function toDoc(s: FluxCampaignEditorState): FluxEditorDocumentState {
   const {
@@ -77,13 +117,13 @@ function toDoc(s: FluxCampaignEditorState): FluxEditorDocumentState {
     chatSending: _s,
     chatError: _e,
     chatLastSummary: _l,
-    chatUndoSnapshot: _u,
+    chatCheckpoints: _c,
     ...doc
   } = s;
   return doc;
 }
 
-function snapshotFromState(s: FluxCampaignEditorState): FluxEditorUndoSnapshot {
+export function checkpointFromEditorState(s: FluxCampaignEditorState): FluxEditorCheckpoint {
   return {
     name: s.name,
     offerDescription: s.offerDescription,
@@ -92,6 +132,8 @@ function snapshotFromState(s: FluxCampaignEditorState): FluxEditorUndoSnapshot {
     copySlots: s.copySlots,
     constraints: s.constraints,
     previewProspect: JSON.parse(JSON.stringify(s.previewProspect)) as FluxPreviewProspectInput,
+    sellerProfile: JSON.parse(JSON.stringify(s.sellerProfile)) as FluxSellerProfileInput,
+    brandingPolicy: JSON.parse(JSON.stringify(s.brandingPolicy)) as FluxBrandingPolicy,
     editingBlockId: s.editingBlockId,
   };
 }
@@ -107,13 +149,15 @@ export function initialFluxCampaignEditorState(
     copySlots: '',
     constraints: '',
     previewProspect,
+    sellerProfile: emptyFluxSellerProfile(),
+    brandingPolicy: defaultFluxBrandingPolicy(),
     previewProspectOpen: true,
     editingBlockId: null,
     chatMessages: [],
     chatSending: false,
     chatError: null,
     chatLastSummary: null,
-    chatUndoSnapshot: null,
+    chatCheckpoints: {},
   };
 }
 
@@ -133,13 +177,44 @@ export function fluxCampaignEditorReducer(
         copySlots: action.payload.copySlots,
         constraints: action.payload.constraints,
         previewProspect: action.payload.previewProspect ?? state.previewProspect,
+        sellerProfile: action.payload.sellerProfile ?? state.sellerProfile,
+        brandingPolicy: action.payload.brandingPolicy ?? state.brandingPolicy,
         chatMessages: chatState.messages,
         chatLastSummary: chatState.lastSummary,
-        chatUndoSnapshot: null,
+        chatCheckpoints: chatState.checkpoints,
         chatError: null,
         chatSending: false,
       };
     }
+    case 'seller.patchProfile': {
+      const doc = applyFluxEditorOperation(toDoc(state), {
+        type: 'seller.patchProfile',
+        patch: action.patch,
+      });
+      return { ...state, ...doc };
+    }
+    case 'seller.patchBrand': {
+      const doc = applyFluxEditorOperation(toDoc(state), {
+        type: 'seller.patchBrand',
+        patch: action.patch,
+      });
+      return { ...state, ...doc };
+    }
+    case 'seller.setIntel':
+      return {
+        ...state,
+        sellerProfile: { ...state.sellerProfile, website_intel: action.value },
+      };
+    case 'seller.setMeta':
+      return {
+        ...state,
+        sellerProfile: { ...state.sellerProfile, ...action.patch },
+      };
+    case 'branding.setPolicy':
+      return {
+        ...state,
+        brandingPolicy: normalizeFluxBrandingPolicy(action.value),
+      };
     case 'campaign.setName':
       return { ...state, name: action.value };
     case 'campaign.setOfferDescription':
@@ -177,6 +252,14 @@ export function fluxCampaignEditorReducer(
       const doc = applyFluxEditorOperation(toDoc(state), {
         type: 'asset.remove',
         assetId: action.assetId,
+      });
+      return { ...state, ...doc };
+    }
+    case 'asset.update': {
+      const doc = applyFluxEditorOperation(toDoc(state), {
+        type: 'asset.update',
+        assetId: action.assetId,
+        patch: action.patch,
       });
       return { ...state, ...doc };
     }
@@ -223,6 +306,10 @@ export function fluxCampaignEditorReducer(
       return {
         ...state,
         chatMessages: [...state.chatMessages, { id: action.id, role: 'user', content: action.content }],
+        chatCheckpoints: {
+          ...state.chatCheckpoints,
+          [action.id]: action.checkpoint,
+        },
       };
     case 'chat.appendAssistant':
       return {
@@ -248,7 +335,7 @@ export function fluxCampaignEditorReducer(
         chatMessages: [],
         chatLastSummary: null,
         chatError: null,
-        chatUndoSnapshot: null,
+        chatCheckpoints: {},
       };
     case 'chat.restore':
       return {
@@ -257,10 +344,9 @@ export function fluxCampaignEditorReducer(
         chatLastSummary: action.value?.lastSummary ?? null,
         chatSending: false,
         chatError: null,
-        chatUndoSnapshot: null,
+        chatCheckpoints: action.value?.checkpoints ?? {},
       };
     case 'chat.applyRemoteOperations': {
-      const snap = snapshotFromState(state);
       let nextDoc = toDoc(state);
       for (const op of action.operations) {
         nextDoc = applyFluxEditorOperation(nextDoc, op);
@@ -268,23 +354,37 @@ export function fluxCampaignEditorReducer(
       return {
         ...state,
         ...nextDoc,
-        chatUndoSnapshot: snap,
       };
     }
-    case 'chat.undoLast': {
-      if (!state.chatUndoSnapshot) return state;
-      const u = state.chatUndoSnapshot;
+    case 'chat.rewindToCheckpoint': {
+      const index = state.chatMessages.findIndex((message) => message.id === action.messageId);
+      const checkpoint = state.chatCheckpoints[action.messageId];
+      if (index < 0 || !checkpoint || state.chatMessages[index]?.role !== 'user') return state;
+      const nextMessages = state.chatMessages.slice(0, index);
+      const nextCheckpoints: Record<string, FluxEditorCheckpoint> = {};
+      for (const message of nextMessages) {
+        if (message.role !== 'user') continue;
+        const existing = state.chatCheckpoints[message.id];
+        if (existing) {
+          nextCheckpoints[message.id] = existing;
+        }
+      }
       return {
         ...state,
-        name: u.name,
-        offerDescription: u.offerDescription,
-        blocks: u.blocks,
-        contentAssets: u.contentAssets,
-        copySlots: u.copySlots,
-        constraints: u.constraints,
-        previewProspect: u.previewProspect,
-        editingBlockId: u.editingBlockId,
-        chatUndoSnapshot: null,
+        name: checkpoint.name,
+        offerDescription: checkpoint.offerDescription,
+        blocks: checkpoint.blocks,
+        contentAssets: checkpoint.contentAssets,
+        copySlots: checkpoint.copySlots,
+        constraints: checkpoint.constraints,
+        previewProspect: checkpoint.previewProspect,
+        sellerProfile: checkpoint.sellerProfile,
+        brandingPolicy: checkpoint.brandingPolicy,
+        editingBlockId: checkpoint.editingBlockId,
+        chatMessages: nextMessages,
+        chatLastSummary: getLastFluxChatSummary(nextMessages),
+        chatError: null,
+        chatCheckpoints: nextCheckpoints,
       };
     }
     default:

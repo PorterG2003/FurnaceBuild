@@ -1,4 +1,9 @@
 import type { Block, PageConfig, ThemeConfig } from './types';
+import {
+  DEFAULT_FLUX_BLOCK_STYLE_PRESET,
+  FLUX_BLOCK_STYLE_PRESETS,
+  type FluxBlockStylePreset,
+} from './fluxPresentationTokens';
 
 /**
  * Normalize DB jsonb into a renderable PageConfig, or null if there is nothing to show.
@@ -18,6 +23,9 @@ export function coercePageConfig(raw: unknown): PageConfig | null {
     textColor: typeof t.textColor === 'string' ? t.textColor : '#1a1a1a',
     fontFamily: typeof t.fontFamily === 'string' ? t.fontFamily : 'Inter',
     ...(typeof t.logoUrl === 'string' && t.logoUrl.length > 0 ? { logoUrl: t.logoUrl } : {}),
+    blockStylePreset: FLUX_BLOCK_STYLE_PRESETS.includes(t.blockStylePreset as FluxBlockStylePreset)
+      ? (t.blockStylePreset as FluxBlockStylePreset)
+      : DEFAULT_FLUX_BLOCK_STYLE_PRESET,
   };
 
   return {

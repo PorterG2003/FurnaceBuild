@@ -33,8 +33,8 @@ const region = process.env.CDK_DEFAULT_REGION || process.env.AWS_REGION || 'us-w
 const devSupabaseUrl = process.env.DEV_SUPABASE_URL || process.env.SUPABASE_URL_DEV;
 let prodSupabaseUrl = process.env.PROD_SUPABASE_URL || process.env.SUPABASE_URL_PROD;
 
-// SSM: one prefix per environment; full parameter names = prefix + /SUPABASE_SECRET_KEY and
-// prefix + /LEADS_SUPABASE_SECRET_KEY (same layout Amplify uses under that folder).
+// SSM: one prefix per environment; full parameter names = prefix + /SUPABASE_SECRET_KEY,
+// prefix + /LEADS_SUPABASE_SECRET_KEY, and prefix + /FOUNDRY_OPENROUTER_API_KEY (same layout Amplify uses under that folder).
 // See docs/infrastructure/WORKER_SSM_AND_AMPLIFY_SECRETS.md
 
 /** Join prefix (e.g. /amplify/.../sandbox-id) with Amplify secret segment (no leading slash). */
@@ -101,6 +101,8 @@ const devLeadsSecretParamPath = devLeadsSupabaseUrl
 const prodLeadsSecretParamPath = prodLeadsSupabaseUrl
   ? ssmParamUnderPrefix(prodSecretSsmPrefix, 'LEADS_SUPABASE_SECRET_KEY')
   : undefined;
+const devFoundryOpenRouterApiKeyParamPath = ssmParamUnderPrefix(devSecretSsmPrefix, 'FOUNDRY_OPENROUTER_API_KEY');
+const prodFoundryOpenRouterApiKeyParamPath = ssmParamUnderPrefix(prodSecretSsmPrefix, 'FOUNDRY_OPENROUTER_API_KEY');
 
 // Dev Stack
 new WorkerStack(app, 'WorkerStack-Dev', {
@@ -112,6 +114,7 @@ new WorkerStack(app, 'WorkerStack-Dev', {
   supabaseUrl: devSupabaseUrl,
   supabaseSecretKeyParamPath: devSupabaseSecretKeyParamPath,
   slackErrorWebhookUrl: devSlackErrorWebhookUrl,
+  foundryOpenRouterApiKeyParamPath: devFoundryOpenRouterApiKeyParamPath,
   ...(devLeadsSupabaseUrl
     ? { leadsSupabaseUrl: devLeadsSupabaseUrl, leadsSupabaseSecretParamPath: devLeadsSecretParamPath }
     : {}),
@@ -132,6 +135,7 @@ new WorkerStack(app, 'WorkerStack-Prod', {
   supabaseUrl: prodSupabaseUrl,
   supabaseSecretKeyParamPath: prodSupabaseSecretKeyParamPath,
   slackErrorWebhookUrl: prodSlackErrorWebhookUrl,
+  foundryOpenRouterApiKeyParamPath: prodFoundryOpenRouterApiKeyParamPath,
   ...(prodLeadsSupabaseUrl
     ? { leadsSupabaseUrl: prodLeadsSupabaseUrl, leadsSupabaseSecretParamPath: prodLeadsSecretParamPath }
     : {}),

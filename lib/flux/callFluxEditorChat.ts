@@ -1,5 +1,12 @@
 import { getAccessToken } from '@/lib/services/auth-token';
-import type { Block, ContentAsset, FluxPreviewProspectInput } from '@/lib/flux/types';
+import type {
+  Block,
+  ContentAsset,
+  FluxPreviewProspectInput,
+  FluxSellerProfileInput,
+  PageConfig,
+} from '@/lib/flux/types';
+import type { FluxBrandingPolicy } from '@/lib/flux/fluxBrandingPolicy';
 import { getFluxEditorChatUrl } from '@/lib/flux/fluxEditorChatUrl';
 import {
   fluxEditorChatResponseSchema,
@@ -10,18 +17,34 @@ export type FluxEditorChatResult =
   | { ok: true; data: FluxEditorChatResponse; model?: string }
   | { ok: false; message: string };
 
+/** Campaign template editor snapshot (fluxEditorChat default mode). */
+export type FluxEditorChatCampaignEditorPayload = {
+  name: string;
+  offer_description: string;
+  blocks: Block[];
+  content_assets: ContentAsset[];
+  copy_slots: string[];
+  constraints: string;
+  preview_prospect: FluxPreviewProspectInput;
+  seller_profile: FluxSellerProfileInput;
+  branding_policy: FluxBrandingPolicy;
+};
+
+/** Prospect page editor snapshot when `prospectPageId` is set. */
+export type FluxEditorChatProspectPageEditorPayload = {
+  mode: 'prospect_page';
+  page_config: PageConfig;
+  content_assets: ContentAsset[];
+  prospect_record: { name: string; company: string };
+  seller_profile: FluxSellerProfileInput;
+  branding_policy: FluxBrandingPolicy;
+};
+
 export async function callFluxEditorChat(params: {
   campaignId: string;
+  prospectPageId?: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
-  editor: {
-    name: string;
-    offer_description: string;
-    blocks: Block[];
-    content_assets: ContentAsset[];
-    copy_slots: string[];
-    constraints: string;
-    preview_prospect: FluxPreviewProspectInput;
-  };
+  editor: FluxEditorChatCampaignEditorPayload | FluxEditorChatProspectPageEditorPayload;
 }): Promise<FluxEditorChatResult> {
   const url = getFluxEditorChatUrl();
   if (!url) {
@@ -47,6 +70,7 @@ export async function callFluxEditorChat(params: {
       },
       body: JSON.stringify({
         campaignId: params.campaignId,
+        ...(params.prospectPageId ? { prospectPageId: params.prospectPageId } : {}),
         messages: params.messages,
         editor: params.editor,
       }),

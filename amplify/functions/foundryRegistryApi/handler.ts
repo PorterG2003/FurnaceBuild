@@ -48,6 +48,7 @@ import { dispatchFoundryExtendedRoutes } from './foundryApiRoutes.js';
 import { handleFoundryJobsRequest, startNormalizeIngestionJob } from './foundryJobsApi.js';
 
 const FOUNDRY_FLAG_KEY = 'foundry';
+const FLUX_FLAG_KEY = 'flux';
 const MAX_COMPANIES_LIMIT = 100;
 const DEFAULT_COMPANIES_LIMIT = 50;
 const MAX_COMPANIES_SEARCH_LIMIT = 50;
@@ -214,6 +215,27 @@ async function assertFoundryAccess(
   }
   if (!data) {
     return jsonResponse(403, { error: 'Foundry access denied' });
+  }
+  return null;
+}
+
+async function assertFluxOrFoundryAccess(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<FunctionUrlResponse | null> {
+  const { data, error } = await supabase
+    .from('user_access_flags')
+    .select('flag_key')
+    .eq('user_id', userId)
+    .in('flag_key', [FOUNDRY_FLAG_KEY, FLUX_FLAG_KEY])
+    .limit(2);
+
+  if (error) {
+    console.error('user_access_flags flux/foundry query failed', error.message);
+    return jsonResponse(500, { error: 'Failed to verify access' });
+  }
+  if (!Array.isArray(data) || data.length === 0) {
+    return jsonResponse(403, { error: 'Flux or Foundry access denied' });
   }
   return null;
 }
@@ -556,14 +578,17 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
   const verified = await verifyUser(mainClient, token);
   if ('error' in verified) return verified.error;
 
-  const forbidden = await assertFoundryAccess(mainClient, verified.user.id);
+  const path = normalizePath(event.rawPath || '/');
+  const websiteIntelRoute = path.startsWith('/website-intelligence/');
+
+  const forbidden = websiteIntelRoute
+    ? await assertFluxOrFoundryAccess(mainClient, verified.user.id)
+    : await assertFoundryAccess(mainClient, verified.user.id);
   if (forbidden) return forbidden;
 
   const leadsClient = createClient(leadsUrl, leadsSecretKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-
-  const path = normalizePath(event.rawPath || '/');
 
   if (path === '/companies') {
     if (method === 'GET') {

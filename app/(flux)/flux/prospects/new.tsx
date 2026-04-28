@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams, type Href } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/layout/PageHeader';
+import { LoadingState } from '@/components/ui/feedback';
 import {
   getFluxCampaigns,
   createFluxProspect,
@@ -10,12 +12,18 @@ import {
   checkSlugAvailable,
   ensureFluxTemplateExists,
 } from '@/lib/supabase/services/flux';
-import type { FluxCampaignRow, BrandProfile } from '@/lib/flux/types';
+import type { FluxCampaignRow, BrandProfile, FluxWebsiteIntelSnapshot } from '@/lib/flux/types';
 import { callFluxGenerate } from '@/lib/flux/callFluxGenerate';
 import { getFluxGenerateUrl } from '@/lib/flux/fluxGenerateUrl';
 import { FLUX_GOOGLE_FONT_NAMES } from '@/lib/flux/googleFontsCatalog';
-import { FluxFontFamilyPicker } from '@/components/flux/FluxFontFamilyPicker';
+import {
+  FluxProspectDetailsFields,
+  type FluxProspectDetailsFieldValues,
+} from '@/components/flux/FluxProspectDetailsFields';
+import type { FluxBlockStylePreset } from '@/lib/flux/fluxPresentationTokens';
 import { FluxGoogleFontWebLinks } from '@/components/flux/FluxGoogleFontWebLinks';
+import { fetchWebsiteIntelligenceByDomain } from '@/lib/foundry/registry-client';
+import { runWebsiteIntelligenceScrapePoll } from '@/lib/flux/websiteIntelScrapePoll';
 
 function slugify(text: string): string {
   return text
@@ -23,6 +31,16 @@ function slugify(text: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60);
+}
+
+function deriveIndustryGuess(snapshot: FluxWebsiteIntelSnapshot | null): string | null {
+  if (!snapshot) return null;
+  return (
+    snapshot.industry_guess ??
+    snapshot.extracted_profile?.industries_served?.[0] ??
+    snapshot.extracted_profile?.services?.[0] ??
+    null
+  );
 }
 
 export default function NewProspect() {
@@ -49,6 +67,21 @@ export default function NewProspect() {
   const [accentColor, setAccentColor] = useState('');
   const [fontFamily, setFontFamily] = useState('Inter');
   const [logoUrl, setLogoUrl] = useState('');
+  const [brandBlockStylePreset, setBrandBlockStylePreset] = useState<FluxBlockStylePreset>('classic');
+  const [foundryCompanyId, setFoundryCompanyId] = useState<string | null>(null);
+  const [websiteDomainKey, setWebsiteDomainKey] = useState<string | null>(null);
+  const [websiteIntelSnapshot, setWebsiteIntelSnapshot] = useState<FluxWebsiteIntelSnapshot | null>(null);
+  const [websiteIntelAutoFilledAt, setWebsiteIntelAutoFilledAt] = useState<string | null>(null);
+  const [websiteIntelStatus, setWebsiteIntelStatus] = useState<
+    'idle' | 'loading' | 'hit' | 'stale' | 'miss' | 'scraping' | 'error'
+  >('idle');
+  const [websiteIntelStatusText, setWebsiteIntelStatusText] = useState('');
+  const [manualOverrides, setManualOverrides] = useState({
+    primaryColor: false,
+    accentColor: false,
+    logoUrl: false,
+    industry: false,
+  });
 
   // Slug
   const [slug, setSlug] = useState('');
@@ -64,6 +97,81 @@ export default function NewProspect() {
     });
   }, [account]);
 
+  const applyIntelToForm = useCallback((snapshot: FluxWebsiteIntelSnapshot, opts?: { force?: boolean }) => {
+    const force = opts?.force === true;
+    const primaryCandidate = snapshot.site_assets?.theme_color ?? snapshot.site_assets?.brand_color_candidates?.[0];
+    const accentCandidate =
+      snapshot.site_assets?.brand_color_candidates?.find((color) => color !== primaryCandidate) ??
+      snapshot.site_assets?.brand_color_candidates?.[0];
+    const logoCandidate = snapshot.site_assets?.logo_candidates?.[0];
+    const industryGuess = deriveIndustryGuess(snapshot);
+
+    setWebsiteIntelSnapshot(snapshot);
+    setFoundryCompanyId(snapshot.company_id ?? null);
+    setWebsiteDomainKey(snapshot.normalized_domain_key ?? null);
+    setWebsiteIntelAutoFilledAt(new Date().toISOString());
+
+    if (primaryCandidate && (force || !manualOverrides.primaryColor || !primaryColor.trim())) {
+      setPrimaryColor(primaryCandidate);
+    }
+    if (accentCandidate && (force || !manualOverrides.accentColor || !accentColor.trim())) {
+      setAccentColor(accentCandidate);
+    }
+    if (logoCandidate && (force || !manualOverrides.logoUrl || !logoUrl.trim())) {
+      setLogoUrl(logoCandidate);
+    }
+    if (industryGuess && (force || !manualOverrides.industry || !industry.trim())) {
+      setIndustry(industryGuess);
+    }
+  }, [accentColor, industry, logoUrl, manualOverrides, primaryColor]);
+
+  useEffect(() => {
+    const trimmed = companyUrl.trim();
+    if (!trimmed || !trimmed.includes('.')) {
+      setWebsiteIntelStatus('idle');
+      setWebsiteIntelStatusText('');
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setWebsiteIntelStatus('loading');
+      setWebsiteIntelStatusText('Looking up cached website intel...');
+      try {
+        const lookup = await fetchWebsiteIntelligenceByDomain(trimmed);
+        if (cancelled) return;
+        if (!lookup.hit) {
+          setWebsiteIntelSnapshot(null);
+          setFoundryCompanyId(null);
+          setWebsiteDomainKey(lookup.normalized_domain_key);
+          setWebsiteIntelStatus('miss');
+          setWebsiteIntelStatusText('No cached website intel yet.');
+          return;
+        }
+        const snapshot: FluxWebsiteIntelSnapshot = {
+          ...lookup,
+          industry_guess: deriveIndustryGuess(lookup as FluxWebsiteIntelSnapshot),
+        };
+        applyIntelToForm(snapshot);
+        setWebsiteIntelStatus(lookup.stale ? 'stale' : 'hit');
+        setWebsiteIntelStatusText(
+          lookup.stale
+            ? `Stale cached data from ${new Date(lookup.crawled_at ?? Date.now()).toLocaleDateString()}`
+            : `Hit cached ${new Date(lookup.crawled_at ?? Date.now()).toLocaleDateString()}`,
+        );
+      } catch (error: unknown) {
+        if (cancelled) return;
+        setWebsiteIntelStatus('error');
+        setWebsiteIntelStatusText(error instanceof Error ? error.message : 'Website lookup failed.');
+      }
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [applyIntelToForm, companyUrl]);
+
   const handleSlugChange = (text: string) => {
     const s = slugify(text);
     setSlug(s);
@@ -78,6 +186,52 @@ export default function NewProspect() {
     setCheckingSlug(false);
   }, [slug]);
 
+  const prospectDetailValues = useMemo(
+    (): FluxProspectDetailsFieldValues => ({
+      name: contactName,
+      company,
+      role,
+      url: companyUrl,
+      industry,
+      company_size: companySize,
+      email_notes: emailNotes,
+      brand_primaryColor: primaryColor,
+      brand_accentColor: accentColor,
+      brand_fontFamily: fontFamily,
+      brand_logoUrl: logoUrl,
+      brand_blockStylePreset: brandBlockStylePreset,
+    }),
+    [
+      contactName,
+      company,
+      role,
+      companyUrl,
+      industry,
+      companySize,
+      emailNotes,
+      primaryColor,
+      accentColor,
+      fontFamily,
+      logoUrl,
+      brandBlockStylePreset,
+    ],
+  );
+
+  const patchProspectDetails = useCallback((patch: Partial<FluxProspectDetailsFieldValues>) => {
+    if (patch.name !== undefined) setContactName(patch.name);
+    if (patch.company !== undefined) setCompany(patch.company);
+    if (patch.role !== undefined) setRole(patch.role);
+    if (patch.url !== undefined) setCompanyUrl(patch.url);
+    if (patch.industry !== undefined) setIndustry(patch.industry);
+    if (patch.company_size !== undefined) setCompanySize(patch.company_size);
+    if (patch.email_notes !== undefined) setEmailNotes(patch.email_notes);
+    if (patch.brand_primaryColor !== undefined) setPrimaryColor(patch.brand_primaryColor);
+    if (patch.brand_accentColor !== undefined) setAccentColor(patch.brand_accentColor);
+    if (patch.brand_fontFamily !== undefined) setFontFamily(patch.brand_fontFamily);
+    if (patch.brand_logoUrl !== undefined) setLogoUrl(patch.brand_logoUrl);
+    if (patch.brand_blockStylePreset !== undefined) setBrandBlockStylePreset(patch.brand_blockStylePreset);
+  }, []);
+
   const handleSubmit = async () => {
     if (!account || !campaignId || !contactName || !company || !slug || submitting) return;
     if (slugAvailable === false) {
@@ -87,11 +241,16 @@ export default function NewProspect() {
 
     setSubmitting(true);
     try {
+      const persistedWebsiteIntel =
+        websiteIntelSnapshot && JSON.stringify(websiteIntelSnapshot).length <= 24 * 1024
+          ? websiteIntelSnapshot
+          : null;
       const brandProfile: BrandProfile = {
         primaryColor,
         accentColor: accentColor || undefined,
         fontFamily: fontFamily || undefined,
         logoUrl: logoUrl || undefined,
+        blockStylePreset: brandBlockStylePreset,
       };
 
       const prospect = await createFluxProspect({
@@ -105,6 +264,10 @@ export default function NewProspect() {
         company_size: companySize || undefined,
         email_notes: emailNotes || undefined,
         brand_profile: brandProfile,
+        foundry_company_id: foundryCompanyId,
+        website_domain_key: websiteDomainKey,
+        website_intel_snapshot: persistedWebsiteIntel,
+        website_intel_auto_filled_at: persistedWebsiteIntel ? websiteIntelAutoFilledAt : null,
       });
 
       await createFluxPage({
@@ -131,10 +294,58 @@ export default function NewProspect() {
     }
   };
 
+  const handleRefreshFromWebsite = useCallback(async (force = true) => {
+    const trimmed = companyUrl.trim();
+    if (!trimmed) {
+      Alert.alert('Company URL required', 'Enter a company website first.');
+      return;
+    }
+    setWebsiteIntelStatus('scraping');
+    setWebsiteIntelStatusText('Scraping website...');
+    try {
+      const result = await runWebsiteIntelligenceScrapePoll({ url: trimmed, force });
+      if (!result.ok) {
+        throw new Error(result.message);
+      }
+      if (!result.snapshot) {
+        setWebsiteIntelStatus('miss');
+        setWebsiteIntelStatusText(result.message || 'No usable website intel was found.');
+        return;
+      }
+      applyIntelToForm(result.snapshot, { force: true });
+      setWebsiteIntelStatus(result.stale ? 'stale' : 'hit');
+      setWebsiteIntelStatusText('Website intel updated.');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Website scrape failed.';
+      setWebsiteIntelStatus('error');
+      setWebsiteIntelStatusText(message);
+      Alert.alert('Website refresh failed', message);
+    }
+  }, [applyIntelToForm, companyUrl]);
+
+  const intelChipText = useMemo(() => {
+    switch (websiteIntelStatus) {
+      case 'loading':
+        return 'Looking up...';
+      case 'hit':
+        return websiteIntelStatusText || 'Hit';
+      case 'stale':
+        return websiteIntelStatusText || 'Stale';
+      case 'miss':
+        return websiteIntelStatusText || 'No data';
+      case 'scraping':
+        return websiteIntelStatusText || 'Scraping...';
+      case 'error':
+        return websiteIntelStatusText || 'Lookup failed';
+      default:
+        return '';
+    }
+  }, [websiteIntelStatus, websiteIntelStatusText]);
+
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center">
-        <ActivityIndicator size="large" color="#6b7280" />
+      <View className="flex-1">
+        <LoadingState message="Loading…" />
       </View>
     );
   }
@@ -146,11 +357,10 @@ export default function NewProspect() {
     <>
       <FluxGoogleFontWebLinks families={FLUX_GOOGLE_FONT_NAMES} />
     <ScrollView className="flex-1" contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
-      <Pressable onPress={() => router.back()} className="mb-4">
-        <Text className="text-gray-400 text-sm font-instrument">← Back</Text>
-      </Pressable>
-
-      <Text className="text-white text-xl font-instrument-semibold mb-6">New Prospect</Text>
+      <PageHeader
+        title="New prospect"
+        subtitle="Creates the contact, page slug, and runs generate when Flux is configured"
+      />
 
       {/* Campaign picker */}
       <Text className={labelClass}>Campaign</Text>
@@ -158,7 +368,7 @@ export default function NewProspect() {
         {campaigns.map((c) => (
           <Pressable
             key={c.id}
-            className={`px-3 py-2 rounded-xl border ${campaignId === c.id ? 'border-indigo-500 bg-indigo-500/10' : 'border-[#2A2A2A] bg-[#1A1A1A]'}`}
+            className={`px-3 py-2 rounded-xl border ${campaignId === c.id ? 'border-[#f85102] bg-[#f85102]/12' : 'border-[#2A2A2A] bg-[#1A1A1A]'}`}
             onPress={() => setCampaignId(c.id)}
           >
             <Text className="text-white text-sm font-instrument">{c.name}</Text>
@@ -166,61 +376,49 @@ export default function NewProspect() {
         ))}
       </View>
 
-      {/* Prospect details */}
-      <Text className="text-gray-500 text-xs uppercase tracking-wider mb-3 font-instrument-semibold">Prospect Details</Text>
-      <Text className={labelClass}>Contact Name *</Text>
-      <TextInput className={inputClass} value={contactName} onChangeText={setContactName} placeholder="Jane Smith" placeholderTextColor="#555" />
-      <Text className={labelClass}>Company *</Text>
-      <TextInput className={inputClass} value={company} onChangeText={setCompany} placeholder="Acme Corp" placeholderTextColor="#555" />
-      <Text className={labelClass}>Role</Text>
-      <TextInput className={inputClass} value={role} onChangeText={setRole} placeholder="VP of Sales" placeholderTextColor="#555" />
-      <Text className={labelClass}>Company URL</Text>
-      <TextInput className={inputClass} value={companyUrl} onChangeText={setCompanyUrl} placeholder="https://acme.com" placeholderTextColor="#555" autoCapitalize="none" />
-      <Text className={labelClass}>Industry</Text>
-      <TextInput className={inputClass} value={industry} onChangeText={setIndustry} placeholder="SaaS" placeholderTextColor="#555" />
-      <Text className={labelClass}>Company Size</Text>
-      <TextInput className={inputClass} value={companySize} onChangeText={setCompanySize} placeholder="50-200" placeholderTextColor="#555" />
-      <Text className={labelClass}>Email Notes</Text>
-      <TextInput
-        className={`${inputClass} min-h-[80px]`}
-        value={emailNotes}
-        onChangeText={setEmailNotes}
-        placeholder="Paste relevant context from the email thread..."
-        placeholderTextColor="#555"
-        multiline
-        textAlignVertical="top"
+      <FluxProspectDetailsFields
+        values={prospectDetailValues}
+        onChange={(patch) => {
+          if (patch.industry !== undefined && websiteIntelAutoFilledAt) {
+            setManualOverrides((current) => ({ ...current, industry: true }));
+          }
+          if (patch.brand_primaryColor !== undefined && websiteIntelAutoFilledAt) {
+            setManualOverrides((current) => ({ ...current, primaryColor: true }));
+          }
+          if (patch.brand_accentColor !== undefined && websiteIntelAutoFilledAt) {
+            setManualOverrides((current) => ({ ...current, accentColor: true }));
+          }
+          if (patch.brand_logoUrl !== undefined && websiteIntelAutoFilledAt) {
+            setManualOverrides((current) => ({ ...current, logoUrl: true }));
+          }
+          patchProspectDetails(patch);
+        }}
+        belowCompanyUrlSlot={
+          (websiteIntelStatus !== 'idle' || websiteIntelSnapshot) ? (
+            <View className="mb-4 gap-2">
+              <View className="self-start px-3 py-2 rounded-full border border-[#2A2A2A] bg-[#1A1A1A]">
+                <Text className="text-xs text-gray-300 font-instrument">{intelChipText}</Text>
+              </View>
+              <View className="flex-row flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onPress={() => handleRefreshFromWebsite(true)}>
+                  Refresh from Website
+                </Button>
+                {websiteIntelSnapshot ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onPress={() => applyIntelToForm(websiteIntelSnapshot, { force: true })}
+                  >
+                    Re-apply from Website
+                  </Button>
+                ) : null}
+              </View>
+            </View>
+          ) : null
+        }
+        inputClassName={inputClass}
+        labelClassName={labelClass}
       />
-
-      {/* Brand profile */}
-      <Text className="text-gray-500 text-xs uppercase tracking-wider mb-3 mt-4 font-instrument-semibold">Brand Profile</Text>
-      <Text className={labelClass}>Primary Color</Text>
-      <View className="flex-row items-center gap-3 mb-3">
-        <View className="w-8 h-8 rounded-lg border border-[#3A3A3A]" style={{ backgroundColor: primaryColor }} />
-        <TextInput
-          className="flex-1 text-white bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-4 py-3 text-sm"
-          value={primaryColor}
-          onChangeText={setPrimaryColor}
-          placeholder="#4f46e5"
-          placeholderTextColor="#555"
-          autoCapitalize="none"
-        />
-      </View>
-      <Text className={labelClass}>Accent Color (optional)</Text>
-      <View className="flex-row items-center gap-3 mb-3">
-        <View className="w-8 h-8 rounded-lg border border-[#3A3A3A]" style={{ backgroundColor: accentColor || '#transparent' }} />
-        <TextInput
-          className="flex-1 text-white bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-4 py-3 text-sm"
-          value={accentColor}
-          onChangeText={setAccentColor}
-          placeholder="#10b981"
-          placeholderTextColor="#555"
-          autoCapitalize="none"
-        />
-      </View>
-      <Text className={labelClass}>Font Family</Text>
-      <FluxFontFamilyPicker value={fontFamily} onChange={setFontFamily} />
-      <Text className={labelClass}>Logo URL (optional)</Text>
-      <TextInput className={inputClass} value={logoUrl} onChangeText={setLogoUrl} placeholder="https://acme.com/logo.png" placeholderTextColor="#555" autoCapitalize="none" />
 
       {/* Slug */}
       <Text className="text-gray-500 text-xs uppercase tracking-wider mb-3 mt-4 font-instrument-semibold">Page URL</Text>

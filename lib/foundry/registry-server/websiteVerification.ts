@@ -11,6 +11,7 @@ export const WEBSITE_VERIFICATION_PAGE_KINDS = [
   'team',
   'locations',
   'policy',
+  'services',
   'project',
   'blog',
   'listing',
@@ -118,6 +119,10 @@ export interface WebsiteVerificationBundle {
   legal_name: string;
   normalized_key: string | null;
   notes: string | null;
+  shell_domain_key?: string | null;
+  is_flux_domain_shell?: boolean;
+  flux_seed_website?: string | null;
+  contact_website?: string | null;
   locations: WebsiteVerificationLocation[];
   source_records: WebsiteVerificationSourceRecord[];
   registry_entities: WebsiteVerificationRegistryEntity[];
@@ -342,6 +347,7 @@ function pageKindWeight(page: WebsiteVerificationExtractedPage): number {
       return 1;
     case 'contact':
     case 'about':
+    case 'services':
     case 'team':
     case 'locations':
       return 0.95;
@@ -358,7 +364,7 @@ function pageKindWeight(page: WebsiteVerificationExtractedPage): number {
 }
 
 function isHighSignalPage(page: WebsiteVerificationExtractedPage): boolean {
-  return page.depth === 0 || ['home', 'contact', 'about', 'team', 'locations'].includes(page.page_kind ?? 'other');
+  return page.depth === 0 || ['home', 'contact', 'about', 'services', 'team', 'locations'].includes(page.page_kind ?? 'other');
 }
 
 function pageNameCandidates(page: WebsiteVerificationExtractedPage): string[] {
@@ -830,6 +836,13 @@ export function countWebsiteVerificationBands(
 }
 
 export function pickWebsiteVerificationTarget(bundle: WebsiteVerificationBundle): string | null {
+  if (bundle.is_flux_domain_shell) {
+    const seeded = canonicalizeWebsiteUrl(bundle.flux_seed_website);
+    const seededDomain = normalizeDomainKey(seeded);
+    if (seeded && !isDisallowedWebsiteTargetHost(seededDomain)) {
+      return seeded;
+    }
+  }
   const scored = bundle.source_records
     .map((row) => {
       const normalizedUrl = canonicalizeWebsiteUrl(row.website);
@@ -843,9 +856,17 @@ export function pickWebsiteVerificationTarget(bundle: WebsiteVerificationBundle)
       };
     })
     .filter(Boolean) as Array<{ url: string; domain: string | null; points: number }>;
-  if (scored.length === 0) return null;
-  scored.sort((a, b) => b.points - a.points || a.url.localeCompare(b.url));
-  return scored[0]?.url ?? null;
+  if (scored.length > 0) {
+    scored.sort((a, b) => b.points - a.points || a.url.localeCompare(b.url));
+    const best = scored[0]?.url ?? null;
+    if (best) return best;
+  }
+  const projectionUrl = canonicalizeWebsiteUrl(bundle.contact_website);
+  const projectionDomain = normalizeDomainKey(projectionUrl);
+  if (projectionUrl && !isDisallowedWebsiteTargetHost(projectionDomain)) {
+    return projectionUrl;
+  }
+  return null;
 }
 
 export async function loadWebsiteVerificationBundles(
@@ -858,7 +879,7 @@ export async function loadWebsiteVerificationBundles(
     selectByIdBatches(leadsClient, 'website verification companies', uniqueIds, async (batch) => {
       const { data, error } = await leadsClient
         .from('companies')
-        .select('id, legal_name, normalized_key, notes')
+        .select('id, legal_name, normalized_key, notes, shell_domain_key, is_flux_domain_shell')
         .in('id', batch);
       return { data: data as unknown[] | null, error };
     }),
@@ -893,7 +914,7 @@ export async function loadWebsiteVerificationBundles(
   const sourceSelect =
     'id, website, phone, address_raw, line1, city, state_region, postal_code, categories, raw_payload';
 
-  const [sourceRowsList, entityRowsList, ownerRowsList] = await Promise.all([
+  const [sourceRowsList, entityRowsList, ownerRowsList, sourceSeedRows, contactProjectionRows] = await Promise.all([
     selectByIdBatches(leadsClient, 'website verification source_business_records', sourceRecordIds, async (batch) => {
       const { data, error } = await leadsClient.from('source_business_records').select(sourceSelect).in('id', batch);
       return { data: data as unknown[] | null, error };
@@ -910,6 +931,20 @@ export async function loadWebsiteVerificationBundles(
         .eq('is_current', true);
       return { data: data as unknown[] | null, error };
     }),
+    selectByIdBatches(leadsClient, 'website verification flux_company_website_sources', uniqueIds, async (batch) => {
+      const { data, error } = await leadsClient
+        .from('flux_company_website_sources')
+        .select('company_id, input_url, normalized_domain_key')
+        .in('company_id', batch);
+      return { data: data as unknown[] | null, error };
+    }),
+    selectByIdBatches(leadsClient, 'website verification company_contact_projection', uniqueIds, async (batch) => {
+      const { data, error } = await leadsClient
+        .from('company_contact_projection')
+        .select('company_id, website')
+        .in('company_id', batch);
+      return { data: data as unknown[] | null, error };
+    }),
   ]);
 
   const sourceById = new Map<string, Record<string, unknown>>(
@@ -917,6 +952,12 @@ export async function loadWebsiteVerificationBundles(
   );
   const entitiesById = new Map<string, Record<string, unknown>>(
     entityRowsList.map((row) => [String(row.id), row as Record<string, unknown>]),
+  );
+  const fluxSeedByCompanyId = new Map<string, string | null>(
+    sourceSeedRows.map((row) => [String(row.company_id), row.input_url == null ? null : String(row.input_url)]),
+  );
+  const contactWebsiteByCompanyId = new Map<string, string | null>(
+    contactProjectionRows.map((row) => [String(row.company_id), row.website == null ? null : String(row.website)]),
   );
   const ownersByEntityId = new Map<string, WebsiteVerificationOwner[]>();
   for (const row of ownerRowsList) {
@@ -972,6 +1013,10 @@ export async function loadWebsiteVerificationBundles(
       legal_name: String(company?.legal_name ?? ''),
       normalized_key: company?.normalized_key == null ? null : String(company.normalized_key),
       notes: company?.notes == null ? null : String(company.notes),
+      shell_domain_key: company?.shell_domain_key == null ? null : String(company.shell_domain_key),
+      is_flux_domain_shell: Boolean(company?.is_flux_domain_shell),
+      flux_seed_website: fluxSeedByCompanyId.get(companyId) ?? null,
+      contact_website: contactWebsiteByCompanyId.get(companyId) ?? null,
       locations: locationRows
         .filter((row) => String(row.company_id) === companyId)
         .map((row) => ({

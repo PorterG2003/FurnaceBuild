@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "run": "tsx src/index.ts"
+    "run": "tsx src/index.ts",
+    "local:intelligence": "RUN_MODE=local-intelligence tsx src/index.ts"
   },
   "dependencies": {
     "@aws-sdk/client-ssm": "^3.700.0",

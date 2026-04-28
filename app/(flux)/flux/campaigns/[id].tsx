@@ -18,8 +18,12 @@ import {
   deriveFluxCampaignQaStatus,
   parseFluxCopySlots,
 } from '@/lib/flux/fluxCampaignMethodologyQa';
-import type { FluxCampaignChatMessage } from '@/lib/flux/fluxCampaignChatState';
-import { emptyFluxCampaignChatState } from '@/lib/flux/fluxCampaignChatState';
+import {
+  emptyFluxCampaignChatState,
+  getLastFluxChatSummary,
+  type FluxCampaignChatMessage,
+  type FluxEditorCheckpoint,
+} from '@/lib/flux/fluxCampaignChatState';
 import { getFluxEditorChatUrl } from '@/lib/flux/fluxEditorChatUrl';
 import { getFluxGenerateUrl } from '@/lib/flux/fluxGenerateUrl';
 import { FLUX_GOOGLE_FONT_NAMES } from '@/lib/flux/googleFontsCatalog';
@@ -28,11 +32,13 @@ import {
   defaultFluxPreviewProspect,
   getFluxAiTierSnapshot,
 } from '@/lib/flux/fluxCampaignPreview';
+import { sellerProfileFromCampaignRow } from '@/lib/flux/campaignSeller';
 import {
   getFluxCampaignStudioUnlocked,
   setFluxCampaignStudioUnlocked,
 } from '@/lib/flux/fluxCampaignStudioPersistence';
 import {
+  checkpointFromEditorState,
   fluxCampaignEditorReducer,
   initialFluxCampaignEditorState,
 } from '@/lib/flux/editor/reducer';
@@ -71,15 +77,23 @@ export default function CampaignDetail() {
   const [previewAiLoading, setPreviewAiLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [needsAiRerender, setNeedsAiRerender] = useState(false);
+  /** User dismissed the idle rerender overlay; does not change preview freshness semantics. */
+  const [previewOverlayDismissed, setPreviewOverlayDismissed] = useState(false);
 
   const previewSeedForLoadRef = useRef(false);
   const initialAiTierRef = useRef<string | null>(null);
   const lastAiTierRef = useRef<string | null>(null);
+  /** Snapshot key when we last decided overlay visibility; used to re-show overlay after dismiss if tier changes again. */
+  const tierAtLastOverlayDecisionRef = useRef<string | null>(null);
 
   const copySlotsList = useMemo(() => parseFluxCopySlots(editor.copySlots), [editor.copySlots]);
   const previewProspectSerialized = useMemo(
     () => JSON.stringify(editor.previewProspect),
     [editor.previewProspect],
+  );
+  const sellerBrandingSerialized = useMemo(
+    () => JSON.stringify({ seller: editor.sellerProfile, policy: editor.brandingPolicy }),
+    [editor.sellerProfile, editor.brandingPolicy],
   );
 
   const load = useCallback(async () => {
@@ -109,6 +123,8 @@ export default function CampaignDetail() {
           copySlots: templateRow.copy_slots.join(', '),
           constraints: templateRow.constraints,
           chatState: templateRow.chat_state ?? emptyFluxCampaignChatState(),
+          sellerProfile: sellerProfileFromCampaignRow(campaign),
+          brandingPolicy: campaign.branding_policy,
         },
       });
     } finally {
@@ -130,16 +146,22 @@ export default function CampaignDetail() {
     lastAiTierRef.current = null;
     initialAiTierRef.current = getFluxAiTierSnapshot({
       prospect: editor.previewProspect,
+      sellerProfile: editor.sellerProfile,
+      brandingPolicy: editor.brandingPolicy,
       copy_slots: copySlotsList,
       constraints: editor.constraints,
       content_assets: editor.contentAssets,
       blocks: editor.blocks,
     });
     setNeedsAiRerender(false);
+    setPreviewOverlayDismissed(false);
+    tierAtLastOverlayDecisionRef.current = null;
   }, [
     loading,
     id,
     editor.previewProspect,
+    editor.sellerProfile,
+    editor.brandingPolicy,
     editor.constraints,
     editor.contentAssets,
     editor.blocks,
@@ -150,6 +172,8 @@ export default function CampaignDetail() {
     if (loading || !id || !previewSeedForLoadRef.current) return;
     const current = getFluxAiTierSnapshot({
       prospect: editor.previewProspect,
+      sellerProfile: editor.sellerProfile,
+      brandingPolicy: editor.brandingPolicy,
       copy_slots: copySlotsList,
       constraints: editor.constraints,
       content_assets: editor.contentAssets,
@@ -157,16 +181,28 @@ export default function CampaignDetail() {
     });
     const baseline = lastAiTierRef.current ?? initialAiTierRef.current;
     if (baseline === null) return;
-    setNeedsAiRerender(current !== baseline);
+    const needs = current !== baseline;
+    setNeedsAiRerender(needs);
+    if (needs) {
+      if (tierAtLastOverlayDecisionRef.current !== current) {
+        setPreviewOverlayDismissed(false);
+        tierAtLastOverlayDecisionRef.current = current;
+      }
+    } else {
+      tierAtLastOverlayDecisionRef.current = null;
+    }
   }, [
     loading,
     id,
     editor.previewProspect,
+    editor.sellerProfile,
+    editor.brandingPolicy,
     editor.constraints,
     editor.contentAssets,
     editor.blocks,
     copySlotsList,
     previewProspectSerialized,
+    sellerBrandingSerialized,
   ]);
 
   useEffect(() => {
@@ -174,9 +210,21 @@ export default function CampaignDetail() {
     setPreviewPageConfig((previous) =>
       applyLocalPreviewPatches(previous, editor.previewProspect, editor.blocks, {
         syncBlocksFromTemplate: !needsAiRerender,
+        sellerProfile: editor.sellerProfile,
+        brandingPolicy: editor.brandingPolicy,
       }),
     );
-  }, [loading, id, previewAiLoading, previewProspectSerialized, editor.blocks, needsAiRerender]);
+  }, [
+    loading,
+    id,
+    previewAiLoading,
+    previewProspectSerialized,
+    sellerBrandingSerialized,
+    editor.blocks,
+    editor.sellerProfile,
+    editor.brandingPolicy,
+    needsAiRerender,
+  ]);
 
   const previewFresh = studioUnlocked && !needsAiRerender;
   const qaStatus = useMemo(
@@ -190,16 +238,23 @@ export default function CampaignDetail() {
   );
 
   const persistChatState = useCallback(
-    async (messages: FluxCampaignChatMessage[], lastSummary: string[] | null) => {
-      if (!id) return;
+    async (
+      messages: FluxCampaignChatMessage[],
+      lastSummary: string[] | null,
+      checkpoints: Record<string, FluxEditorCheckpoint>,
+    ) => {
+      if (!id) return false;
       try {
         await updateFluxTemplateChatState(id, {
           messages,
           lastSummary,
           updatedAt: new Date().toISOString(),
+          checkpoints,
         });
+        return true;
       } catch (error) {
         console.warn('[flux] failed to persist chat_state', error);
+        return false;
       }
     },
     [id],
@@ -226,6 +281,8 @@ export default function CampaignDetail() {
           copy_slots: copySlotsList,
           constraints: editor.constraints,
         },
+        seller_profile: editor.sellerProfile,
+        branding_policy: editor.brandingPolicy,
       });
       if (!result.ok) {
         setPreviewError(result.message);
@@ -241,6 +298,8 @@ export default function CampaignDetail() {
       setPreviewPageConfig(nextPageConfig);
       const snapshot = getFluxAiTierSnapshot({
         prospect: editor.previewProspect,
+        sellerProfile: editor.sellerProfile,
+        brandingPolicy: editor.brandingPolicy,
         copy_slots: copySlotsList,
         constraints: editor.constraints,
         content_assets: editor.contentAssets,
@@ -249,6 +308,8 @@ export default function CampaignDetail() {
       lastAiTierRef.current = snapshot;
       initialAiTierRef.current = snapshot;
       setNeedsAiRerender(false);
+      setPreviewOverlayDismissed(false);
+      tierAtLastOverlayDecisionRef.current = null;
       if (!studioUnlocked) {
         setStudioUnlocked(true);
         await setFluxCampaignStudioUnlocked(id, true);
@@ -261,6 +322,8 @@ export default function CampaignDetail() {
     previewAiLoading,
     studioUnlocked,
     editor.previewProspect,
+    editor.sellerProfile,
+    editor.brandingPolicy,
     editor.blocks,
     editor.contentAssets,
     editor.constraints,
@@ -279,12 +342,18 @@ export default function CampaignDetail() {
         role: 'user',
         content: text,
       };
+      const checkpoint = checkpointFromEditorState(editor);
+      const nextCheckpoints = {
+        ...editor.chatCheckpoints,
+        [userMessage.id]: checkpoint,
+      };
       dispatch({
         type: 'chat.appendUser',
         id: userMessage.id,
         content: text,
+        checkpoint,
       });
-      await persistChatState([...editor.chatMessages, userMessage], editor.chatLastSummary);
+      await persistChatState([...editor.chatMessages, userMessage], editor.chatLastSummary, nextCheckpoints);
       dispatch({ type: 'chat.setSending', value: true });
       dispatch({ type: 'chat.setError', value: null });
       try {
@@ -299,6 +368,8 @@ export default function CampaignDetail() {
             copy_slots: copySlotsList,
             constraints: editor.constraints,
             preview_prospect: editor.previewProspect,
+            seller_profile: editor.sellerProfile,
+            branding_policy: editor.brandingPolicy,
           },
         });
         if (!result.ok) {
@@ -316,6 +387,7 @@ export default function CampaignDetail() {
           await persistChatState(
             [...editor.chatMessages, userMessage, assistantErrorMessage],
             editor.chatLastSummary,
+            nextCheckpoints,
           );
           return;
         }
@@ -337,12 +409,52 @@ export default function CampaignDetail() {
         await persistChatState(
           [...editor.chatMessages, userMessage, assistantMessage],
           result.data.summary ?? editor.chatLastSummary,
+          nextCheckpoints,
         );
       } finally {
         dispatch({ type: 'chat.setSending', value: false });
       }
     },
     [id, editor, copySlotsList, persistChatState],
+  );
+
+  const handleChatRewind = useCallback(
+    async (message: FluxCampaignChatMessage) => {
+      if (editor.chatSending || message.role !== 'user') return false;
+      const index = editor.chatMessages.findIndex((entry) => entry.id === message.id);
+      const checkpoint = editor.chatCheckpoints[message.id];
+      if (index < 0 || !checkpoint) return false;
+
+      const nextMessages = editor.chatMessages.slice(0, index);
+      const nextCheckpoints: Record<string, FluxEditorCheckpoint> = {};
+      for (const entry of nextMessages) {
+        if (entry.role !== 'user') continue;
+        const existing = editor.chatCheckpoints[entry.id];
+        if (existing) {
+          nextCheckpoints[entry.id] = existing;
+        }
+      }
+      const nextLastSummary = getLastFluxChatSummary(nextMessages);
+
+      dispatch({ type: 'chat.rewindToCheckpoint', messageId: message.id });
+      setNeedsAiRerender(true);
+      setPreviewOverlayDismissed(false);
+      tierAtLastOverlayDecisionRef.current = null;
+      setPreviewPageConfig((previous) =>
+        applyLocalPreviewPatches(previous, checkpoint.previewProspect, checkpoint.blocks, {
+          syncBlocksFromTemplate: false,
+          sellerProfile: checkpoint.sellerProfile,
+          brandingPolicy: checkpoint.brandingPolicy,
+        }),
+      );
+
+      const persisted = await persistChatState(nextMessages, nextLastSummary, nextCheckpoints);
+      if (!persisted) {
+        toast.warning('Rewound locally, but failed to save the new chat branch. Refresh may restore the previous branch.');
+      }
+      return true;
+    },
+    [editor.chatCheckpoints, editor.chatMessages, editor.chatSending, persistChatState, toast],
   );
 
   const performSave = useCallback(async () => {
@@ -352,6 +464,15 @@ export default function CampaignDetail() {
       await updateFluxCampaign(id, {
         name: editor.name,
         offer_description: editor.offerDescription || null,
+        seller_display_name: editor.sellerProfile.displayName.trim() || null,
+        seller_tagline: editor.sellerProfile.tagline.trim() || null,
+        seller_website_url: editor.sellerProfile.websiteUrl.trim() || null,
+        seller_brand_profile: editor.sellerProfile.brand_profile,
+        seller_website_domain_key: editor.sellerProfile.websiteDomainKey ?? null,
+        seller_foundry_company_id: editor.sellerProfile.foundryCompanyId ?? null,
+        seller_website_intel_snapshot: editor.sellerProfile.website_intel,
+        seller_website_intel_auto_filled_at: editor.sellerProfile.websiteIntelAutoFilledAt ?? null,
+        branding_policy: editor.brandingPolicy,
       });
       await upsertFluxTemplate(id, {
         blocks: editor.blocks,
@@ -370,6 +491,8 @@ export default function CampaignDetail() {
     saving,
     editor.name,
     editor.offerDescription,
+    editor.sellerProfile,
+    editor.brandingPolicy,
     editor.blocks,
     editor.contentAssets,
     editor.constraints,
@@ -412,7 +535,10 @@ export default function CampaignDetail() {
   const fluxGenerateConfigured = Boolean(getFluxGenerateUrl());
   const fluxEditorChatConfigured = Boolean(getFluxEditorChatUrl());
   const isIdeation = !studioUnlocked;
-  const showPreviewAiOverlay = studioUnlocked && editor.blocks.length > 0 && (needsAiRerender || previewAiLoading);
+  const showPreviewAiOverlay =
+    studioUnlocked &&
+    editor.blocks.length > 0 &&
+    (previewAiLoading || (needsAiRerender && !previewOverlayDismissed));
 
   const ideationFooter = (
     <View className="gap-3">
@@ -436,15 +562,6 @@ export default function CampaignDetail() {
           Chat should define at least one block before preview can run.
         </Text>
       ) : null}
-    </View>
-  );
-
-  const studioFooter = (
-    <View className="rounded-xl border border-[#2A2A2A] bg-[#141414] px-3 py-3">
-      <Text className="text-gray-300 text-xs font-instrument leading-5 text-center">
-        Keep the preview honest after major edits. If Flux pauses because it needs a new block, build
-        the primitive and then continue this saved thread.
-      </Text>
     </View>
   );
 
@@ -489,6 +606,19 @@ export default function CampaignDetail() {
                 >
                   {advancedOpen ? 'Back to chat' : 'Manual'}
                 </Button>
+                {!isIdeation ? (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    className={`px-3 py-1.5 ${needsAiRerender ? 'border-amber-500/50 bg-amber-500/15' : ''}`}
+                    onPress={() => {
+                      void handleRerenderWithAi();
+                    }}
+                    disabled={previewAiLoading || !fluxGenerateConfigured || editor.blocks.length === 0}
+                  >
+                    {previewAiLoading ? 'Generating…' : 'Rerender'}
+                  </Button>
+                ) : null}
                 {!isIdeation ? (
                   <Pressable
                     onPress={() => setReadinessOpen(true)}
@@ -553,8 +683,8 @@ export default function CampaignDetail() {
                 lastSummary={editor.chatLastSummary}
                 sending={editor.chatSending}
                 error={editor.chatError}
-                canUndo={!!editor.chatUndoSnapshot}
                 chatConfigured={fluxEditorChatConfigured}
+                rewindableMessageIds={Object.keys(editor.chatCheckpoints)}
                 emptyStateText={
                   isIdeation
                     ? 'Try: “Help me design a reverse lead magnet for dental practice owners. The page should feel custom from just a website URL and deliver one concrete insight in under 60 seconds.”'
@@ -565,9 +695,9 @@ export default function CampaignDetail() {
                     ? 'Describe the campaign you want Flux to design…'
                     : 'Refine the page, proof, or spec…'
                 }
-                footer={isIdeation ? ideationFooter : studioFooter}
+                footer={isIdeation ? ideationFooter : undefined}
                 onSend={handleChatSend}
-                onUndo={() => dispatch({ type: 'chat.undoLast' })}
+                onRewindMessage={handleChatRewind}
               />
             </View>
           )
@@ -613,15 +743,26 @@ export default function CampaignDetail() {
                   {previewError}
                 </Text>
               ) : null}
-              <Button
-                size="sm"
-                onPress={() => {
-                  void handleRerenderWithAi();
-                }}
-                disabled={previewAiLoading || !fluxGenerateConfigured}
-              >
-                {previewAiLoading ? 'Generating…' : 'Rerender with AI'}
-              </Button>
+              <View className="flex-row flex-wrap items-center justify-center gap-2">
+                {!previewAiLoading ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onPress={() => setPreviewOverlayDismissed(true)}
+                  >
+                    Dismiss
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  onPress={() => {
+                    void handleRerenderWithAi();
+                  }}
+                  disabled={previewAiLoading || !fluxGenerateConfigured}
+                >
+                  {previewAiLoading ? 'Generating…' : 'Rerender with AI'}
+                </Button>
+              </View>
             </View>
           ) : undefined
         }

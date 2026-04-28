@@ -5,7 +5,6 @@ import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cdk from 'aws-cdk-lib';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
@@ -27,6 +26,7 @@ import { foundryCsvBuilderExportJob } from './functions/foundryCsvBuilderExportJ
 import { processNotificationEvent } from './functions/processNotificationEvent/resource';
 import { fluxGenerate } from './functions/fluxGenerate/resource';
 import { fluxEditorChat } from './functions/fluxEditorChat/resource';
+import { googlePlaces } from './functions/googlePlaces/resource';
 
 // Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
 config({ path: '.env.local' });
@@ -60,6 +60,7 @@ const backend = defineBackend({
   processNotificationEvent,
   fluxGenerate,
   fluxEditorChat,
+  googlePlaces,
   ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
 
@@ -413,31 +414,19 @@ const websiteVerificationTaskRoleArn = cdk.Fn.importValue(
 const googleAdsVerificationTaskRoleArn = cdk.Fn.importValue(
   `FurnaceGoogleAdsVerificationTaskRole-${workerEnvironment}`,
 );
-const utahScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
-  foundryNormalizeStack,
-  `/furnace/ecs/${workerEnvironment}/utah-scraper/task-definition-arn`,
-);
-const floridaScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
-  foundryNormalizeStack,
-  `/furnace/ecs/${workerEnvironment}/florida-scraper/task-definition-arn`,
-);
-const iowaScraperTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
-  foundryNormalizeStack,
-  `/furnace/ecs/${workerEnvironment}/iowa-scraper/task-definition-arn`,
-);
-const websiteVerificationTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
-  foundryNormalizeStack,
-  `/furnace/ecs/${workerEnvironment}/website-verification/task-definition-arn`,
-);
-const googleAdsVerificationTaskDefinitionArn = ssm.StringParameter.valueForStringParameter(
-  foundryNormalizeStack,
-  `/furnace/ecs/${workerEnvironment}/google-ads-verification/task-definition-arn`,
-);
+// ECS RunTask accepts a task definition *family* (no revision). Amazon ECS resolves it to the
+// latest ACTIVE revision at run time. Pinning a full ARN (e.g. from SSM at Amplify deploy time)
+// goes stale when infra/workers registers a new revision, leaving Step Functions on an INACTIVE TD.
+const utahScraperTaskFamily = `furnace-utah-scraper-task-${workerEnvironment}`;
+const floridaScraperTaskFamily = `furnace-florida-scraper-task-${workerEnvironment}`;
+const iowaScraperTaskFamily = `furnace-iowa-scraper-task-${workerEnvironment}`;
+const websiteVerificationTaskFamily = `furnace-website-verification-task-${workerEnvironment}`;
+const googleAdsVerificationTaskFamily = `furnace-google-ads-verification-task-${workerEnvironment}`;
 
 function buildStateScraperRunTask(
   id: string,
   containerName: string,
-  taskDefinitionArn: string,
+  taskDefinitionFamily: string,
 ): sfn.CustomState {
   const config =
     containerName === 'utah-scraper'
@@ -464,7 +453,7 @@ function buildStateScraperRunTask(
             Parameters: {
               LaunchType: 'FARGATE',
               Cluster: workerClusterName,
-              TaskDefinition: taskDefinitionArn,
+              TaskDefinition: taskDefinitionFamily,
               NetworkConfiguration: {
                 AwsvpcConfiguration: {
                   Subnets: workerPublicSubnetIds,
@@ -501,17 +490,17 @@ foundryStateMatchingLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEAD
 const foundryStateMatchingUtahTask = buildStateScraperRunTask(
   'FoundryStateMatchingRunUtahTask',
   'utah-scraper',
-  utahScraperTaskDefinitionArn,
+  utahScraperTaskFamily,
 );
 const foundryStateMatchingFloridaTask = buildStateScraperRunTask(
   'FoundryStateMatchingRunFloridaTask',
   'florida-scraper',
-  floridaScraperTaskDefinitionArn,
+  floridaScraperTaskFamily,
 );
 const foundryStateMatchingIowaTask = buildStateScraperRunTask(
   'FoundryStateMatchingRunIowaTask',
   'iowa-scraper',
-  iowaScraperTaskDefinitionArn,
+  iowaScraperTaskFamily,
 );
 const foundryStateMatchingSkipUtah = new sfn.Pass(foundryNormalizeStack, 'FoundryStateMatchingSkipUtah');
 const foundryStateMatchingSkipFlorida = new sfn.Pass(foundryNormalizeStack, 'FoundryStateMatchingSkipFlorida');
@@ -631,7 +620,7 @@ const foundryWebsiteVerificationImportRunTask = new sfn.CustomState(
             Parameters: {
               LaunchType: 'FARGATE',
               Cluster: workerClusterName,
-              TaskDefinition: websiteVerificationTaskDefinitionArn,
+              TaskDefinition: websiteVerificationTaskFamily,
               NetworkConfiguration: {
                 AwsvpcConfiguration: {
                   Subnets: workerPublicSubnetIds,
@@ -684,7 +673,7 @@ const foundryWebsiteVerificationCsvBuilderRunTask = new sfn.CustomState(
             Parameters: {
               LaunchType: 'FARGATE',
               Cluster: workerClusterName,
-              TaskDefinition: websiteVerificationTaskDefinitionArn,
+              TaskDefinition: websiteVerificationTaskFamily,
               NetworkConfiguration: {
                 AwsvpcConfiguration: {
                   Subnets: workerPublicSubnetIds,
@@ -814,7 +803,7 @@ const foundryGoogleAdsVerificationImportRunTask = new sfn.CustomState(
       Parameters: {
         LaunchType: 'FARGATE',
         Cluster: workerClusterName,
-        TaskDefinition: googleAdsVerificationTaskDefinitionArn,
+        TaskDefinition: googleAdsVerificationTaskFamily,
         NetworkConfiguration: {
           AwsvpcConfiguration: {
             Subnets: workerPublicSubnetIds,
@@ -858,7 +847,7 @@ const foundryGoogleAdsVerificationCsvBuilderRunTask = new sfn.CustomState(
             Parameters: {
               LaunchType: 'FARGATE',
               Cluster: workerClusterName,
-              TaskDefinition: googleAdsVerificationTaskDefinitionArn,
+              TaskDefinition: googleAdsVerificationTaskFamily,
               NetworkConfiguration: {
                 AwsvpcConfiguration: {
                   Subnets: workerPublicSubnetIds,
@@ -1164,6 +1153,34 @@ const allowPublicFluxEditorChatInvoke = new lambda.CfnPermission(
 );
 allowPublicFluxEditorChatInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
+// Google Places API (New) proxy — Function URL + Supabase JWT (flux or foundry flag)
+const googlePlacesLambda = backend.googlePlaces.resources.lambda as lambda.Function;
+googlePlacesLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+const googlePlacesUrl = googlePlacesLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(googlePlacesLambda.stack, 'AllowPublicGooglePlacesUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: googlePlacesLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicGooglePlacesInvoke = new lambda.CfnPermission(
+  googlePlacesLambda.stack,
+  'AllowPublicGooglePlacesInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: googlePlacesLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicGooglePlacesInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
 let launchSmartleadMigrationUrlRef: { url: string } | undefined;
 
 if (smartleadMigrationEnabled) {
@@ -1299,6 +1316,7 @@ const customOutputs: Record<string, string> = {
   foundryStateMatchingStateMachineArn: foundryStateMatchingStateMachineArn,
   fluxGenerateUrl: fluxGenerateUrl.url,
   fluxEditorChatUrl: fluxEditorChatUrl.url,
+  googlePlacesUrl: googlePlacesUrl.url,
 };
 if (launchSmartleadMigrationUrlRef) {
   customOutputs.launchSmartleadMigrationUrl = launchSmartleadMigrationUrlRef.url;

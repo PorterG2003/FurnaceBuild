@@ -34,6 +34,8 @@ import {
   type GenerateCandidatesResponse,
   type SourceRecordDetailResponse,
   type StateMatchingPreflightResponse,
+  type WebsiteIntelLookupResponse,
+  type WebsiteIntelScrapeResponse,
   type CompanyDeletePreflightResponse,
   type SourceRecordDeletePreflightResponse,
   type SourceRecordsListResponse,
@@ -734,6 +736,24 @@ export async function fetchIngestionRunPipelineJobs(
 export async function fetchFoundryJob(jobId: string): Promise<FoundryJobDetailResponse> {
   return registryFetchJson<FoundryJobDetailResponse>(`jobs/${encodeURIComponent(jobId)}`, {
     method: 'GET',
+  });
+}
+
+export async function fetchWebsiteIntelligenceByDomain(url: string): Promise<WebsiteIntelLookupResponse> {
+  return registryFetchJson<WebsiteIntelLookupResponse>('website-intelligence/by-domain', {
+    method: 'GET',
+    search: { url },
+  });
+}
+
+export async function postWebsiteIntelligenceScrape(body: {
+  url: string;
+  force?: boolean;
+}): Promise<WebsiteIntelScrapeResponse> {
+  return registryFetchJson<WebsiteIntelScrapeResponse>('website-intelligence/scrape', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
 }
 

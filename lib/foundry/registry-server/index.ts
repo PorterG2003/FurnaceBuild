@@ -14,6 +14,8 @@ export * from './state-persistence/ownerDrilldown.js';
 export * from './contact-enrichment/contactEnrichment.js';
 export * from './costRateCards.js';
 export * from './websiteVerification.js';
+export * from './websiteIntelligence.js';
+export * from './websiteDomain.js';
 export * from './websiteVerificationProgress.js';
 export * from './googleAdsVerification.js';
 export * from './googleAdsVerificationProgress.js';

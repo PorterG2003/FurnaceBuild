@@ -51,6 +51,7 @@ Used on:
 - `ingestion_runs`
 - `contact_enrichment_attempts`
 - `company_website_verifications`
+- `company_website_intelligence`
 - `company_google_ads_verifications`
 - `registry_source_snapshots`
 

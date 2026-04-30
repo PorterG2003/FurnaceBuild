@@ -244,7 +244,7 @@ export class SendWorker {
       const [enrollmentResult, nodeResult] = await Promise.all([
         this.supabase
           .from('enrollments')
-          .select('deleted_at')
+          .select('deleted_at, state')
           .eq('id', messageJob.enrollment_id)
           .maybeSingle(),
         messageJob.node_id
@@ -258,6 +258,14 @@ export class SendWorker {
 
       if (enrollmentResult.data?.deleted_at) {
         await this.cancelCampaignMessageJob(messageJob, 'Enrollment deleted');
+        return;
+      }
+      const enrollmentState = (enrollmentResult.data as { state?: string } | null)?.state;
+      if (enrollmentState && enrollmentState !== 'active') {
+        console.log(
+          `[SEND WORKER] Enrollment ${messageJob.enrollment_id} is ${enrollmentState}; cancelling campaign job ${message_job_id} without mutating enrollment`
+        );
+        await this.cancelMessageJob(message_job_id, `Enrollment not active (${enrollmentState})`);
         return;
       }
       if (nodeResult.data?.deleted_at) {

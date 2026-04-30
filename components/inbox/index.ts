@@ -1,3 +1,5 @@
+export { MarkOutOfOfficeModal } from './MarkOutOfOfficeModal';
+export type { MarkOutOfOfficeModalProps } from './MarkOutOfOfficeModal';
 export { BlockedThreadCallout } from './BlockedThreadCallout';
 export { BlockSenderModal } from './BlockSenderModal';
 export { CreateTagModal } from './CreateTagModal';

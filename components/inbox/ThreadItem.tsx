@@ -68,6 +68,19 @@ export function ThreadItem({
               </View>
             );
           })()}
+          {thread.out_of_office ? (
+            <View
+              className="rounded-lg px-2 py-0.5 border"
+              style={{
+                backgroundColor: 'rgba(234, 179, 8, 0.12)',
+                borderColor: 'rgba(234, 179, 8, 0.35)',
+              }}
+            >
+              <Text className="text-xs font-instrument" style={{ color: '#FACC15' }}>
+                OOO
+              </Text>
+            </View>
+          ) : null}
           {visibleTags.map((tag) => {
             const bg = isPresetColor(tag.color) ? hexToPillBackground(tag.color!) : 'rgba(243, 68, 13, 0.2)';
             return (

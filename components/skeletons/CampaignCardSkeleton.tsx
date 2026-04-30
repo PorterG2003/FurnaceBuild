@@ -67,10 +67,8 @@ function SingleCampaignCardSkeleton({ index, isMobileLayout }: { index: number; 
   );
 
   const toolsBlock = (
-    <View className="flex-row gap-2 items-center">
-      <Skeleton style={{ width: 100, height: 32, borderRadius: 8 }} />
-      <Skeleton style={{ width: 44, height: 44, borderRadius: 8 }} />
-      <Skeleton style={{ width: 44, height: 44, borderRadius: 8 }} />
+    <View className="items-center justify-center">
+      <Skeleton style={{ width: 28, height: 28, borderRadius: 14 }} />
     </View>
   );
 
@@ -116,7 +114,10 @@ function SingleCampaignCardSkeleton({ index, isMobileLayout }: { index: number; 
           {campaignBlockDesktop}
           {statsBlockDesktop}
         </View>
-        <View className="absolute right-4 top-4">
+        <View
+          className="absolute"
+          style={{ right: 16, top: 0, bottom: 0, justifyContent: 'center' }}
+        >
           {toolsBlock}
         </View>
       </Card>

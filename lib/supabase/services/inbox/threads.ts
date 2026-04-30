@@ -15,6 +15,8 @@ export interface GetThreadsByAccountOptions {
   tagIds?: string[];
   category?: string;
   includeUnreadCount?: boolean;
+  /** When true, include threads marked out_of_office. Default (omit/false) excludes them from the list. */
+  includeOutOfOffice?: boolean;
 }
 
 export const NO_CATEGORY_FILTER = '__no_category__';
@@ -56,6 +58,7 @@ async function getThreadsByAccountInternal(
     .order('last_message_at', { ascending: false });
 
   if (options?.hasReplyOnly === true) query = query.eq('has_reply', true);
+  if (options?.includeOutOfOffice !== true) query = query.eq('out_of_office', false);
   if (options?.mailboxId) query = query.eq('mailbox_id', options.mailboxId);
   if (options?.campaignId) query = query.eq('campaign_id', options.campaignId);
   if (options?.dateFrom) query = query.gte('last_message_at', options.dateFrom);

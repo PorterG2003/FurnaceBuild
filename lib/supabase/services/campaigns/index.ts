@@ -18,6 +18,11 @@ export {
 } from './campaign-stats';
 export { getCampaignsListSummary, type CampaignListSummary } from './campaign-list-summary';
 export {
+  getAccountOutreachMetrics,
+  type AccountOutreachMetrics,
+} from './account-outreach-metrics';
+export { getAccountOutreachStatsByDay } from './account-outreach-stats-by-day';
+export {
   getCampaignVariantStats,
   type CampaignVariantStatRow,
 } from './campaign-variant-stats';

@@ -36,6 +36,7 @@ export interface InboxMessageListProps {
   selectedThreadProspectEmails: string[];
   blockedProspectEmails: Set<string>;
   onBlock: (() => void) | undefined;
+  onMarkOutOfOffice?: (() => void) | undefined;
   accountId: string | null;
   onOpenTagsPanel: (() => void) | undefined;
   category: string | null;
@@ -73,6 +74,7 @@ export function InboxMessageList({
   selectedThreadProspectEmails,
   blockedProspectEmails,
   onBlock,
+  onMarkOutOfOffice,
   accountId,
   onOpenTagsPanel,
   category,
@@ -127,7 +129,9 @@ export function InboxMessageList({
         prospectEmails={selectedThreadProspectEmails}
         blockedEmails={blockedProspectEmails}
         onBlock={onBlock}
+        onMarkOutOfOffice={onMarkOutOfOffice}
         showBlockButton={!!accountId && selectedThreadProspectEmails.length > 0}
+        showOutOfOfficeButton={!!accountId && !!selectedThreadId}
         threadTags={selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []) : []}
         onOpenTagsPanel={onOpenTagsPanel}
         category={category}

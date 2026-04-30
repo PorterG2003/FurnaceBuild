@@ -44,6 +44,8 @@ export interface InboxFilterDropdownProps {
   onCategoryFilterChange: (v: string | null) => void;
   tagFilterIds: string[];
   onTagFilterIdsChange: (ids: string[]) => void;
+  includeOutOfOfficeFilter: boolean;
+  onIncludeOutOfOfficeFilterChange: (v: boolean) => void;
   mailboxes: Mailbox[];
   campaigns: Campaign[];
   accountTags: ThreadTag[];
@@ -68,6 +70,8 @@ export function InboxFilterDropdown({
   onCategoryFilterChange,
   tagFilterIds,
   onTagFilterIdsChange,
+  includeOutOfOfficeFilter,
+  onIncludeOutOfOfficeFilterChange,
   mailboxes,
   campaigns,
   accountTags,
@@ -130,6 +134,11 @@ export function InboxFilterDropdown({
       <View className="flex-row items-center justify-between mb-4">
         <Text className="text-xs font-instrument-medium text-gray-400">Unread only</Text>
         <Toggle value={unreadOnlyFilter} onValueChange={onUnreadOnlyFilterChange} />
+      </View>
+
+      <View className="flex-row items-center justify-between mb-4">
+        <Text className="text-xs font-instrument-medium text-gray-400">Include out of office</Text>
+        <Toggle value={includeOutOfOfficeFilter} onValueChange={onIncludeOutOfOfficeFilterChange} />
       </View>
 
       <Select

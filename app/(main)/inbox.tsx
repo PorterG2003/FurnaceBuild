@@ -24,7 +24,11 @@ import {
   InboxMobileMessageView,
   InboxModals,
   InboxThreadList,
+  MarkOutOfOfficeModal,
 } from '@/components/inbox';
+import { getDisplayBody } from '@/lib/email/index';
+import { parseOutOfOfficeReturnDate } from '@/lib/inbox/parseOutOfOfficeReturnDate';
+import { format } from 'date-fns';
 import { useInboxData } from '@/hooks/useInboxData';
 import {
   normalizeInboxThreadParam,
@@ -84,6 +88,8 @@ export default function InboxPage() {
     setTagFilterIds,
     categoryFilter,
     setCategoryFilter,
+    includeOutOfOfficeFilter,
+    setIncludeOutOfOfficeFilter,
     hasMoreThreads,
     loadingMoreThreads,
     mailboxes,
@@ -127,6 +133,7 @@ export default function InboxPage() {
     openFilterMenu,
   } = useInboxFilterUI();
   const [blockModalVisible, setBlockModalVisible] = useState(false);
+  const [oooModalVisible, setOooModalVisible] = useState(false);
   const [createTagModalVisible, setCreateTagModalVisible] = useState(false);
   const [tagsPanelVisible, setTagsPanelVisible] = useState(false);
   const [showMessageActionsSheet, setShowMessageActionsSheet] = useState(false);
@@ -235,6 +242,30 @@ export default function InboxPage() {
       (a, b) => new Date(a.received_at).getTime() - new Date(b.received_at).getTime()
     );
   }, [selectedThreadId, selectedThread, messages, pendingReplies, isMobile]);
+
+  const latestReceivedInbound = useMemo(() => {
+    const received = messages.filter((m) => m.direction === 'received');
+    if (received.length === 0) return null;
+    return [...received].sort(
+      (a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
+    )[0];
+  }, [messages]);
+
+  const oooPrefillYmd = useMemo(() => {
+    const ref = latestReceivedInbound
+      ? new Date(latestReceivedInbound.received_at)
+      : new Date();
+    if (!latestReceivedInbound) {
+      return null as string | null;
+    }
+    const rawBody =
+      latestReceivedInbound.body_text ?? latestReceivedInbound.body_html ?? '';
+    const body = getDisplayBody(rawBody, {
+      format: latestReceivedInbound.body_text ? 'text' : 'html',
+    });
+    const parsed = parseOutOfOfficeReturnDate(body, ref);
+    return parsed ? format(parsed, 'yyyy-MM-dd') : null;
+  }, [latestReceivedInbound]);
 
   const scrollMessagesToEnd = useCallback((reason: string, nextHeight?: number) => {
     if (typeof nextHeight === 'number') {
@@ -359,6 +390,7 @@ export default function InboxPage() {
     setDatePreset(null);
     setTagFilterIds([]);
     setCategoryFilter(null);
+    setIncludeOutOfOfficeFilter(false);
   }, [
     setMailboxFilterId,
     setCampaignFilterId,
@@ -366,6 +398,7 @@ export default function InboxPage() {
     setDatePreset,
     setTagFilterIds,
     setCategoryFilter,
+    setIncludeOutOfOfficeFilter,
   ]);
 
   useEffect(() => {
@@ -512,6 +545,8 @@ export default function InboxPage() {
       blockedProspectEmails,
       accountId,
       onBlock: accountId ? () => setBlockModalVisible(true) : undefined,
+      onMarkOutOfOffice:
+        accountId && selectedThreadId ? () => setOooModalVisible(true) : undefined,
       onOpenTagsPanel: selectedThreadId && accountId ? () => setTagsPanelVisible(true) : undefined,
       category: selectedThread?.category ?? null,
       onSetCategory: handleSetThreadCategory,
@@ -544,6 +579,7 @@ export default function InboxPage() {
       accountId,
       selectedThread?.category,
       setBlockModalVisible,
+      setOooModalVisible,
       setTagsPanelVisible,
       handleSetThreadCategory,
       onContentSizeChange,
@@ -633,6 +669,8 @@ export default function InboxPage() {
         setCategoryFilter,
         tagFilterIds,
         setTagFilterIds,
+        includeOutOfOfficeFilter,
+        setIncludeOutOfOfficeFilter,
         mailboxes,
         campaigns,
         accountTags,
@@ -665,6 +703,8 @@ export default function InboxPage() {
         onRemoveTag: handleRemoveTagFromSelectedThread,
         onUpdateTag: handleUpdateTag,
         onDeleteTag: handleDeleteTag,
+        onMarkOutOfOffice:
+          accountId && selectedThreadId ? () => setOooModalVisible(true) : undefined,
       },
     }),
     [
@@ -683,6 +723,8 @@ export default function InboxPage() {
       setCategoryFilter,
       tagFilterIds,
       setTagFilterIds,
+      includeOutOfOfficeFilter,
+      setIncludeOutOfOfficeFilter,
       mailboxes,
       campaigns,
       accountTags,
@@ -711,6 +753,9 @@ export default function InboxPage() {
       handleRemoveTagFromSelectedThread,
       handleUpdateTag,
       handleDeleteTag,
+      includeOutOfOfficeFilter,
+      setIncludeOutOfOfficeFilter,
+      setOooModalVisible,
     ]
   );
 
@@ -772,6 +817,21 @@ export default function InboxPage() {
         visibility={modalProps.visibility}
         actions={modalProps.actions}
       />
+
+      {accountId && selectedThreadId && selectedThread ? (
+        <MarkOutOfOfficeModal
+          visible={oooModalVisible}
+          onClose={() => setOooModalVisible(false)}
+          threadId={selectedThreadId}
+          enrollmentId={selectedThread.enrollment_id}
+          prefilledReturnDateYmd={oooPrefillYmd}
+          isCurrentlyOutOfOffice={!!selectedThread.out_of_office}
+          onSaved={() => {
+            void loadThreads();
+            void loadMessages(selectedThreadId, { silent: true });
+          }}
+        />
+      ) : null}
 
       {/* Reply/Forward composer: full-size sheet on mobile */}
       {composerMode && isMobile && (

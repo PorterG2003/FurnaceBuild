@@ -102,6 +102,10 @@ const competitorAdAuditBlockPropsSchema = z.object({
   heading: z.string(),
   status: z.enum(['pending', 'running', 'ready', 'error']),
   errorMessage: z.string().optional(),
+  lastAuditDomainReport: z
+    .string()
+    .optional()
+    .describe('Legacy; omitted on new audits. Full domain scan: flux_async_jobs.result for competitor_ad_audit.'),
   lastAuditAt: z.string().optional(),
   competitors: z.array(competitorAdAuditRowPropsSchema),
 });

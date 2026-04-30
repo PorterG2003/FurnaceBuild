@@ -19,6 +19,7 @@ import {
   csvBuilderGoogleAdsSkipReason,
 } from '@furnace/registry-server';
 import { runGoogleAdsTransparencyLookup } from './transparencyLookup.js';
+import { workerJsonLog } from './workerJsonLog.js';
 
 type JobProgress = Record<string, unknown> & {
   in_scope_total?: number;
@@ -32,9 +33,7 @@ type JobProgress = Record<string, unknown> & {
   current_step?: string;
 };
 
-function logEvent(event: string, data?: Record<string, unknown>): void {
-  console.log(JSON.stringify({ source: 'google-ads-verification', event, at: new Date().toISOString(), ...data }));
-}
+const logEvent = workerJsonLog;
 
 async function fetchSecretFromParameterStore(parameterPath: string, region: string): Promise<string> {
   const ssmClient = new SSMClient({ region });
@@ -363,8 +362,10 @@ async function main(): Promise<void> {
     const jobId = typeof parsed.jobId === 'string' ? parsed.jobId.trim() : '';
     if (!jobId) throw new Error('FLUX_AUDIT_JOB_JSON.jobId required');
     const region = process.env.AWS_REGION || 'us-west-2';
+    logEvent('flux-competitor-audit-start', { jobId, awsRegion: region });
     const { runFluxCompetitorAuditJob } = await import('./fluxCompetitorAuditRun.js');
-    await runFluxCompetitorAuditJob({ jobId, awsRegion: region });
+    const ok = await runFluxCompetitorAuditJob({ jobId, awsRegion: region });
+    logEvent('flux-competitor-audit-finished', { jobId, ok });
     return;
   }
 
@@ -578,6 +579,9 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error(error);
+  workerJsonLog('worker-fatal', {
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  });
   process.exit(1);
 });

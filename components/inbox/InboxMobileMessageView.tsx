@@ -26,6 +26,7 @@ export interface InboxMobileMessagePaneProps {
   blockedProspectEmails: Set<string>;
   accountId: string | null;
   onBlock: (() => void) | undefined;
+  onMarkOutOfOffice?: (() => void) | undefined;
   onOpenTagsPanel: (() => void) | undefined;
   category: string | null;
   onSetCategory: (category: string | null) => Promise<void>;
@@ -68,6 +69,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
     blockedProspectEmails,
     accountId,
     onBlock,
+    onMarkOutOfOffice,
     onOpenTagsPanel,
     category,
     onSetCategory,
@@ -145,6 +147,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       selectedThreadProspectEmails={selectedThreadProspectEmails}
       blockedProspectEmails={blockedProspectEmails}
       onBlock={onBlock}
+      onMarkOutOfOffice={onMarkOutOfOffice}
       accountId={accountId}
       onOpenTagsPanel={onOpenTagsPanel}
       category={category}

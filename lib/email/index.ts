@@ -14,6 +14,13 @@ export {
   hasResidualEncodingArtifacts,
   type SanitizeEmailBodyOptions,
 } from './sanitize-body.js';
+
+export {
+  stripScriptsFromEmailHtml,
+  stripUnresolvableCidImages,
+  sanitizeEmailHtmlForForwardEmbed,
+  plainTextEmailBodyToForwardHtml,
+} from './forward-embed.js';
 export {
   normalizeEmailHtmlForDarkMode,
   MAILBOX_RENDER_BACKGROUND,

@@ -1,5 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { z } from 'zod';
+import {
+  fluxEditorChatResponseSchema,
+  FLUX_EDITOR_CHAT_BLOCK_ADD_TYPE_ALTS,
+} from '../../../lib/flux/editor/schemas';
 
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -100,129 +103,6 @@ async function openRouterChatWithModelFallbacks(
   return { ok: false, details: lastDetails, modelTried: lastTried };
 }
 
-const contentAssetSchema = z.object({
-  id: z.string(),
-  type: z.enum(['case_study', 'testimonial', 'stat']),
-  title: z.string(),
-  body: z.string(),
-  metric: z.string().optional(),
-  attribution: z.string().optional(),
-  imageUrl: z.string().optional(),
-});
-
-const blockTypeSchema = z.enum([
-  'hero',
-  'social_proof',
-  'case_study',
-  'benefits',
-  'testimonial',
-  'cta',
-  'tanners_tax_strategy',
-  'social_media_plan',
-]);
-
-const fluxBlockStylePresetSchema = z.enum(['classic', 'glass', 'minimal']);
-const fluxPageThemeSchema = z.enum(['prospect', 'seller', 'merge']);
-const fluxBrandFieldSourceSchema = z.enum(['prospect', 'seller', 'merge']);
-const fluxBrandingPolicySchema = z.object({
-  v: z.literal(1),
-  pageTheme: fluxPageThemeSchema,
-  logoFrom: fluxBrandFieldSourceSchema.optional(),
-  colorsFrom: fluxBrandFieldSourceSchema.optional(),
-  fontFrom: fluxBrandFieldSourceSchema.optional(),
-  blockStyleFrom: fluxBrandFieldSourceSchema.optional(),
-});
-
-const fluxEditorOperationSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('campaign.setName'), value: z.string() }),
-  z.object({ type: z.literal('campaign.setOfferDescription'), value: z.string() }),
-  z.object({
-    type: z.literal('block.add'),
-    blockType: blockTypeSchema,
-    index: z.number().int().nonnegative().optional(),
-  }),
-  z.object({ type: z.literal('block.remove'), blockId: z.string().min(1) }),
-  z.object({
-    type: z.literal('block.updateProps'),
-    blockId: z.string().min(1),
-    props: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
-    type: z.literal('block.reorder'),
-    blockIds: z.array(z.string().min(1)),
-  }),
-  z.object({ type: z.literal('asset.add'), asset: contentAssetSchema }),
-  z.object({ type: z.literal('asset.remove'), assetId: z.string().min(1) }),
-  z.object({
-    type: z.literal('asset.update'),
-    assetId: z.string().min(1),
-    patch: z.object({
-      type: z.enum(['case_study', 'testimonial', 'stat']).optional(),
-      title: z.string().optional(),
-      body: z.string().optional(),
-      metric: z.string().nullable().optional(),
-      attribution: z.string().nullable().optional(),
-      imageUrl: z.string().nullable().optional(),
-    }),
-  }),
-  z.object({
-    type: z.literal('template.setCopySlots'),
-    value: z.array(z.string()),
-  }),
-  z.object({ type: z.literal('template.setConstraints'), value: z.string() }),
-  z.object({
-    type: z.literal('preview.patchProspect'),
-    patch: z.object({
-      name: z.string().optional(),
-      company: z.string().optional(),
-      role: z.string().nullable().optional(),
-      url: z.string().nullable().optional(),
-      industry: z.string().nullable().optional(),
-      company_size: z.string().nullable().optional(),
-      email_notes: z.string().nullable().optional(),
-    }),
-  }),
-  z.object({
-    type: z.literal('preview.patchBrand'),
-    patch: z.object({
-      primaryColor: z.string().optional(),
-      accentColor: z.string().optional(),
-      fontFamily: z.string().optional(),
-      logoUrl: z.string().optional(),
-      blockStylePreset: fluxBlockStylePresetSchema.optional(),
-    }),
-  }),
-  z.object({
-    type: z.literal('seller.patchProfile'),
-    patch: z.object({
-      displayName: z.string().optional(),
-      tagline: z.string().optional(),
-      websiteUrl: z.string().optional(),
-    }),
-  }),
-  z.object({
-    type: z.literal('seller.patchBrand'),
-    patch: z.object({
-      primaryColor: z.string().optional(),
-      accentColor: z.string().optional(),
-      fontFamily: z.string().optional(),
-      logoUrl: z.string().optional(),
-      blockStylePreset: fluxBlockStylePresetSchema.optional(),
-    }),
-  }),
-  z.object({
-    type: z.literal('branding.setPolicy'),
-    policy: fluxBrandingPolicySchema,
-  }),
-]);
-
-const fluxEditorChatResponseSchema = z.object({
-  assistantMessage: z.string(),
-  operations: z.array(fluxEditorOperationSchema),
-  summary: z.array(z.string()).optional(),
-  requiresAiPreview: z.boolean().optional(),
-});
-
 const FLUX_FLAG_KEY = 'flux';
 
 const SYSTEM_PROMPT = `You are a Flux campaign editor assistant. The user is designing a reverse lead magnet inside a reusable page template. Your job is not only to edit blocks: you must help the user think through the campaign methodology before the page is treated as ready.
@@ -230,13 +110,14 @@ const SYSTEM_PROMPT = `You are a Flux campaign editor assistant. The user is des
 Rules:
 - Return ONLY valid JSON (no markdown fences) with this exact shape:
   {"assistantMessage": string, "operations": array, "summary"?: string[], "requiresAiPreview"?: boolean}
-- "operations" is an ordered list of small edits. Each item is a discriminated object with "type" and fields as follows:
+- "operations" is an ordered list of small edits. Each item MUST be a JSON object with a "type" field (never a bare string, number, or null in this array). Shape per item:
   - {"type":"campaign.setName","value":string}
   - {"type":"campaign.setOfferDescription","value":string}
-  - {"type":"block.add","blockType":"hero"|"social_proof"|"case_study"|"benefits"|"testimonial"|"cta"|"tanners_tax_strategy"|"social_media_plan","index"?:number}
+  - {"type":"block.add","blockType":${FLUX_EDITOR_CHAT_BLOCK_ADD_TYPE_ALTS},"index"?:number}
   - {"type":"block.remove","blockId":string}
   - {"type":"block.updateProps","blockId":string,"props":object} — merge props into the existing block; use only keys valid for that block type
   - {"type":"block.reorder","blockIds":string[]} — full permutation of existing ids
+  - Block type **competitor_ad_audit**: section that compares nearby competitors using Google Ads Transparency + static maps. In the **template**, only the section heading is edited here; competitor rows, map images, and example creatives are filled **per prospect** when someone runs **Run competitor audit** on the prospect page (requires a saved **service area** on that prospect). Use block.add with blockType "competitor_ad_audit" when the user wants that section. For block.updateProps on this type, normally only change props.heading; do not invent competitors, map URLs, or transparency links. Do not set props.lastAuditDomainReport (legacy / internal); per-domain audit lines are stored on the job result, not in the published block.
   - {"type":"asset.add","asset":{id,type,title,body,...}}
   - {"type":"asset.remove","assetId":string}
   - {"type":"asset.update","assetId":string,"patch":{title?,body?,metric?,attribution?,imageUrl?,type?}}
@@ -266,7 +147,7 @@ Conversation behavior:
 - Once the user has given enough signal, consolidate the methodology into template.setConstraints using the section labels above. Keep the constraints readable and specific.
 - When helpful, also update campaign.setOfferDescription, template.setCopySlots, blocks, and assets so the template matches the methodology.
 - Prefer a small number of thoughtful edits over a giant speculative rewrite.
-- If a high-quality result requires a block capability that Flux does not currently have, do NOT invent a new block type and do NOT fake it with weak generic blocks. Instead return "operations": [] and use assistantMessage with this exact prefix:
+- If a high-quality result requires a block capability that Flux does not currently have (see allowed blockType values on block.add), do NOT invent a new block type and do NOT fake it with weak generic blocks. Instead return "operations": [] and use assistantMessage with this exact prefix:
   Needs new block:
   Then explain:
   - the proposed block name
@@ -275,6 +156,7 @@ Conversation behavior:
   - the output it should render
   - why the current block library is insufficient
   - that the user can come back after the block is built and continue this same chat thread
+  (If the user wants competitor Google Ads comparison + maps, use block.add with blockType "competitor_ad_audit" — that capability exists; do not use "Needs new block" for that.)
 
 Copy / rewrite rules:
 - Only suggest new marketing copy via block.updateProps on text fields that appear in the current copy_slots list (or obvious template text like headlines if copy_slots is empty and the user asked for copy).

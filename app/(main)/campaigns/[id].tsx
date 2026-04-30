@@ -59,46 +59,13 @@ import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { LEGACY_EMAIL_VARIANT_ID, sortVariantsForRoundRobin } from '@/lib/email/emailNodeVariants';
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
+import { fillMissingStatsByDay } from '@/lib/campaigns/fillMissingStatsByDay';
 
 const tabs: Tab[] = [
   { id: 'details', label: 'Details' },
   { id: 'leads', label: 'Leads' },
   { id: 'schedule', label: 'Schedule' },
 ];
-
-function fillMissingStatsByDay(
-  rows: CampaignStatsByDay[],
-  startDate: string,
-  endDate: string
-): CampaignStatsByDay[] {
-  const existingByDay = new Map(rows.map((item) => [item.date, item] as const));
-  const start = new Date(`${startDate}T00:00:00.000Z`);
-  const end = new Date(`${endDate}T00:00:00.000Z`);
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
-    return rows;
-  }
-
-  const filled: CampaignStatsByDay[] = [];
-  const cursor = new Date(start);
-
-  while (cursor <= end) {
-    const date = cursor.toISOString().slice(0, 10);
-    const existing = existingByDay.get(date);
-    filled.push(
-      existing ?? {
-        date,
-        sent: 0,
-        replied: 0,
-        positiveReply: 0,
-        bounce: 0,
-      }
-    );
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-
-  return filled;
-}
 
 function statLookup(
   stats: CampaignVariantStatRow[],

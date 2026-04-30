@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { ChevronDownIcon, NoSymbolIcon } from 'react-native-heroicons/outline';
+import { CalendarDaysIcon, ChevronDownIcon, NoSymbolIcon } from 'react-native-heroicons/outline';
 import { Select } from '@/components/ui/forms';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
@@ -14,7 +14,9 @@ export function MessagePanelHeader({
   prospectEmails,
   blockedEmails: _blockedEmails = [],
   onBlock,
+  onMarkOutOfOffice,
   showBlockButton = true,
+  showOutOfOfficeButton = true,
   threadTags = [],
   onOpenTagsPanel,
   category,
@@ -29,7 +31,9 @@ export function MessagePanelHeader({
   prospectEmails: string[];
   blockedEmails?: string[] | Set<string>;
   onBlock?: () => void;
+  onMarkOutOfOffice?: () => void;
   showBlockButton?: boolean;
+  showOutOfOfficeButton?: boolean;
   threadTags?: ThreadTag[];
   /** When set, shows a single "Tags" control that opens the tags panel (add/remove/create). */
   onOpenTagsPanel?: () => void;
@@ -116,6 +120,22 @@ export function MessagePanelHeader({
               </Text>
             </View>
           ) : null}
+          {showOutOfOfficeButton && onMarkOutOfOffice && (
+            <Pressable
+              onPress={onMarkOutOfOffice}
+              className="flex-row items-center gap-1.5 rounded-lg px-2.5 py-1.5 min-h-[32px]"
+              style={{
+                backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                borderWidth: 1,
+                borderColor: 'rgba(59, 130, 246, 0.45)',
+              }}
+            >
+              <CalendarDaysIcon size={14} color="#93C5FD" />
+              <Text className="text-xs font-instrument-medium" style={{ color: '#BFDBFE' }}>
+                Out of office
+              </Text>
+            </Pressable>
+          )}
           {showBlockButton && onBlock && (
             <Pressable
               onPress={onBlock}

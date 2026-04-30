@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { NoSymbolIcon, TagIcon, FolderIcon } from 'react-native-heroicons/outline';
+import { CalendarDaysIcon, NoSymbolIcon, TagIcon, FolderIcon } from 'react-native-heroicons/outline';
 import { BottomSheet } from '@/components/ui/modals';
 import type { EmailThread } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
@@ -15,6 +15,7 @@ export interface InboxMessageActionsSheetProps {
   threadTagsMap: Record<string, ThreadTag[]>;
   selectedThreadProspectEmails: string[];
   onBlock: () => void;
+  onMarkOutOfOffice?: () => void;
   onTags: () => void;
   onSetCategory: (category: string | null) => Promise<void>;
 }
@@ -28,6 +29,7 @@ export function InboxMessageActionsSheet({
   threadTagsMap,
   selectedThreadProspectEmails,
   onBlock,
+  onMarkOutOfOffice,
   onTags,
   onSetCategory,
 }: InboxMessageActionsSheetProps) {
@@ -54,6 +56,25 @@ export function InboxMessageActionsSheet({
             >
               <NoSymbolIcon size={20} color="#F87171" />
               <Text className="text-white font-instrument-medium text-base">Block sender</Text>
+            </Pressable>
+          )}
+          {!!accountId && selectedThreadId && onMarkOutOfOffice && (
+            <Pressable
+              onPress={() => {
+                onMarkOutOfOffice();
+                onClose();
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 14,
+                borderBottomWidth: 1,
+                borderBottomColor: '#2A2A2A',
+              }}
+            >
+              <CalendarDaysIcon size={20} color="#93C5FD" />
+              <Text className="text-white font-instrument-medium text-base">Out of office</Text>
             </Pressable>
           )}
           <Pressable

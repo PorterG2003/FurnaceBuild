@@ -154,6 +154,11 @@ export interface CompetitorAdAuditBlockProps {
   heading: string;
   status: CompetitorAdAuditStatus;
   errorMessage?: string;
+  /**
+   * Legacy field from older audits; no longer written or shown. Per-domain scan details live on
+   * `flux_async_jobs.result` for the competitor_ad_audit job. Re-run the audit to refresh ad copy.
+   */
+  lastAuditDomainReport?: string;
   lastAuditAt?: string;
   competitors: CompetitorAdAuditRowProps[];
 }

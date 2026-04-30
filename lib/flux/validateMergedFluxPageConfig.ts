@@ -128,8 +128,8 @@ export function getMergedFluxPageConfigSemanticIssues(
         if (!block.props.heading.trim()) push(block, 'heading is empty');
         if (block.props.status === 'ready') {
           const p = block.props;
-          if (p.competitors.length !== 3) {
-            push(block, 'competitors must have exactly 3 rows when status is ready');
+          if (p.competitors.length < 1 || p.competitors.length > 3) {
+            push(block, 'competitors must have 1–3 rows when status is ready');
           }
           for (let i = 0; i < p.competitors.length; i += 1) {
             const row = p.competitors[i]!;
@@ -138,8 +138,8 @@ export function getMergedFluxPageConfigSemanticIssues(
               push(block, `competitors[${i}].mapImageUrl must be an http(s) URL`);
             }
             if (!row.adsSummary?.trim()) push(block, `competitors[${i}].adsSummary is empty`);
-            if (!Array.isArray(row.examples) || row.examples.length !== 2) {
-              push(block, `competitors[${i}].examples must have exactly 2 items`);
+            if (!Array.isArray(row.examples) || row.examples.length < 1 || row.examples.length > 2) {
+              push(block, `competitors[${i}].examples must have 1 or 2 items`);
             } else {
               row.examples.forEach((ex, j) => {
                 if (!ex.headline?.trim()) push(block, `competitors[${i}].examples[${j}].headline is empty`);

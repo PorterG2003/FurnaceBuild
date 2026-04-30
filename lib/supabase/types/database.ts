@@ -767,6 +767,10 @@ export interface Database {
           has_reply: boolean;
           category: string | null;
           category_source: string | null;
+          out_of_office: boolean;
+          ooo_resume_requested: boolean;
+          ooo_resume_at: string | null;
+          ooo_resume_processed_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -786,6 +790,10 @@ export interface Database {
           has_reply?: boolean;
           category?: string | null;
           category_source?: string | null;
+          out_of_office?: boolean;
+          ooo_resume_requested?: boolean;
+          ooo_resume_at?: string | null;
+          ooo_resume_processed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -805,6 +813,10 @@ export interface Database {
           has_reply?: boolean;
           category?: string | null;
           category_source?: string | null;
+          out_of_office?: boolean;
+          ooo_resume_requested?: boolean;
+          ooo_resume_at?: string | null;
+          ooo_resume_processed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1136,6 +1148,21 @@ export interface Database {
         };
         Returns: number;
       };
+      mark_email_thread_out_of_office: {
+        Args: {
+          p_thread_id: string;
+          p_out_of_office: boolean;
+          p_resume_requested: boolean;
+          p_resume_at?: string | null;
+        };
+        Returns: undefined;
+      };
+      process_due_out_of_office_resumes: {
+        Args: {
+          p_batch_size?: number;
+        };
+        Returns: number;
+      };
       resume_campaign_and_reschedule_jobs: {
         Args: {
           p_campaign_id: string;
@@ -1216,6 +1243,26 @@ export interface Database {
           status: string;
           created_at: string;
           total_count: number;
+        }[];
+      };
+      account_outreach_metrics: {
+        Args: { p_account_id: string; p_start_date: string; p_end_date: string };
+        Returns: {
+          total_sent: number;
+          total_positive_reply: number;
+          leads_reached: number;
+          leads_in_queue: number;
+          smartlead_import_warning: boolean;
+        }[];
+      };
+      account_outreach_stats_by_day: {
+        Args: { p_account_id: string; p_start_date: string; p_end_date: string };
+        Returns: {
+          stat_date: string;
+          sent_count: number;
+          replied_count: number;
+          positive_reply_count: number;
+          bounce_count: number;
         }[];
       };
       campaigns_list_summary: {

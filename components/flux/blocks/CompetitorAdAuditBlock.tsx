@@ -82,6 +82,13 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                     className="rounded-xl p-4"
                     style={presentation.card}
                   >
+                    {ex.imageUrl?.trim() ? (
+                      <Image
+                        source={{ uri: ex.imageUrl.trim() }}
+                        className="w-full max-w-2xl h-48 rounded-xl bg-gray-200 mb-3"
+                        resizeMode="cover"
+                      />
+                    ) : null}
                     <Text className="text-base font-instrument-semibold mb-1" style={{ color: theme.textColor }}>
                       {ex.headline}
                     </Text>
@@ -90,7 +97,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                     </Text>
                     <Pressable onPress={() => Linking.openURL(ex.sourceUrl)}>
                       <Text className="text-xs font-instrument-semibold" style={{ color: theme.primaryColor }}>
-                        View on Google Ads Transparency
+                        View on Transparency Center
                       </Text>
                     </Pressable>
                   </View>

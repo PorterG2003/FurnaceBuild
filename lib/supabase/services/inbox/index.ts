@@ -14,6 +14,7 @@ export {
   type SendAttachment,
 } from './messages';
 export { updateThreadCategory } from './thread-categories';
+export { markEmailThreadOutOfOffice, type MarkEmailThreadOutOfOfficeParams } from './out-of-office';
 export {
   createReplyJob,
   createForwardJob,

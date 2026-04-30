@@ -172,6 +172,12 @@ export const blockSchema = z.discriminatedUnion('type', [
       heading: z.string(),
       status: z.enum(['pending', 'running', 'ready', 'error']),
       errorMessage: z.string().optional(),
+      lastAuditDomainReport: z
+        .string()
+        .optional()
+        .describe(
+          'Legacy only; not shown to recipients. Do not set manually. Per-domain Transparency outcomes are on the async job result.',
+        ),
       lastAuditAt: z.string().optional(),
       competitors: z.array(
         z.object({

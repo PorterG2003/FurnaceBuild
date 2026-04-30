@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "run": "tsx src/index.ts",
-    "local": "tsx src/local.ts"
+    "local": "tsx src/local.ts",
+    "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-ssm": "^3.700.0",

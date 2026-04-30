@@ -3,6 +3,9 @@ export {
   fluxEditorOperationSchema,
   fluxEditorChatResponseSchema,
   parseFluxEditorOperations,
+  coerceFluxEditorOperationsArray,
+  blockTypeSchema,
+  FLUX_EDITOR_CHAT_BLOCK_ADD_TYPE_ALTS,
 } from '@/lib/flux/editor/schemas';
 export { applyFluxEditorOperation, applyFluxEditorOperations } from '@/lib/flux/editor/applyOperations';
 export type { FluxEditorDocumentState } from '@/lib/flux/editor/applyOperations';

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { View, Text, TextInput, Pressable, useWindowDimensions } from 'react-native';
 import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Card } from '@/components/ui/Card';
@@ -21,16 +21,20 @@ import {
   PlusIcon,
   TrashIcon,
   PencilIcon,
+  EllipsisHorizontalIcon,
   PaperAirplaneIcon,
   ArrowUturnLeftIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
+  ChartBarIcon,
+  RocketLaunchIcon,
 } from 'react-native-heroicons/outline';
 import { ProgressDial } from '@/components/ui/progress-dial';
 import { isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { CampaignStatusPill } from '@/components/campaigns';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
+import { RowOverflowMenu } from '@/components/ui/RowOverflowMenu';
 
 const STAT_COLUMN_WIDTH = 72;
 const POSITIVE_COLUMN_WIDTH = 88;
@@ -193,6 +197,34 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
     router.push({ pathname: '/builder', params: { campaignId: campaign.id } });
   };
 
+  const overflowItems = useMemo(() => {
+    const items = [];
+    if (isDraft) {
+      items.push({
+        key: 'mission-control',
+        label: 'Mission Control',
+        onPress: handleContinueSetup,
+        icon: RocketLaunchIcon,
+      });
+    }
+    items.push(
+      {
+        key: 'edit-flow',
+        label: 'Edit flow',
+        onPress: handleEditFlow,
+        icon: PencilIcon,
+      },
+      {
+        key: 'delete',
+        label: 'Delete',
+        onPress: () => setShowDeleteModal(true),
+        icon: TrashIcon,
+        tone: 'destructive' as const,
+      },
+    );
+    return items;
+  }, [handleContinueSetup, handleEditFlow, isDraft]);
+
   const repliedPct = sentCount > 0 ? Math.round((repliedCount / sentCount) * 100) : 0;
   const positivePct = repliedCount > 0 ? Math.round((positiveReplyCount / repliedCount) * 100) : 0;
 
@@ -265,40 +297,29 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
 
   const toolsBlockDesktop = (
     <View className="flex-row gap-2 items-center">
-      {isDraft && !isSmartlead && (
-        <Button
-          onPress={handleContinueSetup}
-          className="rounded-lg bg-[#f85102]"
-        >
-          Mission Control
-        </Button>
-      )}
       {isSmartlead ? (
         <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
           <View className="opacity-50">
-            <IconButton
-              icon={PencilIcon}
-              variant="secondary"
-              onPress={handleEditFlow}
-              className="min-w-[44px] min-h-[44px]"
+            <RowOverflowMenu
+              items={overflowItems.filter((item) => item.key !== 'mission-control')}
+              disabled={isDeleting}
+              menuMinWidth={184}
+              triggerIcon={EllipsisHorizontalIcon}
+              triggerAccessibilityLabel="Campaign actions"
+              horizontalAlign="end"
             />
           </View>
         </Tooltip>
       ) : (
-        <IconButton
-          icon={PencilIcon}
-          variant="secondary"
-          onPress={(e) => { e?.stopPropagation?.(); handleEditFlow(); }}
-          className="min-w-[44px] min-h-[44px]"
+        <RowOverflowMenu
+          items={overflowItems}
+          disabled={isDeleting}
+          menuMinWidth={184}
+          triggerIcon={EllipsisHorizontalIcon}
+          triggerAccessibilityLabel="Campaign actions"
+          horizontalAlign="end"
         />
       )}
-      <IconButton
-        icon={TrashIcon}
-        variant="destructive"
-        onPress={(e) => { e?.stopPropagation?.(); setShowDeleteModal(true); }}
-        disabled={isDeleting}
-        className="min-w-[44px] min-h-[44px]"
-      />
     </View>
   );
 
@@ -388,7 +409,10 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
             {campaignBlockDesktop}
             {statsBlockDesktop}
           </View>
-          <View className="absolute right-4 top-4">
+          <View
+            className="absolute"
+            style={{ right: 16, top: 0, bottom: 0, justifyContent: 'center' }}
+          >
             {toolsBlockDesktop}
           </View>
         </Card>
@@ -500,12 +524,32 @@ export default function CampaignsPage() {
     />
   );
 
+  const headerActions = isMobile ? (
+    <View className="flex-row items-center gap-2">
+      <IconButton
+        icon={ChartBarIcon}
+        variant="secondary"
+        onPress={() => router.push('/metrics')}
+        matchButtonPadding="sm"
+        accessibilityLabel="Outreach metrics"
+      />
+      {newCampaignButtonMobile}
+    </View>
+  ) : (
+    <View className="flex-row items-center gap-2">
+      <Button variant="secondary" onPress={() => router.push('/metrics')}>
+        Metrics
+      </Button>
+      {newCampaignButton}
+    </View>
+  );
+
   return (
     <PageLayout>
       <PageHeader
         title="Campaigns"
         subtitle="Manage your marketing campaigns"
-        primaryAction={isMobile ? newCampaignButtonMobile : newCampaignButton}
+        primaryAction={headerActions}
       />
       {/* Error Message */}
       {error ? (

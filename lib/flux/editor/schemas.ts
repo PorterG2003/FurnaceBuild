@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { contentAssetSchema } from '@/lib/flux/schemas';
-import { FLUX_BLOCK_STYLE_PRESETS } from '@/lib/flux/fluxPresentationTokens';
+import { contentAssetSchema } from '../schemas';
+import { FLUX_BLOCK_STYLE_PRESETS } from '../fluxPresentationTokens';
 
 const fluxPageThemeSchema = z.enum(['prospect', 'seller', 'merge']);
 const fluxBrandFieldSourceSchema = z.enum(['prospect', 'seller', 'merge']);
@@ -25,6 +25,14 @@ export const blockTypeSchema = z.enum([
   'social_media_plan',
   'competitor_ad_audit',
 ]);
+
+/**
+ * Union fragment for LLM system prompts (e.g. `"hero"|"social_proof"`).
+ * Stays aligned with {@link blockTypeSchema} — use this in `fluxEditorChat` instead of hand-maintaining lists.
+ */
+export const FLUX_EDITOR_CHAT_BLOCK_ADD_TYPE_ALTS = blockTypeSchema.options
+  .map((t) => `"${t}"`)
+  .join('|');
 
 /** Remote + chat-validated editor operations (subset of internal reducer actions). */
 export const fluxEditorOperationSchema = z.discriminatedUnion('type', [
@@ -112,19 +120,85 @@ export const fluxEditorOperationSchema = z.discriminatedUnion('type', [
 
 export type FluxEditorOperation = z.infer<typeof fluxEditorOperationSchema>;
 
-export const fluxEditorChatResponseSchema = z.object({
-  assistantMessage: z.string(),
-  operations: z.array(fluxEditorOperationSchema),
-  summary: z.array(z.string()).optional(),
-  requiresAiPreview: z.boolean().optional(),
-});
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Models sometimes emit `operations` entries as bare strings or stringified JSON objects.
+ * Strip junk; parse `"{...}"` when it decodes to a plain object.
+ */
+export function coerceFluxEditorOperationsArray(raw: unknown): unknown[] {
+  if (!Array.isArray(raw)) return [];
+  const out: unknown[] = [];
+  for (const item of raw) {
+    if (isPlainRecord(item)) {
+      out.push(item);
+      continue;
+    }
+    if (typeof item === 'string') {
+      const t = item.trim();
+      if (t.startsWith('{') && t.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(t) as unknown;
+          if (isPlainRecord(parsed)) {
+            out.push(parsed);
+          }
+        } catch {
+          /* drop */
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function normalizeFluxEditorChatLlmPayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  const o = raw as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...o };
+  if ('operations' in o) {
+    next.operations = coerceFluxEditorOperationsArray(o.operations);
+  }
+  const am = o.assistantMessage;
+  if (typeof am !== 'string') {
+    if (typeof am === 'number' || typeof am === 'boolean') {
+      next.assistantMessage = String(am);
+    } else if (am == null) {
+      next.assistantMessage = '';
+    } else {
+      next.assistantMessage = '';
+    }
+  }
+  if (o.summary !== undefined) {
+    if (!Array.isArray(o.summary)) {
+      next.summary = undefined;
+    } else {
+      next.summary = o.summary.map((s) => (typeof s === 'string' ? s : JSON.stringify(s)));
+    }
+  }
+  if (o.requiresAiPreview !== undefined && typeof o.requiresAiPreview !== 'boolean') {
+    next.requiresAiPreview = undefined;
+  }
+  return next;
+}
+
+export const fluxEditorChatResponseSchema = z.preprocess(
+  normalizeFluxEditorChatLlmPayload,
+  z.object({
+    assistantMessage: z.string(),
+    operations: z.array(fluxEditorOperationSchema),
+    summary: z.array(z.string()).optional(),
+    requiresAiPreview: z.boolean().optional(),
+  }),
+);
 
 export type FluxEditorChatResponse = z.infer<typeof fluxEditorChatResponseSchema>;
 
 export function parseFluxEditorOperations(
   raw: unknown,
 ): { ok: true; operations: FluxEditorOperation[] } | { ok: false; error: string } {
-  const arr = z.array(fluxEditorOperationSchema).safeParse(raw);
+  const arr = z.array(fluxEditorOperationSchema).safeParse(coerceFluxEditorOperationsArray(raw));
   if (!arr.success) {
     return { ok: false, error: arr.error.message };
   }

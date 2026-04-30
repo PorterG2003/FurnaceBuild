@@ -102,7 +102,10 @@ function needsCustomDeliverablePrimitive(source: string) {
 
 function hasCustomDeliverablePrimitive(editor: FluxCampaignQaInput['editor']) {
   return editor.blocks.some(
-    (block) => block.type === 'tanners_tax_strategy' || block.type === 'social_media_plan',
+    (block) =>
+      block.type === 'tanners_tax_strategy' ||
+      block.type === 'social_media_plan' ||
+      block.type === 'competitor_ad_audit',
   );
 }
 

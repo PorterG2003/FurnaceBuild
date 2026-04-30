@@ -55,6 +55,7 @@ export function useInboxData({
   const [datePreset, setDatePreset] = useState<'7d' | '30d' | null>(null);
   const [tagFilterIds, setTagFilterIds] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [includeOutOfOfficeFilter, setIncludeOutOfOfficeFilter] = useState(false);
   const [threadOffset, setThreadOffset] = useState(0);
   const [hasMoreThreads, setHasMoreThreads] = useState(false);
   const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
@@ -87,6 +88,7 @@ export function useInboxData({
     !!datePreset ||
     tagFilterIds.length > 0 ||
     !!categoryFilter ||
+    includeOutOfOfficeFilter ||
     threadSearchQuery.trim().length > 0;
 
   const selectedThreadProspectEmails = useMemo(() => {
@@ -132,8 +134,18 @@ export function useInboxData({
       searchQuery: threadSearchQuery.trim() || undefined,
       tagIds: tagFilterIds.length > 0 ? tagFilterIds : undefined,
       category: categoryFilter ?? undefined,
+      includeOutOfOffice: includeOutOfOfficeFilter ? true : undefined,
     };
-  }, [mailboxFilterId, campaignFilterId, unreadOnlyFilter, datePreset, threadSearchQuery, tagFilterIds, categoryFilter]);
+  }, [
+    mailboxFilterId,
+    campaignFilterId,
+    unreadOnlyFilter,
+    datePreset,
+    threadSearchQuery,
+    tagFilterIds,
+    categoryFilter,
+    includeOutOfOfficeFilter,
+  ]);
 
   const loadBlockList = useCallback(async () => {
     if (!accountId) return;
@@ -372,7 +384,16 @@ export function useInboxData({
     }
     setThreadOffset(0);
     loadThreadsRef.current();
-  }, [accountId, mailboxFilterId, campaignFilterId, unreadOnlyFilter, datePreset, tagFilterIds, categoryFilter]);
+  }, [
+    accountId,
+    mailboxFilterId,
+    campaignFilterId,
+    unreadOnlyFilter,
+    datePreset,
+    tagFilterIds,
+    categoryFilter,
+    includeOutOfOfficeFilter,
+  ]);
 
   useEffect(() => {
     if (!accountId) return;
@@ -426,6 +447,8 @@ export function useInboxData({
     setTagFilterIds,
     categoryFilter,
     setCategoryFilter,
+    includeOutOfOfficeFilter,
+    setIncludeOutOfOfficeFilter,
     threadOffset,
     hasMoreThreads,
     loadingMoreThreads,

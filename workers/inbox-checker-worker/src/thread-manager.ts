@@ -31,6 +31,14 @@ type ParentMessageCandidate = {
   email_threads: EmailThreadRow | EmailThreadRow[] | null;
 };
 
+/** Clears thread OOO when a new received message arrives; matches mark_email_thread_out_of_office clear branch. */
+const OOO_CLEAR_FOR_NEW_INBOUND_REPLY = {
+  out_of_office: false,
+  ooo_resume_requested: false,
+  ooo_resume_at: null,
+  ooo_resume_processed_at: null,
+} as const;
+
 /**
  * Thread manager for creating email threads and messages
  */
@@ -398,6 +406,7 @@ export class ThreadManager {
             message.from.address,
             ...message.to.map(t => t.address),
           ])),
+          ...OOO_CLEAR_FOR_NEW_INBOUND_REPLY,
         })
         .eq('id', thread.id);
     } else {
@@ -412,6 +421,7 @@ export class ThreadManager {
             message.from.address,
             ...message.to.map(t => t.address),
           ])),
+          ...OOO_CLEAR_FOR_NEW_INBOUND_REPLY,
         })
         .eq('id', thread.id);
     }

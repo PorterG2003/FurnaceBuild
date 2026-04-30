@@ -386,6 +386,23 @@ test('handleReply treats inbound unsubscribe-like replies as normal replies', as
     (call) => (call as QueryCall).table === 'notification_events'
   ) as QueryCall | undefined;
   assert.ok(notificationInsert);
+
+  const threadUpdateCalls = supabase.calls.filter(
+    (call): call is QueryCall =>
+      (call as QueryCall).kind === 'query' &&
+      (call as QueryCall).table === 'email_threads' &&
+      (call as QueryCall).insertPayloads.length > 0 &&
+      typeof (call as QueryCall).insertPayloads[0] === 'object' &&
+      (call as QueryCall).insertPayloads[0] !== null &&
+      'has_reply' in ((call as QueryCall).insertPayloads[0] as object)
+  );
+  assert.equal(threadUpdateCalls.length, 1);
+  const threadUpdatePayload = threadUpdateCalls[0].insertPayloads[0] as Record<string, unknown>;
+  assert.equal(threadUpdatePayload.has_reply, true);
+  assert.equal(threadUpdatePayload.out_of_office, false);
+  assert.equal(threadUpdatePayload.ooo_resume_requested, false);
+  assert.equal(threadUpdatePayload.ooo_resume_at, null);
+  assert.equal(threadUpdatePayload.ooo_resume_processed_at, null);
 });
 
 test('getOrCreateThread reloads the canonical thread after a unique-violation race', async () => {

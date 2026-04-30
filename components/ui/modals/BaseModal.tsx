@@ -49,10 +49,20 @@ export function BaseModal({
 }: BaseModalProps) {
   const { width, height: screenHeight } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
-  const contentHeight = height ?? maxHeight;
-  const containerStyle = contentHeight
-    ? { maxHeight: contentHeight, minHeight: height ?? 320 }
-    : {};
+  /** Explicit `height` opts into a stretched inner layout (legacy). `maxHeight` alone only caps total height. */
+  const stretchContent = height != null;
+  const dialogMaxHeight =
+    maxHeight != null
+      ? Math.min(maxHeight, Math.round(screenHeight * 0.92) - 40)
+      : height != null
+        ? Math.min(height, Math.round(screenHeight * 0.92) - 40)
+        : undefined;
+  const containerStyle =
+    stretchContent && (height ?? maxHeight) != null
+      ? { maxHeight: height ?? maxHeight, minHeight: height ?? 320 }
+      : dialogMaxHeight != null
+        ? { maxHeight: dialogMaxHeight }
+        : {};
   const dialogRef = useRef<View>(null);
 
   useEffect(() => {
@@ -153,9 +163,28 @@ export function BaseModal({
             {!compact && (
               <View
                 className="p-6"
-                style={contentHeight ? { flexGrow: 1, flexShrink: 1, minHeight: 0 } : undefined}
+                style={
+                  stretchContent && dialogMaxHeight != null
+                    ? { flexGrow: 1, flexShrink: 1, minHeight: 0 }
+                    : undefined
+                }
               >
-                {contentHeight ? (
+                {maxHeight != null && !stretchContent ? (
+                  <ScrollView
+                    style={{
+                      maxHeight: Math.max(
+                        160,
+                        dialogMaxHeight! -
+                          (description ? 200 : 168),
+                      ),
+                    }}
+                    contentContainerStyle={{ paddingBottom: footer ? 12 : 0, flexGrow: 0 }}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator
+                  >
+                    {children}
+                  </ScrollView>
+                ) : stretchContent && dialogMaxHeight != null ? (
                   <ScrollView
                     style={{ flex: 1 }}
                     contentContainerStyle={{ paddingBottom: footer ? 12 : 0 }}

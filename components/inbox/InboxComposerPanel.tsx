@@ -42,14 +42,18 @@ export function InboxComposerPanel({
           backgroundColor: '#1A1A1A',
           borderLeftWidth: 1,
           borderLeftColor: '#2A2A2A',
+          alignSelf: 'stretch',
+          minHeight: 0,
         }}
       >
-        <View style={{ width: panelWidth, flex: 1 }}>
+        <View style={{ width: panelWidth, flex: 1, minHeight: 0 }}>
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={{ flex: 1 }}
+            style={{ flex: 1, minHeight: 0 }}
           >
-            <View className="flex-1 p-5">{form}</View>
+            <View className="flex-1 p-5" style={{ minHeight: 0 }}>
+              {form}
+            </View>
           </KeyboardAvoidingView>
         </View>
       </Animated.View>
@@ -59,10 +63,10 @@ export function InboxComposerPanel({
   if (variant === 'sheet') {
     return (
       <BottomSheet visible onClose={onClose}>
-        <View style={{ maxHeight: sheetMaxHeight }}>
+        <View style={{ maxHeight: sheetMaxHeight, minHeight: 0 }}>
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={{ flex: 1 }}
+            style={{ flex: 1, minHeight: 0 }}
           >
             {form}
           </KeyboardAvoidingView>

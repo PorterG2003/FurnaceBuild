@@ -100,8 +100,10 @@ export function InboxComposerForm({
     />
   );
 
+  const scrollStyle = { flex: 1, minHeight: 0 };
+
   return (
-    <View className="pb-4">
+    <View className="flex-1 min-h-0 pb-4">
       <View className="flex-row justify-between items-center mb-5 pb-3 border-b border-[#2A2A2A]" style={{ borderBottomWidth: 1 }}>
         <Text className="text-xl font-instrument-semibold text-white">
           {mode === 'reply' ? 'Reply' : 'Forward'}
@@ -111,7 +113,12 @@ export function InboxComposerForm({
         </Pressable>
       </View>
       {mode === 'reply' ? (
-        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} className="pb-4">
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          className="pb-4"
+          style={scrollStyle}
+        >
           <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">To</Text>
           <TextInput
             value={replyToEmail}
@@ -178,7 +185,12 @@ export function InboxComposerForm({
           </Button>
         </ScrollView>
       ) : (
-        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} className="pb-4">
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          className="pb-4"
+          style={scrollStyle}
+        >
           <Text className="text-gray-400 font-instrument-medium text-sm mb-1.5">To</Text>
           <TextInput
             value={forwardToEmail}
@@ -236,6 +248,7 @@ export function InboxComposerForm({
               bodyHtml={forwardQuoteHtml}
               bodyText={null}
               displayText={stripHtml(forwardQuoteHtml)}
+              disableQuotedThreadCollapse
             />
           </View>
           <Button

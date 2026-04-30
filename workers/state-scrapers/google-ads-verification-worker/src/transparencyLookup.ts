@@ -1,10 +1,29 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright';
 import {
   normalizeGoogleAdsSearchDomain,
   type GoogleAdsVerificationResult,
 } from '@furnace/registry-server';
+import {
+  extractCreativeDisplayFromCreativePage,
+  pickSamplesForDisplay,
+  TRANSPARENCY_CREATIVE_FALLBACK_BODY,
+  TRANSPARENCY_CREATIVE_FALLBACK_HEADLINE,
+  type TransparencyCreativeSampleRow,
+  type TransparencyScannedCreative,
+} from './transparencyCreativeDisplay.js';
+import { workerJsonLog } from './workerJsonLog.js';
+
+export type { TransparencyCreativeSampleRow } from './transparencyCreativeDisplay.js';
+
+/** Same logic as `lib/flux/fluxCompetitorAuditRank.calendarRunDaysBetween` (kept local so the worker bundle does not rely on that named ESM export). */
+function calendarRunDaysBetween(firstIso: string, lastIso: string): number | null {
+  const a = Date.parse(`${firstIso}T12:00:00Z`);
+  const b = Date.parse(`${lastIso}T12:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return null;
+  return Math.floor((b - a) / 86_400_000);
+}
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = Record<string, unknown>;
@@ -13,8 +32,8 @@ const SEARCH_INPUT_NAME = /find the ads you've seen by searching by advertiser n
 const SEARCH_SUGGESTIONS_RE = /\/anji\/_\/rpc\/SearchService\/SearchSuggestions/i;
 const ADVERTISER_ID_RE = /\bAR[A-Z0-9]{8,}\b/g;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
-const NAV_TIMEOUT_MS = 30_000;
-const SETTLE_TIMEOUT_MS = 8_000;
+const NAV_TIMEOUT_MS = 45_000;
+const SETTLE_TIMEOUT_MS = 15_000;
 const VIEWPORT = { width: 1440, height: 960 };
 
 export interface GoogleAdsTransparencyLookupOptions {
@@ -27,6 +46,7 @@ export interface GoogleAdsTransparencyLookupOptions {
   outputDir?: string | null;
   browser?: Browser;
   context?: BrowserContext;
+  signal?: AbortSignal;
 }
 
 export interface GoogleAdsTransparencyLookupResult {
@@ -169,12 +189,16 @@ function dedupeHrefs(hrefs: Array<string | null | undefined>): string[] {
 }
 
 function parseLastShownDateLabel(bodyText: string): string | null {
-  const match = bodyText.match(/Last shown:\s*([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})/);
+  const match = bodyText.match(/Last shown:\s*([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})/i);
   return match?.[1] ?? null;
 }
 
-function normalizeLastShownDate(bodyText: string): string | null {
-  const label = parseLastShownDateLabel(bodyText);
+function parseFirstShownDateLabel(bodyText: string): string | null {
+  const match = bodyText.match(/First shown:\s*([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})/i);
+  return match?.[1] ?? null;
+}
+
+function transparencyDateLabelToIso(label: string | null): string | null {
   if (!label) return null;
   const timestamp = Date.parse(`${label} UTC`);
   if (!Number.isFinite(timestamp)) return null;
@@ -255,6 +279,19 @@ async function clickExactDomainSuggestion(page: Page, searchDomain: string): Pro
   await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
 }
 
+/**
+ * Transparency Center hydrates creative cards after `networkidle`; without this, Playwright often
+ * collects zero `a[href*="/creative/"]` links while the SPA is still rendering (race).
+ */
+async function waitForTransparencyCreativeAnchors(page: Page, maxWaitMs = 20_000): Promise<void> {
+  const deadline = Date.now() + maxWaitMs;
+  const loc = page.locator('a[href*="/creative/"]');
+  while (Date.now() < deadline) {
+    if ((await loc.count()) > 0) return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
 async function captureResultsPageSummary(page: Page): Promise<JsonObject> {
   const bodyText = await page.locator('body').innerText().catch(() => '');
   const adCount = bodyText.match(/(?:~|-)?\d[\d.,KM]*\s+ads/i)?.[0] ?? null;
@@ -304,20 +341,234 @@ async function collectCreativeHrefs(page: Page): Promise<string[]> {
   return dedupeHrefs(hrefs);
 }
 
+const CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS = 12_000;
+const CREATIVE_IMG_WAIT_MS = 22_000;
+const CREATIVE_POST_PAINT_SETTLE_MS = 900;
+/** Ignore degenerate captures (e.g. 1×1 placeholder). */
+const MIN_CREATIVE_PNG_BYTES = 400;
+const CREATIVE_CLIP_PADDING_X = 16;
+const CREATIVE_CLIP_PADDING_Y = 12;
+const MIN_CREATIVE_BOX_WIDTH = 120;
+const MIN_CREATIVE_BOX_HEIGHT = 48;
+const MIN_CREATIVE_BOX_AREA = 8_000;
+const MAX_CREATIVE_BOX_WIDTH_RATIO = 0.88;
+const MAX_CREATIVE_BOX_HEIGHT_RATIO = 0.78;
+const MAX_CREATIVE_BOX_AREA_RATIO = 0.38;
+const MIN_CREATIVE_TEXT_LENGTH = 18;
+
+const SYNDICATED_IMG =
+  'img[src*="googlesyndication.com"], img[src*="tpc.googlesyndication.com"], img[srcset*="googlesyndication"], img[srcset*="tpc.googlesyndication"]';
+
+type ClipBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export interface CreativePreviewCandidate {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  textLength: number;
+  imageCount: number;
+  priority: number;
+}
+
+interface CreativePreviewCandidateBox extends CreativePreviewCandidate {
+  clip: ClipBox;
+}
+
+function pngBufferFromScreenshot(raw: Buffer | Uint8Array): Buffer | null {
+  if (!raw || raw.length < MIN_CREATIVE_PNG_BYTES) return null;
+  return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+}
+
+function isFinitePositive(value: number): boolean {
+  return Number.isFinite(value) && value > 0;
+}
+
+function isFiniteNonNegative(value: number): boolean {
+  return Number.isFinite(value) && value >= 0;
+}
+
+export function clipCreativePreviewBox(
+  box: Pick<CreativePreviewCandidate, 'x' | 'y' | 'width' | 'height'>,
+  viewport = VIEWPORT,
+): ClipBox | null {
+  if (!isFiniteNonNegative(box.x) || !isFiniteNonNegative(box.y)) return null;
+  if (!isFinitePositive(box.width) || !isFinitePositive(box.height)) return null;
+  const x = Math.max(0, Math.floor(box.x - CREATIVE_CLIP_PADDING_X));
+  const y = Math.max(0, Math.floor(box.y - CREATIVE_CLIP_PADDING_Y));
+  const maxX = Math.min(viewport.width, Math.ceil(box.x + box.width + CREATIVE_CLIP_PADDING_X));
+  const maxY = Math.min(viewport.height, Math.ceil(box.y + box.height + CREATIVE_CLIP_PADDING_Y));
+  const width = maxX - x;
+  const height = maxY - y;
+  if (width < 1 || height < 1) return null;
+  return { x, y, width, height };
+}
+
+export function isAcceptableCreativePreviewCandidate(
+  candidate: CreativePreviewCandidate,
+  viewport = VIEWPORT,
+): boolean {
+  if (
+    ![candidate.x, candidate.y, candidate.width, candidate.height, candidate.textLength, candidate.imageCount].every(
+      Number.isFinite,
+    )
+  ) {
+    return false;
+  }
+  if (candidate.width < MIN_CREATIVE_BOX_WIDTH || candidate.height < MIN_CREATIVE_BOX_HEIGHT) return false;
+  if (candidate.width * candidate.height < MIN_CREATIVE_BOX_AREA) return false;
+  if (candidate.width > viewport.width * MAX_CREATIVE_BOX_WIDTH_RATIO) return false;
+  if (candidate.height > viewport.height * MAX_CREATIVE_BOX_HEIGHT_RATIO) return false;
+  if (candidate.width * candidate.height > viewport.width * viewport.height * MAX_CREATIVE_BOX_AREA_RATIO) return false;
+  if (candidate.textLength < MIN_CREATIVE_TEXT_LENGTH && candidate.imageCount < 1) return false;
+  return clipCreativePreviewBox(candidate, viewport) != null;
+}
+
+function rankCreativePreviewCandidate(
+  candidate: Pick<CreativePreviewCandidate, 'width' | 'height' | 'priority' | 'textLength' | 'imageCount'>,
+): number {
+  const area = candidate.width * candidate.height;
+  const textBonus = Math.min(candidate.textLength, 240) * 6;
+  const imageBonus = Math.min(candidate.imageCount, 4) * 150;
+  return area + candidate.priority * 2_000 - textBonus - imageBonus;
+}
+
+export function pickBestCreativePreviewCandidate(
+  candidates: CreativePreviewCandidate[],
+  viewport = VIEWPORT,
+): CreativePreviewCandidateBox | null {
+  let best: CreativePreviewCandidateBox | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    if (!isAcceptableCreativePreviewCandidate(candidate, viewport)) continue;
+    const clip = clipCreativePreviewBox(candidate, viewport);
+    if (!clip) continue;
+    const scoredCandidate: CreativePreviewCandidateBox = { ...candidate, clip };
+    const score = rankCreativePreviewCandidate(scoredCandidate);
+    if (score < bestScore) {
+      best = scoredCandidate;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+async function collectCreativePreviewCandidates(
+  locator: Locator,
+  priority: number,
+  maxMatches: number,
+): Promise<CreativePreviewCandidate[]> {
+  try {
+    await locator.first().waitFor({ state: 'visible', timeout: CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS });
+  } catch {
+    return [];
+  }
+  let count = 0;
+  try {
+    count = await locator.count();
+  } catch {
+    return [];
+  }
+  const candidates: CreativePreviewCandidate[] = [];
+  for (let i = 0; i < Math.min(count, maxMatches); i += 1) {
+    const item = locator.nth(i);
+    try {
+      await item.scrollIntoViewIfNeeded().catch(() => {});
+      const box = await item.boundingBox();
+      if (!box) continue;
+      const { textLength, imageCount } = await item
+        .evaluate((node) => ({
+          textLength: (node.textContent ?? '').replace(/\s+/g, ' ').trim().length,
+          imageCount:
+            node instanceof Element ? node.querySelectorAll('img, picture, video, canvas, svg').length : 0,
+        }))
+        .catch(() => ({ textLength: 0, imageCount: 0 }));
+      candidates.push({
+        x: box.x,
+        y: box.y,
+        width: box.width,
+        height: box.height,
+        textLength,
+        imageCount,
+        priority,
+      });
+    } catch {
+      // Keep scanning other candidates if one node is detached or offscreen.
+    }
+  }
+  return candidates;
+}
+
+/**
+ * Element screenshot of the ad preview on a creative detail page.
+ * Waits for syndicated assets, scrolls targets into view (ECS/Xvfb can be slow),
+ * then returns null if we cannot identify a tight ad-card crop.
+ */
+async function screenshotCreativePreview(page: Page): Promise<Buffer | null> {
+  await page.locator(SYNDICATED_IMG).first().waitFor({ state: 'visible', timeout: CREATIVE_IMG_WAIT_MS }).catch(() => {});
+  await new Promise((r) => setTimeout(r, CREATIVE_POST_PAINT_SETTLE_MS));
+
+  const viewport = page.viewportSize() ?? VIEWPORT;
+  const locatorAttempts: Array<{ locator: Locator; priority: number; maxMatches: number }> = [
+    { locator: page.locator('html-renderer > *'), priority: 0, maxMatches: 8 },
+    { locator: page.locator('html-renderer > * > *'), priority: 1, maxMatches: 12 },
+    { locator: page.locator('[class*="creative-container"] > *'), priority: 2, maxMatches: 8 },
+    { locator: page.locator('creative > *'), priority: 3, maxMatches: 8 },
+    { locator: page.locator('html-renderer'), priority: 4, maxMatches: 2 },
+    { locator: page.locator('[class*="creative-container"]'), priority: 5, maxMatches: 3 },
+    { locator: page.locator('creative'), priority: 6, maxMatches: 2 },
+    { locator: page.locator(SYNDICATED_IMG), priority: 7, maxMatches: 4 },
+  ];
+  const candidates = (
+    await Promise.all(
+      locatorAttempts.map(({ locator, priority, maxMatches }) =>
+        collectCreativePreviewCandidates(locator, priority, maxMatches),
+      ),
+    )
+  ).flat();
+  const best = pickBestCreativePreviewCandidate(candidates, viewport);
+  if (!best) return null;
+
+  try {
+    const raw = await page.screenshot({
+      type: 'png',
+      clip: best.clip,
+      animations: 'disabled',
+      timeout: CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS,
+    });
+    return pngBufferFromScreenshot(raw);
+  } catch {
+    return null;
+  }
+}
+
 async function captureTopCreativeLastShown(
   page: Page,
   creativeHref: string | null,
   region: string,
 ): Promise<{
   latestAdLastShownAt: string | null;
+  firstAdShownAt: string | null;
   creativeDetailUrl: string | null;
   creativeSummary: JsonObject | null;
+  displayHeadline: string;
+  displayBody: string;
+  previewPng: Buffer | null;
 }> {
   if (!creativeHref) {
     return {
       latestAdLastShownAt: null,
+      firstAdShownAt: null,
       creativeDetailUrl: null,
       creativeSummary: null,
+      displayHeadline: '',
+      displayBody: '',
+      previewPng: null,
     };
   }
   const creativeUrl = creativeHref.startsWith('http')
@@ -326,26 +577,45 @@ async function captureTopCreativeLastShown(
   try {
     await page.goto(creativeUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
     await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
+    await page.locator(SYNDICATED_IMG).first().waitFor({ state: 'visible', timeout: CREATIVE_IMG_WAIT_MS }).catch(() => {});
+    await new Promise((r) => setTimeout(r, CREATIVE_POST_PAINT_SETTLE_MS));
     const bodyText = await page.locator('body').innerText().catch(() => '');
     const lastShownLabel = parseLastShownDateLabel(bodyText);
+    const firstShownLabel = parseFirstShownDateLabel(bodyText);
+    const { headline: displayHeadline, body: displayBody } = await extractCreativeDisplayFromCreativePage(
+      page,
+      bodyText,
+    );
+    const previewPng = await screenshotCreativePreview(page);
     return {
-      latestAdLastShownAt: normalizeLastShownDate(bodyText),
+      latestAdLastShownAt: transparencyDateLabelToIso(lastShownLabel),
+      firstAdShownAt: transparencyDateLabelToIso(firstShownLabel),
       creativeDetailUrl: creativeUrl,
       creativeSummary: {
         page_title: trimText(await page.title().catch(() => ''), 120),
         body_snippet: trimText(bodyText, 360),
         last_shown_label: lastShownLabel,
+        first_shown_label: firstShownLabel,
         region,
+        display_headline: displayHeadline,
+        display_body: displayBody,
       },
+      displayHeadline,
+      displayBody,
+      previewPng,
     };
   } catch (error) {
     return {
       latestAdLastShownAt: null,
+      firstAdShownAt: null,
       creativeDetailUrl: creativeUrl,
       creativeSummary: {
         error: error instanceof Error ? error.message : String(error),
         region,
       },
+      displayHeadline: '',
+      displayBody: '',
+      previewPng: null,
     };
   }
 }
@@ -414,6 +684,7 @@ export async function runGoogleAdsTransparencyLookup(
     }
 
     await clickExactDomainSuggestion(page, searchDomain);
+    await waitForTransparencyCreativeAnchors(page);
     const resultsScreenshot = await maybeSaveScreenshot(page, options.outputDir ?? null, `results-${searchDomain}.png`);
     const resultsSummary = await captureResultsPageSummary(page);
     const expandedResults = await expandResultsToFullCreativeList(page);
@@ -502,30 +773,44 @@ export async function runGoogleAdsTransparencyLookup(
   }
 }
 
-export interface TransparencyCreativeSampleRow {
-  sourceUrl: string;
-  headline: string;
-  body: string;
-}
+const MIN_CREATIVES_SCANNED_BEFORE_EARLY_EXIT = 4;
+const TARGET_VALID_CREATIVES_FOR_EARLY_EXIT = 2;
+const MAX_CREATIVES_SCANNED_FOR_RANK_DATES = 8;
+
+export type GoogleAdsTransparencyAuditSamplesOptions = GoogleAdsTransparencyLookupOptions & {
+  maxSamples?: number;
+  /** Correlates `transparency_audit_phase_timing` logs with `flux_async_jobs.id`. */
+  jobId?: string;
+};
 
 /** One browser session: Transparency search → creative count + up to `maxSamples` creative detail excerpts. */
 export async function runGoogleAdsTransparencyAuditSamples(
-  options: GoogleAdsTransparencyLookupOptions & { maxSamples?: number },
+  options: GoogleAdsTransparencyAuditSamplesOptions,
 ): Promise<{
   searchDomain: string;
   creativeCount: number;
   latestAdLastShownAt: string | null;
+  longestAdRunDays: number | null;
   samples: TransparencyCreativeSampleRow[];
   outcome: 'ok' | 'transparency_no_match' | 'transparency_zero_creatives' | 'playwright_error';
   message?: string;
 }> {
   const maxSamples = Math.min(3, Math.max(1, options.maxSamples ?? 2));
+  const jobId = typeof options.jobId === 'string' && options.jobId.trim() ? options.jobId.trim() : undefined;
   const searchDomain = normalizeGoogleAdsSearchDomain(options.domain);
   if (!searchDomain) {
+    workerJsonLog('transparency_audit_phase_timing', {
+      ...(jobId ? { jobId } : {}),
+      searchDomain: '',
+      outcome: 'invalid_domain',
+      wallMs: 0,
+      phaseMs: {},
+    });
     return {
       searchDomain: '',
       creativeCount: 0,
       latestAdLastShownAt: null,
+      longestAdRunDays: null,
       samples: [],
       outcome: 'playwright_error',
       message: 'Invalid domain',
@@ -534,6 +819,7 @@ export async function runGoogleAdsTransparencyAuditSamples(
   const region = options.region?.trim() || 'US';
   const timeoutMs = Math.max(5_000, Number(options.timeoutMs) || 15_000);
   const slowMoMs = Math.max(0, Number(options.slowMoMs) || 0);
+  const signal = options.signal;
   const createdBrowser = !options.browser;
   const browser =
     options.browser ??
@@ -553,68 +839,185 @@ export async function runGoogleAdsTransparencyAuditSamples(
   const page = await context.newPage();
   page.setDefaultTimeout(NAV_TIMEOUT_MS);
   const samples: TransparencyCreativeSampleRow[] = [];
+  const auditWallStart = Date.now();
+  let mark = auditWallStart;
+  const phaseMs: Record<string, number> = {};
+  let attemptedCreativeCount = 0;
+  let validCreativeCount = 0;
+  let creativeStopReason: 'min_reached_and_enough_valid' | 'max_reached' | 'exhausted_creatives' | null = null;
+  const timeoutReason =
+    typeof signal?.reason === 'string' && signal.reason.trim().length > 0
+      ? signal.reason.trim()
+      : `transparency_${searchDomain}_timeout`;
+  const throwIfAborted = () => {
+    if (signal?.aborted) {
+      throw new Error(timeoutReason);
+    }
+  };
+  const bump = (label: string) => {
+    const n = Date.now();
+    phaseMs[label] = n - mark;
+    mark = n;
+  };
+  const logPhases = (outcome: string, extra: Record<string, unknown> = {}) => {
+    workerJsonLog('transparency_audit_phase_timing', {
+      ...(jobId ? { jobId } : {}),
+      searchDomain,
+      outcome,
+      wallMs: Date.now() - auditWallStart,
+      phaseMs: { ...phaseMs },
+      attemptedCreativeCount,
+      validCreativeCount,
+      creativeStopReason,
+      ...extra,
+    });
+  };
+  const onAbort = () => {
+    void page.close().catch(() => {});
+    if (createdContext) void context.close().catch(() => {});
+    if (createdBrowser) void browser.close().catch(() => {});
+  };
+  if (signal) {
+    if (signal.aborted) onAbort();
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
   try {
+    throwIfAborted();
     await openSearchPage(page, region);
+    throwIfAborted();
+    bump('open_home');
     const { parsedBody } = await fetchSuggestions(page, searchDomain, timeoutMs);
+    throwIfAborted();
+    bump('fetch_suggestions');
     const domainSuggestions = dedupeDomainSuggestions(collectDomainSuggestions(parsedBody));
     const exactSuggestion = domainSuggestions.find((candidate) => candidate.domain === searchDomain) ?? null;
     if (!exactSuggestion) {
+      logPhases('transparency_no_match', { suggestionCount: domainSuggestions.length });
       return {
         searchDomain,
         creativeCount: 0,
         latestAdLastShownAt: null,
+        longestAdRunDays: null,
         samples: [],
         outcome: 'transparency_no_match',
       };
     }
     await clickExactDomainSuggestion(page, searchDomain);
+    throwIfAborted();
+    bump('click_domain_suggestion');
+    await waitForTransparencyCreativeAnchors(page);
+    throwIfAborted();
+    bump('wait_creative_anchors');
     await expandResultsToFullCreativeList(page);
+    throwIfAborted();
+    bump('expand_results_list');
     const creativeHrefs = dedupeHrefs(await collectCreativeHrefs(page));
+    throwIfAborted();
+    bump('collect_creative_hrefs');
     const creativeCount = creativeHrefs.length;
     if (creativeCount === 0) {
+      logPhases('transparency_zero_creatives', { creativeLinkCount: 0 });
       return {
         searchDomain,
         creativeCount: 0,
         latestAdLastShownAt: null,
+        longestAdRunDays: null,
         samples: [],
         outcome: 'transparency_zero_creatives',
       };
     }
-    const firstCap = await captureTopCreativeLastShown(page, creativeHrefs[0] ?? null, region);
-    const latestAdLastShownAt = firstCap.latestAdLastShownAt;
-    for (const href of creativeHrefs.slice(0, maxSamples)) {
+    const scanN = Math.min(MAX_CREATIVES_SCANNED_FOR_RANK_DATES, creativeHrefs.length);
+    let latestAdLastShownAt: string | null = null;
+    let longestAdRunDays: number | null = null;
+    const scanned: TransparencyScannedCreative[] = [];
+    const creativeLoopStart = Date.now();
+    for (let i = 0; i < scanN; i += 1) {
+      const href = creativeHrefs[i] ?? null;
+      if (!href) break;
+      attemptedCreativeCount += 1;
       const cap = await captureTopCreativeLastShown(page, href, region);
+      throwIfAborted();
+      const last = cap.latestAdLastShownAt;
+      if (last) {
+        if (!latestAdLastShownAt || Date.parse(`${last}T12:00:00Z`) > Date.parse(`${latestAdLastShownAt}T12:00:00Z`)) {
+          latestAdLastShownAt = last;
+        }
+      }
+      const first = cap.firstAdShownAt;
+      if (first && last) {
+        const run = calendarRunDaysBetween(first, last);
+        if (run != null && (longestAdRunDays == null || run > longestAdRunDays)) {
+          longestAdRunDays = run;
+        }
+      }
       const url =
         cap.creativeDetailUrl ?? (href.startsWith('http') ? href : `https://adstransparency.google.com${href}`);
-      const bodyText =
-        cap.creativeSummary && typeof cap.creativeSummary.body_snippet === 'string'
-          ? cap.creativeSummary.body_snippet
-          : '';
-      const firstLine = bodyText.split('\n').map((l) => l.trim()).filter(Boolean)[0] ?? bodyText.slice(0, 120);
-      samples.push({
+      const headline = ((cap.displayHeadline || '').trim() || TRANSPARENCY_CREATIVE_FALLBACK_HEADLINE).slice(0, 200);
+      const body = ((cap.displayBody || '').trim() || TRANSPARENCY_CREATIVE_FALLBACK_BODY).slice(0, 400);
+      let runDays: number | null = null;
+      if (first && last) {
+        runDays = calendarRunDaysBetween(first, last);
+      }
+      scanned.push({
         sourceUrl: url,
-        headline: firstLine.slice(0, 200),
-        body: bodyText.slice(0, 400),
+        headline,
+        body,
+        latestAdLastShownAt: last,
+        firstAdShownAt: first,
+        runDays,
+        ...(cap.previewPng && cap.previewPng.length > 0 ? { previewPng: cap.previewPng } : {}),
       });
+      validCreativeCount += 1;
+      if (
+        attemptedCreativeCount >= MIN_CREATIVES_SCANNED_BEFORE_EARLY_EXIT &&
+        validCreativeCount >= TARGET_VALID_CREATIVES_FOR_EARLY_EXIT &&
+        i + 1 < scanN
+      ) {
+        creativeStopReason = 'min_reached_and_enough_valid';
+        break;
+      }
     }
+    if (!creativeStopReason) {
+      creativeStopReason = creativeHrefs.length > MAX_CREATIVES_SCANNED_FOR_RANK_DATES ? 'max_reached' : 'exhausted_creatives';
+    }
+    const creativeDetailEnd = Date.now();
+    phaseMs.creative_detail_visits_ms = creativeDetailEnd - creativeLoopStart;
+    mark = creativeDetailEnd;
+    const picked = pickSamplesForDisplay(scanned, latestAdLastShownAt, maxSamples);
+    samples.push(...picked);
+    bump('pick_samples');
+    throwIfAborted();
+    logPhases('ok', {
+      creativeCount,
+      creativeDetailVisitCount: attemptedCreativeCount,
+      publishedSampleCount: samples.length,
+    });
     return {
       searchDomain,
       creativeCount,
       latestAdLastShownAt,
+      longestAdRunDays,
       samples,
       outcome: 'ok',
     };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    if (signal?.aborted || message.endsWith('_timeout')) {
+      logPhases('aborted_after_timeout', { message: timeoutReason.slice(0, 500) });
+      throw new Error(timeoutReason);
+    }
+    logPhases('playwright_error', { message: message.slice(0, 500) });
     return {
       searchDomain,
       creativeCount: 0,
       latestAdLastShownAt: null,
+      longestAdRunDays: null,
       samples: [],
       outcome: 'playwright_error',
       message,
     };
   } finally {
+    if (signal) signal.removeEventListener('abort', onAbort);
     await page.close().catch(() => {});
     if (createdContext) await context.close().catch(() => {});
     if (createdBrowser) await browser.close().catch(() => {});

@@ -46,12 +46,12 @@ const TRANSPARENCY_PREFIX = 'https://adstransparency.google.com/';
 
 function competitorAuditBlockPublishable(block: CompetitorAdAuditBlock): boolean {
   const p = block.props;
-  if (p.status !== 'ready' || p.competitors.length !== 3) return false;
+  if (p.status !== 'ready' || p.competitors.length < 1 || p.competitors.length > 3) return false;
   for (const row of p.competitors) {
     if (!row.name?.trim()) return false;
     if (!row.mapImageUrl?.trim() || !HTTP_PREFIX.test(row.mapImageUrl.trim())) return false;
     if (!row.adsSummary?.trim()) return false;
-    if (!Array.isArray(row.examples) || row.examples.length !== 2) return false;
+    if (!Array.isArray(row.examples) || row.examples.length < 1 || row.examples.length > 2) return false;
     for (const ex of row.examples) {
       if (!ex.headline?.trim() || !ex.body?.trim() || !ex.sourceUrl?.trim()) return false;
       const u = ex.sourceUrl.trim();
@@ -62,7 +62,7 @@ function competitorAuditBlockPublishable(block: CompetitorAdAuditBlock): boolean
 }
 
 /**
- * True when the page may go **live**: renderable, and every `competitor_ad_audit` block is audit-complete per plan.
+ * True when the page may go **live**: renderable, and every `competitor_ad_audit` block is audit-ready with 1–3 competitor rows.
  */
 export function canPublishFluxProspectPage(raw: unknown): boolean {
   if (!hasRenderableFluxPageConfig(raw)) return false;

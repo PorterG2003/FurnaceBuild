@@ -2,20 +2,19 @@ import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { placesSearchText } from '@furnace/google-places';
 import { normalizeGoogleAdsSearchDomain } from '@furnace/registry-server';
-import {
-  runGoogleAdsTransparencyAuditSamples,
-  type TransparencyCreativeSampleRow,
-} from './transparencyLookup.js';
-import { rankFluxCompetitorDomains, type FluxCompetitorScoredDomain } from '../../../../lib/flux/fluxCompetitorAuditRank';
-import {
-  buildFluxCompetitorAuditFailureMessage,
-  type FluxAuditDomainResultRow,
-} from '../../../../lib/flux/fluxCompetitorAuditFailureMessage';
+import { runGoogleAdsTransparencyAuditSamples } from './transparencyLookup.js';
+import fluxCompetitorAuditRank from '../../../../lib/flux/fluxCompetitorAuditRank';
+import type { FluxCompetitorScoredDomain } from '../../../../lib/flux/fluxCompetitorAuditRank';
+import fluxCompetitorAuditFailureMessage from '../../../../lib/flux/fluxCompetitorAuditFailureMessage';
+import type { FluxAuditDomainResultRow } from '../../../../lib/flux/fluxCompetitorAuditFailureMessage';
+import { workerJsonLog } from './workerJsonLog.js';
 
 const REGION = 'US';
 const PLACES_RADIUS_M = 20_000;
 const MAX_TRANSPARENCY = 12;
-const DOMAIN_TIMEOUT_MS = 120_000;
+const MIN_PLACES_SCANNED_BEFORE_EARLY_EXIT = 6;
+const TARGET_OK_DOMAINS_FOR_EARLY_EXIT = 3;
+const DOMAIN_TIMEOUT_MS = 300_000;
 const BUCKET = 'flux-competitor-map';
 
 type PageConfig = { blocks: Array<Record<string, unknown>>; [k: string]: unknown };
@@ -64,26 +63,55 @@ function parsePlacesSearchBody(json: unknown): GooglePlaceRow[] {
   return places as GooglePlaceRow[];
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error(`${label}_timeout`)), ms);
-    }),
-  ]);
+async function withAbortTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  const controller = new AbortController();
+  const timeoutMessage = `${label}_timeout`;
+  const timer = setTimeout(() => controller.abort(timeoutMessage), ms);
+  try {
+    const result = await run(controller.signal);
+    if (controller.signal.aborted) {
+      throw new Error(timeoutMessage);
+    }
+    return result;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(timeoutMessage);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-function adsSummaryFromAudit(
-  creativeCount: number,
-  latest: string | null,
-  firstSample?: TransparencyCreativeSampleRow,
-): string {
-  const datePart = latest && latest.trim() ? latest.trim() : 'unknown';
-  const base = `~${creativeCount} ads in Google’s Transparency Center; most recent creative shown ${datePart}.`;
-  if (firstSample?.headline?.trim()) {
-    return `${base} Sample: ${firstSample.headline.trim().slice(0, 140)}`;
+/** Supabase `StorageError` often omits `message`; never return an empty string (UI showed "Storage upload failed: <none>"). */
+function describeSupabaseStorageError(err: unknown): string {
+  if (err == null) return '(null)';
+  if (typeof err === 'string') return err.trim() || '(empty string)';
+  if (typeof err !== 'object') return String(err);
+  const o = err as Record<string, unknown>;
+  const parts: string[] = [];
+  for (const key of ['message', 'error', 'statusCode', 'status', 'name', 'code'] as const) {
+    const v = o[key];
+    if (v !== undefined && v !== null && String(v).trim().length > 0) {
+      parts.push(`${key}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+    }
   }
-  return base;
+  try {
+    const json = JSON.stringify(err, Object.getOwnPropertyNames(o));
+    if (parts.length > 0) return `${parts.join('; ')} | ${json}`;
+    return json.length > 2 ? json : '(object with no enumerable detail)';
+  } catch {
+    return parts.join('; ') || '(unserializable error object)';
+  }
+}
+
+function adsSummaryFromAudit(creativeCount: number, latest: string | null): string {
+  const datePart = latest && latest.trim() ? latest.trim() : 'unknown';
+  return `~${creativeCount} ads in Google’s Transparency Center; most recent creative shown ${datePart}.`;
 }
 
 function staticMapUrl(lat: number, lng: number, apiKey: string): string {
@@ -99,10 +127,23 @@ function staticMapUrl(lat: number, lng: number, apiKey: string): string {
   return `https://maps.googleapis.com/maps/api/staticmap?${q.toString()}`;
 }
 
+/** Log-safe description of the Static Map request (never includes the API key). */
+function staticMapRequestMeta(lat: number, lng: number): Record<string, string | number> {
+  return {
+    endpoint: 'maps.googleapis.com/maps/api/staticmap',
+    center_lat: lat,
+    center_lng: lng,
+    zoom: 14,
+    size: '400x400',
+    scale: 2,
+    maptype: 'roadmap',
+  };
+}
+
 export async function runFluxCompetitorAuditJob(params: {
   jobId: string;
   awsRegion: string;
-}): Promise<void> {
+}): Promise<boolean> {
   const awsRegion = params.awsRegion || process.env.AWS_REGION || 'us-west-2';
   const fluxUrl = process.env.FLUX_SUPABASE_URL?.trim();
   const fluxKeyPath = process.env.FLUX_SUPABASE_SECRET_KEY_PARAM_PATH?.trim();
@@ -143,6 +184,11 @@ export async function runFluxCompetitorAuditJob(params: {
   const auditRows: FluxAuditDomainResultRow[] = [];
 
   const failJob = async (msg: string, resultExtra?: Record<string, unknown>) => {
+    workerJsonLog('flux_competitor_audit_fail_job', {
+      jobId: params.jobId,
+      message: msg.slice(0, 2000),
+      resultExtraKeys: resultExtra ? Object.keys(resultExtra) : [],
+    });
     const { data: page } = await flux.from('flux_prospect_pages').select('page_config').eq('id', pageId).maybeSingle();
     const cfg = (page?.page_config ?? {}) as PageConfig;
     const blocks = Array.isArray(cfg.blocks) ? [...cfg.blocks] : [];
@@ -154,7 +200,8 @@ export async function runFluxCompetitorAuditJob(params: {
           ...(typeof b.props === 'object' && b.props ? b.props : {}),
           heading: typeof b.props?.heading === 'string' ? b.props.heading : 'Competitor ad audit',
           status: 'error',
-          errorMessage: msg.slice(0, 500),
+          errorMessage: msg.slice(0, 12_000),
+          lastAuditDomainReport: undefined,
           competitors: [],
         };
         await flux.from('flux_prospect_pages').update({ page_config: cfg as never }).eq('id', pageId);
@@ -164,7 +211,7 @@ export async function runFluxCompetitorAuditJob(params: {
       .from('flux_async_jobs')
       .update({
         status: 'failed',
-        error_message: msg.slice(0, 500),
+        error_message: msg.slice(0, 12_000),
         finished_at: new Date().toISOString(),
         result: { audit_domains: auditRows, ...(resultExtra ?? {}) } as never,
       })
@@ -179,7 +226,7 @@ export async function runFluxCompetitorAuditJob(params: {
       .maybeSingle();
     if (pageErr || !page) {
       await failJob(pageErr?.message || 'Page not found');
-      return;
+      return false;
     }
     const cfg = (page.page_config ?? {}) as PageConfig;
     const blocks = Array.isArray(cfg.blocks) ? cfg.blocks : [];
@@ -188,7 +235,7 @@ export async function runFluxCompetitorAuditJob(params: {
       | undefined;
     if (!block || block.type !== 'competitor_ad_audit') {
       await failJob('Block removed before audit finished');
-      return;
+      return false;
     }
 
     const { data: prospect, error: prErr } = await flux
@@ -198,14 +245,14 @@ export async function runFluxCompetitorAuditJob(params: {
       .maybeSingle();
     if (prErr || !prospect) {
       await failJob(prErr?.message || 'Prospect not found');
-      return;
+      return false;
     }
     const sa = prospect.service_area as Record<string, unknown> | null;
     const lat = typeof sa?.latitude === 'number' ? sa.latitude : Number(sa?.latitude);
     const lng = typeof sa?.longitude === 'number' ? sa.longitude : Number(sa?.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       await failJob('Prospect service area (latitude/longitude) is required.');
-      return;
+      return false;
     }
 
     const industry = typeof prospect.industry === 'string' ? prospect.industry.trim() : '';
@@ -218,7 +265,7 @@ export async function runFluxCompetitorAuditJob(params: {
     });
     if (!placesRes.ok) {
       await failJob(placesRes.message || 'Places search failed');
-      return;
+      return false;
     }
     const placeList = parsePlacesSearchBody(placesRes.json);
     const prospectDomains = new Set<string>();
@@ -268,22 +315,30 @@ export async function runFluxCompetitorAuditJob(params: {
     const scored: FluxCompetitorScoredDomain[] = [];
     type AuditOk = Awaited<ReturnType<typeof runGoogleAdsTransparencyAuditSamples>>;
     const auditByDomain = new Map<string, AuditOk>();
+    let attemptedPlacesCount = 0;
+    let okDomainCount = 0;
+    let placesStopReason: 'min_reached_and_enough_ok' | 'max_reached' | 'exhausted_candidates' | null = null;
 
-    for (const c of candidates) {
+    for (let ci = 0; ci < candidates.length; ci += 1) {
+      const c = candidates[ci]!;
       const row: FluxAuditDomainResultRow = {
         domain: c.domain,
         outcome: 'ok',
         creative_count: null,
         message: undefined,
       };
+      const domainWallStart = Date.now();
       try {
-        const audit = await withTimeout(
-          runGoogleAdsTransparencyAuditSamples({
+        const audit = await withAbortTimeout(
+          (signal) =>
+            runGoogleAdsTransparencyAuditSamples({
             domain: c.domain,
             headless: true,
             region: REGION,
-            timeoutMs: 25_000,
+            timeoutMs: 50_000,
             maxSamples: 2,
+            jobId: params.jobId,
+            signal,
           }),
           DOMAIN_TIMEOUT_MS,
           `transparency_${c.domain}`,
@@ -301,11 +356,14 @@ export async function runFluxCompetitorAuditJob(params: {
           row.outcome = 'ok';
           row.creative_count = audit.creativeCount;
           auditByDomain.set(c.domain, audit);
+          okDomainCount += 1;
           scored.push({
             domain: c.domain,
             placeIndex: c.placeIndex,
             creativeCount: audit.creativeCount,
             latestAdLastShownAt: audit.latestAdLastShownAt,
+            distanceMeters: fluxCompetitorAuditRank.haversineDistanceMeters(lat, lng, c.lat, c.lng),
+            longestAdRunDays: audit.longestAdRunDays ?? null,
           });
         } else {
           row.outcome = 'transparency_zero_creatives';
@@ -321,18 +379,50 @@ export async function runFluxCompetitorAuditJob(params: {
           row.message = msg.slice(0, 200);
         }
       }
+      attemptedPlacesCount += 1;
+      workerJsonLog('transparency_domain_audit_wall_ms', {
+        jobId: params.jobId,
+        domain: c.domain,
+        wallMs: Date.now() - domainWallStart,
+        outcome: row.outcome,
+        creativeCount: row.creative_count ?? null,
+        message: row.message?.slice(0, 200) ?? null,
+        attemptedPlacesCount,
+        okDomainCount,
+      });
       auditRows.push(row);
       await flux
         .from('flux_async_jobs')
         .update({ result: { audit_domains: auditRows } as never })
         .eq('id', params.jobId);
+
+      if (
+        attemptedPlacesCount >= MIN_PLACES_SCANNED_BEFORE_EARLY_EXIT &&
+        okDomainCount >= TARGET_OK_DOMAINS_FOR_EARLY_EXIT &&
+        ci + 1 < candidates.length
+      ) {
+        placesStopReason = 'min_reached_and_enough_ok';
+        break;
+      }
     }
 
-    const ranked = rankFluxCompetitorDomains(scored);
+    if (!placesStopReason) {
+      placesStopReason =
+        candidates.length >= MAX_TRANSPARENCY && attemptedPlacesCount >= candidates.length
+          ? 'max_reached'
+          : 'exhausted_candidates';
+    }
+
+    const ranked = fluxCompetitorAuditRank.rankFluxCompetitorDomains(scored);
     const winners = ranked.slice(0, 3);
-    if (winners.length < 3) {
-      await failJob(buildFluxCompetitorAuditFailureMessage(auditRows), { ranked_count: winners.length });
-      return;
+    if (winners.length < 1) {
+      await failJob(fluxCompetitorAuditFailureMessage.buildFluxCompetitorAuditFailureMessage(auditRows), {
+        ranked_count: 0,
+        attempted_places_count: attemptedPlacesCount,
+        ok_domain_count: okDomainCount,
+        places_stop_reason: placesStopReason,
+      });
+      return false;
     }
 
     const accountId = page.account_id as string;
@@ -352,18 +442,62 @@ export async function runFluxCompetitorAuditJob(params: {
       const mapUrl = staticMapUrl(clat, clng, googlePlacesKey);
       const mapRes = await fetch(mapUrl);
       if (!mapRes.ok) {
-        await failJob(`Static map fetch failed (${mapRes.status}) for ${w.domain}`);
-        return;
+        let bodyPreview = '';
+        try {
+          bodyPreview = (await mapRes.text()).slice(0, 8000);
+        } catch (readErr) {
+          bodyPreview = readErr instanceof Error ? readErr.message : 'unknown_read_error';
+        }
+        const contentType = mapRes.headers.get('content-type');
+        workerJsonLog('static_map_fetch_failed', {
+          jobId: params.jobId,
+          domain: w.domain,
+          winnerIndex: wi,
+          httpStatus: mapRes.status,
+          httpStatusText: mapRes.statusText,
+          contentType,
+          request: staticMapRequestMeta(clat, clng),
+          responseBodyPreview: bodyPreview.slice(0, 4000),
+        });
+        await failJob(`Static map fetch failed (${mapRes.status}) for ${w.domain}`, {
+          static_map_fetch: {
+            status: mapRes.status,
+            statusText: mapRes.statusText,
+            content_type: contentType,
+            body_preview: bodyPreview.slice(0, 4000),
+            domain: w.domain,
+            winner_index: wi,
+            center_lat: clat,
+            center_lng: clng,
+          },
+        });
+        return false;
       }
       const buf = Buffer.from(await mapRes.arrayBuffer());
       const path = `${accountId}/${pageId}/${blockId}/map-${wi}.png`;
-      const { error: upErr } = await flux.storage.from(BUCKET).upload(path, buf, {
+      const { data: uploadData, error: upErr } = await flux.storage.from(BUCKET).upload(path, buf, {
         contentType: 'image/png',
         upsert: true,
       });
       if (upErr) {
-        await failJob(`Storage upload failed: ${upErr.message}`);
-        return;
+        const detail = describeSupabaseStorageError(upErr);
+        workerJsonLog('storage_upload_failed', {
+          jobId: params.jobId,
+          bucket: BUCKET,
+          objectPath: path,
+          byteLength: buf.length,
+          detail,
+          uploadData:
+            uploadData == null
+              ? null
+              : typeof uploadData === 'object'
+                ? JSON.stringify(uploadData)
+                : String(uploadData),
+        });
+        await failJob(`Storage upload failed: ${detail}`, {
+          storage_upload: { bucket: BUCKET, path, byte_length: buf.length, detail },
+        });
+        return false;
       }
       const pub = flux.storage.from(BUCKET).getPublicUrl(path);
       const publicUrl = pub.data.publicUrl;
@@ -371,24 +505,65 @@ export async function runFluxCompetitorAuditJob(params: {
       const audit = auditByDomain.get(w.domain);
       if (!audit || audit.outcome !== 'ok') {
         await failJob(`Missing audit data for winner ${w.domain}`);
-        return;
+        return false;
       }
-      let samples = audit.samples.slice(0, 2);
-      if (samples.length === 1) {
-        samples = [...samples, samples[0]];
+      const samples = audit.samples.slice(0, 2);
+      const examples: Array<{ headline: string; body: string; sourceUrl: string; imageUrl?: string }> = [];
+      for (let j = 0; j < samples.length; j += 1) {
+        const s = samples[j];
+        const headline = (s.headline || s.body.slice(0, 80) || 'Ad creative').slice(0, 200);
+        const body = s.body.slice(0, 400);
+        const sourceUrl = s.sourceUrl;
+        let imageUrl: string | undefined;
+        const preview = s.previewPng;
+        const uploadBuf =
+          preview && preview.length > 0
+            ? Buffer.isBuffer(preview)
+              ? preview
+              : Buffer.from(preview)
+            : null;
+        if (uploadBuf) {
+          const creativePath = `${accountId}/${pageId}/${blockId}/creative-${wi}-${j}.png`;
+          const { data: creativeUploadData, error: creativeUpErr } = await flux.storage
+            .from(BUCKET)
+            .upload(creativePath, uploadBuf, { contentType: 'image/png', upsert: true });
+          if (creativeUpErr) {
+            workerJsonLog('creative_preview_upload_failed', {
+              jobId: params.jobId,
+              bucket: BUCKET,
+              objectPath: creativePath,
+              byteLength: uploadBuf.length,
+              domain: w.domain,
+              winnerIndex: wi,
+              sampleIndex: j,
+              detail: describeSupabaseStorageError(creativeUpErr),
+              uploadData:
+                creativeUploadData == null
+                  ? null
+                  : typeof creativeUploadData === 'object'
+                    ? JSON.stringify(creativeUploadData)
+                    : String(creativeUploadData),
+            });
+          } else {
+            imageUrl = flux.storage.from(BUCKET).getPublicUrl(creativePath).data.publicUrl;
+          }
+        } else {
+          workerJsonLog('creative_preview_skipped_no_png', {
+            jobId: params.jobId,
+            domain: w.domain,
+            winnerIndex: wi,
+            sampleIndex: j,
+            hadPreviewField: preview != null,
+            previewByteLength: preview && typeof preview.length === 'number' ? preview.length : 0,
+            sourceUrl: sourceUrl.slice(0, 200),
+          });
+        }
+        examples.push({ headline, body, sourceUrl, ...(imageUrl ? { imageUrl } : {}) });
       }
-      const examples = samples.map((s) => ({
-        headline: (s.headline || s.body.slice(0, 80) || 'Ad creative').slice(0, 200),
-        body: s.body.slice(0, 400),
-        sourceUrl: s.sourceUrl,
-      }));
       competitorRows.push({
         name,
         mapImageUrl: publicUrl,
-        adsSummary: adsSummaryFromAudit(audit.creativeCount, audit.latestAdLastShownAt, audit.samples[0]).slice(
-          0,
-          320,
-        ),
+        adsSummary: adsSummaryFromAudit(audit.creativeCount, audit.latestAdLastShownAt).slice(0, 320),
         examples,
       });
 
@@ -411,6 +586,7 @@ export async function runFluxCompetitorAuditJob(params: {
           status: 'ready',
           errorMessage: undefined,
           lastAuditAt: new Date().toISOString(),
+          lastAuditDomainReport: undefined,
           competitors: competitorRows,
         },
       };
@@ -430,8 +606,27 @@ export async function runFluxCompetitorAuditJob(params: {
         result: { audit_domains: auditRows } as never,
       })
       .eq('id', params.jobId);
+
+    const outcomeCounts: Record<string, number> = {};
+    for (const r of auditRows) {
+      const k = r.outcome ?? 'unknown';
+      outcomeCounts[k] = (outcomeCounts[k] ?? 0) + 1;
+    }
+    workerJsonLog('flux_competitor_audit_succeeded', {
+      jobId: params.jobId,
+      placesCandidateCount: candidates.length,
+      attemptedPlacesCount,
+      okDomainCount,
+      placesStopReason,
+      transparencyScoredOkCount: scored.length,
+      publishedWinnerCount: winners.length,
+      winnerDomains: winners.map((x) => x.domain),
+      auditOutcomeCounts: outcomeCounts,
+    });
+    return true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await failJob(msg);
+    return false;
   }
 }

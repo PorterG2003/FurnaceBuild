@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { View, Text, Pressable, Platform } from 'react-native';
+import { View, Text, Pressable, Platform, type StyleProp, type ViewStyle } from 'react-native';
 import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon } from 'react-native-heroicons/outline';
 import { PopupPortal } from '@/components/ui/PopupPortal';
 
@@ -12,6 +12,9 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+/** Min height for the trigger row (align with paired text fields, e.g. OOO modal). */
+export const DATE_INPUT_TRIGGER_MIN_HEIGHT = 38;
 
 function parseYMD(value: string): { year: number; month: number; day: number } | null {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -218,9 +221,20 @@ interface DateInputProps {
   max?: string;
   disabled?: boolean;
   placeholder?: string;
+  /** Merged onto the calendar trigger `Pressable` after default styles. */
+  triggerStyle?: StyleProp<ViewStyle>;
 }
 
-export function DateInput({ value, onChange, label, min, max, disabled, placeholder = 'Pick a date' }: DateInputProps) {
+export function DateInput({
+  value,
+  onChange,
+  label,
+  min,
+  max,
+  disabled,
+  placeholder = 'Pick a date',
+  triggerStyle,
+}: DateInputProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<View>(null);
 
@@ -243,19 +257,23 @@ export function DateInput({ value, onChange, label, min, max, disabled, placehol
         ref={triggerRef}
         onPress={openCalendar}
         disabled={disabled}
-        style={({ pressed, hovered }: any) => ({
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 6,
-          backgroundColor: open ? '#222' : pressed || hovered ? '#1C1C1C' : '#141414',
-          borderWidth: 1,
-          borderColor: open ? '#4A4A4A' : '#2E2E2E',
-          borderRadius: 8,
-          paddingHorizontal: 10,
-          paddingVertical: 7,
-          opacity: disabled ? 0.45 : 1,
-          ...(Platform.OS === 'web' ? { cursor: disabled ? 'not-allowed' : 'pointer' } : {}),
-        })}
+        style={({ pressed, hovered }: any) => [
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            backgroundColor: open ? '#222' : pressed || hovered ? '#1C1C1C' : '#141414',
+            borderWidth: 1,
+            borderColor: open ? '#4A4A4A' : '#2E2E2E',
+            borderRadius: 8,
+            paddingHorizontal: 10,
+            paddingVertical: 7,
+            minHeight: DATE_INPUT_TRIGGER_MIN_HEIGHT,
+            opacity: disabled ? 0.45 : 1,
+            ...(Platform.OS === 'web' ? { cursor: disabled ? 'not-allowed' : 'pointer' } : {}),
+          },
+          triggerStyle,
+        ]}
       >
         <CalendarDaysIcon size={14} color={value ? '#9CA3AF' : '#4B5563'} />
         <Text style={{

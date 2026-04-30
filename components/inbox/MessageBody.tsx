@@ -48,10 +48,13 @@ export function MessageBody({
   bodyHtml,
   bodyText,
   displayText,
+  /** When true, never collapse to plain text — e.g. forward preview HTML that contains "On … wrote:" labels. */
+  disableQuotedThreadCollapse = false,
 }: {
   bodyHtml?: string | null;
   bodyText?: string | null;
   displayText: string;
+  disableQuotedThreadCollapse?: boolean;
 }) {
   const rawHtml = bodyHtml ?? null;
   const hasHtml = !!rawHtml && rawHtml.trim().length > 0;
@@ -77,11 +80,12 @@ export function MessageBody({
     cleanDisplayText.length > 0;
   const safeHtmlForRender = normalizeEmailHtmlForDarkMode(stripUnresolvableCidImages(safeHtml).html);
   const hasCollapsedThread = useMemo(() => {
+    if (disableQuotedThreadCollapse) return false;
     if (!fullText) return false;
     if (fullText.length <= cleanDisplayText.length) return false;
     if (!cleanDisplayText) return false;
     return fullText.includes('On ') || fullText.includes('\n>') || fullText.includes('wrote:');
-  }, [fullText, cleanDisplayText]);
+  }, [fullText, cleanDisplayText, disableQuotedThreadCollapse]);
   const shouldShowCollapsedHtmlPreview =
     hasHtml &&
     !shouldFallbackToText &&

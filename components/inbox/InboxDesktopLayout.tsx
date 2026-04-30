@@ -48,6 +48,7 @@ export interface InboxDesktopMessagePaneProps {
   blockedProspectEmails: Set<string>;
   accountId: string | null;
   onBlock: (() => void) | undefined;
+  onMarkOutOfOffice?: (() => void) | undefined;
   onOpenTagsPanel: (() => void) | undefined;
   onSetCategory: ((cat: string | null) => Promise<void>) | undefined;
   messagesScrollViewRef: RefObject<ScrollView | null>;
@@ -121,6 +122,7 @@ export function InboxDesktopLayout({
     blockedProspectEmails,
     accountId,
     onBlock,
+    onMarkOutOfOffice,
     onOpenTagsPanel,
     onSetCategory,
     messagesScrollViewRef,
@@ -141,7 +143,7 @@ export function InboxDesktopLayout({
 
   return (
     <View className="flex-1 flex-row bg-[#121212]">
-      <View style={{ flex: 1, minWidth: 0 }} className="flex-row">
+      <View style={{ flex: 1, minWidth: 0, minHeight: 0 }} className="flex-row">
         <Animated.View
           className="border-r border-[#2A2A2A] bg-[#0D0D0D]"
           style={{
@@ -177,7 +179,7 @@ export function InboxDesktopLayout({
           />
         </Animated.View>
 
-        <View className="flex-1">
+        <View className="flex-1 min-h-0">
           {showLoading ? (
             <>
               <MessagePanelHeaderSkeleton />
@@ -197,6 +199,7 @@ export function InboxDesktopLayout({
               selectedThreadProspectEmails={selectedThreadProspectEmails}
               blockedProspectEmails={blockedProspectEmails}
               onBlock={onBlock}
+              onMarkOutOfOffice={onMarkOutOfOffice}
               accountId={accountId}
               onOpenTagsPanel={onOpenTagsPanel}
               category={selectedThread?.category ?? null}

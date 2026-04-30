@@ -17,6 +17,7 @@ import { handleAICategorizerNode } from './node-handlers/ai-categorizer-handler.
 import { handleDataSenderNode } from './node-handlers/data-sender-handler.js';
 import { maintainCampaignIntervals } from './interval-management.js';
 import { batchAssignIntervalJobs } from './batch-interval-assignment.js';
+import { resolveOooResumePollIntervalMs, runOutOfOfficeResumeTick } from './ooo-resume-tick.js';
 import type { CampaignSchedule, Enrollment } from './types.js';
 
 export interface WorkerConfig {
@@ -103,6 +104,7 @@ export class SchedulerWorker {
   private intervalMaintenanceTimer?: ReturnType<typeof setInterval>;
   private staleLockCleanupTimer?: ReturnType<typeof setInterval>;
   private batchIntervalAssignmentTimer?: ReturnType<typeof setInterval>;
+  private oooResumeTimer?: ReturnType<typeof setInterval>;
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
@@ -124,6 +126,8 @@ export class SchedulerWorker {
     
     // Start batch interval assignment (runs every 30 seconds)
     this.startBatchIntervalAssignment();
+
+    this.startOutOfOfficeResumeProcessing();
 
     console.log('Scheduler worker started. Polling database...');
 
@@ -262,6 +266,9 @@ export class SchedulerWorker {
     }
     if (this.batchIntervalAssignmentTimer) {
       clearInterval(this.batchIntervalAssignmentTimer);
+    }
+    if (this.oooResumeTimer) {
+      clearInterval(this.oooResumeTimer);
     }
   }
 
@@ -524,6 +531,43 @@ export class SchedulerWorker {
   /**
    * Start batch interval assignment background task
    */
+  /**
+   * Drain due out-of-office thread resumes (reactivate enrollments stopped for reply).
+   * Interval from OOO_RESUME_POLL_INTERVAL_MS (default 30 minutes).
+   */
+  private startOutOfOfficeResumeProcessing(): void {
+    const intervalMs = resolveOooResumePollIntervalMs(process.env.OOO_RESUME_POLL_INTERVAL_MS);
+
+    this.oooResumeTimer = this.startSingleFlightInterval({
+      taskName: 'OOO RESUME',
+      intervalMs,
+      runImmediately: false,
+      task: async () => {
+        const processed = await runOutOfOfficeResumeTick(this.supabase);
+        if (processed > 0) {
+          console.log(`[OOO RESUME] Processed ${processed} due thread(s)`);
+        }
+      },
+      onError: (err) => {
+        console.error('[OOO RESUME] Error:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        reportErrorToSlack('Scheduler: process_due_out_of_office_resumes failed', {
+          severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
+          error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'persistent_config_warning',
+          aggregationKey: 'scheduler-ooo-resume',
+          summaryFields: {
+            worker: 'scheduler',
+            operation: 'process_due_out_of_office_resumes',
+          },
+        });
+      },
+    });
+    console.log(`[OOO RESUME] Poll interval ${Math.round(intervalMs / 1000)}s`);
+  }
+
   private startBatchIntervalAssignment(): void {
     this.batchIntervalAssignmentTimer = this.startSingleFlightInterval({
       taskName: 'BATCH INTERVAL',

@@ -25,6 +25,8 @@ export interface InboxModalsFiltersProps {
   setCategoryFilter: (v: string | null) => void;
   tagFilterIds: string[];
   setTagFilterIds: (ids: string[]) => void;
+  includeOutOfOfficeFilter: boolean;
+  setIncludeOutOfOfficeFilter: (v: boolean) => void;
   mailboxes: Mailbox[];
   campaigns: Campaign[];
   accountTags: ThreadTag[];
@@ -59,6 +61,7 @@ export interface InboxModalsActionsProps {
   onRemoveTag: (tag: ThreadTag) => Promise<void>;
   onUpdateTag: (tag: ThreadTag) => void;
   onDeleteTag: (tag: ThreadTag) => void;
+  onMarkOutOfOffice?: () => void;
 }
 
 export interface InboxModalsProps {
@@ -84,6 +87,8 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     setCategoryFilter,
     tagFilterIds,
     setTagFilterIds,
+    includeOutOfOfficeFilter,
+    setIncludeOutOfOfficeFilter,
     mailboxes,
     campaigns,
     accountTags,
@@ -118,6 +123,7 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     onRemoveTag,
     onUpdateTag,
     onDeleteTag,
+    onMarkOutOfOffice,
   } = actions;
 
   return (
@@ -140,6 +146,8 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         onCategoryFilterChange={setCategoryFilter}
         tagFilterIds={tagFilterIds}
         onTagFilterIdsChange={setTagFilterIds}
+        includeOutOfOfficeFilter={includeOutOfOfficeFilter}
+        onIncludeOutOfOfficeFilterChange={setIncludeOutOfOfficeFilter}
         mailboxes={mailboxes}
         campaigns={campaigns}
         accountTags={accountTags}
@@ -182,6 +190,7 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         threadTagsMap={threadTagsMap}
         selectedThreadProspectEmails={selectedThreadProspectEmails}
         onBlock={() => setBlockModalVisible(true)}
+        onMarkOutOfOffice={onMarkOutOfOffice}
         onTags={() => setTagsPanelVisible(true)}
         onSetCategory={onSetCategory}
       />

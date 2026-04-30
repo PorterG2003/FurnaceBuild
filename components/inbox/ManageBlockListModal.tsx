@@ -212,13 +212,13 @@ export function ManageBlockListModal({
       maxWidth="4xl"
       maxHeight={720}
     >
-      <View className="gap-4">
+      <View className="gap-3">
         <Tabs
           tabs={tabs}
           activeTab={activeTab}
           onTabChange={setActiveTab}
           layout={isMobile ? 'equal' : 'content'}
-          marginBottom={isMobile ? 0 : 16}
+          marginBottom={isMobile ? 0 : 8}
         />
 
         {activeTab === TAB_SETTINGS && (

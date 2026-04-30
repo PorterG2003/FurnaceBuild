@@ -67,6 +67,35 @@ test('canPublishFluxProspectPage is true when competitor_ad_audit is ready and c
   assert.equal(ok, true);
 });
 
+test('canPublishFluxProspectPage is true when competitor_ad_audit is ready with one competitor', () => {
+  const ok = canPublishFluxProspectPage(
+    page([
+      {
+        id: 'h',
+        type: 'hero',
+        order: 0,
+        props: {
+          headline: 'Hi',
+          subheadline: 'There',
+          ctaText: 'Go',
+          ctaUrl: 'https://example.com',
+        },
+      },
+      {
+        id: 'c',
+        type: 'competitor_ad_audit',
+        order: 1,
+        props: {
+          heading: 'Audit',
+          status: 'ready',
+          competitors: [competitorRow('OnlyOne', 'https://maps.example/a.png')],
+        },
+      },
+    ]),
+  );
+  assert.equal(ok, true);
+});
+
 test('canPublishFluxProspectPage is false when competitor_ad_audit is pending', () => {
   const ok = canPublishFluxProspectPage(
     page([

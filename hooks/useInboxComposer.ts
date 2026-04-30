@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated } from 'react-native';
 import { mergeInboxComposeHtml } from '@/lib/email/buildCampaignEmailContent';
 import { stripHtml } from '@/lib/email';
-import { buildQuotedForwardThreadHtml } from '@/lib/inbox';
+import { buildForwardedConversationHtml } from '@/lib/inbox';
 import {
   createReplyJob,
   createForwardJob,
@@ -333,7 +333,7 @@ export function useInboxComposer({
       setForwardCc('');
       setForwardSubject(fwdSubject);
       setIncludeSignature(true);
-      setForwardQuoteHtml(buildQuotedForwardThreadHtml(messages, subject));
+      setForwardQuoteHtml(buildForwardedConversationHtml(messages, _message, subject));
       setComposerMode('forward');
     },
     [selectedThread, messages]

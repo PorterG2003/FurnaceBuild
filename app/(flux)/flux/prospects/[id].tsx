@@ -47,6 +47,7 @@ import type {
   FluxCampaignTemplateRow,
   FluxPageStatus,
   PageConfig,
+  CompetitorAdAuditBlock,
 } from '@/lib/flux/types';
 import {
   coercePageConfig,
@@ -91,6 +92,31 @@ const PROSPECT_EDITOR_TABS = [
 
 function clonePageConfig(config: PageConfig): PageConfig {
   return JSON.parse(JSON.stringify(config)) as PageConfig;
+}
+
+/** When the server updates `competitor_ad_audit` (async worker) but the editor has unsaved edits elsewhere, patch only those blocks from `server`. */
+function mergeServerCompetitorAuditBlocksIntoDraft(draft: PageConfig, server: PageConfig): PageConfig {
+  const serverById = new Map(server.blocks.map((b) => [b.id, b]));
+  const next = clonePageConfig(draft);
+  next.blocks = next.blocks.map((block) => {
+    if (block.type !== 'competitor_ad_audit') return block;
+    const sb = serverById.get(block.id);
+    if (!sb || sb.type !== 'competitor_ad_audit') return block;
+    const { lastAuditDomainReport: _omitReport, ...draftAuditProps } = block.props;
+    const merged: CompetitorAdAuditBlock = {
+      ...block,
+      props: {
+        ...draftAuditProps,
+        status: sb.props.status,
+        errorMessage: sb.props.errorMessage,
+        lastAuditAt: sb.props.lastAuditAt,
+        competitors: sb.props.competitors,
+        heading: block.props.heading,
+      },
+    };
+    return merged;
+  });
+  return next;
 }
 
 export default function ProspectDetail() {
@@ -185,23 +211,6 @@ export default function ProspectDetail() {
       setSlugCheckAvailable(null);
     }
   }, [page?.id, page?.slug]);
-
-  useEffect(() => {
-    if (!page) {
-      setDraftPageConfig(null);
-      setProspectChat(emptyFluxProspectPageChatState());
-      return;
-    }
-    const c = coercePageConfig(page.page_config);
-    setDraftPageConfig(c);
-    let cancelled = false;
-    void getFluxProspectPageEditorChat(page.id).then((s) => {
-      if (!cancelled) setProspectChat(s);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [page?.id, page?.updated_at]);
 
   const saveProspectChatToDb = useCallback(async (next: FluxProspectPageChatState) => {
     if (!page) return false;
@@ -357,12 +366,65 @@ export default function ProspectDetail() {
     return JSON.stringify(draftPageConfig) !== JSON.stringify(savedPageConfig);
   }, [draftPageConfig, savedPageConfig]);
 
+  /**
+   * Keep `draftPageConfig` aligned with `page.page_config` whenever the server row changes.
+   * Depends on `page?.page_config` (not only `updated_at`) so async worker updates (audit status)
+   * refresh the editor. If the user has local non-audit edits, merging audit blocks from the server
+   * yields a config that still differs from `serverCfg`; in that case we keep the merged draft.
+   */
+  useEffect(() => {
+    if (!page) {
+      setDraftPageConfig(null);
+      setProspectChat(emptyFluxProspectPageChatState());
+      return;
+    }
+    const serverCfg = coercePageConfig(page.page_config);
+    if (!serverCfg) {
+      setDraftPageConfig(null);
+      return;
+    }
+    let cancelled = false;
+    void getFluxProspectPageEditorChat(page.id).then((s) => {
+      if (!cancelled) setProspectChat(s);
+    });
+    setDraftPageConfig((prev) => {
+      if (!prev) return serverCfg;
+      if (JSON.stringify(prev) === JSON.stringify(serverCfg)) return prev;
+      const merged = mergeServerCompetitorAuditBlocksIntoDraft(prev, serverCfg);
+      if (JSON.stringify(merged) === JSON.stringify(serverCfg)) return serverCfg;
+      return merged;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [page?.id, page?.updated_at, page?.page_config]);
+
   const prospectRowDirty = useMemo(() => {
     if (!prospect || !prospectDraft) return false;
     return (
       JSON.stringify(prospectDraft) !== JSON.stringify(fluxProspectRowToFieldValues(prospect))
     );
   }, [prospect, prospectDraft]);
+
+  /** Shown when Run audit is disabled so the control does not feel “dead” (heading copy ≠ saved service area). */
+  const competitorAuditRunBlockers = useMemo(() => {
+    const lines: string[] = [];
+    if (auditPollJobId) {
+      lines.push('An audit job is already in progress; this page refreshes when it finishes.');
+    }
+    if (prospectRowDirty) {
+      lines.push('Save prospect changes before running the audit.');
+    }
+    if (pageDirty) {
+      lines.push('Save page changes before running the audit.');
+    }
+    if (prospect && !isValidFluxServiceArea(prospect.service_area)) {
+      lines.push(
+        'Set a Google Places service area on the prospect below and save. Block headings are only display text.',
+      );
+    }
+    return lines;
+  }, [auditPollJobId, pageDirty, prospect, prospectRowDirty]);
 
   const patchProspectDraft = useCallback((patch: Partial<FluxProspectDetailsFieldValues>) => {
     setProspectDraft((current) => (current ? { ...current, ...patch } : current));
@@ -595,7 +657,15 @@ export default function ProspectDetail() {
 
   const handleStartCompetitorAudit = useCallback(
     async (blockId: string) => {
-      if (!page || auditBusyBlockId || auditPollJobId) return;
+      if (!page) return;
+      if (auditBusyBlockId) {
+        toast.info('Wait for the audit request that is already starting.');
+        return;
+      }
+      if (auditPollJobId) {
+        toast.info('An audit is already running; this screen will update when it completes.');
+        return;
+      }
       if (pageDirty) {
         toast.error('Save page changes before running the audit.');
         return;
@@ -793,6 +863,15 @@ export default function ProspectDetail() {
                   EXPO_PUBLIC_FLUX_COMPETITOR_AUDIT_START_URL).
                 </Text>
               ) : null}
+              {competitorAuditRunBlockers.length > 0 ? (
+                <View className="mb-3 gap-1.5">
+                  {competitorAuditRunBlockers.map((line) => (
+                    <Text key={line} className="text-amber-200/95 text-xs font-instrument leading-5">
+                      — {line}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
               <View className="gap-2">
                 {draftPageConfig.blocks
                   .filter((b) => b.type === 'competitor_ad_audit')
@@ -811,6 +890,13 @@ export default function ProspectDetail() {
                           pageDirty ||
                           !isValidFluxServiceArea(prospect.service_area) ||
                           b.props.status === 'running'
+                        }
+                        accessibilityHint={
+                          competitorAuditRunBlockers.length > 0
+                            ? competitorAuditRunBlockers.join(' ')
+                            : b.props.status === 'running'
+                              ? 'Audit is running'
+                              : 'Starts the competitor ad audit job'
                         }
                         onPress={() => void handleStartCompetitorAudit(b.id)}
                       >

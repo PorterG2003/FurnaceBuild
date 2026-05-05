@@ -42,6 +42,30 @@ test('valid hero-only merged config passes with empty content_assets', () => {
   assert.deepEqual(issues, []);
 });
 
+test('hero and cta blocks accept in-page #fragment ctaUrl', () => {
+  const merged = page([
+    {
+      id: 'h1',
+      type: 'hero',
+      order: 0,
+      props: {
+        headline: 'Hello',
+        subheadline: 'There',
+        ctaText: 'Jump',
+        ctaUrl: '#results',
+      },
+    },
+    {
+      id: 'c1',
+      type: 'cta',
+      order: 1,
+      props: { headline: 'Next', ctaText: 'Go', ctaUrl: '#pricing' },
+    },
+  ]);
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.deepEqual(issues, []);
+});
+
 test('semantic issues include copy budget when hero headline exceeds hard max', () => {
   const merged = page([
     {
@@ -60,6 +84,29 @@ test('semantic issues include copy budget when hero headline exceeds hard max', 
   assert.equal(issues.length, 1);
   assert.match(issues[0]!, /exceeds hard max 88/);
   assert.match(issues[0]!, /target 56/);
+});
+
+test('allowLongCopy suppresses copy-budget issues only', () => {
+  const merged: PageConfig = {
+    theme: { ...theme, allowLongCopy: true },
+    prospectName: 'Pat',
+    companyName: 'Co',
+    blocks: [
+      {
+        id: 'h1',
+        type: 'hero',
+        order: 0,
+        props: {
+          headline: 'x'.repeat(200),
+          subheadline: 'There',
+          ctaText: 'Go',
+          ctaUrl: 'https://example.com',
+        },
+      },
+    ],
+  };
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.deepEqual(issues, []);
 });
 
 test('empty hero headline fails', () => {
@@ -236,4 +283,62 @@ test('social_media_plan empty day hook fails', () => {
   ]);
   const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
   assert.ok(issues.some((s) => /hook is empty/.test(s)));
+});
+
+test('quiz_and_book with one configured question passes semantic checks', () => {
+  const merged = page([
+    {
+      id: 'qb1',
+      type: 'quiz_and_book',
+      order: 0,
+      props: {
+        heading: 'A few quick questions',
+        subheading: 'We will tailor the plan before booking.',
+        questions: [
+          {
+            id: 'q1',
+            type: 'single_select',
+            prompt: 'How many providers are at your clinic?',
+            options: [
+              { id: 'o1', label: 'Just me' },
+              { id: 'o2', label: '2-3 providers' },
+            ],
+          },
+        ],
+        summaryHeading: 'Perfect.',
+        summaryBody: 'Next step is scheduling a time to review your strategy.',
+        calendlyUrl: 'https://calendly.com/drfoottraffic/15min',
+        destinationEmail: 'owner@example.com',
+      },
+    },
+  ]);
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.deepEqual(issues, []);
+});
+
+test('quiz_and_book missing options fails semantic checks', () => {
+  const merged = page([
+    {
+      id: 'qb1',
+      type: 'quiz_and_book',
+      order: 0,
+      props: {
+        heading: 'A few quick questions',
+        subheading: 'We will tailor the plan before booking.',
+        questions: [
+          {
+            id: 'q1',
+            type: 'single_select',
+            prompt: 'How many providers are at your clinic?',
+            options: [{ id: 'o1', label: 'Just me' }],
+          },
+        ],
+        summaryHeading: 'Perfect.',
+        summaryBody: 'Next step is scheduling a time to review your strategy.',
+        calendlyUrl: 'https://calendly.com/drfoottraffic/15min',
+      },
+    },
+  ]);
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.ok(issues.some((s) => /questions\[0\]\.options must include at least two options/.test(s)));
 });

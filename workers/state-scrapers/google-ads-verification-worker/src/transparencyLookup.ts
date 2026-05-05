@@ -240,7 +240,6 @@ async function maybeSaveScreenshot(page: Page, outputDir: string | null, fileNam
 async function openSearchPage(page: Page, region: string): Promise<string> {
   const url = `https://adstransparency.google.com/?region=${encodeURIComponent(region)}`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
-  await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
   return url;
 }
 
@@ -276,7 +275,6 @@ async function clickExactDomainSuggestion(page: Page, searchDomain: string): Pro
     (url) => url.searchParams.get('domain')?.toLowerCase() === searchDomain.toLowerCase(),
     { timeout: NAV_TIMEOUT_MS },
   );
-  await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
 }
 
 /**
@@ -326,9 +324,16 @@ async function captureAdvertiserPageSummary(page: Page): Promise<{ advertiser_na
 async function expandResultsToFullCreativeList(page: Page): Promise<boolean> {
   const seeAllButton = page.getByRole('button', { name: /see all ads/i }).first();
   if (!(await seeAllButton.isVisible().catch(() => false))) return false;
+  const creativeLinks = page.locator('a[href*="/creative/"]');
+  const beforeCount = await creativeLinks.count().catch(() => 0);
   const clicked = await seeAllButton.click({ timeout: NAV_TIMEOUT_MS }).then(() => true).catch(() => false);
   if (!clicked) return false;
-  await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
+  const deadline = Date.now() + 4_000;
+  while (Date.now() < deadline) {
+    const currentCount = await creativeLinks.count().catch(() => beforeCount);
+    if (currentCount > beforeCount) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
   return true;
 }
 
@@ -358,12 +363,26 @@ const MIN_CREATIVE_TEXT_LENGTH = 18;
 
 const SYNDICATED_IMG =
   'img[src*="googlesyndication.com"], img[src*="tpc.googlesyndication.com"], img[srcset*="googlesyndication"], img[srcset*="tpc.googlesyndication"]';
+const CREATIVE_IFRAME =
+  'iframe[src*="googlesyndication.com"], iframe[src*="tpc.googlesyndication.com"], iframe[src*="/archive/sadbundle/"]';
+const CREATIVE_PREVIEW_ROOT_SELECTORS = [
+  'html-renderer',
+  '.html-container',
+  '[class*="creative-container"]',
+  CREATIVE_IFRAME,
+  SYNDICATED_IMG,
+] as const;
 
 type ClipBox = {
   x: number;
   y: number;
   width: number;
   height: number;
+};
+
+type ViewportOrigin = {
+  x: number;
+  y: number;
 };
 
 export interface CreativePreviewCandidate {
@@ -379,6 +398,28 @@ export interface CreativePreviewCandidate {
 interface CreativePreviewCandidateBox extends CreativePreviewCandidate {
   clip: ClipBox;
 }
+
+type CreativePreviewCandidateRejectionReason =
+  | 'non_finite'
+  | 'too_small'
+  | 'too_wide'
+  | 'too_tall'
+  | 'too_large'
+  | 'low_signal'
+  | 'invalid_clip';
+
+type CreativePreviewCollectionSpec = {
+  label: string;
+  locator: Locator;
+  priority: number;
+  maxMatches: number;
+};
+
+type CreativePreviewLogContext = {
+  jobId?: string;
+  domain?: string;
+  sourceUrl?: string;
+};
 
 function pngBufferFromScreenshot(raw: Buffer | Uint8Array): Buffer | null {
   if (!raw || raw.length < MIN_CREATIVE_PNG_BYTES) return null;
@@ -396,13 +437,19 @@ function isFiniteNonNegative(value: number): boolean {
 export function clipCreativePreviewBox(
   box: Pick<CreativePreviewCandidate, 'x' | 'y' | 'width' | 'height'>,
   viewport = VIEWPORT,
+  viewportOrigin: ViewportOrigin = { x: 0, y: 0 },
 ): ClipBox | null {
   if (!isFiniteNonNegative(box.x) || !isFiniteNonNegative(box.y)) return null;
   if (!isFinitePositive(box.width) || !isFinitePositive(box.height)) return null;
-  const x = Math.max(0, Math.floor(box.x - CREATIVE_CLIP_PADDING_X));
-  const y = Math.max(0, Math.floor(box.y - CREATIVE_CLIP_PADDING_Y));
-  const maxX = Math.min(viewport.width, Math.ceil(box.x + box.width + CREATIVE_CLIP_PADDING_X));
-  const maxY = Math.min(viewport.height, Math.ceil(box.y + box.height + CREATIVE_CLIP_PADDING_Y));
+  if (!isFiniteNonNegative(viewportOrigin.x) || !isFiniteNonNegative(viewportOrigin.y)) return null;
+  const minViewportX = viewportOrigin.x;
+  const minViewportY = viewportOrigin.y;
+  const maxViewportX = viewportOrigin.x + viewport.width;
+  const maxViewportY = viewportOrigin.y + viewport.height;
+  const x = Math.max(minViewportX, Math.floor(viewportOrigin.x + box.x - CREATIVE_CLIP_PADDING_X));
+  const y = Math.max(minViewportY, Math.floor(viewportOrigin.y + box.y - CREATIVE_CLIP_PADDING_Y));
+  const maxX = Math.min(maxViewportX, Math.ceil(viewportOrigin.x + box.x + box.width + CREATIVE_CLIP_PADDING_X));
+  const maxY = Math.min(maxViewportY, Math.ceil(viewportOrigin.y + box.y + box.height + CREATIVE_CLIP_PADDING_Y));
   const width = maxX - x;
   const height = maxY - y;
   if (width < 1 || height < 1) return null;
@@ -413,20 +460,27 @@ export function isAcceptableCreativePreviewCandidate(
   candidate: CreativePreviewCandidate,
   viewport = VIEWPORT,
 ): boolean {
+  return getCreativePreviewCandidateRejectionReason(candidate, viewport) == null;
+}
+
+function getCreativePreviewCandidateRejectionReason(
+  candidate: CreativePreviewCandidate,
+  viewport = VIEWPORT,
+): CreativePreviewCandidateRejectionReason | null {
   if (
     ![candidate.x, candidate.y, candidate.width, candidate.height, candidate.textLength, candidate.imageCount].every(
       Number.isFinite,
     )
   ) {
-    return false;
+    return 'non_finite';
   }
-  if (candidate.width < MIN_CREATIVE_BOX_WIDTH || candidate.height < MIN_CREATIVE_BOX_HEIGHT) return false;
-  if (candidate.width * candidate.height < MIN_CREATIVE_BOX_AREA) return false;
-  if (candidate.width > viewport.width * MAX_CREATIVE_BOX_WIDTH_RATIO) return false;
-  if (candidate.height > viewport.height * MAX_CREATIVE_BOX_HEIGHT_RATIO) return false;
-  if (candidate.width * candidate.height > viewport.width * viewport.height * MAX_CREATIVE_BOX_AREA_RATIO) return false;
-  if (candidate.textLength < MIN_CREATIVE_TEXT_LENGTH && candidate.imageCount < 1) return false;
-  return clipCreativePreviewBox(candidate, viewport) != null;
+  if (candidate.width < MIN_CREATIVE_BOX_WIDTH || candidate.height < MIN_CREATIVE_BOX_HEIGHT) return 'too_small';
+  if (candidate.width * candidate.height < MIN_CREATIVE_BOX_AREA) return 'too_small';
+  if (candidate.width > viewport.width * MAX_CREATIVE_BOX_WIDTH_RATIO) return 'too_wide';
+  if (candidate.height > viewport.height * MAX_CREATIVE_BOX_HEIGHT_RATIO) return 'too_tall';
+  if (candidate.width * candidate.height > viewport.width * viewport.height * MAX_CREATIVE_BOX_AREA_RATIO) return 'too_large';
+  if (candidate.textLength < MIN_CREATIVE_TEXT_LENGTH && candidate.imageCount < 1) return 'low_signal';
+  return clipCreativePreviewBox(candidate, viewport) != null ? null : 'invalid_clip';
 }
 
 function rankCreativePreviewCandidate(
@@ -463,45 +517,85 @@ async function collectCreativePreviewCandidates(
   priority: number,
   maxMatches: number,
 ): Promise<CreativePreviewCandidate[]> {
-  try {
-    await locator.first().waitFor({ state: 'visible', timeout: CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS });
-  } catch {
-    return [];
-  }
-  let count = 0;
-  try {
-    count = await locator.count();
-  } catch {
-    return [];
-  }
-  const candidates: CreativePreviewCandidate[] = [];
-  for (let i = 0; i < Math.min(count, maxMatches); i += 1) {
-    const item = locator.nth(i);
+  const deadline = Date.now() + CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    let count = 0;
     try {
-      await item.scrollIntoViewIfNeeded().catch(() => {});
-      const box = await item.boundingBox();
-      if (!box) continue;
-      const { textLength, imageCount } = await item
-        .evaluate((node) => ({
-          textLength: (node.textContent ?? '').replace(/\s+/g, ' ').trim().length,
-          imageCount:
-            node instanceof Element ? node.querySelectorAll('img, picture, video, canvas, svg').length : 0,
-        }))
-        .catch(() => ({ textLength: 0, imageCount: 0 }));
-      candidates.push({
-        x: box.x,
-        y: box.y,
-        width: box.width,
-        height: box.height,
-        textLength,
-        imageCount,
-        priority,
-      });
+      count = await locator.count();
     } catch {
-      // Keep scanning other candidates if one node is detached or offscreen.
+      return [];
     }
+    if (count < 1) {
+      await new Promise((r) => setTimeout(r, 250));
+      continue;
+    }
+    const candidates: CreativePreviewCandidate[] = [];
+    for (let i = 0; i < Math.min(count, maxMatches); i += 1) {
+      const item = locator.nth(i);
+      try {
+        const box = await item.boundingBox();
+        if (!box) continue;
+        const { textLength, imageCount } = await item
+          .evaluate((node) => ({
+            textLength: (node.textContent ?? '').replace(/\s+/g, ' ').trim().length,
+            imageCount:
+              node instanceof Element
+                ? node.matches('img, picture, video, canvas, svg, iframe')
+                  ? 1 + node.querySelectorAll('img, picture, video, canvas, svg, iframe').length
+                  : node.querySelectorAll('img, picture, video, canvas, svg, iframe').length
+                : 0,
+          }))
+          .catch(() => ({ textLength: 0, imageCount: 0 }));
+        candidates.push({
+          x: box.x,
+          y: box.y,
+          width: box.width,
+          height: box.height,
+          textLength,
+          imageCount,
+          priority,
+        });
+      } catch {
+        // Keep scanning other candidates if one node is detached or offscreen.
+      }
+    }
+    if (candidates.length > 0) return candidates;
+    await new Promise((r) => setTimeout(r, 250));
   }
-  return candidates;
+  return [];
+}
+
+function summarizeCreativePreviewCandidate(
+  candidate: Pick<CreativePreviewCandidate, 'x' | 'y' | 'width' | 'height' | 'textLength' | 'imageCount' | 'priority'>,
+): JsonObject {
+  return {
+    x: Math.round(candidate.x),
+    y: Math.round(candidate.y),
+    width: Math.round(candidate.width),
+    height: Math.round(candidate.height),
+    textLength: candidate.textLength,
+    imageCount: candidate.imageCount,
+    priority: candidate.priority,
+  };
+}
+
+function incrementCounter(target: Record<string, number>, key: string): void {
+  target[key] = (target[key] ?? 0) + 1;
+}
+
+async function waitForCreativePreviewRoots(page: Page, maxWaitMs = CREATIVE_IMG_WAIT_MS): Promise<boolean> {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    for (const selector of CREATIVE_PREVIEW_ROOT_SELECTORS) {
+      try {
+        if ((await page.locator(selector).count()) > 0) return true;
+      } catch {
+        // The DOM can still be hydrating; keep polling until timeout.
+      }
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
 }
 
 /**
@@ -509,40 +603,129 @@ async function collectCreativePreviewCandidates(
  * Waits for syndicated assets, scrolls targets into view (ECS/Xvfb can be slow),
  * then returns null if we cannot identify a tight ad-card crop.
  */
-async function screenshotCreativePreview(page: Page): Promise<Buffer | null> {
-  await page.locator(SYNDICATED_IMG).first().waitFor({ state: 'visible', timeout: CREATIVE_IMG_WAIT_MS }).catch(() => {});
+async function screenshotCreativePreview(page: Page, logContext: CreativePreviewLogContext = {}): Promise<Buffer | null> {
+  await Promise.all([
+    page
+      .locator(SYNDICATED_IMG)
+      .first()
+      .waitFor({ state: 'visible', timeout: CREATIVE_IMG_WAIT_MS })
+      .catch(() => {}),
+    waitForCreativePreviewRoots(page).catch(() => false),
+  ]);
   await new Promise((r) => setTimeout(r, CREATIVE_POST_PAINT_SETTLE_MS));
 
   const viewport = page.viewportSize() ?? VIEWPORT;
-  const locatorAttempts: Array<{ locator: Locator; priority: number; maxMatches: number }> = [
-    { locator: page.locator('html-renderer > *'), priority: 0, maxMatches: 8 },
-    { locator: page.locator('html-renderer > * > *'), priority: 1, maxMatches: 12 },
-    { locator: page.locator('[class*="creative-container"] > *'), priority: 2, maxMatches: 8 },
-    { locator: page.locator('creative > *'), priority: 3, maxMatches: 8 },
-    { locator: page.locator('html-renderer'), priority: 4, maxMatches: 2 },
-    { locator: page.locator('[class*="creative-container"]'), priority: 5, maxMatches: 3 },
-    { locator: page.locator('creative'), priority: 6, maxMatches: 2 },
-    { locator: page.locator(SYNDICATED_IMG), priority: 7, maxMatches: 4 },
+  const locatorAttempts: CreativePreviewCollectionSpec[] = [
+    { label: 'creative_iframe', locator: page.locator(CREATIVE_IFRAME), priority: 0, maxMatches: 6 },
+    { label: 'html_renderer_iframe', locator: page.locator('html-renderer iframe'), priority: 1, maxMatches: 6 },
+    {
+      label: 'creative_container_iframe',
+      locator: page.locator('[class*="creative-container"] iframe'),
+      priority: 2,
+      maxMatches: 6,
+    },
+    { label: 'html_container', locator: page.locator('.html-container'), priority: 3, maxMatches: 4 },
+    { label: 'creative_container', locator: page.locator('[class*="creative-container"]'), priority: 4, maxMatches: 4 },
+    { label: 'html_renderer_children', locator: page.locator('html-renderer > *'), priority: 5, maxMatches: 8 },
+    { label: 'html_renderer_grandchildren', locator: page.locator('html-renderer > * > *'), priority: 6, maxMatches: 12 },
+    {
+      label: 'creative_container_children',
+      locator: page.locator('[class*="creative-container"] > *'),
+      priority: 7,
+      maxMatches: 8,
+    },
+    { label: 'creative_children', locator: page.locator('creative > *'), priority: 8, maxMatches: 8 },
+    { label: 'html_renderer', locator: page.locator('html-renderer'), priority: 9, maxMatches: 2 },
+    { label: 'creative_root', locator: page.locator('creative'), priority: 10, maxMatches: 2 },
+    { label: 'syndicated_img', locator: page.locator(SYNDICATED_IMG), priority: 11, maxMatches: 4 },
   ];
-  const candidates = (
-    await Promise.all(
-      locatorAttempts.map(({ locator, priority, maxMatches }) =>
-        collectCreativePreviewCandidates(locator, priority, maxMatches),
-      ),
-    )
-  ).flat();
+  const candidateCountsByLabel: Record<string, number> = {};
+  const candidateCountsByPriority: Record<string, number> = {};
+  const candidates: CreativePreviewCandidate[] = [];
+  const locatorResults = await Promise.all(
+    locatorAttempts.map(async ({ label, locator, priority, maxMatches }) => ({
+      label,
+      priority,
+      found: await collectCreativePreviewCandidates(locator, priority, maxMatches),
+    })),
+  );
+  for (const { label, priority, found } of locatorResults) {
+    candidateCountsByLabel[label] = found.length;
+    candidateCountsByPriority[String(priority)] = (candidateCountsByPriority[String(priority)] ?? 0) + found.length;
+    candidates.push(...found);
+  }
+  const rejectCountsByReason: Record<string, number> = {};
+  for (const candidate of candidates) {
+    const reason = getCreativePreviewCandidateRejectionReason(candidate, viewport);
+    if (reason) incrementCounter(rejectCountsByReason, reason);
+  }
   const best = pickBestCreativePreviewCandidate(candidates, viewport);
-  if (!best) return null;
+  if (!best) {
+    workerJsonLog('creative_preview_selection', {
+      ...logContext,
+      outcome: 'no_acceptable_candidate',
+      viewport,
+      candidateCount: candidates.length,
+      candidateCountsByLabel,
+      candidateCountsByPriority,
+      rejectCountsByReason,
+    });
+    return null;
+  }
 
   try {
+    const viewportOrigin = await page
+      .evaluate(() => ({ x: window.scrollX || 0, y: window.scrollY || 0 }))
+      .catch(() => ({ x: 0, y: 0 }));
+    const clip = clipCreativePreviewBox(best, viewport, viewportOrigin);
+    if (!clip) {
+      workerJsonLog('creative_preview_selection', {
+        ...logContext,
+        outcome: 'clip_invalid',
+        viewport,
+        viewportOrigin,
+        candidateCount: candidates.length,
+        candidateCountsByLabel,
+        candidateCountsByPriority,
+        rejectCountsByReason,
+        acceptedCandidate: summarizeCreativePreviewCandidate(best),
+      });
+      return null;
+    }
     const raw = await page.screenshot({
       type: 'png',
-      clip: best.clip,
+      clip,
       animations: 'disabled',
       timeout: CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS,
     });
-    return pngBufferFromScreenshot(raw);
-  } catch {
+    const preview = pngBufferFromScreenshot(raw);
+    workerJsonLog('creative_preview_selection', {
+      ...logContext,
+      outcome: preview ? 'ok' : 'png_rejected',
+      viewport,
+      viewportOrigin,
+      candidateCount: candidates.length,
+      candidateCountsByLabel,
+      candidateCountsByPriority,
+      rejectCountsByReason,
+      acceptedCandidate: summarizeCreativePreviewCandidate(best),
+      clip,
+      rawByteLength: raw.length,
+      previewByteLength: preview?.length ?? 0,
+    });
+    return preview;
+  } catch (error) {
+    workerJsonLog('creative_preview_selection', {
+      ...logContext,
+      outcome: 'screenshot_failed',
+      viewport,
+      candidateCount: candidates.length,
+      candidateCountsByLabel,
+      candidateCountsByPriority,
+      rejectCountsByReason,
+      acceptedCandidate: summarizeCreativePreviewCandidate(best),
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -551,6 +734,7 @@ async function captureTopCreativeLastShown(
   page: Page,
   creativeHref: string | null,
   region: string,
+  logContext: CreativePreviewLogContext = {},
 ): Promise<{
   latestAdLastShownAt: string | null;
   firstAdShownAt: string | null;
@@ -577,8 +761,6 @@ async function captureTopCreativeLastShown(
   try {
     await page.goto(creativeUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
     await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
-    await page.locator(SYNDICATED_IMG).first().waitFor({ state: 'visible', timeout: CREATIVE_IMG_WAIT_MS }).catch(() => {});
-    await new Promise((r) => setTimeout(r, CREATIVE_POST_PAINT_SETTLE_MS));
     const bodyText = await page.locator('body').innerText().catch(() => '');
     const lastShownLabel = parseLastShownDateLabel(bodyText);
     const firstShownLabel = parseFirstShownDateLabel(bodyText);
@@ -586,7 +768,10 @@ async function captureTopCreativeLastShown(
       page,
       bodyText,
     );
-    const previewPng = await screenshotCreativePreview(page);
+    const previewPng = await screenshotCreativePreview(page, {
+      ...logContext,
+      sourceUrl: creativeUrl,
+    });
     return {
       latestAdLastShownAt: transparencyDateLabelToIso(lastShownLabel),
       firstAdShownAt: transparencyDateLabelToIso(firstShownLabel),
@@ -694,7 +879,10 @@ export async function runGoogleAdsTransparencyLookup(
     const advertiserUrl = firstAdvertiserId
       ? `https://adstransparency.google.com/advertiser/${firstAdvertiserId}?region=${encodeURIComponent(region)}`
       : null;
-    const topCreative = await captureTopCreativeLastShown(page, firstCreativeHref, region);
+    const topCreative = await captureTopCreativeLastShown(page, firstCreativeHref, region, {
+      domain: searchDomain,
+      sourceUrl: firstCreativeHref ?? undefined,
+    });
 
     let matchedAdvertiserName: string | null = null;
     let advertiserPageSummary: JsonObject | null = null;
@@ -844,7 +1032,12 @@ export async function runGoogleAdsTransparencyAuditSamples(
   const phaseMs: Record<string, number> = {};
   let attemptedCreativeCount = 0;
   let validCreativeCount = 0;
-  let creativeStopReason: 'min_reached_and_enough_valid' | 'max_reached' | 'exhausted_creatives' | null = null;
+  let creativeStopReason:
+    | 'collected_enough_samples'
+    | 'min_reached_and_enough_valid'
+    | 'max_reached'
+    | 'exhausted_creatives'
+    | null = null;
   const timeoutReason =
     typeof signal?.reason === 'string' && signal.reason.trim().length > 0
       ? signal.reason.trim()
@@ -935,7 +1128,11 @@ export async function runGoogleAdsTransparencyAuditSamples(
       const href = creativeHrefs[i] ?? null;
       if (!href) break;
       attemptedCreativeCount += 1;
-      const cap = await captureTopCreativeLastShown(page, href, region);
+      const cap = await captureTopCreativeLastShown(page, href, region, {
+        ...(jobId ? { jobId } : {}),
+        domain: searchDomain,
+        sourceUrl: href,
+      });
       throwIfAborted();
       const last = cap.latestAdLastShownAt;
       if (last) {
@@ -968,6 +1165,10 @@ export async function runGoogleAdsTransparencyAuditSamples(
         ...(cap.previewPng && cap.previewPng.length > 0 ? { previewPng: cap.previewPng } : {}),
       });
       validCreativeCount += 1;
+      if (validCreativeCount >= maxSamples && attemptedCreativeCount >= maxSamples && i + 1 < scanN) {
+        creativeStopReason = 'collected_enough_samples';
+        break;
+      }
       if (
         attemptedCreativeCount >= MIN_CREATIVES_SCANNED_BEFORE_EARLY_EXIT &&
         validCreativeCount >= TARGET_VALID_CREATIVES_FOR_EARLY_EXIT &&

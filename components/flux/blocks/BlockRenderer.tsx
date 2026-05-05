@@ -9,13 +9,23 @@ import { CtaBlock } from './CtaBlock';
 import { TannersTaxStrategyBlock } from './TannersTaxStrategyBlock';
 import { SocialMediaPlanBlock } from './SocialMediaPlanBlock';
 import { CompetitorAdAuditBlock } from './CompetitorAdAuditBlock';
+import { QuizAndBookBlock } from './QuizAndBookBlock';
+
+export interface FluxBlockRuntimeContext {
+  isPublicPage: boolean;
+  pageSlug?: string;
+  pageId?: string;
+  prospectName?: string;
+  companyName?: string;
+}
 
 interface BlockRendererProps {
   block: Block;
   assets: ContentAsset[];
+  runtimeContext?: FluxBlockRuntimeContext;
 }
 
-export function BlockRenderer({ block, assets }: BlockRendererProps) {
+export function BlockRenderer({ block, assets, runtimeContext }: BlockRendererProps) {
   switch (block.type) {
     case 'hero':
       return <HeroBlock props={block.props} />;
@@ -51,6 +61,8 @@ export function BlockRenderer({ block, assets }: BlockRendererProps) {
       return <SocialMediaPlanBlock props={block.props} />;
     case 'competitor_ad_audit':
       return <CompetitorAdAuditBlock props={block.props} />;
+    case 'quiz_and_book':
+      return <QuizAndBookBlock props={block.props} runtimeContext={runtimeContext} blockId={block.id} />;
     default:
       return null;
   }

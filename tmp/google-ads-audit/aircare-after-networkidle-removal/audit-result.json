@@ -1,0 +1,84 @@
+{
+  "runner": "debug_flux_competitor_audit",
+  "correlationId": "local_2026-05-01T21-44-21-140Z",
+  "startedAt": "2026-05-01T21:44:21.141Z",
+  "finishedAt": "2026-05-01T21:45:45.124Z",
+  "outputDir": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/aircare-after-networkidle-removal",
+  "inputs": {
+    "domains": [
+      "aircareprofessionals.com"
+    ],
+    "excludeDomains": [],
+    "lat": null,
+    "lng": null,
+    "query": "local services",
+    "region": "US",
+    "headless": true,
+    "slowMoMs": 0,
+    "timeoutMs": 20000,
+    "domainTimeoutMs": 120000,
+    "maxSamples": 2,
+    "maxCandidates": 12,
+    "skipStaticMaps": true
+  },
+  "candidates": [
+    {
+      "domain": "aircareprofessionals.com",
+      "name": "aircareprofessionals.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 0,
+      "source": "manual"
+    }
+  ],
+  "attemptedPlacesCount": 1,
+  "okDomainCount": 1,
+  "placesStopReason": "exhausted_candidates",
+  "transparencyScoredOkCount": 1,
+  "publishedWinnerCount": 1,
+  "winnerDomains": [
+    "aircareprofessionals.com"
+  ],
+  "auditOutcomeCounts": {
+    "ok": 1
+  },
+  "auditRows": [
+    {
+      "domain": "aircareprofessionals.com",
+      "outcome": "ok",
+      "creative_count": 40,
+      "selected_rank": 1
+    }
+  ],
+  "ranked": [
+    {
+      "domain": "aircareprofessionals.com",
+      "placeIndex": 0,
+      "creativeCount": 40,
+      "latestAdLastShownAt": "2026-05-01",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    }
+  ],
+  "competitors": [
+    {
+      "domain": "aircareprofessionals.com",
+      "name": "aircareprofessionals.com",
+      "adsSummary": "~40 ads in Google’s Transparency Center; most recent creative shown 2026-05-01.",
+      "examples": [
+        {
+          "headline": "Air Care Professionals, Llc",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR05288964479395037185/creative/CR14214692353469317121?region=US"
+        },
+        {
+          "headline": "Air Care Professionals, Llc",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR05288964479395037185/creative/CR01463700261494063105?region=US",
+          "imagePath": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/aircare-after-networkidle-removal/creatives/creative-0-1-aircareprofessionals.com.png"
+        }
+      ]
+    }
+  ],
+  "failureMessage": null
+}

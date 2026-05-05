@@ -19,6 +19,7 @@ import {
   FluxChatPanel,
   FluxProspectPageManualEditor,
 } from '@/components/flux';
+import { FLUX_MANUAL_BLOCK_TYPE_LABELS } from '@/components/flux/FluxManualBlockEditor';
 import {
   FluxProspectDetailsFields,
   fluxProspectFieldValuesToBrandProfile,
@@ -74,6 +75,7 @@ import {
 import type { FluxCampaignChatMessage } from '@/lib/flux/fluxCampaignChatState';
 import { getLastFluxChatSummary } from '@/lib/flux/fluxCampaignChatState';
 import { sellerProfileFromCampaignRow } from '@/lib/flux/campaignSeller';
+import { syncFluxPageConfigLogo } from '@/lib/flux/syncFluxPageConfigLogo';
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
@@ -85,6 +87,15 @@ const STATUSES: FluxPageStatus[] = ['draft', 'live', 'archived'];
 
 type ProspectEditorTab = 'manual' | 'chat';
 
+type ParsedPageSaveIssue = {
+  blockId: string | null;
+  blockType: string | null;
+  blockLabel: string;
+  fieldLabel: string;
+  detail: string;
+  isCopyLimit: boolean;
+};
+
 const PROSPECT_EDITOR_TABS = [
   { id: 'manual' as const, label: 'Manual' },
   { id: 'chat' as const, label: 'Chat' },
@@ -92,6 +103,90 @@ const PROSPECT_EDITOR_TABS = [
 
 function clonePageConfig(config: PageConfig): PageConfig {
   return JSON.parse(JSON.stringify(config)) as PageConfig;
+}
+
+function formatIssueFieldLabel(raw: string): string {
+  const match = /^props\.items\[(\d+)\]\.(title|description)$/.exec(raw);
+  if (match) {
+    const index = Number(match[1]) + 1;
+    return `Benefit ${index} ${match[2] === 'title' ? 'title' : 'description'}`;
+  }
+  const dayMatch = /^props\.weeks\[(\d+)\]\.days\[(\d+)\]\.(platform|post_type|hook|cta)$/.exec(raw);
+  if (dayMatch) {
+    const week = Number(dayMatch[1]) + 1;
+    const day = Number(dayMatch[2]) + 1;
+    const tail = dayMatch[3] === 'post_type' ? 'post type' : dayMatch[3];
+    return `Week ${week}, day ${day} ${tail}`;
+  }
+  const weekThemeMatch = /^props\.weeks\[(\d+)\]\.theme$/.exec(raw);
+  if (weekThemeMatch) return `Week ${Number(weekThemeMatch[1]) + 1} theme`;
+  const ctaLadderMatch = /^props\.cta_ladder\[(\d+)\]$/.exec(raw);
+  if (ctaLadderMatch) return `CTA ladder step ${Number(ctaLadderMatch[1]) + 1}`;
+  if (raw === 'props.headline') return 'Headline';
+  if (raw === 'props.subheadline') return 'Subheadline';
+  if (raw === 'props.ctaText') return 'CTA text';
+  if (raw === 'props.ctaUrl') return 'CTA URL';
+  if (raw === 'props.heroImageUrl') return 'Hero image URL';
+  if (raw === 'props.heading') return 'Heading';
+  if (raw === 'props.inferred_vertical') return 'Inferred vertical';
+  if (raw === 'props.inferred_vertical_rationale') return 'Vertical rationale';
+  if (raw === 'props.positioning_summary') return 'Positioning summary';
+  if (raw === 'props.platform_mix_note') return 'Platform mix note';
+  return raw.replace(/^props\./, '').replaceAll('_', ' ');
+}
+
+function parsePageSaveIssue(issue: string): ParsedPageSaveIssue {
+  const prefixMatch = /^Block ([^ ]+) \(([^)]+)\): (.+)$/.exec(issue);
+  if (!prefixMatch) {
+    return {
+      blockId: null,
+      blockType: null,
+      blockLabel: 'Page issue',
+      fieldLabel: 'Validation',
+      detail: issue,
+      isCopyLimit: false,
+    };
+  }
+
+  const [, blockId, blockType, remainder] = prefixMatch;
+  const blockLabel =
+    FLUX_MANUAL_BLOCK_TYPE_LABELS[blockType as keyof typeof FLUX_MANUAL_BLOCK_TYPE_LABELS] ?? blockType;
+  const lengthMatch = /^([^ ]+) length (\d+) exceeds hard max (\d+) \(target (\d+), tier ([^)]+)\)$/.exec(
+    remainder,
+  );
+  if (lengthMatch) {
+    const [, fieldPath, current, hardMax, target, tier] = lengthMatch;
+    return {
+      blockId,
+      blockType,
+      blockLabel,
+      fieldLabel: formatIssueFieldLabel(fieldPath),
+      detail: `${current}/${hardMax} chars (target ${target}, ${tier} layout)`,
+      isCopyLimit: true,
+    };
+  }
+
+  const genericFieldMatch = /^([^ ]+) (.+)$/.exec(remainder);
+  if (genericFieldMatch) {
+    const [, fieldPath, detail] = genericFieldMatch;
+    return {
+      blockId,
+      blockType,
+      blockLabel,
+      fieldLabel: formatIssueFieldLabel(fieldPath),
+      detail,
+      isCopyLimit: false,
+    };
+  }
+
+  return {
+    blockId,
+    blockType,
+    blockLabel,
+    fieldLabel: 'Validation',
+    detail: remainder,
+    isCopyLimit: false,
+  };
 }
 
 /** When the server updates `competitor_ad_audit` (async worker) but the editor has unsaved edits elsewhere, patch only those blocks from `server`. */
@@ -147,6 +242,7 @@ export default function ProspectDetail() {
   const [savingSlug, setSavingSlug] = useState(false);
   const [auditPollJobId, setAuditPollJobId] = useState<string | null>(null);
   const [auditBusyBlockId, setAuditBusyBlockId] = useState<string | null>(null);
+  const [requestedEditingBlockId, setRequestedEditingBlockId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -366,6 +462,40 @@ export default function ProspectDetail() {
     return JSON.stringify(draftPageConfig) !== JSON.stringify(savedPageConfig);
   }, [draftPageConfig, savedPageConfig]);
 
+  const pageSaveIssues = useMemo(
+    () =>
+      draftPageConfig
+        ? getMergedFluxPageConfigSemanticIssues(draftPageConfig, template?.content_assets ?? [])
+        : [],
+    [draftPageConfig, template?.content_assets],
+  );
+
+  const parsedPageSaveIssues = useMemo(
+    () => pageSaveIssues.map(parsePageSaveIssue),
+    [pageSaveIssues],
+  );
+
+  const pageIssueCountByBlockId = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const issue of parsedPageSaveIssues) {
+      if (!issue.blockId) continue;
+      counts[issue.blockId] = (counts[issue.blockId] ?? 0) + 1;
+    }
+    return counts;
+  }, [parsedPageSaveIssues]);
+
+  const hasCopyBudgetIssues = useMemo(
+    () => parsedPageSaveIssues.some((issue) => issue.isCopyLimit),
+    [parsedPageSaveIssues],
+  );
+
+  useEffect(() => {
+    if (!requestedEditingBlockId) return;
+    if (!pageIssueCountByBlockId[requestedEditingBlockId]) {
+      setRequestedEditingBlockId(null);
+    }
+  }, [pageIssueCountByBlockId, requestedEditingBlockId]);
+
   /**
    * Keep `draftPageConfig` aligned with `page.page_config` whenever the server row changes.
    * Depends on `page?.page_config` (not only `updated_at`) so async worker updates (audit status)
@@ -489,6 +619,24 @@ export default function ProspectDetail() {
         service_area: prospectDraft.service_area,
       });
       setProspect(updated);
+      if (page && campaign) {
+        const savedPageConfig = coercePageConfig(page.page_config);
+        if (savedPageConfig) {
+          const syncedPageConfig = syncFluxPageConfigLogo(savedPageConfig, {
+            prospectBrand: updated.brand_profile,
+            prospectWebsiteIntel: updated.website_intel_snapshot,
+            sellerBrand: campaign.seller_brand_profile,
+            sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
+            brandingPolicy: campaign.branding_policy,
+          });
+          const currentLogoUrl = savedPageConfig.theme.logoUrl?.trim() || undefined;
+          const nextLogoUrl = syncedPageConfig.theme.logoUrl?.trim() || undefined;
+          if (currentLogoUrl !== nextLogoUrl) {
+            const syncedPage = await updateFluxPageConfig(page.id, syncedPageConfig);
+            setPage(syncedPage);
+          }
+        }
+      }
       setProspectDraft(fluxProspectRowToFieldValues(updated));
       toast.success('Prospect saved.');
     } catch (e) {
@@ -496,21 +644,31 @@ export default function ProspectDetail() {
     } finally {
       setSavingProspect(false);
     }
-  }, [prospect, prospectDraft, savingProspect, toast]);
+  }, [campaign, page, prospect, prospectDraft, savingProspect, toast]);
 
   const handleSavePage = useCallback(async () => {
-    if (!page || !draftPageConfig || savingPage) return;
-    const issues = getMergedFluxPageConfigSemanticIssues(
-      draftPageConfig,
-      template?.content_assets ?? [],
-    );
+    if (!page || !draftPageConfig || !prospect || !campaign || savingPage) return;
+    const issues = pageSaveIssues;
     if (issues.length > 0) {
+      toast.error(
+        issues.length === 1
+          ? 'Fix 1 page issue before saving.'
+          : `Fix ${issues.length} page issues before saving.`,
+      );
+      console.warn('[flux] page save blocked by validation', issues);
       Alert.alert('Fix before saving', issues.join('\n'));
       return;
     }
     setSavingPage(true);
     try {
-      const updated = await updateFluxPageConfig(page.id, draftPageConfig);
+      const syncedPageConfig = syncFluxPageConfigLogo(draftPageConfig, {
+        prospectBrand: prospect.brand_profile,
+        prospectWebsiteIntel: prospect.website_intel_snapshot,
+        sellerBrand: campaign.seller_brand_profile,
+        sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
+        brandingPolicy: campaign.branding_policy,
+      });
+      const updated = await updateFluxPageConfig(page.id, syncedPageConfig);
       setPage(updated);
       toast.success('Page saved.');
     } catch (e) {
@@ -518,7 +676,26 @@ export default function ProspectDetail() {
     } finally {
       setSavingPage(false);
     }
-  }, [page, draftPageConfig, savingPage, template?.content_assets, toast]);
+  }, [campaign, draftPageConfig, page, pageSaveIssues, prospect, savingPage, toast]);
+
+  const handleOpenIssue = useCallback((blockId: string | null) => {
+    setEditorTab('manual');
+    if (!blockId) return;
+    setRequestedEditingBlockId(blockId);
+  }, []);
+
+  const handleToggleAllowLongCopy = useCallback((enabled: boolean) => {
+    setDraftPageConfig((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        theme: {
+          ...current.theme,
+          ...(enabled ? { allowLongCopy: true } : { allowLongCopy: undefined }),
+        },
+      };
+    });
+  }, []);
 
   const handleDiscardPage = useCallback(() => {
     if (!page) return;
@@ -989,6 +1166,8 @@ export default function ProspectDetail() {
                     onChange={setDraftPageConfig}
                     contentAssets={template?.content_assets ?? []}
                     campaignId={campaign.id}
+                    requestedEditingBlockId={requestedEditingBlockId}
+                    issueCountByBlockId={pageIssueCountByBlockId}
                     prospectLeadSlot={
                       prospectDraft ? (
                         <FluxProspectDetailsFields
@@ -1062,6 +1241,66 @@ export default function ProspectDetail() {
                       ) : null
                     }
                   />
+                  {pageSaveIssues.length > 0 ? (
+                    <View className="border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 gap-2">
+                      <Text className="text-amber-100 text-sm font-instrument-semibold">
+                        Fix before saving
+                      </Text>
+                      <Text className="text-amber-100/90 text-xs font-instrument leading-5">
+                        These copy limits are enforced by the current page layout. Open a block below to shorten the
+                        flagged fields.
+                      </Text>
+                      {hasCopyBudgetIssues ? (
+                        <View className="pt-0.5">
+                          <Button size="xs" variant="secondary" onPress={() => handleToggleAllowLongCopy(true)}>
+                            Allow long copy for this page
+                          </Button>
+                        </View>
+                      ) : null}
+                      <View className="gap-2">
+                        {parsedPageSaveIssues.map((issue, index) => (
+                          <View
+                            key={`${issue.blockId ?? 'page'}-${issue.fieldLabel}-${index}`}
+                            className="border border-amber-500/20 rounded-lg px-3 py-2 bg-black/10 gap-1.5"
+                          >
+                            <Text className="text-amber-50 text-xs font-instrument-semibold">
+                              {issue.blockLabel} · {issue.fieldLabel}
+                            </Text>
+                            <Text className="text-amber-100/85 text-xs font-instrument leading-5">
+                              {issue.detail}
+                            </Text>
+                            {issue.blockId ? (
+                              <View className="pt-0.5">
+                                <Button
+                                  size="xs"
+                                  variant="secondary"
+                                  onPress={() => handleOpenIssue(issue.blockId)}
+                                >
+                                  Open block
+                                </Button>
+                              </View>
+                            ) : null}
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+                  {draftPageConfig.theme.allowLongCopy ? (
+                    <View className="border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 gap-2">
+                      <Text className="text-amber-100 text-sm font-instrument-semibold">
+                        Long-copy override enabled
+                      </Text>
+                      <Text className="text-amber-100/90 text-xs font-instrument leading-5">
+                        This page can save copy that exceeds the normal layout limits. Use this sparingly since tighter
+                        presets may overflow.
+                      </Text>
+                      <View className="pt-0.5">
+                        <Button size="xs" variant="secondary" onPress={() => handleToggleAllowLongCopy(false)}>
+                          Re-enable copy limits
+                        </Button>
+                      </View>
+                    </View>
+                  ) : null}
                   <View className="flex-row flex-wrap gap-2 items-center">
                     <Button size="sm" onPress={handleSavePage} disabled={savingPage || !pageDirty}>
                       {savingPage ? 'Saving…' : 'Save page'}

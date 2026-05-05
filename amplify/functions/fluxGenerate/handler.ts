@@ -16,202 +16,11 @@ import { mergeBrandProfileWithWebsiteIntel } from '../../../lib/flux/mergeBrandP
 import { resolveFluxPageBrandInputs } from '../../../lib/flux/resolveFluxPageBrandInputs';
 import { normalizeFluxBrandingPolicy } from '../../../lib/flux/fluxBrandingPolicy';
 import { formatFluxCopyBudgetsForPrompt } from '../../../lib/flux/fluxCopyBudgets';
-
-const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
-
-type OpenRouterResponseFormat =
-  | { type: 'json_object' }
-  | {
-      type: 'json_schema';
-      json_schema: { name: string; strict: boolean; schema: Record<string, unknown> };
-    };
-
-/** Best-effort string for logs / client from OpenRouter `error` + `metadata` (see openrouter.ai errors docs). */
-function formatOpenRouterErrorDetails(body: Record<string, unknown>): string {
-  const errField = body.error;
-  if (typeof errField === 'string' && errField.trim()) return errField.trim();
-  if (errField && typeof errField === 'object') {
-    const e = errField as Record<string, unknown>;
-    const parts: string[] = [];
-    if (typeof e.message === 'string' && e.message.trim()) parts.push(e.message.trim());
-    if (e.code !== undefined && e.code !== null && String(e.code).length > 0) {
-      parts.push(`code=${String(e.code)}`);
-    }
-    const meta = e.metadata;
-    if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
-      const m = meta as Record<string, unknown>;
-      if (typeof m.provider_name === 'string' && m.provider_name.trim()) {
-        parts.push(`provider=${m.provider_name.trim()}`);
-      }
-      if (m.raw !== undefined && m.raw !== null) {
-        let rawStr: string;
-        if (typeof m.raw === 'string') rawStr = m.raw;
-        else {
-          try {
-            rawStr = JSON.stringify(m.raw);
-          } catch {
-            rawStr = String(m.raw);
-          }
-        }
-        if (rawStr.length > 600) rawStr = `${rawStr.slice(0, 600)}…`;
-        if (rawStr.trim()) parts.push(`upstream=${rawStr}`);
-      }
-    }
-    if (parts.length > 0) return parts.join(' | ');
-  }
-  if (typeof body.message === 'string' && body.message.trim()) return body.message.trim();
-  return '';
-}
-
-async function openRouterChatCompletion(params: {
-  apiKey: string;
-  model: string;
-  system: string;
-  user: string;
-  referer?: string;
-  title?: string;
-  responseFormat?: OpenRouterResponseFormat;
-}): Promise<
-  { ok: true; text: string } | { ok: false; details: string; httpStatus?: number }
-> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${params.apiKey}`,
-    'Content-Type': 'application/json',
-  };
-  if (params.referer) headers['HTTP-Referer'] = params.referer;
-  if (params.title) headers['X-OpenRouter-Title'] = params.title;
-
-  const requestBody: Record<string, unknown> = {
-    model: params.model,
-    messages: [
-      { role: 'system', content: params.system },
-      { role: 'user', content: params.user },
-    ],
-    max_tokens: 4096,
-  };
-  if (params.responseFormat) requestBody.response_format = params.responseFormat;
-
-  let res: Response;
-  try {
-    res = await fetch(OPENROUTER_CHAT_URL, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody),
-    });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, details: msg };
-  }
-
-  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  const choices = body.choices as
-    | Array<{
-        message?: { content?: string | null };
-        finish_reason?: string;
-        native_finish_reason?: string;
-      }>
-    | undefined;
-  const choice0 = choices?.[0];
-  const text = choice0?.message?.content;
-  const hasStringContent = typeof text === 'string' && text.trim().length > 0;
-  const topDetails = formatOpenRouterErrorDetails(body);
-  const finishReason = choice0?.finish_reason;
-
-  if (!res.ok) {
-    const msg = topDetails || `HTTP ${res.status}`;
-    return { ok: false, details: msg, httpStatus: res.status };
-  }
-
-  // HTTP 200 — OpenRouter may still return `error` or choices with finish_reason "error" (non-stream completions).
-  if (body.error && !hasStringContent) {
-    return {
-      ok: false,
-      details: topDetails || 'OpenRouter returned an error with no completion text',
-      httpStatus: res.status,
-    };
-  }
-  if (finishReason === 'error') {
-    const native = choice0?.native_finish_reason;
-    const base = topDetails || 'Model finished with error';
-    const msg = native ? `${base} (native_finish_reason=${native})` : base;
-    return { ok: false, details: msg, httpStatus: res.status };
-  }
-  if (!hasStringContent) {
-    return {
-      ok: false,
-      details:
-        topDetails || 'OpenRouter response missing choices[0].message.content (empty or null)',
-      httpStatus: res.status,
-    };
-  }
-  return { ok: true, text: text as string };
-}
-
-/**
- * Tried after the configured primary model, in order, when routing is unavailable or the
- * upstream is temporarily overloaded (OpenRouter / provider quirks differ by account).
- * Mix of Anthropic, OpenAI, Google, Meta, Mistral, DeepSeek.
- */
-const OPENROUTER_MODEL_FALLBACKS = [
-  'anthropic/claude-sonnet-4',
-  'anthropic/claude-3.7-sonnet',
-  'anthropic/claude-3.5-sonnet-20240620',
-  'openai/gpt-4o',
-  'openai/gpt-4o-mini',
-  'google/gemini-2.0-flash-001',
-  'meta-llama/llama-3.3-70b-instruct',
-  'mistralai/mistral-small-3.1-24b-instruct-2503',
-  'deepseek/deepseek-chat',
-  'qwen/qwen-2.5-72b-instruct',
-];
-
-function shouldTryNextOpenRouterModel(r: { ok: false; details: string; httpStatus?: number }): boolean {
-  const d = r.details;
-  if (/no endpoints found/i.test(d)) return true;
-  if (r.httpStatus === 429) return true;
-  if (r.httpStatus === 503) return true;
-  if (r.httpStatus === 500 || r.httpStatus === 502 || r.httpStatus === 504) return true;
-  if (/rate limit|too many requests|overload|capacity|temporarily unavailable|try again/i.test(d)) {
-    return true;
-  }
-  if (
-    /provider returned|bad gateway|gateway timeout|server error|model is down|invalid response from provider|upstream=/i.test(
-      d,
-    )
-  ) {
-    return true;
-  }
-  return false;
-}
-
-async function openRouterChatWithModelFallbacks(
-  base: Omit<Parameters<typeof openRouterChatCompletion>[0], 'model'> & { model: string },
-): Promise<
-  { ok: true; text: string; modelUsed: string } | { ok: false; details: string; modelTried: string }
-> {
-  const primary = base.model;
-  const candidates = [primary, ...OPENROUTER_MODEL_FALLBACKS.filter((m) => m !== primary)];
-  let lastDetails = '';
-  let lastTried = primary;
-  for (const model of candidates) {
-    lastTried = model;
-    let r = await openRouterChatCompletion({ ...base, model });
-    if (
-      !r.ok &&
-      base.responseFormat &&
-      (r.httpStatus === 400 || r.httpStatus === 422) &&
-      /json|schema|response_format|structured|invalid|unsupported|not support/i.test(r.details)
-    ) {
-      r = await openRouterChatCompletion({ ...base, model, responseFormat: undefined });
-    }
-    if (r.ok) return { ok: true, text: r.text, modelUsed: model };
-    lastDetails = r.details;
-    if (!shouldTryNextOpenRouterModel(r)) {
-      return { ok: false, details: r.details, modelTried: model };
-    }
-  }
-  return { ok: false, details: lastDetails, modelTried: lastTried };
-}
+import {
+  openRouterChatWithModelFallbacks,
+  type OpenRouterResponseFormat,
+} from '../../../lib/flux/openRouterChat';
+import { extractJsonObjectFromLlmText } from '../../../lib/flux/extractJsonObjectFromLlmText';
 
 let pageConfigJsonSchemaMemo: Record<string, unknown> | null = null;
 
@@ -260,7 +69,9 @@ Every block from the template MUST appear in your output with the same id, type,
 
 For tanners_tax_strategy blocks only: if you set props.defaultQualificationMode, it MUST be exactly one of: "passive", "reps", or "str" (never "active" or other labels—use "reps" for real-estate-professional-style qualification).
 
-For social_media_plan blocks: keep props.weeks as a calendar (each week has theme + days with platform, post_type, hook, optional cta). Set inferred_vertical and inferred_vertical_rationale from real prospect signals (no invented proof). Keep cta_ladder as an ordered escalation and platform_mix_note as one concrete sentence on channel mix.`;
+For social_media_plan blocks: keep props.weeks as a calendar (each week has theme + days with platform, post_type, hook, optional cta). Set inferred_vertical and inferred_vertical_rationale from real prospect signals (no invented proof). Keep cta_ladder as an ordered escalation and platform_mix_note as one concrete sentence on channel mix.
+
+For quiz_and_book blocks: preserve the quiz structure from the template. Keep every question id, question.type, question order, option id, calendlyUrl, and destinationEmail aligned with the template. You may rewrite only visible copy such as heading, subheading, question.prompt, question.helperText, question.placeholder, option labels, summaryHeading, and summaryBody.`;
 
 function buildUserPrompt(
   template: { blocks: unknown[]; content_assets: unknown[]; copy_slots: string[]; constraints: string },
@@ -573,16 +384,6 @@ async function assertUserCanAccessCampaign(
     };
   }
   return { ok: true };
-}
-
-function extractJsonObjectFromLlmText(text: string): string | null {
-  const trimmed = text.trim();
-  const fence = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/m);
-  const candidate = fence ? fence[1].trim() : trimmed;
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) return null;
-  return candidate.slice(start, end + 1);
 }
 
 async function runLlmPageConfig(params: {

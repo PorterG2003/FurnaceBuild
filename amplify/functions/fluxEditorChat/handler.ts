@@ -3,105 +3,8 @@ import {
   fluxEditorChatResponseSchema,
   FLUX_EDITOR_CHAT_BLOCK_ADD_TYPE_ALTS,
 } from '../../../lib/flux/editor/schemas';
-
-const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
-
-async function openRouterChatCompletion(params: {
-  apiKey: string;
-  model: string;
-  system: string;
-  user: string;
-  referer?: string;
-  title?: string;
-}): Promise<
-  { ok: true; text: string } | { ok: false; details: string; httpStatus?: number }
-> {
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${params.apiKey}`,
-    'Content-Type': 'application/json',
-  };
-  if (params.referer) headers['HTTP-Referer'] = params.referer;
-  if (params.title) headers['X-OpenRouter-Title'] = params.title;
-
-  let res: Response;
-  try {
-    res = await fetch(OPENROUTER_CHAT_URL, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: params.model,
-        messages: [
-          { role: 'system', content: params.system },
-          { role: 'user', content: params.user },
-        ],
-        max_tokens: 4096,
-      }),
-    });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, details: msg };
-  }
-
-  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) {
-    const errField = body.error;
-    let msg = `HTTP ${res.status}`;
-    if (typeof errField === 'string') msg = errField;
-    else if (errField && typeof errField === 'object' && 'message' in errField) {
-      const m = (errField as { message?: string }).message;
-      if (typeof m === 'string') msg = m;
-    }
-    if (typeof body.message === 'string' && body.message) msg = body.message;
-    return { ok: false, details: msg, httpStatus: res.status };
-  }
-
-  const choices = body.choices as Array<{ message?: { content?: string | null } }> | undefined;
-  const text = choices?.[0]?.message?.content;
-  if (typeof text !== 'string') {
-    return { ok: false, details: 'OpenRouter response missing choices[0].message.content', httpStatus: res.status };
-  }
-  return { ok: true, text };
-}
-
-const OPENROUTER_MODEL_FALLBACKS = [
-  'anthropic/claude-sonnet-4',
-  'anthropic/claude-3.5-sonnet-20240620',
-  'openai/gpt-4o',
-  'openai/gpt-4o-mini',
-  'google/gemini-2.0-flash-001',
-];
-
-function shouldTryNextOpenRouterModel(r: { ok: false; details: string; httpStatus?: number }): boolean {
-  const d = r.details;
-  if (/no endpoints found/i.test(d)) return true;
-  if (r.httpStatus === 429) return true;
-  if (r.httpStatus === 503) return true;
-  if (/rate limit|too many requests|overload|capacity|temporarily unavailable|try again/i.test(d)) {
-    return true;
-  }
-  return false;
-}
-
-async function openRouterChatWithModelFallbacks(
-  base: Omit<Parameters<typeof openRouterChatCompletion>[0], 'model'> & { model: string },
-): Promise<
-  { ok: true; text: string; modelUsed: string } | { ok: false; details: string; modelTried: string }
-> {
-  const primary = base.model;
-  const candidates = [primary, ...OPENROUTER_MODEL_FALLBACKS.filter((m) => m !== primary)];
-  let lastDetails = '';
-  let lastTried = primary;
-  for (const model of candidates) {
-    lastTried = model;
-    const r = await openRouterChatCompletion({ ...base, model });
-    if (r.ok) return { ok: true, text: r.text, modelUsed: model };
-    lastDetails = r.details;
-    if (!shouldTryNextOpenRouterModel(r)) {
-      return { ok: false, details: r.details, modelTried: model };
-    }
-  }
-  return { ok: false, details: lastDetails, modelTried: lastTried };
-}
+import { openRouterChatWithModelFallbacks } from '../../../lib/flux/openRouterChat';
+import { extractJsonObjectFromLlmText } from '../../../lib/flux/extractJsonObjectFromLlmText';
 
 const FLUX_FLAG_KEY = 'flux';
 
@@ -110,14 +13,17 @@ const SYSTEM_PROMPT = `You are a Flux campaign editor assistant. The user is des
 Rules:
 - Return ONLY valid JSON (no markdown fences) with this exact shape:
   {"assistantMessage": string, "operations": array, "summary"?: string[], "requiresAiPreview"?: boolean}
+- The response must be strict JSON: every property name must use double quotes, every string must use double quotes, there must be no trailing commas, and there must be no commentary outside the single JSON object.
 - "operations" is an ordered list of small edits. Each item MUST be a JSON object with a "type" field (never a bare string, number, or null in this array). Shape per item:
   - {"type":"campaign.setName","value":string}
   - {"type":"campaign.setOfferDescription","value":string}
   - {"type":"block.add","blockType":${FLUX_EDITOR_CHAT_BLOCK_ADD_TYPE_ALTS},"index"?:number}
   - {"type":"block.remove","blockId":string}
   - {"type":"block.updateProps","blockId":string,"props":object} — merge props into the existing block; use only keys valid for that block type
+  - {"type":"block.setScrollTag","blockId":string,"scrollTag":string|null} — set or clear the public section anchor for deep links / in-page CTAs (#fragment); null clears
   - {"type":"block.reorder","blockIds":string[]} — full permutation of existing ids
   - Block type **competitor_ad_audit**: section that compares nearby competitors using Google Ads Transparency + static maps. In the **template**, only the section heading is edited here; competitor rows, map images, and example creatives are filled **per prospect** when someone runs **Run competitor audit** on the prospect page (requires a saved **service area** on that prospect). Use block.add with blockType "competitor_ad_audit" when the user wants that section. For block.updateProps on this type, normally only change props.heading; do not invent competitors, map URLs, or transparency links. Do not set props.lastAuditDomainReport (legacy / internal); per-domain audit lines are stored on the job result, not in the published block.
+  - Block type **quiz_and_book**: configurable multi-step quiz that ends in a summary screen and an inline Calendly step. Use block.add with blockType "quiz_and_book" when the user wants a questionnaire / quiz / qualifier / book-a-call flow. In block.updateProps, edit only top-level props and replace the full props.questions array when changing step order or question structure. Keep stable question ids for existing questions, keep question.type accurate, keep destinationEmail as an email or omit it, and keep calendlyUrl as a real http(s) URL. Do not invent hidden scoring or branching logic unless the user explicitly asks for it.
   - {"type":"asset.add","asset":{id,type,title,body,...}}
   - {"type":"asset.remove","assetId":string}
   - {"type":"asset.update","assetId":string,"patch":{title?,body?,metric?,attribution?,imageUrl?,type?}}
@@ -166,18 +72,13 @@ Copy / rewrite rules:
 
 If the user message is conversational with no edits, it is valid to return "operations": [].`;
 
-function extractJsonObjectFromLlmText(text: string): string | null {
-  const trimmed = text.trim();
-  const fence = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/m);
-  const candidate = fence ? fence[1].trim() : trimmed;
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) return null;
-  return candidate.slice(start, end + 1);
+function formatFluxEditorChatValidationIssues(raw: string, maxLen = 700): string {
+  return raw.length > maxLen ? `${raw.slice(0, maxLen)}…` : raw;
 }
 
 const PROSPECT_PAGE_ALLOWED_OPERATION_TYPES = new Set<string>([
   'block.updateProps',
+  'block.setScrollTag',
   'block.reorder',
   'preview.patchBrand',
   'preview.patchProspect',
@@ -187,13 +88,16 @@ const PROSPECT_PAGE_SYSTEM_PROMPT = `You are a Flux assistant editing ONE person
 
 Rules:
 - Return ONLY valid JSON (no markdown fences) with shape {"assistantMessage": string, "operations": array, "summary"?: string[], "requiresAiPreview"?: boolean}
+- The response must be strict JSON: every property name must use double quotes, every string must use double quotes, there must be no trailing commas, and there must be no commentary outside the single JSON object.
 - Allowed operations ONLY:
   - {"type":"block.updateProps","blockId":string,"props":object} — merge props into the existing block; use only keys valid for that block type; do not invent block ids
+  - {"type":"block.setScrollTag","blockId":string,"scrollTag":string|null} — optional section anchor for in-page links; null clears; hero/cta URLs may use #fragment to scroll
   - {"type":"block.reorder","blockIds":string[]} — full permutation of existing block ids
   - {"type":"preview.patchBrand","patch":{primaryColor?,accentColor?,fontFamily?,logoUrl?,blockStylePreset?}}
   - {"type":"preview.patchProspect","patch":{name?,company?,...}} — prefer name/company for on-page personalization
 - Do NOT use: campaign.*, template.*, asset.*, block.add, block.remove
-- Do not invent facts, logos, or metrics. Keep URLs honest (http/https).
+- For **quiz_and_book** blocks in this mode, it is fine to adjust visible copy and configured questions via block.updateProps, but keep the flow linear and preserve existing question ids when rewriting prompts/options.
+- Do not invent facts, logos, or metrics. Keep URLs honest (http/https or same-page anchors like #section when a matching scroll tag exists).
 - Prefer a small number of targeted edits. If the user is only conversing, return "operations": [].
 - If a capability is missing from Flux blocks, return operations: [] and prefix assistantMessage with: Needs new block:`;
 
@@ -403,59 +307,72 @@ async function handleRequest(event: Record<string, unknown>) {
 
   const systemPrompt = prospectPageId ? PROSPECT_PAGE_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
-  const r = await openRouterChatWithModelFallbacks({
-    apiKey: openRouterApiKey,
-    model: openRouterModel,
-    system: systemPrompt,
-    user: userPayload,
-    referer: openRouterReferer || undefined,
-    title: openRouterTitle || undefined,
-  });
+  const maxAttempts = 3;
+  let lastIssue = '';
+  let lastModel = openRouterModel;
 
-  if (!r.ok) {
-    return response(502, {
-      error: 'LLM request failed',
-      details: r.details,
-      code: 'LLM_UPSTREAM_ERROR',
-      model: r.modelTried,
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const repairHint =
+      attempt > 0 && lastIssue
+        ? `\n\nYour previous reply was invalid. Fix these issues and return ONLY one strict JSON object:\n${lastIssue}\n\nRequirements reminder: every property name must be double-quoted, every string value must be double-quoted, and there can be no trailing commas.`
+        : '';
+    const r = await openRouterChatWithModelFallbacks({
+      apiKey: openRouterApiKey,
+      model: openRouterModel,
+      system: systemPrompt,
+      user: `${userPayload}${repairHint}`,
+      referer: openRouterReferer || undefined,
+      title: openRouterTitle || undefined,
+    });
+
+    if (!r.ok) {
+      return response(502, {
+        error: 'LLM request failed',
+        details: r.details,
+        code: 'LLM_UPSTREAM_ERROR',
+        model: r.modelTried,
+      });
+    }
+    lastModel = r.modelUsed;
+
+    const jsonStr = extractJsonObjectFromLlmText(r.text);
+    if (!jsonStr) {
+      lastIssue = 'No JSON object found in the response.';
+      continue;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (e: unknown) {
+      lastIssue = `JSON parse error: ${e instanceof Error ? e.message : String(e)}`;
+      continue;
+    }
+
+    const zr = fluxEditorChatResponseSchema.safeParse(parsed);
+    if (!zr.success) {
+      lastIssue = formatFluxEditorChatValidationIssues(zr.error.message);
+      continue;
+    }
+
+    let operations = zr.data.operations;
+    if (prospectPageId) {
+      operations = operations.filter((op) => PROSPECT_PAGE_ALLOWED_OPERATION_TYPES.has(op.type));
+    }
+
+    return response(200, {
+      assistantMessage: zr.data.assistantMessage,
+      operations,
+      summary: zr.data.summary,
+      requiresAiPreview: zr.data.requiresAiPreview,
+      model: lastModel,
     });
   }
 
-  const jsonStr = extractJsonObjectFromLlmText(r.text);
-  if (!jsonStr) {
-    return response(422, { error: 'No JSON in model response', code: 'NO_JSON' });
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonStr);
-  } catch (e: unknown) {
-    return response(422, {
-      error: 'JSON parse error',
-      details: e instanceof Error ? e.message : String(e),
-      code: 'JSON_PARSE',
-    });
-  }
-
-  const zr = fluxEditorChatResponseSchema.safeParse(parsed);
-  if (!zr.success) {
-    return response(422, {
-      error: 'Response validation failed',
-      details: zr.error.message,
-      code: 'INVALID_RESPONSE',
-    });
-  }
-
-  let operations = zr.data.operations;
-  if (prospectPageId) {
-    operations = operations.filter((op) => PROSPECT_PAGE_ALLOWED_OPERATION_TYPES.has(op.type));
-  }
-
-  return response(200, {
-    assistantMessage: zr.data.assistantMessage,
-    operations,
-    summary: zr.data.summary,
-    requiresAiPreview: zr.data.requiresAiPreview,
-    model: r.modelUsed,
+  return response(422, {
+    error: 'Response validation failed',
+    details: lastIssue || 'Unable to parse or validate model response',
+    code: 'INVALID_RESPONSE',
+    model: lastModel,
   });
 }

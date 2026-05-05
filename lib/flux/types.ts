@@ -15,12 +15,15 @@ export type BlockType =
   | 'cta'
   | 'tanners_tax_strategy'
   | 'social_media_plan'
-  | 'competitor_ad_audit';
+  | 'competitor_ad_audit'
+  | 'quiz_and_book';
 
 export interface BlockBase {
   id: string;
   type: BlockType;
   order: number;
+  /** Optional public section anchor; use `#<normalized-tag>` in CTA URLs to scroll here. */
+  scrollTag?: string;
 }
 
 export interface HeroBlockProps {
@@ -168,6 +171,43 @@ export interface CompetitorAdAuditBlock extends BlockBase {
   props: CompetitorAdAuditBlockProps;
 }
 
+export type QuizAndBookQuestionType =
+  | 'single_select'
+  | 'multi_select'
+  | 'text'
+  | 'textarea'
+  | 'dropdown';
+
+export interface QuizAndBookQuestionOption {
+  id: string;
+  label: string;
+}
+
+export interface QuizAndBookQuestion {
+  id: string;
+  type: QuizAndBookQuestionType;
+  prompt: string;
+  helperText?: string;
+  placeholder?: string;
+  required?: boolean;
+  options?: QuizAndBookQuestionOption[];
+}
+
+export interface QuizAndBookBlockProps {
+  heading: string;
+  subheading: string;
+  questions: QuizAndBookQuestion[];
+  summaryHeading: string;
+  summaryBody: string;
+  calendlyUrl: string;
+  destinationEmail?: string;
+}
+
+export interface QuizAndBookBlock extends BlockBase {
+  type: 'quiz_and_book';
+  props: QuizAndBookBlockProps;
+}
+
 export type Block =
   | HeroBlock
   | SocialProofBlock
@@ -177,7 +217,8 @@ export type Block =
   | CtaBlock
   | TannersTaxStrategyBlock
   | SocialMediaPlanBlock
-  | CompetitorAdAuditBlock;
+  | CompetitorAdAuditBlock
+  | QuizAndBookBlock;
 
 // ---------------------------------------------------------------------------
 // Content assets (referenced by blocks)
@@ -191,6 +232,7 @@ export interface ContentAsset {
   title: string;
   body: string;
   metric?: string;
+  metrics?: Array<{ label: string; value: string }>;
   attribution?: string;
   imageUrl?: string;
 }
@@ -215,6 +257,8 @@ export interface ThemeConfig {
   fontFamily: string;
   logoUrl?: string;
   blockStylePreset?: FluxBlockStylePreset;
+  /** When true, over-limit copy may be saved even if it risks overflowing the chosen layout preset. */
+  allowLongCopy?: boolean;
 }
 
 export interface FluxWebsiteIntelSnapshot {

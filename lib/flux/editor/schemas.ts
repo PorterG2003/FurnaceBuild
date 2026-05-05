@@ -24,6 +24,7 @@ export const blockTypeSchema = z.enum([
   'tanners_tax_strategy',
   'social_media_plan',
   'competitor_ad_audit',
+  'quiz_and_book',
 ]);
 
 /**
@@ -48,6 +49,12 @@ export const fluxEditorOperationSchema = z.discriminatedUnion('type', [
     type: z.literal('block.updateProps'),
     blockId: z.string().min(1),
     props: z.record(z.string(), z.unknown()),
+  }),
+  z.object({
+    type: z.literal('block.setScrollTag'),
+    blockId: z.string().min(1),
+    /** `null` clears the tag; non-empty string sets it (trimmed on apply). */
+    scrollTag: z.union([z.string().max(120), z.null()]),
   }),
   z.object({
     type: z.literal('block.reorder'),

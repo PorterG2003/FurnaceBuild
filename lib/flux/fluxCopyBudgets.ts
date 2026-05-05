@@ -133,6 +133,38 @@ const COMPETITOR: Record<FluxCopyBudgetTier, { heading: FluxCopyFieldBudget }> =
   standard: { heading: { label: 'competitor_ad_audit.heading', ...B(44, 88) } },
 };
 
+const QUIZ_AND_BOOK: Record<
+  FluxCopyBudgetTier,
+  {
+    heading: FluxCopyFieldBudget;
+    subheading: FluxCopyFieldBudget;
+    question_prompt: FluxCopyFieldBudget;
+    question_helperText: FluxCopyFieldBudget;
+    option_label: FluxCopyFieldBudget;
+    summaryHeading: FluxCopyFieldBudget;
+    summaryBody: FluxCopyFieldBudget;
+  }
+> = {
+  tight: {
+    heading: { label: 'quiz_and_book.heading', ...B(48, 96) },
+    subheading: { label: 'quiz_and_book.subheading', ...B(120, 240) },
+    question_prompt: { label: 'quiz_and_book.questions[].prompt', ...B(68, 140) },
+    question_helperText: { label: 'quiz_and_book.questions[].helperText', ...B(90, 220) },
+    option_label: { label: 'quiz_and_book.questions[].options[].label', ...B(36, 88) },
+    summaryHeading: { label: 'quiz_and_book.summaryHeading', ...B(24, 52) },
+    summaryBody: { label: 'quiz_and_book.summaryBody', ...B(110, 240) },
+  },
+  standard: {
+    heading: { label: 'quiz_and_book.heading', ...B(56, 110) },
+    subheading: { label: 'quiz_and_book.subheading', ...B(140, 280) },
+    question_prompt: { label: 'quiz_and_book.questions[].prompt', ...B(76, 156) },
+    question_helperText: { label: 'quiz_and_book.questions[].helperText', ...B(110, 250) },
+    option_label: { label: 'quiz_and_book.questions[].options[].label', ...B(42, 96) },
+    summaryHeading: { label: 'quiz_and_book.summaryHeading', ...B(28, 56) },
+    summaryBody: { label: 'quiz_and_book.summaryBody', ...B(130, 280) },
+  },
+};
+
 function pushLengthViolation(
   out: string[],
   block: Block,
@@ -152,6 +184,7 @@ function pushLengthViolation(
  * Strings between target and hard pass.
  */
 export function getFluxCopyBudgetViolations(merged: PageConfig): string[] {
+  if (merged.theme.allowLongCopy) return [];
   const tier = getTierForPreset(merged.theme.blockStylePreset);
   const out: string[] = [];
 
@@ -237,6 +270,40 @@ export function getFluxCopyBudgetViolations(merged: PageConfig): string[] {
         pushLengthViolation(out, block, 'props.heading', block.props.heading.length, c.heading, tier);
         break;
       }
+      case 'quiz_and_book': {
+        const q = QUIZ_AND_BOOK[tier];
+        pushLengthViolation(out, block, 'props.heading', block.props.heading.length, q.heading, tier);
+        pushLengthViolation(out, block, 'props.subheading', block.props.subheading.length, q.subheading, tier);
+        pushLengthViolation(out, block, 'props.summaryHeading', block.props.summaryHeading.length, q.summaryHeading, tier);
+        pushLengthViolation(out, block, 'props.summaryBody', block.props.summaryBody.length, q.summaryBody, tier);
+        for (let i = 0; i < block.props.questions.length; i += 1) {
+          const question = block.props.questions[i];
+          pushLengthViolation(out, block, `props.questions[${i}].prompt`, question.prompt.length, q.question_prompt, tier);
+          if (typeof question.helperText === 'string') {
+            pushLengthViolation(
+              out,
+              block,
+              `props.questions[${i}].helperText`,
+              question.helperText.length,
+              q.question_helperText,
+              tier,
+            );
+          }
+          for (let j = 0; j < (question.options?.length ?? 0); j += 1) {
+            const option = question.options?.[j];
+            if (!option) continue;
+            pushLengthViolation(
+              out,
+              block,
+              `props.questions[${i}].options[${j}].label`,
+              option.label.length,
+              q.option_label,
+              tier,
+            );
+          }
+        }
+        break;
+      }
       default:
         break;
     }
@@ -269,6 +336,7 @@ export function formatFluxCopyBudgetsForPrompt(): string {
     TANNERS.tight.disclaimer,
     TANNERS.tight.ctaText,
     ...Object.values(SMP.tight),
+    ...Object.values(QUIZ_AND_BOOK.tight),
   ];
   const standardRows: FluxCopyFieldBudget[] = [
     ...HERO.standard,
@@ -282,6 +350,7 @@ export function formatFluxCopyBudgetsForPrompt(): string {
     TANNERS.standard.disclaimer,
     TANNERS.standard.ctaText,
     ...Object.values(SMP.standard),
+    ...Object.values(QUIZ_AND_BOOK.standard),
   ];
 
   return `Copy length (layout density)
@@ -311,6 +380,7 @@ export function collectAllFluxCopyFieldBudgetsForInvariant(): FluxCopyFieldBudge
     out.push(BENEFITS[tier].heading, BENEFITS[tier].itemTitle, BENEFITS[tier].itemDescription);
     out.push(TANNERS[tier].heading, TANNERS[tier].subheadline, TANNERS[tier].disclaimer, TANNERS[tier].ctaText);
     out.push(...Object.values(SMP[tier]));
+    out.push(...Object.values(QUIZ_AND_BOOK[tier]));
   }
   return out;
 }

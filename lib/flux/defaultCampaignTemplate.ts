@@ -3,6 +3,7 @@ import {
   DEFAULT_TANNERS_TAX_STRATEGY_DISCLAIMER,
   DEFAULT_TANNERS_TAX_STRATEGY_HEADING,
 } from '@/lib/flux/tannersTaxStrategyDefaults';
+import { createDefaultQuizAndBookProps } from '@/lib/flux/fluxQuizAndBook';
 
 const DEFAULT_ORDER: BlockType[] = [
   'hero',
@@ -99,6 +100,13 @@ export function makeFluxDefaultBlock(type: BlockType, order: number): Block {
           platform_mix_note:
             'Replace with one line on why IG / TikTok / FB weighting fits this vertical and offer (e.g. discovery vs trust vs retargeting).',
         },
+      };
+    case 'quiz_and_book':
+      return {
+        id,
+        type,
+        order,
+        props: createDefaultQuizAndBookProps(),
       };
   }
 }

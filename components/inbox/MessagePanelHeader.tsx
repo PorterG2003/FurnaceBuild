@@ -1,10 +1,15 @@
 import { useMemo } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Image, Platform } from 'react-native';
 import { CalendarDaysIcon, ChevronDownIcon, NoSymbolIcon } from 'react-native-heroicons/outline';
 import { Select } from '@/components/ui/forms';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import { THREAD_CATEGORIES } from './inboxConstants';
+
+const SMARTLEAD_BADGE_SOURCE =
+  Platform.OS === 'web'
+    ? { uri: '/smartlead_logo.png' }
+    : require('../../public/smartlead_logo.png');
 
 /** Sticky header: left = prospect name + email; right = toolbar (campaign chip, Block, tags, category) */
 export function MessagePanelHeader({
@@ -46,6 +51,7 @@ export function MessagePanelHeader({
   showTitleAndEmail?: boolean;
 }) {
   const showTags = !!onOpenTagsPanel;
+  const isSmartleadSource = !!sourceLabel && (sourceLabel === 'Smartlead' || sourceLabel.startsWith('Imported from Smartlead'));
   const categoryItems = useMemo(
     () => [{ id: '', name: 'No category' }, ...categoryOptions.map((c) => ({ id: c, name: c }))],
     [categoryOptions]
@@ -93,22 +99,27 @@ export function MessagePanelHeader({
         {showToolbar ? (
         <View className="flex-row items-center gap-2 flex-shrink-0">
           {sourceLabel ? (
-            <View
-              className="rounded-lg px-2 py-0.5"
-              style={
-                sourceLabel === 'Smartlead' || sourceLabel.startsWith('Imported from Smartlead')
-                  ? { backgroundColor: 'rgba(110, 88, 241, 0.12)', borderWidth: 1, borderColor: 'rgba(110, 88, 241, 0.3)' }
-                  : { backgroundColor: 'rgba(243, 68, 13, 0.12)', borderWidth: 1, borderColor: 'rgba(243, 68, 13, 0.3)' }
-              }
-            >
-              <Text
-                className="text-xs font-instrument"
-                style={{ color: sourceLabel === 'Smartlead' || sourceLabel.startsWith('Imported from Smartlead') ? '#6e58f1' : '#F97316' }}
-                numberOfLines={1}
+            isSmartleadSource ? (
+              <Image
+                source={SMARTLEAD_BADGE_SOURCE}
+                style={{ width: 20, height: 20, borderRadius: 6 }}
+                resizeMode="cover"
+                accessibilityLabel="Smartlead"
+              />
+            ) : (
+              <View
+                className="rounded-lg px-2 py-0.5 items-center justify-center"
+                style={{ backgroundColor: 'rgba(243, 68, 13, 0.12)', borderWidth: 1, borderColor: 'rgba(243, 68, 13, 0.3)' }}
               >
-                {sourceLabel}
-              </Text>
-            </View>
+                <Text
+                  className="text-xs font-instrument"
+                  style={{ color: '#F97316' }}
+                  numberOfLines={1}
+                >
+                  {sourceLabel}
+                </Text>
+              </View>
+            )
           ) : null}
           {campaignName ? (
             <View

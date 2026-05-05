@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, Pressable, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, Pressable, Image, Platform, useWindowDimensions } from 'react-native';
 import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,10 @@ const STAT_COLUMN_WIDTH = 72;
 const POSITIVE_COLUMN_WIDTH = 88;
 /** Below this width (mobile only), use extra-small stat variant and tighter layout */
 const EXTRA_NARROW_BREAKPOINT = 360;
+const SMARTLEAD_BADGE_SOURCE =
+  Platform.OS === 'web'
+    ? { uri: '/smartlead_logo.png' }
+    : require('../../public/smartlead_logo.png');
 
 interface CreateCampaignModalProps {
   visible: boolean;
@@ -155,6 +159,14 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
   const isDraft = campaign.status === 'draft';
   const draftHasFlow = campaign.hasFlow;
   const isSmartlead = isSmartleadCampaign(campaign);
+  const smartleadBadge = isSmartlead ? (
+    <Image
+      source={SMARTLEAD_BADGE_SOURCE}
+      style={{ width: 20, height: 20, borderRadius: 6 }}
+      resizeMode="cover"
+      accessibilityLabel="Smartlead"
+    />
+  ) : null;
 
   const sentCount = campaign.sentCount;
   const repliedCount = campaign.repliedCount;
@@ -273,6 +285,7 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
           <Text className="text-white font-instrument-semibold text-lg">
             {campaign.name}
           </Text>
+          {smartleadBadge}
           <CampaignStatusPill status={campaign.status || 'draft'} />
         </View>
         {isDraft && (
@@ -352,9 +365,12 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
                 />
               </View>
               <View className="flex-1 min-w-0">
-                <Text className="text-white font-instrument-semibold text-base mb-1" numberOfLines={2}>
-                  {campaign.name}
-                </Text>
+                <View className="flex-row items-center gap-2 mb-1 pr-2">
+                  <Text className="text-white font-instrument-semibold text-base flex-1" numberOfLines={2}>
+                    {campaign.name}
+                  </Text>
+                  {smartleadBadge}
+                </View>
                 <Text className="text-gray-500 font-instrument text-xs">
                   Created {formatDate(campaign.created_at)}
                 </Text>

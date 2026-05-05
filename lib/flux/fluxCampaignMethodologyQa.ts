@@ -105,7 +105,8 @@ function hasCustomDeliverablePrimitive(editor: FluxCampaignQaInput['editor']) {
     (block) =>
       block.type === 'tanners_tax_strategy' ||
       block.type === 'social_media_plan' ||
-      block.type === 'competitor_ad_audit',
+      block.type === 'competitor_ad_audit' ||
+      block.type === 'quiz_and_book',
   );
 }
 

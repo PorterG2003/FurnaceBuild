@@ -29,6 +29,13 @@ test('clipCreativePreviewBox adds padding and clamps to the viewport', () => {
   );
 });
 
+test('clipCreativePreviewBox offsets clips for a scrolled viewport', () => {
+  assert.deepEqual(
+    clipCreativePreviewBox({ x: 40, y: 50, width: 200, height: 80 }, VIEWPORT, { x: 0, y: 1200 }),
+    { x: 24, y: 1238, width: 232, height: 104 },
+  );
+});
+
 test('isAcceptableCreativePreviewCandidate rejects broad page-sized crops', () => {
   assert.equal(
     isAcceptableCreativePreviewCandidate(
@@ -58,6 +65,21 @@ test('isAcceptableCreativePreviewCandidate rejects tiny low-signal nodes', () =>
       VIEWPORT,
     ),
     false,
+  );
+});
+
+test('isAcceptableCreativePreviewCandidate accepts textless iframe-sized creatives when media is present', () => {
+  assert.equal(
+    isAcceptableCreativePreviewCandidate(
+      candidate({
+        width: 380,
+        height: 187,
+        textLength: 0,
+        imageCount: 1,
+      }),
+      VIEWPORT,
+    ),
+    true,
   );
 });
 

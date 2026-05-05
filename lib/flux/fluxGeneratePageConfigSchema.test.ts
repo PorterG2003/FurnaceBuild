@@ -99,3 +99,48 @@ test('pageConfigSchema accepts social_media_plan block', () => {
     assert.equal(b?.type, 'social_media_plan');
   }
 });
+
+test('pageConfigSchema accepts quiz_and_book block', () => {
+  const raw = {
+    theme: {
+      primaryColor: '#111',
+      accentColor: '#222',
+      backgroundColor: '#eee',
+      textColor: '#000',
+      fontFamily: 'Inter',
+    },
+    prospectName: 'A',
+    companyName: 'B',
+    blocks: [
+      {
+        id: 'quiz-1',
+        type: 'quiz_and_book',
+        order: 0,
+        props: {
+          heading: 'A few quick questions',
+          subheading: 'We will tailor the strategy before booking.',
+          questions: [
+            {
+              id: 'q1',
+              type: 'single_select',
+              prompt: 'How many locations do you have?',
+              options: [
+                { id: 'o1', label: 'One' },
+                { id: 'o2', label: 'Two or more' },
+              ],
+            },
+          ],
+          summaryHeading: 'Perfect.',
+          summaryBody: 'Next step is scheduling a time to review the plan.',
+          calendlyUrl: 'https://calendly.com/drfoottraffic/15min',
+        },
+      },
+    ],
+  };
+  const zr = pageConfigSchema.safeParse(raw);
+  assert.equal(zr.success, true);
+  if (zr.success) {
+    const b = zr.data.blocks[0];
+    assert.equal(b?.type, 'quiz_and_book');
+  }
+});

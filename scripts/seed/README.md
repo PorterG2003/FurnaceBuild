@@ -40,13 +40,54 @@ Use a **dedicated** seed campaign id so re-runs do not touch unrelated campaigns
 | `SEED_OWNER_USER_ID` | Yes | `users.id` used for `campaigns.owner_id` and `mailboxes.user_id` |
 | `SEED_OOO_CAMPAIGN_ID` | No | Dedicated campaign UUID for the OOO inbox scenario; falls back to `SEED_CAMPAIGN_ID`, then a built-in constant |
 
-Creates a mixed inbox fixture set with Fallout-themed fictional threads/messages:
+Creates a bulk mixed inbox fixture set with Fallout-themed fictional threads/messages:
 
-- one normal reply thread,
-- one OOO thread hidden by default unless **Include out of office** is enabled,
-- one future resume case created via `mark_email_thread_out_of_office`,
-- one due resume case left pending for scheduler testing,
-- parseable return-date text in inbound auto-replies for modal prefill.
+- 20 deterministic threads in one campaign (8 normal + 4 per OOO resume case),
+- a real two-email campaign flow (`email-1 -> waitTime-1 -> email-2`),
+- a balanced mix of normal, OOO-only, future-resume, and due-resume cases,
+- OOO enrollments parked on the wait step after email 1 so resume can advance them toward email 2,
+- multiple unread threads plus deeper back-and-forth on normal conversations,
+- parseable return-date text in inbound auto-replies for OOO modal prefill.
+
+The scenario seeds in **two phases** inside `oooInbox_baseGraph`:
+
+1. **Historical email-1** — Uses deterministic far-future `campaign_intervals` (same RPC path as prod: `batch_assign_jobs_to_interval`), marks jobs `sent`, refreshes interval progress, and records sent/replied metrics in later modules. `message_jobs.interval_id` is then cleared so intervals can be replaced safely.
+2. **Runtime-ready intervals** — Deletes completed historical intervals, resets `campaigns.last_completed_interval_time`, and inserts ~28 near-future `campaign_intervals` (`interval_time > now`, `status = available`) spaced by the campaign’s `sending_interval_seconds`. **No `email-2` `message_jobs` are inserted**; after you resume an OOO enrollment, the real **scheduler** (`claim_enrollments_ready` / flow eval) and **`batchAssignIntervalJobs`** should create the second job, then the **send worker** can claim it.
+
+Subject prefixes map to behavior: **`[NORMAL]`** (active enrollment on `email-1` — not on the OOO resume path to `email-2`). **`[OOO ONLY]`**, **`[RESUME LATER]`**, and **`[RESUME NOW]`** match `ooo_only`, `ooo_future`, and `ooo_due` leads respectively; those are the **only** enrollments seeded onto `waitTime-1` / stopped so they can produce **`email-2`** after resume. OOO threads are hidden in inbox unless **Include out of office** is enabled. **`[RESUME NOW]`** is the quickest manual check (past `ooo_resume_at` + `ooo_resume_requested`).
+
+#### Timing / workers
+
+- Instant resume RPC can return immediately; **email-2** still depends on **scheduler** tick (~5s poll in dev), **batch interval assignment** (~30s in scheduler worker), and **send worker** when jobs exist.
+- **`[RESUME LATER]`** threads use a far-future `ooo_resume_at` in seed data; treat them as “not due” unless you change the return date / mark instant resume in the UI.
+
+#### Verifying email-2 via the real path (manual + SQL)
+
+After seeding, confirm OOO enrollments are parked on the wait node (replace `campaign_id` if using `SEED_OOO_CAMPAIGN_ID`):
+
+```sql
+select e.id, e.state, e.stopped_reason, n.flow_node_id
+from enrollments e
+join nodes n on n.id = e.current_node_id
+where e.campaign_id = 'f0000000-0000-4000-8000-00000000d101'
+  and n.flow_node_id = 'waitTime-1'
+  and e.state = 'stopped';
+```
+
+Pick one thread whose subject includes `[RESUME NOW — due / instant]` (fastest), or any row tagged `[OOO ONLY — manual resume]` / `[RESUME LATER — future date]` and use instant resume where needed. Enable **Include out of office** if OOO threads are hidden. After resume and workers run, expect **`state = 'active'`**, **`current_node_id`** on the **`email-2`** node, a new **`message_jobs`** row for that node, then status toward **`sent`**:
+
+```sql
+select e.id, e.state, n.flow_node_id, mj.status, mj.id as message_job_id
+from enrollments e
+join nodes n on n.id = e.current_node_id
+left join message_jobs mj on mj.enrollment_id = e.id and mj.node_id = n.id
+where e.campaign_id = 'f0000000-0000-4000-8000-00000000d101'
+  and n.flow_node_id = 'email-2';
+```
+
+Success: **`message_jobs`** for **`email-2`** appears only after resume + scheduler path, not from the seed script.
+
+Unit check for runtime interval spacing: `npx tsx --test scripts/seed/constants/oooMixedInbox.runtime.test.ts`
 
 The scenario seeds a real campaign/mailbox/lead/enrollment/message-job graph first, then inserts `email_threads` and `email_messages`, then applies OOO flags. It is designed for UI testing and OOO scheduler verification on a dev database.
 
@@ -67,6 +108,7 @@ This means local machine values in `.env.local` win over `.env`, which is usuall
 
 ```bash
 npm run seed              # default scenario (minimal)
+npm run seed:reset        # delete known seed slices from the dev DB
 npm run seed:wipe         # same with --wipe (still needs SEED_WIPE_CONFIRM=1)
 npm run seed:help         # print flags and env
 ```
@@ -86,6 +128,47 @@ npx tsx scripts/seed/index.ts --scenario=minimal --dry-run
 | `--dry-run` | Modules should skip writes (scaffold logs only) |
 | `--help`, `-h` | Usage (no DB connection) |
 
+## Reset command
+
+Use the dedicated reset command when you want to remove seeded dev data without reseeding immediately.
+
+```bash
+npm run seed:reset -- --dry-run
+npm run seed:reset -- --scope=campaign-smoke --dry-run
+npm run seed:reset -- --scope=ooo-mixed-inbox --dry-run
+```
+
+Destructive runs require:
+
+- `SEED_ACCOUNT_ID`
+- `SEED_RESET_CONFIRM=1` (or `SEED_WIPE_CONFIRM=1`)
+
+Optional:
+
+- `SEED_CAMPAIGN_ID` for the `campaign-smoke` slice
+- `SEED_OOO_CAMPAIGN_ID` for the `ooo-mixed-inbox` slice
+- `--scope=campaign-smoke|ooo-mixed-inbox|all`
+
+Reset is intentionally conservative:
+
+- if `--scope` is omitted, it only resets scopes that can be inferred from `SEED_CAMPAIGN_ID` / `SEED_OOO_CAMPAIGN_ID`
+- if `--scope=campaign-smoke` is provided, it targets that dedicated campaign id (env or built-in default)
+- if `--scope=ooo-mixed-inbox` is provided, it targets that dedicated OOO campaign id
+- if `--scope=all` is provided, it resets both known scenario slices
+
+Delete order is FK-aware:
+
+1. `email_messages`
+2. `email_threads`
+3. `message_jobs`
+4. `enrollments`
+5. `leads`
+6. `campaign_mailboxes`
+7. soft-delete scenario-owned `mailboxes`
+8. delete the dedicated `campaign`
+
+The reset command is scoped to deterministic seed-owned data for the built-in scenarios only; it does **not** wipe the whole dev database.
+
 ## Scenarios and modules
 
 - A **scenario** is a named list of **module** ids in [`registry.ts`](./registry.ts). Dependencies (`deps` on each `SeedModule`) are pulled in automatically and executed in **topological order** (dependencies first). Cycles are a hard error.
@@ -102,7 +185,7 @@ npx tsx scripts/seed/index.ts --scenario=minimal --dry-run
 
 Background workers (send, scheduler, inbox-checker, etc.) call Supabase RPCs such as `claim_message_jobs_ready`, `claim_enrollments_ready`, `claim_mailboxes_to_check`. If they use the **same** project you seed, new claimable rows may be processed. Prefer a dedicated dev project or documented test mailboxes / flags.
 
-For **`ooo-mixed-inbox`**, the due-resume thread is intentionally left with `ooo_resume_requested = true` and a past `ooo_resume_at`, so scheduler-driven OOO processing can pick it up. That is expected on a dev project.
+For **`ooo-mixed-inbox`**, the due-resume threads are intentionally left with `ooo_resume_requested = true` and a past `ooo_resume_at`, so scheduler-driven OOO processing can pick them up. That is expected on a dev project.
 
 ## Related code
 

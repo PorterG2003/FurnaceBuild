@@ -1,7 +1,17 @@
 import type { Block, ContentAssetType, PageConfig } from './types';
 import { getFluxCopyBudgetViolations } from './fluxCopyBudgets';
+import { parseInPageScrollTargetFromCtaUrl } from './fluxScrollTag';
 
 const HTTP_PREFIX = /^https?:\/\//i;
+const SIMPLE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidFluxCtaUrl(url: string): boolean {
+  const t = url.trim();
+  if (!t) return false;
+  if (parseInPageScrollTargetFromCtaUrl(t)) return true;
+  return HTTP_PREFIX.test(t);
+}
+
 const TRANSPARENCY_PREFIX = 'https://adstransparency.google.com/';
 
 function parseContentAssetRows(raw: unknown[]): { id: string; type: ContentAssetType }[] {
@@ -46,7 +56,7 @@ export function getMergedFluxPageConfigSemanticIssues(
         if (!subheadline.trim()) push(block, 'subheadline is empty');
         if (!ctaText.trim()) push(block, 'ctaText is empty');
         if (!ctaUrl.trim()) push(block, 'ctaUrl is empty');
-        else if (!HTTP_PREFIX.test(ctaUrl.trim())) push(block, 'ctaUrl must start with http:// or https://');
+        else if (!isValidFluxCtaUrl(ctaUrl)) push(block, 'ctaUrl must be http(s) or an in-page anchor like #section');
         if (heroImageUrl && !HTTP_PREFIX.test(heroImageUrl.trim())) {
           push(block, 'heroImageUrl must start with http:// or https://');
         }
@@ -57,7 +67,7 @@ export function getMergedFluxPageConfigSemanticIssues(
         if (!headline.trim()) push(block, 'headline is empty');
         if (!ctaText.trim()) push(block, 'ctaText is empty');
         if (!ctaUrl.trim()) push(block, 'ctaUrl is empty');
-        else if (!HTTP_PREFIX.test(ctaUrl.trim())) push(block, 'ctaUrl must start with http:// or https://');
+        else if (!isValidFluxCtaUrl(ctaUrl)) push(block, 'ctaUrl must be http(s) or an in-page anchor like #section');
         break;
       }
       case 'case_study': {
@@ -152,6 +162,41 @@ export function getMergedFluxPageConfigSemanticIssues(
             }
           }
         }
+        break;
+      }
+      case 'quiz_and_book': {
+        const p = block.props;
+        if (!p.heading.trim()) push(block, 'heading is empty');
+        if (!p.subheading.trim()) push(block, 'subheading is empty');
+        if (!p.summaryHeading.trim()) push(block, 'summaryHeading is empty');
+        if (!p.summaryBody.trim()) push(block, 'summaryBody is empty');
+        if (!p.calendlyUrl.trim()) push(block, 'calendlyUrl is empty');
+        else if (!HTTP_PREFIX.test(p.calendlyUrl.trim())) {
+          push(block, 'calendlyUrl must start with http:// or https://');
+        }
+        if (p.destinationEmail?.trim() && !SIMPLE_EMAIL.test(p.destinationEmail.trim())) {
+          push(block, 'destinationEmail must be a valid email address when provided');
+        }
+        if (!Array.isArray(p.questions) || p.questions.length < 1) {
+          push(block, 'questions must include at least one step');
+          break;
+        }
+        p.questions.forEach((question, qi) => {
+          if (!question.prompt.trim()) push(block, `questions[${qi}].prompt is empty`);
+          const needsOptions =
+            question.type === 'single_select' ||
+            question.type === 'multi_select' ||
+            question.type === 'dropdown';
+          if (needsOptions) {
+            if (!Array.isArray(question.options) || question.options.length < 2) {
+              push(block, `questions[${qi}].options must include at least two options`);
+              return;
+            }
+            question.options.forEach((option, oi) => {
+              if (!option.label.trim()) push(block, `questions[${qi}].options[${oi}].label is empty`);
+            });
+          }
+        });
         break;
       }
       default:

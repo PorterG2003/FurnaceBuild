@@ -11,6 +11,7 @@ import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { sendInvitationEmail } from './functions/sendInvitationEmail/resource';
+import { sendFluxQuizSubmission } from './functions/sendFluxQuizSubmission/resource';
 import { testMailboxConnection } from './functions/testMailboxConnection/resource';
 import { enrollmentMetric } from './functions/enrollmentMetric/resource';
 import { fetchEmailAttachment } from './functions/fetchEmailAttachment/resource';
@@ -47,6 +48,7 @@ const backend = defineBackend({
   auth,
   data,
   sendInvitationEmail,
+  sendFluxQuizSubmission,
   testMailboxConnection,
   enrollmentMetric,
   fetchEmailAttachment,
@@ -155,6 +157,38 @@ const allowPublicTestMailboxInvoke = new lambda.CfnPermission(testMailboxLambda.
   principal: '*',
 });
 allowPublicTestMailboxInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+// Flux quiz submission: public Function URL for live page visitors
+const sendFluxQuizSubmissionLambda = backend.sendFluxQuizSubmission.resources.lambda as lambda.Function;
+sendFluxQuizSubmissionLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+sendFluxQuizSubmissionLambda.addEnvironment(
+  'WEB_APP_ORIGIN',
+  process.env.WEB_APP_ORIGIN ?? 'https://build.getfurnace.io',
+);
+const sendFluxQuizSubmissionUrl = sendFluxQuizSubmissionLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Content-Type'],
+  },
+});
+new lambda.CfnPermission(sendFluxQuizSubmissionLambda.stack, 'AllowPublicSendFluxQuizSubmissionUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: sendFluxQuizSubmissionLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicSendFluxQuizSubmissionInvoke = new lambda.CfnPermission(
+  sendFluxQuizSubmissionLambda.stack,
+  'AllowPublicSendFluxQuizSubmissionInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: sendFluxQuizSubmissionLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicSendFluxQuizSubmissionInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
 // Foundry: normalize/autolink workers (Step Functions) + registry HTTP API (Function URL)
 const workerEnvironment = resolveWorkerEnvironment();
@@ -1413,6 +1447,7 @@ processNotificationLambda.addEventSource(
 const customOutputs: Record<string, string> = {
   fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
   sendInvitationEmailUrl: sendInvitationUrl.url,
+  sendFluxQuizSubmissionUrl: sendFluxQuizSubmissionUrl.url,
   testMailboxConnectionUrl: testMailboxUrl.url,
   foundryRegistryApiUrl: foundryRegistryUrl.url,
   foundryNormalizeStateMachineArn: foundryNormalizeStateMachineArn,

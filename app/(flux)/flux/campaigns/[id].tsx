@@ -48,6 +48,7 @@ import {
   ensureFluxTemplateExists,
   getFluxCampaignById,
   getFluxProspects,
+  syncFluxPageLogosForCampaign,
   getFluxTemplate,
   updateFluxCampaign,
   updateFluxTemplateChatState,
@@ -461,7 +462,7 @@ export default function CampaignDetail() {
     if (!id || saving) return;
     setSaving(true);
     try {
-      await updateFluxCampaign(id, {
+      const updatedCampaign = await updateFluxCampaign(id, {
         name: editor.name,
         offer_description: editor.offerDescription || null,
         seller_display_name: editor.sellerProfile.displayName.trim() || null,
@@ -480,7 +481,10 @@ export default function CampaignDetail() {
         copy_slots: copySlotsList,
         constraints: editor.constraints,
       });
-      toast.success('Campaign saved.');
+      const syncedPageCount = await syncFluxPageLogosForCampaign(updatedCampaign, prospects);
+      toast.success(
+        syncedPageCount > 0 ? `Campaign saved. Re-synced ${syncedPageCount} page logo${syncedPageCount === 1 ? '' : 's'}.` : 'Campaign saved.',
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to save campaign.');
     } finally {
@@ -497,6 +501,7 @@ export default function CampaignDetail() {
     editor.contentAssets,
     editor.constraints,
     copySlotsList,
+    prospects,
     toast,
   ]);
 

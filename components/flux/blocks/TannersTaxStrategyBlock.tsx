@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, TextInput, Pressable, Linking } from 'react-native';
+import { View, Text, TextInput, Pressable } from 'react-native';
 import type { TannersTaxQualificationMode, TannersTaxStrategyBlockProps } from '@/lib/flux/types';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
+import { handleFluxCtaPress } from '@/lib/flux/fluxCtaNavigation';
+import { useFluxPageScroll } from '../FluxPageScrollContext';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 import {
   computeTannersTaxScenarioNumbers,
@@ -35,6 +37,7 @@ const OFFSET_SCENARIO_OPTIONS: { value: OffsetScenarioKey; label: string }[] = [
 export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBlockProps }) {
   const theme = useFluxTheme();
   const presentation = useFluxPresentation();
+  const pageScroll = useFluxPageScroll();
   const mutedStyle = {
     color: theme.textColor,
     opacity: presentation.mutedTextOpacity,
@@ -345,7 +348,7 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
           <Pressable
             className={complexLayout === 'editorial' || complexLayout === 'document' ? 'px-6 py-3 self-start' : 'px-6 py-3 self-center'}
             style={presentation.primaryButton}
-            onPress={() => props.ctaUrl && Linking.openURL(props.ctaUrl)}
+            onPress={() => props.ctaUrl && handleFluxCtaPress(props.ctaUrl, pageScroll ?? undefined)}
           >
             <Text className="text-base" style={{ color: '#ffffff', fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
               {props.ctaText}

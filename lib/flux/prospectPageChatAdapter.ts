@@ -7,6 +7,7 @@ import { defaultFluxBrandingPolicy } from '@/lib/flux/fluxBrandingPolicy';
 
 const PROSPECT_ALLOWED = new Set<FluxEditorOperation['type']>([
   'block.updateProps',
+  'block.setScrollTag',
   'block.reorder',
   'preview.patchBrand',
   'preview.patchProspect',

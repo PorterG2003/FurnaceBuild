@@ -26,6 +26,7 @@ export function coercePageConfig(raw: unknown): PageConfig | null {
     blockStylePreset: FLUX_BLOCK_STYLE_PRESETS.includes(t.blockStylePreset as FluxBlockStylePreset)
       ? (t.blockStylePreset as FluxBlockStylePreset)
       : DEFAULT_FLUX_BLOCK_STYLE_PRESET,
+    ...(typeof t.allowLongCopy === 'boolean' ? { allowLongCopy: t.allowLongCopy } : {}),
   };
 
   return {

@@ -16,6 +16,8 @@ const MIN_PLACES_SCANNED_BEFORE_EARLY_EXIT = 6;
 const TARGET_OK_DOMAINS_FOR_EARLY_EXIT = 3;
 const DOMAIN_TIMEOUT_MS = 300_000;
 const BUCKET = 'flux-competitor-map';
+const MAX_PUBLISHED_WINNERS = 3;
+const MAX_PUBLISHED_SAMPLES_PER_WINNER = 2;
 
 type PageConfig = { blocks: Array<Record<string, unknown>>; [k: string]: unknown };
 
@@ -336,7 +338,7 @@ export async function runFluxCompetitorAuditJob(params: {
             headless: true,
             region: REGION,
             timeoutMs: 50_000,
-            maxSamples: 2,
+            maxSamples: MAX_PUBLISHED_SAMPLES_PER_WINNER,
             jobId: params.jobId,
             signal,
           }),
@@ -414,7 +416,7 @@ export async function runFluxCompetitorAuditJob(params: {
     }
 
     const ranked = fluxCompetitorAuditRank.rankFluxCompetitorDomains(scored);
-    const winners = ranked.slice(0, 3);
+    const winners = ranked.slice(0, MAX_PUBLISHED_WINNERS);
     if (winners.length < 1) {
       await failJob(fluxCompetitorAuditFailureMessage.buildFluxCompetitorAuditFailureMessage(auditRows), {
         ranked_count: 0,
@@ -507,7 +509,7 @@ export async function runFluxCompetitorAuditJob(params: {
         await failJob(`Missing audit data for winner ${w.domain}`);
         return false;
       }
-      const samples = audit.samples.slice(0, 2);
+      const samples = audit.samples.slice(0, MAX_PUBLISHED_SAMPLES_PER_WINNER);
       const examples: Array<{ headline: string; body: string; sourceUrl: string; imageUrl?: string }> = [];
       for (let j = 0; j < samples.length; j += 1) {
         const s = samples[j];
@@ -558,6 +560,18 @@ export async function runFluxCompetitorAuditJob(params: {
             sourceUrl: sourceUrl.slice(0, 200),
           });
         }
+        workerJsonLog('creative_preview_publish_result', {
+          jobId: params.jobId,
+          domain: w.domain,
+          winnerIndex: wi,
+          sampleIndex: j,
+          sourceUrl: sourceUrl.slice(0, 200),
+          hadPreviewField: preview != null,
+          previewByteLength: preview && typeof preview.length === 'number' ? preview.length : 0,
+          uploadAttempted: uploadBuf != null,
+          uploadSucceeded: Boolean(imageUrl),
+          finalHasImageUrl: Boolean(imageUrl),
+        });
         examples.push({ headline, body, sourceUrl, ...(imageUrl ? { imageUrl } : {}) });
       }
       competitorRows.push({

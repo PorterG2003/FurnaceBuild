@@ -157,6 +157,10 @@ export function FluxCampaignManualEditor({
     dispatch({ type: 'block.updateProps', blockId, props });
   };
 
+  const updateBlockScrollTag = (blockId: string, scrollTag: string | undefined) => {
+    dispatch({ type: 'block.setScrollTag', blockId, scrollTag: scrollTag?.trim() ? scrollTag.trim() : null });
+  };
+
   const addAsset = () => {
     const asset: ContentAsset = {
       id: `asset-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -562,6 +566,7 @@ export function FluxCampaignManualEditor({
             onRemove={removeBlock}
             onReorder={(next: Block[]) => dispatch({ type: 'block.setBlocks', blocks: next })}
             updateBlockProps={updateBlockProps}
+            updateBlockScrollTag={updateBlockScrollTag}
             contentAssets={editor.contentAssets}
             renderBlockEditor={renderFluxManualBlockEditor}
           />

@@ -1,0 +1,141 @@
+{
+  "runner": "debug_flux_competitor_audit",
+  "correlationId": "local_2026-05-01T21-54-56-911Z",
+  "startedAt": "2026-05-01T21:54:56.912Z",
+  "finishedAt": "2026-05-01T21:57:44.850Z",
+  "outputDir": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/batch-podiatry-remaining-after-fixes",
+  "inputs": {
+    "domains": [
+      "reverehealth.com",
+      "aaronobrienmd.com",
+      "intermountainhealthcare.org"
+    ],
+    "excludeDomains": [],
+    "lat": null,
+    "lng": null,
+    "query": "local services",
+    "region": "US",
+    "headless": true,
+    "slowMoMs": 0,
+    "timeoutMs": 20000,
+    "domainTimeoutMs": 120000,
+    "maxSamples": 2,
+    "maxCandidates": 12,
+    "skipStaticMaps": true
+  },
+  "candidates": [
+    {
+      "domain": "reverehealth.com",
+      "name": "reverehealth.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 0,
+      "source": "manual"
+    },
+    {
+      "domain": "aaronobrienmd.com",
+      "name": "aaronobrienmd.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 1,
+      "source": "manual"
+    },
+    {
+      "domain": "intermountainhealthcare.org",
+      "name": "intermountainhealthcare.org",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 2,
+      "source": "manual"
+    }
+  ],
+  "attemptedPlacesCount": 3,
+  "okDomainCount": 2,
+  "placesStopReason": "exhausted_candidates",
+  "transparencyScoredOkCount": 2,
+  "publishedWinnerCount": 2,
+  "winnerDomains": [
+    "reverehealth.com",
+    "intermountainhealthcare.org"
+  ],
+  "auditOutcomeCounts": {
+    "ok": 2,
+    "transparency_no_match": 1
+  },
+  "auditRows": [
+    {
+      "domain": "reverehealth.com",
+      "outcome": "ok",
+      "creative_count": 40,
+      "selected_rank": 1
+    },
+    {
+      "domain": "aaronobrienmd.com",
+      "outcome": "transparency_no_match",
+      "creative_count": null,
+      "message": "No Transparency match"
+    },
+    {
+      "domain": "intermountainhealthcare.org",
+      "outcome": "ok",
+      "creative_count": 40,
+      "selected_rank": 2
+    }
+  ],
+  "ranked": [
+    {
+      "domain": "reverehealth.com",
+      "placeIndex": 0,
+      "creativeCount": 40,
+      "latestAdLastShownAt": "2026-05-01",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    },
+    {
+      "domain": "intermountainhealthcare.org",
+      "placeIndex": 2,
+      "creativeCount": 40,
+      "latestAdLastShownAt": "2026-05-01",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    }
+  ],
+  "competitors": [
+    {
+      "domain": "reverehealth.com",
+      "name": "reverehealth.com",
+      "adsSummary": "~40 ads in Google’s Transparency Center; most recent creative shown 2026-05-01.",
+      "examples": [
+        {
+          "headline": "Revere Health",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR16587076698294452225/creative/CR09418541672976875521?region=US"
+        },
+        {
+          "headline": "Revere Health",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR16587076698294452225/creative/CR16362718430068998145?region=US"
+        }
+      ]
+    },
+    {
+      "domain": "intermountainhealthcare.org",
+      "name": "intermountainhealthcare.org",
+      "adsSummary": "~40 ads in Google’s Transparency Center; most recent creative shown 2026-05-01.",
+      "examples": [
+        {
+          "headline": "Intermountain Health",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR14347472306807242753/creative/CR05907044512768720897?region=US"
+        },
+        {
+          "headline": "Intermountain Health",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR14347472306807242753/creative/CR16699096420401020929?region=US",
+          "imagePath": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/batch-podiatry-remaining-after-fixes/creatives/creative-1-1-intermountainhealthcare.org.png"
+        }
+      ]
+    }
+  ],
+  "failureMessage": null
+}

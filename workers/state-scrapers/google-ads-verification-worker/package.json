@@ -6,6 +6,7 @@
   "scripts": {
     "run": "tsx src/index.ts",
     "local": "tsx src/local.ts",
+    "debug:competitor-audit": "tsx src/debugFluxCompetitorAudit.ts",
     "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {

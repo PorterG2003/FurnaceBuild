@@ -1,0 +1,14 @@
+{
+  "name": "send-flux-quiz-submission",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@furnace/slack-lib": "file:../../../lib/slack",
+    "@supabase/supabase-js": "^2.99.1",
+    "resend": "^6.4.2"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145"
+  }
+}

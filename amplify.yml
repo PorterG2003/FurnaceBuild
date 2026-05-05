@@ -24,6 +24,7 @@ backend:
         - cd amplify/functions/fluxCompetitorAuditStart && npm install && cd - || (echo "Failed to install fluxCompetitorAuditStart dependencies" && exit 1)
         - cd amplify/functions/fluxGenerate && npm install && cd - || (echo "Failed to install fluxGenerate dependencies" && exit 1)
         - cd amplify/functions/fluxEditorChat && npm install && cd - || (echo "Failed to install fluxEditorChat dependencies" && exit 1)
+        - cd amplify/functions/sendFluxQuizSubmission && npm install && cd - || (echo "Failed to install sendFluxQuizSubmission dependencies" && exit 1)
         - |
           FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"
           if [ "$FLAG" != "false" ] && [ "$FLAG" != "0" ]; then

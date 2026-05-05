@@ -1,23 +1,27 @@
 import React from 'react';
-import { View, Text, Pressable, Linking } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import type { CtaBlockProps } from '@/lib/flux/types';
+import { handleFluxCtaPress } from '@/lib/flux/fluxCtaNavigation';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
+import { useFluxPageScroll } from '../FluxPageScrollContext';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 
 export function CtaBlock({ props }: { props: CtaBlockProps }) {
   const theme = useFluxTheme();
   const presentation = useFluxPresentation();
+  const pageScroll = useFluxPageScroll();
   const headingFont = fluxPreviewFontFamily(theme.fontFamily, '600');
   const bodyFont = fluxPreviewFontFamily(theme.fontFamily, '400');
+  const onCtaPress = () => handleFluxCtaPress(props.ctaUrl, pageScroll ?? undefined);
   const primaryButton = (
-    <Pressable className="px-8 py-3" style={presentation.primaryButton} onPress={() => Linking.openURL(props.ctaUrl)}>
+    <Pressable className="px-8 py-3" style={presentation.primaryButton} onPress={onCtaPress}>
       <Text className="text-base" style={{ color: '#ffffff', fontFamily: headingFont }}>
         {props.ctaText}
       </Text>
     </Pressable>
   );
   const secondaryButton = (
-    <Pressable className="px-8 py-3" style={presentation.secondaryButton} onPress={() => Linking.openURL(props.ctaUrl)}>
+    <Pressable className="px-8 py-3" style={presentation.secondaryButton} onPress={onCtaPress}>
       <Text className="text-base" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
         {props.ctaText}
       </Text>

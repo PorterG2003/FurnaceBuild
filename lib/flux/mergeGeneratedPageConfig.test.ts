@@ -3,6 +3,96 @@ import assert from 'node:assert/strict';
 import { mergeGeneratedPageConfigWithTemplate, parseTemplateBlocksForMerge } from './mergeGeneratedPageConfig.js';
 import type { FluxGeneratePageConfigParsed } from './fluxGeneratePageConfigSchema.js';
 
+test('mergeGeneratedPageConfigWithTemplate preserves quiz_and_book structure while merging visible copy', () => {
+  const templateBlock = {
+    id: 'qb1',
+    type: 'quiz_and_book' as const,
+    order: 0,
+    props: {
+      heading: 'Original heading',
+      subheading: 'Original subheading',
+      questions: [
+        {
+          id: 'q1',
+          type: 'single_select' as const,
+          prompt: 'Original prompt',
+          options: [
+            { id: 'o1', label: 'Original option one' },
+            { id: 'o2', label: 'Original option two' },
+          ],
+        },
+      ],
+      summaryHeading: 'Original summary',
+      summaryBody: 'Original body',
+      calendlyUrl: 'https://calendly.com/original/event',
+      destinationEmail: 'owner@example.com',
+    },
+  };
+
+  const merged = mergeGeneratedPageConfigWithTemplate({
+    templateBlocks: [templateBlock],
+    llmPageConfig: {
+      theme: {
+        primaryColor: '#111111',
+        accentColor: '#222222',
+        backgroundColor: '#ffffff',
+        textColor: '#000000',
+        fontFamily: 'Inter',
+        blockStylePreset: 'classic',
+      },
+      prospectName: 'Pat',
+      companyName: 'Co',
+      blocks: [
+        {
+          id: 'qb1',
+          type: 'quiz_and_book',
+          order: 0,
+          props: {
+            heading: 'Updated heading',
+            subheading: 'Updated subheading',
+            questions: [
+              {
+                id: 'q1',
+                type: 'single_select',
+                prompt: 'Updated prompt',
+                options: [
+                  { id: 'o1', label: 'Updated option one' },
+                  { id: 'o2', label: 'Updated option two' },
+                ],
+              },
+            ],
+            summaryHeading: 'Updated summary',
+            summaryBody: 'Updated body',
+            calendlyUrl: 'https://calendly.com/changed/event',
+            destinationEmail: 'changed@example.com',
+          },
+        },
+      ],
+    },
+    serverTheme: {
+      primaryColor: '#111111',
+      accentColor: '#222222',
+      backgroundColor: '#ffffff',
+      textColor: '#000000',
+      fontFamily: 'Inter',
+    },
+    prospectName: 'Pat',
+    companyName: 'Co',
+  });
+
+  const block = merged.blocks[0];
+  assert.equal(block?.type, 'quiz_and_book');
+  if (block?.type === 'quiz_and_book') {
+    assert.equal(block.props.heading, 'Updated heading');
+    assert.equal(block.props.questions[0]?.prompt, 'Updated prompt');
+    assert.equal(block.props.questions[0]?.options?.[0]?.label, 'Updated option one');
+    assert.equal(block.props.calendlyUrl, 'https://calendly.com/original/event');
+    assert.equal(block.props.destinationEmail, 'owner@example.com');
+    assert.equal(block.props.questions[0]?.id, 'q1');
+    assert.equal(block.props.questions[0]?.options?.[0]?.id, 'o1');
+  }
+});
+
 const serverTheme = {
   primaryColor: '#111111',
   accentColor: '#222222',
@@ -69,7 +159,7 @@ test('merge preserves template order and ids; applies LLM props when id+type mat
 
   assert.equal(merged.prospectName, 'Jane');
   assert.equal(merged.companyName, 'Acme');
-  assert.deepEqual(merged.theme, serverTheme);
+  assert.deepEqual(merged.theme, { ...serverTheme, blockStylePreset: undefined });
   assert.equal(merged.blocks.length, 2);
   assert.equal(merged.blocks[0].id, 'a');
   assert.equal(merged.blocks[0].type, 'hero');

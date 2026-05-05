@@ -3,6 +3,7 @@ import { Platform, Text, TextInput, useWindowDimensions, View } from 'react-nati
 import { useMemo } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { ManageBlockListModal } from '@/components/inbox';
+import { canManageAccountTeam, getAccountMembershipRole } from '@/lib/account/teamManagementPermissions';
 import {
   MigrationHistoryModal,
   SmartleadMigrationWizardModal,
@@ -191,7 +192,7 @@ function AccountTeamMembersSection({
   titleClassName,
   teamMembers,
   profile,
-  isOwner,
+  canManageTeam,
   inviteEmailInput,
   setInviteEmailInput,
   onInviteTeamMember,
@@ -213,7 +214,7 @@ function AccountTeamMembersSection({
     membership: { id: string; role: string | null; is_owner: boolean };
   }>;
   profile: User | null;
-  isOwner: boolean;
+  canManageTeam: boolean;
   inviteEmailInput: string;
   setInviteEmailInput: (v: string) => void;
   onInviteTeamMember: () => void;
@@ -237,9 +238,8 @@ function AccountTeamMembersSection({
           <View className="rounded-lg overflow-hidden">
             {teamMembers.map((member, index) => {
               const isCurrentUser = member.user.id === profile?.id;
-              const canManage = isOwner && !isCurrentUser;
-              const currentRole =
-                member.membership.role || (member.membership.is_owner ? 'owner' : 'member');
+              const canManage = canManageTeam && !isCurrentUser;
+              const currentRole = getAccountMembershipRole(member.membership);
               return (
                 <View
                   key={member.membership.id}
@@ -345,7 +345,7 @@ function AccountTeamMembersSection({
       ) : (
         <View className="mb-4 py-3">
           <Text className="text-gray-400 text-sm font-instrument">
-            {isOwner
+            {canManageTeam
               ? 'No other members yet. Invite someone by email above.'
               : 'No other members yet.'}
           </Text>
@@ -354,7 +354,7 @@ function AccountTeamMembersSection({
     </>
   );
 
-  const pendingInvitationsBlock = isOwner && invitations.length > 0 && (
+  const pendingInvitationsBlock = canManageTeam && invitations.length > 0 && (
     <View>
       <Text className="text-xs text-gray-400 font-instrument-medium mb-2">
         Pending Invitations ({invitations.length})
@@ -388,7 +388,7 @@ function AccountTeamMembersSection({
   return (
     <Card variant={cardVariant} className={cardClassName ?? ''}>
       <Text className={titleClassName}>Team Members</Text>
-      {isOwner && (
+      {canManageTeam && (
         <View className="mb-4 pb-4 border-b border-[#2A2A2A]">
           <Text className="text-xs text-gray-400 font-instrument-medium mb-2">Invite Team Member</Text>
           <Text className="text-xs text-gray-500 mb-2">
@@ -746,7 +746,7 @@ export default function AccountPage() {
 
   const handleInviteTeamMember = useCallback(async () => {
     if (!membership || !membership.account || !profile) return;
-    if (!membership.membership.is_owner) return;
+    if (!canManageAccountTeam(membership.membership)) return;
 
     const trimmedEmail = inviteEmailInput.trim().toLowerCase();
     if (trimmedEmail.length === 0) {
@@ -840,7 +840,7 @@ export default function AccountPage() {
 
   const handleRevokeInvitation = useCallback(async (invitationId: string) => {
     if (!membership || !membership.account) return;
-    if (!membership.membership.is_owner) return;
+    if (!canManageAccountTeam(membership.membership)) return;
 
     setRevokingInvitationId(invitationId);
 
@@ -859,7 +859,7 @@ export default function AccountPage() {
 
   const handleUpdateMemberRole = useCallback(async (membershipId: string, newRole: 'owner' | 'admin' | 'member') => {
     if (!membership || !membership.account) return;
-    if (!membership.membership.is_owner) return;
+    if (!canManageAccountTeam(membership.membership)) return;
 
     setUpdatingRoleId(membershipId);
 
@@ -878,7 +878,7 @@ export default function AccountPage() {
 
   const handleRemoveMember = useCallback(async (membershipId: string, memberName: string) => {
     if (!membership || !membership.account) return;
-    if (!membership.membership.is_owner) return;
+    if (!canManageAccountTeam(membership.membership)) return;
 
     // Confirm before removing
     if (typeof window !== 'undefined' && !window.confirm(`Are you sure you want to remove ${memberName} from the team?`)) {
@@ -914,6 +914,8 @@ export default function AccountPage() {
   }, [membership, refetchAccountData]);
 
   const isOwner = membership?.membership.is_owner ?? false;
+  const membershipRole = getAccountMembershipRole(membership?.membership);
+  const canManageTeam = canManageAccountTeam(membership?.membership);
   const { width } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
 
@@ -989,7 +991,7 @@ export default function AccountPage() {
             titleClassName={sectionTitleClass}
             teamMembers={teamMembers}
             profile={profile}
-            isOwner={isOwner}
+            canManageTeam={canManageTeam}
             inviteEmailInput={inviteEmailInput}
             setInviteEmailInput={setInviteEmailInput}
             onInviteTeamMember={handleInviteTeamMember}
@@ -1057,6 +1059,7 @@ export default function AccountPage() {
     membership,
     membership?.account,
     isOwner,
+    canManageTeam,
     savingAccount,
     handleSaveAccount,
     teamMembers,
@@ -1099,7 +1102,7 @@ export default function AccountPage() {
         <Alert variant="error" message={loadError} />
       ) : (
         <>
-          {!isOwner && membership?.account?.name ? (
+          {membershipRole === 'member' && membership?.account?.name ? (
             <View
               style={{
                 maxWidth: isMobile ? undefined : DESKTOP_TWO_COLUMN_WIDTH,
@@ -1110,7 +1113,7 @@ export default function AccountPage() {
             >
               <View className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
                 <Text className="text-amber-200 text-sm font-instrument">
-                  You're viewing {membership.account.name} as a member. Only owners can change company details or manage the team.
+                  You're viewing {membership.account.name} as a member. Owners and admins can manage the team, but only owners can change company details.
                 </Text>
               </View>
             </View>

@@ -7,6 +7,7 @@ import {
   Draggable,
   type DropResult,
 } from '@hello-pangea/dnd';
+import { FluxBlockScrollTagEditor } from '@/components/flux/FluxBlockScrollTagEditor';
 import {
   sortBlocksByOrder,
   type FluxTemplateBlocksDraggableListProps,
@@ -23,6 +24,7 @@ export function FluxTemplateBlocksDraggableList({
   onRemove,
   onReorder,
   updateBlockProps,
+  updateBlockScrollTag,
   contentAssets,
   renderBlockEditor,
   allowRemoveBlocks = true,
@@ -106,6 +108,11 @@ export function FluxTemplateBlocksDraggableList({
                         </View>
                         {editingBlockId === block.id ? (
                           <View className="border-t border-[#2A2A2A] px-4 py-4 bg-[#1A1A1A]">
+                            <FluxBlockScrollTagEditor
+                              block={block}
+                              blocks={data}
+                              onSetScrollTag={updateBlockScrollTag}
+                            />
                             {renderBlockEditor(block, updateBlockProps, contentAssets)}
                           </View>
                         ) : null}

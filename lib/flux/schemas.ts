@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { FLUX_BLOCK_STYLE_PRESETS } from './fluxPresentationTokens';
+import { QUIZ_AND_BOOK_QUESTION_TYPES } from './fluxQuizAndBook';
 
 // ---------------------------------------------------------------------------
 // Block prop schemas
@@ -110,6 +111,31 @@ const competitorAdAuditBlockPropsSchema = z.object({
   competitors: z.array(competitorAdAuditRowPropsSchema),
 });
 
+const quizAndBookQuestionOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+});
+
+const quizAndBookQuestionSchema = z.object({
+  id: z.string(),
+  type: z.enum(QUIZ_AND_BOOK_QUESTION_TYPES),
+  prompt: z.string(),
+  helperText: z.string().optional(),
+  placeholder: z.string().optional(),
+  required: z.boolean().optional(),
+  options: z.array(quizAndBookQuestionOptionSchema).optional(),
+});
+
+const quizAndBookBlockPropsSchema = z.object({
+  heading: z.string(),
+  subheading: z.string(),
+  questions: z.array(quizAndBookQuestionSchema),
+  summaryHeading: z.string(),
+  summaryBody: z.string(),
+  calendlyUrl: z.string(),
+  destinationEmail: z.string().optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Block schemas (discriminated union)
 // ---------------------------------------------------------------------------
@@ -117,6 +143,7 @@ const competitorAdAuditBlockPropsSchema = z.object({
 const blockBase = {
   id: z.string(),
   order: z.number(),
+  scrollTag: z.string().max(120).optional(),
 };
 
 const heroBlockSchema = z.object({
@@ -173,6 +200,12 @@ const competitorAdAuditBlockSchema = z.object({
   props: competitorAdAuditBlockPropsSchema,
 });
 
+const quizAndBookBlockSchema = z.object({
+  ...blockBase,
+  type: z.literal('quiz_and_book'),
+  props: quizAndBookBlockPropsSchema,
+});
+
 export const blockSchema = z.discriminatedUnion('type', [
   heroBlockSchema,
   socialProofBlockSchema,
@@ -183,6 +216,7 @@ export const blockSchema = z.discriminatedUnion('type', [
   tannersTaxStrategyBlockSchema,
   socialMediaPlanBlockSchema,
   competitorAdAuditBlockSchema,
+  quizAndBookBlockSchema,
 ]);
 
 // ---------------------------------------------------------------------------
@@ -197,6 +231,7 @@ export const themeConfigSchema = z.object({
   fontFamily: z.string(),
   logoUrl: z.string().optional(),
   blockStylePreset: z.enum(FLUX_BLOCK_STYLE_PRESETS).optional(),
+  allowLongCopy: z.boolean().optional(),
 });
 
 export const pageConfigSchema = z.object({
@@ -228,6 +263,7 @@ export const contentAssetSchema = z.object({
   title: z.string(),
   body: z.string(),
   metric: z.string().optional(),
+  metrics: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
   attribution: z.string().optional(),
   imageUrl: z.string().optional(),
 });

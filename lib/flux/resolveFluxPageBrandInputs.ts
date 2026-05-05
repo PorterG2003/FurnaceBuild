@@ -67,7 +67,7 @@ export function resolveFluxPageBrandInputs(params: {
     policy.logoFrom,
     prospectBrand.logoUrl,
     sellerBrand.logoUrl,
-    'prospect_first',
+    'seller_first',
   );
   const blockStylePreset =
     policy.pageTheme === 'prospect'

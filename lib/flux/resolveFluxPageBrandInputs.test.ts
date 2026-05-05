@@ -39,13 +39,14 @@ test('pageTheme seller uses seller colors', () => {
   assert.equal(r.logoUrl, 'https://s.example/logo.png');
 });
 
-test('pageTheme merge defaults to prospect-first for colors', () => {
+test('pageTheme merge defaults to prospect-first for colors and seller-first for logo', () => {
   const r = resolveFluxPageBrandInputs({
     policy: { v: 1, pageTheme: 'merge' },
     prospectBrand: prospect,
     sellerBrand: seller,
   });
   assert.equal(r.primaryColor, '#111111');
+  assert.equal(r.logoUrl, 'https://s.example/logo.png');
 });
 
 test('logoFrom seller overrides merge', () => {

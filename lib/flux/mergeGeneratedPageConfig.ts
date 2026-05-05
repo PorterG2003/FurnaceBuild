@@ -55,6 +55,36 @@ export function mergeGeneratedPageConfigWithTemplate(params: {
           },
         } as Block;
       }
+      if (tb.type === 'quiz_and_book' && llm.type === 'quiz_and_book') {
+        return {
+          ...tb,
+          props: {
+            ...tb.props,
+            heading: llm.props.heading,
+            subheading: llm.props.subheading,
+            summaryHeading: llm.props.summaryHeading,
+            summaryBody: llm.props.summaryBody,
+            questions: tb.props.questions.map((templateQuestion) => {
+              const llmQuestion = llm.props.questions.find((candidate) => candidate.id === templateQuestion.id);
+              if (!llmQuestion || llmQuestion.type !== templateQuestion.type) return templateQuestion;
+              return {
+                ...templateQuestion,
+                prompt: llmQuestion.prompt,
+                helperText: llmQuestion.helperText,
+                placeholder: llmQuestion.placeholder,
+                options: templateQuestion.options?.map((templateOption) => {
+                  const llmOption = llmQuestion.options?.find((candidate) => candidate.id === templateOption.id);
+                  if (!llmOption) return templateOption;
+                  return {
+                    ...templateOption,
+                    label: llmOption.label,
+                  };
+                }),
+              };
+            }),
+          },
+        } as Block;
+      }
       return { ...tb, props: llm.props } as Block;
     }
     if (tb.type === 'hero' && params.serverHeroImageUrl) {

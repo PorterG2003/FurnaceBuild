@@ -1,0 +1,256 @@
+{
+  "runner": "debug_flux_competitor_audit",
+  "correlationId": "local_2026-05-01T21-47-40-915Z",
+  "startedAt": "2026-05-01T21:47:40.916Z",
+  "finishedAt": "2026-05-01T21:54:42.292Z",
+  "outputDir": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/batch-podiatry-after-fixes",
+  "inputs": {
+    "domains": [
+      "feetnet.com",
+      "myfootdoc.com",
+      "soretoes.com",
+      "summitfootankle.com",
+      "coraldesertfoot.com",
+      "hangerclinic.com",
+      "reverehealth.com",
+      "aaronobrienmd.com",
+      "intermountainhealthcare.org"
+    ],
+    "excludeDomains": [],
+    "lat": null,
+    "lng": null,
+    "query": "local services",
+    "region": "US",
+    "headless": true,
+    "slowMoMs": 0,
+    "timeoutMs": 20000,
+    "domainTimeoutMs": 120000,
+    "maxSamples": 2,
+    "maxCandidates": 12,
+    "skipStaticMaps": true
+  },
+  "candidates": [
+    {
+      "domain": "feetnet.com",
+      "name": "feetnet.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 0,
+      "source": "manual"
+    },
+    {
+      "domain": "myfootdoc.com",
+      "name": "myfootdoc.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 1,
+      "source": "manual"
+    },
+    {
+      "domain": "soretoes.com",
+      "name": "soretoes.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 2,
+      "source": "manual"
+    },
+    {
+      "domain": "summitfootankle.com",
+      "name": "summitfootankle.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 3,
+      "source": "manual"
+    },
+    {
+      "domain": "coraldesertfoot.com",
+      "name": "coraldesertfoot.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 4,
+      "source": "manual"
+    },
+    {
+      "domain": "hangerclinic.com",
+      "name": "hangerclinic.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 5,
+      "source": "manual"
+    },
+    {
+      "domain": "reverehealth.com",
+      "name": "reverehealth.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 6,
+      "source": "manual"
+    },
+    {
+      "domain": "aaronobrienmd.com",
+      "name": "aaronobrienmd.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 7,
+      "source": "manual"
+    },
+    {
+      "domain": "intermountainhealthcare.org",
+      "name": "intermountainhealthcare.org",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 8,
+      "source": "manual"
+    }
+  ],
+  "attemptedPlacesCount": 6,
+  "okDomainCount": 5,
+  "placesStopReason": "min_reached_and_enough_ok",
+  "transparencyScoredOkCount": 5,
+  "publishedWinnerCount": 3,
+  "winnerDomains": [
+    "hangerclinic.com",
+    "summitfootankle.com",
+    "myfootdoc.com"
+  ],
+  "auditOutcomeCounts": {
+    "ok": 5,
+    "transparency_no_match": 1
+  },
+  "auditRows": [
+    {
+      "domain": "feetnet.com",
+      "outcome": "ok",
+      "creative_count": 6
+    },
+    {
+      "domain": "myfootdoc.com",
+      "outcome": "ok",
+      "creative_count": 11,
+      "selected_rank": 3
+    },
+    {
+      "domain": "soretoes.com",
+      "outcome": "transparency_no_match",
+      "creative_count": null,
+      "message": "No Transparency match"
+    },
+    {
+      "domain": "summitfootankle.com",
+      "outcome": "ok",
+      "creative_count": 24,
+      "selected_rank": 2
+    },
+    {
+      "domain": "coraldesertfoot.com",
+      "outcome": "ok",
+      "creative_count": 3
+    },
+    {
+      "domain": "hangerclinic.com",
+      "outcome": "ok",
+      "creative_count": 40,
+      "selected_rank": 1
+    }
+  ],
+  "ranked": [
+    {
+      "domain": "hangerclinic.com",
+      "placeIndex": 5,
+      "creativeCount": 40,
+      "latestAdLastShownAt": "2026-05-01",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    },
+    {
+      "domain": "summitfootankle.com",
+      "placeIndex": 3,
+      "creativeCount": 24,
+      "latestAdLastShownAt": "2026-05-01",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    },
+    {
+      "domain": "myfootdoc.com",
+      "placeIndex": 1,
+      "creativeCount": 11,
+      "latestAdLastShownAt": "2026-05-01",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    },
+    {
+      "domain": "feetnet.com",
+      "placeIndex": 0,
+      "creativeCount": 6,
+      "latestAdLastShownAt": "2026-05-01",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    },
+    {
+      "domain": "coraldesertfoot.com",
+      "placeIndex": 4,
+      "creativeCount": 3,
+      "latestAdLastShownAt": "2026-05-01",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    }
+  ],
+  "competitors": [
+    {
+      "domain": "hangerclinic.com",
+      "name": "hangerclinic.com",
+      "adsSummary": "~40 ads in Google’s Transparency Center; most recent creative shown 2026-05-01.",
+      "examples": [
+        {
+          "headline": "Hanger, Inc.",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR11079877938382897153/creative/CR06489118761558212609?region=US",
+          "imagePath": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/batch-podiatry-after-fixes/creatives/creative-0-0-hangerclinic.com.png"
+        },
+        {
+          "headline": "Hanger, Inc.",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR11079877938382897153/creative/CR08004998950098567169?region=US",
+          "imagePath": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/batch-podiatry-after-fixes/creatives/creative-0-1-hangerclinic.com.png"
+        }
+      ]
+    },
+    {
+      "domain": "summitfootankle.com",
+      "name": "summitfootankle.com",
+      "adsSummary": "~24 ads in Google’s Transparency Center; most recent creative shown 2026-05-01.",
+      "examples": [
+        {
+          "headline": "Ellsworth Foot and Ankle Clinic",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR18206600134223986689/creative/CR14979045186099740673?region=US"
+        },
+        {
+          "headline": "Ellsworth Foot and Ankle Clinic",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR18206600134223986689/creative/CR11858667470355169281?region=US"
+        }
+      ]
+    },
+    {
+      "domain": "myfootdoc.com",
+      "name": "myfootdoc.com",
+      "adsSummary": "~11 ads in Google’s Transparency Center; most recent creative shown 2026-05-01.",
+      "examples": [
+        {
+          "headline": "Bonneville International Corp",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR02190493794099527681/creative/CR16304555467550490625?region=US",
+          "imagePath": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/batch-podiatry-after-fixes/creatives/creative-2-0-myfootdoc.com.png"
+        },
+        {
+          "headline": "Bonneville International Corp",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR02190493794099527681/creative/CR10503499391753519105?region=US",
+          "imagePath": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/batch-podiatry-after-fixes/creatives/creative-2-1-myfootdoc.com.png"
+        }
+      ]
+    }
+  ],
+  "failureMessage": null
+}

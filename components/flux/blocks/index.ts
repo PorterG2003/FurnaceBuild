@@ -2,6 +2,8 @@ export { BlockRenderer } from './BlockRenderer';
 export { HeroBlock } from './HeroBlock';
 export { SocialProofBlock } from './SocialProofBlock';
 export { CaseStudyBlock } from './CaseStudyBlock';
+export { CaseStudyCarouselBlock } from './CaseStudyCarouselBlock';
+export type { CaseStudyCarouselItem } from './CaseStudyCarouselBlock';
 export { BenefitsBlock } from './BenefitsBlock';
 export { TestimonialBlock } from './TestimonialBlock';
 export { CtaBlock } from './CtaBlock';

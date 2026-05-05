@@ -27,6 +27,8 @@ import {
 } from '@/lib/flux/fluxProspectPageChatState';
 import { parseFluxCampaignRowFromDb } from '@/lib/flux/campaignSeller';
 import { brandingPolicyToJson, type FluxBrandingPolicy } from '@/lib/flux/fluxBrandingPolicy';
+import { coercePageConfig } from '@/lib/flux/coercePageConfig';
+import { syncFluxPageConfigLogo } from '@/lib/flux/syncFluxPageConfigLogo';
 
 async function upsertFluxEditorChat(params: {
   accountId: string;
@@ -468,6 +470,43 @@ export async function updateFluxPageSlug(pageId: string, slug: string): Promise<
     .single();
   if (error) throw error;
   return data as FluxProspectPageRow;
+}
+
+export async function syncFluxPageLogosForCampaign(
+  campaign: FluxCampaignRow,
+  prospects: FluxProspectRow[],
+): Promise<number> {
+  const pages = await getFluxPagesByCampaign(campaign.id);
+  const prospectById = new Map(prospects.map((prospect) => [prospect.id, prospect]));
+  const updates = pages.flatMap((page) => {
+    const pageConfig = coercePageConfig(page.page_config);
+    const prospect = prospectById.get(page.prospect_id);
+    if (!pageConfig || !prospect) return [];
+
+    const synced = syncFluxPageConfigLogo(pageConfig, {
+      prospectBrand: prospect.brand_profile,
+      prospectWebsiteIntel: prospect.website_intel_snapshot,
+      sellerBrand: campaign.seller_brand_profile,
+      sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
+      brandingPolicy: campaign.branding_policy,
+    });
+    const currentLogoUrl = pageConfig.theme.logoUrl?.trim() || undefined;
+    const nextLogoUrl = synced.theme.logoUrl?.trim() || undefined;
+    if (currentLogoUrl === nextLogoUrl) return [];
+    return [{ pageId: page.id, pageConfig: synced }];
+  });
+
+  await Promise.all(
+    updates.map(async ({ pageId, pageConfig }) => {
+      const { error } = await supabase
+        .from('flux_prospect_pages')
+        .update({ page_config: pageConfig as any })
+        .eq('id', pageId);
+      if (error) throw error;
+    }),
+  );
+
+  return updates.length;
 }
 
 // ---------------------------------------------------------------------------

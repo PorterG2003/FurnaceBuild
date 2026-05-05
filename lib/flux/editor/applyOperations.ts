@@ -62,6 +62,26 @@ export function applyFluxEditorOperation(
           b.id === op.blockId ? ({ ...b, props: { ...b.props, ...op.props } } as Block) : b,
         ),
       };
+    case 'block.setScrollTag': {
+      return {
+        ...state,
+        blocks: state.blocks.map((b) => {
+          if (b.id !== op.blockId) return b;
+          const next = { ...b } as Block;
+          if (op.scrollTag === null) {
+            delete (next as { scrollTag?: string }).scrollTag;
+          } else {
+            const tag = op.scrollTag.trim();
+            if (!tag) {
+              delete (next as { scrollTag?: string }).scrollTag;
+            } else {
+              (next as { scrollTag?: string }).scrollTag = tag;
+            }
+          }
+          return next;
+        }),
+      };
+    }
     case 'block.reorder': {
       const byId = new Map(state.blocks.map((b) => [b.id, b]));
       const ordered: Block[] = [];

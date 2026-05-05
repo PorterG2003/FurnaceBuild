@@ -14,6 +14,7 @@ export interface FluxTemplateBlocksDraggableListProps {
   onRemove: (blockId: string) => void;
   onReorder: (nextOrdered: Block[]) => void;
   updateBlockProps: (blockId: string, newProps: Record<string, unknown>) => void;
+  updateBlockScrollTag: (blockId: string, scrollTag: string | undefined) => void;
   contentAssets: ContentAsset[];
   renderBlockEditor: (
     block: Block,

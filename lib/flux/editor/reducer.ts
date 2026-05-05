@@ -74,6 +74,7 @@ export type FluxCampaignEditorAction =
   | { type: 'block.add'; blockType: Block['type']; index?: number }
   | { type: 'block.remove'; blockId: string }
   | { type: 'block.updateProps'; blockId: string; props: Record<string, unknown> }
+  | { type: 'block.setScrollTag'; blockId: string; scrollTag: string | null }
   | { type: 'block.setBlocks'; blocks: Block[] }
   | { type: 'asset.add'; asset: ContentAsset }
   | { type: 'asset.remove'; assetId: string }
@@ -239,6 +240,14 @@ export function fluxCampaignEditorReducer(
         type: 'block.updateProps',
         blockId: action.blockId,
         props: action.props,
+      });
+      return { ...state, ...doc };
+    }
+    case 'block.setScrollTag': {
+      const doc = applyFluxEditorOperation(toDoc(state), {
+        type: 'block.setScrollTag',
+        blockId: action.blockId,
+        scrollTag: action.scrollTag,
       });
       return { ...state, ...doc };
     }

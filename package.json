@@ -14,9 +14,11 @@
     "verify:amplify-yml-installs": "node scripts/verify-amplify-yml-installs.mjs",
     "verify:email-parsing": "tsx scripts/verify-email-parsing.ts",
     "verify:google-ads-transparency": "tsx scripts/verify-google-ads-transparency.ts",
+    "verify:google-ads-competitor-audit": "tsx scripts/verify-google-ads-competitor-audit.ts",
     "migrate:users": "tsx scripts/migrate-cognito-users-to-supabase-auth.ts",
     "migrate:users:dry": "DRY_RUN=1 tsx scripts/migrate-cognito-users-to-supabase-auth.ts",
     "seed": "tsx scripts/seed/index.ts",
+    "seed:reset": "tsx scripts/seed/reset.ts",
     "seed:wipe": "tsx scripts/seed/index.ts --wipe",
     "seed:help": "tsx scripts/seed/index.ts --help"
   },

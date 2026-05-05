@@ -14,6 +14,12 @@ test('parseFluxEditorOperations accepts block.add competitor_ad_audit', () => {
   if (r.ok) assert.equal(r.operations[0]?.type, 'block.add');
 });
 
+test('parseFluxEditorOperations accepts block.add quiz_and_book', () => {
+  const r = parseFluxEditorOperations([{ type: 'block.add', blockType: 'quiz_and_book' }]);
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.operations[0]?.type, 'block.add');
+});
+
 test('FLUX_EDITOR_CHAT_BLOCK_ADD_TYPE_ALTS lists every blockTypeSchema value', () => {
   const expected = blockTypeSchema.options.map((t) => `"${t}"`).join('|');
   assert.equal(FLUX_EDITOR_CHAT_BLOCK_ADD_TYPE_ALTS, expected);

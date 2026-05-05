@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, ScrollView, useWindowDimensions } from 'react-native';
+import { View, ScrollView, useWindowDimensions, Platform } from 'react-native';
 import { EditorColumnScrollView } from '@/components/flux/EditorColumnScrollView';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import { Tabs, type Tab } from '@/components/ui/tabs';
@@ -42,6 +42,7 @@ export function FluxEditorSplitLayout({
   const isWide = width >= LAYOUT_BREAKPOINT;
   const [narrowTab, setNarrowTab] = useState<FluxEditorSplitTab>('editor');
   const isIdeation = variant === 'ideation';
+  const keyboardTapBehavior = Platform.OS === 'web' ? 'always' : 'handled';
 
   const editorContentPadding = isWide ? 8 : 0;
 
@@ -73,7 +74,7 @@ export function FluxEditorSplitLayout({
       contentContainerStyle={editorScrollContentStyle}
       showsVerticalScrollIndicator={false}
       nestedScrollEnabled
-      keyboardShouldPersistTaps="handled"
+      keyboardShouldPersistTaps={keyboardTapBehavior}
     >
       {editor}
     </EditorColumnScrollView>

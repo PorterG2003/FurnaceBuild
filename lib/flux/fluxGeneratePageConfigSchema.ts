@@ -1,12 +1,13 @@
 import { z } from 'zod';
 import { FLUX_BLOCK_STYLE_PRESETS } from './fluxPresentationTokens';
+import { QUIZ_AND_BOOK_QUESTION_TYPES } from './fluxQuizAndBook';
 
 /**
  * Zod schemas for Flux `fluxGenerate` PageConfig output (shared with Lambda via relative import).
  * Keep in sync with block props in {@link ./types}.
  */
 
-const blockBase = { id: z.string(), order: z.number() };
+const blockBase = { id: z.string(), order: z.number(), scrollTag: z.string().max(120).optional() };
 
 const TANNERS_QUALIFICATION_MODES = ['passive', 'reps', 'str'] as const;
 
@@ -196,6 +197,36 @@ export const blockSchema = z.discriminatedUnion('type', [
       ),
     }),
   }),
+  z.object({
+    ...blockBase,
+    type: z.literal('quiz_and_book'),
+    props: z.object({
+      heading: z.string(),
+      subheading: z.string(),
+      questions: z.array(
+        z.object({
+          id: z.string(),
+          type: z.enum(QUIZ_AND_BOOK_QUESTION_TYPES),
+          prompt: z.string(),
+          helperText: z.string().optional(),
+          placeholder: z.string().optional(),
+          required: z.boolean().optional(),
+          options: z
+            .array(
+              z.object({
+                id: z.string(),
+                label: z.string(),
+              }),
+            )
+            .optional(),
+        }),
+      ),
+      summaryHeading: z.string(),
+      summaryBody: z.string(),
+      calendlyUrl: z.string(),
+      destinationEmail: z.string().optional(),
+    }),
+  }),
 ]);
 
 export const themeConfigSchema = z.object({
@@ -206,6 +237,7 @@ export const themeConfigSchema = z.object({
   fontFamily: z.string(),
   logoUrl: z.string().optional(),
   blockStylePreset: z.enum(FLUX_BLOCK_STYLE_PRESETS).optional(),
+  allowLongCopy: z.boolean().optional(),
 });
 
 export const pageConfigSchema = z.object({

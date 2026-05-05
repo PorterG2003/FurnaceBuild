@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { PaintBrushIcon, RectangleStackIcon, TagIcon, UserIcon } from 'react-native-heroicons/outline';
@@ -31,6 +31,10 @@ interface FluxProspectPageManualEditorProps {
   prospectLeadSlot?: React.ReactNode;
   /** Brand on the prospect row; optional intel / save actions. Shown in “Brand details”. */
   prospectBrandSlot?: React.ReactNode;
+  /** When set, opens the matching block editor so validation issues are easier to fix. */
+  requestedEditingBlockId?: string | null;
+  /** Per-block issue counts shown in the block summaries. */
+  issueCountByBlockId?: Record<string, number>;
 }
 
 export function FluxProspectPageManualEditor({
@@ -40,6 +44,8 @@ export function FluxProspectPageManualEditor({
   campaignId,
   prospectLeadSlot,
   prospectBrandSlot,
+  requestedEditingBlockId = null,
+  issueCountByBlockId = {},
 }: FluxProspectPageManualEditorProps) {
   const router = useRouter();
   const [openSections, setOpenSections] = useState<string[]>([
@@ -49,6 +55,14 @@ export function FluxProspectPageManualEditor({
     SECTION_BLOCKS,
   ]);
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!requestedEditingBlockId) return;
+    setEditingBlockId(requestedEditingBlockId);
+    setOpenSections((current) =>
+      current.includes(SECTION_BLOCKS) ? current : [...current, SECTION_BLOCKS],
+    );
+  }, [requestedEditingBlockId]);
 
   const toggleSection = (section: string) => {
     setOpenSections((current) =>
@@ -78,6 +92,25 @@ export function FluxProspectPageManualEditor({
     [onChange, pageConfig],
   );
 
+  const updateBlockScrollTag = useCallback(
+    (blockId: string, scrollTag: string | undefined) => {
+      onChange({
+        ...pageConfig,
+        blocks: pageConfig.blocks.map((b) => {
+          if (b.id !== blockId) return b;
+          const next = { ...b } as Block;
+          if (!scrollTag?.trim()) {
+            delete (next as { scrollTag?: string }).scrollTag;
+          } else {
+            (next as { scrollTag?: string }).scrollTag = scrollTag.trim();
+          }
+          return next;
+        }),
+      });
+    },
+    [onChange, pageConfig],
+  );
+
   const setBlocks = useCallback(
     (blocks: Block[]) => {
       onChange({ ...pageConfig, blocks });
@@ -86,6 +119,16 @@ export function FluxProspectPageManualEditor({
   );
 
   const noopRemove = useCallback(() => {}, []);
+
+  const blockSummaryWithIssues = useCallback(
+    (block: Block) => {
+      const summary = fluxManualBlockSummary(block);
+      const issueCount = issueCountByBlockId[block.id] ?? 0;
+      if (issueCount < 1) return summary;
+      return `${summary} · ${issueCount} issue${issueCount === 1 ? '' : 's'}`;
+    },
+    [issueCountByBlockId],
+  );
 
   return (
     <View className="gap-3">
@@ -206,6 +249,35 @@ export function FluxProspectPageManualEditor({
             );
           })}
         </View>
+        <Text className="text-gray-400 text-xs font-instrument mb-1">Copy length limits</Text>
+        <View className="border border-[#333] rounded-lg p-3 bg-[#222] gap-2 mb-2">
+          <Text className="text-gray-300 text-xs font-instrument leading-5">
+            The selected layout preset enforces hard copy limits when you save. Enable this only when you need a
+            manual exception and are okay with possible overflow in tighter layouts.
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            <Pressable
+              className={`rounded-lg border px-3 py-2 ${
+                !pageConfig.theme.allowLongCopy
+                  ? 'border-indigo-500 bg-indigo-500/15'
+                  : 'border-[#333] bg-[#1A1A1A]'
+              }`}
+              onPress={() => patchTheme({ allowLongCopy: undefined })}
+            >
+              <Text className="text-white text-xs font-instrument-semibold">Enforce limits</Text>
+            </Pressable>
+            <Pressable
+              className={`rounded-lg border px-3 py-2 ${
+                pageConfig.theme.allowLongCopy
+                  ? 'border-amber-500 bg-amber-500/15'
+                  : 'border-[#333] bg-[#1A1A1A]'
+              }`}
+              onPress={() => patchTheme({ allowLongCopy: true })}
+            >
+              <Text className="text-white text-xs font-instrument-semibold">Allow long copy</Text>
+            </Pressable>
+          </View>
+        </View>
         <Text className="text-gray-400 text-xs font-instrument mb-1">Logo URL (optional)</Text>
         <TextInput
           className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2"
@@ -231,7 +303,7 @@ export function FluxProspectPageManualEditor({
           <FluxTemplateBlocksDraggableList
             blocks={pageConfig.blocks}
             blockTypeLabels={FLUX_MANUAL_BLOCK_TYPE_LABELS}
-            blockSummary={fluxManualBlockSummary}
+            blockSummary={blockSummaryWithIssues}
             editingBlockId={editingBlockId}
             onToggleEditing={(blockId: string) =>
               setEditingBlockId((id) => (id === blockId ? null : blockId))
@@ -242,6 +314,7 @@ export function FluxProspectPageManualEditor({
               setBlocks(next.map((b, i) => ({ ...b, order: i })))
             }
             updateBlockProps={updateBlockProps}
+            updateBlockScrollTag={updateBlockScrollTag}
             contentAssets={contentAssets}
             renderBlockEditor={renderFluxManualBlockEditor}
           />

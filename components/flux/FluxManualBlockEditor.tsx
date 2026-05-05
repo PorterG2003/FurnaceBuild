@@ -1,6 +1,14 @@
 import React, { type ReactNode } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import type { Block, BlockType, ContentAsset } from '@/lib/flux/types';
+import {
+  createQuizAndBookOption,
+  createQuizAndBookQuestion,
+  questionTypeLabel,
+  questionTypeSupportsOptions,
+  questionTypeSupportsPlaceholder,
+  QUIZ_AND_BOOK_QUESTION_TYPES,
+} from '@/lib/flux/fluxQuizAndBook';
 
 export const FLUX_MANUAL_BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   hero: 'Hero',
@@ -12,6 +20,7 @@ export const FLUX_MANUAL_BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   tanners_tax_strategy: 'Tax strategy calculator',
   social_media_plan: 'Social media plan',
   competitor_ad_audit: 'Competitor ad audit',
+  quiz_and_book: 'Quiz and book',
 };
 
 export const FLUX_ALL_BLOCK_TYPES: BlockType[] = [
@@ -24,6 +33,7 @@ export const FLUX_ALL_BLOCK_TYPES: BlockType[] = [
   'tanners_tax_strategy',
   'social_media_plan',
   'competitor_ad_audit',
+  'quiz_and_book',
 ];
 
 export function fluxManualBlockSummary(block: Block): string {
@@ -46,6 +56,8 @@ export function fluxManualBlockSummary(block: Block): string {
       return block.props.inferred_vertical || '(social plan)';
     case 'competitor_ad_audit':
       return `${block.props.heading?.trim() || 'Audit'} (${block.props.status})`;
+    case 'quiz_and_book':
+      return `${block.props.questions.length} steps`;
   }
 }
 
@@ -90,7 +102,7 @@ export function renderFluxManualBlockEditor(
             className={inputClass}
             value={block.props.ctaUrl}
             onChangeText={(value) => updateProps(block.id, { ctaUrl: value })}
-            placeholder="https://..."
+            placeholder="#section or https://…"
             placeholderTextColor="#555"
           />
           <Text className="text-gray-400 text-xs">Hero image URL (optional)</Text>
@@ -328,11 +340,299 @@ export function renderFluxManualBlockEditor(
             className={inputClass}
             value={block.props.ctaUrl}
             onChangeText={(value) => updateProps(block.id, { ctaUrl: value })}
-            placeholder="https://..."
+            placeholder="#section or https://…"
             placeholderTextColor="#555"
           />
         </View>
       );
+    case 'quiz_and_book': {
+      const props = block.props;
+      const updateQuestion = (questionId: string, patch: Record<string, unknown>) => {
+        updateProps(block.id, {
+          questions: props.questions.map((question) =>
+            question.id === questionId ? { ...question, ...patch } : question,
+          ),
+        });
+      };
+      const replaceQuestion = (questionId: string, buildNext: (question: typeof props.questions[number]) => typeof props.questions[number]) => {
+        updateProps(block.id, {
+          questions: props.questions.map((question) =>
+            question.id === questionId ? buildNext(question) : question,
+          ),
+        });
+      };
+      return (
+        <View className="gap-2">
+          <Text className="text-gray-400 text-xs">Heading</Text>
+          <TextInput
+            className={inputClass}
+            value={props.heading}
+            onChangeText={(value) => updateProps(block.id, { heading: value })}
+            placeholder="A few quick questions before we build your plan."
+            placeholderTextColor="#555"
+            multiline
+          />
+          <Text className="text-gray-400 text-xs">Subheading</Text>
+          <TextInput
+            className={inputClass}
+            value={props.subheading}
+            onChangeText={(value) => updateProps(block.id, { subheading: value })}
+            placeholder="Explain the value of the quiz in one short paragraph."
+            placeholderTextColor="#555"
+            multiline
+          />
+          <Text className="text-gray-400 text-xs">Calendly URL</Text>
+          <TextInput
+            className={inputClass}
+            value={props.calendlyUrl}
+            onChangeText={(value) => updateProps(block.id, { calendlyUrl: value })}
+            placeholder="https://calendly.com/..."
+            placeholderTextColor="#555"
+            autoCapitalize="none"
+          />
+          <Text className="text-gray-400 text-xs">Destination Email (optional)</Text>
+          <TextInput
+            className={inputClass}
+            value={props.destinationEmail ?? ''}
+            onChangeText={(value) =>
+              updateProps(block.id, { destinationEmail: value.trim() ? value.trim() : undefined })
+            }
+            placeholder="team@example.com"
+            placeholderTextColor="#555"
+            autoCapitalize="none"
+          />
+          <Text className="text-gray-400 text-xs">Summary heading</Text>
+          <TextInput
+            className={inputClass}
+            value={props.summaryHeading}
+            onChangeText={(value) => updateProps(block.id, { summaryHeading: value })}
+            placeholder="Perfect."
+            placeholderTextColor="#555"
+          />
+          <Text className="text-gray-400 text-xs">Summary body</Text>
+          <TextInput
+            className={inputClass}
+            value={props.summaryBody}
+            onChangeText={(value) => updateProps(block.id, { summaryBody: value })}
+            placeholder="Next step is scheduling our meeting..."
+            placeholderTextColor="#555"
+            multiline
+          />
+
+          <View className="gap-3 mt-2">
+            {props.questions.map((question, questionIndex) => (
+              <View key={question.id} className="border border-[#333] rounded-lg p-3 gap-2">
+                <View className="flex-row flex-wrap items-center justify-between gap-2">
+                  <Text className="text-gray-300 text-xs font-instrument-semibold">
+                    Step {questionIndex + 1}
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    <Pressable
+                      className="px-2 py-1 rounded border border-[#444] bg-[#2A2A2A]"
+                      disabled={questionIndex === 0}
+                      onPress={() => {
+                        if (questionIndex === 0) return;
+                        const next = [...props.questions];
+                        const [moved] = next.splice(questionIndex, 1);
+                        next.splice(questionIndex - 1, 0, moved!);
+                        updateProps(block.id, { questions: next });
+                      }}
+                    >
+                      <Text className="text-gray-300 text-[11px]">Up</Text>
+                    </Pressable>
+                    <Pressable
+                      className="px-2 py-1 rounded border border-[#444] bg-[#2A2A2A]"
+                      disabled={questionIndex === props.questions.length - 1}
+                      onPress={() => {
+                        if (questionIndex === props.questions.length - 1) return;
+                        const next = [...props.questions];
+                        const [moved] = next.splice(questionIndex, 1);
+                        next.splice(questionIndex + 1, 0, moved!);
+                        updateProps(block.id, { questions: next });
+                      }}
+                    >
+                      <Text className="text-gray-300 text-[11px]">Down</Text>
+                    </Pressable>
+                    <Pressable
+                      className="px-2 py-1 rounded border border-red-500/40 bg-red-500/10"
+                      onPress={() =>
+                        updateProps(block.id, {
+                          questions: props.questions.filter((candidate) => candidate.id !== question.id),
+                        })
+                      }
+                    >
+                      <Text className="text-red-300 text-[11px]">Remove</Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                <Text className="text-gray-400 text-xs">Question type</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {QUIZ_AND_BOOK_QUESTION_TYPES.map((type) => (
+                    <Pressable
+                      key={type}
+                      className={`px-2 py-1 rounded-lg border ${
+                        question.type === type
+                          ? 'border-indigo-500 bg-indigo-500/20'
+                          : 'border-[#444] bg-[#333]'
+                      }`}
+                      onPress={() => {
+                        const next =
+                          type === question.type
+                            ? question
+                            : {
+                                ...createQuizAndBookQuestion(type, question.prompt || 'Question'),
+                                id: question.id,
+                                prompt: question.prompt,
+                                helperText: question.helperText,
+                                required: question.required,
+                              };
+                        replaceQuestion(question.id, () => next);
+                      }}
+                    >
+                      <Text className="text-white text-xs">{questionTypeLabel(type)}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Text className="text-gray-400 text-xs">Prompt</Text>
+                <TextInput
+                  className={inputClass}
+                  value={question.prompt}
+                  onChangeText={(value) => updateQuestion(question.id, { prompt: value })}
+                  placeholder="What do you want to ask?"
+                  placeholderTextColor="#555"
+                  multiline
+                />
+                <Text className="text-gray-400 text-xs">Helper text (optional)</Text>
+                <TextInput
+                  className={inputClass}
+                  value={question.helperText ?? ''}
+                  onChangeText={(value) =>
+                    updateQuestion(question.id, { helperText: value.trim() ? value : undefined })
+                  }
+                  placeholder="Optional supporting copy"
+                  placeholderTextColor="#555"
+                  multiline
+                />
+                <View className="flex-row flex-wrap gap-2 items-center">
+                  <Text className="text-gray-400 text-xs">Required</Text>
+                  <Pressable
+                    className={`px-2 py-1 rounded-lg border ${
+                      question.required !== false
+                        ? 'border-indigo-500 bg-indigo-500/20'
+                        : 'border-[#444] bg-[#333]'
+                    }`}
+                    onPress={() =>
+                      updateQuestion(question.id, { required: question.required === false ? true : false })
+                    }
+                  >
+                    <Text className="text-white text-xs">
+                      {question.required === false ? 'Optional' : 'Required'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {questionTypeSupportsPlaceholder(question.type) ? (
+                  <>
+                    <Text className="text-gray-400 text-xs">Placeholder (optional)</Text>
+                    <TextInput
+                      className={inputClass}
+                      value={question.placeholder ?? ''}
+                      onChangeText={(value) =>
+                        updateQuestion(question.id, { placeholder: value.trim() ? value : undefined })
+                      }
+                      placeholder="Type your answer..."
+                      placeholderTextColor="#555"
+                    />
+                  </>
+                ) : null}
+
+                {questionTypeSupportsOptions(question.type) ? (
+                  <View className="gap-2">
+                    <Text className="text-gray-400 text-xs">Answer options</Text>
+                    {(question.options ?? []).map((option, optionIndex) => (
+                      <View key={option.id} className="flex-row gap-2 items-center">
+                        <TextInput
+                          className={`${inputClass} flex-1 mb-0`}
+                          value={option.label}
+                          onChangeText={(value) =>
+                            replaceQuestion(question.id, (currentQuestion) => ({
+                              ...currentQuestion,
+                              options: (currentQuestion.options ?? []).map((currentOption) =>
+                                currentOption.id === option.id
+                                  ? { ...currentOption, label: value }
+                                  : currentOption,
+                              ),
+                            }))
+                          }
+                          placeholder={`Option ${optionIndex + 1}`}
+                          placeholderTextColor="#555"
+                        />
+                        <Pressable
+                          className="px-2 py-1 rounded border border-[#444] bg-[#2A2A2A]"
+                          disabled={optionIndex === 0}
+                          onPress={() =>
+                            replaceQuestion(question.id, (currentQuestion) => {
+                              const nextOptions = [...(currentQuestion.options ?? [])];
+                              const [moved] = nextOptions.splice(optionIndex, 1);
+                              nextOptions.splice(optionIndex - 1, 0, moved!);
+                              return { ...currentQuestion, options: nextOptions };
+                            })
+                          }
+                        >
+                          <Text className="text-gray-300 text-[11px]">Up</Text>
+                        </Pressable>
+                        <Pressable
+                          className="px-2 py-1 rounded border border-red-500/40 bg-red-500/10"
+                          onPress={() =>
+                            replaceQuestion(question.id, (currentQuestion) => ({
+                              ...currentQuestion,
+                              options: (currentQuestion.options ?? []).filter(
+                                (currentOption) => currentOption.id !== option.id,
+                              ),
+                            }))
+                          }
+                        >
+                          <Text className="text-red-300 text-[11px]">Remove</Text>
+                        </Pressable>
+                      </View>
+                    ))}
+                    <Pressable
+                      className="border border-dashed border-[#444] rounded-lg p-2 items-center"
+                      onPress={() =>
+                        replaceQuestion(question.id, (currentQuestion) => ({
+                          ...currentQuestion,
+                          options: [...(currentQuestion.options ?? []), createQuizAndBookOption('New option')],
+                        }))
+                      }
+                    >
+                      <Text className="text-gray-400 text-xs">+ Add option</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+
+            <View className="flex-row flex-wrap gap-2">
+              {QUIZ_AND_BOOK_QUESTION_TYPES.map((type) => (
+                <Pressable
+                  key={type}
+                  className="border border-dashed border-[#444] rounded-lg px-3 py-2"
+                  onPress={() =>
+                    updateProps(block.id, {
+                      questions: [...props.questions, createQuizAndBookQuestion(type, `Question ${props.questions.length + 1}`)],
+                    })
+                  }
+                >
+                  <Text className="text-gray-300 text-xs">+ {questionTypeLabel(type)}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </View>
+      );
+    }
     case 'social_media_plan': {
       const props = block.props;
       return (
@@ -647,7 +947,7 @@ export function renderFluxManualBlockEditor(
             className={inputClass}
             value={block.props.ctaUrl || ''}
             onChangeText={(value) => updateProps(block.id, { ctaUrl: value || undefined })}
-            placeholder="https://..."
+            placeholder="#section or https://…"
             placeholderTextColor="#555"
           />
         </View>

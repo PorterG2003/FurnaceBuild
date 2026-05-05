@@ -1,0 +1,78 @@
+{
+  "runner": "debug_flux_competitor_audit",
+  "correlationId": "local_2026-05-01T19-56-47-282Z",
+  "startedAt": "2026-05-01T19:56:47.283Z",
+  "finishedAt": "2026-05-01T19:57:33.596Z",
+  "outputDir": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/right-tempair-after-fixes",
+  "inputs": {
+    "domains": [
+      "right-tempair.com"
+    ],
+    "excludeDomains": [],
+    "lat": null,
+    "lng": null,
+    "query": "local services",
+    "region": "US",
+    "headless": true,
+    "slowMoMs": 0,
+    "timeoutMs": 20000,
+    "domainTimeoutMs": 120000,
+    "maxSamples": 2,
+    "maxCandidates": 12,
+    "skipStaticMaps": true
+  },
+  "candidates": [
+    {
+      "domain": "right-tempair.com",
+      "name": "right-tempair.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 0,
+      "source": "manual"
+    }
+  ],
+  "attemptedPlacesCount": 1,
+  "okDomainCount": 1,
+  "placesStopReason": "exhausted_candidates",
+  "transparencyScoredOkCount": 1,
+  "publishedWinnerCount": 1,
+  "winnerDomains": [
+    "right-tempair.com"
+  ],
+  "auditOutcomeCounts": {
+    "ok": 1
+  },
+  "auditRows": [
+    {
+      "domain": "right-tempair.com",
+      "outcome": "ok",
+      "creative_count": 1,
+      "selected_rank": 1
+    }
+  ],
+  "ranked": [
+    {
+      "domain": "right-tempair.com",
+      "placeIndex": 0,
+      "creativeCount": 1,
+      "latestAdLastShownAt": "2026-04-30",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    }
+  ],
+  "competitors": [
+    {
+      "domain": "right-tempair.com",
+      "name": "right-tempair.com",
+      "adsSummary": "~1 ads in Google’s Transparency Center; most recent creative shown 2026-04-30.",
+      "examples": [
+        {
+          "headline": "Jarib Guzman-Perez",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR01913775064172462081/creative/CR10856129521153736705?region=US"
+        }
+      ]
+    }
+  ],
+  "failureMessage": null
+}

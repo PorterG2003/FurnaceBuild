@@ -124,6 +124,36 @@ test('getFluxCopyBudgetViolations: headline length in (target, hard] passes', ()
   assert.deepEqual(getFluxCopyBudgetViolations(merged), []);
 });
 
+test('getFluxCopyBudgetViolations: allowLongCopy bypasses hard max failures', () => {
+  const merged: PageConfig = {
+    theme: {
+      primaryColor: '#111',
+      accentColor: '#222',
+      backgroundColor: '#eee',
+      textColor: '#000',
+      fontFamily: 'Inter',
+      blockStylePreset: 'classic',
+      allowLongCopy: true,
+    },
+    prospectName: 'A',
+    companyName: 'B',
+    blocks: [
+      {
+        id: 'h1',
+        type: 'hero',
+        order: 0,
+        props: {
+          headline: 'x'.repeat(200),
+          subheadline: 'x'.repeat(500),
+          ctaText: 'Go',
+          ctaUrl: 'https://example.com',
+        },
+      },
+    ],
+  };
+  assert.deepEqual(getFluxCopyBudgetViolations(merged), []);
+});
+
 test('formatFluxCopyBudgetsForPrompt includes preset map and fixed instruction lines', () => {
   const s = formatFluxCopyBudgetsForPrompt();
   assert.match(s, /minimal or outlined/);

@@ -103,7 +103,16 @@ export default function PublicProspectPage() {
         {heroSubheadline ? <meta property="og:description" content={heroSubheadline} /> : null}
         {config.theme.logoUrl ? <meta property="og:image" content={config.theme.logoUrl} /> : null}
       </Head>
-      <PageRenderer config={config} />
+      <PageRenderer
+        config={config}
+        runtimeContext={{
+          isPublicPage: page.status === 'live',
+          pageId: page.id,
+          pageSlug: page.slug,
+          prospectName: config.prospectName,
+          companyName: config.companyName,
+        }}
+      />
     </>
   );
 }

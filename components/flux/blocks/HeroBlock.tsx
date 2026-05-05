@@ -1,14 +1,18 @@
 import React from 'react';
-import { View, Text, Pressable, Linking, Image } from 'react-native';
+import { View, Text, Pressable, Image } from 'react-native';
 import type { HeroBlockProps } from '@/lib/flux/types';
+import { handleFluxCtaPress } from '@/lib/flux/fluxCtaNavigation';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
+import { useFluxPageScroll } from '../FluxPageScrollContext';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 
 export function HeroBlock({ props }: { props: HeroBlockProps }) {
   const theme = useFluxTheme();
   const presentation = useFluxPresentation();
+  const pageScroll = useFluxPageScroll();
   const headingFont = fluxPreviewFontFamily(theme.fontFamily, '600');
   const bodyFont = fluxPreviewFontFamily(theme.fontFamily, '400');
+  const onCtaPress = () => handleFluxCtaPress(props.ctaUrl, pageScroll ?? undefined);
   const heroImage = props.heroImageUrl ? (
     <Image
       source={{ uri: props.heroImageUrl }}
@@ -24,7 +28,7 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
           ? presentation.primaryButton
           : presentation.secondaryButton
       }
-      onPress={() => Linking.openURL(props.ctaUrl)}
+      onPress={onCtaPress}
     >
       <Text
         className="text-base"
@@ -130,11 +134,6 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
     return (
       <View className="w-full py-12 md:py-18 px-4 md:px-6" style={{ backgroundColor: theme.backgroundColor }}>
         <View className="w-full max-w-4xl self-center p-5 md:p-8" style={presentation.tintedCard}>
-          <View className="px-4 py-2 mb-5 self-start" style={presentation.chip}>
-            <Text className="text-xs uppercase tracking-wider" style={{ color: theme.textColor, fontFamily: headingFont }}>
-              A quick note
-            </Text>
-          </View>
           <Text className="text-3xl md:text-5xl leading-tight mb-5" style={{ color: theme.textColor, fontFamily: headingFont }}>
             {props.headline}
           </Text>
@@ -142,7 +141,7 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
             {props.subheadline}
           </Text>
           {heroImage ? <View className="mb-8">{heroImage}</View> : null}
-          <Pressable className="px-8 py-3 self-start" style={presentation.primaryButton} onPress={() => Linking.openURL(props.ctaUrl)}>
+          <Pressable className="px-8 py-3 self-start" style={presentation.primaryButton} onPress={onCtaPress}>
             <Text className="text-base" style={{ color: '#ffffff', fontFamily: headingFont }}>
               {props.ctaText}
             </Text>

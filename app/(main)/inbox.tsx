@@ -141,6 +141,7 @@ export default function InboxPage() {
   const [createTagModalVisible, setCreateTagModalVisible] = useState(false);
   const [tagsPanelVisible, setTagsPanelVisible] = useState(false);
   const [showMessageActionsSheet, setShowMessageActionsSheet] = useState(false);
+  const [infoSheetVisible, setInfoSheetVisible] = useState(false);
   const [blockedRecipientConfirm, setBlockedRecipientConfirm] = useState<{
     mode: 'reply' | 'forward';
     onConfirm: () => void;
@@ -260,6 +261,11 @@ export default function InboxPage() {
   const selectedThreadReplacementSummary = selectedThread?.lead_id
     ? (leadReplacementSummaryMap[selectedThread.lead_id] ?? null)
     : null;
+
+  const selectedThreadCampaignName = useMemo(() => {
+    if (!selectedThread?.campaign_id) return null;
+    return campaigns.find((c) => c.id === selectedThread.campaign_id)?.name ?? null;
+  }, [campaigns, selectedThread?.campaign_id]);
 
   const oooPrefillYmd = useMemo(() => {
     const ref = latestReceivedInbound
@@ -703,6 +709,8 @@ export default function InboxPage() {
         setCreateTagModalVisible,
         blockedRecipientConfirm,
         setBlockedRecipientConfirm,
+        infoSheetVisible,
+        setInfoSheetVisible,
       },
       actions: {
         accountId,
@@ -711,6 +719,8 @@ export default function InboxPage() {
         selectedThreadId,
         threadTagsMap,
         selectedThread: selectedThread ?? null,
+        campaignName: selectedThreadCampaignName,
+        replacementSummary: selectedThreadReplacementSummary,
         onSetCategory: handleSetThreadCategory,
         onTagCreated: handleTagCreated,
         onAddTag: handleAddTagToSelectedThread,
@@ -757,12 +767,16 @@ export default function InboxPage() {
       setCreateTagModalVisible,
       blockedRecipientConfirm,
       setBlockedRecipientConfirm,
+      infoSheetVisible,
+      setInfoSheetVisible,
       accountId,
       selectedThreadProspectEmails,
       loadBlockList,
       selectedThreadId,
       threadTagsMap,
       selectedThread,
+      selectedThreadCampaignName,
+      selectedThreadReplacementSummary,
       handleSetThreadCategory,
       handleTagCreated,
       handleAddTagToSelectedThread,
@@ -855,9 +869,7 @@ export default function InboxPage() {
         <ReplaceLeadModal
           visible={replaceLeadModalVisible}
           onClose={() => setReplaceLeadModalVisible(false)}
-          oldLeadId={selectedThread.lead_id}
-          oldLeadName={leadByIdMap[selectedThread.lead_id]?.name ?? null}
-          oldLeadEmail={leadByIdMap[selectedThread.lead_id]?.email ?? null}
+          oldLead={leadByIdMap[selectedThread.lead_id] ?? null}
           sourceMessageId={latestReceivedInbound?.id ?? null}
           onReplaced={() => {
             void loadThreads();

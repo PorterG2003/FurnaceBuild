@@ -7,7 +7,9 @@ import { BlockSenderModal } from './BlockSenderModal';
 import { CreateTagModal } from './CreateTagModal';
 import { InboxFilterDropdown } from './InboxFilterDropdown';
 import { InboxMessageActionsSheet } from './InboxMessageActionsSheet';
+import { InboxThreadInfoSheet } from './InboxThreadInfoSheet';
 import { TagsPanelModal } from './TagsPanelModal';
+import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 
 export interface InboxModalsFiltersProps {
   filterMenuOpen: boolean;
@@ -46,6 +48,8 @@ export interface InboxModalsVisibilityProps {
   setCreateTagModalVisible: (v: boolean) => void;
   blockedRecipientConfirm: { mode: 'reply' | 'forward'; onConfirm: () => void } | null;
   setBlockedRecipientConfirm: (v: { mode: 'reply' | 'forward'; onConfirm: () => void } | null) => void;
+  infoSheetVisible: boolean;
+  setInfoSheetVisible: (v: boolean) => void;
 }
 
 export interface InboxModalsActionsProps {
@@ -55,6 +59,8 @@ export interface InboxModalsActionsProps {
   selectedThreadId: string | null;
   threadTagsMap: Record<string, ThreadTag[]>;
   selectedThread: EmailThread | null;
+  campaignName: string | null;
+  replacementSummary: LeadReplacementSummary | null;
   onSetCategory: (cat: string | null) => Promise<void>;
   onTagCreated: (tag: ThreadTag) => void;
   onAddTag: (tag: ThreadTag) => Promise<void>;
@@ -109,6 +115,8 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     setCreateTagModalVisible,
     blockedRecipientConfirm,
     setBlockedRecipientConfirm,
+    infoSheetVisible,
+    setInfoSheetVisible,
   } = visibility;
 
   const {
@@ -118,6 +126,8 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     selectedThreadId,
     threadTagsMap,
     selectedThread,
+    campaignName,
+    replacementSummary,
     onSetCategory,
     onTagCreated,
     onAddTag,
@@ -191,11 +201,21 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         selectedThread={selectedThread}
         threadTagsMap={threadTagsMap}
         selectedThreadProspectEmails={selectedThreadProspectEmails}
+        campaignName={campaignName}
+        replacementSummary={replacementSummary}
         onBlock={() => setBlockModalVisible(true)}
         onMarkOutOfOffice={onMarkOutOfOffice}
         onReplaceLead={onReplaceLead}
         onTags={() => setTagsPanelVisible(true)}
+        onShowInfo={() => setInfoSheetVisible(true)}
         onSetCategory={onSetCategory}
+      />
+
+      <InboxThreadInfoSheet
+        visible={infoSheetVisible}
+        onClose={() => setInfoSheetVisible(false)}
+        campaignName={campaignName}
+        replacementSummary={replacementSummary}
       />
 
       {accountId && (

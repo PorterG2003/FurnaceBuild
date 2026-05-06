@@ -1,6 +1,14 @@
 import { supabase } from '../client';
-import { getLeadDisplayName } from '@/lib/leads';
+import {
+  applyLeadReplacementSummary,
+  buildLeadReplacementSummariesByLeadIds,
+  type LeadReplacementRole,
+  type LeadReplacementRow,
+  type LeadReplacementSummary,
+} from '@/lib/leads/replacementSummary';
 import type { Lead, LeadInsert, LeadUpdate, ReplacementReason } from '../types';
+
+export type { LeadReplacementRole, LeadReplacementSummary } from '@/lib/leads/replacementSummary';
 
 /** PostgREST encodes `.in()` as a long query string; keep chunks under typical proxy URL limits. */
 const POSTGREST_IN_CHUNK_SIZE = 100;
@@ -127,31 +135,6 @@ type CampaignLeadBaseRow = Pick<
   | 'created_at'
 >;
 
-export type LeadReplacementRole = 'old' | 'new';
-
-export interface LeadReplacementSummary {
-  replacementId: string;
-  role: LeadReplacementRole;
-  counterpartLeadId: string;
-  counterpartName: string | null;
-  counterpartEmail: string | null;
-  counterpartLabel: string | null;
-  reason: ReplacementReason;
-  reasonNote: string | null;
-  completedAt: string | null;
-  createdAt: string;
-}
-
-interface LeadReplacementRow {
-  id: string;
-  old_lead_id: string;
-  new_lead_id: string;
-  reason: ReplacementReason;
-  reason_note: string | null;
-  created_at: string;
-  completed_at: string | null;
-}
-
 export interface ReplaceLeadWithNewContactInput {
   oldLeadId: string;
   newEmail: string;
@@ -169,6 +152,15 @@ export interface ReplaceLeadWithNewContactResult {
   newLeadId: string;
   enrollmentId: string | null;
   newLead: Lead;
+}
+
+export interface UpdateLeadProfileFieldsInput {
+  leadId: string;
+  companyName?: string | null;
+  website?: string | null;
+  linkedinUrl?: string | null;
+  companyLinkedinUrl?: string | null;
+  customLeadData?: Record<string, unknown> | null;
 }
 
 function getCampaignLeadTableSortBy(sortBy?: string): keyof CampaignLeadBaseRow {
@@ -228,81 +220,12 @@ export async function getLeadReplacementSummariesByLeadIds(
 
   const counterpartLeads = await getLeadsByIds(Array.from(counterpartIds));
   const counterpartById = new Map(counterpartLeads.map((lead) => [lead.id, lead]));
-  const summaryByLeadId: Record<string, LeadReplacementSummary> = {};
 
-  for (const replacement of replacements) {
-    if (uniqueLeadIds.includes(replacement.old_lead_id)) {
-      const counterpart = counterpartById.get(replacement.new_lead_id) ?? null;
-      summaryByLeadId[replacement.old_lead_id] = {
-        replacementId: replacement.id,
-        role: 'old',
-        counterpartLeadId: replacement.new_lead_id,
-        counterpartName: counterpart?.name ?? null,
-        counterpartEmail: counterpart?.email ?? null,
-        counterpartLabel: getLeadDisplayName(counterpart),
-        reason: replacement.reason,
-        reasonNote: replacement.reason_note,
-        completedAt: replacement.completed_at,
-        createdAt: replacement.created_at,
-      };
-    }
-
-    if (uniqueLeadIds.includes(replacement.new_lead_id)) {
-      const counterpart = counterpartById.get(replacement.old_lead_id) ?? null;
-      summaryByLeadId[replacement.new_lead_id] = {
-        replacementId: replacement.id,
-        role: 'new',
-        counterpartLeadId: replacement.old_lead_id,
-        counterpartName: counterpart?.name ?? null,
-        counterpartEmail: counterpart?.email ?? null,
-        counterpartLabel: getLeadDisplayName(counterpart),
-        reason: replacement.reason,
-        reasonNote: replacement.reason_note,
-        completedAt: replacement.completed_at,
-        createdAt: replacement.created_at,
-      };
-    }
-  }
-
-  return summaryByLeadId;
-}
-
-function applyLeadReplacementSummary(
-  replacementSummary: LeadReplacementSummary | null | undefined
-): Pick<
-  CampaignLeadTableRow,
-  | 'replacement_role'
-  | 'replacement_counterpart_lead_id'
-  | 'replacement_counterpart_name'
-  | 'replacement_counterpart_email'
-  | 'replacement_counterpart_label'
-  | 'replacement_reason'
-  | 'replacement_reason_note'
-  | 'replacement_completed_at'
-> {
-  if (!replacementSummary) {
-    return {
-      replacement_role: null,
-      replacement_counterpart_lead_id: null,
-      replacement_counterpart_name: null,
-      replacement_counterpart_email: null,
-      replacement_counterpart_label: null,
-      replacement_reason: null,
-      replacement_reason_note: null,
-      replacement_completed_at: null,
-    };
-  }
-
-  return {
-    replacement_role: replacementSummary.role,
-    replacement_counterpart_lead_id: replacementSummary.counterpartLeadId,
-    replacement_counterpart_name: replacementSummary.counterpartName,
-    replacement_counterpart_email: replacementSummary.counterpartEmail,
-    replacement_counterpart_label: replacementSummary.counterpartLabel,
-    replacement_reason: replacementSummary.reason,
-    replacement_reason_note: replacementSummary.reasonNote,
-    replacement_completed_at: replacementSummary.completedAt,
-  };
+  return buildLeadReplacementSummariesByLeadIds({
+    leadIds: uniqueLeadIds,
+    replacements,
+    counterpartLeadsById: counterpartById,
+  });
 }
 
 function buildCampaignLeadTableQuery(
@@ -1144,5 +1067,30 @@ export async function replaceLeadWithNewContact(
     enrollmentId: result.enrollment_id ?? null,
     newLead,
   };
+}
+
+/**
+ * Apply optional profile-field overrides to a lead row. Used by the replace-lead
+ * flow to push the user's edits to fields the RPC already inherited from the old
+ * lead (`company_name`, `website`, the LinkedIn URLs, and `custom_lead_data`).
+ *
+ * Only properties explicitly present on `input` are sent; `undefined` means
+ * "leave the existing column alone". Returns early when there is nothing to patch
+ * so callers can pass an unconditional diff without worrying about no-op updates.
+ */
+export async function updateLeadProfileFields(input: UpdateLeadProfileFieldsInput): Promise<void> {
+  const patch: LeadUpdate = {};
+  if (input.companyName !== undefined) patch.company_name = input.companyName;
+  if (input.website !== undefined) patch.website = input.website;
+  if (input.linkedinUrl !== undefined) patch.linkedin_url = input.linkedinUrl;
+  if (input.companyLinkedinUrl !== undefined) patch.company_linkedin_url = input.companyLinkedinUrl;
+  if (input.customLeadData !== undefined) {
+    patch.custom_lead_data = input.customLeadData as LeadUpdate['custom_lead_data'];
+  }
+  if (Object.keys(patch).length === 0) return;
+  const { error } = await supabase.from('leads').update(patch).eq('id', input.leadId);
+  if (error) {
+    throw new Error(`Failed to update lead profile fields: ${error.message}`);
+  }
 }
 

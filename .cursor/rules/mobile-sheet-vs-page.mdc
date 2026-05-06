@@ -1,0 +1,19 @@
+---
+description: Decide when mobile flows should be full pages instead of bottom sheets
+alwaysApply: true
+---
+
+# Mobile Sheet vs Page
+
+Before implementing a mobile modal, decide whether the flow should be a full page.
+
+- Prefer a **full page** when the flow has multiple sections, many inputs, comparison UIs, long explanatory copy, or any task where the keyboard is central.
+- Prefer a **full page** when users need spatial stability: one scroll container, a stable header, and no shrinking or stacked overlays.
+- Prefer a **bottom sheet** only for short actions: filters, pickers, confirmations, or quick single-purpose forms.
+- If a user asks for a “modal” or “bottom sheet” for a large mobile flow, stop and confirm: “This looks like a full-page mobile flow. Do you want the mobile version to be a page and keep the modal only on desktop?”
+- When using a bottom sheet, keep the content structure simple: fixed header, one scroll area, minimal form depth, and no large comparison layouts.
+
+## Examples
+
+- `ReplaceLead`: mobile page, desktop modal.
+- Filters, tags, quick actions: bottom sheet.

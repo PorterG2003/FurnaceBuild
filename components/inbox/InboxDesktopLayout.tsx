@@ -30,6 +30,8 @@ export interface InboxDesktopThreadListProps {
   hasMoreThreads: boolean;
   loadingMoreThreads: boolean;
   leadDisplayNamesMap: Record<string, string>;
+  leadEmailById: Record<string, string>;
+  mailboxEmailById: Record<string, string>;
   campaigns: Campaign[];
   threadSnippetsMap: Record<string, string>;
   threadTagsMap: Record<string, ThreadTag[]>;
@@ -106,6 +108,8 @@ export function InboxDesktopLayout({
     hasMoreThreads,
     loadingMoreThreads,
     leadDisplayNamesMap,
+    leadEmailById,
+    mailboxEmailById,
     campaigns,
     threadSnippetsMap,
     threadTagsMap,
@@ -174,6 +178,8 @@ export function InboxDesktopLayout({
             hasMoreThreads={hasMoreThreads}
             loadingMoreThreads={loadingMoreThreads}
             leadDisplayNamesMap={leadDisplayNamesMap}
+            leadEmailById={leadEmailById}
+            mailboxEmailById={mailboxEmailById}
             campaigns={campaigns}
             threadSnippetsMap={threadSnippetsMap}
             threadTagsMap={threadTagsMap}

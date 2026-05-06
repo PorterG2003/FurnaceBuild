@@ -24,6 +24,7 @@ export interface InboxMobileMessagePaneProps {
   campaigns: Campaign[];
   threadTagsMap: Record<string, ThreadTag[]>;
   selectedThreadProspectEmails: string[];
+  selectedThreadRecipientEmail?: string | null;
   blockedProspectEmails: Set<string>;
   leadReplacementSummary?: LeadReplacementSummary | null;
   accountId: string | null;
@@ -69,6 +70,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
     campaigns,
     threadTagsMap,
     selectedThreadProspectEmails,
+    selectedThreadRecipientEmail,
     blockedProspectEmails,
     leadReplacementSummary,
     accountId,
@@ -102,7 +104,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
           breadcrumbItems={[{ label: 'Inbox', href: '/inbox' }, { label: mobileMessageViewTitle ?? 'Conversation' }]}
           backHref="/inbox"
           title={mobileMessageViewTitle ?? 'Conversation'}
-          subtitle={selectedThreadProspectEmails[0] ?? selectedThread?.participants?.[0] ?? null}
+          subtitle={selectedThreadProspectEmails[0] ?? selectedThreadRecipientEmail ?? null}
           onBack={onBack}
           mobileRightAction={
             selectedThread ? (
@@ -126,7 +128,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       breadcrumbItems={[{ label: 'Inbox', href: '/inbox' }, { label: mobileMessageViewTitle ?? 'Conversation' }]}
       backHref="/inbox"
       title={mobileMessageViewTitle ?? 'Conversation'}
-      subtitle={selectedThreadProspectEmails[0] ?? selectedThread?.participants?.[0] ?? null}
+      subtitle={selectedThreadProspectEmails[0] ?? selectedThreadRecipientEmail ?? null}
       onBack={onBack}
       mobileRightAction={
         <MobileHeaderButton

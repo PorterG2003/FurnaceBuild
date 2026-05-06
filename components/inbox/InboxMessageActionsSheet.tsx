@@ -30,6 +30,8 @@ export interface InboxMessageActionsSheetProps {
   onTags: () => void;
   onShowInfo: () => void;
   onSetCategory: (category: string | null) => Promise<void>;
+  /** Called after this sheet finishes its close animation (see BottomSheet `onAfterClose`). */
+  onAfterClose?: () => void;
 }
 
 export function InboxMessageActionsSheet({
@@ -48,12 +50,13 @@ export function InboxMessageActionsSheet({
   onTags,
   onShowInfo,
   onSetCategory,
+  onAfterClose,
 }: InboxMessageActionsSheetProps) {
   const tagCount = selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []).length : 0;
   const hasInfo = !!campaignName || !!replacementSummary;
 
   return (
-    <BottomSheet visible={visible} onClose={onClose}>
+    <BottomSheet visible={visible} onClose={onClose} onAfterClose={onAfterClose}>
       {accountId && selectedThreadId && selectedThread && (
         <>
           {hasInfo && (

@@ -28,6 +28,7 @@ import {
   ReplaceLeadModal,
 } from '@/components/inbox';
 import { getDisplayBody } from '@/lib/email/index';
+import { resolveThreadCardTitle, resolveThreadRecipientEmail } from '@/lib/inbox';
 import { parseOutOfOfficeReturnDate } from '@/lib/inbox/parseOutOfOfficeReturnDate';
 import { format } from 'date-fns';
 import { useInboxData } from '@/hooks/useInboxData';
@@ -146,6 +147,9 @@ export default function InboxPage() {
     mode: 'reply' | 'forward';
     onConfirm: () => void;
   } | null>(null);
+
+  /** Set true when user chooses Replace lead from the message actions sheet; consumed when that sheet finishes closing. */
+  const pendingOpenReplaceLeadRef = useRef(false);
 
   const composer = useInboxComposer({
     accountId,
@@ -267,6 +271,24 @@ export default function InboxPage() {
     return campaigns.find((c) => c.id === selectedThread.campaign_id)?.name ?? null;
   }, [campaigns, selectedThread?.campaign_id]);
 
+  const leadEmailById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const [leadId, lead] of Object.entries(leadByIdMap)) {
+      const email = lead.email?.trim();
+      if (email) map[leadId] = email;
+    }
+    return map;
+  }, [leadByIdMap]);
+
+  const mailboxEmailById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const mailbox of mailboxes) {
+      const email = mailbox.email_address?.trim();
+      if (email) map[mailbox.id] = email;
+    }
+    return map;
+  }, [mailboxes]);
+
   const oooPrefillYmd = useMemo(() => {
     const ref = latestReceivedInbound
       ? new Date(latestReceivedInbound.received_at)
@@ -316,6 +338,27 @@ export default function InboxPage() {
     },
     [selectedThreadId, accountId, setThreads]
   );
+
+  const openReplaceLead = useCallback(() => {
+    if (!accountId || !selectedThreadId || !selectedThread?.lead_id) return;
+    if (isMobile) {
+      router.push({ pathname: '/inbox/replace-lead', params: { thread: selectedThreadId } });
+      return;
+    }
+    setReplaceLeadModalVisible(true);
+  }, [accountId, selectedThread?.lead_id, selectedThreadId, isMobile, router]);
+
+  useEffect(() => {
+    if (showMessageActionsSheet) {
+      pendingOpenReplaceLeadRef.current = false;
+    }
+  }, [showMessageActionsSheet]);
+
+  const handleMessageActionsSheetAfterClose = useCallback(() => {
+    if (!pendingOpenReplaceLeadRef.current) return;
+    pendingOpenReplaceLeadRef.current = false;
+    openReplaceLead();
+  }, [openReplaceLead]);
 
   const handleTagCreated = useCallback(
     async (tag: ThreadTag) => {
@@ -470,10 +513,21 @@ export default function InboxPage() {
 
   const mobileMessageViewTitle =
     selectedThread &&
-    ((selectedThread.lead_id && leadDisplayNamesMap[selectedThread.lead_id]) ||
-      selectedThread.participants?.[0] ||
-      selectedThread.subject ||
-      'Conversation');
+    resolveThreadCardTitle({
+      thread: selectedThread,
+      leadDisplayName: selectedThread.lead_id ? leadDisplayNamesMap[selectedThread.lead_id] : null,
+      leadEmail: selectedThread.lead_id ? leadEmailById[selectedThread.lead_id] : null,
+      mailboxEmail: selectedThread.mailbox_id ? mailboxEmailById[selectedThread.mailbox_id] : null,
+      subject: selectedThread.subject,
+    });
+
+  const selectedThreadRecipientEmail =
+    selectedThread &&
+    resolveThreadRecipientEmail({
+      thread: selectedThread,
+      leadEmail: selectedThread.lead_id ? leadEmailById[selectedThread.lead_id] : null,
+      mailboxEmail: selectedThread.mailbox_id ? mailboxEmailById[selectedThread.mailbox_id] : null,
+    });
 
   const pendingRepliesInfo =
     selectedThreadId == null
@@ -510,6 +564,8 @@ export default function InboxPage() {
       hasMoreThreads,
       loadingMoreThreads,
       leadDisplayNamesMap,
+      leadEmailById,
+      mailboxEmailById,
       campaigns,
       threadSnippetsMap,
       threadTagsMap,
@@ -533,6 +589,8 @@ export default function InboxPage() {
       hasMoreThreads,
       loadingMoreThreads,
       leadDisplayNamesMap,
+      leadEmailById,
+      mailboxEmailById,
       campaigns,
       threadSnippetsMap,
       threadTagsMap,
@@ -558,6 +616,7 @@ export default function InboxPage() {
       campaigns,
       threadTagsMap,
       selectedThreadProspectEmails,
+      selectedThreadRecipientEmail,
       blockedProspectEmails,
       leadReplacementSummary: selectedThreadReplacementSummary,
       accountId,
@@ -565,7 +624,7 @@ export default function InboxPage() {
       onMarkOutOfOffice:
         accountId && selectedThreadId ? () => setOooModalVisible(true) : undefined,
       onReplaceLead:
-        accountId && selectedThread?.lead_id ? () => setReplaceLeadModalVisible(true) : undefined,
+        accountId && selectedThread?.lead_id ? openReplaceLead : undefined,
       onOpenTagsPanel: selectedThreadId && accountId ? () => setTagsPanelVisible(true) : undefined,
       category: selectedThread?.category ?? null,
       onSetCategory: handleSetThreadCategory,
@@ -594,12 +653,14 @@ export default function InboxPage() {
       campaigns,
       threadTagsMap,
       selectedThreadProspectEmails,
+      selectedThreadRecipientEmail,
       blockedProspectEmails,
       selectedThreadReplacementSummary,
       accountId,
       selectedThread?.category,
       setBlockModalVisible,
       setOooModalVisible,
+      openReplaceLead,
       setTagsPanelVisible,
       handleSetThreadCategory,
       onContentSizeChange,
@@ -730,7 +791,12 @@ export default function InboxPage() {
         onMarkOutOfOffice:
           accountId && selectedThreadId ? () => setOooModalVisible(true) : undefined,
         onReplaceLead:
-          accountId && selectedThread?.lead_id ? () => setReplaceLeadModalVisible(true) : undefined,
+          accountId && selectedThread?.lead_id
+            ? () => {
+                pendingOpenReplaceLeadRef.current = true;
+              }
+            : undefined,
+        onMessageActionsSheetAfterClose: handleMessageActionsSheetAfterClose,
       },
     }),
     [
@@ -788,6 +854,7 @@ export default function InboxPage() {
       setOooModalVisible,
       selectedThread?.lead_id,
       setReplaceLeadModalVisible,
+      handleMessageActionsSheetAfterClose,
     ]
   );
 
@@ -865,7 +932,7 @@ export default function InboxPage() {
         />
       ) : null}
 
-      {accountId && selectedThread?.lead_id ? (
+      {!isMobile && accountId && selectedThread?.lead_id ? (
         <ReplaceLeadModal
           visible={replaceLeadModalVisible}
           onClose={() => setReplaceLeadModalVisible(false)}

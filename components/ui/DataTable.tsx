@@ -393,35 +393,6 @@ export function DataTable<T>({
   const [measuredColumnWidths, setMeasuredColumnWidths] = useState<Record<string, number>>(() => getCachedMeasuredWidths());
   const measuredColumnWidthsRef = useRef<Record<string, number>>(getCachedMeasuredWidths());
   const measurementCellKeysRef = useRef<Set<string>>(new Set());
-  const debugRunIdRef = useRef(`datatable-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-  const headerLayoutLoggedRef = useRef(false);
-  const firstRowLayoutLoggedRef = useRef(false);
-  const headerCellLayoutLoggedKeysRef = useRef<Set<string>>(new Set());
-  const firstRowCellLayoutLoggedKeysRef = useRef<Set<string>>(new Set());
-  const firstInteractiveRowLoggedRef = useRef(false);
-  const headerLayoutsRef = useRef<Record<string, { index: number; x: number; width: number; expectedWidth: number }>>({});
-  const firstRowLayoutsRef = useRef<Record<string, { index: number; x: number; width: number; expectedWidth: number }>>({});
-  const debugLog = useCallback(
-    (hypothesisId: string, message: string, data: Record<string, unknown>) => {
-      fetch('http://127.0.0.1:7447/ingest/0a9c766e-cfbc-4a65-8b11-aa0dd657a9e5', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Debug-Session-Id': 'a13dbb',
-        },
-        body: JSON.stringify({
-          sessionId: 'a13dbb',
-          runId: debugRunIdRef.current,
-          hypothesisId,
-          location: 'components/ui/DataTable.tsx',
-          message,
-          data,
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-    },
-    []
-  );
   const hasCachedMeasuredWidths = measuredLayoutKeys.has(layoutSignature);
   const requiredMeasurementCellCount = columns.length * (1 + measurementItems.length);
   const [isMeasurementReady, setIsMeasurementReady] = useState(
@@ -455,14 +426,6 @@ export function DataTable<T>({
         [columnKey]: nextWidth,
       };
       contentAwareWidthCache.set(layoutSignature, { ...measuredColumnWidthsRef.current });
-      // #region agent log
-      debugLog('H2', 'Measured column width increased', {
-        columnKey,
-        currentWidth,
-        nextWidth,
-        widthMode: resolvedWidthMode,
-      });
-      // #endregion
       setMeasuredColumnWidths({ ...measuredColumnWidthsRef.current });
     },
     [clampColumnWidth, columnMap, getEffectiveColumnMinWidth, layoutSignature]
@@ -592,159 +555,6 @@ export function DataTable<T>({
       flexShrink: shouldFillColumns && flexGrow > 0 ? 1 : 0,
     } as const;
   };
-
-  const getExpectedDisplayWidth = useCallback(
-    (column: TableColumn<T>, index: number) => {
-      const columnBaseWidth = resolvedColumnWidths[column.key] ?? getEffectiveColumnMinWidth(column);
-      return isContentAwareWidthMode && index < columns.length - 1
-        ? columnBaseWidth + contentAwareColumnBonus
-        : columnBaseWidth;
-    },
-    [columns.length, contentAwareColumnBonus, getEffectiveColumnMinWidth, isContentAwareWidthMode, resolvedColumnWidths]
-  );
-
-  const intrinsicContentLoggedKeysRef = useRef<Set<string>>(new Set());
-
-  const reportVisibleLayout = useCallback(
-    (
-      hypothesisId: string,
-      message: string,
-      targetRef: React.MutableRefObject<Record<string, { index: number; x: number; width: number; expectedWidth: number }>>,
-      loggedRef: React.MutableRefObject<boolean>,
-      column: TableColumn<T>,
-      index: number,
-      x: number,
-      width: number
-    ) => {
-      if (loggedRef.current) return;
-      targetRef.current[column.key] = {
-        index,
-        x,
-        width,
-        expectedWidth: getExpectedDisplayWidth(column, index),
-      };
-      if (Object.keys(targetRef.current).length !== columns.length) return;
-      loggedRef.current = true;
-      // #region agent log
-      debugLog(hypothesisId, message, {
-        widthMode: resolvedWidthMode,
-        tableContainerWidth,
-        intrinsicTableWidth,
-        tableSurfaceWidth,
-        layouts: Object.values(targetRef.current).sort((a, b) => a.index - b.index),
-      });
-      // #endregion
-    },
-    [columns.length, debugLog, getExpectedDisplayWidth, intrinsicTableWidth, resolvedWidthMode, tableContainerWidth, tableSurfaceWidth]
-  );
-
-  const reportVisibleCellLayout = useCallback(
-    (
-      hypothesisId: string,
-      message: string,
-      loggedKeysRef: React.MutableRefObject<Set<string>>,
-      column: TableColumn<T>,
-      index: number,
-      x: number,
-      width: number
-    ) => {
-      if (index > 4 || loggedKeysRef.current.has(column.key)) return;
-      loggedKeysRef.current.add(column.key);
-      // #region agent log
-      debugLog(hypothesisId, message, {
-        widthMode: resolvedWidthMode,
-        columnKey: column.key,
-        index,
-        x,
-        width,
-        expectedWidth: getExpectedDisplayWidth(column, index),
-        tableContainerWidth,
-        intrinsicTableWidth,
-        tableSurfaceWidth,
-      });
-      // #endregion
-    },
-    [debugLog, getExpectedDisplayWidth, intrinsicTableWidth, resolvedWidthMode, tableContainerWidth, tableSurfaceWidth]
-  );
-
-  useEffect(() => {
-    // #region agent log
-    debugLog('H1', 'Table width metrics snapshot', {
-      widthMode: resolvedWidthMode,
-      tableContainerWidth,
-      intrinsicTableWidth,
-      tableSurfaceWidth,
-      isOverflowing,
-      contentAwareColumnBonus,
-      hasCachedMeasuredWidths,
-      shouldHideTableUntilReady,
-      firstColumns: columns.slice(0, 5).map((column) => ({
-        key: column.key,
-        resolvedWidth: resolvedColumnWidths[column.key],
-        minWidth: getEffectiveColumnMinWidth(column),
-        maxWidth: getEffectiveColumnMaxWidth(column) ?? null,
-      })),
-    });
-    // #endregion
-  }, [
-    columns,
-    contentAwareColumnBonus,
-    debugLog,
-    getEffectiveColumnMaxWidth,
-    getEffectiveColumnMinWidth,
-    hasCachedMeasuredWidths,
-    intrinsicTableWidth,
-    isOverflowing,
-    resolvedColumnWidths,
-    resolvedWidthMode,
-    shouldHideTableUntilReady,
-    tableContainerWidth,
-    tableSurfaceWidth,
-  ]);
-
-  useEffect(() => {
-    // #region agent log
-    debugLog('H3', 'Visible row key snapshot', {
-      widthMode: resolvedWidthMode,
-      visibleCount: visibleItems.length,
-      firstRowKeys: visibleItems.slice(0, 5).map((item, rowIndex) => ({
-        baseKey: getItemKey(item),
-        uniqueRowKey: `${getItemKey(item)}-${rowIndex}`,
-      })),
-    });
-    // #endregion
-  }, [debugLog, getItemKey, resolvedWidthMode, visibleItems]);
-
-  useEffect(() => {
-    headerLayoutLoggedRef.current = false;
-    firstRowLayoutLoggedRef.current = false;
-    headerCellLayoutLoggedKeysRef.current = new Set();
-    firstRowCellLayoutLoggedKeysRef.current = new Set();
-    intrinsicContentLoggedKeysRef.current = new Set();
-    firstInteractiveRowLoggedRef.current = false;
-    headerLayoutsRef.current = {};
-    firstRowLayoutsRef.current = {};
-  }, [layoutSignature, visibleItems, tableContainerWidth]);
-
-  const reportIntrinsicContentWidth = useCallback(
-    (column: TableColumn<T>, index: number, width: number) => {
-      if (intrinsicContentLoggedKeysRef.current.has(column.key) || index > 4) return;
-      intrinsicContentLoggedKeysRef.current.add(column.key);
-      // #region agent log
-      debugLog('H12', 'Intrinsic content width probe', {
-        widthMode: resolvedWidthMode,
-        columnKey: column.key,
-        index,
-        intrinsicContentWidth: width,
-        expectedWidth: getExpectedDisplayWidth(column, index),
-        tableContainerWidth,
-        intrinsicTableWidth,
-        tableSurfaceWidth,
-      });
-      // #endregion
-    },
-    [debugLog, getExpectedDisplayWidth, intrinsicTableWidth, resolvedWidthMode, tableContainerWidth, tableSurfaceWidth]
-  );
 
   const getMeasurementColumnLayoutStyle = (column: TableColumn<T>) => ({
     minWidth: getEffectiveColumnMinWidth(column),
@@ -1026,32 +836,12 @@ export function DataTable<T>({
   ) => {
     const measure = options?.measure ?? false;
     const layoutStyle = measure ? getMeasurementColumnLayoutStyle(column) : getColumnLayoutStyle(column, index);
-    const onLayout = (e: LayoutChangeEvent) => {
-      if (measure) {
-        reportMeasuredWidth(column.key, e.nativeEvent.layout.width);
-        reportMeasurementCell(`header:${column.key}`);
-        return;
-      }
-      reportVisibleCellLayout(
-        'H8',
-        'Header cell layout event',
-        headerCellLayoutLoggedKeysRef,
-        column,
-        index,
-        e.nativeEvent.layout.x,
-        e.nativeEvent.layout.width
-      );
-      reportVisibleLayout(
-        'H6',
-        'Header cell layout summary',
-        headerLayoutsRef,
-        headerLayoutLoggedRef,
-        column,
-        index,
-        e.nativeEvent.layout.x,
-        e.nativeEvent.layout.width
-      );
-    };
+    const onLayout = measure
+      ? (e: LayoutChangeEvent) => {
+          reportMeasuredWidth(column.key, e.nativeEvent.layout.width);
+          reportMeasurementCell(`header:${column.key}`);
+        }
+      : undefined;
 
     if (compactHeader) {
       return (
@@ -1093,16 +883,7 @@ export function DataTable<T>({
       <View
         style={{ width: '100%' }}
         onLayout={(e) => {
-          const nextWidth = e.nativeEvent.layout.width;
-          setTableContainerWidth(nextWidth);
-          // #region agent log
-          debugLog('H4', 'Container onLayout fired', {
-            nextWidth,
-            widthMode: resolvedWidthMode,
-            currentIntrinsicTableWidth: intrinsicTableWidth,
-            currentSurfaceWidth: tableSurfaceWidth,
-          });
-          // #endregion
+          setTableContainerWidth(e.nativeEvent.layout.width);
         }}
       >
         <ScrollView
@@ -1178,31 +959,6 @@ export function DataTable<T>({
                         <View
                           key={column.key}
                           className="px-2 py-2 min-w-0"
-                          onLayout={
-                            rowIndex === 0
-                              ? (e) => {
-                                  reportVisibleLayout(
-                                    'H7',
-                                    'First row cell layout summary',
-                                    firstRowLayoutsRef,
-                                    firstRowLayoutLoggedRef,
-                                    column,
-                                    index,
-                                    e.nativeEvent.layout.x,
-                                    e.nativeEvent.layout.width
-                                  );
-                                  reportVisibleCellLayout(
-                                    'H9',
-                                    'First row cell layout event',
-                                    firstRowCellLayoutLoggedKeysRef,
-                                    column,
-                                    index,
-                                    e.nativeEvent.layout.x,
-                                    e.nativeEvent.layout.width
-                                  );
-                                }
-                              : undefined
-                          }
                           style={{
                             ...getColumnLayoutStyle(column, index),
                             ...getColumnPaddingStyle(index),
@@ -1229,24 +985,6 @@ export function DataTable<T>({
                         key={uniqueRowKey}
                         onPress={() => onRowPress(item)}
                         className="active:opacity-80"
-                        onLayout={
-                          rowIndex === 0
-                            ? (e) => {
-                                if (firstInteractiveRowLoggedRef.current) return;
-                                firstInteractiveRowLoggedRef.current = true;
-                                // #region agent log
-                                debugLog('H10', 'Interactive row wrapper layout', {
-                                  widthMode: resolvedWidthMode,
-                                  width: e.nativeEvent.layout.width,
-                                  x: e.nativeEvent.layout.x,
-                                  tableSurfaceWidth,
-                                  intrinsicTableWidth,
-                                  tableContainerWidth,
-                                });
-                                // #endregion
-                              }
-                            : undefined
-                        }
                       >
                         {RowContent}
                       </Pressable>
@@ -1299,24 +1037,6 @@ export function DataTable<T>({
               ))}
             </View>
           ))}
-        </View>
-      )}
-
-      {visibleItems.length > 0 && (
-        <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, opacity: 0 }}>
-          <View className="flex-row items-start">
-            {selectable && <View style={{ width: SELECT_COLUMN_WIDTH }} />}
-            {columns.map((column, index) => (
-              <View
-                key={`intrinsic-${column.key}`}
-                collapsable={false}
-                onLayout={(e) => reportIntrinsicContentWidth(column, index, e.nativeEvent.layout.width)}
-                style={{ alignSelf: 'flex-start' }}
-              >
-                {column.render(visibleItems[0])}
-              </View>
-            ))}
-          </View>
         </View>
       )}
 

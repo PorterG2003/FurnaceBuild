@@ -29,6 +29,10 @@ interface PageLayoutProps {
    * Additional className for the main content area
    */
   contentClassName?: string;
+  /**
+   * Mobile only: hide the bottom nav for immersive/full-screen flows like forms.
+   */
+  hideMobileBottomNav?: boolean;
 }
 
 /**
@@ -43,6 +47,7 @@ export function PageLayout({
   contentPadding = 16,
   mobileFixedBottomPadding = 0,
   contentClassName,
+  hideMobileBottomNav = false,
 }: PageLayoutProps) {
   const { width } = useWindowDimensions();
   const isMobileLayout = width < LAYOUT_BREAKPOINT;
@@ -56,7 +61,7 @@ export function PageLayout({
               className="flex-1"
               contentContainerStyle={{
                 padding: contentPadding,
-                paddingBottom: contentPadding + BOTTOM_NAV_SCROLL_PADDING,
+                paddingBottom: contentPadding + (hideMobileBottomNav ? 0 : BOTTOM_NAV_SCROLL_PADDING),
                 flexGrow: 1,
               }}
               showsVerticalScrollIndicator={false}
@@ -72,7 +77,7 @@ export function PageLayout({
             </View>
           )}
         </View>
-        <BottomNavBar />
+        {!hideMobileBottomNav ? <BottomNavBar /> : null}
       </View>
     );
   }

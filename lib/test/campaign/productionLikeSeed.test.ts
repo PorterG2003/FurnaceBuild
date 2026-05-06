@@ -40,3 +40,25 @@ test('production-like seed keeps OOO and wait-node slices on the primary running
   assert.equal(oooFuture?.thread?.oooResumeRequested, true);
   assert.equal(oooFuture?.enrollment?.currentFlowNodeId, 'waitTime-1');
 });
+
+test('production-like seed includes a replaced-lead pair on the primary running campaign with a completed replacement link', () => {
+  const specs = buildProductionLikeSeedSpecs();
+  const primary = specs[0];
+  assert.ok(primary);
+
+  const replacedOld = primary.leads.find((lead) => lead.key === 'primary-replaced-old');
+  const replacedNew = primary.leads.find((lead) => lead.key === 'primary-replaced-new');
+  assert.ok(replacedOld);
+  assert.ok(replacedNew);
+
+  assert.deepEqual(primary.replacements, [
+    {
+      oldKey: 'primary-replaced-old',
+      newKey: 'primary-replaced-new',
+      reason: 'manual_referral',
+      reasonNote: 'Seeded replacement pair for QA.',
+    },
+  ]);
+
+  assert.ok(specs.slice(1).every((spec) => !spec.replacements || spec.replacements.length === 0));
+});

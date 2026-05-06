@@ -72,7 +72,7 @@ export function MessagePanelHeader({
       : `Replaced by ${replacementSummary.counterpartLabel || replacementSummary.counterpartEmail || 'new lead'}`
     : null;
 
-  const hasLeftContent = showTitleAndEmail || !!replacementLine;
+  const hasLeftContent = showTitleAndEmail;
   const hasRightContent = showToolbar;
   if (!hasLeftContent && !hasRightContent) {
     return null;
@@ -88,12 +88,33 @@ export function MessagePanelHeader({
         <View className="flex-1 min-w-0">
           {showTitleAndEmail ? (
             <>
-              <Text
-                className="text-lg font-instrument-semibold text-white leading-tight"
-                numberOfLines={1}
-              >
-                {title}
-              </Text>
+              <View className="flex-row items-center gap-2 min-w-0">
+                <Text
+                  className="text-lg font-instrument-semibold text-white leading-tight"
+                  numberOfLines={1}
+                  style={{ flexShrink: 1 }}
+                >
+                  {title}
+                </Text>
+                {replacementLine ? (
+                  <View
+                    className="rounded-lg px-2 py-0.5 flex-shrink-0"
+                    style={{
+                      backgroundColor: 'rgba(249, 115, 22, 0.12)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(249, 115, 22, 0.35)',
+                    }}
+                  >
+                    <Text
+                      className="text-xs font-instrument-medium"
+                      style={{ color: '#FDBA74' }}
+                      numberOfLines={1}
+                    >
+                      {replacementLine}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               {emailLine ? (
                 <Text
                   className="text-sm font-instrument text-gray-500 leading-tight"
@@ -104,17 +125,6 @@ export function MessagePanelHeader({
                 </Text>
               ) : null}
             </>
-          ) : null}
-          {replacementLine ? (
-            <View
-              className="self-start rounded-lg px-2 py-1 mt-2"
-              style={{ backgroundColor: 'rgba(249, 115, 22, 0.12)', borderWidth: 1, borderColor: 'rgba(249, 115, 22, 0.35)' }}
-            >
-              <Text className="text-xs font-instrument-medium" style={{ color: '#FDBA74' }}>
-                {replacementLine}
-                {replacementSummary?.reasonNote ? ` — ${replacementSummary.reasonNote}` : ''}
-              </Text>
-            </View>
           ) : null}
         </View>
 

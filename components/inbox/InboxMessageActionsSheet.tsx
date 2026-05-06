@@ -1,8 +1,16 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { CalendarDaysIcon, NoSymbolIcon, TagIcon, FolderIcon, ArrowPathIcon } from 'react-native-heroicons/outline';
+import {
+  CalendarDaysIcon,
+  NoSymbolIcon,
+  TagIcon,
+  FolderIcon,
+  ArrowPathIcon,
+  InformationCircleIcon,
+} from 'react-native-heroicons/outline';
 import { BottomSheet } from '@/components/ui/modals';
 import type { EmailThread } from '@/lib/supabase/types';
+import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import { THREAD_CATEGORIES } from './inboxConstants';
 
@@ -14,10 +22,13 @@ export interface InboxMessageActionsSheetProps {
   selectedThread: EmailThread | null;
   threadTagsMap: Record<string, ThreadTag[]>;
   selectedThreadProspectEmails: string[];
+  campaignName: string | null;
+  replacementSummary: LeadReplacementSummary | null;
   onBlock: () => void;
   onMarkOutOfOffice?: () => void;
   onReplaceLead?: () => void;
   onTags: () => void;
+  onShowInfo: () => void;
   onSetCategory: (category: string | null) => Promise<void>;
 }
 
@@ -29,18 +40,41 @@ export function InboxMessageActionsSheet({
   selectedThread,
   threadTagsMap,
   selectedThreadProspectEmails,
+  campaignName,
+  replacementSummary,
   onBlock,
   onMarkOutOfOffice,
   onReplaceLead,
   onTags,
+  onShowInfo,
   onSetCategory,
 }: InboxMessageActionsSheetProps) {
   const tagCount = selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []).length : 0;
+  const hasInfo = !!campaignName || !!replacementSummary;
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       {accountId && selectedThreadId && selectedThread && (
         <>
+          {hasInfo && (
+            <Pressable
+              onPress={() => {
+                onShowInfo();
+                onClose();
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 14,
+                borderBottomWidth: 1,
+                borderBottomColor: '#2A2A2A',
+              }}
+            >
+              <InformationCircleIcon size={20} color="#9CA3AF" />
+              <Text className="text-white font-instrument-medium text-base">Info</Text>
+            </Pressable>
+          )}
           {!!accountId && selectedThreadProspectEmails.length > 0 && (
             <Pressable
               onPress={() => {

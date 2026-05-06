@@ -3,6 +3,7 @@ import { Animated } from 'react-native';
 import { mergeInboxComposeHtml } from '@/lib/email/buildCampaignEmailContent';
 import { stripHtml } from '@/lib/email';
 import { buildForwardedConversationHtml } from '@/lib/inbox';
+import { resolveReplyComposerTarget } from '@/lib/inbox/resolveReplyComposerTarget';
 import {
   createReplyJob,
   createForwardJob,
@@ -309,12 +310,21 @@ export function useInboxComposer({
     (message: EmailMessage) => {
       if (!selectedThread) return;
       const lastReceived = [...messages].reverse().find((m) => m.direction === 'received');
-      const preferredLeadEmail = currentLeadEmail?.trim() ?? '';
-      const preferredLeadName = currentLeadName?.trim() ?? '';
-      const fallbackEmail = message.direction === 'received' ? message.from_email : lastReceived?.from_email ?? '';
-      const fallbackName = message.direction === 'received' ? (message.from_name ?? '') : (lastReceived?.from_name ?? '');
-      const toEmail = preferredLeadEmail || fallbackEmail;
-      const toName = preferredLeadEmail ? preferredLeadName : fallbackName;
+      const { toEmail, toName } = resolveReplyComposerTarget({
+        message: {
+          direction: message.direction,
+          from_email: message.from_email,
+          from_name: message.from_name ?? null,
+        },
+        lastReceived: lastReceived
+          ? {
+              from_email: lastReceived.from_email,
+              from_name: lastReceived.from_name ?? null,
+            }
+          : null,
+        currentLeadEmail: currentLeadEmail ?? null,
+        currentLeadName: currentLeadName ?? null,
+      });
       setInReplyToMessageId(message.id);
       setReplyToEmail(toEmail);
       setReplyToName(toName);

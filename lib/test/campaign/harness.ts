@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { loadSeedEnv } from '../../../scripts/seed/env';
 import type { Json } from '../../supabase/types/database';
+import type { ReplacementReason } from '../../supabase/types';
 
 type DbClient = SupabaseClient;
 
@@ -95,6 +96,13 @@ export type CampaignLeadSpec = {
   thread?: CampaignThreadSpec | null;
 };
 
+export type CampaignLeadReplacementSpec = {
+  oldKey: string;
+  newKey: string;
+  reason: ReplacementReason;
+  reasonNote?: string | null;
+};
+
 export type CampaignGraphSpec = {
   namespace: string;
   campaignId?: string;
@@ -105,6 +113,7 @@ export type CampaignGraphSpec = {
   schedule?: Json;
   mailboxes?: CampaignMailboxSpec[];
   leads: CampaignLeadSpec[];
+  replacements?: CampaignLeadReplacementSpec[];
 };
 
 export type CampaignGraphManifest = {
@@ -119,6 +128,7 @@ export type CampaignGraphManifest = {
   messageJobIds: string[];
   threadIds: string[];
   messageIds: string[];
+  replacementIds: string[];
 };
 
 type MaterializedLead = {
@@ -474,6 +484,7 @@ async function cleanupCampaignRows(
     { table: 'campaign_stats', column: 'campaign_id', values: campaignIds },
     { table: 'message_jobs', column: 'campaign_id', values: campaignIds },
     { table: 'enrollments', column: 'campaign_id', values: campaignIds },
+    { table: 'lead_replacements', column: 'campaign_id', values: campaignIds },
     { table: 'leads', column: 'campaign_id', values: campaignIds },
     { table: 'campaign_mailboxes', column: 'campaign_id', values: campaignIds },
     { table: 'campaign_intervals', column: 'campaign_id', values: campaignIds },
@@ -653,6 +664,7 @@ export async function materializeCampaignGraph(
     messageJobIds: [],
     threadIds: [],
     messageIds: [],
+    replacementIds: [],
   };
 
   const mailboxSpecs = spec.mailboxes?.length ? spec.mailboxes : buildDefaultMailboxSpecs(spec.namespace);
@@ -927,6 +939,60 @@ export async function materializeCampaignGraph(
     }
   }
 
+  if (spec.replacements?.length) {
+    const replacementTimestamp = nowIso();
+    const replacementRows = spec.replacements.map((replacement) => {
+      const oldLead = leadsByKey.get(replacement.oldKey);
+      const newLead = leadsByKey.get(replacement.newKey);
+      if (!oldLead || !newLead) {
+        throw new Error(
+          `campaign harness: replacement lead keys not found (${replacement.oldKey} -> ${replacement.newKey})`,
+        );
+      }
+
+      const replacementId = randomId();
+      manifest.replacementIds.push(replacementId);
+      return {
+        id: replacementId,
+        account_id: accountId,
+        campaign_id: campaignId,
+        old_lead_id: oldLead.leadId,
+        new_lead_id: newLead.leadId,
+        status: 'completed',
+        reason: replacement.reason,
+        reason_note: replacement.reasonNote?.trim() || null,
+        source_message_id: null,
+        created_by: ownerUserId,
+        created_at: replacementTimestamp,
+        completed_at: replacementTimestamp,
+      };
+    });
+
+    const { error: replacementError } = await supabase
+      .from('lead_replacements')
+      .insert(replacementRows as any);
+    if (replacementError) {
+      throw new Error(`campaign harness: lead_replacements insert failed: ${replacementError.message}`);
+    }
+
+    const oldLeadIds = spec.replacements
+      .map((replacement) => leadsByKey.get(replacement.oldKey)?.leadId)
+      .filter((leadId): leadId is string => Boolean(leadId));
+    if (oldLeadIds.length > 0) {
+      const { error: leadArchiveError } = await supabase
+        .from('leads')
+        .update({
+          status: 'removed',
+          deleted_at: replacementTimestamp,
+          updated_at: replacementTimestamp,
+        } as any)
+        .in('id', oldLeadIds);
+      if (leadArchiveError) {
+        throw new Error(`campaign harness: replacement lead archive failed: ${leadArchiveError.message}`);
+      }
+    }
+  }
+
   return {
     manifest,
     campaignId,
@@ -965,6 +1031,12 @@ export async function cleanupCampaignGraphManifest(
     const { error } = await supabase.from('enrollments').delete().in('id', manifest.enrollmentIds);
     if (error) {
       throw new Error(`campaign harness: exact enrollment cleanup failed: ${error.message}`);
+    }
+  }
+  if (manifest.replacementIds.length > 0) {
+    const { error } = await supabase.from('lead_replacements').delete().in('id', manifest.replacementIds);
+    if (error) {
+      throw new Error(`campaign harness: exact lead_replacements cleanup failed: ${error.message}`);
     }
   }
   if (manifest.leadIds.length > 0) {
@@ -1034,6 +1106,19 @@ export class CampaignDbHarness {
     });
     this.manifests.push(graph.manifest);
     return graph;
+  }
+
+  recordReplacement(params: { replacementId: string; newLeadId: string }): void {
+    const manifest = this.manifests.at(-1);
+    if (!manifest) {
+      throw new Error('campaign harness: cannot record replacement without a manifest');
+    }
+    if (!manifest.replacementIds.includes(params.replacementId)) {
+      manifest.replacementIds.push(params.replacementId);
+    }
+    if (!manifest.leadIds.includes(params.newLeadId)) {
+      manifest.leadIds.push(params.newLeadId);
+    }
   }
 
   async cleanup(): Promise<void> {

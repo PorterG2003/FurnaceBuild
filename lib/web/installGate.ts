@@ -23,6 +23,7 @@ export function isDesktopViewportWidth(viewportWidth: number): boolean {
 
 /** When true, the install gate should not redirect away from the main app. */
 export function shouldBypassWebInstallGate(viewportWidth: number): boolean {
+  if (__DEV__) return true;
   return getIsWebStandalone() || isDesktopViewportWidth(viewportWidth);
 }
 

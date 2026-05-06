@@ -1,6 +1,7 @@
 import type {
   CampaignGraphSpec,
   CampaignLeadSpec,
+  CampaignLeadReplacementSpec,
   CampaignMailboxSpec,
   CampaignStatus,
 } from './harness';
@@ -233,6 +234,104 @@ function buildPrimarySpecialSlices(): CampaignLeadSpec[] {
       },
     },
     {
+      key: 'primary-replaced-old',
+      email: `${DEV_DEFAULT_NAMESPACE}-replaced-old@furnace.test`,
+      name: 'Seed Replaced Old',
+      firstName: 'Seed',
+      lastName: 'ReplacedOld',
+      companyName: 'Seed Replacement Co',
+      mailboxKey: 'mailbox-1',
+      source: DEV_DEFAULT_NAMESPACE,
+      status: 'removed',
+      enrollment: {
+        state: 'stopped',
+        currentFlowNodeId: 'waitTime-1',
+        nextRunAt: null,
+        flowPosition: {},
+        stoppedReason: 'replied',
+        stoppedAt: iso(-240),
+      },
+      jobs: [
+        {
+          key: 'sent-history',
+          nodeFlowNodeId: 'email-1',
+          status: 'sent',
+          scheduledAt: iso(-360),
+          sentAt: iso(-350),
+          messageType: 'campaign',
+          messageData: { source: 'campaign_seed' },
+        },
+      ],
+      thread: {
+        key: 'thread',
+        subject: '[REPLACED OLD] Historical thread',
+        lastMessageAt: iso(-180),
+        outOfOffice: false,
+        oooResumeRequested: false,
+        oooResumeAt: null,
+        oooResumeProcessedAt: null,
+        messageJobKey: 'sent-history',
+        messages: [
+          {
+            direction: 'sent',
+            bodyText: 'Historical seeded outreach before replacement.',
+            receivedAt: iso(-350),
+            readAt: iso(-350),
+          },
+          {
+            direction: 'received',
+            bodyText: 'I am retiring. Please reach out to my teammate instead.',
+            receivedAt: iso(-180),
+            readAt: null,
+          },
+        ],
+      },
+    },
+    {
+      key: 'primary-replaced-new',
+      email: `${DEV_DEFAULT_NAMESPACE}-replaced-new@furnace.test`,
+      name: 'Seed Replaced New',
+      firstName: 'Seed',
+      lastName: 'ReplacedNew',
+      companyName: 'Seed Replacement Co',
+      mailboxKey: 'mailbox-1',
+      source: DEV_DEFAULT_NAMESPACE,
+      enrollment: {
+        state: 'active',
+        currentFlowNodeId: 'waitTime-1',
+        nextRunAt: iso(45),
+        flowPosition: {},
+      },
+      jobs: [
+        {
+          key: 'pending-follow-up',
+          nodeFlowNodeId: 'email-2',
+          status: 'pending',
+          scheduledAt: iso(60),
+          messageType: 'campaign',
+          messageData: { source: 'campaign_seed' },
+        },
+      ],
+      thread: {
+        key: 'thread',
+        subject: '[REPLACED NEW] Active thread',
+        lastMessageAt: iso(-30),
+        outOfOffice: false,
+        oooResumeRequested: false,
+        oooResumeAt: null,
+        oooResumeProcessedAt: null,
+        messageJobKey: 'pending-follow-up',
+        messages: [
+          {
+            direction: 'received',
+            bodyText: 'Happy to take this over.',
+            receivedAt: iso(-30),
+            readAt: null,
+          },
+        ],
+      },
+    },
+    {
       key: 'primary-normal-thread-1',
       email: `${DEV_DEFAULT_NAMESPACE}-thread-1@furnace.test`,
       name: 'Seed Thread One',
@@ -373,6 +472,17 @@ function buildPrimarySpecialSlices(): CampaignLeadSpec[] {
           },
         ],
       },
+    },
+  ];
+}
+
+function buildPrimaryReplacementSpecs(): CampaignLeadReplacementSpec[] {
+  return [
+    {
+      oldKey: 'primary-replaced-old',
+      newKey: 'primary-replaced-new',
+      reason: 'manual_referral',
+      reasonNote: 'Seeded replacement pair for QA.',
     },
   ];
 }
@@ -557,6 +667,7 @@ export function buildProductionLikeSeedSpecs(): CampaignGraphSpec[] {
     flowKind: preset.flowKind,
     mailboxes: DEV_DEFAULT_MAILBOX_SPECS,
     leads: buildCampaignLeadsForPreset(preset),
+    replacements: preset.key === 'running-primary' ? buildPrimaryReplacementSpecs() : undefined,
   }));
 }
 

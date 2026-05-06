@@ -3,6 +3,7 @@ import { Modal, Pressable, View, Text, ScrollView, useWindowDimensions } from 'r
 import { XMarkIcon } from 'react-native-heroicons/outline';
 import { BottomSheet } from './BottomSheet';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
+import { useVisualViewportKeyboardInset } from '@/hooks/useVisualViewportKeyboardInset';
 
 const isWeb = typeof window !== 'undefined';
 
@@ -64,6 +65,7 @@ export function BaseModal({
         ? { maxHeight: dialogMaxHeight }
         : {};
   const dialogRef = useRef<View>(null);
+  const webKeyboardInset = useVisualViewportKeyboardInset();
 
   useEffect(() => {
     if (visible && isWeb && !isMobile && dialogRef.current) {
@@ -95,7 +97,7 @@ export function BaseModal({
             <ScrollView
               style={{ flex: 1, minHeight: 0 }}
               contentContainerStyle={{
-                paddingBottom: (footerMobile ?? footer) ? 12 : 0,
+                paddingBottom: ((footerMobile ?? footer) ? 12 : 0) + (webKeyboardInset > 0 ? webKeyboardInset : 0),
                 flexGrow: 1,
               }}
               keyboardShouldPersistTaps="handled"

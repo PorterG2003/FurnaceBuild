@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MobileHeaderBackButton } from '@/components/ui/layout';
+import { useVisualViewportKeyboardInset } from '@/hooks/useVisualViewportKeyboardInset';
 import {
   BottomSheetTakeoverContext,
   type BottomSheetTakeoverOptions,
@@ -39,6 +40,8 @@ export interface BottomSheetProps {
   visible: boolean;
   onClose: () => void;
   children: ReactNode;
+  /** Fires once after the close animation finishes (Modal fully dismissed). */
+  onAfterClose?: () => void;
 }
 
 const BACKDROP_OPACITY = 0.5;
@@ -52,10 +55,78 @@ const HOST_OPACITY_WHEN_PICKER = 0.92;
  * Slide-up bottom sheet (modal). Use for mobile action sheets and option lists.
  * Backdrop fades in place; sheet slides up from the bottom. Backdrop tap closes.
  */
-export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
+export function BottomSheet({ visible, onClose, children, onAfterClose }: BottomSheetProps) {
+  const onAfterCloseRef = useRef(onAfterClose);
+  onAfterCloseRef.current = onAfterClose;
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [takeover, setTakeover] = useState<BottomSheetTakeoverOptions | null>(null);
+
+  // --- Web keyboard avoidance ---
+  const webKeyboardInset = useVisualViewportKeyboardInset();
+  const webSheetRef = useRef<View | null>(null);
+
+  useEffect(() => {
+    if (!isWeb) return;
+    const el = webSheetRef.current as unknown as HTMLElement | null;
+    if (!el) return;
+
+    if (!visible || webKeyboardInset === 0) {
+      el.style.transition = '';
+      el.style.transform = '';
+      el.style.maxHeight = '';
+      return;
+    }
+
+    const vv = window.visualViewport;
+    const availableH = vv ? vv.height - insets.top : screenHeight - webKeyboardInset - insets.top;
+    const maxH = Math.min(screenHeight * BOTTOM_SHEET_MAX_VIEWPORT_RATIO, availableH);
+
+    el.style.transition = 'transform 0.2s ease, max-height 0.2s ease';
+    el.style.transform = `translateY(-${webKeyboardInset}px)`;
+    el.style.maxHeight = `${maxH}px`;
+  }, [webKeyboardInset, visible, screenHeight, insets.top]);
+
+  // Web: scroll focused input into view when keyboard opens or input changes
+  useEffect(() => {
+    if (!isWeb || !visible) return;
+    const sheetEl = webSheetRef.current as unknown as HTMLElement | null;
+    if (!sheetEl) return;
+
+    const scrollFocusedInput = () => {
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement) || !active.matches('input, textarea, [contenteditable="true"]')) return;
+        if (!sheetEl.contains(active)) return;
+
+        const vv = window.visualViewport;
+        const visibleBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+        const margin = 16;
+
+        const inputRect = active.getBoundingClientRect();
+        if (inputRect.bottom <= visibleBottom - margin && inputRect.top >= 0) return;
+
+        // Find nearest scrollable ancestor
+        let scrollEl: HTMLElement | null = active.parentElement;
+        while (scrollEl && scrollEl !== sheetEl) {
+          if (scrollEl.scrollHeight > scrollEl.clientHeight + 1) break;
+          scrollEl = scrollEl.parentElement;
+        }
+
+        if (scrollEl && scrollEl !== sheetEl && inputRect.bottom > visibleBottom - margin) {
+          scrollEl.scrollTop += inputRect.bottom - (visibleBottom - margin);
+        } else {
+          active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      });
+    };
+
+    sheetEl.addEventListener('focusin', scrollFocusedInput);
+    // Also scroll when keyboard inset changes (input already focused)
+    if (webKeyboardInset > 0) scrollFocusedInput();
+
+    return () => sheetEl.removeEventListener('focusin', scrollFocusedInput);
+  }, [visible, webKeyboardInset]);
 
   const takeoverOpacity = useRef(new Animated.Value(0)).current;
   const takeoverTranslateY = useRef(new Animated.Value(0)).current;
@@ -245,6 +316,8 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
       }
     } else if (prevVisibleRef.current) {
       prevVisibleRef.current = false;
+      // Dismiss keyboard so it animates out with the sheet
+      if (isWeb) (document.activeElement as HTMLElement | null)?.blur?.();
       // Don't set isOpen false here — only after animation completes, so modal doesn't flash
       Animated.parallel([
         Animated.timing(backdropOpacity, {
@@ -257,7 +330,11 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
           duration: ANIMATION_DURATION,
           useNativeDriver: useNative,
         }),
-      ]).start(() => setIsOpen(false));
+      ]).start(({ finished }) => {
+        if (!finished && !isWeb) return;
+        setIsOpen(false);
+        onAfterCloseRef.current?.();
+      });
     }
   }, [visible, screenHeight, backdropOpacity, sheetTranslateY, useNative, isWeb]);
 
@@ -380,19 +457,23 @@ export function BottomSheet({ visible, onClose, children }: BottomSheetProps) {
           animationType="slide"
           onRequestClose={onClose}
         >
-          <Pressable
-            className={containerClassName}
+          <View
+            className="fixed inset-0 w-screen h-screen flex flex-col overflow-hidden"
             style={containerStyle}
-            onPress={onClose}
           >
+            <Pressable
+              className="w-full flex-1 min-h-0"
+              onPress={onClose}
+            />
             <Animated.View
-              className="overflow-hidden"
+              ref={webSheetRef}
+              className="overflow-hidden flex-shrink-0"
               style={sheetStyle}
               onStartShouldSetResponder={() => true}
             >
               {sheetBody}
             </Animated.View>
-          </Pressable>
+          </View>
         </Modal>
       </>
     );

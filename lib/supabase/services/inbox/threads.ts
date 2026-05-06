@@ -1,6 +1,6 @@
 import { supabase } from '../../client';
 import type { EmailThread } from '../../types';
-import { getDisplayBody } from '@/lib/email/index';
+import { buildThreadSnippetMap } from '@/lib/inbox';
 
 export interface GetThreadsByAccountOptions {
   hasReplyOnly?: boolean;
@@ -119,29 +119,18 @@ export async function getThreadUnreadCounts(
   return counts;
 }
 
-const SNIPPET_MAX_LENGTH = 100;
-
 export async function getThreadSnippets(
   threadIds: string[]
 ): Promise<Record<string, string>> {
   if (threadIds.length === 0) return {};
   const { data, error } = await supabase
     .from('email_messages')
-    .select('thread_id, body_text, body_html, received_at')
+    .select('thread_id, direction, body_text, body_html, received_at')
     .in('thread_id', threadIds)
     .order('received_at', { ascending: false })
     .limit(1000);
   if (error) throw new Error(`Failed to fetch thread snippets: ${error.message}`);
-  const map: Record<string, string> = {};
-  for (const row of data ?? []) {
-    if (row.thread_id in map) continue;
-    const hasText = row.body_text != null && row.body_text.trim().length > 0;
-    const body = hasText ? row.body_text! : (row.body_html ?? '');
-    const display = getDisplayBody(body, { format: hasText ? 'text' : 'html' });
-    const oneline = display.replace(/\s+/g, ' ').trim();
-    map[row.thread_id] = oneline.slice(0, SNIPPET_MAX_LENGTH);
-  }
-  return map;
+  return buildThreadSnippetMap(data ?? []);
 }
 
 export async function markThreadMessagesRead(threadId: string): Promise<void> {

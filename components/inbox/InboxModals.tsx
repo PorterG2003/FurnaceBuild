@@ -69,6 +69,7 @@ export interface InboxModalsActionsProps {
   onDeleteTag: (tag: ThreadTag) => void;
   onMarkOutOfOffice?: () => void;
   onReplaceLead?: () => void;
+  onMessageActionsSheetAfterClose?: () => void;
 }
 
 export interface InboxModalsProps {
@@ -136,6 +137,7 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     onDeleteTag,
     onMarkOutOfOffice,
     onReplaceLead,
+    onMessageActionsSheetAfterClose,
   } = actions;
 
   return (
@@ -209,6 +211,7 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         onTags={() => setTagsPanelVisible(true)}
         onShowInfo={() => setInfoSheetVisible(true)}
         onSetCategory={onSetCategory}
+        onAfterClose={onMessageActionsSheetAfterClose}
       />
 
       <InboxThreadInfoSheet

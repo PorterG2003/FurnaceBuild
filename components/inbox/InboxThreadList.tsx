@@ -4,6 +4,7 @@ import { MagnifyingGlassIcon, FunnelIcon } from 'react-native-heroicons/outline'
 import { Alert, EmptyState } from '@/components/ui/feedback';
 import { ThreadItem } from './ThreadItem';
 import { ThreadListSkeleton } from './MessageListSkeleton';
+import { resolveThreadCardTitle } from '@/lib/inbox';
 import type { EmailThread } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
@@ -25,6 +26,8 @@ export interface InboxThreadListProps {
   hasMoreThreads: boolean;
   loadingMoreThreads: boolean;
   leadDisplayNamesMap: Record<string, string>;
+  leadEmailById: Record<string, string>;
+  mailboxEmailById: Record<string, string>;
   campaigns: Campaign[];
   threadSnippetsMap: Record<string, string>;
   threadTagsMap: Record<string, ThreadTag[]>;
@@ -52,6 +55,8 @@ export function InboxThreadList({
   hasMoreThreads,
   loadingMoreThreads,
   leadDisplayNamesMap,
+  leadEmailById,
+  mailboxEmailById,
   campaigns,
   threadSnippetsMap,
   threadTagsMap,
@@ -138,12 +143,14 @@ export function InboxThreadList({
               isSelected={selectedThreadId === thread.id}
               onSelect={() => onSelectThread(thread.id)}
               isUnread={'unread_count' in thread ? (thread as { unread_count: number }).unread_count > 0 : false}
-              cardTitle={
-                (thread.lead_id && leadDisplayNamesMap[thread.lead_id]) ||
-                thread.participants?.[0] ||
-                thread.subject ||
-                '(No subject)'
-              }
+              cardTitle={resolveThreadCardTitle({
+                thread,
+                leadDisplayName: thread.lead_id ? leadDisplayNamesMap[thread.lead_id] : null,
+                leadEmail: thread.lead_id ? leadEmailById[thread.lead_id] : null,
+                mailboxEmail: thread.mailbox_id ? mailboxEmailById[thread.mailbox_id] : null,
+                subject: thread.subject,
+                fallbackTitle: '(No subject)',
+              })}
               campaignName={thread.campaign_id ? campaigns.find((c) => c.id === thread.campaign_id)?.name ?? null : null}
               sourceLabel={thread.smartlead_lead_id != null ? 'Smartlead' : null}
               preview={threadSnippetsMap[thread.id] ?? null}

@@ -12,5 +12,6 @@ alwaysApply: false
 - **Padding**: Page padding e.g. 24px desktop, 16px mobile; use `BOTTOM_NAV_SCROLL_PADDING` for scroll content above bottom nav.
 - **Typography**: Instrument font; keep labels and body readable on small screens.
 - **Safe area**: Respect insets for notched devices when using fixed/sticky elements.
+- **Flow choice**: See `mobile-sheet-vs-page.mdc` before building a mobile modal, bottom sheet, or keyboard-heavy form flow.
 
 Do not create separate mobile and desktop card content; use one card with variant (styled/inline) driven by breakpoint.

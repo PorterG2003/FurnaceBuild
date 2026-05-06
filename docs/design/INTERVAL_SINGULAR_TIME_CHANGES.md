@@ -136,7 +136,7 @@ for (let i = 0; i < count; i++) {
 
 ### 5. Update UI (ScheduleTab)
 
-**File**: `lib/test/campaign-flow/components/ScheduleTab.tsx`
+**File**: `lib/devtools/campaign-flow/components/ScheduleConfigurationStep.tsx`
 
 **Changes:**
 - Update `MessageJob.interval` interface: remove `interval_start`/`interval_end`, add `interval_time`

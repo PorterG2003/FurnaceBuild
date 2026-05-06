@@ -22,6 +22,11 @@ export type CampaignFlowVersion = Database['public']['Tables']['campaign_flow_ve
 export type Lead = Database['public']['Tables']['leads']['Row'];
 export type LeadInsert = Database['public']['Tables']['leads']['Insert'];
 export type LeadUpdate = Database['public']['Tables']['leads']['Update'];
+export type LeadReplacement = Database['public']['Tables']['lead_replacements']['Row'];
+export type LeadReplacementInsert = Database['public']['Tables']['lead_replacements']['Insert'];
+export type LeadReplacementUpdate = Database['public']['Tables']['lead_replacements']['Update'];
+export type LeadReplacementStatus = Database['public']['Enums']['lead_replacement_status_enum'];
+export type ReplacementReason = Database['public']['Enums']['replacement_reason_enum'];
 
 // lead_states removed - replaced by enrollments
 // export type LeadState = Database['public']['Tables']['lead_states']['Row'];

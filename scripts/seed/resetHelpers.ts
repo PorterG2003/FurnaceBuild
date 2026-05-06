@@ -3,6 +3,10 @@ import {
   DEFAULT_SEED_OOO_CAMPAIGN_ID,
   type OooInboxCaseKey,
 } from './constants/oooMixedInbox';
+import {
+  DEV_DEFAULT_CAMPAIGN_IDS,
+  DEV_DEFAULT_MAILBOX_SPECS,
+} from '../../lib/test/campaign/productionLikeSeed';
 import { smokeMailboxLocalPart } from './theme/falloutCopy';
 import {
   OOO_CASE_COPY,
@@ -10,7 +14,7 @@ import {
 } from './theme/falloutOooCopy';
 import type { SeedContext } from './types';
 
-export type ResetScope = 'campaign-smoke' | 'ooo-mixed-inbox';
+export type ResetScope = 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default';
 
 export type ScopePlan = {
   scope: ResetScope;
@@ -32,7 +36,7 @@ export type ScopeCounts = {
 
 export function resolveScopePlans(
   accountId: string,
-  requestedScope: 'campaign-smoke' | 'ooo-mixed-inbox' | 'all' | null
+  requestedScope: 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default' | 'all' | null
 ): ScopePlan[] {
   const plans: ScopePlan[] = [];
   const wantCampaignSmoke =
@@ -43,10 +47,12 @@ export function resolveScopePlans(
     requestedScope === 'ooo-mixed-inbox' ||
     requestedScope === 'all' ||
     (!requestedScope && !!process.env.SEED_OOO_CAMPAIGN_ID);
+  const wantDevDefault =
+    requestedScope === 'dev-default' || requestedScope === 'all';
 
-  if (!wantCampaignSmoke && !wantOoo) {
+  if (!wantCampaignSmoke && !wantOoo && !wantDevDefault) {
     throw new Error(
-      'seed:reset requires an explicit scope (--scope=campaign-smoke|ooo-mixed-inbox|all) or at least one scoped campaign env (SEED_CAMPAIGN_ID / SEED_OOO_CAMPAIGN_ID).'
+      'seed:reset requires an explicit scope (--scope=campaign-smoke|ooo-mixed-inbox|dev-default|all) or at least one scoped campaign env (SEED_CAMPAIGN_ID / SEED_OOO_CAMPAIGN_ID).'
     );
   }
 
@@ -77,6 +83,17 @@ export function resolveScopePlans(
         `${oooMailboxEmailLocalPart(campaignId, copy.mailboxLocalBase)}@furnace.test`
       ),
     });
+  }
+
+  if (wantDevDefault) {
+    for (const campaignId of DEV_DEFAULT_CAMPAIGN_IDS) {
+      plans.push({
+        scope: 'dev-default',
+        campaignId,
+        accountId,
+        mailboxEmails: DEV_DEFAULT_MAILBOX_SPECS.map((mailbox) => mailbox.emailAddress),
+      });
+    }
   }
 
   return plans;

@@ -56,7 +56,7 @@ function parseArgs(argv: string[]): ResetCliOptions {
 
 function normalizeScope(value: string): ResetScopeArg {
   const v = value.trim();
-  if (v === 'campaign-smoke' || v === 'ooo-mixed-inbox' || v === 'all') {
+  if (v === 'campaign-smoke' || v === 'ooo-mixed-inbox' || v === 'dev-default' || v === 'all') {
     return v;
   }
   throw new Error(`Invalid --scope value: ${value}`);
@@ -66,7 +66,7 @@ function printHelp() {
   console.log(`Usage: tsx scripts/seed/reset.ts [options]
 
 Options:
-  --scope=<name>    campaign-smoke | ooo-mixed-inbox | all
+  --scope=<name>    campaign-smoke | ooo-mixed-inbox | dev-default | all
   --scope <name>
   --dry-run         Preview what would be deleted
   --help, -h        Show this help
@@ -83,7 +83,7 @@ Safety:
 
 Notes:
   If --scope is omitted, reset infers targets from SEED_CAMPAIGN_ID / SEED_OOO_CAMPAIGN_ID.
-  Scope all uses known seed campaign ids for both built-in scenarios.
+  Scope all uses known seed campaign ids for all built-in scenarios.
 `);
 }
 

@@ -62,6 +62,7 @@ export interface InboxModalsActionsProps {
   onUpdateTag: (tag: ThreadTag) => void;
   onDeleteTag: (tag: ThreadTag) => void;
   onMarkOutOfOffice?: () => void;
+  onReplaceLead?: () => void;
 }
 
 export interface InboxModalsProps {
@@ -124,6 +125,7 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     onUpdateTag,
     onDeleteTag,
     onMarkOutOfOffice,
+    onReplaceLead,
   } = actions;
 
   return (
@@ -191,6 +193,7 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         selectedThreadProspectEmails={selectedThreadProspectEmails}
         onBlock={() => setBlockModalVisible(true)}
         onMarkOutOfOffice={onMarkOutOfOffice}
+        onReplaceLead={onReplaceLead}
         onTags={() => setTagsPanelVisible(true)}
         onSetCategory={onSetCategory}
       />

@@ -14,6 +14,7 @@ import {
   oooInboxMessagesModule,
   oooInboxOooStatesModule,
 } from './scenarios/ooo-mixed-inbox/index';
+import { devDefaultScenarioModule } from './scenarios/dev-default';
 
 export const allModules: Record<string, SeedModule> = {
   minimal: minimalModule,
@@ -29,6 +30,7 @@ export const allModules: Record<string, SeedModule> = {
   oooInbox_threads: oooInboxThreadsModule,
   oooInbox_messages: oooInboxMessagesModule,
   oooInbox_oooStates: oooInboxOooStatesModule,
+  devDefault_seed: devDefaultScenarioModule,
 };
 
 /**
@@ -37,6 +39,7 @@ export const allModules: Record<string, SeedModule> = {
  */
 export const scenarioModuleIds: Record<string, string[]> = {
   minimal: ['minimal'],
+  'dev-default': ['devDefault_seed'],
   'campaign-smoke': ['campaignSmoke_batchAssign'],
   'ooo-mixed-inbox': ['oooInbox_oooStates'],
 };

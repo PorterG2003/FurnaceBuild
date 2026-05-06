@@ -1,0 +1,18 @@
+---
+description: Repo-wide testing convention for naming, location, and test-layer choice
+alwaysApply: true
+---
+
+# Test Convention
+
+- Use three layers: colocated **unit tests**, domain **integration tests**, and `scripts/seed/` **scenario seeds**.
+- Prefer **outcome-first** integration tests: assert final row state, eligibility, or business outcomes instead of only helper outputs.
+- Namespace every DB-backed test run and clean up by exact created ids first. Never rely on account-wide deletes.
+- Keep narrow unit tests colocated near implementation (`lib/inbox/*.test.ts`, `lib/flux/*.test.ts`, worker-local unit tests in `workers/**/src/*.test.ts`).
+- Put shared harnesses and domain integration tests under `lib/test/<domain>/`.
+- Put internal `/test/*` page support and manual harness code under `lib/devtools/`, not `lib/test/`.
+- Keep manual QA/demo state generation under `scripts/seed/`, not `lib/test/`.
+- Use explicit integration file names such as `oooOutcomes.test.ts`, `waitTimeOutcomes.test.ts`, and `schedulerOutcomes.test.ts`.
+- Use descriptive helper names such as `CampaignDbHarness`, `createCampaignGraph()`, and `cleanupCampaignGraphManifest()`.
+- Prefer repo-root test commands (`npm run test:campaign`, `test:flux`, `test:foundry`, `test:utilities`, `test:workers`, `test:scrapers`, `test:core`) over package-only discovery.
+- For the detailed convention and migration rules, see `docs/engineering/test-convention.md`.

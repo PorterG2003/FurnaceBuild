@@ -1,5 +1,5 @@
 import { View, Text, Pressable, TextInput } from 'react-native';
-import type { FlowTemplate } from '@/lib/test/campaign-flow/types';
+import type { FlowTemplate } from '../types';
 
 interface FlowSelectionStepProps {
   campaignName: string;

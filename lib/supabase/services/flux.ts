@@ -28,6 +28,7 @@ import {
 import { parseFluxCampaignRowFromDb } from '@/lib/flux/campaignSeller';
 import { brandingPolicyToJson, type FluxBrandingPolicy } from '@/lib/flux/fluxBrandingPolicy';
 import { coercePageConfig } from '@/lib/flux/coercePageConfig';
+import { mergeServerCompetitorAuditBlocksIntoDraft } from '@/lib/flux/mergeServerCompetitorAuditBlocks';
 import { syncFluxPageConfigLogo } from '@/lib/flux/syncFluxPageConfigLogo';
 
 async function upsertFluxEditorChat(params: {
@@ -423,9 +424,21 @@ export async function updateFluxPageConfig(
   pageId: string,
   pageConfig: PageConfig,
 ): Promise<FluxProspectPageRow> {
+  const { data: current, error: currentError } = await supabase
+    .from('flux_prospect_pages')
+    .select('page_config')
+    .eq('id', pageId)
+    .single();
+  if (currentError) throw currentError;
+
+  const serverConfig = coercePageConfig(current?.page_config);
+  const nextPageConfig = serverConfig
+    ? mergeServerCompetitorAuditBlocksIntoDraft(pageConfig, serverConfig)
+    : pageConfig;
+
   const { data, error } = await supabase
     .from('flux_prospect_pages')
-    .update({ page_config: pageConfig as any })
+    .update({ page_config: nextPageConfig as any })
     .eq('id', pageId)
     .select()
     .single();

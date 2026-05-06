@@ -5,6 +5,7 @@ import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { MessageListSkeleton, type MessageListSkeletonProps } from './MessageListSkeleton';
 import { InboxMessageList } from './InboxMessageList';
 import { THREAD_CATEGORIES } from './inboxConstants';
+import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
@@ -24,9 +25,11 @@ export interface InboxMobileMessagePaneProps {
   threadTagsMap: Record<string, ThreadTag[]>;
   selectedThreadProspectEmails: string[];
   blockedProspectEmails: Set<string>;
+  leadReplacementSummary?: LeadReplacementSummary | null;
   accountId: string | null;
   onBlock: (() => void) | undefined;
   onMarkOutOfOffice?: (() => void) | undefined;
+  onReplaceLead?: (() => void) | undefined;
   onOpenTagsPanel: (() => void) | undefined;
   category: string | null;
   onSetCategory: (category: string | null) => Promise<void>;
@@ -67,9 +70,11 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
     threadTagsMap,
     selectedThreadProspectEmails,
     blockedProspectEmails,
+    leadReplacementSummary,
     accountId,
     onBlock,
     onMarkOutOfOffice,
+    onReplaceLead,
     onOpenTagsPanel,
     category,
     onSetCategory,
@@ -146,8 +151,10 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       threadTagsMap={threadTagsMap}
       selectedThreadProspectEmails={selectedThreadProspectEmails}
       blockedProspectEmails={blockedProspectEmails}
+      leadReplacementSummary={leadReplacementSummary}
       onBlock={onBlock}
       onMarkOutOfOffice={onMarkOutOfOffice}
+      onReplaceLead={onReplaceLead}
       accountId={accountId}
       onOpenTagsPanel={onOpenTagsPanel}
       category={category}

@@ -24,7 +24,7 @@ interface CliOptions {
 
 function parseArgs(argv: string[]): CliOptions {
   const opts: CliOptions = {
-    scenario: 'minimal',
+    scenario: 'dev-default',
     wipe: false,
     dryRun: false,
     help: false,
@@ -56,7 +56,7 @@ function printHelp() {
   console.log(`Usage: tsx scripts/seed/index.ts [options]
 
 Options:
-  --scenario=<id>   Scenario to run (default: minimal)
+  --scenario=<id>   Scenario to run (default: dev-default)
   --scenario <id>
   --wipe            Run wipe step before seed (requires SEED_WIPE_CONFIRM=1)
   --dry-run         Log only; modules should skip writes
@@ -70,7 +70,7 @@ Optional:
   SEED_PROJECT_REF=<ref>   Must match project ref in https://<ref>.supabase.co
   SEED_WIPE_CONFIRM=1      Required when using --wipe
 
-Scenarios: minimal (no-op), campaign-smoke, ooo-mixed-inbox (see README).
+Scenarios: dev-default, campaign-smoke, ooo-mixed-inbox, minimal (see README).
 
 See scripts/seed/README.md for conventions and worker caveats.
 `);

@@ -14,10 +14,12 @@ import {
   getTagsForThreads,
   getThreadSnippets,
   getLeadsByIds,
+  getLeadReplacementSummariesByLeadIds,
 } from '@/lib/supabase/services';
 import { getLeadDisplayName } from '@/lib/leads';
+import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
-import type { EmailThread, EmailMessage, BlockListEntry, Mailbox, Campaign } from '@/lib/supabase/types';
+import type { EmailThread, EmailMessage, BlockListEntry, Mailbox, Campaign, Lead } from '@/lib/supabase/types';
 import { THREAD_PAGE_SIZE, SEARCH_DEBOUNCE_MS } from '@/components/inbox/inboxConstants';
 
 export interface UseInboxDataOptions {
@@ -66,6 +68,8 @@ export function useInboxData({
   const [threadTagsMap, setThreadTagsMap] = useState<Record<string, ThreadTag[]>>({});
   const [threadSnippetsMap, setThreadSnippetsMap] = useState<Record<string, string>>({});
   const [leadDisplayNamesMap, setLeadDisplayNamesMap] = useState<Record<string, string>>({});
+  const [leadByIdMap, setLeadByIdMap] = useState<Record<string, Lead>>({});
+  const [leadReplacementSummaryMap, setLeadReplacementSummaryMap] = useState<Record<string, LeadReplacementSummary>>({});
   const [accountTags, setAccountTags] = useState<ThreadTag[]>([]);
 
   const filterButtonRef = useRef<View>(null);
@@ -92,13 +96,24 @@ export function useInboxData({
     threadSearchQuery.trim().length > 0;
 
   const selectedThreadProspectEmails = useMemo(() => {
-    if (!selectedThreadId || !messages.length) return [];
-    return [
-      ...new Set(
-        messages.filter((m) => m.direction === 'received').map((m) => m.from_email)
-      ),
+    if (!selectedThreadId) return [];
+    const emails: string[] = [];
+    const seen = new Set<string>();
+    const currentLeadEmail = selectedThread?.lead_id ? leadByIdMap[selectedThread.lead_id]?.email ?? null : null;
+    const candidateEmails = [
+      currentLeadEmail,
+      ...messages.filter((m) => m.direction === 'received').map((m) => m.from_email),
     ];
-  }, [selectedThreadId, messages]);
+
+    for (const email of candidateEmails) {
+      const normalized = email?.trim().toLowerCase();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      emails.push(email!.trim());
+    }
+
+    return emails;
+  }, [selectedThreadId, selectedThread?.lead_id, leadByIdMap, messages]);
 
   const blockedProspectEmails = useMemo(() => {
     const blocked = new Set<string>();
@@ -354,6 +369,8 @@ export function useInboxData({
       setThreadTagsMap({});
       setThreadSnippetsMap({});
       setLeadDisplayNamesMap({});
+      setLeadByIdMap({});
+      setLeadReplacementSummaryMap({});
       return;
     }
     const ids = threads.map((t) => t.id);
@@ -362,16 +379,21 @@ export function useInboxData({
       getTagsForThreads(ids),
       getThreadSnippets(ids),
       leadIds.length > 0 ? getLeadsByIds(leadIds) : Promise.resolve([]),
+      leadIds.length > 0 ? getLeadReplacementSummariesByLeadIds(leadIds) : Promise.resolve({}),
     ])
-      .then(([tags, snippets, leads]) => {
+      .then(([tags, snippets, leads, replacementSummaries]) => {
         setThreadTagsMap(tags);
         setThreadSnippetsMap(snippets);
         const leadNames: Record<string, string> = {};
+        const leadRecords: Record<string, Lead> = {};
         for (const lead of leads) {
           const name = getLeadDisplayName(lead);
           if (name) leadNames[lead.id] = name;
+          leadRecords[lead.id] = lead;
         }
         setLeadDisplayNamesMap(leadNames);
+        setLeadByIdMap(leadRecords);
+        setLeadReplacementSummaryMap(replacementSummaries);
       })
       .catch((err) => console.error('Failed to load thread tags/snippets/leads:', err));
   }, [threads]);
@@ -459,6 +481,8 @@ export function useInboxData({
     setThreadTagsMap,
     threadSnippetsMap,
     leadDisplayNamesMap,
+    leadByIdMap,
+    leadReplacementSummaryMap,
     accountTags,
     setAccountTags,
     displayThreads,

@@ -1,5 +1,6 @@
 import React, { type RefObject } from 'react';
 import { View, Text, ScrollView, Animated } from 'react-native';
+import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
@@ -46,9 +47,11 @@ export interface InboxDesktopMessagePaneProps {
   loadMessages: (threadId: string, options?: { silent?: boolean }) => void;
   selectedThreadProspectEmails: string[];
   blockedProspectEmails: Set<string>;
+  leadReplacementSummary?: LeadReplacementSummary | null;
   accountId: string | null;
   onBlock: (() => void) | undefined;
   onMarkOutOfOffice?: (() => void) | undefined;
+  onReplaceLead?: (() => void) | undefined;
   onOpenTagsPanel: (() => void) | undefined;
   onSetCategory: ((cat: string | null) => Promise<void>) | undefined;
   messagesScrollViewRef: RefObject<ScrollView | null>;
@@ -120,9 +123,11 @@ export function InboxDesktopLayout({
     loadMessages,
     selectedThreadProspectEmails,
     blockedProspectEmails,
+    leadReplacementSummary,
     accountId,
     onBlock,
     onMarkOutOfOffice,
+    onReplaceLead,
     onOpenTagsPanel,
     onSetCategory,
     messagesScrollViewRef,
@@ -198,8 +203,10 @@ export function InboxDesktopLayout({
               threadTagsMap={threadTagsMap}
               selectedThreadProspectEmails={selectedThreadProspectEmails}
               blockedProspectEmails={blockedProspectEmails}
+              leadReplacementSummary={leadReplacementSummary}
               onBlock={onBlock}
               onMarkOutOfOffice={onMarkOutOfOffice}
+              onReplaceLead={onReplaceLead}
               accountId={accountId}
               onOpenTagsPanel={onOpenTagsPanel}
               category={selectedThread?.category ?? null}

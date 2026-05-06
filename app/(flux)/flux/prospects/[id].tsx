@@ -48,7 +48,6 @@ import type {
   FluxCampaignTemplateRow,
   FluxPageStatus,
   PageConfig,
-  CompetitorAdAuditBlock,
 } from '@/lib/flux/types';
 import {
   coercePageConfig,
@@ -76,6 +75,7 @@ import type { FluxCampaignChatMessage } from '@/lib/flux/fluxCampaignChatState';
 import { getLastFluxChatSummary } from '@/lib/flux/fluxCampaignChatState';
 import { sellerProfileFromCampaignRow } from '@/lib/flux/campaignSeller';
 import { syncFluxPageConfigLogo } from '@/lib/flux/syncFluxPageConfigLogo';
+import { mergeServerCompetitorAuditBlocksIntoDraft } from '@/lib/flux/mergeServerCompetitorAuditBlocks';
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
@@ -187,31 +187,6 @@ function parsePageSaveIssue(issue: string): ParsedPageSaveIssue {
     detail: remainder,
     isCopyLimit: false,
   };
-}
-
-/** When the server updates `competitor_ad_audit` (async worker) but the editor has unsaved edits elsewhere, patch only those blocks from `server`. */
-function mergeServerCompetitorAuditBlocksIntoDraft(draft: PageConfig, server: PageConfig): PageConfig {
-  const serverById = new Map(server.blocks.map((b) => [b.id, b]));
-  const next = clonePageConfig(draft);
-  next.blocks = next.blocks.map((block) => {
-    if (block.type !== 'competitor_ad_audit') return block;
-    const sb = serverById.get(block.id);
-    if (!sb || sb.type !== 'competitor_ad_audit') return block;
-    const { lastAuditDomainReport: _omitReport, ...draftAuditProps } = block.props;
-    const merged: CompetitorAdAuditBlock = {
-      ...block,
-      props: {
-        ...draftAuditProps,
-        status: sb.props.status,
-        errorMessage: sb.props.errorMessage,
-        lastAuditAt: sb.props.lastAuditAt,
-        competitors: sb.props.competitors,
-        heading: block.props.heading,
-      },
-    };
-    return merged;
-  });
-  return next;
 }
 
 export default function ProspectDetail() {

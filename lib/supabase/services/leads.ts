@@ -1,5 +1,6 @@
 import { supabase } from '../client';
-import type { Lead, LeadInsert, LeadUpdate } from '../types';
+import { getLeadDisplayName } from '@/lib/leads';
+import type { Lead, LeadInsert, LeadUpdate, ReplacementReason } from '../types';
 
 /** PostgREST encodes `.in()` as a long query string; keep chunks under typical proxy URL limits. */
 const POSTGREST_IN_CHUNK_SIZE = 100;
@@ -58,6 +59,14 @@ export interface CampaignLeadTableRow {
   enrollment_stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
   enrollment_stopped_error_message: string | null;
   reply_category: 'Interested' | 'Neutral' | 'Not Interested' | null;
+  replacement_role: LeadReplacementRole | null;
+  replacement_counterpart_lead_id: string | null;
+  replacement_counterpart_name: string | null;
+  replacement_counterpart_email: string | null;
+  replacement_counterpart_label: string | null;
+  replacement_reason: ReplacementReason | null;
+  replacement_reason_note: string | null;
+  replacement_completed_at: string | null;
   created_at: string;
 }
 
@@ -118,10 +127,182 @@ type CampaignLeadBaseRow = Pick<
   | 'created_at'
 >;
 
+export type LeadReplacementRole = 'old' | 'new';
+
+export interface LeadReplacementSummary {
+  replacementId: string;
+  role: LeadReplacementRole;
+  counterpartLeadId: string;
+  counterpartName: string | null;
+  counterpartEmail: string | null;
+  counterpartLabel: string | null;
+  reason: ReplacementReason;
+  reasonNote: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+interface LeadReplacementRow {
+  id: string;
+  old_lead_id: string;
+  new_lead_id: string;
+  reason: ReplacementReason;
+  reason_note: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface ReplaceLeadWithNewContactInput {
+  oldLeadId: string;
+  newEmail: string;
+  newName?: string | null;
+  newFirstName?: string | null;
+  newLastName?: string | null;
+  newPhoneNumber?: string | null;
+  reason?: ReplacementReason;
+  reasonNote?: string | null;
+  sourceMessageId?: string | null;
+}
+
+export interface ReplaceLeadWithNewContactResult {
+  replacementId: string;
+  newLeadId: string;
+  enrollmentId: string | null;
+  newLead: Lead;
+}
+
 function getCampaignLeadTableSortBy(sortBy?: string): keyof CampaignLeadBaseRow {
   return CAMPAIGN_LEAD_TABLE_SORT_COLUMNS.has(sortBy ?? '')
     ? (sortBy as keyof CampaignLeadBaseRow)
     : 'created_at';
+}
+
+async function getLeadReplacementRowsByLeadIds(leadIds: string[]): Promise<LeadReplacementRow[]> {
+  if (leadIds.length === 0) return [];
+
+  const replacements = new Map<string, LeadReplacementRow>();
+
+  for (const idChunk of chunkIds(leadIds, POSTGREST_IN_CHUNK_SIZE)) {
+    const [oldMatchResult, newMatchResult] = await Promise.all([
+      supabase
+        .from('lead_replacements')
+        .select('id, old_lead_id, new_lead_id, reason, reason_note, created_at, completed_at')
+        .in('old_lead_id', idChunk)
+        .neq('status', 'cancelled'),
+      supabase
+        .from('lead_replacements')
+        .select('id, old_lead_id, new_lead_id, reason, reason_note, created_at, completed_at')
+        .in('new_lead_id', idChunk)
+        .neq('status', 'cancelled'),
+    ]);
+
+    if (oldMatchResult.error) {
+      throw new Error(`Failed to fetch lead replacements: ${oldMatchResult.error.message}`);
+    }
+    if (newMatchResult.error) {
+      throw new Error(`Failed to fetch lead replacements: ${newMatchResult.error.message}`);
+    }
+
+    for (const row of [...(oldMatchResult.data ?? []), ...(newMatchResult.data ?? [])] as LeadReplacementRow[]) {
+      replacements.set(row.id, row);
+    }
+  }
+
+  return Array.from(replacements.values());
+}
+
+export async function getLeadReplacementSummariesByLeadIds(
+  leadIds: string[]
+): Promise<Record<string, LeadReplacementSummary>> {
+  const uniqueLeadIds = [...new Set(leadIds.filter(Boolean))];
+  if (uniqueLeadIds.length === 0) return {};
+
+  const replacements = await getLeadReplacementRowsByLeadIds(uniqueLeadIds);
+  if (replacements.length === 0) return {};
+
+  const counterpartIds = new Set<string>();
+  for (const replacement of replacements) {
+    counterpartIds.add(replacement.old_lead_id);
+    counterpartIds.add(replacement.new_lead_id);
+  }
+
+  const counterpartLeads = await getLeadsByIds(Array.from(counterpartIds));
+  const counterpartById = new Map(counterpartLeads.map((lead) => [lead.id, lead]));
+  const summaryByLeadId: Record<string, LeadReplacementSummary> = {};
+
+  for (const replacement of replacements) {
+    if (uniqueLeadIds.includes(replacement.old_lead_id)) {
+      const counterpart = counterpartById.get(replacement.new_lead_id) ?? null;
+      summaryByLeadId[replacement.old_lead_id] = {
+        replacementId: replacement.id,
+        role: 'old',
+        counterpartLeadId: replacement.new_lead_id,
+        counterpartName: counterpart?.name ?? null,
+        counterpartEmail: counterpart?.email ?? null,
+        counterpartLabel: getLeadDisplayName(counterpart),
+        reason: replacement.reason,
+        reasonNote: replacement.reason_note,
+        completedAt: replacement.completed_at,
+        createdAt: replacement.created_at,
+      };
+    }
+
+    if (uniqueLeadIds.includes(replacement.new_lead_id)) {
+      const counterpart = counterpartById.get(replacement.old_lead_id) ?? null;
+      summaryByLeadId[replacement.new_lead_id] = {
+        replacementId: replacement.id,
+        role: 'new',
+        counterpartLeadId: replacement.old_lead_id,
+        counterpartName: counterpart?.name ?? null,
+        counterpartEmail: counterpart?.email ?? null,
+        counterpartLabel: getLeadDisplayName(counterpart),
+        reason: replacement.reason,
+        reasonNote: replacement.reason_note,
+        completedAt: replacement.completed_at,
+        createdAt: replacement.created_at,
+      };
+    }
+  }
+
+  return summaryByLeadId;
+}
+
+function applyLeadReplacementSummary(
+  replacementSummary: LeadReplacementSummary | null | undefined
+): Pick<
+  CampaignLeadTableRow,
+  | 'replacement_role'
+  | 'replacement_counterpart_lead_id'
+  | 'replacement_counterpart_name'
+  | 'replacement_counterpart_email'
+  | 'replacement_counterpart_label'
+  | 'replacement_reason'
+  | 'replacement_reason_note'
+  | 'replacement_completed_at'
+> {
+  if (!replacementSummary) {
+    return {
+      replacement_role: null,
+      replacement_counterpart_lead_id: null,
+      replacement_counterpart_name: null,
+      replacement_counterpart_email: null,
+      replacement_counterpart_label: null,
+      replacement_reason: null,
+      replacement_reason_note: null,
+      replacement_completed_at: null,
+    };
+  }
+
+  return {
+    replacement_role: replacementSummary.role,
+    replacement_counterpart_lead_id: replacementSummary.counterpartLeadId,
+    replacement_counterpart_name: replacementSummary.counterpartName,
+    replacement_counterpart_email: replacementSummary.counterpartEmail,
+    replacement_counterpart_label: replacementSummary.counterpartLabel,
+    replacement_reason: replacementSummary.reason,
+    replacement_reason_note: replacementSummary.reasonNote,
+    replacement_completed_at: replacementSummary.completedAt,
+  };
 }
 
 function buildCampaignLeadTableQuery(
@@ -238,7 +419,7 @@ async function resolveCampaignLeadScopeIds(
 ): Promise<string[] | null> {
   let scopedLeadIds: Set<string> | null = query?.leadIds ? new Set(query.leadIds.filter(Boolean)) : null;
 
-  if (query?.leadIds && scopedLeadIds.size === 0) {
+  if (query?.leadIds && scopedLeadIds?.size === 0) {
     return [];
   }
 
@@ -409,6 +590,7 @@ function mapCampaignLeadTableRows(
     }
   >,
   replyCategoryByLeadId: Map<string, CampaignLeadTableRow['reply_category']>,
+  replacementSummaryByLeadId: Record<string, LeadReplacementSummary>,
 ): CampaignLeadTableRow[] {
   return leadRows.map((lead) => {
     const enrollment = enrollmentByLeadId.get(lead.id);
@@ -419,6 +601,7 @@ function mapCampaignLeadTableRows(
       enrollment_stopped_reason: enrollment?.stopped_reason ?? null,
       enrollment_stopped_error_message: enrollment?.stopped_error_message ?? null,
       reply_category: replyCategoryByLeadId.get(lead.id) ?? null,
+      ...applyLeadReplacementSummary(replacementSummaryByLeadId[lead.id]),
     };
   });
 }
@@ -454,7 +637,7 @@ async function fetchCampaignLeadsTablePageRpc(
   const totalCount =
     rowsRaw.length > 0 && rowsRaw[0].total_count != null ? Number(rowsRaw[0].total_count) : 0;
 
-  const rows: CampaignLeadBaseRow[] = rowsRaw.map((r) => ({
+  const rows: CampaignLeadBaseRow[] = rowsRaw.map((r: any) => ({
     id: r.id,
     email: r.email,
     name: r.name,
@@ -542,6 +725,7 @@ export async function getCampaignLeadTablePage(
   const limit = query?.limit ?? 20;
   const offset = query?.offset ?? 0;
   const scopedLeadIds = await resolveCampaignLeadScopeIds(campaignId, query);
+  const scopedLeadIdsForQuery = scopedLeadIds ?? null;
   if (scopedLeadIds?.length === 0) {
     return { rows: [], totalCount: 0 };
   }
@@ -549,11 +733,11 @@ export async function getCampaignLeadTablePage(
   let leadRows: CampaignLeadBaseRow[];
   let totalCount: number;
 
-  if (campaignScopedLeadIdsNeedRpc(scopedLeadIds)) {
+  if (campaignScopedLeadIdsNeedRpc(scopedLeadIdsForQuery)) {
     const r = await fetchCampaignLeadsTablePageRpc(
       campaignId,
       query,
-      scopedLeadIds,
+      scopedLeadIdsForQuery ?? [],
       sortBy,
       ascending,
       limit,
@@ -562,7 +746,7 @@ export async function getCampaignLeadTablePage(
     leadRows = r.rows;
     totalCount = r.totalCount;
   } else {
-    const leadsQuery = buildCampaignLeadTableQuery(campaignId, query, true, scopedLeadIds);
+    const leadsQuery = buildCampaignLeadTableQuery(campaignId, query, true, scopedLeadIdsForQuery);
     const { data, error, count } = await leadsQuery
       .order(sortBy, { ascending, nullsFirst: !ascending })
       .range(offset, offset + limit - 1);
@@ -581,9 +765,15 @@ export async function getCampaignLeadTablePage(
     leadIds,
   );
   const replyCategoryByLeadId = await fetchCampaignLeadReplyCategoryMap(campaignId, leadIds);
+  const replacementSummaryByLeadId = await getLeadReplacementSummariesByLeadIds(leadIds);
 
   return {
-    rows: mapCampaignLeadTableRows(leadRows, enrollmentByLeadId, replyCategoryByLeadId),
+    rows: mapCampaignLeadTableRows(
+      leadRows,
+      enrollmentByLeadId,
+      replyCategoryByLeadId,
+      replacementSummaryByLeadId,
+    ),
     totalCount,
   };
 }
@@ -597,17 +787,18 @@ export async function getCampaignLeadTableExportRows(
   const pageSize = 500;
   const rows: CampaignLeadTableRow[] = [];
   const scopedLeadIds = await resolveCampaignLeadScopeIds(campaignId, query);
+  const scopedLeadIdsForQuery = scopedLeadIds ?? null;
 
   if (scopedLeadIds?.length === 0) {
     return rows;
   }
 
-  if (campaignScopedLeadIdsNeedRpc(scopedLeadIds)) {
+  if (campaignScopedLeadIdsNeedRpc(scopedLeadIdsForQuery)) {
     for (let offset = 0; ; offset += pageSize) {
       const { rows: leadRows } = await fetchCampaignLeadsTablePageRpc(
         campaignId,
         query,
-        scopedLeadIds,
+        scopedLeadIdsForQuery ?? [],
         sortBy,
         ascending,
         pageSize,
@@ -617,14 +808,22 @@ export async function getCampaignLeadTableExportRows(
       const leadIds = leadRows.map((lead) => lead.id);
       const enrollmentByLeadId = await fetchCampaignLeadEnrollmentMap(campaignId, leadIds);
       const replyCategoryByLeadId = await fetchCampaignLeadReplyCategoryMap(campaignId, leadIds);
-      rows.push(...mapCampaignLeadTableRows(leadRows, enrollmentByLeadId, replyCategoryByLeadId));
+      const replacementSummaryByLeadId = await getLeadReplacementSummariesByLeadIds(leadIds);
+      rows.push(
+        ...mapCampaignLeadTableRows(
+          leadRows,
+          enrollmentByLeadId,
+          replyCategoryByLeadId,
+          replacementSummaryByLeadId,
+        )
+      );
       if (leadRows.length < pageSize) break;
     }
     return rows;
   }
 
   for (let offset = 0; ; offset += pageSize) {
-    const leadsQuery = buildCampaignLeadTableQuery(campaignId, query, false, scopedLeadIds);
+    const leadsQuery = buildCampaignLeadTableQuery(campaignId, query, false, scopedLeadIdsForQuery);
     const { data, error } = await leadsQuery
       .order(sortBy, { ascending, nullsFirst: !ascending })
       .range(offset, offset + pageSize - 1);
@@ -642,7 +841,15 @@ export async function getCampaignLeadTableExportRows(
       leadIds,
     );
     const replyCategoryByLeadId = await fetchCampaignLeadReplyCategoryMap(campaignId, leadIds);
-    rows.push(...mapCampaignLeadTableRows(leadRows, enrollmentByLeadId, replyCategoryByLeadId));
+    const replacementSummaryByLeadId = await getLeadReplacementSummariesByLeadIds(leadIds);
+    rows.push(
+      ...mapCampaignLeadTableRows(
+        leadRows,
+        enrollmentByLeadId,
+        replyCategoryByLeadId,
+        replacementSummaryByLeadId,
+      )
+    );
 
     if (leadRows.length < pageSize) break;
   }
@@ -895,5 +1102,47 @@ export async function deleteLeadsBestEffort(ids: string[]): Promise<{
  */
 export async function hardDeleteLead(id: string): Promise<void> {
   throw new Error('Hard lead delete is disabled. Use deleteLead() to soft delete the lead.');
+}
+
+export async function replaceLeadWithNewContact(
+  input: ReplaceLeadWithNewContactInput
+): Promise<ReplaceLeadWithNewContactResult> {
+  const newEmail = input.newEmail.trim().toLowerCase();
+  if (!newEmail) {
+    throw new Error('Replacement email is required.');
+  }
+
+  const { data, error } = await supabase.rpc('replace_lead_with_new_contact', {
+    p_old_lead_id: input.oldLeadId,
+    p_new_email: newEmail,
+    p_new_name: input.newName?.trim() || null,
+    p_new_first_name: input.newFirstName?.trim() || null,
+    p_new_last_name: input.newLastName?.trim() || null,
+    p_new_phone_number: input.newPhoneNumber?.trim() || null,
+    p_reason: input.reason ?? 'manual_referral',
+    p_reason_note: input.reasonNote?.trim() || null,
+    p_source_message_id: input.sourceMessageId ?? null,
+  });
+
+  if (error) {
+    throw new Error(`Failed to replace lead: ${error.message}`);
+  }
+
+  const result = Array.isArray(data) ? data[0] : null;
+  if (!result?.new_lead_id || !result?.replacement_id) {
+    throw new Error('Failed to replace lead: no replacement result returned.');
+  }
+
+  const newLead = await getLeadById(result.new_lead_id);
+  if (!newLead) {
+    throw new Error('Failed to load replacement lead after creation.');
+  }
+
+  return {
+    replacementId: result.replacement_id,
+    newLeadId: result.new_lead_id,
+    enrollmentId: result.enrollment_id ?? null,
+    newLead,
+  };
 }
 

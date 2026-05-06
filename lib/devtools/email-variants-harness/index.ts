@@ -8,7 +8,7 @@
 
 import { supabase } from '@/lib/supabase/client';
 import { generateEmailVariantId } from '@/lib/email/emailNodeVariants';
-import { generateTestLead } from '@/lib/test/campaign-flow/utils';
+import { generateTestLead } from '@/lib/devtools/campaign-flow/utils';
 import {
   createCampaign,
   assignMailboxesToCampaign,

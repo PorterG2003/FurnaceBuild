@@ -7,6 +7,7 @@ import { BlockedThreadCallout } from './BlockedThreadCallout';
 import { MessagePanelHeader } from './MessagePanelHeader';
 import { MessageListSkeleton } from './MessageListSkeleton';
 import { groupMessagesByDate } from '@/lib/inbox';
+import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
@@ -35,8 +36,10 @@ export interface InboxMessageListProps {
   threadTagsMap: Record<string, ThreadTag[]>;
   selectedThreadProspectEmails: string[];
   blockedProspectEmails: Set<string>;
+  leadReplacementSummary?: LeadReplacementSummary | null;
   onBlock: (() => void) | undefined;
   onMarkOutOfOffice?: (() => void) | undefined;
+  onReplaceLead?: (() => void) | undefined;
   accountId: string | null;
   onOpenTagsPanel: (() => void) | undefined;
   category: string | null;
@@ -73,8 +76,10 @@ export function InboxMessageList({
   threadTagsMap,
   selectedThreadProspectEmails,
   blockedProspectEmails,
+  leadReplacementSummary,
   onBlock,
   onMarkOutOfOffice,
+  onReplaceLead,
   accountId,
   onOpenTagsPanel,
   category,
@@ -130,8 +135,10 @@ export function InboxMessageList({
         blockedEmails={blockedProspectEmails}
         onBlock={onBlock}
         onMarkOutOfOffice={onMarkOutOfOffice}
+        onReplaceLead={onReplaceLead}
         showBlockButton={!!accountId && selectedThreadProspectEmails.length > 0}
         showOutOfOfficeButton={!!accountId && !!selectedThreadId}
+        showReplaceLeadButton={!!accountId && !!selectedThread?.lead_id}
         threadTags={selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []) : []}
         onOpenTagsPanel={onOpenTagsPanel}
         category={category}
@@ -139,6 +146,7 @@ export function InboxMessageList({
         categoryOptions={[...categoryOptions]}
         showToolbar={showToolbar}
         showTitleAndEmail={showTitleAndEmail}
+        replacementSummary={leadReplacementSummary}
       />
       {messagesError && (
         <View className="p-4">

@@ -3,6 +3,7 @@ import { View, Text, ActivityIndicator, ScrollView } from 'react-native';
 import { BaseModal } from '@/components/ui/modals/BaseModal';
 import { supabase } from '@/lib/supabase/client';
 import { format } from 'date-fns';
+import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import {
   EnvelopeIcon,
   ClockIcon,
@@ -11,6 +12,7 @@ import {
   EyeIcon,
   CursorArrowRaysIcon,
   ChatBubbleLeftRightIcon,
+  ArrowPathIcon,
 } from 'react-native-heroicons/outline';
 
 interface LeadActivityModalProps {
@@ -20,12 +22,22 @@ interface LeadActivityModalProps {
   campaignId: string;
   leadEmail: string;
   leadName: string | null;
+  replacementSummary?: LeadReplacementSummary | null;
 }
 
 interface ActivityItem {
   id: string;
   timestamp: string;
-  type: 'enrollment_started' | 'email_scheduled' | 'email_sent' | 'email_failed' | 'email_opened' | 'email_clicked' | 'email_replied' | 'node_progress';
+  type:
+    | 'enrollment_started'
+    | 'email_scheduled'
+    | 'email_sent'
+    | 'email_failed'
+    | 'email_opened'
+    | 'email_clicked'
+    | 'email_replied'
+    | 'node_progress'
+    | 'lead_replaced';
   nodeLabel?: string;
   nodeType?: string;
   subject?: string;
@@ -40,6 +52,7 @@ export function LeadActivityModal({
   campaignId,
   leadEmail,
   leadName,
+  replacementSummary = null,
 }: LeadActivityModalProps) {
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
@@ -56,6 +69,20 @@ export function LeadActivityModal({
         setError(null);
 
         const activityItems: ActivityItem[] = [];
+
+        const historicalLeadIds =
+          replacementSummary?.role === 'new' && replacementSummary.counterpartLeadId
+            ? [leadId, replacementSummary.counterpartLeadId]
+            : [leadId];
+
+        if (replacementSummary?.role === 'new') {
+          activityItems.push({
+            id: `lead-replaced-${replacementSummary.replacementId}`,
+            timestamp: replacementSummary.completedAt ?? replacementSummary.createdAt,
+            type: 'lead_replaced',
+            details: `Replaced ${replacementSummary.counterpartLabel || replacementSummary.counterpartEmail || 'previous lead'}`,
+          });
+        }
 
         // Load enrollment (for enrollment_started and current position)
         const { data: enrollment } = await supabase
@@ -99,8 +126,8 @@ export function LeadActivityModal({
         // Load message jobs (emails)
         const { data: messageJobs } = await supabase
           .from('message_jobs')
-          .select('id, created_at, scheduled_at, sent_at, status, message_data, node_id, updated_at')
-          .eq('lead_id', leadId)
+          .select('id, lead_id, created_at, scheduled_at, sent_at, status, message_data, node_id, updated_at')
+          .in('lead_id', historicalLeadIds)
           .eq('campaign_id', campaignId)
           .order('created_at', { ascending: true });
 
@@ -126,6 +153,10 @@ export function LeadActivityModal({
             if (!node) continue;
             const nodeData = (node.node_data as any) || {};
             const messageData = (job.message_data as any) || {};
+            const historyPrefix =
+              job.lead_id !== leadId
+                ? `Historical activity from ${replacementSummary?.counterpartLabel || replacementSummary?.counterpartEmail || 'previous lead'}`
+                : null;
 
             // Email scheduled
             activityItems.push({
@@ -136,7 +167,9 @@ export function LeadActivityModal({
               nodeType: node.node_type,
               subject: messageData.subject,
               status: job.status,
-              details: `Scheduled: ${format(new Date(job.scheduled_at), 'MMM d, h:mm a')}`,
+              details: historyPrefix
+                ? `${historyPrefix}. Scheduled: ${format(new Date(job.scheduled_at), 'MMM d, h:mm a')}`
+                : `Scheduled: ${format(new Date(job.scheduled_at), 'MMM d, h:mm a')}`,
             });
 
             // Email sent or failed
@@ -149,7 +182,11 @@ export function LeadActivityModal({
                 nodeType: node.node_type,
                 subject: messageData.subject,
                 status: job.status,
-                details: job.status === 'failed' ? 'Failed to send' : 'Email sent',
+                details: historyPrefix
+                  ? `${historyPrefix}. ${job.status === 'failed' ? 'Failed to send' : 'Email sent'}`
+                  : job.status === 'failed'
+                    ? 'Failed to send'
+                    : 'Email sent',
               });
             } else if (job.status === 'failed') {
               activityItems.push({
@@ -160,7 +197,7 @@ export function LeadActivityModal({
                 nodeType: node.node_type,
                 subject: messageData.subject,
                 status: job.status,
-                details: 'Failed to send',
+                details: historyPrefix ? `${historyPrefix}. Failed to send` : 'Failed to send',
               });
             }
           }
@@ -169,8 +206,8 @@ export function LeadActivityModal({
         // Load events (opened, clicked, replied)
         const { data: events } = await supabase
           .from('events')
-          .select('id, event_type, created_at, message_job_id')
-          .eq('lead_id', leadId)
+          .select('id, lead_id, event_type, created_at, message_job_id')
+          .in('lead_id', historicalLeadIds)
           .eq('campaign_id', campaignId)
           .in('event_type', ['opened', 'clicked', 'replied'])
           .order('created_at', { ascending: true });
@@ -225,7 +262,10 @@ export function LeadActivityModal({
               type,
               nodeLabel: nodeData.label || node.flow_node_id,
               nodeType: node.node_type,
-              details,
+              details:
+                event.lead_id !== leadId && replacementSummary?.role === 'new'
+                  ? `Historical activity from ${replacementSummary.counterpartLabel || replacementSummary.counterpartEmail || 'previous lead'}. ${details}`
+                  : details,
             });
           }
         }
@@ -243,7 +283,7 @@ export function LeadActivityModal({
     };
 
     loadActivity();
-  }, [visible, leadId, campaignId]);
+  }, [visible, leadId, campaignId, replacementSummary]);
 
   const getActivityIcon = (type: ActivityItem['type']) => {
     switch (type) {
@@ -263,6 +303,8 @@ export function LeadActivityModal({
         return <ChatBubbleLeftRightIcon size={20} color="#f59e0b" />;
       case 'node_progress':
         return <ClockIcon size={20} color="#8b5cf6" />;
+      case 'lead_replaced':
+        return <ArrowPathIcon size={20} color="#FDBA74" />;
       default:
         return <ClockIcon size={20} color="#6b7280" />;
     }
@@ -286,6 +328,8 @@ export function LeadActivityModal({
         return item.nodeLabel ? `Replied: ${item.nodeLabel}` : 'Replied';
       case 'node_progress':
         return item.nodeLabel ? `Node: ${item.nodeLabel}` : 'Node Progress';
+      case 'lead_replaced':
+        return 'Lead Replaced';
       default:
         return 'Activity';
     }
@@ -315,6 +359,14 @@ export function LeadActivityModal({
       ) : (
         <ScrollView className="max-h-[600px]">
           <View className="gap-4">
+            {replacementSummary?.role === 'new' ? (
+              <View className="rounded-xl border border-[#F973164D] bg-[#F973161A] px-4 py-3">
+                <Text className="text-sm font-instrument-medium text-[#FDBA74]">
+                  This lead continues the campaign after replacing{' '}
+                  {replacementSummary.counterpartLabel || replacementSummary.counterpartEmail || 'the previous lead'}.
+                </Text>
+              </View>
+            ) : null}
             {activities.map((item, index) => (
               <View key={item.id} className="flex-row gap-4 relative">
                 {/* Timeline line */}

@@ -232,6 +232,43 @@ export function LeadsTable({
     );
   };
 
+  const getReplacementBadge = (lead: Lead) => {
+    if (!lead.replacement_role) {
+      return (
+        <Text className="text-xs font-instrument text-gray-500">
+          —
+        </Text>
+      );
+    }
+
+    const label =
+      lead.replacement_role === 'new'
+        ? `Replaces ${lead.replacement_counterpart_label || lead.replacement_counterpart_email || 'previous lead'}`
+        : `Replaced by ${lead.replacement_counterpart_label || lead.replacement_counterpart_email || 'new lead'}`;
+
+    return (
+      <View className="self-start">
+        <View
+          className="self-start px-3 py-1.5 rounded-md"
+          style={{ backgroundColor: 'rgba(249, 115, 22, 0.12)' }}
+        >
+          <Text className="text-xs font-instrument-semibold" style={{ color: '#FDBA74' }}>
+            {label}
+          </Text>
+        </View>
+        {lead.replacement_reason_note ? (
+          <Text
+            className="text-xs text-gray-500 font-instrument mt-1 max-w-[220px]"
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            {lead.replacement_reason_note}
+          </Text>
+        ) : null}
+      </View>
+    );
+  };
+
   // Dynamic columns from insight summary (same as modal) + fixed campaign columns
   const columns = useMemo((): TableColumn<LeadTableRow>[] => {
     const dataColumns: TableColumn<LeadTableRow>[] = insightSummary.fields.map((f) => {
@@ -278,7 +315,14 @@ export function LeadsTable({
       flex: 0,
       render: (item) => getReplyCategoryBadge(item.__lead.reply_category),
     };
-    return [...dataColumns, enrollmentColumn, replyCategoryColumn];
+    const replacementColumn: TableColumn<LeadTableRow> = {
+      key: 'replacement',
+      label: 'Replacement',
+      minWidth: 240,
+      flex: 0,
+      render: (item) => getReplacementBadge(item.__lead),
+    };
+    return [...dataColumns, enrollmentColumn, replyCategoryColumn, replacementColumn];
   }, [insightSummary]);
 
   return (
@@ -341,6 +385,22 @@ export function LeadsTable({
           campaignId={campaignId}
           leadEmail={selectedLead.email}
           leadName={selectedLead.name}
+          replacementSummary={
+            selectedLead.replacement_role
+              ? {
+                  replacementId: selectedLead.replacement_counterpart_lead_id ?? selectedLead.id,
+                  role: selectedLead.replacement_role,
+                  counterpartLeadId: selectedLead.replacement_counterpart_lead_id ?? '',
+                  counterpartName: selectedLead.replacement_counterpart_name,
+                  counterpartEmail: selectedLead.replacement_counterpart_email,
+                  counterpartLabel: selectedLead.replacement_counterpart_label,
+                  reason: selectedLead.replacement_reason ?? 'manual_referral',
+                  reasonNote: selectedLead.replacement_reason_note,
+                  completedAt: selectedLead.replacement_completed_at,
+                  createdAt: selectedLead.replacement_completed_at ?? selectedLead.created_at,
+                }
+              : null
+          }
         />
       )}
     </>

@@ -25,6 +25,7 @@ import {
   InboxModals,
   InboxThreadList,
   MarkOutOfOfficeModal,
+  ReplaceLeadModal,
 } from '@/components/inbox';
 import { getDisplayBody } from '@/lib/email/index';
 import { parseOutOfOfficeReturnDate } from '@/lib/inbox/parseOutOfOfficeReturnDate';
@@ -99,6 +100,8 @@ export default function InboxPage() {
     setThreadTagsMap,
     threadSnippetsMap,
     leadDisplayNamesMap,
+    leadByIdMap,
+    leadReplacementSummaryMap,
     accountTags,
     setAccountTags,
     displayThreads,
@@ -134,6 +137,7 @@ export default function InboxPage() {
   } = useInboxFilterUI();
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [oooModalVisible, setOooModalVisible] = useState(false);
+  const [replaceLeadModalVisible, setReplaceLeadModalVisible] = useState(false);
   const [createTagModalVisible, setCreateTagModalVisible] = useState(false);
   const [tagsPanelVisible, setTagsPanelVisible] = useState(false);
   const [showMessageActionsSheet, setShowMessageActionsSheet] = useState(false);
@@ -149,6 +153,8 @@ export default function InboxPage() {
       : null,
     selectedThreadId,
     selectedThread,
+    currentLeadEmail: selectedThread?.lead_id ? (leadByIdMap[selectedThread.lead_id]?.email ?? null) : null,
+    currentLeadName: selectedThread?.lead_id ? (leadByIdMap[selectedThread.lead_id]?.name ?? null) : null,
     messages,
     loadMessages,
     blockList,
@@ -250,6 +256,10 @@ export default function InboxPage() {
       (a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
     )[0];
   }, [messages]);
+
+  const selectedThreadReplacementSummary = selectedThread?.lead_id
+    ? (leadReplacementSummaryMap[selectedThread.lead_id] ?? null)
+    : null;
 
   const oooPrefillYmd = useMemo(() => {
     const ref = latestReceivedInbound
@@ -543,10 +553,13 @@ export default function InboxPage() {
       threadTagsMap,
       selectedThreadProspectEmails,
       blockedProspectEmails,
+      leadReplacementSummary: selectedThreadReplacementSummary,
       accountId,
       onBlock: accountId ? () => setBlockModalVisible(true) : undefined,
       onMarkOutOfOffice:
         accountId && selectedThreadId ? () => setOooModalVisible(true) : undefined,
+      onReplaceLead:
+        accountId && selectedThread?.lead_id ? () => setReplaceLeadModalVisible(true) : undefined,
       onOpenTagsPanel: selectedThreadId && accountId ? () => setTagsPanelVisible(true) : undefined,
       category: selectedThread?.category ?? null,
       onSetCategory: handleSetThreadCategory,
@@ -576,6 +589,7 @@ export default function InboxPage() {
       threadTagsMap,
       selectedThreadProspectEmails,
       blockedProspectEmails,
+      selectedThreadReplacementSummary,
       accountId,
       selectedThread?.category,
       setBlockModalVisible,
@@ -705,6 +719,8 @@ export default function InboxPage() {
         onDeleteTag: handleDeleteTag,
         onMarkOutOfOffice:
           accountId && selectedThreadId ? () => setOooModalVisible(true) : undefined,
+        onReplaceLead:
+          accountId && selectedThread?.lead_id ? () => setReplaceLeadModalVisible(true) : undefined,
       },
     }),
     [
@@ -756,6 +772,8 @@ export default function InboxPage() {
       includeOutOfOfficeFilter,
       setIncludeOutOfOfficeFilter,
       setOooModalVisible,
+      selectedThread?.lead_id,
+      setReplaceLeadModalVisible,
     ]
   );
 
@@ -829,6 +847,23 @@ export default function InboxPage() {
           onSaved={() => {
             void loadThreads();
             void loadMessages(selectedThreadId, { silent: true });
+          }}
+        />
+      ) : null}
+
+      {accountId && selectedThread?.lead_id ? (
+        <ReplaceLeadModal
+          visible={replaceLeadModalVisible}
+          onClose={() => setReplaceLeadModalVisible(false)}
+          oldLeadId={selectedThread.lead_id}
+          oldLeadName={leadByIdMap[selectedThread.lead_id]?.name ?? null}
+          oldLeadEmail={leadByIdMap[selectedThread.lead_id]?.email ?? null}
+          sourceMessageId={latestReceivedInbound?.id ?? null}
+          onReplaced={() => {
+            void loadThreads();
+            if (selectedThreadId) {
+              void loadMessages(selectedThreadId, { silent: true });
+            }
           }}
         />
       ) : null}

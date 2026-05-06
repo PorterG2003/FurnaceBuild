@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/Toggle';
 import { getAccountMembershipsForUser } from '@/lib/supabase/services/accounts';
 import { deleteTestCampaign } from '@/lib/supabase/services/campaigns';
-import { ALLOWED_EMAIL } from '@/lib/test/campaign-flow/constants';
+import { ALLOWED_EMAIL } from '@/lib/devtools/campaign-flow/constants';
 import {
   runEmailVariantsHarnessAssertion,
   sweepAbandonedEmailVariantsHarnessCampaigns,
   EMAIL_VARIANTS_HARNESS_PREFIX,
   type HarnessRunResult,
-} from '@/lib/test/email-variants-harness';
+} from '@/lib/devtools/email-variants-harness';
 import {
   ArrowPathIcon,
   BeakerIcon,

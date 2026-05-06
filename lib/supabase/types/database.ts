@@ -197,6 +197,7 @@ export interface Database {
           custom_lead_data: Json | null;
           global_lead_id: string | null;
           smartlead_lead_id: number | null;
+          mailbox_id: string | null;
           status: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           deleted_at: string | null;
           created_at: string;
@@ -220,6 +221,7 @@ export interface Database {
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
           smartlead_lead_id?: number | null;
+          mailbox_id?: string | null;
           status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           deleted_at?: string | null;
           created_at?: string;
@@ -248,6 +250,50 @@ export interface Database {
           mailbox_id?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+      };
+      lead_replacements: {
+        Row: {
+          id: string;
+          account_id: string;
+          campaign_id: string | null;
+          old_lead_id: string;
+          new_lead_id: string;
+          status: 'suggested' | 'confirmed' | 'completed' | 'cancelled';
+          reason: 'auto_reply_forward' | 'manual_referral' | 'wrong_contact' | 'role_change' | 'other';
+          reason_note: string | null;
+          source_message_id: string | null;
+          created_by: string | null;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          campaign_id?: string | null;
+          old_lead_id: string;
+          new_lead_id: string;
+          status?: 'suggested' | 'confirmed' | 'completed' | 'cancelled';
+          reason: 'auto_reply_forward' | 'manual_referral' | 'wrong_contact' | 'role_change' | 'other';
+          reason_note?: string | null;
+          source_message_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          campaign_id?: string | null;
+          old_lead_id?: string;
+          new_lead_id?: string;
+          status?: 'suggested' | 'confirmed' | 'completed' | 'cancelled';
+          reason?: 'auto_reply_forward' | 'manual_referral' | 'wrong_contact' | 'role_change' | 'other';
+          reason_note?: string | null;
+          source_message_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          completed_at?: string | null;
         };
       };
       enrollments: {
@@ -1163,6 +1209,24 @@ export interface Database {
         };
         Returns: number;
       };
+      replace_lead_with_new_contact: {
+        Args: {
+          p_old_lead_id: string;
+          p_new_email: string;
+          p_new_name?: string | null;
+          p_new_first_name?: string | null;
+          p_new_last_name?: string | null;
+          p_new_phone_number?: string | null;
+          p_reason?: Database['public']['Enums']['replacement_reason_enum'];
+          p_reason_note?: string | null;
+          p_source_message_id?: string | null;
+        };
+        Returns: {
+          replacement_id: string;
+          new_lead_id: string;
+          enrollment_id: string | null;
+        }[];
+      };
       resume_campaign_and_reschedule_jobs: {
         Args: {
           p_campaign_id: string;
@@ -1285,7 +1349,8 @@ export interface Database {
       };
     };
     Enums: {
-      [_ in never]: never;
+      lead_replacement_status_enum: 'suggested' | 'confirmed' | 'completed' | 'cancelled';
+      replacement_reason_enum: 'auto_reply_forward' | 'manual_referral' | 'wrong_contact' | 'role_change' | 'other';
     };
   };
 }

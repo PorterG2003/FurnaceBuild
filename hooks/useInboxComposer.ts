@@ -49,6 +49,8 @@ export interface UseInboxComposerOptions {
   mailboxSignatureRaw: string | null;
   selectedThreadId: string | null;
   selectedThread: EmailThread | undefined;
+  currentLeadEmail?: string | null;
+  currentLeadName?: string | null;
   messages: EmailMessage[];
   loadMessages: (threadId: string, options?: { silent?: boolean }) => void;
   blockList: BlockListEntry[];
@@ -87,6 +89,8 @@ export function useInboxComposer({
   mailboxSignatureRaw,
   selectedThreadId,
   selectedThread,
+  currentLeadEmail = null,
+  currentLeadName = null,
   messages,
   loadMessages,
   blockList,
@@ -223,15 +227,23 @@ export function useInboxComposer({
             setPendingReplies((prev) =>
               prev.map((x) =>
                 x.jobId === p.jobId
-                  ? {
-                      ...x,
-                      isFailed: false,
-                      errorMessage: null,
-                      jobStatus: jobStatus.status,
-                      scheduledAt: jobStatus.scheduled_at,
-                      sendWaitReason: jobStatus.send_wait_reason,
-                      throttleBypassNextAttempt: jobStatus.throttle_bypass_next_attempt,
-                    }
+                  ? (() => {
+                      const nextStatus: PendingReply['jobStatus'] =
+                        jobStatus.status === 'sending' ||
+                        jobStatus.status === 'reserved' ||
+                        jobStatus.status === 'pending'
+                          ? jobStatus.status
+                          : 'pending';
+                      return {
+                        ...x,
+                        isFailed: false,
+                        errorMessage: null,
+                        jobStatus: nextStatus,
+                        scheduledAt: jobStatus.scheduled_at,
+                        sendWaitReason: jobStatus.send_wait_reason,
+                        throttleBypassNextAttempt: jobStatus.throttle_bypass_next_attempt,
+                      };
+                    })()
                   : x
               )
             );
@@ -297,8 +309,12 @@ export function useInboxComposer({
     (message: EmailMessage) => {
       if (!selectedThread) return;
       const lastReceived = [...messages].reverse().find((m) => m.direction === 'received');
-      const toEmail = message.direction === 'received' ? message.from_email : lastReceived?.from_email ?? '';
-      const toName = message.direction === 'received' ? (message.from_name ?? '') : (lastReceived?.from_name ?? '');
+      const preferredLeadEmail = currentLeadEmail?.trim() ?? '';
+      const preferredLeadName = currentLeadName?.trim() ?? '';
+      const fallbackEmail = message.direction === 'received' ? message.from_email : lastReceived?.from_email ?? '';
+      const fallbackName = message.direction === 'received' ? (message.from_name ?? '') : (lastReceived?.from_name ?? '');
+      const toEmail = preferredLeadEmail || fallbackEmail;
+      const toName = preferredLeadEmail ? preferredLeadName : fallbackName;
       setInReplyToMessageId(message.id);
       setReplyToEmail(toEmail);
       setReplyToName(toName);
@@ -320,7 +336,7 @@ export function useInboxComposer({
       setIncludeSignature(true);
       setComposerMode('reply');
     },
-    [selectedThread, messages]
+    [selectedThread, messages, currentLeadEmail, currentLeadName]
   );
 
   const openForwardComposer = useCallback(

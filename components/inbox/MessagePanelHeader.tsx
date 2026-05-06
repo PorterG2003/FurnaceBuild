@@ -3,6 +3,7 @@ import { View, Text, Pressable, Image, Platform } from 'react-native';
 import { CalendarDaysIcon, ChevronDownIcon, NoSymbolIcon } from 'react-native-heroicons/outline';
 import { Select } from '@/components/ui/forms';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
+import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import { THREAD_CATEGORIES } from './inboxConstants';
 
@@ -20,8 +21,10 @@ export function MessagePanelHeader({
   blockedEmails: _blockedEmails = [],
   onBlock,
   onMarkOutOfOffice,
+  onReplaceLead,
   showBlockButton = true,
   showOutOfOfficeButton = true,
+  showReplaceLeadButton = true,
   threadTags = [],
   onOpenTagsPanel,
   category,
@@ -29,6 +32,7 @@ export function MessagePanelHeader({
   categoryOptions = [...THREAD_CATEGORIES],
   showToolbar = true,
   showTitleAndEmail = true,
+  replacementSummary = null,
 }: {
   prospectName?: string | null;
   campaignName?: string | null;
@@ -37,8 +41,10 @@ export function MessagePanelHeader({
   blockedEmails?: string[] | Set<string>;
   onBlock?: () => void;
   onMarkOutOfOffice?: () => void;
+  onReplaceLead?: () => void;
   showBlockButton?: boolean;
   showOutOfOfficeButton?: boolean;
+  showReplaceLeadButton?: boolean;
   threadTags?: ThreadTag[];
   /** When set, shows a single "Tags" control that opens the tags panel (add/remove/create). */
   onOpenTagsPanel?: () => void;
@@ -49,6 +55,7 @@ export function MessagePanelHeader({
   showToolbar?: boolean;
   /** When false, hide the left-side title and email (e.g. when shown in a parent header). Default true. */
   showTitleAndEmail?: boolean;
+  replacementSummary?: LeadReplacementSummary | null;
 }) {
   const showTags = !!onOpenTagsPanel;
   const isSmartleadSource = !!sourceLabel && (sourceLabel === 'Smartlead' || sourceLabel.startsWith('Imported from Smartlead'));
@@ -59,8 +66,13 @@ export function MessagePanelHeader({
 
   const title = prospectName ?? prospectEmails[0] ?? '—';
   const emailLine = prospectEmails.length > 0 ? prospectEmails.join(', ') : '';
+  const replacementLine = replacementSummary
+    ? replacementSummary.role === 'new'
+      ? `Replaces ${replacementSummary.counterpartLabel || replacementSummary.counterpartEmail || 'previous lead'}`
+      : `Replaced by ${replacementSummary.counterpartLabel || replacementSummary.counterpartEmail || 'new lead'}`
+    : null;
 
-  const hasLeftContent = showTitleAndEmail;
+  const hasLeftContent = showTitleAndEmail || !!replacementLine;
   const hasRightContent = showToolbar;
   if (!hasLeftContent && !hasRightContent) {
     return null;
@@ -92,6 +104,17 @@ export function MessagePanelHeader({
                 </Text>
               ) : null}
             </>
+          ) : null}
+          {replacementLine ? (
+            <View
+              className="self-start rounded-lg px-2 py-1 mt-2"
+              style={{ backgroundColor: 'rgba(249, 115, 22, 0.12)', borderWidth: 1, borderColor: 'rgba(249, 115, 22, 0.35)' }}
+            >
+              <Text className="text-xs font-instrument-medium" style={{ color: '#FDBA74' }}>
+                {replacementLine}
+                {replacementSummary?.reasonNote ? ` — ${replacementSummary.reasonNote}` : ''}
+              </Text>
+            </View>
           ) : null}
         </View>
 
@@ -144,6 +167,21 @@ export function MessagePanelHeader({
               <CalendarDaysIcon size={14} color="#93C5FD" />
               <Text className="text-xs font-instrument-medium" style={{ color: '#BFDBFE' }}>
                 Out of office
+              </Text>
+            </Pressable>
+          )}
+          {showReplaceLeadButton && onReplaceLead && (
+            <Pressable
+              onPress={onReplaceLead}
+              className="flex-row items-center gap-1.5 rounded-lg px-2.5 py-1.5 min-h-[32px]"
+              style={{
+                backgroundColor: 'rgba(249, 115, 22, 0.12)',
+                borderWidth: 1,
+                borderColor: 'rgba(249, 115, 22, 0.4)',
+              }}
+            >
+              <Text className="text-xs font-instrument-medium" style={{ color: '#FDBA74' }}>
+                Replace lead
               </Text>
             </Pressable>
           )}

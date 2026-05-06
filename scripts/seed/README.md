@@ -1,6 +1,12 @@
 # Database seed CLI
 
-TypeScript runner under `scripts/seed/` for inserting **dev/staging** fixture data into Supabase. Real scenarios and FK-safe wipe logic are added incrementally; the scaffold validates env, safety switches, and module order.
+TypeScript runner under `scripts/seed/` for inserting **dev/staging** fixture data into Supabase. It now supports three complementary layers of campaign test data:
+
+- **Unit fixtures**: plain campaign-domain builders and lightweight tests that do not touch the database.
+- **Integration fixtures**: DB-backed harnesses that materialize only the campaign slice a test needs, using strict namespacing and scoped cleanup.
+- **Scenario seeds**: richer account slices for manual QA, demos, and reproducing edge cases.
+
+The seed CLI is the **scenario seed** layer. Most new automated tests should prefer unit fixtures or DB-backed integration fixtures instead of depending on a full seed run.
 
 ## Requirements
 
@@ -16,6 +22,28 @@ TypeScript runner under `scripts/seed/` for inserting **dev/staging** fixture da
 | `SEED_PROJECT_REF` | No | If set, must equal the `<ref>` in `https://<ref>.supabase.co` (guards wrong project) |
 | `SEED_WIPE_CONFIRM` | When using `--wipe` | Must be `1` or wipe is refused |
 
+### `dev-default` scenario
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `SEED_ACCOUNT_ID` | Yes | Existing account UUID (`accounts.id`) that will own the seeded campaigns and rows |
+| `SEED_OWNER_USER_ID` | Yes | Existing user UUID (`users.id`) for `campaigns.owner_id` and `mailboxes.user_id` |
+
+Creates a production-like campaign account slice attached to the existing seed account/user:
+
+- 5 campaigns with a believable spread of statuses,
+- 50 connected mailboxes shared across the seeded campaign slice,
+- roughly 1.2k total leads,
+- active, paused, stopped/replied, completed, and draft-style slices,
+- a mix of `pending`, `reserved`, and historical `sent` campaign jobs,
+- about 10 inbox conversations, with OOO-focused cases concentrated in a small realistic subset.
+
+This is the default `npm run seed` scenario. It is intentionally broad enough for manual QA while still keeping the conversation history and edge-case richness focused on a modest number of leads.
+
+```bash
+npx tsx scripts/seed/index.ts --scenario=dev-default --dry-run
+```
+
 ### `campaign-smoke` scenario
 
 | Variable | Required | Description |
@@ -24,7 +52,7 @@ TypeScript runner under `scripts/seed/` for inserting **dev/staging** fixture da
 | `SEED_OWNER_USER_ID` | Yes | `users.id` (same as Supabase Auth user id) for `campaigns.owner_id` and `mailboxes.user_id` |
 | `SEED_CAMPAIGN_ID` | No | Fixed campaign UUID for idempotent re-runs; defaults to the constant in [`constants/campaignSmoke.ts`](./constants/campaignSmoke.ts) |
 
-Creates a **running** campaign with Fallout-inspired fictional copy (see [`theme/falloutCopy.ts`](./theme/falloutCopy.ts)), two `@furnace.test` mailboxes, two leads/enrollments, a deterministic `campaign_intervals` row, then calls **`batch_assign_jobs_to_interval`** (same RPC as the scheduler). Modeled on [`lib/test/email-variants-harness/index.ts`](../lib/test/email-variants-harness/index.ts).
+Creates a **running** campaign with Fallout-inspired fictional copy (see [`theme/falloutCopy.ts`](./theme/falloutCopy.ts)), two `@furnace.test` mailboxes, two leads/enrollments, a deterministic `campaign_intervals` row, then calls **`batch_assign_jobs_to_interval`** (same RPC as the scheduler). Modeled on [`lib/devtools/email-variants-harness/index.ts`](../lib/devtools/email-variants-harness/index.ts).
 
 ```bash
 npx tsx scripts/seed/index.ts --scenario=campaign-smoke --dry-run
@@ -107,7 +135,7 @@ This means local machine values in `.env.local` win over `.env`, which is usuall
 ## npm scripts
 
 ```bash
-npm run seed              # default scenario (minimal)
+npm run seed              # default scenario (dev-default)
 npm run seed:reset        # delete known seed slices from the dev DB
 npm run seed:wipe         # same with --wipe (still needs SEED_WIPE_CONFIRM=1)
 npm run seed:help         # print flags and env
@@ -116,14 +144,14 @@ npm run seed:help         # print flags and env
 Direct:
 
 ```bash
-npx tsx scripts/seed/index.ts --scenario=minimal --dry-run
+npx tsx scripts/seed/index.ts --scenario=dev-default --dry-run
 ```
 
 ## Flags
 
 | Flag | Description |
 | ---- | ----------- |
-| `--scenario=<id>` / `--scenario <id>` | Which scenario to run (default: `minimal`) |
+| `--scenario=<id>` / `--scenario <id>` | Which scenario to run (default: `dev-default`) |
 | `--wipe` | Run wipe step before modules; requires `SEED_WIPE_CONFIRM=1` |
 | `--dry-run` | Modules should skip writes (scaffold logs only) |
 | `--help`, `-h` | Usage (no DB connection) |
@@ -134,6 +162,7 @@ Use the dedicated reset command when you want to remove seeded dev data without 
 
 ```bash
 npm run seed:reset -- --dry-run
+npm run seed:reset -- --scope=dev-default --dry-run
 npm run seed:reset -- --scope=campaign-smoke --dry-run
 npm run seed:reset -- --scope=ooo-mixed-inbox --dry-run
 ```
@@ -147,14 +176,15 @@ Optional:
 
 - `SEED_CAMPAIGN_ID` for the `campaign-smoke` slice
 - `SEED_OOO_CAMPAIGN_ID` for the `ooo-mixed-inbox` slice
-- `--scope=campaign-smoke|ooo-mixed-inbox|all`
+- `--scope=dev-default|campaign-smoke|ooo-mixed-inbox|all`
 
 Reset is intentionally conservative:
 
 - if `--scope` is omitted, it only resets scopes that can be inferred from `SEED_CAMPAIGN_ID` / `SEED_OOO_CAMPAIGN_ID`
 - if `--scope=campaign-smoke` is provided, it targets that dedicated campaign id (env or built-in default)
 - if `--scope=ooo-mixed-inbox` is provided, it targets that dedicated OOO campaign id
-- if `--scope=all` is provided, it resets both known scenario slices
+- if `--scope=dev-default` is provided, it resets the 5 built-in production-like seed campaigns and their shared seed mailboxes
+- if `--scope=all` is provided, it resets all known built-in scenario slices
 
 Delete order is FK-aware:
 
@@ -186,6 +216,27 @@ The reset command is scoped to deterministic seed-owned data for the built-in sc
 Background workers (send, scheduler, inbox-checker, etc.) call Supabase RPCs such as `claim_message_jobs_ready`, `claim_enrollments_ready`, `claim_mailboxes_to_check`. If they use the **same** project you seed, new claimable rows may be processed. Prefer a dedicated dev project or documented test mailboxes / flags.
 
 For **`ooo-mixed-inbox`**, the due-resume threads are intentionally left with `ooo_resume_requested = true` and a past `ooo_resume_at`, so scheduler-driven OOO processing can pick them up. That is expected on a dev project.
+
+## Running tests
+
+The campaign test foundation now has explicit commands:
+
+```bash
+npm run test:campaign:unit         # campaign-adjacent unit tests and seed-shape checks
+npm run test:campaign:fixtures     # compatibility alias for test:campaign:unit
+npm run test:campaign:integration  # DB-backed campaign outcome tests (shared dev DB; needs seed env)
+npm run test:campaign:worker       # scheduler worker tests, including wait-time outcome checks
+npm run test:campaign              # all of the above
+npm run test:flux                  # colocated Flux unit tests
+npm run test:utilities             # email, slack, and account utility tests
+npm run test:workers               # send-worker + inbox-checker worker tests
+npm run test:seed:smoke            # dev-default dry run + seed shape smoke checks
+```
+
+Notes:
+
+- `test:campaign:integration` uses the shared dev Supabase database with **strict namespacing** and scoped cleanup. It requires the same seed env vars as the CLI (`SEED_ACCOUNT_ID`, `SEED_OWNER_USER_ID`, and service-role credentials).
+- OOO and scheduler coverage is intentionally **outcome-first**: the DB-backed tests assert final enrollment/thread/job state, not only helper return values.
 
 ## Related code
 

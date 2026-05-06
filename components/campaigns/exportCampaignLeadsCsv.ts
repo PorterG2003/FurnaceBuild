@@ -17,6 +17,12 @@ const CAMPAIGN_LEAD_CSV_BASE_COLUMNS = [
   'enrollment_current_node_id',
   'enrollment_stopped_reason',
   'enrollment_stopped_error_message',
+  'replacement_role',
+  'replacement_counterpart_name',
+  'replacement_counterpart_email',
+  'replacement_reason',
+  'replacement_reason_note',
+  'replacement_completed_at',
   'created_at',
 ] as const satisfies readonly string[];
 

@@ -139,6 +139,15 @@ export default function TestCampaignViewPage() {
             enrollment_current_node_id: enrollment?.current_node_id || null,
             enrollment_stopped_reason: null,
             enrollment_stopped_error_message: null,
+            reply_category: null,
+            replacement_role: null,
+            replacement_counterpart_lead_id: null,
+            replacement_counterpart_name: null,
+            replacement_counterpart_email: null,
+            replacement_counterpart_label: null,
+            replacement_reason: null,
+            replacement_reason_note: null,
+            replacement_completed_at: null,
             created_at: lead.created_at,
           };
         });

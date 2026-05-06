@@ -8,10 +8,10 @@ import { assignMailboxesToCampaign } from '@/lib/supabase/services/campaigns';
 import { createMailbox } from '@/lib/supabase/services/mailboxes';
 import { createLead } from '@/lib/supabase/services/leads';
 import { getAccountMembershipsForUser } from '@/lib/supabase/services/accounts';
-import type { WizardStep, FlowTemplate, ScheduleConfig } from '@/lib/test/campaign-flow/types';
-import { ALLOWED_EMAIL } from '@/lib/test/campaign-flow/constants';
-import { createFlowTemplate } from '@/lib/test/campaign-flow/flow-templates';
-import { validateSchedule, generateTestLead } from '@/lib/test/campaign-flow/utils';
+import type { WizardStep, FlowTemplate, ScheduleConfig } from '@/lib/devtools/campaign-flow/types';
+import { ALLOWED_EMAIL } from '@/lib/devtools/campaign-flow/constants';
+import { createFlowTemplate } from '@/lib/devtools/campaign-flow/flow-templates';
+import { validateSchedule, generateTestLead } from '@/lib/devtools/campaign-flow/utils';
 import {
   FlowSelectionStep,
   MailboxConfigurationStep,
@@ -19,7 +19,7 @@ import {
   LeadConfigurationStep,
   ProcessingStep,
   CompleteStep,
-} from '@/lib/test/campaign-flow/components';
+} from '@/lib/devtools/campaign-flow/components';
 
 export default function CampaignFlowTestPage() {
   const { user } = useAccount();

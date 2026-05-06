@@ -19,6 +19,8 @@ export { MessageBody } from './MessageBody';
 export { MessageBubble } from './MessageBubble';
 export type { MessageBubbleActionsLayout } from './MessageBubble';
 export { MessagePanelHeader } from './MessagePanelHeader';
+export { ReplaceLeadModal } from './ReplaceLeadModal';
+export type { ReplaceLeadModalProps } from './ReplaceLeadModal';
 export {
   MessageListSkeleton,
   MessagePanelHeaderSkeleton,

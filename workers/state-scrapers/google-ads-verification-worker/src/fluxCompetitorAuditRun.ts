@@ -606,12 +606,15 @@ export async function runFluxCompetitorAuditJob(params: {
       };
     });
 
-    await flux
+    const { error: updatePageErr } = await flux
       .from('flux_prospect_pages')
       .update({ page_config: { ...cfg, blocks: nextBlocks } as never })
       .eq('id', pageId);
+    if (updatePageErr) {
+      throw new Error(`Failed to persist completed competitor audit: ${updatePageErr.message}`);
+    }
 
-    await flux
+    const { error: updateJobErr } = await flux
       .from('flux_async_jobs')
       .update({
         status: 'succeeded',
@@ -620,6 +623,9 @@ export async function runFluxCompetitorAuditJob(params: {
         result: { audit_domains: auditRows } as never,
       })
       .eq('id', params.jobId);
+    if (updateJobErr) {
+      throw new Error(`Failed to persist competitor audit job success: ${updateJobErr.message}`);
+    }
 
     const outcomeCounts: Record<string, number> = {};
     for (const r of auditRows) {

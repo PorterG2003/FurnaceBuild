@@ -205,7 +205,7 @@ test('SchedulerWorker batches campaign, node, and message-job preloads per claim
             enrollment_id: 'enrollment-1',
             node_id: 'node-email',
             sent_at: null,
-            status: 'pending',
+            status: 'queued',
             created_at: '2026-04-17T00:00:00.000Z',
           },
         ],
@@ -257,7 +257,7 @@ test('SchedulerWorker batches campaign, node, and message-job preloads per claim
   assert.equal(context.nodesById.get('node-email')?.flow_node_id, 'email-1');
   assert.equal(
     context.latestMessageJobByPair.get('enrollment-1:node-email')?.status,
-    'pending',
+    'queued',
   );
 
   const supabaseCalls = ((worker as any).supabase as MockSupabase).calls;

@@ -60,6 +60,11 @@ class MockQueryBuilder implements PromiseLike<Response> {
     return this;
   }
 
+  lte(column: string, value: unknown) {
+    this.call.filters.push({ op: 'lte', column, value });
+    return this;
+  }
+
   neq(column: string, value: unknown) {
     this.call.filters.push({ op: 'neq', column, value });
     return this;

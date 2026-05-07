@@ -427,7 +427,7 @@ export class SchedulerWorker {
 
     const { data, error } = await this.supabase
       .from('message_jobs')
-      .select('id, enrollment_id, node_id, sent_at, status, created_at')
+      .select('id, enrollment_id, node_id, sent_at, status, status_reason, error_message, created_at')
       .in('enrollment_id', enrollmentIds)
       .in('node_id', nodeIds)
       .order('created_at', { ascending: false });
@@ -836,6 +836,26 @@ export class SchedulerWorker {
         console.log(`[ENROLLMENT ${enrollmentId}] Next nodes: ${nextNodes.map(n => `${n.node_type}(${n.id.substring(0, 8)})`).join(', ')}`);
       }
       
+      if (evaluationResult.stopEnrollment) {
+        const stoppedAt = new Date().toISOString();
+        await this.supabase
+          .from('enrollments')
+          .update({
+            state: 'stopped',
+            next_run_at: null,
+            stopped_reason: 'error',
+            stopped_at: stoppedAt,
+            stopped_error_message: evaluationResult.stopReason ?? 'Email attempt ended terminally',
+            updated_at: stoppedAt,
+          })
+          .eq('id', enrollment.id)
+          .eq('state', 'active');
+        console.log(
+          `[ENROLLMENT ${enrollmentId}] Stopped enrollment after terminal email attempt: ${evaluationResult.stopReason ?? 'unknown reason'}`,
+        );
+        return;
+      }
+
       if (nextNodes.length === 0) {
         // No next nodes - check if this is because we're waiting for email to be sent
         if (evaluationResult.waitingForEmail) {
@@ -865,12 +885,13 @@ export class SchedulerWorker {
         if (node.node_type === 'email') {
           console.log(`[ENROLLMENT ${enrollmentId}] Handling email node...`);
           // Email node: just set current_node_id and stop
-          // Job creation will be handled by batch interval assignment process
+          // Job creation will be handled by batch interval assignment once next_run_at is due.
           await this.supabase
             .from('enrollments')
             .update({
               current_node_id: node.id,
               current_flow_version_number: activeFlowVersionNumber,
+              next_run_at: new Date().toISOString(),
             })
             .eq('id', enrollment.id);
           

@@ -34,7 +34,7 @@ test('OOO due processing resumes only due threads and leaves future rows untouch
             buildCampaignJob({
               key: 'campaign-pending',
               nodeFlowNodeId: 'email-2',
-              status: 'pending',
+              status: 'queued',
               scheduledAt: new Date(now - 15 * 60 * 1000).toISOString(),
             }),
           ],
@@ -144,7 +144,7 @@ test('OOO resume reschedules only future campaign work and leaves manual/history
             buildCampaignJob({
               key: 'campaign-pending',
               nodeFlowNodeId: 'email-2',
-              status: 'pending',
+              status: 'queued',
               scheduledAt: new Date(now - 10 * 60 * 1000).toISOString(),
               messageType: 'campaign',
               messageData: { source: 'campaign_seed' },
@@ -168,7 +168,7 @@ test('OOO resume reschedules only future campaign work and leaves manual/history
             }),
             buildCampaignJob({
               key: 'manual-reply',
-              status: 'pending',
+              status: 'queued',
               scheduledAt: new Date(now - 10 * 60 * 1000).toISOString(),
               messageType: 'inbox_reply',
               messageData: { source: 'inbox_reply' },

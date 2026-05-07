@@ -22,6 +22,21 @@ The seed CLI is the **scenario seed** layer. Most new automated tests should pre
 | `SEED_PROJECT_REF` | No | If set, must equal the `<ref>` in `https://<ref>.supabase.co` (guards wrong project) |
 | `SEED_WIPE_CONFIRM` | When using `--wipe` | Must be `1` or wipe is refused |
 
+### Campaign integration test overrides
+
+DB-backed campaign tests may use a separate non-prod project from the general app `.env.local` target.
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `CAMPAIGN_TEST_SUPABASE_URL` | Preferred | Dedicated API URL for `lib/test/campaign/*` |
+| `CAMPAIGN_TEST_SUPABASE_SERVICE_ROLE_KEY` | Preferred | Matching service-role JWT for the campaign test database |
+| `CAMPAIGN_TEST_PROJECT_REF` | No | If set, must equal the `<ref>` in the campaign test URL |
+| `CAMPAIGN_TEST_ACCOUNT_ID` | No | Existing account UUID to reuse; otherwise the harness creates one |
+| `CAMPAIGN_TEST_OWNER_USER_ID` | No | Existing owner user UUID to reuse; otherwise the harness creates one |
+| `CAMPAIGN_TEST_ALLOW_PROD` | No | Must be `1` to intentionally allow DB-backed campaign tests against a protected prod ref |
+
+If the harness resolves to the protected production project and `CAMPAIGN_TEST_ALLOW_PROD` is not set, campaign integration tests fail fast instead of seeding the wrong database.
+
 ### `dev-default` scenario
 
 | Variable | Required | Description |
@@ -235,7 +250,7 @@ npm run test:seed:smoke            # dev-default dry run + seed shape smoke chec
 
 Notes:
 
-- `test:campaign:integration` uses the shared dev Supabase database with **strict namespacing** and scoped cleanup. It requires the same seed env vars as the CLI (`SEED_ACCOUNT_ID`, `SEED_OWNER_USER_ID`, and service-role credentials).
+- `test:campaign:integration` uses a non-prod Supabase database with **strict namespacing** and scoped cleanup. Prefer the dedicated `CAMPAIGN_TEST_*` env vars so the harness does not inherit the app's runtime `.env.local` target by accident.
 - OOO and scheduler coverage is intentionally **outcome-first**: the DB-backed tests assert final enrollment/thread/job state, not only helper return values.
 
 ## Related code

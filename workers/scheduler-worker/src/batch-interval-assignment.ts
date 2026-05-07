@@ -164,11 +164,14 @@ export async function batchAssignIntervalJobs(
           id,
           lead_id,
           current_node_id,
+          next_run_at,
           lead:leads!inner(id, mailbox_id, email, name, first_name, last_name, deleted_at)
         `)
         .eq('campaign_id', campaign.id)
         .eq('state', 'active')
         .is('deleted_at', null)
+        .not('next_run_at', 'is', null)
+        .lte('next_run_at', now)
         .in('current_node_id', emailNodeIds);
       
       if (enrollmentsError) {

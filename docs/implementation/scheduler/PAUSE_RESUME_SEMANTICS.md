@@ -11,14 +11,17 @@ This is the runtime contract for campaign pause and resume.
 ## Pause
 
 - Pausing a campaign sets `campaigns.status = 'paused'`.
-- Queued campaign `message_jobs` stay `pending`.
-- Already claimed `reserved` jobs are allowed to finish naturally.
-- Pause does not rewrite resumable jobs to `cancelled`.
+- `sending` campaign attempts are allowed to finish naturally.
+- `queued` and `reserved` campaign attempts are rewritten to `deferred + campaign_paused`.
+- Existing throttle-driven deferred attempts remain unchanged.
+- Pause does not use `cancelled` as a pause surrogate.
+- Affected enrollments have `next_run_at` cleared until resume.
 
 ## Resume
 
-- Resume retimes overdue `pending` campaign jobs forward onto the next future schedule anchor.
-- Resume sets `campaigns.status = 'running'` last.
+- Resume explicitly re-arms only enrollments whose unfinished work is `deferred + campaign_paused`.
+- Throttle-driven deferred attempts keep their own retry timing and are not force-resumed.
+- Resume sets `campaigns.status = 'running'` as part of the same runtime path.
 - Legacy `cancelled / Campaign paused` rows are historical data and should be handled by the dedicated repair script, not by the runtime resume path.
 
 ## Terminal semantics

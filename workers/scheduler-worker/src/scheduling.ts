@@ -398,7 +398,7 @@ export async function calculateNextMailboxSendTime(
     .select('scheduled_at')
     .eq('campaign_id', campaignId)
     .eq('mailbox_id', mailboxId)
-    .in('status', ['pending', 'reserved', 'sending', 'sent']) // Count scheduled and sent messages
+    .in('status', ['queued', 'reserved', 'sending', 'sent']) // Count scheduled and sent messages
     .order('scheduled_at', { ascending: false })
     .limit(1)
     .maybeSingle();

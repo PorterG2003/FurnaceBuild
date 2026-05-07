@@ -9,7 +9,7 @@ import { Tabs, type Tab } from '@/components/ui/tabs';
 interface MessageJob {
   id: string;
   type: 'message_job';
-  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'blocked';
+  status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'cancelled' | 'blocked';
   scheduled_at: string;
   reserved_at: string | null;
   sent_at: string | null;
@@ -320,11 +320,13 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     switch (status) {
       case 'sent':
         return '#10b981';
-      case 'pending':
+      case 'queued':
         return '#3b82f6';
       case 'reserved':
       case 'sending':
         return '#f59e0b';
+      case 'deferred':
+        return '#a855f7';
       case 'failed':
         return '#ef4444';
       case 'cancelled':
@@ -339,11 +341,13 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     switch (status) {
       case 'sent':
         return '#10b98120';
-      case 'pending':
+      case 'queued':
         return '#3b82f620';
       case 'reserved':
       case 'sending':
         return '#f59e0b20';
+      case 'deferred':
+        return '#a855f720';
       case 'failed':
         return '#ef444420';
       case 'cancelled':
@@ -360,7 +364,14 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
   ];
 
   const getStatusBadge = (status: string) => {
-    const label = status === 'blocked' ? 'Blocked' : status;
+    const label =
+      status === 'blocked'
+        ? 'Blocked'
+        : status === 'queued'
+          ? 'Queued'
+          : status === 'deferred'
+            ? 'Deferred'
+            : status;
     return (
       <View
         className="px-2 py-1 rounded"

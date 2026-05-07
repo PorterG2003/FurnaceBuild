@@ -35,7 +35,7 @@ function createSupabaseForCurrentNode(result: { data: any; error: { message: str
 }
 
 function createSupabaseForEmailNode(messageJob: {
-  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'blocked' | 'cancelled';
+  status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'blocked' | 'cancelled';
   sent_at: string | null;
 }) {
   return createSupabaseForEmailNodeQuery({
@@ -53,7 +53,7 @@ function createSupabaseForEmailNodeQuery(options: {
   messageJobs?: Array<{
     id: string;
     sent_at: string | null;
-    status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'blocked' | 'cancelled';
+    status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'blocked' | 'cancelled';
   }>;
   messageJobsError?: { message: string } | null;
   orderCalls?: Array<{ column: string; options?: Record<string, unknown> }>;
@@ -180,9 +180,9 @@ test('evaluateFlow still throws when the current node row is truly missing', asy
   );
 });
 
-test('evaluateFlow waits on pending email jobs', async () => {
+test('evaluateFlow waits on queued email jobs', async () => {
   const supabase = createSupabaseForEmailNode({
-    status: 'pending',
+    status: 'queued',
     sent_at: null,
   });
 
@@ -237,7 +237,7 @@ test('evaluateFlow waits on sending email jobs', async () => {
   });
 });
 
-test('evaluateFlow waits on cancelled email jobs instead of advancing', async () => {
+test('evaluateFlow stops enrollments on cancelled email jobs', async () => {
   const supabase = createSupabaseForEmailNode({
     status: 'cancelled',
     sent_at: null,
@@ -250,10 +250,8 @@ test('evaluateFlow waits on cancelled email jobs instead of advancing', async ()
     supabase as any
   );
 
-  assert.deepEqual(result, {
-    nodes: [],
-    waitingForEmail: true,
-  });
+  assert.equal(result.stopEnrollment, true);
+  assert.equal(result.waitingForEmail, undefined);
 });
 
 test('evaluateFlow defers when message job lookup errors', async () => {
@@ -275,7 +273,7 @@ test('evaluateFlow defers when message job lookup errors', async () => {
   });
 });
 
-test('evaluateFlow waits when no message job exists yet', async () => {
+test('evaluateFlow returns current email node when no message job exists yet', async () => {
   const supabase = createSupabaseForEmailNodeQuery({
     messageJobs: [],
   });
@@ -287,13 +285,28 @@ test('evaluateFlow waits when no message job exists yet', async () => {
     supabase as any
   );
 
-  assert.deepEqual(result, {
-    nodes: [],
-    waitingForEmail: true,
-  });
+  assert.equal(result.waitingForEmail, undefined);
+  assert.deepEqual(result.nodes.map((node) => node.id), [enrollment.current_node_id!]);
 });
 
-test('evaluateFlow still advances past blocked email jobs', async () => {
+test('evaluateFlow returns current email node when the latest attempt is deferred', async () => {
+  const supabase = createSupabaseForEmailNode({
+    status: 'deferred',
+    sent_at: null,
+  });
+
+  const result = await evaluateFlow(
+    enrollment,
+    enrollment.campaign_id,
+    { edges: [{ source: 'email-1', target: 'wait-1' }] },
+    supabase as any
+  );
+
+  assert.equal(result.waitingForEmail, undefined);
+  assert.deepEqual(result.nodes.map((node) => node.id), [enrollment.current_node_id!]);
+});
+
+test('evaluateFlow stops enrollments on blocked email jobs', async () => {
   const supabase = createSupabaseForEmailNode({
     status: 'blocked',
     sent_at: null,
@@ -306,8 +319,8 @@ test('evaluateFlow still advances past blocked email jobs', async () => {
     supabase as any
   );
 
+  assert.equal(result.stopEnrollment, true);
   assert.equal(result.waitingForEmail, undefined);
-  assert.deepEqual(result.nodes.map((node) => node.id), ['a901edbf-bdfd-4cad-90ab-434a946bf97c']);
 });
 
 test('evaluateFlow advances after sent email jobs', async () => {
@@ -369,10 +382,7 @@ test('evaluateFlow uses newest-first ordering for multiple message jobs', async 
     supabase as any
   );
 
-  assert.deepEqual(result, {
-    nodes: [],
-    waitingForEmail: true,
-  });
+  assert.equal(result.stopEnrollment, true);
   assert.deepEqual(orderCalls, [
     { column: 'created_at', options: { ascending: false } },
   ]);

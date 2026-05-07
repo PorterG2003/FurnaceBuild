@@ -12,15 +12,27 @@ import { SmtpPool } from './smtp-pool.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
 import { isCampaignMessageJob } from './types.js';
 
+class CampaignAttemptError extends Error {
+  constructor(
+    message: string,
+    readonly statusReason: 'provider_error' | 'template_render_error' = 'provider_error',
+  ) {
+    super(message);
+    this.name = 'CampaignAttemptError';
+  }
+}
+
 export interface WorkerConfig {
   supabase: SupabaseClient;
   databaseClient: DatabaseClient;
+  campaignEmailSender?: typeof sendEmail;
 }
 
 export class SendWorker {
   private supabase: SupabaseClient;
   private databaseClient: DatabaseClient;
   private smtpPool: SmtpPool;
+  private campaignEmailSender: typeof sendEmail;
   private running: boolean = false;
   private consecutiveEmptyPolls: number = 0;
   private readonly maxEmptyPolls: number = 10;
@@ -29,6 +41,7 @@ export class SendWorker {
     this.supabase = config.supabase;
     this.databaseClient = config.databaseClient;
     this.smtpPool = new SmtpPool(100); // Cache up to 100 mailboxes
+    this.campaignEmailSender = config.campaignEmailSender ?? sendEmail;
   }
 
   /**
@@ -123,11 +136,48 @@ export class SendWorker {
     await this.smtpPool.closeAll();
   }
 
+  private toCancelledStatusReason(reason: string): string {
+    switch (reason) {
+      case 'Campaign deleted':
+        return 'campaign_deleted';
+      case 'Mailbox deleted':
+        return 'mailbox_deleted';
+      case 'Lead deleted':
+        return 'lead_deleted';
+      case 'Enrollment deleted':
+        return 'enrollment_deleted';
+      case 'Node deleted':
+        return 'node_deleted';
+      default:
+        return reason.startsWith('Enrollment not active')
+          ? 'enrollment_not_active'
+          : 'manually_cancelled';
+    }
+  }
+
+  private async stopCampaignEnrollment(enrollmentId: string, reason: string): Promise<void> {
+    const now = new Date().toISOString();
+
+    await this.supabase
+      .from('enrollments')
+      .update({
+        state: 'stopped',
+        next_run_at: null,
+        stopped_reason: 'error',
+        stopped_at: now,
+        stopped_error_message: reason,
+        updated_at: now,
+      })
+      .eq('id', enrollmentId)
+      .in('state', ['active', 'paused']);
+  }
+
   private async cancelMessageJob(messageJobId: string, reason: string): Promise<void> {
     await this.supabase
       .from('message_jobs')
       .update({
         status: 'cancelled',
+        status_reason: this.toCancelledStatusReason(reason),
         error_message: reason,
         updated_at: new Date().toISOString(),
       })
@@ -141,23 +191,75 @@ export class SendWorker {
       .from('message_jobs')
       .update({
         status: 'cancelled',
+        status_reason: this.toCancelledStatusReason(reason),
         error_message: reason,
         updated_at: now,
       })
       .eq('id', messageJob.id);
 
+    await this.stopCampaignEnrollment(messageJob.enrollment_id, reason);
+  }
+
+  private async failCampaignMessageJob(
+    messageJob: MessageJob,
+    reason: string,
+    statusReason: 'provider_error' | 'template_render_error' = 'provider_error',
+  ): Promise<void> {
+    await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'failed',
+        status_reason: statusReason,
+        error_message: reason,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', messageJob.id);
+
+    await this.stopCampaignEnrollment(messageJob.enrollment_id, reason);
+  }
+
+  private async blockCampaignMessageJob(
+    messageJob: MessageJob,
+    reason: string,
+    statusReason: 'lead_blocked' | 'mailbox_blocked' = 'lead_blocked',
+  ): Promise<void> {
+    await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'blocked',
+        status_reason: statusReason,
+        error_message: reason,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', messageJob.id);
+
+    await this.stopCampaignEnrollment(messageJob.enrollment_id, reason);
+  }
+
+  private async deferCampaignMessageJobForPause(messageJob: MessageJob): Promise<void> {
+    const now = new Date().toISOString();
+
+    await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'deferred',
+        status_reason: 'campaign_paused',
+        reserved_at: null,
+        send_wait_reason: null as any,
+        error_message: null,
+        updated_at: now,
+      } as any)
+      .eq('id', messageJob.id)
+      .eq('status', 'reserved');
+
     await this.supabase
       .from('enrollments')
       .update({
-        state: 'stopped',
         next_run_at: null,
-        stopped_reason: 'error',
-        stopped_at: now,
-        stopped_error_message: reason,
         updated_at: now,
       })
       .eq('id', messageJob.enrollment_id)
-      .in('state', ['active', 'paused']);
+      .eq('state', 'active');
   }
 
   /**
@@ -177,7 +279,7 @@ export class SendWorker {
     ];
     if (requeueReasons.includes(fr)) {
       console.log(
-        `[SEND WORKER] Throttle check failed for ${jobLabel} ${messageJobId}: ${fr}. Job re-queued for retry.`
+        `[SEND WORKER] Throttle check deferred ${jobLabel} ${messageJobId}: ${fr}. Scheduler will recreate a future retry attempt.`
       );
     } else {
       console.log(
@@ -235,6 +337,13 @@ export class SendWorker {
         await this.cancelCampaignMessageJob(messageJob, reason);
         return;
       }
+      if (campaign.status === 'paused') {
+        console.log(
+          `[SEND WORKER] Campaign ${messageJob.campaign_id} is paused. Deferring reserved attempt ${message_job_id} back to scheduler ownership.`,
+        );
+        await this.deferCampaignMessageJobForPause(messageJob);
+        return;
+      }
       if (campaign.status !== 'running') {
         console.log(
           `[SEND WORKER] Campaign ${messageJob.campaign_id} is ${campaign.status}. Finishing already-claimed job ${message_job_id}.`
@@ -278,13 +387,7 @@ export class SendWorker {
         const blocked = await this.isEmailBlocked(accountId, lead.email);
         if (blocked) {
           console.log(`[SEND WORKER] Lead ${lead.email} is blocked, marking job ${message_job_id} as blocked`);
-          await this.supabase
-            .from('message_jobs')
-            .update({
-              status: 'blocked',
-              error_message: 'Lead blocked',
-            })
-            .eq('id', message_job_id);
+          await this.blockCampaignMessageJob(messageJob, 'Lead blocked', 'lead_blocked');
           return;
         }
       }
@@ -326,6 +429,37 @@ export class SendWorker {
         return;
       }
 
+      const { data: currentCampaign, error: currentCampaignError } = await this.supabase
+        .from('campaigns')
+        .select('status')
+        .eq('id', messageJob.campaign_id)
+        .single();
+
+      if (currentCampaignError) {
+        throw new CampaignAttemptError(
+          `Failed to reload campaign status before sending: ${currentCampaignError.message}`,
+          'provider_error',
+        );
+      }
+
+      if (currentCampaign?.status === 'paused') {
+        console.log(
+          `[SEND WORKER] Campaign ${messageJob.campaign_id} paused before SMTP send. Deferring reserved attempt ${message_job_id}.`,
+        );
+        await this.deferCampaignMessageJobForPause(messageJob);
+        return;
+      }
+
+      await this.supabase
+        .from('message_jobs')
+        .update({
+          status: 'sending',
+          status_reason: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', message_job_id)
+        .eq('status', 'reserved');
+
       // Throttle check passed - proceed with sending
 
       // 2b. Get first sent message for this campaign+lead (for thread continuation)
@@ -359,7 +493,7 @@ export class SendWorker {
             campaign_id: messageJob.campaign_id,
           },
         });
-        throw err;
+        throw new CampaignAttemptError(msg, 'template_render_error');
       }
       const currentSubject = content.subject;
       const emailBody = content.bodyMerged;
@@ -431,7 +565,7 @@ export class SendWorker {
 
         try {
           // 5. Send email (with optional threading headers for follow-ups)
-          providerMessageId = await sendEmail(
+          providerMessageId = await this.campaignEmailSender(
             transporter,
             mailbox,
             messageJob,
@@ -453,7 +587,7 @@ export class SendWorker {
             console.error(`[SEND WORKER] SMTP connection error for mailbox ${mailbox.id}, removing from pool:`, error);
             this.smtpPool.removeTransporter(mailbox.id);
           }
-          throw error; // Re-throw to be handled by outer error handling
+          throw new CampaignAttemptError(formatUnknownError(error), 'provider_error');
         }
       }
 
@@ -462,6 +596,7 @@ export class SendWorker {
         .from('message_jobs')
         .update({
           status: 'sent',
+          status_reason: 'sent_successfully',
           sent_at: new Date().toISOString(),
           provider_message_id: providerMessageId,
         })
@@ -572,8 +707,9 @@ export class SendWorker {
     } catch (error) {
       console.error(`[SEND WORKER] Error processing message job ${messageJob.id}:`, error);
       
-      // Mark job as failed with error message
       const errorMessage = formatUnknownError(error);
+      const statusReason =
+        error instanceof CampaignAttemptError ? error.statusReason : 'provider_error';
 
       const retryableJobError = isRetryableSupabaseReadError(errorMessage);
       reportErrorToSlack('Send-worker failed to process message job', {
@@ -592,13 +728,7 @@ export class SendWorker {
       });
       
       try {
-        await this.supabase
-          .from('message_jobs')
-          .update({
-            status: 'failed',
-            error_message: errorMessage,
-          })
-          .eq('id', messageJob.id);
+        await this.failCampaignMessageJob(messageJob, errorMessage, statusReason);
         
         console.log(`[SEND WORKER] Marked message job ${messageJob.id} as failed`);
 
@@ -800,6 +930,7 @@ export class SendWorker {
       .from('message_jobs')
       .update({
         status: 'sent',
+        status_reason: 'sent_successfully',
         sent_at: now,
         provider_message_id: providerMessageId,
         updated_at: now,
@@ -913,6 +1044,7 @@ export class SendWorker {
       .from('message_jobs')
       .update({
         status: 'sent',
+        status_reason: 'sent_successfully',
         sent_at: now,
         updated_at: now,
       })

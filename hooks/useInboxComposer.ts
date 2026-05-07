@@ -35,7 +35,7 @@ export type PendingReply = {
   receivedAt: string;
   errorMessage?: string | null;
   isFailed?: boolean;
-  jobStatus: 'pending' | 'reserved' | 'sending' | 'failed';
+  jobStatus: 'queued' | 'reserved' | 'sending' | 'failed';
   scheduledAt: string | null;
   sendWaitReason: string | null;
   throttleBypassNextAttempt: boolean;
@@ -232,9 +232,9 @@ export function useInboxComposer({
                       const nextStatus: PendingReply['jobStatus'] =
                         jobStatus.status === 'sending' ||
                         jobStatus.status === 'reserved' ||
-                        jobStatus.status === 'pending'
+                        jobStatus.status === 'queued'
                           ? jobStatus.status
-                          : 'pending';
+                          : 'queued';
                       return {
                         ...x,
                         isFailed: false,
@@ -403,7 +403,7 @@ export function useInboxComposer({
                   jobId: newJobId,
                   isFailed: false,
                   errorMessage: null,
-                  jobStatus: 'pending',
+                  jobStatus: 'queued',
                   scheduledAt: null,
                   sendWaitReason: null,
                   throttleBypassNextAttempt: false,
@@ -489,7 +489,7 @@ export function useInboxComposer({
           cc: ccArray,
           fromEmail,
           receivedAt,
-          jobStatus: 'pending',
+          jobStatus: 'queued',
           scheduledAt: null,
           sendWaitReason: null,
           throttleBypassNextAttempt: false,
@@ -591,7 +591,7 @@ export function useInboxComposer({
           cc: ccArray,
           fromEmail,
           receivedAt,
-          jobStatus: 'pending',
+          jobStatus: 'queued',
           scheduledAt: null,
           sendWaitReason: null,
           throttleBypassNextAttempt: false,
@@ -647,7 +647,7 @@ export function useInboxComposer({
             p.jobId === jobId
               ? {
                   ...p,
-                  jobStatus: 'pending',
+                  jobStatus: 'queued',
                   scheduledAt,
                   sendWaitReason: null,
                   throttleBypassNextAttempt: true,

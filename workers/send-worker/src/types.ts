@@ -27,7 +27,8 @@ export interface MessageJob {
   mailbox_id: string;
   node_id: string | null;
   message_type?: MessageType;
-  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'blocked';
+  status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'cancelled' | 'blocked';
+  status_reason?: string | null;
   scheduled_at: string;
   reserved_at: string | null;
   sent_at: string | null;

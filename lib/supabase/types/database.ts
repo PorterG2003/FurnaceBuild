@@ -1194,6 +1194,12 @@ export interface Database {
         };
         Returns: number;
       };
+      pause_campaign_and_defer_jobs: {
+        Args: {
+          p_campaign_id: string;
+        };
+        Returns: number;
+      };
       mark_email_thread_out_of_office: {
         Args: {
           p_thread_id: string;

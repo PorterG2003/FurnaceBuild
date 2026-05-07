@@ -31,6 +31,7 @@ export {
   ensureCampaignEnrollmentsForLeads,
   backfillCampaignEnrollments,
   cancelUnsentCampaignJobs,
+  pauseCampaignAndDeferJobs,
   resumeCampaignAndRescheduleJobs,
   stopCampaignAndStopEnrollments,
   type ResumeCampaignResult,

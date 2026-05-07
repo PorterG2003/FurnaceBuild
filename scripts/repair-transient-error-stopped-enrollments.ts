@@ -40,7 +40,7 @@ function isCampaignMessageJob(job: MessageJobRow): boolean {
 }
 
 function isQueuedCampaignJob(job: MessageJobRow): boolean {
-  return isCampaignMessageJob(job) && ['pending', 'reserved', 'sending'].includes(job.status);
+  return isCampaignMessageJob(job) && ['queued', 'reserved', 'sending'].includes(job.status);
 }
 
 async function main() {

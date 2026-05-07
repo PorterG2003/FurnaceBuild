@@ -18,7 +18,7 @@ export type PendingReplyInfo = {
   jobId: string;
   isFailed?: boolean;
   errorMessage?: string | null;
-  jobStatus: 'pending' | 'reserved' | 'sending' | 'failed';
+  jobStatus: 'queued' | 'reserved' | 'sending' | 'failed';
   scheduledAt: string | null;
   sendWaitReason: string | null;
   isSendingImmediately?: boolean;

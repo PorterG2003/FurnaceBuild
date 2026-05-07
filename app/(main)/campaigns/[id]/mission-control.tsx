@@ -13,6 +13,7 @@ import {
   getCampaignMailboxes,
   updateCampaign,
   backfillCampaignEnrollments,
+  pauseCampaignAndDeferJobs,
   resumeCampaignAndRescheduleJobs,
   stopCampaignAndStopEnrollments,
 } from '@/lib/supabase/services/campaigns';
@@ -115,7 +116,7 @@ export default function MissionControlPage() {
     if (!id) return;
     setIsPausing(true);
     try {
-      await updateCampaign(id, { status: 'paused' });
+      await pauseCampaignAndDeferJobs(id);
       await loadCampaign(true);
     } catch (err) {
       console.error('Error pausing campaign:', err);

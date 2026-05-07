@@ -29,7 +29,7 @@ export function buildCampaignJob(
   overrides: Partial<CampaignMessageJobSpec> = {},
 ): CampaignMessageJobSpec {
   const scheduledAt = overrides.scheduledAt ?? new Date().toISOString();
-  const status = overrides.status ?? 'pending';
+  const status = overrides.status ?? 'queued';
   return {
     key: 'job',
     nodeFlowNodeId: 'email-1',

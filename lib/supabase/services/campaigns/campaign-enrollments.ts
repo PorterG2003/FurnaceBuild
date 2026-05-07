@@ -65,6 +65,17 @@ export async function cancelUnsentCampaignJobs(
   return typeof data === 'number' ? data : 0;
 }
 
+export async function pauseCampaignAndDeferJobs(
+  campaignId: string,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('pause_campaign_and_defer_jobs', {
+    p_campaign_id: campaignId,
+  });
+
+  if (error) throw new Error(`Failed to pause campaign: ${error.message}`);
+  return typeof data === 'number' ? data : 0;
+}
+
 export interface ResumeCampaignResult {
   revived_jobs: number;
   rescheduled_jobs: number;

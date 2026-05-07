@@ -971,11 +971,12 @@ export async function deleteLead(id: string): Promise<void> {
       .from('message_jobs')
       .update({
         status: 'cancelled',
+        status_reason: 'lead_deleted',
         error_message: 'Lead deleted',
         updated_at: now,
       })
       .eq('lead_id', id)
-      .in('status', ['pending', 'reserved'])
+      .in('status', ['queued', 'reserved'])
       .or('message_type.eq.campaign,message_type.is.null'),
   ]);
 

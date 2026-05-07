@@ -139,14 +139,14 @@ function buildPrimarySpecialSlices(): CampaignLeadSpec[] {
         {
           key: 'campaign-pending',
           nodeFlowNodeId: 'email-2',
-          status: 'pending',
+          status: 'queued',
           scheduledAt: iso(-120),
           messageType: 'campaign',
           messageData: { source: 'campaign_seed' },
         },
         {
           key: 'manual-reply',
-          status: 'pending',
+          status: 'queued',
           scheduledAt: iso(-120),
           messageType: 'inbox_reply',
           messageData: { source: 'inbox_reply' },
@@ -306,7 +306,7 @@ function buildPrimarySpecialSlices(): CampaignLeadSpec[] {
         {
           key: 'pending-follow-up',
           nodeFlowNodeId: 'email-2',
-          status: 'pending',
+          status: 'queued',
           scheduledAt: iso(60),
           messageType: 'campaign',
           messageData: { source: 'campaign_seed' },
@@ -544,7 +544,7 @@ function buildPrimaryCampaignLeads(): CampaignLeadSpec[] {
         {
           key: 'pending-job',
           nodeFlowNodeId: 'email-1',
-          status: i % 2 === 0 ? 'pending' : 'reserved',
+          status: i % 2 === 0 ? 'queued' : 'reserved',
           scheduledAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
           messageType: 'campaign',
           messageData: { source: 'campaign_seed' },
@@ -644,7 +644,7 @@ function buildCampaignLeadsForPreset(preset: CampaignPreset): CampaignLeadSpec[]
           {
             key: 'pending-job',
             nodeFlowNodeId: 'email-1',
-            status: i % 3 === 0 ? 'reserved' : 'pending',
+            status: i % 3 === 0 ? 'reserved' : 'queued',
             scheduledAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
             messageType: 'campaign',
             messageData: { source: 'campaign_seed' },

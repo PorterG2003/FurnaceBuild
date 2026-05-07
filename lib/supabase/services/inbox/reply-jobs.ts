@@ -29,7 +29,7 @@ export interface CreateForwardJobParams {
 
 export interface MessageJobStatus {
   id: string;
-  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'blocked';
+  status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'cancelled' | 'blocked';
   error_message: string | null;
   scheduled_at: string | null;
   send_wait_reason: string | null;
@@ -42,7 +42,7 @@ export interface PendingInboxManualJob {
   id: string;
   thread_id: string;
   created_at: string;
-  status: 'pending' | 'reserved' | 'sending' | 'failed';
+  status: 'queued' | 'reserved' | 'sending' | 'failed';
   error_message: string | null;
   scheduled_at: string | null;
   send_wait_reason: string | null;
@@ -139,7 +139,7 @@ export async function getPendingInboxManualJobs(
     .from('message_jobs')
     .select('id, status, error_message, scheduled_at, send_wait_reason, throttle_bypass_next_attempt, message_data, created_at')
     .in('message_type', ['inbox_reply', 'inbox_forward'])
-    .in('status', ['pending', 'reserved', 'sending', 'failed']);
+    .in('status', ['queued', 'reserved', 'sending', 'failed']);
   if (jobsError) throw new Error(`Failed to fetch pending manual jobs: ${jobsError.message}`);
   if (!jobs) return [];
 

@@ -168,7 +168,7 @@ test('replace_lead_with_new_contact moves active enrollment, pending jobs, and t
             buildCampaignJob({
               key: 'pending-job',
               nodeFlowNodeId: 'email-2',
-              status: 'pending',
+              status: 'queued',
               scheduledAt: new Date(now + 10 * 60 * 1000).toISOString(),
             }),
             buildCampaignJob({
@@ -373,7 +373,7 @@ test('replace_lead_with_new_contact preserves sent failed blocked and cancelled 
             nextRunAt: new Date(now + 5 * 60 * 1000).toISOString(),
           }),
           jobs: [
-            buildCampaignJob({ key: 'pending-job', status: 'pending', scheduledAt: new Date(now + 5 * 60 * 1000).toISOString() }),
+            buildCampaignJob({ key: 'pending-job', status: 'queued', scheduledAt: new Date(now + 5 * 60 * 1000).toISOString() }),
             buildCampaignJob({ key: 'sent-job', status: 'sent', scheduledAt: new Date(now - 60 * 60 * 1000).toISOString(), sentAt: new Date(now - 59 * 60 * 1000).toISOString() }),
             buildCampaignJob({ key: 'failed-job', status: 'failed', scheduledAt: new Date(now - 30 * 60 * 1000).toISOString() }),
             buildCampaignJob({ key: 'blocked-job', status: 'blocked', scheduledAt: new Date(now - 20 * 60 * 1000).toISOString() }),
@@ -671,7 +671,7 @@ test('OOO resume after replacement reactivates the new lead enrollment without t
             buildCampaignJob({
               key: 'campaign-pending',
               nodeFlowNodeId: 'email-2',
-              status: 'pending',
+              status: 'queued',
               scheduledAt: new Date(now - 10 * 60 * 1000).toISOString(),
             }),
           ],

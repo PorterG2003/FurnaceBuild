@@ -25,7 +25,9 @@ export interface LatestMessageJobStatus {
   enrollment_id: string;
   node_id: string;
   sent_at: string | null;
-  status: 'pending' | 'reserved' | 'sending' | 'sent' | 'failed' | 'blocked' | 'cancelled';
+  status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'blocked' | 'cancelled';
+  status_reason?: string | null;
+  error_message?: string | null;
   created_at?: string;
 }
 
@@ -41,6 +43,8 @@ export interface FlowEvaluationSharedContext {
 export interface FlowEvaluationResult {
   nodes: DatabaseNode[];
   waitingForEmail?: boolean; // True if no nodes because waiting for email to be sent
+  stopEnrollment?: boolean;
+  stopReason?: string;
   /**
    * True when a Supabase read failed. Caller must retry (bump next_run_at), not treat
    * empty `nodes` as flow complete.
@@ -382,7 +386,7 @@ export async function evaluateFlow(
     } else {
       const { data: messageJobs, error: messageJobsError } = await supabase
         .from('message_jobs')
-        .select('id, enrollment_id, node_id, sent_at, status, created_at')
+        .select('id, enrollment_id, node_id, sent_at, status, status_reason, error_message, created_at')
         .eq('enrollment_id', enrollment.id)
         .eq('node_id', currentNode.id)
         .order('created_at', { ascending: false })
@@ -406,29 +410,46 @@ export async function evaluateFlow(
     }
 
     if (!latestMessageJob) {
-      // No message_job found - shouldn't happen in normal flow, but don't advance
-      console.warn(`[FLOW ${enrollmentId}] No message_job found for email node ${currentNode.id.substring(0, 8)} (enrollment ${enrollment.id.substring(0, 8)})`);
-      return { nodes: [], waitingForEmail: true };
+      console.log(
+        `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has no attempt yet. Scheduler should arm a send attempt.`,
+      );
+      return { nodes: [currentNode] };
     }
 
-    // Only sent email jobs advance an active enrollment. A cancelled job must be paired
-    // with an enrollment-level terminal transition elsewhere; it is never a node-level skip.
     const isSent =
       latestMessageJob.sent_at !== null || latestMessageJob.status === 'sent';
-    const advancesWithoutSend =
-      latestMessageJob.status === 'failed' || latestMessageJob.status === 'blocked';
-    
-    if (!isSent && !advancesWithoutSend) {
-      // Email not sent yet and not terminal - don't advance to next node
-      // Send worker will update enrollment.next_run_at when email is sent, triggering re-evaluation
-      console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has unsent message_job. Waiting for send worker...`);
-      return { nodes: [], waitingForEmail: true };
-    }
-    
-    if (advancesWithoutSend) {
-      console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job ${latestMessageJob.status}. Proceeding to next node.`);
+
+    if (isSent) {
+      console.log(
+        `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job sent. Proceeding to next node.`,
+      );
+    } else if (latestMessageJob.status === 'deferred') {
+      console.log(
+        `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has deferred attempt. Scheduler should recreate the attempt.`,
+      );
+      return { nodes: [currentNode] };
+    } else if (
+      latestMessageJob.status === 'failed'
+      || latestMessageJob.status === 'cancelled'
+      || latestMessageJob.status === 'blocked'
+    ) {
+      const stopReason =
+        latestMessageJob.error_message
+        ?? latestMessageJob.status_reason
+        ?? `message job ended ${latestMessageJob.status}`;
+      console.log(
+        `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has terminal attempt ${latestMessageJob.status}. Stopping enrollment.`,
+      );
+      return {
+        nodes: [],
+        stopEnrollment: true,
+        stopReason,
+      };
     } else {
-      console.log(`[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job sent. Proceeding to next node.`);
+      console.log(
+        `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has live message_job ${latestMessageJob.status}. Waiting for send worker...`,
+      );
+      return { nodes: [], waitingForEmail: true };
     }
   }
 

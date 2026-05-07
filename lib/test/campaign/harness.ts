@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { loadSeedEnv } from '../../../scripts/seed/env';
+import { loadSeedEnv, parseSupabaseProjectRef } from '../../../scripts/seed/env';
 import type { Json } from '../../supabase/types/database';
 import type { ReplacementReason } from '../../supabase/types';
 
@@ -10,10 +10,11 @@ export type CampaignStatus = 'draft' | 'running' | 'paused' | 'stopped';
 export type EnrollmentState = 'active' | 'paused' | 'stopped' | 'completed';
 export type EnrollmentStoppedReason = 'replied' | 'bounced' | 'unsubscribed' | 'error';
 export type MessageJobStatus =
-  | 'pending'
+  | 'queued'
   | 'reserved'
   | 'sending'
   | 'sent'
+  | 'deferred'
   | 'failed'
   | 'cancelled'
   | 'blocked';
@@ -61,6 +62,7 @@ export type CampaignMessageJobSpec = {
   key?: string;
   nodeFlowNodeId?: string | null;
   status?: MessageJobStatus;
+  statusReason?: string | null;
   scheduledAt?: string;
   reservedAt?: string | null;
   sentAt?: string | null;
@@ -68,6 +70,8 @@ export type CampaignMessageJobSpec = {
   messageType?: MessageJobType;
   messageData?: Record<string, unknown>;
   mailboxKey?: string;
+  sendWaitReason?: string | null;
+  intervalId?: string | null;
 };
 
 export type CampaignEnrollmentSpec = {
@@ -170,6 +174,7 @@ const DEFAULT_MAILBOX_COUNT = 2;
 const INSERT_CHUNK_SIZE = 250;
 const NODE_SYNC_TIMEOUT_MS = 30_000;
 const NODE_SYNC_POLL_MS = 250;
+const PROD_CAMPAIGN_TEST_PROJECT_REFS = new Set(['hibwbebpcwbstqbjeviq']);
 
 const DEFAULT_EMAIL_VARIANT_IDS = [
   'f0000000-0000-4000-8000-00000000ea11',
@@ -194,6 +199,16 @@ function nowIso(): string {
 
 function randomId(): string {
   return crypto.randomUUID();
+}
+
+function firstNonEmpty(...values: Array<string | undefined | null>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return undefined;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -523,6 +538,20 @@ async function cleanupCampaignRows(
   }
 }
 
+async function deleteRowsByIds(
+  supabase: DbClient,
+  table: string,
+  ids: string[],
+  errorLabel: string,
+): Promise<void> {
+  for (const batchIds of chunk(ids)) {
+    const { error } = await supabase.from(table).delete().in('id', batchIds);
+    if (error) {
+      throw new Error(`campaign harness: ${errorLabel} failed: ${error.message}`);
+    }
+  }
+}
+
 async function upsertCampaign(params: {
   supabase: DbClient;
   accountId: string;
@@ -798,7 +827,7 @@ export async function materializeCampaignGraph(
       const jobId = randomId();
       const key = jobSpec.key ?? `job-${jobIndex + 1}`;
       messageJobIdsByKey.set(key, jobId);
-      const status = jobSpec.status ?? 'pending';
+      const status = jobSpec.status ?? 'queued';
       const messageType = jobSpec.messageType ?? 'campaign';
       const messageData =
         jobSpec.messageData ??
@@ -831,13 +860,15 @@ export async function materializeCampaignGraph(
         mailbox_id: jobMailboxId,
         node_id: nodeId,
         status,
+        status_reason: jobSpec.statusReason ?? (status === 'sent' ? 'sent_successfully' : null),
         scheduled_at: scheduledAt,
         reserved_at: jobSpec.reservedAt ?? null,
         sent_at: sentAt,
         provider_message_id: jobSpec.providerMessageId ?? null,
         message_data: messageData,
         message_type: messageType,
-        interval_id: null,
+        send_wait_reason: jobSpec.sendWaitReason ?? null,
+        interval_id: jobSpec.intervalId ?? null,
       } as any);
       manifest.messageJobIds.push(jobId);
     }
@@ -1009,42 +1040,6 @@ export async function cleanupCampaignGraphManifest(
   supabase: DbClient,
   manifest: CampaignGraphManifest,
 ): Promise<void> {
-  if (manifest.messageIds.length > 0) {
-    const { error } = await supabase.from('email_messages').delete().in('id', manifest.messageIds);
-    if (error) {
-      throw new Error(`campaign harness: exact email_message cleanup failed: ${error.message}`);
-    }
-  }
-  if (manifest.threadIds.length > 0) {
-    const { error } = await supabase.from('email_threads').delete().in('id', manifest.threadIds);
-    if (error) {
-      throw new Error(`campaign harness: exact email_thread cleanup failed: ${error.message}`);
-    }
-  }
-  if (manifest.messageJobIds.length > 0) {
-    const { error } = await supabase.from('message_jobs').delete().in('id', manifest.messageJobIds);
-    if (error) {
-      throw new Error(`campaign harness: exact message_job cleanup failed: ${error.message}`);
-    }
-  }
-  if (manifest.enrollmentIds.length > 0) {
-    const { error } = await supabase.from('enrollments').delete().in('id', manifest.enrollmentIds);
-    if (error) {
-      throw new Error(`campaign harness: exact enrollment cleanup failed: ${error.message}`);
-    }
-  }
-  if (manifest.replacementIds.length > 0) {
-    const { error } = await supabase.from('lead_replacements').delete().in('id', manifest.replacementIds);
-    if (error) {
-      throw new Error(`campaign harness: exact lead_replacements cleanup failed: ${error.message}`);
-    }
-  }
-  if (manifest.leadIds.length > 0) {
-    const { error } = await supabase.from('leads').delete().in('id', manifest.leadIds);
-    if (error) {
-      throw new Error(`campaign harness: exact lead cleanup failed: ${error.message}`);
-    }
-  }
   if (manifest.campaignIds.length > 0 || manifest.mailboxEmails.length > 0) {
     await cleanupCampaignRows(
       supabase,
@@ -1053,23 +1048,84 @@ export async function cleanupCampaignGraphManifest(
       manifest.mailboxEmails,
     );
   }
+  if (manifest.messageIds.length > 0) {
+    await deleteRowsByIds(supabase, 'email_messages', manifest.messageIds, 'exact email_message cleanup');
+  }
+  if (manifest.threadIds.length > 0) {
+    await deleteRowsByIds(supabase, 'email_threads', manifest.threadIds, 'exact email_thread cleanup');
+  }
+  if (manifest.messageJobIds.length > 0) {
+    await deleteRowsByIds(supabase, 'message_jobs', manifest.messageJobIds, 'exact message_job cleanup');
+  }
+  if (manifest.enrollmentIds.length > 0) {
+    await deleteRowsByIds(supabase, 'enrollments', manifest.enrollmentIds, 'exact enrollment cleanup');
+  }
+  if (manifest.replacementIds.length > 0) {
+    await deleteRowsByIds(
+      supabase,
+      'lead_replacements',
+      manifest.replacementIds,
+      'exact lead_replacements cleanup',
+    );
+  }
+  if (manifest.leadIds.length > 0) {
+    await deleteRowsByIds(supabase, 'leads', manifest.leadIds, 'exact lead cleanup');
+  }
 }
 
 export function loadCampaignHarnessEnv(): CampaignHarnessEnv {
   loadSeedEnv();
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const usingDedicatedCampaignTestTarget = Boolean(firstNonEmpty(process.env.CAMPAIGN_TEST_SUPABASE_URL));
+  const supabaseUrl = firstNonEmpty(
+    process.env.CAMPAIGN_TEST_SUPABASE_URL,
+    process.env.SUPABASE_URL,
+    process.env.EXPO_PUBLIC_SUPABASE_URL,
+  );
   const serviceRoleKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-  const accountId = process.env.SEED_ACCOUNT_ID?.trim();
-  const ownerUserId = process.env.SEED_OWNER_USER_ID?.trim();
+    firstNonEmpty(
+      process.env.CAMPAIGN_TEST_SUPABASE_SERVICE_ROLE_KEY,
+      process.env.CAMPAIGN_TEST_SUPABASE_SECRET_KEY,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      process.env.SUPABASE_SECRET_KEY,
+    );
+  const accountId =
+    firstNonEmpty(
+      process.env.CAMPAIGN_TEST_ACCOUNT_ID,
+      usingDedicatedCampaignTestTarget ? undefined : process.env.SEED_ACCOUNT_ID,
+    )
+    ?? randomId();
+  const ownerUserId =
+    firstNonEmpty(
+      process.env.CAMPAIGN_TEST_OWNER_USER_ID,
+      usingDedicatedCampaignTestTarget ? undefined : process.env.SEED_OWNER_USER_ID,
+    )
+    ?? randomId();
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
-      'Campaign test harness requires SUPABASE_URL (or EXPO_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY).',
+      'Campaign test harness requires CAMPAIGN_TEST_SUPABASE_URL (preferred) or SUPABASE_URL / EXPO_PUBLIC_SUPABASE_URL, plus a matching CAMPAIGN_TEST_SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SERVICE_ROLE_KEY.',
     );
   }
-  if (!accountId || !ownerUserId) {
-    throw new Error('Campaign test harness requires SEED_ACCOUNT_ID and SEED_OWNER_USER_ID.');
+
+  const projectRef = parseSupabaseProjectRef(supabaseUrl);
+  const expectedProjectRef = firstNonEmpty(
+    process.env.CAMPAIGN_TEST_PROJECT_REF,
+    process.env.SEED_PROJECT_REF,
+  );
+  if (expectedProjectRef && projectRef && projectRef.toLowerCase() !== expectedProjectRef.toLowerCase()) {
+    throw new Error(
+      `Campaign test harness project ref mismatch: expected ${expectedProjectRef}, got ${projectRef}.`,
+    );
+  }
+
+  if (
+    projectRef
+    && PROD_CAMPAIGN_TEST_PROJECT_REFS.has(projectRef)
+    && process.env.CAMPAIGN_TEST_ALLOW_PROD !== '1'
+  ) {
+    throw new Error(
+      `Campaign test harness resolved to protected project ${projectRef}. Set CAMPAIGN_TEST_SUPABASE_URL to a non-prod project or export CAMPAIGN_TEST_ALLOW_PROD=1 to override intentionally.`,
+    );
   }
 
   return { supabaseUrl, serviceRoleKey, accountId, ownerUserId };
@@ -1086,6 +1142,7 @@ export class CampaignDbHarness {
   readonly env: CampaignHarnessEnv;
   readonly supabase: DbClient;
   private readonly manifests: CampaignGraphManifest[] = [];
+  private baseEnvEnsured = false;
 
   constructor(params: { namespace: string; env?: CampaignHarnessEnv }) {
     this.namespace = params.namespace;
@@ -1093,7 +1150,75 @@ export class CampaignDbHarness {
     this.supabase = createCampaignHarnessClient(this.env);
   }
 
+  private async ensureHarnessAccountOwner(): Promise<void> {
+    if (this.baseEnvEnsured) {
+      return;
+    }
+
+    const timestamp = nowIso();
+    const ownerEmail = `campaign-test-${this.env.ownerUserId.slice(0, 8)}@furnace.test`;
+    const accountName = `Campaign Test Account ${this.env.accountId.slice(0, 8)}`;
+
+    const { error: userError } = await this.supabase.from('users').upsert({
+      id: this.env.ownerUserId,
+      external_id: this.env.ownerUserId,
+      email: ownerEmail,
+      name: 'Campaign Test Owner',
+      created_at: timestamp,
+      updated_at: timestamp,
+    } as any, {
+      onConflict: 'id',
+    });
+    if (userError) {
+      throw new Error(`campaign harness: failed to ensure owner user: ${userError.message}`);
+    }
+
+    const { error: accountError } = await this.supabase.from('accounts').upsert({
+      id: this.env.accountId,
+      name: accountName,
+      created_at: timestamp,
+      updated_at: timestamp,
+    } as any, {
+      onConflict: 'id',
+    });
+    if (accountError) {
+      throw new Error(`campaign harness: failed to ensure account: ${accountError.message}`);
+    }
+
+    const { data: membership, error: membershipLookupError } = await this.supabase
+      .from('account_users')
+      .select('id')
+      .eq('account_id', this.env.accountId)
+      .eq('user_id', this.env.ownerUserId)
+      .maybeSingle();
+    if (membershipLookupError) {
+      throw new Error(
+        `campaign harness: failed to check account membership: ${membershipLookupError.message}`,
+      );
+    }
+
+    if (!membership) {
+      const { error: membershipInsertError } = await this.supabase.from('account_users').insert({
+        id: randomId(),
+        account_id: this.env.accountId,
+        user_id: this.env.ownerUserId,
+        is_owner: true,
+        role: 'owner',
+        created_at: timestamp,
+        updated_at: timestamp,
+      } as any);
+      if (membershipInsertError) {
+        throw new Error(
+          `campaign harness: failed to ensure account membership: ${membershipInsertError.message}`,
+        );
+      }
+    }
+
+    this.baseEnvEnsured = true;
+  }
+
   async createCampaignGraph(spec: Omit<CampaignGraphSpec, 'namespace'>): Promise<MaterializedCampaignGraph> {
+    await this.ensureHarnessAccountOwner();
     const graph = await materializeCampaignGraph({
       supabase: this.supabase,
       accountId: this.env.accountId,

@@ -84,7 +84,7 @@ export function AccountNotificationsSection({
     try {
       const [prefRows, subs] = await Promise.all([
         getNotificationPreferences(accountId),
-        listActivePushSubscriptions(accountId),
+        listActivePushSubscriptions(),
       ]);
       setPrefs(prefRows);
       setSubCount(subs.length);
@@ -168,7 +168,6 @@ export function AccountNotificationsSection({
         return;
       }
       await upsertPushSubscription(
-        accountId,
         {
           endpoint: sub.endpoint,
           p256dh: sub.keys.p256dh,
@@ -210,7 +209,7 @@ export function AccountNotificationsSection({
           <Text className="text-white text-sm font-instrument-medium mb-1">Device setup</Text>
           <Text className="text-gray-500 text-xs mb-3 leading-5">
             {subCount > 0
-              ? 'This browser is registered. Enable Device Push Notification per category below.'
+              ? 'This browser is registered for your user. Enable Device Push Notification per category below.'
               : 'Allow Furnace to send alerts on this browser so you can use Device Push Notification below.'}
           </Text>
           <Button size="sm" onPress={() => void enableDeviceAlerts()} disabled={pushBusy}>

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { Stack, usePathname, useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { AccountProvider } from '@/contexts/AccountContext';
+import { AccountProvider, useAccount } from '@/contexts/AccountContext';
 import { NotificationToastSubscriber } from '@/components/notifications/NotificationToastSubscriber';
 import { AppBootScreen } from '@/components/ui/AppBootScreen';
 
@@ -11,6 +11,7 @@ const SW_NAVIGATE_MESSAGE_TYPE = 'furnace-notification-navigate';
 
 function WebPushNavigationBridge() {
   const router = useRouter();
+  const { memberships, setCurrentAccountId } = useAccount();
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -23,6 +24,11 @@ function WebPushNavigationBridge() {
       try {
         const u = new URL(data.url);
         if (u.origin !== window.location.origin) return;
+        const accountId = u.searchParams.get('accountId');
+        if (accountId && memberships.some((m) => m.account.id === accountId)) {
+          setCurrentAccountId(accountId);
+        }
+        u.searchParams.delete('accountId');
         if (u.pathname === '/inbox') {
           const thread = u.searchParams.get('thread');
           if (thread) {
@@ -38,7 +44,7 @@ function WebPushNavigationBridge() {
 
     navigator.serviceWorker.addEventListener('message', handler);
     return () => navigator.serviceWorker.removeEventListener('message', handler);
-  }, [router]);
+  }, [memberships, router, setCurrentAccountId]);
 
   return null;
 }

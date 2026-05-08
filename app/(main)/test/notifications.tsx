@@ -33,17 +33,13 @@ export default function NotificationsTestPage() {
   );
 
   const loadSubs = useCallback(async () => {
-    if (!accountId) {
-      setSubCount(0);
-      return;
-    }
     try {
-      const subs = await listActivePushSubscriptions(accountId);
+      const subs = await listActivePushSubscriptions();
       setSubCount(subs.length);
     } catch {
       setSubCount(0);
     }
-  }, [accountId]);
+  }, []);
 
   useEffect(() => {
     void loadSubs();
@@ -90,7 +86,6 @@ export default function NotificationsTestPage() {
         return;
       }
       await upsertPushSubscription(
-        accountId,
         {
           endpoint: sub.endpoint,
           p256dh: sub.keys.p256dh,
@@ -211,7 +206,7 @@ export default function NotificationsTestPage() {
           {Platform.OS === 'web' ? (
             <View className="gap-3">
               <Text className="text-gray-400 text-sm">
-                Active push subscriptions for this account: {subCount}
+                Active push subscriptions for this user: {subCount}
               </Text>
               <Button
                 onPress={() => void enableDeviceAlerts()}

@@ -1135,7 +1135,6 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
-          account_id: string;
           endpoint: string;
           p256dh: string;
           auth: string;
@@ -1147,7 +1146,6 @@ export interface Database {
         Insert: {
           id?: string;
           user_id: string;
-          account_id: string;
           endpoint: string;
           p256dh: string;
           auth: string;
@@ -1159,7 +1157,6 @@ export interface Database {
         Update: {
           id?: string;
           user_id?: string;
-          account_id?: string;
           endpoint?: string;
           p256dh?: string;
           auth?: string;

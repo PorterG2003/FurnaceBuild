@@ -6,9 +6,18 @@
 2. **Lambda** `processNotificationEvent` (Amplify) consumes the queue, creates **`notifications`** for the mailbox owner, and optionally sends **Web Push** using VAPID.
 3. The **app** shows a bell with unread count, **Account → Notifications** for preferences, and registers **push subscriptions** on web.
 
+## Multi-account model
+
+- `push_subscriptions` are stored per user + browser device, not per account.
+- `notification_preferences` remain per `(user_id, account_id, event_type, channel)` and gate whether a given account may send web push.
+- Push deep links include `accountId` so the app can switch to the right account before opening the target thread.
+
 ## Deploy order
 
-1. Apply Supabase migration `20260403120000_notification_system.sql`.
+1. Apply Supabase migrations:
+
+   - `20260403120000_notification_system.sql`
+   - `20260508120000_push_subscriptions_user_scoped.sql`
 
 2. **SQS queue** (pick one):
 
@@ -74,3 +83,9 @@ The inbox worker still inserts `notification_events`. If `NOTIFICATION_QUEUE_URL
 
 - `notification_events.dedupe_key` unique per account (`email.received:{email_message_id}`).
 - `notifications` unique on `(event_id, user_id)`.
+
+## Manual QA
+
+- Enable push under account A on a browser, switch to account B on the same browser, enable push again, then confirm both accounts still deliver to that browser.
+- Click a push notification for a non-active account and confirm the app switches accounts before opening the target inbox thread.
+- Revoke browser push permission or let the endpoint expire, then confirm a 404/410 response revokes the stored `push_subscriptions` row.

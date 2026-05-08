@@ -16,6 +16,7 @@ type EmailReceivedPayload = {
 /** Event types this Lambda knows how to process; extend when adding producers. */
 const HANDLED_NOTIFICATION_EVENT_TYPES = new Set<string>(['email.received']);
 type PushSubscriptionRow = { id: string; endpoint: string; p256dh: string; auth: string };
+type SendWebPushFn = (...args: Parameters<typeof webpush.sendNotification>) => Promise<unknown>;
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -100,7 +101,7 @@ export async function sendWebPushDeliveries(params: {
   bodyText: string;
   actionUrl: string;
   webOrigin: string;
-  sendNotification: typeof webpush.sendNotification;
+  sendNotification: SendWebPushFn;
 }): Promise<void> {
   const {
     supabase,
@@ -185,7 +186,7 @@ export async function processNotificationRecord(params: {
   supabase: SupabaseClient;
   webPushReady: boolean;
   webOrigin: string;
-  sendNotification: typeof webpush.sendNotification;
+  sendNotification: SendWebPushFn;
 }): Promise<{ itemIdentifier?: string }> {
   const { record, supabase, webPushReady, webOrigin, sendNotification } = params;
 

@@ -580,7 +580,7 @@ function parseSmartleadCampaignStatsResponse(raw: unknown): SmartleadCampaignSta
 
   return {
     sent: num(data?.emails_sent ?? data?.emails_sent_count ?? data?.sent_count ?? data?.sent),
-    replied: num(data?.num_replied ?? data?.replied_count ?? data?.replied ?? data?.replies),
+    replied: num(data?.reply_count ?? data?.num_replied ?? data?.replied_count ?? data?.replied ?? data?.replies),
     positiveReply: num(
       data?.positive_reply_count ?? data?.positive_replies ?? data?.interested_count ?? data?.positiveReply,
     ),

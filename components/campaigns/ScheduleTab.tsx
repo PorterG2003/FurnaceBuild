@@ -1,15 +1,30 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, TextInput } from 'react-native';
 import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { supabase } from '@/lib/supabase/client';
 import { format } from 'date-fns';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { Tabs, type Tab } from '@/components/ui/tabs';
+import { MessageJobDetailModal } from '@/components/campaigns/MessageJobDetailModal';
+import { useAuth } from '@/contexts/AuthContext';
+import { useDevDiagnosticsAccess } from '@/hooks/useDevDiagnosticsAccess';
 
-interface MessageJob {
+export type MessageJobStatus =
+  | 'queued'
+  | 'reserved'
+  | 'sending'
+  | 'sent'
+  | 'deferred'
+  | 'failed'
+  | 'cancelled'
+  | 'blocked';
+
+/** Narrow row + summary modal — no internal IDs, payloads, or ops-only fields. */
+export interface MessageJobSummary {
   id: string;
   type: 'message_job';
-  status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'cancelled' | 'blocked';
+  status: MessageJobStatus;
+  message_type: string;
   scheduled_at: string;
   reserved_at: string | null;
   sent_at: string | null;
@@ -27,12 +42,45 @@ interface MessageJob {
     email_address: string;
   } | null;
   node: {
-    id: string;
-    node_data: any;
+    node_type: string;
   } | null;
-  message_data: any;
   error_message: string | null;
   retry_count: number;
+}
+
+/** Full diagnostics row (`dev_diagnostics` flag). */
+export interface MessageJob extends Omit<MessageJobSummary, 'lead' | 'mailbox' | 'node'> {
+  enrollment_id: string;
+  campaign_id: string;
+  lead_id: string;
+  mailbox_id: string | null;
+  node_id: string | null;
+  account_id: string;
+  status_reason: string | null;
+  provider_message_id: string | null;
+  sqs_message_id: string | null;
+  max_retries: number | null;
+  created_at: string;
+  updated_at: string;
+  flow_version_number: number | null;
+  variant_id: string | null;
+  send_wait_reason: string | null;
+  throttle_bypass_next_attempt: boolean;
+  lead: {
+    id: string;
+    email: string | null;
+    name: string | null;
+  } | null;
+  mailbox: {
+    id: string;
+    email_address: string;
+  } | null;
+  node: {
+    id: string;
+    node_type: string;
+    node_data: unknown;
+  } | null;
+  message_data: unknown;
 }
 
 interface Enrollment {
@@ -58,7 +106,9 @@ type ScheduleItem = MessageJob | Enrollment;
 
 interface ScheduleTabProps {
   campaignId: string;
-  refreshTrigger?: number; // When this changes, reload data
+  refreshTrigger?: number;
+  /** Full schedule drill-down without `dev_diagnostics` flag (e.g. internal test campaign page). */
+  scheduleDiagnosticsOverride?: boolean;
 }
 
 const PAGE_SIZE = 20;
@@ -85,32 +135,14 @@ async function lookupCampaignLeadIds(campaignId: string, searchQuery: string): P
   return (data ?? []).map((row) => row.id).filter(Boolean);
 }
 
-async function fetchMessageJobsPage(params: {
-  campaignId: string;
-  page: number;
-  searchQuery: string;
-  sortColumn?: string;
-  sortDirection?: 'asc' | 'desc';
-}): Promise<{ rows: MessageJob[]; totalCount: number }> {
-  const leadIds = await lookupCampaignLeadIds(params.campaignId, params.searchQuery);
-  if (leadIds && leadIds.length === 0) {
-    return { rows: [], totalCount: 0 };
-  }
-
-  const sortBy = params.sortColumn === 'status' ? 'status' : 'scheduled_at';
-  const ascending = params.sortDirection === 'asc';
-  let query = supabase
-    .from('message_jobs')
-    .select(
-      `
+const MESSAGE_JOBS_SELECT_SUMMARY = `
             id,
             status,
+            message_type,
             scheduled_at,
             reserved_at,
             sent_at,
             interval_id,
-        lead_id,
-            message_data,
             error_message,
             retry_count,
             lead:leads (
@@ -121,7 +153,54 @@ async function fetchMessageJobsPage(params: {
               email_address
             ),
             node:nodes (
+              node_type
+            ),
+            interval:campaign_intervals (
               id,
+              interval_time,
+              status
+            )
+`;
+
+const MESSAGE_JOBS_SELECT_FULL = `
+            id,
+            enrollment_id,
+            campaign_id,
+            lead_id,
+            mailbox_id,
+            node_id,
+            account_id,
+            message_type,
+            status,
+            status_reason,
+            scheduled_at,
+            reserved_at,
+            sent_at,
+            interval_id,
+            provider_message_id,
+            sqs_message_id,
+            message_data,
+            error_message,
+            retry_count,
+            max_retries,
+            created_at,
+            updated_at,
+            flow_version_number,
+            variant_id,
+            send_wait_reason,
+            throttle_bypass_next_attempt,
+            lead:leads (
+              id,
+              email,
+              name
+            ),
+            mailbox:mailboxes (
+              id,
+              email_address
+            ),
+            node:nodes (
+              id,
+              node_type,
               node_data
             ),
             interval:campaign_intervals (
@@ -129,9 +208,28 @@ async function fetchMessageJobsPage(params: {
               interval_time,
               status
             )
-      `,
-      { count: 'exact' },
-    )
+`;
+
+async function fetchMessageJobsPage(params: {
+  campaignId: string;
+  page: number;
+  searchQuery: string;
+  sortColumn?: string;
+  sortDirection?: 'asc' | 'desc';
+  includeDiagnostics: boolean;
+}): Promise<{ rows: MessageJobSummary[] | MessageJob[]; totalCount: number }> {
+  const leadIds = await lookupCampaignLeadIds(params.campaignId, params.searchQuery);
+  if (leadIds && leadIds.length === 0) {
+    return { rows: [], totalCount: 0 };
+  }
+
+  const sortBy = params.sortColumn === 'status' ? 'status' : 'scheduled_at';
+  const ascending = params.sortDirection === 'asc';
+  let query = supabase
+    .from('message_jobs')
+    .select(params.includeDiagnostics ? MESSAGE_JOBS_SELECT_FULL : MESSAGE_JOBS_SELECT_SUMMARY, {
+      count: 'exact',
+    })
     .eq('campaign_id', params.campaignId)
     .or('message_type.eq.campaign,message_type.is.null');
 
@@ -148,7 +246,10 @@ async function fetchMessageJobsPage(params: {
   }
 
   return {
-    rows: ((data ?? []) as MessageJob[]).map((job) => ({ ...job, type: 'message_job' })),
+    rows: ((data ?? []) as MessageJobSummary[] | MessageJob[]).map((job) => ({
+      ...job,
+      type: 'message_job' as const,
+    })),
     totalCount: count ?? 0,
   };
 }
@@ -212,10 +313,23 @@ async function fetchEnrollmentsPage(params: {
   };
 }
 
-export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
+export function ScheduleTab({
+  campaignId,
+  refreshTrigger,
+  scheduleDiagnosticsOverride = false,
+}: ScheduleTabProps) {
+  const { loading: authLoading, user } = useAuth();
+  const devDiagnosticsStatus = useDevDiagnosticsAccess();
+  const authReady = !authLoading && user != null;
+  const diagnosticsGateResolved =
+    authReady && (scheduleDiagnosticsOverride === true || devDiagnosticsStatus !== 'loading');
+  const diagnosticsAllowed =
+    scheduleDiagnosticsOverride === true || devDiagnosticsStatus === 'allowed';
+  const includeDiagnosticsInFetch = diagnosticsGateResolved && diagnosticsAllowed;
+
   const [activeTab, setActiveTab] = useState<string>('emails');
 
-  const [messageJobs, setMessageJobs] = useState<MessageJob[]>([]);
+  const [messageJobs, setMessageJobs] = useState<(MessageJob | MessageJobSummary)[]>([]);
   const [messageJobsLoading, setMessageJobsLoading] = useState(true);
   const [messageJobsError, setMessageJobsError] = useState<string | null>(null);
   const [messageJobsTotalCount, setMessageJobsTotalCount] = useState(0);
@@ -224,6 +338,9 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
   const [emailPage, setEmailPage] = useState(1);
   const [emailSortColumn, setEmailSortColumn] = useState<string | undefined>('scheduled');
   const [emailSortDirection, setEmailSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [selectedEmailJob, setSelectedEmailJob] = useState<MessageJob | MessageJobSummary | null>(
+    null,
+  );
 
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [enrollmentsLoading, setEnrollmentsLoading] = useState(true);
@@ -256,6 +373,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
       searchQuery: debouncedEmailSearchQuery,
       sortColumn: emailSortColumn,
       sortDirection: emailSortDirection,
+      includeDiagnostics: includeDiagnosticsInFetch,
     })
       .then((result) => {
         if (cancelled) return;
@@ -275,7 +393,15 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
     return () => {
       cancelled = true;
     };
-  }, [campaignId, debouncedEmailSearchQuery, emailPage, emailSortColumn, emailSortDirection, refreshTrigger]);
+  }, [
+    campaignId,
+    debouncedEmailSearchQuery,
+    emailPage,
+    emailSortColumn,
+    emailSortDirection,
+    refreshTrigger,
+    includeDiagnosticsInFetch,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -388,7 +514,7 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
   };
 
   // Columns for Email (Message Job) table
-  const emailColumns: TableColumn<MessageJob>[] = [
+  const emailColumns: TableColumn<MessageJobSummary>[] = [
     {
       key: 'lead',
       label: 'Lead',
@@ -561,6 +687,11 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
             widthMode="content-aware"
             emptyMessage="No email jobs found for this campaign"
             getItemKey={(item) => item.id}
+            onRowPress={
+              diagnosticsGateResolved
+                ? (job) => setSelectedEmailJob(job as MessageJob | MessageJobSummary)
+                : undefined
+            }
             loading={messageJobsLoading}
             smoothLoading
             smoothLoadingOptions={{ delayMs: 120, minVisibleMs: 220 }}
@@ -575,6 +706,12 @@ export function ScheduleTab({ campaignId, refreshTrigger }: ScheduleTabProps) {
               setEmailSortDirection(direction);
               setEmailPage(1);
             }}
+          />
+          <MessageJobDetailModal
+            visible={selectedEmailJob != null}
+            onClose={() => setSelectedEmailJob(null)}
+            job={selectedEmailJob}
+            variant={diagnosticsAllowed ? 'full' : 'summary'}
           />
           {messageJobsError ? (
             <View className="bg-red-900/20 border border-red-800 rounded-xl p-4 mt-4">

@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase/client';
 /** Known keys — add more as features ship; grant via service role INSERT. */
 export const ACCESS_FLAG_FOUNDRY = 'foundry' as const;
 export const ACCESS_FLAG_FLUX = 'flux' as const;
+/** Campaign schedule / message_jobs drill-down diagnostics (internal QA & engineering). */
+export const ACCESS_FLAG_DEV_DIAGNOSTICS = 'dev_diagnostics' as const;
 
 /** True if the user has the given flag row (service-managed). */
 export async function getUserHasAccessFlag(userId: string, flagKey: string): Promise<boolean> {
@@ -26,4 +28,8 @@ export function getUserHasFoundryAccess(userId: string): Promise<boolean> {
 
 export function getUserHasFluxAccess(userId: string): Promise<boolean> {
   return getUserHasAccessFlag(userId, ACCESS_FLAG_FLUX);
+}
+
+export function getUserHasDevDiagnosticsAccess(userId: string): Promise<boolean> {
+  return getUserHasAccessFlag(userId, ACCESS_FLAG_DEV_DIAGNOSTICS);
 }

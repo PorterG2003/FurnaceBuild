@@ -541,7 +541,11 @@ export default function TestCampaignViewPage() {
         {/* Schedule Tab */}
         {activeTab === 'schedule' && (
           <View className="mb-4">
-            <ScheduleTab campaignId={id} refreshTrigger={refreshKey} />
+            <ScheduleTab
+              campaignId={id}
+              refreshTrigger={refreshKey}
+              scheduleDiagnosticsOverride
+            />
           </View>
         )}
       </ScrollView>

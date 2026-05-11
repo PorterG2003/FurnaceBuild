@@ -65,24 +65,6 @@ interface CampaignProcessingContext extends FlowEvaluationSharedContext {
 
 const FULL_BATCH_BACKOFF_MS = 750;
 
-function toRetryableReadInput(error: unknown) {
-  if (typeof error === 'object' && error !== null) {
-    return {
-      message: 'message' in error ? String((error as any).message ?? '') : undefined,
-      code: 'code' in error ? String((error as any).code ?? '') : undefined,
-      details: 'details' in error ? String((error as any).details ?? '') : undefined,
-      hint: 'hint' in error ? String((error as any).hint ?? '') : undefined,
-      status:
-        typeof (error as any).status === 'number'
-          ? (error as any).status
-          : undefined,
-      name: 'name' in error ? String((error as any).name ?? '') : undefined,
-    };
-  }
-
-  return formatUnknownError(error);
-}
-
 function getAccountJitter(accounts: CampaignAccountRelation | undefined): number | null {
   if (Array.isArray(accounts)) {
     return accounts[0]?.jitter_percentage ?? null;
@@ -224,7 +206,7 @@ export class SchedulerWorker {
         if (errorStack) {
           console.error('Stack trace:', errorStack);
         }
-        const retryableReadError = isRetryableSupabaseReadError(toRetryableReadInput(error));
+        const retryableReadError = isRetryableSupabaseReadError(errorMessage);
         if (!(error as any)?.reportedToSlack) {
           reportErrorToSlack(
             retryableReadError
@@ -936,10 +918,8 @@ export class SchedulerWorker {
             }
 
             if (selectedNodeError) {
-              const retryableSelectedNodeRead = isRetryableSupabaseReadError(
-                toRetryableReadInput(selectedNodeError),
-              );
-              const errMsg = selectedNodeError.message ?? 'Node lookup failed';
+              const errMsg = formatUnknownError(selectedNodeError);
+              const retryableSelectedNodeRead = isRetryableSupabaseReadError(errMsg);
               console.error(`Selected node ${selectedFlowNodeId} lookup failed: ${errMsg}`);
               reportErrorToSlack(
                 retryableSelectedNodeRead
@@ -1121,9 +1101,7 @@ export class SchedulerWorker {
         return;
       }
 
-      const retryableReadError = isRetryableSupabaseReadError(
-        toRetryableReadInput(error),
-      );
+      const retryableReadError = isRetryableSupabaseReadError(errorMessage);
       if (retryableReadError) {
         const deferMs = 60_000;
         const nextRun = new Date(Date.now() + deferMs).toISOString();

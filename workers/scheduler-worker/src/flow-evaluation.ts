@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  formatUnknownError,
   isRetryableSupabaseReadError,
   reportErrorToSlack,
 } from '@furnace/slack-lib';
@@ -55,33 +56,7 @@ export interface FlowEvaluationResult {
 }
 
 function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    return String((error as { message?: unknown }).message ?? 'Unknown database error');
-  }
-
-  return String(error);
-}
-
-function toRetryableReadInput(error: unknown) {
-  if (typeof error === 'object' && error !== null) {
-    return {
-      message: 'message' in error ? String((error as any).message ?? '') : undefined,
-      code: 'code' in error ? String((error as any).code ?? '') : undefined,
-      details: 'details' in error ? String((error as any).details ?? '') : undefined,
-      hint: 'hint' in error ? String((error as any).hint ?? '') : undefined,
-      status:
-        typeof (error as any).status === 'number'
-          ? (error as any).status
-          : undefined,
-      name: 'name' in error ? String((error as any).name ?? '') : undefined,
-    };
-  }
-
-  return getErrorMessage(error);
+  return formatUnknownError(error);
 }
 
 function buildReadFailureResult(error: unknown): FlowEvaluationResult {
@@ -175,7 +150,7 @@ export async function evaluateFlow(
 
       if (error) {
         console.error(`[FLOW ${enrollmentId}] Error loading entry node: ${error.message}`);
-        if (!isRetryableSupabaseReadError(toRetryableReadInput(error))) {
+        if (!isRetryableSupabaseReadError(getErrorMessage(error))) {
           reportErrorToSlack('Database error loading entry node', {
             severity: 'critical',
             enrollment_id: enrollment.id,
@@ -229,7 +204,7 @@ export async function evaluateFlow(
 
         if (nextNodesError) {
           console.error(`[FLOW ${enrollmentId}] Error loading nodes after leadSource: ${nextNodesError.message}`);
-          if (!isRetryableSupabaseReadError(toRetryableReadInput(nextNodesError))) {
+          if (!isRetryableSupabaseReadError(getErrorMessage(nextNodesError))) {
             reportErrorToSlack('Database error loading nodes after leadSource', {
               severity: 'critical',
               enrollment_id: enrollment.id,
@@ -287,7 +262,7 @@ export async function evaluateFlow(
 
       if (firstError) {
         console.error(`[FLOW ${enrollmentId}] Error loading first node: ${firstError.message}`);
-        if (!isRetryableSupabaseReadError(toRetryableReadInput(firstError))) {
+        if (!isRetryableSupabaseReadError(getErrorMessage(firstError))) {
           reportErrorToSlack('Database error loading first node', {
             severity: 'critical',
             enrollment_id: enrollment.id,
@@ -335,7 +310,7 @@ export async function evaluateFlow(
     const error = `Error loading current node ${enrollment.current_node_id} for enrollment ${enrollment.id}: ${errorMessage}`;
     console.error(error);
 
-    if (isRetryableSupabaseReadError(toRetryableReadInput(currentNodeError))) {
+    if (isRetryableSupabaseReadError(getErrorMessage(currentNodeError))) {
       return buildReadFailureResult(currentNodeError);
     }
 
@@ -394,7 +369,7 @@ export async function evaluateFlow(
 
       if (messageJobsError) {
         console.error(`[FLOW ${enrollmentId}] Error checking message job for email node ${currentNode.id.substring(0, 8)}: ${messageJobsError.message}`);
-        if (!isRetryableSupabaseReadError(toRetryableReadInput(messageJobsError))) {
+        if (!isRetryableSupabaseReadError(getErrorMessage(messageJobsError))) {
           reportErrorToSlack('Database error loading latest message job (flow email gate)', {
             severity: 'critical',
             enrollment_id: enrollment.id,
@@ -483,7 +458,7 @@ export async function evaluateFlow(
 
     if (nextNodesError) {
       console.error(`Error loading next nodes: ${nextNodesError.message}`);
-      if (!isRetryableSupabaseReadError(toRetryableReadInput(nextNodesError))) {
+      if (!isRetryableSupabaseReadError(getErrorMessage(nextNodesError))) {
         reportErrorToSlack('Database error loading next nodes (flow traversal)', {
           severity: 'critical',
           enrollment_id: enrollment.id,

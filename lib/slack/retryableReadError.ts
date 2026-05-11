@@ -1,3 +1,4 @@
+import { formatUnknownError } from './reportErrorToSlack.js';
 import { isTransientUpstreamGatewayErrorMessage } from './summarizeUpstreamGatewayError.js';
 
 export type RetryableReadErrorInput =
@@ -17,7 +18,10 @@ function getErrorMessage(input: RetryableReadErrorInput): string {
   if (typeof input === 'string') {
     return input;
   }
-  return input?.message ?? '';
+  if (!input) {
+    return '';
+  }
+  return formatUnknownError(input);
 }
 
 function getErrorStatus(input: RetryableReadErrorInput): number | null {

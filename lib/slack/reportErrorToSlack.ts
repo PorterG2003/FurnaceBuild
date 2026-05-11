@@ -338,6 +338,14 @@ export function formatUnknownError(error: unknown): string {
       if (typeof o.details === 'string' && o.details.length > 0 && o.details !== o.message) {
         parts.push(o.details);
       }
+      if (
+        typeof o.hint === 'string' &&
+        o.hint.length > 0 &&
+        o.hint !== o.message &&
+        o.hint !== o.details
+      ) {
+        parts.push(`hint=${o.hint}`);
+      }
       return parts.join(' | ');
     }
   }

@@ -43,6 +43,26 @@ test('isRetryableSupabaseReadError detects schema cache retries', () => {
   );
 });
 
+test('isRetryableSupabaseReadError inspects details from structured Supabase errors', () => {
+  assert.equal(
+    isRetryableSupabaseReadError({
+      message: 'Failed to load lead 123',
+      details: 'canceling statement due to statement timeout',
+    }),
+    true
+  );
+});
+
+test('isRetryableSupabaseReadError inspects hint from structured Supabase errors', () => {
+  assert.equal(
+    isRetryableSupabaseReadError({
+      message: 'Failed to query PostgREST',
+      hint: 'Could not query the database for the schema cache. Retrying.',
+    }),
+    true
+  );
+});
+
 test('isRetryableSupabaseReadError ignores unrelated errors', () => {
   assert.equal(
     isRetryableSupabaseReadError('Campaign abc has no account_id. Campaigns must be associated with an account.'),

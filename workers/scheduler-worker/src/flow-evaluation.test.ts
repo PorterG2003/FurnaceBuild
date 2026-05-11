@@ -168,6 +168,30 @@ test('evaluateFlow defers when current-node lookup hits transient Supabase 502',
   });
 });
 
+test('evaluateFlow preserves retryable details from structured Supabase errors', async () => {
+  const supabase = createSupabaseForCurrentNode({
+    data: null,
+    error: {
+      message: 'Failed to load current node',
+      details: 'canceling statement due to statement timeout',
+    },
+  });
+
+  const result = await evaluateFlow(
+    enrollment,
+    enrollment.campaign_id,
+    { edges: [] },
+    supabase as any
+  );
+
+  assert.deepEqual(result, {
+    nodes: [],
+    evaluationFailed: true,
+    evaluationError:
+      'Failed to load current node | canceling statement due to statement timeout',
+  });
+});
+
 test('evaluateFlow still throws when the current node row is truly missing', async () => {
   const supabase = createSupabaseForCurrentNode({
     data: null,

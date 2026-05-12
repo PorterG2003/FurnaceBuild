@@ -483,8 +483,8 @@ export default function CampaignPage() {
           return data[data.length - 1];
         })();
         const last = toDateStr(lastRow.date);
-        const now = new Date();
-        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        // Align with bootstrap endStr / service layer: UTC calendar date (YYYY-MM-DD).
+        const today = new Date().toISOString().slice(0, 10);
         const lastPlus2 = (() => {
           const d = new Date(last + 'T12:00:00Z');
           d.setUTCDate(d.getUTCDate() + 2);

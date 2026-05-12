@@ -11,7 +11,7 @@ Campaign stats are **totals** (sent, replied, positive reply, bounce) plus **enr
 Two storage layers back these numbers:
 
 - **campaign_stats** — Cached totals, one row per campaign. Updated incrementally by workers and the inbox service. Used for list and detail totals.
-- **events** — Immutable log of `sent`, `replied`, and `bounced` events. Used only for per-day aggregation (charts).
+- **events** — Immutable log of `sent`, `replied`, and `bounced` events. Per-day charts aggregate these in the database via **`campaign_stats_by_day`** (native campaigns) so results are not capped by the PostgREST row limit on raw `events` selects.
 
 Event insert and stats increment are **atomic**: a single RPC per stat type inserts the event and updates campaign_stats in one transaction, so the two tables do not drift. List and detail totals read from **campaign_stats** (and enrollments for enrollment count). Per-day charts read from **events**. The diagram in [Who updates what](#who-updates-what) and the [Stat definitions](#stat-definitions) below spell out who writes each stat and what it means.
 
@@ -129,7 +129,7 @@ flowchart LR
 
 - **Campaign detail summary:** `getCampaignStatsForCampaigns(campaignIds)` in [lib/supabase/services/campaigns/campaign-stats.ts](../../../lib/supabase/services/campaigns/campaign-stats.ts). Makes three queries: `enrollments` (total + terminal counts per campaign), `get_campaign_contacted_counts` RPC (contacted count per campaign), and `campaign_stats` (sent/replied/positive_reply/bounce/last_bounce_at). Used by [app/(main)/campaigns/[id].tsx](../../../app/(main)/campaigns/[id].tsx).
 
-- **Per-day chart:** `getCampaignStatsByDay(campaignId, start, end)` in the same service. Queries **events** only (`event_type` in sent, replied, bounced), buckets by date; for replied, positive count uses `event_data.is_positive`. Used by [components/campaigns/CampaignStatsChart.tsx](../../../components/campaigns/CampaignStatsChart.tsx).
+- **Per-day chart:** `getCampaignStatsByDay(campaignId, start, end)` in the same service. For native campaigns it calls the **`campaign_stats_by_day`** RPC (UTC calendar-day buckets; positive replies use `event_data->>'is_positive' = 'true'`, matching prior client aggregation). Smartlead campaigns still read **`imported_campaign_stats_by_day`**. Used by [components/campaigns/CampaignStatsChart.tsx](../../../components/campaigns/CampaignStatsChart.tsx).
 
 ### Account outreach metrics (`/metrics`)
 
@@ -177,6 +177,7 @@ One-time backfill: [supabase/migrations/20260216000002_backfill_campaign_stats.s
 - `20260222150000` — `get_campaign_contacted_counts` RPC + partial index on `message_jobs` for campaign completion dial.
 - `20260429190000` — `account_outreach_metrics` RPC for account-level Furnace-only outreach metrics.
 - `20260429200000` — `account_outreach_stats_by_day` RPC for account daily chart series.
+- `20260513120000` — `campaign_stats_by_day` RPC for campaign detail daily chart (native campaigns).
 
 ### RPCs
 
@@ -185,6 +186,7 @@ One-time backfill: [supabase/migrations/20260216000002_backfill_campaign_stats.s
 - **Campaigns list (aggregated row per campaign):** `campaigns_list_summary(p_account_id UUID)` — list-only columns plus enrollment/terminal/contacted aggregates and `campaign_stats` counts (same semantics as the former list client merge; avoids raw enrollment list truncation).
 - **Account outreach metrics:** `account_outreach_metrics(p_account_id, p_start_date, p_end_date)` — Furnace-only sent/positive reply counts, distinct leads reached, leads in queue, and Smartlead import warning flag (see “Account outreach metrics” above).
 - **Account outreach by day:** `account_outreach_stats_by_day(p_account_id, p_start_date, p_end_date)` — one row per UTC day in range for the account metrics chart.
+- **Campaign outreach by day:** `campaign_stats_by_day(p_campaign_id, p_start_date, p_end_date)` — one row per UTC day in range for the campaign detail chart (Furnace campaigns only).
 - **Reconciliation:** `reconcile_campaign_stats(p_campaign_id)` — pass NULL for all campaigns.
 - **Positive reply (user override):** `update_campaign_stats_positive_reply(p_campaign_id, p_delta)`, `update_replied_event_is_positive(p_campaign_id, p_message_job_id, p_is_positive)`.
 - **Legacy (still present, used by reconciliation):** `increment_campaign_stats_sent`, `increment_campaign_stats_replied`, `increment_campaign_stats_bounce` — workers now use the atomic RPCs above.

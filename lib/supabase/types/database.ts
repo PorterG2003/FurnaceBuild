@@ -1332,6 +1332,16 @@ export interface Database {
           bounce_count: number;
         }[];
       };
+      campaign_stats_by_day: {
+        Args: { p_campaign_id: string; p_start_date: string; p_end_date: string };
+        Returns: {
+          stat_date: string;
+          sent_count: number;
+          replied_count: number;
+          positive_reply_count: number;
+          bounce_count: number;
+        }[];
+      };
       campaigns_list_summary: {
         Args: { p_account_id: string };
         Returns: {

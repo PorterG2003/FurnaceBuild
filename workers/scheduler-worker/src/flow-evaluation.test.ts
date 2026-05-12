@@ -15,7 +15,17 @@ const enrollment: Enrollment = {
   updated_at: '2026-04-16T00:00:00.000Z',
 };
 
-function createSupabaseForCurrentNode(result: { data: any; error: { message: string } | null }) {
+function createSupabaseForCurrentNode(result: {
+  data: any;
+  error:
+    | {
+        message: string;
+        details?: string | null;
+        hint?: string | null;
+        code?: string | null;
+      }
+    | null;
+}) {
   const query = {
     select() {
       return this;

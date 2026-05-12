@@ -59,6 +59,7 @@ import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { LEGACY_EMAIL_VARIANT_ID, sortVariantsForRoundRobin } from '@/lib/email/emailNodeVariants';
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
+import { getEmailNodesInSendOrder } from '@/lib/campaigns/emailNodeSendOrder';
 import { fillMissingStatsByDay } from '@/lib/campaigns/fillMissingStatsByDay';
 
 const tabs: Tab[] = [
@@ -819,8 +820,7 @@ export default function CampaignPage() {
                         <Text className="text-gray-500 font-instrument text-sm">Loading variant stats…</Text>
                       ) : (
                         <View style={{ width: '100%', alignSelf: 'stretch' }}>
-                            {(flowData.nodes as any[])
-                              .filter((n) => n.type === 'email')
+                            {getEmailNodesInSendOrder(flowData as { nodes?: any[]; edges?: any[] })
                               .map((node: any) => {
                                 const flowId = node.id as string;
                                 const rawVariants = node.data?.variants;

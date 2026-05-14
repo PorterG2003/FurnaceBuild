@@ -64,6 +64,13 @@ interface CampaignProcessingContext extends FlowEvaluationSharedContext {
 }
 
 const FULL_BATCH_BACKOFF_MS = 750;
+const RESERVED_RECLAIM_INTERVAL_MS = 5 * 60 * 1000;
+const SELF_RECOVERY_AUDIT_INTERVAL_MS = 15 * 60 * 1000;
+const RESERVED_RECLAIM_BATCH_SIZE = 50;
+const RESERVED_RECLAIM_REARM_DELAY_SECONDS = 60;
+const STALE_SENDING_BATCH_SIZE = 20;
+const STALE_SENDING_MINUTES = 30;
+const RESERVED_STALE_MINUTES = 5;
 
 function getAccountJitter(accounts: CampaignAccountRelation | undefined): number | null {
   if (Array.isArray(accounts)) {
@@ -87,6 +94,8 @@ export class SchedulerWorker {
   private staleLockCleanupTimer?: ReturnType<typeof setInterval>;
   private batchIntervalAssignmentTimer?: ReturnType<typeof setInterval>;
   private oooResumeTimer?: ReturnType<typeof setInterval>;
+  private staleReservedReclaimTimer?: ReturnType<typeof setInterval>;
+  private selfRecoveryAuditTimer?: ReturnType<typeof setInterval>;
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
@@ -110,6 +119,8 @@ export class SchedulerWorker {
     this.startBatchIntervalAssignment();
 
     this.startOutOfOfficeResumeProcessing();
+    this.startStaleReservedReclaim();
+    this.startSelfRecoveryAudit();
 
     console.log('Scheduler worker started. Polling database...');
 
@@ -251,6 +262,12 @@ export class SchedulerWorker {
     }
     if (this.oooResumeTimer) {
       clearInterval(this.oooResumeTimer);
+    }
+    if (this.staleReservedReclaimTimer) {
+      clearInterval(this.staleReservedReclaimTimer);
+    }
+    if (this.selfRecoveryAuditTimer) {
+      clearInterval(this.selfRecoveryAuditTimer);
     }
   }
 
@@ -577,6 +594,138 @@ export class SchedulerWorker {
     });
   }
 
+  private startStaleReservedReclaim(): void {
+    this.staleReservedReclaimTimer = this.startSingleFlightInterval({
+      taskName: 'STALE RESERVED RECLAIM',
+      intervalMs: RESERVED_RECLAIM_INTERVAL_MS,
+      runImmediately: false,
+      task: async () => {
+        const { data, error } = await this.supabase.rpc(
+          'reclaim_stale_campaign_message_jobs',
+          {
+            p_batch_size: RESERVED_RECLAIM_BATCH_SIZE,
+            p_rearm_delay_seconds: RESERVED_RECLAIM_REARM_DELAY_SECONDS,
+            p_reserved_stale_minutes: RESERVED_STALE_MINUTES,
+          },
+        );
+
+        if (error) {
+          throw error;
+        }
+
+        const rows = Array.isArray(data) ? data : [];
+        if (rows.length > 0) {
+          console.log(`[STALE RESERVED RECLAIM] Reclaimed ${rows.length} stale reserved campaign job(s)`);
+        }
+      },
+      onError: (error) => {
+        const msg = formatUnknownError(error);
+        console.error('[STALE RESERVED RECLAIM] Error:', msg);
+        reportErrorToSlack('Scheduler: stale reserved reclaim failed', {
+          severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
+          error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'critical_failure',
+          aggregationKey: 'scheduler-stale-reserved-reclaim',
+          summaryFields: {
+            worker: 'scheduler',
+            operation: 'reclaim_stale_campaign_message_jobs',
+          },
+        });
+      },
+    });
+  }
+
+  private startSelfRecoveryAudit(): void {
+    this.selfRecoveryAuditTimer = this.startSingleFlightInterval({
+      taskName: 'SELF RECOVERY AUDIT',
+      intervalMs: SELF_RECOVERY_AUDIT_INTERVAL_MS,
+      runImmediately: false,
+      task: async () => {
+        const { data: finalizedRows, error: finalizeError } = await this.supabase.rpc(
+          'finalize_stale_sending_campaign_message_jobs',
+          {
+            p_batch_size: STALE_SENDING_BATCH_SIZE,
+            p_stale_minutes: STALE_SENDING_MINUTES,
+          },
+        );
+
+        if (finalizeError) {
+          throw finalizeError;
+        }
+
+        const finalizedCount = Array.isArray(finalizedRows) ? finalizedRows.length : 0;
+        if (finalizedCount > 0) {
+          console.log(
+            `[SELF RECOVERY AUDIT] Finalized ${finalizedCount} stale sending campaign job(s) as uncertain send state`,
+          );
+        }
+
+        const { data: healthRows, error: healthError } = await this.supabase.rpc(
+          'get_job_self_recovery_health',
+          {
+            p_reserved_stale_minutes: RESERVED_STALE_MINUTES,
+            p_sending_stale_minutes: STALE_SENDING_MINUTES,
+          },
+        );
+
+        if (healthError) {
+          throw healthError;
+        }
+
+        const health = Array.isArray(healthRows) ? healthRows[0] : null;
+        if (!health) {
+          return;
+        }
+
+        const retryableStoppedCount = Number(health.retryable_stopped_count ?? 0);
+        const staleReservedCount = Number(health.stale_reserved_count ?? 0);
+        const staleSendingCount = Number(health.stale_sending_count ?? 0);
+
+        if (
+          retryableStoppedCount > 0 ||
+          staleReservedCount > 0 ||
+          staleSendingCount > 0 ||
+          finalizedCount > 0
+        ) {
+          const summary =
+            `retryable_stopped=${retryableStoppedCount}, ` +
+            `stale_reserved=${staleReservedCount}, ` +
+            `stale_sending=${staleSendingCount}, ` +
+            `finalized_stale_sending=${finalizedCount}`;
+          console.log(`[SELF RECOVERY AUDIT] ${summary}`);
+          reportErrorToSlack('Scheduler: self-recovery audit found outstanding job-health issues', {
+            severity: 'warning',
+            error: summary,
+            alertPolicy: 'transient_retryable_warning',
+            aggregationKey: 'scheduler-self-recovery-audit',
+            summaryFields: {
+              worker: 'scheduler',
+              operation: 'self-recovery-audit',
+            },
+          });
+        }
+      },
+      onError: (error) => {
+        const msg = formatUnknownError(error);
+        console.error('[SELF RECOVERY AUDIT] Error:', msg);
+        reportErrorToSlack('Scheduler: self-recovery audit failed', {
+          severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
+          error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'critical_failure',
+          aggregationKey: 'scheduler-self-recovery-audit-failed',
+          summaryFields: {
+            worker: 'scheduler',
+            operation: 'self-recovery-audit',
+          },
+        });
+      },
+    });
+  }
+
   /**
    * Log mailbox distribution before processing enrollments
    */
@@ -612,24 +761,24 @@ export class SchedulerWorker {
         !cm.mailbox?.deleted_at && cm.mailbox?.status === 'connected' && cm.mailbox?.smtp_status === 'active'
       ) || [];
 
-      // Count enrollments per mailbox (existing assignments)
+      // Count enrollments per mailbox using locked lead mailboxes only.
       const mailboxCounts = new Map<string, number>();
-      let unassignedCount = 0;
+      let unlockedCount = 0;
 
       for (const enrollment of campaignEnrollments) {
         const lead = leads?.find(l => l.id === enrollment.lead_id);
         if (lead?.deleted_at) {
-          unassignedCount++;
+          unlockedCount++;
         } else if (lead?.mailbox_id) {
           mailboxCounts.set(lead.mailbox_id, (mailboxCounts.get(lead.mailbox_id) || 0) + 1);
         } else {
-          unassignedCount++;
+          unlockedCount++;
         }
       }
 
       console.log(`[MAILBOX DIST] Campaign ${campaignId.substring(0, 8)}: ${campaignEnrollments.length} enrollment(s) ready`);
       console.log(`[MAILBOX DIST] Eligible mailboxes: ${eligibleMailboxes.length}`);
-      console.log(`[MAILBOX DIST] Enrollments with assigned mailbox: ${campaignEnrollments.length - unassignedCount}, unassigned (will use round-robin): ${unassignedCount}`);
+      console.log(`[MAILBOX DIST] Enrollments with locked mailbox: ${campaignEnrollments.length - unlockedCount}, unlocked (mailbox resolves at job creation): ${unlockedCount}`);
       
       // Show distribution
       const distribution: string[] = [];
@@ -640,8 +789,8 @@ export class SchedulerWorker {
           distribution.push(`${mailboxId.substring(0, 8)}:${count}`);
         }
       }
-      if (unassignedCount > 0) {
-        distribution.push(`unassigned:${unassignedCount}`);
+      if (unlockedCount > 0) {
+        distribution.push(`unlocked:${unlockedCount}`);
       }
       console.log(`[MAILBOX DIST] Distribution: ${distribution.join(', ')}`);
     }

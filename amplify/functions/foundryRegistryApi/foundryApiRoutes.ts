@@ -1,6 +1,9 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  CSV_BUILDER_MAX_BYTES,
   buildContactEnrichmentPreflight,
   bulkAutoResolve,
   companyDeleteImpactFingerprint,
@@ -28,6 +31,7 @@ import {
   mergeEntityOwners,
   mergeSourceBusinessRecords,
   normalizeIngestionRunRecords,
+  parseCsvBuilderText,
   rejectCandidatesForSource,
   rerunCsvBuilderColumn,
   rerunCsvBuilderToolJob,
@@ -55,6 +59,8 @@ import type {
 } from '../../../lib/foundry/registry-types.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const s3Client = new S3Client({});
+const CSV_BUILDER_UPLOAD_URL_EXPIRES_IN_SECONDS = 60 * 15;
 
 interface FunctionUrlResponse {
   statusCode: number;
@@ -422,6 +428,27 @@ function parseJsonBody<T>(raw: string): { ok: true; value: T } | { ok: false; re
   } catch {
     return { ok: false, response: jsonResponse(400, { error: 'Invalid JSON body' }) };
   }
+}
+
+function getCsvBuilderBucketName(): string {
+  const bucket = process.env.CSV_BUILDER_EXPORT_BUCKET?.trim();
+  if (!bucket) throw new Error('Missing CSV_BUILDER_EXPORT_BUCKET');
+  return bucket;
+}
+
+function sanitizeCsvBuilderUploadFileName(fileName: string): string {
+  const trimmed = fileName.trim();
+  const base = trimmed.length > 0 ? trimmed : 'upload.csv';
+  const safe = base.replace(/[^a-zA-Z0-9._-]+/g, '_');
+  return safe || 'upload.csv';
+}
+
+function buildCsvBuilderUploadKey(accountId: string, fileName: string): string {
+  return `csv-builder-uploads/${accountId}/${randomUUID()}-${sanitizeCsvBuilderUploadFileName(fileName)}`;
+}
+
+function isAllowedCsvBuilderUploadKey(accountId: string, objectKey: string): boolean {
+  return objectKey.startsWith(`csv-builder-uploads/${accountId}/`);
 }
 
 const WEBSITE_INTEL_STALE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -1283,6 +1310,56 @@ export async function dispatchFoundryExtendedRoutes(
     }
   }
 
+  if (path === '/csv-builder/upload-url' && method === 'POST') {
+    const parsed = parseJsonBody<{
+      account_id: string;
+      source_file_name: string;
+      source_file_size_bytes?: number | null;
+      source_file_mime_type?: string | null;
+    }>(rawBody || '{}');
+    if (!parsed.ok) return parsed.response;
+    const accountId = parsed.value.account_id?.trim() || '';
+    const sourceFileName = String(parsed.value.source_file_name ?? '').trim();
+    const sourceFileSizeBytes =
+      parsed.value.source_file_size_bytes == null ? null : Number(parsed.value.source_file_size_bytes);
+    if (!UUID_RE.test(accountId)) return jsonResponse(400, { error: 'account_id is required' });
+    if (!sourceFileName) return jsonResponse(400, { error: 'source_file_name is required' });
+    if (sourceFileSizeBytes != null && (!Number.isFinite(sourceFileSizeBytes) || sourceFileSizeBytes <= 0)) {
+      return jsonResponse(400, { error: 'source_file_size_bytes must be a positive number' });
+    }
+    if (sourceFileSizeBytes != null && sourceFileSizeBytes > CSV_BUILDER_MAX_BYTES) {
+      return jsonResponse(400, {
+        error: `CSV Builder supports uploads up to ${Math.round(CSV_BUILDER_MAX_BYTES / (1024 * 1024))} MB in v1.`,
+      });
+    }
+    try {
+      const allowed = await assertAccountMembership(mainClient, actorUserId, accountId);
+      if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
+      const objectKey = buildCsvBuilderUploadKey(accountId, sourceFileName);
+      const contentType = String(parsed.value.source_file_mime_type ?? '').trim() || 'text/csv';
+      const uploadUrl = await getSignedUrl(
+        s3Client,
+        new PutObjectCommand({
+          Bucket: getCsvBuilderBucketName(),
+          Key: objectKey,
+          ContentType: contentType,
+        }),
+        { expiresIn: CSV_BUILDER_UPLOAD_URL_EXPIRES_IN_SECONDS },
+      );
+      return jsonResponse(200, {
+        object_key: objectKey,
+        upload_url: uploadUrl,
+        upload_method: 'PUT',
+        upload_headers: {
+          'Content-Type': contentType,
+        },
+        expires_in_seconds: CSV_BUILDER_UPLOAD_URL_EXPIRES_IN_SECONDS,
+      });
+    } catch (error) {
+      return jsonResponse(502, { error: error instanceof Error ? error.message : 'Failed to create upload URL' });
+    }
+  }
+
   if (path === '/csv-builder/runs' && method === 'POST') {
     const parsed = parseJsonBody<{
       account_id: string;
@@ -1290,8 +1367,9 @@ export async function dispatchFoundryExtendedRoutes(
       source_file_name: string;
       source_file_size_bytes?: number | null;
       source_file_mime_type?: string | null;
-      headers: Array<{ key: string; label: string; data_type?: string }>;
-      rows: Array<Record<string, unknown>>;
+      source_s3_key?: string | null;
+      headers?: Array<{ key: string; label: string; data_type?: string }>;
+      rows?: Array<Record<string, unknown>>;
     }>(rawBody || '{}');
     if (!parsed.ok) return parsed.response;
     const accountId = parsed.value.account_id?.trim() || '';
@@ -1299,27 +1377,70 @@ export async function dispatchFoundryExtendedRoutes(
     try {
       const allowed = await assertAccountMembership(mainClient, actorUserId, accountId);
       if (!allowed) return jsonResponse(403, { error: 'Account access denied' });
-      const typedHeaders = parsed.value.headers.map((header) => ({
-        key: String(header.key ?? '').trim(),
-        label: String(header.label ?? '').trim(),
-        data_type: isCsvBuilderColumnDataType(header.data_type) ? header.data_type : undefined,
-      }));
-      const typedRows: Array<Record<string, CsvBuilderCellValue>> = parsed.value.rows.map((row) => {
-        const typedRow: Record<string, CsvBuilderCellValue> = {};
-        for (const [key, value] of Object.entries(row ?? {})) {
-          typedRow[key] = coerceCsvBuilderCellValue(value);
+      let result;
+      const sourceS3Key = String(parsed.value.source_s3_key ?? '').trim();
+      if (sourceS3Key) {
+        if (!isAllowedCsvBuilderUploadKey(accountId, sourceS3Key)) {
+          return jsonResponse(400, { error: 'source_s3_key is invalid for this account' });
         }
-        return typedRow;
-      });
-      const result = await createCsvBuilderRun(leadsClient as unknown as Parameters<typeof createCsvBuilderRun>[0], actorUserId, {
-        name: parsed.value.name,
-        source_file_name: parsed.value.source_file_name,
-        source_file_size_bytes: parsed.value.source_file_size_bytes,
-        source_file_mime_type: parsed.value.source_file_mime_type,
-        headers: typedHeaders,
-        rows: typedRows,
-        account_id: accountId,
-      });
+        const object = await s3Client.send(
+          new GetObjectCommand({
+            Bucket: getCsvBuilderBucketName(),
+            Key: sourceS3Key,
+          }),
+        );
+        const csvText = await object.Body?.transformToString('utf-8');
+        if (!csvText) return jsonResponse(400, { error: 'Uploaded CSV file could not be read' });
+        try {
+          const parsedCsv = await parseCsvBuilderText(csvText);
+          result = await createCsvBuilderRun(
+            leadsClient as unknown as Parameters<typeof createCsvBuilderRun>[0],
+            actorUserId,
+            {
+              name: parsed.value.name,
+              source_file_name: parsed.value.source_file_name,
+              source_file_size_bytes: parsed.value.source_file_size_bytes,
+              source_file_mime_type: parsed.value.source_file_mime_type,
+              headers: parsedCsv.headers,
+              rows: parsedCsv.rows,
+              account_id: accountId,
+            },
+          );
+        } finally {
+          await s3Client
+            .send(
+              new DeleteObjectCommand({
+                Bucket: getCsvBuilderBucketName(),
+                Key: sourceS3Key,
+              }),
+            )
+            .catch((error) => {
+              console.error('csv-builder upload cleanup failed', sourceS3Key, error instanceof Error ? error.message : error);
+            });
+        }
+      } else {
+        const typedHeaders = (parsed.value.headers ?? []).map((header) => ({
+          key: String(header.key ?? '').trim(),
+          label: String(header.label ?? '').trim(),
+          data_type: isCsvBuilderColumnDataType(header.data_type) ? header.data_type : undefined,
+        }));
+        const typedRows: Array<Record<string, CsvBuilderCellValue>> = (parsed.value.rows ?? []).map((row) => {
+          const typedRow: Record<string, CsvBuilderCellValue> = {};
+          for (const [key, value] of Object.entries(row ?? {})) {
+            typedRow[key] = coerceCsvBuilderCellValue(value);
+          }
+          return typedRow;
+        });
+        result = await createCsvBuilderRun(leadsClient as unknown as Parameters<typeof createCsvBuilderRun>[0], actorUserId, {
+          name: parsed.value.name,
+          source_file_name: parsed.value.source_file_name,
+          source_file_size_bytes: parsed.value.source_file_size_bytes,
+          source_file_mime_type: parsed.value.source_file_mime_type,
+          headers: typedHeaders,
+          rows: typedRows,
+          account_id: accountId,
+        });
+      }
       return jsonResponse(200, result);
     } catch (error) {
       return jsonResponse(400, { error: error instanceof Error ? error.message : 'Failed to create CSV Builder run' });

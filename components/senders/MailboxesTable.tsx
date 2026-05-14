@@ -1,28 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { Button } from '@/components/ui/button';
-import { IconButton } from '@/components/ui/icon-button';
-import { Checkbox } from '@/components/ui/Checkbox';
+import { DataTable } from '@/components/ui/DataTable';
 import { EmptyState } from '@/components/ui/feedback';
+import { MailboxOverviewCard, buildMailboxOverviewColumns } from '@/components/mailboxes';
 import { MailboxActionsSheet } from './MailboxActionsSheet';
-import { MailboxListCard } from './MailboxListCard';
-import { MailboxStatusPill } from './mailboxStatus';
-import { SendersCardListSkeleton, SendersTableSkeleton } from '@/components/skeletons';
-import { PencilIcon, PlayIcon, TrashIcon } from 'react-native-heroicons/outline';
+import { SendersCardListSkeleton } from '@/components/skeletons';
 import type { TestConnectionResult } from './types';
 import type { Mailbox } from '@/lib/supabase/types';
+import type { MailboxOverview } from '@/lib/supabase/services/mailboxes';
 
 export interface MailboxesTableProps {
   isLoading: boolean;
   showSkeleton: boolean;
   isMobile: boolean;
   allowAddMailboxes: boolean;
-  mailboxes: Mailbox[];
+  mailboxes: MailboxOverview[];
   selectedMailboxes: Set<string>;
-  toggleMailboxSelection: (mailboxId: string) => void;
-  toggleSelectAll: () => void;
-  isAllSelected: boolean;
-  isIndeterminate: boolean;
+  onSelectionChange: (next: Set<string>) => void;
   onTestMailbox: (mailbox: Mailbox, options?: { fromActionsSheet?: boolean }) => void;
   onEditMailbox: (mailbox: Mailbox) => void;
   onDeleteClick: (mailbox: Mailbox) => void;
@@ -45,10 +40,7 @@ export function MailboxesTable({
   allowAddMailboxes,
   mailboxes,
   selectedMailboxes,
-  toggleMailboxSelection,
-  toggleSelectAll,
-  isAllSelected,
-  isIndeterminate,
+  onSelectionChange,
   onTestMailbox,
   onEditMailbox,
   onDeleteClick,
@@ -62,7 +54,18 @@ export function MailboxesTable({
   testResult,
   testResultMailboxEmail,
 }: MailboxesTableProps) {
-  const [menuMailbox, setMenuMailbox] = useState<Mailbox | null>(null);
+  const [menuMailbox, setMenuMailbox] = useState<MailboxOverview | null>(null);
+  const desktopColumns = useMemo(
+    () =>
+      buildMailboxOverviewColumns({
+        includeActions: true,
+        testingMailboxId,
+        onTestMailbox: (mailbox) => onTestMailbox(mailbox),
+        onEditMailbox: (mailbox) => onEditMailbox(mailbox),
+        onDeleteMailbox: (mailbox) => onDeleteClick(mailbox),
+      }),
+    [onDeleteClick, onEditMailbox, onTestMailbox, testingMailboxId]
+  );
 
   useEffect(() => {
     if (!isMobile && menuMailbox) {
@@ -84,7 +87,20 @@ export function MailboxesTable({
   }, [mailboxes, menuMailbox, onActionsSheetMailboxChange]);
 
   if (isLoading || showSkeleton) {
-    return isMobile ? <SendersCardListSkeleton /> : <SendersTableSkeleton />;
+    if (isMobile) return <SendersCardListSkeleton />;
+    return (
+      <DataTable
+        items={[]}
+        columns={desktopColumns}
+        getItemKey={(mailbox) => mailbox.id}
+        loading
+        selectable
+        selectedKeys={selectedMailboxes}
+        onSelectionChange={onSelectionChange}
+        pagination={false}
+        widthMode="weighted-fill"
+      />
+    );
   }
 
   if (mailboxes.length === 0) {
@@ -121,7 +137,7 @@ export function MailboxesTable({
       <>
         <View className="gap-3">
           {mailboxes.map((mailbox) => (
-            <MailboxListCard
+            <MailboxOverviewCard
               key={mailbox.id}
               mailbox={mailbox}
               onPressMenu={() => {
@@ -184,67 +200,16 @@ export function MailboxesTable({
           </View>
         </View>
       )}
-
-      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
-        <View className="flex-row border-b border-[#2A2A2A] bg-[#1F1F1F]">
-          <View className="px-2 py-2 justify-center items-center">
-            <Checkbox checked={isAllSelected} indeterminate={isIndeterminate} onPress={toggleSelectAll} />
-          </View>
-          <View className="flex-[2] px-2 py-2 justify-center">
-            <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">Display Name</Text>
-          </View>
-          <View className="flex-[2] px-2 py-2 justify-center">
-            <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">Email Address</Text>
-          </View>
-          <View className="flex-[1] px-2 py-2 justify-center">
-            <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">Status</Text>
-          </View>
-          <View className="flex-[1] px-2 py-2 justify-center">
-            <Text className="text-gray-400 font-instrument-semibold text-xs uppercase">Actions</Text>
-          </View>
-        </View>
-
-        {mailboxes.map((mailbox, index) => {
-          const isSelected = selectedMailboxes.has(mailbox.id);
-          return (
-            <View
-              key={mailbox.id}
-              className={`flex-row border-b border-[#2A2A2A] ${
-                index === mailboxes.length - 1 ? 'border-b-0' : ''
-              } ${isSelected ? 'bg-[#1F1F1F]' : ''}`}
-            >
-              <View className="px-2 py-2 justify-center items-center">
-                <Checkbox checked={isSelected} onPress={() => toggleMailboxSelection(mailbox.id)} />
-              </View>
-              <View className="flex-[2] px-2 py-2 justify-center">
-                <Text className="text-white font-instrument-medium text-sm">
-                  {mailbox.display_name || mailbox.email_address}
-                </Text>
-              </View>
-              <View className="flex-[2] px-2 py-2 justify-center">
-                <Text className="text-gray-400 font-instrument text-sm">{mailbox.email_address}</Text>
-              </View>
-              <View className="flex-[1] px-2 py-2 justify-center">
-                <MailboxStatusPill status={mailbox.status} />
-              </View>
-              <View className="flex-[1] px-2 py-2 justify-center">
-                <View className="flex-row gap-1.5">
-                  <IconButton
-                    variant="secondary"
-                    size="sm"
-                    icon={PlayIcon}
-                    label={testingMailboxId === mailbox.id ? 'Testing...' : 'Test'}
-                    onPress={() => onTestMailbox(mailbox)}
-                    disabled={testingMailboxId === mailbox.id}
-                  />
-                  <IconButton variant="secondary" size="sm" icon={PencilIcon} onPress={() => onEditMailbox(mailbox)} />
-                  <IconButton variant="destructive" size="sm" icon={TrashIcon} onPress={() => onDeleteClick(mailbox)} />
-                </View>
-              </View>
-            </View>
-          );
-        })}
-      </View>
+      <DataTable
+        items={mailboxes}
+        columns={desktopColumns}
+        getItemKey={(mailbox) => mailbox.id}
+        selectable
+        selectedKeys={selectedMailboxes}
+        onSelectionChange={onSelectionChange}
+        pagination={false}
+        widthMode="weighted-fill"
+      />
     </>
   );
 }

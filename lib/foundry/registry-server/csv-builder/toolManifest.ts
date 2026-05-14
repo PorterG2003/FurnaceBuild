@@ -52,6 +52,13 @@ const WEBSITE_VERIFICATION_OUTPUTS: CsvBuilderToolManifestOutput[] = [
   { key: 'input_url', label: 'Input URL', description: 'Canonicalized URL sent to the verifier.', data_type: 'text', default_selected: false },
   { key: 'final_url', label: 'Final URL', description: 'Resolved final URL after redirects.', data_type: 'text', default_selected: true },
   { key: 'reason_summary', label: 'Reason summary', description: 'Short explanation of the verification outcome.', data_type: 'text', default_selected: false },
+  {
+    key: 'industries_served',
+    label: 'Industries served',
+    description: 'Optional LLM-derived industries inferred from crawl evidence when OpenRouter is configured for the worker.',
+    data_type: 'text',
+    default_selected: false,
+  },
   { key: 'raw_json', label: 'Raw JSON', description: 'Full structured verifier result for the row.', data_type: 'json', default_selected: false, is_raw_json: true },
 ];
 

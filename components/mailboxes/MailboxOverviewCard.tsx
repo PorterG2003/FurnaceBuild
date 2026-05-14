@@ -1,15 +1,16 @@
 import { Text, View } from 'react-native';
 import { EllipsisVerticalIcon } from 'react-native-heroicons/outline';
 import { IconButton } from '@/components/ui/icon-button';
-import { MailboxStatusPill } from './mailboxStatus';
-import type { Mailbox } from '@/lib/supabase/types';
+import { formatMailboxLastSent, formatMailboxMinGap, formatMailboxUsage } from '@/lib/mailboxes/overview-format';
+import { MailboxStatusPill } from './MailboxStatusPill';
+import type { MailboxOverview } from '@/lib/supabase/services/mailboxes';
 
-export interface MailboxListCardProps {
-  mailbox: Mailbox;
+export interface MailboxOverviewCardProps {
+  mailbox: MailboxOverview;
   onPressMenu: () => void;
 }
 
-export function MailboxListCard({ mailbox, onPressMenu }: MailboxListCardProps) {
+export function MailboxOverviewCard({ mailbox, onPressMenu }: MailboxOverviewCardProps) {
   return (
     <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4">
       <View className="flex-row items-center justify-between gap-3">
@@ -40,6 +41,14 @@ export function MailboxListCard({ mailbox, onPressMenu }: MailboxListCardProps) 
       >
         {mailbox.email_address}
       </Text>
+      <View className="mt-3 gap-1.5">
+        <Text className="text-gray-300 font-instrument text-xs">
+          Daily {formatMailboxUsage(mailbox.throttleTodaySent, mailbox.effectiveDailyLimit)} | Hour {formatMailboxUsage(mailbox.throttleThisHourSent, mailbox.effectiveHourlyLimit)}
+        </Text>
+        <Text className="text-gray-400 font-instrument text-xs">
+          Gap {formatMailboxMinGap(mailbox.effectiveMinGapSeconds)} | Campaigns {mailbox.activeCampaignCount} | Last sent {formatMailboxLastSent(mailbox.throttleLastSentAt)}
+        </Text>
+      </View>
     </View>
   );
 }

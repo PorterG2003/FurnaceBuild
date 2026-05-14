@@ -65,6 +65,9 @@ export type CampaignMessageJobSpec = {
   statusReason?: string | null;
   scheduledAt?: string;
   reservedAt?: string | null;
+  leaseExpiresAt?: string | null;
+  claimToken?: string | null;
+  sendingStartedAt?: string | null;
   sentAt?: string | null;
   providerMessageId?: string | null;
   messageType?: MessageJobType;
@@ -174,7 +177,11 @@ const DEFAULT_MAILBOX_COUNT = 2;
 const INSERT_CHUNK_SIZE = 250;
 const NODE_SYNC_TIMEOUT_MS = 30_000;
 const NODE_SYNC_POLL_MS = 250;
-const PROD_CAMPAIGN_TEST_PROJECT_REFS = new Set(['hibwbebpcwbstqbjeviq']);
+// Campaign tests may run against the shared dev project, but should avoid mutating
+// the primary Porter seed user unless the caller explicitly opts in.
+const PROTECTED_CAMPAIGN_TEST_OWNER_USER_IDS = new Set([
+  'bedfddfb-7ff2-4842-b953-6ddc1d5f721c',
+]);
 
 const DEFAULT_EMAIL_VARIANT_IDS = [
   'f0000000-0000-4000-8000-00000000ea11',
@@ -471,8 +478,66 @@ async function cleanupCampaignRows(
   accountId: string,
   campaignIds: string[],
   mailboxEmails: string[],
+  harnessMailboxIds?: string[],
 ): Promise<void> {
-  if (campaignIds.length === 0) return;
+  if (campaignIds.length === 0) {
+    const idsOnly = [...new Set((harnessMailboxIds ?? []).filter(Boolean))];
+    if (idsOnly.length === 0 && mailboxEmails.length === 0) {
+      return;
+    }
+    const ts = nowIso();
+    if (idsOnly.length > 0) {
+      for (const batchIds of chunk(idsOnly)) {
+        const { error: mailboxError } = await supabase
+          .from('mailboxes')
+          .update({
+            deleted_at: ts,
+            status: 'disconnected',
+            updated_at: ts,
+          } as any)
+          .eq('account_id', accountId)
+          .in('id', batchIds);
+        if (mailboxError) {
+          throw new Error(`campaign harness: mailbox cleanup failed: ${mailboxError.message}`);
+        }
+      }
+    } else if (mailboxEmails.length > 0) {
+      const { error: mailboxError } = await supabase
+        .from('mailboxes')
+        .update({
+          deleted_at: ts,
+          status: 'disconnected',
+          updated_at: ts,
+        } as any)
+        .eq('account_id', accountId)
+        .in('email_address', mailboxEmails);
+      if (mailboxError) {
+        throw new Error(`campaign harness: mailbox cleanup failed: ${mailboxError.message}`);
+      }
+    }
+    return;
+  }
+
+  // Resolve mailbox ids while campaign_mailboxes rows still exist. Tests may mutate
+  // mailboxes.email_address (e.g. synthetic failure); soft-delete by id must still run.
+  const { data: campaignMailboxRows, error: campaignMailboxLookupError } = await supabase
+    .from('campaign_mailboxes')
+    .select('mailbox_id')
+    .in('campaign_id', campaignIds);
+  if (campaignMailboxLookupError) {
+    throw new Error(
+      `campaign harness: campaign_mailboxes lookup for cleanup failed: ${campaignMailboxLookupError.message}`,
+    );
+  }
+  const mailboxIdsFromCampaigns = [
+    ...new Set(
+      (campaignMailboxRows ?? [])
+        .map((row: { mailbox_id?: string }) => row.mailbox_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const explicitHarnessIds = (harnessMailboxIds ?? []).filter(Boolean);
+  const mailboxIdsToDisconnect = [...new Set([...mailboxIdsFromCampaigns, ...explicitHarnessIds])];
 
   const { data: threadRows, error: threadLookupError } = await supabase
     .from('email_threads')
@@ -521,8 +586,23 @@ async function cleanupCampaignRows(
     throw new Error(`campaign harness: campaign cleanup failed: ${campaignError.message}`);
   }
 
-  if (mailboxEmails.length > 0) {
-    const timestamp = nowIso();
+  const timestamp = nowIso();
+  if (mailboxIdsToDisconnect.length > 0) {
+    for (const batchIds of chunk(mailboxIdsToDisconnect)) {
+      const { error: mailboxError } = await supabase
+        .from('mailboxes')
+        .update({
+          deleted_at: timestamp,
+          status: 'disconnected',
+          updated_at: timestamp,
+        } as any)
+        .eq('account_id', accountId)
+        .in('id', batchIds);
+      if (mailboxError) {
+        throw new Error(`campaign harness: mailbox cleanup failed: ${mailboxError.message}`);
+      }
+    }
+  } else if (mailboxEmails.length > 0) {
     const { error: mailboxError } = await supabase
       .from('mailboxes')
       .update({
@@ -863,6 +943,9 @@ export async function materializeCampaignGraph(
         status_reason: jobSpec.statusReason ?? (status === 'sent' ? 'sent_successfully' : null),
         scheduled_at: scheduledAt,
         reserved_at: jobSpec.reservedAt ?? null,
+        lease_expires_at: jobSpec.leaseExpiresAt ?? null,
+        claim_token: jobSpec.claimToken ?? null,
+        sending_started_at: jobSpec.sendingStartedAt ?? null,
         sent_at: sentAt,
         provider_message_id: jobSpec.providerMessageId ?? null,
         message_data: messageData,
@@ -1040,12 +1123,17 @@ export async function cleanupCampaignGraphManifest(
   supabase: DbClient,
   manifest: CampaignGraphManifest,
 ): Promise<void> {
-  if (manifest.campaignIds.length > 0 || manifest.mailboxEmails.length > 0) {
+  if (
+    manifest.campaignIds.length > 0 ||
+    manifest.mailboxEmails.length > 0 ||
+    manifest.mailboxIds.length > 0
+  ) {
     await cleanupCampaignRows(
       supabase,
       manifest.accountId,
       manifest.campaignIds,
       manifest.mailboxEmails,
+      manifest.mailboxIds,
     );
   }
   if (manifest.messageIds.length > 0) {
@@ -1076,6 +1164,7 @@ export async function cleanupCampaignGraphManifest(
 export function loadCampaignHarnessEnv(): CampaignHarnessEnv {
   loadSeedEnv();
   const usingDedicatedCampaignTestTarget = Boolean(firstNonEmpty(process.env.CAMPAIGN_TEST_SUPABASE_URL));
+  const allowProtectedOwner = process.env.CAMPAIGN_TEST_ALLOW_PROD === '1';
   const supabaseUrl = firstNonEmpty(
     process.env.CAMPAIGN_TEST_SUPABASE_URL,
     process.env.SUPABASE_URL,
@@ -1094,12 +1183,11 @@ export function loadCampaignHarnessEnv(): CampaignHarnessEnv {
       usingDedicatedCampaignTestTarget ? undefined : process.env.SEED_ACCOUNT_ID,
     )
     ?? randomId();
-  const ownerUserId =
-    firstNonEmpty(
-      process.env.CAMPAIGN_TEST_OWNER_USER_ID,
-      usingDedicatedCampaignTestTarget ? undefined : process.env.SEED_OWNER_USER_ID,
-    )
-    ?? randomId();
+  const explicitOwnerUserId = firstNonEmpty(process.env.CAMPAIGN_TEST_OWNER_USER_ID);
+  const defaultOwnerUserId = firstNonEmpty(
+    usingDedicatedCampaignTestTarget ? undefined : process.env.SEED_OWNER_USER_ID,
+  );
+  let ownerUserId = explicitOwnerUserId ?? defaultOwnerUserId ?? randomId();
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
@@ -1118,14 +1206,13 @@ export function loadCampaignHarnessEnv(): CampaignHarnessEnv {
     );
   }
 
-  if (
-    projectRef
-    && PROD_CAMPAIGN_TEST_PROJECT_REFS.has(projectRef)
-    && process.env.CAMPAIGN_TEST_ALLOW_PROD !== '1'
-  ) {
-    throw new Error(
-      `Campaign test harness resolved to protected project ${projectRef}. Set CAMPAIGN_TEST_SUPABASE_URL to a non-prod project or export CAMPAIGN_TEST_ALLOW_PROD=1 to override intentionally.`,
-    );
+  if (PROTECTED_CAMPAIGN_TEST_OWNER_USER_IDS.has(ownerUserId) && !allowProtectedOwner) {
+    if (explicitOwnerUserId) {
+      throw new Error(
+        `Campaign test harness resolved to protected owner ${ownerUserId}. Set CAMPAIGN_TEST_OWNER_USER_ID to a different user or export CAMPAIGN_TEST_ALLOW_PROD=1 to override intentionally.`,
+      );
+    }
+    ownerUserId = randomId();
   }
 
   return { supabaseUrl, serviceRoleKey, accountId, ownerUserId };

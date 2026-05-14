@@ -517,6 +517,56 @@ async function openRouterWebsiteProfile(params: {
   };
 }
 
+function formatCsvBuilderIndustriesServed(profile: WebsiteExtractedProfile | null): string | null {
+  const values = (profile?.industries_served ?? [])
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return values.length > 0 ? values.join(', ') : null;
+}
+
+async function extractCsvBuilderIndustriesServed(args: {
+  crawl: WebsiteWorkerCrawlResult;
+  openRouterApiKey: string | null;
+}): Promise<{
+  industriesServed: string | null;
+  extractedProfile: WebsiteExtractedProfile | null;
+  error: string | null;
+}> {
+  if (!args.openRouterApiKey) {
+    return {
+      industriesServed: null,
+      extractedProfile: null,
+      error: 'Missing FOUNDRY_OPENROUTER_API_KEY or FOUNDRY_OPENROUTER_API_KEY_PARAM_PATH',
+    };
+  }
+  if (args.crawl.pages_visited === 0 || args.crawl.pages.length === 0) {
+    return {
+      industriesServed: null,
+      extractedProfile: null,
+      error: 'No crawl pages available for industries extraction',
+    };
+  }
+  try {
+    const siteBrief = buildWebsiteSiteBrief(toWebsiteIntelligenceCrawl(args.crawl));
+    const { profile } = await openRouterWebsiteProfile({
+      apiKey: args.openRouterApiKey,
+      model: OPENROUTER_MODEL,
+      siteBrief,
+    });
+    return {
+      industriesServed: formatCsvBuilderIndustriesServed(profile),
+      extractedProfile: profile,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      industriesServed: null,
+      extractedProfile: null,
+      error: error instanceof Error ? trimPageFailureMessage(error.message) : String(error),
+    };
+  }
+}
+
 function finiteNumber(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string' && value.trim()) {
@@ -1280,6 +1330,7 @@ async function runCsvBuilderWebsiteVerification(
   jobId: string,
   payload: Record<string, unknown>,
   previousProgress: JobProgress,
+  openRouterApiKey: string | null,
 ): Promise<void> {
   const toolJobId =
     typeof payload.csv_builder_tool_job_id === 'string' && payload.csv_builder_tool_job_id.trim().length > 0
@@ -1302,6 +1353,7 @@ async function runCsvBuilderWebsiteVerification(
   const columns = (columnsData ?? []) as Array<{ id: string; key: string; tool_output_key: string | null }>;
   const columnIdToKey = new Map(columns.map((column) => [column.id, column.key]));
   const outputColumns = columns.filter((column) => (toolJob.output_column_ids ?? []).includes(column.id)) as CsvBuilderOutputColumn[];
+  const wantsIndustriesServed = outputColumns.some((column) => column.tool_output_key === 'industries_served');
   const batch = await loadCsvBuilderBatch(client, batchId);
   const { error: batchStartErr } = await client
     .from('csv_builder_tool_job_batches')
@@ -1341,6 +1393,12 @@ async function runCsvBuilderWebsiteVerification(
           const crawl = await runCompanyWithTimeout(page, bundle, inputUrl, async () => await crawlWebsite(page, bundle, inputUrl));
           const scored = scoreWebsiteVerification(bundle, crawl);
           result = buildCsvBuilderWebsiteVerificationRowResult({ crawl, scored });
+          if (wantsIndustriesServed) {
+            const industries = await extractCsvBuilderIndustriesServed({ crawl, openRouterApiKey });
+            result.industries_served = industries.industriesServed;
+            if (industries.extractedProfile) result.extracted_profile = industries.extractedProfile;
+            if (industries.error) result.industries_served_error = industries.error;
+          }
           outcomeCode = scored.band;
         }
       } catch (error) {
@@ -1429,7 +1487,7 @@ async function main(): Promise<void> {
   }
   const payload = (jobRow.payload ?? {}) as Record<string, unknown>;
   if (typeof payload.csv_builder_tool_job_id === 'string' && payload.csv_builder_tool_job_id.trim().length > 0) {
-    await runCsvBuilderWebsiteVerification(client, jobId, payload, ((jobRow.progress ?? {}) as JobProgress) || {});
+    await runCsvBuilderWebsiteVerification(client, jobId, payload, ((jobRow.progress ?? {}) as JobProgress) || {}, openRouterApiKey);
     return;
   }
   const progress = ((jobRow.progress ?? {}) as JobProgress) || {};

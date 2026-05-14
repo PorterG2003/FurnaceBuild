@@ -1,6 +1,6 @@
 import { Text, View } from 'react-native';
 
-export function getStatusColor(status: string): string {
+export function getMailboxStatusColor(status: string): string {
   switch (status) {
     case 'connected':
       return '#10B981';
@@ -14,7 +14,7 @@ export function getStatusColor(status: string): string {
 }
 
 export function MailboxStatusPill({ status }: { status: string }) {
-  const color = getStatusColor(status);
+  const color = getMailboxStatusColor(status);
   return (
     <View className="px-2 py-1 rounded self-start" style={{ backgroundColor: color + '20' }}>
       <Text className="text-xs font-instrument-medium capitalize" style={{ color }}>

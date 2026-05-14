@@ -69,7 +69,13 @@
     "verify-secret:dev": "bash scripts/verify-secret.sh dev",
     "verify-secret:prod": "bash scripts/verify-secret.sh prod",
     "restart:dev": "bash scripts/restart-services.sh dev",
+    "restart:dev:send": "bash scripts/restart-services.sh dev send-worker",
+    "restart:dev:scheduler": "bash scripts/restart-services.sh dev scheduler-worker",
+    "restart:dev:inbox-checker": "bash scripts/restart-services.sh dev inbox-checker-worker",
     "restart:prod": "bash scripts/restart-services.sh prod",
+    "restart:prod:send": "bash scripts/restart-services.sh prod send-worker",
+    "restart:prod:scheduler": "bash scripts/restart-services.sh prod scheduler-worker",
+    "restart:prod:inbox-checker": "bash scripts/restart-services.sh prod inbox-checker-worker",
     "validate": "bash scripts/validate-build.sh",
     "validate:build": "bash scripts/validate-build.sh"
   },

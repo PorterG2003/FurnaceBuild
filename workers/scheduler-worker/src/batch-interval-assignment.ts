@@ -14,6 +14,38 @@ type ExistingMessageJobPair = {
   node_id: string;
 };
 
+type LiveCampaignJobMailbox = {
+  id: string;
+  lead_id: string;
+  mailbox_id: string;
+  created_at: string;
+};
+
+type ReadyEnrollment = {
+  id: string;
+  lead_id: string;
+  current_node_id: string | null;
+  next_run_at: string | null;
+  created_at?: string;
+  lead?: {
+    id: string;
+    mailbox_id: string | null;
+    email: string;
+    name: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    deleted_at?: string | null;
+  } | Array<{
+    id: string;
+    mailbox_id: string | null;
+    email: string;
+    name: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    deleted_at?: string | null;
+  }> | null;
+};
+
 type CampaignAccountRelation =
   | {
       jitter_percentage?: number | null;
@@ -22,6 +54,24 @@ type CampaignAccountRelation =
       jitter_percentage?: number | null;
     }>
   | null;
+
+/** PostgREST returns 400 Bad Request when `.in()` lists make the request URL too large. */
+const POSTGREST_IN_CLAUSE_CHUNK_SIZE = 100;
+
+/** RPC JSON payload size for `get_existing_message_job_pairs`; chunk to avoid failures at scale. */
+const MESSAGE_JOB_PAIR_RPC_CHUNK_SIZE = 300;
+
+function chunkDistinctIds(ids: string[], chunkSize: number): string[][] {
+  const deduped = [...new Set(ids.filter(Boolean))];
+  if (deduped.length === 0) {
+    return [];
+  }
+  const out: string[][] = [];
+  for (let i = 0; i < deduped.length; i += chunkSize) {
+    out.push(deduped.slice(i, i + chunkSize));
+  }
+  return out;
+}
 
 function getAccountJitter(accounts: CampaignAccountRelation): number | null {
   if (Array.isArray(accounts)) {
@@ -39,16 +89,91 @@ async function loadExistingMessageJobPairSet(
     return new Set();
   }
 
-  const { data, error } = await supabase.rpc('get_existing_message_job_pairs', {
-    p_pairs: candidatePairs,
-  });
+  const keys = new Set<string>();
+  for (let i = 0; i < candidatePairs.length; i += MESSAGE_JOB_PAIR_RPC_CHUNK_SIZE) {
+    const slice = candidatePairs.slice(i, i + MESSAGE_JOB_PAIR_RPC_CHUNK_SIZE);
+    const { data, error } = await supabase.rpc('get_existing_message_job_pairs', {
+      p_pairs: slice,
+    });
 
-  if (error) {
-    throw new Error(`Failed to load existing message job pairs: ${error.message}`);
+    if (error) {
+      throw new Error(`Failed to load existing message job pairs: ${error.message}`);
+    }
+
+    const existingPairs = Array.isArray(data) ? (data as ExistingMessageJobPair[]) : [];
+    for (const pair of existingPairs) {
+      keys.add(`${pair.enrollment_id}:${pair.node_id}`);
+    }
+  }
+  return keys;
+}
+
+/**
+ * Earliest live campaign message_job per lead (pending / reserved / sending).
+ * Chunked: PostgREST encodes `.in('lead_id', …)` on the request URL; huge lists return 400 Bad Request.
+ * Prefer passing only lead ids that actually need this lookup (see batchAssignIntervalJobs).
+ * A single SQL RPC with `uuid[]` / jsonb parameters would avoid URL limits entirely (future refinement).
+ */
+async function loadLiveCampaignJobMailboxByLead(
+  supabase: SupabaseClient,
+  campaignId: string,
+  leadIds: string[],
+): Promise<Map<string, LiveCampaignJobMailbox>> {
+  if (leadIds.length === 0) {
+    return new Map();
   }
 
-  const existingPairs = Array.isArray(data) ? (data as ExistingMessageJobPair[]) : [];
-  return new Set(existingPairs.map((pair) => `${pair.enrollment_id}:${pair.node_id}`));
+  const mailboxByLead = new Map<string, LiveCampaignJobMailbox>();
+
+  for (const chunk of chunkDistinctIds(leadIds, POSTGREST_IN_CLAUSE_CHUNK_SIZE)) {
+    const { data, error } = await supabase
+      .from('message_jobs')
+      .select('id, lead_id, mailbox_id, created_at')
+      .eq('campaign_id', campaignId)
+      .in('lead_id', chunk)
+      .in('status', ['pending', 'reserved', 'sending'])
+      .or('message_type.is.null,message_type.eq.campaign')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to load live campaign job mailboxes: ${error.message}`);
+    }
+
+    for (const row of (data ?? []) as LiveCampaignJobMailbox[]) {
+      const existing = mailboxByLead.get(row.lead_id);
+      if (!existing || row.created_at < existing.created_at) {
+        mailboxByLead.set(row.lead_id, row);
+      }
+    }
+  }
+
+  return mailboxByLead;
+}
+
+function compareReadyEnrollments(left: ReadyEnrollment, right: ReadyEnrollment): number {
+  const leftNextRun = left.next_run_at ?? '';
+  const rightNextRun = right.next_run_at ?? '';
+  if (leftNextRun !== rightNextRun) {
+    return leftNextRun.localeCompare(rightNextRun);
+  }
+
+  const leftCreatedAt = left.created_at ?? '';
+  const rightCreatedAt = right.created_at ?? '';
+  if (leftCreatedAt !== rightCreatedAt) {
+    return leftCreatedAt.localeCompare(rightCreatedAt);
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function getEnrollmentLead(
+  enrollment: ReadyEnrollment,
+): NonNullable<Exclude<ReadyEnrollment['lead'], Array<unknown>>> | null {
+  if (Array.isArray(enrollment.lead)) {
+    return enrollment.lead[0] ?? null;
+  }
+
+  return enrollment.lead ?? null;
 }
 
 /**
@@ -57,7 +182,7 @@ async function loadExistingMessageJobPairSet(
  * For each campaign with available/scheduled intervals:
  * 1. Locks the first available/scheduled interval
  * 2. Finds enrollments ready for email jobs (current_node_id is email node, no message_job exists yet)
- * 3. For each enrollment, determines mailbox (uses existing assignment or round-robin)
+ * 3. For each enrollment, determines mailbox (locked lead mailbox, existing live job mailbox, or round-robin)
  * 4. Creates all message_jobs in one atomic transaction
  */
 export async function batchAssignIntervalJobs(
@@ -65,6 +190,8 @@ export async function batchAssignIntervalJobs(
   rotationIndexBase: number = 0
 ): Promise<void> {
   const now = new Date().toISOString();
+  /** Lower bound for "next" interval_time (SQL >). Small slack avoids skipping the first slot when interval rows were just inserted with timestamps a few ms behind this tick. */
+  const earliestIntervalLowerBoundIso = new Date(Date.now() - 15_000).toISOString();
   
   // Get all campaigns with available/scheduled intervals
   const { data: campaigns, error: campaignsError } = await supabase
@@ -109,7 +236,7 @@ export async function batchAssignIntervalJobs(
         .from('campaign_intervals')
         .select('id, interval_time, status')
         .eq('campaign_id', campaign.id)
-        .gt('interval_time', now)
+        .gt('interval_time', earliestIntervalLowerBoundIso)
         .neq('status', 'completed')
         .order('interval_time', { ascending: true })
         .limit(1);
@@ -165,6 +292,7 @@ export async function batchAssignIntervalJobs(
           lead_id,
           current_node_id,
           next_run_at,
+          created_at,
           lead:leads!inner(id, mailbox_id, email, name, first_name, last_name, deleted_at)
         `)
         .eq('campaign_id', campaign.id)
@@ -172,7 +300,10 @@ export async function batchAssignIntervalJobs(
         .is('deleted_at', null)
         .not('next_run_at', 'is', null)
         .lte('next_run_at', now)
-        .in('current_node_id', emailNodeIds);
+        .in('current_node_id', emailNodeIds)
+        .order('next_run_at', { ascending: true })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
       
       if (enrollmentsError) {
         console.error(`[BATCH INTERVAL] Error loading enrollments for campaign ${campaign.id.substring(0, 8)}:`, enrollmentsError);
@@ -191,7 +322,10 @@ export async function batchAssignIntervalJobs(
         continue;
       }
       
-      const activeEnrollments = (enrollments || []).filter((enrollment: any) => !enrollment.lead?.deleted_at);
+      const activeEnrollments = ((enrollments || []) as ReadyEnrollment[]).filter((enrollment) => {
+        const lead = getEnrollmentLead(enrollment);
+        return !lead?.deleted_at;
+      });
 
       if (activeEnrollments.length === 0) {
         continue;
@@ -218,6 +352,27 @@ export async function batchAssignIntervalJobs(
       }
       
       console.log(`[BATCH INTERVAL] Campaign ${campaign.id.substring(0, 8)}: Found ${enrollmentsWithoutJobs.length} enrollment(s) ready for email jobs`);
+
+      // Live message_job mailbox is only used when the lead has no locked mailbox on `leads`.
+      // Querying all ready lead_ids inflated PostgREST `.in()` URLs and caused 400 Bad Request at scale.
+      const readyLeadIdsNeedingLiveMailbox = [
+        ...new Set(
+          enrollmentsWithoutJobs
+            .filter((enrollment) => {
+              if (!enrollment.lead_id) {
+                return false;
+              }
+              const lead = getEnrollmentLead(enrollment);
+              return !lead?.mailbox_id;
+            })
+            .map((enrollment) => enrollment.lead_id as string),
+        ),
+      ];
+      const liveMailboxByLead = await loadLiveCampaignJobMailboxByLead(
+        supabase,
+        campaign.id,
+        readyLeadIdsNeedingLiveMailbox,
+      );
       
       const jitterPercentage =
         campaign.jitter_percentage ??
@@ -286,9 +441,11 @@ export async function batchAssignIntervalJobs(
       // Later candidates for the same mailbox cannot be scheduled into this interval anyway.
       const jobDataByMailbox = new Map<string, any>();
       let rotationIndex = globalRotationIndex;
-      
-      for (const enrollment of enrollmentsWithoutJobs) {
-        const lead = (enrollment as any).lead;
+
+      const sortedEnrollments = [...enrollmentsWithoutJobs].sort(compareReadyEnrollments);
+
+      for (const enrollment of sortedEnrollments) {
+        const lead = getEnrollmentLead(enrollment);
         if (!lead) {
           continue;
         }
@@ -297,24 +454,19 @@ export async function batchAssignIntervalJobs(
         let mailboxId: string | null = lead.mailbox_id;
         
         if (!mailboxId) {
-          // No mailbox assigned - use round-robin
-          const selectedMailbox = selectMailboxFromPool(campaign.id, eligibleMailboxes, rotationIndex);
-          if (!selectedMailbox) {
-            console.warn(`[BATCH INTERVAL] No mailbox available for enrollment ${enrollment.id.substring(0, 8)}`);
-            continue;
+          const liveMailbox = liveMailboxByLead.get(enrollment.lead_id);
+          if (liveMailbox?.mailbox_id) {
+            mailboxId = liveMailbox.mailbox_id;
+          } else {
+            // No locked or live mailbox assignment yet - use round-robin from the current pool.
+            const selectedMailbox = selectMailboxFromPool(campaign.id, eligibleMailboxes, rotationIndex);
+            if (!selectedMailbox) {
+              console.warn(`[BATCH INTERVAL] No mailbox available for enrollment ${enrollment.id.substring(0, 8)}`);
+              continue;
+            }
+            mailboxId = selectedMailbox.id;
+            rotationIndex++;
           }
-          mailboxId = selectedMailbox.id;
-          rotationIndex++;
-          // Persist assignment so subsequent emails for this lead use the same mailbox
-          const { error: updateLeadError } = await supabase
-            .from('leads')
-            .update({ mailbox_id: selectedMailbox.id })
-            .eq('id', enrollment.lead_id)
-            .is('mailbox_id', null);
-          if (!updateLeadError) {
-            console.log(`[BATCH INTERVAL] Assigned mailbox ${selectedMailbox.id.substring(0, 8)} to lead ${enrollment.lead_id.substring(0, 8)}`);
-          }
-          // If update failed (e.g. race: another worker assigned), lead now has mailbox_id; next batch run will use it
         }
         
         // Get node data
@@ -373,10 +525,8 @@ export async function batchAssignIntervalJobs(
           error: rpcError.message,
           alertPolicy: isRetryableSupabaseReadError(rpcError.message)
             ? 'transient_retryable_warning'
-            : 'critical_failure',
-          aggregationKey: isRetryableSupabaseReadError(rpcError.message)
-            ? `scheduler-batch-interval-rpc:${campaign.id}`
-            : undefined,
+            : 'persistent_config_warning',
+          aggregationKey: `scheduler-batch-interval-rpc:${campaign.id}`,
           summaryFields: {
             campaign_id: campaign.id,
           },
@@ -401,10 +551,8 @@ export async function batchAssignIntervalJobs(
         error: msg,
         alertPolicy: isRetryableSupabaseReadError(msg)
           ? 'transient_retryable_warning'
-          : 'critical_failure',
-        aggregationKey: isRetryableSupabaseReadError(msg)
-          ? `scheduler-batch-interval-process-campaign:${campaign.id}`
-          : undefined,
+          : 'persistent_config_warning',
+        aggregationKey: `scheduler-batch-interval-process-campaign:${campaign.id}`,
         summaryFields: {
           campaign_id: campaign.id,
         },

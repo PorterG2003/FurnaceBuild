@@ -207,6 +207,20 @@ const csvBuilderExportBucket = new s3.Bucket(foundryNormalizeStack, 'CsvBuilderE
   encryption: s3.BucketEncryption.S3_MANAGED,
   enforceSSL: true,
   versioned: false,
+  cors: [
+    {
+      allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.HEAD, s3.HttpMethods.PUT],
+      allowedOrigins: ['*'],
+      allowedHeaders: ['*'],
+      exposedHeaders: ['ETag'],
+    },
+  ],
+  lifecycleRules: [
+    {
+      prefix: 'csv-builder-uploads/',
+      expiration: cdk.Duration.days(3),
+    },
+  ],
   removalPolicy: cdk.RemovalPolicy.RETAIN,
 });
 csvBuilderExportBucket.grantReadWrite(foundryCsvBuilderExportLambda);
@@ -1121,6 +1135,8 @@ foundryRegistryLambda.addEnvironment(
   'FOUNDRY_CSV_BUILDER_EXPORT_STATE_MACHINE_ARN',
   foundryCsvBuilderExportStateMachineArn,
 );
+foundryRegistryLambda.addEnvironment('CSV_BUILDER_EXPORT_BUCKET', csvBuilderExportBucket.bucketName);
+csvBuilderExportBucket.grantReadWrite(foundryRegistryLambda);
 foundryRegistryLambda.addToRolePolicy(
   new iam.PolicyStatement({
     sid: 'FoundryRegistryStartNormalizeExecution',

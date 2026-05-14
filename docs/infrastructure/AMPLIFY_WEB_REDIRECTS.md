@@ -13,12 +13,8 @@ The web app is an Expo SPA. Configure these **Rewrites and redirects** in the Am
    - **Target:** `/auth`  
    - **Type:** 302 (temporary redirect)
 
-2. **SPA fallback (so all routes serve the app)**  
-   - **Source:** `/<*>`  
-   - **Target:** `/index.html`  
-   - **Type:** 200 (rewrite)
-
-If you already have a catch‑all SPA rule, keep it and add only the `/auth/` → `/auth` rule.
+2. **SPA fallback**  
+   Do **not** use only `/<*>` → `/index.html` — that rewrite also catches `/manifest.json`, icons, and `sw.js`, so the PWA gets HTML instead of assets. Prefer the regex rule below (from [AWS SPA examples](https://docs.aws.amazon.com/amplify/latest/userguide/redirect-rewrite-examples.html#redirects-for-single-page-web-apps-spa)), optionally with explicit `/manifest.json` and `/sw.js` lines first if your console still rewrites them.
 
 ## JSON (for Amplify JSON editor)
 
@@ -31,7 +27,19 @@ If you already have a catch‑all SPA rule, keep it and add only the `/auth/` �
     "condition": null
   },
   {
-    "source": "/<*>",
+    "source": "/manifest.json",
+    "target": "/manifest.json",
+    "status": "200",
+    "condition": null
+  },
+  {
+    "source": "/sw.js",
+    "target": "/sw.js",
+    "status": "200",
+    "condition": null
+  },
+  {
+    "source": "</^[^.]+$|\\.(?!(css|gif|ico|jpg|js|mjs|png|txt|svg|woff|woff2|ttf|map|json|webp)$)([^.]+$)/>",
     "target": "/index.html",
     "status": "200",
     "condition": null
@@ -41,6 +49,7 @@ If you already have a catch‑all SPA rule, keep it and add only the `/auth/` �
 
 ## Why this matters
 
+- **PWA / manifest / icons:** A bare `/<*>` → `index.html` rewrite breaks `/manifest.json` and static images unless they are excluded (see above).
 - **`GET /auth/` 404:** Something (user, bookmark, or Supabase redirect) can request `/auth/`. The app route is `/auth`; without a redirect, the host may 404 for `/auth/`.
 - **Forgot password:** Reset emails use a `redirectTo` URL. If that URL or Supabase’s redirect uses `/auth/`, the user can hit the 404 when opening the link. Redirecting `/auth/` → `/auth` fixes that.
 - **`runtime.lastError: The message port closed before a response was received`** is from a **browser extension** (e.g. password manager), not the app. It can be ignored.

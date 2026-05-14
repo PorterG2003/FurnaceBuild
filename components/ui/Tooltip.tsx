@@ -133,9 +133,14 @@ export function Tooltip({ content, placement = 'top', children, style }: Tooltip
       style={[{ position: 'relative' }, style]}
       {...webMouseProps}
     >
-      <Pressable style={{ flex: 1, minWidth: 0 }} onHoverIn={handleHoverIn} onHoverOut={handleHoverOut}>
-        {children}
-      </Pressable>
+      {isCursorPlacement ? (
+        // View (not Pressable): Pressable captures touch on mobile (web + native) and blocks horizontal chart scroll.
+        <View style={{ flex: 1, minWidth: 0 }}>{children}</View>
+      ) : (
+        <Pressable style={{ flex: 1, minWidth: 0 }} onHoverIn={handleHoverIn} onHoverOut={handleHoverOut}>
+          {children}
+        </Pressable>
+      )}
 
       {/* Cursor tooltip — positioned at mouse coords, no anchor measurement */}
       {isCursorPlacement && Platform.OS === 'web' && renderCursorTooltip()}

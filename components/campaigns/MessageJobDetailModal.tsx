@@ -53,6 +53,11 @@ function statusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function formatReason(reason: string | null | undefined): string | null {
+  if (!reason) return null;
+  return reason.replace(/_/g, ' ');
+}
+
 function Section({
   title,
   subtitle,
@@ -153,6 +158,7 @@ export function MessageJobDetailModal({
 
   const accent = job ? statusAccent(job.status) : null;
   const fullJob = job && variant === 'full' && isFullDiagnosticsJob(job) ? job : null;
+  const summaryReason = job ? formatReason(job.status_reason) : null;
   const showIssueSection = !!(
     job &&
     (job.error_message || job.status === 'failed' || job.status === 'blocked')
@@ -195,6 +201,11 @@ export function MessageJobDetailModal({
                   {statusLabel(job.status)}
                 </Text>
               </View>
+              {summaryReason ? (
+                <Text className="min-w-0 flex-1 font-instrument text-sm text-gray-300" selectable>
+                  {summaryReason}
+                </Text>
+              ) : null}
             </View>
           </Section>
 
@@ -229,7 +240,9 @@ export function MessageJobDetailModal({
                 </View>
               ) : (
                 <Text className="font-instrument text-sm text-gray-500">
-                  No message stored — contact support if this job looks wrong.
+                  {summaryReason
+                    ? `Reason: ${summaryReason}`
+                    : 'No message stored — contact support if this job looks wrong.'}
                 </Text>
               )}
             </Section>
@@ -264,7 +277,7 @@ export function MessageJobDetailModal({
               </View>
               {fullJob.status_reason ? (
                 <Text className="min-w-0 flex-1 font-instrument text-sm text-gray-300" selectable>
-                  {fullJob.status_reason.replace(/_/g, ' ')}
+                  {formatReason(fullJob.status_reason)}
                 </Text>
               ) : null}
             </View>

@@ -24,6 +24,7 @@ export interface MessageJobSummary {
   id: string;
   type: 'message_job';
   status: MessageJobStatus;
+  status_reason: string | null;
   message_type: string;
   scheduled_at: string;
   reserved_at: string | null;
@@ -138,6 +139,7 @@ async function lookupCampaignLeadIds(campaignId: string, searchQuery: string): P
 const MESSAGE_JOBS_SELECT_SUMMARY = `
             id,
             status,
+            status_reason,
             message_type,
             scheduled_at,
             reserved_at,

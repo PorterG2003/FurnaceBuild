@@ -9,7 +9,7 @@ export const campaignSmokeLeadsModule: SeedModule = {
   deps: ['campaignSmoke_waitNodes'],
   async run(ctx) {
     const { supabase } = ctx;
-    const { campaignId, accountId, bucketId, emailNodeDbId, mailboxIds } = campaignSmokeStore;
+    const { campaignId, accountId, bucketId, emailNodeDbId } = campaignSmokeStore;
 
     if (ctx.dryRun) {
       ctx.log(`[dry-run] would reset leads+enrollments for campaign=${campaignId}`);
@@ -80,19 +80,6 @@ export const campaignSmokeLeadsModule: SeedModule = {
 
       const leadId = lead.id as string;
       leadIds.push(leadId);
-
-      const mailboxId = mailboxIds[i];
-      if (!mailboxId) {
-        throw new Error('campaign-smoke: missing mailbox for lead');
-      }
-
-      const { error: mbErr } = await supabase
-        .from('leads')
-        .update({ mailbox_id: mailboxId })
-        .eq('id', leadId);
-      if (mbErr) {
-        throw new Error(`campaign-smoke: lead mailbox update failed: ${mbErr.message}`);
-      }
 
       const { data: enr, error: enrErr } = await supabase
         .from('enrollments')

@@ -85,6 +85,11 @@ class MockQueryBuilder implements PromiseLike<Response> {
     return this;
   }
 
+  or(value: string) {
+    this.call.filters.push({ op: 'or', value });
+    return this;
+  }
+
   order(column: string, options?: Record<string, unknown>) {
     this.call.orders.push({ column, options });
     return this;
@@ -278,6 +283,7 @@ test('batchAssignIntervalJobs preserves round-robin mailbox selection for unassi
       ],
     }, // enrollments
     { data: [] }, // get_existing_message_job_pairs
+    { data: [] }, // live campaign jobs by lead
     {
       data: [
         { mailbox_id: 'mailbox-1', mailbox: { id: 'mailbox-1', status: 'connected', smtp_status: 'active', deleted_at: null } },
@@ -285,7 +291,6 @@ test('batchAssignIntervalJobs preserves round-robin mailbox selection for unassi
       ],
     }, // campaign_mailboxes for eligibility
     { data: [{ id: otherNodeId, node_data: { subject: 'Hi' } }] }, // nodes data
-    { data: null, error: null }, // update leads mailbox_id
     {
       data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
     }, // batch_assign_jobs_to_interval
@@ -301,12 +306,6 @@ test('batchAssignIntervalJobs preserves round-robin mailbox selection for unassi
   assert.equal(jobData.length, 1);
   assert.equal(jobData[0].mailbox_id, 'mailbox-2');
   assert.equal(batchRpc.args.p_required_mailbox_count, 2);
-
-  const leadUpdate = supabase.calls.find(
-    (call): call is QueryCall => call.kind === 'query' && call.table === 'leads',
-  );
-  assert.ok(leadUpdate);
-  assert.deepEqual(leadUpdate.updates, [{ mailbox_id: 'mailbox-2' }]);
 
   const mailboxQueries = supabase.calls.filter(
     (call): call is QueryCall =>
@@ -359,4 +358,111 @@ test('batchAssignIntervalJobs only keeps one candidate per mailbox for the curre
   assert.equal(jobData.length, 1);
   assert.equal(jobData[0].mailbox_id, 'mailbox-1');
   assert.equal(batchRpc.args.p_required_mailbox_count, 1);
+});
+
+test('batchAssignIntervalJobs reuses live campaign job mailbox before first send', async () => {
+  const supabase = new MockSupabase([
+    { data: [createCampaign()] },
+    { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] },
+    { data: [{ id: otherNodeId }] },
+    {
+      data: [
+        createEnrollment('enrollment-live-mailbox', {
+          current_node_id: otherNodeId,
+          lead_id: 'lead-live',
+          next_run_at: '2026-04-19T13:00:00.000Z',
+          lead: {
+            id: 'lead-live',
+            mailbox_id: null,
+            email: 'live@example.com',
+            name: 'Live Lead',
+            first_name: 'Live',
+            last_name: 'Lead',
+            deleted_at: null,
+          },
+        }),
+      ],
+    },
+    { data: [] }, // get_existing_message_job_pairs
+    {
+      data: [
+        {
+          id: 'job-live',
+          lead_id: 'lead-live',
+          mailbox_id: 'mailbox-live',
+          created_at: '2026-04-19T12:59:00.000Z',
+        },
+      ],
+    }, // existing live campaign jobs by lead
+    {
+      data: [
+        { mailbox_id: 'mailbox-1', mailbox: { id: 'mailbox-1', status: 'connected', smtp_status: 'active', deleted_at: null } },
+      ],
+    }, // campaign_mailboxes for eligibility
+    { data: [{ id: otherNodeId, node_data: { subject: 'Hi' } }] }, // nodes data
+    {
+      data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
+    },
+  ]);
+
+  await batchAssignIntervalJobs(supabase as any, 0);
+
+  const rpcCalls = supabase.calls.filter((call): call is RpcCall => call.kind === 'rpc');
+  const batchRpc = rpcCalls.find((call) => call.fn === 'batch_assign_jobs_to_interval');
+  assert.ok(batchRpc);
+
+  const jobData = batchRpc.args.p_job_data as Array<Record<string, unknown>>;
+  assert.equal(jobData.length, 1);
+  assert.equal(jobData[0].mailbox_id, 'mailbox-live');
+});
+
+test('batchAssignIntervalJobs chunks live campaign job mailbox lookup by lead_id for large batches', async () => {
+  const enrollmentRows = Array.from({ length: 150 }, (_, i) =>
+    createEnrollment(`enrollment-${i}`, {
+      lead_id: `lead-${i}`,
+      lead: {
+        id: `lead-${i}`,
+        mailbox_id: null,
+        email: `user-${i}@example.com`,
+        name: `Lead ${i}`,
+        first_name: 'Lead',
+        last_name: String(i),
+        deleted_at: null,
+      },
+    }),
+  );
+
+  const supabase = new MockSupabase([
+    { data: [createCampaign()] },
+    { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] },
+    { data: [{ id: nodeId }] },
+    { data: enrollmentRows },
+    { data: [] },
+    { data: [] },
+    { data: [] },
+    {
+      data: [
+        {
+          mailbox_id: 'mailbox-1',
+          mailbox: { id: 'mailbox-1', status: 'connected', smtp_status: 'active', deleted_at: null },
+        },
+      ],
+    },
+    { data: [{ id: nodeId, node_data: { subject: 'Hello' } }] },
+    {
+      data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
+    },
+  ]);
+
+  await batchAssignIntervalJobs(supabase as any, 0);
+
+  const messageJobQueries = supabase.calls.filter(
+    (call): call is QueryCall => call.kind === 'query' && call.table === 'message_jobs',
+  );
+  assert.equal(messageJobQueries.length, 2);
+  const leadInFilters = messageJobQueries.map((call) =>
+    call.filters.find((f) => f.op === 'in' && f.column === 'lead_id')?.value,
+  );
+  assert.equal((leadInFilters[0] as unknown[]).length, 100);
+  assert.equal((leadInFilters[1] as unknown[]).length, 50);
 });

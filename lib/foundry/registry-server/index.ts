@@ -27,6 +27,7 @@ export * from './csv-builder/toolJobBatches.js';
 export * from './csv-builder/toolJobProgress.js';
 export * from './csv-builder/builderWebsiteVerification.js';
 export * from './csv-builder/builderGoogleAdsVerification.js';
+export * from './csv-builder/parseCsv.js';
 export * from './csv-builder/toolManifest.js';
 export * from './csv-builder/toolOutputSchema.js';
 export * from './scrapers/cleanCompanyNameForSearch.js';

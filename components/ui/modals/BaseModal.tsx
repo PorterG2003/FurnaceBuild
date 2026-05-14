@@ -64,6 +64,9 @@ export function BaseModal({
       : dialogMaxHeight != null
         ? { maxHeight: dialogMaxHeight }
         : {};
+  /** Desktop modal: `maxHeight` without `height` — pin dialog height and flex the body so footer stays inside the frame. */
+  const fillMaxHeightColumn =
+    maxHeight != null && !stretchContent && !compact && dialogMaxHeight != null;
   const dialogRef = useRef<View>(null);
   const webKeyboardInset = useVisualViewportKeyboardInset();
 
@@ -139,10 +142,22 @@ export function BaseModal({
           >
             <View
               className={`bg-[#1A1A1A] rounded-2xl border border-[#2A2A2A] w-full ${maxWidthClasses[maxWidth]}`}
-              style={containerStyle}
+              style={[
+                containerStyle,
+                fillMaxHeightColumn
+                  ? {
+                      height: dialogMaxHeight,
+                      flexDirection: 'column',
+                      overflow: 'hidden',
+                    }
+                  : null,
+              ]}
             >
             {/* Header */}
-            <View className="flex-row items-start justify-between p-6 border-b border-[#2A2A2A]">
+            <View
+              className="flex-row items-start justify-between p-6 border-b border-[#2A2A2A]"
+              style={fillMaxHeightColumn ? { flexShrink: 0 } : undefined}
+            >
               <View className="flex-1 mr-4">
                 <Text className="text-2xl font-instrument-semibold mb-2 text-white">
                   {title}
@@ -168,18 +183,14 @@ export function BaseModal({
                 style={
                   stretchContent && dialogMaxHeight != null
                     ? { flexGrow: 1, flexShrink: 1, minHeight: 0 }
-                    : undefined
+                    : fillMaxHeightColumn
+                      ? { flexGrow: 1, flexShrink: 1, minHeight: 0 }
+                      : undefined
                 }
               >
                 {maxHeight != null && !stretchContent ? (
                   <ScrollView
-                    style={{
-                      maxHeight: Math.max(
-                        160,
-                        dialogMaxHeight! -
-                          (description ? 200 : 168),
-                      ),
-                    }}
+                    style={{ flex: 1 }}
                     contentContainerStyle={{ paddingBottom: footer ? 12 : 0, flexGrow: 0 }}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator
@@ -203,7 +214,10 @@ export function BaseModal({
 
             {/* Footer */}
             {footer && (
-              <View className={`px-6 pb-6 pt-6 ${!compact ? 'border-t border-[#2A2A2A]' : ''}`}>
+              <View
+                className={`px-6 pb-6 pt-6 ${!compact ? 'border-t border-[#2A2A2A]' : ''}`}
+                style={fillMaxHeightColumn ? { flexShrink: 0 } : undefined}
+              >
                 {footer}
               </View>
             )}

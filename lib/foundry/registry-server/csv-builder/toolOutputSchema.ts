@@ -32,6 +32,7 @@ export function extractCsvBuilderToolOutputValue(
     if (outputKey === 'input_url') return result.input_url ?? null;
     if (outputKey === 'final_url') return result.final_url ?? null;
     if (outputKey === 'reason_summary') return result.reason_summary ?? null;
+    if (outputKey === 'industries_served') return result.industries_served ?? null;
     if (outputKey === 'raw_json') return result;
     return null;
   }

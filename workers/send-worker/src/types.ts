@@ -31,6 +31,9 @@ export interface MessageJob {
   status_reason?: string | null;
   scheduled_at: string;
   reserved_at: string | null;
+  lease_expires_at?: string | null;
+  claim_token?: string | null;
+  sending_started_at?: string | null;
   sent_at: string | null;
   provider_message_id: string | null;
   error_message: string | null;
@@ -84,6 +87,7 @@ export interface Lead {
   email: string;
   first_name?: string;
   last_name?: string;
+  mailbox_id?: string | null;
   deleted_at?: string | null;
   // ... other fields
 }

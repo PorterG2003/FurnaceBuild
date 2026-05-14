@@ -161,6 +161,26 @@ After deployment, check:
    - later summary posts include counts/timestamps for the same worker-local aggregation key
    - critical failures still post immediately without aggregation delay
 
+6. **Self-recovery health check (after prod migration + worker restart):**
+   From the repo root:
+   ```bash
+   npm run verify:self-recovery
+   ```
+   Expected behavior:
+   - resolves the prod worker Supabase URL / SSM secret automatically
+   - prints:
+     - `retryable_stopped_count`
+     - `stale_reserved_count`
+     - `stale_sending_count`
+   - use this together with:
+     ```bash
+     npx tsx scripts/repair-transient-error-stopped-enrollments.ts
+     ```
+   Healthy post-rollout shape:
+   - `Repair candidates: 0`
+   - `retryable_stopped_count` near zero or only rows with live reserved jobs
+   - `stale_reserved_count` trends down over time instead of accumulating indefinitely
+
 ## Build and Push Docker Images
 
 After deploying the stacks, build and push Docker images to ECR:
@@ -231,10 +251,22 @@ The script will:
 - `npm run build:prod:smartlead` - Build Smartlead migration task image for prod
 
 ### Scaling Commands
+
 - `npm run scale:dev` - Scale dev services to 1 task each (queries `furnace-cluster-dev` only)
 - `npm run scale:prod` - Scale prod services to 1 task each (queries `furnace-cluster-prod` only)
 - `npm run scale:down:dev` - Scale dev services to 0 tasks (stop workers)
 - `npm run scale:down:prod` - Scale prod services to 0 tasks (stop workers)
+
+### Restart Commands
+
+- `npm run restart:dev` - Restart all dev ECS worker services
+- `npm run restart:dev:send` - Restart only the dev send worker service
+- `npm run restart:dev:scheduler` - Restart only the dev scheduler worker service
+- `npm run restart:dev:inbox-checker` - Restart only the dev inbox checker worker service
+- `npm run restart:prod` - Restart all prod ECS worker services
+- `npm run restart:prod:send` - Restart only the prod send worker service
+- `npm run restart:prod:scheduler` - Restart only the prod scheduler worker service
+- `npm run restart:prod:inbox-checker` - Restart only the prod inbox checker worker service
 
 **Note:** Services are isolated by cluster - the script queries the specific cluster for that environment, so dev and prod won't mix.
 

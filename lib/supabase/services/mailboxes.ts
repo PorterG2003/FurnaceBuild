@@ -1,5 +1,16 @@
 import { supabase } from '../client';
 import type { Mailbox, MailboxInsert, MailboxUpdate } from '../types';
+import {
+  getMailboxOverviewUtcKeys,
+  mergeMailboxOverviewData,
+  type MailboxCampaignAssignmentRow,
+  type MailboxOverview,
+  type MailboxThrottleOverviewRow,
+} from './mailboxes-core';
+
+const ACTIVE_CAMPAIGN_STATUSES = ['running', 'paused'] as const;
+export { getMailboxOverviewUtcKeys, mergeMailboxOverviewData } from './mailboxes-core';
+export type { MailboxOverview } from './mailboxes-core';
 
 /**
  * Mailbox service for database operations
@@ -22,6 +33,59 @@ export async function getMailboxesByAccount(accountId: string): Promise<Mailbox[
   }
 
   return data ?? [];
+}
+
+/**
+ * Get mailbox rows enriched with current-day throttle data and active campaign counts.
+ */
+export async function getMailboxOverviewsByAccount(accountId: string): Promise<MailboxOverview[]> {
+  const { date } = getMailboxOverviewUtcKeys();
+
+  const [mailboxes, throttlesResult, activeCampaignsResult] = await Promise.all([
+    getMailboxesByAccount(accountId),
+    (supabase as any)
+      .from('mailbox_throttles')
+      .select('mailbox_id, sent_count, hourly_sent, last_sent_at')
+      .eq('account_id', accountId)
+      .eq('date', date),
+    supabase
+      .from('campaigns')
+      .select('id')
+      .eq('account_id', accountId)
+      .is('deleted_at', null)
+      .in('status', [...ACTIVE_CAMPAIGN_STATUSES]),
+  ]);
+
+  if (throttlesResult.error) {
+    throw new Error(`Failed to fetch mailbox throttles: ${throttlesResult.error.message}`);
+  }
+
+  if (activeCampaignsResult.error) {
+    throw new Error(`Failed to fetch active campaigns: ${activeCampaignsResult.error.message}`);
+  }
+
+  const activeCampaignIds = (activeCampaignsResult.data ?? []).map((campaign) => campaign.id);
+  let assignments: MailboxCampaignAssignmentRow[] = [];
+
+  if (activeCampaignIds.length > 0) {
+    const { data, error } = await supabase
+      .from('campaign_mailboxes')
+      .select('mailbox_id')
+      .eq('account_id', accountId)
+      .in('campaign_id', activeCampaignIds);
+
+    if (error) {
+      throw new Error(`Failed to fetch active campaign mailbox assignments: ${error.message}`);
+    }
+
+    assignments = (data ?? []) as MailboxCampaignAssignmentRow[];
+  }
+
+  return mergeMailboxOverviewData(
+    mailboxes,
+    ((throttlesResult.data ?? []) as MailboxThrottleOverviewRow[]),
+    assignments
+  );
 }
 
 /**

@@ -51,6 +51,8 @@ import {
   type PostCreateCsvBuilderColumnResponse,
   type PostCreateCsvBuilderRunBody,
   type PostCreateCsvBuilderRunResponse,
+  type PostCreateCsvBuilderUploadUrlBody,
+  type PostCreateCsvBuilderUploadUrlResponse,
   type PostCreateCsvBuilderToolJobBody,
   type PostCreateCsvBuilderToolJobResponse,
   type PostCsvBuilderExportBody,
@@ -772,6 +774,10 @@ function encodeCsvBuilderFilters(filters?: CsvBuilderFilter[]): string | undefin
   return JSON.stringify(filters);
 }
 
+export function estimateCsvBuilderCreateRunPayloadBytes(body: PostCreateCsvBuilderRunBody & { account_id: string }): number {
+  return new TextEncoder().encode(JSON.stringify(body)).byteLength;
+}
+
 export async function fetchCsvBuilderRuns(params: {
   account_id: string;
   limit?: number;
@@ -797,6 +803,16 @@ export async function createCsvBuilderRun(
   body: PostCreateCsvBuilderRunBody & { account_id: string },
 ): Promise<PostCreateCsvBuilderRunResponse> {
   return registryFetchJson<PostCreateCsvBuilderRunResponse>('csv-builder/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function createCsvBuilderUploadUrl(
+  body: PostCreateCsvBuilderUploadUrlBody,
+): Promise<PostCreateCsvBuilderUploadUrlResponse> {
+  return registryFetchJson<PostCreateCsvBuilderUploadUrlResponse>('csv-builder/upload-url', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

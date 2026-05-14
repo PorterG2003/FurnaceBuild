@@ -84,6 +84,20 @@ class MockSupabase {
   }
 }
 
+class MockRpcSupabase {
+  readonly rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+
+  constructor(
+    private readonly responses: Array<{ data?: unknown; error?: { message: string } | null }> = []
+  ) {}
+
+  rpc(fn: string, args: Record<string, unknown>) {
+    this.rpcCalls.push({ fn, args });
+    const response = this.responses.shift() ?? { data: null, error: null };
+    return Promise.resolve(response);
+  }
+}
+
 test('SchedulerWorker single-flight intervals skip overlapping ticks', async () => {
   const worker = createWorker();
   (worker as any).running = true;
@@ -145,10 +159,16 @@ test('SchedulerWorker.stop clears background timers', () => {
     { id: 'interval-maintenance' },
     { id: 'stale-lock-cleanup' },
     { id: 'batch-interval-assignment' },
+    { id: 'ooo-resume' },
+    { id: 'stale-reserved-reclaim' },
+    { id: 'self-recovery-audit' },
   ];
   (worker as any).intervalMaintenanceTimer = timerHandles[0];
   (worker as any).staleLockCleanupTimer = timerHandles[1];
   (worker as any).batchIntervalAssignmentTimer = timerHandles[2];
+  (worker as any).oooResumeTimer = timerHandles[3];
+  (worker as any).staleReservedReclaimTimer = timerHandles[4];
+  (worker as any).selfRecoveryAuditTimer = timerHandles[5];
 
   const originalClearInterval = global.clearInterval;
   const cleared: unknown[] = [];
@@ -163,6 +183,127 @@ test('SchedulerWorker.stop clears background timers', () => {
   }
 
   assert.deepEqual(cleared, timerHandles);
+});
+
+test('SchedulerWorker stale reserved reclaim timer calls reclaim rpc', async () => {
+  const worker = new SchedulerWorker({
+    supabase: new MockRpcSupabase([{ data: [{ message_job_id: 'job-1' }], error: null }]) as any,
+    databaseClient: {
+      async poll() {
+        return [];
+      },
+      getPollInterval() {
+        return 1000;
+      },
+      getBatchSize() {
+        return 100;
+      },
+    } as any,
+  });
+  (worker as any).running = true;
+
+  const originalSetInterval = global.setInterval;
+  const originalClearInterval = global.clearInterval;
+  let intervalCallback: (() => void) | undefined;
+
+  global.setInterval = ((callback: (...args: any[]) => void) => {
+    intervalCallback = callback as () => void;
+    return { id: 'timer-reclaim' } as any;
+  }) as typeof setInterval;
+  global.clearInterval = (() => {}) as typeof clearInterval;
+
+  try {
+    (worker as any).startStaleReservedReclaim();
+    assert.ok(intervalCallback);
+    intervalCallback();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const rpcCalls = ((worker as any).supabase as MockRpcSupabase).rpcCalls;
+    assert.deepEqual(rpcCalls, [
+      {
+        fn: 'reclaim_stale_campaign_message_jobs',
+        args: {
+          p_batch_size: 50,
+          p_rearm_delay_seconds: 60,
+          p_reserved_stale_minutes: 5,
+        },
+      },
+    ]);
+  } finally {
+    global.setInterval = originalSetInterval;
+    global.clearInterval = originalClearInterval;
+  }
+});
+
+test('SchedulerWorker self recovery audit calls stale sending finalize and health rpc', async () => {
+  const worker = new SchedulerWorker({
+    supabase: new MockRpcSupabase([
+      { data: [{ message_job_id: 'sending-1' }], error: null },
+      {
+        data: [
+          {
+            retryable_stopped_count: 2,
+            stale_reserved_count: 3,
+            stale_sending_count: 1,
+          },
+        ],
+        error: null,
+      },
+    ]) as any,
+    databaseClient: {
+      async poll() {
+        return [];
+      },
+      getPollInterval() {
+        return 1000;
+      },
+      getBatchSize() {
+        return 100;
+      },
+    } as any,
+  });
+  (worker as any).running = true;
+
+  const originalSetInterval = global.setInterval;
+  const originalClearInterval = global.clearInterval;
+  let intervalCallback: (() => void) | undefined;
+
+  global.setInterval = ((callback: (...args: any[]) => void) => {
+    intervalCallback = callback as () => void;
+    return { id: 'timer-audit' } as any;
+  }) as typeof setInterval;
+  global.clearInterval = (() => {}) as typeof clearInterval;
+
+  try {
+    (worker as any).startSelfRecoveryAudit();
+    assert.ok(intervalCallback);
+    intervalCallback();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const rpcCalls = ((worker as any).supabase as MockRpcSupabase).rpcCalls;
+    assert.deepEqual(rpcCalls, [
+      {
+        fn: 'finalize_stale_sending_campaign_message_jobs',
+        args: {
+          p_batch_size: 20,
+          p_stale_minutes: 30,
+        },
+      },
+      {
+        fn: 'get_job_self_recovery_health',
+        args: {
+          p_reserved_stale_minutes: 5,
+          p_sending_stale_minutes: 30,
+        },
+      },
+    ]);
+  } finally {
+    global.setInterval = originalSetInterval;
+    global.clearInterval = originalClearInterval;
+  }
 });
 
 test('SchedulerWorker batches campaign, node, and message-job preloads per claim batch', async () => {

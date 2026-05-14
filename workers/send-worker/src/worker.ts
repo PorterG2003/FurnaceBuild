@@ -15,7 +15,7 @@ import { isCampaignMessageJob } from './types.js';
 class CampaignAttemptError extends Error {
   constructor(
     message: string,
-    readonly statusReason: 'provider_error' | 'template_render_error' = 'provider_error',
+    readonly statusReason: 'provider_error' | 'template_render_error' | 'uncertain_send_state' = 'provider_error',
   ) {
     super(message);
     this.name = 'CampaignAttemptError';
@@ -203,7 +203,7 @@ export class SendWorker {
   private async failCampaignMessageJob(
     messageJob: MessageJob,
     reason: string,
-    statusReason: 'provider_error' | 'template_render_error' = 'provider_error',
+    statusReason: 'provider_error' | 'template_render_error' | 'uncertain_send_state' = 'provider_error',
   ): Promise<void> {
     await this.supabase
       .from('message_jobs')
@@ -216,6 +216,74 @@ export class SendWorker {
       .eq('id', messageJob.id);
 
     await this.stopCampaignEnrollment(messageJob.enrollment_id, reason);
+  }
+
+  private async deferCampaignMessageJobForRetryableError(
+    messageJob: MessageJob,
+    reason: string,
+    retryDelayMs: number = 60_000,
+  ): Promise<boolean> {
+    const now = new Date();
+    const retryAt = new Date(now.getTime() + retryDelayMs).toISOString();
+    const { data, error } = await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'deferred',
+        status_reason: 'transient_read_error',
+        reserved_at: null,
+        lease_expires_at: null,
+        claim_token: null,
+        send_wait_reason: null as any,
+        error_message: reason,
+        updated_at: now.toISOString(),
+      } as any)
+      .eq('id', messageJob.id)
+      .eq('status', 'reserved')
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to defer retryable message job ${messageJob.id}: ${error.message}`);
+    }
+
+    if (!data?.id) {
+      return false;
+    }
+
+    const { error: enrollmentError } = await this.supabase
+      .from('enrollments')
+      .update({
+        next_run_at: retryAt,
+        updated_at: now.toISOString(),
+      })
+      .eq('id', messageJob.enrollment_id)
+      .eq('state', 'active');
+
+    if (enrollmentError) {
+      throw new Error(
+        `Failed to re-arm enrollment ${messageJob.enrollment_id} after retryable message job defer: ${enrollmentError.message}`
+      );
+    }
+
+    return true;
+  }
+
+  private async finalizeCampaignMessageJobSent(
+    messageJobId: string,
+    providerMessageId: string,
+  ): Promise<void> {
+    const { data, error } = await this.supabase.rpc('finalize_message_job_sent', {
+      p_message_job_id: messageJobId,
+      p_provider_message_id: providerMessageId,
+    });
+
+    if (error) {
+      throw new Error(`Failed to finalize sent message job ${messageJobId}: ${error.message}`);
+    }
+
+    if (data !== true) {
+      throw new Error(`Failed to finalize sent message job ${messageJobId}: job was not in sending state`);
+    }
   }
 
   private async blockCampaignMessageJob(
@@ -234,6 +302,108 @@ export class SendWorker {
       .eq('id', messageJob.id);
 
     await this.stopCampaignEnrollment(messageJob.enrollment_id, reason);
+  }
+
+  private async reconcileLeadMailboxAfterSuccessfulSend(
+    messageJob: MessageJob,
+    leadMailboxId: string | null | undefined,
+  ): Promise<void> {
+    if (leadMailboxId === messageJob.mailbox_id) {
+      return;
+    }
+
+    if (leadMailboxId) {
+      reportErrorToSlack('Send-worker: locked lead mailbox mismatched sent job mailbox', {
+        severity: 'warning',
+        campaign_id: messageJob.campaign_id,
+        enrollment_id: messageJob.enrollment_id,
+        lead_id: messageJob.lead_id,
+        message_job_id: messageJob.id,
+        error: `Lead mailbox ${leadMailboxId} did not match sent job mailbox ${messageJob.mailbox_id}.`,
+        alertPolicy: 'persistent_config_warning',
+        aggregationKey: `send-worker-mailbox-lock-mismatch:${messageJob.campaign_id}:${messageJob.lead_id}`,
+        summaryFields: {
+          campaign_id: messageJob.campaign_id,
+          lead_id: messageJob.lead_id,
+        },
+      });
+      return;
+    }
+
+    const { data: updatedLead, error: updateLeadError } = await this.supabase
+      .from('leads')
+      .update({ mailbox_id: messageJob.mailbox_id })
+      .eq('id', messageJob.lead_id)
+      .is('mailbox_id', null)
+      .select('id, mailbox_id')
+      .maybeSingle();
+
+    if (updateLeadError) {
+      reportErrorToSlack('Send-worker: failed to lock lead mailbox after first send', {
+        severity: 'warning',
+        campaign_id: messageJob.campaign_id,
+        enrollment_id: messageJob.enrollment_id,
+        lead_id: messageJob.lead_id,
+        message_job_id: messageJob.id,
+        error: updateLeadError.message,
+        alertPolicy: isRetryableSupabaseReadError(updateLeadError.message)
+          ? 'transient_retryable_warning'
+          : 'persistent_config_warning',
+        aggregationKey: `send-worker-lock-lead-mailbox:${messageJob.campaign_id}:${messageJob.lead_id}`,
+        summaryFields: {
+          campaign_id: messageJob.campaign_id,
+          lead_id: messageJob.lead_id,
+        },
+      });
+      return;
+    }
+
+    if (updatedLead?.mailbox_id === messageJob.mailbox_id) {
+      return;
+    }
+
+    const { data: currentLead, error: currentLeadError } = await this.supabase
+      .from('leads')
+      .select('id, mailbox_id')
+      .eq('id', messageJob.lead_id)
+      .maybeSingle();
+
+    if (currentLeadError) {
+      reportErrorToSlack('Send-worker: failed to verify lead mailbox after first send', {
+        severity: 'warning',
+        campaign_id: messageJob.campaign_id,
+        enrollment_id: messageJob.enrollment_id,
+        lead_id: messageJob.lead_id,
+        message_job_id: messageJob.id,
+        error: currentLeadError.message,
+        alertPolicy: isRetryableSupabaseReadError(currentLeadError.message)
+          ? 'transient_retryable_warning'
+          : 'persistent_config_warning',
+        aggregationKey: `send-worker-verify-lead-mailbox:${messageJob.campaign_id}:${messageJob.lead_id}`,
+        summaryFields: {
+          campaign_id: messageJob.campaign_id,
+          lead_id: messageJob.lead_id,
+        },
+      });
+      return;
+    }
+
+    if (currentLead?.mailbox_id !== messageJob.mailbox_id) {
+      reportErrorToSlack('Send-worker: lead mailbox differed after first-send lock attempt', {
+        severity: 'warning',
+        campaign_id: messageJob.campaign_id,
+        enrollment_id: messageJob.enrollment_id,
+        lead_id: messageJob.lead_id,
+        message_job_id: messageJob.id,
+        error: `Lead mailbox ${currentLead?.mailbox_id ?? 'NULL'} did not match sent job mailbox ${messageJob.mailbox_id}.`,
+        alertPolicy: 'persistent_config_warning',
+        aggregationKey: `send-worker-post-lock-mismatch:${messageJob.campaign_id}:${messageJob.lead_id}`,
+        summaryFields: {
+          campaign_id: messageJob.campaign_id,
+          lead_id: messageJob.lead_id,
+        },
+      });
+    }
   }
 
   private async deferCampaignMessageJobForPause(messageJob: MessageJob): Promise<void> {
@@ -299,6 +469,8 @@ export class SendWorker {
       return this.processInboxForwardJob(messageJob);
     }
     // Campaign (or null/legacy): continue with campaign send flow
+
+    let enteredSending = false;
 
     try {
       const message_job_id = messageJob.id;
@@ -455,10 +627,12 @@ export class SendWorker {
         .update({
           status: 'sending',
           status_reason: null,
+          sending_started_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
         .eq('id', message_job_id)
         .eq('status', 'reserved');
+      enteredSending = true;
 
       // Throttle check passed - proceed with sending
 
@@ -591,19 +765,12 @@ export class SendWorker {
         }
       }
 
-      // 6. Update message_job status
-      await this.supabase
-        .from('message_jobs')
-        .update({
-          status: 'sent',
-          status_reason: 'sent_successfully',
-          sent_at: new Date().toISOString(),
-          provider_message_id: providerMessageId,
-        })
-        .eq('id', message_job_id);
+      // 6. Atomically finalize sent state and mailbox throttle accounting.
+      await this.finalizeCampaignMessageJobSent(message_job_id, providerMessageId);
 
-      // 6a. Throttle counters already updated by check_mailbox_throttle_and_reserve() function
-      // No need to update mailbox_throttles here
+      await this.reconcileLeadMailboxAfterSuccessfulSend(messageJob, lead.mailbox_id);
+
+      // 6a. Throttle counters were committed atomically with final sent status.
 
       // 6b. Update enrollment to trigger scheduler re-evaluation
       // This allows the scheduler to pick up the enrollment immediately and proceed to next node
@@ -708,10 +875,13 @@ export class SendWorker {
       console.error(`[SEND WORKER] Error processing message job ${messageJob.id}:`, error);
       
       const errorMessage = formatUnknownError(error);
-      const statusReason =
-        error instanceof CampaignAttemptError ? error.statusReason : 'provider_error';
-
       const retryableJobError = isRetryableSupabaseReadError(errorMessage);
+      const statusReason =
+        error instanceof CampaignAttemptError
+          ? error.statusReason
+          : retryableJobError && enteredSending
+            ? 'uncertain_send_state'
+            : 'provider_error';
       reportErrorToSlack('Send-worker failed to process message job', {
         severity: retryableJobError ? 'warning' : 'critical',
         error: errorMessage,
@@ -726,6 +896,46 @@ export class SendWorker {
           campaign_id: messageJob.campaign_id,
         },
       });
+
+      if (retryableJobError && isCampaignMessageJob(messageJob) && !enteredSending) {
+        try {
+          const deferred = await this.deferCampaignMessageJobForRetryableError(
+            messageJob,
+            errorMessage
+          );
+          if (deferred) {
+            console.log(
+              `[SEND WORKER] Deferred retryable pre-send failure for message job ${messageJob.id}`
+            );
+          } else {
+            console.log(
+              `[SEND WORKER] Retryable pre-send failure for message job ${messageJob.id} left unchanged because it was no longer reserved`
+            );
+          }
+          return;
+        } catch (requeueError) {
+          const requeueMessage = formatUnknownError(requeueError);
+          console.error(
+            `[SEND WORKER] Failed to defer retryable message job ${messageJob.id}:`,
+            requeueError
+          );
+          reportErrorToSlack('Send-worker: failed to defer retryable pre-send message job', {
+            severity: 'warning',
+            message_job_id: messageJob.id,
+            enrollment_id: messageJob.enrollment_id,
+            campaign_id: messageJob.campaign_id,
+            error: requeueMessage,
+            alertPolicy: isRetryableSupabaseReadError(requeueMessage)
+              ? 'transient_retryable_warning'
+              : 'persistent_config_warning',
+            aggregationKey: `send-worker-requeue-retryable:${messageJob.campaign_id}`,
+            summaryFields: {
+              campaign_id: messageJob.campaign_id,
+            },
+          });
+          return;
+        }
+      }
       
       try {
         await this.failCampaignMessageJob(messageJob, errorMessage, statusReason);

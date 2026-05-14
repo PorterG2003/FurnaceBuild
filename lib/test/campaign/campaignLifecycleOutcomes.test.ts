@@ -18,7 +18,11 @@ import type {
   Mailbox as InboxMailbox,
   ProcessedMessage,
 } from '../../../workers/inbox-checker-worker/src/types';
-import { createCampaignTestNamespace } from './fixtures';
+import {
+  buildCampaignEnrollment,
+  buildCampaignLead,
+  createCampaignTestNamespace,
+} from './fixtures';
 
 const CHICAGO_SCHEDULE = {
   timezone: 'America/Chicago',
@@ -128,6 +132,13 @@ async function assignJobsForLeadIds(
   leadIds: string[],
 ): Promise<void> {
   const leadRows = await loadLeadRows(harness, leadIds);
+  const { data: campaignMailboxRows, error: campaignMailboxError } = await harness.supabase
+    .from('campaign_mailboxes')
+    .select('mailbox_id')
+    .eq('campaign_id', campaignId)
+    .order('mailbox_id', { ascending: true });
+  assert.equal(campaignMailboxError, null);
+  const campaignMailboxIds = (campaignMailboxRows ?? []).map((row: any) => row.mailbox_id as string);
   const { data: enrollmentRows, error: enrollmentError } = await harness.supabase
     .from('enrollments')
     .select('id, lead_id, current_node_id')
@@ -135,14 +146,15 @@ async function assignJobsForLeadIds(
     .in('lead_id', leadIds);
   assert.equal(enrollmentError, null);
 
-  const jobData = (enrollmentRows ?? []).map((row: any) => {
+  const jobData = (enrollmentRows ?? []).map((row: any, index: number) => {
     const lead = leadRows.get(row.lead_id);
-    assert.ok(lead?.mailbox_id, `expected mailbox assignment for lead ${row.lead_id}`);
+    const mailboxId = lead?.mailbox_id ?? campaignMailboxIds[index % campaignMailboxIds.length];
+    assert.ok(mailboxId, `expected mailbox resolution for lead ${row.lead_id}`);
     assert.ok(row.current_node_id, `expected current node for lead ${row.lead_id}`);
     return {
       enrollment_id: row.id,
       lead_id: row.lead_id,
-      mailbox_id: lead.mailbox_id,
+      mailbox_id: mailboxId,
       node_id: row.current_node_id,
       message_data: {
         node_config: {},
@@ -160,6 +172,137 @@ async function assignJobsForLeadIds(
   });
   assert.equal(result.error, null);
 }
+
+test('batch_assign_jobs_to_interval preserves variant assignment in queued campaign jobs', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('variant-assign') });
+  const now = Date.now();
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Variant Assignment Regression',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'first',
+          email: `first-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: new Date(now - 60_000).toISOString(),
+          }),
+        }),
+        buildCampaignLead({
+          key: 'second',
+          email: `second-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-2',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: new Date(now - 60_000).toISOString(),
+          }),
+        }),
+      ],
+    });
+
+    const intervalId = randomUUID();
+    const { error: intervalError } = await harness.supabase.from('campaign_intervals').insert({
+      id: intervalId,
+      campaign_id: graph.campaignId,
+      account_id: graph.accountId,
+      interval_time: new Date(now + 60 * 60_000).toISOString(),
+      status: 'available',
+    } as any);
+    assert.equal(intervalError, null);
+
+    const nodeId = graph.nodeIdsByFlowNodeId.get('email-1');
+    assert.ok(nodeId, 'expected synced email node');
+
+    const { data: nodeRow, error: nodeError } = await harness.supabase
+      .from('nodes')
+      .select('node_data')
+      .eq('id', nodeId)
+      .single();
+    assert.equal(nodeError, null);
+
+    const expectedVariants = [...((((nodeRow as any)?.node_data?.variants ?? []) as Array<any>))]
+      .sort((left, right) => (Number(left?.order ?? 999_999) - Number(right?.order ?? 999_999)))
+      .map((variant) => ({
+        id: String(variant.id),
+        label: String(variant.label),
+        subject: String(variant.subject ?? ''),
+      }));
+    assert.equal(expectedVariants.length, 2);
+
+    const leadOrder = ['first', 'second'] as const;
+    const leadIds = leadOrder.map((key) => graph.leadsByKey.get(key)!.leadId);
+    const leadRows = await loadLeadRows(harness, leadIds);
+
+    const jobData = leadOrder.map((key) => {
+      const lead = graph.leadsByKey.get(key)!;
+      const leadRow = leadRows.get(lead.leadId);
+      assert.ok(leadRow, `expected lead row for ${key}`);
+      const mailboxKey = key === 'first' ? 'mailbox-1' : 'mailbox-2';
+      const mailboxId = graph.mailboxIdsByKey.get(mailboxKey);
+      assert.ok(mailboxId, `expected mailbox ${mailboxKey}`);
+      return {
+        enrollment_id: lead.enrollmentId,
+        lead_id: lead.leadId,
+        mailbox_id: mailboxId,
+        node_id: nodeId,
+        message_data: {
+          node_config: {},
+          lead_data: { email: leadRow.email },
+        },
+        jitter_percentage: 0,
+      };
+    });
+
+    const assignResult = await harness.supabase.rpc('batch_assign_jobs_to_interval', {
+      p_campaign_id: graph.campaignId,
+      p_job_data: jobData as any,
+      p_worker_id: 'variant-assignment-test',
+      p_required_mailbox_count: 2,
+    });
+    assert.equal(assignResult.error, null);
+    assert.equal((assignResult.data as any)?.[0]?.jobs_created, 2);
+
+    const { data: jobs, error: jobsError } = await harness.supabase
+      .from('message_jobs')
+      .select('lead_id, enrollment_id, status, message_type, variant_id, message_data')
+      .eq('campaign_id', graph.campaignId)
+      .eq('node_id', nodeId)
+      .order('created_at', { ascending: true });
+    assert.equal(jobsError, null);
+    assert.equal(jobs?.length, 2);
+
+    const jobsByLeadId = new Map((jobs ?? []).map((row: any) => [row.lead_id as string, row]));
+    const orderedJobs = leadOrder.map((key) => {
+      const lead = graph.leadsByKey.get(key);
+      assert.ok(lead, `expected materialized lead for ${key}`);
+      const job = jobsByLeadId.get(lead.leadId);
+      assert.ok(job, `expected message job for ${key}`);
+      return job as any;
+    });
+
+    orderedJobs.forEach((job, index) => {
+      const expectedVariant = expectedVariants[index]!;
+      assert.equal(job.status, 'queued');
+      assert.equal(job.message_type, 'campaign');
+      assert.equal(job.variant_id, expectedVariant.id);
+      assert.equal(job.message_data?.variant?.id, expectedVariant.id);
+      assert.equal(job.message_data?.variant?.label_snapshot, expectedVariant.label);
+      assert.equal(job.message_data?.node_config?.subject, expectedVariant.subject);
+      assert.ok(
+        job.message_data?.node_config?.variants == null,
+        'expected merged node_config without raw variants array',
+      );
+    });
+  } finally {
+    await harness.cleanup();
+  }
+});
 
 async function loadLatestJobsForLeadIds(harness: CampaignDbHarness, leadIds: string[]) {
   const { data, error } = await harness.supabase
@@ -378,11 +521,10 @@ test('production-like campaign lifecycle stays internally consistent across mixe
     assert.equal(clearBlockListError, null);
 
     const deferredLead = graph.leadsByKey.get('running-primary-lead-263')!;
-    const deferredLeadRow = leadRows.get(deferredLead.leadId)!;
     const deferredJob = latestAssignedJobs.get(deferredLead.leadId);
-    assert.ok(deferredLeadRow?.mailbox_id);
+    assert.ok(deferredJob?.mailbox_id);
     const { error: throttleSeedError } = await harness.supabase.from('mailbox_throttles').upsert({
-      mailbox_id: deferredLeadRow.mailbox_id,
+      mailbox_id: deferredJob!.mailbox_id,
       account_id: graph.accountId,
       date: clock.nowIso().slice(0, 10),
       sent_count: 1,
@@ -419,15 +561,15 @@ test('production-like campaign lifecycle stays internally consistent across mixe
 
     const failedLead = graph.leadsByKey.get('running-primary-lead-266')!;
     failingJobIds.add(latestAssignedJobs.get(failedLead.leadId)!.id);
-    const failedLeadRow = leadRows.get(failedLead.leadId)!;
-    assert.ok(failedLeadRow?.mailbox_id);
+    const failedJob = latestAssignedJobs.get(failedLead.leadId)!;
+    assert.ok(failedJob?.mailbox_id);
     const { error: failedMailboxError } = await harness.supabase
       .from('mailboxes')
       .update({
         email_address: `failure-${failedLead.leadId.slice(0, 8)}@example.com`,
         updated_at: clock.nowIso(),
       } as any)
-      .eq('id', failedLeadRow.mailbox_id);
+      .eq('id', failedJob.mailbox_id);
     assert.equal(failedMailboxError, null);
 
     for (const leadKey of outcomeLeadKeys.slice(0, 6)) {

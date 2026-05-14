@@ -176,12 +176,6 @@ export async function seedEmailVariantsHarness(params: {
       source: EMAIL_VARIANTS_HARNESS_PREFIX,
     });
 
-    const { error: mbErr } = await supabase
-      .from('leads')
-      .update({ mailbox_id: mailboxIds[i] })
-      .eq('id', lead.id);
-    if (mbErr) throw new Error(`Harness: failed to set lead mailbox: ${mbErr.message}`);
-
     leadIds.push(lead.id);
 
     const { data: ins, error: enrErr } = await supabase
@@ -250,13 +244,14 @@ export async function assignJobsViaBatchRpc(fixture: EmailVariantsHarnessFixture
     const eid = fixture.enrollmentIds[i];
     const leadId = fixture.leadIds[i];
     const lead = leadById.get(leadId) as any;
-    if (!lead?.mailbox_id) {
-      throw new Error(`Harness: lead ${leadId} missing mailbox_id`);
+    const mailboxId = lead?.mailbox_id ?? fixture.mailboxIds[i % fixture.mailboxIds.length];
+    if (!mailboxId) {
+      throw new Error(`Harness: unable to resolve mailbox for lead ${leadId}`);
     }
     jobData.push({
       enrollment_id: eid,
       lead_id: leadId,
-      mailbox_id: lead.mailbox_id,
+      mailbox_id: mailboxId,
       node_id: fixture.emailNodeDbId,
       message_data: {
         node_config: {},

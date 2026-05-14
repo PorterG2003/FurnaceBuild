@@ -37,13 +37,14 @@ export const campaignSmokeBatchAssignModule: SeedModule = {
       const eid = enrollmentIds[i];
       const leadId = leadIds[i];
       const lead = leadById.get(leadId!);
-      if (!lead?.mailbox_id) {
-        throw new Error(`campaign-smoke: lead ${leadId} missing mailbox_id`);
+      const mailboxId = lead?.mailbox_id ?? mailboxIds[i % mailboxIds.length];
+      if (!mailboxId) {
+        throw new Error(`campaign-smoke: unable to resolve mailbox for lead ${leadId}`);
       }
       jobData.push({
         enrollment_id: eid,
         lead_id: leadId,
-        mailbox_id: lead.mailbox_id,
+        mailbox_id: mailboxId,
         node_id: emailNodeDbId,
         message_data: {
           node_config: {},

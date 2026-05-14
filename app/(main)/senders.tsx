@@ -20,10 +20,11 @@ import { BLANK_MAILBOX_FORM_DATA } from '@/components/senders/types';
 import {
   createMailbox,
   deleteMailbox,
-  getMailboxesByAccount,
+  getMailboxOverviewsByAccount,
   updateMailbox,
   updateMailboxStatus,
 } from '@/lib/supabase/services';
+import type { MailboxOverview } from '@/lib/supabase/services/mailboxes';
 import { testMailboxConnection } from '@/lib/services/email';
 import type { Mailbox, MailboxUpdate } from '@/lib/supabase/types';
 import type { EditorBridge } from '@10play/tentap-editor';
@@ -51,7 +52,7 @@ export default function SendersPage() {
   const accountId = account?.id ?? null;
 
   const [isLoading, setIsLoading] = useState(true);
-  const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
+  const [mailboxes, setMailboxes] = useState<MailboxOverview[]>([]);
   const [selectedMailboxes, setSelectedMailboxes] = useState<Set<string>>(new Set());
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showUploadCSVModal, setShowUploadCSVModal] = useState(false);
@@ -84,7 +85,7 @@ export default function SendersPage() {
     const silent = options?.silent === true;
     try {
       if (!silent) setIsLoading(true);
-      const mailboxesList = await getMailboxesByAccount(accountId);
+      const mailboxesList = await getMailboxOverviewsByAccount(accountId);
       setMailboxes(mailboxesList);
     } catch (err) {
       console.error('Failed to load mailboxes:', err);
@@ -240,7 +241,7 @@ export default function SendersPage() {
     setShowTestResultModal(false);
   }, []);
 
-  const handleTestMailbox = async (
+  const handleTestMailbox = useCallback(async (
     mailbox: Mailbox,
     options?: { fromActionsSheet?: boolean }
   ) => {
@@ -302,9 +303,9 @@ export default function SendersPage() {
     } finally {
       setTestingMailboxId(null);
     }
-  };
+  }, [loadMailboxes, toast]);
 
-  const handleEditMailbox = (mailbox: Mailbox) => {
+  const handleEditMailbox = useCallback((mailbox: Mailbox) => {
     setEditMailbox(mailbox);
     setEditMailboxIds([]);
     setEditFormData({
@@ -329,7 +330,7 @@ export default function SendersPage() {
     });
     setEditModalActiveTab('profile');
     setShowEditModal(true);
-  };
+  }, []);
 
   const handleBulkEdit = () => {
     const ids = Array.from(selectedMailboxes);
@@ -395,10 +396,10 @@ export default function SendersPage() {
     }
   };
 
-  const handleDeleteClick = (mailbox: Mailbox) => {
+  const handleDeleteClick = useCallback((mailbox: Mailbox) => {
     setMailboxToDelete(mailbox);
     setShowDeleteModal(true);
-  };
+  }, []);
 
   const handleDeleteConfirm = async () => {
     if (!mailboxToDelete) return;
@@ -418,29 +419,6 @@ export default function SendersPage() {
       setDeleting(false);
     }
   };
-
-  const toggleMailboxSelection = (mailboxId: string) => {
-    setSelectedMailboxes((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(mailboxId)) {
-        newSet.delete(mailboxId);
-      } else {
-        newSet.add(mailboxId);
-      }
-      return newSet;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedMailboxes.size === mailboxes.length) {
-      setSelectedMailboxes(new Set());
-    } else {
-      setSelectedMailboxes(new Set(mailboxes.map((m) => m.id)));
-    }
-  };
-
-  const isAllSelected = mailboxes.length > 0 && selectedMailboxes.size === mailboxes.length;
-  const isIndeterminate = selectedMailboxes.size > 0 && selectedMailboxes.size < mailboxes.length;
 
   const openConnectModal = () => {
     if (isMobile) return;
@@ -496,10 +474,7 @@ export default function SendersPage() {
         allowAddMailboxes={!isMobile}
         mailboxes={mailboxes}
         selectedMailboxes={selectedMailboxes}
-        toggleMailboxSelection={toggleMailboxSelection}
-        toggleSelectAll={toggleSelectAll}
-        isAllSelected={isAllSelected}
-        isIndeterminate={isIndeterminate}
+        onSelectionChange={setSelectedMailboxes}
         onTestMailbox={handleTestMailbox}
         onEditMailbox={handleEditMailbox}
         onDeleteClick={handleDeleteClick}

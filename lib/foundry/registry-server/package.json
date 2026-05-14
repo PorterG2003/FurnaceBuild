@@ -17,6 +17,7 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@compwright/namecase": "^3.0.1",
-    "@supabase/supabase-js": "^2.99.1"
+    "@supabase/supabase-js": "^2.99.1",
+    "papaparse": "^5.5.3"
   }
 }

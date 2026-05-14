@@ -341,17 +341,43 @@ export interface CsvBuilderRowsQuery {
   filters?: CsvBuilderFilter[];
 }
 
-export interface PostCreateCsvBuilderRunBody {
+export interface CsvBuilderSourceHeaderInput {
+  key: string;
+  label: string;
+  data_type?: CsvBuilderColumnDataType;
+}
+
+interface CsvBuilderCreateRunBaseBody {
   name: string;
   source_file_name: string;
   source_file_size_bytes?: number | null;
   source_file_mime_type?: string | null;
-  headers: Array<{
-    key: string;
-    label: string;
-    data_type?: CsvBuilderColumnDataType;
-  }>;
+}
+
+export interface PostCreateCsvBuilderRunRowsBody extends CsvBuilderCreateRunBaseBody {
+  headers: CsvBuilderSourceHeaderInput[];
   rows: Array<Record<string, CsvBuilderCellValue>>;
+}
+
+export interface PostCreateCsvBuilderRunUploadBody extends CsvBuilderCreateRunBaseBody {
+  source_s3_key: string;
+}
+
+export type PostCreateCsvBuilderRunBody = PostCreateCsvBuilderRunRowsBody | PostCreateCsvBuilderRunUploadBody;
+
+export interface PostCreateCsvBuilderUploadUrlBody {
+  account_id: string;
+  source_file_name: string;
+  source_file_size_bytes?: number | null;
+  source_file_mime_type?: string | null;
+}
+
+export interface PostCreateCsvBuilderUploadUrlResponse {
+  object_key: string;
+  upload_url: string;
+  upload_method: 'PUT';
+  upload_headers: Record<string, string>;
+  expires_in_seconds: number;
 }
 
 export interface CsvBuilderRunsListResponse {

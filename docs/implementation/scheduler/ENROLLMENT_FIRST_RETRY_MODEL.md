@@ -46,8 +46,8 @@ Primary `message_jobs.status` values:
 - `reserved` -> `NULL`
 - `sending` -> `NULL`
 - `sent` -> `sent_successfully`
-- `deferred` -> `daily_throttle_limit`, `hourly_throttle_limit`, `min_gap_not_met`, `campaign_paused`
-- `failed` -> `provider_error`, `template_render_error`
+- `deferred` -> `daily_throttle_limit`, `hourly_throttle_limit`, `min_gap_not_met`, `campaign_paused`, `transient_read_error`
+- `failed` -> `provider_error`, `template_render_error`, `uncertain_send_state`
 - `cancelled` -> `campaign_deleted`, `mailbox_deleted`, `lead_deleted`, `enrollment_deleted`, `node_deleted`, `enrollment_not_active`, `manually_cancelled`
 - `blocked` -> `lead_blocked`, `mailbox_blocked`
 
@@ -57,6 +57,8 @@ Primary `message_jobs.status` values:
 
 - `queued`, `reserved`, and `sending` are live in-flight states.
 - These states block duplicate attempt creation for the same enrollment/node pair.
+- `reserved` is lease-backed. If the lease expires before send execution completes, the attempt should move to `deferred + transient_read_error` so the scheduler can create a fresh retry row later.
+- `sending` means the worker crossed the send boundary. If the send outcome becomes uncertain after that point, the attempt should become terminal (`failed + uncertain_send_state`) instead of being retried automatically.
 
 ### Successful completion
 
@@ -69,6 +71,7 @@ Primary `message_jobs.status` values:
 - The deferred row remains an immutable attempt record tied to its original `interval_id`.
 - A retry creates a brand new `message_jobs` row with a fresh `interval_id`.
 - The enrollment stays on the same email node until a later attempt is sent or a terminal outcome stops it.
+- Retryable pre-send infrastructure/read failures should land here as `transient_read_error`, not as terminal `failed`.
 
 ### Terminal attempts
 
@@ -84,6 +87,7 @@ Primary `message_jobs.status` values:
 - Reserve and execute the claimed attempt.
 - Record the final attempt outcome on the current `message_jobs` row.
 - For retryable throttle outcomes, mark the row `deferred` and re-arm the enrollment through `next_run_at`.
+- For retryable pre-send infrastructure/read failures, mark the row `deferred + transient_read_error` and re-arm the enrollment through `next_run_at`.
 - Do not choose the next campaign `scheduled_at` timestamp for a retry.
 
 ### Scheduler responsibilities
@@ -144,9 +148,11 @@ Any future lifecycle change should be checked against this matrix:
 
 - `queued -> reserved -> sending -> sent`
 - throttle outcomes become `deferred`
+- lease-expired `reserved` attempts become `deferred + transient_read_error`
 - deferred attempts recreate a fresh row later
 - retries land in valid campaign schedule windows
 - pause converts queued/reserved attempts to `deferred + campaign_paused`
 - resume only re-arms pause-driven deferred attempts
+- stale `sending` attempts become `failed + uncertain_send_state` and are not auto-retried
 - `failed`, `cancelled`, and `blocked` stop the enrollment
 - duplicate attempt creation remains blocked for every status except `deferred`

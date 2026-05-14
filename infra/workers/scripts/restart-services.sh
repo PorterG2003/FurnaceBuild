@@ -17,21 +17,43 @@ fi
 
 # Parse arguments
 ENVIRONMENT="${1:-dev}"
+TARGET="${2:-all}"
 
 REGION="${CDK_DEFAULT_REGION:-us-west-2}"
 
 # Validate environment
 if [ "$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "prod" ]; then
   echo "❌ Error: Environment must be 'dev' or 'prod'"
-  echo "Usage: $0 [dev|prod]"
+  echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|all]"
   exit 1
 fi
+
+case "$TARGET" in
+  ""|"all")
+    TARGET="all"
+    ;;
+  "send"|"send-worker")
+    TARGET="send-worker"
+    ;;
+  "scheduler"|"scheduler-worker")
+    TARGET="scheduler-worker"
+    ;;
+  "inbox"|"inbox-checker"|"inbox-checker-worker")
+    TARGET="inbox-checker-worker"
+    ;;
+  *)
+    echo "❌ Error: Target must be 'send-worker', 'scheduler-worker', 'inbox-checker-worker', or 'all'"
+    echo "Usage: $0 [dev|prod] [send-worker|scheduler-worker|inbox-checker-worker|all]"
+    exit 1
+    ;;
+esac
 
 CLUSTER_NAME="furnace-cluster-$ENVIRONMENT"
 
 echo "🔄 Restarting ECS services"
 echo "   Environment: $ENVIRONMENT"
 echo "   Cluster: $CLUSTER_NAME"
+echo "   Target: $TARGET"
 echo ""
 
 # Get actual service names from ECS (--max-items 100 so inbox-checker isn't on a later page)
@@ -49,13 +71,11 @@ INBOX_CHECKER_SERVICE_FULL=$(aws ecs list-services "${LIST_SERVICES_ARGS[@]}" \
   --output text 2>/dev/null | awk -F'/' '{print $NF}')
 
 if [ -z "$SEND_SERVICE_FULL" ] || [ "$SEND_SERVICE_FULL" = "None" ]; then
-  echo "❌ Error: Could not find SendWorkerService in cluster $CLUSTER_NAME"
-  exit 1
+  SEND_SERVICE_FULL=""
 fi
 
 if [ -z "$SCHEDULER_SERVICE_FULL" ] || [ "$SCHEDULER_SERVICE_FULL" = "None" ]; then
-  echo "❌ Error: Could not find SchedulerWorkerService in cluster $CLUSTER_NAME"
-  exit 1
+  SCHEDULER_SERVICE_FULL=""
 fi
 
 # Inbox checker is optional (may not exist in older deployments)
@@ -63,16 +83,26 @@ if [ -z "$INBOX_CHECKER_SERVICE_FULL" ] || [ "$INBOX_CHECKER_SERVICE_FULL" = "No
   INBOX_CHECKER_SERVICE_FULL=""
 fi
 
-echo "   Found: Send=$SEND_SERVICE_FULL | Scheduler=$SCHEDULER_SERVICE_FULL | InboxChecker=${INBOX_CHECKER_SERVICE_FULL:-<not in cluster>}"
+echo "   Found: Send=${SEND_SERVICE_FULL:-<not in cluster>} | Scheduler=${SCHEDULER_SERVICE_FULL:-<not in cluster>} | InboxChecker=${INBOX_CHECKER_SERVICE_FULL:-<not in cluster>}"
 echo ""
+
+require_service() {
+  local service_name="$1"
+  local service_label="$2"
+
+  if [ -z "$service_name" ]; then
+    echo "❌ Error: Could not find $service_label in cluster $CLUSTER_NAME"
+    exit 1
+  fi
+}
 
 # Function to restart a service
 restart_service() {
   local service_name="$1"
   local service_type="$2"
-  
+
   echo "🔄 Restarting $service_type ($service_name)..."
-  
+
   if ! aws ecs update-service \
     --cluster "$CLUSTER_NAME" \
     --service "$service_name" \
@@ -85,21 +115,23 @@ restart_service() {
   echo "✅ $service_type restarted (new tasks will roll out)"
 }
 
-# Restart send worker service
-restart_service "$SEND_SERVICE_FULL" "Send Worker Service"
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "send-worker" ]; then
+  require_service "$SEND_SERVICE_FULL" "SendWorkerService"
+  restart_service "$SEND_SERVICE_FULL" "Send Worker Service"
+fi
 
-# Restart scheduler worker service
-restart_service "$SCHEDULER_SERVICE_FULL" "Scheduler Worker Service"
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "scheduler-worker" ]; then
+  require_service "$SCHEDULER_SERVICE_FULL" "SchedulerWorkerService"
+  restart_service "$SCHEDULER_SERVICE_FULL" "Scheduler Worker Service"
+fi
 
-# Restart inbox checker worker service (if it exists in cluster)
-if [ -n "$INBOX_CHECKER_SERVICE_FULL" ] && [ "$INBOX_CHECKER_SERVICE_FULL" != "None" ]; then
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "inbox-checker-worker" ]; then
+  require_service "$INBOX_CHECKER_SERVICE_FULL" "InboxCheckerWorkerService"
   restart_service "$INBOX_CHECKER_SERVICE_FULL" "Inbox Checker Worker Service"
   DESIRED=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$INBOX_CHECKER_SERVICE_FULL" --region "$REGION" --query 'services[0].desiredCount' --output text 2>/dev/null || echo "?")
   if [ "$DESIRED" = "0" ]; then
-    echo "   💡 Inbox checker desired count is 0 — no new task will start until you run: npm run scale:$ENVIRONMENT"
+    echo "   💡 Inbox checker desired count is 0 - no new task will start until you run: npm run scale:$ENVIRONMENT"
   fi
-else
-  echo "⚠️  Inbox checker service not found in cluster — skipping. (Ensure stack includes inbox-checker and deploy: npm run deploy:$ENVIRONMENT)"
 fi
 
 echo ""
@@ -111,22 +143,37 @@ echo "📝 Next steps:"
 echo "   1. Wait 30-60 seconds for new tasks to start"
 echo "   2. Check CloudWatch logs to verify workers connect successfully:"
 echo ""
-echo "      # Send worker logs"
-echo "      aws logs tail /ecs/furnace/send-worker-$ENVIRONMENT --follow --region $REGION"
-echo ""
-echo "      # Scheduler worker logs"
-echo "      aws logs tail /ecs/furnace/scheduler-worker-$ENVIRONMENT --follow --region $REGION"
-echo ""
-echo "      # Inbox checker worker logs"
-echo "      aws logs tail /ecs/furnace/inbox-checker-worker-$ENVIRONMENT --follow --region $REGION"
-echo ""
+
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "send-worker" ]; then
+  echo "      # Send worker logs"
+  echo "      aws logs tail /ecs/furnace/send-worker-$ENVIRONMENT --follow --region $REGION"
+  echo ""
+fi
+
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "scheduler-worker" ]; then
+  echo "      # Scheduler worker logs"
+  echo "      aws logs tail /ecs/furnace/scheduler-worker-$ENVIRONMENT --follow --region $REGION"
+  echo ""
+fi
+
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "inbox-checker-worker" ]; then
+  echo "      # Inbox checker worker logs"
+  echo "      aws logs tail /ecs/furnace/inbox-checker-worker-$ENVIRONMENT --follow --region $REGION"
+  echo ""
+fi
+
 echo "   3. Look for:"
-echo "      ✅ 'Initializing send worker...' (no errors)"
-echo "      ✅ 'Initializing scheduler worker...' (no errors)"
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "send-worker" ]; then
+  echo "      ✅ 'Initializing send worker...' (no errors)"
+fi
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "scheduler-worker" ]; then
+  echo "      ✅ 'Initializing scheduler worker...' (no errors)"
+fi
+if [ "$TARGET" = "all" ] || [ "$TARGET" = "inbox-checker-worker" ]; then
+  echo "      ✅ inbox checker startup logs without secret/config errors"
+fi
 echo "      ❌ Should NOT see: 'ParameterNotFound' or 'Failed to fetch secret'"
 echo ""
 echo "   4. Check task status:"
 echo "      aws ecs list-tasks --cluster $CLUSTER_NAME --region $REGION"
 echo ""
-
-

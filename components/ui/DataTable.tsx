@@ -1,9 +1,10 @@
-import { useState, useMemo, useEffect, ReactNode, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, ReactNode, useCallback, useRef, memo } from 'react';
 import { ActivityIndicator, View, Text, Pressable, ScrollView, type LayoutChangeEvent, type StyleProp, type TextStyle } from 'react-native';
 import { ChevronUpIcon, ChevronDownIcon } from 'react-native-heroicons/outline';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Skeleton, useSmoothLoading, type UseSmoothLoadingOptions } from '@/components/ui/feedback';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { applyAnchoredSelection } from '@/lib/selection/applyAnchoredSelection';
 
 /** Extra padding on the left of the first column and right of the last column so content isn't flush to the table edges. */
 const OUTER_EDGE_PADDING_X = 24;
@@ -60,6 +61,102 @@ export function TableHeaderLabel({
     </Text>
   );
 }
+
+interface ResolvedRenderColumn<T> {
+  key: string;
+  render: (item: T) => ReactNode;
+  layoutStyle: Record<string, unknown>;
+  paddingStyle: { paddingLeft?: number; paddingRight?: number };
+  alignItems: 'flex-start' | 'center' | 'flex-end';
+}
+
+interface DataTableRowProps<T> {
+  item: T;
+  rowKey: string;
+  rowIndex: number;
+  isLastRow: boolean;
+  isSelected: boolean;
+  selectable: boolean;
+  resolvedColumns: ResolvedRenderColumn<T>[];
+  onToggleRow: (key: string, event?: any) => void;
+  onRowPress?: (item: T) => void;
+}
+
+const DataTableRow = memo(function DataTableRow<T>({
+  item,
+  rowKey,
+  rowIndex,
+  isLastRow,
+  isSelected,
+  selectable,
+  resolvedColumns,
+  onToggleRow,
+  onRowPress,
+}: DataTableRowProps<T>) {
+  const rowContent = (
+    <View
+      className={`flex-row items-center border-b border-[#2A2A2A] ${isLastRow ? 'border-b-0' : ''} ${isSelected ? 'bg-[#1F1F1F]' : ''}`}
+      style={{ minHeight: 48 }}
+    >
+      {selectable && (
+        <View
+          className="py-2 justify-center items-center"
+          style={{ width: SELECT_COLUMN_WIDTH, paddingHorizontal: SELECT_COLUMN_PADDING_X }}
+        >
+          <Checkbox
+            checked={isSelected}
+            onPress={(event) => onToggleRow(rowKey, event)}
+          />
+        </View>
+      )}
+      {resolvedColumns.map((column) => (
+        <View
+          key={column.key}
+          className="px-2 py-2 min-w-0"
+          style={{
+            ...column.layoutStyle,
+            ...column.paddingStyle,
+            alignItems: 'stretch',
+          }}
+        >
+          <View
+            style={{
+              width: '100%',
+              minWidth: 0,
+              alignItems: column.alignItems,
+            }}
+          >
+            {column.render(item)}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+
+  if (onRowPress) {
+    return (
+      <Pressable
+        onPress={() => onRowPress(item)}
+        className="active:opacity-80"
+      >
+        {rowContent}
+      </Pressable>
+    );
+  }
+
+  return rowContent;
+}, (prev, next) =>
+  prev.item === next.item &&
+  prev.rowKey === next.rowKey &&
+  prev.rowIndex === next.rowIndex &&
+  prev.isLastRow === next.isLastRow &&
+  prev.isSelected === next.isSelected &&
+  prev.selectable === next.selectable &&
+  prev.resolvedColumns === next.resolvedColumns &&
+  prev.onToggleRow === next.onToggleRow &&
+  prev.onRowPress === next.onRowPress
+) as <T>(props: DataTableRowProps<T>) => ReactNode;
+
 
 interface DataTableProps<T> {
   items: T[];
@@ -151,6 +248,9 @@ export function DataTable<T>({
   const [tableContainerWidth, setTableContainerWidth] = useState<number>(0);
   const [internalSortDirection, setInternalSortDirection] = useState<SortDirection>('asc');
   const [internalCurrentPage, setInternalCurrentPage] = useState(1);
+  const selectedKeysRef = useRef(selectedKeys);
+  const orderedVisibleKeysRef = useRef<string[]>([]);
+  const selectableRef = useRef(selectable);
   const hasFiniteServerTotal = typeof totalItems === 'number' && Number.isFinite(totalItems);
   const isServerPagination = paginationEnabled && paginationMode === 'server' && hasFiniteServerTotal && onPageChange != null;
   const effectiveSortColumn = isServerPagination ? sortColumn ?? null : internalSortColumn;
@@ -193,6 +293,7 @@ export function DataTable<T>({
     const start = (effectiveCurrentPage - 1) * itemsPerPage;
     return sortedItems.slice(start, start + itemsPerPage);
   }, [paginationEnabled, sortedItems, effectiveCurrentPage, itemsPerPage, isServerPagination, items]);
+  const orderedVisibleKeys = useMemo(() => visibleItems.map(getItemKey), [visibleItems, getItemKey]);
   const measurementItems = useMemo(() => visibleItems.slice(0, MEASUREMENT_SAMPLE_SIZE), [visibleItems]);
 
   const totalVisibleItems = isServerPagination ? safeServerTotal : sortedItems.length;
@@ -247,6 +348,7 @@ export function DataTable<T>({
       visibleKeys.forEach((k) => next.add(k));
       onSelectionChange(next);
     }
+    selectionAnchorKeyRef.current = null;
   };
 
   const getSortIdentifier = (column: TableColumn<T>) => column.serverSortKey ?? column.key;
@@ -286,19 +388,19 @@ export function DataTable<T>({
     },
     []
   );
-  const getColumnPaddingStyle = (index: number) => ({
+  const getColumnPaddingStyle = useCallback((index: number) => ({
     paddingLeft: !selectable && index === 0 ? OUTER_EDGE_PADDING_X : undefined,
     paddingRight: index < columns.length - 1 ? INNER_COLUMN_PADDING_RIGHT : OUTER_EDGE_PADDING_X,
-  });
+  }), [columns.length, selectable]);
   const getColumnAlignment = (column: TableColumn<T>): TableColumnAlignment => column.align ?? 'start';
   const getAlignItemsForAlignment = (alignment: TableColumnAlignment) => {
     if (alignment === 'end') return 'flex-end' as const;
     if (alignment === 'center') return 'center' as const;
     return 'flex-start' as const;
   };
-  const getAlignItemsForColumn = (column: TableColumn<T>) => {
+  const getAlignItemsForColumn = useCallback((column: TableColumn<T>) => {
     return getAlignItemsForAlignment(getColumnAlignment(column));
-  };
+  }, []);
   const getTextAlignForAlignment = (alignment: TableColumnAlignment) => {
     if (alignment === 'end') return 'right' as const;
     if (alignment === 'center') return 'center' as const;
@@ -393,6 +495,7 @@ export function DataTable<T>({
   const [measuredColumnWidths, setMeasuredColumnWidths] = useState<Record<string, number>>(() => getCachedMeasuredWidths());
   const measuredColumnWidthsRef = useRef<Record<string, number>>(getCachedMeasuredWidths());
   const measurementCellKeysRef = useRef<Set<string>>(new Set());
+  const selectionAnchorKeyRef = useRef<string | null>(null);
   const hasCachedMeasuredWidths = measuredLayoutKeys.has(layoutSignature);
   const requiredMeasurementCellCount = columns.length * (1 + measurementItems.length);
   const [isMeasurementReady, setIsMeasurementReady] = useState(
@@ -409,6 +512,27 @@ export function DataTable<T>({
     measurementCellKeysRef.current = new Set();
     setIsMeasurementReady(visibleItems.length === 0 || columns.length === 0 || measuredLayoutKeys.has(layoutSignature));
   }, [columns.length, layoutSignature, visibleItems.length]);
+
+  useEffect(() => {
+    if (
+      selectionAnchorKeyRef.current != null
+      && !orderedVisibleKeys.includes(selectionAnchorKeyRef.current)
+    ) {
+      selectionAnchorKeyRef.current = null;
+    }
+  }, [orderedVisibleKeys]);
+
+  useEffect(() => {
+    selectedKeysRef.current = selectedKeys;
+  }, [selectedKeys]);
+
+  useEffect(() => {
+    orderedVisibleKeysRef.current = orderedVisibleKeys;
+  }, [orderedVisibleKeys]);
+
+  useEffect(() => {
+    selectableRef.current = selectable;
+  }, [selectable]);
 
   const reportMeasuredWidth = useCallback(
     (columnKey: string, width: number) => {
@@ -504,7 +628,7 @@ export function DataTable<T>({
     return Math.min(CONTENT_AWARE_COLUMN_BONUS_MAX, Math.floor(availableWidth / gapCount));
   }, [columns.length, hasMeasuredContainerWidth, intrinsicTableWidth, isContentAwareWidthMode, isOverflowing, tableContainerWidth]);
 
-  const getColumnGrow = (column: TableColumn<T>) => {
+  const getColumnGrow = useCallback((column: TableColumn<T>) => {
     if (resolvedWidthMode === 'weighted-fill') {
       return column.flex ?? 0;
     }
@@ -514,9 +638,9 @@ export function DataTable<T>({
     }
 
     return 0;
-  };
+  }, [isEqualFillWidthMode, resolvedWidthMode]);
 
-  const getColumnLayoutStyle = (column: TableColumn<T>, index: number) => {
+  const getColumnLayoutStyle = useCallback((column: TableColumn<T>, index: number) => {
     const columnBaseWidth = resolvedColumnWidths[column.key] ?? getEffectiveColumnMinWidth(column);
     const columnMaxWidth = getEffectiveColumnMaxWidth(column);
     const displayWidth =
@@ -554,7 +678,17 @@ export function DataTable<T>({
       flexGrow,
       flexShrink: shouldFillColumns && flexGrow > 0 ? 1 : 0,
     } as const;
-  };
+  }, [
+    columns.length,
+    contentAwareColumnBonus,
+    getColumnGrow,
+    getEffectiveColumnMaxWidth,
+    getEffectiveColumnMinWidth,
+    hasMeasuredContainerWidth,
+    isContentAwareWidthMode,
+    resolvedColumnWidths,
+    shouldFillColumns,
+  ]);
 
   const getMeasurementColumnLayoutStyle = (column: TableColumn<T>) => ({
     minWidth: getEffectiveColumnMinWidth(column),
@@ -564,14 +698,32 @@ export function DataTable<T>({
   });
 
   const hasAnyHeaderStats = columns.some((column) => column.headerStats != null);
+  const readShiftKey = (event?: any) =>
+    Boolean(event?.shiftKey ?? event?.nativeEvent?.shiftKey);
+  const resolvedRenderColumns = useMemo<ResolvedRenderColumn<T>[]>(
+    () => columns.map((column, index) => ({
+      key: column.key,
+      render: column.render,
+      layoutStyle: getColumnLayoutStyle(column, index),
+      paddingStyle: getColumnPaddingStyle(index),
+      alignItems: getAlignItemsForColumn(column),
+    })),
+    [columns, getAlignItemsForColumn, getColumnLayoutStyle, getColumnPaddingStyle]
+  );
 
-  const toggleRow = (key: string) => {
-    if (!selectable || !onSelectionChange || selectedKeys == null) return;
-    const next = new Set(selectedKeys);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
+  const toggleRow = useCallback((key: string, event?: any) => {
+    const currentSelectedKeys = selectedKeysRef.current;
+    if (!selectableRef.current || !onSelectionChange || currentSelectedKeys == null) return;
+    const next = applyAnchoredSelection(
+      currentSelectedKeys,
+      orderedVisibleKeysRef.current,
+      selectionAnchorKeyRef.current,
+      key,
+      { shiftKey: readShiftKey(event) }
+    );
     onSelectionChange(next);
-  };
+    selectionAnchorKeyRef.current = key;
+  }, [onSelectionChange]);
 
   const handleSort = (columnKey: string) => {
     const column = columns.find((col) => col.key === columnKey);
@@ -939,59 +1091,20 @@ export function DataTable<T>({
                   const uniqueRowKey = `${key}-${rowIndex}`;
                   const isSelected = selectable && selectedKeys != null && selectedKeys.has(key);
                   const isLastRow = rowIndex === visibleItems.length - 1;
-                  const RowContent = (
-                    <View
-                      className={`flex-row items-center border-b border-[#2A2A2A] ${isLastRow ? 'border-b-0' : ''} ${isSelected ? 'bg-[#1F1F1F]' : ''}`}
-                      style={{ minHeight: 48 }}
-                    >
-                      {selectable && (
-                        <View
-                          className="py-2 justify-center items-center"
-                          style={{ width: SELECT_COLUMN_WIDTH, paddingHorizontal: SELECT_COLUMN_PADDING_X }}
-                        >
-                          <Checkbox
-                            checked={selectedKeys?.has(key) ?? false}
-                            onPress={() => toggleRow(key)}
-                          />
-                        </View>
-                      )}
-                      {columns.map((column, index) => (
-                        <View
-                          key={column.key}
-                          className="px-2 py-2 min-w-0"
-                          style={{
-                            ...getColumnLayoutStyle(column, index),
-                            ...getColumnPaddingStyle(index),
-                            alignItems: 'stretch',
-                          }}
-                        >
-                          <View
-                            style={{
-                              width: '100%',
-                              minWidth: 0,
-                              alignItems: getAlignItemsForColumn(column),
-                            }}
-                          >
-                            {column.render(item)}
-                          </View>
-                        </View>
-                      ))}
-                    </View>
+                  return (
+                    <DataTableRow
+                      key={uniqueRowKey}
+                      item={item}
+                      rowKey={key}
+                      rowIndex={rowIndex}
+                      isLastRow={isLastRow}
+                      isSelected={isSelected}
+                      selectable={Boolean(selectable)}
+                      resolvedColumns={resolvedRenderColumns}
+                      onToggleRow={toggleRow}
+                      onRowPress={onRowPress}
+                    />
                   );
-
-                  if (onRowPress) {
-                    return (
-                      <Pressable
-                        key={uniqueRowKey}
-                        onPress={() => onRowPress(item)}
-                        className="active:opacity-80"
-                      >
-                        {RowContent}
-                      </Pressable>
-                    );
-                  }
-
-                  return <View key={uniqueRowKey}>{RowContent}</View>;
                 })}
               </>
             )}

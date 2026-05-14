@@ -15,27 +15,17 @@
  *   4. Fall back to `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SECRET_KEY`
  */
 
-import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
-import { config as loadEnvFile } from 'dotenv';
 import { isRetryableSupabaseReadError } from '../lib/slack/retryableReadError.js';
+import {
+  fetchSecretFromParameterStore,
+  loadSelfRecoveryEnv,
+  resolveSecretParamPathForTarget,
+  resolveSelfRecoveryTargetEnv,
+  resolveSupabaseUrlForTarget,
+  ssmParamUnderPrefix,
+} from './self-recovery-env.js';
 
-const scriptDir = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(scriptDir, '..');
-const workerEnvDir = join(repoRoot, 'infra', 'workers');
-
-for (const envPath of [
-  join(repoRoot, '.env.local'),
-  join(repoRoot, '.env'),
-  join(workerEnvDir, '.env.local'),
-  join(workerEnvDir, '.env'),
-] as const) {
-  if (existsSync(envPath)) {
-    loadEnvFile({ path: envPath });
-  }
-}
+loadSelfRecoveryEnv();
 
 type EnrollmentRow = {
   id: string;
@@ -54,14 +44,17 @@ type MessageJobRow = {
   id: string;
   enrollment_id: string;
   status: string;
+  status_reason: string | null;
   scheduled_at: string | null;
   message_type: string | null;
   created_at: string;
+  error_message: string | null;
 };
 
 type Candidate = {
   enrollment: EnrollmentRow;
   queuedCampaignJobs: MessageJobRow[];
+  latestCampaignJob: MessageJobRow | null;
 };
 
 function isCampaignMessageJob(job: MessageJobRow): boolean {
@@ -72,76 +65,9 @@ function isQueuedCampaignJob(job: MessageJobRow): boolean {
   return isCampaignMessageJob(job) && ['queued', 'reserved', 'sending'].includes(job.status);
 }
 
-function ssmParamUnderPrefix(prefix: string, secretSegment: string): string {
-  const normalizedPrefix = prefix.replace(/\/+$/, '');
-  const normalizedSecretSegment = secretSegment.replace(/^\/+/, '');
-  return `${normalizedPrefix}/${normalizedSecretSegment}`;
-}
-
-async function fetchSecretFromParameterStore(
-  parameterPath: string,
-  region: string
-): Promise<string> {
-  const ssmClient = new SSMClient({ region });
-  const command = new GetParameterCommand({
-    Name: parameterPath,
-    WithDecryption: true,
-  });
-  const response = await ssmClient.send(command);
-  const value = response.Parameter?.Value?.trim();
-  if (!value) {
-    throw new Error(`Parameter ${parameterPath} has no value`);
-  }
-  return value;
-}
-
-function resolveSupabaseUrl(): { url: string | null; source: string } {
-  if (process.env.SUPABASE_URL?.trim()) {
-    return { url: process.env.SUPABASE_URL.trim(), source: 'SUPABASE_URL' };
-  }
-  if (process.env.PROD_SUPABASE_URL?.trim()) {
-    return { url: process.env.PROD_SUPABASE_URL.trim(), source: 'PROD_SUPABASE_URL' };
-  }
-  if (process.env.EXPO_PUBLIC_SUPABASE_URL?.trim()) {
-    return {
-      url: process.env.EXPO_PUBLIC_SUPABASE_URL.trim(),
-      source: 'EXPO_PUBLIC_SUPABASE_URL',
-    };
-  }
-  if (process.env.DEV_SUPABASE_URL?.trim()) {
-    return { url: process.env.DEV_SUPABASE_URL.trim(), source: 'DEV_SUPABASE_URL' };
-  }
-  return { url: null, source: 'missing' };
-}
-
-function resolveSecretParamPath(url: string): string | null {
-  if (process.env.SUPABASE_SECRET_KEY_PARAM_PATH?.trim()) {
-    return process.env.SUPABASE_SECRET_KEY_PARAM_PATH.trim();
-  }
-
-  const prodUrl = process.env.PROD_SUPABASE_URL?.trim();
-  const devUrl =
-    process.env.DEV_SUPABASE_URL?.trim() || process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
-
-  if (prodUrl && url === prodUrl && process.env.PROD_SECRET_SSM_PREFIX?.trim()) {
-    return ssmParamUnderPrefix(
-      process.env.PROD_SECRET_SSM_PREFIX.trim(),
-      'SUPABASE_SECRET_KEY'
-    );
-  }
-
-  if (devUrl && url === devUrl && process.env.DEV_SECRET_SSM_PREFIX?.trim()) {
-    return ssmParamUnderPrefix(
-      process.env.DEV_SECRET_SSM_PREFIX.trim(),
-      'SUPABASE_SECRET_KEY'
-    );
-  }
-
-  return null;
-}
-
 async function main() {
-  const { url, source: urlSource } = resolveSupabaseUrl();
+  const targetEnv = resolveSelfRecoveryTargetEnv();
+  const { url, source: urlSource } = resolveSupabaseUrlForTarget(targetEnv);
   const campaignId = process.env.CAMPAIGN_ID?.trim();
   const apply = process.env.APPLY === 'true';
   const awsRegion =
@@ -154,7 +80,7 @@ async function main() {
     process.env.SUPABASE_SECRET_KEY?.trim() ||
     null;
 
-  const secretParamPath = url ? resolveSecretParamPath(url) : null;
+  const secretParamPath = resolveSecretParamPathForTarget(targetEnv);
 
   if (secretParamPath) {
     try {
@@ -177,6 +103,7 @@ async function main() {
     process.exit(1);
   }
 
+  console.log(`Target env: ${targetEnv}`);
   console.log(`Resolved SUPABASE_URL from ${urlSource}.`);
   if (secretParamPath) {
     console.log(`Resolved SUPABASE secret from Parameter Store path ${secretParamPath}.`);
@@ -241,7 +168,7 @@ async function main() {
   if (enrollmentIds.length > 0) {
     const { data: messageJobs, error: messageJobsError } = await supabase
       .from('message_jobs')
-      .select('id, enrollment_id, status, scheduled_at, message_type, created_at')
+      .select('id, enrollment_id, status, status_reason, scheduled_at, message_type, created_at, error_message')
       .in('enrollment_id', enrollmentIds)
       .order('created_at', { ascending: true });
 
@@ -261,10 +188,13 @@ async function main() {
   const skippedWithQueuedJobs: Candidate[] = [];
 
   for (const enrollment of retryableRows) {
-    const queuedCampaignJobs = (jobsByEnrollment.get(enrollment.id) ?? []).filter(
-      isQueuedCampaignJob
+    const campaignJobs = (jobsByEnrollment.get(enrollment.id) ?? []).filter(
+      isCampaignMessageJob
     );
-    const candidate = { enrollment, queuedCampaignJobs };
+    const queuedCampaignJobs = campaignJobs.filter(isQueuedCampaignJob);
+    const latestCampaignJob =
+      campaignJobs.length > 0 ? campaignJobs[campaignJobs.length - 1] : null;
+    const candidate = { enrollment, queuedCampaignJobs, latestCampaignJob };
 
     if (queuedCampaignJobs.length > 0) {
       skippedWithQueuedJobs.push(candidate);
@@ -376,30 +306,62 @@ async function main() {
   }
 
   const now = new Date().toISOString();
-  const candidateIds = candidates.map(({ enrollment }) => enrollment.id);
+  let repaired = 0;
 
-  const { data: updated, error: updateError } = await supabase
-    .from('enrollments')
-    .update({
-      state: 'active',
-      stopped_reason: null,
-      stopped_at: null,
-      stopped_error_message: null,
-      next_run_at: now,
-      updated_at: now,
-    })
-    .in('id', candidateIds)
-    .eq('state', 'stopped')
-    .eq('stopped_reason', 'error')
-    .select('id');
+  for (const candidate of candidates) {
+    const latestRetryableFailedJob =
+      candidate.latestCampaignJob &&
+      candidate.latestCampaignJob.status === 'failed' &&
+      isRetryableSupabaseReadError(candidate.latestCampaignJob.error_message ?? '')
+        ? candidate.latestCampaignJob
+        : null;
 
-  if (updateError) {
-    console.error('Failed to repair enrollments:', updateError.message);
-    process.exit(1);
+    if (latestRetryableFailedJob) {
+      const { error: jobUpdateError } = await supabase
+        .from('message_jobs')
+        .update({
+          status: 'deferred',
+          status_reason: 'transient_read_error',
+          reserved_at: null,
+          error_message: latestRetryableFailedJob.error_message,
+          updated_at: now,
+        } as any)
+        .eq('id', latestRetryableFailedJob.id)
+        .eq('status', 'failed');
+
+      if (jobUpdateError) {
+        console.error(
+          `Failed to convert message job ${latestRetryableFailedJob.id} to deferred: ${jobUpdateError.message}`
+        );
+        process.exit(1);
+      }
+    }
+
+    const { data: updatedRows, error: updateError } = await supabase
+      .from('enrollments')
+      .update({
+        state: 'active',
+        stopped_reason: null,
+        stopped_at: null,
+        stopped_error_message: null,
+        next_run_at: now,
+        updated_at: now,
+      })
+      .eq('id', candidate.enrollment.id)
+      .eq('state', 'stopped')
+      .eq('stopped_reason', 'error')
+      .select('id');
+
+    if (updateError) {
+      console.error(`Failed to repair enrollment ${candidate.enrollment.id}: ${updateError.message}`);
+      process.exit(1);
+    }
+
+    repaired += updatedRows?.length ?? 0;
   }
 
   console.log(
-    `Reactivated ${updated?.length ?? 0} enrollments. Campaign message job timing remains unchanged; scheduling will continue through the normal scheduler path.`
+    `Reactivated ${repaired} enrollments. Latest retryable failed attempts were converted to deferred when present so scheduler retries follow the normal path.`
   );
 }
 

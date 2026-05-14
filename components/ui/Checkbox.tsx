@@ -10,7 +10,7 @@ import Animated, {
 
 interface CheckboxProps {
   checked: boolean;
-  onPress: () => void;
+  onPress: (event?: any) => void;
   indeterminate?: boolean;
   size?: number;
   circleSize?: number;
@@ -65,7 +65,7 @@ export function Checkbox({
     if (e?.stopPropagation) {
       e.stopPropagation();
     }
-    onPress();
+    onPress(e);
   };
 
   // Animated styles

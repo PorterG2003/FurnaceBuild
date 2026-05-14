@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "build:web": "expo export --platform web --output-dir web-build",
     "generate:pwa-splash": "npx --yes pwa-asset-generator@6.4.0 assets/Logo_Color.svg public/pwa-splash --splash-only --favicon false --manifest false --path-override /pwa-splash --padding \"12%\" --background \"#121212\" && cp assets/Logo_Color.svg public/Logo_Color.svg",
+    "generate:pwa-icons": "bash scripts/generate-pwa-icons.sh",
     "validate": "bash scripts/validate-expo-build.sh",
     "validate:build": "bash scripts/validate-expo-build.sh",
     "verify:amplify-yml-installs": "node scripts/verify-amplify-yml-installs.mjs",

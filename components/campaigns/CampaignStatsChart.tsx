@@ -25,6 +25,18 @@ const Y_AXIS_LABEL_WIDTH = 35;
 const GROUP_WIDTH = 4 * GROUP_BAR_WIDTH + 3 * BAR_SPACING + GROUP_SPACING;
 const STRIP_WIDTH = 4 * GROUP_BAR_WIDTH + 3 * BAR_SPACING;
 
+/** True when primary input is touch-like: disable chart tooltip hit layer so horizontal ScrollView receives pans. */
+function readWebChartTouchLikeOverlay(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  try {
+    return (
+      window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches
+    );
+  } catch {
+    return false;
+  }
+}
+
 interface BarItem extends barDataItem {
   value: number;
   dataLabel: BarLabelType;
@@ -128,6 +140,25 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
         : null,
     [data]
   );
+
+  const [webChartTouchLikeOverlay, setWebChartTouchLikeOverlay] = useState(
+    () => (Platform.OS === 'web' ? readWebChartTouchLikeOverlay() : false)
+  );
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || !window.matchMedia) return;
+    const mqCoarse = window.matchMedia('(pointer: coarse)');
+    const mqNoHover = window.matchMedia('(hover: none)');
+    const sync = () =>
+      setWebChartTouchLikeOverlay(mqCoarse.matches || mqNoHover.matches);
+    sync();
+    mqCoarse.addEventListener('change', sync);
+    mqNoHover.addEventListener('change', sync);
+    return () => {
+      mqCoarse.removeEventListener('change', sync);
+      mqNoHover.removeEventListener('change', sync);
+    };
+  }, []);
 
   const wrapperStyle = { width: '100%' as const };
   const wrapperClass = embedded ? undefined : 'rounded-xl border border-[#2A2A2A] bg-[#1A1A1A]';
@@ -248,35 +279,42 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
               contentContainerStyle={{ width: chartContentWidth }}
             >
               <View style={{ width: chartContentWidth, paddingBottom: CHART_X_LABEL_PADDING_BOTTOM }}>
-                <BarChart
-                  data={barData}
-                  width={chartContentWidth}
-                  height={CHART_HEIGHT}
-                  maxValue={maxValue}
-                  noOfSections={4}
-                  barWidth={GROUP_BAR_WIDTH}
-                  spacing={BAR_SPACING}
-                  initialSpacing={INITIAL_SPACING}
-                  endSpacing={END_SPACING}
-                  xAxisThickness={1}
-                  xAxisColor="#2A2A2A"
-                  yAxisThickness={0}
-                  yAxisLabelWidth={Y_AXIS_LABEL_WIDTH}
-                  yAxisTextStyle={{ color: '#9CA3AF', fontSize: 11, fontFamily: FONT_FAMILY }}
-                  xAxisLabelTextStyle={{ color: '#9CA3AF', fontSize: 10, fontFamily: FONT_FAMILY }}
-                  labelsDistanceFromXaxis={8}
-                  hideRules={false}
-                  rulesColor="#2A2A2A"
-                  rulesThickness={1}
-                  disableScroll={true}
-                  showScrollIndicator={false}
-                  scrollToEnd={false}
-                  roundedBottom={false}
-                  barBorderTopLeftRadius={2}
-                  barBorderTopRightRadius={2}
-                  backgroundColor="transparent"
-                  isAnimated={false}
-                />
+                {/*
+                  gifted-charts wraps the plot in a Pressable when pointerConfig is unset; that captures
+                  touch on web and blocks this outer horizontal ScrollView. Skip hit-testing on touch-like
+                  viewports so pans reach the ScrollView (tooltips already use pointerEvents none there).
+                */}
+                <View pointerEvents={webChartTouchLikeOverlay ? 'none' : 'auto'}>
+                  <BarChart
+                    data={barData}
+                    width={chartContentWidth}
+                    height={CHART_HEIGHT}
+                    maxValue={maxValue}
+                    noOfSections={4}
+                    barWidth={GROUP_BAR_WIDTH}
+                    spacing={BAR_SPACING}
+                    initialSpacing={INITIAL_SPACING}
+                    endSpacing={END_SPACING}
+                    xAxisThickness={1}
+                    xAxisColor="#2A2A2A"
+                    yAxisThickness={0}
+                    yAxisLabelWidth={Y_AXIS_LABEL_WIDTH}
+                    yAxisTextStyle={{ color: '#9CA3AF', fontSize: 11, fontFamily: FONT_FAMILY }}
+                    xAxisLabelTextStyle={{ color: '#9CA3AF', fontSize: 10, fontFamily: FONT_FAMILY }}
+                    labelsDistanceFromXaxis={8}
+                    hideRules={false}
+                    rulesColor="#2A2A2A"
+                    rulesThickness={1}
+                    disableScroll={true}
+                    showScrollIndicator={false}
+                    scrollToEnd={false}
+                    roundedBottom={false}
+                    barBorderTopLeftRadius={2}
+                    barBorderTopRightRadius={2}
+                    backgroundColor="transparent"
+                    isAnimated={false}
+                  />
+                </View>
                 <View
                   style={{
                     position: 'absolute',
@@ -286,9 +324,12 @@ export function CampaignStatsChart({ data, loading, embedded, containerWidth: co
                     bottom: 0,
                     width: chartContentWidth - Y_AXIS_LABEL_WIDTH,
                   }}
-                  pointerEvents="box-none"
+                  pointerEvents={webChartTouchLikeOverlay ? 'none' : 'box-none'}
                 >
-                  <View style={{ flex: 1, width: chartContentWidth - Y_AXIS_LABEL_WIDTH }} pointerEvents="box-none">
+                  <View
+                    style={{ flex: 1, width: chartContentWidth - Y_AXIS_LABEL_WIDTH }}
+                    pointerEvents={webChartTouchLikeOverlay ? 'none' : 'box-none'}
+                  >
                     {tooltipStrips}
                   </View>
                 </View>

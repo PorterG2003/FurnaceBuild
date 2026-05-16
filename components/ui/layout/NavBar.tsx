@@ -4,7 +4,14 @@ import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from '
 import { useRouter, usePathname } from 'expo-router';
 import { signOut } from '@/lib/supabase/client';
 import { SvgXml } from 'react-native-svg';
-import { DocumentTextIcon, ArrowRightOnRectangleIcon, Cog6ToothIcon, InboxIcon, EnvelopeIcon } from 'react-native-heroicons/outline';
+import {
+  MegaphoneIcon,
+  ChartBarIcon,
+  ArrowRightOnRectangleIcon,
+  Cog6ToothIcon,
+  InboxIcon,
+  EnvelopeIcon,
+} from 'react-native-heroicons/outline';
 import { useAccount } from '@/contexts/AccountContext';
 import { WorkspaceSwitcherPopover } from '@/components/ui/WorkspaceSwitcherPopover';
 const furnaceLogoFull = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
@@ -115,7 +122,8 @@ export function NavBar() {
   });
 
   const navItems = [
-    { label: 'Campaigns', path: '/campaigns', icon: DocumentTextIcon },
+    { label: 'Campaigns', path: '/campaigns', icon: MegaphoneIcon },
+    { label: 'Metrics', path: '/metrics', icon: ChartBarIcon },
     { label: 'Master Inbox', path: '/inbox', icon: InboxIcon },
     { label: 'Senders', path: '/senders', icon: EnvelopeIcon },
   ];

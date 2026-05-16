@@ -20,10 +20,10 @@ const B = (targetChars: number, hardMaxChars: number): Pick<FluxCopyFieldBudget,
   hardMaxChars,
 });
 
-/** `minimal` and `outlined` → tight; `classic`, `elevated`, `soft` → standard. */
+/** `minimal` → tight; `classic`, `elevated`, `soft` → standard. */
 export function getTierForPreset(preset: FluxBlockStylePreset | undefined): FluxCopyBudgetTier {
   const p = preset ?? DEFAULT_FLUX_BLOCK_STYLE_PRESET;
-  if (p === 'minimal' || p === 'outlined') return 'tight';
+  if (p === 'minimal') return 'tight';
   return 'standard';
 }
 
@@ -357,7 +357,7 @@ export function formatFluxCopyBudgetsForPrompt(): string {
 
 Default to **short, scannable** copy: treat the Target column as your normal output. Use Hard max only when the user prompt's legal/compliance/quote exception applies—do not "use all available space."
 
-Preset → tier: presets ${presetList}. Use tier **tight** for blockStylePreset minimal or outlined. Use tier **standard** for classic, elevated, or soft.
+Preset → tier: presets ${presetList}. Use tier **tight** for blockStylePreset minimal. Use tier **standard** for classic, elevated, or soft.
 
 ### Tight tier
 ${markdownTableForRows(tightRows)}

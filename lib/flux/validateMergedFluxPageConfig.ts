@@ -51,7 +51,7 @@ export function getMergedFluxPageConfigSemanticIssues(
   for (const block of merged.blocks) {
     switch (block.type) {
       case 'hero': {
-        const { headline, subheadline, ctaText, ctaUrl, heroImageUrl } = block.props;
+        const { headline, subheadline, ctaText, ctaUrl, heroImageUrl, heroPanelImageUrl } = block.props;
         if (!headline.trim()) push(block, 'headline is empty');
         if (!subheadline.trim()) push(block, 'subheadline is empty');
         if (!ctaText.trim()) push(block, 'ctaText is empty');
@@ -59,6 +59,9 @@ export function getMergedFluxPageConfigSemanticIssues(
         else if (!isValidFluxCtaUrl(ctaUrl)) push(block, 'ctaUrl must be http(s) or an in-page anchor like #section');
         if (heroImageUrl && !HTTP_PREFIX.test(heroImageUrl.trim())) {
           push(block, 'heroImageUrl must start with http:// or https://');
+        }
+        if (heroPanelImageUrl && !HTTP_PREFIX.test(heroPanelImageUrl.trim())) {
+          push(block, 'heroPanelImageUrl must start with http:// or https://');
         }
         break;
       }

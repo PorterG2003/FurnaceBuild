@@ -138,12 +138,8 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
   const complexLayout = presentation.layouts.complex;
   const headingFont = fluxPreviewFontFamily(theme.fontFamily, '600');
   const bodyFont = fluxPreviewFontFamily(theme.fontFamily, '400');
-  const outerBackground = complexLayout === 'document' ? presentation.surfaceColor : theme.backgroundColor;
+  const outerBackground = theme.backgroundColor;
   const frameClassName = complexLayout === 'dashboard' ? 'w-full max-w-5xl self-center' : 'w-full max-w-4xl self-center';
-  const frameStyle =
-    complexLayout === 'document'
-      ? { borderTopWidth: 1, borderBottomWidth: 1, borderColor: theme.primaryColor, paddingVertical: 24 }
-      : undefined;
   const introCardStyle =
     complexLayout === 'soft'
       ? presentation.tintedCard
@@ -153,7 +149,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
 
   return (
     <View className="w-full py-10 px-4 md:px-6" style={{ backgroundColor: outerBackground }}>
-      <View className={frameClassName} style={frameStyle}>
+      <View className={frameClassName}>
         <View className="flex-row flex-wrap items-start justify-between gap-3 mb-5">
           <View className="flex-1 min-w-[260px]">
             <Text
@@ -204,11 +200,95 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
         ) : null}
 
         {props.status === 'ready' && props.competitors.length > 0 ? (
-          <View className="gap-5">
+          <View className={complexLayout === 'editorial' ? 'gap-0' : 'gap-5'}>
             {props.competitors.map((row, i) => {
               const advertiserUrl = row.examples[0]?.sourceUrl
                 ? advertiserUrlFromSourceUrl(row.examples[0].sourceUrl)
                 : null;
+              const examplesWithImage = row.examples.filter((ex) => ex.imageUrl?.trim());
+              const examples = examplesWithImage.length > 0 ? (
+                <View className="gap-3 mt-5">
+                  <Text
+                    className="text-[11px] uppercase tracking-[2px]"
+                    style={{ color: theme.textColor, opacity: presentation.subtleTextOpacity, fontFamily: headingFont }}
+                  >
+                    Example creatives
+                  </Text>
+                  <View className="flex-row flex-wrap gap-3">
+                    {examplesWithImage.map((ex, j) => (
+                      <Pressable
+                        key={`${ex.sourceUrl}-${j}`}
+                        className="w-full md:flex-1 md:min-w-[220px] overflow-hidden"
+                        style={{ borderRadius: presentation.radii.media }}
+                        onPress={() => Linking.openURL(ex.sourceUrl)}
+                      >
+                        <Image
+                          source={{ uri: ex.imageUrl!.trim() }}
+                          className="w-full h-56"
+                          resizeMode="contain"
+                        />
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ) : null;
+
+              if (complexLayout === 'editorial') {
+                const isReversed = i % 2 === 1;
+                const textCol = (
+                  <View className="flex-[2] min-w-[220px] gap-3">
+                    <Text className="text-xl md:text-2xl" style={{ color: theme.textColor, fontFamily: headingFont }}>
+                      {row.name}
+                    </Text>
+                    <Text className="text-sm leading-6 md:text-[15px]" style={{ color: theme.textColor, opacity: presentation.mutedTextOpacity, fontFamily: bodyFont }}>
+                      {buildAuditSummary(row)}
+                    </Text>
+                    {advertiserUrl ? (
+                      <Pressable className="self-start" onPress={() => Linking.openURL(advertiserUrl)}>
+                        <Text className="text-sm" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
+                          {`View ${row.name}'s Google Ads →`}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                );
+                const mapCol = row.mapImageUrl ? (
+                  <View className="flex-[1] min-w-[140px] gap-2">
+                    <Text
+                      className="text-[11px] uppercase tracking-[2px]"
+                      style={{ color: theme.textColor, opacity: presentation.subtleTextOpacity, fontFamily: headingFont }}
+                    >
+                      Market view
+                    </Text>
+                    <Image
+                      source={{ uri: row.mapImageUrl }}
+                      className="w-full h-44 bg-gray-100"
+                      style={{ borderRadius: presentation.radii.media }}
+                      resizeMode="cover"
+                    />
+                  </View>
+                ) : null;
+
+                return (
+                  <View
+                    key={`${row.name}-${i}`}
+                    className="py-8"
+                    style={i > 0 ? { borderTopWidth: 1, borderColor: `${theme.primaryColor}20` } : undefined}
+                  >
+                    <Text
+                      className="text-[10px] uppercase tracking-[3px] mb-4"
+                      style={{ color: theme.primaryColor, opacity: 0.7, fontFamily: headingFont }}
+                    >
+                      Competitor {i + 1}
+                    </Text>
+                    <View className="flex-row flex-wrap gap-6">
+                      {isReversed ? mapCol : textCol}
+                      {isReversed ? textCol : mapCol}
+                    </View>
+                    {examples}
+                  </View>
+                );
+              }
 
               return (
                 <View key={`${row.name}-${i}`} className="p-5 md:p-6 gap-5" style={presentation.strongCard}>
@@ -261,45 +341,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                       </View>
                     ) : null}
                   </View>
-
-                  <View>
-                    <View className="gap-3">
-                      <Text
-                        className="text-[11px] uppercase tracking-[2px]"
-                        style={{ color: theme.textColor, opacity: presentation.subtleTextOpacity, fontFamily: headingFont }}
-                      >
-                        Example creatives
-                      </Text>
-                      <View className="flex-row flex-wrap gap-3">
-                        {row.examples.map((ex, j) => (
-                          <Pressable
-                            key={`${ex.sourceUrl}-${j}`}
-                            className="w-full md:flex-1 md:min-w-[220px]"
-                            onPress={() => Linking.openURL(ex.sourceUrl)}
-                          >
-                            <View className="p-3 bg-gray-50" style={{ ...presentation.card, borderRadius: presentation.radii.media }}>
-                              {ex.imageUrl?.trim() ? (
-                                <Image
-                                  source={{ uri: ex.imageUrl.trim() }}
-                                  className="w-full h-56 rounded-lg"
-                                  resizeMode="contain"
-                                />
-                              ) : (
-                                <View className="h-56 items-center justify-center rounded-lg bg-white/70 px-4">
-                                  <Text
-                                    className="text-sm text-center"
-                                    style={{ color: theme.textColor, opacity: presentation.mutedTextOpacity, fontFamily: bodyFont }}
-                                  >
-                                    Open ad in Transparency Center
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                          </Pressable>
-                        ))}
-                      </View>
-                    </View>
-                  </View>
+                  {examples}
                 </View>
               );
             })}

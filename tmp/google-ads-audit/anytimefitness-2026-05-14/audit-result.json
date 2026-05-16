@@ -1,0 +1,83 @@
+{
+  "runner": "debug_flux_competitor_audit",
+  "correlationId": "local_2026-05-14T22-53-11-709Z",
+  "startedAt": "2026-05-14T22:53:11.709Z",
+  "finishedAt": "2026-05-14T22:54:39.773Z",
+  "outputDir": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/anytimefitness-2026-05-14",
+  "inputs": {
+    "domains": [
+      "anytimefitness.com"
+    ],
+    "excludeDomains": [],
+    "lat": null,
+    "lng": null,
+    "query": "local services",
+    "region": "US",
+    "headless": true,
+    "slowMoMs": 0,
+    "timeoutMs": 20000,
+    "domainTimeoutMs": 120000,
+    "maxSamples": 2,
+    "maxCandidates": 12,
+    "skipStaticMaps": true
+  },
+  "candidates": [
+    {
+      "domain": "anytimefitness.com",
+      "name": "anytimefitness.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 0,
+      "source": "manual"
+    }
+  ],
+  "attemptedPlacesCount": 1,
+  "okDomainCount": 1,
+  "placesStopReason": "exhausted_candidates",
+  "transparencyScoredOkCount": 1,
+  "publishedWinnerCount": 1,
+  "winnerDomains": [
+    "anytimefitness.com"
+  ],
+  "auditOutcomeCounts": {
+    "ok": 1
+  },
+  "auditRows": [
+    {
+      "domain": "anytimefitness.com",
+      "outcome": "ok",
+      "creative_count": 40,
+      "selected_rank": 1
+    }
+  ],
+  "ranked": [
+    {
+      "domain": "anytimefitness.com",
+      "placeIndex": 0,
+      "creativeCount": 40,
+      "latestAdLastShownAt": "2026-05-14",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    }
+  ],
+  "competitors": [
+    {
+      "domain": "anytimefitness.com",
+      "name": "anytimefitness.com",
+      "adsSummary": "~40 ads in Google’s Transparency Center; most recent creative shown 2026-05-14.",
+      "examples": [
+        {
+          "headline": "Mlynarczyk, Musleh & Co.",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR04171424726394077185/creative/CR11421293452906725377?region=US"
+        },
+        {
+          "headline": "Mlynarczyk, Musleh & Co.",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR04171424726394077185/creative/CR12124140867799744513?region=US"
+        }
+      ]
+    }
+  ],
+  "failureMessage": null
+}

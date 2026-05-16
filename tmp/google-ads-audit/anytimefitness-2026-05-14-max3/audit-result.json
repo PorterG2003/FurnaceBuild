@@ -1,0 +1,54 @@
+{
+  "runner": "debug_flux_competitor_audit",
+  "correlationId": "local_2026-05-14T22-56-43-408Z",
+  "startedAt": "2026-05-14T22:56:43.408Z",
+  "finishedAt": "2026-05-14T22:58:43.526Z",
+  "outputDir": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/anytimefitness-2026-05-14-max3",
+  "inputs": {
+    "domains": [
+      "anytimefitness.com"
+    ],
+    "excludeDomains": [],
+    "lat": null,
+    "lng": null,
+    "query": "local services",
+    "region": "US",
+    "headless": true,
+    "slowMoMs": 0,
+    "timeoutMs": 20000,
+    "domainTimeoutMs": 120000,
+    "maxSamples": 3,
+    "maxCandidates": 12,
+    "skipStaticMaps": true
+  },
+  "candidates": [
+    {
+      "domain": "anytimefitness.com",
+      "name": "anytimefitness.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 0,
+      "source": "manual"
+    }
+  ],
+  "attemptedPlacesCount": 1,
+  "okDomainCount": 0,
+  "placesStopReason": "exhausted_candidates",
+  "transparencyScoredOkCount": 0,
+  "publishedWinnerCount": 0,
+  "winnerDomains": [],
+  "auditOutcomeCounts": {
+    "timeout": 1
+  },
+  "auditRows": [
+    {
+      "domain": "anytimefitness.com",
+      "outcome": "timeout",
+      "creative_count": null,
+      "message": "transparency_anytimefitness.com_timeout"
+    }
+  ],
+  "ranked": [],
+  "competitors": [],
+  "failureMessage": "No competitor qualified for a published card (each needs a Transparency Center match with at least one visible creative).\n1 timed out.\n\nPer domain:\n\nanytimefitness.com · timeout · transparency_anytimefitness.com_timeout"
+}

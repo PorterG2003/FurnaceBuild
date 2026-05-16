@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 
 interface ButtonProps extends TouchableOpacityProps {
   variant?: 'default' | 'secondary' | 'outline' | 'destructive' | 'destructive-solid' | 'link';
-  size?: 'default' | 'sm' | 'lg' | 'xs';
+  size?: 'default' | 'sm' | 'lg' | 'xs' | '2xs';
   /** When true, button stretches to full width of its container (e.g. single-button modal footer). */
   fullWidth?: boolean;
   children: React.ReactNode;
@@ -24,8 +24,9 @@ export function Button({
         'items-center justify-center font-instrument-medium flex-row',
         fullWidth && 'self-stretch',
         {
+          'rounded-md': size === '2xs',
           'rounded-lg': size === 'xs',
-          'rounded-xl': size !== 'xs',
+          'rounded-xl': size !== '2xs' && size !== 'xs',
         },
         {
           'bg-brand-orange text-white': variant === 'default' && !props.disabled,
@@ -44,6 +45,7 @@ export function Button({
           'px-4 py-2': size === 'sm',
           'px-8 py-4': size === 'lg',
           'px-2 py-1': size === 'xs',
+          'px-1.5 py-0.5': size === '2xs',
         },
         className
       )}
@@ -72,6 +74,7 @@ export function Button({
               'text-sm': size === 'sm',
               'text-lg': size === 'lg',
               'text-xs': size === 'xs',
+              'text-[11px] leading-tight': size === '2xs',
             }
           )}
         >

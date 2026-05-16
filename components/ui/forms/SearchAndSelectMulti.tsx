@@ -28,6 +28,63 @@ import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 const noSelectStyle = Platform.OS === 'web' ? ({ userSelect: 'none' } as const) : undefined;
 const textInputWebStyle = Platform.OS === 'web' ? ({ userSelect: 'text' } as const) : undefined;
 
+/** Stable references — `renderListPanel` depends on `panelSizing`; inline objects each render caused infinite `useLayoutEffect` → `presentTakeover` loops inside `BottomSheet`. */
+const TRIGGER_SIZING = {
+  compact: {
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    minHeight: 32,
+    textClassName: 'text-xs',
+    chevronSize: 14,
+  },
+  default: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 44,
+    textClassName: 'text-sm',
+    chevronSize: 18,
+  },
+} as const;
+
+const PANEL_SIZING = {
+  compact: {
+    panelPadding: 8,
+    searchRadius: 8,
+    searchPaddingX: 8,
+    searchPaddingY: 6,
+    searchMarginBottom: 6,
+    searchIconSize: 14,
+    searchTextSize: 12,
+    rowGap: 8,
+    rowPaddingY: 7,
+    rowPaddingX: 10,
+    rowRadius: 8,
+    rowMarginBottom: 4,
+    checkboxSize: 16,
+    checkboxRadius: 4,
+    rowTextClassName: 'text-xs',
+  },
+  default: {
+    panelPadding: 10,
+    searchRadius: 10,
+    searchPaddingX: 10,
+    searchPaddingY: 8,
+    searchMarginBottom: 8,
+    searchIconSize: 16,
+    searchTextSize: 14,
+    rowGap: 10,
+    rowPaddingY: 10,
+    rowPaddingX: 12,
+    rowRadius: 12,
+    rowMarginBottom: 6,
+    checkboxSize: 18,
+    checkboxRadius: 4,
+    rowTextClassName: 'text-sm',
+  },
+} as const;
+
 export interface SearchAndSelectMultiProps<T> {
   items: T[];
   getItemId: (item: T) => string;
@@ -63,61 +120,8 @@ export function SearchAndSelectMulti<T>({
   size = 'default',
   panelSize = size,
 }: SearchAndSelectMultiProps<T>) {
-  const triggerSizing =
-    size === 'compact'
-      ? {
-          borderRadius: 8,
-          paddingHorizontal: 10,
-          paddingVertical: 6,
-          minHeight: 32,
-          textClassName: 'text-xs',
-          chevronSize: 14,
-        }
-      : {
-          borderRadius: 12,
-          paddingHorizontal: 14,
-          paddingVertical: 12,
-          minHeight: 44,
-          textClassName: 'text-sm',
-          chevronSize: 18,
-        };
-
-  const panelSizing =
-    panelSize === 'compact'
-      ? {
-          panelPadding: 8,
-          searchRadius: 8,
-          searchPaddingX: 8,
-          searchPaddingY: 6,
-          searchMarginBottom: 6,
-          searchIconSize: 14,
-          searchTextSize: 12,
-          rowGap: 8,
-          rowPaddingY: 7,
-          rowPaddingX: 10,
-          rowRadius: 8,
-          rowMarginBottom: 4,
-          checkboxSize: 16,
-          checkboxRadius: 4,
-          rowTextClassName: 'text-xs',
-        }
-      : {
-          panelPadding: 10,
-          searchRadius: 10,
-          searchPaddingX: 10,
-          searchPaddingY: 8,
-          searchMarginBottom: 8,
-          searchIconSize: 16,
-          searchTextSize: 14,
-          rowGap: 10,
-          rowPaddingY: 10,
-          rowPaddingX: 12,
-          rowRadius: 12,
-          rowMarginBottom: 6,
-          checkboxSize: 18,
-          checkboxRadius: 4,
-          rowTextClassName: 'text-sm',
-        };
+  const triggerSizing = size === 'compact' ? TRIGGER_SIZING.compact : TRIGGER_SIZING.default;
+  const panelSizing = panelSize === 'compact' ? PANEL_SIZING.compact : PANEL_SIZING.default;
 
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isCompactLayout = screenWidth < LAYOUT_BREAKPOINT;

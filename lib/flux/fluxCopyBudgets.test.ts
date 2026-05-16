@@ -8,9 +8,8 @@ import {
 } from './fluxCopyBudgets.js';
 import type { PageConfig } from './types.js';
 
-test('getTierForPreset: minimal and outlined are tight', () => {
+test('getTierForPreset: minimal is tight', () => {
   assert.equal(getTierForPreset('minimal'), 'tight');
-  assert.equal(getTierForPreset('outlined'), 'tight');
 });
 
 test('getTierForPreset: classic elevated soft are standard', () => {
@@ -156,7 +155,7 @@ test('getFluxCopyBudgetViolations: allowLongCopy bypasses hard max failures', ()
 
 test('formatFluxCopyBudgetsForPrompt includes preset map and fixed instruction lines', () => {
   const s = formatFluxCopyBudgetsForPrompt();
-  assert.match(s, /minimal or outlined/);
+  assert.match(s, /blockStylePreset minimal/);
   assert.match(s, /classic, elevated, or soft/);
   assert.match(s, /Prefer staying at or below Target/);
   assert.match(s, /If any string exceeds Hard max/);

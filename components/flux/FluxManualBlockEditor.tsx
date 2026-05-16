@@ -1,6 +1,8 @@
 import React, { type ReactNode } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import type { Block, BlockType, ContentAsset } from '@/lib/flux/types';
+import type { FluxBlockEditorLayout } from '@/components/flux/fluxTemplateBlocksDraggableListShared';
+import { fluxPanelInputClass, fluxPanelInputFieldClass, fluxPanelLabelClass } from '@/lib/flux/fluxEditorPanelClasses';
 import {
   createQuizAndBookOption,
   createQuizAndBookQuestion,
@@ -65,14 +67,17 @@ export function renderFluxManualBlockEditor(
   block: Block,
   updateProps: (id: string, props: Record<string, unknown>) => void,
   assets: ContentAsset[],
+  layout?: FluxBlockEditorLayout,
 ): ReactNode {
-  const inputClass = 'text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm mb-2';
+  const inputClass = fluxPanelInputClass;
+  const labelClass = fluxPanelLabelClass;
+  const pair = Boolean(layout?.pairFieldColumns);
 
   switch (block.type) {
     case 'hero':
       return (
         <View className="gap-1">
-          <Text className="text-gray-400 text-xs">Headline</Text>
+          <Text className={labelClass}>Headline</Text>
           <TextInput
             className={inputClass}
             value={block.props.headline}
@@ -80,7 +85,7 @@ export function renderFluxManualBlockEditor(
             placeholder="Headline"
             placeholderTextColor="#555"
           />
-          <Text className="text-gray-400 text-xs">Subheadline</Text>
+          <Text className={labelClass}>Subheadline</Text>
           <TextInput
             className={inputClass}
             value={block.props.subheadline}
@@ -89,23 +94,50 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             multiline
           />
-          <Text className="text-gray-400 text-xs">CTA Text</Text>
-          <TextInput
-            className={inputClass}
-            value={block.props.ctaText}
-            onChangeText={(value) => updateProps(block.id, { ctaText: value })}
-            placeholder="CTA text"
-            placeholderTextColor="#555"
-          />
-          <Text className="text-gray-400 text-xs">CTA URL</Text>
-          <TextInput
-            className={inputClass}
-            value={block.props.ctaUrl}
-            onChangeText={(value) => updateProps(block.id, { ctaUrl: value })}
-            placeholder="#section or https://…"
-            placeholderTextColor="#555"
-          />
-          <Text className="text-gray-400 text-xs">Hero image URL (optional)</Text>
+          {pair ? (
+            <View className="flex-row gap-2 flex-wrap mb-1.5">
+              <View className="flex-1 min-w-[120px]">
+                <Text className={labelClass}>CTA Text</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={block.props.ctaText}
+                  onChangeText={(value) => updateProps(block.id, { ctaText: value })}
+                  placeholder="CTA text"
+                  placeholderTextColor="#555"
+                />
+              </View>
+              <View className="flex-1 min-w-[120px]">
+                <Text className={labelClass}>CTA URL</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={block.props.ctaUrl}
+                  onChangeText={(value) => updateProps(block.id, { ctaUrl: value })}
+                  placeholder="#section or https://…"
+                  placeholderTextColor="#555"
+                />
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text className={labelClass}>CTA Text</Text>
+              <TextInput
+                className={inputClass}
+                value={block.props.ctaText}
+                onChangeText={(value) => updateProps(block.id, { ctaText: value })}
+                placeholder="CTA text"
+                placeholderTextColor="#555"
+              />
+              <Text className={labelClass}>CTA URL</Text>
+              <TextInput
+                className={inputClass}
+                value={block.props.ctaUrl}
+                onChangeText={(value) => updateProps(block.id, { ctaUrl: value })}
+                placeholder="#section or https://…"
+                placeholderTextColor="#555"
+              />
+            </>
+          )}
+          <Text className={labelClass}>Hero image URL (optional)</Text>
           <TextInput
             className={inputClass}
             value={block.props.heroImageUrl ?? ''}
@@ -121,7 +153,7 @@ export function renderFluxManualBlockEditor(
     case 'social_proof':
       return (
         <View className="gap-1">
-          <Text className="text-gray-400 text-xs">Heading</Text>
+          <Text className={labelClass}>Heading</Text>
           <TextInput
             className={inputClass}
             value={block.props.heading}
@@ -129,7 +161,7 @@ export function renderFluxManualBlockEditor(
             placeholder="Trusted by"
             placeholderTextColor="#555"
           />
-          <Text className="text-gray-400 text-xs">Logos (comma-separated names)</Text>
+          <Text className={labelClass}>Logos (comma-separated names)</Text>
           <TextInput
             className={inputClass}
             value={block.props.logos.map((logo) => logo.name).join(', ')}
@@ -148,7 +180,7 @@ export function renderFluxManualBlockEditor(
             placeholder="Acme, Globex, Initech"
             placeholderTextColor="#555"
           />
-          <Text className="text-gray-400 text-xs">
+          <Text className={labelClass}>
             Logo image URLs (optional, comma-separated — same order as names)
           </Text>
           <TextInput
@@ -171,7 +203,7 @@ export function renderFluxManualBlockEditor(
     case 'case_study':
       return (
         <View className="gap-1">
-          <Text className="text-gray-400 text-xs">Content Asset</Text>
+          <Text className={labelClass}>Content Asset</Text>
           <View className="flex-row flex-wrap gap-1 mb-2">
             {assets
               .filter((asset) => asset.type === 'case_study')
@@ -192,28 +224,55 @@ export function renderFluxManualBlockEditor(
               <Text className="text-gray-500 text-xs">No case study assets. Add one above.</Text>
             ) : null}
           </View>
-          <Text className="text-gray-400 text-xs">Override Title (optional)</Text>
-          <TextInput
-            className={inputClass}
-            value={block.props.overrideTitle || ''}
-            onChangeText={(value) => updateProps(block.id, { overrideTitle: value || undefined })}
-            placeholder="Override title"
-            placeholderTextColor="#555"
-          />
-          <Text className="text-gray-400 text-xs">Override Metric (optional)</Text>
-          <TextInput
-            className={inputClass}
-            value={block.props.overrideMetric || ''}
-            onChangeText={(value) => updateProps(block.id, { overrideMetric: value || undefined })}
-            placeholder="Override metric"
-            placeholderTextColor="#555"
-          />
+          {pair ? (
+            <View className="flex-row gap-2 flex-wrap mb-1.5">
+              <View className="flex-1 min-w-[120px]">
+                <Text className={labelClass}>Override Title (optional)</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={block.props.overrideTitle || ''}
+                  onChangeText={(value) => updateProps(block.id, { overrideTitle: value || undefined })}
+                  placeholder="Override title"
+                  placeholderTextColor="#555"
+                />
+              </View>
+              <View className="flex-1 min-w-[120px]">
+                <Text className={labelClass}>Override Metric (optional)</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={block.props.overrideMetric || ''}
+                  onChangeText={(value) => updateProps(block.id, { overrideMetric: value || undefined })}
+                  placeholder="Override metric"
+                  placeholderTextColor="#555"
+                />
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text className={labelClass}>Override Title (optional)</Text>
+              <TextInput
+                className={inputClass}
+                value={block.props.overrideTitle || ''}
+                onChangeText={(value) => updateProps(block.id, { overrideTitle: value || undefined })}
+                placeholder="Override title"
+                placeholderTextColor="#555"
+              />
+              <Text className={labelClass}>Override Metric (optional)</Text>
+              <TextInput
+                className={inputClass}
+                value={block.props.overrideMetric || ''}
+                onChangeText={(value) => updateProps(block.id, { overrideMetric: value || undefined })}
+                placeholder="Override metric"
+                placeholderTextColor="#555"
+              />
+            </>
+          )}
         </View>
       );
     case 'benefits':
       return (
         <View className="gap-1">
-          <Text className="text-gray-400 text-xs">Heading</Text>
+          <Text className={labelClass}>Heading</Text>
           <TextInput
             className={inputClass}
             value={block.props.heading}
@@ -267,14 +326,14 @@ export function renderFluxManualBlockEditor(
               })
             }
           >
-            <Text className="text-gray-400 text-xs">+ Add benefit</Text>
+            <Text className={labelClass}>+ Add benefit</Text>
           </Pressable>
         </View>
       );
     case 'testimonial':
       return (
         <View className="gap-1">
-          <Text className="text-gray-400 text-xs">Content Asset</Text>
+          <Text className={labelClass}>Content Asset</Text>
           <View className="flex-row flex-wrap gap-1 mb-2">
             {assets
               .filter((asset) => asset.type === 'testimonial')
@@ -295,7 +354,7 @@ export function renderFluxManualBlockEditor(
               <Text className="text-gray-500 text-xs">No testimonial assets. Add one above.</Text>
             ) : null}
           </View>
-          <Text className="text-gray-400 text-xs">Override Quote (optional)</Text>
+          <Text className={labelClass}>Override Quote (optional)</Text>
           <TextInput
             className={inputClass}
             value={block.props.overrideQuote || ''}
@@ -304,7 +363,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             multiline
           />
-          <Text className="text-gray-400 text-xs">Override Attribution (optional)</Text>
+          <Text className={labelClass}>Override Attribution (optional)</Text>
           <TextInput
             className={inputClass}
             value={block.props.overrideAttribution || ''}
@@ -319,7 +378,7 @@ export function renderFluxManualBlockEditor(
     case 'cta':
       return (
         <View className="gap-1">
-          <Text className="text-gray-400 text-xs">Headline</Text>
+          <Text className={labelClass}>Headline</Text>
           <TextInput
             className={inputClass}
             value={block.props.headline}
@@ -327,22 +386,49 @@ export function renderFluxManualBlockEditor(
             placeholder="Ready to get started?"
             placeholderTextColor="#555"
           />
-          <Text className="text-gray-400 text-xs">CTA Text</Text>
-          <TextInput
-            className={inputClass}
-            value={block.props.ctaText}
-            onChangeText={(value) => updateProps(block.id, { ctaText: value })}
-            placeholder="Book a call"
-            placeholderTextColor="#555"
-          />
-          <Text className="text-gray-400 text-xs">CTA URL</Text>
-          <TextInput
-            className={inputClass}
-            value={block.props.ctaUrl}
-            onChangeText={(value) => updateProps(block.id, { ctaUrl: value })}
-            placeholder="#section or https://…"
-            placeholderTextColor="#555"
-          />
+          {pair ? (
+            <View className="flex-row gap-2 flex-wrap mb-1.5">
+              <View className="flex-1 min-w-[120px]">
+                <Text className={labelClass}>CTA Text</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={block.props.ctaText}
+                  onChangeText={(value) => updateProps(block.id, { ctaText: value })}
+                  placeholder="Book a call"
+                  placeholderTextColor="#555"
+                />
+              </View>
+              <View className="flex-1 min-w-[120px]">
+                <Text className={labelClass}>CTA URL</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={block.props.ctaUrl}
+                  onChangeText={(value) => updateProps(block.id, { ctaUrl: value })}
+                  placeholder="#section or https://…"
+                  placeholderTextColor="#555"
+                />
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text className={labelClass}>CTA Text</Text>
+              <TextInput
+                className={inputClass}
+                value={block.props.ctaText}
+                onChangeText={(value) => updateProps(block.id, { ctaText: value })}
+                placeholder="Book a call"
+                placeholderTextColor="#555"
+              />
+              <Text className={labelClass}>CTA URL</Text>
+              <TextInput
+                className={inputClass}
+                value={block.props.ctaUrl}
+                onChangeText={(value) => updateProps(block.id, { ctaUrl: value })}
+                placeholder="#section or https://…"
+                placeholderTextColor="#555"
+              />
+            </>
+          )}
         </View>
       );
     case 'quiz_and_book': {
@@ -363,7 +449,7 @@ export function renderFluxManualBlockEditor(
       };
       return (
         <View className="gap-2">
-          <Text className="text-gray-400 text-xs">Heading</Text>
+          <Text className={labelClass}>Heading</Text>
           <TextInput
             className={inputClass}
             value={props.heading}
@@ -372,7 +458,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             multiline
           />
-          <Text className="text-gray-400 text-xs">Subheading</Text>
+          <Text className={labelClass}>Subheading</Text>
           <TextInput
             className={inputClass}
             value={props.subheading}
@@ -381,7 +467,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             multiline
           />
-          <Text className="text-gray-400 text-xs">Calendly URL</Text>
+          <Text className={labelClass}>Calendly URL</Text>
           <TextInput
             className={inputClass}
             value={props.calendlyUrl}
@@ -390,7 +476,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             autoCapitalize="none"
           />
-          <Text className="text-gray-400 text-xs">Destination Email (optional)</Text>
+          <Text className={labelClass}>Destination Email (optional)</Text>
           <TextInput
             className={inputClass}
             value={props.destinationEmail ?? ''}
@@ -401,7 +487,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             autoCapitalize="none"
           />
-          <Text className="text-gray-400 text-xs">Summary heading</Text>
+          <Text className={labelClass}>Summary heading</Text>
           <TextInput
             className={inputClass}
             value={props.summaryHeading}
@@ -409,7 +495,7 @@ export function renderFluxManualBlockEditor(
             placeholder="Perfect."
             placeholderTextColor="#555"
           />
-          <Text className="text-gray-400 text-xs">Summary body</Text>
+          <Text className={labelClass}>Summary body</Text>
           <TextInput
             className={inputClass}
             value={props.summaryBody}
@@ -466,7 +552,7 @@ export function renderFluxManualBlockEditor(
                   </View>
                 </View>
 
-                <Text className="text-gray-400 text-xs">Question type</Text>
+                <Text className={labelClass}>Question type</Text>
                 <View className="flex-row flex-wrap gap-2">
                   {QUIZ_AND_BOOK_QUESTION_TYPES.map((type) => (
                     <Pressable
@@ -495,7 +581,7 @@ export function renderFluxManualBlockEditor(
                   ))}
                 </View>
 
-                <Text className="text-gray-400 text-xs">Prompt</Text>
+                <Text className={labelClass}>Prompt</Text>
                 <TextInput
                   className={inputClass}
                   value={question.prompt}
@@ -504,7 +590,7 @@ export function renderFluxManualBlockEditor(
                   placeholderTextColor="#555"
                   multiline
                 />
-                <Text className="text-gray-400 text-xs">Helper text (optional)</Text>
+                <Text className={labelClass}>Helper text (optional)</Text>
                 <TextInput
                   className={inputClass}
                   value={question.helperText ?? ''}
@@ -516,7 +602,7 @@ export function renderFluxManualBlockEditor(
                   multiline
                 />
                 <View className="flex-row flex-wrap gap-2 items-center">
-                  <Text className="text-gray-400 text-xs">Required</Text>
+                  <Text className={labelClass}>Required</Text>
                   <Pressable
                     className={`px-2 py-1 rounded-lg border ${
                       question.required !== false
@@ -535,7 +621,7 @@ export function renderFluxManualBlockEditor(
 
                 {questionTypeSupportsPlaceholder(question.type) ? (
                   <>
-                    <Text className="text-gray-400 text-xs">Placeholder (optional)</Text>
+                    <Text className={labelClass}>Placeholder (optional)</Text>
                     <TextInput
                       className={inputClass}
                       value={question.placeholder ?? ''}
@@ -550,11 +636,11 @@ export function renderFluxManualBlockEditor(
 
                 {questionTypeSupportsOptions(question.type) ? (
                   <View className="gap-2">
-                    <Text className="text-gray-400 text-xs">Answer options</Text>
+                    <Text className={labelClass}>Answer options</Text>
                     {(question.options ?? []).map((option, optionIndex) => (
                       <View key={option.id} className="flex-row gap-2 items-center">
                         <TextInput
-                          className={`${inputClass} flex-1 mb-0`}
+                          className={`${fluxPanelInputFieldClass} flex-1`}
                           value={option.label}
                           onChangeText={(value) =>
                             replaceQuestion(question.id, (currentQuestion) => ({
@@ -607,7 +693,7 @@ export function renderFluxManualBlockEditor(
                         }))
                       }
                     >
-                      <Text className="text-gray-400 text-xs">+ Add option</Text>
+                      <Text className={labelClass}>+ Add option</Text>
                     </Pressable>
                   </View>
                 ) : null}
@@ -637,7 +723,7 @@ export function renderFluxManualBlockEditor(
       const props = block.props;
       return (
         <View className="gap-2">
-          <Text className="text-gray-400 text-xs">Inferred vertical</Text>
+          <Text className={labelClass}>Inferred vertical</Text>
           <TextInput
             className={inputClass}
             value={props.inferred_vertical}
@@ -645,7 +731,7 @@ export function renderFluxManualBlockEditor(
             placeholder="e.g. med spas"
             placeholderTextColor="#555"
           />
-          <Text className="text-gray-400 text-xs">Vertical rationale</Text>
+          <Text className={labelClass}>Vertical rationale</Text>
           <TextInput
             className={inputClass}
             value={props.inferred_vertical_rationale}
@@ -654,7 +740,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             multiline
           />
-          <Text className="text-gray-400 text-xs">Positioning summary</Text>
+          <Text className={labelClass}>Positioning summary</Text>
           <TextInput
             className={inputClass}
             value={props.positioning_summary}
@@ -663,7 +749,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             multiline
           />
-          <Text className="text-gray-400 text-xs">Platform mix note</Text>
+          <Text className={labelClass}>Platform mix note</Text>
           <TextInput
             className={inputClass}
             value={props.platform_mix_note}
@@ -671,7 +757,7 @@ export function renderFluxManualBlockEditor(
             placeholder="One line on IG / TikTok / FB split"
             placeholderTextColor="#555"
           />
-          <Text className="text-gray-400 text-xs">CTA ladder (one per line)</Text>
+          <Text className={labelClass}>CTA ladder (one per line)</Text>
           <TextInput
             className={inputClass}
             value={props.cta_ladder.join('\n')}
@@ -782,7 +868,7 @@ export function renderFluxManualBlockEditor(
                   updateProps(block.id, { weeks });
                 }}
               >
-                <Text className="text-gray-400 text-xs">+ Add day</Text>
+                <Text className={labelClass}>+ Add day</Text>
               </Pressable>
               <Pressable
                 className="mt-1"
@@ -807,7 +893,7 @@ export function renderFluxManualBlockEditor(
               })
             }
           >
-            <Text className="text-gray-400 text-xs">+ Add week</Text>
+            <Text className={labelClass}>+ Add week</Text>
           </Pressable>
         </View>
       );
@@ -816,7 +902,7 @@ export function renderFluxManualBlockEditor(
       const p = block.props;
       return (
         <View className="gap-1">
-          <Text className="text-gray-400 text-xs">Section heading</Text>
+          <Text className={labelClass}>Section heading</Text>
           <TextInput
             className={inputClass}
             value={p.heading}
@@ -841,7 +927,7 @@ export function renderFluxManualBlockEditor(
     case 'tanners_tax_strategy':
       return (
         <View className="gap-1">
-          <Text className="text-gray-400 text-xs">Heading</Text>
+          <Text className={labelClass}>Heading</Text>
           <TextInput
             className={inputClass}
             value={block.props.heading}
@@ -849,7 +935,7 @@ export function renderFluxManualBlockEditor(
             placeholder="Heading"
             placeholderTextColor="#555"
           />
-          <Text className="text-gray-400 text-xs">Subheadline (optional)</Text>
+          <Text className={labelClass}>Subheadline (optional)</Text>
           <TextInput
             className={inputClass}
             value={block.props.subheadline || ''}
@@ -858,7 +944,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             multiline
           />
-          <Text className="text-gray-400 text-xs">Disclaimer</Text>
+          <Text className={labelClass}>Disclaimer</Text>
           <TextInput
             className={inputClass}
             value={block.props.disclaimer}
@@ -867,7 +953,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             multiline
           />
-          <Text className="text-gray-400 text-xs">Default purchase price</Text>
+          <Text className={labelClass}>Default purchase price</Text>
           <TextInput
             className={inputClass}
             value={
@@ -884,7 +970,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             keyboardType="decimal-pad"
           />
-          <Text className="text-gray-400 text-xs">Default land value</Text>
+          <Text className={labelClass}>Default land value</Text>
           <TextInput
             className={inputClass}
             value={block.props.defaultLandValue != null ? String(block.props.defaultLandValue) : ''}
@@ -899,7 +985,7 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             keyboardType="decimal-pad"
           />
-          <Text className="text-gray-400 text-xs">Default marginal tax %</Text>
+          <Text className={labelClass}>Default marginal tax %</Text>
           <TextInput
             className={inputClass}
             value={
@@ -934,7 +1020,7 @@ export function renderFluxManualBlockEditor(
               </Pressable>
             ))}
           </View>
-          <Text className="text-gray-400 text-xs">CTA text (optional)</Text>
+          <Text className={labelClass}>CTA text (optional)</Text>
           <TextInput
             className={inputClass}
             value={block.props.ctaText || ''}
@@ -942,7 +1028,7 @@ export function renderFluxManualBlockEditor(
             placeholder="Book a call"
             placeholderTextColor="#555"
           />
-          <Text className="text-gray-400 text-xs">CTA URL (optional)</Text>
+          <Text className={labelClass}>CTA URL (optional)</Text>
           <TextInput
             className={inputClass}
             value={block.props.ctaUrl || ''}

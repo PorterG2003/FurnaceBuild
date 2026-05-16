@@ -1,7 +1,9 @@
-import { useState, useRef, useCallback } from 'react';
-import { View, Text, Pressable, Platform, type StyleProp, type ViewStyle } from 'react-native';
+import { useState, useRef, useCallback, useLayoutEffect } from 'react';
+import { View, Text, Pressable, Platform, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon } from 'react-native-heroicons/outline';
 import { PopupPortal } from '@/components/ui/PopupPortal';
+import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
+import { BottomSheet, useBottomSheetTakeover, usePickerInsideBottomSheet } from '@/components/ui/modals';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -13,8 +15,11 @@ const MONTH_NAMES = [
 ];
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
-/** Min height for the trigger row (align with paired text fields, e.g. OOO modal). */
-export const DATE_INPUT_TRIGGER_MIN_HEIGHT = 38;
+/** Max week rows for any month (e.g. 31 days starting Saturday). Sheet layout pads to this so height is stable. */
+const SHEET_CALENDAR_WEEK_ROWS = 6;
+
+/** Min height for the trigger row; matches compact `Select` / `SearchAndSelectMulti` triggers. */
+export const DATE_INPUT_TRIGGER_MIN_HEIGHT = 32;
 
 function parseYMD(value: string): { year: number; month: number; day: number } | null {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -46,15 +51,19 @@ function getFirstDayOfWeek(year: number, month: number): number {
 // Calendar popup content
 // ---------------------------------------------------------------------------
 
+type CalendarLayout = 'popover' | 'sheet';
+
 interface CalendarProps {
   value: string;
   min?: string;
   max?: string;
   onSelect: (ymd: string) => void;
   onClose: () => void;
+  /** `popover` — fixed width anchored panel; `sheet` — full width inside BottomSheet / takeover. */
+  layout?: CalendarLayout;
 }
 
-function Calendar({ value, min, max, onSelect, onClose }: CalendarProps) {
+function Calendar({ value, min, max, onSelect, onClose, layout = 'popover' }: CalendarProps) {
   const today = new Date();
   const parsed = parseYMD(value);
   const [viewYear, setViewYear] = useState(parsed?.year ?? today.getFullYear());
@@ -99,10 +108,31 @@ function Calendar({ value, min, max, onSelect, onClose }: CalendarProps) {
 
   const weeks = Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7));
 
-  return (
-    <View
-      style={{
-        backgroundColor: '#1A1A1A',
+  const isSheet = layout === 'sheet';
+  const emptyWeek = (): (number | null)[] => Array(7).fill(null);
+  const weeksForLayout = isSheet
+    ? (() => {
+        const w = [...weeks];
+        while (w.length < SHEET_CALENDAR_WEEK_ROWS) w.push(emptyWeek());
+        return w;
+      })()
+    : weeks;
+  const navPad = isSheet ? 10 : 6;
+  const monthTitleSize = isSheet ? 15 : 13;
+  const chevronSize = isSheet ? 18 : 15;
+  const dowFontSize = isSheet ? 12 : 11;
+  const dayFontSize = isSheet ? 14 : 12;
+
+  /** Sheet hosts (`BottomSheet`, takeover) already use `#1A1A1A` + horizontal padding — stay flush, no inner card. */
+  const containerStyle = isSheet
+    ? {
+        backgroundColor: 'transparent',
+        width: '100%' as const,
+        alignSelf: 'stretch' as const,
+        padding: 0,
+      }
+    : {
+        backgroundColor: '#1A1A1A' as const,
         borderRadius: 12,
         borderWidth: 1,
         borderColor: '#2A2A2A',
@@ -112,24 +142,37 @@ function Calendar({ value, min, max, onSelect, onClose }: CalendarProps) {
         shadowOpacity: 0.5,
         shadowRadius: 20,
         shadowOffset: { width: 0, height: 8 },
-      }}
-    >
+      };
+
+  return (
+    <View style={containerStyle}>
       {/* Month navigation header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: isSheet ? 8 : 10,
+        }}
+      >
         <Pressable
           onPress={prevMonth}
           style={({ pressed, hovered }: any) => ({
-            padding: 6,
+            padding: navPad,
             borderRadius: 6,
+            minWidth: isSheet ? 44 : undefined,
+            minHeight: isSheet ? 44 : undefined,
+            alignItems: 'center' as const,
+            justifyContent: 'center' as const,
             backgroundColor: pressed || hovered ? 'rgba(255,255,255,0.06)' : 'transparent',
           })}
         >
-          <ChevronLeftIcon size={15} color="#9CA3AF" />
+          <ChevronLeftIcon size={chevronSize} color="#9CA3AF" />
         </Pressable>
 
         <Text style={{
           color: '#F3F4F6',
-          fontSize: 13,
+          fontSize: monthTitleSize,
           fontFamily: 'InstrumentSans_600SemiBold, Instrument Sans, system-ui',
           fontWeight: '600',
           letterSpacing: 0.2,
@@ -140,22 +183,26 @@ function Calendar({ value, min, max, onSelect, onClose }: CalendarProps) {
         <Pressable
           onPress={nextMonth}
           style={({ pressed, hovered }: any) => ({
-            padding: 6,
+            padding: navPad,
             borderRadius: 6,
+            minWidth: isSheet ? 44 : undefined,
+            minHeight: isSheet ? 44 : undefined,
+            alignItems: 'center' as const,
+            justifyContent: 'center' as const,
             backgroundColor: pressed || hovered ? 'rgba(255,255,255,0.06)' : 'transparent',
           })}
         >
-          <ChevronRightIcon size={15} color="#9CA3AF" />
+          <ChevronRightIcon size={chevronSize} color="#9CA3AF" />
         </Pressable>
       </View>
 
       {/* Day-of-week labels */}
       <View style={{ flexDirection: 'row', marginBottom: 4 }}>
         {DAY_LABELS.map(label => (
-          <View key={label} style={{ flex: 1, alignItems: 'center', paddingVertical: 3 }}>
+          <View key={label} style={{ flex: 1, alignItems: 'center', paddingVertical: isSheet ? 4 : 3 }}>
             <Text style={{
               color: '#4B5563',
-              fontSize: 11,
+              fontSize: dowFontSize,
               fontFamily: 'Instrument Sans, system-ui',
               fontWeight: '500',
             }}>
@@ -166,7 +213,7 @@ function Calendar({ value, min, max, onSelect, onClose }: CalendarProps) {
       </View>
 
       {/* Day cells */}
-      {weeks.map((week, wi) => (
+      {weeksForLayout.map((week, wi) => (
         <View key={wi} style={{ flexDirection: 'row', marginBottom: 2 }}>
           {week.map((day, di) => {
             if (!day) return <View key={di} style={{ flex: 1, aspectRatio: 1 }} />;
@@ -194,7 +241,7 @@ function Calendar({ value, min, max, onSelect, onClose }: CalendarProps) {
               >
                 <Text style={{
                   color: sel ? '#FFFFFF' : tod ? '#F3440D' : '#D1D5DB',
-                  fontSize: 12,
+                  fontSize: dayFontSize,
                   fontFamily: 'Instrument Sans, system-ui',
                   fontWeight: sel || tod ? '600' : '400',
                 }}>
@@ -221,6 +268,8 @@ interface DateInputProps {
   max?: string;
   disabled?: boolean;
   placeholder?: string;
+  /** `comfortable` matches default Select / sheet row tap targets (~44pt). */
+  triggerSize?: 'compact' | 'comfortable';
   /** Merged onto the calendar trigger `Pressable` after default styles. */
   triggerStyle?: StyleProp<ViewStyle>;
 }
@@ -233,73 +282,159 @@ export function DateInput({
   max,
   disabled,
   placeholder = 'Pick a date',
+  triggerSize = 'compact',
   triggerStyle,
 }: DateInputProps) {
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const isCompactLayout = screenWidth < LAYOUT_BREAKPOINT;
+  /** Calendar + padding; cap like `Select` so the sheet does not dominate very short viewports. */
+  const sheetBodyMaxHeight = Math.min(420, screenHeight * 0.55);
+  const insideSheet = usePickerInsideBottomSheet();
+  const { presentTakeover, dismissTakeover } = useBottomSheetTakeover();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<View>(null);
 
   const displayValue = formatDisplay(value);
   const close = useCallback(() => setOpen(false), []);
+  const comfortableTrigger = triggerSize === 'comfortable';
 
   const openCalendar = useCallback(() => {
     if (disabled) return;
     setOpen(v => !v);
   }, [disabled]);
 
+  useLayoutEffect(() => {
+    if (!isCompactLayout) {
+      dismissTakeover();
+      return;
+    }
+    if (!insideSheet) return;
+    if (!open) {
+      dismissTakeover();
+      return;
+    }
+    presentTakeover({
+      title: insideSheet ? null : (label ?? placeholder) || 'Date',
+      content: (
+        <View style={{ alignSelf: 'stretch', width: '100%' }}>
+          <Calendar
+            layout="sheet"
+            value={value}
+            min={min}
+            max={max}
+            onSelect={onChange}
+            onClose={close}
+          />
+        </View>
+      ),
+      onRequestDismiss: close,
+    });
+  }, [
+    isCompactLayout,
+    insideSheet,
+    open,
+    dismissTakeover,
+    presentTakeover,
+    label,
+    placeholder,
+    value,
+    min,
+    max,
+    onChange,
+    close,
+  ]);
+
   return (
     <View style={{ position: 'relative' }}>
-      {label && (
-        <Text style={{ color: '#9CA3AF', fontSize: 11, fontFamily: 'Instrument Sans, system-ui', fontWeight: '500', marginBottom: 4 }}>
+      {label ? (
+        <Text selectable={false} className="text-xs font-instrument-medium mb-2 text-gray-400">
           {label}
         </Text>
-      )}
+      ) : null}
       <Pressable
         ref={triggerRef}
         onPress={openCalendar}
         disabled={disabled}
-        style={({ pressed, hovered }: any) => [
-          {
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-            backgroundColor: open ? '#222' : pressed || hovered ? '#1C1C1C' : '#141414',
-            borderWidth: 1,
-            borderColor: open ? '#4A4A4A' : '#2E2E2E',
-            borderRadius: 8,
-            paddingHorizontal: 10,
-            paddingVertical: 7,
-            minHeight: DATE_INPUT_TRIGGER_MIN_HEIGHT,
-            opacity: disabled ? 0.45 : 1,
-            ...(Platform.OS === 'web' ? { cursor: disabled ? 'not-allowed' : 'pointer' } : {}),
-          },
-          triggerStyle,
-        ]}
+        style={({ pressed, hovered }: any) => {
+          const interacted = pressed || hovered;
+          let backgroundColor = '#FFFFFF0D';
+          let borderColor = '#FFFFFF4D';
+          if (open) {
+            backgroundColor = 'rgba(255, 255, 255, 0.16)';
+            borderColor = 'rgba(255, 255, 255, 0.32)';
+          } else if (interacted) {
+            backgroundColor = 'rgba(255, 255, 255, 0.1)';
+            borderColor = 'rgba(255, 255, 255, 0.26)';
+          }
+          return [
+            {
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: comfortableTrigger ? 8 : 6,
+              backgroundColor,
+              borderWidth: 1,
+              borderColor,
+              borderRadius: comfortableTrigger ? 12 : 8,
+              paddingHorizontal: comfortableTrigger ? 14 : 10,
+              paddingVertical: comfortableTrigger ? 12 : 6,
+              minHeight: comfortableTrigger ? 44 : DATE_INPUT_TRIGGER_MIN_HEIGHT,
+              opacity: disabled ? 0.45 : 1,
+              ...(Platform.OS === 'web' ? { cursor: disabled ? 'not-allowed' : 'pointer' } : {}),
+            },
+            triggerStyle,
+          ];
+        }}
       >
-        <CalendarDaysIcon size={14} color={value ? '#9CA3AF' : '#4B5563'} />
-        <Text style={{
-          color: value ? '#F3F4F6' : '#4B5563',
-          fontSize: 13,
-          fontFamily: 'Instrument Sans, system-ui',
-        }}>
+        <CalendarDaysIcon
+          size={comfortableTrigger ? 18 : 14}
+          color={displayValue ? '#9CA3AF' : '#4B5563'}
+        />
+        <Text
+          selectable={false}
+          className={`${comfortableTrigger ? 'text-sm' : 'text-xs'} font-instrument flex-1`}
+          style={{
+            color: displayValue ? '#FFFFFF' : '#666666',
+            fontFamily: 'Instrument Sans, system-ui',
+          }}
+          numberOfLines={1}
+        >
           {displayValue || placeholder}
         </Text>
       </Pressable>
 
-      <PopupPortal
-        anchorRef={triggerRef}
-        open={open}
-        onClose={close}
-        placement="bottom-start"
-        gap={6}
-      >
-        <Calendar
-          value={value}
-          min={min}
-          max={max}
-          onSelect={onChange}
+      {!isCompactLayout ? (
+        <PopupPortal
+          anchorRef={triggerRef}
+          open={open}
           onClose={close}
-        />
-      </PopupPortal>
+          placement="bottom-start"
+          gap={6}
+        >
+          <Calendar
+            layout="popover"
+            value={value}
+            min={min}
+            max={max}
+            onSelect={onChange}
+            onClose={close}
+          />
+        </PopupPortal>
+      ) : null}
+
+      {isCompactLayout && !insideSheet ? (
+        <BottomSheet visible={open} onClose={close}>
+          <View style={{ maxHeight: sheetBodyMaxHeight }}>
+            <Calendar
+              layout="sheet"
+              value={value}
+              min={min}
+              max={max}
+              onSelect={onChange}
+              onClose={close}
+            />
+          </View>
+        </BottomSheet>
+      ) : null}
     </View>
   );
 }

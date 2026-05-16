@@ -1313,7 +1313,12 @@ export interface Database {
         }[];
       };
       account_outreach_metrics: {
-        Args: { p_account_id: string; p_start_date: string; p_end_date: string };
+        Args: {
+          p_account_id: string;
+          p_start_date: string;
+          p_end_date: string;
+          p_campaign_ids?: string[] | null;
+        };
         Returns: {
           total_sent: number;
           total_positive_reply: number;
@@ -1323,7 +1328,12 @@ export interface Database {
         }[];
       };
       account_outreach_stats_by_day: {
-        Args: { p_account_id: string; p_start_date: string; p_end_date: string };
+        Args: {
+          p_account_id: string;
+          p_start_date: string;
+          p_end_date: string;
+          p_campaign_ids?: string[] | null;
+        };
         Returns: {
           stat_date: string;
           sent_count: number;

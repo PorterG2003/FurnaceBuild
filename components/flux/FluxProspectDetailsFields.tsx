@@ -8,6 +8,7 @@ import {
 } from '@/lib/flux/fluxPresentationTokens';
 import type { FluxServiceArea } from '@/lib/flux/types';
 import { FluxServiceAreaField } from '@/components/flux/FluxServiceAreaField';
+import { fluxPanelInputClass, fluxPanelLabelClass } from '@/lib/flux/fluxEditorPanelClasses';
 
 export interface FluxProspectDetailsFieldValues {
   name: string;
@@ -58,11 +59,11 @@ interface FluxProspectDetailsFieldsProps {
   onApplyFieldToPage?: (field: FluxProspectApplyToPageField) => void;
 }
 
-const DEFAULT_INPUT = 'text-white bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-4 py-3 text-sm mb-3';
-const DEFAULT_LABEL = 'text-gray-400 text-xs font-instrument mb-1';
+const DEFAULT_INPUT = fluxPanelInputClass;
+const DEFAULT_LABEL = fluxPanelLabelClass;
 
 const SECTION_HEADING =
-  'text-gray-500 text-xs uppercase tracking-wider mb-3 font-instrument-semibold';
+  'text-gray-500 text-[10px] uppercase tracking-wider mb-2 font-instrument-semibold';
 
 function ApplyToPageButton({
   field,
@@ -76,12 +77,12 @@ function ApplyToPageButton({
   if (!show || !onApply) return null;
   return (
     <Pressable
-      className="border border-[#444] rounded-lg px-2.5 py-2 shrink-0"
+      className="border border-[#444] rounded-md px-2 py-1 shrink-0"
       onPress={() => onApply(field)}
       accessibilityRole="button"
       accessibilityLabel="Apply to page"
     >
-      <Text className="text-indigo-300 text-xs font-instrument-semibold">Page</Text>
+      <Text className="text-indigo-300 text-[11px] font-instrument-semibold">Page</Text>
     </Pressable>
   );
 }

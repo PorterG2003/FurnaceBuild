@@ -1,0 +1,54 @@
+{
+  "runner": "debug_flux_competitor_audit",
+  "correlationId": "local_2026-05-14T23-08-30-833Z",
+  "startedAt": "2026-05-14T23:08:30.837Z",
+  "finishedAt": "2026-05-14T23:22:35.178Z",
+  "outputDir": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/vasafitness-after-preview-priority",
+  "inputs": {
+    "domains": [
+      "vasafitness.com"
+    ],
+    "excludeDomains": [],
+    "lat": null,
+    "lng": null,
+    "query": "local services",
+    "region": "US",
+    "headless": true,
+    "slowMoMs": 0,
+    "timeoutMs": 20000,
+    "domainTimeoutMs": 120000,
+    "maxSamples": 2,
+    "maxCandidates": 12,
+    "skipStaticMaps": true
+  },
+  "candidates": [
+    {
+      "domain": "vasafitness.com",
+      "name": "vasafitness.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 0,
+      "source": "manual"
+    }
+  ],
+  "attemptedPlacesCount": 1,
+  "okDomainCount": 0,
+  "placesStopReason": "exhausted_candidates",
+  "transparencyScoredOkCount": 0,
+  "publishedWinnerCount": 0,
+  "winnerDomains": [],
+  "auditOutcomeCounts": {
+    "timeout": 1
+  },
+  "auditRows": [
+    {
+      "domain": "vasafitness.com",
+      "outcome": "timeout",
+      "creative_count": null,
+      "message": "transparency_vasafitness.com_timeout"
+    }
+  ],
+  "ranked": [],
+  "competitors": [],
+  "failureMessage": "No competitor qualified for a published card (each needs a Transparency Center match with at least one visible creative).\n1 timed out.\n\nPer domain:\n\nvasafitness.com · timeout · transparency_vasafitness.com_timeout"
+}

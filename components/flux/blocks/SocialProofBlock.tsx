@@ -67,25 +67,6 @@ export function SocialProofBlock({ props }: { props: SocialProofBlockProps }) {
     );
   }
 
-  if (presentation.layouts.proof === 'ledger') {
-    return (
-      <View className="w-full py-8 px-5 md:px-10" style={{ backgroundColor: presentation.surfaceColor }}>
-        <View className="w-full max-w-4xl self-center border-y" style={{ borderColor: theme.primaryColor }}>
-          <Text className="text-xs uppercase tracking-[3px] py-3" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
-            {props.heading}
-          </Text>
-          <View className="flex-row flex-wrap border-t" style={{ borderColor: '#d1d5db' }}>
-            {props.logos.map((logo, i) => (
-              <View key={i} className="w-1/2 md:w-1/4 py-4 pr-4">
-                {renderLogo(logo, i, 'h-7 w-24')}
-              </View>
-            ))}
-          </View>
-        </View>
-      </View>
-    );
-  }
-
   if (presentation.layouts.proof === 'pillCloud') {
     return (
       <View className="w-full py-10 px-4 md:px-6" style={{ backgroundColor: theme.backgroundColor }}>

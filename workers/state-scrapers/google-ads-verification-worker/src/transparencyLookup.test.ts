@@ -4,6 +4,7 @@ import {
   clipCreativePreviewBox,
   isAcceptableCreativePreviewCandidate,
   pickBestCreativePreviewCandidate,
+  selectCreativeHrefsForSampling,
   type CreativePreviewCandidate,
 } from './transparencyLookup.js';
 
@@ -83,6 +84,40 @@ test('isAcceptableCreativePreviewCandidate accepts textless iframe-sized creativ
   );
 });
 
+test('isAcceptableCreativePreviewCandidate accepts tall narrow creatives when area is still bounded', () => {
+  assert.equal(
+    isAcceptableCreativePreviewCandidate(
+      candidate({
+        x: 530,
+        y: 543,
+        width: 380,
+        height: 820,
+        textLength: 0,
+        imageCount: 1,
+      }),
+      VIEWPORT,
+    ),
+    true,
+  );
+});
+
+test('isAcceptableCreativePreviewCandidate still rejects overly tall broad crops', () => {
+  assert.equal(
+    isAcceptableCreativePreviewCandidate(
+      candidate({
+        x: 400,
+        y: 120,
+        width: 760,
+        height: 900,
+        textLength: 120,
+        imageCount: 2,
+      }),
+      VIEWPORT,
+    ),
+    false,
+  );
+});
+
 test('pickBestCreativePreviewCandidate prefers the tighter acceptable ad card', () => {
   const best = pickBestCreativePreviewCandidate(
     [
@@ -113,4 +148,33 @@ test('pickBestCreativePreviewCandidate returns null when only bad candidates exi
   );
 
   assert.equal(best, null);
+});
+
+test('selectCreativeHrefsForSampling keeps one advertiser cluster per domain', () => {
+  const selected = selectCreativeHrefsForSampling([
+    '/advertiser/AR11111111111111111111/creative/CR1?region=US',
+    '/advertiser/AR22222222222222222222/creative/CR2?region=US',
+    '/advertiser/AR11111111111111111111/creative/CR3?region=US',
+    '/advertiser/AR11111111111111111111/creative/CR4?region=US',
+  ]);
+
+  assert.equal(selected.selectedAdvertiserId, 'AR11111111111111111111');
+  assert.deepEqual(selected.selectedHrefs, [
+    '/advertiser/AR11111111111111111111/creative/CR1?region=US',
+    '/advertiser/AR11111111111111111111/creative/CR3?region=US',
+    '/advertiser/AR11111111111111111111/creative/CR4?region=US',
+  ]);
+  assert.deepEqual(selected.advertiserCreativeCounts, {
+    AR11111111111111111111: 3,
+    AR22222222222222222222: 1,
+  });
+});
+
+test('selectCreativeHrefsForSampling falls back to all hrefs when advertiser ids are missing', () => {
+  const hrefs = ['/creative/CR1?region=US', '/creative/CR2?region=US'];
+  const selected = selectCreativeHrefsForSampling(hrefs);
+
+  assert.equal(selected.selectedAdvertiserId, null);
+  assert.deepEqual(selected.selectedHrefs, hrefs);
+  assert.deepEqual(selected.advertiserCreativeCounts, {});
 });

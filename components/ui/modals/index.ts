@@ -3,6 +3,7 @@ export {
   BottomSheet,
   BOTTOM_SHEET_MAX_VIEWPORT_RATIO,
   getBottomSheetBodyScrollMaxHeight,
+  getBottomSheetExpandedBodyHeight,
 } from './BottomSheet';
 export {
   PickerInsideBottomSheetProvider,

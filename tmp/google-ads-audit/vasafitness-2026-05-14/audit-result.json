@@ -1,0 +1,84 @@
+{
+  "runner": "debug_flux_competitor_audit",
+  "correlationId": "local_2026-05-14T22-54-51-891Z",
+  "startedAt": "2026-05-14T22:54:51.892Z",
+  "finishedAt": "2026-05-14T22:56:16.949Z",
+  "outputDir": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/vasafitness-2026-05-14",
+  "inputs": {
+    "domains": [
+      "vasafitness.com"
+    ],
+    "excludeDomains": [],
+    "lat": null,
+    "lng": null,
+    "query": "local services",
+    "region": "US",
+    "headless": true,
+    "slowMoMs": 0,
+    "timeoutMs": 20000,
+    "domainTimeoutMs": 120000,
+    "maxSamples": 2,
+    "maxCandidates": 12,
+    "skipStaticMaps": true
+  },
+  "candidates": [
+    {
+      "domain": "vasafitness.com",
+      "name": "vasafitness.com",
+      "lat": null,
+      "lng": null,
+      "placeIndex": 0,
+      "source": "manual"
+    }
+  ],
+  "attemptedPlacesCount": 1,
+  "okDomainCount": 1,
+  "placesStopReason": "exhausted_candidates",
+  "transparencyScoredOkCount": 1,
+  "publishedWinnerCount": 1,
+  "winnerDomains": [
+    "vasafitness.com"
+  ],
+  "auditOutcomeCounts": {
+    "ok": 1
+  },
+  "auditRows": [
+    {
+      "domain": "vasafitness.com",
+      "outcome": "ok",
+      "creative_count": 40,
+      "selected_rank": 1
+    }
+  ],
+  "ranked": [
+    {
+      "domain": "vasafitness.com",
+      "placeIndex": 0,
+      "creativeCount": 40,
+      "latestAdLastShownAt": "2026-05-14",
+      "distanceMeters": 9999999999,
+      "longestAdRunDays": null
+    }
+  ],
+  "competitors": [
+    {
+      "domain": "vasafitness.com",
+      "name": "vasafitness.com",
+      "adsSummary": "~40 ads in Google’s Transparency Center; most recent creative shown 2026-05-14.",
+      "examples": [
+        {
+          "headline": "Fitness Member Services, LLC",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR05044827027778043905/creative/CR07044892202585030657?region=US"
+        },
+        {
+          "headline": "Fitness Member Services, LLC",
+          "body": "View the full creative on Google Ads Transparency (link below).",
+          "sourceUrl": "https://adstransparency.google.com/advertiser/AR05044827027778043905/creative/CR06129716834531803137?region=US",
+          "imagePath": "/Users/porter/Projects/FurnaceBuild/tmp/google-ads-audit/vasafitness-2026-05-14/creatives/creative-0-1-vasafitness.com.png"
+        }
+      ]
+    }
+  ],
+  "failureMessage": null
+}

@@ -62,7 +62,7 @@ const SYSTEM_PROMPT = `You are a conversion landing page personalizer. You recei
 - Prefer **tight** marketing copy: short sentences, one idea per line where possible, and headlines that would fit a mobile hero without long wraps. Follow the Copy length section's **Target** values as your default; do not pad or elaborate to fill space.
 - Select the most relevant content_assets for case study / testimonial blocks: props.assetId must be an exact "id" from content_assets of matching type when such assets exist; if there are none of that type, set assetId to "" (empty block)
 - Return a complete PageConfig JSON
-- Pick theme.blockStylePreset from exactly one of: "classic", "minimal", "elevated", "outlined", "soft". These are full layout systems, not just colors: classic = centered marketing sections, minimal = editorial/enterprise layouts, elevated = modern SaaS split panels and feature cards, outlined = report-like trust/compliance layouts, soft = approachable conversational panels.
+- Pick theme.blockStylePreset from exactly one of: "classic", "minimal", "elevated", "soft". These are full layout systems, not just colors: classic = centered marketing sections, minimal = editorial/enterprise layouts, elevated = modern SaaS split panels and feature cards, soft = approachable conversational panels.
 
 Do NOT add, remove, or reorder blocks. Work strictly within the template structure.
 Every block from the template MUST appear in your output with the same id, type, and order.
@@ -141,7 +141,7 @@ ${formatFluxCopyBudgetsForPrompt()}
 
 Return ONLY valid JSON matching this schema:
 {
-  "theme": { "primaryColor": string, "accentColor": string, "backgroundColor": string, "textColor": string, "fontFamily": string, "logoUrl"?: string, "blockStylePreset"?: "classic" | "minimal" | "elevated" | "outlined" | "soft" },
+  "theme": { "primaryColor": string, "accentColor": string, "backgroundColor": string, "textColor": string, "fontFamily": string, "logoUrl"?: string, "blockStylePreset"?: "classic" | "minimal" | "elevated" | "soft" },
   "prospectName": string,
   "companyName": string,
   "blocks": [ { "id": string, "type": string, "order": number, "props": { ... } }, ... ]

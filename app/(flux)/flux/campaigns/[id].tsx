@@ -1,14 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { ChatBubbleLeftRightIcon } from 'react-native-heroicons/outline';
 import { BaseModal, ConfirmDeleteModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/feedback/Toast';
 import {
+  FluxBrowserTabBar,
   FluxCampaignManualEditor,
+  FLUX_CAMPAIGN_MANUAL_BROWSER_TABS,
+  FLUX_CAMPAIGN_MANUAL_TAB,
   FluxCampaignQaPanel,
   FluxChatPanel,
   FluxEditorSplitLayout,
+  type FluxBrowserTabItem,
 } from '@/components/flux';
 import { FluxGoogleFontWebLinks } from '@/components/flux/FluxGoogleFontWebLinks';
 import { PageRenderer } from '@/components/flux/PageRenderer';
@@ -27,6 +32,7 @@ import {
 import { getFluxEditorChatUrl } from '@/lib/flux/fluxEditorChatUrl';
 import { getFluxGenerateUrl } from '@/lib/flux/fluxGenerateUrl';
 import { FLUX_GOOGLE_FONT_NAMES } from '@/lib/flux/googleFontsCatalog';
+import { fluxBrowserTabPanelSidebarClass } from '@/lib/flux/fluxEditorPanelClasses';
 import {
   applyLocalPreviewPatches,
   defaultFluxPreviewProspect,
@@ -63,7 +69,7 @@ export default function CampaignDetail() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [studioTab, setStudioTab] = useState<string>('chat');
   const [readinessOpen, setReadinessOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [studioUnlocked, setStudioUnlocked] = useState(false);
@@ -529,6 +535,18 @@ export default function CampaignDetail() {
     }
   }, [id, deleting, router, toast]);
 
+  const campaignStudioEditorTabs = useMemo<FluxBrowserTabItem[]>(
+    () => [{ id: 'chat', label: 'Chat', icon: ChatBubbleLeftRightIcon }, ...FLUX_CAMPAIGN_MANUAL_BROWSER_TABS],
+    [],
+  );
+
+  useEffect(() => {
+    const open = studioTab === FLUX_CAMPAIGN_MANUAL_TAB.sample;
+    if (editor.previewProspectOpen !== open) {
+      dispatch({ type: 'ui.setPreviewProspectOpen', value: open });
+    }
+  }, [studioTab, editor.previewProspectOpen, dispatch]);
+
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center">
@@ -549,7 +567,7 @@ export default function CampaignDetail() {
     <View className="gap-3">
       <Button
         fullWidth
-        size="sm"
+        size="2xs"
         onPress={() => {
           void handleRerenderWithAi();
         }}
@@ -575,26 +593,25 @@ export default function CampaignDetail() {
       <FluxGoogleFontWebLinks families={FLUX_GOOGLE_FONT_NAMES} />
       <FluxEditorSplitLayout
         variant={isIdeation ? 'ideation' : 'studio'}
-        editorLabel={advancedOpen ? 'Manual' : 'Chat'}
-        editorScrollable={advancedOpen}
-        editorNestableScroll={advancedOpen}
+        editorLabel="Edit"
+        editorScrollable={studioTab !== 'chat'}
+        editorNestableScroll={studioTab !== 'chat'}
         header={
-          <View className="px-3 pt-2 pb-2 border-b border-[#2A2A2A]">
-            <View className="flex-row items-start justify-between gap-3">
+          <View className="px-3 pt-1.5 pb-1.5 border-b border-[#2A2A2A]">
+            <View className="flex-row items-start justify-between gap-2">
               <View className="flex-1 min-w-0">
                 <Pressable onPress={() => router.back()}>
-                  <Text className="text-gray-400 text-sm font-instrument">← Back</Text>
+                  <Text className="text-gray-400 text-xs font-instrument">← Back</Text>
                 </Pressable>
-                <Text className="text-white text-lg font-instrument-semibold mt-2">
+                <Text className="text-white text-base font-instrument-semibold mt-1">
                   {editor.name.trim() || 'Untitled Flux campaign'}
                 </Text>
               </View>
               <View className="flex-row flex-wrap items-center justify-end gap-1.5">
                 {isIdeation ? (
                   <Button
-                    size="xs"
+                    size="2xs"
                     variant="secondary"
-                    className="px-3 py-1.5"
                     onPress={() => {
                       void handleRerenderWithAi();
                     }}
@@ -603,19 +620,11 @@ export default function CampaignDetail() {
                     {previewAiLoading ? 'Generating…' : 'Preview with AI'}
                   </Button>
                 ) : null}
-                <Button
-                  size="xs"
-                  variant="secondary"
-                  className="px-3 py-1.5"
-                  onPress={() => setAdvancedOpen((value) => !value)}
-                >
-                  {advancedOpen ? 'Back to chat' : 'Manual'}
-                </Button>
                 {!isIdeation ? (
                   <Button
-                    size="xs"
+                    size="2xs"
                     variant="secondary"
-                    className={`px-3 py-1.5 ${needsAiRerender ? 'border-amber-500/50 bg-amber-500/15' : ''}`}
+                    className={needsAiRerender ? 'border-amber-500/50 bg-amber-500/15' : ''}
                     onPress={() => {
                       void handleRerenderWithAi();
                     }}
@@ -651,15 +660,14 @@ export default function CampaignDetail() {
                   </Pressable>
                 ) : null}
                 <Button
-                  size="xs"
+                  size="2xs"
                   variant="destructive"
-                  className="px-3 py-1.5"
                   onPress={handleDelete}
                   disabled={deleting}
                 >
                   {deleting ? 'Deleting...' : 'Delete'}
                 </Button>
-                <Button size="xs" className="px-3 py-1.5" onPress={handleSave} disabled={saving}>
+                <Button size="2xs" onPress={handleSave} disabled={saving}>
                   {saving ? 'Saving...' : 'Save'}
                 </Button>
               </View>
@@ -667,45 +675,54 @@ export default function CampaignDetail() {
           </View>
         }
         editor={
-          advancedOpen ? (
-            <View className="px-2 pt-2 pb-4">
-              <FluxCampaignManualEditor
-                editor={editor}
-                dispatch={dispatch}
-                prospects={prospects}
-                onNavigateNewProspect={() =>
-                  router.push(`/flux/prospects/new?campaignId=${id}` as Href)
-                }
-                onNavigateProspect={(prospectId) =>
-                  router.push(`/flux/prospects/${prospectId}` as Href)
-                }
-              />
+          <View className="flex-1 min-h-0 self-stretch min-w-0 bg-[#1a1a1a] px-1.5 pt-1.5 pb-3">
+            <FluxBrowserTabBar
+              appearance="sidebar"
+              tabs={campaignStudioEditorTabs}
+              activeTab={studioTab}
+              onTabChange={setStudioTab}
+            />
+            <View className={`${fluxBrowserTabPanelSidebarClass} flex-1 min-h-0`}>
+              {studioTab === 'chat' ? (
+                <View className="flex-1" style={{ minHeight: 0 }}>
+                  <FluxChatPanel
+                    messages={editor.chatMessages}
+                    lastSummary={editor.chatLastSummary}
+                    sending={editor.chatSending}
+                    error={editor.chatError}
+                    chatConfigured={fluxEditorChatConfigured}
+                    rewindableMessageIds={Object.keys(editor.chatCheckpoints)}
+                    emptyStateText={
+                      isIdeation
+                        ? 'Try: “Help me design a reverse lead magnet for dental practice owners. The page should feel custom from just a website URL and deliver one concrete insight in under 60 seconds.”'
+                        : 'Try: “Tighten the hero for owner-operators, make the calculator feel more bespoke, and strengthen the proof path without inventing claims.”'
+                    }
+                    composerPlaceholder={
+                      isIdeation
+                        ? 'Describe the campaign you want Flux to design…'
+                        : 'Refine the page, proof, or spec…'
+                    }
+                    footer={isIdeation ? ideationFooter : undefined}
+                    onSend={handleChatSend}
+                    onRewindMessage={handleChatRewind}
+                  />
+                </View>
+              ) : (
+                <FluxCampaignManualEditor
+                  activeTab={studioTab}
+                  editor={editor}
+                  dispatch={dispatch}
+                  prospects={prospects}
+                  onNavigateNewProspect={() =>
+                    router.push(`/flux/prospects/new?campaignId=${id}` as Href)
+                  }
+                  onNavigateProspect={(prospectId) =>
+                    router.push(`/flux/prospects/${prospectId}` as Href)
+                  }
+                />
+              )}
             </View>
-          ) : (
-            <View className="flex-1 px-2 pt-1 pb-2" style={{ minHeight: 0 }}>
-              <FluxChatPanel
-                messages={editor.chatMessages}
-                lastSummary={editor.chatLastSummary}
-                sending={editor.chatSending}
-                error={editor.chatError}
-                chatConfigured={fluxEditorChatConfigured}
-                rewindableMessageIds={Object.keys(editor.chatCheckpoints)}
-                emptyStateText={
-                  isIdeation
-                    ? 'Try: “Help me design a reverse lead magnet for dental practice owners. The page should feel custom from just a website URL and deliver one concrete insight in under 60 seconds.”'
-                    : 'Try: “Tighten the hero for owner-operators, make the calculator feel more bespoke, and strengthen the proof path without inventing claims.”'
-                }
-                composerPlaceholder={
-                  isIdeation
-                    ? 'Describe the campaign you want Flux to design…'
-                    : 'Refine the page, proof, or spec…'
-                }
-                footer={isIdeation ? ideationFooter : undefined}
-                onSend={handleChatSend}
-                onRewindMessage={handleChatRewind}
-              />
-            </View>
-          )
+          </View>
         }
         preview={
           <View className="px-4 pt-4 pb-8">
@@ -751,7 +768,7 @@ export default function CampaignDetail() {
               <View className="flex-row flex-wrap items-center justify-center gap-2">
                 {!previewAiLoading ? (
                   <Button
-                    size="sm"
+                    size="2xs"
                     variant="secondary"
                     onPress={() => setPreviewOverlayDismissed(true)}
                   >
@@ -759,7 +776,7 @@ export default function CampaignDetail() {
                   </Button>
                 ) : null}
                 <Button
-                  size="sm"
+                  size="2xs"
                   onPress={() => {
                     void handleRerenderWithAi();
                   }}
@@ -785,7 +802,7 @@ export default function CampaignDetail() {
           status={qaStatus}
           onOpenAdvanced={() => {
             setReadinessOpen(false);
-            setAdvancedOpen(true);
+            setStudioTab(FLUX_CAMPAIGN_MANUAL_TAB.blocks);
           }}
         />
       </BaseModal>

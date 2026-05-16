@@ -21,6 +21,8 @@ interface TabsProps {
   /** Bottom margin of the tab bar. Default 16. Use 0 for tight layouts (e.g. mobile modals). */
   marginBottom?: number;
   textSize?: number;
+  /** Tighter padding (e.g. Flux editor panel). */
+  compact?: boolean;
   /** Visual variant for indicator and label contrast. Default matches historical brand orange tabs. */
   color?: TabsColor;
 }
@@ -66,6 +68,7 @@ export function Tabs({
   layout = 'content',
   marginBottom = 16,
   textSize = 14,
+  compact = false,
   color = 'brand',
 }: TabsProps) {
   const palette = TAB_COLORS[color];
@@ -75,9 +78,9 @@ export function Tabs({
   const tabIndicator = useRef(new Animated.Value(0)).current;
   const tabIndicatorWidth = useRef(new Animated.Value(0)).current;
 
-  const CONTAINER_PADDING = 4;
-  const INDICATOR_INSET = 4;
-  const TAB_HORIZONTAL_PADDING = 12;
+  const CONTAINER_PADDING = compact ? 2 : 4;
+  const INDICATOR_INSET = compact ? 3 : 4;
+  const TAB_HORIZONTAL_PADDING = compact ? 8 : 12;
   const snapPx = (value: number, mode: 'floor' | 'ceil' | 'round' = 'round') => {
     if (Platform.OS === 'web') {
       if (mode === 'floor') return Math.floor(value);
@@ -118,7 +121,7 @@ export function Tabs({
       if (!w) return null;
       return snapPx(w + TAB_HORIZONTAL_PADDING * 2, 'ceil');
     });
-  }, [TAB_HORIZONTAL_PADDING, layout, tabTextWidths, tabs.length]);
+  }, [TAB_HORIZONTAL_PADDING, compact, layout, tabTextWidths, tabs.length]);
 
   const computedTabPositions = useMemo(() => {
     if (!computedTabWidths) return null;
@@ -239,10 +242,10 @@ export function Tabs({
               ...(layout === 'content' && contentWidth ? { width: contentWidth } : null),
               alignItems: 'center',
               justifyContent: 'center',
-              paddingVertical: 8,
+              paddingVertical: compact ? 6 : 8,
               paddingHorizontal: isEqual ? TAB_HORIZONTAL_PADDING : 0,
               zIndex: 1,
-              ...(color === 'indigo' && isEqual ? { minHeight: 44 } : null),
+              ...(color === 'indigo' && isEqual ? { minHeight: compact ? 40 : 44 } : null),
             }}
           >
             <Text

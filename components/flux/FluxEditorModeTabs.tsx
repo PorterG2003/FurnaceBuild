@@ -20,7 +20,9 @@ export function FluxEditorModeTabs({ mode, onModeChange }: FluxEditorModeTabsPro
       activeTab={mode}
       onTabChange={(id) => onModeChange(id as FluxEditorPanelMode)}
       layout="equal"
-      marginBottom={16}
+      marginBottom={6}
+      textSize={12}
+      compact
       color="indigo"
     />
   );

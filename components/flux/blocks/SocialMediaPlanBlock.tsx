@@ -12,39 +12,27 @@ export function SocialMediaPlanBlock({ props }: { props: SocialMediaPlanBlockPro
   const complexLayout = presentation.layouts.complex;
   const headingFont = fluxPreviewFontFamily(theme.fontFamily, '600');
   const bodyFont = fluxPreviewFontFamily(theme.fontFamily, '400');
-  const outerBg = complexLayout === 'document' ? presentation.surfaceColor : theme.backgroundColor;
-  const frameStyle =
-    complexLayout === 'document'
-      ? { borderTopWidth: 1, borderBottomWidth: 1, borderColor: theme.primaryColor, paddingVertical: 24 }
-      : undefined;
+  const outerBg = theme.backgroundColor;
   const headerStyle =
     complexLayout === 'editorial'
       ? { borderLeftWidth: 3, borderLeftColor: theme.primaryColor, paddingLeft: 18 }
-      : complexLayout === 'document'
-        ? { borderBottomWidth: 1, borderBottomColor: '#d1d5db', paddingBottom: 18, marginBottom: 24 }
-        : {
-            ...presentation.tintedCard,
-            backgroundColor: primaryTint,
-          };
-  const dayCardStyle =
-    complexLayout === 'document'
-      ? presentation.strongCard
-      : complexLayout === 'soft'
-        ? presentation.tintedCard
-        : presentation.card;
+      : {
+          ...presentation.tintedCard,
+          backgroundColor: primaryTint,
+        };
+  const dayCardStyle = complexLayout === 'soft' ? presentation.tintedCard : presentation.card;
 
   return (
     <View className="w-full py-10 px-4 md:px-6" style={{ backgroundColor: outerBg }}>
       <View
         className={complexLayout === 'dashboard' ? 'w-full max-w-5xl self-center' : 'w-full max-w-4xl self-center'}
-        style={frameStyle}
       >
         {/* Header strip: vertical + honest rationale */}
         <View
-          className={complexLayout === 'editorial' || complexLayout === 'document' ? 'mb-6' : 'overflow-hidden mb-6'}
+          className={complexLayout === 'editorial' ? 'mb-6' : 'overflow-hidden mb-6'}
           style={headerStyle}
         >
-          <View className={complexLayout === 'editorial' || complexLayout === 'document' ? '' : 'px-4 py-3 md:px-5 md:py-4'}>
+          <View className={complexLayout === 'editorial' ? '' : 'px-4 py-3 md:px-5 md:py-4'}>
             <Text
               className="text-[10px] md:text-xs uppercase tracking-wider mb-1"
               style={{
@@ -113,7 +101,7 @@ export function SocialMediaPlanBlock({ props }: { props: SocialMediaPlanBlockPro
                   <View
                     key={di}
                     className={
-                      complexLayout === 'editorial' || complexLayout === 'document'
+                      complexLayout === 'editorial'
                         ? 'w-full p-4'
                         : 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(33.333%-8px)] p-4'
                     }
@@ -217,7 +205,7 @@ export function SocialMediaPlanBlock({ props }: { props: SocialMediaPlanBlockPro
                   ) : null}
                   <View
                     className="px-2.5 py-1 mr-1"
-                    style={{ ...presentation.chip, backgroundColor: complexLayout === 'document' ? presentation.surfaceColor : primaryTint }}
+                    style={{ ...presentation.chip, backgroundColor: primaryTint }}
                   >
                     <Text
                       className="text-xs md:text-sm"

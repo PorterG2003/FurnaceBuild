@@ -16,13 +16,13 @@ export function FluxFontFamilyPicker({
       horizontal
       nestedScrollEnabled={Platform.OS === 'android'}
       showsHorizontalScrollIndicator
-      className="mb-2"
+      className="mb-1.5"
       contentContainerStyle={{
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 14,
-        paddingVertical: 6,
-        paddingRight: 12,
+        gap: 8,
+        paddingVertical: 4,
+        paddingRight: 8,
       }}
     >
       {FLUX_GOOGLE_FONT_NAMES.map((f) => {
@@ -33,10 +33,10 @@ export function FluxFontFamilyPicker({
             onPress={() => onChange(f)}
             style={{ flexShrink: 0 }}
             className={
-              selected ? 'px-5 py-3 rounded-xl border border-indigo-500 bg-indigo-500/20' : 'px-4 py-3'
+              selected ? 'px-3 py-1.5 rounded-lg border border-indigo-500 bg-indigo-500/20' : 'px-2.5 py-1.5 rounded-lg'
             }
           >
-            <Text className="text-white text-lg leading-7" style={{ fontFamily: f }}>
+            <Text className="text-white text-xs leading-5" style={{ fontFamily: f }}>
               {f}
             </Text>
           </Pressable>

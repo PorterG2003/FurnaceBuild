@@ -32,6 +32,12 @@ export interface HeroBlockProps {
   ctaText: string;
   ctaUrl: string;
   heroImageUrl?: string;
+  /** Image shown in the side card of the Elevated (splitPanel) hero layout. Falls back to heroImageUrl. */
+  heroPanelImageUrl?: string;
+  /** Small label rendered beneath the panel image (or at the top of the text-only fallback) in the splitPanel hero. Omit to hide. */
+  heroPanelLabel?: string;
+  /** Body text shown in the side card when no panel image is present. Omit to hide. */
+  heroPanelBody?: string;
 }
 export interface HeroBlock extends BlockBase {
   type: 'hero';

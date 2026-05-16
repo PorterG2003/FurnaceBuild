@@ -36,12 +36,29 @@ export function getBottomSheetBodyScrollMaxHeight(screenHeight: number, bottomIn
   return sheetMax - 12 - paddingBottom - dragBlock;
 }
 
+/** Body height when `expandBodyToMax` uses `expandBodyHeightFraction` (clamped to 0.35–1). */
+export function getBottomSheetExpandedBodyHeight(
+  sheetBodyMaxHeight: number,
+  fraction: number = 1,
+): number {
+  const f = Math.min(1, Math.max(0.35, fraction));
+  return Math.round(sheetBodyMaxHeight * f);
+}
+
 export interface BottomSheetProps {
   visible: boolean;
   onClose: () => void;
   children: ReactNode;
   /** Fires once after the close animation finishes (Modal fully dismissed). */
   onAfterClose?: () => void;
+  /**
+   * When true, the body region uses a fixed height derived from `getBottomSheetBodyScrollMaxHeight`
+   * so nested pickers/takeovers are not clipped. Use with `flex:1` + `minHeight:0` on a child `ScrollView`.
+   * Tune with `expandBodyHeightFraction` (default 1 = full max height).
+   */
+  expandBodyToMax?: boolean;
+  /** With `expandBodyToMax`, body height = max body × this fraction (clamped 0.35–1). Default 1. */
+  expandBodyHeightFraction?: number;
 }
 
 const BACKDROP_OPACITY = 0.5;
@@ -55,7 +72,14 @@ const HOST_OPACITY_WHEN_PICKER = 0.92;
  * Slide-up bottom sheet (modal). Use for mobile action sheets and option lists.
  * Backdrop fades in place; sheet slides up from the bottom. Backdrop tap closes.
  */
-export function BottomSheet({ visible, onClose, children, onAfterClose }: BottomSheetProps) {
+export function BottomSheet({
+  visible,
+  onClose,
+  children,
+  onAfterClose,
+  expandBodyToMax = false,
+  expandBodyHeightFraction = 1,
+}: BottomSheetProps) {
   const onAfterCloseRef = useRef(onAfterClose);
   onAfterCloseRef.current = onAfterClose;
   const insets = useSafeAreaInsets();
@@ -195,20 +219,21 @@ export function BottomSheet({ visible, onClose, children, onAfterClose }: Bottom
       takeoverScale.stopAnimation();
       hostOpacity.stopAnimation();
       takeoverExitingRef.current = false;
-      setTakeover((prev) => {
-        if (prev != null) {
-          takeoverOpacity.setValue(1);
-          takeoverTranslateY.setValue(0);
-          takeoverScale.setValue(1);
-          hostOpacity.setValue(HOST_OPACITY_WHEN_PICKER);
-        } else {
-          takeoverOpacity.setValue(0);
-          takeoverTranslateY.setValue(TAKEOVER_NUDGE_Y);
-          takeoverScale.setValue(TAKEOVER_SCALE_FROM);
-          hostOpacity.setValue(1);
-        }
-        return opts;
-      });
+      // Do not call Animated.setValue inside setState's updater — on RN Web it can
+      // schedule updates to animated ForwardRefs during React's render phase.
+      const prev = takeoverRef.current;
+      if (prev != null) {
+        takeoverOpacity.setValue(1);
+        takeoverTranslateY.setValue(0);
+        takeoverScale.setValue(1);
+        hostOpacity.setValue(HOST_OPACITY_WHEN_PICKER);
+      } else {
+        takeoverOpacity.setValue(0);
+        takeoverTranslateY.setValue(TAKEOVER_NUDGE_Y);
+        takeoverScale.setValue(TAKEOVER_SCALE_FROM);
+        hostOpacity.setValue(1);
+      }
+      setTakeover(opts);
     },
     [
       takeoverOpacity,
@@ -217,6 +242,14 @@ export function BottomSheet({ visible, onClose, children, onAfterClose }: Bottom
       hostOpacity,
     ]
   );
+
+  const handleBackdropOrHardwareBack = useCallback(() => {
+    if (takeoverRef.current != null) {
+      dismissTakeover();
+      return;
+    }
+    onClose();
+  }, [dismissTakeover, onClose]);
 
   const takeoverContextValue = useMemo(
     () => ({
@@ -354,6 +387,14 @@ export function BottomSheet({ visible, onClose, children, onAfterClose }: Bottom
 
   const sheetMaxHeight = screenHeight * BOTTOM_SHEET_MAX_VIEWPORT_RATIO;
   const sheetBodyMaxHeight = getBottomSheetBodyScrollMaxHeight(screenHeight, insets.bottom);
+  const expandedBodyHeight = expandBodyToMax
+    ? getBottomSheetExpandedBodyHeight(sheetBodyMaxHeight, expandBodyHeightFraction)
+    : undefined;
+  /** When not expanding the body, temporarily lift the host floor while a takeover is open. */
+  const takeoverHostMinHeight =
+    expandBodyToMax || takeover == null
+      ? undefined
+      : Math.min(sheetBodyMaxHeight, Math.max(280, Math.round(screenHeight * 0.35)));
 
   const sheetStyle = {
     backgroundColor: '#1A1A1A',
@@ -389,7 +430,16 @@ export function BottomSheet({ visible, onClose, children, onAfterClose }: Bottom
     <>
       <View style={dragHandleStyle} />
       <BottomSheetTakeoverContext.Provider value={takeoverContextValue}>
-        <View style={[styles.sheetBodyHost, { maxHeight: sheetBodyMaxHeight }]}>
+        <View
+          style={[
+            styles.sheetBodyHost,
+            { maxHeight: sheetBodyMaxHeight },
+            expandBodyToMax && expandedBodyHeight != null
+              ? { height: expandedBodyHeight }
+              : null,
+            takeoverHostMinHeight != null ? { minHeight: takeoverHostMinHeight } : null,
+          ]}
+        >
           <Animated.View style={{ flex: 1, minHeight: 0, opacity: hostOpacity }}>
             <PickerInsideBottomSheetProvider value={true}>
               {children}
@@ -443,11 +493,11 @@ export function BottomSheet({ visible, onClose, children, onAfterClose }: Bottom
           visible={isOpen}
           transparent
           animationType="fade"
-          onRequestClose={onClose}
+          onRequestClose={handleBackdropOrHardwareBack}
         >
           <View className={webBackdropModalContainerClassName} style={containerStyle}>
             <Animated.View style={[webBackdropFillStyle, backdropStyle]}>
-              <Pressable className="absolute inset-0" onPress={onClose} />
+              <Pressable className="absolute inset-0" onPress={handleBackdropOrHardwareBack} />
             </Animated.View>
           </View>
         </Modal>
@@ -455,7 +505,7 @@ export function BottomSheet({ visible, onClose, children, onAfterClose }: Bottom
           visible={isOpen}
           transparent
           animationType="slide"
-          onRequestClose={onClose}
+          onRequestClose={handleBackdropOrHardwareBack}
         >
           <View
             className="fixed inset-0 w-screen h-screen flex flex-col overflow-hidden"
@@ -463,7 +513,7 @@ export function BottomSheet({ visible, onClose, children, onAfterClose }: Bottom
           >
             <Pressable
               className="w-full flex-1 min-h-0"
-              onPress={onClose}
+              onPress={handleBackdropOrHardwareBack}
             />
             <Animated.View
               ref={webSheetRef}
@@ -480,10 +530,10 @@ export function BottomSheet({ visible, onClose, children, onAfterClose }: Bottom
   }
 
   return (
-    <Modal visible={isOpen} transparent animationType="none" onRequestClose={onClose}>
+    <Modal visible={isOpen} transparent animationType="none" onRequestClose={handleBackdropOrHardwareBack}>
       <View className={containerClassName} style={containerStyle}>
         <Animated.View className="absolute inset-0" style={backdropStyle}>
-          <Pressable className="absolute inset-0" onPress={onClose} />
+          <Pressable className="absolute inset-0" onPress={handleBackdropOrHardwareBack} />
         </Animated.View>
         <Animated.View
           className="overflow-hidden"

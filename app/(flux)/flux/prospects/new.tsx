@@ -405,12 +405,12 @@ export default function NewProspect() {
                 <Text className="text-xs text-gray-300 font-instrument">{intelChipText}</Text>
               </View>
               <View className="flex-row flex-wrap gap-2">
-                <Button size="sm" variant="secondary" onPress={() => handleRefreshFromWebsite(true)}>
+                <Button size="2xs" variant="secondary" onPress={() => handleRefreshFromWebsite(true)}>
                   Refresh from Website
                 </Button>
                 {websiteIntelSnapshot ? (
                   <Button
-                    size="sm"
+                    size="2xs"
                     variant="secondary"
                     onPress={() => applyIntelToForm(websiteIntelSnapshot, { force: true })}
                   >

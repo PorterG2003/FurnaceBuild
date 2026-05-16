@@ -74,11 +74,7 @@ async function withAbortTimeout<T>(
   const timeoutMessage = `${label}_timeout`;
   const timer = setTimeout(() => controller.abort(timeoutMessage), ms);
   try {
-    const result = await run(controller.signal);
-    if (controller.signal.aborted) {
-      throw new Error(timeoutMessage);
-    }
-    return result;
+    return await run(controller.signal);
   } catch (error) {
     if (controller.signal.aborted) {
       throw new Error(timeoutMessage);

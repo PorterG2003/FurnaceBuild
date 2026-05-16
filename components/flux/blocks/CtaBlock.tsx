@@ -59,19 +59,6 @@ export function CtaBlock({ props }: { props: CtaBlockProps }) {
     );
   }
 
-  if (presentation.layouts.cta === 'outlinedBar') {
-    return (
-      <View className="w-full px-5 md:px-10 py-8" style={{ backgroundColor: presentation.surfaceColor }}>
-        <View className="w-full max-w-5xl self-center border-y py-5 flex-row flex-wrap gap-4 items-center justify-between" style={{ borderColor: theme.primaryColor }}>
-          <Text className="text-xl md:text-2xl flex-1 min-w-[260px]" style={{ color: theme.textColor, fontFamily: headingFont }}>
-            {props.headline}
-          </Text>
-          {primaryButton}
-        </View>
-      </View>
-    );
-  }
-
   if (presentation.layouts.cta === 'softPanel') {
     return (
       <View className="w-full px-4 md:px-6 py-12" style={{ backgroundColor: theme.backgroundColor }}>

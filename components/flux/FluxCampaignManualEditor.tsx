@@ -6,11 +6,12 @@ import {
   MegaphoneIcon,
   PencilSquareIcon,
   RectangleStackIcon,
+  SwatchIcon,
   UserGroupIcon,
   UserIcon,
 } from 'react-native-heroicons/outline';
 import { Button } from '@/components/ui/button';
-import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
+import type { FluxBrowserTabItem } from '@/components/flux/FluxBrowserTabBar';
 import { FluxFontFamilyPicker } from '@/components/flux/FluxFontFamilyPicker';
 import { FluxHexColorField } from '@/components/flux/FluxHexColorField';
 import { FluxTemplateBlocksDraggableList } from '@/components/flux/FluxTemplateBlocksDraggableList';
@@ -29,6 +30,17 @@ import {
   type FluxBlockStylePreset,
 } from '@/lib/flux/fluxPresentationTokens';
 import {
+  fluxPanelActionRowClass,
+  fluxPanelHexContainerRowClass,
+  fluxPanelInputClass,
+  fluxPanelInputFieldClass,
+  fluxPanelInputMultilineClass,
+  fluxPanelInputTallMultilineClass,
+  fluxPanelLabelClass,
+  fluxPanelSubsectionLabelClass,
+} from '@/lib/flux/fluxEditorPanelClasses';
+import { useFluxEditorPanelTwoColumns } from '@/lib/flux/useFluxEditorPanelTwoColumns';
+import {
   FLUX_CONSTRAINTS_SKELETON,
   parseFluxCopySlots,
 } from '@/lib/flux/fluxCampaignMethodologyQa';
@@ -38,13 +50,27 @@ import type {
   FluxCampaignEditorState,
 } from '@/lib/flux/editor/reducer';
 
-const MANUAL_SECTION_CAMPAIGN = 'Campaign';
-const MANUAL_SECTION_SELLER = 'Seller (your company)';
-const MANUAL_SECTION_PAGE_BRANDING = 'Merged preview branding';
-const MANUAL_SECTION_TEMPLATE_BLOCKS = 'Template blocks';
-const MANUAL_SECTION_CONTENT_ASSETS = 'Content assets';
-const MANUAL_SECTION_CAMPAIGN_SPEC = 'Campaign spec';
-const MANUAL_SECTION_PROSPECTS = 'Prospects';
+export const FLUX_CAMPAIGN_MANUAL_TAB = {
+  campaign: 'campaign',
+  seller: 'seller',
+  branding: 'branding',
+  sample: 'sample',
+  blocks: 'blocks',
+  assets: 'assets',
+  spec: 'spec',
+  prospects: 'prospects',
+} as const;
+
+export const FLUX_CAMPAIGN_MANUAL_BROWSER_TABS: FluxBrowserTabItem[] = [
+  { id: FLUX_CAMPAIGN_MANUAL_TAB.campaign, label: 'Campaign', icon: MegaphoneIcon },
+  { id: FLUX_CAMPAIGN_MANUAL_TAB.seller, label: 'Seller', icon: BriefcaseIcon },
+  { id: FLUX_CAMPAIGN_MANUAL_TAB.branding, label: 'Branding', icon: SwatchIcon },
+  { id: FLUX_CAMPAIGN_MANUAL_TAB.sample, label: 'Sample', icon: UserIcon },
+  { id: FLUX_CAMPAIGN_MANUAL_TAB.blocks, label: 'Blocks', icon: RectangleStackIcon },
+  { id: FLUX_CAMPAIGN_MANUAL_TAB.assets, label: 'Assets', icon: FolderIcon },
+  { id: FLUX_CAMPAIGN_MANUAL_TAB.spec, label: 'Spec', icon: PencilSquareIcon },
+  { id: FLUX_CAMPAIGN_MANUAL_TAB.prospects, label: 'Prospects', icon: UserGroupIcon },
+];
 
 interface FluxCampaignManualEditorProps {
   editor: FluxCampaignEditorState;
@@ -52,6 +78,8 @@ interface FluxCampaignManualEditorProps {
   prospects: FluxProspectRow[];
   onNavigateNewProspect: () => void;
   onNavigateProspect: (prospectId: string) => void;
+  /** Parent-owned tab id (must be one of `FLUX_CAMPAIGN_MANUAL_TAB`). */
+  activeTab: string;
 }
 
 export function FluxCampaignManualEditor({
@@ -60,8 +88,10 @@ export function FluxCampaignManualEditor({
   prospects,
   onNavigateNewProspect,
   onNavigateProspect,
+  activeTab,
 }: FluxCampaignManualEditorProps) {
-  const [openSections, setOpenSections] = useState<string[]>([]);
+  const pairFieldColumns = useFluxEditorPanelTwoColumns();
+
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [assetTitle, setAssetTitle] = useState('');
   const [assetBody, setAssetBody] = useState('');
@@ -217,74 +247,86 @@ export function FluxCampaignManualEditor({
     setEditingAssetId(null);
   };
 
-  const toggleSection = (section: string) => {
-    setOpenSections((current) =>
-      current.includes(section) ? current.filter((value) => value !== section) : [...current, section],
-    );
-  };
-
   return (
-    <View className="gap-3">
-      <CollapsibleSection
-        title={MANUAL_SECTION_CAMPAIGN}
-        icon={MegaphoneIcon}
-        open={openSections.includes(MANUAL_SECTION_CAMPAIGN)}
-        onToggle={() => toggleSection(MANUAL_SECTION_CAMPAIGN)}
-      >
+    <View className="flex-1 min-w-0 self-stretch">
+        {activeTab === FLUX_CAMPAIGN_MANUAL_TAB.campaign ? (
+          <View className="gap-1.5">
         <TextInput
-          className="text-white text-xl font-instrument-semibold bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-3 py-2.5"
+          className="text-white text-base font-instrument-semibold bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg px-2.5 py-2 mb-1.5"
           value={editor.name}
           onChangeText={(value) => dispatch({ type: 'campaign.setName', value })}
           placeholder="Campaign name"
           placeholderTextColor="#555"
         />
         <TextInput
-          className="text-gray-300 text-sm font-instrument bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-3 py-2.5"
+          className="text-gray-300 text-xs font-instrument bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg px-2.5 py-2 min-h-[72px]"
           value={editor.offerDescription}
           onChangeText={(value) => dispatch({ type: 'campaign.setOfferDescription', value })}
           placeholder="Who this campaign is for and what the reader should get from it"
           placeholderTextColor="#555"
           multiline
         />
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        title={MANUAL_SECTION_SELLER}
-        icon={BriefcaseIcon}
-        open={openSections.includes(MANUAL_SECTION_SELLER)}
-        onToggle={() => toggleSection(MANUAL_SECTION_SELLER)}
-      >
-        <Text className="text-gray-400 text-xs font-instrument mb-2">
-          Who runs this campaign (your agency or client). Separate from the sample recipient below.
+          </View>
+        ) : activeTab === FLUX_CAMPAIGN_MANUAL_TAB.seller ? (
+          <View className="gap-1.5">
+        <Text className="text-gray-500 text-[11px] font-instrument leading-4 mb-1.5">
+          Your company (agency or client). Separate from the sample recipient below.
         </Text>
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Display name</Text>
+        {pairFieldColumns ? (
+          <View className="flex-row gap-2 flex-wrap mb-1.5">
+            <View className="flex-1 min-w-[120px]">
+              <Text className={fluxPanelLabelClass}>Display name</Text>
+              <TextInput
+                className={`${fluxPanelInputFieldClass} w-full`}
+                value={editor.sellerProfile.displayName}
+                onChangeText={(value) => dispatch({ type: 'seller.patchProfile', patch: { displayName: value } })}
+                placeholder="Your company name"
+                placeholderTextColor="#555"
+              />
+            </View>
+            <View className="flex-1 min-w-[120px]">
+              <Text className={fluxPanelLabelClass}>Tagline</Text>
+              <TextInput
+                className={`${fluxPanelInputFieldClass} w-full`}
+                value={editor.sellerProfile.tagline}
+                onChangeText={(value) => dispatch({ type: 'seller.patchProfile', patch: { tagline: value } })}
+                placeholder="One-line positioning"
+                placeholderTextColor="#555"
+              />
+            </View>
+          </View>
+        ) : (
+          <>
+            <Text className={fluxPanelLabelClass}>Display name</Text>
+            <TextInput
+              className={fluxPanelInputClass}
+              value={editor.sellerProfile.displayName}
+              onChangeText={(value) => dispatch({ type: 'seller.patchProfile', patch: { displayName: value } })}
+              placeholder="Your company name"
+              placeholderTextColor="#555"
+            />
+            <Text className={fluxPanelLabelClass}>Tagline</Text>
+            <TextInput
+              className={fluxPanelInputClass}
+              value={editor.sellerProfile.tagline}
+              onChangeText={(value) => dispatch({ type: 'seller.patchProfile', patch: { tagline: value } })}
+              placeholder="One-line positioning"
+              placeholderTextColor="#555"
+            />
+          </>
+        )}
+        <Text className={fluxPanelLabelClass}>Website URL</Text>
         <TextInput
-          className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-          value={editor.sellerProfile.displayName}
-          onChangeText={(value) => dispatch({ type: 'seller.patchProfile', patch: { displayName: value } })}
-          placeholder="Your company name"
-          placeholderTextColor="#555"
-        />
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Tagline</Text>
-        <TextInput
-          className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-          value={editor.sellerProfile.tagline}
-          onChangeText={(value) => dispatch({ type: 'seller.patchProfile', patch: { tagline: value } })}
-          placeholder="One-line positioning"
-          placeholderTextColor="#555"
-        />
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Website URL</Text>
-        <TextInput
-          className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
+          className={fluxPanelInputClass}
           value={editor.sellerProfile.websiteUrl}
           onChangeText={(value) => dispatch({ type: 'seller.patchProfile', patch: { websiteUrl: value } })}
           placeholder="https://…"
           placeholderTextColor="#555"
           autoCapitalize="none"
         />
-        <View className="flex-row items-center gap-2 mb-3">
+        <View className={`${fluxPanelActionRowClass} mb-2`}>
           <Button
-            size="sm"
+            size="2xs"
             variant="secondary"
             onPress={() => void handleSellerWebsiteScrape()}
             disabled={sellerScrapeBusy}
@@ -293,26 +335,54 @@ export function FluxCampaignManualEditor({
           </Button>
           {sellerScrapeBusy ? <ActivityIndicator color="#9ca3af" /> : null}
         </View>
-        <FluxHexColorField
-          label="Primary"
-          value={editor.sellerProfile.brand_profile?.primaryColor ?? '#4f46e5'}
-          onChange={(primaryColor) =>
-            dispatch({ type: 'seller.patchBrand', patch: { primaryColor } })
-          }
-        />
-        <FluxHexColorField
-          label="Accent"
-          value={editor.sellerProfile.brand_profile?.accentColor ?? ''}
-          onChange={(hex) => dispatch({ type: 'seller.patchBrand', patch: { accentColor: hex || undefined } })}
-        />
+        <Text className={fluxPanelSubsectionLabelClass}>Brand</Text>
+        {pairFieldColumns ? (
+          <View className="flex-row gap-2 flex-wrap mb-1.5">
+            <View className="flex-1 min-w-[140px]">
+              <Text className={fluxPanelLabelClass}>Primary</Text>
+              <FluxHexColorField
+                value={editor.sellerProfile.brand_profile?.primaryColor ?? '#4f46e5'}
+                onChange={(primaryColor) =>
+                  dispatch({ type: 'seller.patchBrand', patch: { primaryColor } })
+                }
+                containerClassName={fluxPanelHexContainerRowClass}
+              />
+            </View>
+            <View className="flex-1 min-w-[140px]">
+              <Text className={fluxPanelLabelClass}>Accent</Text>
+              <FluxHexColorField
+                value={editor.sellerProfile.brand_profile?.accentColor ?? ''}
+                onChange={(hex) => dispatch({ type: 'seller.patchBrand', patch: { accentColor: hex || undefined } })}
+                allowEmpty
+                containerClassName={fluxPanelHexContainerRowClass}
+              />
+            </View>
+          </View>
+        ) : (
+          <>
+            <Text className={fluxPanelLabelClass}>Primary</Text>
+            <FluxHexColorField
+              value={editor.sellerProfile.brand_profile?.primaryColor ?? '#4f46e5'}
+              onChange={(primaryColor) =>
+                dispatch({ type: 'seller.patchBrand', patch: { primaryColor } })
+              }
+            />
+            <Text className={fluxPanelLabelClass}>Accent</Text>
+            <FluxHexColorField
+              value={editor.sellerProfile.brand_profile?.accentColor ?? ''}
+              onChange={(hex) => dispatch({ type: 'seller.patchBrand', patch: { accentColor: hex || undefined } })}
+              allowEmpty
+            />
+          </>
+        )}
+        <Text className={fluxPanelLabelClass}>Font</Text>
         <FluxFontFamilyPicker
-          label="Font"
           value={editor.sellerProfile.brand_profile?.fontFamily}
           onChange={(fontFamily) => dispatch({ type: 'seller.patchBrand', patch: { fontFamily } })}
         />
-        <Text className="text-gray-400 text-xs font-instrument mb-1 mt-2">Logo URL</Text>
+        <Text className={fluxPanelLabelClass}>Logo URL</Text>
         <TextInput
-          className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
+          className={fluxPanelInputFieldClass}
           value={editor.sellerProfile.brand_profile?.logoUrl ?? ''}
           onChangeText={(value) => dispatch({ type: 'seller.patchBrand', patch: { logoUrl: value || undefined } })}
           placeholder="https://…"
@@ -337,25 +407,20 @@ export function FluxCampaignManualEditor({
             </Pressable>
           </View>
         ) : null}
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        title={MANUAL_SECTION_PAGE_BRANDING}
-        icon={RectangleStackIcon}
-        open={openSections.includes(MANUAL_SECTION_PAGE_BRANDING)}
-        onToggle={() => toggleSection(MANUAL_SECTION_PAGE_BRANDING)}
-      >
-        <Text className="text-gray-400 text-xs font-instrument mb-2">
-          How seller and sample recipient brands combine for the live preview theme.
+          </View>
+        ) : activeTab === FLUX_CAMPAIGN_MANUAL_TAB.branding ? (
+          <View className="gap-1.5">
+        <Text className="text-gray-500 text-[11px] font-instrument leading-4 mb-1.5">
+          How seller and recipient brands combine in the live preview theme.
         </Text>
-        <View className="flex-row flex-wrap gap-2">
+        <View className="flex-row flex-wrap gap-1.5">
           {(['prospect', 'seller', 'merge'] as const).map((mode) => {
             const selected = editor.brandingPolicy.pageTheme === mode;
             return (
               <Pressable
                 key={mode}
                 onPress={() => setPageTheme(mode)}
-                className={`px-3 py-2 rounded-lg border ${
+                className={`px-2 py-1.5 rounded-md border ${
                   selected ? 'border-orange-500 bg-orange-500/15' : 'border-[#333] bg-[#222]'
                 }`}
               >
@@ -366,73 +431,148 @@ export function FluxCampaignManualEditor({
             );
           })}
         </View>
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        title="Sample recipient (preview only)"
-        icon={UserIcon}
-        open={editor.previewProspectOpen}
-        onToggle={() =>
-          dispatch({ type: 'ui.setPreviewProspectOpen', value: !editor.previewProspectOpen })
-        }
-      >
-        <View className="border border-[#2A2A2A] rounded-xl p-3 bg-[#1A1A1A] gap-1">
-          <Text className="text-gray-400 text-xs font-instrument mb-2">
-            Use a realistic lead here. Theme changes show instantly; copy and structure changes may
-            need a fresh AI preview in the studio.
+          </View>
+        ) : activeTab === FLUX_CAMPAIGN_MANUAL_TAB.sample ? (
+          <View className="gap-1.5">
+        <View className="border border-[#2A2A2A] rounded-lg p-2 bg-[#1A1A1A] gap-1">
+          <Text className="text-gray-500 text-[11px] font-instrument leading-4 mb-1">
+            Realistic lead for the studio preview. Theme updates instantly; copy/structure may need a fresh AI rerun.
           </Text>
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Contact name</Text>
+          <Text className={fluxPanelSubsectionLabelClass}>Contact</Text>
+          {pairFieldColumns ? (
+            <View className="flex-row gap-2 flex-wrap mb-1.5">
+              <View className="flex-1 min-w-[120px]">
+                <Text className={fluxPanelLabelClass}>Contact name</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={editor.previewProspect.name}
+                  onChangeText={(value) => patchPreviewProspect({ name: value })}
+                  placeholder="Jane Smith"
+                  placeholderTextColor="#555"
+                />
+              </View>
+              <View className="flex-1 min-w-[120px]">
+                <Text className={fluxPanelLabelClass}>Company</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={editor.previewProspect.company}
+                  onChangeText={(value) => patchPreviewProspect({ company: value })}
+                  placeholder="Acme Corp"
+                  placeholderTextColor="#555"
+                />
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text className={fluxPanelLabelClass}>Contact name</Text>
+              <TextInput
+                className={fluxPanelInputClass}
+                value={editor.previewProspect.name}
+                onChangeText={(value) => patchPreviewProspect({ name: value })}
+                placeholder="Jane Smith"
+                placeholderTextColor="#555"
+              />
+              <Text className={fluxPanelLabelClass}>Company</Text>
+              <TextInput
+                className={fluxPanelInputClass}
+                value={editor.previewProspect.company}
+                onChangeText={(value) => patchPreviewProspect({ company: value })}
+                placeholder="Acme Corp"
+                placeholderTextColor="#555"
+              />
+            </>
+          )}
+          {pairFieldColumns ? (
+            <View className="flex-row gap-2 flex-wrap mb-1.5">
+              <View className="flex-1 min-w-[120px]">
+                <Text className={fluxPanelLabelClass}>Role</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={editor.previewProspect.role ?? ''}
+                  onChangeText={(value) => patchPreviewProspect({ role: value })}
+                  placeholder="VP of Sales"
+                  placeholderTextColor="#555"
+                />
+              </View>
+              <View className="flex-1 min-w-[120px]">
+                <Text className={fluxPanelLabelClass}>Company URL</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={editor.previewProspect.url ?? ''}
+                  onChangeText={(value) => patchPreviewProspect({ url: value })}
+                  placeholder="https://acme.com"
+                  placeholderTextColor="#555"
+                  autoCapitalize="none"
+                />
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text className={fluxPanelLabelClass}>Role</Text>
+              <TextInput
+                className={fluxPanelInputClass}
+                value={editor.previewProspect.role ?? ''}
+                onChangeText={(value) => patchPreviewProspect({ role: value })}
+                placeholder="VP of Sales"
+                placeholderTextColor="#555"
+              />
+              <Text className={fluxPanelLabelClass}>Company URL</Text>
+              <TextInput
+                className={fluxPanelInputClass}
+                value={editor.previewProspect.url ?? ''}
+                onChangeText={(value) => patchPreviewProspect({ url: value })}
+                placeholder="https://acme.com"
+                placeholderTextColor="#555"
+                autoCapitalize="none"
+              />
+            </>
+          )}
+          {pairFieldColumns ? (
+            <View className="flex-row gap-2 flex-wrap mb-1.5">
+              <View className="flex-1 min-w-[120px]">
+                <Text className={fluxPanelLabelClass}>Industry</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={editor.previewProspect.industry ?? ''}
+                  onChangeText={(value) => patchPreviewProspect({ industry: value })}
+                  placeholder="SaaS"
+                  placeholderTextColor="#555"
+                />
+              </View>
+              <View className="flex-1 min-w-[120px]">
+                <Text className={fluxPanelLabelClass}>Company size</Text>
+                <TextInput
+                  className={`${fluxPanelInputFieldClass} w-full`}
+                  value={editor.previewProspect.company_size ?? ''}
+                  onChangeText={(value) => patchPreviewProspect({ company_size: value })}
+                  placeholder="50-200"
+                  placeholderTextColor="#555"
+                />
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text className={fluxPanelLabelClass}>Industry</Text>
+              <TextInput
+                className={fluxPanelInputClass}
+                value={editor.previewProspect.industry ?? ''}
+                onChangeText={(value) => patchPreviewProspect({ industry: value })}
+                placeholder="SaaS"
+                placeholderTextColor="#555"
+              />
+              <Text className={fluxPanelLabelClass}>Company size</Text>
+              <TextInput
+                className={fluxPanelInputClass}
+                value={editor.previewProspect.company_size ?? ''}
+                onChangeText={(value) => patchPreviewProspect({ company_size: value })}
+                placeholder="50-200"
+                placeholderTextColor="#555"
+              />
+            </>
+          )}
+          <Text className={fluxPanelLabelClass}>Email notes</Text>
           <TextInput
-            className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-            value={editor.previewProspect.name}
-            onChangeText={(value) => patchPreviewProspect({ name: value })}
-            placeholder="Jane Smith"
-            placeholderTextColor="#555"
-          />
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Company</Text>
-          <TextInput
-            className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-            value={editor.previewProspect.company}
-            onChangeText={(value) => patchPreviewProspect({ company: value })}
-            placeholder="Acme Corp"
-            placeholderTextColor="#555"
-          />
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Role</Text>
-          <TextInput
-            className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-            value={editor.previewProspect.role ?? ''}
-            onChangeText={(value) => patchPreviewProspect({ role: value })}
-            placeholder="VP of Sales"
-            placeholderTextColor="#555"
-          />
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Company URL</Text>
-          <TextInput
-            className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-            value={editor.previewProspect.url ?? ''}
-            onChangeText={(value) => patchPreviewProspect({ url: value })}
-            placeholder="https://acme.com"
-            placeholderTextColor="#555"
-            autoCapitalize="none"
-          />
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Industry</Text>
-          <TextInput
-            className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-            value={editor.previewProspect.industry ?? ''}
-            onChangeText={(value) => patchPreviewProspect({ industry: value })}
-            placeholder="SaaS"
-            placeholderTextColor="#555"
-          />
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Company size</Text>
-          <TextInput
-            className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-            value={editor.previewProspect.company_size ?? ''}
-            onChangeText={(value) => patchPreviewProspect({ company_size: value })}
-            placeholder="50-200"
-            placeholderTextColor="#555"
-          />
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Email notes</Text>
-          <TextInput
-            className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-3 min-h-[72px]"
+            className={fluxPanelInputMultilineClass}
             value={editor.previewProspect.email_notes ?? ''}
             onChangeText={(value) => patchPreviewProspect({ email_notes: value })}
             placeholder="What does this lead care about right now?"
@@ -465,50 +605,76 @@ export function FluxCampaignManualEditor({
               <Text className="text-gray-400 text-xs font-instrument">Clear website intel</Text>
             </Pressable>
           ) : null}
-          <Text className="text-gray-500 text-xs uppercase tracking-wider mb-2 font-instrument-semibold">
-            Brand
-          </Text>
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Primary color</Text>
-          <FluxHexColorField
-            value={editor.previewProspect.brand_profile?.primaryColor ?? '#4f46e5'}
-            onChange={(primaryColor) => patchPreviewBrand({ primaryColor })}
-            placeholder="#4f46e5"
-            fallbackHex="#4f46e5"
-          />
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Accent (optional)</Text>
-          <FluxHexColorField
-            value={editor.previewProspect.brand_profile?.accentColor ?? ''}
-            onChange={(hex) => patchPreviewBrand({ accentColor: hex || undefined })}
-            allowEmpty
-            placeholder="#10b981"
-            fallbackHex="#10b981"
-          />
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Font</Text>
+          <Text className={fluxPanelSubsectionLabelClass}>Brand</Text>
+          {pairFieldColumns ? (
+            <View className="flex-row gap-2 flex-wrap mb-1.5">
+              <View className="flex-1 min-w-[140px]">
+                <Text className={fluxPanelLabelClass}>Primary color</Text>
+                <FluxHexColorField
+                  value={editor.previewProspect.brand_profile?.primaryColor ?? '#4f46e5'}
+                  onChange={(primaryColor) => patchPreviewBrand({ primaryColor })}
+                  placeholder="#4f46e5"
+                  fallbackHex="#4f46e5"
+                  containerClassName={fluxPanelHexContainerRowClass}
+                />
+              </View>
+              <View className="flex-1 min-w-[140px]">
+                <Text className={fluxPanelLabelClass}>Accent (optional)</Text>
+                <FluxHexColorField
+                  value={editor.previewProspect.brand_profile?.accentColor ?? ''}
+                  onChange={(hex) => patchPreviewBrand({ accentColor: hex || undefined })}
+                  allowEmpty
+                  placeholder="#10b981"
+                  fallbackHex="#10b981"
+                  containerClassName={fluxPanelHexContainerRowClass}
+                />
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text className={fluxPanelLabelClass}>Primary color</Text>
+              <FluxHexColorField
+                value={editor.previewProspect.brand_profile?.primaryColor ?? '#4f46e5'}
+                onChange={(primaryColor) => patchPreviewBrand({ primaryColor })}
+                placeholder="#4f46e5"
+                fallbackHex="#4f46e5"
+              />
+              <Text className={fluxPanelLabelClass}>Accent (optional)</Text>
+              <FluxHexColorField
+                value={editor.previewProspect.brand_profile?.accentColor ?? ''}
+                onChange={(hex) => patchPreviewBrand({ accentColor: hex || undefined })}
+                allowEmpty
+                placeholder="#10b981"
+                fallbackHex="#10b981"
+              />
+            </>
+          )}
+          <Text className={fluxPanelLabelClass}>Font</Text>
           <FluxFontFamilyPicker
             value={editor.previewProspect.brand_profile?.fontFamily}
             onChange={(fontFamily) => patchPreviewBrand({ fontFamily })}
           />
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Style preset</Text>
-          <View className="gap-2 mb-2">
+          <Text className={fluxPanelLabelClass}>Style preset</Text>
+          <View className="gap-1.5 mb-1.5">
             {FLUX_BLOCK_STYLE_PRESET_OPTIONS.map((option) => {
               const selected = (editor.previewProspect.brand_profile?.blockStylePreset ?? 'classic') === option.id;
               return (
                 <Pressable
                   key={option.id}
-                  className={`rounded-lg border px-3 py-2 ${
+                  className={`rounded-md border px-2 py-1.5 ${
                     selected ? 'border-indigo-500 bg-indigo-500/15' : 'border-[#333] bg-[#222]'
                   }`}
                   onPress={() => patchPreviewBrand({ blockStylePreset: option.id })}
                 >
-                  <Text className="text-white text-sm font-instrument-semibold">{option.label}</Text>
-                  <Text className="text-gray-400 text-xs font-instrument mt-0.5">{option.description}</Text>
+                  <Text className="text-white text-xs font-instrument-semibold">{option.label}</Text>
+                  <Text className="text-gray-400 text-[11px] font-instrument mt-0.5 leading-4">{option.description}</Text>
                 </Pressable>
               );
             })}
           </View>
-          <Text className="text-gray-400 text-xs font-instrument mb-1">Logo URL (optional)</Text>
+          <Text className={fluxPanelLabelClass}>Logo URL (optional)</Text>
           <TextInput
-            className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
+            className={fluxPanelInputFieldClass}
             value={editor.previewProspect.brand_profile?.logoUrl ?? ''}
             onChangeText={(value) => patchPreviewBrand({ logoUrl: value || undefined })}
             placeholder="https://…"
@@ -517,7 +683,7 @@ export function FluxCampaignManualEditor({
           />
           {prospects.length > 0 ? (
             <Button
-              size="sm"
+              size="2xs"
               variant="secondary"
               onPress={() => {
                 const sample = prospects[0];
@@ -542,17 +708,12 @@ export function FluxCampaignManualEditor({
             </Button>
           ) : null}
         </View>
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        title={MANUAL_SECTION_TEMPLATE_BLOCKS}
-        icon={RectangleStackIcon}
-        open={openSections.includes(MANUAL_SECTION_TEMPLATE_BLOCKS)}
-        onToggle={() => toggleSection(MANUAL_SECTION_TEMPLATE_BLOCKS)}
-      >
+          </View>
+        ) : activeTab === FLUX_CAMPAIGN_MANUAL_TAB.blocks ? (
+          <View className="gap-1.5">
         {editor.blocks.length === 0 ? (
-          <View className="border border-[#2A2A2A] rounded-xl p-3">
-            <Text className="text-gray-400 text-sm font-instrument text-center">
+          <View className="border border-[#2A2A2A] rounded-lg p-2">
+            <Text className="text-gray-400 text-xs font-instrument text-center">
               No blocks yet. Let chat build them or add one below.
             </Text>
           </View>
@@ -568,30 +729,26 @@ export function FluxCampaignManualEditor({
             updateBlockProps={updateBlockProps}
             updateBlockScrollTag={updateBlockScrollTag}
             contentAssets={editor.contentAssets}
+            pairFieldColumns={pairFieldColumns}
             renderBlockEditor={renderFluxManualBlockEditor}
           />
         )}
-        <View className="flex-row flex-wrap gap-2">
+        <View className="flex-row flex-wrap gap-1.5">
           {FLUX_ALL_BLOCK_TYPES.map((type) => (
             <Pressable
               key={type}
-              className="border border-[#3A3A3A] rounded-lg px-3 py-1.5 bg-[#2A2A2A]"
+              className="border border-[#3A3A3A] rounded-md px-2 py-1 bg-[#2A2A2A] min-w-[44px] min-h-[32px] justify-center"
               onPress={() => addBlock(type)}
             >
-              <Text className="text-gray-300 text-xs font-instrument">
+              <Text className="text-gray-300 text-[11px] font-instrument">
                 + {FLUX_MANUAL_BLOCK_TYPE_LABELS[type]}
               </Text>
             </Pressable>
           ))}
         </View>
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        title={MANUAL_SECTION_CONTENT_ASSETS}
-        icon={FolderIcon}
-        open={openSections.includes(MANUAL_SECTION_CONTENT_ASSETS)}
-        onToggle={() => toggleSection(MANUAL_SECTION_CONTENT_ASSETS)}
-      >
+          </View>
+        ) : activeTab === FLUX_CAMPAIGN_MANUAL_TAB.assets ? (
+          <View className="gap-1.5">
         {editor.contentAssets.length > 0 && (
         <View className="gap-2">
           {editor.contentAssets.map((asset) =>
@@ -613,14 +770,14 @@ export function FluxCampaignManualEditor({
                   ))}
                 </View>
                 <TextInput
-                  className="text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm"
+                  className={fluxPanelInputClass}
                   placeholder="Title"
                   placeholderTextColor="#555"
                   value={editAssetTitle}
                   onChangeText={setEditAssetTitle}
                 />
                 <TextInput
-                  className="text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm"
+                  className={fluxPanelInputClass}
                   placeholder="Body"
                   placeholderTextColor="#555"
                   value={editAssetBody}
@@ -628,21 +785,21 @@ export function FluxCampaignManualEditor({
                   multiline
                 />
                 <TextInput
-                  className="text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm"
+                  className={fluxPanelInputClass}
                   placeholder="Metric (optional)"
                   placeholderTextColor="#555"
                   value={editAssetMetric}
                   onChangeText={setEditAssetMetric}
                 />
                 <TextInput
-                  className="text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm"
+                  className={fluxPanelInputClass}
                   placeholder="Attribution (optional)"
                   placeholderTextColor="#555"
                   value={editAssetAttribution}
                   onChangeText={setEditAssetAttribution}
                 />
                 <TextInput
-                  className="text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm"
+                  className={fluxPanelInputClass}
                   placeholder="Image URL (optional)"
                   placeholderTextColor="#555"
                   value={editAssetImageUrl}
@@ -650,10 +807,10 @@ export function FluxCampaignManualEditor({
                   autoCapitalize="none"
                 />
                 <View className="flex-row gap-2">
-                  <Button size="sm" onPress={saveEditAsset}>
+                  <Button size="2xs" onPress={saveEditAsset}>
                     Save
                   </Button>
-                  <Button size="sm" variant="secondary" onPress={cancelEditAsset}>
+                  <Button size="2xs" variant="secondary" onPress={cancelEditAsset}>
                     Cancel
                   </Button>
                 </View>
@@ -700,14 +857,14 @@ export function FluxCampaignManualEditor({
             ))}
           </View>
           <TextInput
-            className="text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm"
+            className={fluxPanelInputClass}
             placeholder="Title"
             placeholderTextColor="#555"
             value={assetTitle}
             onChangeText={setAssetTitle}
           />
           <TextInput
-            className="text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm"
+            className={fluxPanelInputClass}
             placeholder="Body"
             placeholderTextColor="#555"
             value={assetBody}
@@ -715,21 +872,21 @@ export function FluxCampaignManualEditor({
             multiline
           />
           <TextInput
-            className="text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm"
+            className={fluxPanelInputClass}
             placeholder="Metric (optional)"
             placeholderTextColor="#555"
             value={assetMetric}
             onChangeText={setAssetMetric}
           />
           <TextInput
-            className="text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm"
+            className={fluxPanelInputClass}
             placeholder="Attribution (optional)"
             placeholderTextColor="#555"
             value={assetAttribution}
             onChangeText={setAssetAttribution}
           />
           <TextInput
-            className="text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm"
+            className={fluxPanelInputClass}
             placeholder="Image URL (optional)"
             placeholderTextColor="#555"
             value={assetImageUrl}
@@ -737,11 +894,11 @@ export function FluxCampaignManualEditor({
             autoCapitalize="none"
           />
           <View className="flex-row gap-2">
-            <Button size="sm" onPress={addAsset}>
+            <Button size="2xs" onPress={addAsset}>
               Add asset
             </Button>
             <Button
-              size="sm"
+              size="2xs"
               variant="secondary"
               onPress={() => {
                 setShowAssetForm(false);
@@ -763,29 +920,24 @@ export function FluxCampaignManualEditor({
           <Text className="text-gray-400 text-sm font-instrument">+ Add content asset</Text>
         </Pressable>
         )}
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        title={MANUAL_SECTION_CAMPAIGN_SPEC}
-        icon={PencilSquareIcon}
-        open={openSections.includes(MANUAL_SECTION_CAMPAIGN_SPEC)}
-        onToggle={() => toggleSection(MANUAL_SECTION_CAMPAIGN_SPEC)}
-      >
-        <Text className="text-gray-400 text-xs font-instrument mb-1">
+          </View>
+        ) : activeTab === FLUX_CAMPAIGN_MANUAL_TAB.spec ? (
+          <View className="gap-1.5">
+        <Text className={fluxPanelLabelClass}>
           Personalization slots ({copySlots.length})
         </Text>
         <TextInput
-          className="text-white bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-3 py-2.5 text-sm"
+          className={fluxPanelInputClass}
           value={editor.copySlots}
           onChangeText={(value) => dispatch({ type: 'template.setCopySlotsText', value })}
           placeholder="headline, subheadline, ctaText"
           placeholderTextColor="#555"
         />
-        <Text className="text-gray-400 text-xs font-instrument mb-1">
+        <Text className={fluxPanelLabelClass}>
           Constraints / methodology spec
         </Text>
         <TextInput
-          className="text-white bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl px-3 py-2.5 text-sm min-h-[220px]"
+          className={fluxPanelInputTallMultilineClass}
           value={editor.constraints}
           onChangeText={(value) => dispatch({ type: 'template.setConstraints', value })}
           placeholder={FLUX_CONSTRAINTS_SKELETON}
@@ -793,16 +945,11 @@ export function FluxCampaignManualEditor({
           multiline
           textAlignVertical="top"
         />
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        title={MANUAL_SECTION_PROSPECTS}
-        icon={UserGroupIcon}
-        open={openSections.includes(MANUAL_SECTION_PROSPECTS)}
-        onToggle={() => toggleSection(MANUAL_SECTION_PROSPECTS)}
-      >
+          </View>
+        ) : activeTab === FLUX_CAMPAIGN_MANUAL_TAB.prospects ? (
+          <View className="gap-1.5">
         <View className="flex-row items-center justify-end">
-          <Button size="xs" onPress={onNavigateNewProspect}>
+          <Button size="2xs" onPress={onNavigateNewProspect}>
             + New Prospect
           </Button>
         </View>
@@ -829,7 +976,8 @@ export function FluxCampaignManualEditor({
             ))}
           </View>
         )}
-      </CollapsibleSection>
+          </View>
+        ) : null}
     </View>
   );
 }

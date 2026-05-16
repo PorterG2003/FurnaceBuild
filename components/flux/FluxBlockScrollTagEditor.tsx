@@ -2,8 +2,9 @@ import React, { useMemo } from 'react';
 import { View, Text, TextInput } from 'react-native';
 import type { Block } from '@/lib/flux/types';
 import { computeResolvedAnchorDomIdByBlockId } from '@/lib/flux/fluxScrollTag';
+import { fluxPanelInputClass, fluxPanelLabelClass } from '@/lib/flux/fluxEditorPanelClasses';
 
-const INPUT_CLASS = 'text-white bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-sm mb-2';
+const INPUT_CLASS = fluxPanelInputClass;
 
 type FluxBlockScrollTagEditorProps = {
   block: Block;
@@ -20,8 +21,8 @@ export function FluxBlockScrollTagEditor({ block, blocks, onSetScrollTag }: Flux
   const example = resolvedId ? `#${resolvedId}` : '#pricing';
 
   return (
-    <View className="gap-1 mb-3">
-      <Text className="text-gray-400 text-xs font-instrument">Section scroll tag (optional)</Text>
+    <View className="gap-1 mb-2">
+      <Text className={fluxPanelLabelClass}>Section scroll tag (optional)</Text>
       <TextInput
         className={INPUT_CLASS}
         value={block.scrollTag ?? ''}

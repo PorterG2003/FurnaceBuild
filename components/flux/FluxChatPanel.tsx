@@ -16,8 +16,8 @@ import { IconButton } from '@/components/ui/icon-button';
 import { Alert } from '@/components/ui/feedback';
 import type { FluxChatMessage } from '@/lib/flux/editor/reducer';
 
-const COMPOSER_MIN_HEIGHT = 40;
-const COMPOSER_MAX_HEIGHT = 300;
+const COMPOSER_MIN_HEIGHT = 34;
+const COMPOSER_MAX_HEIGHT = 260;
 
 function isNeedsNewBlockMessage(content: string): boolean {
   return /^needs new block:/i.test(content.trim());
@@ -136,25 +136,25 @@ export function FluxChatPanel({
       ) : null}
       {error ? <Alert variant="error" message={error} className="mb-1.5" /> : null}
       {showLastSummary && lastSummary && lastSummary.length > 0 ? (
-        <View className="mb-2 border border-[#2A2A2A] rounded-xl p-2.5 bg-[#141414]">
-          <Text className="text-gray-500 text-xs uppercase tracking-wider font-instrument-semibold mb-1">
+        <View className="mb-1.5 border border-[#2A2A2A] rounded-lg p-2 bg-[#141414]">
+          <Text className="text-gray-500 text-[10px] uppercase tracking-wider font-instrument-semibold mb-0.5">
             Last applied
           </Text>
           {lastSummary.map((line, i) => (
-            <Text key={i} className="text-gray-300 text-xs font-instrument leading-5">
+            <Text key={i} className="text-gray-300 text-[11px] font-instrument leading-4">
               • {line}
             </Text>
           ))}
         </View>
       ) : null}
       <ScrollView
-        className="flex-1 mb-2 rounded-xl"
+        className="flex-1 mb-1.5 rounded-lg"
         style={{ minHeight: 0 }}
-        contentContainerStyle={{ padding: 10, paddingBottom: 12, flexGrow: messages.length === 0 ? 1 : undefined }}
+        contentContainerStyle={{ padding: 6, paddingBottom: 8, flexGrow: messages.length === 0 ? 1 : undefined }}
         keyboardShouldPersistTaps="handled"
       >
         {messages.length === 0 ? (
-          <Text className="text-gray-500 text-sm font-instrument text-center py-6">
+          <Text className="text-gray-500 text-xs font-instrument text-center py-4 px-1">
             {emptyStateText}
           </Text>
         ) : (
@@ -165,10 +165,10 @@ export function FluxChatPanel({
             return (
               <View
                 key={m.id}
-                className={`mb-2 max-w-[95%] ${isUser ? 'self-end items-end' : 'self-start items-start'}`}
+                className={`mb-1.5 max-w-[95%] ${isUser ? 'self-end items-end' : 'self-start items-start'}`}
               >
                 <View
-                  className={`rounded-xl px-2.5 py-2 ${
+                  className={`rounded-lg px-2 py-1.5 ${
                     isUser
                       ? 'bg-indigo-600/35 border border-indigo-500/40'
                       : isBlockedState
@@ -176,28 +176,28 @@ export function FluxChatPanel({
                         : 'bg-[#1f1f1f] border border-[#333]'
                   }`}
                 >
-                  <Text className="text-gray-500 text-[10px] font-instrument-semibold uppercase mb-1">
+                  <Text className="text-gray-500 text-[9px] font-instrument-semibold uppercase mb-0.5">
                     {isUser ? 'You' : 'Assistant'}
                   </Text>
                   {isBlockedState ? (
-                    <Text className="text-amber-200 text-[10px] font-instrument-semibold uppercase mb-1">
+                    <Text className="text-amber-200 text-[9px] font-instrument-semibold uppercase mb-0.5">
                       Missing block capability
                     </Text>
                   ) : null}
-                  <Text className="text-gray-100 text-sm font-instrument leading-5">{m.content}</Text>
+                  <Text className="text-gray-100 text-xs font-instrument leading-[18px]">{m.content}</Text>
                   {isBlockedState ? (
-                    <Text className="text-amber-100/80 text-xs font-instrument leading-5 mt-2">
+                    <Text className="text-amber-100/80 text-[11px] font-instrument leading-4 mt-1.5">
                       Flux is pausing here instead of inventing a fake block. Build the primitive, then
                       return to this campaign and continue the same thread.
                     </Text>
                   ) : null}
                 </View>
-                <View className={`mt-1 flex-row gap-1 px-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                <View className={`mt-0.5 flex-row gap-0.5 px-0.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
                   <IconButton
                     icon={DocumentDuplicateIcon}
                     variant="ghost"
                     size="xs"
-                    className="rounded-full"
+                    className="rounded-full h-7 w-7"
                     accessibilityLabel="Copy chat message"
                     onPress={() => {
                       void copyMessage(m.content);
@@ -208,7 +208,7 @@ export function FluxChatPanel({
                       icon={ArrowUturnLeftIcon}
                       variant="ghost"
                       size="xs"
-                      className="rounded-full"
+                      className="rounded-full h-7 w-7"
                       accessibilityLabel="Edit chat message"
                       onPress={() => {
                         void editMessage(m);
@@ -222,16 +222,16 @@ export function FluxChatPanel({
           })
         )}
         {sending ? (
-          <View className="flex-row items-center gap-2 py-2">
+          <View className="flex-row items-center gap-1.5 py-1">
             <ActivityIndicator size="small" color="#a5b4fc" />
-            <Text className="text-gray-400 text-xs font-instrument">Thinking…</Text>
+            <Text className="text-gray-400 text-[11px] font-instrument">Thinking…</Text>
           </View>
         ) : null}
       </ScrollView>
-      <View className="rounded-xl border border-[#2A2A2A] bg-[#1A1A1A] px-3 py-1.5">
+      <View className="rounded-lg border border-[#2A2A2A] bg-[#1A1A1A] px-2 py-1">
         <View className="relative flex-1 min-w-0">
           <TextInput
-            className="text-white text-sm font-instrument py-2 pr-11"
+            className="text-white text-xs font-instrument py-1.5 pr-10"
             style={{
               height: composerHeight,
               minHeight: COMPOSER_MIN_HEIGHT,
@@ -253,7 +253,7 @@ export function FluxChatPanel({
             icon={ArrowUpIcon}
             size="sm"
             variant="default"
-            className="absolute bottom-1 right-0 h-8 w-8 rounded-full p-0"
+            className="absolute bottom-0.5 right-0 h-7 w-7 rounded-full p-0"
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             onPress={() => {
               void submit();
@@ -262,7 +262,7 @@ export function FluxChatPanel({
           />
         </View>
       </View>
-      {footer ? <View className="mt-2">{footer}</View> : null}
+      {footer ? <View className="mt-1.5">{footer}</View> : null}
     </KeyboardAvoidingView>
   );
 }

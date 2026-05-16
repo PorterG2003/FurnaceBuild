@@ -5,6 +5,11 @@ export function sortBlocksByOrder(blocks: Block[]): Block[] {
   return [...blocks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
+export type FluxBlockEditorLayout = {
+  /** When true, short paired fields (e.g. CTA + URL) render in two columns when space allows. */
+  pairFieldColumns?: boolean;
+};
+
 export interface FluxTemplateBlocksDraggableListProps {
   blocks: Block[];
   blockTypeLabels: Record<BlockType, string>;
@@ -20,7 +25,9 @@ export interface FluxTemplateBlocksDraggableListProps {
     block: Block,
     updateProps: (id: string, props: Record<string, unknown>) => void,
     assets: ContentAsset[],
+    layout?: FluxBlockEditorLayout,
   ) => ReactNode;
   /** When false, hide remove control (e.g. prospect page blocks). Default true. */
   allowRemoveBlocks?: boolean;
+  pairFieldColumns?: boolean;
 }

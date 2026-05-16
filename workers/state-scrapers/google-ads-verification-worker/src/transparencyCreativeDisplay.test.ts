@@ -135,3 +135,54 @@ test('pickSamplesForDisplay preserves previewPng on picked rows', () => {
   assert.ok(out[0].previewPng);
   assert.deepEqual(out[0].previewPng, png);
 });
+
+test('pickSamplesForDisplay prefers screenshot-bearing rows over previewless rows', () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  const scanned: TransparencyScannedCreative[] = [
+    {
+      sourceUrl: 'https://adstransparency.google.com/creative/no-preview',
+      headline: 'No preview',
+      body: 'No preview body',
+      latestAdLastShownAt: '2026-05-14',
+      firstAdShownAt: '2026-05-01',
+      runDays: 13,
+    },
+    {
+      sourceUrl: 'https://adstransparency.google.com/creative/with-preview',
+      headline: 'With preview',
+      body: 'With preview body',
+      latestAdLastShownAt: '2026-05-13',
+      firstAdShownAt: '2026-05-01',
+      runDays: 12,
+      previewPng: png,
+    },
+  ];
+  const out = pickSamplesForDisplay(scanned, '2026-05-14', 1);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].headline, 'With preview');
+  assert.deepEqual(out[0].previewPng, png);
+});
+
+test('pickSamplesForDisplay still falls back to previewless rows when none have screenshots', () => {
+  const scanned: TransparencyScannedCreative[] = [
+    {
+      sourceUrl: 'https://adstransparency.google.com/creative/a',
+      headline: 'A',
+      body: 'A body',
+      latestAdLastShownAt: '2026-05-14',
+      firstAdShownAt: '2026-05-01',
+      runDays: 13,
+    },
+    {
+      sourceUrl: 'https://adstransparency.google.com/creative/b',
+      headline: 'B',
+      body: 'B body',
+      latestAdLastShownAt: '2026-05-13',
+      firstAdShownAt: '2026-05-01',
+      runDays: 12,
+    },
+  ];
+  const out = pickSamplesForDisplay(scanned, '2026-05-14', 1);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].headline, 'A');
+});

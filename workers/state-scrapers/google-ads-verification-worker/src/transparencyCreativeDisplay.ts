@@ -26,6 +26,10 @@ export interface TransparencyCreativeSampleRow {
   previewPng?: Buffer;
 }
 
+function hasPreviewPng(row: Pick<TransparencyScannedCreative, 'previewPng'>): boolean {
+  return Boolean(row.previewPng && row.previewPng.length > 0);
+}
+
 const CHROME_EXACT = new Set(
   [
     'Ads Transparency Center',
@@ -136,8 +140,9 @@ export async function extractCreativeDisplayFromCreativePage(
 }
 
 /**
- * Pick up to `maxSamples` creatives for the published cards: prefer rows whose last-shown date
- * equals the global max, then longer First→Last run, then most recent last-shown, stable by input order.
+ * Pick up to `maxSamples` creatives for the published cards: prefer rows with preview screenshots,
+ * then rows whose last-shown date equals the global max, then longer First→Last run, then most
+ * recent last-shown, stable by input order.
  */
 export function pickSamplesForDisplay(
   scanned: TransparencyScannedCreative[],
@@ -148,12 +153,14 @@ export function pickSamplesForDisplay(
   const globalTs = globalLatestIso ? Date.parse(`${globalLatestIso}T12:00:00Z`) : NaN;
   const decorated = scanned.map((row, index) => {
     const lastTs = row.latestAdLastShownAt ? Date.parse(`${row.latestAdLastShownAt}T12:00:00Z`) : NaN;
+    const hasPreview = hasPreviewPng(row) ? 1 : 0;
     const matchesGlobal =
       Number.isFinite(globalTs) && Number.isFinite(lastTs) && lastTs === globalTs ? 1 : 0;
     const run = row.runDays ?? -1;
-    return { row, index, lastTs, matchesGlobal, run };
+    return { row, index, hasPreview, lastTs, matchesGlobal, run };
   });
   decorated.sort((a, b) => {
+    if (b.hasPreview !== a.hasPreview) return b.hasPreview - a.hasPreview;
     if (b.matchesGlobal !== a.matchesGlobal) return b.matchesGlobal - a.matchesGlobal;
     if (b.run !== a.run) return b.run - a.run;
     const bt = Number.isFinite(b.lastTs) ? b.lastTs : -Infinity;

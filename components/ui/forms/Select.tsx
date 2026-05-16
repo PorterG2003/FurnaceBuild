@@ -42,6 +42,10 @@ interface SelectPropsBase<T> {
   itemColorVariant?: 'dot' | 'tint';
   /** Optional custom trigger. When provided, replaces the default trigger; use for icon buttons etc. */
   renderTrigger?: (props: { open: boolean; onPress: () => void }) => React.ReactNode;
+  /** When true, the trigger does not open the list (e.g. while a mutation is in flight). */
+  disabled?: boolean;
+  /** When provided, rows returning true are non-interactive and styled as disabled. */
+  isItemDisabled?: (item: T) => boolean;
 }
 
 export interface SelectPropsSearchable<T> extends SelectPropsBase<T> {
@@ -160,6 +164,8 @@ export function Select<T>({
   getItemColor,
   itemColorVariant = 'dot',
   renderTrigger,
+  disabled = false,
+  isItemDisabled,
 }: SelectProps<T>) {
   const sz = sizeStyles[size];
   const panel = panelSizeStyles[panelSize];
@@ -190,8 +196,9 @@ export function Select<T>({
   );
 
   const openPopover = useCallback(() => {
+    if (disabled) return;
     setOpen(true);
-  }, []);
+  }, [disabled]);
 
   const closePopover = useCallback(() => {
     setOpen(false);
@@ -199,10 +206,11 @@ export function Select<T>({
 
   const handleSelect = useCallback(
     (id: string, item: T | null) => {
+      if (item != null && isItemDisabled?.(item)) return;
       onChange(id, item);
       closePopover();
     },
-    [onChange, closePopover]
+    [onChange, closePopover, isItemDisabled]
   );
 
   // Measure trigger position when opening (for popover placement only)
@@ -221,11 +229,12 @@ export function Select<T>({
     return () => clearTimeout(t);
   }, [open, isCompactLayout]);
 
-  // Focus search when popover opens (only when searchable)
+  // Focus search when popover opens (only when searchable). Skip auto-focus inside a parent
+  // BottomSheet takeover so the keyboard does not cover the list until the user taps search.
   useEffect(() => {
     if (open && searchable) {
-      const delay = insideSheet ? 160 : 100;
-      const t = setTimeout(() => searchInputRef.current?.focus(), delay);
+      if (insideSheet) return;
+      const t = setTimeout(() => searchInputRef.current?.focus(), 100);
       return () => clearTimeout(t);
     }
   }, [open, searchable, insideSheet]);
@@ -377,11 +386,18 @@ export function Select<T>({
             const { primary, secondary } = getItemLabel(item);
             const isSelected = value === id;
             const itemColor = getItemColor ? getItemColor(item) ?? null : null;
+            const rowDisabled = isItemDisabled?.(item) ?? false;
             return (
               <TouchableOpacity
                 key={id}
                 onPress={() => handleSelect(id, item)}
-                style={{ ...rowStyle(isSelected, itemColor), ...noSelectStyle }}
+                disabled={rowDisabled}
+                accessibilityState={{ disabled: rowDisabled }}
+                style={{
+                  ...rowStyle(isSelected, itemColor),
+                  ...noSelectStyle,
+                  ...(rowDisabled ? { opacity: 0.45 } : null),
+                }}
               >
                 {itemColorVariant === 'dot' && getItemColor && itemColor ? (
                   <View
@@ -442,6 +458,7 @@ export function Select<T>({
       handleSelect,
       listMaxHeight,
       panel,
+      isItemDisabled,
     ]
   );
 
@@ -500,6 +517,8 @@ export function Select<T>({
             if (open) triggerRef.current?.measureInWindow((x, y, w, h) => setTriggerLayout({ x, y, w, h }));
           }}
           onPress={openPopover}
+          disabled={disabled}
+          accessibilityState={{ disabled }}
           activeOpacity={0.8}
           style={[
             itemColorVariant === 'tint' && triggerColor
@@ -514,6 +533,7 @@ export function Select<T>({
                 }
               : { ...triggerStyle, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', ...sz.trigger },
             noSelectStyle,
+            disabled ? { opacity: 0.45 } : null,
           ]}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 10 }}>

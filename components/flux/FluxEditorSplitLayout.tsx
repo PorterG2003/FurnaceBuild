@@ -44,7 +44,7 @@ export function FluxEditorSplitLayout({
   const isIdeation = variant === 'ideation';
   const keyboardTapBehavior = Platform.OS === 'web' ? 'always' : 'handled';
 
-  const editorContentPadding = isWide ? 8 : 0;
+  const editorContentPadding = isWide ? 6 : 0;
 
   const tabBar = !isWide && !isIdeation ? (
     <Tabs
@@ -55,14 +55,16 @@ export function FluxEditorSplitLayout({
       activeTab={narrowTab}
       onTabChange={(id) => setNarrowTab(id as FluxEditorSplitTab)}
       layout="equal"
-      marginBottom={12}
+      marginBottom={6}
+      textSize={12}
+      compact
       color="indigo"
     />
   ) : null;
 
   const editorScrollContentStyle = {
     padding: editorContentPadding,
-    paddingBottom: isWide ? 20 : 16,
+    paddingBottom: isWide ? 14 : 12,
     flexGrow: 1,
   };
 
@@ -120,10 +122,22 @@ export function FluxEditorSplitLayout({
           </View>
         ) : (
           <View className="flex-1 flex-row" style={{ minHeight: 0 }}>
-            <View className="border-r border-[#2A2A2A]" style={{ flex: 1, minWidth: 0 }}>
+            <View className="min-w-0 flex-1" style={{ minHeight: 0 }}>
+              {previewPane}
+            </View>
+            <View
+              className="border-l border-[#2A2A2A] overflow-hidden"
+              style={{
+                flexBasis: 380,
+                flexGrow: 0,
+                flexShrink: 1,
+                minWidth: 288,
+                maxWidth: 400,
+                minHeight: 0,
+              }}
+            >
               {editorPane}
             </View>
-            <View style={{ flex: 2, minWidth: 0 }}>{previewPane}</View>
           </View>
         )}
       </View>
@@ -133,7 +147,7 @@ export function FluxEditorSplitLayout({
   return (
     <View className="flex-1">
       {header}
-      <View className="flex-1 px-3 pt-1.5" style={{ minHeight: 0 }}>
+      <View className="flex-1 px-2.5 pt-1" style={{ minHeight: 0 }}>
         {tabBar}
         {isIdeation || narrowTab === 'editor' ? editorPane : previewPane}
       </View>

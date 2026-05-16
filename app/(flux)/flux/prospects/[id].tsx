@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  Pressable,
   ActivityIndicator,
   Alert,
   Platform,
@@ -11,15 +9,32 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button } from '@/components/ui/button';
-import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/feedback/Toast';
+import {
+  ArrowTopRightOnSquareIcon,
+  ChatBubbleLeftRightIcon,
+  MagnifyingGlassIcon,
+  PaintBrushIcon,
+  RectangleStackIcon,
+  TagIcon,
+  UserIcon,
+} from 'react-native-heroicons/outline';
 import { PageRenderer } from '@/components/flux/PageRenderer';
 import {
-  FluxEditorSplitLayout,
+  FluxBrowserTabBar,
   FluxChatPanel,
+  FluxEditorSplitLayout,
+  FluxProspectEditorHeader,
   FluxProspectPageManualEditor,
+  FluxProspectWebsiteIntelSnippet,
+  FLUX_PROSPECT_PAGE_TAB,
+  type FluxBrowserTabItem,
 } from '@/components/flux';
 import { FLUX_MANUAL_BLOCK_TYPE_LABELS } from '@/components/flux/FluxManualBlockEditor';
+import {
+  fluxBrowserTabPanelSidebarClass,
+  fluxPanelActionRowClass,
+} from '@/lib/flux/fluxEditorPanelClasses';
 import {
   FluxProspectDetailsFields,
   fluxProspectFieldValuesToBrandProfile,
@@ -76,16 +91,11 @@ import { getLastFluxChatSummary } from '@/lib/flux/fluxCampaignChatState';
 import { sellerProfileFromCampaignRow } from '@/lib/flux/campaignSeller';
 import { syncFluxPageConfigLogo } from '@/lib/flux/syncFluxPageConfigLogo';
 import { mergeServerCompetitorAuditBlocksIntoDraft } from '@/lib/flux/mergeServerCompetitorAuditBlocks';
+import { BaseModal } from '@/components/ui/modals/BaseModal';
 
-const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
-  live: 'bg-green-500/20 text-green-300 border-green-500/30',
-  archived: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
-};
+const FLUX_PROSPECT_SIDEBAR_TAB_AUDIT = 'audit';
 
 const STATUSES: FluxPageStatus[] = ['draft', 'live', 'archived'];
-
-type ProspectEditorTab = 'manual' | 'chat';
 
 type ParsedPageSaveIssue = {
   blockId: string | null;
@@ -95,11 +105,6 @@ type ParsedPageSaveIssue = {
   detail: string;
   isCopyLimit: boolean;
 };
-
-const PROSPECT_EDITOR_TABS = [
-  { id: 'manual' as const, label: 'Manual' },
-  { id: 'chat' as const, label: 'Chat' },
-];
 
 function clonePageConfig(config: PageConfig): PageConfig {
   return JSON.parse(JSON.stringify(config)) as PageConfig;
@@ -204,7 +209,9 @@ export default function ProspectDetail() {
   const [prospectDraft, setProspectDraft] = useState<FluxProspectDetailsFieldValues | null>(null);
   const [savingProspect, setSavingProspect] = useState(false);
 
-  const [editorTab, setEditorTab] = useState<ProspectEditorTab>('manual');
+  const [sidebarTab, setSidebarTab] = useState<string>(FLUX_PROSPECT_PAGE_TAB.blocks);
+  const [generateWiringDismissed, setGenerateWiringDismissed] = useState(false);
+  const [prospectDetailsModalOpen, setProspectDetailsModalOpen] = useState(false);
   const [draftPageConfig, setDraftPageConfig] = useState<PageConfig | null>(null);
   const [savingPage, setSavingPage] = useState(false);
   const [prospectChat, setProspectChat] = useState<FluxProspectPageChatState>(emptyFluxProspectPageChatState());
@@ -306,7 +313,7 @@ export default function ProspectDetail() {
     if (status === 'live' && !canPublishFluxProspectPage(page.page_config)) {
       Alert.alert(
         'Competitor audit incomplete',
-        'This page includes a competitor ad audit block that is not finished yet. Run the audit from the prospect editor and wait until it shows Ready, then save the page before going live.',
+        'This page includes a competitor ad audit block that is not finished yet. Open the Audit tab, run the audit, and wait until it shows Ready, then save the page before going live.',
       );
       return;
     }
@@ -367,43 +374,52 @@ export default function ProspectDetail() {
     }
   }, [page, draftSlug]);
 
-  const handleSaveSlug = useCallback(async () => {
-    if (!page || savingSlug) return;
-    const next = draftSlug.trim();
-    if (!next) {
-      toast.error('Slug cannot be empty.');
-      return;
-    }
-    if (next === page.slug) {
-      toast.success('Slug unchanged.');
-      return;
-    }
-    const ok = await checkSlugAvailable(next, page.id);
-    if (!ok) {
-      setSlugCheckAvailable(false);
-      toast.error('That slug is already taken.');
-      return;
-    }
-    const prev = page.slug;
-    setSavingSlug(true);
-    try {
-      const updated = await updateFluxPageSlug(page.id, next);
-      setPage(updated);
-      setDraftSlug(updated.slug);
-      setSlugCheckAvailable(null);
-      toast.success('Slug updated.');
-      if (prev !== updated.slug) {
-        Alert.alert(
-          'Public URL changed',
-          `Old path /p/${prev} will no longer work. Share /p/${updated.slug} instead.`,
-        );
+  const handleSaveSlug = useCallback(
+    async (opts?: { quiet?: boolean }): Promise<boolean> => {
+      if (!page || savingSlug) return true;
+      const next = draftSlug.trim();
+      if (!next) {
+        toast.error('Slug cannot be empty.');
+        return false;
       }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to update slug.');
-    } finally {
-      setSavingSlug(false);
-    }
-  }, [page, draftSlug, savingSlug, toast]);
+      if (next === page.slug) {
+        if (!opts?.quiet) {
+          toast.success('Slug unchanged.');
+        }
+        return true;
+      }
+      const ok = await checkSlugAvailable(next, page.id);
+      if (!ok) {
+        setSlugCheckAvailable(false);
+        toast.error('That slug is already taken.');
+        return false;
+      }
+      const prev = page.slug;
+      setSavingSlug(true);
+      try {
+        const updated = await updateFluxPageSlug(page.id, next);
+        setPage(updated);
+        setDraftSlug(updated.slug);
+        setSlugCheckAvailable(null);
+        if (!opts?.quiet) {
+          toast.success('Slug updated.');
+        }
+        if (prev !== updated.slug) {
+          Alert.alert(
+            'Public URL changed',
+            `Old path /p/${prev} will no longer work. Share /p/${updated.slug} instead.`,
+          );
+        }
+        return true;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to update slug.');
+        return false;
+      } finally {
+        setSavingSlug(false);
+      }
+    },
+    [page, draftSlug, savingSlug, toast],
+  );
 
   const handleCopyUrl = async () => {
     if (!page) return;
@@ -431,6 +447,62 @@ export default function ProspectDetail() {
     () => (page ? coercePageConfig(page.page_config) : null),
     [page?.id, page?.updated_at, page?.page_config],
   );
+
+  const prospectSidebarTabs = useMemo(() => {
+    const previewLive = draftPageConfig ?? savedPageConfig;
+    const hasCfg = previewLive != null;
+    const ready = Boolean(hasCfg && page && draftPageConfig && campaign);
+    const auditEligible =
+      hasCfg &&
+      Boolean(page && draftPageConfig && draftPageConfig.blocks.some((b) => b.type === 'competitor_ad_audit'));
+    const auditTab: FluxBrowserTabItem = {
+      id: FLUX_PROSPECT_SIDEBAR_TAB_AUDIT,
+      label: 'Audit',
+      icon: MagnifyingGlassIcon,
+    };
+
+    if (ready) {
+      const tabs: FluxBrowserTabItem[] = [];
+      if (prospectDraft) {
+        tabs.push(
+          { id: FLUX_PROSPECT_PAGE_TAB.lead, label: 'Contact', icon: UserIcon },
+          { id: FLUX_PROSPECT_PAGE_TAB.brand, label: 'Brand', icon: TagIcon },
+        );
+      } else {
+        tabs.push({ id: FLUX_PROSPECT_PAGE_TAB.onpage, label: 'On-page', icon: UserIcon });
+      }
+      tabs.push(
+        { id: FLUX_PROSPECT_PAGE_TAB.theme, label: 'Theme', icon: PaintBrushIcon },
+        { id: FLUX_PROSPECT_PAGE_TAB.blocks, label: 'Blocks', icon: RectangleStackIcon },
+      );
+      if (auditEligible) {
+        tabs.push(auditTab);
+      }
+      tabs.push(
+        { id: FLUX_PROSPECT_PAGE_TAB.campaign, label: 'Campaign', icon: ArrowTopRightOnSquareIcon },
+        { id: 'chat', label: 'Chat', icon: ChatBubbleLeftRightIcon },
+      );
+      return tabs;
+    }
+
+    const fallback: FluxBrowserTabItem[] = [];
+    if (auditEligible) {
+      fallback.push(auditTab);
+    }
+    fallback.push({
+      id: FLUX_PROSPECT_PAGE_TAB.blocks,
+      label: 'Blocks',
+      icon: RectangleStackIcon,
+    });
+    return fallback;
+  }, [draftPageConfig, savedPageConfig, page, campaign, prospectDraft]);
+
+  useEffect(() => {
+    const valid = new Set(prospectSidebarTabs.map((t) => t.id));
+    if (!valid.has(sidebarTab)) {
+      setSidebarTab(prospectSidebarTabs[0]?.id ?? FLUX_PROSPECT_PAGE_TAB.blocks);
+    }
+  }, [prospectSidebarTabs, sidebarTab]);
 
   const pageDirty = useMemo(() => {
     if (!draftPageConfig || !savedPageConfig) return false;
@@ -518,14 +590,14 @@ export default function ProspectDetail() {
       lines.push('An audit job is already in progress; this page refreshes when it finishes.');
     }
     if (prospectRowDirty) {
-      lines.push('Save prospect changes before running the audit.');
+      lines.push('Save changes in the header before running the audit.');
     }
     if (pageDirty) {
-      lines.push('Save page changes before running the audit.');
+      lines.push('Save page changes in the header before running the audit.');
     }
     if (prospect && !isValidFluxServiceArea(prospect.service_area)) {
       lines.push(
-        'Set a Google Places service area on the prospect below and save. Block headings are only display text.',
+        'Set a Google Places service area on the prospect (Contact / Brand or Prospect details), then save in the header. Block headings are only display text.',
       );
     }
     return lines;
@@ -578,83 +650,209 @@ export default function ProspectDetail() {
     setProspectDraft(fluxProspectRowToFieldValues(prospect));
   }, [prospect]);
 
-  const handleSaveProspectRow = useCallback(async () => {
-    if (!prospect || !prospectDraft || savingProspect) return;
-    setSavingProspect(true);
-    try {
-      const updated = await updateFluxProspect(prospect.id, {
-        name: prospectDraft.name.trim(),
-        company: prospectDraft.company.trim(),
-        role: prospectDraft.role.trim() || null,
-        url: prospectDraft.url.trim() || null,
-        industry: prospectDraft.industry.trim() || null,
-        company_size: prospectDraft.company_size.trim() || null,
-        email_notes: prospectDraft.email_notes.trim() || null,
-        brand_profile: fluxProspectFieldValuesToBrandProfile(prospectDraft),
-        service_area: prospectDraft.service_area,
-      });
-      setProspect(updated);
-      if (page && campaign) {
-        const savedPageConfig = coercePageConfig(page.page_config);
-        if (savedPageConfig) {
-          const syncedPageConfig = syncFluxPageConfigLogo(savedPageConfig, {
-            prospectBrand: updated.brand_profile,
-            prospectWebsiteIntel: updated.website_intel_snapshot,
-            sellerBrand: campaign.seller_brand_profile,
-            sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
-            brandingPolicy: campaign.branding_policy,
-          });
-          const currentLogoUrl = savedPageConfig.theme.logoUrl?.trim() || undefined;
-          const nextLogoUrl = syncedPageConfig.theme.logoUrl?.trim() || undefined;
-          if (currentLogoUrl !== nextLogoUrl) {
-            const syncedPage = await updateFluxPageConfig(page.id, syncedPageConfig);
-            setPage(syncedPage);
+  const handleSaveProspectRow = useCallback(
+    async (opts?: { quiet?: boolean }): Promise<boolean> => {
+      if (!prospect || !prospectDraft || savingProspect) return false;
+      setSavingProspect(true);
+      try {
+        const updated = await updateFluxProspect(prospect.id, {
+          name: prospectDraft.name.trim(),
+          company: prospectDraft.company.trim(),
+          role: prospectDraft.role.trim() || null,
+          url: prospectDraft.url.trim() || null,
+          industry: prospectDraft.industry.trim() || null,
+          company_size: prospectDraft.company_size.trim() || null,
+          email_notes: prospectDraft.email_notes.trim() || null,
+          brand_profile: fluxProspectFieldValuesToBrandProfile(prospectDraft),
+          service_area: prospectDraft.service_area,
+        });
+        setProspect(updated);
+        if (page && campaign) {
+          const savedPageConfig = coercePageConfig(page.page_config);
+          if (savedPageConfig) {
+            const syncedPageConfig = syncFluxPageConfigLogo(savedPageConfig, {
+              prospectBrand: updated.brand_profile,
+              prospectWebsiteIntel: updated.website_intel_snapshot,
+              sellerBrand: campaign.seller_brand_profile,
+              sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
+              brandingPolicy: campaign.branding_policy,
+            });
+            const currentLogoUrl = savedPageConfig.theme.logoUrl?.trim() || undefined;
+            const nextLogoUrl = syncedPageConfig.theme.logoUrl?.trim() || undefined;
+            if (currentLogoUrl !== nextLogoUrl) {
+              const syncedPage = await updateFluxPageConfig(page.id, syncedPageConfig);
+              setPage(syncedPage);
+            }
           }
         }
+        setProspectDraft(fluxProspectRowToFieldValues(updated));
+        setProspectDetailsModalOpen(false);
+        if (!opts?.quiet) {
+          toast.success('Prospect saved.');
+        }
+        return true;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to save prospect.');
+        return false;
+      } finally {
+        setSavingProspect(false);
       }
-      setProspectDraft(fluxProspectRowToFieldValues(updated));
-      toast.success('Prospect saved.');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save prospect.');
-    } finally {
-      setSavingProspect(false);
-    }
-  }, [campaign, page, prospect, prospectDraft, savingProspect, toast]);
+    },
+    [campaign, page, prospect, prospectDraft, savingProspect, toast],
+  );
 
-  const handleSavePage = useCallback(async () => {
-    if (!page || !draftPageConfig || !prospect || !campaign || savingPage) return;
-    const issues = pageSaveIssues;
-    if (issues.length > 0) {
+  const handleSavePage = useCallback(
+    async (opts?: { quiet?: boolean }): Promise<boolean> => {
+      if (!page || !draftPageConfig || !prospect || !campaign || savingPage) return false;
+      const issues = pageSaveIssues;
+      if (issues.length > 0) {
+        if (!opts?.quiet) {
+          toast.error(
+            issues.length === 1
+              ? 'Fix 1 page issue before saving.'
+              : `Fix ${issues.length} page issues before saving.`,
+          );
+          console.warn('[flux] page save blocked by validation', issues);
+          Alert.alert('Fix before saving', issues.join('\n'));
+        }
+        return false;
+      }
+      setSavingPage(true);
+      try {
+        const syncedPageConfig = syncFluxPageConfigLogo(draftPageConfig, {
+          prospectBrand: prospect.brand_profile,
+          prospectWebsiteIntel: prospect.website_intel_snapshot,
+          sellerBrand: campaign.seller_brand_profile,
+          sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
+          brandingPolicy: campaign.branding_policy,
+        });
+        const updated = await updateFluxPageConfig(page.id, syncedPageConfig);
+        setPage(updated);
+        if (!opts?.quiet) {
+          toast.success('Page saved.');
+        }
+        return true;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to save page.');
+        return false;
+      } finally {
+        setSavingPage(false);
+      }
+    },
+    [campaign, draftPageConfig, page, pageSaveIssues, prospect, savingPage, toast],
+  );
+
+  const handleSaveAll = useCallback(async () => {
+    const hasPendingSave = prospectRowDirty || slugDirty || pageDirty;
+    if (!hasPendingSave) return;
+    if (savingProspect || savingSlug || savingPage || regenerating) return;
+
+    if (slugDirty && page) {
+      const next = draftSlug.trim();
+      if (!next) {
+        toast.error('Slug cannot be empty.');
+        return;
+      }
+      if (slugCheckAvailable === false) {
+        toast.error('That slug is already taken.');
+        return;
+      }
+      if (next !== page.slug && slugCheckAvailable !== true) {
+        setSlugChecking(true);
+        try {
+          const available = await checkSlugAvailable(next, page.id);
+          setSlugCheckAvailable(available);
+          if (!available) {
+            toast.error('That slug is already taken.');
+            return;
+          }
+        } finally {
+          setSlugChecking(false);
+        }
+      }
+    }
+
+    if (pageDirty && pageSaveIssues.length > 0) {
       toast.error(
-        issues.length === 1
+        pageSaveIssues.length === 1
           ? 'Fix 1 page issue before saving.'
-          : `Fix ${issues.length} page issues before saving.`,
+          : `Fix ${pageSaveIssues.length} page issues before saving.`,
       );
-      console.warn('[flux] page save blocked by validation', issues);
-      Alert.alert('Fix before saving', issues.join('\n'));
+      console.warn('[flux] page save blocked by validation', pageSaveIssues);
+      Alert.alert('Fix before saving', pageSaveIssues.join('\n'));
       return;
     }
-    setSavingPage(true);
-    try {
-      const syncedPageConfig = syncFluxPageConfigLogo(draftPageConfig, {
-        prospectBrand: prospect.brand_profile,
-        prospectWebsiteIntel: prospect.website_intel_snapshot,
-        sellerBrand: campaign.seller_brand_profile,
-        sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
-        brandingPolicy: campaign.branding_policy,
-      });
-      const updated = await updateFluxPageConfig(page.id, syncedPageConfig);
-      setPage(updated);
-      toast.success('Page saved.');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save page.');
-    } finally {
-      setSavingPage(false);
+
+    const hadProspect = prospectRowDirty;
+    const hadSlug = Boolean(page && slugDirty);
+    const hadPage = pageDirty;
+
+    const labels: string[] = [];
+    if (hadProspect) {
+      const ok = await handleSaveProspectRow({ quiet: true });
+      if (!ok) {
+        toast.error('Prospect was not saved. Slug and page were not saved.');
+        return;
+      }
+      labels.push('prospect');
     }
-  }, [campaign, draftPageConfig, page, pageSaveIssues, prospect, savingPage, toast]);
+    if (hadSlug) {
+      const ok = await handleSaveSlug({ quiet: true });
+      if (!ok) {
+        toast.error(
+          labels.length > 0
+            ? 'Slug was not saved. Page draft was not saved.'
+            : 'Slug was not saved.',
+        );
+        return;
+      }
+      labels.push('URL slug');
+    }
+    if (hadPage) {
+      const ok = await handleSavePage({ quiet: true });
+      if (!ok) {
+        toast.error(
+          labels.length > 0
+            ? 'Page draft was not saved. Prospect and slug changes were saved.'
+            : 'Page was not saved.',
+        );
+        return;
+      }
+      labels.push('page');
+    }
+
+    if (labels.length === 1) {
+      toast.success(
+        labels[0] === 'prospect'
+          ? 'Prospect saved.'
+          : labels[0] === 'page'
+            ? 'Page saved.'
+            : 'URL slug saved.',
+      );
+    } else if (labels.length > 1) {
+      toast.success(`Saved: ${labels.join(', ')}.`);
+    }
+  }, [
+    checkSlugAvailable,
+    draftSlug,
+    handleSavePage,
+    handleSaveProspectRow,
+    handleSaveSlug,
+    page,
+    pageDirty,
+    pageSaveIssues,
+    prospectRowDirty,
+    regenerating,
+    savingPage,
+    savingProspect,
+    savingSlug,
+    slugCheckAvailable,
+    slugDirty,
+    toast,
+  ]);
 
   const handleOpenIssue = useCallback((blockId: string | null) => {
-    setEditorTab('manual');
+    setSidebarTab(FLUX_PROSPECT_PAGE_TAB.blocks);
     if (!blockId) return;
     setRequestedEditingBlockId(blockId);
   }, []);
@@ -819,11 +1017,11 @@ export default function ProspectDetail() {
         return;
       }
       if (pageDirty) {
-        toast.error('Save page changes before running the audit.');
+        toast.error('Save in the header before running the audit.');
         return;
       }
       if (prospectRowDirty) {
-        toast.error('Save prospect (including service area) before running the audit.');
+        toast.error('Save in the header before running the audit.');
         return;
       }
       if (!prospect || !isValidFluxServiceArea(prospect.service_area)) {
@@ -860,289 +1058,162 @@ export default function ProspectDetail() {
   const hasPageConfig = previewLiveConfig != null;
   const fluxGenerateConfigured = Boolean(getFluxGenerateUrl());
   const fluxEditorChatConfigured = Boolean(getFluxEditorChatUrl());
+  const prospectEditorReady = hasPageConfig && Boolean(page && draftPageConfig && campaign);
+  const auditSidebarEligible =
+    hasPageConfig &&
+    Boolean(page && draftPageConfig && draftPageConfig.blocks.some((b) => b.type === 'competitor_ad_audit'));
+  const showProspectDetailsCta =
+    !hasPageConfig && Boolean(page && prospect && prospectDraft && campaign);
+
+  const hasPendingSave = prospectRowDirty || slugDirty || pageDirty;
+  const saveAllBlockedBySlug =
+    Boolean(page && slugDirty && (draftSlug.trim() === '' || slugCheckAvailable === false));
+  const saveAllBlockedByPage = Boolean(pageDirty && pageSaveIssues.length > 0);
+  const saveAllBusy = savingProspect || savingSlug || savingPage;
+  const saveAllDisabled =
+    !hasPendingSave ||
+    saveAllBlockedBySlug ||
+    saveAllBlockedByPage ||
+    saveAllBusy ||
+    regenerating;
 
   return (
-    <FluxEditorSplitLayout
-      editorNestableScroll={editorTab === 'manual' && draftPageConfig != null}
+    <>
+      <FluxEditorSplitLayout
+      editorNestableScroll={sidebarTab === FLUX_PROSPECT_PAGE_TAB.blocks && draftPageConfig != null}
       editorLabel="Edit"
       header={(
-        <View className="px-4 pt-2 pb-3 border-b border-[#2A2A2A]">
-          <Pressable onPress={() => router.back()}>
-            <Text className="text-gray-400 text-sm font-instrument">← Back</Text>
-          </Pressable>
-        </View>
+        <FluxProspectEditorHeader
+          onBack={() => router.back()}
+          prospect={prospect}
+          campaign={campaign}
+          fluxGenerateConfigured={fluxGenerateConfigured}
+          generateWiringDismissed={generateWiringDismissed}
+          onDismissGenerateWiring={() => setGenerateWiringDismissed(true)}
+          page={page}
+          hasPageConfig={hasPageConfig}
+          draftSlug={draftSlug}
+          onDraftSlugChange={(t) => {
+            setDraftSlug(t);
+            setSlugCheckAvailable(null);
+          }}
+          onSlugBlur={() => void checkDraftSlug()}
+          slugChecking={slugChecking}
+          slugCheckAvailable={slugCheckAvailable}
+          slugDirty={slugDirty}
+          onSaveAll={() => void handleSaveAll()}
+          saveAllDisabled={saveAllDisabled}
+          saveAllBusy={saveAllBusy}
+          onCopyUrl={() => void handleCopyUrl()}
+          regenerating={regenerating}
+          onRegenerate={() => void handleRegenerate()}
+          statuses={STATUSES}
+          statusUpdating={statusUpdating}
+          onStatusChange={(s) => void handleStatusChange(s)}
+          showProspectDetailsCta={showProspectDetailsCta}
+          onOpenProspectDetails={
+            showProspectDetailsCta ? () => setProspectDetailsModalOpen(true) : undefined
+          }
+        />
       )}
       editor={(
-        <>
-          {!fluxGenerateConfigured && (
-            <View className="border border-red-500/40 bg-red-500/10 rounded-xl p-4 mb-4">
-              <Text className="text-red-100 text-sm font-instrument-semibold mb-1">Generate is not wired</Text>
-              <Text className="text-red-100/90 text-xs font-instrument leading-5">
-                The app needs the Flux Lambda Function URL. After `npx ampx sandbox` or deploy, your root{' '}
-                <Text className="font-mono">amplify_outputs.json</Text> should include{' '}
-                <Text className="font-mono">custom.fluxGenerateUrl</Text>. Restart Expo if you just generated that file.
-                Alternatively set <Text className="font-mono">EXPO_PUBLIC_FLUX_GENERATE_URL</Text> in{' '}
-                <Text className="font-mono">.env.local</Text> to that URL. The Lambda also needs secrets:{' '}
-                <Text className="font-mono">OPENROUTER_API_KEY</Text>, <Text className="font-mono">SUPABASE_SECRET_KEY</Text>.
-              </Text>
-            </View>
-          )}
-
-          <View className="flex-row items-start justify-between mb-4">
-            <View className="flex-1 mr-4">
-              <Text className="text-white text-xl font-instrument-semibold">{prospect.name}</Text>
-              <Text className="text-gray-400 text-sm font-instrument">
-                {prospect.company}
-                {prospect.role ? ` · ${prospect.role}` : ''}
-              </Text>
-              {campaign && (
-                <Text className="text-gray-500 text-xs font-instrument mt-1">Campaign: {campaign.name}</Text>
-              )}
-            </View>
-          </View>
-
-          {page?.status === 'live' && !hasRenderableFluxPageConfig(page.page_config) && (
-            <View className="border border-amber-500/40 bg-amber-500/10 rounded-xl p-4 mb-4">
-              <Text className="text-amber-100 text-sm font-instrument leading-5">
-                Status is <Text className="font-instrument-semibold">live</Text> but there is no generated page yet
-                (empty config). The public URL will not show content until you run Generate or Regenerate, or you can
-                switch back to draft.
-              </Text>
-            </View>
-          )}
-
-          {page?.status === 'live' &&
-            hasRenderableFluxPageConfig(page.page_config) &&
-            !canPublishFluxProspectPage(page.page_config) && (
-              <View className="border border-amber-500/40 bg-amber-500/10 rounded-xl p-4 mb-4">
-                <Text className="text-amber-100 text-sm font-instrument leading-5">
-                  Status is <Text className="font-instrument-semibold">live</Text> but a competitor ad audit block is not
-                  complete. Finish the audit (or switch to draft) so the public page matches your quality bar.
-                </Text>
-              </View>
-            )}
-
-          {page && (
-            <View className="border border-[#2A2A2A] rounded-xl p-4 bg-[#1A1A1A] mb-4">
-              <View className="mb-3">
-                <Text className="text-gray-400 text-xs font-instrument mb-1">Slug</Text>
-                <View className="flex-row items-center gap-2 flex-wrap">
-                  <Text className="text-gray-400 text-sm font-instrument">/p/</Text>
-                  <TextInput
-                    className="flex-1 min-w-[120px] text-white text-sm font-instrument-semibold bg-[#222] border border-[#333] rounded-lg px-3 py-2"
-                    value={draftSlug}
-                    onChangeText={(t) => {
-                      setDraftSlug(t);
-                      setSlugCheckAvailable(null);
-                    }}
-                    onBlur={() => void checkDraftSlug()}
-                    placeholder="your-page-slug"
-                    placeholderTextColor="#555"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  {slugChecking ? (
-                    <ActivityIndicator size="small" color="#6b7280" />
-                  ) : slugCheckAvailable === true ? (
-                    <Text className="text-green-400 text-xs font-instrument">Available</Text>
-                  ) : slugCheckAvailable === false ? (
-                    <Text className="text-red-400 text-xs font-instrument">Taken</Text>
-                  ) : null}
-                </View>
-                <View className="flex-row flex-wrap gap-2 mt-2 items-center">
-                  <Button
-                    size="sm"
-                    onPress={handleSaveSlug}
-                    disabled={savingSlug || !slugDirty || slugCheckAvailable === false}
-                  >
-                    {savingSlug ? 'Saving…' : 'Save slug'}
-                  </Button>
-                  <Button size="sm" variant="secondary" onPress={handleCopyUrl}>
-                    Copy URL
-                  </Button>
-                </View>
-              </View>
-
-              <View className="flex-row items-center gap-2 mb-3">
-                <Text className="text-gray-400 text-xs font-instrument mr-2">Status:</Text>
-                {STATUSES.map((s) => (
-                  <Pressable
-                    key={s}
-                    className={`px-3 py-1 rounded-lg border ${
-                      page.status === s ? STATUS_COLORS[s] : 'border-[#3A3A3A] bg-[#2A2A2A]'
-                    }`}
-                    onPress={() => handleStatusChange(s)}
-                    disabled={
-                      statusUpdating ||
-                      (s === 'live' && !canPublishFluxProspectPage(page.page_config))
-                    }
-                  >
-                    <Text
-                      className={`text-xs font-instrument-semibold ${page.status === s ? '' : 'text-gray-400'}`}
-                    >
-                      {s}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <View className="flex-row items-center gap-4">
-                <Button size="sm" onPress={handleRegenerate} disabled={regenerating}>
-                  {regenerating ? 'Generating...' : 'Regenerate'}
-                </Button>
-                <View>
-                  <Text className="text-gray-500 text-xs font-instrument">{page.view_count} views</Text>
-                  {page.last_viewed_at && (
-                    <Text className="text-gray-600 text-xs font-instrument">
-                      Last: {new Date(page.last_viewed_at).toLocaleDateString()}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            </View>
-          )}
-
-          {hasPageConfig && page && draftPageConfig && draftPageConfig.blocks.some((b) => b.type === 'competitor_ad_audit') && (
-            <View className="border border-indigo-500/25 bg-indigo-500/5 rounded-xl p-4 mb-4">
-              <Text className="text-white text-sm font-instrument-semibold mb-1">Competitor ad audit</Text>
-              <Text className="text-gray-400 text-xs font-instrument mb-3 leading-5">
-                Uses the prospect service area (saved on the prospect row). Save prospect and page before starting.
-                Polling refreshes this page when the job completes.
-              </Text>
-              {!getFluxCompetitorAuditStartUrl() ? (
-                <Text className="text-amber-200/90 text-xs font-instrument mb-2">
-                  Deploy Amplify so amplify_outputs.json includes custom.fluxCompetitorAuditStartUrl (or set
-                  EXPO_PUBLIC_FLUX_COMPETITOR_AUDIT_START_URL).
-                </Text>
-              ) : null}
-              {competitorAuditRunBlockers.length > 0 ? (
-                <View className="mb-3 gap-1.5">
-                  {competitorAuditRunBlockers.map((line) => (
-                    <Text key={line} className="text-amber-200/95 text-xs font-instrument leading-5">
-                      — {line}
-                    </Text>
-                  ))}
-                </View>
-              ) : null}
+        <View className="flex-1 min-h-0 self-stretch min-w-0 bg-[#1a1a1a]">
+          <FluxBrowserTabBar
+            appearance="sidebar"
+            tabs={prospectSidebarTabs}
+            activeTab={sidebarTab}
+            onTabChange={setSidebarTab}
+          />
+          <View className={`${fluxBrowserTabPanelSidebarClass} gap-2`}>
+            {sidebarTab === FLUX_PROSPECT_SIDEBAR_TAB_AUDIT && auditSidebarEligible && page && draftPageConfig ? (
               <View className="gap-2">
-                {draftPageConfig.blocks
-                  .filter((b) => b.type === 'competitor_ad_audit')
-                  .map((b) => (
-                    <View key={b.id} className="flex-row flex-wrap items-center gap-2">
-                      <Text className="text-gray-300 text-xs font-instrument flex-1 min-w-[140px]">
-                        {b.props.heading?.trim() || 'Audit block'} · {b.props.status}
-                      </Text>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={
-                          auditBusyBlockId === b.id ||
-                          Boolean(auditPollJobId) ||
-                          prospectRowDirty ||
-                          pageDirty ||
-                          !isValidFluxServiceArea(prospect.service_area) ||
-                          b.props.status === 'running'
-                        }
-                        accessibilityHint={
-                          competitorAuditRunBlockers.length > 0
-                            ? competitorAuditRunBlockers.join(' ')
-                            : b.props.status === 'running'
-                              ? 'Audit is running'
-                              : 'Starts the competitor ad audit job'
-                        }
-                        onPress={() => void handleStartCompetitorAudit(b.id)}
-                      >
-                        {auditBusyBlockId === b.id
-                          ? 'Starting…'
-                          : b.props.status === 'running'
-                            ? 'Running…'
-                            : 'Run audit'}
-                      </Button>
-                    </View>
-                  ))}
-              </View>
-            </View>
-          )}
-
-          {!hasPageConfig && page && (
-            <View className="border border-[#2A2A2A] rounded-xl p-6 items-center mb-4">
-              <Text className="text-gray-400 text-sm font-instrument mb-3">Page not yet generated.</Text>
-              <Button size="sm" onPress={handleRegenerate} disabled={regenerating}>
-                {regenerating ? 'Generating...' : 'Generate Now'}
-              </Button>
-            </View>
-          )}
-
-          {!hasPageConfig && page && prospect && prospectDraft && campaign && (
-            <View className="border border-[#2A2A2A] rounded-xl p-4 bg-[#1A1A1A] gap-2 mb-4">
-              <FluxProspectDetailsFields
-                partition="full"
-                variant="embedded"
-                showBrandProfile
-                values={prospectDraft}
-                onChange={patchProspectDraft}
-                inputClassName="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-                labelClassName="text-gray-400 text-xs font-instrument mb-1"
-              />
-              {prospect.website_intel_snapshot ? (
-                <View className="mt-2 border border-[#2A2A2A] rounded-xl p-3 gap-1">
-                  <Text className="text-gray-500 text-xs uppercase tracking-wider font-instrument-semibold">
-                    Website intel (read-only)
+                <View className="border border-indigo-500/25 bg-indigo-500/5 rounded-lg p-2.5">
+                  <Text className="text-white text-sm font-instrument-semibold mb-1">Competitor ad audit</Text>
+                  <Text className="text-gray-400 text-xs font-instrument mb-3 leading-5">
+                    Uses the prospect service area (saved on the prospect row). Save changes in the header before
+                    starting. Polling refreshes this page when the job completes.
                   </Text>
-                  <Text className="text-gray-400 text-xs font-instrument">
-                    Domain: {prospect.website_intel_snapshot.normalized_domain_key}
-                    {prospect.website_intel_snapshot.hit ? ' · cached hit' : ''}
-                  </Text>
-                  {prospect.website_intel_snapshot.extracted_profile?.business_summary ? (
-                    <Text className="text-gray-300 text-xs font-instrument mt-1" numberOfLines={4}>
-                      {prospect.website_intel_snapshot.extracted_profile.business_summary}
+                  {!getFluxCompetitorAuditStartUrl() ? (
+                    <Text className="text-amber-200/90 text-xs font-instrument mb-2">
+                      Deploy Amplify so amplify_outputs.json includes custom.fluxCompetitorAuditStartUrl (or set
+                      EXPO_PUBLIC_FLUX_COMPETITOR_AUDIT_START_URL).
                     </Text>
                   ) : null}
+                  {competitorAuditRunBlockers.length > 0 ? (
+                    <View className="mb-3 gap-1.5">
+                      {competitorAuditRunBlockers.map((line) => (
+                        <Text key={line} className="text-amber-200/95 text-xs font-instrument leading-5">
+                          — {line}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : null}
+                  <View className="gap-2">
+                    {draftPageConfig.blocks
+                      .filter((b) => b.type === 'competitor_ad_audit')
+                      .map((b) => (
+                        <View key={b.id} className="flex-row flex-wrap items-center gap-2">
+                          <Text className="text-gray-300 text-xs font-instrument flex-1 min-w-[140px]">
+                            {b.props.heading?.trim() || 'Audit block'} · {b.props.status}
+                          </Text>
+                          <Button
+                            size="2xs"
+                            variant="secondary"
+                            disabled={
+                              auditBusyBlockId === b.id ||
+                              Boolean(auditPollJobId) ||
+                              prospectRowDirty ||
+                              pageDirty ||
+                              !isValidFluxServiceArea(prospect.service_area) ||
+                              b.props.status === 'running'
+                            }
+                            accessibilityHint={
+                              competitorAuditRunBlockers.length > 0
+                                ? competitorAuditRunBlockers.join(' ')
+                                : b.props.status === 'running'
+                                  ? 'Audit is running'
+                                  : 'Starts the competitor ad audit job'
+                            }
+                            onPress={() => void handleStartCompetitorAudit(b.id)}
+                          >
+                            {auditBusyBlockId === b.id
+                              ? 'Starting…'
+                              : b.props.status === 'running'
+                                ? 'Running…'
+                                : 'Run audit'}
+                          </Button>
+                        </View>
+                      ))}
+                  </View>
                 </View>
-              ) : null}
-              <View className="flex-row flex-wrap gap-2 items-center mt-2">
-                <Button
-                  size="sm"
-                  onPress={handleSaveProspectRow}
-                  disabled={savingProspect || !prospectRowDirty}
-                >
-                  {savingProspect ? 'Saving…' : 'Save prospect'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onPress={handleDiscardProspectRow}
-                  disabled={!prospectRowDirty}
-                >
-                  Discard
-                </Button>
-                {prospectRowDirty ? (
-                  <Text className="text-amber-200/90 text-xs font-instrument">Unsaved prospect changes</Text>
-                ) : null}
               </View>
-            </View>
-          )}
+            ) : null}
 
-          {hasPageConfig && page && draftPageConfig && campaign && (
-            <>
-              <Tabs
-                tabs={PROSPECT_EDITOR_TABS}
-                activeTab={editorTab}
-                onTabChange={(tabId) => setEditorTab(tabId as ProspectEditorTab)}
-                layout="equal"
-                marginBottom={12}
-                color="indigo"
-              />
+            {!prospectEditorReady && sidebarTab !== 'chat' && sidebarTab !== FLUX_PROSPECT_SIDEBAR_TAB_AUDIT ? (
+              <View className="rounded-lg border border-[#2A2A2A] bg-black/20 p-4">
+                <Text className="text-gray-400 text-sm font-instrument leading-5">
+                  {!page
+                    ? 'No prospect page is linked yet.'
+                    : !campaign
+                      ? 'Campaign data could not be loaded.'
+                      : !hasPageConfig
+                        ? 'Page configuration is still loading.'
+                        : 'The editor will be available once everything finishes loading.'}
+                </Text>
+              </View>
+            ) : null}
 
-              {editorTab === 'manual' ? (
-                <View className="gap-3">
+            {prospectEditorReady && sidebarTab !== 'chat' && sidebarTab !== FLUX_PROSPECT_SIDEBAR_TAB_AUDIT ? (
+                <View className="gap-2">
                   <FluxProspectPageManualEditor
+                    activeSection={sidebarTab}
                     pageConfig={draftPageConfig}
                     onChange={setDraftPageConfig}
                     contentAssets={template?.content_assets ?? []}
                     campaignId={campaign.id}
                     requestedEditingBlockId={requestedEditingBlockId}
                     issueCountByBlockId={pageIssueCountByBlockId}
+                    onRequestSection={setSidebarTab}
                     prospectLeadSlot={
                       prospectDraft ? (
                         <FluxProspectDetailsFields
@@ -1154,8 +1225,6 @@ export default function ProspectDetail() {
                           onApplyFieldToPage={applyProspectFieldToPage}
                           values={prospectDraft}
                           onChange={patchProspectDraft}
-                          inputClassName="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-                          labelClassName="text-gray-400 text-xs font-instrument mb-1"
                         />
                       ) : null
                     }
@@ -1171,35 +1240,13 @@ export default function ProspectDetail() {
                             onApplyFieldToPage={applyProspectFieldToPage}
                             values={prospectDraft}
                             onChange={patchProspectDraft}
-                            inputClassName="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-                            labelClassName="text-gray-400 text-xs font-instrument mb-1"
                           />
                           {prospect.website_intel_snapshot ? (
-                            <View className="mt-2 border border-[#2A2A2A] rounded-xl p-3 gap-1">
-                              <Text className="text-gray-500 text-xs uppercase tracking-wider font-instrument-semibold">
-                                Website intel (read-only)
-                              </Text>
-                              <Text className="text-gray-400 text-xs font-instrument">
-                                Domain: {prospect.website_intel_snapshot.normalized_domain_key}
-                                {prospect.website_intel_snapshot.hit ? ' · cached hit' : ''}
-                              </Text>
-                              {prospect.website_intel_snapshot.extracted_profile?.business_summary ? (
-                                <Text className="text-gray-300 text-xs font-instrument mt-1" numberOfLines={4}>
-                                  {prospect.website_intel_snapshot.extracted_profile.business_summary}
-                                </Text>
-                              ) : null}
-                            </View>
+                            <FluxProspectWebsiteIntelSnippet snapshot={prospect.website_intel_snapshot} />
                           ) : null}
-                          <View className="flex-row flex-wrap gap-2 items-center mt-2">
+                          <View className={`${fluxPanelActionRowClass} mt-2`}>
                             <Button
-                              size="sm"
-                              onPress={handleSaveProspectRow}
-                              disabled={savingProspect || !prospectRowDirty}
-                            >
-                              {savingProspect ? 'Saving…' : 'Save prospect'}
-                            </Button>
-                            <Button
-                              size="sm"
+                              size="2xs"
                               variant="secondary"
                               onPress={handleDiscardProspectRow}
                               disabled={!prospectRowDirty}
@@ -1208,7 +1255,7 @@ export default function ProspectDetail() {
                             </Button>
                             {prospectRowDirty ? (
                               <Text className="text-amber-200/90 text-xs font-instrument">
-                                Unsaved prospect changes
+                                Unsaved prospect changes — use Save in the header
                               </Text>
                             ) : null}
                           </View>
@@ -1217,17 +1264,16 @@ export default function ProspectDetail() {
                     }
                   />
                   {pageSaveIssues.length > 0 ? (
-                    <View className="border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 gap-2">
+                    <View className="border border-amber-500/30 bg-amber-500/10 rounded-lg p-2 gap-1.5">
                       <Text className="text-amber-100 text-sm font-instrument-semibold">
                         Fix before saving
                       </Text>
                       <Text className="text-amber-100/90 text-xs font-instrument leading-5">
-                        These copy limits are enforced by the current page layout. Open a block below to shorten the
-                        flagged fields.
+                        These copy limits are enforced by the current page layout. Use <Text className="font-instrument-semibold">Save</Text> in the header after fixing, or open a block below to shorten the flagged fields.
                       </Text>
                       {hasCopyBudgetIssues ? (
                         <View className="pt-0.5">
-                          <Button size="xs" variant="secondary" onPress={() => handleToggleAllowLongCopy(true)}>
+                          <Button size="2xs" variant="secondary" onPress={() => handleToggleAllowLongCopy(true)}>
                             Allow long copy for this page
                           </Button>
                         </View>
@@ -1247,7 +1293,7 @@ export default function ProspectDetail() {
                             {issue.blockId ? (
                               <View className="pt-0.5">
                                 <Button
-                                  size="xs"
+                                  size="2xs"
                                   variant="secondary"
                                   onPress={() => handleOpenIssue(issue.blockId)}
                                 >
@@ -1261,7 +1307,7 @@ export default function ProspectDetail() {
                     </View>
                   ) : null}
                   {draftPageConfig.theme.allowLongCopy ? (
-                    <View className="border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 gap-2">
+                    <View className="border border-amber-500/30 bg-amber-500/10 rounded-lg p-2 gap-1.5">
                       <Text className="text-amber-100 text-sm font-instrument-semibold">
                         Long-copy override enabled
                       </Text>
@@ -1270,18 +1316,15 @@ export default function ProspectDetail() {
                         presets may overflow.
                       </Text>
                       <View className="pt-0.5">
-                        <Button size="xs" variant="secondary" onPress={() => handleToggleAllowLongCopy(false)}>
+                        <Button size="2xs" variant="secondary" onPress={() => handleToggleAllowLongCopy(false)}>
                           Re-enable copy limits
                         </Button>
                       </View>
                     </View>
                   ) : null}
-                  <View className="flex-row flex-wrap gap-2 items-center">
-                    <Button size="sm" onPress={handleSavePage} disabled={savingPage || !pageDirty}>
-                      {savingPage ? 'Saving…' : 'Save page'}
-                    </Button>
+                  <View className={fluxPanelActionRowClass}>
                     <Button
-                      size="sm"
+                      size="2xs"
                       variant="secondary"
                       onPress={handleDiscardPage}
                       disabled={!pageDirty}
@@ -1289,11 +1332,15 @@ export default function ProspectDetail() {
                       Discard edits
                     </Button>
                     {pageDirty ? (
-                      <Text className="text-amber-200/90 text-xs font-instrument">Unsaved changes</Text>
+                      <Text className="text-amber-200/90 text-xs font-instrument">
+                        Unsaved changes — use Save in the header
+                      </Text>
                     ) : null}
                   </View>
                 </View>
-              ) : (
+            ) : null}
+
+            {sidebarTab === 'chat' && prospectEditorReady ? (
                 <View className="flex-1" style={{ minHeight: 280 }}>
                   <FluxChatPanel
                     messages={prospectChat.messages}
@@ -1308,11 +1355,10 @@ export default function ProspectDetail() {
                     onRewindMessage={handleChatRewind}
                   />
                 </View>
-              )}
-            </>
-          )}
+            ) : null}
 
-        </>
+          </View>
+        </View>
       )}
       preview={(
         previewLiveConfig && page ? (
@@ -1332,5 +1378,49 @@ export default function ProspectDetail() {
         )
       )}
     />
+    <BaseModal
+      visible={prospectDetailsModalOpen}
+      onClose={() => setProspectDetailsModalOpen(false)}
+      title="Prospect details"
+      description="Use Save in the header after editing. Service area and brand fields affect generate and competitor audit."
+      maxWidth="3xl"
+      maxHeight={560}
+      footer={
+        <Button size="sm" variant="secondary" onPress={() => setProspectDetailsModalOpen(false)}>
+          Close
+        </Button>
+      }
+    >
+      {prospect && prospectDraft && campaign ? (
+        <View className="gap-3">
+          <FluxProspectDetailsFields
+            partition="full"
+            variant="embedded"
+            showBrandProfile
+            values={prospectDraft}
+            onChange={patchProspectDraft}
+          />
+          {prospect.website_intel_snapshot ? (
+            <FluxProspectWebsiteIntelSnippet snapshot={prospect.website_intel_snapshot} />
+          ) : null}
+          <View className={`${fluxPanelActionRowClass} mt-2`}>
+            <Button
+              size="2xs"
+              variant="secondary"
+              onPress={handleDiscardProspectRow}
+              disabled={!prospectRowDirty}
+            >
+              Discard
+            </Button>
+            {prospectRowDirty ? (
+              <Text className="text-amber-200/90 text-xs font-instrument">
+                Unsaved changes — use Save in the header
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+    </BaseModal>
+    </>
   );
 }

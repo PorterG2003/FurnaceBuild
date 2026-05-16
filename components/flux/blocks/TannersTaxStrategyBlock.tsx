@@ -90,39 +90,26 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
   const inputClass = 'px-3 py-2 text-sm mb-2 w-full';
   const headingFont = fluxPreviewFontFamily(theme.fontFamily, '600');
   const complexLayout = presentation.layouts.complex;
-  const innerFrameStyle =
-    complexLayout === 'document'
-      ? { borderTopWidth: 1, borderBottomWidth: 1, borderColor: theme.primaryColor, paddingVertical: 28 }
-      : complexLayout === 'soft'
-        ? presentation.tintedCard
-        : undefined;
+  const innerFrameStyle = complexLayout === 'soft' ? presentation.tintedCard : undefined;
   const headingAlignClass = complexLayout === 'cards' || complexLayout === 'soft' ? 'text-center' : 'text-left';
   const sectionLabel =
     complexLayout === 'dashboard'
       ? 'Interactive model'
-      : complexLayout === 'document'
-        ? 'Tax strategy worksheet'
-        : complexLayout === 'editorial'
-          ? 'Scenario notes'
-          : 'Strategy calculator';
+      : complexLayout === 'editorial'
+        ? 'Scenario notes'
+        : 'Strategy calculator';
   const workingCardStyle = complexLayout === 'dashboard' ? presentation.strongCard : presentation.card;
 
   return (
     <View
-      className={
-        complexLayout === 'document'
-          ? 'w-full py-10 px-5 md:px-10 items-center'
-          : complexLayout === 'dashboard'
-            ? 'w-full py-14 px-4 md:px-8 items-center'
-            : 'w-full py-12 px-6 items-center'
-      }
-      style={{ backgroundColor: complexLayout === 'document' ? presentation.surfaceColor : theme.backgroundColor }}
+      className={complexLayout === 'dashboard' ? 'w-full py-14 px-4 md:px-8 items-center' : 'w-full py-12 px-6 items-center'}
+      style={{ backgroundColor: theme.backgroundColor }}
     >
       <View
         className={
           complexLayout === 'dashboard'
             ? 'w-full max-w-5xl'
-            : complexLayout === 'editorial' || complexLayout === 'document'
+            : complexLayout === 'editorial'
               ? 'w-full max-w-4xl'
               : 'w-full max-w-3xl'
         }
@@ -286,7 +273,7 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
           </Text>
         ) : (
           <>
-            <View className="p-4 md:p-5 mb-4" style={complexLayout === 'document' ? presentation.strongCard : presentation.card}>
+            <View className="p-4 md:p-5 mb-4" style={presentation.card}>
               <Text className="text-sm mb-3" style={{ color: theme.textColor, fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
                 Depreciable building: {formatUsd(numbers.depreciableBuilding)}
               </Text>
@@ -346,7 +333,7 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
 
         {props.ctaText && props.ctaUrl ? (
           <Pressable
-            className={complexLayout === 'editorial' || complexLayout === 'document' ? 'px-6 py-3 self-start' : 'px-6 py-3 self-center'}
+            className={complexLayout === 'editorial' ? 'px-6 py-3 self-start' : 'px-6 py-3 self-center'}
             style={presentation.primaryButton}
             onPress={() => props.ctaUrl && handleFluxCtaPress(props.ctaUrl, pageScroll ?? undefined)}
           >

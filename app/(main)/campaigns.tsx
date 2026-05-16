@@ -4,7 +4,6 @@ import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layou
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
 import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
-import { IconButton } from '@/components/ui/icon-button';
 import { StatColumn } from '@/components/ui/StatColumn';
 import { Alert, EmptyState, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { CampaignListSkeleton } from '@/components/skeletons';
@@ -26,7 +25,6 @@ import {
   ArrowUturnLeftIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
-  ChartBarIcon,
   RocketLaunchIcon,
 } from 'react-native-heroicons/outline';
 import { ProgressDial } from '@/components/ui/progress-dial';
@@ -541,23 +539,9 @@ export default function CampaignsPage() {
   );
 
   const headerActions = isMobile ? (
-    <View className="flex-row items-center gap-2">
-      <IconButton
-        icon={ChartBarIcon}
-        variant="secondary"
-        onPress={() => router.push('/metrics')}
-        matchButtonPadding="sm"
-        accessibilityLabel="Outreach metrics"
-      />
-      {newCampaignButtonMobile}
-    </View>
+    <View className="flex-row items-center gap-2">{newCampaignButtonMobile}</View>
   ) : (
-    <View className="flex-row items-center gap-2">
-      <Button variant="secondary" onPress={() => router.push('/metrics')}>
-        Metrics
-      </Button>
-      {newCampaignButton}
-    </View>
+    <View className="flex-row items-center gap-2">{newCampaignButton}</View>
   );
 
   return (

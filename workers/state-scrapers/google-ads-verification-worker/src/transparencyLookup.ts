@@ -188,6 +188,52 @@ function dedupeHrefs(hrefs: Array<string | null | undefined>): string[] {
   return out;
 }
 
+type SelectedCreativeHrefs = {
+  selectedAdvertiserId: string | null;
+  selectedHrefs: string[];
+  advertiserCreativeCounts: Record<string, number>;
+};
+
+export function selectCreativeHrefsForSampling(creativeHrefs: string[]): SelectedCreativeHrefs {
+  if (creativeHrefs.length === 0) {
+    return { selectedAdvertiserId: null, selectedHrefs: [], advertiserCreativeCounts: {} };
+  }
+  const groups = new Map<string, { advertiserId: string | null; hrefs: string[]; firstIndex: number }>();
+  for (let index = 0; index < creativeHrefs.length; index += 1) {
+    const href = creativeHrefs[index]!;
+    const advertiserId = extractAdvertiserIdFromHref(href);
+    const key = advertiserId ?? `unknown:${index}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.hrefs.push(href);
+      continue;
+    }
+    groups.set(key, { advertiserId, hrefs: [href], firstIndex: index });
+  }
+  const advertiserCreativeCounts: Record<string, number> = {};
+  const knownGroups = [...groups.values()].filter((group) => group.advertiserId);
+  for (const group of knownGroups) {
+    advertiserCreativeCounts[group.advertiserId!] = group.hrefs.length;
+  }
+  if (knownGroups.length === 0) {
+    return {
+      selectedAdvertiserId: null,
+      selectedHrefs: creativeHrefs,
+      advertiserCreativeCounts,
+    };
+  }
+  knownGroups.sort((a, b) => {
+    if (b.hrefs.length !== a.hrefs.length) return b.hrefs.length - a.hrefs.length;
+    return a.firstIndex - b.firstIndex;
+  });
+  const chosen = knownGroups[0]!;
+  return {
+    selectedAdvertiserId: chosen.advertiserId,
+    selectedHrefs: chosen.hrefs,
+    advertiserCreativeCounts,
+  };
+}
+
 function parseLastShownDateLabel(bodyText: string): string | null {
   const match = bodyText.match(/Last shown:\s*([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})/i);
   return match?.[1] ?? null;
@@ -357,7 +403,7 @@ const MIN_CREATIVE_BOX_WIDTH = 120;
 const MIN_CREATIVE_BOX_HEIGHT = 48;
 const MIN_CREATIVE_BOX_AREA = 8_000;
 const MAX_CREATIVE_BOX_WIDTH_RATIO = 0.88;
-const MAX_CREATIVE_BOX_HEIGHT_RATIO = 0.78;
+const MAX_CREATIVE_BOX_HEIGHT_RATIO = 0.92;
 const MAX_CREATIVE_BOX_AREA_RATIO = 0.38;
 const MIN_CREATIVE_TEXT_LENGTH = 18;
 
@@ -365,12 +411,15 @@ const SYNDICATED_IMG =
   'img[src*="googlesyndication.com"], img[src*="tpc.googlesyndication.com"], img[srcset*="googlesyndication"], img[srcset*="tpc.googlesyndication"]';
 const CREATIVE_IFRAME =
   'iframe[src*="googlesyndication.com"], iframe[src*="tpc.googlesyndication.com"], iframe[src*="/archive/sadbundle/"]';
+const MAIN_REGION_MEDIA =
+  'main iframe, main img, main picture, main canvas, main video, [role="main"] iframe, [role="main"] img, [role="main"] picture, [role="main"] canvas, [role="main"] video';
 const CREATIVE_PREVIEW_ROOT_SELECTORS = [
   'html-renderer',
   '.html-container',
   '[class*="creative-container"]',
   CREATIVE_IFRAME,
   SYNDICATED_IMG,
+  MAIN_REGION_MEDIA,
 ] as const;
 
 type ClipBox = {
@@ -638,6 +687,14 @@ async function screenshotCreativePreview(page: Page, logContext: CreativePreview
     { label: 'html_renderer', locator: page.locator('html-renderer'), priority: 9, maxMatches: 2 },
     { label: 'creative_root', locator: page.locator('creative'), priority: 10, maxMatches: 2 },
     { label: 'syndicated_img', locator: page.locator(SYNDICATED_IMG), priority: 11, maxMatches: 4 },
+    { label: 'main_region_media', locator: page.locator(MAIN_REGION_MEDIA), priority: 12, maxMatches: 8 },
+    { label: 'main_region_children', locator: page.locator('main > *, [role="main"] > *'), priority: 13, maxMatches: 10 },
+    {
+      label: 'main_region_grandchildren',
+      locator: page.locator('main > * > *, [role="main"] > * > *'),
+      priority: 14,
+      maxMatches: 12,
+    },
   ];
   const candidateCountsByLabel: Record<string, number> = {};
   const candidateCountsByPriority: Record<string, number> = {};
@@ -963,7 +1020,8 @@ export async function runGoogleAdsTransparencyLookup(
 
 const MIN_CREATIVES_SCANNED_BEFORE_EARLY_EXIT = 4;
 const TARGET_VALID_CREATIVES_FOR_EARLY_EXIT = 2;
-const MAX_CREATIVES_SCANNED_FOR_RANK_DATES = 8;
+const MAX_CREATIVES_SCANNED_FOR_RANK_DATES = 12;
+const ABORT_CLOSE_GRACE_MS = 5_000;
 
 export type GoogleAdsTransparencyAuditSamplesOptions = GoogleAdsTransparencyLookupOptions & {
   maxSamples?: number;
@@ -1032,6 +1090,12 @@ export async function runGoogleAdsTransparencyAuditSamples(
   const phaseMs: Record<string, number> = {};
   let attemptedCreativeCount = 0;
   let validCreativeCount = 0;
+  let previewCreativeCount = 0;
+  let creativeCount = 0;
+  let selectedAdvertiserId: string | null = null;
+  let latestAdLastShownAt: string | null = null;
+  let longestAdRunDays: number | null = null;
+  const scanned: TransparencyScannedCreative[] = [];
   let creativeStopReason:
     | 'collected_enough_samples'
     | 'min_reached_and_enough_valid'
@@ -1061,14 +1125,20 @@ export async function runGoogleAdsTransparencyAuditSamples(
       phaseMs: { ...phaseMs },
       attemptedCreativeCount,
       validCreativeCount,
+      previewCreativeCount,
       creativeStopReason,
       ...extra,
     });
   };
+  let abortCloseTimer: ReturnType<typeof setTimeout> | null = null;
   const onAbort = () => {
-    void page.close().catch(() => {});
-    if (createdContext) void context.close().catch(() => {});
-    if (createdBrowser) void browser.close().catch(() => {});
+    if (abortCloseTimer) return;
+    // Give any in-flight Playwright action a short chance to finish before forced teardown.
+    abortCloseTimer = setTimeout(() => {
+      void page.close().catch(() => {});
+      if (createdContext) void context.close().catch(() => {});
+      if (createdBrowser) void browser.close().catch(() => {});
+    }, ABORT_CLOSE_GRACE_MS);
   };
   if (signal) {
     if (signal.aborted) onAbort();
@@ -1107,7 +1177,7 @@ export async function runGoogleAdsTransparencyAuditSamples(
     const creativeHrefs = dedupeHrefs(await collectCreativeHrefs(page));
     throwIfAborted();
     bump('collect_creative_hrefs');
-    const creativeCount = creativeHrefs.length;
+    creativeCount = creativeHrefs.length;
     if (creativeCount === 0) {
       logPhases('transparency_zero_creatives', { creativeLinkCount: 0 });
       return {
@@ -1119,13 +1189,13 @@ export async function runGoogleAdsTransparencyAuditSamples(
         outcome: 'transparency_zero_creatives',
       };
     }
-    const scanN = Math.min(MAX_CREATIVES_SCANNED_FOR_RANK_DATES, creativeHrefs.length);
-    let latestAdLastShownAt: string | null = null;
-    let longestAdRunDays: number | null = null;
-    const scanned: TransparencyScannedCreative[] = [];
+    const selectedCreatives = selectCreativeHrefsForSampling(creativeHrefs);
+    selectedAdvertiserId = selectedCreatives.selectedAdvertiserId;
+    const hrefsToScan = selectedCreatives.selectedHrefs;
+    const scanN = Math.min(MAX_CREATIVES_SCANNED_FOR_RANK_DATES, hrefsToScan.length);
     const creativeLoopStart = Date.now();
     for (let i = 0; i < scanN; i += 1) {
-      const href = creativeHrefs[i] ?? null;
+      const href = hrefsToScan[i] ?? null;
       if (!href) break;
       attemptedCreativeCount += 1;
       const cap = await captureTopCreativeLastShown(page, href, region, {
@@ -1165,13 +1235,16 @@ export async function runGoogleAdsTransparencyAuditSamples(
         ...(cap.previewPng && cap.previewPng.length > 0 ? { previewPng: cap.previewPng } : {}),
       });
       validCreativeCount += 1;
-      if (validCreativeCount >= maxSamples && attemptedCreativeCount >= maxSamples && i + 1 < scanN) {
+      if (cap.previewPng && cap.previewPng.length > 0) {
+        previewCreativeCount += 1;
+      }
+      if (previewCreativeCount >= maxSamples && attemptedCreativeCount >= maxSamples && i + 1 < scanN) {
         creativeStopReason = 'collected_enough_samples';
         break;
       }
       if (
         attemptedCreativeCount >= MIN_CREATIVES_SCANNED_BEFORE_EARLY_EXIT &&
-        validCreativeCount >= TARGET_VALID_CREATIVES_FOR_EARLY_EXIT &&
+        previewCreativeCount >= TARGET_VALID_CREATIVES_FOR_EARLY_EXIT &&
         i + 1 < scanN
       ) {
         creativeStopReason = 'min_reached_and_enough_valid';
@@ -1179,7 +1252,7 @@ export async function runGoogleAdsTransparencyAuditSamples(
       }
     }
     if (!creativeStopReason) {
-      creativeStopReason = creativeHrefs.length > MAX_CREATIVES_SCANNED_FOR_RANK_DATES ? 'max_reached' : 'exhausted_creatives';
+      creativeStopReason = hrefsToScan.length > MAX_CREATIVES_SCANNED_FOR_RANK_DATES ? 'max_reached' : 'exhausted_creatives';
     }
     const creativeDetailEnd = Date.now();
     phaseMs.creative_detail_visits_ms = creativeDetailEnd - creativeLoopStart;
@@ -1190,6 +1263,9 @@ export async function runGoogleAdsTransparencyAuditSamples(
     throwIfAborted();
     logPhases('ok', {
       creativeCount,
+      selectedAdvertiserId,
+      selectedCreativeCount: hrefsToScan.length,
+      advertiserCreativeCounts: selectedCreatives.advertiserCreativeCounts,
       creativeDetailVisitCount: attemptedCreativeCount,
       publishedSampleCount: samples.length,
     });
@@ -1204,6 +1280,26 @@ export async function runGoogleAdsTransparencyAuditSamples(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     if (signal?.aborted || message.endsWith('_timeout')) {
+      const partialSamples = creativeCount > 0 ? pickSamplesForDisplay(scanned, latestAdLastShownAt, maxSamples) : [];
+      if (creativeCount > 0 && partialSamples.length > 0) {
+        samples.push(...partialSamples);
+        bump('pick_samples_after_timeout');
+        logPhases('partial_ok_after_timeout', {
+          creativeCount,
+          selectedAdvertiserId,
+          creativeDetailVisitCount: attemptedCreativeCount,
+          publishedSampleCount: samples.length,
+          timeoutMessage: timeoutReason.slice(0, 500),
+        });
+        return {
+          searchDomain,
+          creativeCount,
+          latestAdLastShownAt,
+          longestAdRunDays,
+          samples,
+          outcome: 'ok',
+        };
+      }
       logPhases('aborted_after_timeout', { message: timeoutReason.slice(0, 500) });
       throw new Error(timeoutReason);
     }
@@ -1218,6 +1314,7 @@ export async function runGoogleAdsTransparencyAuditSamples(
       message,
     };
   } finally {
+    if (abortCloseTimer) clearTimeout(abortCloseTimer);
     if (signal) signal.removeEventListener('abort', onAbort);
     await page.close().catch(() => {});
     if (createdContext) await context.close().catch(() => {});

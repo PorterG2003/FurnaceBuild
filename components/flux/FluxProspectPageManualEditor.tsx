@@ -1,8 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
-import { PaintBrushIcon, RectangleStackIcon, TagIcon, UserIcon } from 'react-native-heroicons/outline';
-import { CollapsibleSection } from '@/components/ui/CollapsibleSection';
 import { FluxFontFamilyPicker } from '@/components/flux/FluxFontFamilyPicker';
 import { FluxHexColorField } from '@/components/flux/FluxHexColorField';
 import { FluxTemplateBlocksDraggableList } from '@/components/flux/FluxTemplateBlocksDraggableList';
@@ -15,18 +13,33 @@ import {
   FLUX_BLOCK_STYLE_PRESET_OPTIONS,
   type FluxBlockStylePreset,
 } from '@/lib/flux/fluxPresentationTokens';
+import {
+  fluxPanelHexContainerRowClass,
+  fluxPanelInputClass,
+  fluxPanelInputFieldClass,
+  fluxPanelLabelClass,
+  fluxPanelSectionCardClass,
+} from '@/lib/flux/fluxEditorPanelClasses';
+import { useFluxEditorPanelTwoColumns } from '@/lib/flux/useFluxEditorPanelTwoColumns';
 import type { Block, ContentAsset, PageConfig } from '@/lib/flux/types';
 
-const SECTION_PROSPECT_DETAILS = 'Prospect details';
-const SECTION_BRAND_DETAILS = 'Brand details';
-const SECTION_THEME = 'Theme';
-const SECTION_BLOCKS = 'Blocks';
+/** Section ids for the prospect page editor (parent owns the tab bar). */
+export const FLUX_PROSPECT_PAGE_TAB = {
+  lead: 'lead',
+  brand: 'brand',
+  onpage: 'onpage',
+  theme: 'theme',
+  blocks: 'blocks',
+  campaign: 'campaign',
+} as const;
 
 interface FluxProspectPageManualEditorProps {
   pageConfig: PageConfig;
   onChange: (next: PageConfig) => void;
   contentAssets: ContentAsset[];
   campaignId: string;
+  /** Which section to show (must match a tab id on the parent). */
+  activeSection: string;
   /** Contact / firm fields (CRM row). Shown in “Prospect details” when set with `prospectBrandSlot`. */
   prospectLeadSlot?: React.ReactNode;
   /** Brand on the prospect row; optional intel / save actions. Shown in “Brand details”. */
@@ -35,6 +48,8 @@ interface FluxProspectPageManualEditorProps {
   requestedEditingBlockId?: string | null;
   /** Per-block issue counts shown in the block summaries. */
   issueCountByBlockId?: Record<string, number>;
+  /** Parent switches to the Blocks tab when a block should be focused (e.g. validation). */
+  onRequestSection?: (section: string) => void;
 }
 
 export function FluxProspectPageManualEditor({
@@ -42,33 +57,22 @@ export function FluxProspectPageManualEditor({
   onChange,
   contentAssets,
   campaignId,
+  activeSection,
   prospectLeadSlot,
   prospectBrandSlot,
   requestedEditingBlockId = null,
   issueCountByBlockId = {},
+  onRequestSection,
 }: FluxProspectPageManualEditorProps) {
   const router = useRouter();
-  const [openSections, setOpenSections] = useState<string[]>([
-    SECTION_PROSPECT_DETAILS,
-    SECTION_BRAND_DETAILS,
-    SECTION_THEME,
-    SECTION_BLOCKS,
-  ]);
+  const pairFieldColumns = useFluxEditorPanelTwoColumns();
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!requestedEditingBlockId) return;
     setEditingBlockId(requestedEditingBlockId);
-    setOpenSections((current) =>
-      current.includes(SECTION_BLOCKS) ? current : [...current, SECTION_BLOCKS],
-    );
-  }, [requestedEditingBlockId]);
-
-  const toggleSection = (section: string) => {
-    setOpenSections((current) =>
-      current.includes(section) ? current.filter((value) => value !== section) : [...current, section],
-    );
-  };
+    onRequestSection?.(FLUX_PROSPECT_PAGE_TAB.blocks);
+  }, [requestedEditingBlockId, onRequestSection]);
 
   const patchTheme = useCallback(
     (patch: Partial<PageConfig['theme']>) => {
@@ -131,195 +135,249 @@ export function FluxProspectPageManualEditor({
   );
 
   return (
-    <View className="gap-3">
-      <Pressable
-        className="border border-[#2A2A2A] rounded-xl px-3 py-2.5 bg-[#1A1A1A]"
-        onPress={() => router.push(`/flux/campaigns/${campaignId}` as Href)}
-      >
-        <Text className="text-gray-400 text-xs font-instrument">
-          Content assets (case studies, testimonials) are edited in the campaign template.
-        </Text>
-        <Text className="text-indigo-400 text-sm font-instrument-semibold mt-1">Open campaign →</Text>
-      </Pressable>
+    <View className="flex-1 min-w-0 self-stretch">
+        {activeSection === FLUX_PROSPECT_PAGE_TAB.campaign ? (
+          <Pressable
+            className={`${fluxPanelSectionCardClass} px-2.5 py-2`}
+            onPress={() => router.push(`/flux/campaigns/${campaignId}` as Href)}
+          >
+            <Text className="text-gray-400 text-[11px] font-instrument leading-4">
+              Content assets (case studies, testimonials) are edited in the campaign template.
+            </Text>
+            <Text className="text-indigo-400 text-xs font-instrument-semibold mt-0.5">Open campaign →</Text>
+          </Pressable>
+        ) : null}
 
-      {prospectLeadSlot ? (
-        <CollapsibleSection
-          title={SECTION_PROSPECT_DETAILS}
-          icon={UserIcon}
-          open={openSections.includes(SECTION_PROSPECT_DETAILS)}
-          onToggle={() => toggleSection(SECTION_PROSPECT_DETAILS)}
-        >
-          {prospectLeadSlot}
-        </CollapsibleSection>
-      ) : null}
+        {activeSection === FLUX_PROSPECT_PAGE_TAB.lead && prospectLeadSlot ? (
+            <View className="gap-1.5">{prospectLeadSlot}</View>
+          ) : null}
 
-      {prospectBrandSlot ? (
-        <CollapsibleSection
-          title={SECTION_BRAND_DETAILS}
-          icon={TagIcon}
-          open={openSections.includes(SECTION_BRAND_DETAILS)}
-          onToggle={() => toggleSection(SECTION_BRAND_DETAILS)}
-        >
-          {prospectBrandSlot}
-        </CollapsibleSection>
-      ) : null}
+        {activeSection === FLUX_PROSPECT_PAGE_TAB.brand && prospectBrandSlot ? (
+            <View className="gap-1.5">{prospectBrandSlot}</View>
+          ) : null}
 
-      {!prospectLeadSlot && !prospectBrandSlot ? (
-        <CollapsibleSection
-          title={SECTION_PROSPECT_DETAILS}
-          icon={UserIcon}
-          open={openSections.includes(SECTION_PROSPECT_DETAILS)}
-          onToggle={() => toggleSection(SECTION_PROSPECT_DETAILS)}
-        >
-          <>
-            <Text className="text-gray-400 text-xs font-instrument mb-1">Prospect name (on page)</Text>
-            <TextInput
-              className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2 mb-2"
-              value={pageConfig.prospectName}
-              onChangeText={(value) => onChange({ ...pageConfig, prospectName: value })}
-              placeholder="Name"
-              placeholderTextColor="#555"
-            />
-            <Text className="text-gray-400 text-xs font-instrument mb-1">Company name (on page)</Text>
-            <TextInput
-              className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2"
-              value={pageConfig.companyName}
-              onChangeText={(value) => onChange({ ...pageConfig, companyName: value })}
-              placeholder="Company"
-              placeholderTextColor="#555"
-            />
-          </>
-        </CollapsibleSection>
-      ) : null}
+        {activeSection === FLUX_PROSPECT_PAGE_TAB.onpage && !prospectLeadSlot && !prospectBrandSlot ? (
+            <View className="gap-1.5">
+              {pairFieldColumns ? (
+                <View className="flex-row gap-2 flex-wrap">
+                  <View className="flex-1 min-w-[120px]">
+                    <Text className={fluxPanelLabelClass}>Prospect name (on page)</Text>
+                    <TextInput
+                      className={`${fluxPanelInputFieldClass} w-full`}
+                      value={pageConfig.prospectName}
+                      onChangeText={(value) => onChange({ ...pageConfig, prospectName: value })}
+                      placeholder="Name"
+                      placeholderTextColor="#555"
+                    />
+                  </View>
+                  <View className="flex-1 min-w-[120px]">
+                    <Text className={fluxPanelLabelClass}>Company name (on page)</Text>
+                    <TextInput
+                      className={`${fluxPanelInputFieldClass} w-full`}
+                      value={pageConfig.companyName}
+                      onChangeText={(value) => onChange({ ...pageConfig, companyName: value })}
+                      placeholder="Company"
+                      placeholderTextColor="#555"
+                    />
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <Text className={fluxPanelLabelClass}>Prospect name (on page)</Text>
+                  <TextInput
+                    className={fluxPanelInputClass}
+                    value={pageConfig.prospectName}
+                    onChangeText={(value) => onChange({ ...pageConfig, prospectName: value })}
+                    placeholder="Name"
+                    placeholderTextColor="#555"
+                  />
+                  <Text className={fluxPanelLabelClass}>Company name (on page)</Text>
+                  <TextInput
+                    className={`${fluxPanelInputFieldClass} w-full`}
+                    value={pageConfig.companyName}
+                    onChangeText={(value) => onChange({ ...pageConfig, companyName: value })}
+                    placeholder="Company"
+                    placeholderTextColor="#555"
+                  />
+                </>
+              )}
+            </View>
+          ) : null}
 
-      <CollapsibleSection
-        title={SECTION_THEME}
-        icon={PaintBrushIcon}
-        open={openSections.includes(SECTION_THEME)}
-        onToggle={() => toggleSection(SECTION_THEME)}
-      >
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Primary color</Text>
-        <FluxHexColorField
-          value={pageConfig.theme.primaryColor}
-          onChange={(primaryColor) => patchTheme({ primaryColor })}
-          placeholder="#4f46e5"
-          fallbackHex="#4f46e5"
-        />
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Accent</Text>
-        <FluxHexColorField
-          value={pageConfig.theme.accentColor}
-          onChange={(accentColor) => patchTheme({ accentColor })}
-          placeholder="#10b981"
-          fallbackHex="#10b981"
-        />
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Background</Text>
-        <FluxHexColorField
-          value={pageConfig.theme.backgroundColor}
-          onChange={(backgroundColor) => patchTheme({ backgroundColor })}
-          placeholder="#f5f5f5"
-          fallbackHex="#f5f5f5"
-        />
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Text color</Text>
-        <FluxHexColorField
-          value={pageConfig.theme.textColor}
-          onChange={(textColor) => patchTheme({ textColor })}
-          placeholder="#1a1a1a"
-          fallbackHex="#1a1a1a"
-        />
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Font</Text>
-        <FluxFontFamilyPicker
-          value={pageConfig.theme.fontFamily}
-          onChange={(fontFamily) => patchTheme({ fontFamily })}
-        />
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Style preset</Text>
-        <View className="gap-2 mb-2">
-          {FLUX_BLOCK_STYLE_PRESET_OPTIONS.map((option) => {
-            const selected = (pageConfig.theme.blockStylePreset ?? 'classic') === option.id;
-            return (
-              <Pressable
-                key={option.id}
-                className={`rounded-lg border px-3 py-2 ${
-                  selected ? 'border-indigo-500 bg-indigo-500/15' : 'border-[#333] bg-[#222]'
-                }`}
-                onPress={() => patchTheme({ blockStylePreset: option.id as FluxBlockStylePreset })}
-              >
-                <Text className="text-white text-sm font-instrument-semibold">{option.label}</Text>
-                <Text className="text-gray-400 text-xs font-instrument mt-0.5">{option.description}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Copy length limits</Text>
-        <View className="border border-[#333] rounded-lg p-3 bg-[#222] gap-2 mb-2">
-          <Text className="text-gray-300 text-xs font-instrument leading-5">
-            The selected layout preset enforces hard copy limits when you save. Enable this only when you need a
-            manual exception and are okay with possible overflow in tighter layouts.
-          </Text>
-          <View className="flex-row flex-wrap gap-2">
-            <Pressable
-              className={`rounded-lg border px-3 py-2 ${
-                !pageConfig.theme.allowLongCopy
-                  ? 'border-indigo-500 bg-indigo-500/15'
-                  : 'border-[#333] bg-[#1A1A1A]'
-              }`}
-              onPress={() => patchTheme({ allowLongCopy: undefined })}
-            >
-              <Text className="text-white text-xs font-instrument-semibold">Enforce limits</Text>
-            </Pressable>
-            <Pressable
-              className={`rounded-lg border px-3 py-2 ${
-                pageConfig.theme.allowLongCopy
-                  ? 'border-amber-500 bg-amber-500/15'
-                  : 'border-[#333] bg-[#1A1A1A]'
-              }`}
-              onPress={() => patchTheme({ allowLongCopy: true })}
-            >
-              <Text className="text-white text-xs font-instrument-semibold">Allow long copy</Text>
-            </Pressable>
-          </View>
-        </View>
-        <Text className="text-gray-400 text-xs font-instrument mb-1">Logo URL (optional)</Text>
-        <TextInput
-          className="text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2"
-          value={pageConfig.theme.logoUrl ?? ''}
-          onChangeText={(value) => patchTheme({ logoUrl: value.trim() ? value : undefined })}
-          placeholder="https://…"
-          placeholderTextColor="#555"
-          autoCapitalize="none"
-        />
-      </CollapsibleSection>
+        {activeSection === FLUX_PROSPECT_PAGE_TAB.theme ? (
+            <View className="gap-1.5">
+              {pairFieldColumns ? (
+                <>
+                  <View className="flex-row gap-2 flex-wrap mb-1.5">
+                    <View className="flex-1 min-w-[140px]">
+                      <Text className={fluxPanelLabelClass}>Primary color</Text>
+                      <FluxHexColorField
+                        value={pageConfig.theme.primaryColor}
+                        onChange={(primaryColor) => patchTheme({ primaryColor })}
+                        placeholder="#4f46e5"
+                        fallbackHex="#4f46e5"
+                        containerClassName={fluxPanelHexContainerRowClass}
+                      />
+                    </View>
+                    <View className="flex-1 min-w-[140px]">
+                      <Text className={fluxPanelLabelClass}>Accent</Text>
+                      <FluxHexColorField
+                        value={pageConfig.theme.accentColor}
+                        onChange={(accentColor) => patchTheme({ accentColor })}
+                        placeholder="#10b981"
+                        fallbackHex="#10b981"
+                        containerClassName={fluxPanelHexContainerRowClass}
+                      />
+                    </View>
+                  </View>
+                  <View className="flex-row gap-2 flex-wrap mb-1.5">
+                    <View className="flex-1 min-w-[140px]">
+                      <Text className={fluxPanelLabelClass}>Background</Text>
+                      <FluxHexColorField
+                        value={pageConfig.theme.backgroundColor}
+                        onChange={(backgroundColor) => patchTheme({ backgroundColor })}
+                        placeholder="#f5f5f5"
+                        fallbackHex="#f5f5f5"
+                        containerClassName={fluxPanelHexContainerRowClass}
+                      />
+                    </View>
+                    <View className="flex-1 min-w-[140px]">
+                      <Text className={fluxPanelLabelClass}>Text color</Text>
+                      <FluxHexColorField
+                        value={pageConfig.theme.textColor}
+                        onChange={(textColor) => patchTheme({ textColor })}
+                        placeholder="#1a1a1a"
+                        fallbackHex="#1a1a1a"
+                        containerClassName={fluxPanelHexContainerRowClass}
+                      />
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text className={fluxPanelLabelClass}>Primary color</Text>
+                  <FluxHexColorField
+                    value={pageConfig.theme.primaryColor}
+                    onChange={(primaryColor) => patchTheme({ primaryColor })}
+                    placeholder="#4f46e5"
+                    fallbackHex="#4f46e5"
+                  />
+                  <Text className={fluxPanelLabelClass}>Accent</Text>
+                  <FluxHexColorField
+                    value={pageConfig.theme.accentColor}
+                    onChange={(accentColor) => patchTheme({ accentColor })}
+                    placeholder="#10b981"
+                    fallbackHex="#10b981"
+                  />
+                  <Text className={fluxPanelLabelClass}>Background</Text>
+                  <FluxHexColorField
+                    value={pageConfig.theme.backgroundColor}
+                    onChange={(backgroundColor) => patchTheme({ backgroundColor })}
+                    placeholder="#f5f5f5"
+                    fallbackHex="#f5f5f5"
+                  />
+                  <Text className={fluxPanelLabelClass}>Text color</Text>
+                  <FluxHexColorField
+                    value={pageConfig.theme.textColor}
+                    onChange={(textColor) => patchTheme({ textColor })}
+                    placeholder="#1a1a1a"
+                    fallbackHex="#1a1a1a"
+                  />
+                </>
+              )}
+              <Text className={fluxPanelLabelClass}>Font</Text>
+              <FluxFontFamilyPicker
+                value={pageConfig.theme.fontFamily}
+                onChange={(fontFamily) => patchTheme({ fontFamily })}
+              />
+              <Text className={fluxPanelLabelClass}>Style preset</Text>
+              <View className="gap-1.5 mb-1.5">
+                {FLUX_BLOCK_STYLE_PRESET_OPTIONS.map((option) => {
+                  const selected = (pageConfig.theme.blockStylePreset ?? 'classic') === option.id;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      className={`rounded-md border px-2 py-1.5 ${
+                        selected ? 'border-indigo-500 bg-indigo-500/15' : 'border-[#333] bg-[#222]'
+                      }`}
+                      onPress={() => patchTheme({ blockStylePreset: option.id as FluxBlockStylePreset })}
+                    >
+                      <Text className="text-white text-xs font-instrument-semibold">{option.label}</Text>
+                      <Text className="text-gray-400 text-[11px] font-instrument mt-0.5 leading-4">
+                        {option.description}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text className={fluxPanelLabelClass}>Copy length limits</Text>
+              <View className="border border-[#333] rounded-md p-2 bg-[#222] gap-1.5 mb-1.5">
+                <Text className="text-gray-300 text-[11px] font-instrument leading-4">
+                  The selected layout preset enforces hard copy limits when you save. Enable this only when you need a
+                  manual exception and are okay with possible overflow in tighter layouts.
+                </Text>
+                <View className="flex-row flex-wrap gap-1.5">
+                  <Pressable
+                    className={`rounded-md border px-2 py-1.5 ${
+                      !pageConfig.theme.allowLongCopy
+                        ? 'border-indigo-500 bg-indigo-500/15'
+                        : 'border-[#333] bg-[#1A1A1A]'
+                    }`}
+                    onPress={() => patchTheme({ allowLongCopy: undefined })}
+                  >
+                    <Text className="text-white text-[11px] font-instrument-semibold">Enforce limits</Text>
+                  </Pressable>
+                  <Pressable
+                    className={`rounded-md border px-2 py-1.5 ${
+                      pageConfig.theme.allowLongCopy
+                        ? 'border-amber-500 bg-amber-500/15'
+                        : 'border-[#333] bg-[#1A1A1A]'
+                    }`}
+                    onPress={() => patchTheme({ allowLongCopy: true })}
+                  >
+                    <Text className="text-white text-[11px] font-instrument-semibold">Allow long copy</Text>
+                  </Pressable>
+                </View>
+              </View>
+              <Text className={fluxPanelLabelClass}>Logo URL (optional)</Text>
+              <TextInput
+                className={fluxPanelInputFieldClass}
+                value={pageConfig.theme.logoUrl ?? ''}
+                onChangeText={(value) => patchTheme({ logoUrl: value.trim() ? value : undefined })}
+                placeholder="https://…"
+                placeholderTextColor="#555"
+                autoCapitalize="none"
+              />
+            </View>
+          ) : null}
 
-      <CollapsibleSection
-        title={SECTION_BLOCKS}
-        icon={RectangleStackIcon}
-        open={openSections.includes(SECTION_BLOCKS)}
-        onToggle={() => toggleSection(SECTION_BLOCKS)}
-      >
-        {pageConfig.blocks.length === 0 ? (
-          <View className="border border-[#2A2A2A] rounded-xl p-3">
-            <Text className="text-gray-400 text-sm font-instrument text-center">No blocks on this page.</Text>
-          </View>
-        ) : (
-          <FluxTemplateBlocksDraggableList
-            blocks={pageConfig.blocks}
-            blockTypeLabels={FLUX_MANUAL_BLOCK_TYPE_LABELS}
-            blockSummary={blockSummaryWithIssues}
-            editingBlockId={editingBlockId}
-            onToggleEditing={(blockId: string) =>
-              setEditingBlockId((id) => (id === blockId ? null : blockId))
-            }
-            onRemove={noopRemove}
-            allowRemoveBlocks={false}
-            onReorder={(next: Block[]) =>
-              setBlocks(next.map((b, i) => ({ ...b, order: i })))
-            }
-            updateBlockProps={updateBlockProps}
-            updateBlockScrollTag={updateBlockScrollTag}
-            contentAssets={contentAssets}
-            renderBlockEditor={renderFluxManualBlockEditor}
-          />
-        )}
-      </CollapsibleSection>
+        {activeSection === FLUX_PROSPECT_PAGE_TAB.blocks ? (
+            <View className="gap-1.5">
+              {pageConfig.blocks.length === 0 ? (
+                <View className="border border-[#2A2A2A] rounded-lg p-2">
+                  <Text className="text-gray-400 text-xs font-instrument text-center">No blocks on this page.</Text>
+                </View>
+              ) : (
+                <FluxTemplateBlocksDraggableList
+                  blocks={pageConfig.blocks}
+                  blockTypeLabels={FLUX_MANUAL_BLOCK_TYPE_LABELS}
+                  blockSummary={blockSummaryWithIssues}
+                  editingBlockId={editingBlockId}
+                  onToggleEditing={(blockId: string) =>
+                    setEditingBlockId((id) => (id === blockId ? null : blockId))
+                  }
+                  onRemove={noopRemove}
+                  allowRemoveBlocks={false}
+                  pairFieldColumns={pairFieldColumns}
+                  onReorder={(next: Block[]) => setBlocks(next.map((b, i) => ({ ...b, order: i })))}
+                  updateBlockProps={updateBlockProps}
+                  updateBlockScrollTag={updateBlockScrollTag}
+                  contentAssets={contentAssets}
+                  renderBlockEditor={renderFluxManualBlockEditor}
+                />
+              )}
+            </View>
+        ) : null}
     </View>
   );
 }

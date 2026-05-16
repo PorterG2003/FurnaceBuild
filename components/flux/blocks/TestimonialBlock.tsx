@@ -47,20 +47,6 @@ export function TestimonialBlock({ asset, overrideQuote, overrideAttribution }: 
     );
   }
 
-  if (presentation.layouts.testimonial === 'citation') {
-    return (
-      <View className="w-full py-10 px-5 md:px-10" style={{ backgroundColor: presentation.surfaceColor }}>
-        <View className="w-full max-w-4xl self-center border-y py-6" style={{ borderColor: theme.primaryColor }}>
-          <Text className="text-xs uppercase tracking-[3px] mb-4" style={{ color: theme.primaryColor, fontFamily: headingFont }}>Citation</Text>
-          <Text className="text-lg md:text-2xl leading-8 mb-4" style={{ color: theme.textColor, fontFamily: bodyFont }}>
-            “{quote}”
-          </Text>
-          {attribution ? <Text className="text-xs uppercase tracking-wider" style={{ color: theme.textColor, opacity: presentation.mutedTextOpacity, fontFamily: headingFont }}>{attribution}</Text> : null}
-        </View>
-      </View>
-    );
-  }
-
   if (presentation.layouts.testimonial === 'speechBubble') {
     return (
       <View className="w-full py-12 px-4 md:px-6" style={{ backgroundColor: theme.backgroundColor }}>

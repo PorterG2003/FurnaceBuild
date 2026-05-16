@@ -66,22 +66,6 @@ export function CaseStudyBlock({ asset, overrideTitle, overrideMetric }: CaseStu
     );
   }
 
-  if (presentation.layouts.caseStudy === 'dossier') {
-    return (
-      <View className="w-full py-12 px-5 md:px-10" style={{ backgroundColor: presentation.surfaceColor }}>
-        <View className="w-full max-w-4xl self-center border p-5 md:p-7" style={{ borderColor: theme.primaryColor }}>
-          <View className="flex-row flex-wrap justify-between gap-4 border-b pb-4 mb-5" style={{ borderColor: '#d1d5db' }}>
-            <Text className="text-xs uppercase tracking-[3px]" style={{ color: theme.primaryColor, fontFamily: headingFont }}>Dossier</Text>
-            {metric ? <Text className="text-sm" style={{ color: theme.textColor, fontFamily: headingFont }}>{metric}</Text> : null}
-          </View>
-          <Text className="text-2xl md:text-3xl mb-4" style={{ color: theme.textColor, fontFamily: headingFont }}>{title}</Text>
-          <Text className="text-sm leading-7" style={bodyStyle}>{asset.body}</Text>
-          {asset.attribution ? <Text className="text-xs mt-5" style={bodyStyle}>Filed under: {asset.attribution}</Text> : null}
-        </View>
-      </View>
-    );
-  }
-
   if (presentation.layouts.caseStudy === 'storyPanel') {
     return (
       <View className="w-full py-14 px-4 md:px-6" style={{ backgroundColor: theme.backgroundColor }}>

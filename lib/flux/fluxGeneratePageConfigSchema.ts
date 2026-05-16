@@ -82,6 +82,9 @@ export const blockSchema = z.discriminatedUnion('type', [
       ctaText: z.string(),
       ctaUrl: z.string(),
       heroImageUrl: z.string().optional(),
+      heroPanelImageUrl: z.string().optional(),
+      heroPanelLabel: z.string().optional(),
+      heroPanelBody: z.string().optional(),
     }),
   }),
   z.object({

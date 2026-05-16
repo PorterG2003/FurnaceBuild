@@ -1,7 +1,7 @@
 import type { ViewStyle } from 'react-native';
 import type { ThemeConfig } from './types';
 
-export const FLUX_BLOCK_STYLE_PRESETS = ['classic', 'minimal', 'elevated', 'outlined', 'soft'] as const;
+export const FLUX_BLOCK_STYLE_PRESETS = ['classic', 'minimal', 'elevated', 'soft'] as const;
 
 export type FluxBlockStylePreset = (typeof FLUX_BLOCK_STYLE_PRESETS)[number];
 
@@ -28,11 +28,6 @@ export const FLUX_BLOCK_STYLE_PRESET_OPTIONS: Array<{
     description: 'Modern SaaS panels, split compositions, large feature tiles, and layered cards.',
   },
   {
-    id: 'outlined',
-    label: 'Outlined',
-    description: 'Report-like sections with strong rules, numbered rows, and compact framed CTAs.',
-  },
-  {
     id: 'soft',
     label: 'Soft',
     description: 'Warm, conversational layouts with rounded panels, bubbles, and pill actions.',
@@ -42,13 +37,13 @@ export const FLUX_BLOCK_STYLE_PRESET_OPTIONS: Array<{
 export interface FluxPresentationTokens {
   preset: FluxBlockStylePreset;
   layouts: {
-    hero: 'centered' | 'editorial' | 'splitPanel' | 'documentHeader' | 'conversational';
-    benefits: 'cardGrid' | 'checklist' | 'featureTiles' | 'numberedRows' | 'softCards';
-    caseStudy: 'compactCard' | 'report' | 'splitMetric' | 'dossier' | 'storyPanel';
-    proof: 'logoRow' | 'inline' | 'cardStrip' | 'ledger' | 'pillCloud';
-    testimonial: 'simpleQuote' | 'pullQuote' | 'quoteCard' | 'citation' | 'speechBubble';
-    cta: 'band' | 'inline' | 'raisedCard' | 'outlinedBar' | 'softPanel';
-    complex: 'cards' | 'editorial' | 'dashboard' | 'document' | 'soft';
+    hero: 'centered' | 'editorial' | 'splitPanel' | 'conversational';
+    benefits: 'cardGrid' | 'checklist' | 'featureTiles' | 'softCards';
+    caseStudy: 'compactCard' | 'report' | 'splitMetric' | 'storyPanel';
+    proof: 'logoRow' | 'inline' | 'cardStrip' | 'pillCloud';
+    testimonial: 'simpleQuote' | 'pullQuote' | 'quoteCard' | 'speechBubble';
+    cta: 'band' | 'inline' | 'raisedCard' | 'softPanel';
+    complex: 'cards' | 'editorial' | 'dashboard' | 'soft';
   };
   surfaceColor: string;
   sectionBackgroundColor: string;
@@ -186,28 +181,6 @@ export function getFluxPresentationTokens(theme: ThemeConfig): FluxPresentationT
       mutedTextOpacity: 0.7,
       subtleTextOpacity: 0.56,
     },
-    outlined: {
-      layouts: {
-        hero: 'documentHeader',
-        benefits: 'numberedRows',
-        caseStudy: 'dossier',
-        proof: 'ledger',
-        testimonial: 'citation',
-        cta: 'outlinedBar',
-        complex: 'document',
-      },
-      cardRadius: 8,
-      buttonRadius: 6,
-      chipRadius: 6,
-      inputRadius: 6,
-      mediaRadius: 6,
-      borderWidth: 1,
-      borderColor: FALLBACK_STRONG_BORDER,
-      strongBorderColor: '#9ca3af',
-      depth: 'none' as const,
-      mutedTextOpacity: 0.66,
-      subtleTextOpacity: 0.52,
-    },
     soft: {
       layouts: {
         hero: 'conversational',
@@ -265,7 +238,7 @@ export function getFluxPresentationTokens(theme: ThemeConfig): FluxPresentationT
     },
     tintedCard: {
       ...baseCard,
-      backgroundColor: preset === 'minimal' || preset === 'outlined' ? surfaceColor : primaryTint,
+      backgroundColor: preset === 'minimal' ? surfaceColor : primaryTint,
       borderWidth: Math.max(1, config.borderWidth),
       borderColor: config.strongBorderColor,
     },
@@ -294,7 +267,7 @@ export function getFluxPresentationTokens(theme: ThemeConfig): FluxPresentationT
     },
     logoBar: {
       backgroundColor: surfaceColor,
-      borderBottomWidth: preset === 'minimal' || preset === 'outlined' ? 1 : 0,
+      borderBottomWidth: preset === 'minimal' ? 1 : 0,
       borderBottomColor: config.borderColor,
     },
     highlightFrame: {

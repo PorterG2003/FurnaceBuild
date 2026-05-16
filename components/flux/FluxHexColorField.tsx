@@ -4,6 +4,7 @@ import ColorPicker, { HueSlider, Panel1, Preview } from 'reanimated-color-picker
 import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { normalizeFluxHexColor } from '@/lib/flux/normalizeFluxHexColor';
+import { fluxPanelHexContainerClass, fluxPanelHexInputClass } from '@/lib/flux/fluxEditorPanelClasses';
 
 export interface FluxHexColorFieldProps {
   value: string;
@@ -37,8 +38,8 @@ export function FluxHexColorField({
   allowEmpty = false,
   placeholder = '#000000',
   fallbackHex = '#4f46e5',
-  inputClassName = 'flex-1 text-white text-sm font-instrument bg-[#222] border border-[#333] rounded-lg px-3 py-2',
-  containerClassName = 'flex-row items-center gap-2 mb-2',
+  inputClassName = fluxPanelHexInputClass,
+  containerClassName = fluxPanelHexContainerClass,
   swatchSize = 'sm',
 }: FluxHexColorFieldProps) {
   const [text, setText] = useState(value);

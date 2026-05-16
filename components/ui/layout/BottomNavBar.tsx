@@ -8,14 +8,16 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useRouter, usePathname } from 'expo-router';
 import {
-  DocumentTextIcon,
+  MegaphoneIcon,
+  ChartBarIcon,
   Cog6ToothIcon,
   InboxIcon,
   EnvelopeIcon,
 } from 'react-native-heroicons/outline';
 
 const navItems = [
-  { path: '/campaigns', icon: DocumentTextIcon },
+  { path: '/campaigns', icon: MegaphoneIcon },
+  { path: '/metrics', icon: ChartBarIcon },
   { path: '/inbox', icon: InboxIcon },
   { path: '/senders', icon: EnvelopeIcon },
   { path: '/account', icon: Cog6ToothIcon },

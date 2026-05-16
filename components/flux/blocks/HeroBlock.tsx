@@ -24,7 +24,7 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
     <Pressable
       className="px-8 py-3"
       style={
-        presentation.layouts.hero === 'editorial' || presentation.layouts.hero === 'documentHeader'
+        presentation.layouts.hero === 'editorial'
           ? presentation.primaryButton
           : presentation.secondaryButton
       }
@@ -33,10 +33,7 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
       <Text
         className="text-base"
         style={{
-          color:
-            presentation.layouts.hero === 'editorial' || presentation.layouts.hero === 'documentHeader'
-              ? '#ffffff'
-              : theme.primaryColor,
+          color: presentation.layouts.hero === 'editorial' ? '#ffffff' : theme.primaryColor,
           fontFamily: headingFont,
         }}
       >
@@ -69,6 +66,16 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
   }
 
   if (presentation.layouts.hero === 'splitPanel') {
+    const panelImageUrl = props.heroPanelImageUrl || props.heroImageUrl;
+    const panelImage = panelImageUrl ? (
+      <View className="w-full overflow-hidden rounded-2xl" style={{ height: 220 }}>
+        <Image
+          source={{ uri: panelImageUrl }}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="contain"
+        />
+      </View>
+    ) : null;
     return (
       <View className="w-full py-10 md:py-16 px-4 md:px-8" style={{ backgroundColor: theme.primaryColor }}>
         <View className="w-full max-w-5xl self-center flex-row flex-wrap gap-6 items-stretch">
@@ -81,49 +88,21 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
             </Text>
             {cta}
           </View>
-          <View className="w-full md:w-80 p-5 md:p-6 justify-between" style={presentation.secondaryButton}>
-            {heroImage ? (
-              <View className="gap-4">
-                {heroImage}
-                <Text className="text-xs uppercase tracking-[2px]" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
-                  Personalized page
-                </Text>
-              </View>
-            ) : (
-              <>
-                <Text className="text-xs uppercase tracking-[2px] mb-8" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
-                  Personalized page
-                </Text>
-                <Text className="text-2xl leading-8 mb-6" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
-                  Built around what matters to this account.
-                </Text>
-                <View className="h-2 w-24" style={{ backgroundColor: theme.accentColor || theme.primaryColor, borderRadius: 999 }} />
-              </>
-            )}
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  if (presentation.layouts.hero === 'documentHeader') {
-    return (
-      <View className="w-full px-5 md:px-10 py-10 md:py-14" style={{ backgroundColor: presentation.surfaceColor }}>
-        <View className="w-full max-w-4xl self-center border-y py-8 md:py-10" style={{ borderColor: theme.primaryColor }}>
-          <Text className="text-xs uppercase tracking-[3px] mb-4" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
-            Executive brief
-          </Text>
-          <Text className="text-3xl md:text-5xl leading-tight mb-5" style={{ color: theme.textColor, fontFamily: headingFont }}>
-            {props.headline}
-          </Text>
-          <View className="flex-row flex-wrap gap-6 items-end">
-            <Text
-              className="text-base md:text-lg leading-7 flex-1 min-w-[260px]"
-              style={{ color: theme.textColor, opacity: presentation.mutedTextOpacity, fontFamily: bodyFont }}
-            >
-              {props.subheadline}
-            </Text>
-            {cta}
+          <View className="w-full md:w-80 p-5 md:p-6 justify-center gap-4" style={presentation.secondaryButton}>
+            {panelImage}
+            {props.heroPanelLabel ? (
+              <Text className="text-xs uppercase tracking-[2px]" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
+                {props.heroPanelLabel}
+              </Text>
+            ) : null}
+            {!panelImage && props.heroPanelBody ? (
+              <Text className="text-2xl leading-8" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
+                {props.heroPanelBody}
+              </Text>
+            ) : null}
+            {!panelImage ? (
+              <View className="h-2 w-24" style={{ backgroundColor: theme.accentColor || theme.primaryColor, borderRadius: 999 }} />
+            ) : null}
           </View>
         </View>
       </View>

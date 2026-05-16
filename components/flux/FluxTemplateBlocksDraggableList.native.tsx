@@ -25,6 +25,7 @@ export function FluxTemplateBlocksDraggableList({
   contentAssets,
   renderBlockEditor,
   allowRemoveBlocks = true,
+  pairFieldColumns = false,
 }: FluxTemplateBlocksDraggableListProps) {
   const data = useMemo(() => sortBlocksByOrder(blocks), [blocks]);
 
@@ -41,52 +42,54 @@ export function FluxTemplateBlocksDraggableList({
         const selected = editingBlockId === block.id;
         return (
           <ScaleDecorator activeScale={1.02}>
-            <View className="mb-2">
+            <View className="mb-1.5">
               <View
-                className={`rounded-xl overflow-hidden border ${
+                className={`rounded-lg overflow-hidden border ${
                   selected ? 'border-indigo-500 bg-indigo-500/10' : 'border-[#2A2A2A] bg-[#1A1A1A]'
                 }`}
               >
-                <View className="flex-row items-stretch min-h-[52px]">
+                <View className="flex-row items-stretch min-h-[44px]">
                   <Pressable
                     accessibilityLabel="Drag to reorder blocks"
                     onLongPress={drag}
                     delayLongPress={200}
-                    className="px-2.5 justify-center bg-[#222] border-r border-[#2A2A2A] active:bg-[#2a2a2a]"
+                    className="px-2 justify-center bg-[#222] border-r border-[#2A2A2A] active:bg-[#2a2a2a] min-w-[44px] min-h-[44px]"
                   >
-                    <Text className="text-gray-500 text-sm font-instrument" style={{ letterSpacing: -2 }}>
+                    <Text className="text-gray-500 text-xs font-instrument" style={{ letterSpacing: -2 }}>
                       ⋮⋮
                     </Text>
                   </Pressable>
                   <Pressable
-                    className="flex-1 px-3 py-3 justify-center"
+                    className="flex-1 px-2.5 py-2 justify-center min-w-0"
                     onPress={() => onToggleEditing(block.id)}
                   >
-                    <Text className="text-white text-sm font-instrument-semibold">
+                    <Text className="text-white text-xs font-instrument-semibold" numberOfLines={1}>
                       {blockTypeLabels[block.type]}
                     </Text>
-                    <Text className="text-gray-400 text-xs font-instrument" numberOfLines={1}>
+                    <Text className="text-gray-400 text-[11px] font-instrument" numberOfLines={1}>
                       {blockSummary(block)}
                     </Text>
                   </Pressable>
                   {allowRemoveBlocks ? (
                     <Pressable
-                      className="px-3 justify-center"
+                      className="px-2 min-w-[44px] min-h-[44px] justify-center items-center"
                       onPress={() => onRemove(block.id)}
                       accessibilityLabel="Remove block"
                     >
-                      <Text className="text-red-400 text-base">✕</Text>
+                      <Text className="text-red-400 text-sm">✕</Text>
                     </Pressable>
                   ) : null}
                 </View>
                 {selected ? (
-                  <View className="border-t border-[#2A2A2A] px-4 py-4 bg-[#1A1A1A]">
+                  <View className="border-t border-[#2A2A2A] px-3 py-2.5 bg-[#1A1A1A]">
                     <FluxBlockScrollTagEditor
                       block={block}
                       blocks={data}
                       onSetScrollTag={updateBlockScrollTag}
                     />
-                    {renderBlockEditor(block, updateBlockProps, contentAssets)}
+                    {renderBlockEditor(block, updateBlockProps, contentAssets, {
+                      pairFieldColumns,
+                    })}
                   </View>
                 ) : null}
               </View>

@@ -23,9 +23,13 @@ export function coercePageConfig(raw: unknown): PageConfig | null {
     textColor: typeof t.textColor === 'string' ? t.textColor : '#1a1a1a',
     fontFamily: typeof t.fontFamily === 'string' ? t.fontFamily : 'Inter',
     ...(typeof t.logoUrl === 'string' && t.logoUrl.length > 0 ? { logoUrl: t.logoUrl } : {}),
-    blockStylePreset: FLUX_BLOCK_STYLE_PRESETS.includes(t.blockStylePreset as FluxBlockStylePreset)
-      ? (t.blockStylePreset as FluxBlockStylePreset)
-      : DEFAULT_FLUX_BLOCK_STYLE_PRESET,
+    blockStylePreset: (() => {
+      const v = (t as { blockStylePreset?: unknown }).blockStylePreset;
+      const raw = v === 'outlined' ? 'minimal' : typeof v === 'string' ? v : undefined;
+      return FLUX_BLOCK_STYLE_PRESETS.includes(raw as FluxBlockStylePreset)
+        ? (raw as FluxBlockStylePreset)
+        : DEFAULT_FLUX_BLOCK_STYLE_PRESET;
+    })(),
     ...(typeof t.allowLongCopy === 'boolean' ? { allowLongCopy: t.allowLongCopy } : {}),
   };
 

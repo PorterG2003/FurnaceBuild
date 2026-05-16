@@ -64,27 +64,6 @@ export function BenefitsBlock({ props }: { props: BenefitsBlockProps }) {
     );
   }
 
-  if (presentation.layouts.benefits === 'numberedRows') {
-    return (
-      <View className="w-full py-12 px-5 md:px-10" style={{ backgroundColor: presentation.surfaceColor }}>
-        <View className="w-full max-w-4xl self-center border-y py-8" style={{ borderColor: theme.primaryColor }}>
-          <Text className="text-2xl md:text-4xl mb-6" style={{ color: theme.textColor, fontFamily: headingFont }}>{props.heading}</Text>
-          {props.items.map((item, i) => (
-            <View key={i} className="flex-row gap-5 border-t py-5" style={{ borderColor: '#d1d5db' }}>
-              <Text className="text-sm w-10" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
-                {String(i + 1).padStart(2, '0')}
-              </Text>
-              <View className="flex-1">
-                <Text className="text-lg mb-1" style={{ color: theme.textColor, fontFamily: headingFont }}>{item.title}</Text>
-                <Text className="text-sm leading-6" style={mutedText}>{item.description}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      </View>
-    );
-  }
-
   if (presentation.layouts.benefits === 'softCards') {
     return (
       <View className="w-full py-14 px-4 md:px-6" style={{ backgroundColor: theme.backgroundColor }}>

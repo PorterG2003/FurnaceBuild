@@ -62,6 +62,11 @@ class MockQueryBuilder implements PromiseLike<Response> {
     return this;
   }
 
+  lte(column: string, value: unknown) {
+    this.call.filters.push({ op: 'lte', column, value });
+    return this;
+  }
+
   is(column: string, value: unknown) {
     this.call.filters.push({ op: 'is', column, value });
     return this;
@@ -436,6 +441,127 @@ test('getOrCreateThread reloads the canonical thread after a unique-violation ra
     reloadCall.filters.find((filter) => filter.column === 'message_job_id'),
     { op: 'eq', column: 'message_job_id', value: 'job-1' }
   );
+});
+
+test('backfillSentMessages stores rendered event payloads for sent campaign messages', async () => {
+  const supabase = new MockSupabase([
+    {
+      data: [
+        {
+          id: 'job-1',
+          provider_message_id: '<abc@example.com>',
+          sent_at: '2026-04-05T01:00:00.000Z',
+          created_at: '2026-04-05T00:00:00.000Z',
+          message_data: {
+            node_config: {
+              body: '{Hey|Hi} {{first_name}}',
+            },
+          },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+      ],
+    },
+    {
+      data: [
+        {
+          message_job_id: 'job-1',
+          event_data: {
+            sent_subject: 'Hello Casey',
+            sent_body_html: 'Hello Casey<br><br>Thanks,<br>Porter',
+            sent_body_text: 'Hello Casey Thanks, Porter',
+          },
+        },
+      ],
+    },
+    { data: [] },
+    { data: { email: 'lead@example.com', name: 'Lead' }, error: null },
+    { data: null, error: null },
+    { count: 1, error: null },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+
+  await (manager as any).backfillSentMessages(
+    { id: 'thread-1', account_id: 'account-1' },
+    'campaign-1',
+    'lead-1',
+    '2026-04-06T00:00:00.000Z',
+    createMailbox()
+  );
+
+  const insertCall = supabase.calls[4] as QueryCall;
+  assert.equal(insertCall.table, 'email_messages');
+  assert.equal(insertCall.insertPayloads.length, 1);
+  assert.deepEqual(insertCall.insertPayloads[0], {
+    thread_id: 'thread-1',
+    account_id: 'account-1',
+    message_job_id: 'job-1',
+    direction: 'sent',
+    from_email: 'porterg@furnaceoutbound.com',
+    from_name: 'Porter',
+    to_email: 'lead@example.com',
+    to_name: 'Lead',
+    subject: 'Hello Casey',
+    body_text: 'Hello Casey Thanks, Porter',
+    body_html: 'Hello Casey<br><br>Thanks,<br>Porter',
+    message_id: 'abc@example.com',
+    in_reply_to: null,
+    message_references: null,
+    received_at: '2026-04-05T01:00:00.000Z',
+    headers: {},
+    attachments: [],
+  });
+
+  const updateCall = supabase.calls[6] as QueryCall;
+  assert.equal(updateCall.table, 'email_threads');
+  assert.deepEqual(updateCall.insertPayloads[0], { message_count: 1 });
+});
+
+test('backfillSentMessages falls back to raw node config when no sent event exists', async () => {
+  const supabase = new MockSupabase([
+    {
+      data: [
+        {
+          id: 'job-1',
+          provider_message_id: '<abc@example.com>',
+          sent_at: '2026-04-05T01:00:00.000Z',
+          created_at: '2026-04-05T00:00:00.000Z',
+          message_data: {
+            subject: 'Fallback subject',
+            node_config: {
+              body: '{Hey|Hi} {{first_name}}',
+              template: '{Fallback|Backup} {{first_name}}',
+            },
+          },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+      ],
+    },
+    { data: [] },
+    { data: [] },
+    { data: { email: 'lead@example.com', name: 'Lead' }, error: null },
+    { data: null, error: null },
+    { count: 1, error: null },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+
+  await (manager as any).backfillSentMessages(
+    { id: 'thread-1', account_id: 'account-1' },
+    'campaign-1',
+    'lead-1',
+    '2026-04-06T00:00:00.000Z',
+    createMailbox()
+  );
+
+  const insertCall = supabase.calls[4] as QueryCall;
+  assert.equal(insertCall.table, 'email_messages');
+  const inserted = insertCall.insertPayloads[0] as Record<string, unknown>;
+  assert.equal(inserted.subject, 'Fallback subject');
+  assert.equal(inserted.body_text, '{Hey|Hi} {{first_name}}');
+  assert.equal(inserted.body_html, '{Hey|Hi} {{first_name}}');
 });
 
 test('handleBounce returns early when bounce already processed (messageId idempotency)', async () => {

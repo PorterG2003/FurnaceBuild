@@ -97,6 +97,113 @@ class TrackingSupabase {
   }
 }
 
+class ProcessMessageMutationStub implements PromiseLike<{ data: any; error: any }> {
+  constructor(
+    private readonly table: string,
+    private readonly supabase: ProcessMessageSupabase,
+    private updates: Record<string, unknown> | null = null,
+  ) {}
+
+  select(_columns?: string) {
+    return this;
+  }
+
+  update(payload: Record<string, unknown>) {
+    this.updates = payload;
+    return this;
+  }
+
+  eq(_column: string, _value: unknown) {
+    return this;
+  }
+
+  in(_column: string, _value: unknown) {
+    return this;
+  }
+
+  maybeSingle() {
+    return Promise.resolve(this.supabase.resolveTableResult(this.table, this.updates));
+  }
+
+  single() {
+    return Promise.resolve(this.supabase.resolveTableResult(this.table, this.updates));
+  }
+
+  then<TResult1 = { data: any; error: any }, TResult2 = never>(
+    onfulfilled?: ((value: { data: any; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): Promise<TResult1 | TResult2> {
+    return Promise.resolve(this.supabase.resolveTableResult(this.table, this.updates)).then(
+      onfulfilled ?? undefined,
+      onrejected ?? undefined,
+    );
+  }
+}
+
+class ProcessMessageRpcStub {
+  constructor(
+    private readonly fn: string,
+    private readonly args: Record<string, unknown>,
+    private readonly supabase: ProcessMessageSupabase,
+  ) {}
+
+  single() {
+    return Promise.resolve(this.supabase.resolveRpcResult(this.fn, this.args));
+  }
+}
+
+class ProcessMessageSupabase {
+  readonly rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+
+  from(table: string) {
+    return new ProcessMessageMutationStub(table, this);
+  }
+
+  rpc(fn: string, args: Record<string, unknown>) {
+    this.rpcCalls.push({ fn, args });
+    if (fn === 'check_mailbox_throttle_and_reserve') {
+      return new ProcessMessageRpcStub(fn, args, this);
+    }
+    return Promise.resolve(this.resolveRpcResult(fn, args));
+  }
+
+  resolveTableResult(table: string, updates: Record<string, unknown> | null) {
+    if (table === 'campaigns') {
+      return {
+        data: {
+          account_id: 'account-1',
+          status: 'running',
+          deleted_at: null,
+        },
+        error: null,
+      };
+    }
+    if (table === 'enrollments' && updates == null) {
+      return {
+        data: {
+          deleted_at: null,
+          state: 'active',
+        },
+        error: null,
+      };
+    }
+    return { data: null, error: null };
+  }
+
+  resolveRpcResult(fn: string, _args: Record<string, unknown>) {
+    if (fn === 'check_mailbox_throttle_and_reserve') {
+      return {
+        data: {
+          success: true,
+          failure_reason: null,
+        },
+        error: null,
+      };
+    }
+    return { data: null, error: null };
+  }
+}
+
 function createCampaignMessageJob(overrides: Partial<MessageJob> = {}): MessageJob {
   return {
     id: 'message-job-1',
@@ -318,4 +425,72 @@ test('SendWorker warns when locked lead mailbox mismatches sent job mailbox', as
   } finally {
     slack.restore();
   }
+});
+
+test('SendWorker persists rendered text and html payloads for campaign sends', async () => {
+  const supabase = new ProcessMessageSupabase();
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async (_transporter, _mailbox, _job, _lead, _subject, _body, _inReplyTo, _references, options) => {
+      assert.equal(options?.bodyHtml, 'Hey Casey,<br>Appreciate it for your time.');
+      assert.equal(options?.bodyText, 'Hey Casey, Appreciate it for your time.');
+      return '<provider@example.com>';
+    },
+  });
+  const messageJob = createCampaignMessageJob({
+    message_data: {
+      node_config: {
+        subject: '{Hi {{first_name}}|Hello {{first_name}}}',
+        body_html: '<p>{Hey|Hello} {{first_name}},</p><p>{Appreciate it|Thanks} for your time.</p>',
+        body_text: '{Hey|Hello} {{first_name}},\n\n{Appreciate it|Thanks} for your time.',
+      },
+    },
+  });
+
+  (worker as any).loadJobData = async () => ({
+    lead: {
+      id: 'lead-1',
+      email: 'lead@example.com',
+      first_name: 'Casey',
+      mailbox_id: 'mailbox-1',
+    },
+    mailbox: {
+      id: 'mailbox-1',
+      email_address: 'sender@example.com',
+      display_name: 'Sender',
+      signature: null,
+    },
+    nodeConfig: (messageJob.message_data as any).node_config,
+  });
+  (worker as any).isEmailBlocked = async () => false;
+  (worker as any).getFirstSentMessageForCampaignLead = async () => null;
+  (worker as any).finalizeCampaignMessageJobSent = async () => {};
+  (worker as any).reconcileLeadMailboxAfterSuccessfulSend = async () => {};
+  (worker as any).smtpPool = {
+    getTransporter: async () => ({}),
+    markMessageSent: () => {},
+  };
+
+  const originalRandom = Math.random;
+  Math.random = () => 0;
+
+  try {
+    await (worker as any).processMessageJob(messageJob);
+  } finally {
+    Math.random = originalRandom;
+  }
+
+  const sentEventCall = supabase.rpcCalls.find((call) => call.fn === 'record_sent_event_and_increment');
+  assert.ok(sentEventCall);
+  const eventData = sentEventCall.args.p_event_data as Record<string, unknown>;
+  assert.deepEqual(eventData, {
+    provider_message_id: '<provider@example.com>',
+    sent_at: eventData.sent_at,
+    test_mode: false,
+    sent_subject: 'Hi Casey',
+    sent_body_html: 'Hey Casey,<br>Appreciate it for your time.',
+    sent_body_text: 'Hey Casey, Appreciate it for your time.',
+  });
+  assert.equal(typeof eventData.sent_at, 'string');
 });

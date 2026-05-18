@@ -573,6 +573,8 @@ ECS task role needs:
 
 ## 2.4 Inbox Checker (Scheduled Task)
 
+> Historical note: this section describes an earlier Lambda-oriented inbox checker design. The current runtime in this repo is the ECS `inbox-checker-worker`, so treat the implementation steps below as archival context rather than current operator guidance.
+
 ### Purpose
 Periodically check mailboxes for replies/bounces via IMAP.
 

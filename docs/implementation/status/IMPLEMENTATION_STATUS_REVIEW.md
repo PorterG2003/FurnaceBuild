@@ -118,12 +118,10 @@ The implementation has made **significant progress** across all phases, with mos
 - ✅ Health checks and logging configured
 - ✅ **Infrastructure extracted from Amplify** to separate CDK project (`infra/workers/`)
 
-### 2.4 Inbox Checker (Scheduled Task) ⚠️ **PARTIAL**
-- ✅ Lambda function exists (`inboxChecker`)
-- ✅ CloudWatch Event Rule configured (every 5 minutes)
-- ⚠️ **Missing**: Full IMAP reply detection logic (see Phase 3.4)
-- ⚠️ **Missing**: Email thread/message creation from IMAP
-- **Status**: Infrastructure ready, logic incomplete
+### 2.4 Inbox Checker (Historical Scheduled Task) ⚠️ **SUPERSEDED**
+- Historical note: this review captured an earlier Lambda-based inbox checker design
+- Current runtime is the ECS `inbox-checker-worker`
+- The Lambda-specific status items below should not be used as current operator guidance
 
 ### 2.5 API Gateway / Lambda Functions (Optional) ❌ **NOT STARTED**
 - ❌ Open pixel endpoint (`/o/:message_job_id.png`)

@@ -24,7 +24,7 @@ This document outlines the step-by-step implementation plan for setting up isola
    - ✅ ECS infrastructure defined in `amplify/backend.ts`
    - ✅ ECR repositories, ECS clusters, services, task definitions
    - ✅ IAM roles and permissions
-   - ✅ Lambda functions (enrollmentMetric, inboxChecker, etc.)
+   - ✅ Lambda functions (enrollmentMetric, sendInvitationEmail, etc.)
 
 3. **Database:**
    - ✅ Supabase project exists
@@ -257,7 +257,7 @@ new WorkerStack(app, 'WorkerStack-Prod', {
    - CloudWatch log groups for workers
 
 3. **Keep in Amplify:**
-   - Lambda functions (enrollmentMetric, inboxChecker, sendInvitationEmail, etc.)
+   - Lambda functions (enrollmentMetric, sendInvitationEmail, etc.)
    - Auth configuration
    - Data API configuration
    - Any other frontend/API infrastructure
@@ -450,7 +450,7 @@ cdk deploy WorkerStack-Prod
 
 **Lambda functions that access Supabase:**
 - `enrollmentMetric` - should use prod branch (or environment-specific)
-- `inboxChecker` - should use environment-specific branch
+- Historical note: the old `inboxChecker` Lambda guidance in this document has been superseded by the ECS `inbox-checker-worker`
 
 **Update Lambda environment variables:**
 - Add `SUPABASE_URL` environment variable per environment

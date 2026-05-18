@@ -116,9 +116,9 @@ Progress on setting up isolated dev/prod infrastructure with Supabase branches a
 
 - ⚠️ **Update Lambda functions** (if they use Supabase):
   - `enrollmentMetric` - needs environment-specific Supabase URL
-  - `inboxChecker` - needs environment-specific Supabase URL
   - `testMailboxConnection` - needs environment-specific Supabase URL
   - `sendInvitationEmail` - needs environment-specific Supabase URL
+  - Historical note: `inboxChecker` is no longer an active Lambda runtime in this repo; inbox checking now runs through the ECS `inbox-checker-worker`
 
 - ⚠️ **Test frontend connections:**
   - Verify dev frontend connects to dev branch

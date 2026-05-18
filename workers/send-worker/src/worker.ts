@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { buildCampaignEmailContent, type LeadLike } from '@furnace/email-lib';
+import { buildCampaignEmailContent, type LeadLike } from '../../../lib/email/dist/index.js';
 import {
   formatUnknownError,
   isRetryableSupabaseReadError,

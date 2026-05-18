@@ -67,10 +67,12 @@ infra/workers/
 - Auto-scaling configuration
 
 **Kept:**
-- Lambda functions (enrollmentMetric, inboxChecker, sendInvitationEmail)
+- Lambda functions (enrollmentMetric, sendInvitationEmail)
 - Auth configuration
 - Data API configuration
 - CloudWatch permissions for enrollmentMetric Lambda (still useful for monitoring)
+
+Historical note: this document reflects the earlier migration phase. Inbox checking is now owned by the ECS `inbox-checker-worker`, not an active `inboxChecker` Lambda in this repo.
 
 ## Next Steps
 

@@ -4,6 +4,7 @@
  * Pipeline: body_html ?? template ?? body → processSpintax → mergeTemplate; same for subject.
  */
 
+import { stripHtml } from './parse-body.js';
 import { mergeTemplate, type LeadLike } from './mergeTemplate.js';
 import { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js';
 import { stripSignatureStyles } from './strip-signature-styles.js';
@@ -48,7 +49,7 @@ export function mergeInboxComposeHtml(
   let bodyRaw: string;
   if (normalizedSignature && bodyIsHtml && sigIsHtml) {
     const bodyFragment = htmlToFragment(bodyPart);
-    const sigFragment = htmlToFragment(sigPartForHtml);
+    const sigFragment = htmlToFragment(sigPartForHtml).replace(/^(\s*<br\s*\/?>\s*)+/gi, '');
     bodyRaw = `${bodyFragment}<br><br>${sigFragment}`;
   } else if (normalizedSignature) {
     bodyRaw = `${bodyPart}\n\n${sigPart}`;
@@ -111,10 +112,13 @@ export function buildCampaignEmailContent(
     options
   );
   const bodyMerged = mergeTemplate(bodySpun, lead);
-  const bodyTextFromConfig =
-    typeof config.body_text === 'string' ? config.body_text : null;
   const isHtmlBody = /<[a-z][\s\S]*>/i.test(bodyMerged);
-  const bodyText = bodyTextFromConfig ?? (isHtmlBody ? null : bodyMerged);
+  const bodyText =
+    typeof config.body_text === 'string' && !isHtmlBody
+      ? mergeTemplate(processSpintax(config.body_text, options), lead)
+      : isHtmlBody
+        ? stripHtml(bodyMerged)
+        : bodyMerged;
 
   if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
     const log = (label: string, value: unknown) =>

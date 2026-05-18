@@ -74,7 +74,7 @@ After this change, the client sends **UID FETCH 3523 (...)** and the server acce
 | Location | Uses ImapFlow fetch/download? | Status |
 |----------|-----------------------------|--------|
 | `workers/inbox-checker-worker/src/imap-client.ts` | Yes: `search`, `fetchOne`, `download` | Fixed: `fetchOne(..., { uid: true })`, `download(uid, undefined, { uid: true })` |
-| `amplify/functions/inboxChecker/handler.ts` | Yes: `search`, `fetchOne`, `download` | Fixed: same options; also corrected `download` stream reading (was `Buffer.from(parsed.content)`, now for-await over `parsed.content`) |
+| `amplify/functions/inboxChecker/handler.ts` | Historical only | Superseded by the ECS inbox checker worker; this repo no longer contains an active Amplify inbox checker function. |
 | `amplify/functions/testMailboxConnection/handler.ts` | No: only `connect()` and `mailboxOpen('INBOX')` | No change needed |
 | `lib/services/email.ts` | No: calls Lambda via client, no direct ImapFlow | No change needed |
 

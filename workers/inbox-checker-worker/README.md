@@ -85,6 +85,8 @@ npm run scale:dev
 bash scripts/scale-services.sh dev 1 1 1
 ```
 
+The inbox checker runtime in this repo is ECS-only. If you still have a legacy inbox-checking runtime outside this repo, remove or disable it in AWS before scaling the ECS inbox checker.
+
 ## Monitoring
 
 - **CloudWatch Logs**: `/ecs/furnace/inbox-checker-worker-{environment}`

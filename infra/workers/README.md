@@ -324,22 +324,19 @@ The container runs the CSV CLI by default (`INPUT_CSV` / `OUTPUT_JSON`). Foundry
 
 ### Inbox Checker Runtime Ownership
 
-To avoid duplicate ingestion, only one inbox checker runtime should be active:
+The supported runtime in this repo is the ECS `inbox-checker-worker`.
 
-- **Option A (default):** Amplify Lambda `inboxChecker`
-- **Option B:** ECS `inbox-checker-worker`
-
-When scaling ECS inbox checker above `0`, disable Lambda ingestion at deploy time:
+Scale it the same way as the other ECS workers:
 
 ```bash
-INBOX_CHECKER_LAMBDA_ENABLED=false npx ampx pipeline-deploy --branch "$AWS_BRANCH" --app-id "$AWS_APP_ID"
+cd infra/workers
+npm run scale:dev
+
+# Or specify counts explicitly (send, scheduler, inbox-checker)
+bash scripts/scale-services.sh dev 1 1 1
 ```
 
-The scaling script enforces this by default and blocks inbox checker ECS scale-up unless you explicitly override with:
-
-```bash
-ALLOW_DUAL_INGESTION=true bash scripts/scale-services.sh dev 1 1 1
-```
+If you still have an old inbox-checking runtime outside this repo, remove or disable it in AWS before scaling the ECS inbox checker.
 
 ### Stack Management
 - `npm run check:stack` - Check stack status

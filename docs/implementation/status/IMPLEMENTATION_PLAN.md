@@ -6,6 +6,8 @@ This document outlines the step-by-step plan to implement the scalable email inf
 
 **Note**: This architecture uses SMTP AUTH to Gmail-hosted mailboxes. Gmail still owns SMTP reputation, and no IP warmup is required. The system controls pacing, jitter, and behavior patterns.
 
+**Historical note**: This plan contains earlier Lambda-era implementation ideas. Current inbox checking in this repo runs via the ECS `inbox-checker-worker`, so any inbox-checker Lambda references below should be treated as superseded.
+
 ---
 
 ## Current State Assessment
@@ -261,7 +263,7 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - Reuses same ECS cluster
   - Similar structure to send-workers but polls database instead of SQS
   - Auto-scales based on enrollment count (not queue depth)
-- **Note**: No `inbox-workers` or `event-workers` ECS services needed. Inbox checking uses scheduled Lambda tasks (Phase 2.4), and events are processed synchronously (Phase 3.5).
+- **Note**: No separate `event-workers` ECS service needed, and the old Lambda-based inbox-checker notes in this section have been superseded by the ECS `inbox-checker-worker`.
 
 ### 2.6 Docker Images
 **Purpose**: Containerized worker applications
@@ -283,14 +285,14 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - Install dependencies: Supabase client, AWS SDK (SQS for pushing jobs, SSM for secrets)
 - Build and push to ECR (Elastic Container Registry)
 - Set up CI/CD for image builds
-- **Note**: No `inbox-worker` Docker image needed - inbox checking uses Lambda (Phase 2.4)
+- **Note**: Inbox checking is now handled by the ECS `inbox-checker-worker`
 
-### 2.4 Inbox Checker (Scheduled Task)
+### 2.4 Inbox Checker (Historical Scheduled Task)
 **Purpose**: Periodically check mailboxes for replies/bounces
 
 **Tasks**:
 - Create CloudWatch Event Rule (every 5 minutes)
-- Create Lambda function (or ECS Scheduled Task):
+- Historical design note: this plan originally proposed a Lambda or ECS scheduled task. The current repo implementation uses the ECS `inbox-checker-worker`.
   - Query Supabase: `SELECT * FROM mailboxes WHERE status = 'connected' AND email_address NOT LIKE '%@furnace.test'`
   - For each mailbox:
     - Connect via IMAP
@@ -459,7 +461,7 @@ This document outlines the step-by-step plan to implement the scalable email inf
 **Purpose**: Detect replies, bounces, unsubscribes via IMAP and store full email conversations (scheduled task)
 
 **Tasks**:
-- Scheduled task (CloudWatch → Lambda or ECS Scheduled Task):
+- Scheduled task design note (historical): the current repo implementation uses the ECS `inbox-checker-worker`
   - Runs every 5 minutes
   - Query Supabase: `SELECT * FROM mailboxes WHERE status = 'connected' AND email_address NOT LIKE '%@furnace.test'`
   - For each mailbox:
@@ -731,7 +733,7 @@ This document outlines the step-by-step plan to implement the scalable email inf
 5. **Phase 2.2, 3.1**: Scheduler workers + Flow evaluation engine (migrate from Lambda to ECS)
 6. **Phase 3.3**: SMTP integration (connection pooling, error handling)
 7. **Phase 4**: Pacing & throttling (safety)
-8. **Phase 2.4, 3.4**: Inbox checker (scheduled Lambda, IMAP reply detection) ✅ (infrastructure done)
+8. **Phase 2.4, 3.4**: Inbox checker (historical Lambda-era plan, later superseded by ECS worker)
 9. **Phase 3.5**: Event processing (synchronous, inline)
 10. **Phase 5**: Monitoring (observability)
 11. **Phase 6-7**: Testing & rollout (validation)
@@ -778,7 +780,7 @@ This document outlines the step-by-step plan to implement the scalable email inf
   - Target: Keep pending jobs low (< 1000 jobs)
   - Scale up when pending jobs > 500
   - Scale down when pending jobs < 100
-- **Inbox Checker**: Lambda scheduled task (runs every 5 minutes, no scaling needed)
+- **Inbox Checker**: ECS `inbox-checker-worker` runtime
 
 ### Error Handling
 - **SMTP 4xx (Temporary)**: Retry with exponential backoff (max 3 retries)

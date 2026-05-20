@@ -1366,7 +1366,16 @@ const clientApiDistribution = new cloudfront.Distribution(clientApiStack, 'Clien
 const resolvedClientApiBaseUrl = clientApiDomainName
   ? `https://${clientApiDomainName}`
   : `https://${clientApiDistribution.distributionDomainName}`;
-clientApiLambda.addEnvironment('CLIENT_API_BASE_URL', resolvedClientApiBaseUrl);
+// Set base URL from deploy-time domain only — referencing the distribution domain on the
+// Lambda creates a CloudFormation cycle (Lambda -> Function URL -> Distribution -> Lambda).
+if (clientApiDomainName) {
+  clientApiLambda.addEnvironment('CLIENT_API_BASE_URL', `https://${clientApiDomainName}`);
+} else {
+  const clientApiDocsOrigin = process.env.CLIENT_API_DOCS_ORIGIN?.trim();
+  if (clientApiDocsOrigin) {
+    clientApiLambda.addEnvironment('CLIENT_API_DOCS_ORIGIN', clientApiDocsOrigin.replace(/\/$/, ''));
+  }
+}
 
 // Flux: generate personalized prospect pages (Function URL + Supabase JWT)
 const fluxGenerateLambda = backend.fluxGenerate.resources.lambda as lambda.Function;

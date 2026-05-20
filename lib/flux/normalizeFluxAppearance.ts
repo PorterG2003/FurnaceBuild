@@ -41,7 +41,21 @@ export function normalizeFluxPageHeaderAppearance(raw: unknown): FluxPageHeaderA
   };
 }
 
-const THEME_HEX_KEYS: (keyof ThemeConfig)[] = [
+type ThemeHexKey =
+  | 'primaryColor'
+  | 'accentColor'
+  | 'backgroundColor'
+  | 'textColor'
+  | 'surfaceColor'
+  | 'onPrimaryColor'
+  | 'onSurfaceColor'
+  | 'mutedTextColor'
+  | 'borderColor'
+  | 'strongBorderColor'
+  | 'errorColor'
+  | 'shadowColor';
+
+const THEME_HEX_KEYS: ThemeHexKey[] = [
   'primaryColor',
   'accentColor',
   'backgroundColor',
@@ -63,7 +77,7 @@ export function normalizeThemeConfigHex(theme: ThemeConfig): ThemeConfig {
     const v = next[key];
     if (typeof v === 'string') {
       const n = normalizeFluxHexColor(v);
-      if (n) (next as Record<string, string>)[key] = n;
+      if (n) next[key] = n;
     }
   }
   if (theme.header) {

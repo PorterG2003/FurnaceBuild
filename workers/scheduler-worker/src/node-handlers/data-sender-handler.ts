@@ -205,7 +205,7 @@ export async function handleDataSenderNode(
 
   const errorMessage = lastError ?? 'DataSender request failed';
   reportErrorToSlack('DataSender request failed', {
-    severity: onFailure === 'stop' ? 'warning' : 'info',
+    severity: 'warning',
     enrollment_id: enrollment.id,
     campaign_id: enrollment.campaign_id,
     node_id: node.id,

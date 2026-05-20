@@ -1304,7 +1304,10 @@ const clientApiWafWebAclArn =
   clientApiWafWebAclArnRaw?.startsWith('arn:aws:wafv2:') || clientApiWafWebAclArnRaw?.startsWith('arn:aws:waf:')
     ? clientApiWafWebAclArnRaw
     : undefined;
-const clientApiCachePolicy = new cloudfront.CachePolicy(backend.stack, 'ClientApiCachePolicy', {
+// Co-locate CloudFront with the clientApi Lambda to avoid a function <-> root stack cycle:
+// distribution needs the function URL; the function needs CLIENT_API_BASE_URL from the distribution.
+const clientApiStack = clientApiLambda.stack;
+const clientApiCachePolicy = new cloudfront.CachePolicy(clientApiStack, 'ClientApiCachePolicy', {
   defaultTtl: cdk.Duration.seconds(0),
   minTtl: cdk.Duration.seconds(0),
   maxTtl: cdk.Duration.seconds(1),
@@ -1315,7 +1318,7 @@ const clientApiCachePolicy = new cloudfront.CachePolicy(backend.stack, 'ClientAp
   enableAcceptEncodingGzip: true,
 });
 const clientApiOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
-  backend.stack,
+  clientApiStack,
   'ClientApiOriginRequestPolicy',
   {
     headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList(
@@ -1327,7 +1330,7 @@ const clientApiOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
   },
 );
 
-const clientApiDistribution = new cloudfront.Distribution(backend.stack, 'ClientApiDistribution', {
+const clientApiDistribution = new cloudfront.Distribution(clientApiStack, 'ClientApiDistribution', {
   defaultBehavior: {
     origin: new origins.HttpOrigin(clientApiOriginHost, {
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
@@ -1351,7 +1354,7 @@ const clientApiDistribution = new cloudfront.Distribution(backend.stack, 'Client
     ? {
         domainNames: [clientApiDomainName],
         certificate: acm.Certificate.fromCertificateArn(
-          backend.stack,
+          clientApiStack,
           'ClientApiCertificate',
           clientApiCertificateArn,
         ),

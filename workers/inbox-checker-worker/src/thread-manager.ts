@@ -950,7 +950,7 @@ export class ThreadManager {
           message_job_id: job.id,
           mailbox_id: mailbox.id,
           severity: classification.severity,
-          code: classification.code ?? null,
+          code: classification.smtpCode ?? null,
           bounce_message_id: message.messageId ?? null,
           bounce_uid: message.uid ?? null,
           candidate_emails: candidateEmails,

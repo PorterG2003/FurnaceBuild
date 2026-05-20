@@ -8,6 +8,7 @@ import { defineFunction, secret } from '@aws-amplify/backend';
  */
 export const sendInvitationEmail = defineFunction({
   name: 'sendInvitationEmail',
+  resourceGroupName: 'data',
   entry: './handler.ts',
   environment: {
     RESEND_API_KEY: secret('RESEND_API_KEY'),

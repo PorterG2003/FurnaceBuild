@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { FluxBlockStylePreset } from '@/lib/flux/fluxPresentationTokens';
 import type { Block, BlockType, ContentAsset } from '@/lib/flux/types';
 
 export function sortBlocksByOrder(blocks: Block[]): Block[] {
@@ -8,6 +9,8 @@ export function sortBlocksByOrder(blocks: Block[]): Block[] {
 export type FluxBlockEditorLayout = {
   /** When true, short paired fields (e.g. CTA + URL) render in two columns when space allows. */
   pairFieldColumns?: boolean;
+  /** Active block style preset (drives layout-specific fields such as case study image URL). */
+  blockStylePreset?: FluxBlockStylePreset;
 };
 
 export interface FluxTemplateBlocksDraggableListProps {
@@ -30,4 +33,5 @@ export interface FluxTemplateBlocksDraggableListProps {
   /** When false, hide remove control (e.g. prospect page blocks). Default true. */
   allowRemoveBlocks?: boolean;
   pairFieldColumns?: boolean;
+  blockStylePreset?: FluxBlockStylePreset;
 }

@@ -89,6 +89,7 @@ import {
 import type { FluxCampaignChatMessage } from '@/lib/flux/fluxCampaignChatState';
 import { getLastFluxChatSummary } from '@/lib/flux/fluxCampaignChatState';
 import { sellerProfileFromCampaignRow } from '@/lib/flux/campaignSeller';
+import { normalizePageConfigForSave } from '@/lib/flux/normalizePageConfigForSave';
 import { syncFluxPageConfigLogo } from '@/lib/flux/syncFluxPageConfigLogo';
 import { mergeServerCompetitorAuditBlocksIntoDraft } from '@/lib/flux/mergeServerCompetitorAuditBlocks';
 import { BaseModal } from '@/components/ui/modals/BaseModal';
@@ -719,13 +720,15 @@ export default function ProspectDetail() {
       }
       setSavingPage(true);
       try {
-        const syncedPageConfig = syncFluxPageConfigLogo(draftPageConfig, {
+        const syncedPageConfig = normalizePageConfigForSave(
+          syncFluxPageConfigLogo(draftPageConfig, {
           prospectBrand: prospect.brand_profile,
           prospectWebsiteIntel: prospect.website_intel_snapshot,
           sellerBrand: campaign.seller_brand_profile,
           sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
           brandingPolicy: campaign.branding_policy,
-        });
+          }),
+        );
         const updated = await updateFluxPageConfig(page.id, syncedPageConfig);
         setPage(updated);
         if (!opts?.quiet) {

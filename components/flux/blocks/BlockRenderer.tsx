@@ -38,6 +38,7 @@ export function BlockRenderer({ block, assets, runtimeContext }: BlockRendererPr
           asset={asset}
           overrideTitle={block.props.overrideTitle}
           overrideMetric={block.props.overrideMetric}
+          overrideImageUrl={block.props.overrideImageUrl}
         />
       );
     }

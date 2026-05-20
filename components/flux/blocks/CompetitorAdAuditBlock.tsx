@@ -180,7 +180,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
 
         {props.status === 'error' && props.errorMessage ? (
           <View className="p-4 mb-4" style={presentation.card}>
-            <Text className="text-sm leading-6" style={{ color: '#b91c1c', fontFamily: bodyFont }}>
+            <Text className="text-sm leading-6" style={{ color: presentation.errorColor, fontFamily: bodyFont }}>
               {props.errorMessage}
             </Text>
           </View>

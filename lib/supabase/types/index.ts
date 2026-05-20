@@ -12,6 +12,12 @@ export type AccountUpdate = Database['public']['Tables']['accounts']['Update'];
 export type AccountUser = Database['public']['Tables']['account_users']['Row'];
 export type AccountUserInsert = Database['public']['Tables']['account_users']['Insert'];
 export type AccountUserUpdate = Database['public']['Tables']['account_users']['Update'];
+export type AccountApiKey = Database['public']['Tables']['account_api_keys']['Row'];
+export type AccountApiKeyInsert = Database['public']['Tables']['account_api_keys']['Insert'];
+export type AccountApiKeyUpdate = Database['public']['Tables']['account_api_keys']['Update'];
+export type ApiIdempotencyKey = Database['public']['Tables']['api_idempotency_keys']['Row'];
+export type ApiRateLimitBucket = Database['public']['Tables']['api_rate_limit_buckets']['Row'];
+export type ApiImportJob = Database['public']['Tables']['api_import_jobs']['Row'];
 
 // Export commonly used types
 export type Campaign = Database['public']['Tables']['campaigns']['Row'];
@@ -59,6 +65,10 @@ export type EmailMessageUpdate = Database['public']['Tables']['email_messages'][
 export type BlockListEntry = Database['public']['Tables']['block_list']['Row'];
 export type BlockListEntryInsert = Database['public']['Tables']['block_list']['Insert'];
 export type BlockListEntryUpdate = Database['public']['Tables']['block_list']['Update'];
+export type WebhookEvent = Database['public']['Tables']['webhook_events']['Row'];
+export type WebhookEventInsert = Database['public']['Tables']['webhook_events']['Insert'];
+export type WebhookDelivery = Database['public']['Tables']['webhook_deliveries']['Row'];
+export type WebhookDeliveryInsert = Database['public']['Tables']['webhook_deliveries']['Insert'];
 
 export type SmartleadMigrationRun = Database['public']['Tables']['smartlead_migration_runs']['Row'];
 export type SmartleadMigrationRunInsert = Database['public']['Tables']['smartlead_migration_runs']['Insert'];

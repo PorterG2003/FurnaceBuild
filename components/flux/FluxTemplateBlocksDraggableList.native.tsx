@@ -26,6 +26,7 @@ export function FluxTemplateBlocksDraggableList({
   renderBlockEditor,
   allowRemoveBlocks = true,
   pairFieldColumns = false,
+  blockStylePreset,
 }: FluxTemplateBlocksDraggableListProps) {
   const data = useMemo(() => sortBlocksByOrder(blocks), [blocks]);
 
@@ -89,6 +90,7 @@ export function FluxTemplateBlocksDraggableList({
                     />
                     {renderBlockEditor(block, updateBlockProps, contentAssets, {
                       pairFieldColumns,
+                      blockStylePreset,
                     })}
                   </View>
                 ) : null}

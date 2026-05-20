@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text } from 'react-native';
 import type { BenefitsBlockProps } from '@/lib/flux/types';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
+import { withFluxAlpha } from '@/lib/flux/fluxPresentationTokens';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 
 export function BenefitsBlock({ props }: { props: BenefitsBlockProps }) {
@@ -27,7 +28,11 @@ export function BenefitsBlock({ props }: { props: BenefitsBlockProps }) {
           </Text>
           <View className="gap-5">
             {props.items.map((item, i) => (
-              <View key={i} className="flex-row gap-4 border-t pt-5" style={{ borderColor: theme.primaryColor + '28' }}>
+              <View
+                key={i}
+                className="flex-row gap-4 border-t pt-5"
+                style={{ borderColor: withFluxAlpha(theme.primaryColor, '28') }}
+              >
                 <Text className="text-lg" style={{ color: theme.primaryColor, fontFamily: headingFont }}>✓</Text>
                 <View className="flex-1">
                   <Text className="text-lg mb-1" style={{ color: theme.textColor, fontFamily: headingFont }}>{item.title}</Text>
@@ -98,7 +103,10 @@ export function BenefitsBlock({ props }: { props: BenefitsBlockProps }) {
           <View key={i} className="w-full sm:w-64 md:w-72 p-4 md:p-5" style={presentation.card}>
             <View
               className="w-10 h-10 mb-3 items-center justify-center"
-              style={{ backgroundColor: theme.primaryColor + '15', borderRadius: presentation.radii.icon }}
+              style={{
+                backgroundColor: withFluxAlpha(theme.primaryColor, '15'),
+                borderRadius: presentation.radii.icon,
+              }}
             >
               <Text style={{ color: theme.primaryColor, fontSize: 18 }}>✦</Text>
             </View>

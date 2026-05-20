@@ -10,6 +10,7 @@ import {
   classifyBounce,
 } from './bounce-detection/index.js';
 import { emitEmailReceivedNotification } from './emit-notification-event.js';
+import { emitWebhookEvent } from './emit-webhook-event.js';
 
 type EmailThreadRow = {
   id: string;
@@ -489,6 +490,26 @@ export class ThreadManager {
       receivedAt: emailMessage.received_at,
     });
 
+    if (isReplyToOriginal && originalJob) {
+      await emitWebhookEvent(this.supabase, {
+        accountId: thread.account_id,
+        campaignId: originalJob.campaign_id,
+        eventType: 'reply.received',
+        payload: {
+          thread_id: thread.id,
+          email_message_id: emailMessage.id,
+          campaign_id: originalJob.campaign_id,
+          lead_id: originalJob.lead_id,
+          enrollment_id: originalJob.enrollment_id,
+          mailbox_id: mailbox.id,
+          from_email: message.from.address,
+          subject: message.subject,
+          received_at: emailMessage.received_at,
+        },
+        dedupeKey: `reply.received:${emailMessage.id}`,
+      });
+    }
+
     return true;
   }
 
@@ -918,6 +939,24 @@ export class ThreadManager {
           );
         }
       }
+      await emitWebhookEvent(this.supabase, {
+        accountId: mailbox.account_id,
+        campaignId: job.campaign_id,
+        eventType: 'bounce.detected',
+        payload: {
+          campaign_id: job.campaign_id,
+          lead_id: job.lead_id,
+          enrollment_id: job.enrollment_id,
+          message_job_id: job.id,
+          mailbox_id: mailbox.id,
+          severity: classification.severity,
+          code: classification.code ?? null,
+          bounce_message_id: message.messageId ?? null,
+          bounce_uid: message.uid ?? null,
+          candidate_emails: candidateEmails,
+        },
+        dedupeKey: `bounce.detected:${job.id}:${message.uid ?? message.messageId ?? 'unknown'}`,
+      });
     }
 
     const uniqueEnrollmentIds = [...new Set(enrollmentsToStop)];

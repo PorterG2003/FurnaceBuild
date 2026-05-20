@@ -1,6 +1,7 @@
 import type { Block, ContentAssetType, PageConfig } from './types';
 import { getFluxCopyBudgetViolations } from './fluxCopyBudgets';
 import { parseInPageScrollTargetFromCtaUrl } from './fluxScrollTag';
+import { getCompetitorAdAuditConsistencyIssues } from './fluxCompetitorAuditAdvertiser';
 
 const HTTP_PREFIX = /^https?:\/\//i;
 const SIMPLE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -143,6 +144,9 @@ export function getMergedFluxPageConfigSemanticIssues(
           const p = block.props;
           if (p.competitors.length < 1 || p.competitors.length > 3) {
             push(block, 'competitors must have 1–3 rows when status is ready');
+          }
+          for (const issue of getCompetitorAdAuditConsistencyIssues(p.competitors)) {
+            push(block, issue);
           }
           for (let i = 0; i < p.competitors.length; i += 1) {
             const row = p.competitors[i]!;

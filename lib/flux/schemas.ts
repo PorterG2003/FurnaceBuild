@@ -29,6 +29,7 @@ const caseStudyBlockPropsSchema = z.object({
   assetId: z.string(),
   overrideTitle: z.string().optional(),
   overrideMetric: z.string().optional(),
+  overrideImageUrl: z.string().optional(),
 });
 
 const benefitItemSchema = z.object({
@@ -143,10 +144,34 @@ const quizAndBookBlockPropsSchema = z.object({
 // Block schemas (discriminated union)
 // ---------------------------------------------------------------------------
 
+export const fluxBlockAppearanceSchema = z
+  .object({
+    sectionBackgroundColor: z.string().optional(),
+    surfaceColor: z.string().optional(),
+    panelSurfaceColor: z.string().optional(),
+    textColor: z.string().optional(),
+    headingColor: z.string().optional(),
+    mutedTextColor: z.string().optional(),
+    primaryColor: z.string().optional(),
+    accentColor: z.string().optional(),
+    onPrimaryColor: z.string().optional(),
+    borderColor: z.string().optional(),
+    errorColor: z.string().optional(),
+  })
+  .partial();
+
+export const fluxPageHeaderAppearanceSchema = z
+  .object({
+    backgroundColor: z.string().optional(),
+    borderColor: z.string().optional(),
+  })
+  .partial();
+
 const blockBase = {
   id: z.string(),
   order: z.number(),
   scrollTag: z.string().max(120).optional(),
+  appearance: fluxBlockAppearanceSchema.optional(),
 };
 
 const heroBlockSchema = z.object({
@@ -232,7 +257,16 @@ export const themeConfigSchema = z.object({
   backgroundColor: z.string(),
   textColor: z.string(),
   fontFamily: z.string(),
+  surfaceColor: z.string().optional(),
+  onPrimaryColor: z.string().optional(),
+  onSurfaceColor: z.string().optional(),
+  mutedTextColor: z.string().optional(),
+  borderColor: z.string().optional(),
+  strongBorderColor: z.string().optional(),
+  errorColor: z.string().optional(),
+  shadowColor: z.string().optional(),
   logoUrl: z.string().optional(),
+  header: fluxPageHeaderAppearanceSchema.optional(),
   blockStylePreset: z.enum(FLUX_BLOCK_STYLE_PRESETS).optional(),
   allowLongCopy: z.boolean().optional(),
 });

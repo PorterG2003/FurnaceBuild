@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { placesSearchText } from '@furnace/google-places';
 import { normalizeGoogleAdsSearchDomain } from '@furnace/registry-server';
 import { runGoogleAdsTransparencyAuditSamples } from './transparencyLookup.js';
+import { buildPublishedCompetitorExamples } from './fluxCompetitorAuditPublish.js';
 import fluxCompetitorAuditRank from '../../../../lib/flux/fluxCompetitorAuditRank';
 import type { FluxCompetitorScoredDomain } from '../../../../lib/flux/fluxCompetitorAuditRank';
 import fluxCompetitorAuditFailureMessage from '../../../../lib/flux/fluxCompetitorAuditFailureMessage';
@@ -505,12 +506,17 @@ export async function runFluxCompetitorAuditJob(params: {
         await failJob(`Missing audit data for winner ${w.domain}`);
         return false;
       }
-      const samples = audit.samples.slice(0, MAX_PUBLISHED_SAMPLES_PER_WINNER);
+      const published = buildPublishedCompetitorExamples({
+        domain: w.domain,
+        samples: audit.samples,
+        maxExamples: MAX_PUBLISHED_SAMPLES_PER_WINNER,
+        selectedAdvertiserId: audit.selectedAdvertiserId,
+      });
       const examples: Array<{ headline: string; body: string; sourceUrl: string; imageUrl?: string }> = [];
-      for (let j = 0; j < samples.length; j += 1) {
-        const s = samples[j];
-        const headline = (s.headline || s.body.slice(0, 80) || 'Ad creative').slice(0, 200);
-        const body = s.body.slice(0, 400);
+      for (let j = 0; j < published.examples.length; j += 1) {
+        const s = published.examples[j]!;
+        const headline = s.headline;
+        const body = s.body;
         const sourceUrl = s.sourceUrl;
         let imageUrl: string | undefined;
         const preview = s.previewPng;
@@ -579,7 +585,12 @@ export async function runFluxCompetitorAuditJob(params: {
 
       for (const r of auditRows) {
         if (r.domain === w.domain && r.outcome === 'ok') {
-          (r as FluxAuditDomainResultRow & { selected_rank?: number }).selected_rank = wi + 1;
+          const selectedRow = r as FluxAuditDomainResultRow & {
+            selected_rank?: number;
+            selected_advertiser_id?: string | null;
+          };
+          selectedRow.selected_rank = wi + 1;
+          selectedRow.selected_advertiser_id = published.selectedAdvertiserId;
         }
       }
     }

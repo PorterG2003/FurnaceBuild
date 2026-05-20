@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { FluxFontFamilyPicker } from '@/components/flux/FluxFontFamilyPicker';
@@ -9,6 +9,13 @@ import {
   fluxManualBlockSummary,
   renderFluxManualBlockEditor,
 } from '@/components/flux/FluxManualBlockEditor';
+import { FluxBlockAppearanceEditor } from '@/components/flux/FluxBlockAppearanceEditor';
+import {
+  FluxPageHeaderColorsSection,
+  FluxThemeAdvancedColorsSection,
+} from '@/components/flux/FluxThemeAdvancedColorsSection';
+import { enrichThemeConfig } from '@/lib/flux/enrichThemeConfig';
+import { getFluxThemeContrastWarnings } from '@/lib/flux/fluxThemeContrast';
 import {
   FLUX_BLOCK_STYLE_PRESET_OPTIONS,
   type FluxBlockStylePreset,
@@ -21,7 +28,7 @@ import {
   fluxPanelSectionCardClass,
 } from '@/lib/flux/fluxEditorPanelClasses';
 import { useFluxEditorPanelTwoColumns } from '@/lib/flux/useFluxEditorPanelTwoColumns';
-import type { Block, ContentAsset, PageConfig } from '@/lib/flux/types';
+import type { Block, ContentAsset, FluxBlockAppearance, PageConfig } from '@/lib/flux/types';
 
 /** Section ids for the prospect page editor (parent owns the tab bar). */
 export const FLUX_PROSPECT_PAGE_TAB = {
@@ -76,9 +83,13 @@ export function FluxProspectPageManualEditor({
 
   const patchTheme = useCallback(
     (patch: Partial<PageConfig['theme']>) => {
+      const merged = { ...pageConfig.theme, ...patch };
+      if (patch.header !== undefined && Object.keys(patch.header ?? {}).length === 0) {
+        delete merged.header;
+      }
       onChange({
         ...pageConfig,
-        theme: { ...pageConfig.theme, ...patch },
+        theme: enrichThemeConfig(merged),
       });
     },
     [onChange, pageConfig],
@@ -122,16 +133,56 @@ export function FluxProspectPageManualEditor({
     [onChange, pageConfig],
   );
 
+  const updateBlockAppearance = useCallback(
+    (blockId: string, appearance: FluxBlockAppearance | undefined) => {
+      onChange({
+        ...pageConfig,
+        blocks: pageConfig.blocks.map((b) => {
+          if (b.id !== blockId) return b;
+          const next = { ...b } as Block;
+          if (appearance) (next as Block).appearance = appearance;
+          else delete (next as { appearance?: FluxBlockAppearance }).appearance;
+          return next;
+        }),
+      });
+    },
+    [onChange, pageConfig],
+  );
+
+  const renderBlockEditorWithAppearance = useCallback(
+    (
+      block: Block,
+      updateProps: (id: string, props: Record<string, unknown>) => void,
+      assets: ContentAsset[],
+      layout?: { pairFieldColumns?: boolean },
+    ) => (
+      <View className="gap-1">
+        <FluxBlockAppearanceEditor
+          block={block}
+          pairFieldColumns={layout?.pairFieldColumns}
+          onChange={(appearance) => updateBlockAppearance(block.id, appearance)}
+        />
+        {renderFluxManualBlockEditor(block, updateProps, assets, layout)}
+      </View>
+    ),
+    [updateBlockAppearance],
+  );
+
+  const themeContrastWarnings = useMemo(
+    () => getFluxThemeContrastWarnings(pageConfig.theme),
+    [pageConfig.theme],
+  );
+
   const noopRemove = useCallback(() => {}, []);
 
   const blockSummaryWithIssues = useCallback(
     (block: Block) => {
-      const summary = fluxManualBlockSummary(block);
+      const summary = fluxManualBlockSummary(block, contentAssets);
       const issueCount = issueCountByBlockId[block.id] ?? 0;
       if (issueCount < 1) return summary;
       return `${summary} · ${issueCount} issue${issueCount === 1 ? '' : 's'}`;
     },
-    [issueCountByBlockId],
+    [contentAssets, issueCountByBlockId],
   );
 
   return (
@@ -339,6 +390,11 @@ export function FluxProspectPageManualEditor({
                   </Pressable>
                 </View>
               </View>
+              <FluxThemeAdvancedColorsSection
+                theme={pageConfig.theme}
+                onPatch={(patch) => patchTheme(patch)}
+                pairFieldColumns={pairFieldColumns}
+              />
               <Text className={fluxPanelLabelClass}>Logo URL (optional)</Text>
               <TextInput
                 className={fluxPanelInputFieldClass}
@@ -348,6 +404,24 @@ export function FluxProspectPageManualEditor({
                 placeholderTextColor="#555"
                 autoCapitalize="none"
               />
+              <FluxPageHeaderColorsSection
+                theme={pageConfig.theme}
+                pairFieldColumns={pairFieldColumns}
+                onPatchHeader={(header) =>
+                  patchTheme({
+                    header: header && Object.keys(header).length > 0 ? header : undefined,
+                  })
+                }
+              />
+              {themeContrastWarnings.length > 0 ? (
+                <View className="border border-amber-500/30 bg-amber-500/10 rounded-md p-2 gap-1">
+                  {themeContrastWarnings.map((w) => (
+                    <Text key={w} className="text-amber-100/90 text-[11px] font-instrument leading-4">
+                      {w}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -373,7 +447,8 @@ export function FluxProspectPageManualEditor({
                   updateBlockProps={updateBlockProps}
                   updateBlockScrollTag={updateBlockScrollTag}
                   contentAssets={contentAssets}
-                  renderBlockEditor={renderFluxManualBlockEditor}
+                  blockStylePreset={pageConfig.theme.blockStylePreset ?? 'classic'}
+                  renderBlockEditor={renderBlockEditorWithAppearance}
                 />
               )}
             </View>

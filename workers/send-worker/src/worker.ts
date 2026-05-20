@@ -9,6 +9,7 @@ import { DatabaseClient } from './database.js';
 import { sendEmail, sendReplyEmail } from './email.js';
 import type { ReplyEmailOptions } from './email.js';
 import { SmtpPool } from './smtp-pool.js';
+import { emitWebhookEvent } from './emit-webhook-event.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
 import { isCampaignMessageJob } from './types.js';
 
@@ -853,6 +854,22 @@ export class SendWorker {
             },
           });
         }
+        await emitWebhookEvent(this.supabase, {
+          accountId: accountId,
+          campaignId: messageJob.campaign_id,
+          eventType: 'email.sent',
+          payload: {
+            campaign_id: messageJob.campaign_id,
+            lead_id: messageJob.lead_id,
+            enrollment_id: messageJob.enrollment_id,
+            message_job_id: messageJob.id,
+            mailbox_id: messageJob.mailbox_id,
+            provider_message_id: providerMessageId,
+            sent_at: eventData.sent_at,
+            subject,
+          },
+          dedupeKey: `email.sent:${messageJob.id}`,
+        });
       } else {
         await this.supabase.from('events').insert({
           campaign_id: messageJob.campaign_id,

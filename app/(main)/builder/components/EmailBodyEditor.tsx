@@ -1,8 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, TouchableOpacity, Platform } from 'react-native';
-import { CodeBracketIcon } from 'react-native-heroicons/outline';
+import React from 'react';
+import { View, Text, Platform } from 'react-native';
 import { ComposerRichEditor } from '@/components/inbox';
-import { Select } from '@/components/ui/forms';
+import { MergeTagVariablePicker } from '@/components/builder/MergeTagVariablePicker';
 
 /** Minimal bridge for rich editor (getHTML, getText, insertContent). Web TipTap implementation provides these. */
 interface EmailEditorBridge {
@@ -41,17 +40,6 @@ export function EmailBodyEditor({
   onContentChange,
   trailingElement,
 }: EmailBodyEditorProps) {
-  const [variableSearch, setVariableSearch] = useState('');
-
-  const filteredVariables = useMemo(() => {
-    if (!variableSearch.trim()) return variables;
-    const q = variableSearch.trim().toLowerCase();
-    return variables.filter(
-      (v) =>
-        v.token.toLowerCase().includes(q) || v.description.toLowerCase().includes(q)
-    );
-  }, [variables, variableSearch]);
-
   const handleSelectVariable = (token: string) => {
     const bridge = editorRef.current;
     if (bridge?.insertContent) {
@@ -71,44 +59,7 @@ export function EmailBodyEditor({
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         {trailingElement}
-        <Select<LeadVariable>
-          items={filteredVariables}
-          getItemId={(v) => v.token}
-          getItemLabel={(v) => ({ primary: v.token, secondary: v.description })}
-          value={null}
-          onChange={(_id, item) => {
-            if (item) handleSelectVariable(item.token);
-          }}
-          searchable={true}
-          onSearchChange={setVariableSearch}
-          searchValue={variableSearch}
-          placeholder="Variables"
-          searchPlaceholder="Search variables…"
-          emptyMessage={(hasSearch) =>
-            hasSearch ? 'No matching variables.' : 'No variables.'
-          }
-          listMaxHeight={320}
-          noMargin={true}
-          size="compact"
-          dropdownMinWidth={260}
-          renderTrigger={({ open, onPress }) => (
-            <TouchableOpacity
-              onPress={onPress}
-              style={{
-                borderRadius: 12,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderWidth: 1,
-                borderColor: open ? 'rgba(243,68,13,0.4)' : 'rgba(255,255,255,0.16)',
-                backgroundColor: open ? 'rgba(243,68,13,0.2)' : 'rgba(255,255,255,0.08)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <CodeBracketIcon size={18} color={open ? '#F3440D' : '#FFFFFF'} />
-            </TouchableOpacity>
-            )}
-        />
+        <MergeTagVariablePicker variables={variables} onSelect={handleSelectVariable} />
         </View>
       </View>
       <View>

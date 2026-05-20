@@ -2,21 +2,29 @@ import React from 'react';
 import { View, Text, Image } from 'react-native';
 import type { ContentAsset } from '@/lib/flux/types';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
+import { withFluxAlpha } from '@/lib/flux/fluxPresentationTokens';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 
 interface CaseStudyBlockDisplayProps {
   asset: ContentAsset | undefined;
   overrideTitle?: string;
   overrideMetric?: string;
+  overrideImageUrl?: string;
 }
 
-export function CaseStudyBlock({ asset, overrideTitle, overrideMetric }: CaseStudyBlockDisplayProps) {
+export function CaseStudyBlock({
+  asset,
+  overrideTitle,
+  overrideMetric,
+  overrideImageUrl,
+}: CaseStudyBlockDisplayProps) {
   const theme = useFluxTheme();
   const presentation = useFluxPresentation();
   if (!asset) return null;
 
   const title = overrideTitle || asset.title;
   const metric = overrideMetric || asset.metric;
+  const imageUrl = overrideImageUrl?.trim() || asset.imageUrl?.trim() || undefined;
   const headingFont = fluxPreviewFontFamily(theme.fontFamily, '600');
   const bodyFont = fluxPreviewFontFamily(theme.fontFamily, '400');
   const bodyStyle = {
@@ -49,10 +57,13 @@ export function CaseStudyBlock({ asset, overrideTitle, overrideMetric }: CaseStu
     return (
       <View className="w-full py-14 px-4 md:px-8" style={{ backgroundColor: theme.backgroundColor }}>
         <View className="w-full max-w-5xl self-center flex-row flex-wrap overflow-hidden" style={presentation.strongCard}>
-          {asset.imageUrl ? (
-            <Image source={{ uri: asset.imageUrl }} className="w-full md:flex-1 h-56 md:h-auto" resizeMode="cover" />
+          {imageUrl ? (
+            <Image source={{ uri: imageUrl }} className="w-full md:flex-1 h-56 md:h-auto" resizeMode="cover" />
           ) : (
-            <View className="w-full md:flex-1 min-h-[220px]" style={{ backgroundColor: theme.primaryColor + '18' }} />
+            <View
+              className="w-full md:flex-1 min-h-[220px]"
+              style={{ backgroundColor: withFluxAlpha(theme.primaryColor, '18') }}
+            />
           )}
           <View className="w-full md:flex-1 p-6 md:p-8">
             <Text className="text-xs uppercase tracking-[2px] mb-3" style={{ color: theme.primaryColor, fontFamily: headingFont }}>Case Study</Text>
@@ -83,9 +94,9 @@ export function CaseStudyBlock({ asset, overrideTitle, overrideMetric }: CaseStu
   return (
     <View className="w-full py-12 px-6 items-center" style={{ backgroundColor: theme.backgroundColor }}>
       <View className="w-full max-w-2xl p-6" style={presentation.strongCard}>
-        {asset.imageUrl && (
+        {imageUrl && (
           <Image
-            source={{ uri: asset.imageUrl }}
+            source={{ uri: imageUrl }}
             className="w-full h-40 mb-4"
             style={{ borderRadius: presentation.radii.media }}
             resizeMode="cover"

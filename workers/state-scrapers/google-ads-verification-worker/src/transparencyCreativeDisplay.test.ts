@@ -186,3 +186,34 @@ test('pickSamplesForDisplay still falls back to previewless rows when none have 
   assert.equal(out.length, 1);
   assert.equal(out[0].headline, 'A');
 });
+
+test('pickSamplesForDisplay restricts output to one advertiser when requiredAdvertiserId is provided', () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  const scanned: TransparencyScannedCreative[] = [
+    {
+      sourceUrl:
+        'https://adstransparency.google.com/advertiser/AR11550926466527002625/creative/CR06891629215205031937?region=US',
+      headline: 'Jerome Dean',
+      body: 'Ad funded by: jerome dean info',
+      latestAdLastShownAt: '2026-05-18',
+      firstAdShownAt: '2026-05-01',
+      runDays: 17,
+      previewPng: png,
+    },
+    {
+      sourceUrl:
+        'https://adstransparency.google.com/advertiser/AR00365012073437986817/creative/CR08847700258315042817?region=US',
+      headline: 'Hype Consulting LLC',
+      body: 'View the full creative on Google Ads Transparency (link below).',
+      latestAdLastShownAt: '2026-05-18',
+      firstAdShownAt: '2026-05-01',
+      runDays: 17,
+      previewPng: png,
+    },
+  ];
+  const out = pickSamplesForDisplay(scanned, '2026-05-18', 2, {
+    requiredAdvertiserId: 'AR11550926466527002625',
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].headline, 'Jerome Dean');
+});

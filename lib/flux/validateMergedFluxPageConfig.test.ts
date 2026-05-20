@@ -342,3 +342,84 @@ test('quiz_and_book missing options fails semantic checks', () => {
   const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
   assert.ok(issues.some((s) => /questions\[0\]\.options must include at least two options/.test(s)));
 });
+
+test('competitor_ad_audit flags mixed advertiser ids inside one row', () => {
+  const merged = page([
+    {
+      id: 'audit',
+      type: 'competitor_ad_audit',
+      order: 0,
+      props: {
+        heading: 'Audit',
+        status: 'ready',
+        competitors: [
+          {
+            name: 'Anytime Fitness',
+            mapImageUrl: 'https://maps.example/a.png',
+            adsSummary: '2 active creatives; last shown Jan 2025.',
+            examples: [
+              {
+                headline: 'A',
+                body: 'B',
+                sourceUrl:
+                  'https://adstransparency.google.com/advertiser/AR11550926466527002625/creative/CR06891629215205031937?region=US',
+              },
+              {
+                headline: 'C',
+                body: 'D',
+                sourceUrl:
+                  'https://adstransparency.google.com/advertiser/AR00365012073437986817/creative/CR08847700258315042817?region=US',
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ]);
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.ok(issues.some((s) => /mix advertiser IDs/.test(s)));
+});
+
+test('competitor_ad_audit flags duplicate advertiser ids across rows', () => {
+  const merged = page([
+    {
+      id: 'audit',
+      type: 'competitor_ad_audit',
+      order: 0,
+      props: {
+        heading: 'Audit',
+        status: 'ready',
+        competitors: [
+          {
+            name: 'VASA Fitness',
+            mapImageUrl: 'https://maps.example/a.png',
+            adsSummary: '2 active creatives; last shown Jan 2025.',
+            examples: [
+              {
+                headline: 'A',
+                body: 'B',
+                sourceUrl:
+                  'https://adstransparency.google.com/advertiser/AR05044827027778043905/creative/CR14151655565142523905?region=US',
+              },
+            ],
+          },
+          {
+            name: 'VASA Fitness Duplicate',
+            mapImageUrl: 'https://maps.example/b.png',
+            adsSummary: '2 active creatives; last shown Jan 2025.',
+            examples: [
+              {
+                headline: 'C',
+                body: 'D',
+                sourceUrl:
+                  'https://adstransparency.google.com/advertiser/AR05044827027778043905/creative/CR18115521951098208257?region=US',
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ]);
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.ok(issues.some((s) => /shares advertiser ID AR05044827027778043905/.test(s)));
+});

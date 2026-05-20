@@ -6,6 +6,9 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cdk from 'aws-cdk-lib';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { auth } from './auth/resource';
@@ -25,6 +28,9 @@ import { foundryWebsiteVerificationJob } from './functions/foundryWebsiteVerific
 import { foundryGoogleAdsVerificationJob } from './functions/foundryGoogleAdsVerificationJob/resource';
 import { foundryCsvBuilderExportJob } from './functions/foundryCsvBuilderExportJob/resource';
 import { processNotificationEvent } from './functions/processNotificationEvent/resource';
+import { processWebhookEvent } from './functions/processWebhookEvent/resource';
+import { clientApi } from './functions/clientApi/resource';
+import { clientApiBulkImport } from './functions/clientApiBulkImport/resource';
 import { fluxGenerate } from './functions/fluxGenerate/resource';
 import { fluxEditorChat } from './functions/fluxEditorChat/resource';
 import { googlePlaces } from './functions/googlePlaces/resource';
@@ -61,6 +67,9 @@ const backend = defineBackend({
   foundryGoogleAdsVerificationJob,
   foundryCsvBuilderExportJob,
   processNotificationEvent,
+  processWebhookEvent,
+  clientApi,
+  clientApiBulkImport,
   fluxGenerate,
   fluxEditorChat,
   googlePlaces,
@@ -1192,6 +1201,170 @@ const allowPublicFoundryRegistryInvoke = new lambda.CfnPermission(
 );
 allowPublicFoundryRegistryInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
+const clientApiLambda = backend.clientApi.resources.lambda as lambda.Function;
+clientApiLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+
+const clientApiUrl = clientApiLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: [
+      'https://build.getfurnace.io',
+      'http://localhost:8081',
+      'http://localhost:19006',
+    ],
+    allowedMethods: [
+      lambda.HttpMethod.GET,
+      lambda.HttpMethod.POST,
+      lambda.HttpMethod.PATCH,
+      lambda.HttpMethod.PUT,
+      lambda.HttpMethod.DELETE,
+    ],
+    allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'],
+  },
+});
+new lambda.CfnPermission(clientApiLambda.stack, 'AllowPublicClientApiUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: clientApiLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicClientApiInvoke = new lambda.CfnPermission(
+  clientApiLambda.stack,
+  'AllowPublicClientApiInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: clientApiLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicClientApiInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+const clientApiWorkerEnvironment = resolveWorkerEnvironment();
+const webhookQueue = new sqs.Queue(backend.stack, 'ClientApiWebhookEventsQueue', {
+  queueName: `furnace-webhook-events-${clientApiWorkerEnvironment}`,
+  visibilityTimeout: cdk.Duration.seconds(120),
+  retentionPeriod: cdk.Duration.days(4),
+});
+const importQueue = new sqs.Queue(backend.stack, 'ClientApiImportQueue', {
+  queueName: `furnace-client-api-import-${clientApiWorkerEnvironment}`,
+  visibilityTimeout: cdk.Duration.seconds(300),
+  retentionPeriod: cdk.Duration.days(4),
+});
+
+new cdk.CfnOutput(backend.stack, 'ClientApiWebhookQueueArnExport', {
+  value: webhookQueue.queueArn,
+  exportName: `FurnaceWebhookEventsQueueArn-${clientApiWorkerEnvironment}`,
+});
+new cdk.CfnOutput(backend.stack, 'ClientApiWebhookQueueUrlExport', {
+  value: webhookQueue.queueUrl,
+  exportName: `FurnaceWebhookEventsQueueUrl-${clientApiWorkerEnvironment}`,
+});
+new cdk.CfnOutput(backend.stack, 'ClientApiImportQueueArnExport', {
+  value: importQueue.queueArn,
+  exportName: `FurnaceClientApiImportQueueArn-${clientApiWorkerEnvironment}`,
+});
+new cdk.CfnOutput(backend.stack, 'ClientApiImportQueueUrlExport', {
+  value: importQueue.queueUrl,
+  exportName: `FurnaceClientApiImportQueueUrl-${clientApiWorkerEnvironment}`,
+});
+
+clientApiLambda.addEnvironment('CLIENT_API_WEBHOOK_QUEUE_URL', webhookQueue.queueUrl);
+clientApiLambda.addEnvironment('CLIENT_API_IMPORT_QUEUE_URL', importQueue.queueUrl);
+webhookQueue.grantSendMessages(clientApiLambda);
+importQueue.grantSendMessages(clientApiLambda);
+
+const processWebhookLambda = backend.processWebhookEvent.resources.lambda as lambda.Function;
+processWebhookLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+webhookQueue.grantConsumeMessages(processWebhookLambda);
+processWebhookLambda.addEventSource(
+  new lambdaEventSources.SqsEventSource(webhookQueue, {
+    batchSize: 5,
+    maxBatchingWindow: cdk.Duration.seconds(5),
+    reportBatchItemFailures: true,
+  }),
+);
+
+const clientApiBulkImportLambda = backend.clientApiBulkImport.resources.lambda as lambda.Function;
+clientApiBulkImportLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+clientApiBulkImportLambda.addEnvironment('WEBHOOK_QUEUE_URL', webhookQueue.queueUrl);
+importQueue.grantConsumeMessages(clientApiBulkImportLambda);
+webhookQueue.grantSendMessages(clientApiBulkImportLambda);
+clientApiBulkImportLambda.addEventSource(
+  new lambdaEventSources.SqsEventSource(importQueue, {
+    batchSize: 1,
+    reportBatchItemFailures: true,
+  }),
+);
+
+const clientApiOriginHost = cdk.Fn.select(2, cdk.Fn.split('/', clientApiUrl.url));
+const clientApiDomainName = process.env.CLIENT_API_DOMAIN_NAME?.trim();
+const clientApiCertificateArn = process.env.CLIENT_API_CERTIFICATE_ARN?.trim();
+const clientApiWafWebAclArnRaw = process.env.CLIENT_API_WAF_WEB_ACL_ARN?.trim();
+const clientApiWafWebAclArn =
+  clientApiWafWebAclArnRaw?.startsWith('arn:aws:wafv2:') || clientApiWafWebAclArnRaw?.startsWith('arn:aws:waf:')
+    ? clientApiWafWebAclArnRaw
+    : undefined;
+const clientApiCachePolicy = new cloudfront.CachePolicy(backend.stack, 'ClientApiCachePolicy', {
+  defaultTtl: cdk.Duration.seconds(0),
+  minTtl: cdk.Duration.seconds(0),
+  maxTtl: cdk.Duration.seconds(1),
+  headerBehavior: cloudfront.CacheHeaderBehavior.allowList('Authorization'),
+  queryStringBehavior: cloudfront.CacheQueryStringBehavior.all(),
+  cookieBehavior: cloudfront.CacheCookieBehavior.none(),
+  enableAcceptEncodingBrotli: true,
+  enableAcceptEncodingGzip: true,
+});
+const clientApiOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
+  backend.stack,
+  'ClientApiOriginRequestPolicy',
+  {
+    headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList(
+      'Content-Type',
+      'Idempotency-Key',
+    ),
+    queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.all(),
+    cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
+  },
+);
+
+const clientApiDistribution = new cloudfront.Distribution(backend.stack, 'ClientApiDistribution', {
+  defaultBehavior: {
+    origin: new origins.HttpOrigin(clientApiOriginHost, {
+      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+    }),
+    cachePolicy: clientApiCachePolicy,
+    originRequestPolicy: clientApiOriginRequestPolicy,
+    viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+    allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+  },
+  additionalBehaviors: {
+    'openapi.json': {
+      origin: new origins.HttpOrigin(clientApiOriginHost, {
+        protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+      }),
+      cachePolicy: clientApiCachePolicy,
+      originRequestPolicy: clientApiOriginRequestPolicy,
+      viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+    },
+  },
+  ...(clientApiDomainName && clientApiCertificateArn
+    ? {
+        domainNames: [clientApiDomainName],
+        certificate: acm.Certificate.fromCertificateArn(
+          backend.stack,
+          'ClientApiCertificate',
+          clientApiCertificateArn,
+        ),
+      }
+    : {}),
+  webAclId: clientApiWafWebAclArn || undefined,
+});
+
+const resolvedClientApiBaseUrl = clientApiDomainName
+  ? `https://${clientApiDomainName}`
+  : `https://${clientApiDistribution.distributionDomainName}`;
+clientApiLambda.addEnvironment('CLIENT_API_BASE_URL', resolvedClientApiBaseUrl);
+
 // Flux: generate personalized prospect pages (Function URL + Supabase JWT)
 const fluxGenerateLambda = backend.fluxGenerate.resources.lambda as lambda.Function;
 fluxGenerateLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
@@ -1466,6 +1639,13 @@ const customOutputs: Record<string, string> = {
   sendFluxQuizSubmissionUrl: sendFluxQuizSubmissionUrl.url,
   testMailboxConnectionUrl: testMailboxUrl.url,
   foundryRegistryApiUrl: foundryRegistryUrl.url,
+  clientApiFunctionUrl: clientApiUrl.url,
+  clientApiCloudFrontUrl: `https://${clientApiDistribution.distributionDomainName}`,
+  clientApiUrl: resolvedClientApiBaseUrl,
+  clientApiDocsUrl: `${resolvedClientApiBaseUrl}/docs`,
+  clientApiOpenApiUrl: `${resolvedClientApiBaseUrl}/openapi.json`,
+  clientApiWebhookQueueUrl: webhookQueue.queueUrl,
+  clientApiImportQueueUrl: importQueue.queueUrl,
   foundryNormalizeStateMachineArn: foundryNormalizeStateMachineArn,
   foundryAutolinkStateMachineArn: foundryAutolinkStateMachineArn,
   foundryContactEnrichmentStateMachineArn: foundryContactEnrichmentStateMachineArn,

@@ -7,6 +7,19 @@ export {
 } from './users';
 export { createAccount, updateAccount } from './accounts';
 export {
+  listAccountApiKeys,
+  createAccountApiKey,
+  renameAccountApiKey,
+  revokeAccountApiKey,
+  updateAccountWebhookSettings,
+  type AccountApiKeyWithSecret,
+} from './api-keys';
+export {
+  countFailedWebhookDeliveries,
+  fetchFailedWebhookDeliveries,
+  type FailedWebhookDeliveryRow,
+} from './webhook-deliveries';
+export {
   getAccountMembershipsForUser,
   addUserToAccount,
   updateMemberRole,

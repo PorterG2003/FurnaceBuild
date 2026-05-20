@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Toggle } from '@/components/ui/Toggle';
 import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/feedback';
+import { Skeleton, useToast } from '@/components/ui/feedback';
 import {
   getNotificationPreferences,
   upsertNotificationPreference,
@@ -49,25 +49,41 @@ function effectiveChannelEnabled(
   return channelEnabledForEvent(prefs, eventType, channel, defaultOn);
 }
 
+function NotificationPrefSkeleton() {
+  return (
+    <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4 gap-3">
+      <Skeleton style={{ width: 140, height: 16, borderRadius: 4 }} />
+      <Skeleton style={{ width: '100%', height: 12, borderRadius: 4, maxWidth: 260 }} />
+      <Skeleton style={{ width: '100%', height: 36, borderRadius: 8 }} />
+      <Skeleton style={{ width: '100%', height: 36, borderRadius: 8 }} />
+    </View>
+  );
+}
+
 export function AccountNotificationsSection({
   accountId,
   cardVariant,
   cardClassName,
   titleClassName,
+  initialPrefs,
+  initialSubCount,
 }: {
   accountId: string;
   cardVariant: 'card' | 'inline';
   cardClassName?: string;
   titleClassName: string;
+  initialPrefs?: PrefRow[];
+  initialSubCount?: number;
 }) {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
   const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
-  const [prefs, setPrefs] = useState<PrefRow[]>([]);
+  const hasInitialData = initialPrefs !== undefined;
+  const [loading, setLoading] = useState(!hasInitialData);
+  const [prefs, setPrefs] = useState<PrefRow[]>(initialPrefs ?? []);
   const [pushBusy, setPushBusy] = useState(false);
-  const [subCount, setSubCount] = useState(0);
+  const [subCount, setSubCount] = useState(initialSubCount ?? 0);
   const [optimisticByEvent, setOptimisticByEvent] = useState<
     Record<string, Partial<Record<PrefChannel, boolean>>>
   >({});
@@ -96,8 +112,17 @@ export function AccountNotificationsSection({
   }, [accountId]);
 
   useEffect(() => {
+    if (hasInitialData) return;
     void load();
-  }, [load]);
+  }, [hasInitialData, load]);
+
+  useEffect(() => {
+    if (initialPrefs !== undefined) {
+      setPrefs(initialPrefs);
+      setSubCount(initialSubCount ?? 0);
+      setLoading(false);
+    }
+  }, [initialPrefs, initialSubCount]);
 
   useEffect(() => {
     setOptimisticByEvent({});
@@ -225,7 +250,10 @@ export function AccountNotificationsSection({
       )}
 
       {loading ? (
-        <Text className="text-gray-400 text-sm">Loading…</Text>
+        <View className="gap-3">
+          <NotificationPrefSkeleton />
+          <NotificationPrefSkeleton />
+        </View>
       ) : (
         <View className="gap-3">
           {sortedCatalog.map((def) => {

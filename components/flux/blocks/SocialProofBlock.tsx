@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Image } from 'react-native';
 import type { SocialProofBlockProps } from '@/lib/flux/types';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
+import { withFluxAlpha } from '@/lib/flux/fluxPresentationTokens';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 
 export function SocialProofBlock({ props }: { props: SocialProofBlockProps }) {
@@ -36,7 +37,10 @@ export function SocialProofBlock({ props }: { props: SocialProofBlockProps }) {
   if (presentation.layouts.proof === 'inline') {
     return (
       <View className="w-full py-8 px-5 md:px-10" style={{ backgroundColor: theme.backgroundColor }}>
-        <View className="w-full max-w-4xl self-center flex-row flex-wrap gap-5 items-center border-y py-4" style={{ borderColor: theme.primaryColor + '24' }}>
+        <View
+          className="w-full max-w-4xl self-center flex-row flex-wrap gap-5 items-center border-y py-4"
+          style={{ borderColor: withFluxAlpha(theme.primaryColor, '24') }}
+        >
           <Text className="text-xs uppercase tracking-[2px] mr-2" style={{ color: theme.textColor, opacity: presentation.subtleTextOpacity, fontFamily: bodyFont }}>
             {props.heading}
           </Text>

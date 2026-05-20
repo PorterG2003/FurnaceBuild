@@ -115,16 +115,23 @@ export function createDataSenderNode(
   data?: {
     label?: string;
     endpoint?: string;
+    endpoint_url?: string;
     payload?: string;
+    payload_template?: Record<string, unknown>;
+    on_failure?: 'continue' | 'stop';
   }
 ): Node {
+  const endpoint = data?.endpoint_url || data?.endpoint || '';
   return {
     id: generateId(),
     type: 'dataSender',
     data: {
       label: data?.label || 'Data Sender',
-      endpoint: data?.endpoint || '',
+      endpoint,
+      endpoint_url: endpoint,
       payload: data?.payload || '',
+      payload_template: data?.payload_template || {},
+      on_failure: data?.on_failure || 'continue',
     },
     position,
   };

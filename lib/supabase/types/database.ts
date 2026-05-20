@@ -55,6 +55,10 @@ export interface Database {
           name: string;
           jitter_percentage: number;
           suppress_bounced_emails: boolean;
+          webhook_url: string | null;
+          webhook_signing_secret: string | null;
+          webhook_enabled_events: Json;
+          webhook_url_verified_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -63,6 +67,10 @@ export interface Database {
           name: string;
           jitter_percentage?: number;
           suppress_bounced_emails?: boolean;
+          webhook_url?: string | null;
+          webhook_signing_secret?: string | null;
+          webhook_enabled_events?: Json;
+          webhook_url_verified_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -71,6 +79,106 @@ export interface Database {
           name?: string;
           jitter_percentage?: number;
           suppress_bounced_emails?: boolean;
+          webhook_url?: string | null;
+          webhook_signing_secret?: string | null;
+          webhook_enabled_events?: Json;
+          webhook_url_verified_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      account_api_keys: {
+        Row: {
+          id: string;
+          account_id: string;
+          created_by_user_id: string;
+          name: string;
+          key_hash: string;
+          secret_prefix: string;
+          expires_at: string | null;
+          last_used_at: string | null;
+          revoked_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          created_by_user_id: string;
+          name: string;
+          key_hash: string;
+          secret_prefix: string;
+          expires_at?: string | null;
+          last_used_at?: string | null;
+          revoked_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          created_by_user_id?: string;
+          name?: string;
+          key_hash?: string;
+          secret_prefix?: string;
+          expires_at?: string | null;
+          last_used_at?: string | null;
+          revoked_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      api_idempotency_keys: {
+        Row: {
+          id: string;
+          account_id: string;
+          idempotency_key: string;
+          route: string;
+          body_hash: string;
+          response: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          idempotency_key: string;
+          route: string;
+          body_hash: string;
+          response?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          idempotency_key?: string;
+          route?: string;
+          body_hash?: string;
+          response?: Json;
+          created_at?: string;
+        };
+      };
+      api_rate_limit_buckets: {
+        Row: {
+          id: string;
+          account_id: string;
+          window_start: string;
+          request_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          window_start: string;
+          request_count?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          window_start?: string;
+          request_count?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -92,6 +200,10 @@ export interface Database {
           source: string | null;
           smartlead_campaign_id: number | null;
           smartlead_created_at: string | null;
+          webhook_url_override: string | null;
+          webhook_signing_secret_override: string | null;
+          webhook_enabled_events_override: Json | null;
+          webhook_url_override_verified_at: string | null;
           current_flow_version_number: number;
           deleted_at: string | null;
           created_at: string;
@@ -113,6 +225,10 @@ export interface Database {
           source?: string | null;
           smartlead_campaign_id?: number | null;
           smartlead_created_at?: string | null;
+          webhook_url_override?: string | null;
+          webhook_signing_secret_override?: string | null;
+          webhook_enabled_events_override?: Json | null;
+          webhook_url_override_verified_at?: string | null;
           current_flow_version_number?: number;
           deleted_at?: string | null;
           created_at?: string;
@@ -134,6 +250,10 @@ export interface Database {
           source?: string | null;
           smartlead_campaign_id?: number | null;
           smartlead_created_at?: string | null;
+          webhook_url_override?: string | null;
+          webhook_signing_secret_override?: string | null;
+          webhook_enabled_events_override?: Json | null;
+          webhook_url_override_verified_at?: string | null;
           current_flow_version_number?: number;
           deleted_at?: string | null;
           created_at?: string;
@@ -176,6 +296,149 @@ export interface Database {
           changed_by_user_id?: string | null;
           change_source?: string;
           created_at?: string;
+        };
+      };
+      campaign_mailboxes: {
+        Row: {
+          id: string;
+          campaign_id: string;
+          mailbox_id: string;
+          account_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          campaign_id: string;
+          mailbox_id: string;
+          account_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          campaign_id?: string;
+          mailbox_id?: string;
+          account_id?: string;
+          created_at?: string;
+        };
+      };
+      campaign_stats: {
+        Row: {
+          campaign_id: string;
+          account_id: string;
+          sent_count: number;
+          replied_count: number;
+          positive_reply_count: number;
+          bounce_count: number;
+          last_bounce_at: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          campaign_id: string;
+          account_id: string;
+          sent_count?: number;
+          replied_count?: number;
+          positive_reply_count?: number;
+          bounce_count?: number;
+          last_bounce_at?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          campaign_id?: string;
+          account_id?: string;
+          sent_count?: number;
+          replied_count?: number;
+          positive_reply_count?: number;
+          bounce_count?: number;
+          last_bounce_at?: string | null;
+          updated_at?: string;
+        };
+      };
+      nodes: {
+        Row: {
+          id: string;
+          campaign_id: string;
+          account_id: string;
+          flow_node_id: string;
+          node_type: string;
+          node_data: Json;
+          position_x: number | null;
+          position_y: number | null;
+          deleted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          campaign_id: string;
+          account_id: string;
+          flow_node_id: string;
+          node_type: string;
+          node_data?: Json;
+          position_x?: number | null;
+          position_y?: number | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          campaign_id?: string;
+          account_id?: string;
+          flow_node_id?: string;
+          node_type?: string;
+          node_data?: Json;
+          position_x?: number | null;
+          position_y?: number | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      message_jobs: {
+        Row: {
+          id: string;
+          enrollment_id: string;
+          campaign_id: string;
+          account_id: string;
+          lead_id: string;
+          mailbox_id: string;
+          node_id: string;
+          status: string;
+          status_reason: string | null;
+          message_type: string | null;
+          error_message: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          enrollment_id: string;
+          campaign_id: string;
+          account_id: string;
+          lead_id: string;
+          mailbox_id: string;
+          node_id: string;
+          status?: string;
+          status_reason?: string | null;
+          message_type?: string | null;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          enrollment_id?: string;
+          campaign_id?: string;
+          account_id?: string;
+          lead_id?: string;
+          mailbox_id?: string;
+          node_id?: string;
+          status?: string;
+          status_reason?: string | null;
+          message_type?: string | null;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
         };
       };
       leads: {
@@ -970,6 +1233,53 @@ export interface Database {
           created_at?: string | null;
         };
       };
+      api_import_jobs: {
+        Row: {
+          id: string;
+          account_id: string;
+          campaign_id: string;
+          created_by_api_key_id: string | null;
+          status: 'queued' | 'running' | 'completed' | 'failed';
+          progress: number;
+          input: Json;
+          result: Json;
+          errors: Json;
+          started_at: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          campaign_id: string;
+          created_by_api_key_id?: string | null;
+          status?: 'queued' | 'running' | 'completed' | 'failed';
+          progress?: number;
+          input?: Json;
+          result?: Json;
+          errors?: Json;
+          started_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          campaign_id?: string;
+          created_by_api_key_id?: string | null;
+          status?: 'queued' | 'running' | 'completed' | 'failed';
+          progress?: number;
+          input?: Json;
+          result?: Json;
+          errors?: Json;
+          started_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       notification_deliveries: {
         Row: {
           id: string;
@@ -1017,6 +1327,62 @@ export interface Database {
           updated_at?: string;
         };
       };
+      webhook_deliveries: {
+        Row: {
+          id: string;
+          webhook_event_id: string;
+          account_id: string;
+          campaign_id: string | null;
+          endpoint_url: string;
+          event_type: string;
+          status: 'pending' | 'sending' | 'delivered' | 'failed';
+          attempt_count: number;
+          request_body: Json;
+          response_status: number | null;
+          response_body: string | null;
+          error: string | null;
+          last_attempt_at: string | null;
+          delivered_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          webhook_event_id: string;
+          account_id: string;
+          campaign_id?: string | null;
+          endpoint_url: string;
+          event_type: string;
+          status?: 'pending' | 'sending' | 'delivered' | 'failed';
+          attempt_count?: number;
+          request_body?: Json;
+          response_status?: number | null;
+          response_body?: string | null;
+          error?: string | null;
+          last_attempt_at?: string | null;
+          delivered_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          webhook_event_id?: string;
+          account_id?: string;
+          campaign_id?: string | null;
+          endpoint_url?: string;
+          event_type?: string;
+          status?: 'pending' | 'sending' | 'delivered' | 'failed';
+          attempt_count?: number;
+          request_body?: Json;
+          response_status?: number | null;
+          response_body?: string | null;
+          error?: string | null;
+          last_attempt_at?: string | null;
+          delivered_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       notification_events: {
         Row: {
           id: string;
@@ -1049,6 +1415,38 @@ export interface Database {
           payload?: Json;
           occurred_at?: string;
           dedupe_key?: string | null;
+          created_at?: string;
+        };
+      };
+      webhook_events: {
+        Row: {
+          id: string;
+          account_id: string;
+          campaign_id: string | null;
+          event_type: string;
+          payload: Json;
+          dedupe_key: string | null;
+          occurred_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          campaign_id?: string | null;
+          event_type: string;
+          payload?: Json;
+          dedupe_key?: string | null;
+          occurred_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          campaign_id?: string | null;
+          event_type?: string;
+          payload?: Json;
+          dedupe_key?: string | null;
+          occurred_at?: string;
           created_at?: string;
         };
       };
@@ -1245,6 +1643,38 @@ export interface Database {
           p_campaign_id: string;
         };
         Returns: number;
+      };
+      update_campaign_flow_data: {
+        Args: {
+          p_campaign_id: string;
+          p_flow_data: Json;
+          p_change_source?: string;
+        };
+        Returns: Database['public']['Tables']['campaigns']['Row'];
+      };
+      create_inbox_reply_job: {
+        Args: {
+          p_account_id: string;
+          p_thread_id: string;
+          p_in_reply_to_message_id: string;
+          p_subject: string;
+          p_body_text: string;
+          p_body_html: string;
+          p_to_email: string;
+          p_to_name?: string | null;
+          p_cc?: string[] | null;
+          p_attachments?: Json | null;
+        };
+        Returns: string;
+      };
+      get_campaign_contacted_counts: {
+        Args: {
+          p_campaign_ids: string[];
+        };
+        Returns: {
+          campaign_id: string;
+          contacted_count: number;
+        }[];
       };
       claim_smartlead_migration_run: {
         Args: {

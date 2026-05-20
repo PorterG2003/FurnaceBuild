@@ -14,6 +14,7 @@ import {
   type TransparencyScannedCreative,
 } from './transparencyCreativeDisplay.js';
 import { workerJsonLog } from './workerJsonLog.js';
+import competitorAuditAdvertiser from '../../../../lib/flux/fluxCompetitorAuditAdvertiser.js';
 
 export type { TransparencyCreativeSampleRow } from './transparencyCreativeDisplay.js';
 
@@ -30,7 +31,6 @@ type JsonObject = Record<string, unknown>;
 
 const SEARCH_INPUT_NAME = /find the ads you've seen by searching by advertiser name or website/i;
 const SEARCH_SUGGESTIONS_RE = /\/anji\/_\/rpc\/SearchService\/SearchSuggestions/i;
-const ADVERTISER_ID_RE = /\bAR[A-Z0-9]{8,}\b/g;
 const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/i;
 const NAV_TIMEOUT_MS = 45_000;
 const SETTLE_TIMEOUT_MS = 15_000;
@@ -172,9 +172,7 @@ function dedupeDomainSuggestions(candidates: DomainSuggestion[]): DomainSuggesti
 }
 
 function extractAdvertiserIdFromHref(href: string | null | undefined): string | null {
-  if (!href) return null;
-  const match = href.match(ADVERTISER_ID_RE);
-  return match?.[0] ?? null;
+  return competitorAuditAdvertiser.extractGoogleAdsAdvertiserId(href);
 }
 
 function dedupeHrefs(hrefs: Array<string | null | undefined>): string[] {
@@ -1037,6 +1035,7 @@ export async function runGoogleAdsTransparencyAuditSamples(
   creativeCount: number;
   latestAdLastShownAt: string | null;
   longestAdRunDays: number | null;
+  selectedAdvertiserId: string | null;
   samples: TransparencyCreativeSampleRow[];
   outcome: 'ok' | 'transparency_no_match' | 'transparency_zero_creatives' | 'playwright_error';
   message?: string;
@@ -1057,6 +1056,7 @@ export async function runGoogleAdsTransparencyAuditSamples(
       creativeCount: 0,
       latestAdLastShownAt: null,
       longestAdRunDays: null,
+      selectedAdvertiserId: null,
       samples: [],
       outcome: 'playwright_error',
       message: 'Invalid domain',
@@ -1161,6 +1161,7 @@ export async function runGoogleAdsTransparencyAuditSamples(
         creativeCount: 0,
         latestAdLastShownAt: null,
         longestAdRunDays: null,
+        selectedAdvertiserId: null,
         samples: [],
         outcome: 'transparency_no_match',
       };
@@ -1185,6 +1186,7 @@ export async function runGoogleAdsTransparencyAuditSamples(
         creativeCount: 0,
         latestAdLastShownAt: null,
         longestAdRunDays: null,
+        selectedAdvertiserId: null,
         samples: [],
         outcome: 'transparency_zero_creatives',
       };
@@ -1257,7 +1259,9 @@ export async function runGoogleAdsTransparencyAuditSamples(
     const creativeDetailEnd = Date.now();
     phaseMs.creative_detail_visits_ms = creativeDetailEnd - creativeLoopStart;
     mark = creativeDetailEnd;
-    const picked = pickSamplesForDisplay(scanned, latestAdLastShownAt, maxSamples);
+    const picked = pickSamplesForDisplay(scanned, latestAdLastShownAt, maxSamples, {
+      requiredAdvertiserId: selectedAdvertiserId,
+    });
     samples.push(...picked);
     bump('pick_samples');
     throwIfAborted();
@@ -1274,13 +1278,19 @@ export async function runGoogleAdsTransparencyAuditSamples(
       creativeCount,
       latestAdLastShownAt,
       longestAdRunDays,
+      selectedAdvertiserId,
       samples,
       outcome: 'ok',
     };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     if (signal?.aborted || message.endsWith('_timeout')) {
-      const partialSamples = creativeCount > 0 ? pickSamplesForDisplay(scanned, latestAdLastShownAt, maxSamples) : [];
+      const partialSamples =
+        creativeCount > 0
+          ? pickSamplesForDisplay(scanned, latestAdLastShownAt, maxSamples, {
+              requiredAdvertiserId: selectedAdvertiserId,
+            })
+          : [];
       if (creativeCount > 0 && partialSamples.length > 0) {
         samples.push(...partialSamples);
         bump('pick_samples_after_timeout');
@@ -1296,6 +1306,7 @@ export async function runGoogleAdsTransparencyAuditSamples(
           creativeCount,
           latestAdLastShownAt,
           longestAdRunDays,
+          selectedAdvertiserId,
           samples,
           outcome: 'ok',
         };
@@ -1309,6 +1320,7 @@ export async function runGoogleAdsTransparencyAuditSamples(
       creativeCount: 0,
       latestAdLastShownAt: null,
       longestAdRunDays: null,
+      selectedAdvertiserId: null,
       samples: [],
       outcome: 'playwright_error',
       message,

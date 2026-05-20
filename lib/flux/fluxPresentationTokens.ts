@@ -48,8 +48,16 @@ export interface FluxPresentationTokens {
   surfaceColor: string;
   sectionBackgroundColor: string;
   textColor: string;
+  /** Defaults to textColor; block appearance can override via getFluxBlockPresentation. */
+  headingColor: string;
+  onPrimaryColor: string;
+  onSurfaceColor: string;
+  mutedTextColor: string;
+  errorColor: string;
   mutedTextOpacity: number;
   subtleTextOpacity: number;
+  /** Hero splitPanel / media side column. */
+  panelCard: ViewStyle;
   radii: {
     card: number;
     button: number;
@@ -82,11 +90,11 @@ export function withFluxAlpha(color: string, alphaHex: string): string {
   return isHexColor(color) ? `${color}${alphaHex}` : color;
 }
 
-function shadow(depth: 'none' | 'soft' | 'medium'): ViewStyle {
+function shadow(depth: 'none' | 'soft' | 'medium', shadowColor: string): ViewStyle {
   if (depth === 'none') return {};
   if (depth === 'soft') {
     return {
-      shadowColor: '#0f172a',
+      shadowColor,
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.08,
       shadowRadius: 18,
@@ -94,7 +102,7 @@ function shadow(depth: 'none' | 'soft' | 'medium'): ViewStyle {
     };
   }
   return {
-    shadowColor: '#0f172a',
+    shadowColor,
     shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.12,
     shadowRadius: 28,
@@ -108,11 +116,26 @@ function normalizePreset(preset: unknown): FluxBlockStylePreset {
     : DEFAULT_FLUX_BLOCK_STYLE_PRESET;
 }
 
+const CASE_STUDY_LAYOUT_BY_PRESET: Record<FluxBlockStylePreset, FluxPresentationTokens['layouts']['caseStudy']> = {
+  classic: 'compactCard',
+  minimal: 'report',
+  elevated: 'splitMetric',
+  soft: 'storyPanel',
+};
+
+/** True when the preset's case study layout can show an image (classic compact card, elevated split). */
+export function caseStudyLayoutUsesImage(preset: FluxBlockStylePreset): boolean {
+  const normalized = FLUX_BLOCK_STYLE_PRESETS.includes(preset) ? preset : DEFAULT_FLUX_BLOCK_STYLE_PRESET;
+  const layout = CASE_STUDY_LAYOUT_BY_PRESET[normalized];
+  return layout === 'splitMetric' || layout === 'compactCard';
+}
+
 export function getFluxPresentationTokens(theme: ThemeConfig): FluxPresentationTokens {
   const preset = normalizePreset(theme.blockStylePreset);
-  const surfaceColor = '#ffffff';
+  const surfaceColor = theme.surfaceColor;
   const primaryTint = withFluxAlpha(theme.primaryColor, '14');
   const accentTint = withFluxAlpha(theme.accentColor || theme.primaryColor, '16');
+  const shadowColor = theme.shadowColor;
 
   const config = {
     classic: {
@@ -153,8 +176,8 @@ export function getFluxPresentationTokens(theme: ThemeConfig): FluxPresentationT
       inputRadius: 6,
       mediaRadius: 6,
       borderWidth: 1,
-      borderColor: FALLBACK_BORDER,
-      strongBorderColor: FALLBACK_STRONG_BORDER,
+      borderColor: theme.borderColor || FALLBACK_BORDER,
+      strongBorderColor: theme.strongBorderColor || FALLBACK_STRONG_BORDER,
       depth: 'none' as const,
       mutedTextOpacity: 0.64,
       subtleTextOpacity: 0.48,
@@ -210,7 +233,13 @@ export function getFluxPresentationTokens(theme: ThemeConfig): FluxPresentationT
     borderRadius: config.cardRadius,
     borderWidth: config.borderWidth,
     borderColor: config.borderColor,
-    ...shadow(config.depth),
+    ...shadow(config.depth, shadowColor),
+  };
+
+  const panelCard: ViewStyle = {
+    backgroundColor: surfaceColor,
+    borderRadius: config.buttonRadius,
+    padding: 20,
   };
 
   return {
@@ -219,6 +248,11 @@ export function getFluxPresentationTokens(theme: ThemeConfig): FluxPresentationT
     surfaceColor,
     sectionBackgroundColor: theme.backgroundColor,
     textColor: theme.textColor,
+    headingColor: theme.textColor,
+    onPrimaryColor: theme.onPrimaryColor,
+    onSurfaceColor: theme.onSurfaceColor,
+    mutedTextColor: theme.mutedTextColor,
+    errorColor: theme.errorColor,
     mutedTextOpacity: config.mutedTextOpacity,
     subtleTextOpacity: config.subtleTextOpacity,
     radii: {
@@ -265,10 +299,11 @@ export function getFluxPresentationTokens(theme: ThemeConfig): FluxPresentationT
       borderRadius: config.buttonRadius,
       backgroundColor: surfaceColor,
     },
+    panelCard,
     logoBar: {
       backgroundColor: surfaceColor,
       borderBottomWidth: preset === 'minimal' ? 1 : 0,
-      borderBottomColor: config.borderColor,
+      borderBottomColor: theme.borderColor || config.borderColor,
     },
     highlightFrame: {
       borderWidth: 2,

@@ -2,9 +2,15 @@ import React, { useMemo, useRef } from 'react';
 import { ScrollView, View, Image } from 'react-native';
 import type { Block, PageConfig, ContentAsset } from '@/lib/flux/types';
 import { computeResolvedAnchorDomIdByBlockId } from '@/lib/flux/fluxScrollTag';
+import { enrichThemeConfig, resolveFluxHeaderAppearance } from '@/lib/flux/enrichThemeConfig';
 import { FluxGoogleFontWebLinks } from './FluxGoogleFontWebLinks';
 import { FluxPageScrollProvider, useFluxPageScroll } from './FluxPageScrollContext';
-import { FluxThemeProvider } from './FluxThemeProvider';
+import {
+  FluxBlockThemeProvider,
+  FluxThemeProvider,
+  useFluxPresentation,
+  useFluxTheme,
+} from './FluxThemeProvider';
 import { BlockRenderer, type FluxBlockRuntimeContext } from './blocks/BlockRenderer';
 import { CaseStudyCarouselBlock } from './blocks/CaseStudyCarouselBlock';
 import { getFluxPresentationTokens } from '@/lib/flux/fluxPresentationTokens';
@@ -18,13 +24,34 @@ interface PageRendererProps {
   runtimeContext?: FluxBlockRuntimeContext;
 }
 
-const FALLBACK_THEME: PageConfig['theme'] = {
-  primaryColor: '#4f46e5',
-  accentColor: '#4f46e5',
-  backgroundColor: '#f5f5f5',
-  textColor: '#1a1a1a',
-  fontFamily: 'Inter',
-};
+function FluxPageLogoHeader({ logoUrl }: { logoUrl: string }) {
+  const theme = useFluxTheme();
+  const presentation = useFluxPresentation();
+  const headerChrome = resolveFluxHeaderAppearance(theme);
+  const borderBottomWidth =
+    typeof presentation.logoBar.borderBottomWidth === 'number'
+      ? presentation.logoBar.borderBottomWidth
+      : 0;
+  return (
+    <View
+      className="w-full py-4 px-6 flex-row items-center"
+      style={[
+        presentation.logoBar,
+        {
+          backgroundColor: headerChrome.backgroundColor,
+          ...(borderBottomWidth > 0
+            ? {
+                borderBottomWidth,
+                borderBottomColor: headerChrome.borderColor,
+              }
+            : {}),
+        },
+      ]}
+    >
+      <Image source={{ uri: logoUrl }} className="h-8 w-32" resizeMode="contain" />
+    </View>
+  );
+}
 
 export function PageRenderer({
   config,
@@ -33,9 +60,15 @@ export function PageRenderer({
   highlightedBlockId = null,
   runtimeContext,
 }: PageRendererProps) {
-  const theme = config.theme ?? FALLBACK_THEME;
+  const enrichedTheme = useMemo(
+    () => enrichThemeConfig(config.theme ?? {}),
+    [config.theme],
+  );
   const blocks = Array.isArray(config.blocks) ? config.blocks : [];
-  const presentation = getFluxPresentationTokens(theme);
+  const pagePresentation = useMemo(
+    () => getFluxPresentationTokens(enrichedTheme),
+    [enrichedTheme],
+  );
   const scrollRef = useRef<ScrollView>(null);
   const anchorByBlockId = useMemo(() => computeResolvedAnchorDomIdByBlockId(blocks), [blocks]);
 
@@ -46,17 +79,9 @@ export function PageRenderer({
 
   const inner = (
     <FluxPageScrollProvider scrollViewRef={scrollable ? scrollRef : null}>
-      <FluxThemeProvider theme={theme}>
-        <View className="w-full" style={{ backgroundColor: theme.backgroundColor }}>
-          {theme.logoUrl ? (
-            <View className="w-full py-4 px-6 flex-row items-center" style={presentation.logoBar}>
-              <Image
-                source={{ uri: theme.logoUrl }}
-                className="h-8 w-32"
-                resizeMode="contain"
-              />
-            </View>
-          ) : null}
+      <FluxThemeProvider theme={enrichedTheme}>
+        <View className="w-full" style={{ backgroundColor: enrichedTheme.backgroundColor }}>
+          {enrichedTheme.logoUrl ? <FluxPageLogoHeader logoUrl={enrichedTheme.logoUrl} /> : null}
           {groupedBlocks.map((group) => {
             if (group.type === 'case_study_carousel' && group.blocks.length > 1) {
               const firstBlock = group.blocks[0];
@@ -69,15 +94,21 @@ export function PageRenderer({
                 asset: assets.find((a) => a.id === b.props.assetId),
                 overrideTitle: b.props.overrideTitle,
                 overrideMetric: b.props.overrideMetric,
+                overrideImageUrl: b.props.overrideImageUrl,
               }));
               return (
                 <FluxBlockAnchor
                   key={carouselKey}
                   anchorId={anchorId}
                   highlighted={highlighted}
-                  highlightStyle={presentation.highlightFrame}
+                  highlightStyle={pagePresentation.highlightFrame}
                 >
-                  <CaseStudyCarouselBlock items={items} />
+                  <FluxBlockThemeProvider
+                    theme={enrichedTheme}
+                    appearance={firstBlock.appearance}
+                  >
+                    <CaseStudyCarouselBlock items={items} />
+                  </FluxBlockThemeProvider>
                 </FluxBlockAnchor>
               );
             }
@@ -91,9 +122,11 @@ export function PageRenderer({
                 key={anchorId != null ? `${block.id}-${anchorId}` : block.id}
                 anchorId={anchorId}
                 highlighted={highlighted}
-                highlightStyle={presentation.highlightFrame}
+                highlightStyle={pagePresentation.highlightFrame}
               >
-                <BlockRenderer block={block} assets={assets} runtimeContext={runtimeContext} />
+                <FluxBlockThemeProvider theme={enrichedTheme} appearance={block.appearance}>
+                  <BlockRenderer block={block} assets={assets} runtimeContext={runtimeContext} />
+                </FluxBlockThemeProvider>
               </FluxBlockAnchor>
             );
           })}
@@ -104,7 +137,7 @@ export function PageRenderer({
 
   const content = (
     <>
-      <FluxGoogleFontWebLinks families={[theme.fontFamily || 'Inter']} />
+      <FluxGoogleFontWebLinks families={[enrichedTheme.fontFamily || 'Inter']} />
       {inner}
     </>
   );
@@ -112,11 +145,7 @@ export function PageRenderer({
   if (!scrollable) return content;
 
   return (
-    <ScrollView
-      ref={scrollRef}
-      className="flex-1"
-      showsVerticalScrollIndicator={false}
-    >
+    <ScrollView ref={scrollRef} className="flex-1" showsVerticalScrollIndicator={false}>
       {content}
     </ScrollView>
   );

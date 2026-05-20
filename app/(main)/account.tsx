@@ -8,6 +8,7 @@ import {
   MigrationHistoryModal,
   SmartleadMigrationWizardModal,
 } from '@/components/account/smartleadMigration';
+import { AccountApiKeysSection, AccountWebhooksSection } from '@/components/account/api';
 import { AccountNotificationsSection } from '@/components/account/AccountNotificationsSection';
 import type { BalancedSection } from '@/components/ui/layout';
 import {
@@ -19,14 +20,14 @@ import {
 import { WorkspaceSwitcherContent } from '@/components/ui/WorkspaceSwitcherPopover';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
-import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
-import { BaseModal, ModalFooter } from '@/components/ui/modals';
+import { Alert, useSmoothLoading, useToast } from '@/components/ui/feedback';
+import { AccountSettingsSkeleton } from '@/components/skeletons';
+import { useAccountSettingsData } from '@/hooks/useAccountSettingsData';
+import { BaseModal, ConfirmDeleteModal, ModalFooter } from '@/components/ui/modals';
 import { BottomSheet } from '@/components/ui/modals/BottomSheet';
 import { useAccount } from '@/contexts/AccountContext';
 import {
   deleteInvitation,
-  getActiveSmartleadMigrationRun,
-  getLatestSmartleadMigrationRun,
   inviteUserToAccount,
   listSmartleadMigrationRuns,
   removeBlockEntry,
@@ -200,7 +201,7 @@ function AccountTeamMembersSection({
   updatingRoleId,
   setRoleEditMember,
   onUpdateMemberRole,
-  onRemoveMember,
+  onRequestRemoveMember,
   removingMemberId,
   invitations,
   onRevokeInvitation,
@@ -222,7 +223,7 @@ function AccountTeamMembersSection({
   updatingRoleId: string | null;
   setRoleEditMember: (v: { membershipId: string; memberName: string } | null) => void;
   onUpdateMemberRole: (membershipId: string, role: 'owner' | 'admin' | 'member') => void;
-  onRemoveMember: (membershipId: string, memberName: string) => void;
+  onRequestRemoveMember: (membershipId: string, memberName: string) => void;
   removingMemberId: string | null;
   invitations: Invitation[];
   onRevokeInvitation: (id: string) => void;
@@ -329,7 +330,10 @@ function AccountTeamMembersSection({
                         variant="destructive"
                         size="xs"
                         onPress={() =>
-                          onRemoveMember(member.membership.id, member.user.name || member.user.email)
+                          onRequestRemoveMember(
+                            member.membership.id,
+                            member.user.name || member.user.email
+                          )
                         }
                         disabled={removingMemberId === member.membership.id}
                       >
@@ -530,12 +534,39 @@ export default function AccountPage() {
     teamMembers,
     invitations,
     blockList,
-    loading: isLoading,
+    loading: contextLoading,
+    accountDataLoading,
     error: loadError,
     refetch,
     refetchAccountData,
     setCurrentAccountId,
   } = useAccount();
+
+  const settingsBootstrapReady =
+    !contextLoading && !accountDataLoading && !!account?.id;
+  const settings = useAccountSettingsData(account?.id, {
+    enabled: settingsBootstrapReady,
+  });
+
+  const pageLoading =
+    contextLoading || accountDataLoading || settings.loading;
+
+  const { width } = useWindowDimensions();
+  const isMobile = width < LAYOUT_BREAKPOINT;
+  const [layoutStable, setLayoutStable] = useState(isMobile);
+
+  useEffect(() => {
+    setLayoutStable(isMobile);
+  }, [account?.id, isMobile]);
+
+  useEffect(() => {
+    if (pageLoading) {
+      setLayoutStable(isMobile);
+    }
+  }, [pageLoading, isMobile]);
+
+  const awaitingLayout = !isMobile && !layoutStable;
+  const showSkeleton = useSmoothLoading(pageLoading || awaitingLayout);
 
   const switchHandledRef = useRef(false);
   useEffect(() => {
@@ -567,12 +598,16 @@ export default function AccountPage() {
   const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false);
   const [smartleadWizardVisible, setSmartleadWizardVisible] = useState(false);
   const [smartleadHistoryVisible, setSmartleadHistoryVisible] = useState(false);
-  const [smartleadRun, setSmartleadRun] = useState<SmartleadMigrationRun | null>(null);
+  const smartleadRun = settings.data?.smartleadRun ?? null;
   const [selectedSmartleadRunId, setSelectedSmartleadRunId] = useState<string | null>(null);
   const [smartleadRuns, setSmartleadRuns] = useState<SmartleadMigrationRun[]>([]);
   const [smartleadRunsLoading, setSmartleadRunsLoading] = useState(false);
   const [smartleadRunsError, setSmartleadRunsError] = useState<string | null>(null);
   const [roleEditMember, setRoleEditMember] = useState<{ membershipId: string; memberName: string } | null>(null);
+  const [memberToRemove, setMemberToRemove] = useState<{
+    membershipId: string;
+    memberName: string;
+  } | null>(null);
 
   const handleNameChange = (value: string) => {
     setNameInput(value);
@@ -597,47 +632,6 @@ export default function AccountPage() {
     }
     setCompanyInput(membership.account.name ?? '');
   }, [membership?.account?.id, membership?.account?.name]);
-
-  useEffect(() => {
-    if (!account?.id) {
-      setSmartleadRun(null);
-      setSmartleadRuns([]);
-      setSmartleadRunsError(null);
-      return;
-    }
-
-    let cancelled = false;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const refreshRun = async () => {
-      try {
-        const activeRun = await getActiveSmartleadMigrationRun(account.id);
-        if (cancelled) return;
-        if (activeRun) {
-          setSmartleadRun(activeRun);
-          return;
-        }
-        const latestRun = await getLatestSmartleadMigrationRun(account.id);
-        if (!cancelled) {
-          setSmartleadRun(latestRun);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error('Failed to load Smartlead migration run:', error);
-        }
-      }
-    };
-
-    void refreshRun();
-    intervalId = setInterval(() => {
-      void refreshRun();
-    }, 5000);
-
-    return () => {
-      cancelled = true;
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [account?.id]);
 
   useEffect(() => {
     if (!smartleadHistoryVisible || !account?.id) return;
@@ -846,7 +840,6 @@ export default function AccountPage() {
 
     try {
       await deleteInvitation(invitationId);
-      await refetch();
       await refetchAccountData();
       toast.success('Invitation revoked successfully.');
     } catch (error: unknown) {
@@ -855,7 +848,7 @@ export default function AccountPage() {
     } finally {
       setRevokingInvitationId(null);
     }
-  }, [membership, refetch, refetchAccountData, toast]);
+  }, [membership, refetchAccountData, toast]);
 
   const handleUpdateMemberRole = useCallback(async (membershipId: string, newRole: 'owner' | 'admin' | 'member') => {
     if (!membership || !membership.account) return;
@@ -865,7 +858,6 @@ export default function AccountPage() {
 
     try {
       await updateMemberRole(membershipId, newRole);
-      await refetch();
       await refetchAccountData();
       toast.success('Member role updated successfully.');
     } catch (error: unknown) {
@@ -874,23 +866,26 @@ export default function AccountPage() {
     } finally {
       setUpdatingRoleId(null);
     }
-  }, [membership, refetch, refetchAccountData, toast]);
+  }, [membership, refetchAccountData, toast]);
 
-  const handleRemoveMember = useCallback(async (membershipId: string, memberName: string) => {
+  const handleRequestRemoveMember = useCallback((membershipId: string, memberName: string) => {
+    if (!membership || !membership.account) return;
+    if (!canManageAccountTeam(membership.membership)) return;
+    setMemberToRemove({ membershipId, memberName });
+  }, [membership]);
+
+  const handleConfirmRemoveMember = useCallback(async () => {
+    if (!memberToRemove) return;
     if (!membership || !membership.account) return;
     if (!canManageAccountTeam(membership.membership)) return;
 
-    // Confirm before removing
-    if (typeof window !== 'undefined' && !window.confirm(`Are you sure you want to remove ${memberName} from the team?`)) {
-      return;
-    }
-
+    const { membershipId } = memberToRemove;
     setRemovingMemberId(membershipId);
 
     try {
       await removeMemberFromAccount(membershipId);
-      await refetch();
       await refetchAccountData();
+      setMemberToRemove(null);
       toast.success('Member removed successfully.');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to remove member.';
@@ -898,7 +893,7 @@ export default function AccountPage() {
     } finally {
       setRemovingMemberId(null);
     }
-  }, [membership, refetch, refetchAccountData, toast]);
+  }, [memberToRemove, membership, refetchAccountData, toast]);
 
   const handleUnblock = useCallback(async (entryId: string) => {
     if (!membership?.account) return;
@@ -916,8 +911,6 @@ export default function AccountPage() {
   const isOwner = membership?.membership.is_owner ?? false;
   const membershipRole = getAccountMembershipRole(membership?.membership);
   const canManageTeam = canManageAccountTeam(membership?.membership);
-  const { width } = useWindowDimensions();
-  const isMobile = width < LAYOUT_BREAKPOINT;
 
   const sectionTitleClass = isMobile
     ? 'text-lg font-instrument-semibold text-white pb-2 mb-3 border-b border-[#2A2A2A]'
@@ -957,6 +950,8 @@ export default function AccountPage() {
                   cardVariant={sectionCardVariant}
                   cardClassName={sectionCardClassName}
                   titleClassName={sectionNotificationsTitleClass}
+                  initialPrefs={settings.data?.prefs}
+                  initialSubCount={settings.data?.subCount}
                 />
               ),
             } satisfies BalancedSection,
@@ -982,6 +977,49 @@ export default function AccountPage() {
     ];
     if (membership?.account) {
       base.push({
+        id: 'api-keys',
+        groupLabel: 'Integrations',
+        content: canManageTeam ? (
+          <AccountApiKeysSection
+            account={membership.account}
+            cardVariant={sectionCardVariant}
+            cardClassName={sectionCardClassName}
+            titleClassName={sectionTitleClass}
+            headerTitleClassName={sectionNotificationsTitleClass}
+            initialKeys={settings.data?.apiKeys}
+          />
+        ) : (
+          <Card variant={sectionCardVariant} className={sectionCardClassName ?? ''}>
+            <Text className={sectionTitleClass}>API Keys</Text>
+            <Text className="text-sm text-gray-400">
+              Owners and admins can manage account API keys.
+            </Text>
+          </Card>
+        ),
+      });
+      base.push({
+        id: 'webhooks',
+        groupLabel: 'Integrations',
+        content: canManageTeam ? (
+          <AccountWebhooksSection
+            account={membership.account}
+            cardVariant={sectionCardVariant}
+            cardClassName={sectionCardClassName}
+            titleClassName={sectionTitleClass}
+            headerTitleClassName={sectionNotificationsTitleClass}
+            onAccountUpdated={refetch}
+            initialFailedDeliveryCount={settings.data?.webhookFailedDeliveryCount}
+          />
+        ) : (
+          <Card variant={sectionCardVariant} className={sectionCardClassName ?? ''}>
+            <Text className={sectionTitleClass}>Webhooks</Text>
+            <Text className="text-sm text-gray-400">
+              Owners and admins can manage account webhook settings.
+            </Text>
+          </Card>
+        ),
+      });
+      base.push({
         id: 'team-members',
         groupLabel: 'Team',
         content: (
@@ -999,7 +1037,7 @@ export default function AccountPage() {
             updatingRoleId={updatingRoleId}
             setRoleEditMember={setRoleEditMember}
             onUpdateMemberRole={handleUpdateMemberRole}
-            onRemoveMember={handleRemoveMember}
+            onRequestRemoveMember={handleRequestRemoveMember}
             removingMemberId={removingMemberId}
             invitations={invitations}
             onRevokeInvitation={handleRevokeInvitation}
@@ -1070,12 +1108,14 @@ export default function AccountPage() {
     updatingRoleId,
     setRoleEditMember,
     handleUpdateMemberRole,
-    handleRemoveMember,
+    handleRequestRemoveMember,
     removingMemberId,
     invitations,
     handleRevokeInvitation,
     revokingInvitationId,
     smartleadRun,
+    settings.data,
+    refetch,
   ]);
 
   const signOutButton = (
@@ -1096,12 +1136,29 @@ export default function AccountPage() {
         primaryAction={!isMobile ? signOutButton : undefined}
       />
 
-      {isLoading ? (
-        <LoadingState message="Loading account details..." color="#f33203" />
-      ) : loadError ? (
+      {loadError ? (
         <Alert variant="error" message={loadError} />
+      ) : settings.error && !pageLoading ? (
+        <Alert
+          variant="error"
+          message={settings.error}
+          actionText="Try again"
+          onAction={() => void settings.refresh()}
+        />
       ) : (
         <>
+          {(pageLoading || showSkeleton || awaitingLayout) ? (
+            <AccountSettingsSkeleton isMobile={isMobile} includeSmartlead={!isMobile} />
+          ) : null}
+
+          {!pageLoading ? (
+          <View
+            style={
+              awaitingLayout
+                ? { opacity: 0, position: 'absolute', width: '100%', pointerEvents: 'none' as const }
+                : undefined
+            }
+          >
           {membershipRole === 'member' && membership?.account?.name ? (
             <View
               style={{
@@ -1144,6 +1201,7 @@ export default function AccountPage() {
             compact={isMobile}
             contentMaxWidth={DESKTOP_TWO_COLUMN_WIDTH}
             columnMaxWidth={DESKTOP_COLUMN_MAX_WIDTH}
+            onLayoutStable={() => setLayoutStable(true)}
           />
 
           {isMobile && (
@@ -1225,8 +1283,22 @@ export default function AccountPage() {
                   </ModalFooter>
                 }
               />
-            </>
-          )}
+
+              <ConfirmDeleteModal
+                visible={memberToRemove !== null}
+                onClose={() => setMemberToRemove(null)}
+                onConfirm={handleConfirmRemoveMember}
+                title="Remove team member?"
+                itemName={memberToRemove?.memberName}
+                description="They will lose access to this workspace. This cannot be undone."
+                confirmLabel="Remove"
+                isLoading={removingMemberId !== null}
+                requireConfirmation={false}
+              />
+          </View>
+          ) : null}
+        </>
+      )}
     </PageLayout>
   );
 }

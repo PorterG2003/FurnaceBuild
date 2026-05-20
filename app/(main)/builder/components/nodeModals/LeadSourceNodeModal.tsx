@@ -6,6 +6,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { useAccount } from '@/contexts/AccountContext';
+import { getClientApiBaseUrl } from '@/lib/client-api/client';
 import { createLeads, getLeadCount, getLeads } from '@/lib/supabase/services/leads';
 import { generateGlobalLeadId } from '@/lib/leads';
 import { ensureCampaignEnrollmentsForLeads } from '@/lib/supabase/services/campaigns';
@@ -165,9 +166,6 @@ function LeadSourceNodeModal({
     unmappedColumns: string[];
   } | null>(null);
   const [importedCount, setImportedCount] = useState<number | null>(null);
-  const [apiKeyVisible, setApiKeyVisible] = useState(false);
-  const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [apiKey] = useState(() => `live_${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`);
   const [isImportWizardOpen, setIsImportWizardOpen] = useState(false);
   const [dbLeads, setDbLeads] = useState<Lead[]>([]);
   const [leadCount, setLeadCount] = useState<number | null>(null);
@@ -293,8 +291,17 @@ function LeadSourceNodeModal({
 
   const endpointUrl = useMemo(() => {
     const bucketSegment = initialData?.bucketId ?? 'your-bucket-id';
-    return `https://api.furnace.build/v1/buckets/${bucketSegment}/leads`;
-  }, [initialData?.bucketId]);
+    const baseUrl = getClientApiBaseUrl();
+    if (!baseUrl) {
+      return `https://api.getfurnace.io/v1/campaigns/${initialData?.campaignId ?? 'your-campaign-id'}/leads`;
+    }
+    return `${baseUrl}/v1/campaigns/${initialData?.campaignId ?? 'your-campaign-id'}/leads`;
+  }, [initialData?.bucketId, initialData?.campaignId]);
+
+  const docsUrl = useMemo(() => {
+    const baseUrl = getClientApiBaseUrl();
+    return baseUrl ? `${baseUrl}/docs` : 'https://api.getfurnace.io/docs';
+  }, []);
 
   const payloadExample = useMemo(() => {
     const bucketSegment = initialData?.bucketId ?? 'your-bucket-id';
@@ -632,12 +639,12 @@ function LeadSourceNodeModal({
     }
   };
 
-  const handleTestEndpoint = () => {
-    setTestStatus('loading');
-    setTimeout(() => {
-      setTestStatus('success');
-      Alert.alert('Test mode', 'Mock request sent. Hook up the backend handler to complete this action.');
-    }, 650);
+  const handleOpenDocs = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.open(docsUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    Alert.alert('Open docs', docsUrl);
   };
 
   const renderDetailsTab = () => (
@@ -983,16 +990,21 @@ function LeadSourceNodeModal({
 
   const renderApiTab = () => (
     <View className="gap-4">
-      <View className="p-4 border border-yellow-500/30 rounded-xl bg-yellow-500/10">
-        <Text className="text-xs text-yellow-200 uppercase tracking-[0.2em] mb-2">
-          Coming Soon
+      <View className="p-4 border border-brand-orange/30 rounded-xl bg-brand-orange/10">
+        <Text className="text-xs text-brand-orange uppercase tracking-[0.2em] mb-2">
+          Client API
         </Text>
-        <Text className="text-sm text-yellow-100">
-          The API workflow is in development. These controls are read-only for now while we wire up live endpoints.
+        <Text className="text-sm text-white">
+          Use your account API keys from Account Settings and the live Client API docs for request examples, schemas, and authentication details.
         </Text>
+        <View style={{ flexDirection: 'row', marginTop: 16 }}>
+          <Button size="sm" onPress={handleOpenDocs}>
+            Open API Docs
+          </Button>
+        </View>
       </View>
 
-      <View className="p-4 border border-white/10 rounded-xl bg-white/5 opacity-60">
+      <View className="p-4 border border-white/10 rounded-xl bg-white/5">
         <Text className="text-xs text-gray-400 uppercase tracking-[0.2em] mb-2">
           Endpoint URL
         </Text>
@@ -1005,27 +1017,7 @@ function LeadSourceNodeModal({
           </Button>
         </View>
         <Text className="text-xs text-gray-400 mt-3">
-          Send a POST request to this URL to push leads directly into the bucket.
-        </Text>
-      </View>
-
-      <View className="p-4 border border-white/10 rounded-xl bg-white/5 opacity-60">
-        <Text className="text-xs text-gray-400 uppercase tracking-[0.2em] mb-2">
-          API Key
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <Text style={{ flex: 1, color: '#FFFFFF', fontSize: 13, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>
-            {apiKeyVisible ? apiKey : '••••••••••••••••••'}
-          </Text>
-          <Button variant="secondary" size="sm" onPress={() => setApiKeyVisible(!apiKeyVisible)}>
-            {apiKeyVisible ? 'Hide' : 'Show'}
-          </Button>
-          <Button variant="secondary" size="sm" onPress={() => handleCopy(apiKey, 'API key')}>
-            Copy
-          </Button>
-        </View>
-        <Text className="text-xs text-gray-400 mt-3">
-          Use this key as a Bearer token in the Authorization header. Replace with a secure value when wiring up the backend.
+          Send a POST request to this campaign endpoint to create or upsert leads. Async imports are also available under `/bulk/async`.
         </Text>
       </View>
 
@@ -1049,15 +1041,10 @@ function LeadSourceNodeModal({
           <Button variant="secondary" size="sm" onPress={() => handleCopy(payloadExample, 'Payload example')}>
             Copy Payload
           </Button>
-          <Button onPress={handleTestEndpoint} disabled={testStatus === 'loading'}>
-            {testStatus === 'loading' ? 'Testing…' : 'Send Test (Mock)'}
+          <Button onPress={handleOpenDocs}>
+            View Full Docs
           </Button>
         </View>
-        {testStatus === 'success' && (
-          <Text className="text-xs text-green-300 mt-2">
-            Mock request recorded. Replace with real networking code to validate the endpoint.
-          </Text>
-        )}
       </View>
     </View>
   );

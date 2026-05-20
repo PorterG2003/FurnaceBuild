@@ -1,4 +1,5 @@
 import type { Block, PageConfig, ThemeConfig } from './types';
+import { enrichThemeConfig } from './enrichThemeConfig';
 import { blockSchema, type FluxGeneratePageConfigParsed } from './fluxGeneratePageConfigSchema';
 
 /**
@@ -26,11 +27,19 @@ export function mergeGeneratedPageConfigWithTemplate(params: {
   prospectName: string;
   companyName: string;
   serverHeroImageUrl?: string | null;
+  /** When regenerating, keep user styling overrides from the saved page. */
+  existingPageConfig?: PageConfig | null;
 }): PageConfig {
   const templateBlocks = parseTemplateBlocksForMerge(params.templateBlocks);
   const byId = new Map(params.llmPageConfig.blocks.map((b) => [b.id, b]));
 
+  const existingById = new Map(
+    (params.existingPageConfig?.blocks ?? []).map((b) => [b.id, b]),
+  );
+
   const mergedBlocks: Block[] = templateBlocks.map((tb) => {
+    const existing = existingById.get(tb.id);
+    const preserveAppearance = existing?.appearance ? { appearance: existing.appearance } : {};
     const llm = byId.get(tb.id);
     if (llm && llm.type === tb.type) {
       if (tb.type === 'competitor_ad_audit' && llm.type === 'competitor_ad_audit') {
@@ -40,6 +49,7 @@ export function mergeGeneratedPageConfigWithTemplate(params: {
             : tb.props.heading;
         return {
           ...tb,
+          ...preserveAppearance,
           props: {
             ...tb.props,
             heading,
@@ -49,6 +59,7 @@ export function mergeGeneratedPageConfigWithTemplate(params: {
       if (tb.type === 'hero' && llm.type === 'hero') {
         return {
           ...tb,
+          ...preserveAppearance,
           props: {
             ...llm.props,
             ...(params.serverHeroImageUrl ? { heroImageUrl: params.serverHeroImageUrl } : {}),
@@ -58,6 +69,7 @@ export function mergeGeneratedPageConfigWithTemplate(params: {
       if (tb.type === 'quiz_and_book' && llm.type === 'quiz_and_book') {
         return {
           ...tb,
+          ...preserveAppearance,
           props: {
             ...tb.props,
             heading: llm.props.heading,
@@ -85,25 +97,29 @@ export function mergeGeneratedPageConfigWithTemplate(params: {
           },
         } as Block;
       }
-      return { ...tb, props: llm.props } as Block;
+      return { ...tb, ...preserveAppearance, props: llm.props } as Block;
     }
     if (tb.type === 'hero' && params.serverHeroImageUrl) {
       return {
         ...tb,
+        ...preserveAppearance,
         props: {
           ...tb.props,
           heroImageUrl: params.serverHeroImageUrl,
         },
       } as Block;
     }
-    return tb;
+    return { ...tb, ...preserveAppearance };
   });
 
+  const existingHeader = params.existingPageConfig?.theme?.header;
+
   return {
-    theme: {
+    theme: enrichThemeConfig({
       ...params.serverTheme,
       blockStylePreset: params.llmPageConfig.theme.blockStylePreset ?? params.serverTheme.blockStylePreset,
-    },
+      ...(existingHeader ? { header: existingHeader } : {}),
+    }),
     prospectName: params.prospectName,
     companyName: params.companyName,
     blocks: mergedBlocks,

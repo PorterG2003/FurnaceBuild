@@ -395,12 +395,29 @@ export class WorkerStack extends cdk.Stack {
       visibilityTimeout: cdk.Duration.seconds(150),
       retentionPeriod: cdk.Duration.days(4),
     });
+    const webhookEventsQueueUrl = cdk.Fn.importValue(`FurnaceWebhookEventsQueueUrl-${environment}`);
+    const webhookEventsQueueArn = cdk.Fn.importValue(`FurnaceWebhookEventsQueueArn-${environment}`);
+
+    sendWorkerTaskRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'AllowSendWebhookEventsQueue',
+        actions: ['sqs:SendMessage'],
+        resources: [webhookEventsQueueArn],
+      }),
+    );
 
     inboxCheckerWorkerTaskRole.addToPolicy(
       new iam.PolicyStatement({
         sid: 'AllowSendNotificationEventsQueue',
         actions: ['sqs:SendMessage'],
         resources: [notificationEventsQueue.queueArn],
+      }),
+    );
+    inboxCheckerWorkerTaskRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'AllowInboxCheckerWebhookEventsQueue',
+        actions: ['sqs:SendMessage'],
+        resources: [webhookEventsQueueArn],
       }),
     );
 
@@ -558,6 +575,7 @@ export class WorkerStack extends cdk.Stack {
         AWS_REGION: region,
         SUPABASE_URL: supabaseUrl,
         SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
+        WEBHOOK_QUEUE_URL: webhookEventsQueueUrl,
         ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
       },
     });
@@ -643,6 +661,7 @@ export class WorkerStack extends cdk.Stack {
         SUPABASE_URL: supabaseUrl,
         SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
         NOTIFICATION_QUEUE_URL: notificationEventsQueue.queueUrl,
+        WEBHOOK_QUEUE_URL: webhookEventsQueueUrl,
         ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
       },
     });

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { enrichThemeConfig } from './enrichThemeConfig.js';
 import { mergeGeneratedPageConfigWithTemplate, parseTemplateBlocksForMerge } from './mergeGeneratedPageConfig.js';
 import type { FluxGeneratePageConfigParsed } from './fluxGeneratePageConfigSchema.js';
 
@@ -159,7 +160,7 @@ test('merge preserves template order and ids; applies LLM props when id+type mat
 
   assert.equal(merged.prospectName, 'Jane');
   assert.equal(merged.companyName, 'Acme');
-  assert.deepEqual(merged.theme, { ...serverTheme, blockStylePreset: undefined });
+  assert.deepEqual(merged.theme, enrichThemeConfig({ ...serverTheme }));
   assert.equal(merged.blocks.length, 2);
   assert.equal(merged.blocks[0].id, 'a');
   assert.equal(merged.blocks[0].type, 'hero');
@@ -197,6 +198,70 @@ test('merge keeps template block when LLM has no matching id', () => {
   });
   assert.equal(merged.blocks.length, 1);
   if (merged.blocks[0].type === 'hero') assert.equal(merged.blocks[0].props.headline, 'Keep');
+});
+
+test('mergeGeneratedPageConfigWithTemplate preserves block appearance and theme header', () => {
+  const serverTheme = {
+    primaryColor: '#4f46e5',
+    accentColor: '#4f46e5',
+    backgroundColor: '#f5f5f5',
+    textColor: '#1a1a1a',
+    fontFamily: 'Inter',
+    surfaceColor: '#ffffff',
+    onPrimaryColor: '#ffffff',
+    onSurfaceColor: '#1a1a1a',
+    mutedTextColor: '#1a1a1aad',
+    borderColor: '#4f46e530',
+    strongBorderColor: '#4f46e540',
+    errorColor: '#b91c1c',
+    shadowColor: '#0f172a',
+  };
+  const templateBlocks = [
+    {
+      id: 'hero-1',
+      type: 'hero',
+      order: 0,
+      props: { headline: 'Old', subheadline: 'Sub', ctaText: 'Go', ctaUrl: 'https://x.com' },
+    },
+  ];
+  const llm: FluxGeneratePageConfigParsed = {
+    theme: { primaryColor: '#000', accentColor: '#000', backgroundColor: '#fff', textColor: '#000', fontFamily: 'Inter' },
+    prospectName: 'New Name',
+    companyName: 'New Co',
+    blocks: [
+      {
+        id: 'hero-1',
+        type: 'hero',
+        order: 0,
+        props: { headline: 'New', subheadline: 'Sub2', ctaText: 'Go', ctaUrl: 'https://x.com' },
+      },
+    ],
+  };
+  const existingPageConfig = {
+    theme: { ...serverTheme, header: { backgroundColor: '#eeeeee', borderColor: '#cccccc' } },
+    prospectName: 'Old',
+    companyName: 'Old Co',
+    blocks: [
+      {
+        id: 'hero-1',
+        type: 'hero' as const,
+        order: 0,
+        appearance: { panelSurfaceColor: '#aabbcc' },
+        props: { headline: 'Old', subheadline: 'Sub', ctaText: 'Go', ctaUrl: 'https://x.com' },
+      },
+    ],
+  };
+  const merged = mergeGeneratedPageConfigWithTemplate({
+    templateBlocks,
+    llmPageConfig: llm,
+    serverTheme,
+    prospectName: 'New Name',
+    companyName: 'New Co',
+    existingPageConfig,
+  });
+  assert.equal(merged.theme.header?.backgroundColor, '#eeeeee');
+  assert.equal(merged.blocks[0].appearance?.panelSurfaceColor, '#aabbcc');
+  if (merged.blocks[0].type === 'hero') assert.equal(merged.blocks[0].props.headline, 'New');
 });
 
 test('parseTemplateBlocksForMerge sorts by order', () => {

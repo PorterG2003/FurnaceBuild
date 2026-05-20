@@ -18,12 +18,33 @@ export type BlockType =
   | 'competitor_ad_audit'
   | 'quiz_and_book';
 
+export interface FluxBlockAppearance {
+  sectionBackgroundColor?: string;
+  surfaceColor?: string;
+  /** Side card / media panel (e.g. Hero splitPanel image column). Defaults to surfaceColor. */
+  panelSurfaceColor?: string;
+  textColor?: string;
+  headingColor?: string;
+  mutedTextColor?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  onPrimaryColor?: string;
+  borderColor?: string;
+  errorColor?: string;
+}
+
+export interface FluxPageHeaderAppearance {
+  backgroundColor?: string;
+  borderColor?: string;
+}
+
 export interface BlockBase {
   id: string;
   type: BlockType;
   order: number;
   /** Optional public section anchor; use `#<normalized-tag>` in CTA URLs to scroll here. */
   scrollTag?: string;
+  appearance?: FluxBlockAppearance;
 }
 
 export interface HeroBlockProps {
@@ -57,6 +78,7 @@ export interface CaseStudyBlockProps {
   assetId: string;
   overrideTitle?: string;
   overrideMetric?: string;
+  overrideImageUrl?: string;
 }
 export interface CaseStudyBlock extends BlockBase {
   type: 'case_study';
@@ -261,8 +283,22 @@ export interface ThemeConfig {
   backgroundColor: string;
   textColor: string;
   fontFamily: string;
+  /** Cards, inputs, secondary buttons, logo bar default. */
+  surfaceColor: string;
+  /** Text/icons on primary-filled surfaces (buttons, hero bands). */
+  onPrimaryColor: string;
+  /** Body text on card/surface backgrounds. */
+  onSurfaceColor: string;
+  /** Secondary / de-emphasized copy. */
+  mutedTextColor: string;
+  borderColor: string;
+  strongBorderColor: string;
+  errorColor: string;
+  shadowColor: string;
   logoUrl?: string;
   blockStylePreset?: FluxBlockStylePreset;
+  /** Logo bar chrome (not a block). */
+  header?: FluxPageHeaderAppearance;
   /** When true, over-limit copy may be saved even if it risks overflowing the chosen layout preset. */
   allowLongCopy?: boolean;
 }

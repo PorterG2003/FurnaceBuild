@@ -6,6 +6,7 @@ import { PageLayout, DetailPageHeader, LAYOUT_BREAKPOINT } from '@/components/ui
 import { LoadingState, Alert } from '@/components/ui/feedback';
 import { Button } from '@/components/ui/button';
 import { FlowDiagram } from '@/components/campaigns';
+import { CampaignWebhookOverrideCard } from '@/components/campaigns/CampaignWebhookOverrideCard';
 import { ScheduleModal } from '@/components/campaigns/ScheduleModal';
 import { MailboxesModal } from '@/components/campaigns/MailboxesModal';
 import {
@@ -450,6 +451,13 @@ export default function MissionControlPage() {
               </View>
             </Pressable>
           </View>
+
+          {campaign ? (
+            <CampaignWebhookOverrideCard
+              campaign={campaign}
+              onSaved={() => loadCampaign(true)}
+            />
+          ) : null}
 
           {/* Launch Readiness Section */}
           {isDraft && (

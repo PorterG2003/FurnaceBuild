@@ -1,4 +1,5 @@
 import type { Page } from 'playwright';
+import competitorAuditAdvertiser from '../../../../lib/flux/fluxCompetitorAuditAdvertiser.js';
 
 export const TRANSPARENCY_CREATIVE_FALLBACK_HEADLINE = 'Ad creative';
 export const TRANSPARENCY_CREATIVE_FALLBACK_BODY =
@@ -148,10 +149,13 @@ export function pickSamplesForDisplay(
   scanned: TransparencyScannedCreative[],
   globalLatestIso: string | null,
   maxSamples: number,
+  options: { requiredAdvertiserId?: string | null } = {},
 ): TransparencyCreativeSampleRow[] {
   if (scanned.length === 0 || maxSamples < 1) return [];
+  const filteredScanned = competitorAuditAdvertiser.filterExamplesToAdvertiser(scanned, options.requiredAdvertiserId ?? null);
+  if (filteredScanned.length === 0) return [];
   const globalTs = globalLatestIso ? Date.parse(`${globalLatestIso}T12:00:00Z`) : NaN;
-  const decorated = scanned.map((row, index) => {
+  const decorated = filteredScanned.map((row, index) => {
     const lastTs = row.latestAdLastShownAt ? Date.parse(`${row.latestAdLastShownAt}T12:00:00Z`) : NaN;
     const hasPreview = hasPreviewPng(row) ? 1 : 0;
     const matchesGlobal =
@@ -170,10 +174,18 @@ export function pickSamplesForDisplay(
   });
   const out: TransparencyCreativeSampleRow[] = [];
   const seenUrl = new Set<string>();
+  const seenAdvertiserId = new Set<string>();
   for (const { row } of decorated) {
     if (out.length >= maxSamples) break;
     if (seenUrl.has(row.sourceUrl)) continue;
+    const advertiserId = competitorAuditAdvertiser.extractGoogleAdsAdvertiserId(row.sourceUrl);
+    if (options.requiredAdvertiserId && advertiserId && advertiserId !== options.requiredAdvertiserId) continue;
+    if (options.requiredAdvertiserId && advertiserId == null) continue;
+    if (!options.requiredAdvertiserId && advertiserId && seenAdvertiserId.size > 0 && !seenAdvertiserId.has(advertiserId)) {
+      continue;
+    }
     seenUrl.add(row.sourceUrl);
+    if (advertiserId) seenAdvertiserId.add(advertiserId);
     out.push({
       sourceUrl: row.sourceUrl,
       headline: row.headline,

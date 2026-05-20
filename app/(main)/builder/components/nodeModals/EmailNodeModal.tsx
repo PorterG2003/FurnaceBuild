@@ -3,9 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, Pressable, Platform, ScrollVie
 import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/feedback/Alert';
-import { Select } from '@/components/ui/forms';
+import { MergeTagVariablePicker } from '@/components/builder/MergeTagVariablePicker';
 import {
-  CodeBracketIcon,
   EyeIcon,
   EyeSlashIcon,
   PlusIcon,
@@ -46,17 +45,6 @@ const VariableInput = ({
   variant = 'body',
   variables,
 }: VariableInputProps) => {
-  const [variableSearch, setVariableSearch] = useState('');
-
-  const filteredVariables = useMemo(() => {
-    if (!variableSearch.trim()) return variables;
-    const q = variableSearch.trim().toLowerCase();
-    return variables.filter(
-      (v) =>
-        v.token.toLowerCase().includes(q) || v.description.toLowerCase().includes(q)
-    );
-  }, [variables, variableSearch]);
-
   const handleSelectVariable = (token: string) => {
     const currentValue = value || '';
     const nextValue =
@@ -94,41 +82,9 @@ const VariableInput = ({
           multiline={multiline}
         />
         <View style={{ position: 'absolute', top: 7, right: 7 }}>
-          <Select<LeadVariable>
-            items={filteredVariables}
-            getItemId={(v) => v.token}
-            getItemLabel={(v) => ({ primary: v.token, secondary: v.description })}
-            value={null}
-            onChange={(_id, item) => {
-              if (item) handleSelectVariable(item.token);
-            }}
-            searchable={true}
-            onSearchChange={setVariableSearch}
-            searchValue={variableSearch}
-            placeholder="Variables"
-            searchPlaceholder="Search variables…"
-            emptyMessage={(hasSearch) => (hasSearch ? 'No matching variables.' : 'No variables.')}
-            listMaxHeight={320}
-            noMargin={true}
-            size="compact"
-            dropdownMinWidth={260}
-            renderTrigger={({ open, onPress }) => (
-              <TouchableOpacity
-                onPress={onPress}
-                style={{
-                  borderRadius: 12,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderWidth: 1,
-                  borderColor: open ? 'rgba(243,68,13,0.4)' : 'rgba(255,255,255,0.16)',
-                  backgroundColor: open ? 'rgba(243,68,13,0.2)' : 'rgba(255,255,255,0.08)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <CodeBracketIcon size={18} color={open ? '#F3440D' : '#FFFFFF'} />
-              </TouchableOpacity>
-            )}
+          <MergeTagVariablePicker
+            variables={variables}
+            onSelect={handleSelectVariable}
           />
         </View>
       </View>

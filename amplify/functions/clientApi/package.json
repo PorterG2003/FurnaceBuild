@@ -1,0 +1,14 @@
+{
+  "name": "clientApi",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.0.0",
+    "@supabase/supabase-js": "^2.77.0",
+    "hono": "^4.9.6"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.152",
+    "typescript": "^5.0.0"
+  }
+}

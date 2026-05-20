@@ -31,6 +31,8 @@ interface AccountContextValue {
   invitations: Invitation[];
   blockList: BlockListEntry[];
   loading: boolean;
+  accountDataLoading: boolean;
+  isAccountPageReady: boolean;
   error: string | null;
   refetch: () => Promise<void>;
   refetchAccountData: () => Promise<void>;
@@ -56,6 +58,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [accountDataLoading, setAccountDataLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastFetchedIdRef = useRef<string | null>(null);
 
@@ -140,6 +143,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       setInvitations([]);
       setBlockList([]);
       setLoading(false);
+      setAccountDataLoading(false);
       setError(null);
       lastFetchedIdRef.current = null;
       return;
@@ -174,9 +178,26 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       setTeamMembers([]);
       setInvitations([]);
       setBlockList([]);
+      setAccountDataLoading(false);
       return;
     }
-    fetchAccountData(currentAccountId);
+
+    let cancelled = false;
+    setAccountDataLoading(true);
+
+    void (async () => {
+      try {
+        await fetchAccountData(currentAccountId);
+      } finally {
+        if (!cancelled) {
+          setAccountDataLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [currentAccountId, memberships.length, fetchAccountData]);
 
   const setCurrentAccountId = useCallback((accountId: string) => {
@@ -200,9 +221,16 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     const nextMemberships = await fetchUserAndMemberships(authUser.id, email, name);
     const primary = nextMemberships?.find((m) => m.membership.is_owner) ?? nextMemberships?.[0];
     if (primary?.account.id) {
-      await fetchAccountData(primary.account.id);
+      setAccountDataLoading(true);
+      try {
+        await fetchAccountData(primary.account.id);
+      } finally {
+        setAccountDataLoading(false);
+      }
     }
   }, [authUser, fetchUserAndMemberships, fetchAccountData]);
+
+  const isAccountPageReady = !loading && !accountDataLoading && !error;
 
   const value = useMemo<AccountContextValue>(
     () => ({
@@ -213,12 +241,28 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       invitations,
       blockList,
       loading,
+      accountDataLoading,
+      isAccountPageReady,
       error,
       refetch,
       refetchAccountData,
       setCurrentAccountId,
     }),
-    [supabaseUser, account, memberships, teamMembers, invitations, blockList, loading, error, refetch, refetchAccountData, setCurrentAccountId]
+    [
+      supabaseUser,
+      account,
+      memberships,
+      teamMembers,
+      invitations,
+      blockList,
+      loading,
+      accountDataLoading,
+      isAccountPageReady,
+      error,
+      refetch,
+      refetchAccountData,
+      setCurrentAccountId,
+    ]
   );
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;

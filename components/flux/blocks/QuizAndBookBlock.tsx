@@ -162,7 +162,9 @@ export function QuizAndBookBlock({
                 }}
               >
                 {selected ? (
-                  <Text style={{ color: '#ffffff', fontSize: 12, fontFamily: headingFont }}>
+                  <Text
+                    style={{ color: presentation.onPrimaryColor, fontSize: 12, fontFamily: headingFont }}
+                  >
                     {isMulti ? '✓' : '●'}
                   </Text>
                 ) : null}
@@ -380,7 +382,10 @@ export function QuizAndBookBlock({
               style={presentation.primaryButton}
               onPress={() => setStarted(true)}
             >
-              <Text className="text-base" style={{ color: '#ffffff', fontFamily: headingFont }}>
+              <Text
+                className="text-base"
+                style={{ color: presentation.onPrimaryColor, fontFamily: headingFont }}
+              >
                 Get started
               </Text>
             </Pressable>
@@ -444,7 +449,7 @@ export function QuizAndBookBlock({
               style={{ borderTopWidth: 1, borderTopColor: `${theme.primaryColor}14` }}
             >
               {(validationError || submissionError) ? (
-                <Text className="text-sm" style={{ color: '#b91c1c', fontFamily: bodyFont }}>
+                <Text className="text-sm" style={{ color: presentation.errorColor, fontFamily: bodyFont }}>
                   {validationError ?? submissionError}
                 </Text>
               ) : null}
@@ -455,7 +460,10 @@ export function QuizAndBookBlock({
                   style={presentation.primaryButton}
                   onPress={handleNext}
                 >
-                  <Text className="text-base" style={{ color: '#ffffff', fontFamily: headingFont }}>
+                  <Text
+                className="text-base"
+                style={{ color: presentation.onPrimaryColor, fontFamily: headingFont }}
+              >
                     Next
                   </Text>
                 </Pressable>
@@ -466,8 +474,13 @@ export function QuizAndBookBlock({
                   onPress={() => { void continueFromSummary(); }}
                   disabled={sending}
                 >
-                  {sending ? <ActivityIndicator size="small" color="#ffffff" /> : null}
-                  <Text className="text-base" style={{ color: '#ffffff', fontFamily: headingFont }}>
+                  {sending ? (
+                    <ActivityIndicator size="small" color={presentation.onPrimaryColor} />
+                  ) : null}
+                  <Text
+                className="text-base"
+                style={{ color: presentation.onPrimaryColor, fontFamily: headingFont }}
+              >
                     {sending ? 'Sending…' : 'Book a time'}
                   </Text>
                 </Pressable>

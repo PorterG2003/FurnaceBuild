@@ -178,3 +178,21 @@ test('selectCreativeHrefsForSampling falls back to all hrefs when advertiser ids
   assert.deepEqual(selected.selectedHrefs, hrefs);
   assert.deepEqual(selected.advertiserCreativeCounts, {});
 });
+
+test('selectCreativeHrefsForSampling keeps the largest advertiser cluster for prod-like anytime results', () => {
+  const selected = selectCreativeHrefsForSampling([
+    '/advertiser/AR08607200154371489793/creative/CR09252723482578386945?region=US',
+    '/advertiser/AR04171424726394077185/creative/CR09070879540837875713?region=US',
+    '/advertiser/AR08607200154371489793/creative/CR05046974159238725633?region=US',
+  ]);
+
+  assert.equal(selected.selectedAdvertiserId, 'AR08607200154371489793');
+  assert.deepEqual(selected.selectedHrefs, [
+    '/advertiser/AR08607200154371489793/creative/CR09252723482578386945?region=US',
+    '/advertiser/AR08607200154371489793/creative/CR05046974159238725633?region=US',
+  ]);
+  assert.deepEqual(selected.advertiserCreativeCounts, {
+    AR08607200154371489793: 2,
+    AR04171424726394077185: 1,
+  });
+});

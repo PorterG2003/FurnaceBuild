@@ -4,7 +4,9 @@ import { nodeIcons } from './nodeMetadata';
 interface DataSenderNodeData {
   label?: string;
   endpoint?: string;
+  endpoint_url?: string;
   payload?: string;
+  on_failure?: 'continue' | 'stop';
 }
 
 interface DataSenderNodeProps {
@@ -16,6 +18,7 @@ interface DataSenderNodeProps {
 function DataSenderNode({ data, selected, id }: DataSenderNodeProps) {
   const displayLabel = data.label || 'Data Sender';
   const IconComponent = nodeIcons.dataSender;
+  const endpoint = data.endpoint_url || data.endpoint;
   
   const handleEdit = () => {
     if (typeof window !== 'undefined') {
@@ -25,7 +28,7 @@ function DataSenderNode({ data, selected, id }: DataSenderNodeProps) {
   
   return (
     <BaseNode label={displayLabel} onEdit={handleEdit} icon={IconComponent && <IconComponent size={16} color="#f85102" />}>
-      {data.endpoint && (
+      {endpoint && (
         <div style={{
           color: '#9CA3AF',
           fontSize: '12px',
@@ -35,7 +38,7 @@ function DataSenderNode({ data, selected, id }: DataSenderNodeProps) {
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}>
-          {data.endpoint}
+          {endpoint}
         </div>
       )}
     </BaseNode>

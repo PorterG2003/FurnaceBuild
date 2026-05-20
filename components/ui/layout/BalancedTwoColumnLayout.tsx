@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { debounce } from '@/lib/utils/debounce';
 import { computeTwoColumnAssignment } from './columnPacking';
@@ -21,6 +21,8 @@ interface BalancedTwoColumnLayoutProps {
   columnMaxWidth?: number;
   /** When true, use tighter vertical spacing (e.g. for mobile). */
   compact?: boolean;
+  /** Fires once all section heights are measured (desktop) or immediately on mount (mobile). */
+  onLayoutStable?: () => void;
 }
 
 const groupLabelClassCompact = 'text-xs font-instrument-medium text-gray-500 uppercase tracking-wide mb-2';
@@ -37,32 +39,63 @@ export function BalancedTwoColumnLayout({
   contentMaxWidth = DEFAULT_CONTENT_MAX_WIDTH,
   columnMaxWidth = DEFAULT_COLUMN_MAX_WIDTH,
   compact = false,
+  onLayoutStable,
 }: BalancedTwoColumnLayoutProps) {
   const groupLabelCls = compact ? groupLabelClassCompact : groupLabelClassDefault;
   const sectionIds = useMemo(() => sections.map((s) => s.id), [sections]);
+  const sectionIdsKey = sectionIds.join('|');
   const sectionMap = useMemo(() => new Map(sections.map((s) => [s.id, s])), [sections]);
 
   const [heights, setHeights] = useState<Record<string, number>>({});
   const heightsRef = useRef<Record<string, number>>({});
   const debouncedFlushRef = useRef<(() => void) | null>(null);
+  const layoutStableReportedRef = useRef(false);
+  const onLayoutStableRef = useRef(onLayoutStable);
+  onLayoutStableRef.current = onLayoutStable;
 
-  const reportHeight = useCallback((id: string, height: number) => {
-    heightsRef.current[id] = height;
-    if (debouncedFlushRef.current == null) {
-      debouncedFlushRef.current = debounce(() => {
-        setHeights((prev) => ({ ...prev, ...heightsRef.current }));
-      }, HEIGHT_DEBOUNCE_MS);
-    }
-    debouncedFlushRef.current();
-  }, []);
+  useEffect(() => {
+    setHeights({});
+    heightsRef.current = {};
+    layoutStableReportedRef.current = false;
+    debouncedFlushRef.current = null;
+  }, [sectionIdsKey]);
 
-  const assignment = useMemo(
-    () => computeTwoColumnAssignment(sectionIds, heights),
-    [sectionIds, heights]
+  const allMeasured =
+    sectionIds.length > 0 && sectionIds.every((id) => (heights[id] ?? 0) > 0);
+
+  const reportHeight = useCallback(
+    (id: string, height: number) => {
+      heightsRef.current[id] = height;
+      const ready =
+        sectionIds.length > 0 &&
+        sectionIds.every((sectionId) => (heightsRef.current[sectionId] ?? 0) > 0);
+      if (!ready) return;
+
+      if (debouncedFlushRef.current == null) {
+        debouncedFlushRef.current = debounce(() => {
+          setHeights({ ...heightsRef.current });
+          if (!layoutStableReportedRef.current) {
+            layoutStableReportedRef.current = true;
+            onLayoutStableRef.current?.();
+          }
+        }, HEIGHT_DEBOUNCE_MS);
+      }
+      debouncedFlushRef.current();
+    },
+    [sectionIds],
   );
 
-  const hasAnyHeight = sectionIds.some((id) => (heights[id] ?? 0) > 0);
-  const showTwoColumns = isDesktop && hasAnyHeight;
+  const assignment = useMemo(
+    () => computeTwoColumnAssignment(sectionIds, allMeasured ? heights : {}),
+    [sectionIds, heights, allMeasured],
+  );
+
+  useEffect(() => {
+    if (!isDesktop && onLayoutStableRef.current && !layoutStableReportedRef.current) {
+      layoutStableReportedRef.current = true;
+      onLayoutStableRef.current();
+    }
+  }, [isDesktop, sectionIdsKey]);
 
   if (!isDesktop) {
     let lastGroupLabel: string | undefined;
@@ -79,28 +112,6 @@ export function BalancedTwoColumnLayout({
                 <Text className={groupLabelCls}>{section.groupLabel}</Text>
               )}
               {section.content}
-            </React.Fragment>
-          );
-        })}
-      </View>
-    );
-  }
-
-  if (!showTwoColumns) {
-    let lastGroupLabel: string | undefined;
-    return (
-      <View>
-        {sections.map((section) => {
-          const showGroupLabel = section.groupLabel != null && section.groupLabel !== lastGroupLabel;
-          if (showGroupLabel) lastGroupLabel = section.groupLabel;
-          return (
-            <React.Fragment key={section.id}>
-              {showGroupLabel && (
-                <Text className={groupLabelCls}>{section.groupLabel}</Text>
-              )}
-              <MeasuredSection id={section.id} onHeightMeasured={reportHeight}>
-                {section.content}
-              </MeasuredSection>
             </React.Fragment>
           );
         })}

@@ -8,6 +8,7 @@ export type CaseStudyCarouselItem = {
   asset: ContentAsset | undefined;
   overrideTitle?: string;
   overrideMetric?: string;
+  overrideImageUrl?: string;
 };
 
 interface CaseStudyCarouselBlockProps {
@@ -83,6 +84,7 @@ function MarqueeCard({ item }: { item: ValidCarouselItem }) {
   const bodyFont = fluxPreviewFontFamily(theme.fontFamily, '400');
 
   const title = item.overrideTitle ?? item.asset.title;
+  const imageUrl = item.overrideImageUrl?.trim() || item.asset.imageUrl?.trim() || undefined;
 
   const resolvedMetrics: Array<{ label: string; value: string }> = (() => {
     if (item.asset.metrics && item.asset.metrics.length > 0) return item.asset.metrics;
@@ -93,9 +95,9 @@ function MarqueeCard({ item }: { item: ValidCarouselItem }) {
 
   return (
     <View className="p-5" style={presentation.strongCard}>
-      {item.asset.imageUrl ? (
+      {imageUrl ? (
         <Image
-          source={{ uri: item.asset.imageUrl }}
+          source={{ uri: imageUrl }}
           style={{ width: '100%', height: 32, marginBottom: 16 }}
           resizeMode="contain"
         />

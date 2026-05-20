@@ -1,6 +1,10 @@
 import React, { type ReactNode } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import type { Block, BlockType, ContentAsset } from '@/lib/flux/types';
+import {
+  caseStudyLayoutUsesImage,
+  DEFAULT_FLUX_BLOCK_STYLE_PRESET,
+} from '@/lib/flux/fluxPresentationTokens';
 import type { FluxBlockEditorLayout } from '@/components/flux/fluxTemplateBlocksDraggableListShared';
 import { fluxPanelInputClass, fluxPanelInputFieldClass, fluxPanelLabelClass } from '@/lib/flux/fluxEditorPanelClasses';
 import {
@@ -38,14 +42,20 @@ export const FLUX_ALL_BLOCK_TYPES: BlockType[] = [
   'quiz_and_book',
 ];
 
-export function fluxManualBlockSummary(block: Block): string {
+export function fluxManualBlockSummary(block: Block, assets?: ContentAsset[]): string {
   switch (block.type) {
     case 'hero':
       return block.props.headline || '(empty headline)';
     case 'social_proof':
       return `${block.props.logos.length} logos`;
-    case 'case_study':
-      return block.props.overrideTitle || `asset: ${block.props.assetId || '(none)'}`;
+    case 'case_study': {
+      const base = block.props.overrideTitle || `asset: ${block.props.assetId || '(none)'}`;
+      const linked = assets?.find((a) => a.id === block.props.assetId);
+      const hasImage = Boolean(
+        block.props.overrideImageUrl?.trim() || linked?.imageUrl?.trim(),
+      );
+      return hasImage ? `${base} · image` : base;
+    }
     case 'benefits':
       return `${block.props.items.length} items`;
     case 'testimonial':
@@ -200,7 +210,11 @@ export function renderFluxManualBlockEditor(
           />
         </View>
       );
-    case 'case_study':
+    case 'case_study': {
+      const blockStylePreset = layout?.blockStylePreset ?? DEFAULT_FLUX_BLOCK_STYLE_PRESET;
+      const showImageField = caseStudyLayoutUsesImage(blockStylePreset);
+      const selectedAsset = assets.find((asset) => asset.id === block.props.assetId);
+      const assetDefaultImage = selectedAsset?.imageUrl?.trim();
       return (
         <View className="gap-1">
           <Text className={labelClass}>Content Asset</Text>
@@ -221,9 +235,32 @@ export function renderFluxManualBlockEditor(
                 </Pressable>
               ))}
             {assets.filter((asset) => asset.type === 'case_study').length === 0 ? (
-              <Text className="text-gray-500 text-xs">No case study assets. Add one above.</Text>
+              <Text className="text-gray-500 text-xs">No case study assets. Add one in Assets.</Text>
             ) : null}
           </View>
+          {showImageField ? (
+            block.props.assetId ? (
+              <>
+                <Text className={labelClass}>Image URL (optional)</Text>
+                <TextInput
+                  className={inputClass}
+                  value={block.props.overrideImageUrl ?? ''}
+                  onChangeText={(value) =>
+                    updateProps(block.id, { overrideImageUrl: value.trim() || undefined })
+                  }
+                  placeholder={
+                    assetDefaultImage ? `Asset default: ${assetDefaultImage}` : 'https://…'
+                  }
+                  placeholderTextColor="#555"
+                  autoCapitalize="none"
+                />
+              </>
+            ) : (
+              <Text className="text-gray-500 text-xs mb-1">
+                Pick a case study asset above to set an image URL.
+              </Text>
+            )
+          ) : null}
           {pair ? (
             <View className="flex-row gap-2 flex-wrap mb-1.5">
               <View className="flex-1 min-w-[120px]">
@@ -269,6 +306,7 @@ export function renderFluxManualBlockEditor(
           )}
         </View>
       );
+    }
     case 'benefits':
       return (
         <View className="gap-1">

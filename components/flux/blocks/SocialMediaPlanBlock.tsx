@@ -2,13 +2,14 @@ import React from 'react';
 import { View, Text } from 'react-native';
 import type { SocialMediaPlanBlockProps } from '@/lib/flux/types';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
+import { withFluxAlpha } from '@/lib/flux/fluxPresentationTokens';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 
 export function SocialMediaPlanBlock({ props }: { props: SocialMediaPlanBlockProps }) {
   const theme = useFluxTheme();
   const presentation = useFluxPresentation();
-  const primaryTint = theme.primaryColor + '18';
-  const accentTint = (theme.accentColor || theme.primaryColor) + '22';
+  const primaryTint = withFluxAlpha(theme.primaryColor, '18');
+  const accentTint = withFluxAlpha(theme.accentColor || theme.primaryColor, '22');
   const complexLayout = presentation.layouts.complex;
   const headingFont = fluxPreviewFontFamily(theme.fontFamily, '600');
   const bodyFont = fluxPreviewFontFamily(theme.fontFamily, '400');
@@ -124,7 +125,10 @@ export function SocialMediaPlanBlock({ props }: { props: SocialMediaPlanBlockPro
                       </View>
                       <View
                         className="px-2 py-0.5"
-                        style={{ ...presentation.outlineChip, borderColor: theme.primaryColor + '40' }}
+                        style={{
+                          ...presentation.outlineChip,
+                          borderColor: withFluxAlpha(theme.primaryColor, '40'),
+                        }}
                       >
                         <Text
                           className="text-xs"

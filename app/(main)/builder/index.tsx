@@ -19,6 +19,40 @@ import {
   createDataSenderNode,
 } from './nodes/factories';
 
+type FlowNodeRecord = Record<string, any>;
+type FlowEdgeRecord = Record<string, any>;
+
+function sanitizeFlowNode(node: FlowNodeRecord): FlowNodeRecord {
+  const {
+    selected: _selected,
+    dragging: _dragging,
+    measured: _measured,
+    positionAbsolute: _positionAbsolute,
+    resizing: _resizing,
+    ...rest
+  } = node;
+
+  return {
+    ...rest,
+    deletable: node.type === 'leadSource' || node.data?.isRequired ? false : rest.deletable,
+  };
+}
+
+function sanitizeFlowEdge(edge: FlowEdgeRecord): FlowEdgeRecord {
+  const { selected: _selected, ...rest } = edge;
+  return rest;
+}
+
+function sanitizeFlowData(
+  nodes: FlowNodeRecord[] | null | undefined,
+  edges: FlowEdgeRecord[] | null | undefined,
+): { nodes: FlowNodeRecord[]; edges: FlowEdgeRecord[] } {
+  return {
+    nodes: Array.isArray(nodes) ? nodes.map((node) => sanitizeFlowNode(node)) : [],
+    edges: Array.isArray(edges) ? edges.map((edge) => sanitizeFlowEdge(edge)) : [],
+  };
+}
+
 // Conditionally import React Flow only on web
 let ReactFlow: any = null;
 let ReactFlowProvider: any = null;
@@ -54,6 +88,28 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
 /** Label for the flow editor / builder page in breadcrumbs and UI. Change here to rename globally. */
 export const FLOW_EDITOR_PAGE_LABEL = 'Flow editor';
 
+function getLeadSourceFieldKeysFromFlow(): {
+  customFieldKeys: string[];
+  mappedStandardFieldKeys: string[] | undefined;
+} {
+  const nodes =
+    typeof window !== 'undefined' && (window as any).__reactFlowGetNodes
+      ? (window as any).__reactFlowGetNodes()
+      : [];
+  const leadSourceNodes = (nodes as any[]).filter((n: any) => n.type === 'leadSource');
+  const customFieldKeys = Array.from(
+    new Set(leadSourceNodes.flatMap((n: any) => n.data?.customFieldKeys ?? []))
+  );
+  const mappedStandardFieldKeys = Array.from(
+    new Set(leadSourceNodes.flatMap((n: any) => n.data?.mappedStandardFieldKeys ?? []))
+  );
+  return {
+    customFieldKeys,
+    mappedStandardFieldKeys:
+      mappedStandardFieldKeys.length > 0 ? mappedStandardFieldKeys : undefined,
+  };
+}
+
 // Factory map for creating nodes
 const nodeFactories: Record<string, (position: { x: number; y: number }) => any> = {
   email: createEmailNode,
@@ -68,6 +124,7 @@ interface FlowEditorProps {
   initialNodes?: any[];
   initialEdges?: any[];
   onFlowChange?: (nodes: any[], edges: any[]) => void;
+  campaignStatus?: Campaign['status'] | null;
 }
 
 // Only mount FlowEditor when React Flow is loaded (avoids hooks-before-return in FlowEditor)
@@ -75,7 +132,13 @@ function isReactFlowAvailable() {
   return !!(useNodesState && useEdgesState && addEdge && ReactFlow && ReactFlowProvider);
 }
 
-function FlowEditor({ onEditNode, initialNodes = [], initialEdges = [], onFlowChange }: FlowEditorProps) {
+function FlowEditor({
+  onEditNode,
+  initialNodes = [],
+  initialEdges = [],
+  onFlowChange,
+  campaignStatus,
+}: FlowEditorProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState!(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState!(initialEdges);
   
@@ -133,6 +196,28 @@ function FlowEditor({ onEditNode, initialNodes = [], initialEdges = [], onFlowCh
 
   // Prevent deletion of Lead Bucket node
   const handleNodesChange = useCallback((changes: any[]) => {
+    const removableNodes = changes
+      .filter((change: any) => change.type === 'remove')
+      .map((change: any) => nodes.find((node: any) => node.id === change.id))
+      .filter((node: any) => node && node.type !== 'leadSource' && !node.data?.isRequired);
+
+    if (removableNodes.length > 0) {
+      const labels = removableNodes.map((node: any) => node.data?.label || node.type || 'Node');
+      const campaignWarning =
+        campaignStatus && campaignStatus !== 'draft'
+          ? 'This campaign is already live. Deleting nodes can affect active enrollments and future sends.\n\n'
+          : '';
+      const confirmed =
+        typeof window !== 'undefined'
+          ? window.confirm(
+              `${campaignWarning}Delete ${removableNodes.length} node${removableNodes.length === 1 ? '' : 's'}?\n\n${labels.join('\n')}`
+            )
+          : false;
+      if (!confirmed) {
+        return;
+      }
+    }
+
     // Filter out any delete changes for Lead Bucket nodes
     const filteredChanges = changes.filter((change: any) => {
       if (change.type === 'remove') {
@@ -148,7 +233,7 @@ function FlowEditor({ onEditNode, initialNodes = [], initialEdges = [], onFlowCh
     if (filteredChanges.length > 0) {
       onNodesChange(filteredChanges);
     }
-  }, [nodes, onNodesChange]);
+  }, [campaignStatus, nodes, onNodesChange]);
 
   const onConnect = useCallback(
     (params: any) => setEdges((eds: any) => addEdge(params, eds)),
@@ -198,8 +283,21 @@ function FlowEditor({ onEditNode, initialNodes = [], initialEdges = [], onFlowCh
   // Expose setNodes and getNodes for updating node data
   useEffect(() => {
     (window as any).__reactFlowSetNodes = setNodes;
+    (window as any).__reactFlowSetEdges = setEdges;
     (window as any).__reactFlowGetNodes = () => nodes;
-  }, [setNodes, nodes]);
+    (window as any).__reactFlowClearSelection = () => {
+      setNodes((currentNodes: any[]) =>
+        currentNodes.map((node: any) =>
+          node.selected ? { ...node, selected: false } : node
+        )
+      );
+      setEdges((currentEdges: any[]) =>
+        currentEdges.map((edge: any) =>
+          edge.selected ? { ...edge, selected: false } : edge
+        )
+      );
+    };
+  }, [setEdges, setNodes, nodes]);
 
   // Handle node clicks to open edit modal
   const handleNodeClick = useCallback((event: any, node: any) => {
@@ -207,6 +305,9 @@ function FlowEditor({ onEditNode, initialNodes = [], initialEdges = [], onFlowCh
     // React Flow will handle dragging separately
     if (node && node.type) {
       onEditNode(node.id, node.type);
+      setTimeout(() => {
+        (window as any).__reactFlowClearSelection?.();
+      }, 0);
     }
   }, [onEditNode]);
 
@@ -243,6 +344,7 @@ export default function BuilderPage() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [initialFlowData, setInitialFlowData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
   const hasLoadedFlowRef = useRef(false);
+  const lastSavedFlowRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!campaignId) {
@@ -272,20 +374,27 @@ export default function BuilderPage() {
               : data.flow_data;
             
             if (flowData && typeof flowData === 'object') {
-              const nodes = Array.isArray(flowData.nodes) ? flowData.nodes : [];
-              const edges = Array.isArray(flowData.edges) ? flowData.edges : [];
-              setInitialFlowData({ nodes, edges });
+              const sanitizedFlowData = sanitizeFlowData(
+                Array.isArray(flowData.nodes) ? flowData.nodes : [],
+                Array.isArray(flowData.edges) ? flowData.edges : []
+              );
+              setInitialFlowData(sanitizedFlowData);
+              lastSavedFlowRef.current = JSON.stringify(sanitizedFlowData);
               hasLoadedFlowRef.current = true;
             }
           } catch (error) {
             console.error('Failed to parse flow_data:', error);
             // Fallback to empty flow
-            setInitialFlowData({ nodes: [], edges: [] });
+            const emptyFlow = { nodes: [], edges: [] };
+            setInitialFlowData(emptyFlow);
+            lastSavedFlowRef.current = JSON.stringify(emptyFlow);
             hasLoadedFlowRef.current = true;
           }
         } else if (!data?.flow_data && !hasLoadedFlowRef.current) {
           // No flow_data exists, start with empty
-          setInitialFlowData({ nodes: [], edges: [] });
+          const emptyFlow = { nodes: [], edges: [] };
+          setInitialFlowData(emptyFlow);
+          lastSavedFlowRef.current = JSON.stringify(emptyFlow);
           hasLoadedFlowRef.current = true;
         }
       } catch (error) {
@@ -303,10 +412,16 @@ export default function BuilderPage() {
   const saveFlowData = useMemo(
     () => debounce(async (nodes: any[], edges: any[]) => {
       if (!campaignId) return;
-      
+      const sanitizedFlowData = sanitizeFlowData(nodes, edges);
+      const serializedFlow = JSON.stringify(sanitizedFlowData);
+      if (serializedFlow === lastSavedFlowRef.current) {
+        return;
+      }
+
       setSaveStatus('saving');
       try {
-        await updateCampaignFlowData(campaignId, { nodes, edges } as any, 'builder');
+        await updateCampaignFlowData(campaignId, sanitizedFlowData as any, 'builder');
+        lastSavedFlowRef.current = serializedFlow;
         setSaveStatus('saved');
         // Reset to idle after 2 seconds
         setTimeout(() => {
@@ -365,6 +480,7 @@ export default function BuilderPage() {
   };
 
   const handleEditNode = (nodeId: string, nodeType: string) => {
+    (window as any).__reactFlowClearSelection?.();
     // Find the node in React Flow state
     if ((window as any).__reactFlowGetNodes) {
       const nodes = (window as any).__reactFlowGetNodes();
@@ -394,6 +510,7 @@ export default function BuilderPage() {
   };
 
   const handleCloseModal = () => {
+    (window as any).__reactFlowClearSelection?.();
     setEditingNode(null);
   };
 
@@ -481,6 +598,7 @@ export default function BuilderPage() {
               initialNodes={initialFlowData.nodes}
               initialEdges={initialFlowData.edges}
               onFlowChange={handleFlowChange}
+              campaignStatus={campaign?.status}
             />
           ) : initialFlowData !== null ? (
             <View className="flex-1 items-center justify-center">
@@ -534,36 +652,20 @@ export default function BuilderPage() {
             bucketId: campaign?.bucket_id || editingNode.data?.bucketId,
           };
         } else if (editingNode.type === 'email') {
-          const nodes =
-            typeof window !== 'undefined' && (window as any).__reactFlowGetNodes
-              ? (window as any).__reactFlowGetNodes()
-              : [];
-          const leadSourceNodes = (nodes as any[]).filter(
-            (n: any) => n.type === 'leadSource'
-          );
-          const customFieldKeys = Array.from(
-            new Set(
-              leadSourceNodes.flatMap(
-                (n: any) => n.data?.customFieldKeys ?? []
-              )
-            )
-          );
-          const mappedStandardFieldKeys = Array.from(
-            new Set(
-              leadSourceNodes.flatMap(
-                (n: any) => n.data?.mappedStandardFieldKeys ?? []
-              )
-            )
-          );
+          const { customFieldKeys, mappedStandardFieldKeys } = getLeadSourceFieldKeysFromFlow();
           modalData = {
             ...editingNode.data,
             campaignId: campaignId,
             campaignStatus: campaign?.status,
             customFieldKeys,
-            mappedStandardFieldKeys:
-              mappedStandardFieldKeys.length > 0
-                ? mappedStandardFieldKeys
-                : undefined,
+            mappedStandardFieldKeys,
+          };
+        } else if (editingNode.type === 'dataSender') {
+          const { customFieldKeys, mappedStandardFieldKeys } = getLeadSourceFieldKeysFromFlow();
+          modalData = {
+            ...editingNode.data,
+            customFieldKeys,
+            mappedStandardFieldKeys,
           };
         }
         

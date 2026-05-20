@@ -15,6 +15,7 @@ import type { FluxBrowserTabItem } from '@/components/flux/FluxBrowserTabBar';
 import { FluxFontFamilyPicker } from '@/components/flux/FluxFontFamilyPicker';
 import { FluxHexColorField } from '@/components/flux/FluxHexColorField';
 import { FluxTemplateBlocksDraggableList } from '@/components/flux/FluxTemplateBlocksDraggableList';
+import { FluxBlockAppearanceEditor } from '@/components/flux/FluxBlockAppearanceEditor';
 import {
   FLUX_ALL_BLOCK_TYPES,
   FLUX_MANUAL_BLOCK_TYPE_LABELS,
@@ -190,6 +191,41 @@ export function FluxCampaignManualEditor({
   const updateBlockScrollTag = (blockId: string, scrollTag: string | undefined) => {
     dispatch({ type: 'block.setScrollTag', blockId, scrollTag: scrollTag?.trim() ? scrollTag.trim() : null });
   };
+
+  const updateBlockAppearance = useCallback(
+    (blockId: string, appearance: import('@/lib/flux/types').FluxBlockAppearance | undefined) => {
+      dispatch({
+        type: 'block.setBlocks',
+        blocks: editor.blocks.map((b) => {
+          if (b.id !== blockId) return b;
+          const next = { ...b };
+          if (appearance) next.appearance = appearance;
+          else delete next.appearance;
+          return next;
+        }),
+      });
+    },
+    [dispatch, editor.blocks],
+  );
+
+  const renderBlockEditorWithAppearance = useCallback(
+    (
+      block: Block,
+      updateProps: (id: string, props: Record<string, unknown>) => void,
+      assets: ContentAsset[],
+      layout?: { pairFieldColumns?: boolean },
+    ) => (
+      <View className="gap-1">
+        <FluxBlockAppearanceEditor
+          block={block}
+          pairFieldColumns={layout?.pairFieldColumns}
+          onChange={(appearance) => updateBlockAppearance(block.id, appearance)}
+        />
+        {renderFluxManualBlockEditor(block, updateProps, assets, layout)}
+      </View>
+    ),
+    [updateBlockAppearance],
+  );
 
   const addAsset = () => {
     const asset: ContentAsset = {
@@ -721,7 +757,7 @@ export function FluxCampaignManualEditor({
           <FluxTemplateBlocksDraggableList
             blocks={editor.blocks}
             blockTypeLabels={FLUX_MANUAL_BLOCK_TYPE_LABELS}
-            blockSummary={fluxManualBlockSummary}
+            blockSummary={(block) => fluxManualBlockSummary(block, editor.contentAssets)}
             editingBlockId={editor.editingBlockId}
             onToggleEditing={(blockId: string) => dispatch({ type: 'ui.toggleEditingBlock', blockId })}
             onRemove={removeBlock}
@@ -730,7 +766,8 @@ export function FluxCampaignManualEditor({
             updateBlockScrollTag={updateBlockScrollTag}
             contentAssets={editor.contentAssets}
             pairFieldColumns={pairFieldColumns}
-            renderBlockEditor={renderFluxManualBlockEditor}
+            blockStylePreset={editor.previewProspect.brand_profile?.blockStylePreset ?? 'classic'}
+            renderBlockEditor={renderBlockEditorWithAppearance}
           />
         )}
         <View className="flex-row flex-wrap gap-1.5">

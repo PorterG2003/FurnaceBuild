@@ -7,7 +7,35 @@ import { QUIZ_AND_BOOK_QUESTION_TYPES } from './fluxQuizAndBook';
  * Keep in sync with block props in {@link ./types}.
  */
 
-const blockBase = { id: z.string(), order: z.number(), scrollTag: z.string().max(120).optional() };
+const fluxBlockAppearanceSchema = z
+  .object({
+    sectionBackgroundColor: z.string().optional(),
+    surfaceColor: z.string().optional(),
+    panelSurfaceColor: z.string().optional(),
+    textColor: z.string().optional(),
+    headingColor: z.string().optional(),
+    mutedTextColor: z.string().optional(),
+    primaryColor: z.string().optional(),
+    accentColor: z.string().optional(),
+    onPrimaryColor: z.string().optional(),
+    borderColor: z.string().optional(),
+    errorColor: z.string().optional(),
+  })
+  .partial();
+
+const fluxPageHeaderAppearanceSchema = z
+  .object({
+    backgroundColor: z.string().optional(),
+    borderColor: z.string().optional(),
+  })
+  .partial();
+
+const blockBase = {
+  id: z.string(),
+  order: z.number(),
+  scrollTag: z.string().max(120).optional(),
+  appearance: fluxBlockAppearanceSchema.optional(),
+};
 
 const TANNERS_QUALIFICATION_MODES = ['passive', 'reps', 'str'] as const;
 
@@ -102,6 +130,7 @@ export const blockSchema = z.discriminatedUnion('type', [
       assetId: z.string(),
       overrideTitle: z.string().optional(),
       overrideMetric: z.string().optional(),
+      overrideImageUrl: z.string().optional(),
     }),
   }),
   z.object({

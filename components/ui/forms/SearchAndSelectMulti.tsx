@@ -24,6 +24,8 @@ import {
   usePickerInsideBottomSheet,
 } from '@/components/ui/modals';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
+import { FormFieldLabel } from './FormFieldHelp';
+import { FORM_FIELD_VARIANTS, type FormFieldVariant } from './formFieldStyles';
 
 const noSelectStyle = Platform.OS === 'web' ? ({ userSelect: 'none' } as const) : undefined;
 const textInputWebStyle = Platform.OS === 'web' ? ({ userSelect: 'text' } as const) : undefined;
@@ -31,7 +33,6 @@ const textInputWebStyle = Platform.OS === 'web' ? ({ userSelect: 'text' } as con
 /** Stable references — `renderListPanel` depends on `panelSizing`; inline objects each render caused infinite `useLayoutEffect` → `presentTakeover` loops inside `BottomSheet`. */
 const TRIGGER_SIZING = {
   compact: {
-    borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
     minHeight: 32,
@@ -39,7 +40,6 @@ const TRIGGER_SIZING = {
     chevronSize: 14,
   },
   default: {
-    borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     minHeight: 44,
@@ -92,6 +92,8 @@ export interface SearchAndSelectMultiProps<T> {
   value: string[];
   onChange: (ids: string[]) => void;
   label?: string;
+  /** Short explanation shown via help icon next to the label. */
+  labelHelp?: string;
   searchPlaceholder?: string;
   placeholder?: string;
   listMaxHeight?: number;
@@ -102,6 +104,8 @@ export interface SearchAndSelectMultiProps<T> {
   noMargin?: boolean;
   size?: 'default' | 'compact';
   panelSize?: 'default' | 'compact';
+  /** Matches `FormTextField` / modal inputs when `solid`. Default `glass` for toolbars. */
+  variant?: FormFieldVariant;
 }
 
 export function SearchAndSelectMulti<T>({
@@ -111,6 +115,7 @@ export function SearchAndSelectMulti<T>({
   value,
   onChange,
   label,
+  labelHelp,
   searchPlaceholder = 'Search…',
   placeholder = 'All',
   listMaxHeight = 200,
@@ -119,8 +124,14 @@ export function SearchAndSelectMulti<T>({
   noMargin = false,
   size = 'default',
   panelSize = size,
+  variant = 'glass',
 }: SearchAndSelectMultiProps<T>) {
+  const fieldVariant = FORM_FIELD_VARIANTS[variant];
   const triggerSizing = size === 'compact' ? TRIGGER_SIZING.compact : TRIGGER_SIZING.default;
+  const triggerBorderRadius =
+    size === 'compact'
+      ? fieldVariant.triggerBorderRadius.compact
+      : fieldVariant.triggerBorderRadius.default;
   const panelSizing = panelSize === 'compact' ? PANEL_SIZING.compact : PANEL_SIZING.default;
 
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -196,10 +207,10 @@ export function SearchAndSelectMulti<T>({
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          backgroundColor: '#FFFFFF0D',
-          borderRadius: panelSizing.searchRadius,
+          backgroundColor: fieldVariant.panelSearch.backgroundColor,
+          borderRadius: fieldVariant.panelSearchBorderRadius,
           borderWidth: 1,
-          borderColor: '#FFFFFF4D',
+          borderColor: fieldVariant.panelSearch.borderColor,
           paddingHorizontal: panelSizing.searchPaddingX,
           paddingVertical: panelSizing.searchPaddingY,
           marginBottom: panelSizing.searchMarginBottom,
@@ -343,6 +354,8 @@ export function SearchAndSelectMulti<T>({
       toggleItem,
       listMaxHeight,
       panelSizing,
+      fieldVariant,
+      triggerBorderRadius,
     ]
   );
 
@@ -376,9 +389,11 @@ export function SearchAndSelectMulti<T>({
   return (
     <View style={{ marginBottom: noMargin ? 0 : 12 }}>
       {label != null && (
-        <Text selectable={false} className="text-xs font-instrument-medium mb-2 text-gray-400">
-          {label}
-        </Text>
+        <FormFieldLabel
+          label={label}
+          labelClassName={fieldVariant.labelClassName}
+          help={labelHelp}
+        />
       )}
       <Pressable
         ref={triggerRef}
@@ -387,20 +402,22 @@ export function SearchAndSelectMulti<T>({
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          borderRadius: triggerSizing.borderRadius,
+          borderRadius: triggerBorderRadius,
           paddingHorizontal: triggerSizing.paddingHorizontal,
           paddingVertical: triggerSizing.paddingVertical,
           minHeight: triggerSizing.minHeight,
-          borderWidth: 1,
-          borderColor: '#FFFFFF4D',
-          backgroundColor: '#FFFFFF0D',
+          ...fieldVariant.trigger,
           ...noSelectStyle,
         }}
       >
         <Text
           selectable={false}
           className={`${triggerSizing.textClassName} font-instrument flex-1`}
-          style={{ color: value.length > 0 ? '#FFFFFF' : '#666666' }}
+          style={{
+            color: value.length > 0
+              ? fieldVariant.triggerTextColor
+              : fieldVariant.triggerPlaceholderColor,
+          }}
           numberOfLines={1}
         >
           {displayText}

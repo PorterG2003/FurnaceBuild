@@ -6,6 +6,7 @@ import fluxCompetitorAuditRank from '../../../../lib/flux/fluxCompetitorAuditRan
 import type { FluxCompetitorScoredDomain } from '../../../../lib/flux/fluxCompetitorAuditRank';
 import type { FluxAuditDomainResultRow } from '../../../../lib/flux/fluxCompetitorAuditFailureMessage';
 import { runGoogleAdsTransparencyAuditSamples } from './transparencyLookup.js';
+import { buildPublishedCompetitorExamples } from './fluxCompetitorAuditPublish.js';
 import { workerJsonLog } from './workerJsonLog.js';
 
 const REGION = 'US';
@@ -539,9 +540,14 @@ async function main(): Promise<void> {
       }
     }
     const examples: ArtifactExample[] = [];
-    const samples = audit.samples.slice(0, args.maxSamples);
-    for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
-      const sample = samples[sampleIndex]!;
+    const published = buildPublishedCompetitorExamples({
+      domain: winner.domain,
+      samples: audit.samples,
+      maxExamples: args.maxSamples,
+      selectedAdvertiserId: audit.selectedAdvertiserId,
+    });
+    for (let sampleIndex = 0; sampleIndex < published.examples.length; sampleIndex += 1) {
+      const sample = published.examples[sampleIndex]!;
       const creativePath = await maybeWriteBuffer(
         resolve(creativeDir, `creative-${winnerIndex}-${sampleIndex}-${sanitizeFilePart(winner.domain)}.png`),
         sample.previewPng,
@@ -572,7 +578,12 @@ async function main(): Promise<void> {
     });
     for (const row of auditRows) {
       if (row.domain === winner.domain && row.outcome === 'ok') {
-        (row as FluxAuditDomainResultRow & { selected_rank?: number }).selected_rank = winnerIndex + 1;
+        const selectedRow = row as FluxAuditDomainResultRow & {
+          selected_rank?: number;
+          selected_advertiser_id?: string | null;
+        };
+        selectedRow.selected_rank = winnerIndex + 1;
+        selectedRow.selected_advertiser_id = published.selectedAdvertiserId;
       }
     }
   }

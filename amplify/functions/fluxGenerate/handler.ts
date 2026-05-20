@@ -6,6 +6,7 @@ import {
   normalizeFluxLlmPageConfigBeforeZod,
   pageConfigSchema,
 } from '../../../lib/flux/fluxGeneratePageConfigSchema';
+import { coercePageConfig } from '../../../lib/flux/coercePageConfig';
 import { mergeGeneratedPageConfigWithTemplate } from '../../../lib/flux/mergeGeneratedPageConfig';
 import {
   formatMergedFluxSemanticIssuesForRepair,
@@ -390,6 +391,7 @@ async function runLlmPageConfig(params: {
   template: NormalizedTemplate;
   prospect: ProspectPromptShape;
   campaignSeller?: CampaignSellerContext | null;
+  existingPageConfig?: import('../../../lib/flux/types').PageConfig | null;
   openRouterApiKey: string;
   openRouterModel: string;
   openRouterReferer?: string;
@@ -504,6 +506,7 @@ async function runLlmPageConfig(params: {
       prospectName: params.prospect.name,
       companyName: params.prospect.company,
       serverHeroImageUrl: pickServerHeroImageUrl(websiteIntel),
+      existingPageConfig: params.existingPageConfig ?? null,
     });
     const semanticIssues = getMergedFluxPageConfigSemanticIssues(merged, params.template.content_assets);
     if (semanticIssues.length > 0) {
@@ -770,6 +773,16 @@ async function handleRequest(event: any) {
     return response(400, { error: 'prospectId does not belong to campaignId', code: 'MISMATCH' });
   }
 
+  const { data: existingPageRow } = await db
+    .from('flux_prospect_pages')
+    .select('id, page_config')
+    .eq('prospect_id', prospectId)
+    .eq('campaign_id', campaignId)
+    .maybeSingle();
+
+  const existingPageConfig =
+    existingPageRow?.page_config != null ? coercePageConfig(existingPageRow.page_config) : null;
+
   const llm = await runLlmPageConfig({
     template,
     prospect: {
@@ -777,6 +790,7 @@ async function handleRequest(event: any) {
       website_intel: parseWebsiteIntelSnapshot((prospect as Record<string, unknown>).website_intel_snapshot),
     },
     campaignSeller: campaignSellerPersisted,
+    existingPageConfig,
     openRouterApiKey,
     openRouterModel,
     openRouterReferer: openRouterReferer || undefined,
@@ -787,12 +801,7 @@ async function handleRequest(event: any) {
   }
   const pageConfig = llm.pageConfig;
 
-  const { data: existingPage } = await db
-    .from('flux_prospect_pages')
-    .select('id')
-    .eq('prospect_id', prospectId)
-    .eq('campaign_id', campaignId)
-    .maybeSingle();
+  const existingPage = existingPageRow;
 
   if (existingPage) {
     const { data: updated, error: updateErr } = await db

@@ -4,6 +4,7 @@ import type { TannersTaxQualificationMode, TannersTaxStrategyBlockProps } from '
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
 import { handleFluxCtaPress } from '@/lib/flux/fluxCtaNavigation';
 import { useFluxPageScroll } from '../FluxPageScrollContext';
+import { withFluxAlpha } from '@/lib/flux/fluxPresentationTokens';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 import {
   computeTannersTaxScenarioNumbers,
@@ -197,7 +198,10 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
                   borderRadius: presentation.radii.chip,
                   borderWidth: 1,
                   borderColor: qualification === opt.value ? theme.primaryColor : '#e5e5e5',
-                  backgroundColor: qualification === opt.value ? theme.primaryColor + '18' : '#fafafa',
+                  backgroundColor:
+                    qualification === opt.value
+                      ? withFluxAlpha(theme.primaryColor, '18')
+                      : presentation.surfaceColor,
                 }}
                 onPress={() => setQualification(opt.value)}
               >
@@ -253,7 +257,10 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
                       borderRadius: presentation.radii.chip,
                       borderWidth: 1,
                       borderColor: offsetScenario === opt.value ? theme.primaryColor : '#e5e5e5',
-                      backgroundColor: offsetScenario === opt.value ? theme.primaryColor + '18' : '#fafafa',
+                      backgroundColor:
+                        offsetScenario === opt.value
+                          ? withFluxAlpha(theme.primaryColor, '18')
+                          : presentation.surfaceColor,
                     }}
                     onPress={() => setOffsetScenario(opt.value)}
                   >
@@ -337,7 +344,13 @@ export function TannersTaxStrategyBlock({ props }: { props: TannersTaxStrategyBl
             style={presentation.primaryButton}
             onPress={() => props.ctaUrl && handleFluxCtaPress(props.ctaUrl, pageScroll ?? undefined)}
           >
-            <Text className="text-base" style={{ color: '#ffffff', fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600') }}>
+            <Text
+              className="text-base"
+              style={{
+                color: presentation.onPrimaryColor,
+                fontFamily: fluxPreviewFontFamily(theme.fontFamily, '600'),
+              }}
+            >
               {props.ctaText}
             </Text>
           </Pressable>

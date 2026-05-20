@@ -18,6 +18,7 @@ import {
   usePickerInsideBottomSheet,
 } from '@/components/ui/modals';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
+import { FORM_FIELD_VARIANTS, type FormFieldVariant } from './formFieldStyles';
 
 interface SelectPropsBase<T> {
   items: T[];
@@ -46,6 +47,8 @@ interface SelectPropsBase<T> {
   disabled?: boolean;
   /** When provided, rows returning true are non-interactive and styled as disabled. */
   isItemDisabled?: (item: T) => boolean;
+  /** Matches `FormTextField` / modal inputs when `solid`. Default `glass` for toolbars. */
+  variant?: FormFieldVariant;
 }
 
 export interface SelectPropsSearchable<T> extends SelectPropsBase<T> {
@@ -76,11 +79,6 @@ function hexToTranslucentBackground(hex: string, alpha = 0.12): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-const triggerStyle = {
-  borderColor: '#FFFFFF4D',
-  backgroundColor: '#FFFFFF0D',
-  borderWidth: 1,
-};
 const noSelectStyle = Platform.OS === 'web' ? ({ userSelect: 'none' } as const) : undefined;
 const textInputWebStyle = Platform.OS === 'web' ? ({ userSelect: 'text' } as const) : undefined;
 
@@ -166,7 +164,13 @@ export function Select<T>({
   renderTrigger,
   disabled = false,
   isItemDisabled,
+  variant = 'glass',
 }: SelectProps<T>) {
+  const fieldVariant = FORM_FIELD_VARIANTS[variant];
+  const triggerBorderRadius =
+    size === 'compact'
+      ? fieldVariant.triggerBorderRadius.compact
+      : fieldVariant.triggerBorderRadius.default;
   const sz = sizeStyles[size];
   const panel = panelSizeStyles[panelSize];
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -300,10 +304,10 @@ export function Select<T>({
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: '#FFFFFF0D',
-            borderRadius: panel.searchRadius,
+            backgroundColor: fieldVariant.panelSearch.backgroundColor,
+            borderRadius: fieldVariant.panelSearchBorderRadius,
             borderWidth: 1,
-            borderColor: '#FFFFFF4D',
+            borderColor: fieldVariant.panelSearch.borderColor,
             paddingHorizontal: panel.searchPaddingX,
             paddingVertical: panel.searchPaddingY,
             marginBottom: panel.searchMarginBottom,
@@ -316,7 +320,7 @@ export function Select<T>({
             value={searchValue}
             onChangeText={handleSearchChange}
             placeholder={searchPlaceholder}
-            placeholderTextColor="#666"
+            placeholderTextColor={fieldVariant.placeholderTextColor}
             style={{
               flex: 1,
               color: '#FFFFFF',
@@ -459,6 +463,7 @@ export function Select<T>({
       listMaxHeight,
       panel,
       isItemDisabled,
+      fieldVariant,
     ]
   );
 
@@ -492,11 +497,7 @@ export function Select<T>({
   return (
     <View style={{ marginBottom: noMargin ? 0 : 12 }}>
       {label != null && (
-        <Text
-          selectable={false}
-          className="text-xs font-instrument-medium mb-2 text-gray-400"
-          style={{ fontFamily: 'Instrument Sans, system-ui, sans-serif' }}
-        >
+        <Text selectable={false} className={fieldVariant.labelClassName}>
           {label}
         </Text>
       )}
@@ -527,11 +528,19 @@ export function Select<T>({
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   ...sz.trigger,
+                  borderRadius: triggerBorderRadius,
                   backgroundColor: hexToTranslucentBackground(triggerColor),
                   borderWidth: 1,
                   borderColor: `${triggerColor}66`,
                 }
-              : { ...triggerStyle, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', ...sz.trigger },
+              : {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  ...sz.trigger,
+                  borderRadius: triggerBorderRadius,
+                  ...fieldVariant.trigger,
+                },
             noSelectStyle,
             disabled ? { opacity: 0.45 } : null,
           ]}
@@ -552,11 +561,12 @@ export function Select<T>({
             ) : null}
             <Text
               selectable={false}
-              className={`${sz.triggerTextClassName} text-white`}
+              className={`${sz.triggerTextClassName} font-instrument`}
               style={{
-                fontFamily: 'Instrument Sans, system-ui, sans-serif',
                 flex: 1,
-                color: selectedLabel ? '#FFFFFF' : '#666666',
+                color: selectedLabel
+                  ? fieldVariant.triggerTextColor
+                  : fieldVariant.triggerPlaceholderColor,
               }}
               numberOfLines={1}
             >

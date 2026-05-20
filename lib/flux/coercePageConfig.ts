@@ -1,9 +1,7 @@
 import type { Block, CompetitorAdAuditBlock, PageConfig, ThemeConfig } from './types';
-import {
-  DEFAULT_FLUX_BLOCK_STYLE_PRESET,
-  FLUX_BLOCK_STYLE_PRESETS,
-  type FluxBlockStylePreset,
-} from './fluxPresentationTokens';
+import { enrichThemeConfig } from './enrichThemeConfig';
+import { getCompetitorAdAuditConsistencyIssues } from './fluxCompetitorAuditAdvertiser';
+import { normalizeFluxBlockAppearance } from './normalizeFluxAppearance';
 
 /**
  * Normalize DB jsonb into a renderable PageConfig, or null if there is nothing to show.
@@ -15,29 +13,27 @@ export function coercePageConfig(raw: unknown): PageConfig | null {
   if (blocks.length === 0) return null;
 
   const t = (c.theme && typeof c.theme === 'object' ? c.theme : {}) as Partial<ThemeConfig>;
-  const primary = typeof t.primaryColor === 'string' ? t.primaryColor : '#4f46e5';
-  const theme: ThemeConfig = {
-    primaryColor: primary,
-    accentColor: typeof t.accentColor === 'string' ? t.accentColor : primary,
-    backgroundColor: typeof t.backgroundColor === 'string' ? t.backgroundColor : '#f5f5f5',
-    textColor: typeof t.textColor === 'string' ? t.textColor : '#1a1a1a',
-    fontFamily: typeof t.fontFamily === 'string' ? t.fontFamily : 'Inter',
-    ...(typeof t.logoUrl === 'string' && t.logoUrl.length > 0 ? { logoUrl: t.logoUrl } : {}),
-    blockStylePreset: (() => {
-      const v = (t as { blockStylePreset?: unknown }).blockStylePreset;
-      const raw = v === 'outlined' ? 'minimal' : typeof v === 'string' ? v : undefined;
-      return FLUX_BLOCK_STYLE_PRESETS.includes(raw as FluxBlockStylePreset)
-        ? (raw as FluxBlockStylePreset)
-        : DEFAULT_FLUX_BLOCK_STYLE_PRESET;
-    })(),
-    ...(typeof t.allowLongCopy === 'boolean' ? { allowLongCopy: t.allowLongCopy } : {}),
-  };
+  const presetRaw = (t as { blockStylePreset?: unknown }).blockStylePreset;
+  const blockStylePreset =
+    presetRaw === 'outlined' ? 'minimal' : typeof presetRaw === 'string' ? presetRaw : undefined;
+  const theme = enrichThemeConfig({
+    ...t,
+    primaryColor: typeof t.primaryColor === 'string' ? t.primaryColor : '#4f46e5',
+    blockStylePreset: blockStylePreset as ThemeConfig['blockStylePreset'],
+  });
+
+  const coercedBlocks = blocks.map((block) => {
+    const appearance = normalizeFluxBlockAppearance(
+      (block as { appearance?: unknown }).appearance,
+    );
+    return appearance ? { ...block, appearance } : block;
+  });
 
   return {
     theme,
     prospectName: typeof c.prospectName === 'string' ? c.prospectName : ' ',
     companyName: typeof c.companyName === 'string' ? c.companyName : ' ',
-    blocks,
+    blocks: coercedBlocks,
   };
 }
 
@@ -52,6 +48,7 @@ const TRANSPARENCY_PREFIX = 'https://adstransparency.google.com/';
 function competitorAuditBlockPublishable(block: CompetitorAdAuditBlock): boolean {
   const p = block.props;
   if (p.status !== 'ready' || p.competitors.length < 1 || p.competitors.length > 3) return false;
+  if (getCompetitorAdAuditConsistencyIssues(p.competitors).length > 0) return false;
   for (const row of p.competitors) {
     if (!row.name?.trim()) return false;
     if (!row.mapImageUrl?.trim() || !HTTP_PREFIX.test(row.mapImageUrl.trim())) return false;

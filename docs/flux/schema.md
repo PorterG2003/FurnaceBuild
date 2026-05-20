@@ -78,3 +78,4 @@ The generated page for a prospect. Served publicly at `/p/{slug}`.
 ## RPC
 
 - `flux_increment_page_view(p_slug text)` — SECURITY DEFINER, increments `view_count` and sets `last_viewed_at` for live pages. Callable by anon.
+- `flux_resolve_page_content_assets(p_slug text)` — SECURITY DEFINER, returns campaign `content_assets` referenced by `case_study` / `testimonial` blocks on the page. Live pages: callable by anon. Draft/archived: account members only.

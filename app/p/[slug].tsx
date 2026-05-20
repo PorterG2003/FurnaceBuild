@@ -5,6 +5,8 @@ import Head from 'expo-router/head';
 import { supabase } from '@/lib/supabase/client';
 import type { FluxProspectPageRow } from '@/lib/flux/types';
 import { coercePageConfig } from '@/lib/flux/coercePageConfig';
+import { fetchFluxPageContentAssets } from '@/lib/flux/fetchFluxPageContentAssets';
+import type { ContentAsset } from '@/lib/flux/types';
 import { PageRenderer } from '@/components/flux/PageRenderer';
 
 function normalizeSlugParam(raw: string | string[] | undefined): string | undefined {
@@ -17,6 +19,7 @@ export default function PublicProspectPage() {
   const { slug: slugRaw } = useLocalSearchParams<{ slug: string | string[] }>();
   const slug = normalizeSlugParam(slugRaw);
   const [page, setPage] = useState<FluxProspectPageRow | null>(null);
+  const [contentAssets, setContentAssets] = useState<ContentAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -28,6 +31,7 @@ export default function PublicProspectPage() {
     }
 
     (async () => {
+      setContentAssets([]);
       // Do not filter by status here: RLS allows anon only `live` rows; authenticated users in
       // the account can read drafts—matching Flux preview. A client-side `.eq('status','live')`
       // made `/p/{slug}` 404 for owners until they toggled Live.
@@ -39,9 +43,12 @@ export default function PublicProspectPage() {
 
       if (error || !data) {
         setNotFound(true);
+        setContentAssets([]);
       } else {
         const row = data as FluxProspectPageRow;
         setPage(row);
+        const assets = await fetchFluxPageContentAssets(slug);
+        setContentAssets(assets);
         if (row.status === 'live' && coercePageConfig(row.page_config)) {
           void (async () => {
             try {
@@ -105,6 +112,7 @@ export default function PublicProspectPage() {
       </Head>
       <PageRenderer
         config={config}
+        assets={contentAssets}
         runtimeContext={{
           isPublicPage: page.status === 'live',
           pageId: page.id,

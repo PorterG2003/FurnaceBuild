@@ -12,6 +12,8 @@ Set these before deploying the Amplify backend for the branch/environment that s
 
 If `CLIENT_API_DOMAIN_NAME` and `CLIENT_API_CERTIFICATE_ARN` are omitted, the stack still provisions CloudFront and falls back to the CloudFront distribution hostname.
 
+If sandbox deploy fails with a CloudFront alias conflict (`DNS record points to another CloudFront distribution`), set `CLIENT_API_SKIP_CUSTOM_DOMAIN=true` in `.env.local`, redeploy to create the distribution without the alias, update the Namecheap CNAME to the new `clientApiCloudFrontUrl` hostname, then remove the skip flag and redeploy again to attach `api-dev.getfurnace.io`.
+
 ## What gets deployed
 
 - `clientApi` Lambda with a public Function URL

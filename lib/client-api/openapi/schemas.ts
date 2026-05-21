@@ -1,0 +1,871 @@
+import {
+  API_KEY_PREFIX,
+  BULK_ASYNC_LIMIT,
+  BULK_SYNC_LIMIT,
+  DEFAULT_PAGE_SIZE,
+  MAX_ASYNC_JOBS_PER_ACCOUNT,
+  MAX_PAGE_SIZE,
+  RATE_LIMIT_REQUESTS_PER_MINUTE,
+} from './constants.js';
+
+export function schemaRef(name: string) {
+  return { $ref: `#/components/schemas/${name}` };
+}
+
+export function parameterRef(name: string) {
+  return { $ref: `#/components/parameters/${name}` };
+}
+
+export function responseRef(name: string) {
+  return { $ref: `#/components/responses/${name}` };
+}
+
+function rateLimitHeaders() {
+  return {
+    'X-RateLimit-Limit': { $ref: '#/components/headers/XRateLimitLimit' },
+    'X-RateLimit-Remaining': { $ref: '#/components/headers/XRateLimitRemaining' },
+    'X-RateLimit-Reset': { $ref: '#/components/headers/XRateLimitReset' },
+  };
+}
+
+export function buildClientApiComponents() {
+  return {
+    securitySchemes: {
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'API Key',
+        description: `Use an account API key in the Authorization header: \`Authorization: Bearer ${API_KEY_PREFIX}...\`.`,
+      },
+    },
+    headers: {
+      XRateLimitLimit: {
+        description: `Maximum requests allowed in the current minute window. Furnace currently allows ${RATE_LIMIT_REQUESTS_PER_MINUTE} requests per account per minute.`,
+        schema: { type: 'string', example: String(RATE_LIMIT_REQUESTS_PER_MINUTE) },
+      },
+      XRateLimitRemaining: {
+        description: 'Remaining requests in the current minute window.',
+        schema: { type: 'string', example: '199' },
+      },
+      XRateLimitReset: {
+        description: 'Unix epoch seconds when the current rate-limit window resets.',
+        schema: { type: 'string', example: '1716316860' },
+      },
+    },
+    parameters: {
+      CampaignId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Campaign id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      LeadId: {
+        name: 'leadId',
+        in: 'path',
+        required: true,
+        description: 'Lead id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      JobId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Async import job id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      MailboxId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Mailbox id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      ThreadId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Inbox thread id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      BlockListId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Block-list entry id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      Limit: {
+        name: 'limit',
+        in: 'query',
+        description: `Number of rows to return. Defaults to ${DEFAULT_PAGE_SIZE}; maximum ${MAX_PAGE_SIZE}.`,
+        schema: {
+          type: 'integer',
+          minimum: 0,
+          default: DEFAULT_PAGE_SIZE,
+          maximum: MAX_PAGE_SIZE,
+        },
+      },
+      Offset: {
+        name: 'offset',
+        in: 'query',
+        description: 'Zero-based offset for pagination.',
+        schema: {
+          type: 'integer',
+          minimum: 0,
+          default: 0,
+        },
+      },
+      Search: {
+        name: 'q',
+        in: 'query',
+        description: 'Case-insensitive search term.',
+        schema: { type: 'string' },
+      },
+      CampaignStatus: {
+        name: 'status',
+        in: 'query',
+        description: 'Campaign status filter.',
+        schema: {
+          type: 'string',
+          enum: ['draft', 'running', 'paused', 'stopped'],
+        },
+      },
+      LeadStatus: {
+        name: 'status',
+        in: 'query',
+        description: 'Lead status filter.',
+        schema: {
+          type: 'string',
+          enum: ['new', 'processing', 'completed', 'failed', 'paused', 'removed'],
+        },
+      },
+      IncludeDeletedCampaigns: {
+        name: 'include_deleted',
+        in: 'query',
+        description: 'When true, includes campaigns with `deleted_at` set.',
+        schema: { type: 'boolean', default: false },
+      },
+      CampaignFilter: {
+        name: 'campaign_id',
+        in: 'query',
+        description: 'Filter inbox threads to a single campaign.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      MailboxFilter: {
+        name: 'mailbox_id',
+        in: 'query',
+        description: 'Filter inbox threads to a single mailbox.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      StartDate: {
+        name: 'start_date',
+        in: 'query',
+        description: 'Inclusive start date in `YYYY-MM-DD` format.',
+        schema: { type: 'string', format: 'date' },
+      },
+      EndDate: {
+        name: 'end_date',
+        in: 'query',
+        description: 'Inclusive end date in `YYYY-MM-DD` format.',
+        schema: { type: 'string', format: 'date' },
+      },
+      IdempotencyKey: {
+        name: 'Idempotency-Key',
+        in: 'header',
+        description: 'Optional idempotency key for create and bulk lead imports.',
+        schema: { type: 'string' },
+      },
+    },
+    responses: {
+      UnauthorizedError: {
+        description: 'Missing, invalid, revoked, or expired API key.',
+        headers: rateLimitHeaders(),
+        content: {
+          'application/json': {
+            schema: schemaRef('Error'),
+            example: {
+              error: {
+                type: 'authentication_error',
+                code: 'invalid_api_key',
+                message: 'A valid Furnace API key is required',
+              },
+            },
+          },
+        },
+      },
+      ForbiddenError: {
+        description: 'The authenticated account may read the resource but cannot perform this action.',
+        headers: rateLimitHeaders(),
+        content: {
+          'application/json': {
+            schema: schemaRef('Error'),
+            example: {
+              error: {
+                type: 'permission_error',
+                code: 'smartlead_read_only',
+                message: 'Smartlead campaigns are read-only via the API',
+              },
+            },
+          },
+        },
+      },
+      NotFoundError: {
+        description: 'The requested resource does not exist in the API key account scope.',
+        headers: rateLimitHeaders(),
+        content: {
+          'application/json': {
+            schema: schemaRef('Error'),
+            example: {
+              error: {
+                type: 'invalid_request_error',
+                code: 'campaign_not_found',
+                message: 'Campaign not found',
+              },
+            },
+          },
+        },
+      },
+      RateLimitError: {
+        description: 'The account exceeded the current rate limit window.',
+        headers: rateLimitHeaders(),
+        content: {
+          'application/json': {
+            schema: schemaRef('Error'),
+            example: {
+              error: {
+                type: 'rate_limit_error',
+                code: 'rate_limit_exceeded',
+                message: 'Rate limit exceeded for this account',
+              },
+            },
+          },
+        },
+      },
+      ValidationError: {
+        description: 'The request body or parameters failed validation.',
+        headers: rateLimitHeaders(),
+        content: {
+          'application/json': {
+            schema: schemaRef('Error'),
+            example: {
+              error: {
+                type: 'invalid_request_error',
+                code: 'missing_email',
+                message: 'Lead email is required',
+                param: 'email',
+              },
+            },
+          },
+        },
+      },
+      InternalError: {
+        description: 'Unexpected server-side error.',
+        headers: rateLimitHeaders(),
+        content: {
+          'application/json': {
+            schema: schemaRef('Error'),
+            example: {
+              error: {
+                type: 'api_error',
+                code: 'internal_error',
+                message: 'Internal server error',
+              },
+            },
+          },
+        },
+      },
+    },
+    schemas: {
+      Error: {
+        type: 'object',
+        properties: {
+          error: {
+            type: 'object',
+            properties: {
+              type: {
+                type: 'string',
+                enum: [
+                  'invalid_request_error',
+                  'authentication_error',
+                  'permission_error',
+                  'rate_limit_error',
+                  'api_error',
+                ],
+              },
+              code: { type: 'string' },
+              message: { type: 'string' },
+              param: { type: 'string' },
+            },
+            required: ['type', 'code', 'message'],
+          },
+        },
+        required: ['error'],
+      },
+      HealthResponse: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['ok', 'error'] },
+          db: { type: 'string', enum: ['ok', 'error'] },
+        },
+        required: ['status', 'db'],
+      },
+      DeleteResult: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          deleted: { type: 'boolean' },
+        },
+        required: ['id', 'deleted'],
+      },
+      Campaign: {
+        type: 'object',
+        description: 'Campaign row as returned by the Furnace backend.',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          account_id: { type: 'string', format: 'uuid', nullable: true },
+          bucket_id: { type: 'string', format: 'uuid', nullable: true },
+          name: { type: 'string', nullable: true },
+          status: { type: 'string', enum: ['draft', 'running', 'paused', 'stopped'] },
+          source: {
+            type: 'string',
+            description: 'Campaign source. `smartlead` campaigns can be read but not mutated through this API.',
+            examples: ['manual'],
+          },
+          flow_data: { $ref: '#/components/schemas/CampaignFlow' },
+          schedule: { type: 'object', additionalProperties: true, nullable: true },
+          sending_interval_seconds: { type: 'number', nullable: true },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time', nullable: true },
+          deleted_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        required: ['id', 'status', 'created_at'],
+        additionalProperties: true,
+      },
+      CampaignFlow: {
+        type: 'object',
+        description: 'Flow graph definition for the campaign.',
+        properties: {
+          nodes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                type: { type: 'string', nullable: true },
+                data: { type: 'object', additionalProperties: true, nullable: true },
+              },
+              additionalProperties: true,
+            },
+          },
+          edges: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: true,
+            },
+          },
+        },
+        additionalProperties: true,
+      },
+      CampaignUpdate: {
+        type: 'object',
+        description: 'Mutable campaign fields. Mailbox ids can replace the full set or be incrementally added and removed.',
+        properties: {
+          name: { type: 'string' },
+          schedule: { type: 'object', additionalProperties: true },
+          sending_interval_seconds: { type: 'number' },
+          mailbox_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+          },
+          add_mailbox_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+          },
+          remove_mailbox_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+          },
+        },
+        additionalProperties: false,
+      },
+      CampaignStatusResult: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          status: { type: 'string', enum: ['paused', 'stopped', 'running'] },
+        },
+        required: ['id', 'status'],
+      },
+      LeadFields: {
+        type: 'object',
+        properties: {
+          standard: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          custom: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+        required: ['standard', 'custom'],
+      },
+      LeadFieldCreate: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+        },
+        required: ['key'],
+      },
+      LeadFieldResult: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+        },
+        required: ['key'],
+      },
+      Lead: {
+        type: 'object',
+        description: 'Lead row scoped to a campaign.',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          campaign_id: { type: 'string', format: 'uuid' },
+          account_id: { type: 'string', format: 'uuid', nullable: true },
+          email: { type: 'string', format: 'email' },
+          name: { type: 'string', nullable: true },
+          first_name: { type: 'string', nullable: true },
+          last_name: { type: 'string', nullable: true },
+          company_name: { type: 'string', nullable: true },
+          website: { type: 'string', nullable: true },
+          linkedin_url: { type: 'string', nullable: true },
+          company_linkedin_url: { type: 'string', nullable: true },
+          custom_lead_data: { type: 'object', additionalProperties: true },
+          source: { type: 'string', examples: ['api'] },
+          status: {
+            type: 'string',
+            enum: ['new', 'processing', 'completed', 'failed', 'paused', 'removed'],
+          },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time', nullable: true },
+          deleted_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        required: ['id', 'campaign_id', 'email', 'status', 'created_at'],
+        additionalProperties: true,
+      },
+      LeadCreate: {
+        type: 'object',
+        description: 'Create or upsert a lead. `email` is required. When the campaign defines custom lead fields, every key must be present in `custom_lead_data`.',
+        properties: {
+          email: { type: 'string', format: 'email' },
+          name: { type: 'string' },
+          first_name: { type: 'string' },
+          last_name: { type: 'string' },
+          company_name: { type: 'string' },
+          website: { type: 'string' },
+          linkedin_url: { type: 'string' },
+          company_linkedin_url: { type: 'string' },
+          custom_lead_data: {
+            type: 'object',
+            additionalProperties: true,
+          },
+        },
+        required: ['email'],
+        additionalProperties: false,
+      },
+      LeadUpdate: {
+        type: 'object',
+        properties: {
+          email: { type: 'string', format: 'email' },
+          name: { type: 'string', nullable: true },
+          first_name: { type: 'string', nullable: true },
+          last_name: { type: 'string', nullable: true },
+          company_name: { type: 'string', nullable: true },
+          website: { type: 'string', nullable: true },
+          linkedin_url: { type: 'string', nullable: true },
+          company_linkedin_url: { type: 'string', nullable: true },
+          custom_lead_data: {
+            type: 'object',
+            additionalProperties: true,
+          },
+        },
+        additionalProperties: false,
+      },
+      LeadUpsertResult: {
+        type: 'object',
+        properties: {
+          data: schemaRef('Lead'),
+          created: { type: 'boolean' },
+        },
+        required: ['data', 'created'],
+      },
+      BulkLeadsRequest: {
+        type: 'object',
+        properties: {
+          leads: {
+            type: 'array',
+            minItems: 1,
+            maxItems: BULK_SYNC_LIMIT,
+            items: schemaRef('LeadCreate'),
+          },
+        },
+        required: ['leads'],
+      },
+      AsyncBulkLeadsRequest: {
+        type: 'object',
+        properties: {
+          leads: {
+            type: 'array',
+            minItems: 1,
+            maxItems: BULK_ASYNC_LIMIT,
+            items: schemaRef('LeadCreate'),
+          },
+        },
+        required: ['leads'],
+      },
+      BulkLeadsResult: {
+        type: 'object',
+        properties: {
+          imported: { type: 'integer' },
+          failed: { type: 'integer' },
+          errors: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                index: { type: 'integer' },
+                message: { type: 'string' },
+              },
+              required: ['index', 'message'],
+            },
+          },
+        },
+        required: ['imported', 'failed', 'errors'],
+      },
+      ImportJob: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          account_id: { type: 'string', format: 'uuid' },
+          campaign_id: { type: 'string', format: 'uuid' },
+          created_by_api_key_id: { type: 'string', format: 'uuid', nullable: true },
+          status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
+          input: { type: 'object', additionalProperties: true },
+          result: { type: 'object', additionalProperties: true },
+          errors: {
+            type: 'array',
+            items: { type: 'object', additionalProperties: true },
+          },
+          created_at: { type: 'string', format: 'date-time', nullable: true },
+          updated_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        required: ['id', 'status', 'input', 'result', 'errors'],
+        additionalProperties: true,
+      },
+      Mailbox: {
+        type: 'object',
+        description: 'Mailbox row with sensitive IMAP/SMTP passwords removed from the response.',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          account_id: { type: 'string', format: 'uuid', nullable: true },
+          email: { type: 'string', format: 'email', nullable: true },
+          display_name: { type: 'string', nullable: true },
+          provider: { type: 'string', nullable: true },
+          created_at: { type: 'string', format: 'date-time', nullable: true },
+          updated_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        required: ['id'],
+        additionalProperties: true,
+      },
+      Thread: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          account_id: { type: 'string', format: 'uuid' },
+          campaign_id: { type: 'string', format: 'uuid', nullable: true },
+          mailbox_id: { type: 'string', format: 'uuid', nullable: true },
+          subject: { type: 'string', nullable: true },
+          last_message_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        required: ['id', 'account_id'],
+        additionalProperties: true,
+      },
+      Message: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          thread_id: { type: 'string', format: 'uuid' },
+          direction: { type: 'string', enum: ['sent', 'received'] },
+          subject: { type: 'string', nullable: true },
+          body_text: { type: 'string', nullable: true },
+          body_html: { type: 'string', nullable: true },
+          from_email: { type: 'string', format: 'email', nullable: true },
+          from_name: { type: 'string', nullable: true },
+          to_email: { type: 'string', format: 'email', nullable: true },
+          received_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        required: ['id', 'thread_id'],
+        additionalProperties: true,
+      },
+      ReplyRequest: {
+        type: 'object',
+        description: 'Create a reply job for the latest message in the thread. When omitted, subject and recipient fields fall back to the latest message.',
+        properties: {
+          subject: { type: 'string' },
+          body_text: { type: 'string' },
+          body_html: { type: 'string' },
+          to_email: { type: 'string', format: 'email' },
+          to_name: { type: 'string' },
+          cc: {
+            type: 'array',
+            items: { type: 'string', format: 'email' },
+          },
+        },
+        additionalProperties: false,
+      },
+      ReplyJobResult: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+        },
+        required: ['id'],
+      },
+      BlockListEntry: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          account_id: { type: 'string', format: 'uuid' },
+          value: { type: 'string' },
+          type: { type: 'string', enum: ['email', 'domain'] },
+          reason: { type: 'string', nullable: true },
+          created_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        required: ['id', 'account_id', 'value', 'type'],
+        additionalProperties: true,
+      },
+      BlockListCreate: {
+        type: 'object',
+        properties: {
+          value: { type: 'string' },
+          type: { type: 'string', enum: ['email', 'domain'] },
+          reason: { type: 'string', nullable: true },
+        },
+        required: ['value', 'type'],
+        additionalProperties: false,
+      },
+      CampaignStatsDaily: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', format: 'date' },
+          sent: { type: 'number' },
+          replied: { type: 'number' },
+          positiveReply: { type: 'number' },
+          bounce: { type: 'number' },
+        },
+        required: ['date', 'sent', 'replied', 'positiveReply', 'bounce'],
+      },
+      CampaignStatsTotals: {
+        type: 'object',
+        properties: {
+          sentCount: { type: 'number' },
+          repliedCount: { type: 'number' },
+          positiveReplyCount: { type: 'number' },
+          bounceCount: { type: 'number' },
+          lastBounceAt: { type: 'string', format: 'date-time', nullable: true },
+          enrollmentCount: { type: 'integer' },
+          terminalEnrollmentCount: { type: 'integer' },
+          contactedEnrollmentCount: { type: 'integer' },
+        },
+        required: [
+          'sentCount',
+          'repliedCount',
+          'positiveReplyCount',
+          'bounceCount',
+          'lastBounceAt',
+          'enrollmentCount',
+          'terminalEnrollmentCount',
+          'contactedEnrollmentCount',
+        ],
+      },
+      CampaignStats: {
+        type: 'object',
+        properties: {
+          daily: {
+            type: 'array',
+            items: schemaRef('CampaignStatsDaily'),
+          },
+          totals: schemaRef('CampaignStatsTotals'),
+        },
+        required: ['daily', 'totals'],
+      },
+      CampaignListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('Campaign') },
+          limit: { type: 'integer' },
+          offset: { type: 'integer' },
+          total_count: { type: 'integer' },
+        },
+        required: ['data', 'limit', 'offset', 'total_count'],
+      },
+      CampaignResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('Campaign'),
+        },
+        required: ['data'],
+      },
+      CampaignFlowResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('CampaignFlow'),
+        },
+        required: ['data'],
+      },
+      CampaignStatusResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('CampaignStatusResult'),
+        },
+        required: ['data'],
+      },
+      LeadFieldsResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('LeadFields'),
+        },
+        required: ['data'],
+      },
+      LeadFieldResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('LeadFieldResult'),
+        },
+        required: ['data'],
+      },
+      LeadListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('Lead') },
+          limit: { type: 'integer' },
+          offset: { type: 'integer' },
+          total_count: { type: 'integer' },
+        },
+        required: ['data', 'limit', 'offset', 'total_count'],
+      },
+      LeadResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('Lead'),
+        },
+        required: ['data'],
+      },
+      DeleteResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('DeleteResult'),
+        },
+        required: ['data'],
+      },
+      ImportJobResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('ImportJob'),
+        },
+        required: ['data'],
+      },
+      MailboxListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('Mailbox') },
+          limit: { type: 'integer' },
+          offset: { type: 'integer' },
+          total_count: { type: 'integer' },
+        },
+        required: ['data', 'limit', 'offset', 'total_count'],
+      },
+      MailboxResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('Mailbox'),
+        },
+        required: ['data'],
+      },
+      ThreadListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('Thread') },
+          limit: { type: 'integer' },
+          offset: { type: 'integer' },
+          total_count: { type: 'integer' },
+        },
+        required: ['data', 'limit', 'offset', 'total_count'],
+      },
+      ThreadResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('Thread'),
+        },
+        required: ['data'],
+      },
+      MessageListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('Message') },
+        },
+        required: ['data'],
+      },
+      ReplyJobResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('ReplyJobResult'),
+        },
+        required: ['data'],
+      },
+      BlockListListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('BlockListEntry') },
+          limit: { type: 'integer' },
+          offset: { type: 'integer' },
+          total_count: { type: 'integer' },
+        },
+        required: ['data', 'limit', 'offset', 'total_count'],
+      },
+      BlockListResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('BlockListEntry'),
+        },
+        required: ['data'],
+      },
+      CampaignStatsResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('CampaignStats'),
+        },
+        required: ['data'],
+      },
+      OpenApiDocument: {
+        type: 'object',
+        description: 'The live OpenAPI document returned by `/openapi.json`.',
+        additionalProperties: true,
+      },
+      DocsHtml: {
+        type: 'string',
+        description: 'Scalar HTML application.',
+      },
+      LimitsGuide: {
+        type: 'object',
+        properties: {
+          default_page_size: { type: 'integer', example: DEFAULT_PAGE_SIZE },
+          max_page_size: { type: 'integer', example: MAX_PAGE_SIZE },
+          bulk_sync_limit: { type: 'integer', example: BULK_SYNC_LIMIT },
+          bulk_async_limit: { type: 'integer', example: BULK_ASYNC_LIMIT },
+          max_async_jobs_per_account: { type: 'integer', example: MAX_ASYNC_JOBS_PER_ACCOUNT },
+        },
+      },
+    },
+  };
+}

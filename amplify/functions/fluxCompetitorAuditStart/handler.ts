@@ -186,6 +186,22 @@ export const handler = async (event: unknown) => {
       }
     }
 
+    const sfn = new SFNClient({});
+    const exec = await sfn.send(
+      new StartExecutionCommand({
+        stateMachineArn: smArn,
+        input: JSON.stringify({ jobId }),
+        name: `flux-audit-${jobId}-${Date.now()}`.slice(0, 80),
+      }),
+    );
+
+    await supabase
+      .from('flux_async_jobs')
+      .update({
+        external_execution_arn: exec.executionArn ?? null,
+      })
+      .eq('id', jobId);
+
     const nextBlocks = blocks.map((b) => {
       if (b.id !== parsedBody.blockId) return b;
       if (b.type !== 'competitor_ad_audit') return b;
@@ -204,22 +220,6 @@ export const handler = async (event: unknown) => {
     if (upPageErr) {
       return response(500, { ok: false, error: upPageErr.message });
     }
-
-    const sfn = new SFNClient({});
-    const exec = await sfn.send(
-      new StartExecutionCommand({
-        stateMachineArn: smArn,
-        input: JSON.stringify({ jobId }),
-        name: `flux-audit-${jobId}-${Date.now()}`.slice(0, 80),
-      }),
-    );
-
-    await supabase
-      .from('flux_async_jobs')
-      .update({
-        external_execution_arn: exec.executionArn ?? null,
-      })
-      .eq('id', jobId);
 
     return response(200, { ok: true, jobId, executionArn: exec.executionArn ?? null });
   } catch (err: unknown) {

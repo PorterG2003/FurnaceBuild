@@ -34,6 +34,7 @@ import { clientApiBulkImport } from './functions/clientApiBulkImport/resource';
 import { fluxGenerate } from './functions/fluxGenerate/resource';
 import { fluxEditorChat } from './functions/fluxEditorChat/resource';
 import { googlePlaces } from './functions/googlePlaces/resource';
+import { fluxCompetitorAuditJob } from './functions/fluxCompetitorAuditJob/resource';
 import { fluxCompetitorAuditStart } from './functions/fluxCompetitorAuditStart/resource';
 
 // Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
@@ -73,6 +74,7 @@ const backend = defineBackend({
   fluxGenerate,
   fluxEditorChat,
   googlePlaces,
+  fluxCompetitorAuditJob,
   fluxCompetitorAuditStart,
   ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
@@ -851,6 +853,9 @@ const foundryWebsiteVerificationStateMachineArn = cdk.Stack.of(foundryNormalizeS
 const foundryGoogleAdsVerificationLambda = backend.foundryGoogleAdsVerificationJob.resources.lambda as lambda.Function;
 foundryGoogleAdsVerificationLambda.addEnvironment('LEADS_SUPABASE_URL', process.env.LEADS_SUPABASE_URL ?? '');
 
+const fluxCompetitorAuditJobLambda = backend.fluxCompetitorAuditJob.resources.lambda as lambda.Function;
+fluxCompetitorAuditJobLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+
 const foundryGoogleAdsVerificationImportRunTask = new sfn.CustomState(
   foundryNormalizeStack,
   'FoundryGoogleAdsVerificationImportRunTask',
@@ -1053,6 +1058,21 @@ const fluxCompetitorAuditRunEcs = new sfn.CustomState(foundryNormalizeStack, 'Fl
     },
     End: true,
   },
+});
+const fluxCompetitorAuditFail = new sfnTasks.LambdaInvoke(foundryNormalizeStack, 'FluxCompetitorAuditFail', {
+  lambdaFunction: fluxCompetitorAuditJobLambda,
+  payload: sfn.TaskInput.fromObject({
+    action: 'fail',
+    'jobId.$': '$.jobId',
+    'message.$': '$.error.Cause',
+  }),
+  payloadResponseOnly: true,
+});
+const fluxCompetitorAuditAfterFail = new sfn.Succeed(foundryNormalizeStack, 'FluxCompetitorAuditAfterFail');
+fluxCompetitorAuditFail.next(fluxCompetitorAuditAfterFail);
+fluxCompetitorAuditRunEcs.addCatch(fluxCompetitorAuditFail, {
+  errors: [sfn.Errors.ALL],
+  resultPath: '$.error',
 });
 const fluxCompetitorAuditStateMachineName = `flux-competitor-audit-${workerEnvironment}`;
 const fluxCompetitorAuditStateMachine = new sfn.StateMachine(foundryNormalizeStack, 'FluxCompetitorAuditSm', {
@@ -1297,8 +1317,15 @@ clientApiBulkImportLambda.addEventSource(
 );
 
 const clientApiOriginHost = cdk.Fn.select(2, cdk.Fn.split('/', clientApiUrl.url));
-const clientApiDomainName = process.env.CLIENT_API_DOMAIN_NAME?.trim();
-const clientApiCertificateArn = process.env.CLIENT_API_CERTIFICATE_ARN?.trim();
+const skipClientApiCustomDomain = ['true', '1', 'yes'].includes(
+  (process.env.CLIENT_API_SKIP_CUSTOM_DOMAIN ?? '').toLowerCase(),
+);
+const clientApiDomainName = skipClientApiCustomDomain
+  ? undefined
+  : process.env.CLIENT_API_DOMAIN_NAME?.trim();
+const clientApiCertificateArn = skipClientApiCustomDomain
+  ? undefined
+  : process.env.CLIENT_API_CERTIFICATE_ARN?.trim();
 const clientApiWafWebAclArnRaw = process.env.CLIENT_API_WAF_WEB_ACL_ARN?.trim();
 const clientApiWafWebAclArn =
   clientApiWafWebAclArnRaw?.startsWith('arn:aws:wafv2:') || clientApiWafWebAclArnRaw?.startsWith('arn:aws:waf:')

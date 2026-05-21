@@ -304,27 +304,21 @@ function LeadSourceNodeModal({
   }, []);
 
   const payloadExample = useMemo(() => {
-    const bucketSegment = initialData?.bucketId ?? 'your-bucket-id';
     return `{
-  "bucket_id": "${bucketSegment}",
-  "leads": [
-    {
-      "email": "jane@example.com",
-      "name": "Jane Doe",
-      "first_name": "Jane",
-      "last_name": "Doe",
-      "company_name": "Acme Co",
-      "website": "https://www.acmeco.com",
-      "linkedin_url": "https://www.linkedin.com/in/janedoe",
-      "company_linkedin_url": "https://www.linkedin.com/company/acme-co",
-      "custom_lead_data": {
-        "company": "Acme Co",
-        "source": "Landing Page"
-      }
-    }
-  ]
+  "email": "jane@example.com",
+  "name": "Jane Doe",
+  "first_name": "Jane",
+  "last_name": "Doe",
+  "company_name": "Acme Co",
+  "website": "https://www.acmeco.com",
+  "linkedin_url": "https://www.linkedin.com/in/janedoe",
+  "company_linkedin_url": "https://www.linkedin.com/company/acme-co",
+  "custom_lead_data": {
+    "company": "Acme Co",
+    "source": "Landing Page"
+  }
 }`;
-  }, [initialData?.bucketId]);
+  }, []);
 
   const isNextDisabled = isSavingImport
     ? true

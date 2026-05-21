@@ -21,6 +21,16 @@ import {
 } from '../../../lib/client-api/flow-fields.js';
 import { buildRateLimitHeaders } from '../../../lib/client-api/rate-limit.js';
 import { hashRequestBody } from '../../../lib/client-api/idempotency.js';
+import {
+  BULK_ASYNC_LIMIT,
+  BULK_SYNC_LIMIT,
+  DEFAULT_PAGE_SIZE,
+  MAX_ASYNC_JOBS_PER_ACCOUNT,
+  MAX_PAGE_SIZE,
+  RATE_LIMIT_REQUESTS_PER_MINUTE,
+  WEBHOOK_VERIFY_USER_AGENT,
+} from '../../../lib/client-api/openapi/constants.js';
+import { buildClientApiOpenApiSpec } from '../../../lib/client-api/openapi/spec.js';
 import type { Database, Json } from '../../../lib/supabase/types/database.js';
 
 type Variables = {
@@ -30,26 +40,6 @@ type Variables = {
 
 type Supabase = ReturnType<typeof createServiceRoleClient>;
 
-const RATE_LIMIT_REQUESTS_PER_MINUTE = 200;
-const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
-const BULK_SYNC_LIMIT = 100;
-const BULK_ASYNC_LIMIT = 1000;
-const MAX_ASYNC_JOBS_PER_ACCOUNT = 3;
-const WEBHOOK_VERIFY_USER_AGENT = 'Furnace-Webhook-Verify/1.0';
-const DEFAULT_ALLOWED_WEBHOOK_EVENTS = [
-  'lead.created',
-  'lead.updated',
-  'lead.deleted',
-  'enrollment.created',
-  'enrollment.updated',
-  'campaign.paused',
-  'campaign.resumed',
-  'campaign.stopped',
-  'email.sent',
-  'reply.received',
-  'bounce.detected',
-] as const;
 const sqs = new SQSClient({ region: process.env.AWS_REGION || 'us-west-2' });
 
 function getBaseUrl(c: Context): string {
@@ -166,69 +156,7 @@ function buildListPayload<T>(data: T[], limit: number, offset: number, totalCoun
 }
 
 function getOpenApiSpec(baseUrl: string) {
-  return {
-    openapi: '3.1.0',
-    info: {
-      title: 'Furnace Client API',
-      version: '1.0.0',
-      description: 'Account-scoped REST API for campaigns, leads, inbox, mailboxes, stats, and block list.',
-    },
-    servers: [{ url: baseUrl }],
-    components: {
-      securitySchemes: {
-        bearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'API Key',
-        },
-      },
-      schemas: {
-        Error: {
-          type: 'object',
-          properties: {
-            error: {
-              type: 'object',
-              properties: {
-                type: { type: 'string' },
-                code: { type: 'string' },
-                message: { type: 'string' },
-                param: { type: 'string' },
-              },
-              required: ['type', 'code', 'message'],
-            },
-          },
-          required: ['error'],
-        },
-      },
-    },
-    security: [{ bearerAuth: [] }],
-    paths: {
-      '/health': { get: { summary: 'Health check', security: [] } },
-      '/openapi.json': { get: { summary: 'OpenAPI document', security: [] } },
-      '/docs': { get: { summary: 'Scalar docs', security: [] } },
-      '/v1/campaigns': { get: { summary: 'List campaigns' } },
-      '/v1/campaigns/{id}': { get: { summary: 'Get campaign' }, patch: { summary: 'Update campaign' }, delete: { summary: 'Delete campaign' } },
-      '/v1/campaigns/{id}/pause': { post: { summary: 'Pause campaign' } },
-      '/v1/campaigns/{id}/stop': { post: { summary: 'Stop campaign' } },
-      '/v1/campaigns/{id}/resume': { post: { summary: 'Resume campaign' } },
-      '/v1/campaigns/{id}/flow': { get: { summary: 'Get campaign flow' } },
-      '/v1/campaigns/{id}/lead-fields': { get: { summary: 'Get lead fields' }, post: { summary: 'Append lead field' } },
-      '/v1/campaigns/{id}/leads': { get: { summary: 'List campaign leads' }, post: { summary: 'Create or upsert lead' } },
-      '/v1/campaigns/{id}/leads/{leadId}': { get: { summary: 'Get lead' }, patch: { summary: 'Update lead' }, delete: { summary: 'Delete lead' } },
-      '/v1/campaigns/{id}/leads/bulk': { post: { summary: 'Bulk sync leads' } },
-      '/v1/campaigns/{id}/leads/bulk/async': { post: { summary: 'Queue async lead import' } },
-      '/v1/jobs/{id}': { get: { summary: 'Get async import job' } },
-      '/v1/mailboxes': { get: { summary: 'List mailboxes' } },
-      '/v1/mailboxes/{id}': { get: { summary: 'Get mailbox' } },
-      '/v1/threads': { get: { summary: 'List inbox threads' } },
-      '/v1/threads/{id}': { get: { summary: 'Get thread' } },
-      '/v1/threads/{id}/messages': { get: { summary: 'List thread messages' } },
-      '/v1/threads/{id}/reply': { post: { summary: 'Create reply job' } },
-      '/v1/block-list': { get: { summary: 'List block list' }, post: { summary: 'Add block list entry' } },
-      '/v1/block-list/{id}': { delete: { summary: 'Delete block list entry' } },
-      '/v1/campaigns/{id}/stats': { get: { summary: 'Campaign stats' } },
-    },
-  };
+  return buildClientApiOpenApiSpec(baseUrl);
 }
 
 async function loadCampaignOrThrow(supabase: Supabase, accountId: string, campaignId: string) {
@@ -590,6 +518,7 @@ app.get('/docs', async (c) => {
     <script
       id="api-reference"
       data-url="${getBaseUrl(c)}/openapi.json"
+      data-configuration='{"theme":"purple","defaultHttpClient":{"targetKey":"js","clientKey":"fetch"},"searchHotKey":"k","showSidebar":true,"expanded":true}'
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
   </body>

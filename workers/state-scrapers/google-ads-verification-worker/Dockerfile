@@ -7,6 +7,7 @@ WORKDIR /app
 
 COPY lib/foundry/registry-server ./lib/foundry/registry-server
 COPY lib/google/places ./lib/google/places
+COPY lib/flux/fluxCompetitorAuditAdvertiser.ts ./lib/flux/fluxCompetitorAuditAdvertiser.ts
 COPY lib/flux/fluxCompetitorAuditRank.ts ./lib/flux/fluxCompetitorAuditRank.ts
 COPY lib/flux/fluxCompetitorAuditFailureMessage.ts ./lib/flux/fluxCompetitorAuditFailureMessage.ts
 COPY workers/state-scrapers/google-ads-verification-worker ./workers/state-scrapers/google-ads-verification-worker

@@ -19,56 +19,6 @@ function statusLabel(status: CompetitorAdAuditBlockProps['status']): string {
   }
 }
 
-type StrategySignal = {
-  id: string;
-  patterns: RegExp[];
-  label: string;
-};
-
-const STRATEGY_SIGNALS: StrategySignal[] = [
-  {
-    id: 'offers',
-    patterns: [/\bfree\b/i, /\bdiscount\b/i, /\bsave\b/i, /\bspecial\b/i, /\bcoupon\b/i, /\bquote\b/i],
-    label: 'offers',
-  },
-  {
-    id: 'speed',
-    patterns: [/\bsame day\b/i, /\b24\/7\b/i, /\bemergency\b/i, /\bfast\b/i, /\bquick\b/i, /\btoday\b/i],
-    label: 'speed and urgency',
-  },
-  {
-    id: 'trust',
-    patterns: [/\breview/i, /\btrusted\b/i, /\blicensed\b/i, /\binsured\b/i, /\bexpert/i, /\byears?\b/i],
-    label: 'trust signals',
-  },
-  {
-    id: 'local',
-    patterns: [/\blocal\b/i, /\bnear you\b/i, /\bserving\b/i, /\bnearby\b/i, /\bcommunity\b/i],
-    label: 'local relevance',
-  },
-  {
-    id: 'quality',
-    patterns: [/\bquality\b/i, /\bpremium\b/i, /\bcustom\b/i, /\bluxury\b/i, /\bcraftsmanship\b/i],
-    label: 'quality positioning',
-  },
-  {
-    id: 'cta',
-    patterns: [/\bcall now\b/i, /\bbook\b/i, /\bschedule\b/i, /\bcontact us\b/i, /\bget started\b/i],
-    label: 'direct calls to action',
-  },
-];
-
-function joinLabels(values: string[]): string {
-  if (values.length === 0) return '';
-  if (values.length === 1) return values[0];
-  if (values.length === 2) return `${values[0]} and ${values[1]}`;
-  return `${values.slice(0, -1).join(', ')}, and ${values[values.length - 1]}`;
-}
-
-function quotedExamples(values: string[]): string {
-  return joinLabels(values.map((value) => `"${value}"`));
-}
-
 function formatAuditDate(value: string): string {
   const parsed = new Date(`${value}T12:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -80,24 +30,40 @@ function formatAuditDate(value: string): string {
   });
 }
 
-function summarizeAdPresence(adsSummary: string): string {
-  const countMatch = adsSummary.match(/~?(\d+)\s+ads?/i);
+function parseLastShownFromAdsSummary(adsSummary: string): string | null {
   const recentMatch = adsSummary.match(/(?:most recent creative shown|last shown)\s+([^.;]+)/i);
-  const count = countMatch ? Number.parseInt(countMatch[1] ?? '', 10) : null;
   const recent = recentMatch?.[1]?.trim();
+  if (!recent || /^unknown$/i.test(recent)) return null;
+  return recent;
+}
 
-  let activity = 'They seem to have an active Google Ads presence.';
-  if (typeof count === 'number' && Number.isFinite(count)) {
-    if (count <= 2) activity = 'They only show a small ad footprint right now.';
-    else if (count < 10) activity = 'They seem to be advertising pretty consistently.';
-    else if (count < 25) activity = 'They look fairly active in Google Ads right now.';
-    else activity = 'They look very active in Google Ads right now.';
+function daysSinceIsoDate(iso: string): number | null {
+  const timestamp = Date.parse(`${iso}T12:00:00Z`);
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.floor((Date.now() - timestamp) / 86_400_000);
+}
+
+function relativeRecencyClause(daysSince: number): string | null {
+  if (daysSince < 0) return null;
+  if (daysSince <= 7) return 'within the past week';
+  if (daysSince <= 30) return 'within the past month';
+  return null;
+}
+
+function summarizeAdRecency(adsSummary: string): string {
+  const lastShown = parseLastShownFromAdsSummary(adsSummary);
+  if (!lastShown) {
+    return "We couldn't confirm how recently they've been running Google Ads.";
   }
 
-  if (recent) {
-    return `${activity} The creative we found was showing as recently as ${formatAuditDate(recent)}.`;
+  const formatted = formatAuditDate(lastShown);
+  const daysSince = daysSinceIsoDate(lastShown);
+  const relative = daysSince == null ? null : relativeRecencyClause(daysSince);
+
+  if (relative) {
+    return `They were still running Google Ads ${relative} — most recently as of ${formatted}.`;
   }
-  return activity;
+  return `They were still running Google Ads as recently as ${formatted}.`;
 }
 
 function advertiserUrlFromSourceUrl(sourceUrl: string): string {
@@ -105,31 +71,8 @@ function advertiserUrlFromSourceUrl(sourceUrl: string): string {
   return match?.[1] ?? sourceUrl;
 }
 
-function textCorpus(row: CompetitorAdAuditBlockProps['competitors'][number]): string {
-  return [row.adsSummary, ...row.examples.flatMap((example) => [example.headline, example.body])]
-    .filter(Boolean)
-    .join(' ');
-}
-
-function matchedSignals(row: CompetitorAdAuditBlockProps['competitors'][number]): StrategySignal[] {
-  const corpus = textCorpus(row);
-  return STRATEGY_SIGNALS.filter((signal) => signal.patterns.some((pattern) => pattern.test(corpus))).slice(0, 3);
-}
-
 function buildAuditSummary(row: CompetitorAdAuditBlockProps['competitors'][number]): string {
-  const signals = matchedSignals(row);
-  const presence = summarizeAdPresence(row.adsSummary);
-  if (signals.length > 0) {
-    return `${presence} Their messaging leans on ${joinLabels(signals.map((signal) => signal.label))}.`;
-  }
-  const repeatedHooks = row.examples
-    .map((example) => example.headline?.trim())
-    .filter((headline): headline is string => Boolean(headline))
-    .slice(0, 2);
-  if (repeatedHooks.length > 0) {
-    return `${presence} You can see the same hooks repeating in lines like ${quotedExamples(repeatedHooks)}.`;
-  }
-  return `${presence} Overall, the creative feels short, direct, and built to get a quick click.`;
+  return summarizeAdRecency(row.adsSummary);
 }
 
 export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBlockProps }) {
@@ -212,7 +155,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                     className="text-[11px] uppercase tracking-[2px]"
                     style={{ color: theme.textColor, opacity: presentation.subtleTextOpacity, fontFamily: headingFont }}
                   >
-                    Example creatives
+                    Current Ads They Are Running
                   </Text>
                   <View className="flex-row flex-wrap gap-3">
                     {examplesWithImage.map((ex, j) => (

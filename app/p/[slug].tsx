@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, Text } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import Head from 'expo-router/head';
 import { supabase } from '@/lib/supabase/client';
@@ -64,11 +64,7 @@ export default function PublicProspectPage() {
   }, [slug]);
 
   if (loading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-white">
-        <ActivityIndicator size="large" color="#6b7280" />
-      </View>
-    );
+    return <View className="flex-1 bg-white" />;
   }
 
   if (notFound || !page) {

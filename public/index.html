@@ -71,6 +71,14 @@
       })();
     </script>
     <title>%WEB_TITLE%</title>
+    <script>
+      (function () {
+        var path = (window.location.pathname || '').replace(/\/$/, '') || '/';
+        if (path === '/p' || path.indexOf('/p/') === 0) {
+          document.documentElement.setAttribute('data-flux-landing', '1');
+        }
+      })();
+    </script>
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
       /* These styles make the body full-height */
@@ -93,6 +101,11 @@
         min-height: 100dvh;
         flex: 1;
         background-color: #121212;
+      }
+      html[data-flux-landing='1'],
+      html[data-flux-landing='1'] body,
+      html[data-flux-landing='1'] #root {
+        background-color: #ffffff;
       }
     </style>
   </head>

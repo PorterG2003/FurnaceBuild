@@ -405,6 +405,8 @@ export interface FluxServiceArea {
   formattedAddress: string;
   latitude: number;
   longitude: number;
+  /** ISO 3166-1 alpha-2 (e.g. `US`, `CA`). Drives Google Ads Transparency `region`. */
+  regionCode?: string;
 }
 
 export interface FluxProspectRow {

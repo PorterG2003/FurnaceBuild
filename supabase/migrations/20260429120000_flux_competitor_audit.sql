@@ -7,7 +7,7 @@ ALTER TABLE public.flux_prospects
   ADD COLUMN IF NOT EXISTS service_area JSONB;
 
 COMMENT ON COLUMN public.flux_prospects.service_area IS
-  'Optional { placeId, displayName?, formattedAddress, latitude, longitude } from Google Places for competitor audit area.';
+  'Optional { placeId, displayName?, formattedAddress, latitude, longitude, regionCode? } from Google Places for competitor audit area; regionCode is ISO 3166-1 alpha-2 for Google Ads Transparency region.';
 
 -- ---------------------------------------------------------------------------
 -- flux_async_jobs (generalized async work; v1: competitor_ad_audit)

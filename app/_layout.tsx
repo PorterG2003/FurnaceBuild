@@ -1,9 +1,9 @@
-import { Slot } from 'expo-router';
+import { Slot, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts, InstrumentSans_400Regular, InstrumentSans_500Medium, InstrumentSans_600SemiBold, InstrumentSans_700Bold, InstrumentSans_400Regular_Italic, InstrumentSans_500Medium_Italic, InstrumentSans_600SemiBold_Italic, InstrumentSans_700Bold_Italic } from '@expo-google-fonts/instrument-sans';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppBootScreen } from '@/components/ui/AppBootScreen';
@@ -11,6 +11,7 @@ import { ToastProvider } from '@/components/ui/feedback';
 import { ConfirmProvider } from '@/components/ui/ConfirmContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { WebInstallGate } from '@/components/web/WebInstallGate';
+import { isFluxPublicLandingRoute } from '@/lib/web/installGate';
 
 const MIN_BOOT_MS = 350;
 
@@ -28,6 +29,15 @@ if (typeof console !== 'undefined' && console.warn) {
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const pathname = usePathname();
+  const skipAppBoot = useMemo(() => {
+    if (isFluxPublicLandingRoute(pathname)) return true;
+    if (typeof window !== 'undefined' && isFluxPublicLandingRoute(window.location.pathname)) {
+      return true;
+    }
+    return false;
+  }, [pathname]);
+
   const [minBootElapsed, setMinBootElapsed] = useState(false);
   const [fontsLoaded, fontError] = useFonts({
     InstrumentSans_400Regular,
@@ -45,24 +55,32 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
+    if (skipAppBoot) return;
     const timer = setTimeout(() => setMinBootElapsed(true), MIN_BOOT_MS);
     return () => clearTimeout(timer);
-  }, []);
+  }, [skipAppBoot]);
 
   useEffect(() => {
-    if ((fontsLoaded || fontError) && minBootElapsed) {
-      SplashScreen.hideAsync();
+    if (skipAppBoot) {
+      void SplashScreen.hideAsync();
+      return;
     }
-  }, [fontsLoaded, fontError, minBootElapsed]);
+    if ((fontsLoaded || fontError) && minBootElapsed) {
+      void SplashScreen.hideAsync();
+    }
+  }, [skipAppBoot, fontsLoaded, fontError, minBootElapsed]);
+
+  const bootComplete =
+    skipAppBoot || (minBootElapsed && (fontsLoaded || !!fontError));
 
   const safeAreaRootStyle = {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: skipAppBoot ? '#ffffff' : '#121212',
     paddingTop: 'env(safe-area-inset-top, 0px)' as unknown as number,
   };
 
   // Render app even if fonts fail (avoids white screen on web)
-  if (!minBootElapsed || (!fontsLoaded && !fontError)) {
+  if (!bootComplete) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={safeAreaRootStyle} testID="safe-area-root">

@@ -37,7 +37,7 @@ export function FluxServiceAreaField({
     const t = setTimeout(async () => {
       setLoadingList(true);
       setError(null);
-      const res = await callGooglePlaces({ action: 'autocomplete', input: q, includedRegionCodes: ['US'] });
+      const res = await callGooglePlaces({ action: 'autocomplete', input: q });
       if (cancelled) return;
       setLoadingList(false);
       if (!res.ok) {
@@ -92,7 +92,8 @@ export function FluxServiceAreaField({
     <View className="mb-2">
       <Text className={labelClassName}>Service area (competitor ad audit)</Text>
       <Text className="text-gray-500 text-xs font-instrument mb-2 leading-5">
-        Pick the city or region you sell into. We use it to find nearby competitors and center the map.
+        Pick the city or region you sell into (any country). We use it to find nearby competitors, center the
+        map, and match ads in that market.
       </Text>
       {value ? (
         <View className="border border-[#2A2A2A] rounded-xl px-3 py-2 mb-2 bg-[#151515]">

@@ -8,9 +8,8 @@ import fluxCompetitorAuditRank from '../../../../lib/flux/fluxCompetitorAuditRan
 import type { FluxCompetitorScoredDomain } from '../../../../lib/flux/fluxCompetitorAuditRank';
 import fluxCompetitorAuditFailureMessage from '../../../../lib/flux/fluxCompetitorAuditFailureMessage';
 import type { FluxAuditDomainResultRow } from '../../../../lib/flux/fluxCompetitorAuditFailureMessage';
+import { fluxServiceAreaTransparencyRegionFromRaw } from '../../../../lib/flux/fluxServiceArea';
 import { workerJsonLog } from './workerJsonLog.js';
-
-const REGION = 'US';
 const PLACES_RADIUS_M = 20_000;
 const MAX_TRANSPARENCY = 12;
 const MIN_PLACES_SCANNED_BEFORE_EARLY_EXIT = 6;
@@ -253,12 +252,13 @@ export async function runFluxCompetitorAuditJob(params: {
       await failJob('Prospect service area (latitude/longitude) is required.');
       return false;
     }
+    const transparencyRegion = fluxServiceAreaTransparencyRegionFromRaw(sa);
 
     const industry = typeof prospect.industry === 'string' ? prospect.industry.trim() : '';
     const textQuery = industry.length >= 3 ? industry : 'local services';
     const placesRes = await placesSearchText(googlePlacesKey, {
       textQuery,
-      languageCode: 'en-US',
+      languageCode: transparencyRegion === 'US' ? 'en-US' : 'en',
       maxResultCount: 20,
       locationBias: { latitude: lat, longitude: lng, radiusMeters: PLACES_RADIUS_M },
     });
@@ -333,7 +333,7 @@ export async function runFluxCompetitorAuditJob(params: {
             runGoogleAdsTransparencyAuditSamples({
             domain: c.domain,
             headless: true,
-            region: REGION,
+            region: transparencyRegion,
             timeoutMs: 50_000,
             maxSamples: MAX_PUBLISHED_SAMPLES_PER_WINNER,
             jobId: params.jobId,

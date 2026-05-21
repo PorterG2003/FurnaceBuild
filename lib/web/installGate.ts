@@ -34,6 +34,20 @@ export function normalizeInstallGatePathname(pathname: string): string {
   return pathname;
 }
 
+/** Flux public prospect landing pages (`/p/{slug}`). */
+export function isFluxPublicLandingRoute(pathname: string): boolean {
+  const path = normalizeInstallGatePathname(pathname);
+  return path === '/p' || path.startsWith('/p/');
+}
+
+/** Routes that must not be redirected to `/install` on mobile web. */
+export function isInstallGateExemptRoute(pathname: string): boolean {
+  const path = normalizeInstallGatePathname(pathname);
+  if (path === '/install') return true;
+  return isFluxPublicLandingRoute(pathname);
+}
+
+/** @deprecated Use {@link isInstallGateExemptRoute} */
 export function isPublicInstallRoute(pathname: string): boolean {
-  return normalizeInstallGatePathname(pathname) === '/install';
+  return isInstallGateExemptRoute(pathname);
 }

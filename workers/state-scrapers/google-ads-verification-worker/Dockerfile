@@ -8,8 +8,10 @@ WORKDIR /app
 COPY lib/foundry/registry-server ./lib/foundry/registry-server
 COPY lib/google/places ./lib/google/places
 COPY lib/flux/fluxCompetitorAuditAdvertiser.ts ./lib/flux/fluxCompetitorAuditAdvertiser.ts
+COPY lib/flux/fluxCompetitorAuditDiscovery.ts ./lib/flux/fluxCompetitorAuditDiscovery.ts
 COPY lib/flux/fluxCompetitorAuditRank.ts ./lib/flux/fluxCompetitorAuditRank.ts
 COPY lib/flux/fluxCompetitorAuditFailureMessage.ts ./lib/flux/fluxCompetitorAuditFailureMessage.ts
+COPY lib/flux/fluxServiceArea.ts ./lib/flux/fluxServiceArea.ts
 COPY workers/state-scrapers/google-ads-verification-worker ./workers/state-scrapers/google-ads-verification-worker
 
 WORKDIR /app/workers/state-scrapers/google-ads-verification-worker

@@ -4,6 +4,7 @@ import { placesSearchText } from '@furnace/google-places';
 import { normalizeGoogleAdsSearchDomain } from '@furnace/registry-server';
 import { runGoogleAdsTransparencyAuditSamples } from './transparencyLookup.js';
 import { buildPublishedCompetitorExamples } from './fluxCompetitorAuditPublish.js';
+import fluxCompetitorAuditDiscovery from '../../../../lib/flux/fluxCompetitorAuditDiscovery';
 import fluxCompetitorAuditRank from '../../../../lib/flux/fluxCompetitorAuditRank';
 import type { FluxCompetitorScoredDomain } from '../../../../lib/flux/fluxCompetitorAuditRank';
 import fluxCompetitorAuditFailureMessage from '../../../../lib/flux/fluxCompetitorAuditFailureMessage';
@@ -56,6 +57,14 @@ type GooglePlaceRow = {
   formattedAddress?: string;
   location?: { latitude?: number; longitude?: number };
   websiteUri?: string;
+};
+
+type AuditCandidate = {
+  domain: string;
+  name: string;
+  lat: number | null;
+  lng: number | null;
+  placeIndex: number;
 };
 
 function parsePlacesSearchBody(json: unknown): GooglePlaceRow[] {
@@ -238,35 +247,23 @@ export async function runFluxCompetitorAuditJob(params: {
 
     const { data: prospect, error: prErr } = await flux
       .from('flux_prospects')
-      .select('industry, url, website_domain_key, service_area, company')
+      .select('industry, url, website_domain_key, service_area, company, competitor_audit_curated_domains')
       .eq('id', page.prospect_id as string)
       .maybeSingle();
     if (prErr || !prospect) {
       await failJob(prErr?.message || 'Prospect not found');
       return false;
     }
+    const discoveryMode = fluxCompetitorAuditDiscovery.normalizeFluxCompetitorAuditDiscoveryMode(block.props?.discoveryMode);
     const sa = prospect.service_area as Record<string, unknown> | null;
     const lat = typeof sa?.latitude === 'number' ? sa.latitude : Number(sa?.latitude);
     const lng = typeof sa?.longitude === 'number' ? sa.longitude : Number(sa?.longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      await failJob('Prospect service area (latitude/longitude) is required.');
+    if (discoveryMode === 'local_places' && (!Number.isFinite(lat) || !Number.isFinite(lng))) {
+      await failJob('Prospect service area (latitude/longitude) is required for local competitor audit.');
       return false;
     }
     const transparencyRegion = fluxServiceAreaTransparencyRegionFromRaw(sa);
 
-    const industry = typeof prospect.industry === 'string' ? prospect.industry.trim() : '';
-    const textQuery = industry.length >= 3 ? industry : 'local services';
-    const placesRes = await placesSearchText(googlePlacesKey, {
-      textQuery,
-      languageCode: transparencyRegion === 'US' ? 'en-US' : 'en',
-      maxResultCount: 20,
-      locationBias: { latitude: lat, longitude: lng, radiusMeters: PLACES_RADIUS_M },
-    });
-    if (!placesRes.ok) {
-      await failJob(placesRes.message || 'Places search failed');
-      return false;
-    }
-    const placeList = parsePlacesSearchBody(placesRes.json);
     const prospectDomains = new Set<string>();
     const pk = normalizeGoogleAdsSearchDomain(
       typeof prospect.website_domain_key === 'string' ? prospect.website_domain_key : '',
@@ -278,45 +275,75 @@ export async function runFluxCompetitorAuditJob(params: {
       if (nd) prospectDomains.add(nd);
     }
 
-    type Cand = { domain: string; name: string; lat: number; lng: number; placeIndex: number };
-    const candidates: Cand[] = [];
-    const seenEtld = new Set<string>();
-    let idx = 0;
-    for (const p of placeList) {
-      const web = typeof p.websiteUri === 'string' ? p.websiteUri : '';
-      const dom = normalizeGoogleAdsSearchDomain(hostFromWebsiteUri(web) ?? '');
-      if (!dom) {
-        idx += 1;
-        continue;
+    const candidates: AuditCandidate[] = [];
+    if (discoveryMode === 'curated_domains') {
+      const curatedDomains = fluxCompetitorAuditDiscovery.resolveEffectiveCuratedDomains({
+        blockDomains: block.props?.curatedDomains,
+        prospectDomains: prospect.competitor_audit_curated_domains,
+      });
+      for (let idx = 0; idx < curatedDomains.length; idx += 1) {
+        const seed = curatedDomains[idx]!;
+        if (prospectDomains.has(seed.domain)) continue;
+        candidates.push({
+          domain: seed.domain,
+          name: seed.name?.trim() || seed.domain,
+          lat: null,
+          lng: null,
+          placeIndex: idx,
+        });
       }
-      if (prospectDomains.has(dom)) {
-        idx += 1;
-        continue;
+    } else {
+      const industry = typeof prospect.industry === 'string' ? prospect.industry.trim() : '';
+      const textQuery = industry.length >= 3 ? industry : 'local services';
+      const placesRes = await placesSearchText(googlePlacesKey, {
+        textQuery,
+        languageCode: transparencyRegion === 'US' ? 'en-US' : 'en',
+        maxResultCount: 20,
+        locationBias: { latitude: lat, longitude: lng, radiusMeters: PLACES_RADIUS_M },
+      });
+      if (!placesRes.ok) {
+        await failJob(placesRes.message || 'Places search failed');
+        return false;
       }
-      const dedupeKey = etldPlusOne(dom);
-      if (seenEtld.has(dedupeKey)) {
+      const placeList = parsePlacesSearchBody(placesRes.json);
+      const seenEtld = new Set<string>();
+      let idx = 0;
+      for (const p of placeList) {
+        const web = typeof p.websiteUri === 'string' ? p.websiteUri : '';
+        const dom = normalizeGoogleAdsSearchDomain(hostFromWebsiteUri(web) ?? '');
+        if (!dom) {
+          idx += 1;
+          continue;
+        }
+        if (prospectDomains.has(dom)) {
+          idx += 1;
+          continue;
+        }
+        const dedupeKey = etldPlusOne(dom);
+        if (seenEtld.has(dedupeKey)) {
+          idx += 1;
+          continue;
+        }
+        seenEtld.add(dedupeKey);
+        const name = (p.displayName as { text?: string } | undefined)?.text?.trim() || dom;
+        const plat = p.location?.latitude;
+        const plng = p.location?.longitude;
+        if (!Number.isFinite(plat) || !Number.isFinite(plng)) {
+          idx += 1;
+          continue;
+        }
+        candidates.push({ domain: dom, name, lat: plat as number, lng: plng as number, placeIndex: idx });
         idx += 1;
-        continue;
+        if (candidates.length >= MAX_TRANSPARENCY) break;
       }
-      seenEtld.add(dedupeKey);
-      const name = (p.displayName as { text?: string } | undefined)?.text?.trim() || dom;
-      const plat = p.location?.latitude;
-      const plng = p.location?.longitude;
-      if (!Number.isFinite(plat) || !Number.isFinite(plng)) {
-        idx += 1;
-        continue;
-      }
-      candidates.push({ domain: dom, name, lat: plat as number, lng: plng as number, placeIndex: idx });
-      idx += 1;
-      if (candidates.length >= MAX_TRANSPARENCY) break;
     }
 
     const scored: FluxCompetitorScoredDomain[] = [];
     type AuditOk = Awaited<ReturnType<typeof runGoogleAdsTransparencyAuditSamples>>;
     const auditByDomain = new Map<string, AuditOk>();
-    let attemptedPlacesCount = 0;
+    let attemptedDomainCount = 0;
     let okDomainCount = 0;
-    let placesStopReason: 'min_reached_and_enough_ok' | 'max_reached' | 'exhausted_candidates' | null = null;
+    let candidateStopReason: 'min_reached_and_enough_ok' | 'max_reached' | 'exhausted_candidates' | null = null;
 
     for (let ci = 0; ci < candidates.length; ci += 1) {
       const c = candidates[ci]!;
@@ -378,48 +405,54 @@ export async function runFluxCompetitorAuditJob(params: {
           row.message = msg.slice(0, 200);
         }
       }
-      attemptedPlacesCount += 1;
+      attemptedDomainCount += 1;
       workerJsonLog('transparency_domain_audit_wall_ms', {
         jobId: params.jobId,
+        discoveryMode,
         domain: c.domain,
         wallMs: Date.now() - domainWallStart,
         outcome: row.outcome,
         creativeCount: row.creative_count ?? null,
         message: row.message?.slice(0, 200) ?? null,
-        attemptedPlacesCount,
+        attemptedDomainCount,
         okDomainCount,
       });
       auditRows.push(row);
       await flux
         .from('flux_async_jobs')
-        .update({ result: { audit_domains: auditRows } as never })
+        .update({ result: { discovery_mode: discoveryMode, audit_domains: auditRows } as never })
         .eq('id', params.jobId);
 
       if (
-        attemptedPlacesCount >= MIN_PLACES_SCANNED_BEFORE_EARLY_EXIT &&
+        attemptedDomainCount >=
+          (discoveryMode === 'curated_domains' ? TARGET_OK_DOMAINS_FOR_EARLY_EXIT : MIN_PLACES_SCANNED_BEFORE_EARLY_EXIT) &&
         okDomainCount >= TARGET_OK_DOMAINS_FOR_EARLY_EXIT &&
         ci + 1 < candidates.length
       ) {
-        placesStopReason = 'min_reached_and_enough_ok';
+        candidateStopReason = 'min_reached_and_enough_ok';
         break;
       }
     }
 
-    if (!placesStopReason) {
-      placesStopReason =
-        candidates.length >= MAX_TRANSPARENCY && attemptedPlacesCount >= candidates.length
+    if (!candidateStopReason) {
+      candidateStopReason =
+        discoveryMode === 'local_places' && candidates.length >= MAX_TRANSPARENCY && attemptedDomainCount >= candidates.length
           ? 'max_reached'
           : 'exhausted_candidates';
     }
 
-    const ranked = fluxCompetitorAuditRank.rankFluxCompetitorDomains(scored);
+    const ranked =
+      discoveryMode === 'curated_domains'
+        ? fluxCompetitorAuditRank.rankFluxCompetitorDomainsCurated(scored)
+        : fluxCompetitorAuditRank.rankFluxCompetitorDomains(scored);
     const winners = ranked.slice(0, MAX_PUBLISHED_WINNERS);
     if (winners.length < 1) {
       await failJob(fluxCompetitorAuditFailureMessage.buildFluxCompetitorAuditFailureMessage(auditRows), {
         ranked_count: 0,
-        attempted_places_count: attemptedPlacesCount,
+        discovery_mode: discoveryMode,
+        attempted_domain_count: attemptedDomainCount,
         ok_domain_count: okDomainCount,
-        places_stop_reason: placesStopReason,
+        candidate_stop_reason: candidateStopReason,
       });
       return false;
     }
@@ -436,70 +469,73 @@ export async function runFluxCompetitorAuditJob(params: {
       const w = winners[wi];
       const cand = candidates.find((x) => x.domain === w.domain);
       const name = cand?.name ?? w.domain;
-      const clat = cand?.lat ?? lat;
-      const clng = cand?.lng ?? lng;
-      const mapUrl = staticMapUrl(clat, clng, googlePlacesKey);
-      const mapRes = await fetch(mapUrl);
-      if (!mapRes.ok) {
-        let bodyPreview = '';
-        try {
-          bodyPreview = (await mapRes.text()).slice(0, 8000);
-        } catch (readErr) {
-          bodyPreview = readErr instanceof Error ? readErr.message : 'unknown_read_error';
-        }
-        const contentType = mapRes.headers.get('content-type');
-        workerJsonLog('static_map_fetch_failed', {
-          jobId: params.jobId,
-          domain: w.domain,
-          winnerIndex: wi,
-          httpStatus: mapRes.status,
-          httpStatusText: mapRes.statusText,
-          contentType,
-          request: staticMapRequestMeta(clat, clng),
-          responseBodyPreview: bodyPreview.slice(0, 4000),
-        });
-        await failJob(`Static map fetch failed (${mapRes.status}) for ${w.domain}`, {
-          static_map_fetch: {
-            status: mapRes.status,
-            statusText: mapRes.statusText,
-            content_type: contentType,
-            body_preview: bodyPreview.slice(0, 4000),
+      let publicUrl = '';
+      if (discoveryMode === 'local_places') {
+        const clat = cand?.lat ?? lat;
+        const clng = cand?.lng ?? lng;
+        const mapUrl = staticMapUrl(clat, clng, googlePlacesKey);
+        const mapRes = await fetch(mapUrl);
+        if (!mapRes.ok) {
+          let bodyPreview = '';
+          try {
+            bodyPreview = (await mapRes.text()).slice(0, 8000);
+          } catch (readErr) {
+            bodyPreview = readErr instanceof Error ? readErr.message : 'unknown_read_error';
+          }
+          const contentType = mapRes.headers.get('content-type');
+          workerJsonLog('static_map_fetch_failed', {
+            jobId: params.jobId,
             domain: w.domain,
-            winner_index: wi,
-            center_lat: clat,
-            center_lng: clng,
-          },
+            winnerIndex: wi,
+            httpStatus: mapRes.status,
+            httpStatusText: mapRes.statusText,
+            contentType,
+            request: staticMapRequestMeta(clat, clng),
+            responseBodyPreview: bodyPreview.slice(0, 4000),
+          });
+          await failJob(`Static map fetch failed (${mapRes.status}) for ${w.domain}`, {
+            static_map_fetch: {
+              status: mapRes.status,
+              statusText: mapRes.statusText,
+              content_type: contentType,
+              body_preview: bodyPreview.slice(0, 4000),
+              domain: w.domain,
+              winner_index: wi,
+              center_lat: clat,
+              center_lng: clng,
+            },
+          });
+          return false;
+        }
+        const buf = Buffer.from(await mapRes.arrayBuffer());
+        const path = `${accountId}/${pageId}/${blockId}/map-${wi}.png`;
+        const { data: uploadData, error: upErr } = await flux.storage.from(BUCKET).upload(path, buf, {
+          contentType: 'image/png',
+          upsert: true,
         });
-        return false;
+        if (upErr) {
+          const detail = describeSupabaseStorageError(upErr);
+          workerJsonLog('storage_upload_failed', {
+            jobId: params.jobId,
+            bucket: BUCKET,
+            objectPath: path,
+            byteLength: buf.length,
+            detail,
+            uploadData:
+              uploadData == null
+                ? null
+                : typeof uploadData === 'object'
+                  ? JSON.stringify(uploadData)
+                  : String(uploadData),
+          });
+          await failJob(`Storage upload failed: ${detail}`, {
+            storage_upload: { bucket: BUCKET, path, byte_length: buf.length, detail },
+          });
+          return false;
+        }
+        const pub = flux.storage.from(BUCKET).getPublicUrl(path);
+        publicUrl = pub.data.publicUrl;
       }
-      const buf = Buffer.from(await mapRes.arrayBuffer());
-      const path = `${accountId}/${pageId}/${blockId}/map-${wi}.png`;
-      const { data: uploadData, error: upErr } = await flux.storage.from(BUCKET).upload(path, buf, {
-        contentType: 'image/png',
-        upsert: true,
-      });
-      if (upErr) {
-        const detail = describeSupabaseStorageError(upErr);
-        workerJsonLog('storage_upload_failed', {
-          jobId: params.jobId,
-          bucket: BUCKET,
-          objectPath: path,
-          byteLength: buf.length,
-          detail,
-          uploadData:
-            uploadData == null
-              ? null
-              : typeof uploadData === 'object'
-                ? JSON.stringify(uploadData)
-                : String(uploadData),
-        });
-        await failJob(`Storage upload failed: ${detail}`, {
-          storage_upload: { bucket: BUCKET, path, byte_length: buf.length, detail },
-        });
-        return false;
-      }
-      const pub = flux.storage.from(BUCKET).getPublicUrl(path);
-      const publicUrl = pub.data.publicUrl;
 
       const audit = auditByDomain.get(w.domain);
       if (!audit || audit.outcome !== 'ok') {
@@ -627,7 +663,13 @@ export async function runFluxCompetitorAuditJob(params: {
         status: 'succeeded',
         finished_at: new Date().toISOString(),
         error_message: null,
-        result: { audit_domains: auditRows } as never,
+        result: {
+          discovery_mode: discoveryMode,
+          attempted_domain_count: attemptedDomainCount,
+          ok_domain_count: okDomainCount,
+          candidate_stop_reason: candidateStopReason,
+          audit_domains: auditRows,
+        } as never,
       })
       .eq('id', params.jobId);
     if (updateJobErr) {
@@ -641,10 +683,11 @@ export async function runFluxCompetitorAuditJob(params: {
     }
     workerJsonLog('flux_competitor_audit_succeeded', {
       jobId: params.jobId,
-      placesCandidateCount: candidates.length,
-      attemptedPlacesCount,
+      discoveryMode,
+      candidateCount: candidates.length,
+      attemptedDomainCount,
       okDomainCount,
-      placesStopReason,
+      candidateStopReason,
       transparencyScoredOkCount: scored.length,
       publishedWinnerCount: winners.length,
       winnerDomains: winners.map((x) => x.domain),

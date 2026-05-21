@@ -9,6 +9,7 @@ import type {
   ContentAsset,
   PageConfig,
   BrandProfile,
+  FluxCuratedDomainSeed,
   FluxWebsiteIntelSnapshot,
   FluxEditorChatSubjectType,
   FluxAsyncJobRow,
@@ -269,6 +270,7 @@ export async function createFluxProspect(prospect: {
   website_intel_snapshot?: FluxWebsiteIntelSnapshot | null;
   website_intel_auto_filled_at?: string | null;
   service_area?: FluxServiceArea | null;
+  competitor_audit_curated_domains?: FluxCuratedDomainSeed[] | null;
 }): Promise<FluxProspectRow> {
   const { data, error } = await supabase
     .from('flux_prospects')
@@ -288,6 +290,7 @@ export async function createFluxProspect(prospect: {
       website_intel_snapshot: (prospect.website_intel_snapshot as any) ?? null,
       website_intel_auto_filled_at: prospect.website_intel_auto_filled_at ?? null,
       service_area: (prospect.service_area as any) ?? null,
+      competitor_audit_curated_domains: (prospect.competitor_audit_curated_domains as any) ?? null,
     })
     .select()
     .single();
@@ -305,6 +308,7 @@ export type UpdateFluxProspectInput = {
   email_notes?: string | null;
   brand_profile?: BrandProfile | null;
   service_area?: FluxServiceArea | null;
+  competitor_audit_curated_domains?: FluxCuratedDomainSeed[] | null;
 };
 
 export async function updateFluxProspect(
@@ -324,6 +328,10 @@ export async function updateFluxProspect(
   }
   if (updates.service_area !== undefined) {
     row.service_area = updates.service_area === null ? null : (updates.service_area as any);
+  }
+  if (updates.competitor_audit_curated_domains !== undefined) {
+    row.competitor_audit_curated_domains =
+      updates.competitor_audit_curated_domains === null ? null : (updates.competitor_audit_curated_domains as any);
   }
   const { data, error } = await supabase
     .from('flux_prospects')

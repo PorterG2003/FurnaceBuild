@@ -38,6 +38,8 @@ export interface FluxPageHeaderAppearance {
   borderColor?: string;
 }
 
+export type FluxImageFit = 'cover' | 'contain';
+
 export interface BlockBase {
   id: string;
   type: BlockType;
@@ -53,6 +55,7 @@ export interface HeroBlockProps {
   ctaText: string;
   ctaUrl: string;
   heroImageUrl?: string;
+  imageFit?: FluxImageFit;
   /** Image shown in the side card of the Elevated (splitPanel) hero layout. Falls back to heroImageUrl. */
   heroPanelImageUrl?: string;
   /** Small label rendered beneath the panel image (or at the top of the text-only fallback) in the splitPanel hero. Omit to hide. */
@@ -68,6 +71,7 @@ export interface HeroBlock extends BlockBase {
 export interface SocialProofBlockProps {
   heading: string;
   logos: { name: string; imageUrl?: string }[];
+  imageFit?: FluxImageFit;
 }
 export interface SocialProofBlock extends BlockBase {
   type: 'social_proof';
@@ -79,6 +83,7 @@ export interface CaseStudyBlockProps {
   overrideTitle?: string;
   overrideMetric?: string;
   overrideImageUrl?: string;
+  imageFit?: FluxImageFit;
 }
 export interface CaseStudyBlock extends BlockBase {
   type: 'case_study';
@@ -167,6 +172,13 @@ export interface SocialMediaPlanBlock extends BlockBase {
 
 export type CompetitorAdAuditStatus = 'pending' | 'running' | 'ready' | 'error';
 
+export type FluxCompetitorAuditDiscoveryMode = 'local_places' | 'curated_domains';
+
+export interface FluxCuratedDomainSeed {
+  domain: string;
+  name?: string;
+}
+
 export interface CompetitorAdExampleProps {
   headline: string;
   body: string;
@@ -183,6 +195,8 @@ export interface CompetitorAdAuditRowProps {
 
 export interface CompetitorAdAuditBlockProps {
   heading: string;
+  discoveryMode?: FluxCompetitorAuditDiscoveryMode;
+  curatedDomains?: FluxCuratedDomainSeed[];
   status: CompetitorAdAuditStatus;
   errorMessage?: string;
   /**
@@ -191,6 +205,8 @@ export interface CompetitorAdAuditBlockProps {
    */
   lastAuditDomainReport?: string;
   lastAuditAt?: string;
+  mapImageFit?: FluxImageFit;
+  exampleImageFit?: FluxImageFit;
   competitors: CompetitorAdAuditRowProps[];
 }
 
@@ -426,6 +442,7 @@ export interface FluxProspectRow {
   website_intel_snapshot: FluxWebsiteIntelSnapshot | null;
   website_intel_auto_filled_at: string | null;
   service_area: FluxServiceArea | null;
+  competitor_audit_curated_domains: FluxCuratedDomainSeed[] | null;
   created_at: string;
 }
 

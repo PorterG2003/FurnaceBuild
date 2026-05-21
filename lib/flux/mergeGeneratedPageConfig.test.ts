@@ -200,6 +200,67 @@ test('merge keeps template block when LLM has no matching id', () => {
   if (merged.blocks[0].type === 'hero') assert.equal(merged.blocks[0].props.headline, 'Keep');
 });
 
+test('mergeGeneratedPageConfigWithTemplate preserves curated audit settings from template while merging heading', () => {
+  const templateBlocks = [
+    {
+      id: 'audit',
+      type: 'competitor_ad_audit' as const,
+      order: 0,
+      props: {
+        heading: 'Template heading',
+        discoveryMode: 'curated_domains' as const,
+        curatedDomains: [
+          { domain: 'visitdenver.com', name: 'Visit Denver' },
+          { domain: 'tripadvisor.com' },
+          { domain: 'expedia.com' },
+        ],
+        status: 'pending' as const,
+        competitors: [],
+      },
+    },
+  ];
+  const llm: FluxGeneratePageConfigParsed = {
+    theme: serverTheme as FluxGeneratePageConfigParsed['theme'],
+    prospectName: 'P',
+    companyName: 'C',
+    blocks: [
+      {
+        id: 'audit',
+        type: 'competitor_ad_audit',
+        order: 0,
+        props: {
+          heading: 'Updated heading',
+          status: 'ready',
+          competitors: [
+            {
+              name: 'Should not persist',
+              mapImageUrl: 'https://maps.example/a.png',
+              adsSummary: 'Nope',
+              examples: [],
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const merged = mergeGeneratedPageConfigWithTemplate({
+    templateBlocks,
+    llmPageConfig: llm,
+    serverTheme,
+    prospectName: 'P',
+    companyName: 'C',
+  });
+  const block = merged.blocks[0];
+  assert.equal(block?.type, 'competitor_ad_audit');
+  if (block?.type === 'competitor_ad_audit') {
+    assert.equal(block.props.heading, 'Updated heading');
+    assert.equal(block.props.discoveryMode, 'curated_domains');
+    assert.deepEqual(block.props.curatedDomains, templateBlocks[0].props.curatedDomains);
+    assert.equal(block.props.status, 'pending');
+    assert.deepEqual(block.props.competitors, []);
+  }
+});
+
 test('mergeGeneratedPageConfigWithTemplate preserves block appearance and theme header', () => {
   const serverTheme = {
     primaryColor: '#4f46e5',

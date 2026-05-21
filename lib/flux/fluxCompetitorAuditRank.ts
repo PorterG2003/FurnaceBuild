@@ -48,6 +48,29 @@ function longestRunSortKey(days: number | null): number {
   return days == null ? Number.NEGATIVE_INFINITY : days;
 }
 
+function compareRows(
+  a: FluxCompetitorScoredDomain,
+  b: FluxCompetitorScoredDomain,
+  options?: { useDistance?: boolean },
+): number {
+  const useDistance = options?.useDistance !== false;
+  const la = lastShownSortKey(a.latestAdLastShownAt);
+  const lb = lastShownSortKey(b.latestAdLastShownAt);
+  if (lb !== la) return lb - la;
+
+  if (useDistance && a.distanceMeters !== b.distanceMeters) {
+    return a.distanceMeters - b.distanceMeters;
+  }
+
+  if (b.creativeCount !== a.creativeCount) return b.creativeCount - a.creativeCount;
+
+  const ra = longestRunSortKey(a.longestAdRunDays);
+  const rb = longestRunSortKey(b.longestAdRunDays);
+  if (rb !== ra) return rb - ra;
+
+  return a.placeIndex - b.placeIndex;
+}
+
 /**
  * Rank competitors for the audit hero section:
  * 1. Most recent activity (max Last shown)
@@ -57,27 +80,17 @@ function longestRunSortKey(days: number | null): number {
  * 5. Places order tie-break
  */
 export function rankFluxCompetitorDomains(rows: FluxCompetitorScoredDomain[]): FluxCompetitorScoredDomain[] {
-  return [...rows].sort((a, b) => {
-    const la = lastShownSortKey(a.latestAdLastShownAt);
-    const lb = lastShownSortKey(b.latestAdLastShownAt);
-    if (lb !== la) return lb - la;
+  return [...rows].sort((a, b) => compareRows(a, b, { useDistance: true }));
+}
 
-    if (a.distanceMeters !== b.distanceMeters) {
-      return a.distanceMeters - b.distanceMeters;
-    }
-
-    if (b.creativeCount !== a.creativeCount) return b.creativeCount - a.creativeCount;
-
-    const ra = longestRunSortKey(a.longestAdRunDays);
-    const rb = longestRunSortKey(b.longestAdRunDays);
-    if (rb !== ra) return rb - ra;
-
-    return a.placeIndex - b.placeIndex;
-  });
+/** Curated-domain mode ranks by recency, creative count, ad longevity, then seed order. */
+export function rankFluxCompetitorDomainsCurated(rows: FluxCompetitorScoredDomain[]): FluxCompetitorScoredDomain[] {
+  return [...rows].sort((a, b) => compareRows(a, b, { useDistance: false }));
 }
 
 const fluxCompetitorAuditRank = {
   rankFluxCompetitorDomains,
+  rankFluxCompetitorDomainsCurated,
   haversineDistanceMeters,
   calendarRunDaysBetween,
 };

@@ -64,3 +64,13 @@ export function getCompetitorAdAuditConsistencyIssues(competitors: CompetitorLik
   }
   return issues;
 }
+
+const fluxCompetitorAuditAdvertiser = {
+  extractGoogleAdsAdvertiserId,
+  getCompetitorRowAdvertiserIds,
+  competitorExamplesAreSingleAdvertiser,
+  filterExamplesToAdvertiser,
+  getCompetitorAdAuditConsistencyIssues,
+};
+
+export default fluxCompetitorAuditAdvertiser;

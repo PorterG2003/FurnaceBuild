@@ -439,19 +439,6 @@ async function runLlmPageConfig(params: {
   let modelUsed = params.openRouterModel;
   const responseFormat = getFluxGenerateOpenRouterResponseFormat();
 
-  if (!Array.isArray(params.template.blocks) || params.template.blocks.length === 0) {
-    return {
-      ok: true,
-      pageConfig: {
-        theme,
-        prospectName: params.prospect.name,
-        companyName: params.prospect.company,
-        blocks: [],
-      },
-      modelUsed: params.openRouterModel,
-    };
-  }
-
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const repairHint =
       attempt > 0 && lastIssue
@@ -684,6 +671,9 @@ async function handleRequest(event: any) {
         ...(typeof o.constraints === 'string' ? { constraints: o.constraints } : {}),
       } as Record<string, unknown>);
     }
+    if (!templateHasBlocks(template)) {
+      return response(422, emptyTemplateBlocksBody());
+    }
 
     const { data: campaignRow, error: campLoadErr } = await db
       .from('flux_campaigns')
@@ -744,6 +734,9 @@ async function handleRequest(event: any) {
   }
 
   const template = normalizeTemplateRow(templateRaw as Record<string, unknown>);
+  if (!templateHasBlocks(template)) {
+    return response(422, emptyTemplateBlocksBody());
+  }
 
   const { data: campaignRowForSeller, error: campaignRowErr } = await db
     .from('flux_campaigns')
@@ -818,6 +811,19 @@ async function handleRequest(event: any) {
     error: 'No prospect page row for this prospect and campaign. Create a flux_prospect_pages row (slug) before calling generate.',
     code: 'NO_PROSPECT_PAGE',
   });
+}
+
+function templateHasBlocks(template: NormalizedTemplate): boolean {
+  return Array.isArray(template.blocks) && template.blocks.length > 0;
+}
+
+function emptyTemplateBlocksBody(): Record<string, unknown> {
+  return {
+    error: 'Campaign template has no blocks',
+    details:
+      'Open the campaign in Flux, add at least one block (for example Competitor ad audit), save the campaign, then generate the prospect page again.',
+    code: 'NO_TEMPLATE_BLOCKS',
+  };
 }
 
 function response(statusCode: number, body: any) {

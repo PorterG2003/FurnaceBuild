@@ -11,8 +11,16 @@ import {
   createFluxPage,
   checkSlugAvailable,
   ensureFluxTemplateExists,
+  getFluxTemplate,
 } from '@/lib/supabase/services/flux';
-import type { FluxCampaignRow, BrandProfile, FluxWebsiteIntelSnapshot, FluxServiceArea } from '@/lib/flux/types';
+import type {
+  FluxCampaignRow,
+  FluxCampaignTemplateRow,
+  BrandProfile,
+  FluxCuratedDomainSeed,
+  FluxWebsiteIntelSnapshot,
+  FluxServiceArea,
+} from '@/lib/flux/types';
 import { callFluxGenerate } from '@/lib/flux/callFluxGenerate';
 import { getFluxGenerateUrl } from '@/lib/flux/fluxGenerateUrl';
 import { FLUX_GOOGLE_FONT_NAMES } from '@/lib/flux/googleFontsCatalog';
@@ -20,9 +28,11 @@ import {
   FluxProspectDetailsFields,
   type FluxProspectDetailsFieldValues,
 } from '@/components/flux/FluxProspectDetailsFields';
+import { FluxCuratedDomainsField } from '@/components/flux/FluxCuratedDomainsField';
 import type { FluxBlockStylePreset } from '@/lib/flux/fluxPresentationTokens';
 import { FluxGoogleFontWebLinks } from '@/components/flux/FluxGoogleFontWebLinks';
 import { fetchWebsiteIntelligenceByDomain } from '@/lib/foundry/registry-client';
+import fluxCompetitorAuditDiscovery from '@/lib/flux/fluxCompetitorAuditDiscovery';
 import { runWebsiteIntelligenceScrapePoll } from '@/lib/flux/websiteIntelScrapePoll';
 
 function slugify(text: string): string {
@@ -83,6 +93,8 @@ export default function NewProspect() {
     industry: false,
   });
   const [serviceArea, setServiceArea] = useState<FluxServiceArea | null>(null);
+  const [competitorAuditCuratedDomains, setCompetitorAuditCuratedDomains] = useState<FluxCuratedDomainSeed[] | null>(null);
+  const [campaignTemplate, setCampaignTemplate] = useState<FluxCampaignTemplateRow | null>(null);
 
   // Slug
   const [slug, setSlug] = useState('');
@@ -97,6 +109,24 @@ export default function NewProspect() {
       setLoading(false);
     });
   }, [account]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!campaignId) {
+      setCampaignTemplate(null);
+      return;
+    }
+    getFluxTemplate(campaignId)
+      .then((template) => {
+        if (!cancelled) setCampaignTemplate(template);
+      })
+      .catch(() => {
+        if (!cancelled) setCampaignTemplate(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId]);
 
   const applyIntelToForm = useCallback((snapshot: FluxWebsiteIntelSnapshot, opts?: { force?: boolean }) => {
     const force = opts?.force === true;
@@ -202,6 +232,7 @@ export default function NewProspect() {
       brand_logoUrl: logoUrl,
       brand_blockStylePreset: brandBlockStylePreset,
       service_area: serviceArea,
+      competitor_audit_curated_domains: competitorAuditCuratedDomains,
     }),
     [
       contactName,
@@ -217,7 +248,16 @@ export default function NewProspect() {
       logoUrl,
       brandBlockStylePreset,
       serviceArea,
+      competitorAuditCuratedDomains,
     ],
+  );
+
+  const selectedCuratedAuditBlock = useMemo(
+    () =>
+      campaignTemplate?.blocks.find(
+        (block) => block.type === 'competitor_ad_audit' && (block.props.discoveryMode ?? 'local_places') === 'curated_domains',
+      ),
+    [campaignTemplate],
   );
 
   const patchProspectDetails = useCallback((patch: Partial<FluxProspectDetailsFieldValues>) => {
@@ -234,6 +274,9 @@ export default function NewProspect() {
     if (patch.brand_logoUrl !== undefined) setLogoUrl(patch.brand_logoUrl);
     if (patch.brand_blockStylePreset !== undefined) setBrandBlockStylePreset(patch.brand_blockStylePreset);
     if (patch.service_area !== undefined) setServiceArea(patch.service_area);
+    if (patch.competitor_audit_curated_domains !== undefined) {
+      setCompetitorAuditCuratedDomains(patch.competitor_audit_curated_domains);
+    }
   }, []);
 
   const handleSubmit = async () => {
@@ -256,6 +299,7 @@ export default function NewProspect() {
         logoUrl: logoUrl || undefined,
         blockStylePreset: brandBlockStylePreset,
       };
+      const parsedCuratedDomains = fluxCompetitorAuditDiscovery.parseFluxCuratedDomains(competitorAuditCuratedDomains);
 
       const prospect = await createFluxProspect({
         account_id: account.id,
@@ -273,6 +317,7 @@ export default function NewProspect() {
         website_intel_snapshot: persistedWebsiteIntel,
         website_intel_auto_filled_at: persistedWebsiteIntel ? websiteIntelAutoFilledAt : null,
         service_area: serviceArea,
+        competitor_audit_curated_domains: parsedCuratedDomains.length > 0 ? parsedCuratedDomains : null,
       });
 
       await createFluxPage({
@@ -284,10 +329,20 @@ export default function NewProspect() {
       });
 
       if (getFluxGenerateUrl()) {
-        await ensureFluxTemplateExists(campaignId);
-        const gen = await callFluxGenerate({ prospectId: prospect.id, campaignId });
-        if (!gen.ok) {
-          Alert.alert('Prospect created', `The page was saved, but generation failed: ${gen.message}. You can try Regenerate on the prospect screen.`);
+        const campaignTemplate = await ensureFluxTemplateExists(campaignId);
+        if (!campaignTemplate.blocks.length) {
+          Alert.alert(
+            'Prospect created',
+            'The page was saved, but the campaign template has no blocks yet. Open the campaign editor, add blocks, save, then use Regenerate on the prospect screen.',
+          );
+        } else {
+          const gen = await callFluxGenerate({ prospectId: prospect.id, campaignId });
+          if (!gen.ok) {
+            Alert.alert(
+              'Prospect created',
+              `The page was saved, but generation failed: ${gen.message}. You can try Regenerate on the prospect screen.`,
+            );
+          }
         }
       }
 
@@ -418,6 +473,20 @@ export default function NewProspect() {
                   </Button>
                 ) : null}
               </View>
+            </View>
+          ) : null
+        }
+        belowServiceAreaSlot={
+          selectedCuratedAuditBlock ? (
+            <View className="mb-3">
+              <FluxCuratedDomainsField
+                value={competitorAuditCuratedDomains}
+                onChange={(next) => setCompetitorAuditCuratedDomains(next)}
+                labelClassName={labelClass}
+                inputClassName={inputClass}
+                title="Competitor domains (this prospect)"
+                helperText="Overrides campaign defaults when you list at least 3 domains; otherwise the template list is used."
+              />
             </View>
           ) : null
         }

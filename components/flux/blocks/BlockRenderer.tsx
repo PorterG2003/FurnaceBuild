@@ -39,6 +39,7 @@ export function BlockRenderer({ block, assets, runtimeContext }: BlockRendererPr
           overrideTitle={block.props.overrideTitle}
           overrideMetric={block.props.overrideMetric}
           overrideImageUrl={block.props.overrideImageUrl}
+          imageFit={block.props.imageFit}
         />
       );
     }

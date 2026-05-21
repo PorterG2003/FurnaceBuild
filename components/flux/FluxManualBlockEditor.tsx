@@ -6,6 +6,8 @@ import {
   DEFAULT_FLUX_BLOCK_STYLE_PRESET,
 } from '@/lib/flux/fluxPresentationTokens';
 import type { FluxBlockEditorLayout } from '@/components/flux/fluxTemplateBlocksDraggableListShared';
+import { FluxCuratedDomainsField } from '@/components/flux/FluxCuratedDomainsField';
+import { FluxImageFitPicker } from '@/components/flux/FluxImageFitPicker';
 import { fluxPanelInputClass, fluxPanelInputFieldClass, fluxPanelLabelClass } from '@/lib/flux/fluxEditorPanelClasses';
 import {
   createQuizAndBookOption,
@@ -158,9 +160,17 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             autoCapitalize="none"
           />
+          {block.props.heroImageUrl?.trim() ? (
+            <FluxImageFitPicker
+              value={block.props.imageFit}
+              defaultValue="cover"
+              onChange={(imageFit) => updateProps(block.id, { imageFit })}
+            />
+          ) : null}
         </View>
       );
-    case 'social_proof':
+    case 'social_proof': {
+      const hasLogoImages = block.props.logos.some((logo) => Boolean(logo.imageUrl?.trim()));
       return (
         <View className="gap-1">
           <Text className={labelClass}>Heading</Text>
@@ -208,13 +218,22 @@ export function renderFluxManualBlockEditor(
             placeholderTextColor="#555"
             autoCapitalize="none"
           />
+          {hasLogoImages ? (
+            <FluxImageFitPicker
+              value={block.props.imageFit}
+              defaultValue="contain"
+              onChange={(imageFit) => updateProps(block.id, { imageFit })}
+            />
+          ) : null}
         </View>
       );
+    }
     case 'case_study': {
       const blockStylePreset = layout?.blockStylePreset ?? DEFAULT_FLUX_BLOCK_STYLE_PRESET;
       const showImageField = caseStudyLayoutUsesImage(blockStylePreset);
       const selectedAsset = assets.find((asset) => asset.id === block.props.assetId);
       const assetDefaultImage = selectedAsset?.imageUrl?.trim();
+      const hasCaseStudyImage = Boolean(block.props.overrideImageUrl?.trim() || assetDefaultImage);
       return (
         <View className="gap-1">
           <Text className={labelClass}>Content Asset</Text>
@@ -254,6 +273,13 @@ export function renderFluxManualBlockEditor(
                   placeholderTextColor="#555"
                   autoCapitalize="none"
                 />
+                {hasCaseStudyImage ? (
+                  <FluxImageFitPicker
+                    value={block.props.imageFit}
+                    defaultValue="cover"
+                    onChange={(imageFit) => updateProps(block.id, { imageFit })}
+                  />
+                ) : null}
               </>
             ) : (
               <Text className="text-gray-500 text-xs mb-1">
@@ -938,6 +964,11 @@ export function renderFluxManualBlockEditor(
     }
     case 'competitor_ad_audit': {
       const p = block.props;
+      const hasMapImages = p.competitors.some((row) => Boolean(row.mapImageUrl?.trim()));
+      const hasExampleImages = p.competitors.some((row) =>
+        row.examples.some((example) => Boolean(example.imageUrl?.trim())),
+      );
+      const discoveryMode = p.discoveryMode ?? 'local_places';
       return (
         <View className="gap-1">
           <Text className={labelClass}>Section heading</Text>
@@ -948,6 +979,37 @@ export function renderFluxManualBlockEditor(
             placeholder="Competitor ad audit"
             placeholderTextColor="#555"
           />
+          <Text className={labelClass}>Discovery mode</Text>
+          <View className="flex-row flex-wrap gap-2 mb-2">
+            {[
+              { id: 'local_places', label: 'Nearby (Places)' },
+              { id: 'curated_domains', label: 'Curated domains' },
+            ].map((option) => {
+              const selected = discoveryMode === option.id;
+              return (
+                <Pressable
+                  key={option.id}
+                  className={`min-h-[44px] rounded-lg border px-3 py-2 justify-center ${
+                    selected ? 'border-indigo-500 bg-indigo-500/15' : 'border-[#2A2A2A] bg-[#1A1A1A]'
+                  }`}
+                  onPress={() => updateProps(block.id, { discoveryMode: option.id })}
+                >
+                  <Text className="text-white text-sm font-instrument-semibold">{option.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {discoveryMode === 'curated_domains' ? (
+            <View className="mb-2">
+              <FluxCuratedDomainsField
+                value={p.curatedDomains}
+                onChange={(curatedDomains) => updateProps(block.id, { curatedDomains: curatedDomains ?? [] })}
+                labelClassName={labelClass}
+                inputClassName={inputClass}
+                helperText="Set 3-12 domains for keyword-driven or national competitors. The prospect can override this list with a saved domain set."
+              />
+            </View>
+          ) : null}
           <Text className="text-gray-500 text-xs font-instrument mt-2">
             Status: {p.status}
             {p.lastAuditAt ? ` · Last run: ${p.lastAuditAt}` : ''}
@@ -956,9 +1018,26 @@ export function renderFluxManualBlockEditor(
             <Text className="text-red-400 text-xs font-instrument">{p.errorMessage}</Text>
           ) : null}
           <Text className="text-gray-500 text-xs font-instrument leading-5 mt-1">
-            Maps and ad samples are produced by the audit. Set the prospect service area, save the prospect,
-            then use Run competitor audit on the prospect page.
+            {discoveryMode === 'curated_domains'
+              ? 'Ad samples are produced by the audit. Save this template list, and optionally add a prospect-specific override before running the audit.'
+              : 'Maps and ad samples are produced by the audit. Set the prospect service area, save the prospect, then use Run competitor audit on the prospect page.'}
           </Text>
+          {p.status === 'ready' && hasMapImages ? (
+            <FluxImageFitPicker
+              label="Map image fit"
+              value={p.mapImageFit}
+              defaultValue="cover"
+              onChange={(mapImageFit) => updateProps(block.id, { mapImageFit })}
+            />
+          ) : null}
+          {p.status === 'ready' && hasExampleImages ? (
+            <FluxImageFitPicker
+              label="Ad sample fit"
+              value={p.exampleImageFit}
+              defaultValue="contain"
+              onChange={(exampleImageFit) => updateProps(block.id, { exampleImageFit })}
+            />
+          ) : null}
         </View>
       );
     }

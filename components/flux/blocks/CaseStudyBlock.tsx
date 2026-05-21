@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Image } from 'react-native';
-import type { ContentAsset } from '@/lib/flux/types';
+import type { ContentAsset, FluxImageFit } from '@/lib/flux/types';
+import { fluxImageResizeMode } from '@/lib/flux/fluxImageFit';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
 import { withFluxAlpha } from '@/lib/flux/fluxPresentationTokens';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
@@ -10,6 +11,7 @@ interface CaseStudyBlockDisplayProps {
   overrideTitle?: string;
   overrideMetric?: string;
   overrideImageUrl?: string;
+  imageFit?: FluxImageFit;
 }
 
 export function CaseStudyBlock({
@@ -17,6 +19,7 @@ export function CaseStudyBlock({
   overrideTitle,
   overrideMetric,
   overrideImageUrl,
+  imageFit,
 }: CaseStudyBlockDisplayProps) {
   const theme = useFluxTheme();
   const presentation = useFluxPresentation();
@@ -58,7 +61,11 @@ export function CaseStudyBlock({
       <View className="w-full py-14 px-4 md:px-8" style={{ backgroundColor: theme.backgroundColor }}>
         <View className="w-full max-w-5xl self-center flex-row flex-wrap overflow-hidden" style={presentation.strongCard}>
           {imageUrl ? (
-            <Image source={{ uri: imageUrl }} className="w-full md:flex-1 h-56 md:h-auto" resizeMode="cover" />
+            <Image
+              source={{ uri: imageUrl }}
+              className="w-full md:flex-1 h-56 md:h-auto"
+              resizeMode={fluxImageResizeMode(imageFit, 'cover')}
+            />
           ) : (
             <View
               className="w-full md:flex-1 min-h-[220px]"
@@ -99,7 +106,7 @@ export function CaseStudyBlock({
             source={{ uri: imageUrl }}
             className="w-full h-40 mb-4"
             style={{ borderRadius: presentation.radii.media }}
-            resizeMode="cover"
+            resizeMode={fluxImageResizeMode(imageFit, 'cover')}
           />
         )}
         <Text

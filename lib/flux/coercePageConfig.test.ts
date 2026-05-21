@@ -193,3 +193,41 @@ test('canPublishFluxProspectPage is false when two competitor rows share one adv
   );
   assert.equal(ok, false);
 });
+
+test('canPublishFluxProspectPage allows empty mapImageUrl in curated mode', () => {
+  const ok = canPublishFluxProspectPage(
+    page([
+      {
+        id: 'c',
+        type: 'competitor_ad_audit',
+        order: 0,
+        props: {
+          heading: 'Audit',
+          discoveryMode: 'curated_domains',
+          status: 'ready',
+          competitors: [competitorRow('Visit Denver', '')],
+        },
+      },
+    ]),
+  );
+  assert.equal(ok, true);
+});
+
+test('canPublishFluxProspectPage still requires mapImageUrl in local_places mode', () => {
+  const ok = canPublishFluxProspectPage(
+    page([
+      {
+        id: 'c',
+        type: 'competitor_ad_audit',
+        order: 0,
+        props: {
+          heading: 'Audit',
+          discoveryMode: 'local_places',
+          status: 'ready',
+          competitors: [competitorRow('Visit Denver', '')],
+        },
+      },
+    ]),
+  );
+  assert.equal(ok, false);
+});

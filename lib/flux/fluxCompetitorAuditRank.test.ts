@@ -4,6 +4,7 @@ import {
   calendarRunDaysBetween,
   haversineDistanceMeters,
   rankFluxCompetitorDomains,
+  rankFluxCompetitorDomainsCurated,
   type FluxCompetitorScoredDomain,
 } from './fluxCompetitorAuditRank.js';
 
@@ -63,6 +64,29 @@ test('rankFluxCompetitorDomains: same last shown then closer distance', () => {
   ];
   const [first] = rankFluxCompetitorDomains(rows);
   assert.equal(first.domain, 'near.com');
+});
+
+test('rankFluxCompetitorDomainsCurated ignores distance and falls back to creative count', () => {
+  const rows: FluxCompetitorScoredDomain[] = [
+    {
+      domain: 'far-but-more-ads.com',
+      placeIndex: 5,
+      creativeCount: 25,
+      latestAdLastShownAt: '2026-04-29',
+      distanceMeters: 500_000,
+      longestAdRunDays: 10,
+    },
+    {
+      domain: 'near-but-fewer-ads.com',
+      placeIndex: 0,
+      creativeCount: 3,
+      latestAdLastShownAt: '2026-04-29',
+      distanceMeters: 50,
+      longestAdRunDays: 10,
+    },
+  ];
+  const [first] = rankFluxCompetitorDomainsCurated(rows);
+  assert.equal(first.domain, 'far-but-more-ads.com');
 });
 
 test('rankFluxCompetitorDomains: same date and distance then higher creative count', () => {

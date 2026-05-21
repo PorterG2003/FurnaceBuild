@@ -42,6 +42,7 @@ import {
   type FluxProspectApplyToPageField,
   type FluxProspectDetailsFieldValues,
 } from '@/components/flux/FluxProspectDetailsFields';
+import { FluxCuratedDomainsField } from '@/components/flux/FluxCuratedDomainsField';
 import {
   getFluxProspectById,
   getFluxPagesByProspect,
@@ -75,6 +76,7 @@ import { callFluxGenerate } from '@/lib/flux/callFluxGenerate';
 import { callFluxEditorChat } from '@/lib/flux/callFluxEditorChat';
 import { callFluxCompetitorAuditStart } from '@/lib/flux/callFluxCompetitorAuditStart';
 import { getFluxCompetitorAuditStartUrl } from '@/lib/flux/fluxCompetitorAuditStartUrl';
+import fluxCompetitorAuditDiscovery from '@/lib/flux/fluxCompetitorAuditDiscovery';
 import { isValidFluxServiceArea } from '@/lib/flux/fluxServiceArea';
 import { getMergedFluxPageConfigSemanticIssues } from '@/lib/flux/validateMergedFluxPageConfig';
 import {
@@ -133,6 +135,9 @@ function formatIssueFieldLabel(raw: string): string {
   if (raw === 'props.ctaText') return 'CTA text';
   if (raw === 'props.ctaUrl') return 'CTA URL';
   if (raw === 'props.heroImageUrl') return 'Hero image URL';
+  if (raw === 'props.imageFit') return 'Image fit';
+  if (raw === 'props.mapImageFit') return 'Map image fit';
+  if (raw === 'props.exampleImageFit') return 'Ad sample fit';
   if (raw === 'props.heading') return 'Heading';
   if (raw === 'props.inferred_vertical') return 'Inferred vertical';
   if (raw === 'props.inferred_vertical_rationale') return 'Vertical rationale';
@@ -332,7 +337,14 @@ export default function ProspectDetail() {
 
     setRegenerating(true);
     try {
-      await ensureFluxTemplateExists(prospect.campaign_id);
+      const campaignTemplate = await ensureFluxTemplateExists(prospect.campaign_id);
+      if (!campaignTemplate.blocks.length) {
+        Alert.alert(
+          'Campaign template is empty',
+          'This campaign has no blocks saved in its template. Open the campaign editor, add blocks (for example Competitor ad audit), save the campaign, then try Generate again.',
+        );
+        return;
+      }
       const result = await callFluxGenerate({
         prospectId: prospect.id,
         campaignId: prospect.campaign_id,
@@ -584,6 +596,22 @@ export default function ProspectDetail() {
     );
   }, [prospect, prospectDraft]);
 
+  const curatedAuditBlock = useMemo(
+    () =>
+      draftPageConfig?.blocks.find(
+        (block) => block.type === 'competitor_ad_audit' && (block.props.discoveryMode ?? 'local_places') === 'curated_domains',
+      ) ?? null,
+    [draftPageConfig],
+  );
+
+  const effectiveCuratedDomains = useMemo(() => {
+    if (!curatedAuditBlock) return [];
+    return fluxCompetitorAuditDiscovery.resolveEffectiveCuratedDomains({
+      blockDomains: curatedAuditBlock.props.curatedDomains,
+      prospectDomains: prospectDraft?.competitor_audit_curated_domains ?? prospect?.competitor_audit_curated_domains,
+    });
+  }, [curatedAuditBlock, prospect, prospectDraft]);
+
   /** Shown when Run audit is disabled so the control does not feel “dead” (heading copy ≠ saved service area). */
   const competitorAuditRunBlockers = useMemo(() => {
     const lines: string[] = [];
@@ -596,13 +624,19 @@ export default function ProspectDetail() {
     if (pageDirty) {
       lines.push('Save page changes in the header before running the audit.');
     }
-    if (prospect && !isValidFluxServiceArea(prospect.service_area)) {
+    if (
+      curatedAuditBlock &&
+      effectiveCuratedDomains.length < fluxCompetitorAuditDiscovery.MIN_CURATED_COMPETITOR_DOMAINS
+    ) {
+      lines.push('Add at least 3 curated competitor domains on this prospect or in the campaign template, then save before running the audit.');
+    }
+    if (prospect && !curatedAuditBlock && !isValidFluxServiceArea(prospect.service_area)) {
       lines.push(
         'Set a Google Places service area on the prospect (Contact / Brand or Prospect details), then save in the header. Block headings are only display text.',
       );
     }
     return lines;
-  }, [auditPollJobId, pageDirty, prospect, prospectRowDirty]);
+  }, [auditPollJobId, curatedAuditBlock, effectiveCuratedDomains.length, pageDirty, prospect, prospectRowDirty]);
 
   const patchProspectDraft = useCallback((patch: Partial<FluxProspectDetailsFieldValues>) => {
     setProspectDraft((current) => (current ? { ...current, ...patch } : current));
@@ -656,6 +690,9 @@ export default function ProspectDetail() {
       if (!prospect || !prospectDraft || savingProspect) return false;
       setSavingProspect(true);
       try {
+        const parsedCuratedDomains = fluxCompetitorAuditDiscovery.parseFluxCuratedDomains(
+          prospectDraft.competitor_audit_curated_domains,
+        );
         const updated = await updateFluxProspect(prospect.id, {
           name: prospectDraft.name.trim(),
           company: prospectDraft.company.trim(),
@@ -666,6 +703,7 @@ export default function ProspectDetail() {
           email_notes: prospectDraft.email_notes.trim() || null,
           brand_profile: fluxProspectFieldValuesToBrandProfile(prospectDraft),
           service_area: prospectDraft.service_area,
+          competitor_audit_curated_domains: parsedCuratedDomains.length > 0 ? parsedCuratedDomains : null,
         });
         setProspect(updated);
         if (page && campaign) {
@@ -1011,6 +1049,11 @@ export default function ProspectDetail() {
   const handleStartCompetitorAudit = useCallback(
     async (blockId: string) => {
       if (!page) return;
+      const auditBlock = draftPageConfig?.blocks.find(
+        (block) => block.type === 'competitor_ad_audit' && block.id === blockId,
+      );
+      const discoveryMode =
+        auditBlock?.type === 'competitor_ad_audit' ? (auditBlock.props.discoveryMode ?? 'local_places') : 'local_places';
       if (auditBusyBlockId) {
         toast.info('Wait for the audit request that is already starting.');
         return;
@@ -1027,7 +1070,10 @@ export default function ProspectDetail() {
         toast.error('Save in the header before running the audit.');
         return;
       }
-      if (!prospect || !isValidFluxServiceArea(prospect.service_area)) {
+      if (!prospect) {
+        return;
+      }
+      if (discoveryMode === 'local_places' && !isValidFluxServiceArea(prospect.service_area)) {
         toast.error('Set and save a service area on the prospect first.');
         return;
       }
@@ -1044,7 +1090,7 @@ export default function ProspectDetail() {
         setAuditBusyBlockId(null);
       }
     },
-    [auditBusyBlockId, auditPollJobId, page, pageDirty, prospect, prospectRowDirty, toast],
+    [auditBusyBlockId, auditPollJobId, draftPageConfig, page, pageDirty, prospect, prospectRowDirty, toast],
   );
 
   if (loading) {
@@ -1167,7 +1213,10 @@ export default function ProspectDetail() {
                               Boolean(auditPollJobId) ||
                               prospectRowDirty ||
                               pageDirty ||
-                              !isValidFluxServiceArea(prospect.service_area) ||
+                              (
+                                (b.props.discoveryMode ?? 'local_places') === 'local_places' &&
+                                !isValidFluxServiceArea(prospect.service_area)
+                              ) ||
                               b.props.status === 'running'
                             }
                             accessibilityHint={
@@ -1228,6 +1277,16 @@ export default function ProspectDetail() {
                           onApplyFieldToPage={applyProspectFieldToPage}
                           values={prospectDraft}
                           onChange={patchProspectDraft}
+                          belowServiceAreaSlot={
+                            curatedAuditBlock ? (
+                              <FluxCuratedDomainsField
+                                value={prospectDraft.competitor_audit_curated_domains}
+                                onChange={(next) => patchProspectDraft({ competitor_audit_curated_domains: next })}
+                                title="Competitor domains (this prospect)"
+                                helperText="Overrides campaign defaults when you list at least 3 domains; otherwise the template list is used."
+                              />
+                            ) : null
+                          }
                         />
                       ) : null
                     }
@@ -1402,6 +1461,16 @@ export default function ProspectDetail() {
             showBrandProfile
             values={prospectDraft}
             onChange={patchProspectDraft}
+            belowServiceAreaSlot={
+              curatedAuditBlock ? (
+                <FluxCuratedDomainsField
+                  value={prospectDraft.competitor_audit_curated_domains}
+                  onChange={(next) => patchProspectDraft({ competitor_audit_curated_domains: next })}
+                  title="Competitor domains (this prospect)"
+                  helperText="Overrides campaign defaults when you list at least 3 domains; otherwise the template list is used."
+                />
+              ) : null
+            }
           />
           {prospect.website_intel_snapshot ? (
             <FluxProspectWebsiteIntelSnippet snapshot={prospect.website_intel_snapshot} />

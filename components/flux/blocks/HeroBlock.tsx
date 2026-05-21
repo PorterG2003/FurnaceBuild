@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Pressable, Image } from 'react-native';
 import type { HeroBlockProps } from '@/lib/flux/types';
 import { handleFluxCtaPress } from '@/lib/flux/fluxCtaNavigation';
+import { fluxImageResizeMode } from '@/lib/flux/fluxImageFit';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
 import { useFluxPageScroll } from '../FluxPageScrollContext';
 import { withFluxAlpha } from '@/lib/flux/fluxPresentationTokens';
@@ -32,7 +33,7 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
     <Image
       source={{ uri: props.heroImageUrl }}
       className="w-full h-56 md:h-72 rounded-2xl"
-      resizeMode="cover"
+      resizeMode={fluxImageResizeMode(props.imageFit, 'cover')}
     />
   ) : null;
   const cta = (
@@ -102,7 +103,7 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
         <Image
           source={{ uri: panelImageUrl }}
           style={{ width: '100%', height: '100%' }}
-          resizeMode="contain"
+          resizeMode={fluxImageResizeMode(props.imageFit, 'contain')}
         />
       </View>
     ) : null;

@@ -1,6 +1,7 @@
 import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
+import fluxCompetitorAuditDiscovery from '../../../lib/flux/fluxCompetitorAuditDiscovery';
 import { isValidFluxServiceArea } from '../../../lib/flux/fluxServiceArea';
 import type { Block, PageConfig } from '../../../lib/flux/types';
 
@@ -133,13 +134,30 @@ export const handler = async (event: unknown) => {
       return response(400, { ok: false, error: 'Block not found or wrong type' });
     }
 
+    const discoveryMode = fluxCompetitorAuditDiscovery.normalizeFluxCompetitorAuditDiscoveryMode(block.props?.discoveryMode);
     const { data: prospect, error: prErr } = await supabase
       .from('flux_prospects')
-      .select('service_area')
+      .select('service_area, competitor_audit_curated_domains')
       .eq('id', page.prospect_id)
       .maybeSingle();
-    if (prErr || !prospect || !isValidFluxServiceArea(prospect.service_area)) {
-      return response(400, { ok: false, error: 'Prospect service area is required for competitor audit' });
+    if (prErr || !prospect) {
+      return response(400, { ok: false, error: 'Prospect not found for competitor audit' });
+    }
+    if (discoveryMode === 'local_places' && !isValidFluxServiceArea(prospect.service_area)) {
+      return response(400, { ok: false, error: 'Prospect service area is required for local competitor audit' });
+    }
+    if (discoveryMode === 'curated_domains') {
+      const effectiveDomains = fluxCompetitorAuditDiscovery.resolveEffectiveCuratedDomains({
+        blockDomains: block.props?.curatedDomains,
+        prospectDomains: prospect.competitor_audit_curated_domains,
+      });
+      if (effectiveDomains.length < fluxCompetitorAuditDiscovery.MIN_CURATED_COMPETITOR_DOMAINS) {
+        return response(400, {
+          ok: false,
+          error:
+            'Curated competitor audit needs at least 3 valid domains from the prospect override or the campaign template.',
+        });
+      }
     }
 
     const blockIdNorm = parsedBody.blockId.trim();

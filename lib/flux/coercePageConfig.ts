@@ -47,11 +47,12 @@ const TRANSPARENCY_PREFIX = 'https://adstransparency.google.com/';
 
 function competitorAuditBlockPublishable(block: CompetitorAdAuditBlock): boolean {
   const p = block.props;
+  const allowMissingMaps = p.discoveryMode === 'curated_domains';
   if (p.status !== 'ready' || p.competitors.length < 1 || p.competitors.length > 3) return false;
   if (getCompetitorAdAuditConsistencyIssues(p.competitors).length > 0) return false;
   for (const row of p.competitors) {
     if (!row.name?.trim()) return false;
-    if (!row.mapImageUrl?.trim() || !HTTP_PREFIX.test(row.mapImageUrl.trim())) return false;
+    if (!allowMissingMaps && (!row.mapImageUrl?.trim() || !HTTP_PREFIX.test(row.mapImageUrl.trim()))) return false;
     if (!row.adsSummary?.trim()) return false;
     if (!Array.isArray(row.examples) || row.examples.length < 1 || row.examples.length > 2) return false;
     for (const ex of row.examples) {

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { canonicalizeWebsiteUrl, type WebsiteVerificationBand } from './websiteVerification.js';
+import { canonicalizeWebsiteUrl, normalizeGoogleAdsSearchDomain } from './searchDomain.js';
+import type { WebsiteVerificationBand } from './websiteVerification.js';
 
 export const GOOGLE_ADS_VERIFIER_VERSION = 'foundry_google_ads_verifier_v1';
 export const GOOGLE_ADS_VERIFICATION_RESULTS = ['yes', 'no', 'unknown'] as const;
@@ -95,21 +96,7 @@ async function selectByIdBatches(
   return out;
 }
 
-export function normalizeGoogleAdsSearchDomain(raw: string | null | undefined): string | null {
-  const canonical = canonicalizeWebsiteUrl(raw);
-  if (!canonical) return null;
-  try {
-    const url = new URL(canonical);
-    const hostname = url.hostname
-      .toLowerCase()
-      .replace(/\.$/, '')
-      .replace(/^www\./, '')
-      .trim();
-    return hostname || null;
-  } catch {
-    return null;
-  }
-}
+export { normalizeGoogleAdsSearchDomain } from './searchDomain.js';
 
 export async function loadGoogleAdsVerificationTargets(
   leadsClient: SupabaseClient,

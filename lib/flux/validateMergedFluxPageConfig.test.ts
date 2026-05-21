@@ -423,3 +423,65 @@ test('competitor_ad_audit flags duplicate advertiser ids across rows', () => {
   const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
   assert.ok(issues.some((s) => /shares advertiser ID AR05044827027778043905/.test(s)));
 });
+
+test('competitor_ad_audit allows empty mapImageUrl in curated mode', () => {
+  const merged = page([
+    {
+      id: 'audit',
+      type: 'competitor_ad_audit',
+      order: 0,
+      props: {
+        heading: 'Audit',
+        discoveryMode: 'curated_domains',
+        status: 'ready',
+        competitors: [
+          {
+            name: 'Visit Denver',
+            mapImageUrl: '',
+            adsSummary: '2 active creatives.',
+            examples: [
+              {
+                headline: 'H',
+                body: 'B',
+                sourceUrl: 'https://adstransparency.google.com/advertiser/AR1234567890/creative/CR1',
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ]);
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.deepEqual(issues, []);
+});
+
+test('competitor_ad_audit still requires mapImageUrl in local mode', () => {
+  const merged = page([
+    {
+      id: 'audit',
+      type: 'competitor_ad_audit',
+      order: 0,
+      props: {
+        heading: 'Audit',
+        discoveryMode: 'local_places',
+        status: 'ready',
+        competitors: [
+          {
+            name: 'Visit Denver',
+            mapImageUrl: '',
+            adsSummary: '2 active creatives.',
+            examples: [
+              {
+                headline: 'H',
+                body: 'B',
+                sourceUrl: 'https://adstransparency.google.com/advertiser/AR1234567890/creative/CR1',
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ]);
+  const issues = getMergedFluxPageConfigSemanticIssues(merged, []);
+  assert.ok(issues.some((s) => /mapImageUrl must be an http\(s\) URL/.test(s)));
+});

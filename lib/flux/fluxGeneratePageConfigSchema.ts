@@ -38,6 +38,7 @@ const blockBase = {
 };
 
 const TANNERS_QUALIFICATION_MODES = ['passive', 'reps', 'str'] as const;
+const FLUX_IMAGE_FITS = ['cover', 'contain'] as const;
 
 /** Map common LLM mistakes / synonyms to a valid mode before Zod parse (strict JSON schema unchanged). */
 export function normalizeTannersQualificationModeLiteral(
@@ -110,6 +111,7 @@ export const blockSchema = z.discriminatedUnion('type', [
       ctaText: z.string(),
       ctaUrl: z.string(),
       heroImageUrl: z.string().optional(),
+      imageFit: z.enum(FLUX_IMAGE_FITS).optional(),
       heroPanelImageUrl: z.string().optional(),
       heroPanelLabel: z.string().optional(),
       heroPanelBody: z.string().optional(),
@@ -121,6 +123,7 @@ export const blockSchema = z.discriminatedUnion('type', [
     props: z.object({
       heading: z.string(),
       logos: z.array(z.object({ name: z.string(), imageUrl: z.string().optional() })),
+      imageFit: z.enum(FLUX_IMAGE_FITS).optional(),
     }),
   }),
   z.object({
@@ -131,6 +134,7 @@ export const blockSchema = z.discriminatedUnion('type', [
       overrideTitle: z.string().optional(),
       overrideMetric: z.string().optional(),
       overrideImageUrl: z.string().optional(),
+      imageFit: z.enum(FLUX_IMAGE_FITS).optional(),
     }),
   }),
   z.object({
@@ -203,6 +207,15 @@ export const blockSchema = z.discriminatedUnion('type', [
     type: z.literal('competitor_ad_audit'),
     props: z.object({
       heading: z.string(),
+      discoveryMode: z.enum(['local_places', 'curated_domains']).optional(),
+      curatedDomains: z
+        .array(
+          z.object({
+            domain: z.string(),
+            name: z.string().optional(),
+          }),
+        )
+        .optional(),
       status: z.enum(['pending', 'running', 'ready', 'error']),
       errorMessage: z.string().optional(),
       lastAuditDomainReport: z
@@ -212,6 +225,8 @@ export const blockSchema = z.discriminatedUnion('type', [
           'Legacy only; not shown to recipients. Do not set manually. Per-domain Transparency outcomes are on the async job result.',
         ),
       lastAuditAt: z.string().optional(),
+      mapImageFit: z.enum(FLUX_IMAGE_FITS).optional(),
+      exampleImageFit: z.enum(FLUX_IMAGE_FITS).optional(),
       competitors: z.array(
         z.object({
           name: z.string(),

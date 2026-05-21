@@ -6,7 +6,7 @@ import {
   FLUX_BLOCK_STYLE_PRESET_OPTIONS,
   type FluxBlockStylePreset,
 } from '@/lib/flux/fluxPresentationTokens';
-import type { FluxServiceArea } from '@/lib/flux/types';
+import type { FluxCuratedDomainSeed, FluxServiceArea } from '@/lib/flux/types';
 import { FluxServiceAreaField } from '@/components/flux/FluxServiceAreaField';
 import { fluxPanelInputClass, fluxPanelLabelClass } from '@/lib/flux/fluxEditorPanelClasses';
 
@@ -25,6 +25,7 @@ export interface FluxProspectDetailsFieldValues {
   brand_blockStylePreset: FluxBlockStylePreset;
   /** Center for competitor audit (Google Places). */
   service_area: FluxServiceArea | null;
+  competitor_audit_curated_domains: FluxCuratedDomainSeed[] | null;
 }
 
 /** Prospect-row fields that can be copied into `PageConfig` (names + brand → theme). */
@@ -44,6 +45,8 @@ interface FluxProspectDetailsFieldsProps {
   onChange: (patch: Partial<FluxProspectDetailsFieldValues>) => void;
   /** Inserted after the Company URL field (e.g. website intel controls on new prospect). */
   belowCompanyUrlSlot?: React.ReactNode;
+  /** Inserted after the service area field. */
+  belowServiceAreaSlot?: React.ReactNode;
   inputClassName?: string;
   labelClassName?: string;
   /** Kept for call sites; section chrome uses `partition` and `hideSectionTitles`. */
@@ -91,6 +94,7 @@ export function FluxProspectDetailsFields({
   values,
   onChange,
   belowCompanyUrlSlot,
+  belowServiceAreaSlot,
   inputClassName = DEFAULT_INPUT,
   labelClassName = DEFAULT_LABEL,
   partition = 'full',
@@ -185,6 +189,7 @@ export function FluxProspectDetailsFields({
         labelClassName={labelClassName}
         inputClassName={inputClassName}
       />
+      {belowServiceAreaSlot}
         </>
       ) : null}
 
@@ -291,6 +296,7 @@ export function fluxProspectRowToFieldValues(row: {
   email_notes: string | null;
   brand_profile: import('@/lib/flux/types').BrandProfile | null;
   service_area?: import('@/lib/flux/types').FluxServiceArea | null;
+  competitor_audit_curated_domains?: import('@/lib/flux/types').FluxCuratedDomainSeed[] | null;
 }): FluxProspectDetailsFieldValues {
   const bp = row.brand_profile;
   return {
@@ -307,6 +313,7 @@ export function fluxProspectRowToFieldValues(row: {
     brand_logoUrl: bp?.logoUrl ?? '',
     brand_blockStylePreset: (bp?.blockStylePreset ?? 'classic') as FluxBlockStylePreset,
     service_area: row.service_area ?? null,
+    competitor_audit_curated_domains: row.competitor_audit_curated_domains ?? null,
   };
 }
 

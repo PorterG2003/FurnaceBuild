@@ -95,6 +95,7 @@ export function PageRenderer({
                 overrideTitle: b.props.overrideTitle,
                 overrideMetric: b.props.overrideMetric,
                 overrideImageUrl: b.props.overrideImageUrl,
+                imageFit: b.props.imageFit,
               }));
               return (
                 <FluxBlockAnchor

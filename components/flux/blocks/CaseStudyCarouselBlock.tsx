@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, View, Text, Image } from 'react-native';
-import type { ContentAsset } from '@/lib/flux/types';
+import type { ContentAsset, FluxImageFit } from '@/lib/flux/types';
+import { fluxImageResizeMode } from '@/lib/flux/fluxImageFit';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 
@@ -9,6 +10,7 @@ export type CaseStudyCarouselItem = {
   overrideTitle?: string;
   overrideMetric?: string;
   overrideImageUrl?: string;
+  imageFit?: FluxImageFit;
 };
 
 interface CaseStudyCarouselBlockProps {
@@ -99,7 +101,7 @@ function MarqueeCard({ item }: { item: ValidCarouselItem }) {
         <Image
           source={{ uri: imageUrl }}
           style={{ width: '100%', height: 32, marginBottom: 16 }}
-          resizeMode="contain"
+          resizeMode={fluxImageResizeMode(item.imageFit, 'contain')}
         />
       ) : null}
 

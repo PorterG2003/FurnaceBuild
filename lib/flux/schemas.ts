@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { FLUX_BLOCK_STYLE_PRESETS } from './fluxPresentationTokens';
 import { QUIZ_AND_BOOK_QUESTION_TYPES } from './fluxQuizAndBook';
 
+const fluxImageFitSchema = z.enum(['cover', 'contain']);
+
 // ---------------------------------------------------------------------------
 // Block prop schemas
 // ---------------------------------------------------------------------------
@@ -12,6 +14,7 @@ const heroBlockPropsSchema = z.object({
   ctaText: z.string(),
   ctaUrl: z.string(),
   heroImageUrl: z.string().optional(),
+  imageFit: fluxImageFitSchema.optional(),
   heroPanelImageUrl: z.string().optional(),
   heroPanelLabel: z.string().optional(),
   heroPanelBody: z.string().optional(),
@@ -23,6 +26,7 @@ const socialProofBlockPropsSchema = z.object({
     name: z.string(),
     imageUrl: z.string().optional(),
   })),
+  imageFit: fluxImageFitSchema.optional(),
 });
 
 const caseStudyBlockPropsSchema = z.object({
@@ -30,6 +34,7 @@ const caseStudyBlockPropsSchema = z.object({
   overrideTitle: z.string().optional(),
   overrideMetric: z.string().optional(),
   overrideImageUrl: z.string().optional(),
+  imageFit: fluxImageFitSchema.optional(),
 });
 
 const benefitItemSchema = z.object({
@@ -96,6 +101,11 @@ const competitorAdExamplePropsSchema = z.object({
   imageUrl: z.string().optional(),
 });
 
+const fluxCuratedDomainSeedSchema = z.object({
+  domain: z.string(),
+  name: z.string().optional(),
+});
+
 const competitorAdAuditRowPropsSchema = z.object({
   name: z.string(),
   mapImageUrl: z.string(),
@@ -105,6 +115,8 @@ const competitorAdAuditRowPropsSchema = z.object({
 
 const competitorAdAuditBlockPropsSchema = z.object({
   heading: z.string(),
+  discoveryMode: z.enum(['local_places', 'curated_domains']).optional(),
+  curatedDomains: z.array(fluxCuratedDomainSeedSchema).optional(),
   status: z.enum(['pending', 'running', 'ready', 'error']),
   errorMessage: z.string().optional(),
   lastAuditDomainReport: z
@@ -112,6 +124,8 @@ const competitorAdAuditBlockPropsSchema = z.object({
     .optional()
     .describe('Legacy; omitted on new audits. Full domain scan: flux_async_jobs.result for competitor_ad_audit.'),
   lastAuditAt: z.string().optional(),
+  mapImageFit: fluxImageFitSchema.optional(),
+  exampleImageFit: fluxImageFitSchema.optional(),
   competitors: z.array(competitorAdAuditRowPropsSchema),
 });
 

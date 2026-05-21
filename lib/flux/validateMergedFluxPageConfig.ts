@@ -142,6 +142,7 @@ export function getMergedFluxPageConfigSemanticIssues(
         if (!block.props.heading.trim()) push(block, 'heading is empty');
         if (block.props.status === 'ready') {
           const p = block.props;
+          const allowMissingMaps = p.discoveryMode === 'curated_domains';
           if (p.competitors.length < 1 || p.competitors.length > 3) {
             push(block, 'competitors must have 1–3 rows when status is ready');
           }
@@ -151,7 +152,7 @@ export function getMergedFluxPageConfigSemanticIssues(
           for (let i = 0; i < p.competitors.length; i += 1) {
             const row = p.competitors[i]!;
             if (!row.name?.trim()) push(block, `competitors[${i}].name is empty`);
-            if (!row.mapImageUrl?.trim() || !HTTP_PREFIX.test(row.mapImageUrl.trim())) {
+            if (!allowMissingMaps && (!row.mapImageUrl?.trim() || !HTTP_PREFIX.test(row.mapImageUrl.trim()))) {
               push(block, `competitors[${i}].mapImageUrl must be an http(s) URL`);
             }
             if (!row.adsSummary?.trim()) push(block, `competitors[${i}].adsSummary is empty`);

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Image, Pressable, Linking } from 'react-native';
 import type { CompetitorAdAuditBlockProps } from '@/lib/flux/types';
+import { fluxImageResizeMode } from '@/lib/flux/fluxImageFit';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
 
@@ -79,6 +80,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
   const theme = useFluxTheme();
   const presentation = useFluxPresentation();
   const complexLayout = presentation.layouts.complex;
+  const discoveryMode = props.discoveryMode ?? 'local_places';
   const headingFont = fluxPreviewFontFamily(theme.fontFamily, '600');
   const bodyFont = fluxPreviewFontFamily(theme.fontFamily, '400');
   const outerBackground = theme.backgroundColor;
@@ -136,8 +138,12 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
               style={{ color: theme.textColor, opacity: presentation.mutedTextOpacity, fontFamily: bodyFont }}
             >
               {props.status === 'running'
-                ? 'We are scanning Google Ads Transparency and assembling a cleaner read on who is active nearby, what they emphasize, and where you can out-position them. Refresh in a minute.'
-                : 'Run the competitor audit from the prospect editor when you are ready. It needs a saved service area on the prospect before we can map nearby advertisers and pull example creatives.'}
+                ? discoveryMode === 'curated_domains'
+                  ? 'We are scanning Google Ads Transparency for the curated competitor list and assembling a cleaner read on who is active in this market, what they emphasize, and where you can out-position them. Refresh in a minute.'
+                  : 'We are scanning Google Ads Transparency and assembling a cleaner read on who is active nearby, what they emphasize, and where you can out-position them. Refresh in a minute.'
+                : discoveryMode === 'curated_domains'
+                  ? 'Run the competitor audit from the prospect editor when you are ready. It needs at least three curated competitor domains from the template or the prospect override.'
+                  : 'Run the competitor audit from the prospect editor when you are ready. It needs a saved service area on the prospect before we can map nearby advertisers and pull example creatives.'}
             </Text>
           </View>
         ) : null}
@@ -168,7 +174,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                         <Image
                           source={{ uri: ex.imageUrl!.trim() }}
                           className="w-full h-56"
-                          resizeMode="contain"
+                          resizeMode={fluxImageResizeMode(props.exampleImageFit, 'contain')}
                         />
                       </Pressable>
                     ))}
@@ -207,7 +213,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                       source={{ uri: row.mapImageUrl }}
                       className="w-full h-44 bg-gray-100"
                       style={{ borderRadius: presentation.radii.media }}
-                      resizeMode="cover"
+                      resizeMode={fluxImageResizeMode(props.mapImageFit, 'cover')}
                     />
                   </View>
                 ) : null;
@@ -278,7 +284,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                           <Image
                             source={{ uri: row.mapImageUrl }}
                             className="w-full h-44 bg-gray-100"
-                            resizeMode="cover"
+                            resizeMode={fluxImageResizeMode(props.mapImageFit, 'cover')}
                           />
                         </View>
                       </View>

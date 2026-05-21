@@ -100,6 +100,63 @@ test('pageConfigSchema accepts social_media_plan block', () => {
   }
 });
 
+test('pageConfigSchema accepts image fit props on image blocks', () => {
+  const raw = {
+    theme: {
+      primaryColor: '#111',
+      accentColor: '#222',
+      backgroundColor: '#eee',
+      textColor: '#000',
+      fontFamily: 'Inter',
+    },
+    prospectName: 'A',
+    companyName: 'B',
+    blocks: [
+      {
+        id: 'hero-1',
+        type: 'hero',
+        order: 0,
+        props: {
+          headline: 'Headline',
+          subheadline: 'Subheadline',
+          ctaText: 'Book',
+          ctaUrl: '#book',
+          heroImageUrl: 'https://cdn.example/hero.jpg',
+          imageFit: 'contain',
+        },
+      },
+      {
+        id: 'audit-1',
+        type: 'competitor_ad_audit',
+        order: 1,
+        props: {
+          heading: 'Competitor ad audit',
+          status: 'ready',
+          mapImageFit: 'contain',
+          exampleImageFit: 'cover',
+          competitors: [
+            {
+              name: 'Acme',
+              mapImageUrl: 'https://cdn.example/map.jpg',
+              adsSummary: 'Most recent creative shown 2026-05-01.',
+              examples: [
+                {
+                  headline: 'Headline',
+                  body: 'Body',
+                  sourceUrl: 'https://adstransparency.google.com/advertiser/123',
+                  imageUrl: 'https://cdn.example/ad.jpg',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const zr = pageConfigSchema.safeParse(raw);
+  assert.equal(zr.success, true);
+});
+
 test('pageConfigSchema accepts quiz_and_book block', () => {
   const raw = {
     theme: {

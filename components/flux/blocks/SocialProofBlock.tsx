@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Image } from 'react-native';
 import type { SocialProofBlockProps } from '@/lib/flux/types';
+import { fluxImageResizeMode } from '@/lib/flux/fluxImageFit';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
 import { withFluxAlpha } from '@/lib/flux/fluxPresentationTokens';
 import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
@@ -17,7 +18,7 @@ export function SocialProofBlock({ props }: { props: SocialProofBlockProps }) {
         key={i}
         source={{ uri: logo.imageUrl }}
         className={className}
-        resizeMode="contain"
+        resizeMode={fluxImageResizeMode(props.imageFit, 'contain')}
         accessibilityLabel={logo.name}
       />
     ) : (

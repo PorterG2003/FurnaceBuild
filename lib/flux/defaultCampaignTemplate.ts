@@ -63,6 +63,8 @@ export function makeFluxDefaultBlock(type: BlockType, order: number): Block {
         order,
         props: {
           heading: 'Competitor ad audit',
+          discoveryMode: 'local_places',
+          curatedDomains: [],
           status: 'pending',
           competitors: [],
         },

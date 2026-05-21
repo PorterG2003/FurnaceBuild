@@ -22,6 +22,7 @@ backend:
         - cd amplify/functions/googlePlaces && npm install && cd - || (echo "Failed to install googlePlaces dependencies" && exit 1)
         - cd amplify/functions/processNotificationEvent && npm install && cd - || (echo "Failed to install processNotificationEvent dependencies" && exit 1)
         - cd amplify/functions/fluxCompetitorAuditStart && npm install && cd - || (echo "Failed to install fluxCompetitorAuditStart dependencies" && exit 1)
+        - cd amplify/functions/fluxCompetitorAuditJob && npm install && cd - || (echo "Failed to install fluxCompetitorAuditJob dependencies" && exit 1)
         - cd amplify/functions/fluxGenerate && npm install && cd - || (echo "Failed to install fluxGenerate dependencies" && exit 1)
         - cd amplify/functions/fluxEditorChat && npm install && cd - || (echo "Failed to install fluxEditorChat dependencies" && exit 1)
         - cd amplify/functions/processWebhookEvent && npm install && cd - || (echo "Failed to install processWebhookEvent dependencies" && exit 1)

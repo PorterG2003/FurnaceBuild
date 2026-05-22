@@ -715,6 +715,14 @@ export default function ProspectDetail() {
               sellerBrand: campaign.seller_brand_profile,
               sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
               brandingPolicy: campaign.branding_policy,
+            }, {
+              onlyIfCurrentMatches: {
+                prospectBrand: prospect.brand_profile,
+                prospectWebsiteIntel: prospect.website_intel_snapshot,
+                sellerBrand: campaign.seller_brand_profile,
+                sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
+                brandingPolicy: campaign.branding_policy,
+              },
             });
             const currentLogoUrl = savedPageConfig.theme.logoUrl?.trim() || undefined;
             const nextLogoUrl = syncedPageConfig.theme.logoUrl?.trim() || undefined;
@@ -758,15 +766,7 @@ export default function ProspectDetail() {
       }
       setSavingPage(true);
       try {
-        const syncedPageConfig = normalizePageConfigForSave(
-          syncFluxPageConfigLogo(draftPageConfig, {
-          prospectBrand: prospect.brand_profile,
-          prospectWebsiteIntel: prospect.website_intel_snapshot,
-          sellerBrand: campaign.seller_brand_profile,
-          sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
-          brandingPolicy: campaign.branding_policy,
-          }),
-        );
+        const syncedPageConfig = normalizePageConfigForSave(draftPageConfig);
         const updated = await updateFluxPageConfig(page.id, syncedPageConfig);
         setPage(updated);
         if (!opts?.quiet) {

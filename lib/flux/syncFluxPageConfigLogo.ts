@@ -3,18 +3,20 @@ import { defaultFluxBrandingPolicy, type FluxBrandingPolicy } from './fluxBrandi
 import { mergeBrandProfileWithWebsiteIntel } from './mergeBrandProfileWithWebsiteIntel';
 import { resolveFluxPageBrandInputs } from './resolveFluxPageBrandInputs';
 
-function normalizeLogoUrl(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-export function resolveFluxPageLogoUrl(params: {
+export type FluxPageLogoSyncParams = {
   prospectBrand: BrandProfile | null | undefined;
   prospectWebsiteIntel?: FluxWebsiteIntelSnapshot | null;
   sellerBrand?: BrandProfile | null;
   sellerWebsiteIntel?: FluxWebsiteIntelSnapshot | null;
   brandingPolicy?: FluxBrandingPolicy | null;
-}): string | undefined {
+};
+
+function normalizeLogoUrl(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export function resolveFluxPageLogoUrl(params: FluxPageLogoSyncParams): string | undefined {
   const prospectMerged = mergeBrandProfileWithWebsiteIntel(
     params.prospectBrand ?? undefined,
     params.prospectWebsiteIntel ?? null,
@@ -37,16 +39,22 @@ export function resolveFluxPageLogoUrl(params: {
   return normalizeLogoUrl(resolved.logoUrl);
 }
 
+export function shouldSyncFluxPageConfigLogo(pageConfig: PageConfig, params: FluxPageLogoSyncParams): boolean {
+  const currentLogoUrl = normalizeLogoUrl(pageConfig.theme.logoUrl);
+  if (!currentLogoUrl) return true;
+  return currentLogoUrl === resolveFluxPageLogoUrl(params);
+}
+
 export function syncFluxPageConfigLogo(
   pageConfig: PageConfig,
-  params: {
-    prospectBrand: BrandProfile | null | undefined;
-    prospectWebsiteIntel?: FluxWebsiteIntelSnapshot | null;
-    sellerBrand?: BrandProfile | null;
-    sellerWebsiteIntel?: FluxWebsiteIntelSnapshot | null;
-    brandingPolicy?: FluxBrandingPolicy | null;
+  params: FluxPageLogoSyncParams,
+  options?: {
+    onlyIfCurrentMatches?: FluxPageLogoSyncParams;
   },
 ): PageConfig {
+  if (options?.onlyIfCurrentMatches && !shouldSyncFluxPageConfigLogo(pageConfig, options.onlyIfCurrentMatches)) {
+    return pageConfig;
+  }
   const currentLogoUrl = normalizeLogoUrl(pageConfig.theme.logoUrl);
   const nextLogoUrl = resolveFluxPageLogoUrl(params);
   if (currentLogoUrl === nextLogoUrl) return pageConfig;

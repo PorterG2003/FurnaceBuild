@@ -468,6 +468,7 @@ export default function CampaignDetail() {
     if (!id || saving) return;
     setSaving(true);
     try {
+      const previousCampaign = await getFluxCampaignById(id);
       const updatedCampaign = await updateFluxCampaign(id, {
         name: editor.name,
         offer_description: editor.offerDescription || null,
@@ -487,7 +488,7 @@ export default function CampaignDetail() {
         copy_slots: copySlotsList,
         constraints: editor.constraints,
       });
-      const syncedPageCount = await syncFluxPageLogosForCampaign(updatedCampaign, prospects);
+      const syncedPageCount = await syncFluxPageLogosForCampaign(updatedCampaign, prospects, previousCampaign);
       toast.success(
         syncedPageCount > 0 ? `Campaign saved. Re-synced ${syncedPageCount} page logo${syncedPageCount === 1 ? '' : 's'}.` : 'Campaign saved.',
       );

@@ -496,6 +496,7 @@ export async function updateFluxPageSlug(pageId: string, slug: string): Promise<
 export async function syncFluxPageLogosForCampaign(
   campaign: FluxCampaignRow,
   prospects: FluxProspectRow[],
+  previousCampaign?: FluxCampaignRow | null,
 ): Promise<number> {
   const pages = await getFluxPagesByCampaign(campaign.id);
   const prospectById = new Map(prospects.map((prospect) => [prospect.id, prospect]));
@@ -510,7 +511,15 @@ export async function syncFluxPageLogosForCampaign(
       sellerBrand: campaign.seller_brand_profile,
       sellerWebsiteIntel: campaign.seller_website_intel_snapshot,
       brandingPolicy: campaign.branding_policy,
-    });
+    }, previousCampaign ? {
+      onlyIfCurrentMatches: {
+        prospectBrand: prospect.brand_profile,
+        prospectWebsiteIntel: prospect.website_intel_snapshot,
+        sellerBrand: previousCampaign.seller_brand_profile,
+        sellerWebsiteIntel: previousCampaign.seller_website_intel_snapshot,
+        brandingPolicy: previousCampaign.branding_policy,
+      },
+    } : undefined);
     const currentLogoUrl = pageConfig.theme.logoUrl?.trim() || undefined;
     const nextLogoUrl = synced.theme.logoUrl?.trim() || undefined;
     if (currentLogoUrl === nextLogoUrl) return [];

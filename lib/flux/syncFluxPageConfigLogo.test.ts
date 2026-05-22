@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveFluxPageLogoUrl, syncFluxPageConfigLogo } from './syncFluxPageConfigLogo.js';
+import { resolveFluxPageLogoUrl, shouldSyncFluxPageConfigLogo, syncFluxPageConfigLogo } from './syncFluxPageConfigLogo.js';
 import type { PageConfig } from './types.js';
 
 const basePageConfig: PageConfig = {
@@ -43,4 +43,65 @@ test('syncFluxPageConfigLogo removes stale logo when resolved branding has none'
     brandingPolicy: { v: 1, pageTheme: 'merge' },
   });
   assert.equal(synced.theme.logoUrl, undefined);
+});
+
+test('shouldSyncFluxPageConfigLogo is false for a manual page override', () => {
+  assert.equal(
+    shouldSyncFluxPageConfigLogo(
+      {
+        ...basePageConfig,
+        theme: { ...basePageConfig.theme, logoUrl: 'https://page.example/custom-logo.png' },
+      },
+      {
+        prospectBrand: { primaryColor: '#111111', logoUrl: 'https://prospect.example/logo.png' },
+        sellerBrand: { primaryColor: '#222222', logoUrl: 'https://seller.example/logo.png' },
+        brandingPolicy: { v: 1, pageTheme: 'merge' },
+      },
+    ),
+    false,
+  );
+});
+
+test('syncFluxPageConfigLogo preserves a manual page override when guarded', () => {
+  const synced = syncFluxPageConfigLogo(
+    {
+      ...basePageConfig,
+      theme: { ...basePageConfig.theme, logoUrl: 'https://page.example/custom-logo.png' },
+    },
+    {
+      prospectBrand: { primaryColor: '#111111', logoUrl: 'https://next-prospect.example/logo.png' },
+      sellerBrand: { primaryColor: '#222222', logoUrl: 'https://next-seller.example/logo.png' },
+      brandingPolicy: { v: 1, pageTheme: 'merge' },
+    },
+    {
+      onlyIfCurrentMatches: {
+        prospectBrand: { primaryColor: '#111111', logoUrl: 'https://prospect.example/logo.png' },
+        sellerBrand: { primaryColor: '#222222', logoUrl: 'https://seller.example/logo.png' },
+        brandingPolicy: { v: 1, pageTheme: 'merge' },
+      },
+    },
+  );
+  assert.equal(synced.theme.logoUrl, 'https://page.example/custom-logo.png');
+});
+
+test('syncFluxPageConfigLogo updates an auto-derived page logo when guarded', () => {
+  const synced = syncFluxPageConfigLogo(
+    {
+      ...basePageConfig,
+      theme: { ...basePageConfig.theme, logoUrl: 'https://seller.example/logo.png' },
+    },
+    {
+      prospectBrand: { primaryColor: '#111111', logoUrl: 'https://next-prospect.example/logo.png' },
+      sellerBrand: { primaryColor: '#222222', logoUrl: 'https://next-seller.example/logo.png' },
+      brandingPolicy: { v: 1, pageTheme: 'merge' },
+    },
+    {
+      onlyIfCurrentMatches: {
+        prospectBrand: { primaryColor: '#111111', logoUrl: 'https://prospect.example/logo.png' },
+        sellerBrand: { primaryColor: '#222222', logoUrl: 'https://seller.example/logo.png' },
+        brandingPolicy: { v: 1, pageTheme: 'merge' },
+      },
+    },
+  );
+  assert.equal(synced.theme.logoUrl, 'https://next-seller.example/logo.png');
 });

@@ -154,8 +154,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
               const advertiserUrl = row.examples[0]?.sourceUrl
                 ? advertiserUrlFromSourceUrl(row.examples[0].sourceUrl)
                 : null;
-              const examplesWithImage = row.examples.filter((ex) => ex.imageUrl?.trim());
-              const examples = examplesWithImage.length > 0 ? (
+              const examples = row.examples.length > 0 ? (
                 <View className="gap-3 mt-5">
                   <Text
                     className="text-[11px] uppercase tracking-[2px]"
@@ -164,18 +163,46 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                     Current Ads They Are Running
                   </Text>
                   <View className="flex-row flex-wrap gap-3">
-                    {examplesWithImage.map((ex, j) => (
+                    {row.examples.map((ex, j) => (
                       <Pressable
                         key={`${ex.sourceUrl}-${j}`}
                         className="w-full md:flex-1 md:min-w-[220px] overflow-hidden"
-                        style={{ borderRadius: presentation.radii.media }}
+                        style={[
+                          { borderRadius: presentation.radii.media },
+                          ex.imageUrl?.trim() ? null : presentation.card,
+                        ]}
                         onPress={() => Linking.openURL(ex.sourceUrl)}
                       >
-                        <Image
-                          source={{ uri: ex.imageUrl!.trim() }}
-                          className="w-full h-56"
-                          resizeMode={fluxImageResizeMode(props.exampleImageFit, 'contain')}
-                        />
+                        {ex.imageUrl?.trim() ? (
+                          <Image
+                            source={{ uri: ex.imageUrl.trim() }}
+                            className="w-full h-56"
+                            resizeMode={fluxImageResizeMode(props.exampleImageFit, 'contain')}
+                          />
+                        ) : (
+                          <View className="min-h-56 p-4 justify-between gap-3">
+                            <View className="gap-2">
+                              <Text
+                                className="text-[11px] uppercase tracking-[2px]"
+                                style={{ color: theme.primaryColor, fontFamily: headingFont }}
+                              >
+                                Live ad detected
+                              </Text>
+                              <Text className="text-base" style={{ color: theme.textColor, fontFamily: headingFont }}>
+                                {ex.headline?.trim() || 'Google Ad example'}
+                              </Text>
+                              <Text
+                                className="text-sm leading-6"
+                                style={{ color: theme.textColor, opacity: presentation.mutedTextOpacity, fontFamily: bodyFont }}
+                              >
+                                {ex.body?.trim() || 'Preview unavailable for this ad creative, but the Transparency record is still included.'}
+                              </Text>
+                            </View>
+                            <Text className="text-sm" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
+                              View ad details →
+                            </Text>
+                          </View>
+                        )}
                       </Pressable>
                     ))}
                   </View>

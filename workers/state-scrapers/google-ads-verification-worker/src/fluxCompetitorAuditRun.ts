@@ -9,7 +9,6 @@ import fluxCompetitorAuditRank from '../../../../lib/flux/fluxCompetitorAuditRan
 import type { FluxCompetitorScoredDomain } from '../../../../lib/flux/fluxCompetitorAuditRank';
 import fluxCompetitorAuditFailureMessage from '../../../../lib/flux/fluxCompetitorAuditFailureMessage';
 import type { FluxAuditDomainResultRow } from '../../../../lib/flux/fluxCompetitorAuditFailureMessage';
-import { fluxServiceAreaTransparencyRegionFromRaw } from '../../../../lib/flux/fluxServiceArea';
 import { workerJsonLog } from './workerJsonLog.js';
 const PLACES_RADIUS_M = 20_000;
 const MAX_TRANSPARENCY = 12;
@@ -21,6 +20,14 @@ const MAX_PUBLISHED_WINNERS = 3;
 const MAX_PUBLISHED_SAMPLES_PER_WINNER = 2;
 
 type PageConfig = { blocks: Array<Record<string, unknown>>; [k: string]: unknown };
+
+function transparencyRegionFromServiceAreaRaw(raw: unknown): string {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return 'US';
+  const regionCode = (raw as { regionCode?: unknown }).regionCode;
+  if (typeof regionCode !== 'string') return 'US';
+  const normalized = regionCode.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(normalized) ? normalized : 'US';
+}
 
 async function fetchSsm(paramPath: string, region: string): Promise<string> {
   const client = new SSMClient({ region });
@@ -262,7 +269,7 @@ export async function runFluxCompetitorAuditJob(params: {
       await failJob('Prospect service area (latitude/longitude) is required for local competitor audit.');
       return false;
     }
-    const transparencyRegion = fluxServiceAreaTransparencyRegionFromRaw(sa);
+    const transparencyRegion = transparencyRegionFromServiceAreaRaw(sa);
 
     const prospectDomains = new Set<string>();
     const pk = normalizeGoogleAdsSearchDomain(

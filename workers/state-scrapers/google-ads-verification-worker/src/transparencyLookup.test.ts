@@ -18,6 +18,8 @@ function candidate(overrides: Partial<CreativePreviewCandidate> = {}): CreativeP
     height: 140,
     textLength: 80,
     imageCount: 1,
+    hasVideo: false,
+    hasIframe: false,
     priority: 0,
     ...overrides,
   };
@@ -69,7 +71,7 @@ test('isAcceptableCreativePreviewCandidate rejects tiny low-signal nodes', () =>
   );
 });
 
-test('isAcceptableCreativePreviewCandidate accepts textless iframe-sized creatives when media is present', () => {
+test('isAcceptableCreativePreviewCandidate rejects textless iframe-backed creatives', () => {
   assert.equal(
     isAcceptableCreativePreviewCandidate(
       candidate({
@@ -77,10 +79,42 @@ test('isAcceptableCreativePreviewCandidate accepts textless iframe-sized creativ
         height: 187,
         textLength: 0,
         imageCount: 1,
+        hasIframe: true,
       }),
       VIEWPORT,
     ),
-    true,
+    false,
+  );
+});
+
+test('isAcceptableCreativePreviewCandidate rejects flat video scrubber-like media crops', () => {
+  assert.equal(
+    isAcceptableCreativePreviewCandidate(
+      candidate({
+        width: 420,
+        height: 54,
+        textLength: 0,
+        imageCount: 1,
+      }),
+      VIEWPORT,
+    ),
+    false,
+  );
+});
+
+test('isAcceptableCreativePreviewCandidate rejects candidates that contain video', () => {
+  assert.equal(
+    isAcceptableCreativePreviewCandidate(
+      candidate({
+        width: 480,
+        height: 240,
+        textLength: 60,
+        imageCount: 1,
+        hasVideo: true,
+      }),
+      VIEWPORT,
+    ),
+    false,
   );
 });
 

@@ -393,6 +393,7 @@ async function collectCreativeHrefs(page: Page): Promise<string[]> {
 const CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS = 12_000;
 const CREATIVE_IMG_WAIT_MS = 22_000;
 const CREATIVE_POST_PAINT_SETTLE_MS = 900;
+const CREATIVE_PAGE_READY_WAIT_MS = 5_000;
 /** Ignore degenerate captures (e.g. 1×1 placeholder). */
 const MIN_CREATIVE_PNG_BYTES = 400;
 const CREATIVE_CLIP_PADDING_X = 16;
@@ -404,13 +405,15 @@ const MAX_CREATIVE_BOX_WIDTH_RATIO = 0.88;
 const MAX_CREATIVE_BOX_HEIGHT_RATIO = 0.92;
 const MAX_CREATIVE_BOX_AREA_RATIO = 0.38;
 const MIN_CREATIVE_TEXT_LENGTH = 18;
+const MIN_MEDIA_CREATIVE_BOX_HEIGHT = 72;
+const MAX_MEDIA_CREATIVE_ASPECT_RATIO = 6.5;
 
 const SYNDICATED_IMG =
   'img[src*="googlesyndication.com"], img[src*="tpc.googlesyndication.com"], img[srcset*="googlesyndication"], img[srcset*="tpc.googlesyndication"]';
 const CREATIVE_IFRAME =
   'iframe[src*="googlesyndication.com"], iframe[src*="tpc.googlesyndication.com"], iframe[src*="/archive/sadbundle/"]';
 const MAIN_REGION_MEDIA =
-  'main iframe, main img, main picture, main canvas, main video, [role="main"] iframe, [role="main"] img, [role="main"] picture, [role="main"] canvas, [role="main"] video';
+  'main iframe, main img, main picture, main canvas, [role="main"] iframe, [role="main"] img, [role="main"] picture, [role="main"] canvas';
 const CREATIVE_PREVIEW_ROOT_SELECTORS = [
   'html-renderer',
   '.html-container',
@@ -439,6 +442,8 @@ export interface CreativePreviewCandidate {
   height: number;
   textLength: number;
   imageCount: number;
+  hasVideo: boolean;
+  hasIframe: boolean;
   priority: number;
 }
 
@@ -452,6 +457,9 @@ type CreativePreviewCandidateRejectionReason =
   | 'too_wide'
   | 'too_tall'
   | 'too_large'
+  | 'contains_video'
+  | 'textless_iframe'
+  | 'too_flat_media'
   | 'low_signal'
   | 'invalid_clip';
 
@@ -521,11 +529,20 @@ function getCreativePreviewCandidateRejectionReason(
   ) {
     return 'non_finite';
   }
+  if (candidate.hasVideo) return 'contains_video';
+  if (candidate.hasIframe && candidate.textLength < MIN_CREATIVE_TEXT_LENGTH) return 'textless_iframe';
   if (candidate.width < MIN_CREATIVE_BOX_WIDTH || candidate.height < MIN_CREATIVE_BOX_HEIGHT) return 'too_small';
   if (candidate.width * candidate.height < MIN_CREATIVE_BOX_AREA) return 'too_small';
   if (candidate.width > viewport.width * MAX_CREATIVE_BOX_WIDTH_RATIO) return 'too_wide';
   if (candidate.height > viewport.height * MAX_CREATIVE_BOX_HEIGHT_RATIO) return 'too_tall';
   if (candidate.width * candidate.height > viewport.width * viewport.height * MAX_CREATIVE_BOX_AREA_RATIO) return 'too_large';
+  if (
+    candidate.textLength < MIN_CREATIVE_TEXT_LENGTH &&
+    candidate.imageCount > 0 &&
+    (candidate.height < MIN_MEDIA_CREATIVE_BOX_HEIGHT || candidate.width / Math.max(candidate.height, 1) > MAX_MEDIA_CREATIVE_ASPECT_RATIO)
+  ) {
+    return 'too_flat_media';
+  }
   if (candidate.textLength < MIN_CREATIVE_TEXT_LENGTH && candidate.imageCount < 1) return 'low_signal';
   return clipCreativePreviewBox(candidate, viewport) != null ? null : 'invalid_clip';
 }
@@ -582,17 +599,28 @@ async function collectCreativePreviewCandidates(
       try {
         const box = await item.boundingBox();
         if (!box) continue;
-        const { textLength, imageCount } = await item
-          .evaluate((node) => ({
-            textLength: (node.textContent ?? '').replace(/\s+/g, ' ').trim().length,
-            imageCount:
-              node instanceof Element
-                ? node.matches('img, picture, video, canvas, svg, iframe')
-                  ? 1 + node.querySelectorAll('img, picture, video, canvas, svg, iframe').length
-                  : node.querySelectorAll('img, picture, video, canvas, svg, iframe').length
-                : 0,
-          }))
-          .catch(() => ({ textLength: 0, imageCount: 0 }));
+        const { textLength, imageCount, hasVideo, hasIframe } =
+          await item
+            .evaluate((node) => {
+              return {
+                textLength: (node.textContent ?? '').replace(/\s+/g, ' ').trim().length,
+                imageCount:
+                  node instanceof Element
+                    ? node.matches('img, picture, canvas, svg, iframe')
+                      ? 1 + node.querySelectorAll('img, picture, canvas, svg, iframe').length
+                      : node.querySelectorAll('img, picture, canvas, svg, iframe').length
+                    : 0,
+                hasVideo:
+                  node instanceof Element
+                    ? node.matches('video') || node.querySelector('video') != null
+                    : false,
+                hasIframe:
+                  node instanceof Element
+                    ? node.matches('iframe') || node.querySelector('iframe') != null
+                    : false,
+              };
+            })
+            .catch(() => ({ textLength: 0, imageCount: 0, hasVideo: false, hasIframe: false }));
         candidates.push({
           x: box.x,
           y: box.y,
@@ -600,6 +628,8 @@ async function collectCreativePreviewCandidates(
           height: box.height,
           textLength,
           imageCount,
+          hasVideo,
+          hasIframe,
           priority,
         });
       } catch {
@@ -613,7 +643,10 @@ async function collectCreativePreviewCandidates(
 }
 
 function summarizeCreativePreviewCandidate(
-  candidate: Pick<CreativePreviewCandidate, 'x' | 'y' | 'width' | 'height' | 'textLength' | 'imageCount' | 'priority'>,
+  candidate: Pick<
+    CreativePreviewCandidate,
+    'x' | 'y' | 'width' | 'height' | 'textLength' | 'imageCount' | 'hasVideo' | 'hasIframe' | 'priority'
+  >,
 ): JsonObject {
   return {
     x: Math.round(candidate.x),
@@ -622,7 +655,19 @@ function summarizeCreativePreviewCandidate(
     height: Math.round(candidate.height),
     textLength: candidate.textLength,
     imageCount: candidate.imageCount,
+    hasVideo: candidate.hasVideo,
+    hasIframe: candidate.hasIframe,
     priority: candidate.priority,
+  };
+}
+
+function summarizeCreativePreviewCandidateWithReason(
+  candidate: CreativePreviewCandidate,
+  viewport = VIEWPORT,
+): JsonObject {
+  return {
+    ...summarizeCreativePreviewCandidate(candidate),
+    rejectionReason: getCreativePreviewCandidateRejectionReason(candidate, viewport),
   };
 }
 
@@ -645,20 +690,27 @@ async function waitForCreativePreviewRoots(page: Page, maxWaitMs = CREATIVE_IMG_
   return false;
 }
 
+async function waitForCreativePageReady(page: Page): Promise<void> {
+  await Promise.race([
+    page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => false),
+    waitForCreativePreviewRoots(page, CREATIVE_PAGE_READY_WAIT_MS).catch(() => false),
+  ]);
+}
+
 /**
  * Element screenshot of the ad preview on a creative detail page.
  * Waits for syndicated assets, scrolls targets into view (ECS/Xvfb can be slow),
  * then returns null if we cannot identify a tight ad-card crop.
  */
 async function screenshotCreativePreview(page: Page, logContext: CreativePreviewLogContext = {}): Promise<Buffer | null> {
-  await Promise.all([
-    page
+  const rootsReady = await waitForCreativePreviewRoots(page, CREATIVE_PAGE_READY_WAIT_MS).catch(() => false);
+  if (!rootsReady) {
+    await page
       .locator(SYNDICATED_IMG)
       .first()
-      .waitFor({ state: 'visible', timeout: CREATIVE_IMG_WAIT_MS })
-      .catch(() => {}),
-    waitForCreativePreviewRoots(page).catch(() => false),
-  ]);
+      .waitFor({ state: 'visible', timeout: CREATIVE_PAGE_READY_WAIT_MS })
+      .catch(() => {});
+  }
   await new Promise((r) => setTimeout(r, CREATIVE_POST_PAINT_SETTLE_MS));
 
   const viewport = page.viewportSize() ?? VIEWPORT;
@@ -727,7 +779,6 @@ async function screenshotCreativePreview(page: Page, logContext: CreativePreview
     });
     return null;
   }
-
   try {
     const viewportOrigin = await page
       .evaluate(() => ({ x: window.scrollX || 0, y: window.scrollY || 0 }))
@@ -815,7 +866,7 @@ async function captureTopCreativeLastShown(
     : `https://adstransparency.google.com${creativeHref}`;
   try {
     await page.goto(creativeUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
-    await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
+    await waitForCreativePageReady(page);
     const bodyText = await page.locator('body').innerText().catch(() => '');
     const lastShownLabel = parseLastShownDateLabel(bodyText);
     const firstShownLabel = parseFirstShownDateLabel(bodyText);

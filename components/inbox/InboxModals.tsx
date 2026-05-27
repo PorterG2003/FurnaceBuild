@@ -1,10 +1,10 @@
 import React from 'react';
+import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailThread } from '@/lib/supabase/types';
 import type { Mailbox, Campaign } from '@/lib/supabase/types';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import { BlockSenderModal } from './BlockSenderModal';
-import { CreateTagModal } from './CreateTagModal';
 import { InboxFilterDropdown } from './InboxFilterDropdown';
 import { InboxMessageActionsSheet } from './InboxMessageActionsSheet';
 import { InboxThreadInfoSheet } from './InboxThreadInfoSheet';
@@ -27,11 +27,14 @@ export interface InboxModalsFiltersProps {
   setCategoryFilter: (v: string | null) => void;
   tagFilterIds: string[];
   setTagFilterIds: (ids: string[]) => void;
+  campaignTagFilterIds: string[];
+  setCampaignTagFilterIds: (ids: string[]) => void;
   includeOutOfOfficeFilter: boolean;
   setIncludeOutOfOfficeFilter: (v: boolean) => void;
   mailboxes: Mailbox[];
   campaigns: Campaign[];
   accountTags: ThreadTag[];
+  accountCampaignTags: CampaignTag[];
   onClearAllFilters: () => void;
   filterPresentation: 'dropdown' | 'sheet';
   filterSheetMaxHeight: number;
@@ -44,8 +47,6 @@ export interface InboxModalsVisibilityProps {
   setTagsPanelVisible: (v: boolean) => void;
   showMessageActionsSheet: boolean;
   setShowMessageActionsSheet: (v: boolean) => void;
-  createTagModalVisible: boolean;
-  setCreateTagModalVisible: (v: boolean) => void;
   blockedRecipientConfirm: { mode: 'reply' | 'forward'; onConfirm: () => void } | null;
   setBlockedRecipientConfirm: (v: { mode: 'reply' | 'forward'; onConfirm: () => void } | null) => void;
   infoSheetVisible: boolean;
@@ -95,11 +96,14 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     setCategoryFilter,
     tagFilterIds,
     setTagFilterIds,
+    campaignTagFilterIds,
+    setCampaignTagFilterIds,
     includeOutOfOfficeFilter,
     setIncludeOutOfOfficeFilter,
     mailboxes,
     campaigns,
     accountTags,
+    accountCampaignTags,
     onClearAllFilters,
     filterPresentation,
     filterSheetMaxHeight,
@@ -112,8 +116,6 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     setTagsPanelVisible,
     showMessageActionsSheet,
     setShowMessageActionsSheet,
-    createTagModalVisible,
-    setCreateTagModalVisible,
     blockedRecipientConfirm,
     setBlockedRecipientConfirm,
     infoSheetVisible,
@@ -160,11 +162,14 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         onCategoryFilterChange={setCategoryFilter}
         tagFilterIds={tagFilterIds}
         onTagFilterIdsChange={setTagFilterIds}
+        campaignTagFilterIds={campaignTagFilterIds}
+        onCampaignTagFilterIdsChange={setCampaignTagFilterIds}
         includeOutOfOfficeFilter={includeOutOfOfficeFilter}
         onIncludeOutOfOfficeFilterChange={setIncludeOutOfOfficeFilter}
         mailboxes={mailboxes}
         campaigns={campaigns}
         accountTags={accountTags}
+        accountCampaignTags={accountCampaignTags}
         onClearAll={onClearAllFilters}
       />
 
@@ -182,16 +187,14 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         <TagsPanelModal
           visible={tagsPanelVisible}
           onClose={() => setTagsPanelVisible(false)}
+          accountId={accountId}
           threadTags={threadTagsMap[selectedThreadId] ?? []}
           accountTags={accountTags}
           onAddTag={onAddTag}
           onRemoveTag={onRemoveTag}
           onUpdateTag={onUpdateTag}
           onDeleteTag={onDeleteTag}
-          onCreateTag={() => {
-            setTagsPanelVisible(false);
-            setCreateTagModalVisible(true);
-          }}
+          onTagCreated={onTagCreated}
         />
       )}
 
@@ -220,15 +223,6 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         campaignName={campaignName}
         replacementSummary={replacementSummary}
       />
-
-      {accountId && (
-        <CreateTagModal
-          visible={createTagModalVisible}
-          onClose={() => setCreateTagModalVisible(false)}
-          accountId={accountId}
-          onCreated={onTagCreated}
-        />
-      )}
 
       {blockedRecipientConfirm && (
         <ConfirmDeleteModal

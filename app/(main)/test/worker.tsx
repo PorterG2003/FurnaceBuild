@@ -263,7 +263,6 @@ export default function TestWorkerPage() {
         account_id: account.id,
         email: recipientEmail,
         name: recipientName,
-        status: 'new',
         global_lead_id: null,
       });
       updateStep('lead', 'success', `Created lead: ${lead.email}`);

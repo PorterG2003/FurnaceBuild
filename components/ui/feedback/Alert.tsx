@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
+import { cn } from '@/lib/cn';
 
 export type AlertVariant = 'error' | 'success' | 'warning' | 'info';
 
@@ -60,7 +61,7 @@ export function Alert({
   const styles = variantStyles[variant];
 
   return (
-    <View className={`mb-4 p-4 border rounded-xl ${styles.container} ${className || ''}`}>
+    <View className={cn('p-4 border rounded-xl', styles.container, className)}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <Text className={`${styles.text} font-instrument-medium text-sm`} style={{ flex: 1 }}>
           {message}

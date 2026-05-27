@@ -681,7 +681,6 @@ export const oooInboxBaseGraphModule: SeedModule = {
           first_name: persona.firstName,
           last_name: persona.lastName,
           company_name: persona.companyName,
-          status: 'new',
           source: OOO_SEED_SOURCE,
           mailbox_id: mailbox.id,
         })

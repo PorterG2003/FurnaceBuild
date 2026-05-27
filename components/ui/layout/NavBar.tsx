@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, Text, Pressable, Platform, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, Platform, useWindowDimensions } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from 'react-native-reanimated';
 import { useRouter, usePathname } from 'expo-router';
 import { signOut } from '@/lib/supabase/client';
@@ -11,9 +11,13 @@ import {
   Cog6ToothIcon,
   InboxIcon,
   EnvelopeIcon,
+  UserGroupIcon,
+  LifebuoyIcon,
 } from 'react-native-heroicons/outline';
 import { useAccount } from '@/contexts/AccountContext';
 import { WorkspaceSwitcherPopover } from '@/components/ui/WorkspaceSwitcherPopover';
+import { HelpModal } from '@/components/ui/help';
+import { NavBarButton } from './NavBarButton';
 const furnaceLogoFull = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg height="100%" stroke-miterlimit="10" style="fill-rule:nonzero;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;" version="1.1" viewBox="0 0 1584 396" width="100%" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">
@@ -65,6 +69,7 @@ export function NavBar() {
   // Use persisted state, but allow local state to control animations
   const [isExpanded, setIsExpanded] = useState(persistedExpandedState);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const hasMultipleAccounts = memberships.length > 1;
 
   useEffect(() => {
@@ -125,6 +130,7 @@ export function NavBar() {
     { label: 'Campaigns', path: '/campaigns', icon: MegaphoneIcon },
     { label: 'Metrics', path: '/metrics', icon: ChartBarIcon },
     { label: 'Master Inbox', path: '/inbox', icon: InboxIcon },
+    { label: 'Leads', path: '/leads', icon: UserGroupIcon },
     { label: 'Senders', path: '/senders', icon: EnvelopeIcon },
   ];
 
@@ -134,6 +140,9 @@ export function NavBar() {
     }
     if (path === '/inbox') {
       return pathname === '/inbox' || pathname === '/';
+    }
+    if (path === '/leads') {
+      return pathname === '/leads' || pathname?.startsWith('/leads/');
     }
     if (path === '/senders') {
       return pathname === '/senders' || pathname?.startsWith('/senders/');
@@ -223,45 +232,32 @@ export function NavBar() {
         </View>
 
         {/* Navigation Links */}
-        <View className="mb-6">
-          {navItems.map((item) => {
-            const active = isActive(item.path);
-            return (
-              <Pressable
-                key={item.path}
-                onPress={() => router.push(item.path)}
-                className={`py-2 mb-2 rounded-lg border ${
-                  isExpanded ? 'px-2' : 'px-0'
-                } ${
-                  active
-                    ? 'bg-[rgba(243,68,13,0.15)] border-brand-orange'
-                    : 'bg-[rgba(42,42,42,0.6)] border-[#3A3A3A]'
-                }`}
-              >
-                <View className={`flex-row items-center ${isExpanded ? '' : 'justify-center'}`} style={{ flexShrink: 0 }}>
-                  {item.icon && (
-                    <View className={isExpanded ? 'mr-3' : ''}>
-                      <item.icon size={20} color="#ffffff" />
-                    </View>
-                  )}
-                  {isExpanded && (
-                    <Text className="text-white font-instrument text-sm" numberOfLines={1} ellipsizeMode="tail">
-                      {item.label}
-                    </Text>
-                  )}
-                </View>
-              </Pressable>
-            );
-          })}
+        <View>
+          {navItems.map((item) => (
+            <NavBarButton
+              key={item.path}
+              icon={item.icon}
+              label={item.label}
+              onPress={() => router.push(item.path)}
+              isExpanded={isExpanded}
+              active={isActive(item.path)}
+            />
+          ))}
         </View>
 
-        {/* Spacer to push account section to bottom */}
+        {/* Spacer to push help + account section to bottom */}
         <View className="flex-1" />
+
+        <NavBarButton
+          icon={LifebuoyIcon}
+          label="Need help?"
+          onPress={() => setHelpOpen(true)}
+          isExpanded={isExpanded}
+        />
 
         {/* Account Section */}
         {user && (
           <View>
-            {/* Divider */}
             <View className="h-px bg-[#2A2A2A] mb-4" />
 
             {/* Current workspace name + switcher (when multiple accounts) */}
@@ -296,45 +292,26 @@ export function NavBar() {
               </View>
             )}
 
-            {/* Settings Button */}
-            <Pressable
+            <NavBarButton
+              icon={Cog6ToothIcon}
+              label="Settings"
               onPress={() => router.push('/account')}
-              className={`${pathname === '/account' 
-                ? 'bg-[rgba(243,68,13,0.15)] border-brand-orange' 
-                : 'bg-[rgba(42,42,42,0.6)] border-[#3A3A3A]'
-              } border rounded-lg py-2 mb-2 ${isExpanded ? 'px-2' : 'px-0'}`}
-            >
-              <View className={`flex-row items-center ${isExpanded ? '' : 'justify-center'}`} style={{ flexShrink: 0 }}>
-                <View className={isExpanded ? 'mr-3' : ''}>
-                  <Cog6ToothIcon size={20} color="#ffffff" />
-                </View>
-                {isExpanded && (
-                  <Text className="text-white font-instrument text-sm" numberOfLines={1} ellipsizeMode="tail">
-                    Settings
-                  </Text>
-                )}
-              </View>
-            </Pressable>
+              isExpanded={isExpanded}
+              active={pathname === '/account'}
+            />
 
-            {/* Sign Out Button */}
-            <Pressable 
+            <NavBarButton
+              icon={ArrowRightOnRectangleIcon}
+              label="Sign Out"
               onPress={handleSignOut}
-              className={`bg-brand-orange rounded-lg border border-[rgba(248,81,2,0.3)] py-2 ${isExpanded ? 'px-2' : 'px-0'}`}
-            >
-              <View className={`flex-row items-center ${isExpanded ? '' : 'justify-center'}`} style={{ flexShrink: 0 }}>
-                <View className={isExpanded ? 'mr-3' : ''}>
-                  <ArrowRightOnRectangleIcon size={20} color="#ffffff" />
-                </View>
-                {isExpanded && (
-                  <Text className="text-white font-instrument text-sm" numberOfLines={1} ellipsizeMode="tail">
-                    Sign Out
-                  </Text>
-                )}
-              </View>
-            </Pressable>
+              isExpanded={isExpanded}
+              variant="primary"
+            />
           </View>
         )}
       </View>
+
+      <HelpModal visible={helpOpen} onClose={() => setHelpOpen(false)} />
     </Animated.View>
   );
 }

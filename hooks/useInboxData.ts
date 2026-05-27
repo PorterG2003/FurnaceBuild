@@ -11,6 +11,7 @@ import {
   getMailboxesByAccount,
   getCampaigns,
   getThreadTags,
+  getCampaignTags,
   getTagsForThreads,
   getThreadSnippets,
   getLeadsByIds,
@@ -18,6 +19,7 @@ import {
 } from '@/lib/supabase/services';
 import { getLeadDisplayName } from '@/lib/leads';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
+import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailThread, EmailMessage, BlockListEntry, Mailbox, Campaign, Lead } from '@/lib/supabase/types';
 import { THREAD_PAGE_SIZE, SEARCH_DEBOUNCE_MS } from '@/components/inbox/inboxConstants';
@@ -56,6 +58,7 @@ export function useInboxData({
   const [unreadOnlyFilter, setUnreadOnlyFilter] = useState(false);
   const [datePreset, setDatePreset] = useState<'7d' | '30d' | null>(null);
   const [tagFilterIds, setTagFilterIds] = useState<string[]>([]);
+  const [campaignTagFilterIds, setCampaignTagFilterIds] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [includeOutOfOfficeFilter, setIncludeOutOfOfficeFilter] = useState(false);
   const [threadOffset, setThreadOffset] = useState(0);
@@ -71,6 +74,7 @@ export function useInboxData({
   const [leadByIdMap, setLeadByIdMap] = useState<Record<string, Lead>>({});
   const [leadReplacementSummaryMap, setLeadReplacementSummaryMap] = useState<Record<string, LeadReplacementSummary>>({});
   const [accountTags, setAccountTags] = useState<ThreadTag[]>([]);
+  const [accountCampaignTags, setAccountCampaignTags] = useState<CampaignTag[]>([]);
 
   const filterButtonRef = useRef<View>(null);
   const loadThreadsRef = useRef<(options?: { append?: boolean }) => Promise<void>>(() => Promise.resolve());
@@ -91,6 +95,7 @@ export function useInboxData({
     unreadOnlyFilter ||
     !!datePreset ||
     tagFilterIds.length > 0 ||
+    campaignTagFilterIds.length > 0 ||
     !!categoryFilter ||
     includeOutOfOfficeFilter ||
     threadSearchQuery.trim().length > 0;
@@ -148,6 +153,7 @@ export function useInboxData({
       dateTo: undefined,
       searchQuery: threadSearchQuery.trim() || undefined,
       tagIds: tagFilterIds.length > 0 ? tagFilterIds : undefined,
+      campaignTagIds: campaignTagFilterIds.length > 0 ? campaignTagFilterIds : undefined,
       category: categoryFilter ?? undefined,
       includeOutOfOffice: includeOutOfOfficeFilter ? true : undefined,
     };
@@ -158,6 +164,7 @@ export function useInboxData({
     datePreset,
     threadSearchQuery,
     tagFilterIds,
+    campaignTagFilterIds,
     categoryFilter,
     includeOutOfOfficeFilter,
   ]);
@@ -260,14 +267,16 @@ export function useInboxData({
   const loadMailboxesAndCampaigns = useCallback(async () => {
     if (!accountId) return;
     try {
-      const [mbList, campList, tagsList] = await Promise.all([
+      const [mbList, campList, tagsList, campaignTagsList] = await Promise.all([
         getMailboxesByAccount(accountId),
         getCampaigns({ accountId }),
         getThreadTags(accountId),
+        getCampaignTags(accountId),
       ]);
       setMailboxes(mbList);
       setCampaigns(campList);
       setAccountTags(tagsList);
+      setAccountCampaignTags(campaignTagsList);
     } catch (err) {
       console.error('Failed to load mailboxes/campaigns/tags:', err);
     }
@@ -413,6 +422,7 @@ export function useInboxData({
     unreadOnlyFilter,
     datePreset,
     tagFilterIds,
+    campaignTagFilterIds,
     categoryFilter,
     includeOutOfOfficeFilter,
   ]);
@@ -467,6 +477,8 @@ export function useInboxData({
     setDatePreset,
     tagFilterIds,
     setTagFilterIds,
+    campaignTagFilterIds,
+    setCampaignTagFilterIds,
     categoryFilter,
     setCategoryFilter,
     includeOutOfOfficeFilter,
@@ -485,6 +497,7 @@ export function useInboxData({
     leadReplacementSummaryMap,
     accountTags,
     setAccountTags,
+    accountCampaignTags,
     displayThreads,
     hasActiveFilters,
     threadsLoadingOrNoAccount,

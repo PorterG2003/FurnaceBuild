@@ -6,6 +6,7 @@ export { Skeleton } from './Skeleton';
 export { SKELETON_DELAY_MS, SKELETON_MIN_DISPLAY_MS } from './skeletonConstants';
 export { useSmoothLoading } from './useSmoothLoading';
 export type { UseSmoothLoadingOptions } from './useSmoothLoading';
+export { usePageSkeleton } from './usePageSkeleton';
 export { ToastProvider, useToast } from './Toast';
 export type { ToastVariant } from './Toast';
 

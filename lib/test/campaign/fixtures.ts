@@ -107,7 +107,6 @@ export function buildCampaignLead(
     lastName,
     companyName: overrides.companyName ?? 'Seed Company',
     phoneNumber: overrides.phoneNumber ?? null,
-    status: overrides.status ?? 'new',
     mailboxKey: overrides.mailboxKey ?? 'mailbox-1',
     source: overrides.source ?? 'campaign-fixture',
     enrollment: overrides.enrollment ?? null,

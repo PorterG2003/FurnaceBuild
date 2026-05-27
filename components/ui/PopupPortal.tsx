@@ -54,7 +54,7 @@ export type PopupPlacement =
 
 export interface PopupPortalProps {
   /** Ref to the trigger element the popup should be anchored to. */
-  anchorRef: RefObject<View>;
+  anchorRef: RefObject<View | null>;
   open: boolean;
   onClose?: () => void;
   placement?: PopupPlacement;
@@ -69,7 +69,7 @@ export interface PopupPortalProps {
   /** Make the popup at least as wide as the anchor. */
   sameWidth?: boolean;
   children: ReactNode;
-  /** Optional extra style applied to the popup wrapper (native only). */
+  /** Optional extra style applied to the popup wrapper (web + native). */
   style?: StyleProp<ViewStyle>;
 }
 
@@ -200,6 +200,7 @@ function PopupPortalWeb({
   interactive = true,
   sameWidth = false,
   children,
+  style,
 }: PopupPortalProps) {
   const popupRef = useRef<HTMLDivElement>(null);
 
@@ -284,7 +285,7 @@ function PopupPortalWeb({
   const { createPortal } = require('react-dom');
 
   // First pass: render off-screen + hidden so we can measure
-  const style: React.CSSProperties = pos
+  const popupStyle: React.CSSProperties = pos
     ? {
         position: 'fixed',
         top: pos.top,
@@ -292,6 +293,7 @@ function PopupPortalWeb({
         zIndex: 99999,
         pointerEvents: interactive ? 'auto' : 'none',
         ...(sameWidth && anchor ? { minWidth: anchor.aw } : {}),
+        ...(style as React.CSSProperties | undefined),
       }
     : {
         position: 'fixed',
@@ -301,10 +303,11 @@ function PopupPortalWeb({
         zIndex: 99999,
         pointerEvents: 'none',
         ...(sameWidth && anchor ? { minWidth: anchor.aw } : {}),
+        ...(style as React.CSSProperties | undefined),
       };
 
   return createPortal(
-    <div ref={popupRef} style={style}>
+    <div ref={popupRef} style={popupStyle}>
       {children}
     </div>,
     document.body,

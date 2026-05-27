@@ -172,7 +172,6 @@ export async function seedEmailVariantsHarness(params: {
       account_id: params.accountId,
       email: leadData.email,
       name: leadData.name,
-      status: 'new',
       source: EMAIL_VARIANTS_HARNESS_PREFIX,
     });
 

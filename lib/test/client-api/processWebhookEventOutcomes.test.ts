@@ -178,3 +178,57 @@ test('processWebhookEvent skips unverified accounts and disabled event types', a
     await harness.cleanup();
   }
 });
+
+test('processWebhookEvent delivers batch completion events when enabled', async (t) => {
+  const restoreFetch = installWebhookDeliveryFetchMock(200);
+  t.after(restoreFetch);
+
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('webhook-deliver-batch'),
+  });
+
+  try {
+    const { error: accountError } = await harness.supabase
+      .from('accounts')
+      .update({
+        webhook_url: 'https://webhook-delivery.test/batch',
+        webhook_signing_secret: 'whsec_test',
+        webhook_enabled_events: ['lead.added_to_campaign.completed'],
+        webhook_url_verified_at: new Date().toISOString(),
+      } as never)
+      .eq('id', harness.accountId);
+    assert.equal(accountError, null);
+
+    const { data: event, error: eventError } = await harness.supabase
+      .from('webhook_events')
+      .insert({
+        account_id: harness.accountId,
+        campaign_id: null,
+        event_type: 'lead.added_to_campaign.completed',
+        payload: {
+          job_id: null,
+          source: 'sync',
+          operation: 'add_to_campaign',
+          counts: { enrolled: 1 },
+          errors: [],
+        },
+        dedupe_key: `${harness.namespace}-batch-completion`,
+      } as never)
+      .select('id')
+      .single();
+    assert.equal(eventError, null);
+    harness.trackedWebhookEventIds.add(event.id);
+
+    await processWebhookEventById(event.id as string);
+
+    const { data: delivery } = await harness.supabase
+      .from('webhook_deliveries')
+      .select('status, response_status')
+      .eq('webhook_event_id', event.id)
+      .maybeSingle();
+    assert.equal(delivery?.status, 'delivered');
+    assert.equal(delivery?.response_status, 200);
+  } finally {
+    await harness.cleanup();
+  }
+});

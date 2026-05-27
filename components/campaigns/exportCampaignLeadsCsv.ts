@@ -11,7 +11,6 @@ const CAMPAIGN_LEAD_CSV_BASE_COLUMNS = [
   'company_linkedin_url',
   'phone_number',
   'source',
-  'status',
   'reply_category',
   'enrollment_state',
   'enrollment_current_node_id',

@@ -37,7 +37,6 @@ const SUPABASE_PAGE_RANGE_SIZE = 1000;
 export interface LeadFilters {
   campaignId?: string;
   bucketId?: string;
-  status?: Lead['status'];
   /** Max number of leads to return (for pagination/preview). */
   limit?: number;
   /** Offset for pagination (use with limit). */
@@ -61,7 +60,7 @@ export interface CampaignLeadTableRow {
   phone_number?: string | null;
   source?: string | null;
   custom_lead_data?: Record<string, unknown> | null;
-  status?: Lead['status'] | null;
+  global_lead_id?: string | null;
   enrollment_state: 'active' | 'completed' | 'stopped' | 'paused' | null;
   enrollment_current_node_id: string | null;
   enrollment_stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
@@ -78,7 +77,6 @@ export interface CampaignLeadTableRow {
   created_at: string;
 }
 
-export type CampaignLeadStatusFilterValue = NonNullable<CampaignLeadTableRow['status']>;
 export type CampaignLeadEnrollmentFilterValue = NonNullable<CampaignLeadTableRow['enrollment_state']> | 'not_started';
 export type CampaignLeadReplyCategoryFilterValue = NonNullable<CampaignLeadTableRow['reply_category']> | 'not_categorized';
 
@@ -88,7 +86,6 @@ export interface CampaignLeadTableQuery {
   search?: string;
   sortBy?: string;
   sortDirection?: 'asc' | 'desc';
-  statuses?: CampaignLeadStatusFilterValue[];
   enrollmentStates?: CampaignLeadEnrollmentFilterValue[];
   replyCategories?: CampaignLeadReplyCategoryFilterValue[];
   leadIds?: string[];
@@ -100,7 +97,7 @@ export interface CampaignLeadTableResult {
 }
 
 const CAMPAIGN_LEAD_TABLE_SELECT =
-  'id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, status, created_at';
+  'id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, global_lead_id, created_at';
 
 const CAMPAIGN_LEAD_TABLE_SORT_COLUMNS = new Set([
   'email',
@@ -113,7 +110,6 @@ const CAMPAIGN_LEAD_TABLE_SORT_COLUMNS = new Set([
   'company_linkedin_url',
   'phone_number',
   'source',
-  'status',
   'created_at',
 ]);
 
@@ -131,7 +127,7 @@ type CampaignLeadBaseRow = Pick<
   | 'phone_number'
   | 'source'
   | 'custom_lead_data'
-  | 'status'
+  | 'global_lead_id'
   | 'created_at'
 >;
 
@@ -246,10 +242,6 @@ function buildCampaignLeadTableQuery(
     leadsQuery = leadsQuery.or(
       `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern},phone_number.ilike.${pattern},website.ilike.${pattern},linkedin_url.ilike.${pattern}`,
     );
-  }
-
-  if (query?.statuses?.length) {
-    leadsQuery = leadsQuery.in('status', query.statuses);
   }
 
   if (scopedLeadIds) {
@@ -539,12 +531,10 @@ async function fetchCampaignLeadsTablePageRpc(
   offset: number,
 ): Promise<{ rows: CampaignLeadBaseRow[]; totalCount: number }> {
   const search = query?.search?.trim();
-  const statuses = query?.statuses?.length ? query.statuses.map(String) : null;
 
   const { data, error } = await supabase.rpc('campaign_leads_table_page', {
     p_campaign_id: campaignId,
     p_scoped_ids: scopedLeadIds,
-    p_statuses: statuses,
     p_search: search && search.length > 0 ? search : null,
     p_sort: String(sortBy),
     p_asc: ascending,
@@ -573,7 +563,6 @@ async function fetchCampaignLeadsTablePageRpc(
     phone_number: r.phone_number,
     source: r.source,
     custom_lead_data: r.custom_lead_data as Record<string, unknown> | null,
-    status: r.status as CampaignLeadBaseRow['status'],
     created_at: r.created_at,
   }));
 
@@ -596,10 +585,6 @@ export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
 
   if (filters?.bucketId) {
     query = query.eq('bucket_id', filters.bucketId);
-  }
-
-  if (filters?.status) {
-    query = query.eq('status', filters.status);
   }
 
   const searchTerm = filters?.search?.trim();
@@ -943,7 +928,7 @@ export async function updateLead(id: string, updates: LeadUpdate): Promise<Lead>
 }
 
 /**
- * Delete a lead (soft delete - sets status to 'removed')
+ * Delete a lead (soft delete via deleted_at).
  */
 export async function deleteLead(id: string): Promise<void> {
   const now = new Date().toISOString();
@@ -951,7 +936,6 @@ export async function deleteLead(id: string): Promise<void> {
     supabase
       .from('leads')
       .update({
-        status: 'removed',
         deleted_at: now,
         updated_at: now,
       })

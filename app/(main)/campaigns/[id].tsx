@@ -1,14 +1,18 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, useWindowDimensions, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { PageLayout, DetailPageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
-import { LoadingState, Alert, useToast } from '@/components/ui/feedback';
+import { DetailPageShell, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
+import { Alert, usePageSkeleton, useToast } from '@/components/ui/feedback';
+import { CampaignDetailSkeleton } from '@/components/skeletons';
 import { MultiSegmentDial } from '@/components/ui/multi-segment-dial';
 import {
   CampaignLeadFiltersModal,
   EMPTY_CAMPAIGN_LEAD_FILTERS,
   LeadsTable,
   ScheduleTab,
+  CampaignStatusMenu,
+  CampaignStatusActionsSheet,
+  type CampaignStatusMenuStatus,
   countActiveCampaignLeadFilters,
   type CampaignLeadFilters,
   type Lead,
@@ -61,6 +65,17 @@ import { LEGACY_EMAIL_VARIANT_ID, sortVariantsForRoundRobin } from '@/lib/email/
 import { CAMPAIGN_STAT_COLORS } from '@/lib/campaigns/campaignStatColors';
 import { getEmailNodesInSendOrder } from '@/lib/campaigns/emailNodeSendOrder';
 import { fillMissingStatsByDay } from '@/lib/campaigns/fillMissingStatsByDay';
+import { useCampaignStatusActions } from '@/lib/campaigns/useCampaignStatusActions';
+import { useCampaignTags } from '@/lib/campaigns/useCampaignTags';
+import { CampaignTagsSection } from '@/components/campaigns/CampaignTagsSection';
+import { useAccount } from '@/contexts/AccountContext';
+
+function toStatusMenuStatus(status: string | null | undefined): CampaignStatusMenuStatus {
+  if (status === 'running' || status === 'paused' || status === 'stopped' || status === 'draft') {
+    return status;
+  }
+  return 'draft';
+}
 
 const tabs: Tab[] = [
   { id: 'details', label: 'Details' },
@@ -158,6 +173,8 @@ export default function CampaignPage() {
   const [variantStatsLoading, setVariantStatsLoading] = useState(false);
   const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
   const [showCampaignActionsSheet, setShowCampaignActionsSheet] = useState(false);
+  const [showStatusActionsSheet, setShowStatusActionsSheet] = useState(false);
+  const pendingOpenStatusActionsRef = useRef(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(() => new Set());
   const [leadsRefreshNonce, setLeadsRefreshNonce] = useState(0);
   const [bulkRemovingLeads, setBulkRemovingLeads] = useState(false);
@@ -168,7 +185,19 @@ export default function CampaignPage() {
     message: string;
   } | null>(null);
   const { toast } = useToast();
+  const { account } = useAccount();
   const leadPageSize = 20;
+  const tagCampaignIds = useMemo(() => (id ? [id] : []), [id]);
+  const {
+    accountCampaignTags,
+    campaignTagsMap,
+    handleTagCreated,
+    handleAddTagToCampaign,
+    handleRemoveTagFromCampaign,
+    handleUpdateTag,
+    handleDeleteTag,
+  } = useCampaignTags(account?.id ?? campaign?.account_id ?? null, tagCampaignIds);
+  const campaignTags = id ? (campaignTagsMap[id] ?? []) : [];
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedLeadSearchQuery(leadSearchQuery.trim()), 300);
@@ -177,12 +206,12 @@ export default function CampaignPage() {
 
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < LAYOUT_BREAKPOINT;
+  const { showPlaceholder } = usePageSkeleton(isLoading);
   const isSmartlead = isSmartleadCampaign(campaign);
   const activeLeadFilterCount = useMemo(() => countActiveCampaignLeadFilters(leadFilters), [leadFilters]);
   const leadFilterKey = useMemo(
     () =>
       JSON.stringify({
-        statuses: [...leadFilters.statuses].sort(),
         enrollmentStates: [...leadFilters.enrollmentStates].sort(),
         replyCategories: [...leadFilters.replyCategories].sort(),
       }),
@@ -279,7 +308,6 @@ export default function CampaignPage() {
       search: debouncedLeadSearchQuery || undefined,
       sortBy: leadSortColumn,
       sortDirection: leadSortDirection,
-      statuses: leadFilters.statuses.length > 0 ? leadFilters.statuses : undefined,
       enrollmentStates: leadFilters.enrollmentStates.length > 0 ? leadFilters.enrollmentStates : undefined,
       replyCategories: leadFilters.replyCategories.length > 0 ? leadFilters.replyCategories : undefined,
     })
@@ -301,7 +329,7 @@ export default function CampaignPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, debouncedLeadSearchQuery, id, leadFilterKey, leadFilters.enrollmentStates, leadFilters.statuses, leadPage, leadSortColumn, leadSortDirection, leadsRefreshNonce]);
+  }, [activeTab, debouncedLeadSearchQuery, id, leadFilterKey, leadFilters.enrollmentStates, leadPage, leadSortColumn, leadSortDirection, leadsRefreshNonce]);
 
   useEffect(() => {
     setSelectedLeadIds(new Set());
@@ -404,7 +432,6 @@ export default function CampaignPage() {
         search: exportingSelectedLeads ? undefined : debouncedLeadSearchQuery || undefined,
         sortBy: leadSortColumn,
         sortDirection: leadSortDirection,
-        statuses: exportingSelectedLeads || leadFilters.statuses.length === 0 ? undefined : leadFilters.statuses,
         enrollmentStates:
           exportingSelectedLeads || leadFilters.enrollmentStates.length === 0
             ? undefined
@@ -438,7 +465,6 @@ export default function CampaignPage() {
     id,
     leadFilters.enrollmentStates,
     leadFilters.replyCategories,
-    leadFilters.statuses,
     leadSortColumn,
     leadSortDirection,
     selectedLeadIds,
@@ -448,6 +474,15 @@ export default function CampaignPage() {
   useEffect(() => {
     loadCampaign();
   }, [loadCampaign]);
+
+  const {
+    isPausing,
+    isStarting: isResuming,
+    isStopping,
+    handlePause,
+    handleResume,
+    handleStop,
+  } = useCampaignStatusActions(id, loadCampaign);
 
   const loadStatsByDay = useCallback(async (bootstrapping: boolean) => {
     if (!id || !campaign) return;
@@ -570,84 +605,101 @@ export default function CampaignPage() {
     ? format(utcToZonedTime(new Date(), schedule.timezone), 'HH:mm')
     : null;
 
-  const detailHeader = (
-    <DetailPageHeader
-      breadcrumbItems={[
-        { label: 'Campaigns', href: '/campaigns' },
-        {
-          label: isLoading ? 'Loading...' : campaign?.name ?? 'Campaign',
-        },
-      ]}
-      backHref="/campaigns"
-      title={isLoading ? 'Loading...' : campaign?.name ?? 'Campaign'}
-      mobileRightAction={
-        <MobileHeaderButton
-          variant="actions"
-          onPress={() => setShowCampaignActionsSheet(true)}
-          accessibilityLabel="Campaign actions"
-        />
-      }
-      actions={
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pressable
-            onPress={handleRefresh}
-            disabled={refreshing || isLoading}
-            style={{
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: '#3A3A3A',
-              backgroundColor: '#2A2A2A',
-              opacity: refreshing || isLoading ? 0.6 : 1,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <ArrowPathIcon size={16} color="#9ca3af" style={{ transform: [{ rotate: refreshing ? '180deg' : '0deg' }] }} />
-              <Text className="text-gray-300 font-instrument text-sm">
-                {refreshing ? 'Refreshing...' : 'Refresh'}
-              </Text>
-            </View>
-          </Pressable>
-          {isSmartlead ? (
-          <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
-            <Pressable
-              onPress={handleOpenMissionControl}
-              className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-              style={{ opacity: 0.5 }}
-            >
-              <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
-            </Pressable>
-          </Tooltip>
-        ) : (
-          <Pressable
-            onPress={handleOpenMissionControl}
-            className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-          >
-            <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
-          </Pressable>
-        )}
-          {isSmartlead ? (
-          <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
-            <Pressable
-              onPress={handleEditFlow}
-              className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-              style={{ opacity: 0.5 }}
-            >
-              <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
-            </Pressable>
-          </Tooltip>
-        ) : (
-          <Pressable
-            onPress={handleEditFlow}
-            className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-          >
-            <Text className="text-white font-instrument-medium text-sm">Edit flow</Text>
-          </Pressable>
-        )}
-        </View>
-      }
+  const showStatusMenu = campaign != null && !isLoading && !loadError;
+  const statusMenuProps = {
+    status: toStatusMenuStatus(campaign?.status) as CampaignStatusMenuStatus,
+    campaignName: campaign?.name ?? undefined,
+    readOnly: isSmartlead,
+    isPausing,
+    isStarting: isResuming,
+    isStopping,
+    onPause: isSmartlead ? undefined : handlePause,
+    onResume: isSmartlead ? undefined : handleResume,
+    onStop: isSmartlead ? undefined : handleStop,
+  };
+
+  useEffect(() => {
+    if (showCampaignActionsSheet) {
+      pendingOpenStatusActionsRef.current = false;
+    }
+  }, [showCampaignActionsSheet]);
+
+  const openStatusActionsFromCampaignSheet = useCallback(() => {
+    pendingOpenStatusActionsRef.current = true;
+    setShowCampaignActionsSheet(false);
+  }, []);
+
+  const handleCampaignActionsSheetAfterClose = useCallback(() => {
+    if (!pendingOpenStatusActionsRef.current) return;
+    pendingOpenStatusActionsRef.current = false;
+    setShowStatusActionsSheet(true);
+  }, []);
+
+  const statusMenu = showStatusMenu ? <CampaignStatusMenu {...statusMenuProps} /> : null;
+  const statusMenuInActionsSheet = showStatusMenu ? (
+    <CampaignStatusMenu
+      {...statusMenuProps}
+      onOpenMobileActionsSheet={openStatusActionsFromCampaignSheet}
     />
+  ) : null;
+
+  const headerActions = (
+    <>
+      {!isMobile && statusMenu}
+      <Button
+        variant="secondary"
+        size="sm"
+        onPress={handleRefresh}
+        disabled={refreshing || isLoading}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <ArrowPathIcon size={16} color="#9ca3af" style={{ transform: [{ rotate: refreshing ? '180deg' : '0deg' }] }} />
+          <Text className="text-gray-300 font-instrument text-sm">
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </Text>
+        </View>
+      </Button>
+      {isSmartlead ? (
+        <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="opacity-50"
+            onPress={handleOpenMissionControl}
+          >
+            Mission Control
+          </Button>
+        </Tooltip>
+      ) : (
+        <Button
+          variant="secondary"
+          size="sm"
+          onPress={handleOpenMissionControl}
+        >
+          Mission Control
+        </Button>
+      )}
+      {isSmartlead ? (
+        <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="opacity-50"
+            onPress={handleEditFlow}
+          >
+            Edit flow
+          </Button>
+        </Tooltip>
+      ) : (
+        <Button
+          variant="secondary"
+          size="sm"
+          onPress={handleEditFlow}
+        >
+          Edit flow
+        </Button>
+      )}
+    </>
   );
 
   const tabContent = campaign ? (
@@ -658,34 +710,26 @@ export default function CampaignPage() {
                 <View className={isMobile ? 'mb-4 pt-0 pb-0' : 'bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 mb-4'}>
                   <View className={`flex-row items-center justify-between ${isMobile ? 'mb-3' : 'mb-6'}`}>
                     <Text className="text-lg font-instrument-semibold text-white">Campaign Overview</Text>
-                    <View
-                      className="px-3 py-1 rounded-lg"
-                      style={{
-                        backgroundColor:
-                          campaign.status === 'running'
-                            ? '#10b98120'
-                            : campaign.status === 'paused'
-                              ? '#f59e0b20'
-                              : '#6b728020',
-                      }}
-                    >
-                      <Text
-                        className="text-xs font-instrument-semibold uppercase"
-                        style={{
-                          color:
-                            campaign.status === 'running'
-                              ? '#10b981'
-                              : campaign.status === 'paused'
-                                ? '#f59e0b'
-                                : '#6b7280',
-                        }}
-                      >
-                        {campaign.status}
-                      </Text>
-                    </View>
                   </View>
 
                   <View style={{ gap: 24 }}>
+                    {account?.id && id ? (
+                      <View>
+                        <Text className="text-gray-400 font-instrument text-xs mb-2">Tags</Text>
+                        <CampaignTagsSection
+                          accountId={account.id}
+                          campaignId={id}
+                          tags={campaignTags}
+                          accountTags={accountCampaignTags}
+                          onTagCreated={handleTagCreated}
+                          onAddTag={handleAddTagToCampaign}
+                          onRemoveTag={handleRemoveTagFromCampaign}
+                          onUpdateTag={handleUpdateTag}
+                          onDeleteTag={handleDeleteTag}
+                          showChipRow
+                        />
+                      </View>
+                    ) : null}
                     <View style={{ flexDirection: isMobile ? 'column' : 'row', gap: 24 }}>
                       <View style={{ flex: 1, gap: 12 }}>
                         <View>
@@ -1249,39 +1293,39 @@ export default function CampaignPage() {
     </View>
   ) : null;
 
-  return (
-    <PageLayout scrollable={false} mobileLayout="scrollable">
-      {isMobile ? (
-        <>
-          {detailHeader}
-          {isLoading && <LoadingState message="Loading campaign..." />}
-          {loadError && (
-            <Alert variant="error" message={loadError} actionText="Retry" onAction={() => loadCampaign()} />
-          )}
-          {campaign && !isLoading && !loadError && tabContent}
-        </>
-      ) : (
-        <>
-          {detailHeader}
-          {isLoading ? (
-            <LoadingState message="Loading campaign..." />
-          ) : loadError ? (
-            <View style={{ padding: 24 }}>
-              <Alert variant="error" message={loadError} actionText="Retry" onAction={() => loadCampaign()} />
-            </View>
-          ) : campaign ? (
-            <View style={{ flex: 1, paddingHorizontal: 24 }}>
-              <ScrollView
-                style={{ flex: 1 }}
-                contentContainerStyle={{ paddingTop: 16, paddingBottom: 24 }}
-                showsVerticalScrollIndicator={false}
-              >
-                {tabContent}
-              </ScrollView>
-            </View>
-          ) : null}
-        </>
+  const detailHeader = (
+    <DetailPageShell
+      breadcrumbItems={[
+        { label: 'Campaigns', href: '/campaigns' },
+        {
+          label: showPlaceholder ? 'Campaign' : (campaign?.name ?? 'Campaign'),
+        },
+      ]}
+      backHref="/campaigns"
+      title={showPlaceholder ? 'Campaign' : (campaign?.name ?? 'Campaign')}
+      mobileRightAction={
+        showPlaceholder ? undefined : (
+          <MobileHeaderButton
+            variant="actions"
+            onPress={() => setShowCampaignActionsSheet(true)}
+            accessibilityLabel="Campaign actions"
+          />
+        )
+      }
+      actions={showPlaceholder ? undefined : headerActions}
+      contentPadding={16}
+    >
+      {showPlaceholder ? <CampaignDetailSkeleton /> : null}
+      {loadError && (
+        <Alert variant="error" message={loadError} actionText="Retry" onAction={() => loadCampaign()} />
       )}
+      {campaign && !showPlaceholder && !loadError && tabContent}
+    </DetailPageShell>
+  );
+
+  return (
+    <>
+      {detailHeader}
       <ConfirmModal
         visible={leadRemoveConfirmOpen}
         onClose={() => setLeadRemoveConfirmOpen(false)}
@@ -1301,7 +1345,9 @@ export default function CampaignPage() {
       <BottomSheet
         visible={showCampaignActionsSheet}
         onClose={() => setShowCampaignActionsSheet(false)}
+        onAfterClose={handleCampaignActionsSheetAfterClose}
       >
+        {statusMenuInActionsSheet}
         {/* Refresh */}
         <Pressable
           onPress={() => {
@@ -1383,6 +1429,13 @@ export default function CampaignPage() {
           </Text>
         </View>
       </BottomSheet>
-    </PageLayout>
+      {showStatusMenu && (campaign?.status === 'running' || campaign?.status === 'paused') && !isSmartlead ? (
+        <CampaignStatusActionsSheet
+          visible={showStatusActionsSheet}
+          onClose={() => setShowStatusActionsSheet(false)}
+          {...statusMenuProps}
+        />
+      ) : null}
+    </>
   );
 }

@@ -30,7 +30,15 @@ const tagDescriptions = [
   },
   {
     name: 'Jobs',
-    description: 'Inspect asynchronous lead import jobs.',
+    description: 'Create and poll asynchronous bulk jobs (import, add/remove, pause/resume).',
+  },
+  {
+    name: 'People',
+    description: 'Account-scoped people explorer and profile updates.',
+  },
+  {
+    name: 'Lead lists',
+    description: 'Saved lead lists and list membership.',
   },
   {
     name: 'Mailboxes',
@@ -56,7 +64,7 @@ const tagDescriptions = [
 
 function buildDescription() {
   return [
-    'Account-scoped REST API for campaigns, leads, inbox, mailboxes, stats, and block list.',
+    'Account-scoped REST API for campaigns, leads, people, saved lists, inbox, mailboxes, stats, and block list.',
     '',
     '## Authentication',
     `Send your account API key as \`Authorization: Bearer ${API_KEY_PREFIX}...\`. Keys are created in Furnace Account Settings. Revoked, expired, or unknown keys return \`401 authentication_error\`.`,
@@ -93,6 +101,27 @@ function buildDescription() {
     '',
     '## Outbound Webhooks',
     `Client API actions can emit webhook events such as ${DEFAULT_ALLOWED_WEBHOOK_EVENTS.join(', ')}. Event delivery is configured in Furnace; this OpenAPI document covers the initiating REST calls and the event types they may trigger.`,
+    '',
+    '### Atomic vs batch webhooks',
+    '- **Atomic tier** — single-lead synchronous requests emit one entity event (`lead.created`, `lead.updated`, `lead.deleted`, campaign status, email activity).',
+    '- **Batch tier** — async jobs and sync bulk actions (>1 lead or dedicated bulk endpoints) emit exactly one operation-specific `*.completed` event. Per-row lead webhooks are never emitted during bulk processing.',
+    '',
+    '### Batch completion payload',
+    'Batch completion events use the `BatchCompletionWebhookPayload` schema: `job_id` (null for sync), `source` (`async` | `sync`), `campaign_id`, `operation`, `counts`, and `errors[]`.',
+    '',
+    '| Operation | Completion event |',
+    '| --- | --- |',
+    '| `api_lead_import` | `lead.bulk_import.completed` |',
+    '| `add_to_campaign` | `lead.added_to_campaign.completed` |',
+    '| `remove_from_campaign` | `lead.removed_from_campaign.completed` |',
+    '| `remove_from_all_campaigns` | `lead.removed_from_all_campaigns.completed` |',
+    '| `pause_enrollments` | `enrollment.pause_completed` |',
+    '| `resume_enrollments` | `enrollment.resume_completed` |',
+    '',
+    '### Bulk import webhook policy',
+    '- Sync bulk (`POST /v1/campaigns/{id}/leads/bulk`) suppresses per-row lead webhooks and emits one `lead.bulk_import.completed` event.',
+    '- Async bulk (`POST /v1/campaigns/{id}/leads/bulk/async` or `POST /v1/jobs` with `api_lead_import`) suppresses per-row lead webhooks and emits one `lead.bulk_import.completed` event when the job finishes successfully.',
+    '- Poll `GET /v1/jobs/{id}` for per-row errors and aggregate counts in the job `result` payload.',
   ].join('\n');
 }
 

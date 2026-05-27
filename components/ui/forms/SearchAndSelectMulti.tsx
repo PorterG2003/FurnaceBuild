@@ -12,7 +12,6 @@ import {
   TextInput,
   Pressable,
   ScrollView,
-  Modal,
   useWindowDimensions,
   Platform,
   KeyboardAvoidingView,
@@ -23,9 +22,14 @@ import {
   useBottomSheetTakeover,
   usePickerInsideBottomSheet,
 } from '@/components/ui/modals';
+import { PopupPortal } from '@/components/ui/PopupPortal';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import { FormFieldLabel } from './FormFieldHelp';
 import { FORM_FIELD_VARIANTS, type FormFieldVariant } from './formFieldStyles';
+import {
+  FORM_DROPDOWN_POPUP_GAP,
+  getFormDropdownPanelStyle,
+} from './formDropdownPopup';
 
 const noSelectStyle = Platform.OS === 'web' ? ({ userSelect: 'none' } as const) : undefined;
 const textInputWebStyle = Platform.OS === 'web' ? ({ userSelect: 'text' } as const) : undefined;
@@ -89,6 +93,8 @@ export interface SearchAndSelectMultiProps<T> {
   items: T[];
   getItemId: (item: T) => string;
   getItemLabel: (item: T) => string;
+  /** Optional muted sublabel (e.g. status) shown below the primary label in the list. */
+  getItemSecondaryLabel?: (item: T) => string | null | undefined;
   value: string[];
   onChange: (ids: string[]) => void;
   label?: string;
@@ -112,6 +118,7 @@ export function SearchAndSelectMulti<T>({
   items,
   getItemId,
   getItemLabel,
+  getItemSecondaryLabel,
   value,
   onChange,
   label,
@@ -140,39 +147,21 @@ export function SearchAndSelectMulti<T>({
   const { presentTakeover, dismissTakeover } = useBottomSheetTakeover();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [triggerLayout, setTriggerLayout] = useState<{
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null>(null);
   const triggerRef = useRef<View>(null);
 
   const filteredItems = useMemo(() => {
     if (!search.trim()) return items;
     const q = search.trim().toLowerCase();
-    return items.filter((item) => getItemLabel(item).toLowerCase().includes(q));
-  }, [items, search, getItemLabel]);
+    return items.filter((item) => {
+      const primary = getItemLabel(item).toLowerCase();
+      const secondary = getItemSecondaryLabel?.(item)?.toLowerCase() ?? '';
+      return primary.includes(q) || secondary.includes(q);
+    });
+  }, [items, search, getItemLabel, getItemSecondaryLabel]);
 
   useEffect(() => {
-    if (!open) {
-      setTriggerLayout(null);
-      setSearch('');
-      return;
-    }
-    if (isCompactLayout) {
-      setTriggerLayout(null);
-      return;
-    }
-    const measure = () => {
-      triggerRef.current?.measureInWindow((x, y, w, h) => {
-        setTriggerLayout({ x, y, w, h });
-      });
-    };
-    measure();
-    const t = setTimeout(measure, 50);
-    return () => clearTimeout(t);
-  }, [open, isCompactLayout]);
+    if (!open) setSearch('');
+  }, [open]);
 
   const displayText = (() => {
     if (value.length === 0) return placeholder;
@@ -199,6 +188,7 @@ export function SearchAndSelectMulti<T>({
   const dropdownContentHeight = listMaxHeight + 100;
   const sheetBodyMaxHeight = Math.min(dropdownContentHeight, screenHeight * 0.55);
   const takeoverListMax = Math.min(listMaxHeight, Math.floor(screenHeight * 0.65));
+  const dropdownPanelStyle = getFormDropdownPanelStyle({ maxHeight: dropdownContentHeight });
 
   const renderListPanel = useCallback(
     (listScrollMax: number = listMaxHeight) => (
@@ -279,6 +269,7 @@ export function SearchAndSelectMulti<T>({
           {filteredItems.map((item) => {
             const id = getItemId(item);
             const isSelected = value.includes(id);
+            const secondaryLabel = getItemSecondaryLabel?.(item);
             return (
               <Pressable
                 key={id}
@@ -328,13 +319,24 @@ export function SearchAndSelectMulti<T>({
                     ) : null;
                   })()
                 ) : null}
-                <Text
-                  selectable={false}
-                  className={`text-white font-instrument-medium ${panelSizing.rowTextClassName} flex-1`}
-                  numberOfLines={1}
-                >
-                  {getItemLabel(item)}
-                </Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    selectable={false}
+                    className={`text-white font-instrument-medium ${panelSizing.rowTextClassName}`}
+                    numberOfLines={1}
+                  >
+                    {getItemLabel(item)}
+                  </Text>
+                  {secondaryLabel ? (
+                    <Text
+                      selectable={false}
+                      className="text-gray-400 font-instrument mt-0.5 text-[11px]"
+                      numberOfLines={1}
+                    >
+                      {secondaryLabel}
+                    </Text>
+                  ) : null}
+                </View>
               </Pressable>
             );
           })}
@@ -350,6 +352,7 @@ export function SearchAndSelectMulti<T>({
       value,
       getItemId,
       getItemLabel,
+      getItemSecondaryLabel,
       getItemColor,
       toggleItem,
       listMaxHeight,
@@ -439,38 +442,16 @@ export function SearchAndSelectMulti<T>({
           </BottomSheet>
         )
       ) : (
-        <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
-          <Pressable style={{ flex: 1 }} onPress={close}>
-            {triggerLayout && (
-              <Pressable
-                style={{
-                  position: 'absolute',
-                  left: triggerLayout.x,
-                  top: triggerLayout.y + triggerLayout.h + 4,
-                  width: Math.max(triggerLayout.w, 260),
-                  maxHeight: dropdownContentHeight,
-                  backgroundColor: '#1A1A1A',
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: '#2A2A2A',
-                  ...(typeof window !== 'undefined'
-                    ? { boxShadow: '0px 8px 16px rgba(0,0,0,0.35)' }
-                    : {
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 8 },
-                        shadowOpacity: 0.35,
-                        shadowRadius: 16,
-                        elevation: 12,
-                      }),
-                  overflow: 'hidden',
-                }}
-                onPress={(e) => e?.stopPropagation?.()}
-              >
-                {renderListPanel(listMaxHeight)}
-              </Pressable>
-            )}
-          </Pressable>
-        </Modal>
+        <PopupPortal
+          anchorRef={triggerRef}
+          open={open}
+          onClose={close}
+          placement="bottom-start"
+          gap={FORM_DROPDOWN_POPUP_GAP}
+          sameWidth
+        >
+          <View style={dropdownPanelStyle}>{renderListPanel(listMaxHeight)}</View>
+        </PopupPortal>
       )}
     </View>
   );

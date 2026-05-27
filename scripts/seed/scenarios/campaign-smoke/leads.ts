@@ -68,7 +68,6 @@ export const campaignSmokeLeadsModule: SeedModule = {
           first_name: persona.first_name,
           last_name: persona.last_name,
           company_name: persona.company_name,
-          status: 'new',
           source: SEED_LEAD_SOURCE,
         })
         .select('id')

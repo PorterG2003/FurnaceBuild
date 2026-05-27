@@ -52,7 +52,6 @@ export default function SlackErrorsTestPage() {
         account_id: accountId,
         email: 'slack-test@furnace.test',
         name: 'Slack Test',
-        status: 'new',
       });
       await supabase.from('enrollments').insert({
         campaign_id: campaign.id,
@@ -120,7 +119,6 @@ export default function SlackErrorsTestPage() {
         account_id: account.id,
         email: 'slack-send-test@furnace.test',
         name: 'Slack Send Test',
-        status: 'new',
       });
       const { data: enrollment } = await supabase
         .from('enrollments')

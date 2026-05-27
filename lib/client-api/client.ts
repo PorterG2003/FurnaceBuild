@@ -2,10 +2,16 @@ import outputs from '@/amplify_outputs.json';
 import { getAccessToken } from '@/lib/supabase/client';
 
 const custom = (outputs as { custom?: { clientApiUrl?: string } }).custom;
-const CLIENT_API_URL = custom?.clientApiUrl?.replace(/\/$/, '') ?? null;
 
 export function getClientApiBaseUrl(): string | null {
-  return CLIENT_API_URL;
+  const fromEnv =
+    process.env.EXPO_PUBLIC_CLIENT_API_URL?.trim() ||
+    process.env.EXPO_PUBLIC_CLIENT_API_BASE_URL?.trim();
+  if (fromEnv) {
+    return fromEnv.replace(/\/$/, '');
+  }
+
+  return custom?.clientApiUrl?.replace(/\/$/, '') ?? null;
 }
 
 export async function verifyWebhookUrl(params: {
@@ -17,10 +23,11 @@ export async function verifyWebhookUrl(params: {
   if (!token) {
     throw new Error('You must be signed in to verify webhook URLs.');
   }
-  if (!CLIENT_API_URL) {
+  const clientApiUrl = getClientApiBaseUrl();
+  if (!clientApiUrl) {
     throw new Error('Client API URL is not configured in amplify outputs.');
   }
-  const response = await fetch(`${CLIENT_API_URL}/internal/webhook/verify`, {
+  const response = await fetch(`${clientApiUrl}/internal/webhook/verify`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,

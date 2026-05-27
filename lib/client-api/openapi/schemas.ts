@@ -3,6 +3,7 @@ import {
   BULK_ASYNC_LIMIT,
   BULK_SYNC_LIMIT,
   DEFAULT_PAGE_SIZE,
+  IMPORT_JOB_OPERATIONS,
   MAX_ASYNC_JOBS_PER_ACCOUNT,
   MAX_PAGE_SIZE,
   RATE_LIMIT_REQUESTS_PER_MINUTE,
@@ -131,14 +132,62 @@ export function buildClientApiComponents() {
           enum: ['draft', 'running', 'paused', 'stopped'],
         },
       },
-      LeadStatus: {
-        name: 'status',
+      CampaignTagIds: {
+        name: 'tag_ids',
         in: 'query',
-        description: 'Lead status filter.',
-        schema: {
-          type: 'string',
-          enum: ['new', 'processing', 'completed', 'failed', 'paused', 'removed'],
-        },
+        description: 'Comma-separated campaign tag ids. Returns campaigns that have any of the listed tags.',
+        schema: { type: 'string', example: 'uuid-1,uuid-2' },
+      },
+      CampaignTagId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Campaign tag id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      GlobalLeadId: {
+        name: 'globalLeadId',
+        in: 'path',
+        required: true,
+        description: 'Stable account-scoped person id (SHA-256 of normalized email).',
+        schema: { type: 'string' },
+      },
+      LeadListId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Saved lead list id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      PeopleSearch: {
+        name: 'q',
+        in: 'query',
+        description: 'Search people by email or name.',
+        schema: { type: 'string' },
+      },
+      PeopleSort: {
+        name: 'sort',
+        in: 'query',
+        description: 'Sort column for the people explorer.',
+        schema: { type: 'string', default: 'latest_activity' },
+      },
+      PeopleSortDirection: {
+        name: 'sort_dir',
+        in: 'query',
+        description: 'Sort direction.',
+        schema: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+      },
+      GlobalLeadIdsQuery: {
+        name: 'global_lead_ids',
+        in: 'query',
+        description: 'Comma-separated global lead ids filter.',
+        schema: { type: 'string' },
+      },
+      CampaignIdsQuery: {
+        name: 'campaign_ids',
+        in: 'query',
+        description: 'Comma-separated campaign ids filter.',
+        schema: { type: 'string' },
       },
       IncludeDeletedCampaigns: {
         name: 'include_deleted',
@@ -318,6 +367,47 @@ export function buildClientApiComponents() {
         },
         required: ['id', 'deleted'],
       },
+      CampaignTag: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          color: { type: 'string', nullable: true },
+          created_at: { type: 'string', format: 'date-time' },
+        },
+        required: ['id', 'name', 'created_at'],
+      },
+      CampaignTagCreate: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          color: { type: 'string', nullable: true },
+        },
+        required: ['name'],
+        additionalProperties: false,
+      },
+      CampaignTagUpdate: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          color: { type: 'string', nullable: true },
+        },
+        additionalProperties: false,
+      },
+      CampaignTagResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('CampaignTag'),
+        },
+        required: ['data'],
+      },
+      CampaignTagListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('CampaignTag') },
+        },
+        required: ['data'],
+      },
       Campaign: {
         type: 'object',
         description: 'Campaign row as returned by the Furnace backend.',
@@ -338,6 +428,11 @@ export function buildClientApiComponents() {
           created_at: { type: 'string', format: 'date-time' },
           updated_at: { type: 'string', format: 'date-time', nullable: true },
           deleted_at: { type: 'string', format: 'date-time', nullable: true },
+          tags: {
+            type: 'array',
+            items: schemaRef('CampaignTag'),
+            description: 'Campaign tags assigned to this campaign.',
+          },
         },
         required: ['id', 'status', 'created_at'],
         additionalProperties: true,
@@ -387,6 +482,19 @@ export function buildClientApiComponents() {
             type: 'array',
             items: { type: 'string', format: 'uuid' },
           },
+          tag_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+            description: 'Replace all tag assignments on the campaign.',
+          },
+          add_tag_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+          },
+          remove_tag_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+          },
         },
         additionalProperties: false,
       },
@@ -433,6 +541,10 @@ export function buildClientApiComponents() {
           id: { type: 'string', format: 'uuid' },
           campaign_id: { type: 'string', format: 'uuid' },
           account_id: { type: 'string', format: 'uuid', nullable: true },
+          global_lead_id: {
+            type: 'string',
+            description: 'Stable account-scoped person id (SHA-256 of normalized email). Used for enrollment pause/resume and bulk membership APIs.',
+          },
           email: { type: 'string', format: 'email' },
           name: { type: 'string', nullable: true },
           first_name: { type: 'string', nullable: true },
@@ -443,15 +555,11 @@ export function buildClientApiComponents() {
           company_linkedin_url: { type: 'string', nullable: true },
           custom_lead_data: { type: 'object', additionalProperties: true },
           source: { type: 'string', examples: ['api'] },
-          status: {
-            type: 'string',
-            enum: ['new', 'processing', 'completed', 'failed', 'paused', 'removed'],
-          },
           created_at: { type: 'string', format: 'date-time' },
           updated_at: { type: 'string', format: 'date-time', nullable: true },
           deleted_at: { type: 'string', format: 'date-time', nullable: true },
         },
-        required: ['id', 'campaign_id', 'email', 'status', 'created_at'],
+        required: ['id', 'campaign_id', 'email', 'created_at'],
         additionalProperties: true,
       },
       LeadCreate: {
@@ -548,20 +656,45 @@ export function buildClientApiComponents() {
         properties: {
           id: { type: 'string', format: 'uuid' },
           account_id: { type: 'string', format: 'uuid' },
-          campaign_id: { type: 'string', format: 'uuid' },
+          campaign_id: { type: 'string', format: 'uuid', nullable: true },
           created_by_api_key_id: { type: 'string', format: 'uuid', nullable: true },
           status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
-          input: { type: 'object', additionalProperties: true },
+          progress: { type: 'integer', minimum: 0, maximum: 100 },
+          cursor: { type: 'integer', minimum: 0 },
+          input: {
+            type: 'object',
+            additionalProperties: true,
+            description: 'Includes required `operation` and scope fields (`global_lead_ids`, `list_id`, or `leads`).',
+          },
           result: { type: 'object', additionalProperties: true },
           errors: {
             type: 'array',
             items: { type: 'object', additionalProperties: true },
           },
+          started_at: { type: 'string', format: 'date-time', nullable: true },
+          completed_at: { type: 'string', format: 'date-time', nullable: true },
           created_at: { type: 'string', format: 'date-time', nullable: true },
           updated_at: { type: 'string', format: 'date-time', nullable: true },
         },
         required: ['id', 'status', 'input', 'result', 'errors'],
         additionalProperties: true,
+      },
+      ImportJobCreate: {
+        type: 'object',
+        description: 'Create an async bulk job. Poll `GET /v1/jobs/{id}` for completion.',
+        properties: {
+          operation: { type: 'string', enum: [...IMPORT_JOB_OPERATIONS] },
+          campaign_id: { type: 'string', format: 'uuid', nullable: true },
+          global_lead_ids: { type: 'array', items: { type: 'string' } },
+          list_id: { type: 'string', format: 'uuid' },
+          leads: {
+            type: 'array',
+            maxItems: BULK_ASYNC_LIMIT,
+            items: schemaRef('LeadCreate'),
+          },
+        },
+        required: ['operation'],
+        additionalProperties: false,
       },
       Mailbox: {
         type: 'object',
@@ -730,6 +863,44 @@ export function buildClientApiComponents() {
         },
         required: ['data'],
       },
+      PauseEnrollmentsRequest: {
+        type: 'object',
+        properties: {
+          global_lead_ids: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 1,
+          },
+        },
+        required: ['global_lead_ids'],
+      },
+      ResumeEnrollmentsRequest: {
+        type: 'object',
+        properties: {
+          global_lead_ids: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 1,
+          },
+        },
+        required: ['global_lead_ids'],
+      },
+      EnrollmentActionResult: {
+        type: 'object',
+        properties: {
+          paused: { type: 'integer' },
+          resumed: { type: 'integer' },
+          skipped: { type: 'integer' },
+          errors: { type: 'array', items: { type: 'object' } },
+        },
+      },
+      EnrollmentActionResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('EnrollmentActionResult'),
+        },
+        required: ['data'],
+      },
       LeadFieldsResponse: {
         type: 'object',
         properties: {
@@ -815,6 +986,175 @@ export function buildClientApiComponents() {
           data: { type: 'array', items: schemaRef('Message') },
         },
         required: ['data'],
+      },
+      GlobalLeadIdsRequest: {
+        type: 'object',
+        properties: {
+          global_lead_ids: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 1,
+            maxItems: BULK_SYNC_LIMIT,
+          },
+        },
+        required: ['global_lead_ids'],
+        additionalProperties: false,
+      },
+      BulkMembershipActionResult: {
+        type: 'object',
+        additionalProperties: true,
+        description: 'RPC result counts from sync membership operations.',
+      },
+      BulkMembershipActionResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('BulkMembershipActionResult'),
+        },
+        required: ['data'],
+      },
+      Person: {
+        type: 'object',
+        description: 'Account-scoped person rollup row from the people explorer.',
+        additionalProperties: true,
+      },
+      PersonUpdate: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', nullable: true },
+          first_name: { type: 'string', nullable: true },
+          last_name: { type: 'string', nullable: true },
+          company_name: { type: 'string', nullable: true },
+        },
+        additionalProperties: false,
+      },
+      PersonResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('Person'),
+        },
+        required: ['data'],
+      },
+      PersonDetailResponse: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              person: schemaRef('Person'),
+              memberships: {
+                type: 'array',
+                items: { type: 'object', additionalProperties: true },
+              },
+            },
+            required: ['person', 'memberships'],
+          },
+        },
+        required: ['data'],
+      },
+      PersonListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('Person') },
+          limit: { type: 'integer' },
+          offset: { type: 'integer' },
+          total_count: { type: 'integer' },
+        },
+        required: ['data', 'limit', 'offset', 'total_count'],
+      },
+      LeadSavedList: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          account_id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          column_layout: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          created_at: { type: 'string', format: 'date-time', nullable: true },
+          updated_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        required: ['id', 'name'],
+        additionalProperties: true,
+      },
+      LeadSavedListCreate: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          global_lead_ids: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['name'],
+        additionalProperties: false,
+      },
+      LeadSavedListUpdate: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          column_layout: { type: 'array', items: { type: 'object', additionalProperties: true } },
+        },
+        additionalProperties: false,
+      },
+      LeadSavedListResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('LeadSavedList'),
+        },
+        required: ['data'],
+      },
+      LeadSavedListArrayResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('LeadSavedList') },
+        },
+        required: ['data'],
+      },
+      LeadListMembersResult: {
+        type: 'object',
+        properties: {
+          added: { type: 'integer' },
+          removed: { type: 'integer' },
+          skippedAlreadyMember: { type: 'integer' },
+          skippedNotMember: { type: 'integer' },
+        },
+        additionalProperties: true,
+      },
+      LeadListMembersResultResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('LeadListMembersResult'),
+        },
+        required: ['data'],
+      },
+      BatchCompletionWebhookPayload: {
+        type: 'object',
+        description: 'Standard payload for async or sync bulk completion webhooks.',
+        properties: {
+          job_id: { type: 'string', format: 'uuid', nullable: true },
+          source: { type: 'string', enum: ['async', 'sync'] },
+          campaign_id: { type: 'string', format: 'uuid', nullable: true },
+          operation: { type: 'string', enum: [...IMPORT_JOB_OPERATIONS] },
+          counts: {
+            type: 'object',
+            additionalProperties: { type: 'integer' },
+          },
+          errors: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                global_lead_id: { type: 'string' },
+                index: { type: 'integer' },
+                message: { type: 'string' },
+              },
+              required: ['message'],
+            },
+          },
+          global_lead_ids: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+        required: ['job_id', 'source', 'campaign_id', 'operation', 'counts', 'errors'],
       },
       ReplyJobResponse: {
         type: 'object',

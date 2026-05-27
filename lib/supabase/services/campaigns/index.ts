@@ -37,5 +37,21 @@ export {
   type ResumeCampaignResult,
   type StopCampaignResult,
 } from './campaign-enrollments';
+export {
+  getCampaignTags,
+  createCampaignTag,
+  updateCampaignTag,
+  deleteCampaignTag,
+  addTagToCampaign,
+  removeTagFromCampaign,
+  setCampaignTags,
+  addTagsToCampaign,
+  removeTagsFromCampaign,
+  getTagsForCampaign,
+  getTagsForCampaigns,
+  getCampaignIdsForTags,
+  validateCampaignTagIds,
+  type CampaignTag,
+} from '../campaign-tags';
 export { isCampaignOwner, hasCampaignAccess } from './campaign-access';
 export { getTestCampaigns, deleteTestCampaign } from './campaign-test-data';

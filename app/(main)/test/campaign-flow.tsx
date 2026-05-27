@@ -234,7 +234,6 @@ export default function CampaignFlowTestPage() {
           account_id: account.id,
           email: leadData.email,
           name: leadData.name,
-          status: 'new',
           source: 'test-campaign-flow',
         });
         leads.push(lead);

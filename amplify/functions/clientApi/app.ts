@@ -20,7 +20,19 @@ import {
   getCampaignMappedStandardFieldKeys,
 } from '../../../lib/client-api/flow-fields.js';
 import { buildRateLimitHeaders } from '../../../lib/client-api/rate-limit.js';
+import {
+  applyCampaignTagPatch,
+  attachTagsToCampaignRow,
+  getCampaignIdsMatchingAnyTag,
+  getTagsForCampaignIds,
+  listAccountCampaignTags,
+} from '../../../lib/client-api/campaign-tags.js';
 import { hashRequestBody } from '../../../lib/client-api/idempotency.js';
+import { startApiImportJob } from '../../../lib/client-api/jobs.js';
+import {
+  stableGlobalLeadIdsKey,
+} from '../../../lib/client-api/webhooks/batchCompletion.js';
+import { insertBatchCompletionWebhookEvent } from '../../../lib/client-api/webhooks/emitBatchCompletion.js';
 import {
   BULK_ASYNC_LIMIT,
   BULK_SYNC_LIMIT,
@@ -536,6 +548,10 @@ app.get('/v1/campaigns', async (c) => {
   const includeDeleted = c.req.query('include_deleted') === 'true';
   const q = c.req.query('q')?.trim();
   const status = c.req.query('status')?.trim();
+  const tagIdsParam = c.req.query('tag_ids')?.trim();
+  const tagFilterIds = tagIdsParam
+    ? tagIdsParam.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
   let query = supabase
     .from('campaigns')
     .select('*', { count: 'exact' })
@@ -548,17 +564,96 @@ app.get('/v1/campaigns', async (c) => {
   if (q) {
     query = query.ilike('name', `%${q.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`);
   }
+  if (tagFilterIds.length > 0) {
+    const matchingIds = await getCampaignIdsMatchingAnyTag(supabase, auth.accountId, tagFilterIds);
+    if (matchingIds.length === 0) {
+      return jsonResponse(c, buildListPayload([], limit, offset, 0), 200, c.get('rateLimitHeaders'));
+    }
+    query = query.in('id', matchingIds);
+  }
   const { data, error, count } = await query.range(offset, offset + limit - 1);
   if (error) {
     throw new Error(`Failed to list campaigns: ${error.message}`);
   }
-  return jsonResponse(c, buildListPayload(data ?? [], limit, offset, count ?? 0), 200, c.get('rateLimitHeaders'));
+  const rows = data ?? [];
+  const tagsMap = await getTagsForCampaignIds(
+    supabase,
+    rows.map((row) => row.id),
+  );
+  const enriched = rows.map((row) => attachTagsToCampaignRow(row, tagsMap));
+  return jsonResponse(c, buildListPayload(enriched, limit, offset, count ?? 0), 200, c.get('rateLimitHeaders'));
+});
+
+app.get('/v1/campaign-tags', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const tags = await listAccountCampaignTags(supabase, auth.accountId);
+  return jsonResponse(c, { data: tags }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/campaign-tags', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = parseJsonBody<{ name?: string; color?: string | null }>(await c.req.text());
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) invalidRequest('validation_error', 'name is required');
+  const { data, error } = await supabase
+    .from('campaign_tags')
+    .insert({
+      account_id: auth.accountId,
+      name,
+      color: body.color ?? null,
+    })
+    .select('id, name, color, created_at')
+    .single();
+  if (error) throw new Error(`Failed to create campaign tag: ${error.message}`);
+  return jsonResponse(c, { data }, 201, c.get('rateLimitHeaders'));
+});
+
+app.patch('/v1/campaign-tags/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const tagId = c.req.param('id');
+  const body = parseJsonBody<{ name?: string; color?: string | null }>(await c.req.text());
+  const updates: { name?: string; color?: string | null } = {};
+  if (typeof body.name === 'string') updates.name = body.name.trim();
+  if (body.color !== undefined) updates.color = body.color;
+  if (Object.keys(updates).length === 0) {
+    invalidRequest('validation_error', 'No mutable fields provided');
+  }
+  const { data, error } = await supabase
+    .from('campaign_tags')
+    .update(updates)
+    .eq('id', tagId)
+    .eq('account_id', auth.accountId)
+    .select('id, name, color, created_at')
+    .single();
+  if (error) throw new Error(`Failed to update campaign tag: ${error.message}`);
+  if (!data) notFound('tag_not_found', 'Campaign tag not found');
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.delete('/v1/campaign-tags/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const tagId = c.req.param('id');
+  const { data, error } = await supabase
+    .from('campaign_tags')
+    .delete()
+    .eq('id', tagId)
+    .eq('account_id', auth.accountId)
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(`Failed to delete campaign tag: ${error.message}`);
+  if (!data) notFound('tag_not_found', 'Campaign tag not found');
+  return jsonResponse(c, { data: { id: data.id, deleted: true } }, 200, c.get('rateLimitHeaders'));
 });
 
 app.get('/v1/campaigns/:id', async (c) => {
   const supabase = createServiceRoleClient();
   const campaign = await loadCampaignOrThrow(supabase, c.get('apiKey').accountId, c.req.param('id'));
-  return jsonResponse(c, { data: campaign }, 200, c.get('rateLimitHeaders'));
+  const tagsMap = await getTagsForCampaignIds(supabase, [campaign.id]);
+  return jsonResponse(c, { data: attachTagsToCampaignRow(campaign, tagsMap) }, 200, c.get('rateLimitHeaders'));
 });
 
 app.get('/v1/campaigns/:id/flow', async (c) => {
@@ -582,6 +677,16 @@ app.patch('/v1/campaigns/:id', async (c) => {
   const addMailboxIds = Array.isArray(body.add_mailbox_ids) ? body.add_mailbox_ids.filter((value): value is string => typeof value === 'string') : [];
   const removeMailboxIds = Array.isArray(body.remove_mailbox_ids) ? body.remove_mailbox_ids.filter((value): value is string => typeof value === 'string') : [];
   const replaceMailboxIds = Array.isArray(body.mailbox_ids) ? body.mailbox_ids.filter((value): value is string => typeof value === 'string') : null;
+  const tagIds = Array.isArray(body.tag_ids) ? body.tag_ids.filter((value): value is string => typeof value === 'string') : undefined;
+  const addTagIds = Array.isArray(body.add_tag_ids) ? body.add_tag_ids.filter((value): value is string => typeof value === 'string') : [];
+  const removeTagIds = Array.isArray(body.remove_tag_ids) ? body.remove_tag_ids.filter((value): value is string => typeof value === 'string') : [];
+  if (tagIds !== undefined || addTagIds.length > 0 || removeTagIds.length > 0) {
+    await applyCampaignTagPatch(supabase, auth.accountId, campaign.id, {
+      tag_ids: tagIds,
+      add_tag_ids: addTagIds,
+      remove_tag_ids: removeTagIds,
+    });
+  }
   if (Object.keys(patch).length > 0) {
     const { error } = await supabase
       .from('campaigns')
@@ -602,7 +707,8 @@ app.patch('/v1/campaigns/:id', async (c) => {
     await replaceCampaignMailboxes(supabase, campaign, [...nextMailboxIds]);
   }
   const refreshed = await loadCampaignOrThrow(supabase, auth.accountId, campaign.id);
-  return jsonResponse(c, { data: refreshed }, 200, c.get('rateLimitHeaders'));
+  const tagsMap = await getTagsForCampaignIds(supabase, [refreshed.id]);
+  return jsonResponse(c, { data: attachTagsToCampaignRow(refreshed, tagsMap) }, 200, c.get('rateLimitHeaders'));
 });
 
 app.delete('/v1/campaigns/:id', async (c) => {
@@ -677,6 +783,97 @@ app.post('/v1/campaigns/:id/resume', async (c) => {
     dedupeKey: `campaign.resumed:${campaign.id}:${Date.now()}`,
   });
   return jsonResponse(c, { data: { id: campaign.id, status: 'running' } }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/campaigns/:id/enrollments/pause', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  assertCampaignMutable(campaign);
+  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
+  const globalLeadIds = Array.isArray(body.global_lead_ids)
+    ? [...new Set(body.global_lead_ids.filter((id): id is string => typeof id === 'string' && id.length > 0))]
+    : [];
+  if (globalLeadIds.length === 0) {
+    invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
+  }
+  const { data, error } = await supabase.rpc('pause_enrollments_for_leads', {
+    p_account_id: auth.accountId,
+    p_campaign_id: campaign.id,
+    p_global_lead_ids: globalLeadIds,
+  });
+  if (error) throw new Error(`Failed to pause enrollments: ${error.message}`);
+  const result = (data ?? {}) as Record<string, unknown>;
+  const scopeKey = stableGlobalLeadIdsKey(globalLeadIds);
+  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+    accountId: auth.accountId,
+    campaignId: campaign.id,
+    operation: 'pause_enrollments',
+    jobId: null,
+    source: 'sync',
+    counts: {
+      paused: typeof result.paused === 'number' ? result.paused : 0,
+      skipped: typeof result.skipped === 'number' ? result.skipped : 0,
+      failed: 0,
+    },
+    globalLeadIds,
+    syncScopeKey: `${campaign.id}:${scopeKey}`,
+  });
+  const queueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
+  if (queueUrl) {
+    await sqs.send(new SendMessageCommand({
+      QueueUrl: queueUrl,
+      MessageBody: JSON.stringify({ eventId }),
+    }));
+  }
+  return jsonResponse(c, { data: result }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/campaigns/:id/enrollments/resume', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  assertCampaignMutable(campaign);
+  if (campaign.status !== 'running') {
+    invalidRequest('campaign_not_running', 'Campaign must be running to resume enrollments');
+  }
+  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
+  const globalLeadIds = Array.isArray(body.global_lead_ids)
+    ? [...new Set(body.global_lead_ids.filter((id): id is string => typeof id === 'string' && id.length > 0))]
+    : [];
+  if (globalLeadIds.length === 0) {
+    invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
+  }
+  const { data, error } = await supabase.rpc('resume_enrollments_for_leads', {
+    p_account_id: auth.accountId,
+    p_campaign_id: campaign.id,
+    p_global_lead_ids: globalLeadIds,
+  });
+  if (error) throw new Error(`Failed to resume enrollments: ${error.message}`);
+  const result = (data ?? {}) as Record<string, unknown>;
+  const scopeKey = stableGlobalLeadIdsKey(globalLeadIds);
+  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+    accountId: auth.accountId,
+    campaignId: campaign.id,
+    operation: 'resume_enrollments',
+    jobId: null,
+    source: 'sync',
+    counts: {
+      resumed: typeof result.resumed === 'number' ? result.resumed : 0,
+      skipped: typeof result.skipped === 'number' ? result.skipped : 0,
+      failed: 0,
+    },
+    globalLeadIds,
+    syncScopeKey: `${campaign.id}:${scopeKey}`,
+  });
+  const queueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
+  if (queueUrl) {
+    await sqs.send(new SendMessageCommand({
+      QueueUrl: queueUrl,
+      MessageBody: JSON.stringify({ eventId }),
+    }));
+  }
+  return jsonResponse(c, { data: result }, 200, c.get('rateLimitHeaders'));
 });
 
 app.get('/v1/campaigns/:id/lead-fields', async (c) => {
@@ -767,7 +964,6 @@ async function upsertCampaignLead(params: {
     campaign_id: campaign.id,
     bucket_id: campaign.bucket_id,
     account_id: campaign.account_id!,
-    status: 'new',
     created_at: nowIso(),
   };
   const { data, error } = await supabase.from('leads').insert(insertPayload as never).select('*').single();
@@ -784,23 +980,30 @@ app.get('/v1/campaigns/:id/leads', async (c) => {
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   const limit = parseIntQuery(c, 'limit', DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const offset = parseIntQuery(c, 'offset', 0);
-  const search = c.req.query('q')?.trim();
-  const status = c.req.query('status')?.trim();
+  const search = c.req.query('q')?.trim() || null;
+  const sortRaw = c.req.query('sort')?.trim().toLowerCase() || 'created_at';
+  const allowedSort = new Set([
+    'email', 'name', 'first_name', 'last_name', 'company_name', 'website',
+    'linkedin_url', 'company_linkedin_url', 'source', 'created_at',
+  ]);
+  const sort = allowedSort.has(sortRaw) ? sortRaw : 'created_at';
+  const ascending = c.req.query('sort_dir')?.trim().toLowerCase() === 'asc';
+
   let query = supabase
     .from('leads')
     .select('*', { count: 'exact' })
-    .eq('campaign_id', campaign.id)
     .eq('account_id', auth.accountId)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false });
+    .eq('campaign_id', campaign.id)
+    .is('deleted_at', null);
   if (search) {
-    const pattern = `%${search.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
-    query = query.or(`email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`);
+    const pattern = `%${search}%`;
+    query = query.or(
+      `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern}`,
+    );
   }
-  if (status) {
-    query = query.eq('status', status as any);
-  }
-  const { data, error, count } = await query.range(offset, offset + limit - 1);
+  const { data, error, count } = await query
+    .order(sort, { ascending, nullsFirst: !ascending })
+    .range(offset, offset + limit - 1);
   if (error) throw new Error(`Failed to list leads: ${error.message}`);
   return jsonResponse(c, buildListPayload(data ?? [], limit, offset, count ?? 0), 200, c.get('rateLimitHeaders'));
 });
@@ -902,7 +1105,7 @@ app.delete('/v1/campaigns/:id/leads/:leadId', async (c) => {
   const lead = await loadLeadOrThrow(supabase, auth.accountId, campaign.id, c.req.param('leadId'));
   const now = nowIso();
   const [leadResult, enrollmentResult, jobsResult] = await Promise.all([
-    supabase.from('leads').update({ status: 'removed', deleted_at: now, updated_at: now }).eq('id', lead.id).is('deleted_at', null),
+    supabase.from('leads').update({ deleted_at: now, updated_at: now }).eq('id', lead.id).is('deleted_at', null),
     supabase.from('enrollments').update({ deleted_at: now, state: 'stopped', next_run_at: null, updated_at: now }).eq('lead_id', lead.id).is('deleted_at', null),
     supabase.from('message_jobs').update({ status: 'cancelled', status_reason: 'lead_deleted', error_message: 'Lead deleted', updated_at: now }).eq('lead_id', lead.id).in('status', ['queued', 'reserved']).or('message_type.eq.campaign,message_type.is.null'),
   ]);
@@ -938,15 +1141,50 @@ app.post('/v1/campaigns/:id/leads/bulk', async (c) => {
   const errors: Array<{ index: number; message: string }> = [];
   let imported = 0;
   let failed = 0;
-  for (let index = 0; index < rows.length; index += 1) {
-    try {
-      await upsertCampaignLead({ supabase, campaign, lead: rows[index], shouldEnsureEnrollment: true });
-      imported += 1;
-    } catch (error) {
-      failed += 1;
-      errors.push({ index, message: error instanceof Error ? error.message : String(error) });
+
+  const { data: rpcResult, error: rpcError } = await supabase.rpc('import_api_leads_to_campaign', {
+    p_account_id: auth.accountId,
+    p_campaign_id: campaign.id,
+    p_leads: rows as Json,
+    p_options: { emit_row_webhooks: false },
+  });
+  if (rpcError) throw new Error(`Failed to bulk import leads: ${rpcError.message}`);
+
+  const resultRow = (rpcResult ?? {}) as Record<string, unknown>;
+  imported = (typeof resultRow.created === 'number' ? resultRow.created : 0)
+    + (typeof resultRow.updated === 'number' ? resultRow.updated : 0);
+  failed = typeof resultRow.failed === 'number' ? resultRow.failed : 0;
+  if (Array.isArray(resultRow.errors)) {
+    for (const [index, entry] of (resultRow.errors as Array<Record<string, unknown>>).entries()) {
+      errors.push({ index, message: String(entry.message ?? 'Import failed') });
     }
   }
+
+  if (imported > 0 || failed > 0) {
+    const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+      accountId: auth.accountId,
+      campaignId: campaign.id,
+      operation: 'api_lead_import',
+      jobId: null,
+      source: 'sync',
+      counts: {
+        created: typeof resultRow.created === 'number' ? resultRow.created : 0,
+        updated: typeof resultRow.updated === 'number' ? resultRow.updated : 0,
+        enrolled: typeof resultRow.enrolled === 'number' ? resultRow.enrolled : 0,
+        skipped: typeof resultRow.skipped === 'number' ? resultRow.skipped : 0,
+        failed,
+      },
+      syncScopeKey: hashRequestBody(rawBody),
+    });
+    const queueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
+    if (queueUrl) {
+      await sqs.send(new SendMessageCommand({
+        QueueUrl: queueUrl,
+        MessageBody: JSON.stringify({ eventId }),
+      }));
+    }
+  }
+
   const payload = { imported, failed, errors };
   await saveIdempotencyResponse(supabase, auth.accountId, idempotencyKey, getRequestPath(c), bodyHash, payload);
   return jsonResponse(c, payload, 200, c.get('rateLimitHeaders'));
@@ -977,7 +1215,7 @@ app.post('/v1/campaigns/:id/leads/bulk/async', async (c) => {
       campaign_id: campaign.id,
       created_by_api_key_id: auth.id,
       status: 'queued',
-      input: { leads: rows },
+      input: { operation: 'api_lead_import', leads: rows },
       result: {},
       errors: [],
     } as never)
@@ -995,6 +1233,162 @@ app.post('/v1/campaigns/:id/leads/bulk/async', async (c) => {
   return jsonResponse(c, { data: job }, 202, c.get('rateLimitHeaders'));
 });
 
+async function enqueueImportJobById(jobId: string): Promise<void> {
+  const queueUrl = process.env.CLIENT_API_IMPORT_QUEUE_URL?.trim();
+  if (!queueUrl) return;
+  await sqs.send(new SendMessageCommand({
+    QueueUrl: queueUrl,
+    MessageBody: JSON.stringify({ jobId }),
+  }));
+}
+
+app.post('/v1/jobs', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = parseJsonBody<{
+    operation?: string;
+    campaign_id?: string | null;
+    global_lead_ids?: string[];
+    list_id?: string;
+    leads?: Record<string, unknown>[];
+  }>(await c.req.text());
+  const job = await startApiImportJob(supabase, auth.accountId, auth.id, body);
+  await enqueueImportJobById(job.id);
+  return jsonResponse(c, { data: job }, 202, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/campaigns/:id/leads:add', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  assertCampaignMutable(campaign);
+  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
+  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  if (globalLeadIds.length === 0) {
+    invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
+  }
+  if (globalLeadIds.length > BULK_SYNC_LIMIT) {
+    invalidRequest('too_many_leads', `Sync add is limited to ${BULK_SYNC_LIMIT} leads`, 'global_lead_ids');
+  }
+  const { data, error } = await supabase.rpc('add_global_leads_to_campaign', {
+    p_account_id: auth.accountId,
+    p_campaign_id: campaign.id,
+    p_global_lead_ids: globalLeadIds,
+    p_options: { emit_row_webhooks: false },
+  });
+  if (error) throw new Error(`Failed to add leads to campaign: ${error.message}`);
+  const result = (data ?? {}) as Record<string, unknown>;
+  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+    accountId: auth.accountId,
+    campaignId: campaign.id,
+    operation: 'add_to_campaign',
+    jobId: null,
+    source: 'sync',
+    counts: {
+      created: typeof result.created === 'number' ? result.created : 0,
+      updated: typeof result.updated === 'number' ? result.updated : 0,
+      enrolled: typeof result.enrolled === 'number' ? result.enrolled : 0,
+      skipped: typeof result.skipped === 'number' ? result.skipped : 0,
+      failed: typeof result.failed === 'number' ? result.failed : 0,
+    },
+    globalLeadIds,
+    syncScopeKey: `${campaign.id}:${stableGlobalLeadIdsKey(globalLeadIds)}`,
+  });
+  const webhookQueueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
+  if (webhookQueueUrl) {
+    await sqs.send(new SendMessageCommand({
+      QueueUrl: webhookQueueUrl,
+      MessageBody: JSON.stringify({ eventId }),
+    }));
+  }
+  return jsonResponse(c, { data: result }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/campaigns/:id/leads:remove', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  assertCampaignMutable(campaign);
+  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
+  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  if (globalLeadIds.length === 0) {
+    invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
+  }
+  if (globalLeadIds.length > BULK_SYNC_LIMIT) {
+    invalidRequest('too_many_leads', `Sync remove is limited to ${BULK_SYNC_LIMIT} leads`, 'global_lead_ids');
+  }
+  const { data, error } = await supabase.rpc('remove_global_leads_from_campaign', {
+    p_account_id: auth.accountId,
+    p_campaign_id: campaign.id,
+    p_global_lead_ids: globalLeadIds,
+  });
+  if (error) throw new Error(`Failed to remove leads from campaign: ${error.message}`);
+  const result = (data ?? {}) as Record<string, unknown>;
+  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+    accountId: auth.accountId,
+    campaignId: campaign.id,
+    operation: 'remove_from_campaign',
+    jobId: null,
+    source: 'sync',
+    counts: {
+      removed: typeof result.removed === 'number' ? result.removed : 0,
+      skipped: typeof result.skipped === 'number' ? result.skipped : 0,
+      failed: 0,
+    },
+    globalLeadIds,
+    syncScopeKey: `${campaign.id}:${stableGlobalLeadIdsKey(globalLeadIds)}`,
+  });
+  const webhookQueueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
+  if (webhookQueueUrl) {
+    await sqs.send(new SendMessageCommand({
+      QueueUrl: webhookQueueUrl,
+      MessageBody: JSON.stringify({ eventId }),
+    }));
+  }
+  return jsonResponse(c, { data: result }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/leads:remove-from-all-campaigns', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
+  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  if (globalLeadIds.length === 0) {
+    invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
+  }
+  if (globalLeadIds.length > BULK_SYNC_LIMIT) {
+    invalidRequest('too_many_leads', `Sync remove is limited to ${BULK_SYNC_LIMIT} leads`, 'global_lead_ids');
+  }
+  const { data, error } = await supabase.rpc('remove_global_leads_from_all_campaigns', {
+    p_account_id: auth.accountId,
+    p_global_lead_ids: globalLeadIds,
+  });
+  if (error) throw new Error(`Failed to remove leads from all campaigns: ${error.message}`);
+  const result = (data ?? {}) as Record<string, unknown>;
+  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+    accountId: auth.accountId,
+    campaignId: null,
+    operation: 'remove_from_all_campaigns',
+    jobId: null,
+    source: 'sync',
+    counts: {
+      removed: typeof result.removed === 'number' ? result.removed : 0,
+      skipped: typeof result.skipped === 'number' ? result.skipped : 0,
+      failed: 0,
+    },
+    globalLeadIds,
+    syncScopeKey: stableGlobalLeadIdsKey(globalLeadIds),
+  });
+  const webhookQueueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
+  if (webhookQueueUrl) {
+    await sqs.send(new SendMessageCommand({
+      QueueUrl: webhookQueueUrl,
+      MessageBody: JSON.stringify({ eventId }),
+    }));
+  }
+  return jsonResponse(c, { data: result }, 200, c.get('rateLimitHeaders'));
+});
+
 app.get('/v1/jobs/:id', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
@@ -1007,6 +1401,322 @@ app.get('/v1/jobs/:id', async (c) => {
   if (error) throw new Error(`Failed to fetch async import job: ${error.message}`);
   if (!data) notFound('job_not_found', 'Async import job not found');
   return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+function parseCsvQueryIds(raw: string | undefined): string[] | null {
+  if (!raw?.trim()) return null;
+  return raw.split(',').map((value) => value.trim()).filter(Boolean);
+}
+
+app.get('/v1/people', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const limit = parseIntQuery(c, 'limit', DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const offset = parseIntQuery(c, 'offset', 0);
+  const search = c.req.query('q')?.trim() || null;
+  const sortColumn = c.req.query('sort')?.trim() || 'latest_activity';
+  const sortDirection = c.req.query('sort_dir')?.trim().toLowerCase() === 'asc' ? 'asc' : 'desc';
+  const { data, error } = await supabase.rpc('account_lead_people_page', {
+    p_account_id: auth.accountId,
+    p_global_lead_ids: parseCsvQueryIds(c.req.query('global_lead_ids')),
+    p_campaign_ids: parseCsvQueryIds(c.req.query('campaign_ids')) as string[] | null,
+    p_reply_statuses: parseCsvQueryIds(c.req.query('reply_statuses')),
+    p_enrollment_states: parseCsvQueryIds(c.req.query('enrollment_states')),
+    p_reply_categories: parseCsvQueryIds(c.req.query('reply_categories')),
+    p_search: search,
+    p_limit: limit,
+    p_offset: offset,
+    p_sort_column: sortColumn,
+    p_sort_direction: sortDirection,
+  });
+  if (error) throw new Error(`Failed to list people: ${error.message}`);
+  const rowsRaw = data ?? [];
+  const totalCount =
+    rowsRaw.length > 0 && rowsRaw[0].total_count != null ? Number(rowsRaw[0].total_count) : 0;
+  return jsonResponse(c, buildListPayload(rowsRaw, limit, offset, totalCount), 200, c.get('rateLimitHeaders'));
+});
+
+app.get('/v1/people/:globalLeadId', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const globalLeadId = c.req.param('globalLeadId');
+  const { data, error } = await supabase
+    .from('account_lead_people')
+    .select('*')
+    .eq('account_id', auth.accountId)
+    .eq('global_lead_id', globalLeadId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to fetch person: ${error.message}`);
+  if (!data) notFound('person_not_found', 'Person not found');
+  const { data: memberships, error: membershipError } = await supabase
+    .from('leads')
+    .select('id, campaign_id, email, deleted_at, created_at')
+    .eq('account_id', auth.accountId)
+    .eq('global_lead_id', globalLeadId)
+    .order('created_at', { ascending: false });
+  if (membershipError) throw new Error(`Failed to fetch memberships: ${membershipError.message}`);
+  return jsonResponse(c, { data: { person: data, memberships: memberships ?? [] } }, 200, c.get('rateLimitHeaders'));
+});
+
+app.patch('/v1/people/:globalLeadId', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const globalLeadId = c.req.param('globalLeadId');
+  const body = parseJsonBody<{
+    name?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
+    company_name?: string | null;
+  }>(await c.req.text());
+  const { data: existing, error: existingError } = await supabase
+    .from('account_lead_people')
+    .select('global_lead_id')
+    .eq('account_id', auth.accountId)
+    .eq('global_lead_id', globalLeadId)
+    .maybeSingle();
+  if (existingError) throw new Error(`Failed to load person: ${existingError.message}`);
+  if (!existing) notFound('person_not_found', 'Person not found');
+
+  const leadPatch = {
+    ...(body.name !== undefined ? { name: body.name } : {}),
+    ...(body.first_name !== undefined ? { first_name: body.first_name } : {}),
+    ...(body.last_name !== undefined ? { last_name: body.last_name } : {}),
+    ...(body.company_name !== undefined ? { company_name: body.company_name } : {}),
+    updated_at: nowIso(),
+  };
+  if (Object.keys(leadPatch).length > 1) {
+    await supabase
+      .from('leads')
+      .update(leadPatch as never)
+      .eq('account_id', auth.accountId)
+      .eq('global_lead_id', globalLeadId)
+      .is('deleted_at', null);
+  }
+
+  const peoplePatch = {
+    ...(body.name !== undefined ? { display_name: body.name } : {}),
+    ...(body.first_name !== undefined ? { first_name: body.first_name } : {}),
+    ...(body.last_name !== undefined ? { last_name: body.last_name } : {}),
+    ...(body.company_name !== undefined ? { company_list: body.company_name } : {}),
+    updated_at: nowIso(),
+  };
+  if (Object.keys(peoplePatch).length > 1) {
+    const { error: updateError } = await supabase
+      .from('account_lead_people')
+      .update(peoplePatch as never)
+      .eq('account_id', auth.accountId)
+      .eq('global_lead_id', globalLeadId);
+    if (updateError) throw new Error(`Failed to update person: ${updateError.message}`);
+  }
+
+  const { data, error } = await supabase
+    .from('account_lead_people')
+    .select('*')
+    .eq('account_id', auth.accountId)
+    .eq('global_lead_id', globalLeadId)
+    .single();
+  if (error) throw new Error(`Failed to fetch updated person: ${error.message}`);
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.get('/v1/lead-lists', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const { data, error } = await supabase
+    .from('lead_saved_lists')
+    .select('id, account_id, name, description, column_layout, created_at, updated_at')
+    .eq('account_id', auth.accountId)
+    .order('updated_at', { ascending: false });
+  if (error) throw new Error(`Failed to list lead lists: ${error.message}`);
+  return jsonResponse(c, { data: data ?? [] }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/lead-lists', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = parseJsonBody<{ name?: string; description?: string | null; global_lead_ids?: string[] }>(
+    await c.req.text(),
+  );
+  const name = body.name?.trim();
+  if (!name) invalidRequest('missing_name', 'name is required', 'name');
+  const { data: list, error } = await supabase
+    .from('lead_saved_lists')
+    .insert({
+      account_id: auth.accountId,
+      name,
+      description: body.description?.trim() || null,
+      column_layout: [],
+    } as never)
+    .select('*')
+    .single();
+  if (error) throw new Error(`Failed to create lead list: ${error.message}`);
+  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  if (globalLeadIds.length > 0) {
+    await supabase.from('lead_saved_list_members').insert(
+      globalLeadIds.map((globalLeadId) => ({
+        list_id: list.id,
+        account_id: auth.accountId,
+        global_lead_id: globalLeadId,
+        source: 'manual',
+      })) as never,
+    );
+  }
+  return jsonResponse(c, { data: list }, 201, c.get('rateLimitHeaders'));
+});
+
+app.get('/v1/lead-lists/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const { data, error } = await supabase
+    .from('lead_saved_lists')
+    .select('*')
+    .eq('account_id', auth.accountId)
+    .eq('id', c.req.param('id'))
+    .maybeSingle();
+  if (error) throw new Error(`Failed to fetch lead list: ${error.message}`);
+  if (!data) notFound('list_not_found', 'Lead list not found');
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.patch('/v1/lead-lists/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = parseJsonBody<{ name?: string; description?: string | null; column_layout?: unknown }>(
+    await c.req.text(),
+  );
+  const patch: Record<string, unknown> = { updated_at: nowIso() };
+  if (typeof body.name === 'string') patch.name = body.name.trim();
+  if (body.description !== undefined) patch.description = body.description;
+  if (body.column_layout !== undefined) patch.column_layout = body.column_layout;
+  const { data, error } = await supabase
+    .from('lead_saved_lists')
+    .update(patch as never)
+    .eq('account_id', auth.accountId)
+    .eq('id', c.req.param('id'))
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(`Failed to update lead list: ${error.message}`);
+  if (!data) notFound('list_not_found', 'Lead list not found');
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.delete('/v1/lead-lists/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const listId = c.req.param('id');
+  const { data, error } = await supabase
+    .from('lead_saved_lists')
+    .delete()
+    .eq('account_id', auth.accountId)
+    .eq('id', listId)
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(`Failed to delete lead list: ${error.message}`);
+  if (!data) notFound('list_not_found', 'Lead list not found');
+  return jsonResponse(c, { data: { id: data.id, deleted: true } }, 200, c.get('rateLimitHeaders'));
+});
+
+app.get('/v1/lead-lists/:id/people', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const listId = c.req.param('id');
+  const limit = parseIntQuery(c, 'limit', DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const offset = parseIntQuery(c, 'offset', 0);
+  const search = c.req.query('q')?.trim() || null;
+  const { data, error } = await supabase.rpc('saved_lead_list_people_page', {
+    p_account_id: auth.accountId,
+    p_list_id: listId,
+    p_search: search,
+    p_reply_statuses: parseCsvQueryIds(c.req.query('reply_statuses')),
+    p_enrollment_states: parseCsvQueryIds(c.req.query('enrollment_states')),
+    p_reply_categories: parseCsvQueryIds(c.req.query('reply_categories')),
+    p_limit: limit,
+    p_offset: offset,
+    p_sort_column: c.req.query('sort')?.trim() || 'latest_activity',
+    p_sort_direction: c.req.query('sort_dir')?.trim().toLowerCase() === 'asc' ? 'asc' : 'desc',
+  });
+  if (error) throw new Error(`Failed to list lead list people: ${error.message}`);
+  const rowsRaw = data ?? [];
+  const totalCount =
+    rowsRaw.length > 0 && rowsRaw[0].total_count != null ? Number(rowsRaw[0].total_count) : 0;
+  return jsonResponse(c, buildListPayload(rowsRaw, limit, offset, totalCount), 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/lead-lists/:id/members', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const listId = c.req.param('id');
+  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
+  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  if (globalLeadIds.length === 0) {
+    invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
+  }
+  const { data: list, error: listError } = await supabase
+    .from('lead_saved_lists')
+    .select('id')
+    .eq('account_id', auth.accountId)
+    .eq('id', listId)
+    .maybeSingle();
+  if (listError) throw new Error(`Failed to load lead list: ${listError.message}`);
+  if (!list) notFound('list_not_found', 'Lead list not found');
+
+  const { data: existingMembers, error: existingError } = await supabase
+    .from('lead_saved_list_members')
+    .select('global_lead_id')
+    .eq('account_id', auth.accountId)
+    .eq('list_id', listId)
+    .in('global_lead_id', globalLeadIds);
+  if (existingError) throw new Error(`Failed to load list members: ${existingError.message}`);
+  const existingSet = new Set((existingMembers ?? []).map((row) => row.global_lead_id as string));
+  const toAdd = globalLeadIds.filter((id) => !existingSet.has(id));
+  if (toAdd.length > 0) {
+    const { error: insertError } = await supabase.from('lead_saved_list_members').insert(
+      toAdd.map((globalLeadId) => ({
+        list_id: listId,
+        account_id: auth.accountId,
+        global_lead_id: globalLeadId,
+        source: 'manual',
+      })) as never,
+    );
+    if (insertError) throw new Error(`Failed to add list members: ${insertError.message}`);
+  }
+  return jsonResponse(
+    c,
+    {
+      data: {
+        added: toAdd.length,
+        skippedAlreadyMember: globalLeadIds.length - toAdd.length,
+      },
+    },
+    200,
+    c.get('rateLimitHeaders'),
+  );
+});
+
+app.delete('/v1/lead-lists/:id/members', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const listId = c.req.param('id');
+  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
+  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  if (globalLeadIds.length === 0) {
+    invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
+  }
+  const { data: removedRows, error } = await supabase
+    .from('lead_saved_list_members')
+    .delete()
+    .eq('account_id', auth.accountId)
+    .eq('list_id', listId)
+    .in('global_lead_id', globalLeadIds)
+    .select('global_lead_id');
+  if (error) throw new Error(`Failed to remove list members: ${error.message}`);
+  const removed = removedRows?.length ?? 0;
+  return jsonResponse(
+    c,
+    { data: { removed, skippedNotMember: globalLeadIds.length - removed } },
+    200,
+    c.get('rateLimitHeaders'),
+  );
 });
 
 app.get('/v1/mailboxes', async (c) => {
@@ -1318,4 +2028,39 @@ app.post('/internal/webhook/verify', async (c) => {
       response_body: responseBody.slice(0, 2000),
     },
   }, isVerified ? 200 : 422);
+});
+
+app.post('/internal/import-jobs/:id/enqueue', async (c) => {
+  const supabase = createServiceRoleClient();
+  const jobId = c.req.param('id');
+  const userId = (c as any).get('userId') as string;
+
+  const { data: job, error: jobError } = await supabase
+    .from('api_import_jobs')
+    .select('id, account_id, status')
+    .eq('id', jobId)
+    .maybeSingle();
+  if (jobError) throw new Error(`Failed to load import job: ${jobError.message}`);
+  if (!job) notFound('job_not_found', 'Import job not found');
+
+  const { data: membership, error: membershipError } = await supabase
+    .from('account_users')
+    .select('role')
+    .eq('account_id', job.account_id)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (membershipError) throw new Error(`Failed to verify membership: ${membershipError.message}`);
+  if (!membership) {
+    forbidden('account_member_required', 'Account membership is required to enqueue import jobs');
+  }
+
+  const queueUrl = process.env.CLIENT_API_IMPORT_QUEUE_URL?.trim();
+  if (queueUrl) {
+    await sqs.send(new SendMessageCommand({
+      QueueUrl: queueUrl,
+      MessageBody: JSON.stringify({ jobId: job.id }),
+    }));
+  }
+
+  return jsonResponse(c, { data: { id: job.id, enqueued: Boolean(queueUrl) } }, 202);
 });

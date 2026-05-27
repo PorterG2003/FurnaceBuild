@@ -25,6 +25,8 @@ Step-by-step implementation plans and guides, organized by domain.
 | [scheduler/SCHEDULER_RACE_CONDITION_FIX_SQS.md](./scheduler/SCHEDULER_RACE_CONDITION_FIX_SQS.md) | Scheduler race condition fix (SQS) |
 | [scheduler/RACE_CONDITION_TESTING.md](./scheduler/RACE_CONDITION_TESTING.md) | Race condition testing |
 | [scheduler/BULLETPROOF_LOCKING_ANALYSIS.md](./scheduler/BULLETPROOF_LOCKING_ANALYSIS.md) | Locking analysis for scheduler |
+| [scheduler/ENROLLMENT_PAUSE_RESUME_SEMANTICS.md](./scheduler/ENROLLMENT_PAUSE_RESUME_SEMANTICS.md) | Manual enrollment pause/resume semantics and webhooks |
+| [../engineering/bulk-operations-standards.md](../engineering/bulk-operations-standards.md) | Leads workbench bulk/async standards |
 
 ---
 

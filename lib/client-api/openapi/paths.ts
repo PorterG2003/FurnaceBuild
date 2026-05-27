@@ -1,6 +1,7 @@
 import {
   BULK_ASYNC_LIMIT,
   BULK_SYNC_LIMIT,
+  IMPORT_JOB_OPERATIONS,
   MAX_ASYNC_JOBS_PER_ACCOUNT,
 } from './constants.js';
 import { parameterRef, responseRef, schemaRef } from './schemas.js';
@@ -32,6 +33,18 @@ function authenticatedErrors(...extraNames: string[]) {
     ...Object.fromEntries(extraNames.map((name) => [name === 'ValidationError' ? 400 : name === 'ForbiddenError' ? 403 : name === 'NotFoundError' ? 404 : 500, responseRef(name)])),
     429: responseRef('RateLimitError'),
     500: responseRef('InternalError'),
+  };
+}
+
+function jsonRequestBody(schemaName: string, example?: unknown) {
+  return {
+    required: true,
+    content: {
+      'application/json': {
+        schema: schemaRef(schemaName),
+        ...(example === undefined ? {} : { example }),
+      },
+    },
   };
 }
 
@@ -115,6 +128,7 @@ export function buildClientApiPaths() {
           parameterRef('Offset'),
           parameterRef('Search'),
           parameterRef('CampaignStatus'),
+          parameterRef('CampaignTagIds'),
           parameterRef('IncludeDeletedCampaigns'),
         ],
         responses: {
@@ -152,7 +166,7 @@ export function buildClientApiPaths() {
         operationId: 'updateCampaign',
         tags: ['Campaigns'],
         summary: 'Update campaign',
-        description: 'Updates mutable campaign fields. Mailboxes can be replaced wholesale with `mailbox_ids`, or incrementally edited with `add_mailbox_ids` and `remove_mailbox_ids`.',
+        description: 'Updates mutable campaign fields. Mailboxes can be replaced wholesale with `mailbox_ids`, or incrementally edited with `add_mailbox_ids` and `remove_mailbox_ids`. Tags can be replaced with `tag_ids`, or incrementally edited with `add_tag_ids` and `remove_tag_ids`.',
         parameters: [parameterRef('CampaignId')],
         requestBody: {
           required: true,
@@ -183,6 +197,66 @@ export function buildClientApiPaths() {
             data: { id: '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb', deleted: true },
           }),
           ...authenticatedErrors('ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/campaign-tags': {
+      get: {
+        operationId: 'listCampaignTags',
+        tags: ['Campaigns'],
+        summary: 'List campaign tags',
+        description: 'Lists account-scoped campaign tag definitions.',
+        responses: {
+          200: jsonResponse('CampaignTagListResponse', 'Campaign tag list.'),
+          ...authenticatedErrors(),
+        },
+      },
+      post: {
+        operationId: 'createCampaignTag',
+        tags: ['Campaigns'],
+        summary: 'Create campaign tag',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: schemaRef('CampaignTagCreate'),
+              example: { name: 'Enterprise', color: '#818CF8' },
+            },
+          },
+        },
+        responses: {
+          201: jsonResponse('CampaignTagResponse', 'Created campaign tag.'),
+          ...authenticatedErrors('ValidationError'),
+        },
+      },
+    },
+    '/v1/campaign-tags/{id}': {
+      patch: {
+        operationId: 'updateCampaignTag',
+        tags: ['Campaigns'],
+        summary: 'Update campaign tag',
+        parameters: [parameterRef('CampaignTagId')],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: schemaRef('CampaignTagUpdate'),
+            },
+          },
+        },
+        responses: {
+          200: jsonResponse('CampaignTagResponse', 'Updated campaign tag.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+      delete: {
+        operationId: 'deleteCampaignTag',
+        tags: ['Campaigns'],
+        summary: 'Delete campaign tag',
+        parameters: [parameterRef('CampaignTagId')],
+        responses: {
+          200: jsonResponse('DeleteResponse', 'Campaign tag deleted.'),
+          ...authenticatedErrors('NotFoundError'),
         },
       },
     },
@@ -226,6 +300,40 @@ export function buildClientApiPaths() {
         responses: {
           200: jsonResponse('CampaignStatusResponse', 'Campaign resumed.', {
             data: { id: '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb', status: 'running' },
+          }),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/campaigns/{id}/enrollments/pause': {
+      post: {
+        operationId: 'pauseCampaignEnrollments',
+        tags: ['Campaigns'],
+        summary: 'Pause enrollments',
+        description:
+          'Manually pauses enrollments for the given global lead IDs in a native campaign and emits one `enrollment.pause_completed` batch webhook.',
+        parameters: [parameterRef('CampaignId')],
+        requestBody: jsonRequestBody('PauseEnrollmentsRequest'),
+        responses: {
+          200: jsonResponse('EnrollmentActionResponse', 'Enrollments paused.', {
+            data: { paused: 2, skipped: 0, errors: [] },
+          }),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/campaigns/{id}/enrollments/resume': {
+      post: {
+        operationId: 'resumeCampaignEnrollments',
+        tags: ['Campaigns'],
+        summary: 'Resume enrollments',
+        description:
+          'Resumes manually paused enrollments for the given global lead IDs. Requires campaign status `running`. Emits one `enrollment.resume_completed` batch webhook.',
+        parameters: [parameterRef('CampaignId')],
+        requestBody: jsonRequestBody('ResumeEnrollmentsRequest'),
+        responses: {
+          200: jsonResponse('EnrollmentActionResponse', 'Enrollments resumed.', {
+            data: { resumed: 2, skipped: 0, errors: [] },
           }),
           ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
         },
@@ -309,7 +417,6 @@ export function buildClientApiPaths() {
           parameterRef('Limit'),
           parameterRef('Offset'),
           parameterRef('Search'),
-          parameterRef('LeadStatus'),
         ],
         responses: {
           200: jsonResponse('LeadListResponse', 'Lead page.'),
@@ -352,7 +459,6 @@ export function buildClientApiPaths() {
               email: 'jane@example.com',
               first_name: 'Jane',
               custom_lead_data: { company: 'Acme Co', source: 'Landing Page' },
-              status: 'new',
               source: 'api',
               created_at: '2026-05-21T18:00:00.000Z',
             },
@@ -421,7 +527,7 @@ export function buildClientApiPaths() {
         operationId: 'bulkSyncLeads',
         tags: ['Leads'],
         summary: 'Bulk sync leads',
-        description: `Synchronously imports or upserts up to ${BULK_SYNC_LIMIT} leads in a single request. The response includes per-row failures instead of failing the whole batch. Supports idempotent retries with \`Idempotency-Key\`.`,
+        description: `Synchronously imports or upserts up to ${BULK_SYNC_LIMIT} leads in a single request. Per-row lead webhooks are suppressed; Furnace emits one \`lead.bulk_import.completed\` batch event. Supports idempotent retries with \`Idempotency-Key\`.`,
         parameters: [parameterRef('CampaignId'), parameterRef('IdempotencyKey')],
         requestBody: {
           required: true,
@@ -466,7 +572,7 @@ export function buildClientApiPaths() {
         operationId: 'queueAsyncLeadImport',
         tags: ['Leads', 'Jobs'],
         summary: 'Queue async lead import',
-        description: `Queues an async import job for up to ${BULK_ASYNC_LIMIT} leads. Furnace allows at most ${MAX_ASYNC_JOBS_PER_ACCOUNT} queued or running async jobs per account at a time.`,
+        description: `Queues an async import job for up to ${BULK_ASYNC_LIMIT} leads. Furnace allows at most ${MAX_ASYNC_JOBS_PER_ACCOUNT} queued or running async jobs per account at a time. Per-row \`lead.created\` / \`lead.updated\` webhooks are suppressed during processing; a single \`lead.bulk_import.completed\` event is emitted when the job completes successfully.`,
         parameters: [parameterRef('CampaignId')],
         requestBody: {
           required: true,
@@ -502,6 +608,200 @@ export function buildClientApiPaths() {
             },
           }),
           ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/jobs': {
+      post: {
+        operationId: 'createAsyncJob',
+        tags: ['Jobs'],
+        summary: 'Create async bulk job',
+        description: `Creates an async job for any supported bulk operation. Poll \`GET /v1/jobs/{id}\` for completion. Furnace allows at most ${MAX_ASYNC_JOBS_PER_ACCOUNT} queued or running async jobs per account. One operation-specific \`*.completed\` webhook is emitted when the job finishes successfully.`,
+        requestBody: jsonRequestBody('ImportJobCreate', {
+          operation: 'add_to_campaign',
+          campaign_id: '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb',
+          global_lead_ids: ['abc123'],
+        }),
+        responses: {
+          202: jsonResponse('ImportJobResponse', 'Async job queued.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/campaigns/{id}/leads:add': {
+      post: {
+        operationId: 'syncAddLeadsToCampaign',
+        tags: ['Leads'],
+        summary: 'Sync add leads to campaign',
+        description: `Adds up to ${BULK_SYNC_LIMIT} existing account people to a campaign by \`global_lead_id\`. Emits one \`lead.added_to_campaign.completed\` batch webhook.`,
+        parameters: [parameterRef('CampaignId')],
+        requestBody: jsonRequestBody('GlobalLeadIdsRequest'),
+        responses: {
+          200: jsonResponse('BulkMembershipActionResponse', 'Leads added to campaign.'),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/campaigns/{id}/leads:remove': {
+      post: {
+        operationId: 'syncRemoveLeadsFromCampaign',
+        tags: ['Leads'],
+        summary: 'Sync remove leads from campaign',
+        description: `Removes up to ${BULK_SYNC_LIMIT} leads from a campaign by \`global_lead_id\`. Emits one \`lead.removed_from_campaign.completed\` batch webhook.`,
+        parameters: [parameterRef('CampaignId')],
+        requestBody: jsonRequestBody('GlobalLeadIdsRequest'),
+        responses: {
+          200: jsonResponse('BulkMembershipActionResponse', 'Leads removed from campaign.'),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/leads:remove-from-all-campaigns': {
+      post: {
+        operationId: 'syncRemoveLeadsFromAllCampaigns',
+        tags: ['Leads'],
+        summary: 'Sync remove leads from all campaigns',
+        description: `Removes up to ${BULK_SYNC_LIMIT} people from every campaign in the account. Emits one \`lead.removed_from_all_campaigns.completed\` batch webhook.`,
+        requestBody: jsonRequestBody('GlobalLeadIdsRequest'),
+        responses: {
+          200: jsonResponse('BulkMembershipActionResponse', 'Leads removed from all campaigns.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/people': {
+      get: {
+        operationId: 'listPeople',
+        tags: ['People'],
+        summary: 'List account people',
+        description: 'Returns the account people explorer page with filters, sort, and pagination.',
+        parameters: [
+          parameterRef('Limit'),
+          parameterRef('Offset'),
+          parameterRef('PeopleSearch'),
+          parameterRef('PeopleSort'),
+          parameterRef('PeopleSortDirection'),
+          parameterRef('GlobalLeadIdsQuery'),
+          parameterRef('CampaignIdsQuery'),
+        ],
+        responses: {
+          200: jsonResponse('PersonListResponse', 'Account people page.'),
+          ...authenticatedErrors(),
+        },
+      },
+    },
+    '/v1/people/{globalLeadId}': {
+      get: {
+        operationId: 'getPerson',
+        tags: ['People'],
+        summary: 'Get person',
+        description: 'Returns one account person and their campaign memberships.',
+        parameters: [parameterRef('GlobalLeadId')],
+        responses: {
+          200: jsonResponse('PersonDetailResponse', 'Person detail.'),
+          ...authenticatedErrors('NotFoundError'),
+        },
+      },
+      patch: {
+        operationId: 'updatePerson',
+        tags: ['People'],
+        summary: 'Update person profile',
+        description: 'Updates profile fields on all lead rows for the given global lead id.',
+        parameters: [parameterRef('GlobalLeadId')],
+        requestBody: jsonRequestBody('PersonUpdate'),
+        responses: {
+          200: jsonResponse('PersonResponse', 'Updated person.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/lead-lists': {
+      get: {
+        operationId: 'listLeadLists',
+        tags: ['Lead lists'],
+        summary: 'List saved lead lists',
+        responses: {
+          200: jsonResponse('LeadSavedListArrayResponse', 'Saved lead lists.'),
+          ...authenticatedErrors(),
+        },
+      },
+      post: {
+        operationId: 'createLeadList',
+        tags: ['Lead lists'],
+        summary: 'Create saved lead list',
+        requestBody: jsonRequestBody('LeadSavedListCreate'),
+        responses: {
+          201: jsonResponse('LeadSavedListResponse', 'Created lead list.'),
+          ...authenticatedErrors('ValidationError'),
+        },
+      },
+    },
+    '/v1/lead-lists/{id}': {
+      get: {
+        operationId: 'getLeadList',
+        tags: ['Lead lists'],
+        summary: 'Get saved lead list',
+        parameters: [parameterRef('LeadListId')],
+        responses: {
+          200: jsonResponse('LeadSavedListResponse', 'Lead list.'),
+          ...authenticatedErrors('NotFoundError'),
+        },
+      },
+      patch: {
+        operationId: 'updateLeadList',
+        tags: ['Lead lists'],
+        summary: 'Update saved lead list',
+        parameters: [parameterRef('LeadListId')],
+        requestBody: jsonRequestBody('LeadSavedListUpdate'),
+        responses: {
+          200: jsonResponse('LeadSavedListResponse', 'Updated lead list.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+      delete: {
+        operationId: 'deleteLeadList',
+        tags: ['Lead lists'],
+        summary: 'Delete saved lead list',
+        parameters: [parameterRef('LeadListId')],
+        responses: {
+          200: jsonResponse('DeleteResponse', 'Lead list deleted.'),
+          ...authenticatedErrors('NotFoundError'),
+        },
+      },
+    },
+    '/v1/lead-lists/{id}/people': {
+      get: {
+        operationId: 'listLeadListPeople',
+        tags: ['Lead lists', 'People'],
+        summary: 'List people in saved lead list',
+        parameters: [parameterRef('LeadListId'), parameterRef('Limit'), parameterRef('Offset')],
+        responses: {
+          200: jsonResponse('PersonListResponse', 'People in list.'),
+          ...authenticatedErrors('NotFoundError'),
+        },
+      },
+    },
+    '/v1/lead-lists/{id}/members': {
+      post: {
+        operationId: 'addLeadListMembers',
+        tags: ['Lead lists'],
+        summary: 'Add members to saved lead list',
+        parameters: [parameterRef('LeadListId')],
+        requestBody: jsonRequestBody('GlobalLeadIdsRequest'),
+        responses: {
+          200: jsonResponse('LeadListMembersResultResponse', 'Members added.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+      delete: {
+        operationId: 'removeLeadListMembers',
+        tags: ['Lead lists'],
+        summary: 'Remove members from saved lead list',
+        parameters: [parameterRef('LeadListId')],
+        requestBody: jsonRequestBody('GlobalLeadIdsRequest'),
+        responses: {
+          200: jsonResponse('LeadListMembersResultResponse', 'Members removed.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
         },
       },
     },

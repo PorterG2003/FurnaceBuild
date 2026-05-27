@@ -1,9 +1,11 @@
 import { useState, useMemo, type ReactNode } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
-import { MagnifyingGlassIcon } from 'react-native-heroicons/outline';
+import { useRouter } from 'expo-router';
+import { MagnifyingGlassIcon, UserIcon } from 'react-native-heroicons/outline';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
 import { LeadActivityModal } from './LeadActivityModal';
 import type { CampaignLeadTableRow } from '@/lib/supabase/services/leads';
+import { openLeadDetail } from '@/lib/leads/navigation';
 
 /** Same as Lead Source Node Modal Insights tab. */
 const INSIGHTS_COLUMN_MIN_WIDTH = 160;
@@ -21,7 +23,6 @@ const STANDARD_LEAD_FIELDS = new Set([
   'company_linkedin_url',
   'phone_number',
   'source',
-  'status',
 ]);
 
 function formatLeadHeaderLabel(fieldKey: string): string {
@@ -33,8 +34,6 @@ function formatLeadHeaderLabel(fieldKey: string): string {
 }
 
 export type EnrollmentStoppedReason = 'replied' | 'bounced' | 'unsubscribed' | 'error';
-
-export type LeadStatus = 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
 
 export type Lead = CampaignLeadTableRow;
 
@@ -78,7 +77,6 @@ const SERVER_SORTABLE_FIELDS = new Set([
   'company_linkedin_url',
   'phone_number',
   'source',
-  'status',
 ]);
 
 export function LeadsTable({
@@ -100,6 +98,7 @@ export function LeadsTable({
   headerSummary,
   headerActions,
 }: LeadsTableProps) {
+  const router = useRouter();
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const selectionActive = selectable && selectedKeys != null && selectedKeys.size > 0;
 
@@ -117,7 +116,6 @@ export function LeadsTable({
       if (lead.company_linkedin_url) record.company_linkedin_url = lead.company_linkedin_url;
       if (lead.phone_number) record.phone_number = lead.phone_number;
       if (lead.source) record.source = lead.source;
-      if (lead.status) record.status = lead.status ?? '';
       if (lead.custom_lead_data && typeof lead.custom_lead_data === 'object') {
         Object.entries(lead.custom_lead_data).forEach(([key, value]) => {
           if (value !== null && value !== undefined) {
@@ -322,8 +320,30 @@ export function LeadsTable({
       flex: 0,
       render: (item) => getReplacementBadge(item.__lead),
     };
-    return [...dataColumns, enrollmentColumn, replyCategoryColumn, replacementColumn];
-  }, [insightSummary]);
+    const viewLeadColumn: TableColumn<LeadTableRow> = {
+      key: 'view_lead',
+      label: '',
+      minWidth: 52,
+      flex: 0,
+      render: (item) => (
+        <Pressable
+          accessibilityLabel="View lead"
+          className="p-2 rounded-lg items-center justify-center"
+          onPress={() => {
+            void openLeadDetail(router, {
+              globalLeadId: item.__lead.global_lead_id ?? undefined,
+              leadId: item.__lead.id,
+              campaignId,
+              from: 'campaign',
+            });
+          }}
+        >
+          <UserIcon size={18} color="#9ca3af" />
+        </Pressable>
+      ),
+    };
+    return [...dataColumns, enrollmentColumn, replyCategoryColumn, replacementColumn, viewLeadColumn];
+  }, [campaignId, insightSummary, router]);
 
   return (
     <>

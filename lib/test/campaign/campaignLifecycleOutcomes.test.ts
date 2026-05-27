@@ -381,7 +381,6 @@ async function insertMidRunLeads(
       company_name: 'Mid Run Co',
       source: params.namespace,
       mailbox_id: mailboxId,
-      status: 'new',
     } as any);
     assert.equal(leadError, null);
 

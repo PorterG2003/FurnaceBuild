@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, Pressable, Image, Platform, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, Pressable, useWindowDimensions } from 'react-native';
 import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,8 @@ import {
   getCampaignsListSummary,
   type CampaignListSummary,
 } from '@/lib/supabase/services/campaigns';
+import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
+import { useCampaignTags } from '@/lib/campaigns/useCampaignTags';
 import {
   PlusIcon,
   TrashIcon,
@@ -26,23 +28,30 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   RocketLaunchIcon,
+  TagIcon,
+  FunnelIcon,
+  MagnifyingGlassIcon,
 } from 'react-native-heroicons/outline';
 import { ProgressDial } from '@/components/ui/progress-dial';
 import { isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { CampaignStatusPill } from '@/components/campaigns';
+import { CampaignStatusPill, SmartleadBadge, CampaignListFiltersModal } from '@/components/campaigns';
+import { IconButton } from '@/components/ui/icon-button';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 import { RowOverflowMenu } from '@/components/ui/RowOverflowMenu';
+import { TagChipRow } from '@/components/tags';
+import {
+  EMPTY_CAMPAIGN_LIST_FILTERS,
+  countActiveCampaignListFilters,
+  filterCampaigns,
+  type CampaignListFilters,
+} from '@/components/campaigns/CampaignListFilterBar';
+import { CampaignTagsManager } from '@/components/campaigns/CampaignTagsManager';
 
 const STAT_COLUMN_WIDTH = 72;
 const POSITIVE_COLUMN_WIDTH = 88;
 /** Below this width (mobile only), use extra-small stat variant and tighter layout */
 const EXTRA_NARROW_BREAKPOINT = 360;
-const SMARTLEAD_BADGE_SOURCE =
-  Platform.OS === 'web'
-    ? { uri: '/smartlead_logo.png' }
-    : require('../../public/smartlead_logo.png');
-
 interface CreateCampaignModalProps {
   visible: boolean;
   onClose: () => void;
@@ -144,11 +153,13 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
 
 interface CampaignCardProps {
   campaign: CampaignListSummary;
+  tags: CampaignTag[];
   onDelete: (id: string) => Promise<void>;
+  onManageTags: (campaignId: string) => void;
   isDeleting: boolean;
 }
 
-function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
+function CampaignCard({ campaign, tags, onDelete, onManageTags, isDeleting }: CampaignCardProps) {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -157,14 +168,7 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
   const isDraft = campaign.status === 'draft';
   const draftHasFlow = campaign.hasFlow;
   const isSmartlead = isSmartleadCampaign(campaign);
-  const smartleadBadge = isSmartlead ? (
-    <Image
-      source={SMARTLEAD_BADGE_SOURCE}
-      style={{ width: 20, height: 20, borderRadius: 6 }}
-      resizeMode="cover"
-      accessibilityLabel="Smartlead"
-    />
-  ) : null;
+  const smartleadBadge = isSmartlead ? <SmartleadBadge /> : null;
 
   const sentCount = campaign.sentCount;
   const repliedCount = campaign.repliedCount;
@@ -219,6 +223,12 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
     }
     items.push(
       {
+        key: 'manage-tags',
+        label: 'Manage tags',
+        onPress: () => onManageTags(campaign.id),
+        icon: TagIcon,
+      },
+      {
         key: 'edit-flow',
         label: 'Edit flow',
         onPress: handleEditFlow,
@@ -233,7 +243,7 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
       },
     );
     return items;
-  }, [handleContinueSetup, handleEditFlow, isDraft]);
+  }, [handleContinueSetup, handleEditFlow, isDraft, onManageTags, campaign.id]);
 
   const repliedPct = sentCount > 0 ? Math.round((repliedCount / sentCount) * 100) : 0;
   const positivePct = repliedCount > 0 ? Math.round((positiveReplyCount / repliedCount) * 100) : 0;
@@ -296,6 +306,11 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
         <Text className="text-gray-500 font-instrument text-sm">
           Created {formatDate(campaign.createdAt)}
         </Text>
+        {tags.length > 0 ? (
+          <View className="mt-2">
+            <TagChipRow tags={tags} maxVisible={4} />
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -370,7 +385,7 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
                   {smartleadBadge}
                 </View>
                 <Text className="text-gray-500 font-instrument text-xs">
-                  Created {formatDate(campaign.created_at)}
+                  Created {formatDate(campaign.createdAt)}
                 </Text>
                 {isDraft && (
                   <Text className="text-gray-400 font-instrument text-xs mt-1">
@@ -379,6 +394,11 @@ function CampaignCard({ campaign, onDelete, isDeleting }: CampaignCardProps) {
                       : 'Next: Build your flow'}
                   </Text>
                 )}
+                {tags.length > 0 ? (
+                  <View className="mt-2">
+                    <TagChipRow tags={tags} maxVisible={4} />
+                  </View>
+                ) : null}
               </View>
             </View>
             {/* Block 2 — Stats: 4 columns with gap so first/last line up on the edges; margin above, no margin below */}
@@ -455,8 +475,30 @@ export default function CampaignsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState<CampaignListFilters>(EMPTY_CAMPAIGN_LIST_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [managingTagsCampaignId, setManagingTagsCampaignId] = useState<string | null>(null);
   const showSkeleton = useSmoothLoading(isLoading);
   const isMobile = screenWidth < LAYOUT_BREAKPOINT;
+
+  const campaignIds = useMemo(() => campaigns.map((c) => c.id), [campaigns]);
+  const {
+    accountCampaignTags,
+    campaignTagsMap,
+    handleTagCreated,
+    handleAddTagToCampaign,
+    handleRemoveTagFromCampaign,
+    handleUpdateTag,
+    handleDeleteTag,
+  } = useCampaignTags(account?.id ?? null, campaignIds);
+
+  const activeFilterCount = countActiveCampaignListFilters(appliedFilters);
+
+  const filteredCampaigns = useMemo(
+    () => filterCampaigns(campaigns, searchQuery, appliedFilters, campaignTagsMap),
+    [campaigns, searchQuery, appliedFilters, campaignTagsMap],
+  );
 
   const loadCampaigns = async () => {
     if (!account?.id) return;
@@ -558,6 +600,7 @@ export default function CampaignsPage() {
           message={error}
           actionText="Try again"
           onAction={loadCampaigns}
+          className="mb-4"
         />
       ) : null}
       {/* Loading State */}
@@ -583,16 +626,85 @@ export default function CampaignsPage() {
       ) : (
         /* Campaigns List */
         <View>
-          {campaigns.map((campaign) => (
-            <CampaignCard
-              key={campaign.id}
-              campaign={campaign}
-              onDelete={handleDeleteCampaign}
-              isDeleting={deletingId === campaign.id}
+          <View className="flex-row items-center mb-4" style={{ minWidth: 0, gap: 10 }}>
+            <View
+              className="flex-1 flex-row items-center rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-3 py-2.5"
+              style={{ borderWidth: 1, minWidth: 0 }}
+            >
+              <MagnifyingGlassIcon size={20} color="#6B7280" style={{ marginRight: 10 }} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search by campaign name"
+                placeholderTextColor="#6B7280"
+                className="flex-1 text-white font-instrument text-base py-0"
+                style={{ minHeight: 24 }}
+              />
+            </View>
+            <View className="relative" style={{ flexShrink: 0 }}>
+              <IconButton
+                icon={FunnelIcon}
+                variant="secondary"
+                size="sm"
+                matchButtonPadding="sm"
+                className="!h-11 !w-11 !bg-[#1A1A1A] !border-[#2A2A2A]"
+                accessibilityLabel="Campaign filters"
+                onPress={() => setFiltersOpen(true)}
+              />
+              {activeFilterCount > 0 ? (
+                <View className="absolute -top-1 -right-1 min-w-[18px] min-h-[18px] px-1 items-center justify-center rounded-full bg-brand-orange border border-[#1A1A1A]">
+                  <Text className="text-white font-instrument-semibold text-[10px] leading-none">
+                    {activeFilterCount}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          {filteredCampaigns.length === 0 ? (
+            <EmptyState
+              title="No campaigns match"
+              description="Try adjusting your search or filters."
             />
-          ))}
+          ) : (
+            filteredCampaigns.map((campaign) => (
+              <CampaignCard
+                key={campaign.id}
+                campaign={campaign}
+                tags={campaignTagsMap[campaign.id] ?? []}
+                onDelete={handleDeleteCampaign}
+                onManageTags={setManagingTagsCampaignId}
+                isDeleting={deletingId === campaign.id}
+              />
+            ))
+          )}
         </View>
       )}
+
+      {account?.id && managingTagsCampaignId ? (
+        <CampaignTagsManager
+          accountId={account.id}
+          campaignId={managingTagsCampaignId}
+          visible={managingTagsCampaignId !== null}
+          onClose={() => setManagingTagsCampaignId(null)}
+          tags={campaignTagsMap[managingTagsCampaignId] ?? []}
+          accountTags={accountCampaignTags}
+          onTagCreated={handleTagCreated}
+          onAddTag={handleAddTagToCampaign}
+          onRemoveTag={handleRemoveTagFromCampaign}
+          onUpdateTag={handleUpdateTag}
+          onDeleteTag={handleDeleteTag}
+        />
+      ) : null}
+      <CampaignListFiltersModal
+        visible={filtersOpen}
+        filters={appliedFilters}
+        accountTags={accountCampaignTags}
+        onApply={setAppliedFilters}
+        onClear={() => setAppliedFilters({ ...EMPTY_CAMPAIGN_LIST_FILTERS })}
+        onClose={() => setFiltersOpen(false)}
+      />
+
       {/* Create Campaign Modal */}
       <CreateCampaignModal
         visible={showCreateModal}

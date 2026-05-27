@@ -8,10 +8,39 @@ import {
   createCampaignTestNamespace,
 } from './fixtures';
 import { maintainCampaignIntervals } from '../../../workers/scheduler-worker/src/interval-management';
-import { batchAssignIntervalJobs } from '../../../workers/scheduler-worker/src/batch-interval-assignment';
 
 /** Always-on schedule keeps interval seeding + batch assign independent of wall-clock vs Chicago business hours. */
 const INTEGRATION_SCHEDULE = buildAlwaysOnSchedule();
+
+async function assignFreshRetryAttempt(
+  harness: CampaignDbHarness,
+  graph: Awaited<ReturnType<CampaignDbHarness['createCampaignGraph']>>,
+  lead: { enrollmentId?: string; leadId?: string; email?: string },
+  mailboxKey = 'mailbox-1',
+) {
+  const mailboxId = graph.mailboxIdsByKey.get(mailboxKey);
+  assert.ok(mailboxId, `missing mailbox ${mailboxKey}`);
+
+  const assignResult = await harness.supabase.rpc('batch_assign_jobs_to_interval', {
+    p_campaign_id: graph.campaignId,
+    p_job_data: [
+      {
+        enrollment_id: lead.enrollmentId,
+        lead_id: lead.leadId,
+        mailbox_id: mailboxId,
+        node_id: graph.nodeIdsByFlowNodeId.get('email-1'),
+        message_data: {
+          node_config: {},
+          lead_data: { email: lead.email },
+        },
+        jitter_percentage: 0,
+      },
+    ] as any,
+    p_worker_id: 'test-self-recovery',
+    p_required_mailbox_count: 1,
+  });
+  assert.equal(assignResult.error, null);
+}
 
 function isReclaimRpcSchemaMismatch(error: unknown): boolean {
   const message = String((error as { message?: string } | null)?.message ?? '');
@@ -108,7 +137,7 @@ test('stale reserved campaign jobs are reclaimed to deferred transient_read_erro
     assert.equal(rearmError, null);
 
     await maintainCampaignIntervals(harness.supabase as any);
-    await batchAssignIntervalJobs(harness.supabase as any, 0);
+    await assignFreshRetryAttempt(harness, graph, lead);
 
     const { data: attempts, error: attemptsError } = await harness.supabase
       .from('message_jobs')
@@ -210,7 +239,7 @@ test('legacy reserved campaign jobs without lease_expires_at are reclaimed using
     assert.equal(rearmError, null);
 
     await maintainCampaignIntervals(harness.supabase as any);
-    await batchAssignIntervalJobs(harness.supabase as any, 0);
+    await assignFreshRetryAttempt(harness, graph, lead);
 
     const { data: attempts, error: attemptsError } = await harness.supabase
       .from('message_jobs')

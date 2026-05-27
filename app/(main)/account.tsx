@@ -24,6 +24,7 @@ import { Alert, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { AccountSettingsSkeleton } from '@/components/skeletons';
 import { useAccountSettingsData } from '@/hooks/useAccountSettingsData';
 import { BaseModal, ConfirmDeleteModal, ModalFooter } from '@/components/ui/modals';
+import { HelpModal } from '@/components/ui/help';
 import { BottomSheet } from '@/components/ui/modals/BottomSheet';
 import { useAccount } from '@/contexts/AccountContext';
 import {
@@ -596,6 +597,7 @@ export default function AccountPage() {
   const [unblockingId, setUnblockingId] = useState<string | null>(null);
   const [blockListModalVisible, setBlockListModalVisible] = useState(false);
   const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [smartleadWizardVisible, setSmartleadWizardVisible] = useState(false);
   const [smartleadHistoryVisible, setSmartleadHistoryVisible] = useState(false);
   const smartleadRun = settings.data?.smartleadRun ?? null;
@@ -1205,7 +1207,10 @@ export default function AccountPage() {
           />
 
           {isMobile && (
-            <View className="mt-4 pt-4 border-t border-[#2A2A2A]">
+            <View className="mt-4 pt-4 border-t border-[#2A2A2A] gap-3">
+              <Button variant="outline" size="sm" onPress={() => setHelpOpen(true)} className="w-full">
+                Need help?
+              </Button>
               {signOutButton}
             </View>
           )}
@@ -1295,6 +1300,8 @@ export default function AccountPage() {
                 isLoading={removingMemberId !== null}
                 requireConfirmation={false}
               />
+
+              <HelpModal visible={helpOpen} onClose={() => setHelpOpen(false)} />
           </View>
           ) : null}
         </>

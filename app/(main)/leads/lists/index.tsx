@@ -5,12 +5,12 @@ import { DetailPageShell, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Alert, usePageSkeleton } from '@/components/ui/feedback';
 import { SavedLeadListsSkeleton } from '@/components/skeletons';
 import { LeadsSavedListsGallery, LEADS_DESKTOP_ONLY_MESSAGE } from '@/components/leads/workbench';
-import { useAccount } from '@/contexts/AccountContext';
+import { useAccountBootstrap } from '@/lib/account/useAccountBootstrap';
 import { getSavedLeadLists, type SavedLeadListSummary } from '@/lib/supabase/services/leads/saved-lists';
 
 export default function LeadsListsIndexPage() {
   const router = useRouter();
-  const { account } = useAccount();
+  const { accountId, isAccountBootstrapping, accountBootstrapError } = useAccountBootstrap();
   const { width } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
   const [lists, setLists] = useState<SavedLeadListSummary[]>([]);
@@ -18,10 +18,20 @@ export default function LeadsListsIndexPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!account?.id) {
+    if (isAccountBootstrapping) {
+      setLoading(true);
+      setError(null);
+      return;
+    }
+
+    if (accountBootstrapError) {
       setLists([]);
       setLoading(false);
-      setError('No active account found.');
+      setError(accountBootstrapError);
+      return;
+    }
+
+    if (!accountId) {
       return;
     }
 
@@ -31,7 +41,7 @@ export default function LeadsListsIndexPage() {
 
     void (async () => {
       try {
-        const nextLists = await getSavedLeadLists(account.id);
+        const nextLists = await getSavedLeadLists(accountId);
         if (!cancelled) setLists(nextLists);
       } catch (nextError) {
         if (!cancelled) {
@@ -46,9 +56,9 @@ export default function LeadsListsIndexPage() {
     return () => {
       cancelled = true;
     };
-  }, [account?.id]);
+  }, [accountBootstrapError, accountId, isAccountBootstrapping]);
 
-  const { showPlaceholder } = usePageSkeleton(loading);
+  const { showPlaceholder } = usePageSkeleton(isAccountBootstrapping || loading);
 
   return (
     <DetailPageShell
@@ -69,7 +79,7 @@ export default function LeadsListsIndexPage() {
           <Alert variant="info" message={LEADS_DESKTOP_ONLY_MESSAGE} />
         ) : null}
 
-        {error ? <Alert variant="error" message={error} /> : null}
+        {error && !isAccountBootstrapping ? <Alert variant="error" message={error} /> : null}
         {showPlaceholder ? (
           <SavedLeadListsSkeleton />
         ) : (

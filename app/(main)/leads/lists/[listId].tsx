@@ -7,7 +7,7 @@ import { Alert, EmptyState, usePageSkeleton, useToast } from '@/components/ui/fe
 import { SavedListDetailSkeleton } from '@/components/skeletons';
 import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
-import { useAccount } from '@/contexts/AccountContext';
+import { useAccountBootstrap } from '@/lib/account/useAccountBootstrap';
 import {
   countActiveExplorerFilters,
   EMPTY_EXPLORER_FILTERS,
@@ -77,7 +77,7 @@ export default function LeadsWorkbenchPage() {
   const { listId } = useLocalSearchParams<{ listId: string }>();
   const router = useRouter();
   const { toast } = useToast();
-  const { account } = useAccount();
+  const { accountId, isAccountBootstrapping, accountBootstrapError } = useAccountBootstrap();
   const { width } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
   const [listMetadata, setListMetadata] = useState<SavedLeadListMetadata | null>(null);
@@ -155,17 +155,36 @@ export default function LeadsWorkbenchPage() {
   }, []);
 
   const { saveStatus, markLoaded, resetLoaded } = useAutoSaveColumnLayout({
-    accountId: account?.id,
+    accountId,
     listId,
     columns,
     enabled: !isMobile && Boolean(listMetadata),
   });
 
   useEffect(() => {
-    if (!account?.id || !listId) {
+    if (!listId) {
       setListMetadata(null);
-      setError('No active account or list selected.');
+      setError('No list selected.');
+      setMetadataLoading(false);
       resetLoaded();
+      return;
+    }
+
+    if (isAccountBootstrapping) {
+      setMetadataLoading(true);
+      setError(null);
+      return;
+    }
+
+    if (accountBootstrapError) {
+      setListMetadata(null);
+      setError(accountBootstrapError);
+      setMetadataLoading(false);
+      resetLoaded();
+      return;
+    }
+
+    if (!accountId) {
       return;
     }
 
@@ -176,7 +195,7 @@ export default function LeadsWorkbenchPage() {
 
     void (async () => {
       try {
-        const nextMetadata = await getSavedLeadListMetadata(account.id, listId);
+        const nextMetadata = await getSavedLeadListMetadata(accountId, listId);
         if (!cancelled) {
           if (!nextMetadata) {
             setListMetadata(null);
@@ -200,10 +219,18 @@ export default function LeadsWorkbenchPage() {
     return () => {
       cancelled = true;
     };
-  }, [account?.id, listId, markLoaded, metadataRefreshNonce, resetLoaded]);
+  }, [
+    accountBootstrapError,
+    accountId,
+    isAccountBootstrapping,
+    listId,
+    markLoaded,
+    metadataRefreshNonce,
+    resetLoaded,
+  ]);
 
   useEffect(() => {
-    if (!account?.id) {
+    if (!accountId) {
       setCampaigns([]);
       setAccountCampaignTags([]);
       return;
@@ -212,8 +239,8 @@ export default function LeadsWorkbenchPage() {
     void (async () => {
       try {
         const [nextCampaigns, nextTags] = await Promise.all([
-          getAccountLeadCampaigns(account.id),
-          getCampaignTags(account.id),
+          getAccountLeadCampaigns(accountId),
+          getCampaignTags(accountId),
         ]);
         if (!cancelled) {
           setCampaigns(nextCampaigns);
@@ -229,7 +256,7 @@ export default function LeadsWorkbenchPage() {
     return () => {
       cancelled = true;
     };
-  }, [account?.id]);
+  }, [accountId]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -249,7 +276,7 @@ export default function LeadsWorkbenchPage() {
   }, [appliedFilters, currentPage, searchQuery, sortColumn, sortDirection]);
 
   useEffect(() => {
-    if (!account?.id || !listId || !listMetadata) {
+    if (!accountId || !listId || !listMetadata) {
       setRows([]);
       setDataset({ campaigns: [], people: [] });
       setTotalPeople(0);
@@ -261,7 +288,7 @@ export default function LeadsWorkbenchPage() {
 
     void (async () => {
       try {
-        const peoplePage = await getSavedLeadListPeoplePage(account.id, listId, {
+        const peoplePage = await getSavedLeadListPeoplePage(accountId, listId, {
           ...listPeopleQuery,
           limit: pageSize,
           offset: (currentPage - 1) * pageSize,
@@ -272,7 +299,7 @@ export default function LeadsWorkbenchPage() {
 
         const nextDataset =
           needsWorkbench && pageGlobalLeadIds.length > 0
-            ? await getAccountLeadWorkbenchDataset(account.id, pageGlobalLeadIds, {
+            ? await getAccountLeadWorkbenchDataset(accountId, pageGlobalLeadIds, {
                 includeReplyActivity: layoutNeedsReplyActivity(columns),
               })
             : { campaigns: [], people: [] };
@@ -303,7 +330,7 @@ export default function LeadsWorkbenchPage() {
     return () => {
       cancelled = true;
     };
-  }, [account?.id, columns, currentPage, listId, listMetadata, listPeopleQuery, peopleRefreshNonce]);
+  }, [accountId, columns, currentPage, listId, listMetadata, listPeopleQuery, peopleRefreshNonce]);
 
   useEffect(() => {
     setSelectedKeys((current) => new Set([...current].filter((key) => rows.some((row) => row.globalLeadId === key))));
@@ -479,7 +506,7 @@ export default function LeadsWorkbenchPage() {
 
   const isInitialPageLoad = !hasInitialLoadCompleted && !error;
   const isTableRefresh = hasInitialLoadCompleted && peopleLoading;
-  const { showPlaceholder } = usePageSkeleton(isInitialPageLoad);
+  const { showPlaceholder } = usePageSkeleton(isAccountBootstrapping || isInitialPageLoad);
   const tableLoading = isInitialPageLoad || isTableRefresh;
   const tableLoadingMode = hasInitialLoadCompleted ? 'refresh' : 'initial';
 
@@ -508,9 +535,9 @@ export default function LeadsWorkbenchPage() {
       actions={showPlaceholder || isMobile ? undefined : headerActions}
     >
       <View className="gap-6">
-        {error ? <Alert variant="error" message={error} /> : null}
+        {error && !isAccountBootstrapping ? <Alert variant="error" message={error} /> : null}
 
-        {!showPlaceholder && !error && !listMetadata ? (
+        {!showPlaceholder && !error && !listMetadata && !isAccountBootstrapping ? (
           <EmptyState
             title="List not found"
             description="This saved list could not be found for the current account."

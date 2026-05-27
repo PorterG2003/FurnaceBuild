@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { IconButton } from '@/components/ui/icon-button';
 import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { BottomSheet } from '@/components/ui/modals/BottomSheet';
-import { useAccount } from '@/contexts/AccountContext';
+import { useAccountBootstrap } from '@/lib/account/useAccountBootstrap';
 import {
   countActiveExplorerFilters,
   EMPTY_EXPLORER_FILTERS,
@@ -51,7 +51,7 @@ const DESKTOP_EXPLORER_PAGE_SIZE = 25;
 export default function LeadsIndexPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { account } = useAccount();
+  const { accountId, isAccountBootstrapping, accountBootstrapError } = useAccountBootstrap();
   const { width } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,7 +85,7 @@ export default function LeadsIndexPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const { showPlaceholder } = usePageSkeleton(loading && !hasLoadedOnce);
+  const { showPlaceholder } = usePageSkeleton(isAccountBootstrapping || (loading && !hasLoadedOnce));
 
   const explorerList = useMemo<LeadsListDefinition>(
     () => ({
@@ -130,7 +130,7 @@ export default function LeadsIndexPage() {
   }, [appliedFilters, searchQuery, pageSize, sortColumn, sortDirection]);
 
   useEffect(() => {
-    if (!account?.id) {
+    if (!accountId) {
       setCampaigns([]);
       setAccountCampaignTags([]);
       return;
@@ -140,8 +140,8 @@ export default function LeadsIndexPage() {
     void (async () => {
       try {
         const [nextCampaigns, nextTags] = await Promise.all([
-          getAccountLeadCampaigns(account.id),
-          getCampaignTags(account.id),
+          getAccountLeadCampaigns(accountId),
+          getCampaignTags(accountId),
         ]);
         if (!cancelled) {
           setCampaigns(nextCampaigns);
@@ -158,14 +158,24 @@ export default function LeadsIndexPage() {
     return () => {
       cancelled = true;
     };
-  }, [account?.id]);
+  }, [accountId]);
 
   useEffect(() => {
-    if (!account?.id) {
+    if (isAccountBootstrapping) {
+      setLoading(true);
+      setError(null);
+      return;
+    }
+
+    if (accountBootstrapError) {
       setRows([]);
       setTotalCount(0);
       setLoading(false);
-      setError('No active account found.');
+      setError(accountBootstrapError);
+      return;
+    }
+
+    if (!accountId) {
       return;
     }
 
@@ -175,7 +185,7 @@ export default function LeadsIndexPage() {
 
     void (async () => {
       try {
-        const result = await getAccountLeadPeoplePage(account.id, {
+        const result = await getAccountLeadPeoplePage(accountId, {
           searchQuery: explorerList.filters.searchQuery,
           campaignIds: explorerList.filters.campaignIds,
           campaignTagIds: explorerList.filters.campaignTagIds,
@@ -207,7 +217,17 @@ export default function LeadsIndexPage() {
     return () => {
       cancelled = true;
     };
-  }, [account?.id, currentPage, explorerList, pageSize, refreshNonce, sortColumn, sortDirection]);
+  }, [
+    accountBootstrapError,
+    accountId,
+    currentPage,
+    explorerList,
+    isAccountBootstrapping,
+    pageSize,
+    refreshNonce,
+    sortColumn,
+    sortDirection,
+  ]);
 
   useEffect(() => {
     setSelectedKeys((current) => new Set([...current].filter((key) => rows.some((row) => row.globalLeadId === key))));
@@ -388,7 +408,7 @@ export default function LeadsIndexPage() {
       />
 
       <View className="gap-3">
-        {error ? (
+        {error && !isAccountBootstrapping ? (
           <Alert variant="error" message={error} />
         ) : null}
 

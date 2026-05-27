@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { DEFAULT_ALLOWED_WEBHOOK_EVENTS } from '../../client-api/openapi/constants.js';
 import { buildClientApiOpenApiSpec } from '../../client-api/openapi/spec.js';
 import {
   ClientApiDbHarness,
@@ -27,27 +28,53 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   assert.ok(spec.tags.some((tag) => tag.name === 'Inbox'));
 
   assert.ok('LeadCreate' in spec.components.schemas);
-  assert.ok('CampaignListResponse' in spec.components.schemas);
-  assert.ok('Error' in spec.components.schemas);
+  assert.ok('BatchCompletionWebhookPayload' in spec.components.schemas);
+  assert.ok('ImportJobCreate' in spec.components.schemas);
   assert.ok('IdempotencyKey' in spec.components.parameters);
   assert.ok('UnauthorizedError' in spec.components.responses);
+
+  const leadSchema = spec.components.schemas.Lead as { properties?: Record<string, unknown> };
+  assert.ok(leadSchema.properties?.global_lead_id);
+
+  assert.equal(
+    (spec.components.schemas.Lead as { properties?: Record<string, unknown> }).properties?.global_lead_id !== undefined,
+    true,
+  );
+  assert.equal(DEFAULT_ALLOWED_WEBHOOK_EVENTS.includes('enrollment.created' as never), false);
+  assert.equal(DEFAULT_ALLOWED_WEBHOOK_EVENTS.includes('enrollment.updated' as never), false);
+  assert.ok(DEFAULT_ALLOWED_WEBHOOK_EVENTS.includes('enrollment.pause_completed'));
+  assert.ok(DEFAULT_ALLOWED_WEBHOOK_EVENTS.includes('lead.added_to_campaign.completed'));
 
   const expectedOperations: Record<string, string[]> = {
     '/health': ['get'],
     '/openapi.json': ['get'],
     '/docs': ['get'],
     '/v1/campaigns': ['get'],
+    '/v1/campaign-tags': ['get', 'post'],
+    '/v1/campaign-tags/{id}': ['patch', 'delete'],
     '/v1/campaigns/{id}': ['get', 'patch', 'delete'],
     '/v1/campaigns/{id}/pause': ['post'],
     '/v1/campaigns/{id}/stop': ['post'],
     '/v1/campaigns/{id}/resume': ['post'],
+    '/v1/campaigns/{id}/enrollments/pause': ['post'],
+    '/v1/campaigns/{id}/enrollments/resume': ['post'],
     '/v1/campaigns/{id}/flow': ['get'],
     '/v1/campaigns/{id}/lead-fields': ['get', 'post'],
     '/v1/campaigns/{id}/leads': ['get', 'post'],
     '/v1/campaigns/{id}/leads/{leadId}': ['get', 'patch', 'delete'],
     '/v1/campaigns/{id}/leads/bulk': ['post'],
     '/v1/campaigns/{id}/leads/bulk/async': ['post'],
+    '/v1/campaigns/{id}/leads:add': ['post'],
+    '/v1/campaigns/{id}/leads:remove': ['post'],
+    '/v1/leads:remove-from-all-campaigns': ['post'],
+    '/v1/jobs': ['post'],
     '/v1/jobs/{id}': ['get'],
+    '/v1/people': ['get'],
+    '/v1/people/{globalLeadId}': ['get', 'patch'],
+    '/v1/lead-lists': ['get', 'post'],
+    '/v1/lead-lists/{id}': ['get', 'patch', 'delete'],
+    '/v1/lead-lists/{id}/people': ['get'],
+    '/v1/lead-lists/{id}/members': ['post', 'delete'],
     '/v1/mailboxes': ['get'],
     '/v1/mailboxes/{id}': ['get'],
     '/v1/threads': ['get'],
@@ -69,7 +96,11 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
       assert.ok(operation.responses && Object.keys(operation.responses).length > 0, `missing responses for ${method.toUpperCase()} ${path}`);
 
       const isMutating = method === 'post' || method === 'patch';
-      if (isMutating && path !== '/v1/campaigns/{id}/pause' && path !== '/v1/campaigns/{id}/stop' && path !== '/v1/campaigns/{id}/resume') {
+      const skipRequestBody =
+        path === '/v1/campaigns/{id}/pause'
+        || path === '/v1/campaigns/{id}/stop'
+        || path === '/v1/campaigns/{id}/resume';
+      if (isMutating && !skipRequestBody) {
         assert.ok(operation.requestBody, `missing requestBody for ${method.toUpperCase()} ${path}`);
       }
     }
@@ -100,7 +131,9 @@ test('client api exposes a public openapi contract and health endpoint', async (
     assert.equal(spec.info.title, 'Furnace Client API');
     assert.ok('/v1/campaigns' in spec.paths);
     assert.ok('/v1/campaigns/{id}/leads/bulk/async' in spec.paths);
-    assert.ok('/v1/jobs/{id}' in spec.paths);
+    assert.ok('/v1/jobs' in spec.paths);
+    assert.ok('/v1/people' in spec.paths);
+    assert.ok('/v1/lead-lists' in spec.paths);
     assert.match(spec.info.description, /Rate Limits/);
     assert.ok('LeadCreate' in spec.components.schemas);
     assert.ok(spec.paths['/v1/campaigns/{id}/leads'].post?.requestBody);

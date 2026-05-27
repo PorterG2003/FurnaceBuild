@@ -269,14 +269,13 @@ test('replace_lead_with_new_contact moves active enrollment, pending jobs, and t
     const { data: leadRows, error: leadError } = await harness.supabase
       .from('leads')
       .select(
-        'id, account_id, campaign_id, bucket_id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, global_lead_id, smartlead_lead_id, mailbox_id, status, deleted_at'
+        'id, account_id, campaign_id, bucket_id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, global_lead_id, smartlead_lead_id, mailbox_id, deleted_at'
       )
       .in('id', [oldLead.leadId, rpcRow!.new_lead_id]);
     assert.equal(leadError, null);
     const leadsById = new Map((leadRows ?? []).map((row: any) => [row.id, row]));
     const oldLeadRow = leadsById.get(oldLead.leadId);
     const newLeadRow = leadsById.get(rpcRow!.new_lead_id);
-    assert.equal(oldLeadRow?.status, 'removed');
     assert.ok(oldLeadRow?.deleted_at);
     assert.equal(newLeadRow?.email, newEmail);
     assert.equal(newLeadRow?.name, 'New Decision Maker');
@@ -459,7 +458,6 @@ test('replace_lead_with_new_contact rejects duplicate self-targeting and missing
     const { error: reviveError } = await harness.supabase
       .from('leads')
       .update({
-        status: 'new',
         deleted_at: null,
       } as any)
       .eq('id', oldLead.leadId);
@@ -741,11 +739,10 @@ test('OOO resume after replacement reactivates the new lead enrollment without t
 
     const { data: oldLeadRow, error: oldLeadError } = await harness.supabase
       .from('leads')
-      .select('status, deleted_at')
+      .select('deleted_at')
       .eq('id', oldLead.leadId)
       .single();
     assert.equal(oldLeadError, null);
-    assert.equal(oldLeadRow?.status, 'removed');
     assert.ok(oldLeadRow?.deleted_at);
   } finally {
     await harness.cleanup();

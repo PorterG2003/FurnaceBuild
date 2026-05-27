@@ -433,6 +433,23 @@ export class SendWorker {
       .eq('state', 'active');
   }
 
+  private async deferCampaignMessageJobForEnrollmentPause(messageJob: MessageJob): Promise<void> {
+    const now = new Date().toISOString();
+
+    await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'deferred',
+        status_reason: 'enrollment_paused',
+        reserved_at: null,
+        send_wait_reason: null as any,
+        error_message: null,
+        updated_at: now,
+      } as any)
+      .eq('id', messageJob.id)
+      .in('status', ['queued', 'reserved']);
+  }
+
   /**
    * check_mailbox_throttle_and_reserve returns success=false when rate limits re-queue the job to pending,
    * or when the RPC cancels the job (e.g. deleted parent for campaign sends). Log accordingly.
@@ -543,6 +560,13 @@ export class SendWorker {
         return;
       }
       const enrollmentState = (enrollmentResult.data as { state?: string } | null)?.state;
+      if (enrollmentState === 'paused') {
+        console.log(
+          `[SEND WORKER] Enrollment ${messageJob.enrollment_id} is paused; deferring campaign job ${message_job_id}.`,
+        );
+        await this.deferCampaignMessageJobForEnrollmentPause(messageJob);
+        return;
+      }
       if (enrollmentState && enrollmentState !== 'active') {
         console.log(
           `[SEND WORKER] Enrollment ${messageJob.enrollment_id} is ${enrollmentState}; cancelling campaign job ${message_job_id} without mutating enrollment`

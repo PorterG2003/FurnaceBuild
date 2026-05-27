@@ -95,7 +95,7 @@ export type CampaignLeadSpec = {
   lastName?: string | null;
   companyName?: string | null;
   phoneNumber?: string | null;
-  status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
+  deletedAt?: string | null;
   mailboxKey?: string;
   source?: string | null;
   enrollment?: CampaignEnrollmentSpec | null;
@@ -854,7 +854,6 @@ export async function materializeCampaignGraph(
 
   for (const leadSpec of spec.leads) {
     const leadId = randomId();
-    const leadStatus = leadSpec.status ?? 'new';
     const defaultName = defaultLeadName(leadSpec.key);
     const mailboxKey = leadSpec.mailboxKey ?? mailboxSpecs[manifest.leadIds.length % mailboxSpecs.length]?.key;
     const mailboxId = mailboxKey ? mailboxIdsByKey.get(mailboxKey) ?? null : null;
@@ -873,7 +872,7 @@ export async function materializeCampaignGraph(
       phone_number: leadSpec.phoneNumber ?? null,
       source: leadSpec.source ?? spec.namespace,
       mailbox_id: mailboxId,
-      status: leadStatus,
+      deleted_at: leadSpec.deletedAt ?? null,
     });
     manifest.leadIds.push(leadId);
 
@@ -1096,7 +1095,6 @@ export async function materializeCampaignGraph(
       const { error: leadArchiveError } = await supabase
         .from('leads')
         .update({
-          status: 'removed',
           deleted_at: replacementTimestamp,
           updated_at: replacementTimestamp,
         } as any)

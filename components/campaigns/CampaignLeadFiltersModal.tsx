@@ -5,29 +5,17 @@ import { SearchAndSelectMulti } from '@/components/ui/forms';
 import type {
   CampaignLeadEnrollmentFilterValue,
   CampaignLeadReplyCategoryFilterValue,
-  CampaignLeadStatusFilterValue,
 } from '@/lib/supabase/services/leads';
 
 export interface CampaignLeadFilters {
-  statuses: CampaignLeadStatusFilterValue[];
   enrollmentStates: CampaignLeadEnrollmentFilterValue[];
   replyCategories: CampaignLeadReplyCategoryFilterValue[];
 }
 
 export const EMPTY_CAMPAIGN_LEAD_FILTERS: CampaignLeadFilters = {
-  statuses: [],
   enrollmentStates: [],
   replyCategories: [],
 };
-
-const LEAD_STATUS_OPTIONS: Array<{ value: CampaignLeadStatusFilterValue; label: string }> = [
-  { value: 'new', label: 'New' },
-  { value: 'processing', label: 'Processing' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'failed', label: 'Failed' },
-  { value: 'paused', label: 'Paused' },
-  { value: 'removed', label: 'Removed' },
-];
 
 const ENROLLMENT_OPTIONS: Array<{ value: CampaignLeadEnrollmentFilterValue; label: string }> = [
   { value: 'not_started', label: 'Not Started' },
@@ -46,7 +34,6 @@ const REPLY_CATEGORY_OPTIONS: Array<{ value: CampaignLeadReplyCategoryFilterValu
 
 export function countActiveCampaignLeadFilters(filters: CampaignLeadFilters): number {
   return (
-    (filters.statuses.length > 0 ? 1 : 0) +
     (filters.enrollmentStates.length > 0 ? 1 : 0) +
     (filters.replyCategories.length > 0 ? 1 : 0)
   );
@@ -70,7 +57,7 @@ export function CampaignLeadFiltersModal({
       visible={visible}
       onClose={onClose}
       title="Lead filters"
-      description="Choose lead status, enrollment, and reply category. Empty means all values in that group."
+      description="Choose enrollment and reply category. Empty means all values in that group."
       maxWidth="lg"
       footer={
         <View className="flex-row flex-wrap gap-2 justify-end">
@@ -83,18 +70,6 @@ export function CampaignLeadFiltersModal({
         </View>
       }
     >
-      <SearchAndSelectMulti
-        label="Lead status"
-        items={LEAD_STATUS_OPTIONS}
-        getItemId={(o) => o.value}
-        getItemLabel={(o) => o.label}
-        value={filters.statuses}
-        onChange={(ids) =>
-          onChange({ ...filters, statuses: ids as CampaignLeadStatusFilterValue[] })
-        }
-        placeholder="All statuses"
-        listMaxHeight={240}
-      />
       <SearchAndSelectMulti
         label="Enrollment"
         items={ENROLLMENT_OPTIONS}

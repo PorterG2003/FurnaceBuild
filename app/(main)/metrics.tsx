@@ -161,22 +161,22 @@ export default function AccountMetricsPage() {
     </View>
   );
 
-  const alerts = (
-    <>
-      {error ? (
-        <Alert variant="error" message={error} actionText="Retry" onAction={load} className="mb-4" />
-      ) : null}
-      {metrics?.smartleadImportWarning === true && !warningDismissed ? (
-        <Alert
-          variant="warning"
-          message="A Smartlead import finished on or after the start of this range. These totals only include activity from campaigns sent through Furnace, not historical Smartlead sends."
-          actionText="Dismiss"
-          onAction={() => setWarningDismissed(true)}
-          className="mb-4"
-        />
-      ) : null}
-    </>
-  );
+  const alerts =
+    error || (metrics?.smartleadImportWarning === true && !warningDismissed) ? (
+      <View className="gap-3">
+        {error ? (
+          <Alert variant="error" message={error} actionText="Retry" onAction={load} />
+        ) : null}
+        {metrics?.smartleadImportWarning === true && !warningDismissed ? (
+          <Alert
+            variant="warning"
+            message="A Smartlead import finished on or after the start of this range. These totals only include activity from campaigns sent through Furnace, not historical Smartlead sends."
+            actionText="Dismiss"
+            onAction={() => setWarningDismissed(true)}
+          />
+        ) : null}
+      </View>
+    ) : null;
 
   const metricsCards = (
     <View className={isMobile ? 'flex-row flex-wrap gap-3 mb-6' : 'flex-row flex-wrap gap-4 mb-8'}>

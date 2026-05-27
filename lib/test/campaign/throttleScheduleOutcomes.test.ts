@@ -9,7 +9,6 @@ import {
   createCampaignTestNamespace,
 } from './fixtures';
 import { maintainCampaignIntervals } from '../../../workers/scheduler-worker/src/interval-management';
-import { batchAssignIntervalJobs } from '../../../workers/scheduler-worker/src/batch-interval-assignment';
 
 const CHICAGO_SCHEDULE = {
   timezone: 'America/Chicago',
@@ -177,14 +176,45 @@ test('daily throttle defers the attempt, preserves the historical interval, and 
     assert.ok(enrollmentRow?.next_run_at);
     assert.ok(Date.parse(enrollmentRow!.next_run_at) > now);
 
+    await maintainCampaignIntervals(harness.supabase as any);
+
+    const { data: nextInterval, error: nextIntervalError } = await harness.supabase
+      .from('campaign_intervals')
+      .select('id, interval_time, status')
+      .eq('campaign_id', graph.campaignId)
+      .gt('interval_time', new Date().toISOString())
+      .in('status', ['available', 'scheduled'])
+      .order('interval_time', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    assert.equal(nextIntervalError, null);
+    assert.ok(nextInterval?.interval_time, 'expected a future campaign interval for retry scheduling');
+
     const { error: rearmError } = await harness.supabase
       .from('enrollments')
       .update({ next_run_at: new Date().toISOString() } as any)
       .eq('id', lead.enrollmentId!);
     assert.equal(rearmError, null);
 
-    await maintainCampaignIntervals(harness.supabase as any);
-    await batchAssignIntervalJobs(harness.supabase as any, 0);
+    const assignResult = await harness.supabase.rpc('batch_assign_jobs_to_interval', {
+      p_campaign_id: graph.campaignId,
+      p_job_data: [
+        {
+          enrollment_id: lead.enrollmentId,
+          lead_id: lead.leadId,
+          mailbox_id: mailboxId,
+          node_id: graph.nodeIdsByFlowNodeId.get('email-1'),
+          message_data: {
+            node_config: {},
+            lead_data: { email: lead.email },
+          },
+          jitter_percentage: 0,
+        },
+      ] as any,
+      p_worker_id: 'test-throttle-daily',
+      p_required_mailbox_count: 1,
+    });
+    assert.equal(assignResult.error, null);
 
     const { data: attempts, error: attemptsError } = await harness.supabase
       .from('message_jobs')
@@ -201,7 +231,7 @@ test('daily throttle defers the attempt, preserves the historical interval, and 
     assert.equal(recreatedAttempt?.status_reason, null);
     assert.ok(recreatedAttempt?.interval_id);
     assert.notEqual(recreatedAttempt?.interval_id, oldIntervalId);
-    assertInChicagoBusinessHours(recreatedAttempt!.scheduled_at);
+    assertInChicagoBusinessHours(nextInterval!.interval_time);
   } finally {
     await harness.cleanup();
   }

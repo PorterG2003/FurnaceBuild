@@ -30,3 +30,7 @@ This is the runtime contract for campaign pause and resume.
 - `cancelled` must never mean "skip this node and continue."
 - If a send attempt becomes a real terminal cancellation, the enrollment must also be moved to an enrollment-level terminal state.
 - `skipped` is not part of this redesign. If product wants explicit node bypass later, it should be introduced as its own concept.
+
+## See also
+
+- [Enrollment (per-lead) pause / resume](./ENROLLMENT_PAUSE_RESUME_SEMANTICS.md) — manual hold on individual leads within a campaign (`enrollments.state = 'paused'`, `enrollment_paused` job reason). Orthogonal to campaign pause.

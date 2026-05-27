@@ -1,16 +1,12 @@
 import { useMemo } from 'react';
-import { View, Text, Pressable, Image, Platform } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
+import { SmartleadBadge } from '@/components/campaigns';
 import { CalendarDaysIcon, ChevronDownIcon, NoSymbolIcon } from 'react-native-heroicons/outline';
 import { Select } from '@/components/ui/forms';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import { THREAD_CATEGORIES } from './inboxConstants';
-
-const SMARTLEAD_BADGE_SOURCE =
-  Platform.OS === 'web'
-    ? { uri: '/smartlead_logo.png' }
-    : require('../../public/smartlead_logo.png');
 
 /** Sticky header: left = prospect name + email; right = toolbar (campaign chip, Block, tags, category) */
 export function MessagePanelHeader({
@@ -33,6 +29,7 @@ export function MessagePanelHeader({
   showToolbar = true,
   showTitleAndEmail = true,
   replacementSummary = null,
+  onOpenLeadDetail,
 }: {
   prospectName?: string | null;
   campaignName?: string | null;
@@ -56,6 +53,8 @@ export function MessagePanelHeader({
   /** When false, hide the left-side title and email (e.g. when shown in a parent header). Default true. */
   showTitleAndEmail?: boolean;
   replacementSummary?: LeadReplacementSummary | null;
+  /** Opens the account lead detail page for this prospect. */
+  onOpenLeadDetail?: () => void;
 }) {
   const showTags = !!onOpenTagsPanel;
   const isSmartleadSource = !!sourceLabel && (sourceLabel === 'Smartlead' || sourceLabel.startsWith('Imported from Smartlead'));
@@ -78,6 +77,47 @@ export function MessagePanelHeader({
     return null;
   }
 
+  const titleContent = (
+    <>
+      <View className="flex-row items-center gap-2 min-w-0">
+        <Text
+          className="text-lg font-instrument-semibold text-white leading-tight"
+          numberOfLines={1}
+          style={{ flexShrink: 1 }}
+        >
+          {title}
+        </Text>
+        {replacementLine ? (
+          <View
+            className="rounded-lg px-2 py-0.5 flex-shrink-0"
+            style={{
+              backgroundColor: 'rgba(249, 115, 22, 0.12)',
+              borderWidth: 1,
+              borderColor: 'rgba(249, 115, 22, 0.35)',
+            }}
+          >
+            <Text
+              className="text-xs font-instrument-medium"
+              style={{ color: '#FDBA74' }}
+              numberOfLines={1}
+            >
+              {replacementLine}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+      {emailLine ? (
+        <Text
+          className="text-sm font-instrument text-gray-500 leading-tight"
+          numberOfLines={1}
+          style={{ marginTop: 2 }}
+        >
+          {emailLine}
+        </Text>
+      ) : null}
+    </>
+  );
+
   return (
     <View
       className="px-5 py-3.5 border-b border-[#2A2A2A] bg-[#0D0D0D]"
@@ -87,44 +127,13 @@ export function MessagePanelHeader({
         {/* Left: prospect name + email (optional) */}
         <View className="flex-1 min-w-0">
           {showTitleAndEmail ? (
-            <>
-              <View className="flex-row items-center gap-2 min-w-0">
-                <Text
-                  className="text-lg font-instrument-semibold text-white leading-tight"
-                  numberOfLines={1}
-                  style={{ flexShrink: 1 }}
-                >
-                  {title}
-                </Text>
-                {replacementLine ? (
-                  <View
-                    className="rounded-lg px-2 py-0.5 flex-shrink-0"
-                    style={{
-                      backgroundColor: 'rgba(249, 115, 22, 0.12)',
-                      borderWidth: 1,
-                      borderColor: 'rgba(249, 115, 22, 0.35)',
-                    }}
-                  >
-                    <Text
-                      className="text-xs font-instrument-medium"
-                      style={{ color: '#FDBA74' }}
-                      numberOfLines={1}
-                    >
-                      {replacementLine}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-              {emailLine ? (
-                <Text
-                  className="text-sm font-instrument text-gray-500 leading-tight"
-                  numberOfLines={1}
-                  style={{ marginTop: 2 }}
-                >
-                  {emailLine}
-                </Text>
-              ) : null}
-            </>
+            onOpenLeadDetail ? (
+              <Pressable onPress={onOpenLeadDetail} accessibilityLabel="View lead profile">
+                {titleContent}
+              </Pressable>
+            ) : (
+              titleContent
+            )
           ) : null}
         </View>
 
@@ -133,12 +142,7 @@ export function MessagePanelHeader({
         <View className="flex-row items-center gap-2 flex-shrink-0">
           {sourceLabel ? (
             isSmartleadSource ? (
-              <Image
-                source={SMARTLEAD_BADGE_SOURCE}
-                style={{ width: 20, height: 20, borderRadius: 6 }}
-                resizeMode="cover"
-                accessibilityLabel="Smartlead"
-              />
+              <SmartleadBadge />
             ) : (
               <View
                 className="rounded-lg px-2 py-0.5 items-center justify-center"

@@ -87,6 +87,59 @@ export interface Database {
           updated_at?: string;
         };
       };
+      account_lead_people: {
+        Row: {
+          account_id: string;
+          global_lead_id: string;
+          email: string | null;
+          display_name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+          campaign_count: number;
+          native_campaign_count: number;
+          smartlead_campaign_count: number;
+          company_list: string | null;
+          has_reply: boolean;
+          latest_activity_at: string | null;
+          newest_membership_created_at: string | null;
+          search_text: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          account_id: string;
+          global_lead_id: string;
+          email?: string | null;
+          display_name?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+          campaign_count?: number;
+          native_campaign_count?: number;
+          smartlead_campaign_count?: number;
+          company_list?: string | null;
+          has_reply?: boolean;
+          latest_activity_at?: string | null;
+          newest_membership_created_at?: string | null;
+          search_text?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          account_id?: string;
+          global_lead_id?: string;
+          email?: string | null;
+          display_name?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+          campaign_count?: number;
+          native_campaign_count?: number;
+          smartlead_campaign_count?: number;
+          company_list?: string | null;
+          has_reply?: boolean;
+          latest_activity_at?: string | null;
+          newest_membership_created_at?: string | null;
+          search_text?: string | null;
+          updated_at?: string;
+        };
+      };
       account_api_keys: {
         Row: {
           id: string;
@@ -461,7 +514,6 @@ export interface Database {
           global_lead_id: string | null;
           smartlead_lead_id: number | null;
           mailbox_id: string | null;
-          status: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           deleted_at: string | null;
           created_at: string;
           updated_at: string;
@@ -485,7 +537,6 @@ export interface Database {
           global_lead_id?: string | null;
           smartlead_lead_id?: number | null;
           mailbox_id?: string | null;
-          status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -508,11 +559,62 @@ export interface Database {
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
           smartlead_lead_id?: number | null;
-          status?: 'new' | 'processing' | 'completed' | 'failed' | 'paused' | 'removed';
           deleted_at?: string | null;
           mailbox_id?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+      };
+      lead_saved_lists: {
+        Row: {
+          id: string;
+          account_id: string;
+          name: string;
+          description: string | null;
+          column_layout: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          name: string;
+          description?: string | null;
+          column_layout?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          name?: string;
+          description?: string | null;
+          column_layout?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      lead_saved_list_members: {
+        Row: {
+          list_id: string;
+          account_id: string;
+          global_lead_id: string;
+          source: 'selection' | 'csv' | 'manual';
+          created_at: string;
+        };
+        Insert: {
+          list_id: string;
+          account_id: string;
+          global_lead_id: string;
+          source?: 'selection' | 'csv' | 'manual';
+          created_at?: string;
+        };
+        Update: {
+          list_id?: string;
+          account_id?: string;
+          global_lead_id?: string;
+          source?: 'selection' | 'csv' | 'manual';
+          created_at?: string;
         };
       };
       lead_replacements: {
@@ -1207,6 +1309,49 @@ export interface Database {
           updated_at?: string;
         };
       };
+      campaign_tags: {
+        Row: {
+          id: string;
+          account_id: string;
+          name: string;
+          color: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          name: string;
+          color?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          name?: string;
+          color?: string | null;
+          created_at?: string;
+        };
+      };
+      campaign_tag_assignments: {
+        Row: {
+          campaign_id: string;
+          tag_id: string;
+          account_id: string;
+          created_at: string;
+        };
+        Insert: {
+          campaign_id: string;
+          tag_id: string;
+          account_id: string;
+          created_at?: string;
+        };
+        Update: {
+          campaign_id?: string;
+          tag_id?: string;
+          account_id?: string;
+          created_at?: string;
+        };
+      };
       block_list: {
         Row: {
           id: string;
@@ -1237,10 +1382,11 @@ export interface Database {
         Row: {
           id: string;
           account_id: string;
-          campaign_id: string;
+          campaign_id: string | null;
           created_by_api_key_id: string | null;
           status: 'queued' | 'running' | 'completed' | 'failed';
           progress: number;
+          cursor: number;
           input: Json;
           result: Json;
           errors: Json;
@@ -1252,10 +1398,11 @@ export interface Database {
         Insert: {
           id?: string;
           account_id: string;
-          campaign_id: string;
+          campaign_id?: string | null;
           created_by_api_key_id?: string | null;
           status?: 'queued' | 'running' | 'completed' | 'failed';
           progress?: number;
+          cursor?: number;
           input?: Json;
           result?: Json;
           errors?: Json;
@@ -1267,10 +1414,11 @@ export interface Database {
         Update: {
           id?: string;
           account_id?: string;
-          campaign_id?: string;
+          campaign_id?: string | null;
           created_by_api_key_id?: string | null;
           status?: 'queued' | 'running' | 'completed' | 'failed';
           progress?: number;
+          cursor?: number;
           input?: Json;
           result?: Json;
           errors?: Json;
@@ -1717,7 +1865,6 @@ export interface Database {
         Args: {
           p_campaign_id: string;
           p_scoped_ids: string[];
-          p_statuses: string[] | null;
           p_search: string | null;
           p_sort: string;
           p_asc: boolean;
@@ -1737,8 +1884,261 @@ export interface Database {
           phone_number: string | null;
           source: string | null;
           custom_lead_data: Json | null;
-          status: string;
           created_at: string;
+          total_count: number;
+        }[];
+      };
+      add_global_leads_to_campaign: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+          p_options?: Json;
+        };
+        Returns: Json;
+      };
+      add_to_campaign_review_summary: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: Json;
+      };
+      import_api_leads_to_campaign: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_leads: Json;
+          p_options?: Json;
+        };
+        Returns: Json;
+      };
+      backfill_account_lead_people_batch: {
+        Args: {
+          p_account_id?: string | null;
+          p_limit?: number | null;
+        };
+        Returns: number;
+      };
+      get_account_import_job: {
+        Args: {
+          p_job_id: string;
+        };
+        Returns: Json;
+      };
+      start_add_to_campaign_job: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: string;
+      };
+      start_add_to_campaign_job_for_list: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_list_id: string;
+        };
+        Returns: string;
+      };
+      pause_enrollments_review_summary: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: Json;
+      };
+      resume_enrollments_review_summary: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: Json;
+      };
+      pause_enrollments_for_leads: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: Json;
+      };
+      resume_enrollments_for_leads: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: Json;
+      };
+      start_pause_enrollments_job: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: string;
+      };
+      start_resume_enrollments_job: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: string;
+      };
+      start_pause_enrollments_job_for_list: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_list_id: string;
+        };
+        Returns: string;
+      };
+      start_resume_enrollments_job_for_list: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_list_id: string;
+        };
+        Returns: string;
+      };
+      remove_from_campaign_review_summary: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: Json;
+      };
+      remove_from_all_campaigns_review_summary: {
+        Args: {
+          p_account_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: Json;
+      };
+      remove_global_leads_from_campaign: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: Json;
+      };
+      remove_global_leads_from_all_campaigns: {
+        Args: {
+          p_account_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: Json;
+      };
+      start_remove_from_campaign_job: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: string;
+      };
+      start_remove_from_all_campaigns_job: {
+        Args: {
+          p_account_id: string;
+          p_global_lead_ids: string[];
+        };
+        Returns: string;
+      };
+      start_remove_from_campaign_job_for_list: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_list_id: string;
+        };
+        Returns: string;
+      };
+      start_remove_from_all_campaigns_job_for_list: {
+        Args: {
+          p_account_id: string;
+          p_list_id: string;
+        };
+        Returns: string;
+      };
+      lead_saved_list_member_counts: {
+        Args: {
+          p_account_id: string;
+          p_list_ids?: string[] | null;
+        };
+        Returns: {
+          list_id: string;
+          lead_count: number;
+        }[];
+      };
+      saved_list_membership_review_summary: {
+        Args: {
+          p_account_id: string;
+          p_list_id: string;
+          p_global_lead_ids: string[];
+          p_mode: string;
+        };
+        Returns: Json;
+      };
+      saved_lead_list_people_page: {
+        Args: {
+          p_account_id: string;
+          p_list_id: string;
+          p_campaign_ids?: string[] | null;
+          p_reply_statuses?: string[] | null;
+          p_enrollment_states?: string[] | null;
+          p_reply_categories?: string[] | null;
+          p_search?: string | null;
+          p_limit?: number | null;
+          p_offset?: number | null;
+          p_sort_column?: string | null;
+          p_sort_direction?: string | null;
+        };
+        Returns: {
+          global_lead_id: string;
+          email: string | null;
+          display_name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+          campaign_count: number;
+          company_list: string | null;
+          has_reply: boolean;
+          latest_activity: string | null;
+          newest_membership_created_at: string | null;
+          total_count: number;
+        }[];
+      };
+      account_lead_people_page: {
+        Args: {
+          p_account_id: string;
+          p_global_lead_ids?: string[] | null;
+          p_campaign_ids?: string[] | null;
+          p_reply_statuses?: string[] | null;
+          p_enrollment_states?: string[] | null;
+          p_reply_categories?: string[] | null;
+          p_search?: string | null;
+          p_limit?: number | null;
+          p_offset?: number | null;
+          p_sort_column?: string | null;
+          p_sort_direction?: string | null;
+        };
+        Returns: {
+          global_lead_id: string;
+          email: string | null;
+          display_name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+          campaign_count: number;
+          company_list: string | null;
+          has_reply: boolean;
+          latest_activity: string | null;
+          newest_membership_created_at: string | null;
           total_count: number;
         }[];
       };

@@ -321,7 +321,6 @@ export function RaceConditionTest() {
         account_id: account.id,
         email: `test-${Date.now()}@example.com`,
         name: 'Test Lead',
-        status: 'new',
         global_lead_id: null,
       });
 

@@ -170,6 +170,8 @@ interface DataTableProps<T> {
   selectable?: boolean;
   selectedKeys?: Set<string>;
   onSelectionChange?: (keys: Set<string>) => void;
+  /** Whether header select-all applies to the current page or all sorted items. Default `page`. */
+  selectAllScope?: 'page' | 'all';
   /** When false, show all sorted items and hide pagination UI. Default true. */
   pagination?: boolean;
   /** When provided and there are no items, render this instead of emptyMessage. */
@@ -224,6 +226,7 @@ export function DataTable<T>({
   selectable = false,
   selectedKeys,
   onSelectionChange,
+  selectAllScope = 'page',
   pagination: paginationEnabled = true,
   renderEmpty,
   equalColumnWidths = false,
@@ -324,28 +327,30 @@ export function DataTable<T>({
     setInternalCurrentPage(clampedPage);
   };
 
+  const selectAllItems = selectAllScope === 'all' ? sortedItems : visibleItems;
+
   const allSelected =
     selectable &&
-    visibleItems.length > 0 &&
+    selectAllItems.length > 0 &&
     selectedKeys != null &&
-    visibleItems.every((item) => selectedKeys.has(getItemKey(item)));
+    selectAllItems.every((item) => selectedKeys.has(getItemKey(item)));
 
   const someSelected =
     selectable &&
     selectedKeys != null &&
-    visibleItems.some((item) => selectedKeys.has(getItemKey(item))) &&
+    selectAllItems.some((item) => selectedKeys.has(getItemKey(item))) &&
     !allSelected;
 
   const toggleSelectAll = () => {
     if (!selectable || !onSelectionChange || selectedKeys == null) return;
-    const visibleKeys = new Set(visibleItems.map(getItemKey));
+    const scopeKeys = new Set(selectAllItems.map(getItemKey));
     if (allSelected) {
       const next = new Set(selectedKeys);
-      visibleKeys.forEach((k) => next.delete(k));
+      scopeKeys.forEach((k) => next.delete(k));
       onSelectionChange(next);
     } else {
       const next = new Set(selectedKeys);
-      visibleKeys.forEach((k) => next.add(k));
+      scopeKeys.forEach((k) => next.add(k));
       onSelectionChange(next);
     }
     selectionAnchorKeyRef.current = null;

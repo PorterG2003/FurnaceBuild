@@ -930,7 +930,6 @@ export async function upsertLeadsFromSmartlead(
           source: 'smartlead',
           smartlead_lead_id: sl.id,
           global_lead_id: globalLeadId,
-          status: 'new' as const,
           created_at: now,
           updated_at: now,
         };

@@ -242,7 +242,7 @@ function buildPrimarySpecialSlices(): CampaignLeadSpec[] {
       companyName: 'Seed Replacement Co',
       mailboxKey: 'mailbox-1',
       source: DEV_DEFAULT_NAMESPACE,
-      status: 'removed',
+      deletedAt: iso(-240),
       enrollment: {
         state: 'stopped',
         currentFlowNodeId: 'waitTime-1',

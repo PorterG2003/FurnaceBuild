@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Modal, Pressable, View, Text, ScrollView, useWindowDimensions } from 'react-native';
 import { XMarkIcon } from 'react-native-heroicons/outline';
+import { FormFieldHelpIcon } from '@/components/ui/forms/FormFieldHelp';
 import { BottomSheet } from './BottomSheet';
+import { MobileHeaderBackButton } from '@/components/ui/layout/MobileHeaderBackButton';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import { useVisualViewportKeyboardInset } from '@/hooks/useVisualViewportKeyboardInset';
 
@@ -10,8 +12,12 @@ const isWeb = typeof window !== 'undefined';
 interface BaseModalProps {
   visible: boolean;
   onClose: () => void;
+  /** When set, back chevron is shown and backdrop/hardware back/X call this instead of onClose. */
+  onBack?: () => void;
   title: string;
   description?: string;
+  /** Tooltip help shown beside the description. */
+  descriptionHelp?: string;
   children?: React.ReactNode;
   footer?: React.ReactNode;
   /** On mobile (sheet), use this footer instead of footer when set. Use to omit Cancel and show only primary action(s). */
@@ -38,8 +44,10 @@ const maxWidthClasses = {
 export function BaseModal({
   visible,
   onClose,
+  onBack,
   title,
   description,
+  descriptionHelp,
   children,
   footer,
   footerMobile,
@@ -69,6 +77,13 @@ export function BaseModal({
     maxHeight != null && !stretchContent && !compact && dialogMaxHeight != null;
   const dialogRef = useRef<View>(null);
   const webKeyboardInset = useVisualViewportKeyboardInset();
+  const handleDismiss = useCallback(() => {
+    if (onBack) {
+      onBack();
+      return;
+    }
+    onClose();
+  }, [onBack, onClose]);
 
   useEffect(() => {
     if (visible && isWeb && !isMobile && dialogRef.current) {
@@ -82,17 +97,28 @@ export function BaseModal({
 
   if (isMobile) {
     return (
-      <BottomSheet visible={visible} onClose={onClose}>
+      <BottomSheet visible={visible} onClose={handleDismiss}>
         <View style={{ flex: 1, minHeight: 0 }}>
           <View className="border-b border-[#2A2A2A] pb-4 mb-4 flex-shrink-0">
+            {onBack ? (
+              <MobileHeaderBackButton onPress={onBack} className="mb-2" />
+            ) : null}
             <View className="min-w-0">
               <Text className="text-xl font-instrument-semibold text-white" numberOfLines={2}>
                 {title}
               </Text>
               {description ? (
-                <Text className="text-gray-400 font-instrument text-sm mt-1" numberOfLines={3}>
-                  {description}
-                </Text>
+                <View className="flex-row items-start gap-1.5 mt-1">
+                  <Text className="text-gray-400 font-instrument text-sm flex-1" numberOfLines={3}>
+                    {description}
+                  </Text>
+                  {descriptionHelp ? (
+                    <FormFieldHelpIcon
+                      content={descriptionHelp}
+                      accessibilityLabel="Help for modal description"
+                    />
+                  ) : null}
+                </View>
               ) : null}
             </View>
           </View>
@@ -102,9 +128,12 @@ export function BaseModal({
               contentContainerStyle={{
                 paddingBottom: ((footerMobile ?? footer) ? 12 : 0) + (webKeyboardInset > 0 ? webKeyboardInset : 0),
                 flexGrow: 1,
+                width: '100%',
+                maxWidth: '100%',
               }}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
+              showsHorizontalScrollIndicator={false}
               nestedScrollEnabled
             >
               {children}
@@ -125,11 +154,11 @@ export function BaseModal({
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={handleDismiss}
     >
       <Pressable
         style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
-        onPress={onClose}
+        onPress={handleDismiss}
       >
         <View
           style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, pointerEvents: 'box-none' }}
@@ -159,17 +188,28 @@ export function BaseModal({
               style={fillMaxHeightColumn ? { flexShrink: 0 } : undefined}
             >
               <View className="flex-1 mr-4">
+                {onBack ? (
+                  <MobileHeaderBackButton onPress={onBack} className="mb-2 -ml-1" />
+                ) : null}
                 <Text className="text-2xl font-instrument-semibold mb-2 text-white">
                   {title}
                 </Text>
-                {description && (
-                  <Text className="text-gray-400 font-instrument text-sm">
-                    {description}
-                  </Text>
-                )}
+                {description ? (
+                  <View className="flex-row items-start gap-1.5">
+                    <Text className="text-gray-400 font-instrument text-sm flex-1">
+                      {description}
+                    </Text>
+                    {descriptionHelp ? (
+                      <FormFieldHelpIcon
+                        content={descriptionHelp}
+                        accessibilityLabel="Help for modal description"
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
               <Pressable
-                onPress={onClose}
+                onPress={handleDismiss}
                 className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
               >
                 <XMarkIcon size={20} color="#9CA3AF" />
@@ -191,9 +231,15 @@ export function BaseModal({
                 {maxHeight != null && !stretchContent ? (
                   <ScrollView
                     style={{ flex: 1 }}
-                    contentContainerStyle={{ paddingBottom: footer ? 12 : 0, flexGrow: 0 }}
+                    contentContainerStyle={{
+                      paddingBottom: footer ? 12 : 0,
+                      flexGrow: 0,
+                      width: '100%',
+                      maxWidth: '100%',
+                    }}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator
+                    showsHorizontalScrollIndicator={false}
                   >
                     {children}
                   </ScrollView>

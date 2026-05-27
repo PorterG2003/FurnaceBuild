@@ -13,12 +13,14 @@ import {
   Cog6ToothIcon,
   InboxIcon,
   EnvelopeIcon,
+  UserGroupIcon,
 } from 'react-native-heroicons/outline';
 
 const navItems = [
   { path: '/campaigns', icon: MegaphoneIcon },
   { path: '/metrics', icon: ChartBarIcon },
   { path: '/inbox', icon: InboxIcon },
+  { path: '/leads', icon: UserGroupIcon },
   { path: '/senders', icon: EnvelopeIcon },
   { path: '/account', icon: Cog6ToothIcon },
 ];
@@ -29,6 +31,9 @@ function isActive(path: string, pathname: string | null) {
   }
   if (path === '/inbox') {
     return pathname === '/inbox' || pathname === '/';
+  }
+  if (path === '/leads') {
+    return pathname === '/leads' || (pathname?.startsWith('/leads/') ?? false);
   }
   if (path === '/senders') {
     return pathname === '/senders' || (pathname?.startsWith('/senders/') ?? false);

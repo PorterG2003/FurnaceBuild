@@ -24,6 +24,8 @@ If sandbox deploy fails with a CloudFront alias conflict (`DNS record points to 
 - `processWebhookEvent` Lambda subscribed to the webhook queue
 - `clientApiBulkImport` Lambda subscribed to the import queue
 
+The import queue handles all `api_import_jobs` operation types (`api_lead_import`, add/remove, pause/resume). See [bulk-operations-standards.md](../engineering/bulk-operations-standards.md) and [CLIENT_API_WEBHOOKS.md](./CLIENT_API_WEBHOOKS.md).
+
 ## Deploy order
 
 1. Deploy the Amplify backend so the `clientApi` Lambda, CloudFront distribution, and queue exports exist.

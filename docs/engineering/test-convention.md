@@ -226,6 +226,8 @@ Every DB-backed test run must:
 
 New tests should be placeable by domain alone without broad repo exploration.
 
+Bulk/async features (workbench, Client API jobs, sync shortcuts) must follow [bulk-operations-standards.md](./bulk-operations-standards.md): RPC outcome tests first, then Client API HTTP outcomes for auth/limits/contract gaps, plus worker tests for async completion webhooks.
+
 ## Cursor guidance
 
 This convention is also surfaced in:

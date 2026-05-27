@@ -40,6 +40,7 @@ export interface InboxMessageListProps {
   onBlock: (() => void) | undefined;
   onMarkOutOfOffice?: (() => void) | undefined;
   onReplaceLead?: (() => void) | undefined;
+  onOpenLeadDetail?: (() => void) | undefined;
   accountId: string | null;
   onOpenTagsPanel: (() => void) | undefined;
   category: string | null;
@@ -80,6 +81,7 @@ export function InboxMessageList({
   onBlock,
   onMarkOutOfOffice,
   onReplaceLead,
+  onOpenLeadDetail,
   accountId,
   onOpenTagsPanel,
   category,
@@ -147,6 +149,7 @@ export function InboxMessageList({
         showToolbar={showToolbar}
         showTitleAndEmail={showTitleAndEmail}
         replacementSummary={leadReplacementSummary}
+        onOpenLeadDetail={onOpenLeadDetail}
       />
       {messagesError && (
         <View className="p-4">

@@ -12,9 +12,10 @@ import { BottomSheet } from '@/components/ui/modals';
 import { Select, SearchAndSelectMulti } from '@/components/ui/forms';
 import { Toggle } from '@/components/ui/Toggle';
 import type { Mailbox, Campaign } from '@/lib/supabase/types';
+import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
-import { resolveTagColor } from '@/lib/inbox/tag-colors';
+import { resolveTagColor } from '@/lib/tags/tag-colors';
 import { NO_CATEGORY_FILTER } from '@/lib/supabase/services/inbox';
 import { THREAD_CATEGORIES } from './inboxConstants';
 const DATE_OPTIONS = [
@@ -44,11 +45,14 @@ export interface InboxFilterDropdownProps {
   onCategoryFilterChange: (v: string | null) => void;
   tagFilterIds: string[];
   onTagFilterIdsChange: (ids: string[]) => void;
+  campaignTagFilterIds: string[];
+  onCampaignTagFilterIdsChange: (ids: string[]) => void;
   includeOutOfOfficeFilter: boolean;
   onIncludeOutOfOfficeFilterChange: (v: boolean) => void;
   mailboxes: Mailbox[];
   campaigns: Campaign[];
   accountTags: ThreadTag[];
+  accountCampaignTags: CampaignTag[];
   onClearAll: () => void;
 }
 
@@ -70,11 +74,14 @@ export function InboxFilterDropdown({
   onCategoryFilterChange,
   tagFilterIds,
   onTagFilterIdsChange,
+  campaignTagFilterIds,
+  onCampaignTagFilterIdsChange,
   includeOutOfOfficeFilter,
   onIncludeOutOfOfficeFilterChange,
   mailboxes,
   campaigns,
   accountTags,
+  accountCampaignTags,
   onClearAll,
 }: InboxFilterDropdownProps) {
   const [dateSearch, setDateSearch] = useState('');
@@ -198,17 +205,33 @@ export function InboxFilterDropdown({
       />
 
       <SearchAndSelectMulti
-        label="Tag"
+        label="Thread tags"
         items={accountTags}
         getItemId={(t) => t.id}
         getItemLabel={(t) => t.name}
         getItemColor={(t) => resolveTagColor(t.color)}
         value={tagFilterIds}
         onChange={onTagFilterIdsChange}
-        searchPlaceholder="Search tags…"
-        placeholder="All"
+        searchPlaceholder="Search thread tags…"
+        placeholder="All thread tags"
         listMaxHeight={200}
-        emptyMessage={(hasSearch) => (hasSearch ? 'No matching tags.' : 'No tags yet.')}
+        emptyMessage={(hasSearch) => (hasSearch ? 'No matching thread tags.' : 'No thread tags yet.')}
+      />
+
+      <SearchAndSelectMulti
+        label="Campaign tags"
+        items={accountCampaignTags}
+        getItemId={(t) => t.id}
+        getItemLabel={(t) => t.name}
+        getItemColor={(t) => resolveTagColor(t.color)}
+        value={campaignTagFilterIds}
+        onChange={onCampaignTagFilterIdsChange}
+        searchPlaceholder="Search campaign tags…"
+        placeholder="All campaign tags"
+        listMaxHeight={200}
+        emptyMessage={(hasSearch) =>
+          hasSearch ? 'No matching campaign tags.' : 'No campaign tags yet.'
+        }
       />
 
       <Pressable onPress={onClearAll} className="py-2 mt-2">

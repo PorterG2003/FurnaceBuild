@@ -239,7 +239,6 @@ function LeadSourceNodeModal({
       if (lead.linkedin_url) record.linkedin_url = lead.linkedin_url;
       if (lead.company_linkedin_url) record.company_linkedin_url = lead.company_linkedin_url;
       if (lead.source) record.source = lead.source;
-      if (lead.status) record.status = lead.status;
 
       // Add any custom lead data if it exists
       if (lead.custom_lead_data && typeof lead.custom_lead_data === 'object') {
@@ -581,7 +580,6 @@ function LeadSourceNodeModal({
             linkedin_url: linkedinUrl,
             company_linkedin_url: companyLinkedinUrl,
             source: initialData?.source || 'CSV Import',
-            status: 'new',
           };
 
           if (Object.keys(customData).length > 0) {

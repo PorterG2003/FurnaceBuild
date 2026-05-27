@@ -7,27 +7,20 @@ export interface AccountMembership {
 }
 
 export async function getAccountMembershipsForUser(userId: string): Promise<AccountMembership[]> {
-  const { data: memberships, error } = await supabase
+  const { data: rows, error } = await supabase
     .from('account_users')
-    .select('id, account_id, user_id, is_owner, role, created_at, updated_at')
+    .select('*, account:accounts(*)')
     .eq('user_id', userId);
 
   if (error) throw new Error(`Failed to fetch account memberships: ${error.message}`);
-  if (!memberships?.length) return [];
+  if (!rows?.length) return [];
 
-  const accountIds = Array.from(new Set(memberships.map((m) => m.account_id)));
-  const { data: accounts, error: accountsError } = await supabase
-    .from('accounts')
-    .select('*')
-    .in('id', accountIds);
-
-  if (accountsError) throw new Error(`Failed to fetch accounts: ${accountsError.message}`);
-  const accountMap = new Map((accounts ?? []).map((a) => [a.id, a]));
-
-  return memberships
-    .map((membership) => {
-      const account = accountMap.get(membership.account_id);
-      return account ? { membership, account } : null;
+  return rows
+    .map((row) => {
+      const account = row.account as Account | null;
+      if (!account) return null;
+      const { account: _account, ...membership } = row;
+      return { membership: membership as AccountUser, account };
     })
     .filter((entry): entry is AccountMembership => Boolean(entry));
 }
@@ -79,22 +72,19 @@ export async function removeMemberFromAccount(membershipId: string): Promise<voi
 }
 
 export async function getAccountMembers(accountId: string): Promise<Array<{ user: User; membership: AccountUser }>> {
-  const { data: memberships, error } = await supabase
+  const { data: rows, error } = await supabase
     .from('account_users')
-    .select('*')
+    .select('*, user:users(*)')
     .eq('account_id', accountId);
   if (error) throw new Error(`Failed to fetch account members: ${error.message}`);
-  if (!memberships?.length) return [];
+  if (!rows?.length) return [];
 
-  const userIds = Array.from(new Set(memberships.map((m) => m.user_id)));
-  const { data: users, error: usersError } = await supabase.from('users').select('*').in('id', userIds);
-  if (usersError) throw new Error(`Failed to fetch users: ${usersError.message}`);
-  const userMap = new Map((users ?? []).map((u) => [u.id, u]));
-
-  return memberships
-    .map((membership) => {
-      const user = userMap.get(membership.user_id);
-      return user ? { user, membership } : null;
+  return rows
+    .map((row) => {
+      const user = row.user as User | null;
+      if (!user) return null;
+      const { user: _user, ...membership } = row;
+      return { user, membership: membership as AccountUser };
     })
     .filter((entry): entry is { user: User; membership: AccountUser } => Boolean(entry));
 }

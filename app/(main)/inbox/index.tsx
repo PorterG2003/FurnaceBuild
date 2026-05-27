@@ -9,6 +9,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
 import { useToast } from '@/components/ui/feedback';
 import { PageLayout, LAYOUT_BREAKPOINT, BOTTOM_NAV_SCROLL_PADDING } from '@/components/ui/layout';
+import { openLeadDetail } from '@/lib/leads/navigation';
 import {
   addTagToThread,
   removeTagFromThread,
@@ -88,6 +89,8 @@ export default function InboxPage() {
     setDatePreset,
     tagFilterIds,
     setTagFilterIds,
+    campaignTagFilterIds,
+    setCampaignTagFilterIds,
     categoryFilter,
     setCategoryFilter,
     includeOutOfOfficeFilter,
@@ -105,6 +108,7 @@ export default function InboxPage() {
     leadReplacementSummaryMap,
     accountTags,
     setAccountTags,
+    accountCampaignTags,
     displayThreads,
     hasActiveFilters,
     threadsLoadingOrNoAccount,
@@ -139,7 +143,6 @@ export default function InboxPage() {
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [oooModalVisible, setOooModalVisible] = useState(false);
   const [replaceLeadModalVisible, setReplaceLeadModalVisible] = useState(false);
-  const [createTagModalVisible, setCreateTagModalVisible] = useState(false);
   const [tagsPanelVisible, setTagsPanelVisible] = useState(false);
   const [showMessageActionsSheet, setShowMessageActionsSheet] = useState(false);
   const [infoSheetVisible, setInfoSheetVisible] = useState(false);
@@ -347,6 +350,26 @@ export default function InboxPage() {
     }
     setReplaceLeadModalVisible(true);
   }, [accountId, selectedThread?.lead_id, selectedThreadId, isMobile, router]);
+
+  const openLeadDetailFromInbox = useCallback(() => {
+    if (!selectedThread?.lead_id) return;
+    const lead = leadByIdMap[selectedThread.lead_id];
+    void openLeadDetail(router, {
+      globalLeadId: lead?.global_lead_id ?? undefined,
+      leadId: selectedThread.lead_id,
+      campaignId: selectedThread.campaign_id ?? undefined,
+      campaignName: selectedThreadCampaignName ?? undefined,
+      from: 'inbox',
+      threadId: selectedThreadId ?? undefined,
+    });
+  }, [
+    leadByIdMap,
+    router,
+    selectedThread?.campaign_id,
+    selectedThread?.lead_id,
+    selectedThreadCampaignName,
+    selectedThreadId,
+  ]);
 
   useEffect(() => {
     if (showMessageActionsSheet) {
@@ -625,6 +648,7 @@ export default function InboxPage() {
         accountId && selectedThreadId ? () => setOooModalVisible(true) : undefined,
       onReplaceLead:
         accountId && selectedThread?.lead_id ? openReplaceLead : undefined,
+      onOpenLeadDetail: selectedThread?.lead_id ? openLeadDetailFromInbox : undefined,
       onOpenTagsPanel: selectedThreadId && accountId ? () => setTagsPanelVisible(true) : undefined,
       category: selectedThread?.category ?? null,
       onSetCategory: handleSetThreadCategory,
@@ -661,6 +685,7 @@ export default function InboxPage() {
       setBlockModalVisible,
       setOooModalVisible,
       openReplaceLead,
+      openLeadDetailFromInbox,
       setTagsPanelVisible,
       handleSetThreadCategory,
       onContentSizeChange,
@@ -750,11 +775,14 @@ export default function InboxPage() {
         setCategoryFilter,
         tagFilterIds,
         setTagFilterIds,
+        campaignTagFilterIds,
+        setCampaignTagFilterIds,
         includeOutOfOfficeFilter,
         setIncludeOutOfOfficeFilter,
         mailboxes,
         campaigns,
         accountTags,
+        accountCampaignTags,
         onClearAllFilters: handleClearAllFilters,
         filterPresentation: (isMobile ? 'sheet' : 'dropdown') as 'dropdown' | 'sheet',
         filterSheetMaxHeight: winHeight * 0.9,
@@ -766,8 +794,6 @@ export default function InboxPage() {
         setTagsPanelVisible,
         showMessageActionsSheet,
         setShowMessageActionsSheet,
-        createTagModalVisible,
-        setCreateTagModalVisible,
         blockedRecipientConfirm,
         setBlockedRecipientConfirm,
         infoSheetVisible,
@@ -815,11 +841,14 @@ export default function InboxPage() {
       setCategoryFilter,
       tagFilterIds,
       setTagFilterIds,
+      campaignTagFilterIds,
+      setCampaignTagFilterIds,
       includeOutOfOfficeFilter,
       setIncludeOutOfOfficeFilter,
       mailboxes,
       campaigns,
       accountTags,
+      accountCampaignTags,
       handleClearAllFilters,
       isMobile,
       winHeight,
@@ -829,8 +858,6 @@ export default function InboxPage() {
       setTagsPanelVisible,
       showMessageActionsSheet,
       setShowMessageActionsSheet,
-      createTagModalVisible,
-      setCreateTagModalVisible,
       blockedRecipientConfirm,
       setBlockedRecipientConfirm,
       infoSheetVisible,

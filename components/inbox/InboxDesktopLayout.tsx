@@ -54,6 +54,7 @@ export interface InboxDesktopMessagePaneProps {
   onBlock: (() => void) | undefined;
   onMarkOutOfOffice?: (() => void) | undefined;
   onReplaceLead?: (() => void) | undefined;
+  onOpenLeadDetail?: (() => void) | undefined;
   onOpenTagsPanel: (() => void) | undefined;
   onSetCategory: ((cat: string | null) => Promise<void>) | undefined;
   messagesScrollViewRef: RefObject<ScrollView | null>;
@@ -132,6 +133,7 @@ export function InboxDesktopLayout({
     onBlock,
     onMarkOutOfOffice,
     onReplaceLead,
+    onOpenLeadDetail,
     onOpenTagsPanel,
     onSetCategory,
     messagesScrollViewRef,
@@ -213,6 +215,7 @@ export function InboxDesktopLayout({
               onBlock={onBlock}
               onMarkOutOfOffice={onMarkOutOfOffice}
               onReplaceLead={onReplaceLead}
+              onOpenLeadDetail={onOpenLeadDetail}
               accountId={accountId}
               onOpenTagsPanel={onOpenTagsPanel}
               category={selectedThread?.category ?? null}

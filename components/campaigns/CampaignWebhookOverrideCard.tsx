@@ -5,8 +5,8 @@ import { Card } from '@/components/ui/Card';
 import { useToast } from '@/components/ui/feedback';
 import { FormTextField } from '@/components/ui/forms';
 import {
-  parseWebhookEnabledEvents,
-  type WebhookEventOption,
+  parseWebhookGroupIds,
+  webhookEventsFromGroupIds,
 } from '@/components/account/api/constants';
 import { WebhookEventsMultiSelect } from '@/components/account/api/WebhookEventsMultiSelect';
 import { CAMPAIGN_WEBHOOK_FIELD_HELP } from '@/components/account/api/webhookFieldHelp';
@@ -26,13 +26,13 @@ export function CampaignWebhookOverrideCard({
   const { toast } = useToast();
   const [webhookUrl, setWebhookUrl] = useState(campaign.webhook_url_override ?? '');
   const [webhookSecret, setWebhookSecret] = useState(campaign.webhook_signing_secret_override ?? '');
-  const [enabledEvents, setEnabledEvents] = useState<WebhookEventOption[]>(() =>
-    parseWebhookEnabledEvents(campaign.webhook_enabled_events_override)
+  const [enabledGroupIds, setEnabledGroupIds] = useState<string[]>(() =>
+    parseWebhookGroupIds(campaign.webhook_enabled_events_override)
   );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setEnabledEvents(parseWebhookEnabledEvents(campaign.webhook_enabled_events_override));
+    setEnabledGroupIds(parseWebhookGroupIds(campaign.webhook_enabled_events_override));
   }, [campaign.id, campaign.webhook_enabled_events_override]);
 
   const inheritsAccountDefault = useMemo(() => !webhookUrl.trim(), [webhookUrl]);
@@ -56,7 +56,9 @@ export function CampaignWebhookOverrideCard({
       await updateCampaign(campaign.id, {
         webhook_url_override: trimmedUrl || null,
         webhook_signing_secret_override: webhookSecret.trim() || null,
-        webhook_enabled_events_override: enabledEvents.length > 0 ? enabledEvents : null,
+        webhook_enabled_events_override: enabledGroupIds.length > 0
+          ? webhookEventsFromGroupIds(enabledGroupIds)
+          : null,
         webhook_url_override_verified_at: verifiedAt,
       });
       await onSaved();
@@ -100,8 +102,8 @@ export function CampaignWebhookOverrideCard({
         <WebhookEventsMultiSelect
           label="Override events"
           labelHelp={CAMPAIGN_WEBHOOK_FIELD_HELP.overrideEvents}
-          value={enabledEvents}
-          onChange={setEnabledEvents}
+          value={enabledGroupIds}
+          onChange={setEnabledGroupIds}
           placeholder="Inherit account events when empty"
           disabled={saving}
           variant="solid"

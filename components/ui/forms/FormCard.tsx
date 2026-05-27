@@ -1,6 +1,6 @@
 import React from 'react';
 import { useWindowDimensions, View } from 'react-native';
-import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
+import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 
 interface FormCardProps {
   children: React.ReactNode;

@@ -7,7 +7,7 @@ import { FormTextField } from '@/components/ui/forms';
 import type { Account } from '@/lib/supabase/types';
 import { updateAccountWebhookSettings } from '@/lib/supabase/services/accounts';
 import { verifyWebhookUrl } from '@/lib/client-api/client';
-import { parseWebhookEnabledEvents, type WebhookEventOption } from './constants';
+import { parseWebhookGroupIds, webhookEventsFromGroupIds } from './constants';
 import { WebhookEventsMultiSelect } from './WebhookEventsMultiSelect';
 import { ACCOUNT_WEBHOOK_FIELD_HELP } from './webhookFieldHelp';
 
@@ -27,8 +27,8 @@ export function ConfigureWebhookModal({
   const { toast } = useToast();
   const [webhookUrl, setWebhookUrl] = useState(account.webhook_url ?? '');
   const [webhookSecret, setWebhookSecret] = useState(account.webhook_signing_secret ?? '');
-  const [enabledEvents, setEnabledEvents] = useState<WebhookEventOption[]>(() =>
-    parseWebhookEnabledEvents(account.webhook_enabled_events)
+  const [enabledGroupIds, setEnabledGroupIds] = useState<string[]>(() =>
+    parseWebhookGroupIds(account.webhook_enabled_events)
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -36,7 +36,7 @@ export function ConfigureWebhookModal({
     if (visible) {
       setWebhookUrl(account.webhook_url ?? '');
       setWebhookSecret(account.webhook_signing_secret ?? '');
-      setEnabledEvents(parseWebhookEnabledEvents(account.webhook_enabled_events));
+      setEnabledGroupIds(parseWebhookGroupIds(account.webhook_enabled_events));
     }
   }, [
     visible,
@@ -66,7 +66,7 @@ export function ConfigureWebhookModal({
       await updateAccountWebhookSettings(account.id, {
         webhook_url: trimmedUrl || null,
         webhook_signing_secret: webhookSecret.trim() || null,
-        webhook_enabled_events: enabledEvents,
+        webhook_enabled_events: webhookEventsFromGroupIds(enabledGroupIds),
         webhook_url_verified_at: verifiedAt,
       });
       await onSaved();
@@ -126,8 +126,8 @@ export function ConfigureWebhookModal({
           variant="solid"
         />
         <WebhookEventsMultiSelect
-          value={enabledEvents}
-          onChange={setEnabledEvents}
+          value={enabledGroupIds}
+          onChange={setEnabledGroupIds}
           labelHelp={ACCOUNT_WEBHOOK_FIELD_HELP.enabledEvents}
           disabled={isSubmitting}
           variant="solid"

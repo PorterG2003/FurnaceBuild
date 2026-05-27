@@ -2,13 +2,10 @@ import { View, Text, Pressable } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { ChevronRightIcon } from 'react-native-heroicons/outline';
 import { useState } from 'react';
+import { openAppRoute } from '@/lib/navigation/openAppRoute';
+import type { BreadcrumbItem } from './DetailPageHeader';
 
 const isWeb = typeof window !== 'undefined';
-
-interface BreadcrumbItem {
-  label: string;
-  href?: string;
-}
 
 interface BreadcrumbProps {
   items: BreadcrumbItem[];
@@ -27,7 +24,7 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
         return (
           <View key={index} className="flex-row items-center">
             {item.href ? (
-              isWeb ? (
+              isWeb && !item.openInNewTab ? (
                 <View
                   onMouseEnter={() => setHoveredIndex(index)}
                   onMouseLeave={() => setHoveredIndex(null)}
@@ -53,8 +50,19 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
                 </View>
               ) : (
                 <Pressable
-                  onPress={() => router.push(item.href!)}
+                  onPress={() =>
+                    openAppRoute(router, item.href!, { newTab: item.openInNewTab ?? false })
+                  }
+                  onMouseEnter={isWeb ? () => setHoveredIndex(index) : undefined}
+                  onMouseLeave={isWeb ? () => setHoveredIndex(null) : undefined}
                   className="px-3 py-1.5 rounded-lg mr-1"
+                  style={
+                    isWeb
+                      ? {
+                          backgroundColor: isHovered ? 'rgba(42,42,42,0.6)' : 'transparent',
+                        }
+                      : undefined
+                  }
                 >
                   <Text
                     className={`font-instrument ${

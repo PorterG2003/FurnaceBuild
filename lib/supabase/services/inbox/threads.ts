@@ -1,6 +1,7 @@
 import { supabase } from '../../client';
 import type { EmailThread } from '../../types';
 import { buildThreadSnippetMap } from '@/lib/inbox';
+import { getCampaignIdsForTags } from '../campaign-tags';
 
 export interface GetThreadsByAccountOptions {
   hasReplyOnly?: boolean;
@@ -13,6 +14,8 @@ export interface GetThreadsByAccountOptions {
   dateTo?: string;
   searchQuery?: string;
   tagIds?: string[];
+  /** Threads whose campaign has any of these campaign tags. */
+  campaignTagIds?: string[];
   category?: string;
   includeUnreadCount?: boolean;
   /** When true, include threads marked out_of_office. Default (omit/false) excludes them from the list. */
@@ -60,7 +63,22 @@ async function getThreadsByAccountInternal(
   if (options?.hasReplyOnly === true) query = query.eq('has_reply', true);
   if (options?.includeOutOfOffice !== true) query = query.eq('out_of_office', false);
   if (options?.mailboxId) query = query.eq('mailbox_id', options.mailboxId);
-  if (options?.campaignId) query = query.eq('campaign_id', options.campaignId);
+
+  let campaignIdsFromTags: string[] | undefined;
+  if (options?.campaignTagIds?.length) {
+    campaignIdsFromTags = await getCampaignIdsForTags(accountId, options.campaignTagIds);
+    if (campaignIdsFromTags.length === 0) return [];
+  }
+  if (options?.campaignId) {
+    if (campaignIdsFromTags) {
+      if (!campaignIdsFromTags.includes(options.campaignId)) return [];
+      query = query.eq('campaign_id', options.campaignId);
+    } else {
+      query = query.eq('campaign_id', options.campaignId);
+    }
+  } else if (campaignIdsFromTags?.length) {
+    query = query.in('campaign_id', campaignIdsFromTags);
+  }
   if (options?.dateFrom) query = query.gte('last_message_at', options.dateFrom);
   if (options?.dateTo) query = query.lte('last_message_at', options.dateTo);
   if (options?.searchQuery?.trim()) {

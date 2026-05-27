@@ -31,6 +31,7 @@ export interface InboxMobileMessagePaneProps {
   onBlock: (() => void) | undefined;
   onMarkOutOfOffice?: (() => void) | undefined;
   onReplaceLead?: (() => void) | undefined;
+  onOpenLeadDetail?: (() => void) | undefined;
   onOpenTagsPanel: (() => void) | undefined;
   category: string | null;
   onSetCategory: (category: string | null) => Promise<void>;
@@ -77,6 +78,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
     onBlock,
     onMarkOutOfOffice,
     onReplaceLead,
+    onOpenLeadDetail,
     onOpenTagsPanel,
     category,
     onSetCategory,
@@ -106,6 +108,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
           title={mobileMessageViewTitle ?? 'Conversation'}
           subtitle={selectedThreadProspectEmails[0] ?? selectedThreadRecipientEmail ?? null}
           onBack={onBack}
+          onTitlePress={onOpenLeadDetail}
           mobileRightAction={
             selectedThread ? (
               <MobileHeaderButton
@@ -130,6 +133,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       title={mobileMessageViewTitle ?? 'Conversation'}
       subtitle={selectedThreadProspectEmails[0] ?? selectedThreadRecipientEmail ?? null}
       onBack={onBack}
+      onTitlePress={onOpenLeadDetail}
       mobileRightAction={
         <MobileHeaderButton
           variant="actions"
@@ -157,6 +161,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       onBlock={onBlock}
       onMarkOutOfOffice={onMarkOutOfOffice}
       onReplaceLead={onReplaceLead}
+      onOpenLeadDetail={onOpenLeadDetail}
       accountId={accountId}
       onOpenTagsPanel={onOpenTagsPanel}
       category={category}

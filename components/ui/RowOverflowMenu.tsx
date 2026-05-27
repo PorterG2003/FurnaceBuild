@@ -207,14 +207,14 @@ export function RowOverflowMenu({
                 onLayout={handleMenuLayout}
                 style={[
                   styles.dropdown,
-                  styles.dropdownShadow,
+                  dropdownShadowStyle,
                   {
                     top: desktopPosition.top,
                     left: desktopPosition.left,
                     minWidth: menuMinWidth,
                   },
                 ]}
-                className="rounded-xl border border-[#2A2A2A] bg-[#1A1A1A] shadow-[0_12px_40px_rgba(0,0,0,0.55)]"
+                className="rounded-xl border border-[#2A2A2A] bg-[#1A1A1A]"
               >
                 <View className="gap-2 p-2">
                   {items.map((item) => renderItem(item, desktopRowClass))}
@@ -228,6 +228,16 @@ export function RowOverflowMenu({
   );
 }
 
+const dropdownShadowStyle =
+  Platform.OS === 'web'
+    ? { boxShadow: '0px 8px 20px rgba(0,0,0,0.45)' }
+    : {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.45,
+        shadowRadius: 20,
+      };
+
 const styles = StyleSheet.create({
   modalRoot: {
     flex: 1,
@@ -240,11 +250,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     zIndex: 10,
     elevation: 16,
-  },
-  dropdownShadow: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45,
-    shadowRadius: 20,
   },
 });

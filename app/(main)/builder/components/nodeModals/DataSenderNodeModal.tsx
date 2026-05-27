@@ -7,7 +7,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { FormFieldHelpIcon } from '@/components/ui/forms';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { getLeadVariables } from '@/lib/email/index';
-import { JsonPayloadEditor } from './dataSender/JsonPayloadEditor';
+import { JsonPayloadEditor } from '@/components/builder/JsonPayloadEditor';
 
 interface DataSenderNodeModalProps {
   visible: boolean;

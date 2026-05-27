@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MobileHeaderBackButton } from '@/components/ui/layout';
+import { MobileHeaderBackButton } from '@/components/ui/layout/MobileHeaderBackButton';
 import { useVisualViewportKeyboardInset } from '@/hooks/useVisualViewportKeyboardInset';
 import {
   BottomSheetTakeoverContext,

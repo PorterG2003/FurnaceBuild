@@ -1,14 +1,10 @@
 import { View } from 'react-native';
 import { SearchAndSelectMulti, type FormFieldVariant } from '@/components/ui/forms';
-import {
-  WEBHOOK_EVENT_SELECT_ITEMS,
-  WEBHOOK_EVENT_OPTIONS,
-  type WebhookEventOption,
-} from './constants';
+import { WEBHOOK_EVENT_GROUP_ITEMS } from './constants';
 
 export interface WebhookEventsMultiSelectProps {
-  value: WebhookEventOption[];
-  onChange: (events: WebhookEventOption[]) => void;
+  value: string[];
+  onChange: (groupIds: string[]) => void;
   label?: string;
   labelHelp?: string;
   placeholder?: string;
@@ -21,7 +17,7 @@ export function WebhookEventsMultiSelect({
   onChange,
   label = 'Enabled events',
   labelHelp,
-  placeholder = 'Select events…',
+  placeholder = 'Select event groups…',
   disabled = false,
   variant = 'solid',
 }: WebhookEventsMultiSelectProps) {
@@ -31,20 +27,14 @@ export function WebhookEventsMultiSelect({
         variant={variant}
         label={label}
         labelHelp={labelHelp}
-        items={WEBHOOK_EVENT_SELECT_ITEMS}
+        items={WEBHOOK_EVENT_GROUP_ITEMS}
         getItemId={(item) => item.value}
         getItemLabel={(item) => item.label}
         value={value}
-        onChange={(ids) =>
-          onChange(
-            ids.filter((id): id is WebhookEventOption =>
-              WEBHOOK_EVENT_OPTIONS.includes(id as WebhookEventOption)
-            )
-          )
-        }
+        onChange={onChange}
         placeholder={placeholder}
-        searchPlaceholder="Search events…"
-        emptyMessage={(hasSearch) => (hasSearch ? 'No matching events' : 'No events')}
+        searchPlaceholder="Search event groups…"
+        emptyMessage={(hasSearch) => (hasSearch ? 'No matching groups' : 'No event groups')}
         listMaxHeight={260}
         noMargin
       />

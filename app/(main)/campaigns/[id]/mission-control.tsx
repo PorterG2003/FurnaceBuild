@@ -3,9 +3,11 @@ import { View, Text, Pressable, ScrollView, useWindowDimensions } from 'react-na
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CheckCircleIcon } from 'react-native-heroicons/outline';
 import { PageLayout, DetailPageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
-import { LoadingState, Alert } from '@/components/ui/feedback';
+import { Alert, usePageSkeleton } from '@/components/ui/feedback';
+import { MissionControlSkeleton } from '@/components/skeletons';
 import { Button } from '@/components/ui/button';
-import { FlowDiagram } from '@/components/campaigns';
+import { FlowDiagram, CampaignStatusMenu } from '@/components/campaigns';
+import { useCampaignStatusActions } from '@/lib/campaigns/useCampaignStatusActions';
 import { CampaignWebhookOverrideCard } from '@/components/campaigns/CampaignWebhookOverrideCard';
 import { ScheduleModal } from '@/components/campaigns/ScheduleModal';
 import { MailboxesModal } from '@/components/campaigns/MailboxesModal';
@@ -14,9 +16,6 @@ import {
   getCampaignMailboxes,
   updateCampaign,
   backfillCampaignEnrollments,
-  pauseCampaignAndDeferJobs,
-  resumeCampaignAndRescheduleJobs,
-  stopCampaignAndStopEnrollments,
 } from '@/lib/supabase/services/campaigns';
 import type { Campaign } from '@/lib/supabase/types';
 import {
@@ -36,8 +35,6 @@ export default function MissionControlPage() {
   const [mailboxes, setMailboxes] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
-  const [isPausing, setIsPausing] = useState(false);
-  const [isStopping, setIsStopping] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showMailboxesModal, setShowMailboxesModal] = useState(false);
@@ -71,6 +68,15 @@ export default function MissionControlPage() {
     loadCampaign();
   }, [loadCampaign]);
 
+  const {
+    isPausing,
+    isStarting: isResuming,
+    isStopping,
+    handlePause,
+    handleResume,
+    handleStop,
+  } = useCampaignStatusActions(id, loadCampaign);
+
   const isSmartlead = isSmartleadCampaign(campaign);
 
   const nameSet = !!(campaign?.name?.trim());
@@ -81,6 +87,7 @@ export default function MissionControlPage() {
   const isRunning = campaign?.status === 'running';
   const isPaused = campaign?.status === 'paused';
   const canStart = isDraft && nameSet && flowBuilt && mailboxesAdded;
+  const { showPlaceholder } = usePageSkeleton(isLoading);
 
   const schedule = campaign ? scheduleFromCampaign(campaign) : null;
   const intervalMinutes = Math.floor((campaign?.sending_interval_seconds ?? 300) / 60);
@@ -113,51 +120,8 @@ export default function MissionControlPage() {
     }
   };
 
-  const handlePause = async () => {
-    if (!id) return;
-    setIsPausing(true);
-    try {
-      await pauseCampaignAndDeferJobs(id);
-      await loadCampaign(true);
-    } catch (err) {
-      console.error('Error pausing campaign:', err);
-    } finally {
-      setIsPausing(false);
-    }
-  };
-
-  const handleResume = async () => {
-    if (!id) return;
-    setIsStarting(true);
-    try {
-      await resumeCampaignAndRescheduleJobs(id);
-      await loadCampaign(true);
-    } catch (err) {
-      console.error('Error resuming campaign:', err);
-    } finally {
-      setIsStarting(false);
-    }
-  };
-
-  const handleStop = async () => {
-    if (!id) return;
-    setIsStopping(true);
-    try {
-      await stopCampaignAndStopEnrollments(id);
-      await loadCampaign(true);
-    } catch (err) {
-      console.error('Error stopping campaign:', err);
-    } finally {
-      setIsStopping(false);
-    }
-  };
-
   const handleEditFlow = () => {
     if (id) router.push({ pathname: '/builder', params: { campaignId: id } });
-  };
-
-  const handleBack = () => {
-    if (id) router.push({ pathname: '/campaigns/[id]', params: { id } });
   };
 
   const checklist = [
@@ -169,25 +133,34 @@ export default function MissionControlPage() {
   const { width } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
 
+  const isStopped = campaign?.status === 'stopped';
+  const showStatusMenu = !isLoading && !loadError && (isRunning || isPaused || isStopped);
+  const statusMenuProps = {
+    status: (isRunning ? 'running' : isPaused ? 'paused' : 'stopped') as 'running' | 'paused' | 'stopped',
+    campaignName: campaign?.name ?? undefined,
+    isPausing,
+    isStarting: isResuming,
+    isStopping,
+    onPause: handlePause,
+    onResume: handleResume,
+    onStop: handleStop,
+  };
+
   const missionControlHeader = (
     <DetailPageHeader
       breadcrumbItems={[
         { label: 'Campaigns', href: '/campaigns' },
         {
-          label: isLoading ? 'Loading...' : (campaign?.name || 'Campaign'),
+          label: campaign?.name || 'Campaign',
           href: id ? `/campaigns/${id}` : undefined,
         },
         { label: 'Mission Control' },
       ]}
       backHref={id ? `/campaigns/${id}` : '/campaigns'}
       title="Mission Control"
-      actions={
-        <Pressable
-          onPress={handleBack}
-          className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-        >
-          <Text className="text-white font-instrument-medium text-sm">Back</Text>
-        </Pressable>
+      actions={showStatusMenu ? <CampaignStatusMenu {...statusMenuProps} /> : undefined}
+      mobileRightAction={
+        showStatusMenu ? <CampaignStatusMenu {...statusMenuProps} /> : undefined
       }
     />
   );
@@ -196,69 +169,11 @@ export default function MissionControlPage() {
     <PageLayout scrollable={false} contentPadding={0}>
       {!isMobile && missionControlHeader}
 
-      {/* Status bar for running/paused/stopped campaigns (desktop only; on mobile it's inside the ScrollView below) */}
-      {!isMobile && !isLoading && !loadError && (isRunning || isPaused || campaign?.status === 'stopped') && (
-        <View
-          style={{
-            backgroundColor: '#121212',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: 24,
-            paddingBottom: 16,
-          }}
-        >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {(isRunning || isPaused) && (
-                <View
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: isRunning ? '#F3440D' : '#F59E0B',
-                  }}
-                />
-              )}
-              <Text className="text-gray-400 font-instrument text-sm">
-                {isRunning && 'Campaign is running'}
-                {isPaused && 'Campaign is paused'}
-                {campaign?.status === 'stopped' && 'This campaign has been stopped'}
-              </Text>
-            </View>
-            {isRunning && (
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Pressable
-                  onPress={handlePause}
-                  disabled={isPausing}
-                  style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.5)', backgroundColor: 'rgba(245, 158, 11, 0.1)' }}
-                >
-                  <Text className="text-amber-400 font-instrument-medium text-sm">
-                    {isPausing ? 'Pausing...' : 'Pause'}
-                  </Text>
-                </Pressable>
-                <Button onPress={handleStop} disabled={isStopping} variant="secondary">
-                  {isStopping ? 'Stopping...' : 'Stop'}
-                </Button>
-              </View>
-            )}
-            {isPaused && (
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Button onPress={handleResume} disabled={isStarting}>
-                  {isStarting ? 'Resuming...' : 'Resume'}
-                </Button>
-                <Button onPress={handleStop} disabled={isStopping} variant="secondary">
-                  {isStopping ? 'Stopping...' : 'Stop'}
-                </Button>
-              </View>
-            )}
-          </View>
-      )}
-
       {/* Content */}
-      {isLoading ? (
+      {showPlaceholder ? (
         <>
           {isMobile && missionControlHeader}
-          <LoadingState message="Loading mission control..." />
+          <MissionControlSkeleton />
         </>
       ) : loadError ? (
         <>
@@ -274,49 +189,6 @@ export default function MissionControlPage() {
           showsVerticalScrollIndicator={false}
         >
           {isMobile && missionControlHeader}
-          {isMobile && (isRunning || isPaused || campaign?.status === 'stopped') && (
-            <View className="bg-[#121212] flex-row items-center justify-between pb-4">
-              <View className="flex-row items-center gap-2">
-                {(isRunning || isPaused) && (
-                  <View
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: isRunning ? '#F3440D' : '#F59E0B' }}
-                  />
-                )}
-                <Text className="text-gray-400 font-instrument text-sm">
-                  {isRunning && 'Campaign is running'}
-                  {isPaused && 'Campaign is paused'}
-                  {campaign?.status === 'stopped' && 'This campaign has been stopped'}
-                </Text>
-              </View>
-              {isRunning && (
-                <View className="flex-row gap-2">
-                  <Pressable
-                    onPress={handlePause}
-                    disabled={isPausing}
-                    className="py-1.5 px-3 rounded-lg border border-amber-500/50 bg-amber-500/10"
-                  >
-                    <Text className="text-amber-400 font-instrument-medium text-sm">
-                      {isPausing ? 'Pausing...' : 'Pause'}
-                    </Text>
-                  </Pressable>
-                  <Button onPress={handleStop} disabled={isStopping} variant="secondary">
-                    {isStopping ? 'Stopping...' : 'Stop'}
-                  </Button>
-                </View>
-              )}
-              {isPaused && (
-                <View className="flex-row gap-2">
-                  <Button onPress={handleResume} disabled={isStarting}>
-                    {isStarting ? 'Resuming...' : 'Resume'}
-                  </Button>
-                  <Button onPress={handleStop} disabled={isStopping} variant="secondary">
-                    {isStopping ? 'Stopping...' : 'Stop'}
-                  </Button>
-                </View>
-              )}
-            </View>
-          )}
           {/* Flow Card (full-width). Height scales with node count so the full flow fits. */}
           <Pressable
             onPress={handleEditFlow}

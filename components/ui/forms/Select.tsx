@@ -5,8 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Modal,
-  Pressable,
   useWindowDimensions,
   Platform,
   KeyboardAvoidingView,
@@ -17,8 +15,14 @@ import {
   useBottomSheetTakeover,
   usePickerInsideBottomSheet,
 } from '@/components/ui/modals';
+import { PopupPortal } from '@/components/ui/PopupPortal';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import { FORM_FIELD_VARIANTS, type FormFieldVariant } from './formFieldStyles';
+import {
+  FORM_DROPDOWN_MIN_WIDTH,
+  FORM_DROPDOWN_POPUP_GAP,
+  getFormDropdownPanelStyle,
+} from './formDropdownPopup';
 
 interface SelectPropsBase<T> {
   items: T[];
@@ -179,12 +183,6 @@ export function Select<T>({
   const { presentTakeover, dismissTakeover } = useBottomSheetTakeover();
   const [open, setOpen] = useState(false);
   const [internalSearch, setInternalSearch] = useState('');
-  const [triggerLayout, setTriggerLayout] = useState<{
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null>(null);
   const triggerRef = useRef<View>(null);
   const searchInputRef = useRef<TextInput>(null);
 
@@ -217,21 +215,17 @@ export function Select<T>({
     [onChange, closePopover, isItemDisabled]
   );
 
-  // Measure trigger position when opening (for popover placement only)
+  // Escape to close mobile sheet pickers (desktop uses PopupPortal).
   useEffect(() => {
-    if (!open || isCompactLayout) {
-      setTriggerLayout(null);
-      return;
-    }
-    const measure = () => {
-      triggerRef.current?.measureInWindow((x, y, w, h) => {
-        setTriggerLayout({ x, y, w, h });
-      });
+    if (!open || !isCompactLayout) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closePopover();
     };
-    measure();
-    const t = setTimeout(measure, 50);
-    return () => clearTimeout(t);
-  }, [open, isCompactLayout]);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('keydown', onKey);
+      return () => document.removeEventListener('keydown', onKey);
+    }
+  }, [open, isCompactLayout, closePopover]);
 
   // Focus search when popover opens (only when searchable). Skip auto-focus inside a parent
   // BottomSheet takeover so the keyboard does not cover the list until the user taps search.
@@ -242,18 +236,6 @@ export function Select<T>({
       return () => clearTimeout(t);
     }
   }, [open, searchable, insideSheet]);
-
-  // Escape to close (web)
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closePopover();
-    };
-    if (typeof document !== 'undefined') {
-      document.addEventListener('keydown', onKey);
-      return () => document.removeEventListener('keydown', onKey);
-    }
-  }, [open, closePopover]);
 
   const selectedItem = value != null ? items.find((i) => getItemId(i) === value) ?? null : null;
   const selectedLabel = selectedItem ? getItemLabel(selectedItem).primary : null;
@@ -295,6 +277,11 @@ export function Select<T>({
   const dropdownContentHeight = searchable ? listMaxHeight + 120 : listMaxHeight + 24;
   const sheetBodyMaxHeight = Math.min(dropdownContentHeight, screenHeight * 0.55);
   const takeoverListMax = Math.min(listMaxHeight, Math.floor(screenHeight * 0.65));
+  const dropdownPanelStyle = getFormDropdownPanelStyle({
+    maxHeight: dropdownContentHeight,
+    minWidth: dropdownMinWidth ?? FORM_DROPDOWN_MIN_WIDTH,
+    maxWidth: dropdownMaxWidth,
+  });
 
   const renderListPanel = useCallback(
     (listScrollMax: number = listMaxHeight) => (
@@ -502,21 +489,12 @@ export function Select<T>({
         </Text>
       )}
       {renderTrigger ? (
-        <View
-          ref={triggerRef}
-          onLayout={() => {
-            if (open) triggerRef.current?.measureInWindow((x, y, w, h) => setTriggerLayout({ x, y, w, h }));
-          }}
-          collapsable={false}
-        >
+        <View ref={triggerRef} collapsable={false}>
           {renderTrigger({ open, onPress: openPopover })}
         </View>
       ) : (
         <TouchableOpacity
           ref={triggerRef}
-          onLayout={() => {
-            if (open) triggerRef.current?.measureInWindow((x, y, w, h) => setTriggerLayout({ x, y, w, h }));
-          }}
           onPress={openPopover}
           disabled={disabled}
           accessibilityState={{ disabled }}
@@ -591,59 +569,16 @@ export function Select<T>({
           </BottomSheet>
         )
       ) : (
-        <Modal visible={open} transparent animationType="fade" onRequestClose={closePopover}>
-          <Pressable style={{ flex: 1 }} onPress={closePopover}>
-            {triggerLayout &&
-              (() => {
-                let w = triggerLayout.w;
-                if (dropdownMinWidth != null) w = Math.max(w, dropdownMinWidth);
-                if (dropdownMaxWidth != null) w = Math.min(w, dropdownMaxWidth);
-                const gap = 4;
-                const edgeInset = 8;
-                const spaceBelow = screenHeight - (triggerLayout.y + triggerLayout.h + gap);
-                const spaceAbove = triggerLayout.y;
-                const openAbove = spaceBelow < dropdownContentHeight && spaceAbove >= spaceBelow;
-                const top = openAbove
-                  ? Math.max(edgeInset, triggerLayout.y - dropdownContentHeight - gap)
-                  : Math.min(
-                      Math.max(edgeInset, triggerLayout.y + triggerLayout.h + gap),
-                      screenHeight - dropdownContentHeight - edgeInset
-                    );
-                const left = Math.max(
-                  edgeInset,
-                  Math.min(triggerLayout.x, screenWidth - w - edgeInset)
-                );
-                return (
-                  <Pressable
-                    style={{
-                      position: 'absolute',
-                      left,
-                      top,
-                      width: w,
-                      maxHeight: dropdownContentHeight,
-                      backgroundColor: '#1A1A1A',
-                      borderRadius: 12,
-                      borderWidth: 1,
-                      borderColor: '#2A2A2A',
-                      ...(typeof window !== 'undefined'
-                        ? { boxShadow: '0px 8px 16px rgba(0,0,0,0.35)' }
-                        : {
-                            shadowColor: '#000',
-                            shadowOffset: { width: 0, height: 8 },
-                            shadowOpacity: 0.35,
-                            shadowRadius: 16,
-                            elevation: 12,
-                          }),
-                      overflow: 'hidden',
-                    }}
-                    onPress={(e) => e?.stopPropagation?.()}
-                  >
-                    {renderListPanel(listMaxHeight)}
-                  </Pressable>
-                );
-              })()}
-          </Pressable>
-        </Modal>
+        <PopupPortal
+          anchorRef={triggerRef}
+          open={open}
+          onClose={closePopover}
+          placement="bottom-start"
+          gap={FORM_DROPDOWN_POPUP_GAP}
+          sameWidth
+        >
+          <View style={dropdownPanelStyle}>{renderListPanel(listMaxHeight)}</View>
+        </PopupPortal>
       )}
     </View>
   );

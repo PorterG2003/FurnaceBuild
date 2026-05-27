@@ -5,7 +5,7 @@ import { DetailPageShell, DETAIL_CONTENT_MAX_WIDTH, LAYOUT_BREAKPOINT } from '@/
 import { Alert, EmptyState, usePageSkeleton, useToast } from '@/components/ui/feedback';
 import { LeadDetailSkeleton } from '@/components/skeletons';
 import { Tabs, type Tab } from '@/components/ui/tabs';
-import { useAccount } from '@/contexts/AccountContext';
+import { useAccountBootstrap } from '@/lib/account/useAccountBootstrap';
 import type { LeadDetailFrom } from '@/lib/leads/navigation';
 import { getAccountLeadDetail } from '@/lib/supabase/services/leads/lead-detail';
 import type { AccountLeadDetail } from '@/lib/leads/types';
@@ -27,7 +27,7 @@ const DETAIL_TABS: Tab[] = [
 export function LeadDetailScreen() {
   const router = useRouter();
   const { toast } = useToast();
-  const { account } = useAccount();
+  const { accountId, isAccountBootstrapping, accountBootstrapError } = useAccountBootstrap();
   const { width } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
 
@@ -55,7 +55,20 @@ export function LeadDetailScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const loadDetail = useCallback(async () => {
-    if (!account?.id || !globalLeadId) {
+    if (isAccountBootstrapping) {
+      setLoading(true);
+      setError(null);
+      return;
+    }
+
+    if (accountBootstrapError) {
+      setDetail(null);
+      setError(accountBootstrapError);
+      setLoading(false);
+      return;
+    }
+
+    if (!accountId || !globalLeadId) {
       setDetail(null);
       setLoading(false);
       return;
@@ -64,7 +77,7 @@ export function LeadDetailScreen() {
     try {
       setLoading(true);
       setError(null);
-      const loaded = await getAccountLeadDetail(account.id, globalLeadId);
+      const loaded = await getAccountLeadDetail(accountId, globalLeadId);
       setDetail(loaded);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load lead');
@@ -72,7 +85,7 @@ export function LeadDetailScreen() {
     } finally {
       setLoading(false);
     }
-  }, [account?.id, globalLeadId]);
+  }, [accountBootstrapError, accountId, globalLeadId, isAccountBootstrapping]);
 
   useEffect(() => {
     void loadDetail();
@@ -150,7 +163,7 @@ export function LeadDetailScreen() {
     : { maxWidth: DETAIL_CONTENT_MAX_WIDTH, width: '100%' as const, alignSelf: 'center' as const };
 
   const shellOnBack = isMobile ? mobileNav.onBack : from === 'inbox' ? handleExitPage : undefined;
-  const { showPlaceholder } = usePageSkeleton(loading);
+  const { showPlaceholder } = usePageSkeleton(loading || isAccountBootstrapping);
   const shellTitle = showPlaceholder ? 'Lead' : (isMobile ? mobileNav.headerTitle : displayName);
   const shellSubtitle = showPlaceholder ? null : (isMobile ? mobileNav.headerSubtitle : detail?.person.email ?? null);
 
@@ -179,20 +192,22 @@ export function LeadDetailScreen() {
     >
       <View style={contentWidthStyle} className="gap-6 w-full">
         {showPlaceholder ? <LeadDetailSkeleton isMobile={isMobile} /> : null}
-        {!showPlaceholder && error ? <Alert variant="error" message={error} /> : null}
-        {!showPlaceholder && !error && !detail ? (
+        {!showPlaceholder && !isAccountBootstrapping && error ? (
+          <Alert variant="error" message={error} />
+        ) : null}
+        {!showPlaceholder && !isAccountBootstrapping && !error && !detail ? (
           <EmptyState
             title="Lead not found"
             description="This lead could not be found for the current account."
           />
         ) : null}
 
-        {!showPlaceholder && !error && detail && account?.id ? (
+        {!showPlaceholder && !error && detail && accountId ? (
           <View className={`gap-4 ${isMobile ? '' : 'pt-1'}`}>
             {isMobile ? (
               <LeadDetailMobileView
                 detail={detail}
-                accountId={account.id}
+                accountId={accountId}
                 section={mobileNav.section}
                 highlightCampaignId={campaignId}
                 onSectionChange={mobileNav.setSection}
@@ -212,12 +227,12 @@ export function LeadDetailScreen() {
                 />
 
                 {activeTab === 'overview' ? (
-                  <LeadProfileSection accountId={account.id} detail={detail} onSaved={handleSaved} />
+                  <LeadProfileSection accountId={accountId} detail={detail} onSaved={handleSaved} />
                 ) : null}
 
                 {activeTab === 'campaigns' ? (
                   <LeadCampaignsSection
-                    accountId={account.id}
+                    accountId={accountId}
                     detail={detail}
                     highlightCampaignId={campaignId}
                     onMembershipChanged={loadDetail}

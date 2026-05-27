@@ -10,6 +10,21 @@ DROP FUNCTION IF EXISTS public.account_lead_people_page(
   integer
 );
 
+-- Rollup version from 20260521120200 uses enrollment_states; must drop before renaming param.
+DROP FUNCTION IF EXISTS public.account_lead_people_page(
+  uuid,
+  text[],
+  uuid[],
+  text[],
+  text[],
+  text[],
+  text,
+  integer,
+  integer,
+  text,
+  text
+);
+
 CREATE OR REPLACE FUNCTION public.account_lead_people_page(
   p_account_id uuid,
   p_global_lead_ids text[] DEFAULT NULL,

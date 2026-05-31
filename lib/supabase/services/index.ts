@@ -13,3 +13,4 @@ export * from './thread-tags';
 export * from './smartlead-migrations';
 export * from './user-access-flags';
 export * from './notifications';
+export * from './platform';

@@ -12,7 +12,11 @@ type Density = 'low' | 'off';
 type Props = {
   density?: Density;
   maxOpacity?: number;
+  /** Number of floating ember particles. Default matches historical `density="low"` (~22). */
+  count?: number;
 };
+
+export const EMBER_PARTICLES_LITE_DEFAULT_COUNT = 22;
 
 type EmberSpec = {
   id: number;
@@ -163,14 +167,18 @@ function FloatingEmber({
   );
 }
 
-export function EmberParticlesLite({ density = 'low', maxOpacity = 0.06 }: Props) {
+export function EmberParticlesLite({
+  density = 'low',
+  maxOpacity = 0.06,
+  count = EMBER_PARTICLES_LITE_DEFAULT_COUNT,
+}: Props) {
   const { height: windowHeight } = useWindowDimensions();
   const travel = Math.max(420, windowHeight * 1.15);
   const clockMs = useSharedValue(0);
 
   const specsRef = useRef<EmberSpec[] | null>(null);
   if (specsRef.current == null) {
-    specsRef.current = buildEmberSpecs(22, maxOpacity);
+    specsRef.current = buildEmberSpecs(count, maxOpacity);
   }
 
   useEffect(() => {

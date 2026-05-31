@@ -14,6 +14,7 @@ import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { sendInvitationEmail } from './functions/sendInvitationEmail/resource';
+import { sendPlatformInvitationEmail } from './functions/sendPlatformInvitationEmail/resource';
 import { sendFluxQuizSubmission } from './functions/sendFluxQuizSubmission/resource';
 import { testMailboxConnection } from './functions/testMailboxConnection/resource';
 import { enrollmentMetric } from './functions/enrollmentMetric/resource';
@@ -29,6 +30,8 @@ import { foundryGoogleAdsVerificationJob } from './functions/foundryGoogleAdsVer
 import { foundryCsvBuilderExportJob } from './functions/foundryCsvBuilderExportJob/resource';
 import { processNotificationEvent } from './functions/processNotificationEvent/resource';
 import { processWebhookEvent } from './functions/processWebhookEvent/resource';
+import { platformBilling } from './functions/platformBilling/resource';
+import { stripeWebhook } from './functions/stripeWebhook/resource';
 import { clientApi } from './functions/clientApi/resource';
 import { clientApiBulkImport } from './functions/clientApiBulkImport/resource';
 import { fluxGenerate } from './functions/fluxGenerate/resource';
@@ -55,6 +58,7 @@ const backend = defineBackend({
   auth,
   data,
   sendInvitationEmail,
+  sendPlatformInvitationEmail,
   sendFluxQuizSubmission,
   testMailboxConnection,
   enrollmentMetric,
@@ -69,6 +73,8 @@ const backend = defineBackend({
   foundryCsvBuilderExportJob,
   processNotificationEvent,
   processWebhookEvent,
+  platformBilling,
+  stripeWebhook,
   clientApi,
   clientApiBulkImport,
   fluxGenerate,
@@ -168,6 +174,94 @@ const allowPublicTestMailboxInvoke = new lambda.CfnPermission(testMailboxLambda.
   principal: '*',
 });
 allowPublicTestMailboxInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+// Platform invitation email: Function URL + Supabase auth.getUser() for token verification
+const sendPlatformInvitationLambda = backend.sendPlatformInvitationEmail.resources.lambda as lambda.Function;
+sendPlatformInvitationLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+const sendPlatformInvitationUrl = sendPlatformInvitationLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(sendPlatformInvitationLambda.stack, 'AllowPublicSendPlatformInvitationUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: sendPlatformInvitationLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicSendPlatformInvitationInvoke = new lambda.CfnPermission(
+  sendPlatformInvitationLambda.stack,
+  'AllowPublicSendPlatformInvitationInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: sendPlatformInvitationLambda.functionName,
+    principal: '*',
+  }
+);
+allowPublicSendPlatformInvitationInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+// Platform billing: public Function URL, action-specific auth inside handler
+const platformBillingLambda = backend.platformBilling.resources.lambda as lambda.Function;
+platformBillingLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+platformBillingLambda.addEnvironment(
+  'WEB_APP_ORIGIN',
+  process.env.WEB_APP_ORIGIN ?? 'https://build.getfurnace.io',
+);
+const platformBillingUrl = platformBillingLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(platformBillingLambda.stack, 'AllowPublicPlatformBillingUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: platformBillingLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicPlatformBillingInvoke = new lambda.CfnPermission(
+  platformBillingLambda.stack,
+  'AllowPublicPlatformBillingInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: platformBillingLambda.functionName,
+    principal: '*',
+  }
+);
+allowPublicPlatformBillingInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+// Stripe webhook: public Function URL authenticated by Stripe signature
+const stripeWebhookLambda = backend.stripeWebhook.resources.lambda as lambda.Function;
+stripeWebhookLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+const stripeWebhookUrl = stripeWebhookLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Stripe-Signature', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(stripeWebhookLambda.stack, 'AllowPublicStripeWebhookUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: stripeWebhookLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicStripeWebhookInvoke = new lambda.CfnPermission(
+  stripeWebhookLambda.stack,
+  'AllowPublicStripeWebhookInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: stripeWebhookLambda.functionName,
+    principal: '*',
+  }
+);
+allowPublicStripeWebhookInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
 // Flux quiz submission: public Function URL for live page visitors
 const sendFluxQuizSubmissionLambda = backend.sendFluxQuizSubmission.resources.lambda as lambda.Function;
@@ -1675,8 +1769,11 @@ processNotificationLambda.addEventSource(
 const customOutputs: Record<string, string> = {
   fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
   sendInvitationEmailUrl: sendInvitationUrl.url,
+  sendPlatformInvitationEmailUrl: sendPlatformInvitationUrl.url,
   sendFluxQuizSubmissionUrl: sendFluxQuizSubmissionUrl.url,
   testMailboxConnectionUrl: testMailboxUrl.url,
+  platformBillingUrl: platformBillingUrl.url,
+  stripeWebhookUrl: stripeWebhookUrl.url,
   foundryRegistryApiUrl: foundryRegistryUrl.url,
   clientApiFunctionUrl: clientApiUrl.url,
   clientApiCloudFrontUrl: `https://${clientApiDistribution.distributionDomainName}`,

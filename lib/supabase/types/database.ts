@@ -87,6 +87,88 @@ export interface Database {
           updated_at?: string;
         };
       };
+      account_billing: {
+        Row: {
+          account_id: string;
+          stripe_customer_id: string | null;
+          stripe_subscription_id: string | null;
+          monthly_retainer_cents: number;
+          billing_status: 'active' | 'payment_required' | 'canceled';
+          billing_anchor_day: number;
+          frontend_access_blocked_at: string | null;
+          last_payment_failed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          account_id: string;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
+          monthly_retainer_cents: number;
+          billing_status?: 'active' | 'payment_required' | 'canceled';
+          billing_anchor_day?: number;
+          frontend_access_blocked_at?: string | null;
+          last_payment_failed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          account_id?: string;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
+          monthly_retainer_cents?: number;
+          billing_status?: 'active' | 'payment_required' | 'canceled';
+          billing_anchor_day?: number;
+          frontend_access_blocked_at?: string | null;
+          last_payment_failed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      billing_adjustments: {
+        Row: {
+          id: string;
+          account_id: string;
+          billing_year: number;
+          billing_month: number;
+          discount_cents: number;
+          reason: string;
+          created_by_user_id: string;
+          stripe_coupon_id: string | null;
+          stripe_invoice_item_id: string | null;
+          applied_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          billing_year: number;
+          billing_month: number;
+          discount_cents: number;
+          reason: string;
+          created_by_user_id: string;
+          stripe_coupon_id?: string | null;
+          stripe_invoice_item_id?: string | null;
+          applied_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          billing_year?: number;
+          billing_month?: number;
+          discount_cents?: number;
+          reason?: string;
+          created_by_user_id?: string;
+          stripe_coupon_id?: string | null;
+          stripe_invoice_item_id?: string | null;
+          applied_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       account_lead_people: {
         Row: {
           account_id: string;
@@ -786,6 +868,243 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           expires_at?: string | null;
+        };
+      };
+      platform_invitations: {
+        Row: {
+          id: string;
+          email: string;
+          invited_by_user_id: string;
+          status:
+            | 'draft'
+            | 'approved'
+            | 'sent'
+            | 'pending'
+            | 'pending_payment'
+            | 'active'
+            | 'expired'
+            | 'revoked';
+          expires_at: string | null;
+          viewed_at: string | null;
+          proposed_account_name: string | null;
+          monthly_retainer_cents: number;
+          currency: string;
+          first_month_discount_cents: number;
+          proposal_snapshot_json: Json;
+          agreement_type: 'platform_agreement' | 'managed_services_agreement';
+          terms_version: string;
+          terms_source_markdown: string;
+          terms_snapshot_markdown: string;
+          terms_accepted_at: string | null;
+          terms_accepted_ip: string | null;
+          accepted_by_user_id: string | null;
+          prepared_full_name: string | null;
+          prepared_account_name: string | null;
+          auto_add_internal_admins: boolean;
+          created_account_id: string | null;
+          current_revision_number: number;
+          published_revision_number: number | null;
+          checkout_revision_number: number | null;
+          accepted_revision_number: number | null;
+          approved_at: string | null;
+          sent_at: string | null;
+          last_email_sent_at: string | null;
+          selected_payment_route: 'card' | 'ach' | null;
+          selected_payment_route_fee_cents: number;
+          selected_payment_subtotal_cents: number | null;
+          selected_payment_total_cents: number | null;
+          stripe_checkout_session_id: string | null;
+          stripe_customer_id: string | null;
+          stripe_subscription_id: string | null;
+          payment_completed_at: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          email: string;
+          invited_by_user_id: string;
+          status?:
+            | 'draft'
+            | 'approved'
+            | 'sent'
+            | 'pending'
+            | 'pending_payment'
+            | 'active'
+            | 'expired'
+            | 'revoked';
+          expires_at?: string | null;
+          viewed_at?: string | null;
+          proposed_account_name?: string | null;
+          monthly_retainer_cents: number;
+          currency?: string;
+          first_month_discount_cents?: number;
+          proposal_snapshot_json?: Json;
+          agreement_type?: 'platform_agreement' | 'managed_services_agreement';
+          terms_version: string;
+          terms_source_markdown: string;
+          terms_snapshot_markdown: string;
+          terms_accepted_at?: string | null;
+          terms_accepted_ip?: string | null;
+          accepted_by_user_id?: string | null;
+          prepared_full_name?: string | null;
+          prepared_account_name?: string | null;
+          auto_add_internal_admins?: boolean;
+          created_account_id?: string | null;
+          current_revision_number?: number;
+          published_revision_number?: number | null;
+          checkout_revision_number?: number | null;
+          accepted_revision_number?: number | null;
+          approved_at?: string | null;
+          sent_at?: string | null;
+          last_email_sent_at?: string | null;
+          selected_payment_route?: 'card' | 'ach' | null;
+          selected_payment_route_fee_cents?: number;
+          selected_payment_subtotal_cents?: number | null;
+          selected_payment_total_cents?: number | null;
+          stripe_checkout_session_id?: string | null;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
+          payment_completed_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          email?: string;
+          invited_by_user_id?: string;
+          status?:
+            | 'draft'
+            | 'approved'
+            | 'sent'
+            | 'pending'
+            | 'pending_payment'
+            | 'active'
+            | 'expired'
+            | 'revoked';
+          expires_at?: string | null;
+          viewed_at?: string | null;
+          proposed_account_name?: string | null;
+          monthly_retainer_cents?: number;
+          currency?: string;
+          first_month_discount_cents?: number;
+          proposal_snapshot_json?: Json;
+          agreement_type?: 'platform_agreement' | 'managed_services_agreement';
+          terms_version?: string;
+          terms_source_markdown?: string;
+          terms_snapshot_markdown?: string;
+          terms_accepted_at?: string | null;
+          terms_accepted_ip?: string | null;
+          accepted_by_user_id?: string | null;
+          prepared_full_name?: string | null;
+          prepared_account_name?: string | null;
+          auto_add_internal_admins?: boolean;
+          created_account_id?: string | null;
+          current_revision_number?: number;
+          published_revision_number?: number | null;
+          checkout_revision_number?: number | null;
+          accepted_revision_number?: number | null;
+          approved_at?: string | null;
+          sent_at?: string | null;
+          last_email_sent_at?: string | null;
+          selected_payment_route?: 'card' | 'ach' | null;
+          selected_payment_route_fee_cents?: number;
+          selected_payment_subtotal_cents?: number | null;
+          selected_payment_total_cents?: number | null;
+          stripe_checkout_session_id?: string | null;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
+          payment_completed_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      platform_invitation_revisions: {
+        Row: {
+          id: string;
+          invitation_id: string;
+          revision_number: number;
+          email: string;
+          proposed_account_name: string | null;
+          monthly_retainer_cents: number;
+          currency: string;
+          first_month_discount_cents: number;
+          proposal_snapshot_json: Json;
+          agreement_type: 'platform_agreement' | 'managed_services_agreement';
+          terms_version: string;
+          terms_source_markdown: string;
+          terms_snapshot_markdown: string;
+          created_by_user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          invitation_id: string;
+          revision_number: number;
+          email: string;
+          proposed_account_name?: string | null;
+          monthly_retainer_cents: number;
+          currency?: string;
+          first_month_discount_cents?: number;
+          proposal_snapshot_json?: Json;
+          agreement_type?: 'platform_agreement' | 'managed_services_agreement';
+          terms_version: string;
+          terms_source_markdown: string;
+          terms_snapshot_markdown: string;
+          created_by_user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          invitation_id?: string;
+          revision_number?: number;
+          email?: string;
+          proposed_account_name?: string | null;
+          monthly_retainer_cents?: number;
+          currency?: string;
+          first_month_discount_cents?: number;
+          proposal_snapshot_json?: Json;
+          agreement_type?: 'platform_agreement' | 'managed_services_agreement';
+          terms_version?: string;
+          terms_source_markdown?: string;
+          terms_snapshot_markdown?: string;
+          created_by_user_id?: string;
+          created_at?: string;
+        };
+      };
+      platform_terms_versions: {
+        Row: {
+          version: string;
+          agreement_type: 'platform_agreement' | 'managed_services_agreement';
+          title: string;
+          body_markdown: string;
+          effective_at: string;
+          is_default: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          version: string;
+          agreement_type?: 'platform_agreement' | 'managed_services_agreement';
+          title: string;
+          body_markdown: string;
+          effective_at?: string;
+          is_default?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          version?: string;
+          agreement_type?: 'platform_agreement' | 'managed_services_agreement';
+          title?: string;
+          body_markdown?: string;
+          effective_at?: string;
+          is_default?: boolean;
+          created_at?: string;
+          updated_at?: string;
         };
       };
       imported_campaign_stats_by_day: {

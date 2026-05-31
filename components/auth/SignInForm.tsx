@@ -12,12 +12,20 @@ import {
 } from '@/components/auth/authFormStyles';
 
 interface SignInFormProps {
-  onGoToSignUp: () => void;
   onGoToForgotPassword: () => void;
   initialSuccessMessage?: string;
+  showSignUp?: boolean;
+  onGoToSignUp?: () => void;
+  onRequestAccess?: () => void;
 }
 
-export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessMessage }: SignInFormProps) {
+export function SignInForm({
+  onGoToSignUp,
+  onGoToForgotPassword,
+  initialSuccessMessage,
+  showSignUp = false,
+  onRequestAccess,
+}: SignInFormProps) {
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -131,12 +139,23 @@ export function SignInForm({ onGoToSignUp, onGoToForgotPassword, initialSuccessM
         {isLoading ? 'Signing In...' : 'Sign In'}
       </Button>
 
-      <View className="flex-row justify-center items-center">
-        <Text className="text-gray-300 font-instrument">Don't have an account? </Text>
-        <Pressable onPress={onGoToSignUp}>
-          <Text className="text-brand-orange font-instrument-medium">Sign Up</Text>
-        </Pressable>
-      </View>
+      {showSignUp && onGoToSignUp ? (
+        <View className="flex-row justify-center items-center">
+          <Text className="text-gray-300 font-instrument">Don't have an account? </Text>
+          <Pressable onPress={onGoToSignUp}>
+            <Text className="text-brand-orange font-instrument-medium">Sign Up</Text>
+          </Pressable>
+        </View>
+      ) : onRequestAccess ? (
+        <View className="items-center gap-2">
+          <Text className="text-center text-gray-300 font-instrument">
+            Furnace is invite only. Look in your email for an invite link.
+          </Text>
+          <Pressable onPress={onRequestAccess}>
+            <Text className="text-brand-orange font-instrument-medium">New to Furnace? Book a call</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </FormCard>
   );
 }

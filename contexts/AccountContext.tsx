@@ -1,9 +1,16 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Account, AccountUser, BlockListEntry, Invitation, User } from '@/lib/supabase/types';
+import type { PlatformAdminAccessStatus } from '@/lib/account/platformAdminAccess';
+import {
+  clearAccountCache,
+  loadAccountCache,
+  saveAccountCache,
+  type CachedAccountState,
+} from '@/lib/account/accountCache';
+import type { Account, AccountBilling, AccountUser, BlockListEntry, Invitation, User } from '@/lib/supabase/types';
 import type { AccountMembership } from '@/lib/supabase/services/accounts';
 import {
   getAccountMembers,
@@ -12,16 +19,8 @@ import {
   updateUserProfile,
 } from '@/lib/supabase/services/accounts';
 import { getBlockList } from '@/lib/supabase/services/block-list';
-
-function buildDefaultAccountName(loginId: string | null, currentName?: string | null): string {
-  if (currentName && currentName.trim().length > 0) {
-    return `${currentName.trim()}'s Account`;
-  }
-  if (loginId && loginId.trim().length > 0) {
-    return `${loginId.trim()}'s Account`;
-  }
-  return 'New Account';
-}
+import { getAccountBilling } from '@/lib/supabase/services/platform';
+import { getUserHasPlatformAdminAccess } from '@/lib/supabase/services/user-access-flags';
 
 interface AccountContextValue {
   user: User | null;
@@ -31,9 +30,12 @@ interface AccountContextValue {
   invitations: Invitation[];
   blockList: BlockListEntry[];
   loading: boolean;
-  accountDataLoading: boolean;
-  isAccountPageReady: boolean;
+  initialized: boolean;
+  refetching: boolean;
   error: string | null;
+  platformAdminAccess: PlatformAdminAccessStatus;
+  billing: AccountBilling | null;
+  isFrontendBlocked: boolean;
   refetch: () => Promise<void>;
   refetchAccountData: () => Promise<void>;
   setCurrentAccountId: (accountId: string) => void;
@@ -49,6 +51,66 @@ export function useAccount() {
   return ctx;
 }
 
+function pickAccountId(memberships: AccountMembership[], preferredId: string | null): string | null {
+  if (memberships.length === 0) return null;
+  if (preferredId && memberships.some((m) => m.account.id === preferredId)) {
+    return preferredId;
+  }
+  const primary = memberships.find((m) => m.membership.is_owner) ?? memberships[0];
+  return primary?.account.id ?? null;
+}
+
+async function fetchOrUpsertUser(authUserId: string, email: string): Promise<User> {
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', authUserId)
+    .maybeSingle();
+
+  if (existingUser) {
+    if (existingUser.email !== email) {
+      return updateUserProfile(existingUser.id, { email });
+    }
+    return existingUser;
+  }
+
+  // handle_new_user trigger creates the row; retry once if not yet visible
+  await new Promise((r) => setTimeout(r, 500));
+  const { data: retryUser } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', authUserId)
+    .maybeSingle();
+
+  if (!retryUser) {
+    throw new Error('User profile not found. The account may still be initializing — please refresh.');
+  }
+
+  if (retryUser.email !== email) {
+    return updateUserProfile(retryUser.id, { email });
+  }
+
+  return retryUser;
+}
+
+async function fetchAccountScopedData(accountId: string, authUserId: string) {
+  const [teamMembers, invitations, blockList, billing, isAdmin] = await Promise.all([
+    getAccountMembers(accountId),
+    getAccountInvitations(accountId),
+    getBlockList(accountId),
+    getAccountBilling(accountId),
+    getUserHasPlatformAdminAccess(authUserId),
+  ]);
+
+  return {
+    teamMembers,
+    invitations,
+    blockList,
+    billing,
+    platformAdminAccess: (isAdmin ? 'allowed' : 'denied') as Exclude<PlatformAdminAccessStatus, 'loading'>,
+  };
+}
+
 export function AccountProvider({ children }: { children: React.ReactNode }) {
   const { user: authUser } = useAuth();
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
@@ -57,140 +119,163 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const [teamMembers, setTeamMembers] = useState<Array<{ user: User; membership: AccountUser }>>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [accountDataLoading, setAccountDataLoading] = useState(false);
+  const [billing, setBilling] = useState<AccountBilling | null>(null);
+  const [platformAdminAccess, setPlatformAdminAccess] = useState<PlatformAdminAccessStatus>('denied');
+  const [loading, setLoading] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+  const [refetching, setRefetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const lastFetchedIdRef = useRef<string | null>(null);
 
-  const fetchUserAndMemberships = useCallback(
-    async (authUserId: string, email: string, name?: string | null): Promise<AccountMembership[] | null> => {
-      setLoading(true);
-      setError(null);
+  const preferredAccountIdRef = useRef<string | null>(null);
+  const accountDataLoadedForRef = useRef<string | null>(null);
+  const bootstrapRunIdRef = useRef(0);
+  const bootstrappedUserIdRef = useRef<string | null>(null);
 
-      try {
-        let user: User | null = null;
+  useLayoutEffect(() => {
+    if (!authUser) {
+      bootstrappedUserIdRef.current = null;
+      return;
+    }
+    if (bootstrappedUserIdRef.current === authUser.id) return;
+    setInitialized(false);
+    setLoading(true);
+    setPlatformAdminAccess('loading');
+  }, [authUser?.id]);
 
-        // handle_new_user trigger creates the row; retry once if not yet visible
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const { data: existingUser } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUserId)
-            .maybeSingle();
+  const applyCachedState = useCallback((cached: CachedAccountState) => {
+    setSupabaseUser(cached.user);
+    setMemberships(cached.memberships);
+    setCurrentAccountIdState(cached.currentAccountId);
+    preferredAccountIdRef.current = cached.currentAccountId;
+    setTeamMembers(cached.teamMembers);
+    setInvitations(cached.invitations);
+    setBlockList(cached.blockList);
+    setBilling(cached.billing);
+    setPlatformAdminAccess(cached.platformAdminAccess);
+    accountDataLoadedForRef.current = cached.currentAccountId;
+  }, []);
 
-          if (existingUser) {
-            if (existingUser.email !== email) {
-              user = await updateUserProfile(existingUser.id, { email });
-            } else {
-              user = existingUser;
-            }
-            break;
-          }
+  const resetState = useCallback(() => {
+    setSupabaseUser(null);
+    setMemberships([]);
+    setCurrentAccountIdState(null);
+    preferredAccountIdRef.current = null;
+    setTeamMembers([]);
+    setInvitations([]);
+    setBlockList([]);
+    setBilling(null);
+    setPlatformAdminAccess('denied');
+    setLoading(false);
+    setInitialized(false);
+    setRefetching(false);
+    setError(null);
+    accountDataLoadedForRef.current = null;
+  }, []);
 
-          if (attempt === 0) {
-            await new Promise((r) => setTimeout(r, 500));
-          }
-        }
+  const bootstrap = useCallback(
+    async (authUserId: string, email: string, preferredAccountId: string | null) => {
+      const user = await fetchOrUpsertUser(authUserId, email);
+      const nextMemberships = await getAccountMembershipsForUser(user.id);
+      const accountId = pickAccountId(nextMemberships, preferredAccountId);
 
-        if (!user) {
-          throw new Error('User profile not found. The account may still be initializing — please refresh.');
-        }
+      let accountScoped = {
+        teamMembers: [] as Array<{ user: User; membership: AccountUser }>,
+        invitations: [] as Invitation[],
+        blockList: [] as BlockListEntry[],
+        billing: null as AccountBilling | null,
+        platformAdminAccess: 'denied' as Exclude<PlatformAdminAccessStatus, 'loading'>,
+      };
 
-        let nextMemberships = await getAccountMembershipsForUser(user.id);
-
-        if (nextMemberships.length === 0) {
-          const accountName = buildDefaultAccountName(email, user.name);
-          const { data: newAccountId, error: rpcErr } = await supabase.rpc('bootstrap_account', {
-            p_account_name: accountName,
-          });
-          if (rpcErr || !newAccountId) {
-            throw new Error(rpcErr?.message ?? 'Failed to bootstrap account');
-          }
-          nextMemberships = await getAccountMembershipsForUser(user.id);
-        }
-
-        setSupabaseUser(user);
-        setMemberships(nextMemberships);
-
-        const primary = nextMemberships.find((m) => m.membership.is_owner) ?? nextMemberships[0];
-        setCurrentAccountIdState((prev) => {
-          if (!prev) return primary?.account.id ?? null;
-          const stillMember = nextMemberships.some((m) => m.account.id === prev);
-          return stillMember ? prev : (primary?.account.id ?? null);
-        });
-
-        return nextMemberships;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        setError(message);
-        setSupabaseUser(null);
-        setMemberships([]);
-        setCurrentAccountIdState(null);
-        return null;
-      } finally {
-        setLoading(false);
+      if (accountId) {
+        accountScoped = await fetchAccountScopedData(accountId, authUserId);
+      } else {
+        const isAdmin = await getUserHasPlatformAdminAccess(authUserId);
+        accountScoped.platformAdminAccess = isAdmin ? 'allowed' : 'denied';
       }
+
+      return {
+        user,
+        memberships: nextMemberships,
+        currentAccountId: accountId,
+        ...accountScoped,
+      };
     },
     []
   );
 
   useEffect(() => {
     if (!authUser) {
-      setSupabaseUser(null);
-      setMemberships([]);
-      setCurrentAccountIdState(null);
-      setTeamMembers([]);
-      setInvitations([]);
-      setBlockList([]);
-      setLoading(false);
-      setAccountDataLoading(false);
-      setError(null);
-      lastFetchedIdRef.current = null;
+      resetState();
+      void clearAccountCache();
       return;
     }
 
-    if (lastFetchedIdRef.current === authUser.id) return;
-    lastFetchedIdRef.current = authUser.id;
-
+    const authUserId = authUser.id;
     const email = authUser.email ?? '';
-    const name = authUser.user_metadata?.name ?? authUser.user_metadata?.full_name ?? null;
-    fetchUserAndMemberships(authUser.id, email, name);
-  }, [authUser, fetchUserAndMemberships]);
-
-  const fetchAccountData = useCallback(async (accountId: string) => {
-    const [members, pendingInvitations, blockListData] = await Promise.all([
-      getAccountMembers(accountId),
-      getAccountInvitations(accountId),
-      getBlockList(accountId),
-    ]);
-    setTeamMembers(members);
-    setInvitations(pendingInvitations);
-    setBlockList(blockListData);
-  }, []);
-
-  const refetchAccountData = useCallback(async () => {
-    if (!currentAccountId) return;
-    await fetchAccountData(currentAccountId);
-  }, [currentAccountId, fetchAccountData]);
-
-  useEffect(() => {
-    if (!currentAccountId || memberships.length === 0) {
-      setTeamMembers([]);
-      setInvitations([]);
-      setBlockList([]);
-      setAccountDataLoading(false);
-      return;
-    }
-
+    const runId = ++bootstrapRunIdRef.current;
     let cancelled = false;
-    setAccountDataLoading(true);
 
     void (async () => {
+      const cached = await loadAccountCache(authUserId);
+      if (cancelled || bootstrapRunIdRef.current !== runId) return;
+
+      const hadCache = !!cached;
+      if (cached) {
+        applyCachedState(cached);
+        setLoading(false);
+      } else {
+        setLoading(true);
+        setPlatformAdminAccess('loading');
+      }
+
+      setError(null);
+
       try {
-        await fetchAccountData(currentAccountId);
+        const preferredAccountId = preferredAccountIdRef.current ?? cached?.currentAccountId ?? null;
+        const result = await bootstrap(authUserId, email, preferredAccountId);
+        if (cancelled || bootstrapRunIdRef.current !== runId) return;
+
+        setSupabaseUser(result.user);
+        setMemberships(result.memberships);
+        setCurrentAccountIdState(result.currentAccountId);
+        preferredAccountIdRef.current = result.currentAccountId;
+        setTeamMembers(result.teamMembers);
+        setInvitations(result.invitations);
+        setBlockList(result.blockList);
+        setBilling(result.billing);
+        setPlatformAdminAccess(result.platformAdminAccess);
+        accountDataLoadedForRef.current = result.currentAccountId;
+
+        await saveAccountCache(authUserId, {
+          user: result.user,
+          memberships: result.memberships,
+          currentAccountId: result.currentAccountId,
+          teamMembers: result.teamMembers,
+          invitations: result.invitations,
+          blockList: result.blockList,
+          platformAdminAccess: result.platformAdminAccess,
+          billing: result.billing,
+        });
+      } catch (err) {
+        if (cancelled || bootstrapRunIdRef.current !== runId) return;
+        if (!hadCache) {
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          setError(message);
+          setSupabaseUser(null);
+          setMemberships([]);
+          setCurrentAccountIdState(null);
+          preferredAccountIdRef.current = null;
+          setTeamMembers([]);
+          setInvitations([]);
+          setBlockList([]);
+          setBilling(null);
+          setPlatformAdminAccess('denied');
+        }
       } finally {
-        if (!cancelled) {
-          setAccountDataLoading(false);
+        if (!cancelled && bootstrapRunIdRef.current === runId) {
+          setLoading(false);
+          setInitialized(true);
+          bootstrappedUserIdRef.current = authUserId;
         }
       }
     })();
@@ -198,14 +283,59 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [currentAccountId, memberships.length, fetchAccountData]);
+  }, [authUser?.id, applyCachedState, bootstrap, resetState]);
 
-  const setCurrentAccountId = useCallback((accountId: string) => {
-    setCurrentAccountIdState((prev) => {
-      const isMember = memberships.some((m) => m.account.id === accountId);
-      return isMember ? accountId : prev;
-    });
-  }, [memberships]);
+  useEffect(() => {
+    if (!authUser || !currentAccountId || memberships.length === 0) {
+      if (!currentAccountId || memberships.length === 0) {
+        setTeamMembers([]);
+        setInvitations([]);
+        setBlockList([]);
+        setBilling(null);
+      }
+      return;
+    }
+
+    if (accountDataLoadedForRef.current === currentAccountId) {
+      accountDataLoadedForRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+    setRefetching(true);
+
+    void (async () => {
+      try {
+        const scoped = await fetchAccountScopedData(currentAccountId, authUser.id);
+        if (cancelled) return;
+        setTeamMembers(scoped.teamMembers);
+        setInvitations(scoped.invitations);
+        setBlockList(scoped.blockList);
+        setBilling(scoped.billing);
+        setPlatformAdminAccess(scoped.platformAdminAccess);
+      } finally {
+        if (!cancelled) {
+          setRefetching(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id, currentAccountId, memberships.length]);
+
+  const setCurrentAccountId = useCallback(
+    (accountId: string) => {
+      setCurrentAccountIdState((prev) => {
+        const isMember = memberships.some((m) => m.account.id === accountId);
+        if (!isMember) return prev;
+        preferredAccountIdRef.current = accountId;
+        return accountId;
+      });
+    },
+    [memberships]
+  );
 
   const account = useMemo(() => {
     if (!currentAccountId || !memberships.length) return null;
@@ -213,24 +343,74 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     return entry?.account ?? null;
   }, [currentAccountId, memberships]);
 
+  const refetchAccountData = useCallback(async () => {
+    if (!authUser || !currentAccountId) return;
+    setRefetching(true);
+    try {
+      const scoped = await fetchAccountScopedData(currentAccountId, authUser.id);
+      setTeamMembers(scoped.teamMembers);
+      setInvitations(scoped.invitations);
+      setBlockList(scoped.blockList);
+      setBilling(scoped.billing);
+      setPlatformAdminAccess(scoped.platformAdminAccess);
+
+      if (supabaseUser) {
+        await saveAccountCache(authUser.id, {
+          user: supabaseUser,
+          memberships,
+          currentAccountId,
+          teamMembers: scoped.teamMembers,
+          invitations: scoped.invitations,
+          blockList: scoped.blockList,
+          platformAdminAccess: scoped.platformAdminAccess,
+          billing: scoped.billing,
+        });
+      }
+    } finally {
+      setRefetching(false);
+    }
+  }, [authUser, currentAccountId, memberships, supabaseUser]);
+
   const refetch = useCallback(async () => {
     if (!authUser) return;
     const email = authUser.email ?? '';
-    const name = authUser.user_metadata?.name ?? authUser.user_metadata?.full_name ?? null;
-    lastFetchedIdRef.current = null;
-    const nextMemberships = await fetchUserAndMemberships(authUser.id, email, name);
-    const primary = nextMemberships?.find((m) => m.membership.is_owner) ?? nextMemberships?.[0];
-    if (primary?.account.id) {
-      setAccountDataLoading(true);
-      try {
-        await fetchAccountData(primary.account.id);
-      } finally {
-        setAccountDataLoading(false);
-      }
-    }
-  }, [authUser, fetchUserAndMemberships, fetchAccountData]);
+    setRefetching(true);
+    setError(null);
 
-  const isAccountPageReady = !loading && !accountDataLoading && !error;
+    try {
+      const preferredAccountId = preferredAccountIdRef.current ?? currentAccountId;
+      const result = await bootstrap(authUser.id, email, preferredAccountId);
+
+      setSupabaseUser(result.user);
+      setMemberships(result.memberships);
+      setCurrentAccountIdState(result.currentAccountId);
+      preferredAccountIdRef.current = result.currentAccountId;
+      setTeamMembers(result.teamMembers);
+      setInvitations(result.invitations);
+      setBlockList(result.blockList);
+      setBilling(result.billing);
+      setPlatformAdminAccess(result.platformAdminAccess);
+      accountDataLoadedForRef.current = result.currentAccountId;
+
+      await saveAccountCache(authUser.id, {
+        user: result.user,
+        memberships: result.memberships,
+        currentAccountId: result.currentAccountId,
+        teamMembers: result.teamMembers,
+        invitations: result.invitations,
+        blockList: result.blockList,
+        platformAdminAccess: result.platformAdminAccess,
+        billing: result.billing,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
+    } finally {
+      setRefetching(false);
+    }
+  }, [authUser, bootstrap, currentAccountId]);
+
+  const isFrontendBlocked = billing?.billing_status === 'payment_required';
 
   const value = useMemo<AccountContextValue>(
     () => ({
@@ -241,9 +421,12 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       invitations,
       blockList,
       loading,
-      accountDataLoading,
-      isAccountPageReady,
+      initialized,
+      refetching,
       error,
+      platformAdminAccess,
+      billing,
+      isFrontendBlocked,
       refetch,
       refetchAccountData,
       setCurrentAccountId,
@@ -256,9 +439,12 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       invitations,
       blockList,
       loading,
-      accountDataLoading,
-      isAccountPageReady,
+      initialized,
+      refetching,
       error,
+      platformAdminAccess,
+      billing,
+      isFrontendBlocked,
       refetch,
       refetchAccountData,
       setCurrentAccountId,

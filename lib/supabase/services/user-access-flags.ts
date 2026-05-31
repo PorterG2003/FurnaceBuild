@@ -5,6 +5,8 @@ export const ACCESS_FLAG_FOUNDRY = 'foundry' as const;
 export const ACCESS_FLAG_FLUX = 'flux' as const;
 /** Campaign schedule / message_jobs drill-down diagnostics (internal QA & engineering). */
 export const ACCESS_FLAG_DEV_DIAGNOSTICS = 'dev_diagnostics' as const;
+/** Internal Furnace platform admins. */
+export const ACCESS_FLAG_PLATFORM_ADMIN = 'platform_admin' as const;
 
 /** True if the user has the given flag row (service-managed). */
 export async function getUserHasAccessFlag(userId: string, flagKey: string): Promise<boolean> {
@@ -32,4 +34,8 @@ export function getUserHasFluxAccess(userId: string): Promise<boolean> {
 
 export function getUserHasDevDiagnosticsAccess(userId: string): Promise<boolean> {
   return getUserHasAccessFlag(userId, ACCESS_FLAG_DEV_DIAGNOSTICS);
+}
+
+export function getUserHasPlatformAdminAccess(userId: string): Promise<boolean> {
+  return getUserHasAccessFlag(userId, ACCESS_FLAG_PLATFORM_ADMIN);
 }

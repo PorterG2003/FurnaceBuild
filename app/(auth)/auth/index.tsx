@@ -30,9 +30,10 @@ export default function AuthIndex() {
     email?: string;
     mode?: string;
   }>();
+  const allowInvitationSignUp = Boolean(invitation_id);
   const { user, isRecoverySession, clearRecoverySession } = useAuth();
   const [authState, setAuthState] = useState<AuthState>(
-    isRecoverySession ? 'confirmResetPassword' : mode === 'signUp' ? 'signUp' : 'signIn',
+    isRecoverySession ? 'confirmResetPassword' : (allowInvitationSignUp && mode === 'signUp' ? 'signUp' : 'signIn'),
   );
   const [signUpData, setSignUpData] = useState<{ email: string; password: string } | null>(null);
   const [forgotPasswordData, setForgotPasswordData] = useState<{ email: string } | null>(null);
@@ -65,7 +66,15 @@ export default function AuthIndex() {
   };
 
   const handleGoToSignUp = () => {
+    if (!allowInvitationSignUp) return;
     setAuthState('signUp');
+  };
+
+  const handleRequestAccess = () => {
+    router.push({
+      pathname: '/invite-only',
+      params: inviteEmail ? { email: inviteEmail } : {},
+    });
   };
 
   const handleGoToForgotPassword = () => {
@@ -95,12 +104,23 @@ export default function AuthIndex() {
       case 'signIn':
         return (
           <SignInForm
-            onGoToSignUp={handleGoToSignUp}
             onGoToForgotPassword={handleGoToForgotPassword}
             initialSuccessMessage={signInSuccessMessage ?? undefined}
+            showSignUp={allowInvitationSignUp}
+            onGoToSignUp={allowInvitationSignUp ? handleGoToSignUp : undefined}
+            onRequestAccess={!allowInvitationSignUp ? handleRequestAccess : undefined}
           />
         );
       case 'signUp':
+        if (!allowInvitationSignUp) {
+          return (
+            <SignInForm
+              onGoToForgotPassword={handleGoToForgotPassword}
+              showSignUp={false}
+              onRequestAccess={handleRequestAccess}
+            />
+          );
+        }
         return (
           <SignUpForm
             onSignUpSuccess={handleSignUpSuccess}
@@ -129,8 +149,10 @@ export default function AuthIndex() {
           />
         ) : (
           <SignInForm
-            onGoToSignUp={handleGoToSignUp}
             onGoToForgotPassword={handleGoToForgotPassword}
+            showSignUp={allowInvitationSignUp}
+            onGoToSignUp={allowInvitationSignUp ? handleGoToSignUp : undefined}
+            onRequestAccess={!allowInvitationSignUp ? handleRequestAccess : undefined}
           />
         );
       case 'confirmSignUp':
@@ -143,15 +165,19 @@ export default function AuthIndex() {
           />
         ) : (
           <SignInForm
-            onGoToSignUp={handleGoToSignUp}
             onGoToForgotPassword={handleGoToForgotPassword}
+            showSignUp={allowInvitationSignUp}
+            onGoToSignUp={allowInvitationSignUp ? handleGoToSignUp : undefined}
+            onRequestAccess={!allowInvitationSignUp ? handleRequestAccess : undefined}
           />
         );
       default:
         return (
           <SignInForm
-            onGoToSignUp={handleGoToSignUp}
             onGoToForgotPassword={handleGoToForgotPassword}
+            showSignUp={allowInvitationSignUp}
+            onGoToSignUp={allowInvitationSignUp ? handleGoToSignUp : undefined}
+            onRequestAccess={!allowInvitationSignUp ? handleRequestAccess : undefined}
           />
         );
     }

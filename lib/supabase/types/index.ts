@@ -8,6 +8,9 @@ import { Database } from './database';
 export type Account = Database['public']['Tables']['accounts']['Row'];
 export type AccountInsert = Database['public']['Tables']['accounts']['Insert'];
 export type AccountUpdate = Database['public']['Tables']['accounts']['Update'];
+export type AccountBilling = Database['public']['Tables']['account_billing']['Row'];
+export type AccountBillingInsert = Database['public']['Tables']['account_billing']['Insert'];
+export type AccountBillingUpdate = Database['public']['Tables']['account_billing']['Update'];
 
 export type AccountUser = Database['public']['Tables']['account_users']['Row'];
 export type AccountUserInsert = Database['public']['Tables']['account_users']['Insert'];
@@ -49,6 +52,17 @@ export type UserAccessFlagInsert = Database['public']['Tables']['user_access_fla
 export type Invitation = Database['public']['Tables']['invitations']['Row'];
 export type InvitationInsert = Database['public']['Tables']['invitations']['Insert'];
 export type InvitationUpdate = Database['public']['Tables']['invitations']['Update'];
+export type PlatformInvitation = Database['public']['Tables']['platform_invitations']['Row'];
+export type PlatformInvitationInsert = Database['public']['Tables']['platform_invitations']['Insert'];
+export type PlatformInvitationUpdate = Database['public']['Tables']['platform_invitations']['Update'];
+export type PlatformInvitationRevision = Database['public']['Tables']['platform_invitation_revisions']['Row'];
+export type PlatformInvitationRevisionInsert = Database['public']['Tables']['platform_invitation_revisions']['Insert'];
+export type PlatformInvitationRevisionUpdate = Database['public']['Tables']['platform_invitation_revisions']['Update'];
+export type PlatformTermsVersion = Database['public']['Tables']['platform_terms_versions']['Row'];
+export type PlatformTermsVersionInsert = Database['public']['Tables']['platform_terms_versions']['Insert'];
+export type BillingAdjustment = Database['public']['Tables']['billing_adjustments']['Row'];
+export type BillingAdjustmentInsert = Database['public']['Tables']['billing_adjustments']['Insert'];
+export type BillingAdjustmentUpdate = Database['public']['Tables']['billing_adjustments']['Update'];
 
 export type Mailbox = Database['public']['Tables']['mailboxes']['Row'];
 export type MailboxInsert = Database['public']['Tables']['mailboxes']['Insert'];

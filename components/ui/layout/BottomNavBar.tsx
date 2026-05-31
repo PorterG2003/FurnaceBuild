@@ -14,9 +14,11 @@ import {
   InboxIcon,
   EnvelopeIcon,
   UserGroupIcon,
+  BuildingLibraryIcon,
 } from 'react-native-heroicons/outline';
+import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
 
-const navItems = [
+const baseNavItems = [
   { path: '/campaigns', icon: MegaphoneIcon },
   { path: '/metrics', icon: ChartBarIcon },
   { path: '/inbox', icon: InboxIcon },
@@ -41,7 +43,7 @@ function isActive(path: string, pathname: string | null) {
   return pathname === path;
 }
 
-function getActiveIndex(pathname: string | null): number {
+function getActiveIndex(pathname: string | null, navItems: Array<{ path: string; icon: any }>): number {
   const idx = navItems.findIndex((item) => isActive(item.path, pathname));
   return idx === -1 ? 0 : idx;
 }
@@ -137,7 +139,11 @@ function NativeIndicator({ activeIndex }: { activeIndex: number }) {
 export function BottomNavBar() {
   const router = useRouter();
   const pathname = usePathname();
-  const activeIndex = getActiveIndex(pathname);
+  const platformAdminAccess = usePlatformAdminAccess();
+  const navItems = platformAdminAccess === 'allowed'
+    ? [...baseNavItems.slice(0, 5), { path: '/admin', icon: BuildingLibraryIcon }, ...baseNavItems.slice(5)]
+    : baseNavItems;
+  const activeIndex = getActiveIndex(pathname, navItems);
 
   const shadowStyle =
     Platform.OS === 'web'

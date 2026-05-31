@@ -70,7 +70,7 @@ Optional:
   SEED_PROJECT_REF=<ref>   Must match project ref in https://<ref>.supabase.co
   SEED_WIPE_CONFIRM=1      Required when using --wipe
 
-Scenarios: dev-default, campaign-smoke, ooo-mixed-inbox, minimal (see README).
+Scenarios: dev-default, campaign-smoke, ooo-mixed-inbox, platform-invite-preview, minimal (see README).
 
 See scripts/seed/README.md for conventions and worker caveats.
 `);

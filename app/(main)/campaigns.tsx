@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
 import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { StatColumn } from '@/components/ui/StatColumn';
+import { Toggle } from '@/components/ui/Toggle';
 import { Alert, EmptyState, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { CampaignListSkeleton } from '@/components/skeletons';
 import { BaseModal, ConfirmDeleteModal, ModalFooter } from '@/components/ui/modals';
@@ -12,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
 import {
   createCampaign,
+  duplicateCampaign,
   deleteCampaign,
   getCampaignsListSummary,
   type CampaignListSummary,
@@ -29,6 +31,7 @@ import {
   ExclamationTriangleIcon,
   RocketLaunchIcon,
   TagIcon,
+  DocumentDuplicateIcon,
   FunnelIcon,
   MagnifyingGlassIcon,
 } from 'react-native-heroicons/outline';
@@ -52,11 +55,31 @@ const STAT_COLUMN_WIDTH = 72;
 const POSITIVE_COLUMN_WIDTH = 88;
 /** Below this width (mobile only), use extra-small stat variant and tighter layout */
 const EXTRA_NARROW_BREAKPOINT = 360;
+
+interface DuplicateCampaignFormValues {
+  name: string;
+  copySettings: boolean;
+  copyLeads: boolean;
+}
+
 interface CreateCampaignModalProps {
   visible: boolean;
   onClose: () => void;
   onCreate: (name: string) => Promise<void>;
   isLoading: boolean;
+}
+
+interface DuplicateCampaignModalProps {
+  visible: boolean;
+  sourceCampaign: CampaignListSummary | null;
+  onClose: () => void;
+  onDuplicate: (values: DuplicateCampaignFormValues) => Promise<void>;
+  isLoading: boolean;
+}
+
+function buildDuplicateCampaignName(name: string): string {
+  const trimmed = name.trim();
+  return trimmed ? `Copy of ${trimmed}` : 'Copy of campaign';
 }
 
 function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCampaignModalProps) {
@@ -151,15 +174,153 @@ function CreateCampaignModal({ visible, onClose, onCreate, isLoading }: CreateCa
   );
 }
 
+function DuplicateCampaignModal({
+  visible,
+  sourceCampaign,
+  onClose,
+  onDuplicate,
+  isLoading,
+}: DuplicateCampaignModalProps) {
+  const { toast } = useToast();
+  const [name, setName] = useState('');
+  const [copySettings, setCopySettings] = useState(true);
+  const [copyLeads, setCopyLeads] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!visible || !sourceCampaign) {
+      return;
+    }
+
+    setName(buildDuplicateCampaignName(sourceCampaign.name));
+    setCopySettings(true);
+    setCopyLeads(false);
+    setError('');
+  }, [visible, sourceCampaign]);
+
+  const handleClose = () => {
+    setError('');
+    onClose();
+  };
+
+  const handleDuplicate = async () => {
+    if (!sourceCampaign) {
+      setError('Campaign not found.');
+      return;
+    }
+    if (!name.trim()) {
+      setError('Campaign name is required');
+      return;
+    }
+
+    setError('');
+    try {
+      await onDuplicate({
+        name: name.trim(),
+        copySettings,
+        copyLeads,
+      });
+      handleClose();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to duplicate campaign');
+    }
+  };
+
+  return (
+    <BaseModal
+      visible={visible}
+      onClose={handleClose}
+      title="Duplicate Campaign"
+      description={sourceCampaign ? `Create a new draft from ${sourceCampaign.name}.` : 'Create a new draft from an existing campaign.'}
+      maxWidth="md"
+      footer={
+        <ModalFooter>
+          <Button
+            variant="secondary"
+            onPress={handleClose}
+            disabled={isLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onPress={handleDuplicate}
+            disabled={isLoading || !sourceCampaign}
+          >
+            {isLoading ? 'Duplicating...' : 'Duplicate'}
+          </Button>
+        </ModalFooter>
+      }
+      footerMobile={
+        <ModalFooter>
+          <Button
+            onPress={handleDuplicate}
+            disabled={isLoading || !sourceCampaign}
+          >
+            {isLoading ? 'Duplicating...' : 'Duplicate'}
+          </Button>
+        </ModalFooter>
+      }
+    >
+      <View className="gap-4">
+        <View>
+          <Text className="text-sm font-instrument-medium mb-2 text-gray-300">New Campaign Name</Text>
+          <TextInput
+            value={name}
+            onChangeText={(text) => {
+              setName(text);
+              setError('');
+            }}
+            placeholder="Enter campaign name"
+            placeholderTextColor="#666"
+            className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white border-[#FFFFFF4D] bg-[#FFFFFF0D]"
+            selectionColor="#FF4D00"
+            underlineColorAndroid="transparent"
+            autoFocus
+          />
+        </View>
+
+        <View className="flex-row items-center justify-between gap-3">
+          <View className="flex-1">
+            <Text className="text-sm font-instrument-medium text-gray-300">Copy Campaign Settings</Text>
+            <Text className="text-gray-400 font-instrument text-sm mt-1">
+              Includes flow, schedule, mailboxes, cadence, webhooks, and tags.
+            </Text>
+          </View>
+          <Toggle value={copySettings} onValueChange={setCopySettings} disabled={isLoading} />
+        </View>
+
+        <View className="flex-row items-center justify-between gap-3">
+          <View className="flex-1">
+            <Text className="text-sm font-instrument-medium text-gray-300">Copy Campaign Leads</Text>
+            <Text className="text-gray-400 font-instrument text-sm mt-1">
+              Copies people into the new draft without copying enrollments, jobs, or stats.
+            </Text>
+          </View>
+          <Toggle value={copyLeads} onValueChange={setCopyLeads} disabled={isLoading} />
+        </View>
+
+        {error ? (
+          <View className="p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
+            <Text className="text-red-400 text-center font-instrument-medium text-sm">
+              {error}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </BaseModal>
+  );
+}
+
 interface CampaignCardProps {
   campaign: CampaignListSummary;
   tags: CampaignTag[];
   onDelete: (id: string) => Promise<void>;
+  onDuplicate: (campaign: CampaignListSummary) => void;
   onManageTags: (campaignId: string) => void;
   isDeleting: boolean;
 }
 
-function CampaignCard({ campaign, tags, onDelete, onManageTags, isDeleting }: CampaignCardProps) {
+function CampaignCard({ campaign, tags, onDelete, onDuplicate, onManageTags, isDeleting }: CampaignCardProps) {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -206,6 +367,11 @@ function CampaignCard({ campaign, tags, onDelete, onManageTags, isDeleting }: Ca
     setShowDeleteModal(false);
   };
 
+  const handleDuplicate = () => {
+    if (isSmartlead) { setShowSmartleadModal(true); return; }
+    onDuplicate(campaign);
+  };
+
   const handleEditFlow = () => {
     if (isSmartlead) { setShowSmartleadModal(true); return; }
     router.push({ pathname: '/builder', params: { campaignId: campaign.id } });
@@ -235,6 +401,12 @@ function CampaignCard({ campaign, tags, onDelete, onManageTags, isDeleting }: Ca
         icon: PencilIcon,
       },
       {
+        key: 'duplicate',
+        label: 'Duplicate',
+        onPress: handleDuplicate,
+        icon: DocumentDuplicateIcon,
+      },
+      {
         key: 'delete',
         label: 'Delete',
         onPress: () => setShowDeleteModal(true),
@@ -243,7 +415,11 @@ function CampaignCard({ campaign, tags, onDelete, onManageTags, isDeleting }: Ca
       },
     );
     return items;
-  }, [handleContinueSetup, handleEditFlow, isDraft, onManageTags, campaign.id]);
+  }, [campaign, handleContinueSetup, handleDuplicate, handleEditFlow, isDraft, onManageTags]);
+
+  const visibleOverflowItems = isSmartlead
+    ? overflowItems.filter((item) => item.key !== 'mission-control')
+    : overflowItems;
 
   const repliedPct = sentCount > 0 ? Math.round((repliedCount / sentCount) * 100) : 0;
   const positivePct = repliedCount > 0 ? Math.round((positiveReplyCount / repliedCount) * 100) : 0;
@@ -327,23 +503,25 @@ function CampaignCard({ campaign, tags, onDelete, onManageTags, isDeleting }: Ca
         <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
           <View className="opacity-50">
             <RowOverflowMenu
-              items={overflowItems.filter((item) => item.key !== 'mission-control')}
+              items={visibleOverflowItems}
               disabled={isDeleting}
               menuMinWidth={184}
               triggerIcon={EllipsisHorizontalIcon}
               triggerAccessibilityLabel="Campaign actions"
               horizontalAlign="end"
+              sheetTitle={campaign.name}
             />
           </View>
         </Tooltip>
       ) : (
         <RowOverflowMenu
-          items={overflowItems}
+          items={visibleOverflowItems}
           disabled={isDeleting}
           menuMinWidth={184}
           triggerIcon={EllipsisHorizontalIcon}
           triggerAccessibilityLabel="Campaign actions"
           horizontalAlign="end"
+          sheetTitle={campaign.name}
         />
       )}
     </View>
@@ -399,6 +577,17 @@ function CampaignCard({ campaign, tags, onDelete, onManageTags, isDeleting }: Ca
                     <TagChipRow tags={tags} maxVisible={4} />
                   </View>
                 ) : null}
+              </View>
+              <View className="shrink-0 ml-1">
+                <RowOverflowMenu
+                  items={visibleOverflowItems}
+                  disabled={isDeleting}
+                  menuMinWidth={184}
+                  triggerIcon={EllipsisHorizontalIcon}
+                  triggerAccessibilityLabel="Campaign actions"
+                  horizontalAlign="end"
+                  sheetTitle={campaign.name}
+                />
               </View>
             </View>
             {/* Block 2 — Stats: 4 columns with gap so first/last line up on the edges; margin above, no margin below */}
@@ -472,9 +661,11 @@ export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<CampaignListSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [duplicateSourceCampaign, setDuplicateSourceCampaign] = useState<CampaignListSummary | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [appliedFilters, setAppliedFilters] = useState<CampaignListFilters>(EMPTY_CAMPAIGN_LIST_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -557,6 +748,38 @@ export default function CampaignsPage() {
       console.error('Error deleting campaign:', err);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleDuplicateCampaign = async ({ name, copySettings, copyLeads }: DuplicateCampaignFormValues) => {
+    if (!duplicateSourceCampaign) {
+      throw new Error('Campaign not found');
+    }
+    if (!user?.id) {
+      throw new Error('User not authenticated');
+    }
+    if (!account?.id) {
+      throw new Error('No account selected');
+    }
+
+    setIsDuplicating(true);
+    try {
+      const newCampaign = await duplicateCampaign(duplicateSourceCampaign.id, {
+        name,
+        ownerId: user.id,
+        accountId: account.id,
+        copySettings,
+        copyLeads,
+      });
+      await loadCampaigns();
+      toast.success('Campaign duplicated');
+      setDuplicateSourceCampaign(null);
+      router.push({
+        pathname: '/campaigns/[id]/mission-control',
+        params: { id: newCampaign.id },
+      });
+    } finally {
+      setIsDuplicating(false);
     }
   };
 
@@ -673,8 +896,9 @@ export default function CampaignsPage() {
                 campaign={campaign}
                 tags={campaignTagsMap[campaign.id] ?? []}
                 onDelete={handleDeleteCampaign}
+                onDuplicate={setDuplicateSourceCampaign}
                 onManageTags={setManagingTagsCampaignId}
-                isDeleting={deletingId === campaign.id}
+                isDeleting={deletingId === campaign.id || (isDuplicating && duplicateSourceCampaign?.id === campaign.id)}
               />
             ))
           )}
@@ -711,6 +935,17 @@ export default function CampaignsPage() {
         onClose={() => setShowCreateModal(false)}
         onCreate={handleCreateCampaign}
         isLoading={isCreating}
+      />
+      <DuplicateCampaignModal
+        visible={duplicateSourceCampaign !== null}
+        sourceCampaign={duplicateSourceCampaign}
+        onClose={() => {
+          if (!isDuplicating) {
+            setDuplicateSourceCampaign(null);
+          }
+        }}
+        onDuplicate={handleDuplicateCampaign}
+        isLoading={isDuplicating}
       />
     </PageLayout>
   );

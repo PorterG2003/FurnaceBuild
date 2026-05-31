@@ -13,11 +13,13 @@ import {
   EnvelopeIcon,
   UserGroupIcon,
   LifebuoyIcon,
+  BuildingLibraryIcon,
 } from 'react-native-heroicons/outline';
 import { useAccount } from '@/contexts/AccountContext';
 import { WorkspaceSwitcherPopover } from '@/components/ui/WorkspaceSwitcherPopover';
 import { HelpModal } from '@/components/ui/help';
 import { NavBarButton } from './NavBarButton';
+import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
 const furnaceLogoFull = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg height="100%" stroke-miterlimit="10" style="fill-rule:nonzero;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;" version="1.1" viewBox="0 0 1584 396" width="100%" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">
@@ -63,6 +65,7 @@ const SWITCHER_CLOSE_VIEWPORT_WIDTH = 900;
 export function NavBar() {
   const { width: viewportWidth } = useWindowDimensions();
   const { account, memberships, setCurrentAccountId, user } = useAccount();
+  const platformAdminAccess = usePlatformAdminAccess();
   const handleSignOut = () => signOut();
   const router = useRouter();
   const pathname = usePathname();
@@ -132,6 +135,9 @@ export function NavBar() {
     { label: 'Master Inbox', path: '/inbox', icon: InboxIcon },
     { label: 'Leads', path: '/leads', icon: UserGroupIcon },
     { label: 'Senders', path: '/senders', icon: EnvelopeIcon },
+    ...(platformAdminAccess === 'allowed'
+      ? [{ label: 'Admin Tools', path: '/admin', icon: BuildingLibraryIcon }]
+      : []),
   ];
 
   const isActive = (path: string) => {
@@ -146,6 +152,9 @@ export function NavBar() {
     }
     if (path === '/senders') {
       return pathname === '/senders' || pathname?.startsWith('/senders/');
+    }
+    if (path === '/admin') {
+      return pathname === '/admin' || pathname?.startsWith('/admin/');
     }
     return pathname === path;
   };

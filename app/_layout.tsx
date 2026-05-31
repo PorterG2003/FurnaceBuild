@@ -10,6 +10,7 @@ import { AppBootScreen } from '@/components/ui/AppBootScreen';
 import { ToastProvider } from '@/components/ui/feedback';
 import { ConfirmProvider } from '@/components/ui/ConfirmContext';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { AccountProvider } from '@/contexts/AccountContext';
 import { WebInstallGate } from '@/components/web/WebInstallGate';
 import { isFluxPublicLandingRoute } from '@/lib/web/installGate';
 
@@ -93,15 +94,17 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-        <ToastProvider>
-          <ConfirmProvider>
-            <View style={safeAreaRootStyle} testID="safe-area-root">
-              <StatusBar style="auto" />
-              <WebInstallGate />
-              <Slot />
-            </View>
-          </ConfirmProvider>
-        </ToastProvider>
+        <AccountProvider>
+          <ToastProvider>
+            <ConfirmProvider>
+              <View style={safeAreaRootStyle} testID="safe-area-root">
+                <StatusBar style="auto" />
+                <WebInstallGate />
+                <Slot />
+              </View>
+            </ConfirmProvider>
+          </ToastProvider>
+        </AccountProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );

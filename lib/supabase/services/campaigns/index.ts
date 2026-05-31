@@ -2,12 +2,14 @@ export {
   getCampaigns,
   getCampaignById,
   createCampaign,
+  duplicateCampaign,
   updateCampaign,
   updateCampaignFlowData,
   getCampaignFlowVersions,
   deleteCampaign,
   type CampaignFlowVersion,
   type CampaignFilters,
+  type DuplicateCampaignOptions,
 } from './campaigns';
 export {
   getCampaignStatsForCampaigns,

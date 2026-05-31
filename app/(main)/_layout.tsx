@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Stack, usePathname, useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { AccountProvider, useAccount } from '@/contexts/AccountContext';
+import { useAccount } from '@/contexts/AccountContext';
 import { NotificationToastSubscriber } from '@/components/notifications/NotificationToastSubscriber';
 import { AppBootScreen } from '@/components/ui/AppBootScreen';
+import { Button } from '@/components/ui/button';
+import { HELP_EMAIL } from '@/components/ui/help/HelpModal';
 
 /** Same `type` string as public/sw.js postMessage fallback when WindowClient.navigate is missing. */
 const SW_NAVIGATE_MESSAGE_TYPE = 'furnace-notification-navigate';
@@ -49,6 +51,71 @@ function WebPushNavigationBridge() {
   return null;
 }
 
+function PaymentRequiredScreen() {
+  const { signOut } = useAuth();
+  return (
+    <View className="flex-1 items-center justify-center bg-[#121212] px-6">
+      <View className="w-full max-w-lg rounded-2xl border border-[#2A2A2A] bg-[#181818] p-6">
+        <Text className="text-center text-3xl font-instrument-semibold text-white mb-3">
+          Payment Required
+        </Text>
+        <Text className="text-center text-gray-300 font-instrument mb-6">
+          Your workspace is active, but customer access is temporarily blocked until billing is resolved. Email {HELP_EMAIL} and we will help you restore access.
+        </Text>
+        <Button className="mb-3" onPress={() => { void signOut(); }}>
+          Sign Out
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+function MainAccessGate() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { user } = useAuth();
+  const { memberships, loading, initialized, platformAdminAccess, isFrontendBlocked } = useAccount();
+  const allowAdminWithoutWorkspace = platformAdminAccess === 'allowed' && (pathname === '/admin' || pathname?.startsWith('/admin/'));
+  const showLoadingOverlay = !initialized || loading || platformAdminAccess === 'loading';
+
+  useEffect(() => {
+    if (!initialized) return;
+    if (loading) return;
+    if (platformAdminAccess === 'loading') return;
+    if (!memberships.length && !allowAdminWithoutWorkspace) {
+      router.replace({
+        pathname: '/invite-only',
+        params: user?.email ? { email: user.email } : {},
+      });
+    }
+  }, [allowAdminWithoutWorkspace, initialized, loading, memberships.length, platformAdminAccess, router, user?.email]);
+
+  if (!showLoadingOverlay && !memberships.length && !allowAdminWithoutWorkspace) {
+    return <AppBootScreen />;
+  }
+
+  if (!showLoadingOverlay && isFrontendBlocked && platformAdminAccess !== 'allowed') {
+    return <PaymentRequiredScreen />;
+  }
+
+  return (
+    <>
+      <WebPushNavigationBridge />
+      <NotificationToastSubscriber />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+        }}
+      />
+      {showLoadingOverlay ? (
+        <View pointerEvents="auto" style={StyleSheet.absoluteFillObject}>
+          <AppBootScreen />
+        </View>
+      ) : null}
+    </>
+  );
+}
+
 export default function MainLayout() {
   const { user, loading, isRecoverySession } = useAuth();
   const router = useRouter();
@@ -67,15 +134,5 @@ export default function MainLayout() {
 
   if (loading || !user || isRecoverySession) return <AppBootScreen />;
 
-  return (
-    <AccountProvider>
-      <WebPushNavigationBridge />
-      <NotificationToastSubscriber />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-        }}
-      />
-    </AccountProvider>
-  );
+  return <MainAccessGate />;
 }

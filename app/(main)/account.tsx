@@ -13,6 +13,7 @@ import { AccountNotificationsSection } from '@/components/account/AccountNotific
 import type { BalancedSection } from '@/components/ui/layout';
 import {
   BalancedTwoColumnLayout,
+  Breadcrumb,
   LAYOUT_BREAKPOINT,
   PageHeader,
   PageLayout,
@@ -536,7 +537,7 @@ export default function AccountPage() {
     invitations,
     blockList,
     loading: contextLoading,
-    accountDataLoading,
+    refetching,
     error: loadError,
     refetch,
     refetchAccountData,
@@ -544,13 +545,13 @@ export default function AccountPage() {
   } = useAccount();
 
   const settingsBootstrapReady =
-    !contextLoading && !accountDataLoading && !!account?.id;
+    !contextLoading && !refetching && !!account?.id;
   const settings = useAccountSettingsData(account?.id, {
     enabled: settingsBootstrapReady,
   });
 
   const pageLoading =
-    contextLoading || accountDataLoading || settings.loading;
+    contextLoading || refetching || settings.loading;
 
   const { width } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
@@ -1128,6 +1129,11 @@ export default function AccountPage() {
 
   return (
     <PageLayout>
+      {!isMobile ? (
+        <View className="mb-4">
+          <Breadcrumb items={[{ label: 'Settings' }]} />
+        </View>
+      ) : null}
       <PageHeader
         title="Account"
         subtitle={

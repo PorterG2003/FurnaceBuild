@@ -1,9 +1,16 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { reportErrorToSlack } from '../../../slack/reportErrorToSlack';
 import { supabase } from '../../client';
 import type { Campaign, CampaignFlowVersion, CampaignInsert, CampaignUpdate } from '../../types';
+import type { Database } from '../../types/database';
 import { getAccountMembershipsForUser, getUserById, getUserByExternalId } from '../accounts';
+import {
+  duplicateCampaignWithClient,
+  type DuplicateCampaignOptions,
+} from './duplicate-campaign-with-client';
 
 export type { CampaignFlowVersion };
+export type { DuplicateCampaignOptions };
 
 export interface CampaignFilters {
   ownerId?: string;
@@ -162,4 +169,11 @@ export async function deleteCampaign(id: string): Promise<void> {
   if (nodesResult.error) {
     throw new Error(`Failed to delete campaign nodes: ${nodesResult.error.message}`);
   }
+}
+
+export async function duplicateCampaign(
+  sourceCampaignId: string,
+  options: DuplicateCampaignOptions,
+): Promise<Campaign> {
+  return duplicateCampaignWithClient(supabase as SupabaseClient<Database>, sourceCampaignId, options);
 }

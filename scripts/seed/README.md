@@ -147,6 +147,27 @@ The CLI loads [`dotenv`](https://github.com/motdotla/dotenv) from the repo root 
 
 This means local machine values in `.env.local` win over `.env`, which is usually what you want for seed runs.
 
+### `platform-invite-preview` scenario
+
+Creates deterministic draft platform invitations for admin-only preview QA, including:
+
+- Bronze / Silver / Gold
+- Website traffic sourcing variants
+- Reply handling variants
+- Combined add-on variants
+
+It prints direct embedded preview URLs for each seeded invitation using `/admin-invite-preview?embedded=1`. Normal admin review now happens inside the embedded preview panels on the client-signing wizard and invitation detail page.
+
+Optional:
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `SEED_PREVIEW_ORIGIN` | No | Base origin to prepend to printed preview paths, e.g. `http://localhost:8081` |
+
+```bash
+npx tsx scripts/seed/index.ts --scenario=platform-invite-preview
+```
+
 ## npm scripts
 
 ```bash

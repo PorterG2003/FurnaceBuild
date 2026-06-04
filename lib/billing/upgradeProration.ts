@@ -19,8 +19,8 @@ export function buildUpgradeBillingPlan(
   oldMonthlyRetainerCents: number,
   newMonthlyRetainerCents: number,
 ): UpgradeBillingPlan {
-  if (!Number.isFinite(oldMonthlyRetainerCents) || oldMonthlyRetainerCents <= 0) {
-    throw new Error('oldMonthlyRetainerCents must be positive');
+  if (!Number.isFinite(oldMonthlyRetainerCents) || oldMonthlyRetainerCents < 0) {
+    throw new Error('oldMonthlyRetainerCents must be zero or greater');
   }
   if (!Number.isFinite(newMonthlyRetainerCents) || newMonthlyRetainerCents <= 0) {
     throw new Error('newMonthlyRetainerCents must be positive');

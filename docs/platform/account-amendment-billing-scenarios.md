@@ -121,6 +121,19 @@ Each section contains two concrete scenarios for the same product case.
   - current cycle remains at `$6,500.00`
   - next invoice on `March 1` MST is `$4,000.00`
 
+#### Scenario 2C: Downgrade to free account
+
+- Current monthly retainer: `$5,000.00`
+- Proposed monthly retainer: `$0.00`
+- Amendment accepted on `May 15` MST
+- Expected:
+  - no immediate refund
+  - no immediate charge
+  - amendment is accepted immediately
+  - current cycle remains at `$5,000.00`
+  - the Stripe subscription is scheduled to end on the next billing anchor
+  - on `June 1` MST, the account moves to a `$0.00` monthly retainer with no active subscription
+
 ### 3. Upgrade With Valid Billing Method
 
 #### Scenario 3A: Early-month upgrade
@@ -152,6 +165,19 @@ Each section contains two concrete scenarios for the same product case.
   - next invoice amount: `$5,000.00 - $1,741.94 = $3,258.06`
   - if the billing route is `card`, the customer-facing due-today and next-invoice totals also include the card fee
   - amendment becomes `accepted` after successful payment
+
+#### Scenario 3C: Upgrade from free account
+
+- Current monthly retainer: `$0.00`
+- Proposed monthly retainer: `$5,000.00`
+- Amendment accepted on `May 15` MST
+- Expected:
+  - checkout behaves like an initial paid signup, not a delta charge
+  - due today subtotal: `$5,000.00`
+  - the selected route fee applies to the due-today total
+  - the first recurring invoice on `June 1` MST includes overlap credit for the days already covered by the upfront month
+  - a Stripe customer and recurring subscription are created during the successful checkout flow
+  - amendment becomes `accepted` after the successful checkout webhook completes
 
 ### 4. Upgrade Requiring Billing Method Change
 
@@ -192,6 +218,19 @@ Each section contains two concrete scenarios for the same product case.
   - next invoice amount: `$6,500.00 - $1,017.86 = $5,482.14`
   - the displayed and charged totals use the newly selected route
   - all future recurring charges use the newly added billing method
+
+### 6. Free Invite Onboarding
+
+#### Scenario 6A: Free invite skips checkout
+
+- Invitation monthly retainer: `$0.00`
+- Invitee accepts terms and creates their login
+- Expected:
+  - no Stripe checkout session is created
+  - no Stripe customer or subscription is required
+  - the account is provisioned immediately after acceptance
+  - account billing is created with `monthly_retainer_cents = 0`
+  - the workspace becomes active without a recurring subscription
 
 ### 5. Calendar Boundary And Proration Edge Cases
 

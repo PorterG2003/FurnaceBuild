@@ -34,6 +34,10 @@ type Props = {
   onViewportChange?: (viewport: PlatformInvitePreviewViewport) => void;
   /** When false, viewport toggles are hidden (use an external dropdown instead). */
   showViewportControls?: boolean;
+  /** Optional local width constraint when embedding inside a narrower pane. */
+  availableWidth?: number;
+  /** Optional local height constraint when embedding inside a shorter pane. */
+  availableHeight?: number;
 };
 
 export function PlatformInvitePreviewFrame({
@@ -48,6 +52,8 @@ export function PlatformInvitePreviewFrame({
   viewport: controlledViewport,
   onViewportChange,
   showViewportControls = true,
+  availableWidth,
+  availableHeight,
 }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const [uncontrolledViewport, setUncontrolledViewport] =
@@ -62,8 +68,13 @@ export function PlatformInvitePreviewFrame({
   };
 
   const viewportConfig = PREVIEW_VIEWPORTS[viewport];
-  const availableWidth = Math.max(320, windowWidth - 120);
-  const effectiveZoom = Math.min(DEFAULT_PREVIEW_SCALE, availableWidth / viewportConfig.width);
+  const computedAvailableWidth = Math.max(320, availableWidth ?? windowWidth - 120);
+  const computedAvailableHeight = Math.max(320, availableHeight ?? viewportConfig.height);
+  const effectiveZoom = Math.min(
+    DEFAULT_PREVIEW_SCALE,
+    computedAvailableWidth / viewportConfig.width,
+    computedAvailableHeight / viewportConfig.height
+  );
   const shellWidth = viewportConfig.width * effectiveZoom;
   const shellHeight = viewportConfig.height * effectiveZoom;
 
@@ -143,6 +154,8 @@ export function PlatformInvitePreviewFrame({
         },
         React.createElement('iframe', {
           src: iframeSrc,
+          sandbox: 'allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox',
+          title: label ?? 'Embedded preview',
           style: {
             ...scaledStyle,
             border: '0',

@@ -179,6 +179,32 @@ export async function preparePlatformInvitationCheckout(params: {
   return data as PlatformInvitation;
 }
 
+export async function acceptPlatformInvitation(params: {
+  invitationId: string;
+  fullName: string;
+  accountName: string;
+  termsAcceptedIp?: string | null;
+  internalAdminEmails?: string[];
+}): Promise<{ status: string; account_id?: string | null; accepted_revision_number?: number | null }> {
+  const internalAdminEmails = params.internalAdminEmails ?? [
+    'porter@getfurnace.io',
+    'kyle@getfurnace.io',
+  ];
+  const { data, error } = await rpc('accept_platform_invitation', {
+    p_invitation_id: params.invitationId,
+    p_full_name: params.fullName,
+    p_account_name: params.accountName,
+    p_terms_accepted_ip: params.termsAcceptedIp ?? null,
+    p_internal_admin_emails: internalAdminEmails,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? {}) as {
+    status: string;
+    account_id?: string | null;
+    accepted_revision_number?: number | null;
+  };
+}
+
 export async function getSelfServeGuidanceInfo(email?: string | null): Promise<SelfServeGuidanceInfo> {
   const { data, error } = await rpc('get_self_serve_guidance_info', {
     p_email: email ?? null,

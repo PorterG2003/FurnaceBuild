@@ -33,6 +33,22 @@ export { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js'
 export { getLeadVariables, type LeadVariable } from './leadVariables.js';
 export { stripSignatureStyles } from './strip-signature-styles.js';
 export {
+  canonicalizeEmailContentForSave,
+  canonicalizeEmailHtml,
+  convertHtmlToRichTextSeed,
+  extractBodyFragmentFromHtml,
+  isFullHtmlDocument,
+  mergeHtmlEmailWithSignature,
+  seedHtmlModeFromRichText,
+  type CanonicalEmailSaveInput,
+  type CanonicalEmailSaveResult,
+  type CanonicalizeEmailHtmlOptions,
+  type CanonicalizeEmailHtmlResult,
+  type EmailEditorMode,
+  type EmailHtmlDocumentKind,
+} from './emailHtmlMode.js';
+
+export {
   buildCampaignEmailContent,
   htmlToFragment,
   mergeInboxComposeHtml,

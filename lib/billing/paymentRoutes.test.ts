@@ -64,6 +64,25 @@ test('buildPlatformPaymentQuote keeps ACH total equal to subtotal', () => {
   });
 });
 
+test('buildPlatformPaymentQuote allows a free retainer without fees', () => {
+  const quote = buildPlatformPaymentQuote({
+    monthlyRetainerCents: 0,
+    paymentRoute: 'card',
+    routeConfig: {
+      percentageFeeBps: 290,
+      flatFeeCents: 30,
+    },
+  });
+
+  assert.deepEqual(quote, {
+    paymentRoute: 'card',
+    baseAmountCents: 0,
+    subtotalCents: 0,
+    routeFeeCents: 0,
+    totalDueTodayCents: 0,
+  });
+});
+
 test('buildPlatformRouteChargeBreakdown returns total cents for card charges', () => {
   const charge = buildPlatformRouteChargeBreakdown({
     subtotalCents: 96_000,
@@ -143,6 +162,29 @@ test('buildPlatformRecurringInvoiceQuote does not add a fee when the first recur
   assert.equal(quote.firstRecurringRouteFeeCents, 0);
   assert.equal(quote.firstRecurringTotalCents, 0);
   assert.equal(quote.firstRecurringTotalDiscountCents, quote.ongoingMonthlyTotalCents);
+});
+
+test('buildPlatformRecurringInvoiceQuote allows zero recurring retainers', () => {
+  const quote = buildPlatformRecurringInvoiceQuote({
+    monthlyRetainerCents: 0,
+    firstRecurringSubtotalCents: 0,
+    paymentRoute: 'card',
+    routeConfig: {
+      percentageFeeBps: 290,
+      flatFeeCents: 30,
+    },
+  });
+
+  assert.deepEqual(quote, {
+    paymentRoute: 'card',
+    firstRecurringSubtotalCents: 0,
+    firstRecurringRouteFeeCents: 0,
+    firstRecurringTotalCents: 0,
+    ongoingMonthlySubtotalCents: 0,
+    ongoingMonthlyRouteFeeCents: 0,
+    ongoingMonthlyTotalCents: 0,
+    firstRecurringTotalDiscountCents: 0,
+  });
 });
 
 test('getServerPlatformPaymentFeeConfig reads environment overrides', () => {

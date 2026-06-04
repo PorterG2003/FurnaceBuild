@@ -16,8 +16,8 @@ export function buildBillingAnchorPlan(
   startedAt: Date,
   monthlyRetainerCents: number
 ): BillingAnchorPlan {
-  if (!Number.isFinite(monthlyRetainerCents) || monthlyRetainerCents <= 0) {
-    throw new Error('monthlyRetainerCents must be positive');
+  if (!Number.isFinite(monthlyRetainerCents) || monthlyRetainerCents < 0) {
+    throw new Error('monthlyRetainerCents must be zero or greater');
   }
 
   const anchorDate = getNextMonthlyAnchorDate(startedAt);

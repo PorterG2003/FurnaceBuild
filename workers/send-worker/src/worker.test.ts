@@ -113,6 +113,11 @@ class ProcessMessageMutationStub implements PromiseLike<{ data: any; error: any 
     return this;
   }
 
+  insert(payload: Record<string, unknown>) {
+    this.updates = payload;
+    return this;
+  }
+
   eq(_column: string, _value: unknown) {
     return this;
   }
@@ -493,4 +498,60 @@ test('SendWorker persists rendered text and html payloads for campaign sends', a
     sent_body_text: 'Hey Casey, Appreciate it for your time.',
   });
   assert.equal(typeof eventData.sent_at, 'string');
+});
+
+test('SendWorker preserves html-mode full-document payloads', async () => {
+  const supabase = new ProcessMessageSupabase();
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async (_transporter, _mailbox, _job, _lead, _subject, _body, _inReplyTo, _references, options) => {
+      assert.match(String(options?.bodyHtml), /<html>/i);
+      assert.match(String(options?.bodyHtml), /<table>/i);
+      assert.equal(options?.bodyText, 'Hello Casey');
+      return '<provider@example.com>';
+    },
+  });
+  const messageJob = createCampaignMessageJob({
+    message_data: {
+      node_config: {
+        subject: 'HTML mode',
+        editor_mode: 'html',
+        body_html: '<!DOCTYPE html><html><body><table><tr><td>Hello {{first_name}}</td></tr></table></body></html>',
+        body_text: 'Hello {{first_name}}',
+      },
+    },
+  });
+
+  (worker as any).loadJobData = async () => ({
+    lead: {
+      id: 'lead-1',
+      email: 'lead@example.com',
+      first_name: 'Casey',
+      mailbox_id: 'mailbox-1',
+    },
+    mailbox: {
+      id: 'mailbox-1',
+      email_address: 'sender@example.com',
+      display_name: 'Sender',
+      signature: null,
+    },
+    nodeConfig: (messageJob.message_data as any).node_config,
+  });
+  (worker as any).isEmailBlocked = async () => false;
+  (worker as any).getFirstSentMessageForCampaignLead = async () => null;
+  (worker as any).finalizeCampaignMessageJobSent = async () => {};
+  (worker as any).reconcileLeadMailboxAfterSuccessfulSend = async () => {};
+  (worker as any).smtpPool = {
+    getTransporter: async () => ({}),
+    markMessageSent: () => {},
+  };
+
+  await (worker as any).processMessageJob(messageJob);
+
+  const sentEventCall = supabase.rpcCalls.find((call) => call.fn === 'record_sent_event_and_increment');
+  assert.ok(sentEventCall);
+  const eventData = sentEventCall.args.p_event_data as Record<string, unknown>;
+  assert.match(String(eventData.sent_body_html), /<html>/i);
+  assert.equal(eventData.sent_body_text, 'Hello Casey');
 });

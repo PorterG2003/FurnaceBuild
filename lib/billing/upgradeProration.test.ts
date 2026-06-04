@@ -61,3 +61,15 @@ test('buildUpgradeBillingPlan uses MST instead of UTC near midnight boundaries',
   assert.equal(plan.nextInvoiceBaseCreditCents, 193_548);
   assert.equal(plan.nextInvoiceBaseAmountCents, 306_452);
 });
+
+test('buildUpgradeBillingPlan supports upgrades from a free retainer', () => {
+  const plan = buildUpgradeBillingPlan(
+    new Date('2026-05-15T12:00:00.000Z'),
+    0,
+    500_000,
+  );
+  assert.equal(plan.deltaCents, 500_000);
+  assert.equal(plan.dueTodaySubtotalCents, 500_000);
+  assert.equal(plan.nextInvoiceBaseCreditCents, 225_806);
+  assert.equal(plan.nextInvoiceBaseAmountCents, 274_194);
+});

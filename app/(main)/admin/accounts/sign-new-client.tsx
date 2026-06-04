@@ -429,7 +429,7 @@ export default function SignNewClientPage() {
     if (
       !inviteEmail.trim() ||
       monthlyRetainerCents == null ||
-      monthlyRetainerCents <= 0 ||
+      monthlyRetainerCents < 0 ||
       !termsSourceMarkdown.trim()
     ) {
       throw new Error('Complete the required fields before saving.');

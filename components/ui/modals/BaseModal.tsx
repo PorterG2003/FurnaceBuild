@@ -22,7 +22,7 @@ interface BaseModalProps {
   footer?: React.ReactNode;
   /** On mobile (sheet), use this footer instead of footer when set. Use to omit Cancel and show only primary action(s). */
   footerMobile?: React.ReactNode;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'full';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | 'full';
   maxHeight?: number;
   /** When set, modal has a fixed height (min and max). Use with maxHeight for consistent size. */
   height?: number;
@@ -38,6 +38,8 @@ const maxWidthClasses = {
   '2xl': 'max-w-2xl',
   '3xl': 'max-w-3xl',
   '4xl': 'max-w-4xl',
+  '5xl': 'max-w-5xl',
+  '6xl': 'max-w-6xl',
   full: 'max-w-[95vw]',
 };
 
@@ -233,7 +235,7 @@ export function BaseModal({
                     style={{ flex: 1 }}
                     contentContainerStyle={{
                       paddingBottom: footer ? 12 : 0,
-                      flexGrow: 0,
+                      flexGrow: fillMaxHeightColumn ? 1 : 0,
                       width: '100%',
                       maxWidth: '100%',
                     }}

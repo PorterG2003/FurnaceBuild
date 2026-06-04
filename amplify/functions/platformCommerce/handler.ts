@@ -188,6 +188,24 @@ async function ensureStripeCustomer(args: {
   return customer.id;
 }
 
+async function ensureAccountStripeCustomer(args: {
+  stripe: ReturnType<typeof getStripeClient>;
+  accountId: string;
+  existingCustomerId?: string | null;
+}) {
+  const existingCustomerId = args.existingCustomerId?.trim();
+  if (existingCustomerId) {
+    return existingCustomerId;
+  }
+
+  const customer = await args.stripe.customers.create({
+    metadata: {
+      accountId: args.accountId,
+    },
+  });
+  return customer.id;
+}
+
 async function verifyAuthToken(token: string) {
   const supabase = getSupabaseAdminClient();
   const { data: { user }, error } = await supabase.auth.getUser(token);
@@ -241,6 +259,9 @@ async function createCheckoutSession(args: {
   const supabase = getSupabaseAdminClient();
   const stripe = getStripeClient();
   const invitation = await loadInvitationForCheckout(args.invitationId);
+  if (invitation.effective_monthly_retainer_cents === 0) {
+    throw new Error('Free invitations do not use checkout.');
+  }
   const quote = buildCheckoutQuote(invitation, args.paymentRoute);
   if ((user.email ?? '').toLowerCase() !== invitation.effective_email.toLowerCase()) {
     throw new Error('This invite is for a different email address.');
@@ -330,6 +351,105 @@ async function createCheckoutSession(args: {
   return {
     url: session.url,
     id: session.id,
+  };
+}
+
+async function createAccountUpgradeCheckoutSessionAction(args: {
+  userId: string;
+  accountId: string;
+  amendmentId: string;
+  newMonthlyRetainerCents: number;
+  paymentRoute: PlatformPaymentRoute;
+  successUrl: string;
+  cancelUrl: string;
+}) {
+  const supabase = getSupabaseAdminClient();
+  const stripe = getStripeClient();
+  await assertCanApplyAccountBillingChange(args.userId, args.accountId);
+  const { billing, quote } = await buildAccountUpgradeQuote({
+    accountId: args.accountId,
+    amendmentId: args.amendmentId,
+    newMonthlyRetainerCents: args.newMonthlyRetainerCents,
+    paymentRoute: args.paymentRoute,
+  });
+
+  if (billing.stripe_subscription_id) {
+    throw new Error('This account already has a Stripe subscription. Use the existing upgrade flow.');
+  }
+
+  const customerId = await ensureAccountStripeCustomer({
+    stripe,
+    accountId: args.accountId,
+    existingCustomerId: billing.stripe_customer_id,
+  });
+  const routeOption = getPlatformPaymentRouteOption(args.paymentRoute);
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    success_url: args.successUrl,
+    cancel_url: args.cancelUrl,
+    customer: customerId,
+    payment_method_types: getStripePaymentMethodTypes(args.paymentRoute),
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: 'usd',
+          unit_amount: quote.dueTodayTotalCents,
+          product_data: {
+            name: `Furnace managed outreach - ${routeOption.label.toLowerCase()} initial retainer`,
+          },
+        },
+      },
+    ],
+    invoice_creation: {
+      enabled: true,
+      invoice_data: {
+        description: 'Furnace managed outreach upfront invoice',
+        metadata: {
+          flowKind: 'account_upgrade_initial',
+          accountId: args.accountId,
+          amendmentId: args.amendmentId,
+        },
+      },
+    },
+    payment_intent_data: {
+      setup_future_usage: 'off_session',
+      description: 'Furnace managed outreach upfront invoice',
+      metadata: {
+        flowKind: 'account_upgrade_initial',
+        accountId: args.accountId,
+        amendmentId: args.amendmentId,
+      },
+    },
+    metadata: {
+      flowKind: 'account_upgrade_initial',
+      accountId: args.accountId,
+      amendmentId: args.amendmentId,
+      userId: args.userId,
+      paymentRoute: args.paymentRoute,
+      currency: 'usd',
+      newMonthlyRetainerCents: String(args.newMonthlyRetainerCents),
+      dueTodaySubtotalCents: String(quote.dueTodaySubtotalCents),
+      dueTodayRouteFeeCents: String(quote.dueTodayRouteFeeCents),
+      dueTodayTotalCents: String(quote.dueTodayTotalCents),
+      nextInvoiceCreditCents: String(quote.nextInvoiceCreditCents),
+      ongoingMonthlyTotalCents: String(quote.ongoingMonthlyTotalCents),
+      anchorDateIso: quote.anchorDateIso,
+    },
+  });
+
+  const { error } = await supabase
+    .from('account_billing')
+    .update({
+      stripe_customer_id: customerId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('account_id', args.accountId);
+  if (error) throw new Error(error.message);
+
+  return {
+    id: session.id,
+    url: session.url,
   };
 }
 
@@ -784,6 +904,7 @@ async function scheduleAccountDowngradeAction(args: {
   newMonthlyRetainerCents: number;
 }) {
   const supabase = getSupabaseAdminClient();
+  const stripe = getStripeClient();
   await assertCanApplyAccountBillingChange(args.userId, args.accountId);
   const billing = await loadAccountBilling(args.accountId);
 
@@ -795,6 +916,13 @@ async function scheduleAccountDowngradeAction(args: {
   }
 
   const effectiveAt = getNextMonthlyAnchorDate(new Date());
+
+  if (args.newMonthlyRetainerCents === 0) {
+    await stripe.subscriptions.update(billing.stripe_subscription_id, {
+      cancel_at: Math.floor(effectiveAt.getTime() / 1000),
+      proration_behavior: 'none',
+    });
+  }
 
   const { error } = await supabase
     .from('account_billing')
@@ -824,6 +952,9 @@ async function quoteCheckout(args: {
     invitation.status === 'expired'
   ) {
     throw new Error('Invitation is not available for payment.');
+  }
+  if (invitation.effective_monthly_retainer_cents === 0) {
+    throw new Error('Free invitations do not require payment.');
   }
   const quote = buildCheckoutQuote(invitation, args.paymentRoute);
   const plan = buildBillingAnchorPlan(new Date(), invitation.effective_monthly_retainer_cents);
@@ -903,6 +1034,33 @@ export const handler = async (event: { headers?: Record<string, string>; body?: 
       return json(200, result);
     }
 
+    if (parsed.action === 'createAccountUpgradeCheckoutSession') {
+      const auth = event.headers?.authorization || event.headers?.Authorization;
+      const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : null;
+      if (!token) return json(401, { error: 'Missing or invalid Authorization header' });
+      const user = await verifyAuthToken(token);
+      if (
+        !parsed.accountId ||
+        !parsed.amendmentId ||
+        !parsed.successUrl ||
+        !parsed.cancelUrl ||
+        !parsed.paymentRoute ||
+        !parsed.newMonthlyRetainerCents
+      ) {
+        return json(400, { error: 'Missing upgrade checkout parameters' });
+      }
+      const result = await createAccountUpgradeCheckoutSessionAction({
+        userId: user.id,
+        accountId: parsed.accountId,
+        amendmentId: parsed.amendmentId,
+        newMonthlyRetainerCents: parsed.newMonthlyRetainerCents,
+        paymentRoute: normalizePlatformPaymentRoute(parsed.paymentRoute),
+        successUrl: parsed.successUrl,
+        cancelUrl: parsed.cancelUrl,
+      });
+      return json(200, { success: true, ...result });
+    }
+
     if (parsed.action === 'quoteAccountUpgrade') {
       const auth = event.headers?.authorization || event.headers?.Authorization;
       const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : null;
@@ -962,13 +1120,18 @@ export const handler = async (event: { headers?: Record<string, string>; body?: 
       const token = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : null;
       if (!token) return json(401, { error: 'Missing or invalid Authorization header' });
       const user = await verifyAuthToken(token);
-      if (!parsed.accountId || !parsed.newMonthlyRetainerCents) {
+      if (
+        !parsed.accountId ||
+        typeof parsed.newMonthlyRetainerCents !== 'number' ||
+        !Number.isFinite(parsed.newMonthlyRetainerCents)
+      ) {
         return json(400, { error: 'Missing accountId or newMonthlyRetainerCents' });
       }
+      const newMonthlyRetainerCents = parsed.newMonthlyRetainerCents;
       const result = await scheduleAccountDowngradeAction({
         userId: user.id,
         accountId: parsed.accountId,
-        newMonthlyRetainerCents: parsed.newMonthlyRetainerCents,
+        newMonthlyRetainerCents,
       });
       return json(200, result);
     }

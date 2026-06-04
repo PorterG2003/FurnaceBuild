@@ -13,7 +13,7 @@ export async function sendPlatformInviteEmail(args: {
 }) {
   const { to, inviterName, monthlyRetainerCents, acceptUrl, proposalTitle, accountName } = args;
 
-  if (!to || !inviterName || !acceptUrl || !monthlyRetainerCents) {
+  if (!to || !inviterName || !acceptUrl || monthlyRetainerCents == null) {
     throw new Error('Missing required fields.');
   }
 

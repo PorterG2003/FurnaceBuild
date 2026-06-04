@@ -15,7 +15,6 @@ export interface PlatformPaymentFeeConfig {
 
 export interface PlatformPaymentQuoteInput {
   monthlyRetainerCents: number;
-  firstMonthDiscountCents?: number;
   paymentRoute: PlatformPaymentRoute;
   routeConfig: PlatformPaymentFeeConfig;
 }
@@ -23,10 +22,27 @@ export interface PlatformPaymentQuoteInput {
 export interface PlatformPaymentQuote {
   paymentRoute: PlatformPaymentRoute;
   baseAmountCents: number;
-  discountCents: number;
   subtotalCents: number;
   routeFeeCents: number;
   totalDueTodayCents: number;
+}
+
+export interface PlatformRouteChargeBreakdown {
+  paymentRoute: PlatformPaymentRoute;
+  subtotalCents: number;
+  routeFeeCents: number;
+  totalCents: number;
+}
+
+export interface PlatformRecurringInvoiceQuote {
+  paymentRoute: PlatformPaymentRoute;
+  firstRecurringSubtotalCents: number;
+  firstRecurringRouteFeeCents: number;
+  firstRecurringTotalCents: number;
+  ongoingMonthlySubtotalCents: number;
+  ongoingMonthlyRouteFeeCents: number;
+  ongoingMonthlyTotalCents: number;
+  firstRecurringTotalDiscountCents: number;
 }
 
 const DEFAULT_CARD_FEE_BPS = 290;
@@ -94,6 +110,21 @@ export function calculatePlatformRouteFeeCents(
   return Math.max(0, rawFee);
 }
 
+export function buildPlatformRouteChargeBreakdown(input: {
+  subtotalCents: number;
+  paymentRoute: PlatformPaymentRoute;
+  routeConfig: PlatformPaymentFeeConfig;
+}): PlatformRouteChargeBreakdown {
+  const subtotalCents = Math.max(input.subtotalCents, 0);
+  const routeFeeCents = calculatePlatformRouteFeeCents(subtotalCents, input.routeConfig);
+  return {
+    paymentRoute: input.paymentRoute,
+    subtotalCents,
+    routeFeeCents,
+    totalCents: subtotalCents + routeFeeCents,
+  };
+}
+
 export function buildPlatformPaymentQuote(
   input: PlatformPaymentQuoteInput,
 ): PlatformPaymentQuote {
@@ -101,17 +132,57 @@ export function buildPlatformPaymentQuote(
     throw new Error('monthlyRetainerCents must be positive');
   }
 
-  const discountCents = Math.max(input.firstMonthDiscountCents ?? 0, 0);
-  const subtotalCents = Math.max(input.monthlyRetainerCents - discountCents, 0);
-  const routeFeeCents = calculatePlatformRouteFeeCents(subtotalCents, input.routeConfig);
+  const charge = buildPlatformRouteChargeBreakdown({
+    subtotalCents: input.monthlyRetainerCents,
+    paymentRoute: input.paymentRoute,
+    routeConfig: input.routeConfig,
+  });
 
   return {
     paymentRoute: input.paymentRoute,
     baseAmountCents: input.monthlyRetainerCents,
-    discountCents,
-    subtotalCents,
-    routeFeeCents,
-    totalDueTodayCents: subtotalCents + routeFeeCents,
+    subtotalCents: charge.subtotalCents,
+    routeFeeCents: charge.routeFeeCents,
+    totalDueTodayCents: charge.totalCents,
+  };
+}
+
+export function buildPlatformRecurringInvoiceQuote(input: {
+  monthlyRetainerCents: number;
+  firstRecurringSubtotalCents: number;
+  paymentRoute: PlatformPaymentRoute;
+  routeConfig: PlatformPaymentFeeConfig;
+}): PlatformRecurringInvoiceQuote {
+  if (!Number.isFinite(input.monthlyRetainerCents) || input.monthlyRetainerCents <= 0) {
+    throw new Error('monthlyRetainerCents must be positive');
+  }
+  if (!Number.isFinite(input.firstRecurringSubtotalCents) || input.firstRecurringSubtotalCents < 0) {
+    throw new Error('firstRecurringSubtotalCents must be zero or greater');
+  }
+
+  const firstRecurringCharge = buildPlatformRouteChargeBreakdown({
+    subtotalCents: input.firstRecurringSubtotalCents,
+    paymentRoute: input.paymentRoute,
+    routeConfig: input.routeConfig,
+  });
+  const ongoingMonthlyCharge = buildPlatformRouteChargeBreakdown({
+    subtotalCents: input.monthlyRetainerCents,
+    paymentRoute: input.paymentRoute,
+    routeConfig: input.routeConfig,
+  });
+
+  return {
+    paymentRoute: input.paymentRoute,
+    firstRecurringSubtotalCents: firstRecurringCharge.subtotalCents,
+    firstRecurringRouteFeeCents: firstRecurringCharge.routeFeeCents,
+    firstRecurringTotalCents: firstRecurringCharge.totalCents,
+    ongoingMonthlySubtotalCents: ongoingMonthlyCharge.subtotalCents,
+    ongoingMonthlyRouteFeeCents: ongoingMonthlyCharge.routeFeeCents,
+    ongoingMonthlyTotalCents: ongoingMonthlyCharge.totalCents,
+    firstRecurringTotalDiscountCents: Math.max(
+      ongoingMonthlyCharge.totalCents - firstRecurringCharge.totalCents,
+      0,
+    ),
   };
 }
 

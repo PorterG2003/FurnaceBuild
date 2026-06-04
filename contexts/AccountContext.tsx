@@ -19,7 +19,11 @@ import {
   updateUserProfile,
 } from '@/lib/supabase/services/accounts';
 import { getBlockList } from '@/lib/supabase/services/block-list';
-import { getAccountBilling } from '@/lib/supabase/services/platform';
+import {
+  getAccountBilling,
+  getPendingPlatformAccountAmendment,
+  type PendingPlatformAccountAmendment,
+} from '@/lib/supabase/services/platform';
 import { getUserHasPlatformAdminAccess } from '@/lib/supabase/services/user-access-flags';
 
 interface AccountContextValue {
@@ -35,7 +39,10 @@ interface AccountContextValue {
   error: string | null;
   platformAdminAccess: PlatformAdminAccessStatus;
   billing: AccountBilling | null;
+  pendingAmendment: PendingPlatformAccountAmendment | null;
+  isAccountOwner: boolean;
   isFrontendBlocked: boolean;
+  requiresTermsAcceptance: boolean;
   refetch: () => Promise<void>;
   refetchAccountData: () => Promise<void>;
   setCurrentAccountId: (accountId: string) => void;
@@ -94,11 +101,12 @@ async function fetchOrUpsertUser(authUserId: string, email: string): Promise<Use
 }
 
 async function fetchAccountScopedData(accountId: string, authUserId: string) {
-  const [teamMembers, invitations, blockList, billing, isAdmin] = await Promise.all([
+  const [teamMembers, invitations, blockList, billing, pendingAmendment, isAdmin] = await Promise.all([
     getAccountMembers(accountId),
     getAccountInvitations(accountId),
     getBlockList(accountId),
     getAccountBilling(accountId),
+    getPendingPlatformAccountAmendment(accountId).catch(() => null),
     getUserHasPlatformAdminAccess(authUserId),
   ]);
 
@@ -107,6 +115,7 @@ async function fetchAccountScopedData(accountId: string, authUserId: string) {
     invitations,
     blockList,
     billing,
+    pendingAmendment,
     platformAdminAccess: (isAdmin ? 'allowed' : 'denied') as Exclude<PlatformAdminAccessStatus, 'loading'>,
   };
 }
@@ -120,6 +129,9 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [blockList, setBlockList] = useState<BlockListEntry[]>([]);
   const [billing, setBilling] = useState<AccountBilling | null>(null);
+  const [pendingAmendment, setPendingAmendment] = useState<PendingPlatformAccountAmendment | null>(
+    null,
+  );
   const [platformAdminAccess, setPlatformAdminAccess] = useState<PlatformAdminAccessStatus>('denied');
   const [loading, setLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -164,6 +176,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     setInvitations([]);
     setBlockList([]);
     setBilling(null);
+    setPendingAmendment(null);
     setPlatformAdminAccess('denied');
     setLoading(false);
     setInitialized(false);
@@ -183,6 +196,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         invitations: [] as Invitation[],
         blockList: [] as BlockListEntry[],
         billing: null as AccountBilling | null,
+        pendingAmendment: null as PendingPlatformAccountAmendment | null,
         platformAdminAccess: 'denied' as Exclude<PlatformAdminAccessStatus, 'loading'>,
       };
 
@@ -243,6 +257,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         setInvitations(result.invitations);
         setBlockList(result.blockList);
         setBilling(result.billing);
+        setPendingAmendment(result.pendingAmendment);
         setPlatformAdminAccess(result.platformAdminAccess);
         accountDataLoadedForRef.current = result.currentAccountId;
 
@@ -292,6 +307,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         setInvitations([]);
         setBlockList([]);
         setBilling(null);
+        setPendingAmendment(null);
       }
       return;
     }
@@ -312,6 +328,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         setInvitations(scoped.invitations);
         setBlockList(scoped.blockList);
         setBilling(scoped.billing);
+        setPendingAmendment(scoped.pendingAmendment);
         setPlatformAdminAccess(scoped.platformAdminAccess);
       } finally {
         if (!cancelled) {
@@ -352,6 +369,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       setInvitations(scoped.invitations);
       setBlockList(scoped.blockList);
       setBilling(scoped.billing);
+      setPendingAmendment(scoped.pendingAmendment);
       setPlatformAdminAccess(scoped.platformAdminAccess);
 
       if (supabaseUser) {
@@ -389,6 +407,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       setInvitations(result.invitations);
       setBlockList(result.blockList);
       setBilling(result.billing);
+      setPendingAmendment(result.pendingAmendment);
       setPlatformAdminAccess(result.platformAdminAccess);
       accountDataLoadedForRef.current = result.currentAccountId;
 
@@ -412,6 +431,14 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
 
   const isFrontendBlocked = billing?.billing_status === 'payment_required';
 
+  const isAccountOwner = useMemo(() => {
+    if (!currentAccountId) return false;
+    const entry = memberships.find((m) => m.account.id === currentAccountId);
+    return entry?.membership.is_owner === true;
+  }, [currentAccountId, memberships]);
+
+  const requiresTermsAcceptance = isAccountOwner && pendingAmendment != null;
+
   const value = useMemo<AccountContextValue>(
     () => ({
       user: supabaseUser,
@@ -426,7 +453,10 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       error,
       platformAdminAccess,
       billing,
+      pendingAmendment,
+      isAccountOwner,
       isFrontendBlocked,
+      requiresTermsAcceptance,
       refetch,
       refetchAccountData,
       setCurrentAccountId,
@@ -444,7 +474,10 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       error,
       platformAdminAccess,
       billing,
+      pendingAmendment,
+      isAccountOwner,
       isFrontendBlocked,
+      requiresTermsAcceptance,
       refetch,
       refetchAccountData,
       setCurrentAccountId,

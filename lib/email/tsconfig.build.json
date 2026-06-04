@@ -13,6 +13,6 @@
     "declaration": true,
     "declarationMap": true
   },
-  "include": ["*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["*.ts", "transactional/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

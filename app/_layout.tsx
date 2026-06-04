@@ -7,8 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppBootScreen } from '@/components/ui/AppBootScreen';
-import { ToastProvider } from '@/components/ui/feedback';
-import { ConfirmProvider } from '@/components/ui/ConfirmContext';
+import { FeedbackProvider } from '@/components/ui/feedback';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AccountProvider } from '@/contexts/AccountContext';
 import { WebInstallGate } from '@/components/web/WebInstallGate';
@@ -95,15 +94,13 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
         <AccountProvider>
-          <ToastProvider>
-            <ConfirmProvider>
-              <View style={safeAreaRootStyle} testID="safe-area-root">
-                <StatusBar style="auto" />
-                <WebInstallGate />
-                <Slot />
-              </View>
-            </ConfirmProvider>
-          </ToastProvider>
+          <FeedbackProvider>
+            <View style={safeAreaRootStyle} testID="safe-area-root">
+              <StatusBar style="auto" />
+              <WebInstallGate />
+              <Slot />
+            </View>
+          </FeedbackProvider>
         </AccountProvider>
       </AuthProvider>
     </GestureHandlerRootView>

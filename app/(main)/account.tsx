@@ -13,7 +13,6 @@ import { AccountNotificationsSection } from '@/components/account/AccountNotific
 import type { BalancedSection } from '@/components/ui/layout';
 import {
   BalancedTwoColumnLayout,
-  Breadcrumb,
   LAYOUT_BREAKPOINT,
   PageHeader,
   PageLayout,
@@ -544,10 +543,19 @@ export default function AccountPage() {
     setCurrentAccountId,
   } = useAccount();
 
+  const membership = useMemo(
+    () => (account ? memberships.find((m) => m.account.id === account.id) ?? null : null),
+    [account, memberships]
+  );
+  const isOwner = membership?.membership.is_owner ?? false;
+  const membershipRole = getAccountMembershipRole(membership?.membership);
+  const canManageTeam = canManageAccountTeam(membership?.membership);
+
   const settingsBootstrapReady =
     !contextLoading && !refetching && !!account?.id;
   const settings = useAccountSettingsData(account?.id, {
     enabled: settingsBootstrapReady,
+    includeAdminData: canManageTeam,
   });
 
   const pageLoading =
@@ -578,10 +586,6 @@ export default function AccountPage() {
     }
   }, [switch_account, memberships.length, setCurrentAccountId]);
   const userEmail = profile?.email ?? null;
-  const membership = useMemo(
-    () => (account ? memberships.find((m) => m.account.id === account.id) ?? null : null),
-    [account, memberships]
-  );
 
   const [revokingInvitationId, setRevokingInvitationId] = useState<string | null>(null);
   const [updatingRoleId, setUpdatingRoleId] = useState<string | null>(null);
@@ -911,10 +915,6 @@ export default function AccountPage() {
     }
   }, [membership, refetchAccountData]);
 
-  const isOwner = membership?.membership.is_owner ?? false;
-  const membershipRole = getAccountMembershipRole(membership?.membership);
-  const canManageTeam = canManageAccountTeam(membership?.membership);
-
   const sectionTitleClass = isMobile
     ? 'text-lg font-instrument-semibold text-white pb-2 mb-3 border-b border-[#2A2A2A]'
     : 'text-lg font-instrument-semibold text-white pb-2 mb-4 border-b border-[#2A2A2A]';
@@ -1129,11 +1129,6 @@ export default function AccountPage() {
 
   return (
     <PageLayout>
-      {!isMobile ? (
-        <View className="mb-4">
-          <Breadcrumb items={[{ label: 'Settings' }]} />
-        </View>
-      ) : null}
       <PageHeader
         title="Account"
         subtitle={

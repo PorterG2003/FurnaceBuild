@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildPlatformPaymentQuote,
+  buildPlatformRecurringInvoiceQuote,
+  buildPlatformRouteChargeBreakdown,
   calculatePlatformRouteFeeCents,
   getServerPlatformPaymentFeeConfig,
 } from './paymentRoutes';
@@ -26,7 +28,6 @@ test('calculatePlatformRouteFeeCents returns zero for ACH customer fees', () => 
 test('buildPlatformPaymentQuote derives subtotal, fee, and total due today', () => {
   const quote = buildPlatformPaymentQuote({
     monthlyRetainerCents: 180_000,
-    firstMonthDiscountCents: 20_000,
     paymentRoute: 'card',
     routeConfig: {
       percentageFeeBps: 290,
@@ -37,17 +38,15 @@ test('buildPlatformPaymentQuote derives subtotal, fee, and total due today', () 
   assert.deepEqual(quote, {
     paymentRoute: 'card',
     baseAmountCents: 180_000,
-    discountCents: 20_000,
-    subtotalCents: 160_000,
-    routeFeeCents: 4_670,
-    totalDueTodayCents: 164_670,
+    subtotalCents: 180_000,
+    routeFeeCents: 5_250,
+    totalDueTodayCents: 185_250,
   });
 });
 
 test('buildPlatformPaymentQuote keeps ACH total equal to subtotal', () => {
   const quote = buildPlatformPaymentQuote({
     monthlyRetainerCents: 180_000,
-    firstMonthDiscountCents: 20_000,
     paymentRoute: 'ach',
     routeConfig: {
       percentageFeeBps: 0,
@@ -59,11 +58,91 @@ test('buildPlatformPaymentQuote keeps ACH total equal to subtotal', () => {
   assert.deepEqual(quote, {
     paymentRoute: 'ach',
     baseAmountCents: 180_000,
-    discountCents: 20_000,
-    subtotalCents: 160_000,
+    subtotalCents: 180_000,
     routeFeeCents: 0,
-    totalDueTodayCents: 160_000,
+    totalDueTodayCents: 180_000,
   });
+});
+
+test('buildPlatformRouteChargeBreakdown returns total cents for card charges', () => {
+  const charge = buildPlatformRouteChargeBreakdown({
+    subtotalCents: 96_000,
+    paymentRoute: 'card',
+    routeConfig: {
+      percentageFeeBps: 290,
+      flatFeeCents: 30,
+    },
+  });
+
+  assert.deepEqual(charge, {
+    paymentRoute: 'card',
+    subtotalCents: 96_000,
+    routeFeeCents: 2_814,
+    totalCents: 98_814,
+  });
+});
+
+test('buildPlatformRecurringInvoiceQuote derives first and ongoing totals for card payments', () => {
+  const quote = buildPlatformRecurringInvoiceQuote({
+    monthlyRetainerCents: 180_000,
+    firstRecurringSubtotalCents: 96_000,
+    paymentRoute: 'card',
+    routeConfig: {
+      percentageFeeBps: 290,
+      flatFeeCents: 30,
+    },
+  });
+
+  assert.deepEqual(quote, {
+    paymentRoute: 'card',
+    firstRecurringSubtotalCents: 96_000,
+    firstRecurringRouteFeeCents: 2_814,
+    firstRecurringTotalCents: 98_814,
+    ongoingMonthlySubtotalCents: 180_000,
+    ongoingMonthlyRouteFeeCents: 5_250,
+    ongoingMonthlyTotalCents: 185_250,
+    firstRecurringTotalDiscountCents: 86_436,
+  });
+});
+
+test('buildPlatformRecurringInvoiceQuote keeps ACH recurring totals equal to subtotals', () => {
+  const quote = buildPlatformRecurringInvoiceQuote({
+    monthlyRetainerCents: 180_000,
+    firstRecurringSubtotalCents: 96_000,
+    paymentRoute: 'ach',
+    routeConfig: {
+      percentageFeeBps: 0,
+      flatFeeCents: 0,
+      maxFeeCents: 0,
+    },
+  });
+
+  assert.deepEqual(quote, {
+    paymentRoute: 'ach',
+    firstRecurringSubtotalCents: 96_000,
+    firstRecurringRouteFeeCents: 0,
+    firstRecurringTotalCents: 96_000,
+    ongoingMonthlySubtotalCents: 180_000,
+    ongoingMonthlyRouteFeeCents: 0,
+    ongoingMonthlyTotalCents: 180_000,
+    firstRecurringTotalDiscountCents: 84_000,
+  });
+});
+
+test('buildPlatformRecurringInvoiceQuote does not add a fee when the first recurring subtotal is zero', () => {
+  const quote = buildPlatformRecurringInvoiceQuote({
+    monthlyRetainerCents: 180_000,
+    firstRecurringSubtotalCents: 0,
+    paymentRoute: 'card',
+    routeConfig: {
+      percentageFeeBps: 290,
+      flatFeeCents: 30,
+    },
+  });
+
+  assert.equal(quote.firstRecurringRouteFeeCents, 0);
+  assert.equal(quote.firstRecurringTotalCents, 0);
+  assert.equal(quote.firstRecurringTotalDiscountCents, quote.ongoingMonthlyTotalCents);
 });
 
 test('getServerPlatformPaymentFeeConfig reads environment overrides', () => {

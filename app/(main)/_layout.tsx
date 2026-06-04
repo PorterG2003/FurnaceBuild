@@ -7,6 +7,9 @@ import { NotificationToastSubscriber } from '@/components/notifications/Notifica
 import { AppBootScreen } from '@/components/ui/AppBootScreen';
 import { Button } from '@/components/ui/button';
 import { HELP_EMAIL } from '@/components/ui/help/HelpModal';
+import { TermsAcceptanceRequiredScreen } from '@/components/platform/amendment/TermsAcceptanceRequiredScreen';
+import { PendingTermsBanner } from '@/components/platform/amendment/PendingTermsBanner';
+import { usePublicAccessDialog } from '@/hooks/usePublicAccessDialog';
 
 /** Same `type` string as public/sw.js postMessage fallback when WindowClient.navigate is missing. */
 const SW_NAVIGATE_MESSAGE_TYPE = 'furnace-notification-navigate';
@@ -73,9 +76,18 @@ function PaymentRequiredScreen() {
 function MainAccessGate() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user } = useAuth();
-  const { memberships, loading, initialized, platformAdminAccess, isFrontendBlocked } = useAccount();
+  const {
+    memberships,
+    loading,
+    initialized,
+    platformAdminAccess,
+    isFrontendBlocked,
+    requiresTermsAcceptance,
+    pendingAmendment,
+    isAccountOwner,
+  } = useAccount();
   const allowAdminWithoutWorkspace = platformAdminAccess === 'allowed' && (pathname === '/admin' || pathname?.startsWith('/admin/'));
+  const allowAmendmentAcceptRoute = pathname?.startsWith('/accept-account-amendment/');
   const showLoadingOverlay = !initialized || loading || platformAdminAccess === 'loading';
 
   useEffect(() => {
@@ -83,18 +95,30 @@ function MainAccessGate() {
     if (loading) return;
     if (platformAdminAccess === 'loading') return;
     if (!memberships.length && !allowAdminWithoutWorkspace) {
-      router.replace({
-        pathname: '/invite-only',
-        params: user?.email ? { email: user.email } : {},
-      });
+      router.replace('/no-workspace');
     }
-  }, [allowAdminWithoutWorkspace, initialized, loading, memberships.length, platformAdminAccess, router, user?.email]);
+  }, [allowAdminWithoutWorkspace, initialized, loading, memberships.length, platformAdminAccess, router]);
 
   if (!showLoadingOverlay && !memberships.length && !allowAdminWithoutWorkspace) {
     return <AppBootScreen />;
   }
 
-  if (!showLoadingOverlay && isFrontendBlocked && platformAdminAccess !== 'allowed') {
+  if (
+    !showLoadingOverlay &&
+    requiresTermsAcceptance &&
+    pendingAmendment &&
+    !allowAmendmentAcceptRoute &&
+    platformAdminAccess !== 'allowed'
+  ) {
+    return <TermsAcceptanceRequiredScreen pendingAmendment={pendingAmendment} />;
+  }
+
+  if (
+    !showLoadingOverlay &&
+    isFrontendBlocked &&
+    platformAdminAccess !== 'allowed' &&
+    !allowAmendmentAcceptRoute
+  ) {
     return <PaymentRequiredScreen />;
   }
 
@@ -102,6 +126,13 @@ function MainAccessGate() {
     <>
       <WebPushNavigationBridge />
       <NotificationToastSubscriber />
+      {!showLoadingOverlay &&
+      pendingAmendment &&
+      !isAccountOwner &&
+      !allowAmendmentAcceptRoute &&
+      platformAdminAccess !== 'allowed' ? (
+        <PendingTermsBanner pendingAmendment={pendingAmendment} />
+      ) : null}
       <Stack
         screenOptions={{
           headerShown: false,
@@ -120,6 +151,10 @@ export default function MainLayout() {
   const { user, loading, isRecoverySession } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+
+  usePublicAccessDialog('signed_in', {
+    enabled: !!user && !loading && !isRecoverySession,
+  });
 
   useEffect(() => {
     if (loading) return;

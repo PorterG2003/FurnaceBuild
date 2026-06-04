@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   useWindowDimensions,
@@ -16,17 +17,24 @@ import { ConfirmSignUpForm } from '@/components/auth/ConfirmSignUpForm';
 import { ConfirmResetPasswordForm } from '@/components/auth/ConfirmResetPasswordForm';
 import { HeroHeatShimmer, EmberParticlesLite } from '@/components/ui/effects';
 import { Logo } from '@/components/ui/branding';
+import { HELP_SCHEDULE_URL } from '@/components/ui/help/HelpModal';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
+import { usePublicAccessDialog } from '@/hooks/usePublicAccessDialog';
 
 type AuthState = 'signIn' | 'signUp' | 'confirmSignUp' | 'forgotPassword' | 'confirmResetPassword';
+
+function openScheduleUrl() {
+  void Linking.openURL(HELP_SCHEDULE_URL);
+}
 
 export default function AuthIndex() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const showBrandPanel = width >= LAYOUT_BREAKPOINT;
-  const { invitation_id, email: inviteEmail, mode } = useLocalSearchParams<{
+  const { invitation_id, amendment_id, email: inviteEmail, mode } = useLocalSearchParams<{
     invitation_id?: string;
+    amendment_id?: string;
     email?: string;
     mode?: string;
   }>();
@@ -38,6 +46,8 @@ export default function AuthIndex() {
   const [signUpData, setSignUpData] = useState<{ email: string; password: string } | null>(null);
   const [forgotPasswordData, setForgotPasswordData] = useState<{ email: string } | null>(null);
   const [signInSuccessMessage, setSignInSuccessMessage] = useState<string | null>(null);
+
+  usePublicAccessDialog('auth');
 
   useEffect(() => {
     if (isRecoverySession && user) {
@@ -54,6 +64,8 @@ export default function AuthIndex() {
   const handleVerificationSuccess = () => {
     if (invitation_id) {
       router.replace(`/accept-invitation/${invitation_id}`);
+    } else if (amendment_id) {
+      router.replace(`/accept-account-amendment/${amendment_id}`);
     } else {
       router.replace('/');
     }
@@ -68,13 +80,6 @@ export default function AuthIndex() {
   const handleGoToSignUp = () => {
     if (!allowInvitationSignUp) return;
     setAuthState('signUp');
-  };
-
-  const handleRequestAccess = () => {
-    router.push({
-      pathname: '/invite-only',
-      params: inviteEmail ? { email: inviteEmail } : {},
-    });
   };
 
   const handleGoToForgotPassword = () => {
@@ -108,7 +113,7 @@ export default function AuthIndex() {
             initialSuccessMessage={signInSuccessMessage ?? undefined}
             showSignUp={allowInvitationSignUp}
             onGoToSignUp={allowInvitationSignUp ? handleGoToSignUp : undefined}
-            onRequestAccess={!allowInvitationSignUp ? handleRequestAccess : undefined}
+            onRequestAccess={!allowInvitationSignUp ? openScheduleUrl : undefined}
           />
         );
       case 'signUp':
@@ -117,7 +122,7 @@ export default function AuthIndex() {
             <SignInForm
               onGoToForgotPassword={handleGoToForgotPassword}
               showSignUp={false}
-              onRequestAccess={handleRequestAccess}
+              onRequestAccess={openScheduleUrl}
             />
           );
         }
@@ -152,7 +157,7 @@ export default function AuthIndex() {
             onGoToForgotPassword={handleGoToForgotPassword}
             showSignUp={allowInvitationSignUp}
             onGoToSignUp={allowInvitationSignUp ? handleGoToSignUp : undefined}
-            onRequestAccess={!allowInvitationSignUp ? handleRequestAccess : undefined}
+            onRequestAccess={!allowInvitationSignUp ? openScheduleUrl : undefined}
           />
         );
       case 'confirmSignUp':
@@ -168,7 +173,7 @@ export default function AuthIndex() {
             onGoToForgotPassword={handleGoToForgotPassword}
             showSignUp={allowInvitationSignUp}
             onGoToSignUp={allowInvitationSignUp ? handleGoToSignUp : undefined}
-            onRequestAccess={!allowInvitationSignUp ? handleRequestAccess : undefined}
+            onRequestAccess={!allowInvitationSignUp ? openScheduleUrl : undefined}
           />
         );
       default:
@@ -177,7 +182,7 @@ export default function AuthIndex() {
             onGoToForgotPassword={handleGoToForgotPassword}
             showSignUp={allowInvitationSignUp}
             onGoToSignUp={allowInvitationSignUp ? handleGoToSignUp : undefined}
-            onRequestAccess={!allowInvitationSignUp ? handleRequestAccess : undefined}
+            onRequestAccess={!allowInvitationSignUp ? openScheduleUrl : undefined}
           />
         );
     }

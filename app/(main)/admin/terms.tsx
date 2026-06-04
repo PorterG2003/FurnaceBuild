@@ -1,7 +1,7 @@
 import { View, useWindowDimensions } from 'react-native';
 import { Alert, LoadingState } from '@/components/ui/feedback';
 import { Breadcrumb, LAYOUT_BREAKPOINT, PageHeader, PageLayout } from '@/components/ui/layout';
-import { PlatformTermsManager } from '@/components/admin/account-management/PlatformTermsManager';
+import { PlatformTermsManager } from '@/components/platform/admin/PlatformTermsManager';
 import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
 
 export default function TermsPage() {

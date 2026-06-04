@@ -1,0 +1,15 @@
+---
+description: Stripe platform billing constraints and webhook activation guardrails
+globs: ['amplify/functions/platformCommerce/**', 'amplify/functions/stripeWebhook/**', 'lib/billing/**', 'lib/test/platform/**']
+alwaysApply: false
+---
+
+# Stripe Platform Billing
+
+- Read `docs/engineering/stripe-platform-billing.md` before making non-trivial Stripe or platform billing changes.
+- Verify external API field limits before shipping changes to Stripe request payloads.
+- Keep long IDs in Stripe `metadata`, not display `name` fields.
+- Reuse shared helpers for Stripe-safe names or constrained fields instead of open-coding strings.
+- Add or update handler-level tests when webhook provisioning behavior changes.
+- Add or update outcome tests when invitation or account lifecycle state changes.
+- Run the relevant billing tests and `npm run test:platform` before closeout.

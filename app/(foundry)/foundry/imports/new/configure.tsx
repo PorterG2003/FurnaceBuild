@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { PageHeader, Breadcrumb } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/Card';
-import { Toggle } from '@/components/ui/Toggle';
+import { SettingToggleRow } from '@/components/ui/forms/SettingToggleRow';
 import { useImportWizard } from '@/components/foundry/imports';
 import {
   GOOGLE_MAPS_PARSER_VERSION,
@@ -141,15 +141,12 @@ export default function ImportConfigurePage() {
         </Card>
 
         <Card variant="card">
-          <View className="flex-row items-center justify-between gap-3">
-            <View className="flex-1 pr-2">
-              <Text className="text-white text-sm font-instrument-medium">Import rows with warnings</Text>
-              <Text className="text-xs text-gray-400 mt-1">
-                When off, only rows with no warnings are inserted. Error rows are always skipped.
-              </Text>
-            </View>
-            <Toggle value={importWarnings} onValueChange={setImportWarnings} />
-          </View>
+          <SettingToggleRow
+            label="Import rows with warnings"
+            description="When off, only rows with no warnings are inserted. Error rows are always skipped."
+            value={importWarnings}
+            onValueChange={setImportWarnings}
+          />
         </Card>
 
         <View className="flex-row flex-wrap gap-2 justify-between">

@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import { Alert } from '@/components/ui/feedback/Alert';
 import { Button } from '@/components/ui/button';
-import { BaseModal, ModalFooter, ModalStepIndicator } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
+import { WizardStepIndicator } from '@/components/ui/wizard';
 import { createCsvBuilderToolJob } from '@/lib/foundry/registry-client';
 import { getCsvBuilderToolManifest } from '@/lib/foundry/csv-builder';
 import type { CsvBuilderColumnRow } from '@/lib/foundry/registry-types';
@@ -126,7 +127,7 @@ function CsvBuilderAddColumnWizardInner({
       }
     >
       <View className="gap-6">
-        <ModalStepIndicator steps={CSV_BUILDER_WIZARD_STEPS} activeIndex={step} wrap />
+        <WizardStepIndicator steps={CSV_BUILDER_WIZARD_STEPS} activeIndex={step} wrap />
         {error ? <Alert variant="error" message={error} /> : null}
         {step === 0 ? <CsvBuilderToolSelectionStep /> : null}
         {step === 1 ? <CsvBuilderInputMappingStep columns={columns} /> : null}

@@ -7,6 +7,7 @@ import {
   normalizeQuizAndBookResponseValue,
   type QuizAndBookResponseValue,
 } from '../../../lib/flux/fluxQuizAndBook';
+import { buildFluxQuizSubmissionEmail } from '../../../lib/email/transactional/presets/fluxQuizSubmission.js';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FALLBACK_DESTINATION_EMAIL = 'porter@getfurnace.io';
@@ -32,15 +33,6 @@ function response(statusCode: number, body: Record<string, unknown>) {
     },
     body: JSON.stringify(body),
   };
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 function parseBody(event: FunctionUrlEvent): QuizSubmissionRequest {
@@ -126,7 +118,6 @@ export const handler = async (event: FunctionUrlEvent) => {
       (prospect && typeof prospect.name === 'string' && prospect.name.trim()) || config.prospectName.trim() || 'Unknown prospect';
     const companyName =
       (prospect && typeof prospect.company === 'string' && prospect.company.trim()) || config.companyName.trim() || 'Unknown company';
-    const subject = `Quiz submission for ${companyName}`;
 
     const prospectDetails = [
       ['Prospect', prospectName],
@@ -138,77 +129,32 @@ export const handler = async (event: FunctionUrlEvent) => {
       ['Page URL', pageUrl],
       ['Page slug', page.slug],
       ['Published at', typeof page.published_at === 'string' ? page.published_at : ''],
-    ].filter((entry) => entry[1]);
+    ].filter((entry): entry is [string, string] => Boolean(entry[1]));
 
     const notes =
       typeof prospect?.email_notes === 'string' && prospect.email_notes.trim()
         ? prospect.email_notes.trim()
         : '';
 
-    const answerHtml = answerRows
-      .map(
-        (row) => `
-          <tr>
-            <td style="padding:10px 12px;border:1px solid #e5e7eb;vertical-align:top;font-weight:600;">${escapeHtml(row.question.prompt)}</td>
-            <td style="padding:10px 12px;border:1px solid #e5e7eb;vertical-align:top;">${escapeHtml(row.answerText)}</td>
-          </tr>`,
-      )
-      .join('');
-
-    const detailHtml = prospectDetails
-      .map(
-        ([label, value]) =>
-          `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;">${escapeHtml(label)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb;">${escapeHtml(value)}</td></tr>`,
-      )
-      .join('');
+    const email = buildFluxQuizSubmissionEmail({
+      companyName,
+      prospectName,
+      pageUrl,
+      pageSlug: page.slug,
+      prospectDetails,
+      answerRows: answerRows.map((row) => ({
+        prompt: row.question.prompt,
+        answerText: row.answerText,
+      })),
+      notes: notes || undefined,
+    });
 
     const { data, error } = await resend.emails.send({
       from: 'Furnace <porter@getfurnace.io>',
       to: [destinationEmail],
-      subject,
-      html: `
-        <!DOCTYPE html>
-        <html>
-          <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#111827;line-height:1.5;padding:24px;max-width:720px;margin:0 auto;">
-            <h1 style="font-size:24px;margin:0 0 8px;">Quiz and book submission</h1>
-            <p style="margin:0 0 20px;color:#4b5563;">
-              A visitor completed the quiz on <a href="${escapeHtml(pageUrl)}">${escapeHtml(pageUrl)}</a>.
-            </p>
-
-            <h2 style="font-size:18px;margin:24px 0 12px;">Prospect context</h2>
-            <table style="width:100%;border-collapse:collapse;">${detailHtml}</table>
-
-            <h2 style="font-size:18px;margin:24px 0 12px;">Answers</h2>
-            <table style="width:100%;border-collapse:collapse;">${answerHtml}</table>
-
-            ${
-              notes
-                ? `<h2 style="font-size:18px;margin:24px 0 12px;">Prospect notes</h2><p style="white-space:pre-wrap;border:1px solid #e5e7eb;border-radius:8px;padding:12px;">${escapeHtml(notes)}</p>`
-                : ''
-            }
-          </body>
-        </html>
-      `,
-      text: [
-        'Quiz and book submission',
-        '',
-        `Prospect: ${prospectName}`,
-        `Company: ${companyName}`,
-        ...(typeof prospect?.role === 'string' && prospect.role.trim() ? [`Role: ${prospect.role.trim()}`] : []),
-        ...(typeof prospect?.url === 'string' && prospect.url.trim() ? [`Website: ${prospect.url.trim()}`] : []),
-        ...(typeof prospect?.industry === 'string' && prospect.industry.trim()
-          ? [`Industry: ${prospect.industry.trim()}`]
-          : []),
-        ...(typeof prospect?.company_size === 'string' && prospect.company_size.trim()
-          ? [`Company size: ${prospect.company_size.trim()}`]
-          : []),
-        `Page URL: ${pageUrl}`,
-        `Page slug: ${page.slug}`,
-        '',
-        'Answers:',
-        ...answerRows.map((row) => `- ${row.question.prompt}: ${row.answerText}`),
-        ...(notes ? ['', 'Prospect notes:', notes] : []),
-      ].join('\n'),
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
     });
 
     if (error) {

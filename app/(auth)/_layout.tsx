@@ -7,7 +7,10 @@ import { AppBootScreen } from '@/components/ui/AppBootScreen';
 export default function AuthLayout() {
   const { user, loading, isRecoverySession } = useAuth();
   const router = useRouter();
-  const { invitation_id } = useLocalSearchParams<{ invitation_id?: string }>();
+  const { invitation_id, amendment_id } = useLocalSearchParams<{
+    invitation_id?: string;
+    amendment_id?: string;
+  }>();
 
   // Normalize /auth/ → /auth on web so trailing-slash requests don't break (server may 404 on /auth/)
   useEffect(() => {
@@ -25,11 +28,13 @@ export default function AuthLayout() {
     if (user && !isRecoverySession) {
       if (invitation_id) {
         router.replace(`/accept-invitation/${invitation_id}`);
+      } else if (amendment_id) {
+        router.replace(`/accept-account-amendment/${amendment_id}`);
       } else {
         router.replace('/');
       }
     }
-  }, [user, loading, isRecoverySession, router, invitation_id]);
+  }, [user, loading, isRecoverySession, router, invitation_id, amendment_id]);
 
   if (loading) return <AppBootScreen />;
 

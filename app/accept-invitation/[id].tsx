@@ -1,322 +1,312 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { AppBootScreen } from '@/components/ui/AppBootScreen';
+import { Alert } from '@/components/ui/feedback';
+import { AcceptStandaloneCard, BrandedStandalonePageShell } from '@/components/ui/layout';
+import { useSmoothLoading } from '@/components/ui/feedback/useSmoothLoading';
 import {
   getInvitationInfo,
   acceptInvitationRpc,
   type InvitationInfo,
 } from '@/lib/supabase/services/accounts';
+import { buildPublicAccessRedirectHref } from '@/lib/publicAccessState';
 
-type PageStatus =
-  | 'loading'
-  | 'pending'
-  | 'accepting'
-  | 'success'
-  | 'not-found'
-  | 'expired'
-  | 'already-accepted'
-  | 'email-mismatch'
-  | 'error';
+function inviterLabel(info: InvitationInfo | null): string {
+  const name = info?.inviter_name?.trim();
+  if (name) return name;
+  return 'A teammate';
+}
 
 export default function AcceptInvitationPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { user: authUser, loading: authLoading, signOut } = useAuth();
-  const [status, setStatus] = useState<PageStatus>('loading');
+  const { user: authUser, loading: authLoading } = useAuth();
+  const [bootstrapping, setBootstrapping] = useState(true);
   const [info, setInfo] = useState<InvitationInfo | null>(null);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
+  const [accepting, setAccepting] = useState(false);
+  const [guestMode, setGuestMode] = useState(false);
   const acceptAttemptedRef = useRef(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const showBootScreen = useSmoothLoading(bootstrapping, { delayMs: 0 });
 
   const authEmail = useMemo(
     () => authUser?.email?.toLowerCase().trim() ?? null,
     [authUser],
   );
 
-  // Phase 1: fetch invitation info (no auth needed)
+  const startAccepting = useCallback((invitation: InvitationInfo) => {
+    setInfo(invitation);
+    setGuestMode(false);
+    setAcceptError(null);
+    setBootstrapping(false);
+    setAccepting(true);
+  }, []);
+
   useEffect(() => {
     if (!id) {
-      setStatus('error');
-      setErrorMessage('Invalid invitation link.');
+      setLoadError('Invalid invitation link.');
+      setBootstrapping(false);
       return;
     }
+    if (authLoading) return;
 
-    (async () => {
+    let cancelled = false;
+    setBootstrapping(true);
+    setLoadError(null);
+    setAcceptError(null);
+    setInfo(null);
+    setGuestMode(false);
+    setAccepting(false);
+    acceptAttemptedRef.current = false;
+
+    void (async () => {
       try {
         const result = await getInvitationInfo(id);
+        if (cancelled) return;
+
         setInfo(result);
 
         switch (result.status) {
           case 'not_found':
-            setStatus('not-found');
-            break;
           case 'expired':
-            setStatus('expired');
-            break;
           case 'accepted':
-            setStatus('already-accepted');
+            router.replace(
+              buildPublicAccessRedirectHref({
+                isSignedIn: !!authUser,
+                state: {
+                  flow: 'team_invite',
+                  issue:
+                    result.status === 'accepted'
+                      ? 'resource_completed'
+                      : 'resource_unavailable',
+                  resourceId: id,
+                  inviteeEmail: result.invitee_email ?? null,
+                  accountName: result.account_name ?? null,
+                },
+              }) as any,
+            );
             break;
           case 'pending':
-            setStatus('pending');
-            break;
+            if (!authUser) {
+              setGuestMode(true);
+              setBootstrapping(false);
+              return;
+            }
+
+            if (authEmail && result.invitee_email) {
+              const inviteeEmail = result.invitee_email.toLowerCase().trim();
+              if (authEmail !== inviteeEmail) {
+                router.replace(
+                  buildPublicAccessRedirectHref({
+                    isSignedIn: true,
+                    state: {
+                      flow: 'team_invite',
+                      issue: 'wrong_email',
+                      resourceId: id,
+                      inviteeEmail: result.invitee_email,
+                      accountName: result.account_name ?? null,
+                    },
+                  }) as any,
+                );
+                return;
+              }
+            }
+
+            startAccepting(result);
+            return;
           default:
-            setStatus('error');
-            setErrorMessage(`Unexpected invitation status: ${result.status}`);
+            setLoadError(`Unexpected invitation status: ${result.status}`);
+            setBootstrapping(false);
         }
       } catch (err) {
+        if (cancelled) return;
         console.error('Error loading invitation:', err);
-        setStatus('error');
-        setErrorMessage(err instanceof Error ? err.message : 'Failed to load invitation.');
+        setLoadError(err instanceof Error ? err.message : 'Failed to load invitation.');
+        setBootstrapping(false);
       }
     })();
-  }, [id]);
 
-  // Phase 2: auto-accept when authenticated + invitation is pending
-  useEffect(() => {
-    if (status !== 'pending' || authLoading || !authUser || !info || acceptAttemptedRef.current) return;
+    return () => {
+      cancelled = true;
+    };
+  }, [authEmail, authLoading, authUser, id, reloadKey, router, startAccepting]);
 
-    const inviteeEmail = info.invitee_email?.toLowerCase().trim();
-    if (!inviteeEmail || !authEmail) return;
-
-    if (authEmail !== inviteeEmail) {
-      setStatus('email-mismatch');
-      return;
-    }
-
-    acceptAttemptedRef.current = true;
-    acceptInvitation();
-  }, [status, authLoading, authUser, info, authEmail]);
-
-  const acceptInvitation = async () => {
-    if (!id) return;
-    setStatus('accepting');
+  const acceptInvitation = useCallback(async () => {
+    if (!id || !info) return;
+    setAcceptError(null);
+    setAccepting(true);
 
     try {
       const result = await acceptInvitationRpc(id);
 
       switch (result.status) {
         case 'accepted':
-          setStatus('success');
-          setTimeout(() => {
-            const params = result.account_id ? `?switch_account=${result.account_id}` : '';
-            router.replace(`/account${params}` as any);
-          }, 1500);
-          break;
         case 'already_member':
-          setStatus('success');
-          setTimeout(() => {
-            const params = result.account_id ? `?switch_account=${result.account_id}` : '';
-            router.replace(`/account${params}` as any);
-          }, 1500);
+          router.replace(
+            result.account_id ? `/account?switch_account=${result.account_id}` : '/account',
+          );
           break;
         case 'email_mismatch':
-          setStatus('email-mismatch');
+          router.replace(
+            buildPublicAccessRedirectHref({
+              isSignedIn: true,
+              state: {
+                flow: 'team_invite',
+                issue: 'wrong_email',
+                resourceId: id,
+                inviteeEmail: info.invitee_email ?? null,
+                accountName: info.account_name ?? null,
+              },
+            }) as any,
+          );
           break;
         case 'expired':
-          setStatus('expired');
-          break;
         case 'not_found':
-          setStatus('not-found');
+          router.replace(
+            buildPublicAccessRedirectHref({
+              isSignedIn: !!authUser,
+              state: {
+                flow: 'team_invite',
+                issue: 'resource_unavailable',
+                resourceId: id,
+                inviteeEmail: info.invitee_email ?? null,
+                accountName: info.account_name ?? null,
+              },
+            }) as any,
+          );
           break;
         default:
-          setStatus('error');
-          setErrorMessage(`Unexpected result: ${result.status}`);
+          setAcceptError(`Unexpected result: ${result.status}`);
+          setAccepting(false);
       }
     } catch (err) {
       console.error('Error accepting invitation:', err);
-      setStatus('error');
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to accept invitation.');
+      setAcceptError(err instanceof Error ? err.message : 'Failed to accept invitation.');
+      setAccepting(false);
     }
-  };
+  }, [authUser, id, info, router]);
+
+  useEffect(() => {
+    if (!bootstrapping && !guestMode && info && accepting && !acceptAttemptedRef.current) {
+      acceptAttemptedRef.current = true;
+      void acceptInvitation();
+    }
+  }, [acceptInvitation, accepting, bootstrapping, guestMode, info]);
 
   const navigateToAuth = (mode: 'signIn' | 'signUp') => {
     const email = info?.invitee_email ?? '';
     const base = `/auth?invitation_id=${id}`;
-    const params = mode === 'signUp' && email ? `${base}&email=${encodeURIComponent(email)}&mode=signUp` : `${base}`;
+    const params =
+      mode === 'signUp' && email ? `${base}&email=${encodeURIComponent(email)}&mode=signUp` : base;
     router.replace(params as any);
   };
 
-  const handleSignOutAndRetry = async () => {
-    await signOut();
-    setStatus('pending');
-    acceptAttemptedRef.current = false;
-  };
+  const accountName = info?.account_name?.trim() || 'this workspace';
 
-  const renderInvitationCard = () => {
+  const renderPendingCard = () => {
     if (!info || info.status !== 'pending') return null;
 
     return (
-      <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-2xl p-6 mb-6 w-full max-w-sm">
-        <Text className="text-gray-400 text-xs font-instrument-medium uppercase tracking-wider mb-3">
-          You've been invited to join
+      <AcceptStandaloneCard
+        actions={
+          guestMode ? (
+            <>
+              <Text className="text-gray-300 text-sm font-instrument text-center">
+                Use the same email this invitation was sent to when you continue.
+              </Text>
+              <Button onPress={() => navigateToAuth('signUp')} variant="default">
+                Create account
+              </Button>
+              <Button onPress={() => navigateToAuth('signIn')} variant="outline">
+                Sign in
+              </Button>
+            </>
+          ) : (
+            <View className="gap-3">
+              {acceptError ? <Alert variant="error" message={acceptError} /> : null}
+              <View className="items-center py-1">
+                <ActivityIndicator size="small" color="#f33203" />
+                <Text className="text-gray-400 text-sm font-instrument mt-3 text-center">
+                  Joining workspace…
+                </Text>
+              </View>
+              {acceptError ? (
+                <Button
+                  variant="outline"
+                  onPress={() => {
+                    acceptAttemptedRef.current = false;
+                    setAccepting(true);
+                  }}
+                >
+                  Try again
+                </Button>
+              ) : null}
+            </View>
+          )
+        }
+      >
+        <Text className="text-brand-orange text-xs font-instrument-semibold uppercase tracking-wider">
+          Team invitation
         </Text>
-        <Text className="text-white text-2xl font-instrument-bold mb-2">
-          {info.account_name ?? 'a team'}
+        <Text className="text-white text-2xl font-instrument-bold">
+          Join {accountName}
         </Text>
-        <Text className="text-gray-400 text-sm font-instrument">
-          Invited by {info.inviter_name ?? 'a team member'}
+        <Text className="text-gray-300 text-sm font-instrument leading-5">
+          {inviterLabel(info)} invited you to collaborate in Furnace on campaigns, inbox, and leads
+          for this account.
         </Text>
-        {info.invitee_email && (
-          <View className="mt-3 pt-3 border-t border-[#2A2A2A]">
-            <Text className="text-gray-500 text-xs font-instrument">
-              Sent to {info.invitee_email}
+        {info.invitee_email ? (
+          <View className="rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-4 py-3">
+            <Text className="text-gray-500 text-xs font-instrument-medium uppercase tracking-wider mb-1">
+              Invitation sent to
             </Text>
+            <Text className="text-white text-sm font-instrument">{info.invitee_email}</Text>
           </View>
-        )}
-      </View>
+        ) : null}
+      </AcceptStandaloneCard>
     );
   };
 
-  const renderContent = () => {
-    switch (status) {
-      case 'loading':
-      case 'accepting':
-        return (
-          <View className="flex-1 items-center justify-center p-8">
-            <ActivityIndicator size="large" color="#f33203" />
-            <Text className="text-white text-base font-instrument mt-4">
-              {status === 'loading' ? 'Loading invitation...' : 'Joining team...'}
-            </Text>
-          </View>
-        );
+  if (bootstrapping || showBootScreen) {
+    return <AppBootScreen />;
+  }
 
-      case 'pending':
-        return (
-          <View className="flex-1 items-center justify-center p-8">
-            {renderInvitationCard()}
-
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#f33203" />
-            ) : !authUser ? (
-              <View className="w-full max-w-sm gap-4">
-                <Text className="text-gray-300 text-sm font-instrument text-center">
-                  Create an account to get started, or sign in if you already have one.
-                </Text>
-                <Button onPress={() => navigateToAuth('signUp')} variant="default">
-                  Create Account
-                </Button>
-                <Button onPress={() => navigateToAuth('signIn')} variant="outline">
-                  I Already Have an Account
-                </Button>
-              </View>
-            ) : null}
-          </View>
-        );
-
-      case 'not-found':
-        return (
-          <View className="flex-1 items-center justify-center p-8">
-            <Text className="text-white text-2xl font-instrument-bold mb-4 text-center">
-              Invitation Not Found
-            </Text>
-            <Text className="text-gray-400 text-base font-instrument text-center mb-6">
-              This invitation link is invalid or has been revoked.
-            </Text>
-            <Button onPress={() => router.replace('/')} variant="default">
-              Go to Home
-            </Button>
-          </View>
-        );
-
-      case 'expired':
-        return (
-          <View className="flex-1 items-center justify-center p-8">
-            <Text className="text-white text-2xl font-instrument-bold mb-4 text-center">
-              Invitation Expired
-            </Text>
-            <Text className="text-gray-400 text-base font-instrument text-center mb-6">
-              This invitation has expired. Ask your team for a new one.
-            </Text>
-            <Button onPress={() => router.replace('/')} variant="default">
-              Go to Home
-            </Button>
-          </View>
-        );
-
-      case 'already-accepted':
-        return (
-          <View className="flex-1 items-center justify-center p-8">
-            <Text className="text-white text-2xl font-instrument-bold mb-4 text-center">
-              Already Accepted
-            </Text>
-            <Text className="text-gray-400 text-base font-instrument text-center mb-6">
-              This invitation has already been accepted.
-            </Text>
-            <Button onPress={() => router.replace('/account')} variant="default">
-              Go to Account
-            </Button>
-          </View>
-        );
-
-      case 'email-mismatch':
-        return (
-          <View className="flex-1 items-center justify-center p-8">
-            {renderInvitationCard()}
-            <View className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6 w-full max-w-sm">
-              <Text className="text-red-400 text-sm font-instrument text-center">
-                This invitation was sent to {info?.invitee_email ?? 'a different email'}, but you're signed in as {authEmail ?? 'a different account'}.
-              </Text>
-            </View>
-            <View className="w-full max-w-sm gap-3">
-              <Button onPress={handleSignOutAndRetry} variant="default">
-                Sign Out and Use Correct Email
-              </Button>
-              <Button onPress={() => router.replace('/account')} variant="outline">
-                Go to Account
-              </Button>
-            </View>
-          </View>
-        );
-
-      case 'success':
-        return (
-          <View className="flex-1 items-center justify-center p-8">
-            <Text className="text-white text-2xl font-instrument-bold mb-4 text-center">
-              You're In!
-            </Text>
-            <Text className="text-gray-400 text-base font-instrument text-center mb-6">
-              You've joined {info?.account_name ?? 'the team'}. Redirecting...
-            </Text>
-            <ActivityIndicator size="small" color="#f33203" />
-          </View>
-        );
-
-      case 'error':
-        return (
-          <View className="flex-1 items-center justify-center p-8">
-            <Text className="text-white text-2xl font-instrument-bold mb-4 text-center">
-              Something Went Wrong
-            </Text>
-            <Text className="text-red-400 text-base font-instrument text-center mb-6">
-              {errorMessage || 'An error occurred while processing the invitation.'}
-            </Text>
-            <View className="flex-row gap-3">
-              <Button onPress={() => { acceptAttemptedRef.current = false; setStatus('loading'); window.location.reload(); }} variant="outline">
-                Try Again
+  if (loadError) {
+    return (
+      <BrandedStandalonePageShell>
+        <AcceptStandaloneCard
+          actions={
+            <>
+              <Button
+                onPress={() => {
+                  acceptAttemptedRef.current = false;
+                  setReloadKey((current) => current + 1);
+                }}
+                variant="outline"
+              >
+                Try again
               </Button>
               <Button onPress={() => router.replace('/')} variant="default">
-                Go to Home
+                Go to home
               </Button>
-            </View>
-          </View>
-        );
+            </>
+          }
+        >
+          <Text className="text-white text-2xl font-instrument-bold text-center">
+            Something went wrong
+          </Text>
+          <Text className="text-red-400 text-base font-instrument text-center leading-5">
+            {loadError}
+          </Text>
+        </AcceptStandaloneCard>
+      </BrandedStandalonePageShell>
+    );
+  }
 
-      default:
-        return null;
-    }
-  };
-
-  return (
-    <View className="flex-1 bg-black">
-      <ScrollView className="flex-1" contentContainerClassName="flex-grow">
-        {renderContent()}
-      </ScrollView>
-    </View>
-  );
+  return <BrandedStandalonePageShell>{renderPendingCard()}</BrandedStandalonePageShell>;
 }

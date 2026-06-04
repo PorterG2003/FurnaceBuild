@@ -1,11 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
 import Stripe from 'stripe';
+import {
+  buildPlatformRecurringInvoiceQuote,
+  getServerPlatformPaymentFeeConfig,
+  type PlatformPaymentRoute,
+} from '../../../lib/billing/paymentRoutes';
+import {
+  buildInviteRecurringCouponParams,
+  buildUpgradeDeltaCouponParams,
+} from './couponParams';
 
 const INTERNAL_ADMIN_EMAILS = ['porter@getfurnace.io', 'kyle@getfurnace.io'];
 
 type CheckoutSessionLike = {
   id: string;
   customer: string | null;
+  invoice?: string | null;
+  payment_intent?: string | null;
   subscription?: string | null;
   metadata?: Record<string, string> | null;
 };
@@ -33,14 +44,125 @@ function getStripeClient() {
   return new Stripe(stripeKey);
 }
 
-async function ensureRecurringSubscription(event: CheckoutSessionLike) {
+type StripeClient = ReturnType<typeof getStripeClient>;
+type ExpandedCheckoutSession = Awaited<ReturnType<typeof getExpandedCheckoutSession>>;
+type ExpandedPaymentIntent = ExpandedCheckoutSession['payment_intent'] extends infer T
+  ? Exclude<T, string | null>
+  : never;
+
+function parseMetadataInteger(metadata: Record<string, string>, key: string) {
+  const value = Number(metadata[key] ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function extractPaymentMethodId(
+  paymentIntent: ExpandedPaymentIntent | null | undefined
+) {
+  if (!paymentIntent?.payment_method) return null;
+  return typeof paymentIntent.payment_method === 'string'
+    ? paymentIntent.payment_method
+    : paymentIntent.payment_method.id;
+}
+
+async function getExpandedCheckoutSession(sessionId: string) {
   const stripe = getStripeClient();
-  const metadata = event.metadata ?? {};
+  return stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ['invoice', 'payment_intent.payment_method', 'setup_intent.payment_method'],
+  });
+}
+
+async function resolveDefaultPaymentMethodId(args: {
+  stripe: StripeClient;
+  customerId: string;
+  paymentIntent: ExpandedPaymentIntent | null;
+}) {
+  const directPaymentMethodId = extractPaymentMethodId(args.paymentIntent);
+  if (directPaymentMethodId) {
+    await args.stripe.customers.update(args.customerId, {
+      invoice_settings: {
+        default_payment_method: directPaymentMethodId,
+      },
+    });
+    return directPaymentMethodId;
+  }
+
+  const customer = await args.stripe.customers.retrieve(args.customerId);
+  if (customer.deleted) return null;
+  const defaultPaymentMethod = customer.invoice_settings.default_payment_method;
+  if (!defaultPaymentMethod) return null;
+  return typeof defaultPaymentMethod === 'string' ? defaultPaymentMethod : defaultPaymentMethod.id;
+}
+
+async function syncAccountPaymentMethodUpdate(session: ExpandedCheckoutSession) {
+  const metadata = session.metadata ?? {};
+  if (metadata.flowKind !== 'account_payment_method_update' || !metadata.accountId) {
+    return false;
+  }
+
+  const customerId = typeof session.customer === 'string' ? session.customer : null;
+  if (!customerId) {
+    throw new Error('Missing Stripe customer for payment method update');
+  }
+
+  const setupIntent =
+    session.setup_intent && typeof session.setup_intent !== 'string' ? session.setup_intent : null;
+  const paymentMethodId =
+    setupIntent?.payment_method && typeof setupIntent.payment_method !== 'string'
+      ? setupIntent.payment_method.id
+      : typeof setupIntent?.payment_method === 'string'
+        ? setupIntent.payment_method
+        : null;
+
+  if (!paymentMethodId) {
+    throw new Error('Missing reusable payment method for update session');
+  }
+
+  const stripe = getStripeClient();
+  await stripe.customers.update(customerId, {
+    invoice_settings: {
+      default_payment_method: paymentMethodId,
+    },
+  });
+
+  const supabase = getSupabaseAdminClient();
+  const { data: billing, error: billingError } = await supabase
+    .from('account_billing')
+    .select('stripe_subscription_id')
+    .eq('account_id', metadata.accountId)
+    .maybeSingle();
+  if (billingError) throw new Error(billingError.message);
+
+  if (billing?.stripe_subscription_id) {
+    await stripe.subscriptions.update(billing.stripe_subscription_id, {
+      default_payment_method: paymentMethodId,
+    });
+  }
+
+  const paymentRoute =
+    metadata.paymentRoute === 'ach' || metadata.paymentRoute === 'card'
+      ? metadata.paymentRoute
+      : 'card';
+  const { error } = await supabase
+    .from('account_billing')
+    .update({
+      preferred_payment_route: paymentRoute,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('account_id', metadata.accountId);
+  if (error) throw new Error(error.message);
+
+  return true;
+}
+
+async function ensureRecurringSubscription(session: ExpandedCheckoutSession) {
+  const stripe = getStripeClient();
+  const metadata = session.metadata ?? {};
   const invitationId = metadata.invitationId;
-  if (!invitationId || !event.customer) return;
+  const customerId = typeof session.customer === 'string' ? session.customer : null;
+  if (!invitationId || !customerId) return null;
 
   const existingSubscriptions = await stripe.subscriptions.list({
-    customer: String(event.customer),
+    customer: customerId,
     status: 'all',
     limit: 10,
   });
@@ -48,71 +170,205 @@ async function ensureRecurringSubscription(event: CheckoutSessionLike) {
     (subscription) => subscription.metadata?.invitationId === invitationId
   );
   if (activeForInvite) {
-    return activeForInvite.id;
+    return {
+      subscriptionId: activeForInvite.id,
+      firstRecurringCouponId:
+        activeForInvite.metadata?.firstRecurringCouponId &&
+        activeForInvite.metadata.firstRecurringCouponId.length > 0
+          ? activeForInvite.metadata.firstRecurringCouponId
+          : null,
+      paymentMethodId:
+        typeof activeForInvite.default_payment_method === 'string'
+          ? activeForInvite.default_payment_method
+          : activeForInvite.default_payment_method?.id ?? null,
+      upfrontInvoiceId:
+        typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? null,
+      upfrontPaymentIntentId:
+        typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : session.payment_intent?.id ?? null,
+    };
   }
 
-  const monthlyRetainerCents = Number(metadata.monthlyRetainerCents ?? 0);
-  const firstRecurringInvoiceAmountCents = Number(metadata.firstRecurringInvoiceAmountCents ?? monthlyRetainerCents);
-  const firstRecurringCreditCents = Number(metadata.firstRecurringCreditCents ?? 0);
+  const monthlyRetainerCents = parseMetadataInteger(metadata, 'monthlyRetainerCents');
+  const firstRecurringAmountDueCents =
+    parseMetadataInteger(metadata, 'firstRecurringInvoiceAmountCents') || monthlyRetainerCents;
+  const firstRecurringSubtotalCents =
+    parseMetadataInteger(metadata, 'firstRecurringSubtotalCents') ||
+    Math.max(
+      monthlyRetainerCents - parseMetadataInteger(metadata, 'firstRecurringDiscountCents'),
+      0,
+    );
+  const paymentRoute =
+    metadata.paymentRoute === 'card' || metadata.paymentRoute === 'ach'
+      ? (metadata.paymentRoute as PlatformPaymentRoute)
+      : 'card';
+  const overlapCreditCents = parseMetadataInteger(
+    metadata,
+    'firstRecurringDiscountCents'
+  );
+  const recurringQuote = buildPlatformRecurringInvoiceQuote({
+    monthlyRetainerCents,
+    firstRecurringSubtotalCents,
+    paymentRoute,
+    routeConfig: getServerPlatformPaymentFeeConfig()[paymentRoute],
+  });
+  const firstRecurringCouponAmountCents =
+    parseMetadataInteger(metadata, 'firstRecurringCouponAmountCents') ||
+    recurringQuote.firstRecurringTotalDiscountCents;
+  const ongoingMonthlyTotalCents =
+    parseMetadataInteger(metadata, 'ongoingMonthlyTotalCents') ||
+    recurringQuote.ongoingMonthlyTotalCents;
   const anchorDateIso = metadata.anchorDateIso;
-  const trialEndUnix = anchorDateIso ? Math.floor(new Date(anchorDateIso).getTime() / 1000) : undefined;
+  const billingCycleAnchor = anchorDateIso
+    ? Math.floor(new Date(anchorDateIso).getTime() / 1000)
+    : undefined;
+  if (!billingCycleAnchor) {
+    throw new Error('Missing recurring anchor date');
+  }
+  const paymentIntent =
+    session.payment_intent && typeof session.payment_intent !== 'string'
+      ? session.payment_intent
+      : null;
+  const defaultPaymentMethodId = await resolveDefaultPaymentMethodId({
+    stripe,
+    customerId,
+    paymentIntent,
+  });
+  if (!defaultPaymentMethodId) {
+    throw new Error('Missing reusable payment method for recurring subscription');
+  }
+
   const recurringProduct = await stripe.products.create({
     name: 'Furnace managed outreach',
   });
+  const firstRecurringCoupon =
+    firstRecurringCouponAmountCents > 0
+      ? await stripe.coupons.create(
+          buildInviteRecurringCouponParams({
+            amountOff: firstRecurringCouponAmountCents,
+            currency: metadata.currency ?? 'usd',
+            invitationId,
+            firstRecurringInvoiceAmountCents: firstRecurringAmountDueCents,
+            overlapCreditCents,
+            paymentRoute,
+          }),
+        )
+      : null;
 
   const subscription = await stripe.subscriptions.create({
-    customer: String(event.customer),
-    trial_end: trialEndUnix,
+    customer: customerId,
+    billing_cycle_anchor: billingCycleAnchor,
+    proration_behavior: 'none',
+    default_payment_method: defaultPaymentMethodId,
     metadata: {
       invitationId,
-      checkoutSessionId: event.id,
+      checkoutSessionId: session.id,
+      upfrontInvoiceId:
+        typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? '',
+      firstRecurringCouponId: firstRecurringCoupon?.id ?? '',
     },
     items: [
       {
         price_data: {
           currency: metadata.currency ?? 'usd',
           recurring: { interval: 'month' },
-          unit_amount: monthlyRetainerCents,
+          unit_amount: ongoingMonthlyTotalCents,
           product: recurringProduct.id,
         },
       },
     ],
-    ...(firstRecurringCreditCents > 0
+    ...(firstRecurringCoupon
       ? {
-          add_invoice_items: [
-            {
-              price_data: {
-                currency: metadata.currency ?? 'usd',
-                unit_amount: -firstRecurringCreditCents,
-                product: recurringProduct.id,
-              },
-            },
-          ],
+          discounts: [{ coupon: firstRecurringCoupon.id }],
         }
       : {}),
   });
 
-  return subscription.id;
+  return {
+    subscriptionId: subscription.id,
+    firstRecurringCouponId: firstRecurringCoupon?.id ?? null,
+    paymentMethodId: defaultPaymentMethodId,
+    upfrontInvoiceId:
+      typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? null,
+    upfrontPaymentIntentId:
+      typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : session.payment_intent?.id ?? null,
+  };
 }
 
 async function handleCheckoutCompleted(event: CheckoutSessionLike) {
+  const session = await getExpandedCheckoutSession(event.id);
+  if (await syncAccountPaymentMethodUpdate(session)) {
+    return;
+  }
+
   const invitationId = event.metadata?.invitationId;
   if (!invitationId) return;
-
-  const subscriptionId =
-    typeof event.subscription === 'string'
-      ? event.subscription
-      : (await ensureRecurringSubscription(event));
+  const recurringResult =
+    typeof session.subscription === 'string'
+      ? {
+          subscriptionId: session.subscription,
+          firstRecurringCouponId: null,
+          paymentMethodId: null,
+          upfrontInvoiceId:
+            typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? null,
+          upfrontPaymentIntentId:
+            typeof session.payment_intent === 'string'
+              ? session.payment_intent
+              : session.payment_intent?.id ?? null,
+        }
+      : (await ensureRecurringSubscription(session));
+  const subscriptionId = recurringResult?.subscriptionId ?? null;
 
   const supabase = getSupabaseAdminClient();
-  const { error } = await supabase.rpc('complete_platform_invitation', {
+  const { data: completeResult, error } = await supabase.rpc('complete_platform_invitation', {
     p_invitation_id: invitationId,
-    p_stripe_customer_id: typeof event.customer === 'string' ? event.customer : '',
+    p_stripe_customer_id: typeof session.customer === 'string' ? session.customer : '',
     p_stripe_subscription_id: subscriptionId ?? '',
     p_stripe_checkout_session_id: event.id,
     p_internal_admin_emails: INTERNAL_ADMIN_EMAILS,
   });
   if (error) throw new Error(error.message);
+
+  const completedAccountId =
+    completeResult && typeof completeResult === 'object' && 'account_id' in completeResult
+      ? (completeResult.account_id as string | null)
+      : null;
+  const paymentRoute =
+    session.metadata?.paymentRoute === 'ach' || session.metadata?.paymentRoute === 'card'
+      ? session.metadata.paymentRoute
+      : null;
+  if (completedAccountId && paymentRoute) {
+    const { error: billingUpdateError } = await supabase
+      .from('account_billing')
+      .update({
+        preferred_payment_route: paymentRoute,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('account_id', completedAccountId);
+    if (billingUpdateError) throw new Error(billingUpdateError.message);
+  }
+
+  const firstRecurringInvoiceTargetCents = parseMetadataInteger(
+    session.metadata ?? {},
+    'firstRecurringInvoiceAmountCents'
+  );
+  const recurringAnchorAt = session.metadata?.anchorDateIso ?? null;
+  const { error: updateError } = await supabase
+    .from('platform_invitations')
+    .update({
+      upfront_stripe_invoice_id: recurringResult?.upfrontInvoiceId ?? null,
+      upfront_stripe_payment_intent_id: recurringResult?.upfrontPaymentIntentId ?? null,
+      recurring_anchor_at: recurringAnchorAt,
+      first_recurring_invoice_target_cents:
+        firstRecurringInvoiceTargetCents > 0 ? firstRecurringInvoiceTargetCents : null,
+      first_recurring_coupon_id: recurringResult?.firstRecurringCouponId ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', invitationId);
+  if (updateError) throw new Error(updateError.message);
 }
 
 async function handleCheckoutAsyncPaymentFailed(event: CheckoutSessionLike) {
@@ -136,10 +392,27 @@ async function handleCheckoutAsyncPaymentFailed(event: CheckoutSessionLike) {
 }
 
 async function handleInvoicePaymentFailed(event: InvoiceLike) {
+  const supabase = getSupabaseAdminClient();
+  const stripe = getStripeClient();
+  const invoice =
+    typeof event.id === 'string'
+      ? await stripe.invoices.retrieve(event.id)
+      : null;
+  const metadata = invoice?.metadata ?? {};
+  const accountIdFromMetadata = metadata.accountId;
+
+  if (metadata.invoiceKind === 'platform_upgrade_delta' && accountIdFromMetadata) {
+    const { error } = await supabase.rpc('set_account_billing_status', {
+      p_account_id: accountIdFromMetadata,
+      p_billing_status: 'payment_required',
+    });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
   const subscriptionId = typeof event.subscription === 'string' ? event.subscription : null;
   if (!subscriptionId) return;
 
-  const supabase = getSupabaseAdminClient();
   const { data: billing, error: billingError } = await supabase
     .from('account_billing')
     .select('account_id')
@@ -156,6 +429,24 @@ async function handleInvoicePaymentFailed(event: InvoiceLike) {
 }
 
 async function handleInvoicePaid(event: InvoiceLike) {
+  const stripe = getStripeClient();
+  const invoice =
+    typeof event.id === 'string'
+      ? await stripe.invoices.retrieve(event.id)
+      : null;
+  const metadata = invoice?.metadata ?? {};
+  const accountIdFromMetadata = metadata.accountId;
+
+  if (metadata.invoiceKind === 'platform_upgrade_delta' && accountIdFromMetadata) {
+    const supabase = getSupabaseAdminClient();
+    const { error } = await supabase.rpc('set_account_billing_status', {
+      p_account_id: accountIdFromMetadata,
+      p_billing_status: 'active',
+    });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
   const subscriptionId = typeof event.subscription === 'string' ? event.subscription : null;
   if (!subscriptionId) return;
 
@@ -173,6 +464,68 @@ async function handleInvoicePaid(event: InvoiceLike) {
     p_billing_status: 'active',
   });
   if (error) throw new Error(error.message);
+
+  await maybeApplyScheduledRetainer(billing.account_id);
+}
+
+async function maybeApplyScheduledRetainer(accountId: string) {
+  const supabase = getSupabaseAdminClient();
+  const stripe = getStripeClient();
+  const { data: billing, error: billingError } = await supabase
+    .from('account_billing')
+    .select(
+      'account_id, stripe_subscription_id, monthly_retainer_cents, preferred_payment_route, scheduled_monthly_retainer_cents, scheduled_retainer_effective_at',
+    )
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (billingError) throw new Error(billingError.message);
+  if (
+    !billing?.scheduled_monthly_retainer_cents ||
+    !billing.scheduled_retainer_effective_at ||
+    new Date(billing.scheduled_retainer_effective_at).getTime() > Date.now()
+  ) {
+    return;
+  }
+  if (!billing.stripe_subscription_id) return;
+
+  const subscription = await stripe.subscriptions.retrieve(billing.stripe_subscription_id);
+  const subscriptionItemId = subscription.items.data[0]?.id;
+  if (!subscriptionItemId) return;
+
+  const product = await stripe.products.create({
+    name: 'Furnace managed outreach',
+    metadata: { accountId },
+  });
+  const paymentRoute =
+    billing.preferred_payment_route === 'ach' || billing.preferred_payment_route === 'card'
+      ? (billing.preferred_payment_route as PlatformPaymentRoute)
+      : 'card';
+  const recurringQuote = buildPlatformRecurringInvoiceQuote({
+    monthlyRetainerCents: billing.scheduled_monthly_retainer_cents,
+    firstRecurringSubtotalCents: billing.scheduled_monthly_retainer_cents,
+    paymentRoute,
+    routeConfig: getServerPlatformPaymentFeeConfig()[paymentRoute],
+  });
+
+  await stripe.subscriptions.update(billing.stripe_subscription_id, {
+    proration_behavior: 'none',
+    items: [
+      {
+        id: subscriptionItemId,
+        price_data: {
+          currency: 'usd',
+          recurring: { interval: 'month' },
+          unit_amount: recurringQuote.ongoingMonthlyTotalCents,
+          product: product.id,
+        },
+      },
+    ],
+  });
+
+  const { error } = await supabase.rpc('apply_scheduled_account_billing_retainer', {
+    p_account_id: accountId,
+  });
+  if (error) throw new Error(error.message);
 }
 
 async function handleInvoiceCreated(event: InvoiceLike) {
@@ -183,11 +536,33 @@ async function handleInvoiceCreated(event: InvoiceLike) {
   const stripe = getStripeClient();
   const { data: billing, error: billingError } = await supabase
     .from('account_billing')
-    .select('account_id')
+    .select('account_id, pending_first_delta_coupon_cents, stripe_customer_id')
     .eq('stripe_subscription_id', subscriptionId)
     .maybeSingle();
   if (billingError) throw new Error(billingError.message);
   if (!billing) return;
+
+  if (billing.pending_first_delta_coupon_cents && billing.pending_first_delta_coupon_cents > 0) {
+    const coupon = await stripe.coupons.create(
+      buildUpgradeDeltaCouponParams({
+        amountOff: billing.pending_first_delta_coupon_cents,
+        currency: event.currency || 'usd',
+        accountId: billing.account_id,
+        invoiceId: event.id,
+      }),
+    );
+    await stripe.invoices.update(event.id, {
+      discounts: [{ coupon: coupon.id }],
+    });
+    const { error: clearCouponError } = await supabase
+      .from('account_billing')
+      .update({
+        pending_first_delta_coupon_cents: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('account_id', billing.account_id);
+    if (clearCouponError) throw new Error(clearCouponError.message);
+  }
 
   const invoiceDate = new Date((event.created ?? Math.floor(Date.now() / 1000)) * 1000);
   const billingYear = invoiceDate.getUTCFullYear();

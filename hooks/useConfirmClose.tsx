@@ -4,7 +4,7 @@ import { useConfirm } from '@/components/ui/ConfirmContext';
 /**
  * Returns a close handler that shows the global discard-confirm modal when there are
  * unsaved changes. Use for modals/forms: pass as onClose so Cancel, X, and backdrop
- * all guard against losing changes. Requires ConfirmProvider at app root.
+ * all guard against losing changes. Requires the root dialog host at app root.
  */
 export function useConfirmClose(
   isDirty: boolean,

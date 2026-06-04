@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
-import { BaseModal, ModalStepIndicator } from '@/components/ui/modals';
+import { BaseModal } from '@/components/ui/modals';
+import { WizardStepIndicator } from '@/components/ui/wizard';
 import { Button } from '@/components/ui/button';
 import { useAccount } from '@/contexts/AccountContext';
 import {
@@ -645,7 +646,7 @@ export function SmartleadMigrationWizardModal({ visible, onClose, initialRunId =
         {showBootstrapSkeleton ? (
           <MigrationStepIndicatorSkeleton />
         ) : (
-          <ModalStepIndicator steps={STEPS} activeIndex={step ?? 0} wrap />
+          <WizardStepIndicator steps={STEPS} activeIndex={step ?? 0} wrap />
         )}
 
         {showBootstrapSkeleton && <MigrationBootstrapSkeleton />}

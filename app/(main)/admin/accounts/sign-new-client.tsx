@@ -1,61 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  DETAIL_CONTENT_MAX_WIDTH,
-  DetailPageShell,
-  LAYOUT_BREAKPOINT,
-  PageLayout,
-} from '@/components/ui/layout';
+import { PageLayout } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
-import { Toggle } from '@/components/ui/Toggle';
 import { Alert, LoadingState, useToast } from '@/components/ui/feedback';
-import { ModalStepIndicator } from '@/components/ui/modals';
+import { WizardFooter } from '@/components/ui/wizard';
 import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
 import { useAccount } from '@/contexts/AccountContext';
-import {
-  AdminField,
-  formatUsd,
-  normalizeProposalSnapshot,
-} from '@/components/admin/account-management/shared';
-import { PlatformInviteAdminInlinePreview } from '@/components/platform-invite/PlatformInviteAdminInlinePreview';
-import { PlatformInviteLogoEditor } from '@/components/platform-invite/PlatformInviteLogoEditor';
-import { PlatformTermsMarkdown } from '@/components/platform-invite/PlatformTermsMarkdown';
+import { normalizeProposalSnapshot } from '@/components/platform/admin/shared';
+import { PlatformInviteLogoEditor } from '@/components/platform/contract/PlatformInviteLogoEditor';
 import {
   getProposalPlanPreset,
-  inferProposalPlanTier,
   isProposalPlanTier,
-  PROPOSAL_PLAN_TIER_OPTIONS,
+  readProposalPlanTierFromSnapshot,
   type ProposalPlanTier,
-} from '@/lib/platform-invite/proposalPlans';
-import {
-  authInputClassName,
-  authInputStyle,
-  authPlaceholderColor,
-} from '@/components/auth/authFormStyles';
+} from '@/lib/platform/contract/proposalPlans';
 import {
   createPlatformInvitationDraft,
   getPlatformAccountManagementDetail,
   listPlatformTermsVersions,
-  markPlatformInvitationReady,
   publishPlatformInvitation,
   updatePlatformInvitationDraft,
   type PlatformTermsVersion,
 } from '@/lib/supabase/services/platform';
-import { sendPlatformInvitationEmail } from '@/lib/services/platform';
+import { sendPlatformInviteEmail } from '@/lib/services/platform';
 import {
-  type PlatformInviteViewData,
-} from '@/lib/platform-invite/types';
-import {
-  AGREEMENT_TYPE_OPTIONS,
   getAgreementTemplateMarkdown,
   getAgreementTypeLabel,
   getAgreementTypeTitle,
   getAgreementTypeVersion,
   normalizeAgreementType,
-  renderPlatformTermsMarkdown,
   type AgreementType,
-} from '@/lib/platform-invite/terms';
+} from '@/lib/platform/contract/terms';
 import {
   buildPlatformInviteWizardStorageKey,
   clampInviteWizardStepIndex,
@@ -66,10 +41,20 @@ import {
   type PlatformInviteWizardDraft,
   useInviteWizardController,
   writePlatformInviteWizardDraft,
-} from '@/lib/platform-invite/wizard';
+} from '@/lib/platform/invite/wizard';
+import { useInviteReviewPreviewData } from '@/lib/platform/invite/useInviteWizardScreen';
+import { WizardPageShell } from '@/components/platform/admin/wizard';
+import { InviteClientStep } from '@/components/platform/admin/wizard/steps/invite/InviteClientStep';
+import { InviteProposalBillingStep } from '@/components/platform/admin/wizard/steps/invite/InviteProposalBillingStep';
+import { InviteReviewStep } from '@/components/platform/admin/wizard/steps/invite/InviteReviewStep';
+import { InviteApprovalStep } from '@/components/platform/admin/wizard/steps/invite/InviteApprovalStep';
+import { ContractTermsStep } from '@/components/platform/admin/wizard/steps/shared/ContractTermsStep';
+import {
+  buildContractProposalSnapshot,
+  renderContractTermsPreview,
+} from '@/lib/platform/wizard/contract';
 
 const defaultPlanTier: ProposalPlanTier = 'silver';
-const defaultPlanPreset = getProposalPlanPreset(defaultPlanTier);
 
 function buildInviteUrl(invitationId: string) {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://build.getfurnace.io';
@@ -83,11 +68,6 @@ export default function SignNewClientPage() {
   const showSuccessToast = toast.success;
   const showErrorToast = toast.error;
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const isMobile = width < LAYOUT_BREAKPOINT;
-  const contentWidthStyle = isMobile
-    ? undefined
-    : { maxWidth: DETAIL_CONTENT_MAX_WIDTH, width: '100%' as const, alignSelf: 'center' as const };
   const params = useLocalSearchParams<{ invitationId?: string }>();
   const isEditing = typeof params.invitationId === 'string' && params.invitationId.length > 0;
 
@@ -98,10 +78,7 @@ export default function SignNewClientPage() {
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteCompanyName, setInviteCompanyName] = useState('');
-  const [inviteMonthlyRetainer, setInviteMonthlyRetainer] = useState(
-    String(Math.round(defaultPlanPreset.paymentDefaultCents / 100)),
-  );
-  const [inviteFirstMonthDiscount, setInviteFirstMonthDiscount] = useState('0');
+  const [inviteMonthlyRetainer, setInviteMonthlyRetainer] = useState('');
   const [planTier, setPlanTier] = useState<ProposalPlanTier>(defaultPlanTier);
   const [proposalClientLogoUrl, setProposalClientLogoUrl] = useState('');
   const [proposalClientLogoScale, setProposalClientLogoScale] = useState(1);
@@ -124,10 +101,6 @@ export default function SignNewClientPage() {
     () => parseInviteWizardUsdInputToCents(inviteMonthlyRetainer),
     [inviteMonthlyRetainer],
   );
-  const firstMonthDiscountCents = useMemo(
-    () => parseInviteWizardUsdInputToCents(inviteFirstMonthDiscount) ?? 0,
-    [inviteFirstMonthDiscount],
-  );
   const managedOutreachVolumeValue = useMemo(
     () => parseInviteWizardPositiveWholeNumber(managedOutreachVolume),
     [managedOutreachVolume],
@@ -138,20 +111,18 @@ export default function SignNewClientPage() {
   );
 
   const proposalSnapshot = useMemo(
-    () => ({
-      proposal_title:
-        agreementType === 'managed_services_agreement'
-          ? getProposalPlanPreset(planTier).proposalTitle
-          : 'Furnace Platform Access',
-      client_logo_url: proposalClientLogoUrl.trim(),
-      client_logo_scale: proposalClientLogoScale,
-      client_logo_offset_x: proposalClientLogoOffsetX,
-      plan_tier: planTier,
-      website_traffic_sourcing_enabled: websiteTrafficSourcingEnabled,
-      reply_handling_enabled: replyHandlingEnabled,
-      managed_outreach_volume: managedOutreachVolumeValue,
-      managed_inbox_count: managedInboxCountValue,
-    }),
+    () =>
+      buildContractProposalSnapshot({
+        agreementType,
+        planTier,
+        clientLogoUrl: proposalClientLogoUrl,
+        clientLogoScale: proposalClientLogoScale,
+        clientLogoOffsetX: proposalClientLogoOffsetX,
+        websiteTrafficSourcingEnabled,
+        replyHandlingEnabled,
+        managedOutreachVolume: managedOutreachVolumeValue,
+        managedInboxCount: managedInboxCountValue,
+      }),
     [
       agreementType,
       managedInboxCountValue,
@@ -211,7 +182,7 @@ export default function SignNewClientPage() {
   const currentPlanPreset = useMemo(() => getProposalPlanPreset(planTier), [planTier]);
   const renderedTermsPreview = useMemo(
     () =>
-      renderPlatformTermsMarkdown({
+      renderContractTermsPreview({
         sourceMarkdown: termsSourceMarkdown,
         proposedAccountName: inviteCompanyName.trim() || null,
         monthlyRetainerCents: monthlyRetainerCents ?? 0,
@@ -226,7 +197,6 @@ export default function SignNewClientPage() {
       inviteEmail,
       inviteCompanyName,
       inviteMonthlyRetainer,
-      inviteFirstMonthDiscount,
       planTier,
       proposalClientLogoUrl,
       proposalClientLogoScale,
@@ -245,7 +215,6 @@ export default function SignNewClientPage() {
       autoAddInternalAdmins,
       inviteCompanyName,
       inviteEmail,
-      inviteFirstMonthDiscount,
       inviteMonthlyRetainer,
       managedInboxCount,
       managedOutreachVolume,
@@ -260,13 +229,12 @@ export default function SignNewClientPage() {
       websiteTrafficSourcingEnabled,
     ],
   );
-  const { steps, goBack, goNext } = useInviteWizardController({
+  const { steps, goBack, goNext, goToStep } = useInviteWizardController({
     agreementType,
     stepIndex,
     draft: {
       inviteEmail,
       inviteMonthlyRetainer,
-      inviteFirstMonthDiscount,
       agreementType,
       managedOutreachVolume,
       managedInboxCount,
@@ -281,7 +249,6 @@ export default function SignNewClientPage() {
     setInviteEmail(draft.inviteEmail);
     setInviteCompanyName(draft.inviteCompanyName);
     setInviteMonthlyRetainer(draft.inviteMonthlyRetainer);
-    setInviteFirstMonthDiscount(draft.inviteFirstMonthDiscount);
     setPlanTier(draft.planTier);
     setProposalClientLogoUrl(draft.proposalClientLogoUrl);
     setProposalClientLogoScale(draft.proposalClientLogoScale);
@@ -301,9 +268,7 @@ export default function SignNewClientPage() {
   }, []);
 
   const applyPlanTier = (nextTier: ProposalPlanTier) => {
-    const preset = getProposalPlanPreset(nextTier);
     setPlanTier(nextTier);
-    setInviteMonthlyRetainer(String(Math.round(preset.paymentDefaultCents / 100)));
   };
 
   const applyAgreementType = (nextAgreementType: AgreementType) => {
@@ -355,8 +320,7 @@ export default function SignNewClientPage() {
           stepIndex: 0,
           inviteEmail: '',
           inviteCompanyName: '',
-          inviteMonthlyRetainer: String(Math.round(defaultPlanPreset.paymentDefaultCents / 100)),
-          inviteFirstMonthDiscount: '0',
+          inviteMonthlyRetainer: '',
           planTier: defaultPlanTier,
           proposalClientLogoUrl: '',
           proposalClientLogoScale: 1,
@@ -384,9 +348,7 @@ export default function SignNewClientPage() {
             typeof currentRevision.proposal_snapshot_json === 'object'
               ? (currentRevision.proposal_snapshot_json as Record<string, unknown>)
               : {};
-          const loadedPlanTier = isProposalPlanTier(rawProposal.plan_tier)
-            ? rawProposal.plan_tier
-            : inferProposalPlanTier(currentRevision?.monthly_retainer_cents);
+          const loadedPlanTier = readProposalPlanTierFromSnapshot(rawProposal, defaultPlanTier);
           const loadedAgreementType = normalizeAgreementType(
             currentRevision?.agreement_type ?? invitation.agreement_type
           );
@@ -413,11 +375,7 @@ export default function SignNewClientPage() {
             inviteMonthlyRetainer:
               typeof invitation.monthly_retainer_cents === 'number'
                 ? String(Math.round(invitation.monthly_retainer_cents / 100))
-                : String(Math.round(defaultPlanPreset.paymentDefaultCents / 100)),
-            inviteFirstMonthDiscount:
-              typeof invitation.first_month_discount_cents === 'number'
-                ? String(Math.round(invitation.first_month_discount_cents / 100))
-                : '0',
+                : '',
             planTier: loadedPlanTier,
             proposalClientLogoUrl: proposal.client_logo_url,
             proposalClientLogoScale: proposal.client_logo_scale,
@@ -472,7 +430,6 @@ export default function SignNewClientPage() {
       !inviteEmail.trim() ||
       monthlyRetainerCents == null ||
       monthlyRetainerCents <= 0 ||
-      firstMonthDiscountCents < 0 ||
       !termsSourceMarkdown.trim()
     ) {
       throw new Error('Complete the required fields before saving.');
@@ -487,7 +444,6 @@ export default function SignNewClientPage() {
         email: inviteEmail.trim().toLowerCase(),
         proposedAccountName: inviteCompanyName.trim() || null,
         monthlyRetainerCents,
-        firstMonthDiscountCents,
         proposalSnapshotJson: proposalSnapshot,
         agreementType,
         termsVersion: selectedTermsVersion,
@@ -500,7 +456,6 @@ export default function SignNewClientPage() {
       email: inviteEmail.trim().toLowerCase(),
       proposedAccountName: inviteCompanyName.trim() || null,
       monthlyRetainerCents,
-      firstMonthDiscountCents,
       proposalSnapshotJson: proposalSnapshot,
       agreementType,
       termsVersion: selectedTermsVersion,
@@ -526,17 +481,16 @@ export default function SignNewClientPage() {
     }
   };
 
-  const handleApproveAndSend = async () => {
+  const handlePublishToClient = async () => {
     setSaving(true);
     try {
       const invitation = await saveDraft();
-      await markPlatformInvitationReady(invitation.id);
       await publishPlatformInvitation(invitation.id);
       const proposalRecord =
         proposalSnapshot && typeof proposalSnapshot === 'object'
           ? (proposalSnapshot as Record<string, unknown>)
           : {};
-      await sendPlatformInvitationEmail({
+      await sendPlatformInviteEmail({
         to: inviteEmail.trim().toLowerCase(),
         inviterName: profile?.name || profile?.email || 'Furnace',
         monthlyRetainerCents: monthlyRetainerCents ?? 0,
@@ -550,310 +504,118 @@ export default function SignNewClientPage() {
         accountName: inviteCompanyName.trim() || undefined,
       });
       clearPlatformInviteWizardDraft(wizardStorageKey);
-      showSuccessToast('Invite approved and sent.');
+      showSuccessToast('Invite published to client.');
       router.replace({
         pathname: '/admin/accounts/[id]',
         params: { id: invitation.id, kind: 'invitation' },
       });
     } catch (err) {
-      showErrorToast(err instanceof Error ? err.message : 'Failed to approve and send invite.');
+      showErrorToast(err instanceof Error ? err.message : 'Failed to publish invite.');
     } finally {
       setSaving(false);
     }
   };
 
-  const reviewPreviewData = useMemo<PlatformInviteViewData | null>(() => {
-    if (!inviteEmail.trim() || monthlyRetainerCents == null || monthlyRetainerCents <= 0) {
-      return null;
-    }
-    if (!termsSourceMarkdown.trim()) {
-      return null;
-    }
-
-    return {
-      invitationId: isEditing ? params.invitationId : undefined,
-      status: 'draft',
-      inviteeEmail: inviteEmail.trim().toLowerCase(),
-      proposedAccountName: inviteCompanyName.trim() || null,
-      monthlyRetainerCents,
-      currency: 'usd',
-      firstMonthDiscountCents,
-      proposalSnapshot,
-      agreementType,
-      termsVersion: selectedTermsVersion,
-      termsSourceMarkdown,
-      termsSnapshotMarkdown: renderedTermsPreview,
-      selectedPaymentRoute: 'card' as const,
-    };
-  }, [
-    agreementType,
-    inviteCompanyName,
+  const reviewPreviewData = useInviteReviewPreviewData({
     inviteEmail,
-    inviteFirstMonthDiscount,
-    inviteMonthlyRetainer,
-    isEditing,
-    params.invitationId,
+    inviteCompanyName,
+    monthlyRetainerCents,
     proposalSnapshot,
+    agreementType,
     selectedTermsVersion,
     termsSourceMarkdown,
     renderedTermsPreview,
-  ]);
+    invitationId: params.invitationId,
+    isEditing,
+  });
 
   const renderStepBody = () => {
     if (stepIndex === 0) {
       return (
-        <View className="gap-2">
-          <AdminField label="Invite email">
-            <TextInput
-              value={inviteEmail}
-              onChangeText={setInviteEmail}
-              placeholder="client@company.com"
-              placeholderTextColor={authPlaceholderColor}
-              className={authInputClassName}
-              style={authInputStyle}
-              autoCapitalize="none"
-            />
-          </AdminField>
-          <AdminField label="Proposed company or workspace name">
-            <TextInput
-              value={inviteCompanyName}
-              onChangeText={setInviteCompanyName}
-              placeholder="Sisu"
-              placeholderTextColor={authPlaceholderColor}
-              className={authInputClassName}
-              style={authInputStyle}
-            />
-          </AdminField>
-        </View>
+        <InviteClientStep
+          inviteEmail={inviteEmail}
+          onInviteEmailChange={setInviteEmail}
+          inviteCompanyName={inviteCompanyName}
+          onInviteCompanyNameChange={setInviteCompanyName}
+        />
       );
     }
 
     if (stepIndex === 1) {
       return (
-        <View className="gap-2">
-          <View className="flex-row gap-4">
-            <View className="flex-1">
-              <AdminField label="Monthly retainer (USD)">
-                <TextInput
-                  value={inviteMonthlyRetainer}
-                  onChangeText={setInviteMonthlyRetainer}
-                  placeholder="1800"
-                  placeholderTextColor={authPlaceholderColor}
-                  className={authInputClassName}
-                  style={authInputStyle}
-                  keyboardType="numeric"
-                />
-              </AdminField>
-            </View>
-            <View className="flex-1">
-              <AdminField label="First month discount (USD)">
-                <TextInput
-                  value={inviteFirstMonthDiscount}
-                  onChangeText={setInviteFirstMonthDiscount}
-                  placeholder="0"
-                  placeholderTextColor={authPlaceholderColor}
-                  className={authInputClassName}
-                  style={authInputStyle}
-                  keyboardType="numeric"
-                />
-              </AdminField>
-            </View>
-          </View>
-          <View className="mb-5 flex-row items-center justify-between gap-3 rounded-xl border border-[#2A2A2A] bg-[#121212] p-4">
-            <Text className="flex-1 text-gray-300 font-instrument">
-              Auto-add `porter@getfurnace.io` and `kyle@getfurnace.io` as admins
-            </Text>
-            <Toggle value={autoAddInternalAdmins} onValueChange={setAutoAddInternalAdmins} />
-          </View>
-        </View>
+        <InviteProposalBillingStep
+          agreementType={agreementType}
+          onAgreementTypeChange={applyAgreementType}
+          isManagedServices={isManagedServicesAgreement}
+          inviteMonthlyRetainer={inviteMonthlyRetainer}
+          onInviteMonthlyRetainerChange={setInviteMonthlyRetainer}
+          autoAddInternalAdmins={autoAddInternalAdmins}
+          onAutoAddInternalAdminsChange={setAutoAddInternalAdmins}
+          planTier={planTier}
+          onPlanTierChange={applyPlanTier}
+          websiteTrafficSourcingEnabled={websiteTrafficSourcingEnabled}
+          onWebsiteTrafficSourcingEnabledChange={setWebsiteTrafficSourcingEnabled}
+          replyHandlingEnabled={replyHandlingEnabled}
+          onReplyHandlingEnabledChange={setReplyHandlingEnabled}
+          managedOutreachVolume={managedOutreachVolume}
+          onManagedOutreachVolumeChange={setManagedOutreachVolume}
+          managedInboxCount={managedInboxCount}
+          onManagedInboxCountChange={setManagedInboxCount}
+        />
       );
     }
 
     if (stepIndex === 2) {
       return (
-        <View className="gap-2">
-          <AdminField label="Agreement type">
-            <View className="flex-row gap-2">
-              {AGREEMENT_TYPE_OPTIONS.map((option) => {
-                const selected = option.type === agreementType;
-                return (
-                  <Pressable
-                    key={option.type}
-                    onPress={() => applyAgreementType(option.type)}
-                    className={`rounded-lg border px-4 py-3 ${
-                      selected
-                        ? 'border-brand-orange bg-brand-orange/10'
-                        : 'border-[#3A3A3A] bg-[#121212]'
-                    }`}
-                    style={{ flex: 1 }}
-                  >
-                    <Text
-                      className={
-                        selected
-                          ? 'text-brand-orange font-instrument-semibold text-center'
-                          : 'text-gray-300 font-instrument text-center'
-                      }
-                    >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </AdminField>
-          {isManagedServicesAgreement ? (
-            <>
-              <AdminField label="Plan tier">
-                <View className="flex-row gap-2">
-                  {PROPOSAL_PLAN_TIER_OPTIONS.map((option) => {
-                    const selected = option.id === planTier;
-                    return (
-                      <Pressable
-                        key={option.id}
-                        onPress={() => applyPlanTier(option.id)}
-                        className={`rounded-lg border px-4 py-3 ${
-                          selected
-                            ? 'border-brand-orange bg-brand-orange/10'
-                            : 'border-[#3A3A3A] bg-[#121212]'
-                        }`}
-                        style={{ flex: 1 }}
-                      >
-                        <Text
-                          className={
-                            selected
-                              ? 'text-brand-orange font-instrument-semibold text-center'
-                              : 'text-gray-300 font-instrument text-center'
-                          }
-                        >
-                          {option.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </AdminField>
-              <View className="gap-3 mb-4">
-                <View className="flex-row items-center justify-between gap-3 rounded-xl border border-[#2A2A2A] bg-[#121212] p-4">
-                  <View className="flex-1">
-                    <Text className="text-white font-instrument-medium">Website traffic sourcing</Text>
-                    <Text className="text-gray-400 font-instrument text-sm mt-1">
-                      Show this proposal with website traffic sourcing enabled as an add-on.
-                    </Text>
-                  </View>
-                  <Toggle
-                    value={websiteTrafficSourcingEnabled}
-                    onValueChange={setWebsiteTrafficSourcingEnabled}
-                  />
-                </View>
-                <View className="flex-row items-center justify-between gap-3 rounded-xl border border-[#2A2A2A] bg-[#121212] p-4">
-                  <View className="flex-1">
-                    <Text className="text-white font-instrument-medium">Reply handling</Text>
-                    <Text className="text-gray-400 font-instrument text-sm mt-1">
-                      Show this proposal with reply handling enabled as an add-on.
-                    </Text>
-                  </View>
-                  <Toggle value={replyHandlingEnabled} onValueChange={setReplyHandlingEnabled} />
-                </View>
-              </View>
-            </>
-          ) : (
-            <View className="rounded-xl border border-[#2A2A2A] bg-[#121212] p-4">
-              <Text className="text-white font-instrument-medium">Platform access invite</Text>
-              <Text className="mt-1 text-sm font-instrument text-gray-400">
-                This agreement path grants access to Furnace without a plan tier, add-ons, or
-                managed-services proposal.
-              </Text>
-            </View>
-          )}
-          {isManagedServicesAgreement ? (
-            <View className="flex-row gap-4">
-              <View className="flex-1">
-                <AdminField label="Outreach volume (emails/month)">
-                  <TextInput
-                    value={managedOutreachVolume}
-                    onChangeText={setManagedOutreachVolume}
-                    placeholder="5000"
-                    placeholderTextColor={authPlaceholderColor}
-                    className={authInputClassName}
-                    style={authInputStyle}
-                    keyboardType="numeric"
-                  />
-                </AdminField>
-              </View>
-              <View className="flex-1">
-                <AdminField label="Sending inbox count">
-                  <TextInput
-                    value={managedInboxCount}
-                    onChangeText={setManagedInboxCount}
-                    placeholder="25"
-                    placeholderTextColor={authPlaceholderColor}
-                    className={authInputClassName}
-                    style={authInputStyle}
-                    keyboardType="numeric"
-                  />
-                </AdminField>
-              </View>
-            </View>
-          ) : null}
-        </View>
+        <ContractTermsStep
+          title={getAgreementTypeTitle(agreementType)}
+          templateLabel={`Starting template: ${(selectedTerms?.version ?? selectedTermsVersion) || 'Missing template'}`}
+          markdown={termsSourceMarkdown}
+          onMarkdownChange={setTermsSourceMarkdown}
+          previewMarkdown={renderedTermsPreview}
+          onResetToDefault={() => {
+            setSelectedTermsVersion(selectedTerms?.version ?? '');
+            setTermsSourceMarkdown(selectedTerms?.body_markdown ?? '');
+          }}
+        />
       );
     }
 
     if (stepIndex === 3) {
-      return (
-        <View className="gap-5">
-          <AdminField label="Agreement template">
-            <View className="rounded-xl border border-[#2A2A2A] bg-[#121212] p-4">
-              <Text className="text-white font-instrument-medium">
-                {getAgreementTypeTitle(agreementType)}
-              </Text>
-              <Text className="mt-1 text-sm font-instrument text-gray-400">
-                Starting template: {(selectedTerms?.version ?? selectedTermsVersion) || 'Missing template'}
-              </Text>
-            </View>
-          </AdminField>
-          <AdminField label="Raw markdown">
-            <TextInput
-              value={termsSourceMarkdown}
-              onChangeText={setTermsSourceMarkdown}
-              placeholder="Paste or edit the full agreement markdown here"
-              placeholderTextColor={authPlaceholderColor}
-              className={authInputClassName}
-              style={{ ...authInputStyle, minHeight: 240, textAlignVertical: 'top' }}
-              multiline
-            />
-          </AdminField>
-          <View className="flex-row gap-3">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onPress={() => {
-                setSelectedTermsVersion(selectedTerms?.version ?? '');
-                setTermsSourceMarkdown(selectedTerms?.body_markdown ?? '');
-              }}
-            >
-              Reset to default template
-            </Button>
-          </View>
-          <View className="rounded-2xl border border-[#2A2A2A] bg-[#181818] p-4">
-            <Text className="mb-3 text-sm font-instrument-medium text-white">Rendered preview</Text>
-            <PlatformTermsMarkdown markdown={renderedTermsPreview || 'Agreement preview will appear here.'} />
-          </View>
-        </View>
-      );
-    }
+      const summaryLines = [
+        { label: 'Contact', value: inviteEmail || 'Missing email' },
+        { label: 'Company', value: inviteCompanyName || 'No proposed company name' },
+        { label: 'Agreement', value: getAgreementTypeLabel(agreementType) },
+      ];
 
-    if (stepIndex === 4) {
+      if (isManagedServicesAgreement) {
+        summaryLines.push(
+          { label: 'Plan', value: currentPlanPreset.label },
+          {
+            label: 'Add-ons',
+            value:
+              [
+                websiteTrafficSourcingEnabled ? 'Website traffic sourcing' : null,
+                replyHandlingEnabled ? 'Reply handling' : null,
+              ]
+                .filter(Boolean)
+                .join(', ') || 'None',
+          },
+          { label: 'Outreach volume', value: managedOutreachVolume || 'Missing' },
+          { label: 'Inbox count', value: managedInboxCount || 'Missing' },
+        );
+      }
+
       return (
-        <View className="gap-6">
-          <Alert
-            variant="info"
-            message={
-              isManagedServicesAgreement
-                ? 'Review the real invite flow below. This uses the same proposal, agreement, payment, and account setup screens prospects will see, but it does not publish the invite or start checkout.'
-                : 'Review the real invite flow below. This uses the same agreement, payment, and account setup screens prospects will see, but it does not publish the invite or start checkout.'
-            }
-          />
+        <InviteReviewStep
+          message={
+            isManagedServicesAgreement
+              ? 'Review the real invite flow below. This uses the same proposal, agreement, payment, and account setup screens prospects will see, but it does not publish the invite or start checkout.'
+              : 'Review the real invite flow below. This uses the same agreement, payment, and account setup screens prospects will see, but it does not publish the invite or start checkout.'
+          }
+          summaryLines={summaryLines}
+          reviewPreviewData={reviewPreviewData}
+        >
           <PlatformInviteLogoEditor
             logoUrl={proposalClientLogoUrl}
             logoScale={proposalClientLogoScale}
@@ -862,94 +624,25 @@ export default function SignNewClientPage() {
             onLogoScaleChange={setProposalClientLogoScale}
             onLogoOffsetChange={setProposalClientLogoOffsetX}
           />
-          <PlatformInviteAdminInlinePreview
-            draftData={reviewPreviewData}
-          />
-          <View className="rounded-2xl border border-[#2A2A2A] bg-[#181818] p-5 gap-4">
-            <View className="gap-2 border-t border-[#2A2A2A] pt-4">
-              <Text className="text-gray-400 font-instrument text-sm">
-                Contact: {inviteEmail || 'Missing email'}
-              </Text>
-              <Text className="text-gray-400 font-instrument text-sm">
-                Company: {inviteCompanyName || 'No proposed company name'}
-              </Text>
-              <Text className="text-gray-400 font-instrument text-sm">
-                Agreement: {getAgreementTypeLabel(agreementType)}
-              </Text>
-              {isManagedServicesAgreement ? (
-                <>
-                  <Text className="text-gray-400 font-instrument text-sm">
-                    Plan: {currentPlanPreset.label}
-                  </Text>
-                  <Text className="text-gray-400 font-instrument text-sm">
-                    Add-ons:{' '}
-                    {[
-                      websiteTrafficSourcingEnabled ? 'Website traffic sourcing' : null,
-                      replyHandlingEnabled ? 'Reply handling' : null,
-                    ]
-                      .filter(Boolean)
-                      .join(', ') || 'None'}
-                  </Text>
-                  <Text className="text-gray-400 font-instrument text-sm">
-                    Outreach volume: {managedOutreachVolume || 'Missing'}
-                  </Text>
-                  <Text className="text-gray-400 font-instrument text-sm">
-                    Inbox count: {managedInboxCount || 'Missing'}
-                  </Text>
-                </>
-              ) : null}
-            </View>
-          </View>
-        </View>
+        </InviteReviewStep>
       );
     }
 
     return (
-      <View className="gap-4">
-        <View className="rounded-2xl border border-[#2A2A2A] bg-[#181818] p-5">
-          <Text className="text-white text-xl font-instrument-semibold mb-3">Approval checklist</Text>
-          <Text className="text-gray-300 font-instrument">
-            Email will not be sent until you explicitly approve and send. Saving a draft keeps this package internal.
-          </Text>
-          <View className="mt-4 gap-2">
-            <Text className="text-gray-400 font-instrument">Client: {inviteEmail || 'Missing email'}</Text>
-            <Text className="text-gray-400 font-instrument">
-              Company: {inviteCompanyName || 'No proposed company name'}
-            </Text>
-            <Text className="text-gray-400 font-instrument">
-              Retainer: {formatUsd(monthlyRetainerCents ?? 0)}
-            </Text>
-            <Text className="text-gray-400 font-instrument">
-              Agreement: {getAgreementTypeLabel(agreementType)}
-            </Text>
-            {isManagedServicesAgreement ? (
-              <>
-                <Text className="text-gray-400 font-instrument">
-                  Outreach volume: {managedOutreachVolume || 'Missing'}
-                </Text>
-                <Text className="text-gray-400 font-instrument">
-                  Inbox count: {managedInboxCount || 'Missing'}
-                </Text>
-                <Text className="text-gray-400 font-instrument">
-                  Plan: {currentPlanPreset.label}
-                </Text>
-              </>
-            ) : null}
-          </View>
-        </View>
-
-        <View className="gap-3">
-          <Button variant="outline" onPress={goBack} disabled={saving}>
-            Back
-          </Button>
-          <Button variant="secondary" onPress={handleSaveDraft} disabled={saving}>
-            {saving ? 'Saving draft...' : 'Save draft'}
-          </Button>
-          <Button onPress={handleApproveAndSend} disabled={saving}>
-            {saving ? 'Sending invite...' : 'Approve and send'}
-          </Button>
-        </View>
-      </View>
+      <InviteApprovalStep
+        inviteEmail={inviteEmail}
+        inviteCompanyName={inviteCompanyName}
+        monthlyRetainerCents={monthlyRetainerCents}
+        agreementType={agreementType}
+        isManagedServicesAgreement={isManagedServicesAgreement}
+        managedOutreachVolume={managedOutreachVolume}
+        managedInboxCount={managedInboxCount}
+        currentPlanLabel={currentPlanPreset.label}
+        saving={saving}
+        onBack={goBack}
+        onSaveDraft={() => void handleSaveDraft()}
+        onPublish={() => void handlePublishToClient()}
+      />
     );
   };
 
@@ -970,7 +663,7 @@ export default function SignNewClientPage() {
   }
 
   return (
-    <DetailPageShell
+    <WizardPageShell
       breadcrumbItems={[
         { label: 'Admin', href: '/admin' },
         { label: 'Account Management', href: '/admin/accounts' },
@@ -978,36 +671,29 @@ export default function SignNewClientPage() {
       ]}
       backHref={isEditing && params.invitationId ? `/admin/accounts/${params.invitationId}?kind=invitation` : '/admin/accounts'}
       title={isEditing ? 'Edit Client Package' : 'Sign New Client'}
-      subtitle="Build the invite internally first, then approve and send only when it is ready."
-    >
-      <View style={contentWidthStyle} className="gap-6 w-full">
-        <View className="rounded-2xl border border-[#2A2A2A] bg-[#181818] p-5">
-          <ModalStepIndicator steps={steps} activeIndex={stepIndex} wrap />
-        </View>
-
-        <View className="rounded-2xl border border-[#2A2A2A] bg-[#181818] p-5">
-          {renderStepBody()}
-        </View>
-
-        {stepIndex < steps.length - 1 ? (
-          <View className="flex-row gap-3">
+      subtitle="Build the invite internally first, then publish to client when it is ready."
+      steps={steps}
+      activeStepIndex={stepIndex}
+      onStepPress={goToStep}
+      footer={
+        stepIndex < steps.length - 1 ? (
+          <WizardFooter>
             <Button
               variant="outline"
-              className="flex-1"
+              fullWidth
               onPress={goBack}
               disabled={stepIndex === 0}
             >
               Back
             </Button>
-            <Button
-              className="flex-1"
-              onPress={goNext}
-            >
+            <Button fullWidth onPress={goNext}>
               Continue
             </Button>
-          </View>
-        ) : null}
-      </View>
-    </DetailPageShell>
+          </WizardFooter>
+        ) : undefined
+      }
+    >
+      {renderStepBody()}
+    </WizardPageShell>
   );
 }

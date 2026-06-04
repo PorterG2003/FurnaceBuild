@@ -29,6 +29,7 @@ async function resolveSmartleadRun(accountId: string): Promise<SmartleadMigratio
 
 export interface UseAccountSettingsDataOptions {
   enabled?: boolean;
+  includeAdminData?: boolean;
 }
 
 export function useAccountSettingsData(
@@ -36,6 +37,7 @@ export function useAccountSettingsData(
   options: UseAccountSettingsDataOptions = {},
 ) {
   const enabled = (options.enabled ?? true) && !!accountId;
+  const includeAdminData = options.includeAdminData ?? true;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<AccountSettingsData | null>(null);
@@ -48,14 +50,16 @@ export function useAccountSettingsData(
       setError(null);
 
       try {
-        const [prefsBundle, apiKeys, webhookFailedDeliveryCount, smartleadRun] = await Promise.all([
+        const [prefsBundle, adminData, smartleadRun] = await Promise.all([
           Promise.all([getNotificationPreferences(accountId), listActivePushSubscriptions()]),
-          listAccountApiKeys(accountId),
-          countFailedWebhookDeliveries(accountId),
+          includeAdminData
+            ? Promise.all([listAccountApiKeys(accountId), countFailedWebhookDeliveries(accountId)])
+            : Promise.resolve([[], 0] as const),
           resolveSmartleadRun(accountId),
         ]);
 
         const [prefs, subs] = prefsBundle;
+        const [apiKeys, webhookFailedDeliveryCount] = adminData;
         setData({
           prefs,
           subCount: subs.length,
@@ -69,7 +73,7 @@ export function useAccountSettingsData(
         if (!silent) setLoading(false);
       }
     },
-    [accountId],
+    [accountId, includeAdminData],
   );
 
   useEffect(() => {

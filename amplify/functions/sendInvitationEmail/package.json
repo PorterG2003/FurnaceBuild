@@ -1,1 +1,0 @@
-{"type":"module","dependencies":{"@furnace/slack-lib":"file:../../../lib/slack","@supabase/supabase-js":"^2.77.0","resend":"^4.0.0"},"devDependencies":{"@types/aws-lambda":"^8.10.145"}}

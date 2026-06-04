@@ -1,20 +1,16 @@
 export interface BillingAnchorPlan {
   anchorDateIso: string;
-  firstRecurringInvoiceAmountCents: number;
-  firstRecurringCreditCents: number;
+  firstRecurringAmountDueCents: number;
+  overlapCreditCents: number;
 }
 
-function utcMidday(year: number, monthIndex: number, day: number): Date {
-  return new Date(Date.UTC(year, monthIndex, day, 12, 0, 0, 0));
-}
+import {
+  daysInMstMonth,
+  getMstDateParts,
+  getNextMonthlyAnchorDate,
+} from './calendar';
 
-function daysInUtcMonth(year: number, monthIndex: number): number {
-  return utcMidday(year, monthIndex + 1, 0).getUTCDate();
-}
-
-export function getNextMonthlyAnchorDate(startedAt: Date): Date {
-  return utcMidday(startedAt.getUTCFullYear(), startedAt.getUTCMonth() + 1, 1);
-}
+export { getNextMonthlyAnchorDate } from './calendar';
 
 export function buildBillingAnchorPlan(
   startedAt: Date,
@@ -25,19 +21,21 @@ export function buildBillingAnchorPlan(
   }
 
   const anchorDate = getNextMonthlyAnchorDate(startedAt);
-  const startedDay = startedAt.getUTCDate();
-  const anchorMonthDays = daysInUtcMonth(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth());
-
-  const firstRecurringInvoiceAmountCents =
-    startedDay <= 1
-      ? monthlyRetainerCents
-      : Math.round(
-          (monthlyRetainerCents * Math.min(startedDay - 1, anchorMonthDays)) / anchorMonthDays
-        );
+  const { day: startedDay } = getMstDateParts(startedAt);
+  const { year: anchorYear, monthIndex: anchorMonthIndex } = getMstDateParts(anchorDate);
+  const anchorMonthDays = daysInMstMonth(anchorYear, anchorMonthIndex);
+  const overlapCoveredDays = Math.min(Math.max(startedDay - 1, 0), anchorMonthDays);
+  const overlapCreditCents = Math.round(
+    (monthlyRetainerCents * overlapCoveredDays) / anchorMonthDays
+  );
+  const firstRecurringAmountDueCents = Math.max(
+    monthlyRetainerCents - overlapCreditCents,
+    0,
+  );
 
   return {
     anchorDateIso: anchorDate.toISOString(),
-    firstRecurringInvoiceAmountCents,
-    firstRecurringCreditCents: monthlyRetainerCents - firstRecurringInvoiceAmountCents,
+    firstRecurringAmountDueCents,
+    overlapCreditCents,
   };
 }

@@ -21,8 +21,11 @@ export interface EmailBodyEditorProps {
   label?: string;
   /** Called when content changes (web). Used for live preview. */
   onContentChange?: (text: string) => void;
+  /** Called when editor HTML changes (web). */
+  onHtmlChange?: (html: string) => void;
   /** Optional element to render in the header row to the right of the Variables button (e.g. Preview). */
   trailingElement?: React.ReactNode;
+  onSwitchToHtml?: () => void;
 }
 
 /**
@@ -38,7 +41,9 @@ export function EmailBodyEditor({
   minHeight = 220,
   label = 'Email Body',
   onContentChange,
+  onHtmlChange,
   trailingElement,
+  onSwitchToHtml,
 }: EmailBodyEditorProps) {
   const handleSelectVariable = (token: string) => {
     const bridge = editorRef.current;
@@ -70,6 +75,8 @@ export function EmailBodyEditor({
           editorRef={editorRef as React.MutableRefObject<import('@10play/tentap-editor').EditorBridge | null>}
           minHeight={minHeight}
           onContentChange={onContentChange}
+          onHtmlChange={onHtmlChange}
+          onSwitchToHtml={onSwitchToHtml}
         />
       </View>
     </View>

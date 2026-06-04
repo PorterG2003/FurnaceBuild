@@ -45,10 +45,11 @@ export function PlatformAmendmentUpgradePaymentStep({
 }) {
   const currentRetainerCents = info.current_monthly_retainer_cents ?? 0;
   const proposedRetainerCents = info.proposed_monthly_retainer_cents ?? 0;
-  const hasValidUpgrade = currentRetainerCents > 0 && proposedRetainerCents > currentRetainerCents;
+  const hasValidUpgrade = currentRetainerCents >= 0 && proposedRetainerCents > currentRetainerCents;
+  const isInitialSubscription = currentRetainerCents === 0;
   const isRecovery = paymentPhaseState === 'recovery' || billingStatus === 'payment_required';
   const isResume = paymentPhaseState === 'resume';
-  const requiresDefaultUpdate = paymentRoute !== savedPaymentRoute;
+  const requiresDefaultUpdate = !isInitialSubscription && paymentRoute !== savedPaymentRoute;
   const selectedRouteOption = getPlatformPaymentRouteOption(paymentRoute);
   const savedRouteOption = getPlatformPaymentRouteOption(savedPaymentRoute);
 
@@ -74,23 +75,31 @@ export function PlatformAmendmentUpgradePaymentStep({
     ? `This agreement update for ${info.account_name} is still waiting for payment. Choose how you want to pay, review the updated totals, and confirm payment to finish applying it.`
     : isResume
       ? `This agreement has already been reviewed for ${info.account_name}. Choose how you want to pay, review the updated totals, and confirm payment to apply the change.`
-      : `You have reviewed the updated agreement for ${info.account_name}. Choose how you want to pay, review the updated totals, and confirm payment to apply the change.`;
+      : isInitialSubscription
+        ? `You have reviewed the updated agreement for ${info.account_name}. Choose how you want to pay, review the first-month totals, and continue to checkout to start billing.`
+        : `You have reviewed the updated agreement for ${info.account_name}. Choose how you want to pay, review the updated totals, and confirm payment to apply the change.`;
   const outcomeCopy =
     paymentRoute === 'ach'
-      ? 'ACH upgrades provision immediately after you confirm, but the debit can settle later.'
-      : 'Card payments charge immediately when you confirm this upgrade.';
+      ? isInitialSubscription
+        ? 'ACH subscriptions go live after you complete checkout, but the debit can settle later.'
+        : 'ACH upgrades provision immediately after you confirm, but the debit can settle later.'
+      : isInitialSubscription
+        ? 'Card checkout charges the first month immediately and saves the card for recurring invoices.'
+        : 'Card payments charge immediately when you confirm this upgrade.';
   const recoveryMessage =
     billingStatus === 'payment_required'
       ? 'Billing for this workspace needs attention. Review the updated totals and confirm payment to clear the outstanding upgrade.'
       : 'A previous payment attempt did not complete. Review the updated totals and confirm payment to finish applying this agreement.';
   const primaryButtonLabel = requiresDefaultUpdate
     ? `Update default to ${selectedRouteOption.label}`
-    : 'Confirm and pay';
+    : isInitialSubscription
+      ? `Continue to ${selectedRouteOption.label.toLowerCase()} checkout`
+      : 'Confirm and pay';
 
   const dueTodayRows: PlatformPaymentBreakdownRow[] = quote
     ? [
         {
-          label: 'Upgrade subtotal',
+          label: isInitialSubscription ? 'First month subtotal' : 'Upgrade subtotal',
           value: formatCurrency(quote.dueTodaySubtotalCents),
         },
         ...(quote.dueTodayRouteFeeCents > 0
@@ -191,7 +200,9 @@ export function PlatformAmendmentUpgradePaymentStep({
             </Text>
           </View>
           <Text className="text-gray-400 font-instrument text-sm">
-            The updated agreement only becomes active after this payment step is completed.
+            {isInitialSubscription
+              ? 'This workspace will start paid billing after checkout is completed.'
+              : 'The updated agreement only becomes active after this payment step is completed.'}
           </Text>
         </View>
 
@@ -214,6 +225,11 @@ export function PlatformAmendmentUpgradePaymentStep({
               variant="info"
               message={`You are previewing ${selectedRouteOption.label} pricing, but your current default payment method is ${savedRouteOption.label}. When you continue, Furnace will ask you to update the default payment method before charging this route.`}
             />
+          ) : isInitialSubscription ? (
+            <Text className="text-gray-400 font-instrument text-sm">
+              This checkout will collect the payment method for today&apos;s charge and future
+              recurring invoices.
+            </Text>
           ) : (
             <Text className="text-gray-400 font-instrument text-sm">
               You are reviewing pricing for your current default payment method. Continuing will
@@ -274,7 +290,9 @@ export function PlatformAmendmentUpgradePaymentStep({
             {saving
               ? requiresDefaultUpdate
                 ? 'Updating payment method...'
-                : 'Processing payment...'
+                : isInitialSubscription
+                  ? 'Opening checkout...'
+                  : 'Processing payment...'
               : primaryButtonLabel}
           </Button>
         </View>

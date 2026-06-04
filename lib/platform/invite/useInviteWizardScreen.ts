@@ -16,7 +16,7 @@ export type InviteReviewPreviewInput = {
 };
 
 export function buildInviteReviewPreviewData(input: InviteReviewPreviewInput): PlatformContractViewData | null {
-  if (!input.inviteEmail.trim() || input.monthlyRetainerCents == null || input.monthlyRetainerCents <= 0) {
+  if (!input.inviteEmail.trim() || input.monthlyRetainerCents == null || input.monthlyRetainerCents < 0) {
     return null;
   }
   if (!input.termsSourceMarkdown.trim()) {

@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Pressable, Platform, ScrollView, type ViewStyle } from 'react-native';
-import { BaseModal, ModalFooter } from '@/components/ui/modals';
+import { BaseModal, ConfirmModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/feedback/Alert';
 import { MergeTagVariablePicker } from '@/components/builder/MergeTagVariablePicker';
@@ -12,7 +12,17 @@ import {
 } from 'react-native-heroicons/outline';
 import { EmailBodyEditor } from '../EmailBodyEditor';
 import { EmailPreviewModal } from './EmailPreviewModal';
-import { getLeadVariables, extractVariableKeys, extractMalformedVariables, type LeadVariable } from '@/lib/email/index';
+import { EmailHtmlCodeEditor } from '@/components/email/EmailHtmlCodeEditor';
+import {
+  canonicalizeEmailContentForSave,
+  convertHtmlToRichTextSeed,
+  extractVariableKeys,
+  extractMalformedVariables,
+  getLeadVariables,
+  seedHtmlModeFromRichText,
+  type EmailEditorMode,
+  type LeadVariable,
+} from '@/lib/email/index';
 import { getLeadCount } from '@/lib/supabase/services/leads';
 import {
   type EmailNodeVariant,
@@ -222,11 +232,13 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
   const bodyEditorRef = useRef<{ getHTML: () => string; getText: () => string } | null>(null);
 
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [switchToRichConfirmOpen, setSwitchToRichConfirmOpen] = useState(false);
   const [previewConfig, setPreviewConfig] = useState<{
     subject: string;
     body_html?: string;
     body_text?: string;
     template: string;
+    editor_mode?: EmailEditorMode;
   } | null>(null);
 
   const selectedVariant = useMemo(
@@ -236,14 +248,16 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
 
   const subject = selectedVariant?.subject ?? '';
   const template = selectedVariant?.template ?? '';
+  const selectedVariantMode: EmailEditorMode = selectedVariant?.editor_mode === 'html' ? 'html' : 'richText';
 
   const initialBodyContent = useMemo(() => {
+    if (selectedVariant?.editor_mode === 'html') return '<p></p>';
     const html = selectedVariant?.body_html;
     const tmpl = selectedVariant?.template;
-    if (html && isHtml(html)) return html;
+    if (html && isHtml(html)) return convertHtmlToRichTextSeed(html);
     if (tmpl) return templateToHtml(tmpl);
     return '<p></p>';
-  }, [selectedVariant?.body_html, selectedVariant?.template, selectedVariantId]);
+  }, [selectedVariant?.body_html, selectedVariant?.template, selectedVariant?.editor_mode, selectedVariantId]);
 
   useEffect(() => {
     if (!visible || !initialData) return;
@@ -266,8 +280,8 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
   );
 
   const variableKeys = useMemo(
-    () => extractVariableKeys(subject, template),
-    [subject, template]
+    () => extractVariableKeys(subject, template, selectedVariant?.body_html),
+    [subject, template, selectedVariant?.body_html]
   );
 
   const validKeys = useMemo(
@@ -281,8 +295,8 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
   );
 
   const malformedVars = useMemo(
-    () => extractMalformedVariables(subject, template),
-    [subject, template]
+    () => extractMalformedVariables(subject, template, selectedVariant?.body_html),
+    [subject, template, selectedVariant?.body_html]
   );
 
   const hasInvalidVars = unknownKeys.length > 0 || malformedVars.length > 0;
@@ -385,17 +399,33 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
     const bodyHtml = bodyEditorRef.current?.getHTML?.();
     const bodyText = bodyEditorRef.current?.getText?.();
     const merged = variants.map((v) => {
-      if (v.id === selectedVariantId) {
-        return {
-          ...v,
-          template: Platform.OS === 'web' ? (bodyText ?? v.template) : v.template,
-          body_html: bodyHtml ?? v.body_html,
-          body_text: bodyText ?? v.body_text,
-        };
+      if (v.id !== selectedVariantId) return v;
+      if (selectedVariantMode === 'html') {
+        return v;
       }
-      return v;
+      return {
+        ...v,
+        template: Platform.OS === 'web' ? (bodyText ?? v.template) : v.template,
+        body_html: bodyHtml ?? v.body_html,
+        body_text: bodyText ?? v.body_text,
+      };
     });
-    const sorted = sortVariantsForRoundRobin(merged);
+    const normalized = merged.map((variant) => {
+      const canonical = canonicalizeEmailContentForSave({
+        editorMode: variant.editor_mode,
+        bodyHtml: variant.body_html,
+        bodyText: variant.body_text,
+        template: variant.template,
+      });
+      return {
+        ...variant,
+        editor_mode: canonical.editorMode,
+        body_html: canonical.bodyHtml,
+        body_text: canonical.bodyText,
+        template: canonical.template,
+      };
+    });
+    const sorted = sortVariantsForRoundRobin(normalized);
     const withSystemLabels = sorted.map((v, i) => ({
       ...v,
       label: labelForVariantIndex(i),
@@ -411,14 +441,46 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
   const handleOpenPreview = () => {
     const bodyHtml = bodyEditorRef.current?.getHTML?.();
     const bodyText = bodyEditorRef.current?.getText?.();
+    const draftHtml = selectedVariantMode === 'html' ? (selectedVariant?.body_html ?? '') : (bodyHtml ?? selectedVariant?.body_html);
+    const draftText = selectedVariantMode === 'html' ? (selectedVariant?.body_text ?? selectedVariant?.template ?? '') : (bodyText ?? selectedVariant?.body_text ?? selectedVariant?.template ?? '');
     setPreviewConfig({
       subject,
-      body_html: bodyHtml ?? undefined,
-      body_text: bodyText ?? undefined,
-      template: bodyText ?? template,
+      body_html: draftHtml ?? undefined,
+      body_text: draftText ?? undefined,
+      template: draftText ?? template,
+      editor_mode: selectedVariantMode,
     });
     setPreviewOpen(true);
   };
+
+  const handleSwitchSelectedVariantToHtml = useCallback(() => {
+    if (!selectedVariantId) return;
+    const bodyHtml = bodyEditorRef.current?.getHTML?.() ?? selectedVariant?.body_html ?? '';
+    const bodyText = bodyEditorRef.current?.getText?.() ?? selectedVariant?.body_text ?? selectedVariant?.template ?? '';
+    updateSelectedVariant({
+      editor_mode: 'html',
+      body_html: seedHtmlModeFromRichText(bodyHtml),
+      body_text: bodyText,
+      template: bodyText,
+    });
+  }, [selectedVariantId, selectedVariant?.body_html, selectedVariant?.body_text, selectedVariant?.template, updateSelectedVariant]);
+
+  const handleConfirmSwitchSelectedVariantToRich = useCallback(() => {
+    if (!selectedVariant) return;
+    const canonical = canonicalizeEmailContentForSave({
+      editorMode: 'html',
+      bodyHtml: selectedVariant.body_html ?? '',
+      bodyText: selectedVariant.body_text ?? selectedVariant.template,
+      template: selectedVariant.template,
+    });
+    updateSelectedVariant({
+      editor_mode: 'richText',
+      body_html: convertHtmlToRichTextSeed(canonical.bodyHtml),
+      body_text: canonical.bodyText,
+      template: canonical.template,
+    });
+    setSwitchToRichConfirmOpen(false);
+  }, [selectedVariant, updateSelectedVariant]);
 
   const sortedVariantsUi = useMemo(() => sortVariantsForRoundRobin(variants), [variants]);
   const activeCount = useMemo(() => variants.filter((v) => v.isActive).length, [variants]);
@@ -645,9 +707,28 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
                   </Text>
                 </View>
 
-                {Platform.OS === 'web' ? (
+                {selectedVariantMode === 'html' ? (
+                  <EmailHtmlCodeEditor
+                    value={selectedVariant?.body_html ?? ''}
+                    onChangeText={(value) => updateSelectedVariant({ body_html: value })}
+                    label="Email HTML"
+                    placeholder="<table><tr><td>Hello {{first_name}}</td></tr></table>"
+                    minHeight={260}
+                    trailingElement={
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <TouchableOpacity onPress={handleOpenPreview} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' }}>
+                          <EyeIcon size={18} color="#FFFFFF" />
+                          <Text className="text-sm text-white">Preview</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setSwitchToRichConfirmOpen(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' }}>
+                          <Text className="text-sm text-white">Rich text</Text>
+                        </TouchableOpacity>
+                      </View>
+                    }
+                  />
+                ) : Platform.OS === 'web' ? (
                   <EmailBodyEditor
-                    key={selectedVariantId ?? 'none'}
+                    key={`${selectedVariantId ?? 'none'}:${selectedVariantMode}`}
                     initialContent={initialBodyContent}
                     editorRef={bodyEditorRef}
                     variables={leadVariables}
@@ -655,6 +736,8 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
                     minHeight={220}
                     label="Email Body"
                     onContentChange={(text) => updateSelectedVariant({ template: text })}
+                    onHtmlChange={(html) => updateSelectedVariant({ body_html: html })}
+                    onSwitchToHtml={handleSwitchSelectedVariantToHtml}
                     trailingElement={
                       <TouchableOpacity onPress={handleOpenPreview} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' }}>
                         <EyeIcon size={18} color="#FFFFFF" />
@@ -663,15 +746,26 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
                     }
                   />
                 ) : (
-                  <VariableInput
-                    label="Email Body"
-                    value={template}
-                    onChange={(t) => updateSelectedVariant({ template: t })}
-                    multiline
-                    minHeight={220}
-                    variant="body"
-                    variables={leadVariables}
-                  />
+                  <View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
+                      <TouchableOpacity onPress={handleOpenPreview} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' }}>
+                        <EyeIcon size={18} color="#FFFFFF" />
+                        <Text className="text-sm text-white">Preview</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={handleSwitchSelectedVariantToHtml} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' }}>
+                        <Text className="text-sm text-white">HTML</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <VariableInput
+                      label="Email Body"
+                      value={template}
+                      onChange={(t) => updateSelectedVariant({ template: t })}
+                      multiline
+                      minHeight={220}
+                      variant="body"
+                      variables={leadVariables}
+                    />
+                  </View>
                 )}
               </>
             )}
@@ -686,6 +780,14 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
         config={previewConfig}
         campaignId={initialData?.campaignId}
         variableKeys={variableKeys}
+      />
+      <ConfirmModal
+        visible={switchToRichConfirmOpen}
+        onClose={() => setSwitchToRichConfirmOpen(false)}
+        onConfirm={handleConfirmSwitchSelectedVariantToRich}
+        title="Switch back to Rich text?"
+        message="Complex HTML may be simplified or replaced when converted back into the Rich text editor."
+        confirmLabel="Switch"
       />
     </>
   );

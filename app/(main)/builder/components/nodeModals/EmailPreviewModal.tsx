@@ -1,13 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { BaseModal } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { SegmentControl } from '@/components/ui/segment-control';
-import { buildCampaignEmailContent, sanitizeEmailBody, hasMissingValues, type LeadLike } from '@/lib/email/index';
+import {
+  PlatformInvitePreviewFrame,
+  type PlatformInvitePreviewViewport,
+} from '@/components/platform/invite/PlatformInvitePreviewFrame';
+import {
+  buildCampaignEmailContent,
+  hasMissingValues,
+  isFullHtmlDocument,
+  sanitizeEmailBody,
+  type EmailEditorMode,
+  type LeadLike,
+} from '@/lib/email/index';
 import { getCampaignMailboxes } from '@/lib/supabase/services/campaigns';
 import { getLeads, getLeadCount } from '@/lib/supabase/services/leads';
 import type { Lead } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
+import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 
 /** Strip script tags from HTML for safe rendering. */
 function stripScripts(html: string): string {
@@ -31,6 +43,7 @@ export interface EmailPreviewConfig {
   body_html?: string;
   body_text?: string;
   template: string;
+  editor_mode?: EmailEditorMode;
 }
 
 interface EmailPreviewModalProps {
@@ -51,6 +64,8 @@ function EmailPreviewModal({
   campaignId,
   variableKeys,
 }: EmailPreviewModalProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const isMobileLayout = windowWidth < LAYOUT_BREAKPOINT;
   const [leads, setLeads] = useState<Lead[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
@@ -59,6 +74,10 @@ function EmailPreviewModal({
   const lastFetchedSearchRef = useRef<string | undefined>(undefined);
   /** Signature from first campaign mailbox (for preview). */
   const [previewSignature, setPreviewSignature] = useState<string | null>(null);
+  const [previewViewport, setPreviewViewport] =
+    useState<PlatformInvitePreviewViewport>('mobile');
+  const [messagePaneWidth, setMessagePaneWidth] = useState(0);
+  const [previewViewportHeight, setPreviewViewportHeight] = useState(0);
 
   const hasVariables = (variableKeys?.length ?? 0) > 0;
 
@@ -167,6 +186,7 @@ function EmailPreviewModal({
         body_html: config.body_html,
         body_text: config.body_text,
         template: config.template,
+        editor_mode: config.editor_mode,
         signature: previewSignature ?? undefined,
       },
       resolvedLead,
@@ -194,11 +214,15 @@ function EmailPreviewModal({
       sanitizeEmailBody(sanitizeEmailBody(raw, { format: 'html' }), { format: 'html' })
     );
   }, [content?.isHtmlBody, content?.bodyMerged]);
+  const renderFullDocument = useMemo(
+    () => !!safeHtml && isFullHtmlDocument(safeHtml),
+    [safeHtml]
+  );
 
   const footer = (
     <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
       <Button variant="secondary" onPress={onClose}>
-        Close
+        <Text>Close</Text>
       </Button>
     </View>
   );
@@ -210,12 +234,29 @@ function EmailPreviewModal({
       title="Preview message"
       description="Select a lead to see the merged subject and body."
       footer={footer}
-      maxWidth="4xl"
+      maxWidth="6xl"
       maxHeight={typeof window !== 'undefined' ? Math.round(window.innerHeight * 0.85) : 800}
     >
-      <View style={{ flex: 1, flexDirection: 'row', minHeight: 400, gap: 16 }}>
+      <View
+        style={{
+          flex: 1,
+          flexDirection: isMobileLayout ? 'column' : 'row',
+          minHeight: isMobileLayout ? 400 : 0,
+          gap: 16,
+        }}
+      >
         {/* Left panel: leads list */}
-        <View style={{ width: 280, minWidth: 280, borderRightWidth: 1, borderColor: '#2A2A2A', paddingRight: 16 }}>
+        <View
+          style={{
+            width: isMobileLayout ? '100%' : 280,
+            minWidth: isMobileLayout ? 0 : 280,
+            borderRightWidth: isMobileLayout ? 0 : 1,
+            borderBottomWidth: isMobileLayout ? 1 : 0,
+            borderColor: '#2A2A2A',
+            paddingRight: isMobileLayout ? 0 : 16,
+            paddingBottom: isMobileLayout ? 16 : 0,
+          }}
+        >
           <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Leads</Text>
           {hasVariables && showMissingOnly !== null && (
             <View style={{ marginBottom: 8 }}>
@@ -232,7 +273,11 @@ function EmailPreviewModal({
           {campaignId ? (
             <>
               <ScrollView
-                style={{ maxHeight: 320 }}
+                style={{
+                  flex: isMobileLayout ? undefined : 1,
+                  minHeight: 0,
+                  maxHeight: isMobileLayout ? 220 : undefined,
+                }}
                 showsVerticalScrollIndicator
                 keyboardShouldPersistTaps="handled"
               >
@@ -305,7 +350,15 @@ function EmailPreviewModal({
         </View>
 
         {/* Right panel: merged message */}
-        <View style={{ flex: 1, minWidth: 0 }}>
+        <View
+          style={{ flex: 1, minWidth: 0 }}
+          onLayout={(event) => {
+            const nextWidth = event.nativeEvent.layout.width;
+            if (Math.abs(nextWidth - messagePaneWidth) > 1) {
+              setMessagePaneWidth(nextWidth);
+            }
+          }}
+        >
           <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Message</Text>
           {content ? (
             <View style={{ backgroundColor: '#141414', borderRadius: 12, borderWidth: 1, borderColor: '#2A2A2A', padding: 16, flex: 1 }}>
@@ -313,7 +366,30 @@ function EmailPreviewModal({
               <Text className="text-white text-sm mb-4" numberOfLines={2}>
                 {content.subject || '(empty)'}
               </Text>
-              <Text className="text-xs font-instrument-medium text-gray-400 mb-1">Body</Text>
+              <View
+                style={{
+                  flexDirection: isMobileLayout ? 'column' : 'row',
+                  alignItems: isMobileLayout ? 'stretch' : 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  marginBottom: 4,
+                }}
+              >
+                <Text className="text-xs font-instrument-medium text-gray-400">Body</Text>
+                <View style={{ width: isMobileLayout ? '100%' : 220 }}>
+                  <SegmentControl
+                    options={[
+                      { value: 'mobile', label: 'Mobile' },
+                      { value: 'desktop', label: 'Desktop' },
+                    ]}
+                    value={previewViewport}
+                    onChange={(value) =>
+                      setPreviewViewport(value as PlatformInvitePreviewViewport)
+                    }
+                    unselectedVariant="outline"
+                  />
+                </View>
+              </View>
               {campaignId && !previewSignature && (
                 <View
                   style={{
@@ -333,21 +409,69 @@ function EmailPreviewModal({
                 </View>
               )}
               <ScrollView
-                style={{ flex: 1, maxHeight: 360 }}
+                style={{ flex: 1, minHeight: 0 }}
                 showsVerticalScrollIndicator
                 nestedScrollEnabled
+                contentContainerStyle={{ flexGrow: 1 }}
               >
-                {content.isHtmlBody && Platform.OS === 'web' && safeHtml ? (
-                  React.createElement('div', {
-                    className: 'message-body-html',
-                    dangerouslySetInnerHTML: { __html: `<div>${safeHtml}</div>` },
-                    style: { flex: 1 },
-                  })
-                ) : (
-                  <Text className="text-gray-300 text-sm whitespace-pre-wrap">
-                    {content.bodyMerged || '(empty)'}
-                  </Text>
-                )}
+                <View
+                  style={{ flex: 1, minHeight: 0 }}
+                  onLayout={(event) => {
+                    const nextHeight = event.nativeEvent.layout.height;
+                    if (Math.abs(nextHeight - previewViewportHeight) > 1) {
+                      setPreviewViewportHeight(nextHeight);
+                    }
+                  }}
+                >
+                  {content.isHtmlBody && Platform.OS === 'web' && safeHtml ? (
+                    <PlatformInvitePreviewFrame
+                      variant="inline"
+                      viewport={previewViewport}
+                      onViewportChange={setPreviewViewport}
+                      showControls={false}
+                      showTitle={false}
+                      availableWidth={Math.max(320, messagePaneWidth - 24)}
+                      availableHeight={Math.max(260, previewViewportHeight - 8)}
+                    >
+                      {renderFullDocument ? (
+                        React.createElement('iframe', {
+                          srcDoc: safeHtml,
+                          sandbox: 'allow-same-origin',
+                          title: 'Email preview document',
+                          style: {
+                            width: '100%',
+                            height: '100%',
+                            border: '0',
+                            backgroundColor: '#FFFFFF',
+                          },
+                        })
+                      ) : (
+                        React.createElement(
+                          'div',
+                          {
+                            style: {
+                              width: '100%',
+                              height: '100%',
+                              overflowY: 'auto',
+                              backgroundColor: '#FFFFFF',
+                              color: '#111827',
+                              padding: '16px 18px',
+                              boxSizing: 'border-box',
+                            },
+                          },
+                          React.createElement('div', {
+                            className: 'message-body-html',
+                            dangerouslySetInnerHTML: { __html: `<div>${safeHtml}</div>` },
+                          })
+                        )
+                      )}
+                    </PlatformInvitePreviewFrame>
+                  ) : (
+                    <Text className="text-gray-300 text-sm whitespace-pre-wrap">
+                      {content.bodyMerged || '(empty)'}
+                    </Text>
+                  )}
+                </View>
               </ScrollView>
             </View>
           ) : (

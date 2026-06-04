@@ -47,3 +47,22 @@ test('buildAmendmentUpgradeQuote keeps ACH upgrade totals equal to the retainer 
   assert.equal(quote.nextInvoiceCreditCents, 90_323);
   assert.equal(quote.ongoingMonthlyTotalCents, 500_000);
 });
+
+test('buildAmendmentUpgradeQuote treats free-to-paid changes as an initial subscription', () => {
+  const quote = buildAmendmentUpgradeQuote({
+    effectiveAt: new Date('2026-05-15T12:00:00.000Z'),
+    oldMonthlyRetainerCents: 0,
+    newMonthlyRetainerCents: 500_000,
+    paymentRoute: 'card',
+    routeConfig: cardRouteConfig,
+  });
+
+  assert.equal(quote.deltaCents, 500_000);
+  assert.equal(quote.dueTodaySubtotalCents, 500_000);
+  assert.equal(quote.dueTodayRouteFeeCents, 14_530);
+  assert.equal(quote.dueTodayTotalCents, 514_530);
+  assert.equal(quote.nextInvoiceBaseCreditCents, 225_806);
+  assert.equal(quote.nextInvoiceAmountCents, 282_176);
+  assert.equal(quote.nextInvoiceCreditCents, 232_354);
+  assert.equal(quote.ongoingMonthlyTotalCents, 514_530);
+});

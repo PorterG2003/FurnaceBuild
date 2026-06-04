@@ -149,4 +149,37 @@ describe('sendEmail', () => {
     assert.equal(sentMail.text, 'Hello Casey Thanks, Porter');
     assert.equal(sentMail.html, 'Hello Casey<br><br>Thanks,<br>Porter');
   });
+
+  it('preserves full-document html payloads', async () => {
+    let sent: Pick<CapturedMail, 'text' | 'html'> | null = null;
+    const transporter = {
+      async sendMail(options: SendMailOptions) {
+        sent = {
+          text: options.text,
+          html: options.html,
+        };
+        return { messageId: '<provider@example.com>' };
+      },
+    };
+
+    await sendEmail(
+      transporter as any,
+      createMailbox(),
+      createJob(),
+      createLead(),
+      'Full document',
+      'fallback body',
+      null,
+      null,
+      {
+        bodyHtml: '<!DOCTYPE html><html><body><table><tr><td>Hello Casey</td></tr></table></body></html>',
+      }
+    );
+
+    assert.ok(sent);
+    const sentMail: Pick<CapturedMail, 'text' | 'html'> = sent;
+    assert.match(String(sentMail.html), /<html>/i);
+    assert.match(String(sentMail.html), /<table>/i);
+    assert.equal(sentMail.text, 'Hello Casey');
+  });
 });

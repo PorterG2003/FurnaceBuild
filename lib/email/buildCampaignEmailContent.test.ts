@@ -5,6 +5,7 @@ import {
   htmlToFragment,
   mergeInboxComposeHtml,
 } from './buildCampaignEmailContent.js';
+import { canonicalizeEmailContentForSave } from './emailHtmlMode.js';
 
 const lead = {
   first_name: 'Casey',
@@ -103,5 +104,31 @@ describe('buildCampaignEmailContent', () => {
     assert.equal(result.bodyMerged, 'Fallback Casey');
     assert.equal(result.isHtmlBody, false);
     assert.equal(result.bodyText, 'Hello Casey from Acme');
+  });
+
+  it('preserves full-document HTML mode and appends signature without flattening tables', () => {
+    const saved = canonicalizeEmailContentForSave({
+      editorMode: 'html',
+      bodyHtml:
+        '<!DOCTYPE html><html><head><style>.hero{color:#fff}</style></head><body><table><tr><td class="hero">Hello {{first_name}}</td></tr></table></body></html>',
+    });
+    const result = buildCampaignEmailContent(
+      {
+        subject: 'HTML mode',
+        body_html: saved.bodyHtml,
+        body_text: saved.bodyText,
+        template: saved.template,
+        editor_mode: 'html',
+        signature: '<p>Thanks,<br>Porter</p>',
+      },
+      lead,
+      { deterministic: true }
+    );
+
+    assert.equal(result.isHtmlBody, true);
+    assert.match(result.bodyMerged, /<html>/i);
+    assert.match(result.bodyMerged, /<table>/i);
+    assert.match(result.bodyMerged, /Thanks,<br\s*\/?>Porter/);
+    assert.equal(result.bodyText, 'Hello Casey Thanks, Porter');
   });
 });

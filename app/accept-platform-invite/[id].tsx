@@ -6,6 +6,7 @@ import { useSmoothLoading } from '@/components/ui/feedback/useSmoothLoading';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase/client';
 import {
+  acceptPlatformInvitation,
   getPlatformInvitationInfo,
   preparePlatformInvitationCheckout,
   type PlatformInvitationInfo,
@@ -27,6 +28,7 @@ import type {
   PlatformContractViewData,
 } from '@/lib/platform/contract/types';
 import { normalizeAgreementType } from '@/lib/platform/contract/terms';
+import { resolveInviteAcceptFlow } from '@/lib/platform/invite/acceptFlow';
 import { buildPublicAccessRedirectHref } from '@/lib/publicAccessState';
 
 function mapInvitationInfo(
@@ -255,6 +257,22 @@ export default function AcceptPlatformInvitePage() {
         if (signInError) throw new Error(signInError.message);
       }
 
+      if (resolveInviteAcceptFlow(info?.monthly_retainer_cents) === 'free') {
+        const result = await acceptPlatformInvitation({
+          invitationId,
+          fullName,
+          accountName,
+        });
+        router.replace('/campaigns');
+        return {
+          kind: 'activated',
+          accountId:
+            result && typeof result === 'object' && 'account_id' in result
+              ? (result.account_id as string | null | undefined)
+              : null,
+        } as const;
+      }
+
       await preparePlatformInvitationCheckout({
         invitationId,
         fullName,
@@ -279,7 +297,7 @@ export default function AcceptPlatformInvitePage() {
       }
       return { kind: 'redirect' } as const;
     },
-    [],
+    [info?.monthly_retainer_cents, router],
   );
 
   if (bootstrapping || showBootScreen) {

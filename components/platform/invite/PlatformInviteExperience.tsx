@@ -33,6 +33,7 @@ import {
   isPlatformInviteCompletedStatus,
   isPlatformInviteUnavailableStatus,
 } from '@/lib/platform/invite/accessState';
+import { resolveInviteAcceptFlow } from '@/lib/platform/invite/acceptFlow';
 import type {
   PlatformInviteCheckoutInput,
   PlatformInviteCheckoutResult,
@@ -97,6 +98,8 @@ export function PlatformInviteExperience({
     [info?.proposalSnapshot],
   );
   const showsProposalStep = info?.agreementType === 'managed_services_agreement';
+  const inviteAcceptFlow = resolveInviteAcceptFlow(info?.monthlyRetainerCents);
+  const isFreeFlow = inviteAcceptFlow === 'free';
   const clientLogoUrl = normalizedProposal.client_logo_url;
   const clientLogoScale = normalizedProposal.client_logo_scale;
   const clientLogoOffsetX = normalizedProposal.client_logo_offset_x;
@@ -131,6 +134,12 @@ export function PlatformInviteExperience({
     if (!info || blockedStatuses.includes(info.status)) {
       return;
     }
+    if (isFreeFlow) {
+      setQuote(null);
+      setQuoteError(null);
+      setQuoteLoading(false);
+      return;
+    }
 
     let cancelled = false;
     setQuoteLoading(true);
@@ -156,7 +165,7 @@ export function PlatformInviteExperience({
     return () => {
       cancelled = true;
     };
-  }, [info, loadQuote, mode, paymentRoute]);
+  }, [info, isFreeFlow, loadQuote, mode, paymentRoute]);
 
   const inviteEmail = info?.inviteeEmail ?? '';
   const isExpiredLike = isPlatformInviteUnavailableStatus(info?.status);
@@ -264,7 +273,7 @@ export function PlatformInviteExperience({
       setError('You must agree to the agreement before continuing.');
       return;
     }
-    if (!quote) {
+    if (!isFreeFlow && !quote) {
       setError('Pricing is still loading. Please wait a moment and try again.');
       return;
     }
@@ -304,9 +313,21 @@ export function PlatformInviteExperience({
             'Preview mode does not publish the invite or start a checkout session.',
         });
         setStep('activating');
+      } else if (result.kind === 'activated') {
+        setPreviewActivationMessage({
+          title: 'Workspace ready',
+          message: 'Your workspace is ready. Redirecting now.',
+        });
+        setStep('activating');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to continue to payment.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : isFreeFlow
+            ? 'Failed to create your workspace.'
+            : 'Failed to continue to payment.',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -380,7 +401,9 @@ export function PlatformInviteExperience({
       const title = previewActivationMessage?.title ?? 'Activating your workspace';
       const message =
         previewActivationMessage?.message ??
-        'Payment succeeded. We are provisioning your account now.';
+        (isFreeFlow
+          ? 'We are provisioning your account now.'
+          : 'Payment succeeded. We are provisioning your account now.');
       if (activationError) {
         return (
           <View className="gap-4 py-8">
@@ -432,9 +455,13 @@ export function PlatformInviteExperience({
           initialStep={step === 'terms' ? 'terms' : 'proposal'}
           termsAccepted={termsAccepted}
           onTermsAcceptedChange={setTermsAccepted}
-          termsAcceptanceLabel="I have reviewed this agreement, and I agree that completing payment will make it binding."
+          termsAcceptanceLabel={
+            isFreeFlow
+              ? 'I have reviewed this agreement, and I agree that creating this workspace will make it binding.'
+              : 'I have reviewed this agreement, and I agree that completing payment will make it binding.'
+          }
           continueLabel="Continue"
-          onContinue={() => setStep('payment')}
+          onContinue={() => setStep(isFreeFlow ? 'account' : 'payment')}
           onStepChange={setStep}
         />
       );
@@ -482,7 +509,9 @@ export function PlatformInviteExperience({
             Create your login
           </Text>
           <Text selectable={false} className="text-gray-300 font-instrument">
-            Set up your Furnace owner account, then continue to your selected payment route.
+            {isFreeFlow
+              ? 'Set up your Furnace owner account, and we will create your workspace right away.'
+              : 'Set up your Furnace owner account, then continue to your selected payment route.'}
           </Text>
         </View>
 
@@ -576,7 +605,7 @@ export function PlatformInviteExperience({
           <Button
             variant="outline"
             className="flex-1"
-            onPress={() => setStep('payment')}
+            onPress={() => setStep(isFreeFlow ? 'terms' : 'payment')}
             disabled={submitting}
           >
             Back
@@ -584,15 +613,17 @@ export function PlatformInviteExperience({
           <Button
             className="flex-1"
             onPress={handleContinueToCheckout}
-            disabled={submitting || quoteLoading || !quote}
+            disabled={submitting || (!isFreeFlow && (quoteLoading || !quote))}
           >
             {submitting
               ? mode === 'preview'
                 ? 'Opening preview...'
-                : 'Starting payment...'
+                : isFreeFlow
+                  ? 'Creating workspace...'
+                  : 'Starting payment...'
               : mode === 'preview'
-                ? `Preview ${activeRouteOption.label.toLowerCase()} checkout`
-                : activeRouteOption.checkoutButtonLabel}
+                ? (isFreeFlow ? 'Preview free workspace' : `Preview ${activeRouteOption.label.toLowerCase()} checkout`)
+                : (isFreeFlow ? 'Create workspace' : activeRouteOption.checkoutButtonLabel)}
           </Button>
         </View>
       </View>

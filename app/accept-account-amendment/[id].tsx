@@ -30,6 +30,7 @@ import {
 } from '@/lib/supabase/services/platform';
 import {
   applyAccountUpgrade,
+  createAccountUpgradeCheckoutSession,
   createAccountPaymentMethodUpdateSession,
   finalizeAccountPaymentMethodUpdate,
   getAccountUpgradeQuote,
@@ -294,13 +295,16 @@ export default function AcceptAccountAmendmentPage() {
       if (result.requires_stripe_apply && result.billing_change_kind === 'downgrade') {
         await scheduleAccountDowngrade({
           accountId: result.account_id,
-          newMonthlyRetainerCents: result.new_monthly_retainer_cents!,
+          newMonthlyRetainerCents:
+            result.scheduled_monthly_retainer_cents ?? result.new_monthly_retainer_cents!,
         });
       }
 
       toast.success(
         result.billing_change_kind === 'downgrade'
-          ? 'Agreement accepted. The lower retainer is scheduled for the next billing cycle.'
+          ? (result.scheduled_monthly_retainer_cents ?? result.new_monthly_retainer_cents ?? 0) === 0
+            ? 'Agreement accepted. The subscription will end at the next billing date.'
+            : 'Agreement accepted. The lower retainer is scheduled for the next billing cycle.'
           : 'Agreement accepted.',
       );
       await refetchAccountData();
@@ -365,8 +369,9 @@ export default function AcceptAccountAmendmentPage() {
       toast.error('Review the agreement first, then continue to payment.');
       return;
     }
+    const currentRetainerCents = info.current_monthly_retainer_cents ?? 0;
 
-    if (selectedPaymentRoute !== preferredPaymentRoute) {
+    if (currentRetainerCents > 0 && selectedPaymentRoute !== preferredPaymentRoute) {
       await handleUpdatePaymentMethod(selectedPaymentRoute);
       return;
     }
@@ -374,6 +379,28 @@ export default function AcceptAccountAmendmentPage() {
     setSaving(true);
 
     try {
+      if (currentRetainerCents === 0) {
+        const origin =
+          typeof window !== 'undefined' ? window.location.origin : 'https://build.getfurnace.io';
+        const result = await createAccountUpgradeCheckoutSession({
+          accountId: info.account_id,
+          amendmentId: info.amendment_id ?? id,
+          newMonthlyRetainerCents: info.proposed_monthly_retainer_cents,
+          paymentRoute: selectedPaymentRoute,
+          successUrl: `${origin}/`,
+          cancelUrl: `${origin}/accept-account-amendment/${id}`,
+        });
+        const checkoutUrl = typeof result.url === 'string' ? result.url : null;
+        if (!checkoutUrl) {
+          throw new Error('Missing Stripe checkout URL.');
+        }
+        if (typeof window !== 'undefined') {
+          window.location.assign(checkoutUrl);
+          return;
+        }
+        throw new Error('Checkout is only supported on web right now.');
+      }
+
       const result = await applyAccountUpgrade({
         accountId: info.account_id,
         amendmentId: info.amendment_id ?? id,

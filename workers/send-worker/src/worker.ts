@@ -674,6 +674,7 @@ export class SendWorker {
             body_text: nodeConfig.body_text,
             template: nodeConfig.template,
             body: nodeConfig.body,
+            editor_mode: nodeConfig.editor_mode,
             signature: mailbox.signature ?? undefined,
           },
           lead as unknown as LeadLike,

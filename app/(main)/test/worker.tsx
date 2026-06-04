@@ -4,6 +4,7 @@ import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout } from '@/components/ui/layout';
 import { supabase } from '@/lib/supabase/client';
 import { buildCampaignEmailContent } from '@/lib/email/index';
+import { EmailHtmlCodeEditor } from '@/components/email/EmailHtmlCodeEditor';
 import { createCampaign } from '@/lib/supabase/services/campaigns';
 import { createLead } from '@/lib/supabase/services/leads';
 import { createMailbox, getMailboxById, getMailboxesByUser } from '@/lib/supabase/services/mailboxes';
@@ -13,6 +14,12 @@ import { Button } from '@/components/ui/button';
 import { SegmentControl } from '@/components/ui/segment-control';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { RaceConditionTest } from './worker-race-condition';
+import {
+  CAMPAIGN_HTML_QA_SAMPLES,
+  CAMPAIGN_HTML_QA_SENDER,
+  getCampaignHtmlQaSample,
+  type CampaignHtmlQaSampleId,
+} from '@/lib/email/campaignHtmlQaSamples';
 
 interface StepStatus {
   status: 'pending' | 'loading' | 'success' | 'error';
@@ -48,6 +55,10 @@ export default function TestWorkerPage() {
   const [recipientName, setRecipientName] = useState('Test Recipient');
   const [emailSubject, setEmailSubject] = useState('Test Email from Worker');
   const [emailBody, setEmailBody] = useState('Hello {{name}},\n\nThis is a test email from the ECS send worker!\n\nYou can customize this message using template variables like {{name}} and {{email}}.');
+  const [contentMode, setContentMode] = useState<'richText' | 'html'>('richText');
+  const [htmlSampleId, setHtmlSampleId] = useState<CampaignHtmlQaSampleId>('heavy');
+  const [htmlBody, setHtmlBody] = useState(getCampaignHtmlQaSample('heavy').bodyHtml);
+  const [htmlQaConfirmed, setHtmlQaConfirmed] = useState(false);
   
   // Scale test results
   const [totalCreated, setTotalCreated] = useState(0);
@@ -91,6 +102,17 @@ export default function TestWorkerPage() {
     () => (selectedMailboxId ? mailboxes.find((m) => m.id === selectedMailboxId) ?? null : null),
     [mailboxes, selectedMailboxId]
   );
+  const selectedHtmlSample = useMemo(
+    () => getCampaignHtmlQaSample(htmlSampleId),
+    [htmlSampleId]
+  );
+
+  useEffect(() => {
+    if (contentMode !== 'html') return;
+    setEmailSubject(selectedHtmlSample.subject);
+    setHtmlBody(selectedHtmlSample.bodyHtml);
+    setHtmlQaConfirmed(false);
+  }, [contentMode, selectedHtmlSample]);
 
   const previewContent = useMemo(() => {
     const lead = {
@@ -107,14 +129,17 @@ export default function TestWorkerPage() {
     return buildCampaignEmailContent(
       {
         subject: emailSubject,
-        body: emailBody,
-        template: emailBody,
+        body_html: contentMode === 'html' ? htmlBody : undefined,
+        body_text: contentMode === 'html' ? selectedHtmlSample.bodyText : undefined,
+        body: contentMode === 'html' ? undefined : emailBody,
+        template: contentMode === 'html' ? selectedHtmlSample.bodyText : emailBody,
+        editor_mode: contentMode === 'html' ? 'html' : 'richText',
         signature: selectedMailbox?.signature ?? undefined,
       },
       lead,
       { deterministic: true }
     );
-  }, [emailSubject, emailBody, recipientEmail, recipientName, selectedMailbox?.signature]);
+  }, [contentMode, emailSubject, emailBody, htmlBody, recipientEmail, recipientName, selectedHtmlSample.bodyText, selectedMailbox?.signature]);
 
   const updateStep = (step: string, status: StepStatus['status'], message?: string) => {
     setSteps(prev => ({
@@ -138,8 +163,19 @@ export default function TestWorkerPage() {
         setError('Please enter an email subject');
         return;
       }
-      if (!emailBody.trim()) {
+      if (contentMode === 'html' ? !htmlBody.trim() : !emailBody.trim()) {
         setError('Please enter an email body');
+        return;
+      }
+      if (
+        contentMode === 'html' &&
+        selectedMailbox?.email_address.trim().toLowerCase() !== CAMPAIGN_HTML_QA_SENDER
+      ) {
+        setError(`HTML live QA is locked to the ${CAMPAIGN_HTML_QA_SENDER} mailbox.`);
+        return;
+      }
+      if (contentMode === 'html' && !htmlQaConfirmed) {
+        setError('Confirm the live HTML QA guardrail before queueing a send.');
         return;
       }
       if (testMode === 'scale') {
@@ -299,7 +335,11 @@ export default function TestWorkerPage() {
           node_type: 'email',
           node_data: {
             subject: emailSubject,
-            body: emailBody,
+            body: contentMode === 'html' ? undefined : emailBody,
+            template: contentMode === 'html' ? selectedHtmlSample.bodyText : emailBody,
+            body_html: contentMode === 'html' ? htmlBody : undefined,
+            body_text: contentMode === 'html' ? selectedHtmlSample.bodyText : undefined,
+            editor_mode: contentMode === 'html' ? 'html' : 'richText',
           },
           position_x: 0,
           position_y: 0,
@@ -329,11 +369,16 @@ export default function TestWorkerPage() {
         message_data: {
           node_config: {
             subject: emailSubject,
-            body: emailBody,
+            body: contentMode === 'html' ? undefined : emailBody,
+            template: contentMode === 'html' ? selectedHtmlSample.bodyText : emailBody,
+            body_html: contentMode === 'html' ? htmlBody : undefined,
+            body_text: contentMode === 'html' ? selectedHtmlSample.bodyText : undefined,
+            editor_mode: contentMode === 'html' ? 'html' : 'richText',
           },
           lead_data: {
             email: lead.email,
             name: lead.name,
+            first_name: recipientName.trim().split(/\s+/)[0] || recipientName,
           },
           // Add test mode flag for scale tests - worker will skip SMTP sending
           skip_smtp: testMode === 'scale',
@@ -570,6 +615,26 @@ export default function TestWorkerPage() {
         </View>
 
         <View>
+          <Text className="text-sm font-medium mb-2 text-gray-300">Content Mode</Text>
+          <SegmentControl
+            options={[
+              { value: 'richText', label: 'Rich text' },
+              { value: 'html', label: 'HTML live QA' },
+            ]}
+            value={contentMode}
+            onChange={(value) => {
+              setContentMode(value as 'richText' | 'html');
+              setError(null);
+            }}
+          />
+          {contentMode === 'html' ? (
+            <Text className="text-xs text-amber-300 mt-2">
+              HTML live QA is guarded to the {CAMPAIGN_HTML_QA_SENDER} mailbox and queues a real campaign send.
+            </Text>
+          ) : null}
+        </View>
+
+        <View>
           <Text className="text-sm font-medium mb-2 text-gray-300">Email Subject *</Text>
           <TextInput
             value={emailSubject}
@@ -590,33 +655,70 @@ export default function TestWorkerPage() {
           />
         </View>
 
-        <View>
-          <Text className="text-sm font-medium mb-2 text-gray-300">Email Body *</Text>
-          <TextInput
-            value={emailBody}
-            onChangeText={(text) => {
-              setEmailBody(text);
-              setError(null);
-            }}
-            placeholder="Email body text..."
-            multiline
-            numberOfLines={6}
-            textAlignVertical="top"
-            className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
-            style={{
-              borderColor: '#FFFFFF4D',
-              backgroundColor: '#FFFFFF0D',
-              color: '#FFFFFF',
-              borderWidth: 1,
-              minHeight: 120,
-            }}
-            placeholderTextColor="#666"
-            selectionColor="#FF4D00"
-          />
-          <Text className="text-gray-500 text-xs mt-1">
-            Use template variables like {'{{name}}'} and {'{{email}}'} - they'll be replaced with actual values
-          </Text>
-        </View>
+        {contentMode === 'html' ? (
+          <View className="space-y-3">
+            <View>
+              <Text className="text-sm font-medium mb-2 text-gray-300">HTML Sample</Text>
+              <SegmentControl
+                options={CAMPAIGN_HTML_QA_SAMPLES.map((sample) => ({
+                  value: sample.id,
+                  label: sample.label,
+                }))}
+                value={htmlSampleId}
+                onChange={(value) => {
+                  setHtmlSampleId(value as CampaignHtmlQaSampleId);
+                  setError(null);
+                }}
+              />
+            </View>
+            <EmailHtmlCodeEditor
+              value={htmlBody}
+              onChangeText={(value) => {
+                setHtmlBody(value);
+                setError(null);
+              }}
+              label="Email HTML *"
+              minHeight={220}
+              helperText="This queues a real campaign email job using HTML mode metadata."
+            />
+            <TouchableOpacity
+              onPress={() => setHtmlQaConfirmed((prev) => !prev)}
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+            >
+              <Text className="text-sm text-white">
+                {htmlQaConfirmed ? '✓' : '○'} Confirm this should queue a live HTML QA send from {CAMPAIGN_HTML_QA_SENDER}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View>
+            <Text className="text-sm font-medium mb-2 text-gray-300">Email Body *</Text>
+            <TextInput
+              value={emailBody}
+              onChangeText={(text) => {
+                setEmailBody(text);
+                setError(null);
+              }}
+              placeholder="Email body text..."
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+              className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
+              style={{
+                borderColor: '#FFFFFF4D',
+                backgroundColor: '#FFFFFF0D',
+                color: '#FFFFFF',
+                borderWidth: 1,
+                minHeight: 120,
+              }}
+              placeholderTextColor="#666"
+              selectionColor="#FF4D00"
+            />
+            <Text className="text-gray-500 text-xs mt-1">
+              Use template variables like {'{{name}}'} and {'{{email}}'} - they'll be replaced with actual values
+            </Text>
+          </View>
+        )}
 
         <View className="bg-gray-900/50 border border-gray-700 rounded-xl p-4">
           <Text className="text-sm font-medium text-gray-300 mb-2">Preview (with signature)</Text>

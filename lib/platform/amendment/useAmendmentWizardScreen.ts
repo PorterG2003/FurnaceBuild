@@ -19,7 +19,7 @@ export type AmendmentReviewPreviewInput = {
 export function buildAmendmentReviewPreviewData(
   input: AmendmentReviewPreviewInput,
 ): PlatformContractViewData | null {
-  if (!input.ownerEmail.trim() || input.monthlyRetainerCents <= 0 || !input.renderedTermsPreview.trim()) {
+  if (!input.ownerEmail.trim() || input.monthlyRetainerCents < 0 || !input.renderedTermsPreview.trim()) {
     return null;
   }
 

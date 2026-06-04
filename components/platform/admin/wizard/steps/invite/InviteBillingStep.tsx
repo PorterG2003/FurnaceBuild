@@ -32,6 +32,9 @@ export function InviteBillingStep({
           style={authInputStyle}
           keyboardType="numeric"
         />
+        <Text className="mt-2 text-sm text-gray-400 font-instrument">
+          Enter `0` for a free account.
+        </Text>
       </FormFieldGroup>
       <View className="mb-5 flex-row items-center justify-between gap-3 rounded-xl border border-[#2A2A2A] bg-[#121212] p-4">
         <Text className="flex-1 text-gray-300 font-instrument">

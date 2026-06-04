@@ -16,6 +16,7 @@ import {
 } from './scenarios/ooo-mixed-inbox/index';
 import { devDefaultScenarioModule } from './scenarios/dev-default';
 import { platformInvitePreviewSeedModule } from './scenarios/platform-invite-preview';
+import { campaignHtmlDemoSeedModule } from './scenarios/campaign-html-demo';
 
 export const allModules: Record<string, SeedModule> = {
   minimal: minimalModule,
@@ -33,6 +34,7 @@ export const allModules: Record<string, SeedModule> = {
   oooInbox_oooStates: oooInboxOooStatesModule,
   devDefault_seed: devDefaultScenarioModule,
   platformInvitePreview_seed: platformInvitePreviewSeedModule,
+  campaignHtmlDemo_seed: campaignHtmlDemoSeedModule,
 };
 
 /**
@@ -43,6 +45,7 @@ export const scenarioModuleIds: Record<string, string[]> = {
   minimal: ['minimal'],
   'dev-default': ['devDefault_seed'],
   'campaign-smoke': ['campaignSmoke_batchAssign'],
+  'campaign-html-demo': ['campaignHtmlDemo_seed'],
   'ooo-mixed-inbox': ['oooInbox_oooStates'],
   'platform-invite-preview': ['platformInvitePreview_seed'],
 };

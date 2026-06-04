@@ -109,6 +109,11 @@ test('validateAmendmentWizardStep accepts valid combined proposal and billing in
   assert.equal(error, null);
 });
 
+test('validateAmendmentWizardStep accepts a zero retainer', () => {
+  const error = validateAmendmentWizardStep('proposal_billing', buildDraft({ monthlyRetainer: '0' }));
+  assert.equal(error, null);
+});
+
 test('validateAmendmentWizardStep validates terms step content', () => {
   const error = validateAmendmentWizardStep('terms', buildDraft({ termsSourceMarkdown: '' }));
   assert.equal(error, 'Agreement markdown is required.');
@@ -122,7 +127,7 @@ test('validateAmendmentWizardStepNavigation blocks jumps when combined step is i
     draft: buildDraft({ monthlyRetainer: '' }),
   });
 
-  assert.equal(error, 'Monthly retainer must be greater than zero.');
+  assert.equal(error, 'Monthly retainer must be zero or greater.');
 });
 
 test('validateAmendmentWizardStepNavigation allows backward jumps without validation', () => {

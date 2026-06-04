@@ -112,6 +112,31 @@ export async function applyAccountUpgrade(params: {
   );
 }
 
+export async function createAccountUpgradeCheckoutSession(params: {
+  accountId: string;
+  amendmentId: string;
+  newMonthlyRetainerCents: number;
+  paymentRoute: PlatformPaymentRoute;
+  successUrl: string;
+  cancelUrl: string;
+}) {
+  const token = await getAccessToken();
+  if (!token) throw new Error('You must be signed in to start checkout.');
+  return postJson(
+    requirePlatformCommerceUrl(),
+    {
+      action: 'createAccountUpgradeCheckoutSession',
+      accountId: params.accountId,
+      amendmentId: params.amendmentId,
+      newMonthlyRetainerCents: params.newMonthlyRetainerCents,
+      paymentRoute: params.paymentRoute,
+      successUrl: params.successUrl,
+      cancelUrl: params.cancelUrl,
+    },
+    token,
+  );
+}
+
 export async function getAccountUpgradeQuote(params: {
   accountId: string;
   amendmentId?: string | null;

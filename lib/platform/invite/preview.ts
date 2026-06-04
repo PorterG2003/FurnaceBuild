@@ -22,12 +22,12 @@ export function buildPlatformInvitePreviewQuote(
   options?: { startedAt?: Date },
 ): PlatformCheckoutQuote {
   const feeConfig = getServerPlatformPaymentFeeConfig()[paymentRoute];
+  const previewStartedAt = options?.startedAt ?? new Date();
   const quote = buildPlatformPaymentQuote({
     monthlyRetainerCents: data.monthlyRetainerCents,
     paymentRoute,
     routeConfig: feeConfig,
   });
-  const previewStartedAt = options?.startedAt ?? new Date();
   const plan = buildBillingAnchorPlan(previewStartedAt, data.monthlyRetainerCents);
   const recurringQuote = buildPlatformRecurringInvoiceQuote({
     monthlyRetainerCents: data.monthlyRetainerCents,

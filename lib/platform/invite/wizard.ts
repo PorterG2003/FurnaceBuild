@@ -88,8 +88,8 @@ export function validateInviteWizardStep(
 
   if (stepIndex === 1) {
     const monthlyRetainerCents = parseUsdInputToCents(input.inviteMonthlyRetainer);
-    if (monthlyRetainerCents == null || monthlyRetainerCents <= 0) {
-      return 'Monthly retainer must be greater than zero.';
+    if (monthlyRetainerCents == null || monthlyRetainerCents < 0) {
+      return 'Monthly retainer must be zero or greater.';
     }
     if (input.agreementType === 'managed_services_agreement') {
       if (parsePositiveWholeNumber(input.managedOutreachVolume) == null) {

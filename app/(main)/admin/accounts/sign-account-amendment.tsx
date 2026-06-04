@@ -216,7 +216,7 @@ export default function SignAccountAmendmentPage() {
   }, [agreementType, monthlyRetainerCents, proposalSnapshot, wizardPath]);
 
   const renderedTerms = useMemo(() => {
-    if (!termsSourceMarkdown.trim() || effectiveContract.monthlyRetainerCents <= 0) return '';
+    if (!termsSourceMarkdown.trim() || effectiveContract.monthlyRetainerCents < 0) return '';
     return renderContractTermsPreview({
       sourceMarkdown: termsSourceMarkdown,
       proposedAccountName: accountName,
@@ -445,7 +445,7 @@ export default function SignAccountAmendmentPage() {
   const persistDraft = async () => {
     if (!params.accountId) throw new Error('Missing account.');
     const retainer = effectiveContract.monthlyRetainerCents;
-    if (retainer <= 0) throw new Error('Enter a valid monthly retainer.');
+    if (retainer < 0) throw new Error('Enter a monthly retainer of $0 or more.');
     if (!termsSourceMarkdown.trim()) throw new Error('Terms content is required.');
 
     const payload = {

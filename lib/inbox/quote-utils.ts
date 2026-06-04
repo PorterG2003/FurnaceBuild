@@ -85,3 +85,19 @@ export function buildForwardedConversationHtml(
     `</div>`
   );
 }
+
+export function buildForwardComposerHtml(
+  authoredHtml: string,
+  forwardedConversationHtml: string
+): string {
+  const body = authoredHtml.trim();
+  const quote = forwardedConversationHtml.trim();
+  if (!body) return quote;
+  if (!quote) return body;
+  return (
+    `<div style="margin-bottom: 20px;">${body}</div>` +
+    `<div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(209, 213, 219, 0.25);">` +
+    `${quote}` +
+    `</div>`
+  );
+}

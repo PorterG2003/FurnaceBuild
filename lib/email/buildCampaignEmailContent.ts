@@ -8,6 +8,12 @@ import { stripHtml } from './parse-body.js';
 import { mergeTemplate, type LeadLike } from './mergeTemplate.js';
 import { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js';
 import { stripSignatureStyles } from './strip-signature-styles.js';
+import {
+  canonicalizeEmailHtml,
+  isFullHtmlDocument,
+  mergeHtmlEmailWithSignature,
+  type EmailEditorMode,
+} from './emailHtmlMode.js';
 
 /**
  * Convert block-level HTML (from TipTap or signature editor) to a flat <br>-separated
@@ -72,6 +78,7 @@ export interface BuildCampaignEmailContentConfig {
   body_text?: string;
   template?: string;
   body?: string;
+  editor_mode?: EmailEditorMode;
   /** Optional mailbox signature; included in body and processed with spintax/mergeTemplate. */
   signature?: string;
 }
@@ -101,16 +108,28 @@ export function buildCampaignEmailContent(
     typeof (config.body_html ?? config.template ?? config.body) === 'string'
       ? (config.body_html ?? config.template ?? config.body)!
       : '';
+  const editorMode: EmailEditorMode =
+    config.editor_mode === 'html' || isFullHtmlDocument(bodySource) ? 'html' : 'richText';
   const normalizedSignature =
     config.signature?.trim() ? stripSignatureStyles(config.signature.trim()) : '';
   const bodyPart = bodySource.replace(/\s+$/, '');
   const sigPart = normalizedSignature.replace(/^\s+/, '');
-  const { bodyHtmlMerged: bodySpun } = mergeInboxComposeHtml(
-    bodySource,
-    config.signature ?? null,
-    Boolean(config.signature?.trim()),
-    options
-  );
+  const bodySpun =
+    editorMode === 'html'
+      ? processSpintax(
+          mergeHtmlEmailWithSignature(
+            canonicalizeEmailHtml(bodySource, { preserveFullDocument: true }).html,
+            normalizedSignature,
+            Boolean(normalizedSignature)
+          ),
+          options
+        )
+      : mergeInboxComposeHtml(
+          bodySource,
+          config.signature ?? null,
+          Boolean(config.signature?.trim()),
+          options
+        ).bodyHtmlMerged;
   const bodyMerged = mergeTemplate(bodySpun, lead);
   const isHtmlBody = /<[a-z][\s\S]*>/i.test(bodyMerged);
   const bodyText =
@@ -132,6 +151,7 @@ export function buildCampaignEmailContent(
     const bodyIsHtml = /<[a-z][\s\S]*>/i.test(bodyPart);
     const sigIsHtml = /<[a-z][\s\S]*>/i.test(sigPart);
     log('bodyIsHtml / sigIsHtml', { bodyIsHtml, sigIsHtml });
+    log('editor_mode', editorMode);
     log('bodyRaw (join used)', bodyIsHtml && sigIsHtml ? '<br><br>' : '\\n\\n');
     log('bodyRaw (snippet around join)', bodySpun.slice(Math.max(0, bodyPart.length - 20), bodyPart.length + 60));
     log('bodyMerged (snippet around join)', bodyMerged.slice(Math.max(0, bodyPart.length - 20), bodyPart.length + 120));

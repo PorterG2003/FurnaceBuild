@@ -79,8 +79,8 @@ export function validateAmendmentWizardStep(
 ): string | null {
   if (stepId === 'proposal_billing') {
     const monthlyRetainerCents = parseInviteWizardUsdInputToCents(input.monthlyRetainer);
-    if (monthlyRetainerCents == null || monthlyRetainerCents <= 0) {
-      return 'Monthly retainer must be greater than zero.';
+    if (monthlyRetainerCents == null || monthlyRetainerCents < 0) {
+      return 'Monthly retainer must be zero or greater.';
     }
     if (input.agreementType === 'managed_services_agreement') {
       if (parseInviteWizardPositiveWholeNumber(input.managedOutreachVolume) == null) {

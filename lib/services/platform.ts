@@ -11,6 +11,7 @@ export {
   createPlatformCheckoutSession,
   getAccountUpgradeQuote,
   applyAccountUpgrade,
+  createAccountUpgradeCheckoutSession,
   createAccountPaymentMethodUpdateSession,
   finalizeAccountPaymentMethodUpdate,
   scheduleAccountDowngrade,

@@ -114,6 +114,11 @@ test('validateInviteWizardStep accepts valid combined proposal and billing input
   assert.equal(error, null);
 });
 
+test('validateInviteWizardStep accepts a free retainer', () => {
+  const error = validateInviteWizardStep(1, buildDraft({ inviteMonthlyRetainer: '0' }));
+  assert.equal(error, null);
+});
+
 test('validateInviteWizardStep validates terms on step 2', () => {
   const error = validateInviteWizardStep(2, buildDraft({ termsSourceMarkdown: '' }));
   assert.equal(error, 'Agreement markdown is required.');

@@ -51,6 +51,8 @@ Platform invite activation currently completes in the Stripe webhook path:
 
 Because this path is webhook-only, any change to Stripe object creation or metadata parsing must include handler-level test coverage.
 
+Free invites are the exception: a `$0` retainer bypasses Stripe entirely and activates through `accept_platform_invitation(...)`. These accounts do not get a Stripe subscription until they are later upgraded to a paid retainer.
+
 ## Account amendment payment rule
 
 Account amendment upgrades now have two distinct payment behaviors:

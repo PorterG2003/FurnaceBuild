@@ -418,6 +418,157 @@ test('platform invite completion provisions owner account and internal admins id
   }
 });
 
+test('free platform invite acceptance provisions an account without Stripe', async (t) => {
+  const namespace = createPlatformTestNamespace('free-accept');
+  const { service, anon } = getHarnessClients();
+  const supabaseUrl =
+    process.env.PLATFORM_TEST_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    process.env.EXPO_PUBLIC_SUPABASE_URL!;
+  const adminEmail = `${namespace}-admin@furnace.test`;
+  const adminPassword = `Admin!${namespace.slice(-6)}Gg1`;
+  const inviteeEmail = `${namespace}@example.com`;
+  const inviteePassword = `Invitee!${namespace.slice(-6)}Hh1`;
+  const internalEmails = [`porter-${namespace}@getfurnace.io`, `kyle-${namespace}@getfurnace.io`];
+  const cleanup = {
+    accountIds: [] as string[],
+    invitationIds: [] as string[],
+    userIds: [] as string[],
+  };
+
+  try {
+    try {
+      await assertPlatformSchemaAvailable(service);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'SKIP_PLATFORM_SCHEMA_MISSING') {
+        t.skip('Platform invite schema is not present in the current test database.');
+      }
+      throw err;
+    }
+
+    const { data: adminUserData } = await service.auth.admin.createUser({
+      email: adminEmail,
+      password: adminPassword,
+      email_confirm: true,
+    });
+    const adminUserId = adminUserData.user!.id;
+    cleanup.userIds.push(adminUserId);
+    await waitForPublicUser(service, adminUserId);
+    await service.from('user_access_flags').insert({ user_id: adminUserId, flag_key: 'platform_admin' });
+
+    const { data: inviteeUserData } = await service.auth.admin.createUser({
+      email: inviteeEmail,
+      password: inviteePassword,
+      email_confirm: true,
+    });
+    const inviteeUserId = inviteeUserData.user!.id;
+    cleanup.userIds.push(inviteeUserId);
+    await waitForPublicUser(service, inviteeUserId);
+
+    for (const email of internalEmails) {
+      const { data: internalUserData } = await service.auth.admin.createUser({
+        email,
+        password: `Internal!${namespace.slice(-6)}Ii1`,
+        email_confirm: true,
+      });
+      cleanup.userIds.push(internalUserData.user!.id);
+      await waitForPublicUser(service, internalUserData.user!.id);
+    }
+
+    const adminToken = await signIn(anon, adminEmail, adminPassword);
+    const adminClient = createClient(
+      supabaseUrl,
+      process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY!,
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { Authorization: `Bearer ${adminToken}` } },
+      },
+    ) as DbClient;
+    const { data: invitation, error: invitationError } = await adminClient.rpc('create_platform_invitation', {
+      p_email: inviteeEmail,
+      p_proposed_account_name: 'Free Workspace',
+      p_monthly_retainer_cents: 0,
+      p_currency: 'usd',
+      p_proposal_snapshot_json: { proposal_title: 'Free account' },
+      p_terms_version: 'default-v1',
+      p_agreement_type: 'platform_agreement',
+      p_terms_source_markdown: '# Furnace Platform Agreement',
+      p_auto_add_internal_admins: true,
+      p_expires_at: null,
+    });
+    assert.equal(invitationError, null);
+    cleanup.invitationIds.push(invitation.id);
+
+    const inviteeToken = await signIn(anon, inviteeEmail, inviteePassword);
+    const inviteeClient = createClient(
+      supabaseUrl,
+      process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY!,
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { Authorization: `Bearer ${inviteeToken}` } },
+      },
+    ) as DbClient;
+
+    const { data: completed, error: acceptError } = await inviteeClient.rpc('accept_platform_invitation', {
+      p_invitation_id: invitation.id,
+      p_full_name: 'Free Invitee',
+      p_account_name: 'Free Workspace',
+      p_terms_accepted_ip: '127.0.0.1',
+      p_internal_admin_emails: internalEmails,
+    });
+    assert.equal(acceptError, null);
+    assert.equal(completed.status, 'completed');
+    cleanup.accountIds.push(completed.account_id);
+
+    const { data: invitationRow, error: invitationRowError } = await service
+      .from('platform_invitations')
+      .select('status, stripe_customer_id, stripe_subscription_id, created_account_id')
+      .eq('id', invitation.id)
+      .single();
+    assert.equal(invitationRowError, null);
+    assert.equal(invitationRow.status, 'active');
+    assert.equal(invitationRow.stripe_customer_id, null);
+    assert.equal(invitationRow.stripe_subscription_id, null);
+    assert.equal(invitationRow.created_account_id, completed.account_id);
+
+    const { data: billingRow, error: billingError } = await service
+      .from('account_billing')
+      .select('monthly_retainer_cents, billing_status, stripe_customer_id, stripe_subscription_id')
+      .eq('account_id', completed.account_id)
+      .single();
+    assert.equal(billingError, null);
+    assert.equal(billingRow.monthly_retainer_cents, 0);
+    assert.equal(billingRow.billing_status, 'active');
+    assert.equal(billingRow.stripe_customer_id, null);
+    assert.equal(billingRow.stripe_subscription_id, null);
+
+    const { data: memberships, error: membershipsError } = await service
+      .from('account_users')
+      .select('user_id, role, is_owner')
+      .eq('account_id', completed.account_id);
+    assert.equal(membershipsError, null);
+    assert.equal(memberships?.find((row) => row.user_id === inviteeUserId)?.is_owner, true);
+    assert.equal(memberships?.filter((row) => row.role === 'admin').length, 2);
+  } finally {
+    if (cleanup.accountIds.length > 0) {
+      await service.from('billing_adjustments').delete().in('account_id', cleanup.accountIds);
+      await service.from('account_billing').delete().in('account_id', cleanup.accountIds);
+      await service.from('account_users').delete().in('account_id', cleanup.accountIds);
+      await service.from('accounts').delete().in('id', cleanup.accountIds);
+    }
+    if (cleanup.invitationIds.length > 0) {
+      await service.from('platform_invitations').delete().in('id', cleanup.invitationIds);
+    }
+    if (cleanup.userIds.length > 0) {
+      await service.from('user_access_flags').delete().in('user_id', cleanup.userIds);
+      await service.from('users').delete().in('id', cleanup.userIds);
+      for (const userId of cleanup.userIds) {
+        await service.auth.admin.deleteUser(userId);
+      }
+    }
+  }
+});
+
 test('platform invite admin RPCs reject duplicate emails once an account is active', async (t) => {
   const namespace = createPlatformTestNamespace('active-block');
   const { service, anon } = getHarnessClients();

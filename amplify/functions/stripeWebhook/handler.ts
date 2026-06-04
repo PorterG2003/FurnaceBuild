@@ -29,6 +29,10 @@ type InvoiceLike = {
   created?: number | null;
 };
 
+type SubscriptionLike = {
+  id: string;
+};
+
 function getSupabaseAdminClient() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
@@ -298,9 +302,184 @@ async function ensureRecurringSubscription(session: ExpandedCheckoutSession) {
   };
 }
 
+async function ensureAccountUpgradeRecurringSubscription(session: ExpandedCheckoutSession) {
+  const stripe = getStripeClient();
+  const metadata = session.metadata ?? {};
+  const accountId = metadata.accountId;
+  const amendmentId = metadata.amendmentId;
+  const customerId = typeof session.customer === 'string' ? session.customer : null;
+  if (!accountId || !amendmentId || !customerId) return null;
+
+  const supabase = getSupabaseAdminClient();
+  const { data: billing, error: billingError } = await supabase
+    .from('account_billing')
+    .select('stripe_subscription_id')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (billingError) throw new Error(billingError.message);
+
+  if (billing?.stripe_subscription_id) {
+    return {
+      subscriptionId: billing.stripe_subscription_id,
+      upfrontInvoiceId:
+        typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? null,
+      upfrontPaymentIntentId:
+        typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : session.payment_intent?.id ?? null,
+    };
+  }
+
+  const existingSubscriptions = await stripe.subscriptions.list({
+    customer: customerId,
+    status: 'all',
+    limit: 10,
+  });
+  const existingForAccount = existingSubscriptions.data.find(
+    (subscription) => subscription.metadata?.accountId === accountId,
+  );
+  if (existingForAccount) {
+    return {
+      subscriptionId: existingForAccount.id,
+      upfrontInvoiceId:
+        typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? null,
+      upfrontPaymentIntentId:
+        typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : session.payment_intent?.id ?? null,
+    };
+  }
+
+  const paymentRoute =
+    metadata.paymentRoute === 'card' || metadata.paymentRoute === 'ach'
+      ? (metadata.paymentRoute as PlatformPaymentRoute)
+      : 'card';
+  const ongoingMonthlyTotalCents = parseMetadataInteger(metadata, 'ongoingMonthlyTotalCents');
+  const anchorDateIso = metadata.anchorDateIso;
+  const billingCycleAnchor = anchorDateIso
+    ? Math.floor(new Date(anchorDateIso).getTime() / 1000)
+    : undefined;
+  if (!billingCycleAnchor) {
+    throw new Error('Missing recurring anchor date');
+  }
+
+  const paymentIntent =
+    session.payment_intent && typeof session.payment_intent !== 'string'
+      ? session.payment_intent
+      : null;
+  const defaultPaymentMethodId = await resolveDefaultPaymentMethodId({
+    stripe,
+    customerId,
+    paymentIntent,
+  });
+  if (!defaultPaymentMethodId) {
+    throw new Error('Missing reusable payment method for recurring subscription');
+  }
+
+  const recurringProduct = await stripe.products.create({
+    name: 'Furnace managed outreach',
+    metadata: { accountId },
+  });
+  const subscription = await stripe.subscriptions.create({
+    customer: customerId,
+    billing_cycle_anchor: billingCycleAnchor,
+    proration_behavior: 'none',
+    default_payment_method: defaultPaymentMethodId,
+    metadata: {
+      accountId,
+      amendmentId,
+      checkoutSessionId: session.id,
+      paymentRoute,
+    },
+    items: [
+      {
+        price_data: {
+          currency: metadata.currency ?? 'usd',
+          recurring: { interval: 'month' },
+          unit_amount: ongoingMonthlyTotalCents,
+          product: recurringProduct.id,
+        },
+      },
+    ],
+  });
+
+  return {
+    subscriptionId: subscription.id,
+    upfrontInvoiceId:
+      typeof session.invoice === 'string' ? session.invoice : session.invoice?.id ?? null,
+    upfrontPaymentIntentId:
+      typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : session.payment_intent?.id ?? null,
+  };
+}
+
+async function handleAccountUpgradeInitialCheckoutCompleted(session: ExpandedCheckoutSession) {
+  const metadata = session.metadata ?? {};
+  const accountId = metadata.accountId;
+  const amendmentId = metadata.amendmentId;
+  if (!accountId || !amendmentId) {
+    throw new Error('Missing account upgrade checkout metadata');
+  }
+
+  const recurringResult = await ensureAccountUpgradeRecurringSubscription(session);
+  if (!recurringResult?.subscriptionId) {
+    throw new Error('Missing recurring subscription for initial upgrade checkout');
+  }
+
+  const supabase = getSupabaseAdminClient();
+  const { data: existingBilling, error: existingBillingError } = await supabase
+    .from('account_billing')
+    .select('accepted_amendment_id, stripe_subscription_id')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (existingBillingError) throw new Error(existingBillingError.message);
+  if (
+    existingBilling?.accepted_amendment_id === amendmentId &&
+    existingBilling?.stripe_subscription_id === recurringResult.subscriptionId
+  ) {
+    return;
+  }
+
+  const nextInvoiceCreditCents = parseMetadataInteger(metadata, 'nextInvoiceCreditCents');
+  const { error: completeError } = await supabase.rpc('complete_account_amendment_upgrade', {
+    p_amendment_id: amendmentId,
+    p_new_monthly_retainer_cents: parseMetadataInteger(metadata, 'newMonthlyRetainerCents'),
+    p_pending_first_delta_coupon_cents: nextInvoiceCreditCents > 0 ? nextInvoiceCreditCents : null,
+    p_upgrade_delta_invoice_id: recurringResult.upfrontInvoiceId ?? null,
+    p_accepted_by_user_id: metadata.userId ?? null,
+  });
+  if (completeError) throw new Error(completeError.message);
+
+  const paymentRoute =
+    metadata.paymentRoute === 'ach' || metadata.paymentRoute === 'card'
+      ? metadata.paymentRoute
+      : null;
+  const { error: updateError } = await supabase
+    .from('account_billing')
+    .update({
+      stripe_customer_id: typeof session.customer === 'string' ? session.customer : null,
+      stripe_subscription_id: recurringResult.subscriptionId,
+      preferred_payment_route: paymentRoute,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('account_id', accountId);
+  if (updateError) throw new Error(updateError.message);
+
+  const { error: activateError } = await supabase.rpc('set_account_billing_status', {
+    p_account_id: accountId,
+    p_billing_status: 'active',
+  });
+  if (activateError) throw new Error(activateError.message);
+}
+
 async function handleCheckoutCompleted(event: CheckoutSessionLike) {
   const session = await getExpandedCheckoutSession(event.id);
   if (await syncAccountPaymentMethodUpdate(session)) {
+    return;
+  }
+  if (session.metadata?.flowKind === 'account_upgrade_initial') {
+    await handleAccountUpgradeInitialCheckoutCompleted(session);
     return;
   }
 
@@ -372,6 +551,19 @@ async function handleCheckoutCompleted(event: CheckoutSessionLike) {
 }
 
 async function handleCheckoutAsyncPaymentFailed(event: CheckoutSessionLike) {
+  if (
+    event.metadata?.flowKind === 'account_upgrade_initial' &&
+    typeof event.metadata?.accountId === 'string'
+  ) {
+    const supabase = getSupabaseAdminClient();
+    const { error } = await supabase.rpc('set_account_billing_status', {
+      p_account_id: event.metadata.accountId,
+      p_billing_status: 'payment_required',
+    });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
   const invitationId = event.metadata?.invitationId;
   if (!invitationId) return;
 
@@ -480,13 +672,36 @@ async function maybeApplyScheduledRetainer(accountId: string) {
     .maybeSingle();
   if (billingError) throw new Error(billingError.message);
   if (
-    !billing?.scheduled_monthly_retainer_cents ||
+    billing?.scheduled_monthly_retainer_cents == null ||
     !billing.scheduled_retainer_effective_at ||
     new Date(billing.scheduled_retainer_effective_at).getTime() > Date.now()
   ) {
     return;
   }
-  if (!billing.stripe_subscription_id) return;
+  if (!billing.stripe_subscription_id) {
+    const { error } = await supabase.rpc('apply_scheduled_account_billing_retainer', {
+      p_account_id: accountId,
+    });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  if (billing.scheduled_monthly_retainer_cents === 0) {
+    await stripe.subscriptions.cancel(billing.stripe_subscription_id);
+    const { error: applyError } = await supabase.rpc('apply_scheduled_account_billing_retainer', {
+      p_account_id: accountId,
+    });
+    if (applyError) throw new Error(applyError.message);
+    const { error: clearError } = await supabase
+      .from('account_billing')
+      .update({
+        stripe_subscription_id: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('account_id', accountId);
+    if (clearError) throw new Error(clearError.message);
+    return;
+  }
 
   const subscription = await stripe.subscriptions.retrieve(billing.stripe_subscription_id);
   const subscriptionItemId = subscription.items.data[0]?.id;
@@ -526,6 +741,40 @@ async function maybeApplyScheduledRetainer(accountId: string) {
     p_account_id: accountId,
   });
   if (error) throw new Error(error.message);
+}
+
+async function handleSubscriptionDeleted(event: SubscriptionLike) {
+  if (!event.id) return;
+
+  const supabase = getSupabaseAdminClient();
+  const { data: billing, error: billingError } = await supabase
+    .from('account_billing')
+    .select('account_id, scheduled_monthly_retainer_cents, scheduled_retainer_effective_at')
+    .eq('stripe_subscription_id', event.id)
+    .maybeSingle();
+  if (billingError) throw new Error(billingError.message);
+  if (!billing) return;
+  if (
+    billing.scheduled_monthly_retainer_cents !== 0 ||
+    !billing.scheduled_retainer_effective_at ||
+    new Date(billing.scheduled_retainer_effective_at).getTime() > Date.now()
+  ) {
+    return;
+  }
+
+  const { error: applyError } = await supabase.rpc('apply_scheduled_account_billing_retainer', {
+    p_account_id: billing.account_id,
+  });
+  if (applyError) throw new Error(applyError.message);
+
+  const { error: updateError } = await supabase
+    .from('account_billing')
+    .update({
+      stripe_subscription_id: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('account_id', billing.account_id);
+  if (updateError) throw new Error(updateError.message);
 }
 
 async function handleInvoiceCreated(event: InvoiceLike) {
@@ -630,6 +879,9 @@ export const handler = async (event: { headers?: Record<string, string>; body?: 
         break;
       case 'invoice.created':
         await handleInvoiceCreated(stripeEvent.data.object as InvoiceLike);
+        break;
+      case 'customer.subscription.deleted':
+        await handleSubscriptionDeleted(stripeEvent.data.object as SubscriptionLike);
         break;
       default:
         break;

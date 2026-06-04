@@ -34,3 +34,10 @@ test('buildBillingAnchorPlan uses MST calendar days instead of UTC rollover', ()
   assert.equal(plan.firstRecurringAmountDueCents, 200_000);
   assert.equal(plan.overlapCreditCents, 0);
 });
+
+test('buildBillingAnchorPlan allows a zero retainer', () => {
+  const plan = buildBillingAnchorPlan(new Date('2026-05-15T10:00:00.000Z'), 0);
+  assert.equal(plan.anchorDateIso, '2026-06-01T07:00:00.000Z');
+  assert.equal(plan.firstRecurringAmountDueCents, 0);
+  assert.equal(plan.overlapCreditCents, 0);
+});

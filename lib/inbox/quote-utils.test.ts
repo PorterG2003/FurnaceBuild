@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 import type { EmailMessage } from '@/lib/supabase/types';
-import { buildForwardedConversationHtml } from './quote-utils';
+import { buildForwardComposerHtml, buildForwardedConversationHtml } from './quote-utils';
 
 const FORWARD_MARKER = '---------- Forwarded message ---------';
 
@@ -100,5 +100,14 @@ describe('buildForwardedConversationHtml', () => {
     });
     const html = buildForwardedConversationHtml([m], m, 'Fallback Subject');
     assert.ok(html.includes('Fallback Subject'));
+  });
+});
+
+describe('buildForwardComposerHtml', () => {
+  it('wraps authored body above the forwarded quote block', () => {
+    const html = buildForwardComposerHtml('<p>Author note</p>', '<div>Quoted block</div>');
+    assert.ok(html.includes('Author note'));
+    assert.ok(html.includes('Quoted block'));
+    assert.ok(html.includes('border-top'));
   });
 });

@@ -128,8 +128,8 @@ export function buildPlatformRouteChargeBreakdown(input: {
 export function buildPlatformPaymentQuote(
   input: PlatformPaymentQuoteInput,
 ): PlatformPaymentQuote {
-  if (!Number.isFinite(input.monthlyRetainerCents) || input.monthlyRetainerCents <= 0) {
-    throw new Error('monthlyRetainerCents must be positive');
+  if (!Number.isFinite(input.monthlyRetainerCents) || input.monthlyRetainerCents < 0) {
+    throw new Error('monthlyRetainerCents must be zero or greater');
   }
 
   const charge = buildPlatformRouteChargeBreakdown({
@@ -153,8 +153,8 @@ export function buildPlatformRecurringInvoiceQuote(input: {
   paymentRoute: PlatformPaymentRoute;
   routeConfig: PlatformPaymentFeeConfig;
 }): PlatformRecurringInvoiceQuote {
-  if (!Number.isFinite(input.monthlyRetainerCents) || input.monthlyRetainerCents <= 0) {
-    throw new Error('monthlyRetainerCents must be positive');
+  if (!Number.isFinite(input.monthlyRetainerCents) || input.monthlyRetainerCents < 0) {
+    throw new Error('monthlyRetainerCents must be zero or greater');
   }
   if (!Number.isFinite(input.firstRecurringSubtotalCents) || input.firstRecurringSubtotalCents < 0) {
     throw new Error('firstRecurringSubtotalCents must be zero or greater');

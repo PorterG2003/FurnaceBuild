@@ -40,4 +40,5 @@ export interface PlatformInviteCheckoutInput {
 
 export type PlatformInviteCheckoutResult =
   | { kind: 'redirect' }
+  | { kind: 'activated'; accountId?: string | null }
   | { kind: 'preview_complete'; title?: string; message?: string };

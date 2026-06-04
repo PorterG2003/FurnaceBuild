@@ -240,7 +240,7 @@ export function PlatformAccountDetailView({
               Monthly retainer: {formatUsd(detail.billing.monthly_retainer_cents)}
             </Text>
             {(detail.billing as { scheduled_monthly_retainer_cents?: number | null })
-              .scheduled_monthly_retainer_cents ? (
+              .scheduled_monthly_retainer_cents != null ? (
               <Text className="text-gray-400 font-instrument text-sm">
                 Scheduled:{' '}
                 {formatUsd(

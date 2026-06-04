@@ -365,6 +365,145 @@ test('account amendment accept with downgrade schedules retainer', async (t) => 
   }
 });
 
+test('account amendment accept with downgrade to free schedules a zero retainer', async (t) => {
+  const namespace = createPlatformTestNamespace('downgrade-free');
+  const { service, anon } = getHarnessClients();
+  const ownerEmail = `${namespace}-owner@furnace.test`;
+  const adminEmail = `${namespace}-admin@furnace.test`;
+  const ownerPassword = `Owner!${namespace.slice(-6)}Cc2`;
+  const adminPassword = `Admin!${namespace.slice(-6)}Bb1`;
+  const cleanup = {
+    accountIds: [] as string[],
+    amendmentIds: [] as string[],
+    userIds: [] as string[],
+  };
+
+  try {
+    if (!(await amendmentRpcsAvailable(service))) {
+      t.skip('Account amendment RPCs are not present in the current test database.');
+    }
+
+    const { data: adminAuth } = await service.auth.admin.createUser({
+      email: adminEmail,
+      password: adminPassword,
+      email_confirm: true,
+    });
+    if (!adminAuth.user) throw new Error('admin');
+    cleanup.userIds.push(adminAuth.user.id);
+    await waitForPublicUser(service, adminAuth.user.id);
+    await service.from('user_access_flags').upsert({
+      user_id: adminAuth.user.id,
+      flag_key: 'platform_admin',
+    });
+
+    const { data: ownerAuth } = await service.auth.admin.createUser({
+      email: ownerEmail,
+      password: ownerPassword,
+      email_confirm: true,
+    });
+    if (!ownerAuth.user) throw new Error('owner');
+    cleanup.userIds.push(ownerAuth.user.id);
+    await waitForPublicUser(service, ownerAuth.user.id);
+
+    const { data: account } = await service
+      .from('accounts')
+      .insert({ name: `${namespace} Account` })
+      .select('id')
+      .single();
+    if (!account) throw new Error('account');
+    cleanup.accountIds.push(account.id);
+
+    await service.from('account_users').insert({
+      account_id: account.id,
+      user_id: ownerAuth.user.id,
+      is_owner: true,
+      role: 'owner',
+    });
+
+    await service.from('account_billing').insert({
+      account_id: account.id,
+      monthly_retainer_cents: 500_000,
+      billing_status: 'active',
+      agreement_type: 'platform_agreement',
+      proposal_snapshot_json: {},
+      terms_version: 'platform-agreement-current',
+      terms_snapshot_markdown: '# Terms',
+      stripe_customer_id: `cus_${namespace}`,
+      stripe_subscription_id: `sub_${namespace}`,
+    });
+
+    const adminToken = await signIn(anon, adminEmail, adminPassword);
+    const adminClient = createClient(
+      process.env.PLATFORM_TEST_SUPABASE_URL ||
+        process.env.SUPABASE_URL ||
+        process.env.EXPO_PUBLIC_SUPABASE_URL!,
+      process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY!,
+      {
+        global: { headers: { Authorization: `Bearer ${adminToken}` } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
+    ) as DbClient;
+
+    const { data: amendment, error: draftError } = await adminClient.rpc(
+      'create_platform_account_amendment_draft',
+      {
+        p_account_id: account.id,
+        p_account_name: `${namespace} Account`,
+        p_monthly_retainer_cents: 0,
+        p_agreement_type: 'platform_agreement',
+      },
+    );
+    if (draftError) throw new Error(draftError.message);
+    cleanup.amendmentIds.push(amendment.id);
+
+    await adminClient.rpc('publish_platform_account_amendment', { p_amendment_id: amendment.id });
+
+    const ownerToken = await signIn(anon, ownerEmail, ownerPassword);
+    const ownerClient = createClient(
+      process.env.PLATFORM_TEST_SUPABASE_URL ||
+        process.env.SUPABASE_URL ||
+        process.env.EXPO_PUBLIC_SUPABASE_URL!,
+      process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY!,
+      {
+        global: { headers: { Authorization: `Bearer ${ownerToken}` } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
+    ) as DbClient;
+
+    const { data: acceptResult, error: acceptError } = await ownerClient.rpc(
+      'accept_platform_account_amendment',
+      { p_amendment_id: amendment.id },
+    );
+    if (acceptError) throw new Error(acceptError.message);
+    assert.equal(acceptResult.billing_change_kind, 'downgrade');
+    assert.equal(acceptResult.requires_stripe_apply, true);
+    assert.equal(acceptResult.scheduled_monthly_retainer_cents, 0);
+
+    const { data: billing } = await service
+      .from('account_billing')
+      .select('scheduled_monthly_retainer_cents, monthly_retainer_cents')
+      .eq('account_id', account.id)
+      .single();
+    assert.equal(billing?.monthly_retainer_cents, 500_000);
+    assert.equal(billing?.scheduled_monthly_retainer_cents, 0);
+  } finally {
+    for (const amendmentId of cleanup.amendmentIds) {
+      await service.from('platform_account_amendment_revisions').delete().eq('amendment_id', amendmentId);
+      await service.from('platform_account_amendments').delete().eq('id', amendmentId);
+    }
+    for (const accountId of cleanup.accountIds) {
+      await service.from('account_billing_changes').delete().eq('account_id', accountId);
+      await service.from('account_billing').delete().eq('account_id', accountId);
+      await service.from('account_users').delete().eq('account_id', accountId);
+      await service.from('accounts').delete().eq('id', accountId);
+    }
+    for (const userId of cleanup.userIds) {
+      await service.from('user_access_flags').delete().eq('user_id', userId);
+      await service.auth.admin.deleteUser(userId);
+    }
+  }
+});
+
 test('account amendment upgrade stays pending until payment completion', async (t) => {
   const namespace = createPlatformTestNamespace('upgrade');
   const { service, anon } = getHarnessClients();
@@ -542,6 +681,153 @@ test('account amendment upgrade stays pending until payment completion', async (
     if (changeError) throw new Error(changeError.message);
     assert.equal(changeRow.old_monthly_retainer_cents, 500_000);
     assert.equal(changeRow.new_monthly_retainer_cents, 700_000);
+  } finally {
+    for (const amendmentId of cleanup.amendmentIds) {
+      await service.from('platform_account_amendment_revisions').delete().eq('amendment_id', amendmentId);
+      await service.from('platform_account_amendments').delete().eq('id', amendmentId);
+    }
+    for (const accountId of cleanup.accountIds) {
+      await service.from('account_billing_changes').delete().eq('account_id', accountId);
+      await service.from('account_billing').delete().eq('account_id', accountId);
+      await service.from('account_users').delete().eq('account_id', accountId);
+      await service.from('accounts').delete().eq('id', accountId);
+    }
+    for (const userId of cleanup.userIds) {
+      await service.from('user_access_flags').delete().eq('user_id', userId);
+      await service.auth.admin.deleteUser(userId);
+    }
+  }
+});
+
+test('account amendment upgrade from free stays pending until payment completion', async (t) => {
+  const namespace = createPlatformTestNamespace('upgrade-from-free');
+  const { service, anon } = getHarnessClients();
+  const ownerEmail = `${namespace}-owner@furnace.test`;
+  const adminEmail = `${namespace}-admin@furnace.test`;
+  const ownerPassword = `Owner!${namespace.slice(-6)}Dd2`;
+  const adminPassword = `Admin!${namespace.slice(-6)}Cc1`;
+  const cleanup = {
+    accountIds: [] as string[],
+    amendmentIds: [] as string[],
+    userIds: [] as string[],
+  };
+
+  try {
+    if (!(await amendmentRpcsAvailable(service))) {
+      t.skip('Account amendment RPCs are not present in the current test database.');
+    }
+
+    const { data: adminAuth } = await service.auth.admin.createUser({
+      email: adminEmail,
+      password: adminPassword,
+      email_confirm: true,
+    });
+    if (!adminAuth.user) throw new Error('admin');
+    cleanup.userIds.push(adminAuth.user.id);
+    await waitForPublicUser(service, adminAuth.user.id);
+    await service.from('user_access_flags').upsert({
+      user_id: adminAuth.user.id,
+      flag_key: 'platform_admin',
+    });
+
+    const { data: ownerAuth } = await service.auth.admin.createUser({
+      email: ownerEmail,
+      password: ownerPassword,
+      email_confirm: true,
+    });
+    if (!ownerAuth.user) throw new Error('owner');
+    cleanup.userIds.push(ownerAuth.user.id);
+    await waitForPublicUser(service, ownerAuth.user.id);
+
+    const { data: account, error: accountError } = await service
+      .from('accounts')
+      .insert({ name: `${namespace} Account` })
+      .select('id')
+      .single();
+    if (accountError) throw new Error(accountError.message);
+    cleanup.accountIds.push(account.id);
+
+    const { error: billingError } = await service.from('account_billing').insert({
+      account_id: account.id,
+      monthly_retainer_cents: 0,
+      billing_status: 'active',
+      agreement_type: 'platform_agreement',
+      proposal_snapshot_json: { plan_tier: 'silver' },
+      terms_version: 'test-v1',
+      terms_snapshot_markdown: '# Terms',
+      stripe_customer_id: `cus_${namespace}`,
+    });
+    if (billingError) throw new Error(billingError.message);
+
+    const { error: memberError } = await service.from('account_users').insert({
+      account_id: account.id,
+      user_id: ownerAuth.user.id,
+      role: 'owner',
+      is_owner: true,
+    });
+    if (memberError) throw new Error(memberError.message);
+
+    const adminToken = await signIn(anon, adminEmail, adminPassword);
+    const adminClient = createClient(
+      process.env.PLATFORM_TEST_SUPABASE_URL ||
+        process.env.SUPABASE_URL ||
+        process.env.EXPO_PUBLIC_SUPABASE_URL!,
+      process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY!,
+      {
+        global: { headers: { Authorization: `Bearer ${adminToken}` } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
+    ) as DbClient;
+
+    const { data: amendment, error: draftError } = await adminClient.rpc(
+      'create_platform_account_amendment_draft',
+      {
+        p_account_id: account.id,
+        p_account_name: `${namespace} Account`,
+        p_monthly_retainer_cents: 700_000,
+        p_agreement_type: 'platform_agreement',
+      },
+    );
+    if (draftError) throw new Error(draftError.message);
+    cleanup.amendmentIds.push(amendment.id);
+
+    const { error: publishError } = await adminClient.rpc('publish_platform_account_amendment', {
+      p_amendment_id: amendment.id,
+    });
+    if (publishError) throw new Error(publishError.message);
+
+    const ownerToken = await signIn(anon, ownerEmail, ownerPassword);
+    const ownerClient = createClient(
+      process.env.PLATFORM_TEST_SUPABASE_URL ||
+        process.env.SUPABASE_URL ||
+        process.env.EXPO_PUBLIC_SUPABASE_URL!,
+      process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY!,
+      {
+        global: { headers: { Authorization: `Bearer ${ownerToken}` } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
+    ) as DbClient;
+
+    const { data: acceptResult, error: acceptError } = await ownerClient.rpc(
+      'accept_platform_account_amendment',
+      { p_amendment_id: amendment.id },
+    );
+    if (acceptError) throw new Error(acceptError.message);
+    assert.equal(acceptResult.status, 'pending_payment');
+    assert.equal(acceptResult.billing_change_kind, 'upgrade');
+    assert.equal(acceptResult.requires_stripe_apply, true);
+    assert.equal(acceptResult.old_monthly_retainer_cents, 0);
+    assert.equal(acceptResult.new_monthly_retainer_cents, 700_000);
+
+    const { data: billingAfterAccept, error: billingAfterAcceptError } = await service
+      .from('account_billing')
+      .select('monthly_retainer_cents, accepted_amendment_id, stripe_subscription_id')
+      .eq('account_id', account.id)
+      .single();
+    if (billingAfterAcceptError) throw new Error(billingAfterAcceptError.message);
+    assert.equal(billingAfterAccept.monthly_retainer_cents, 0);
+    assert.equal(billingAfterAccept.accepted_amendment_id, null);
+    assert.equal(billingAfterAccept.stripe_subscription_id, null);
   } finally {
     for (const amendmentId of cleanup.amendmentIds) {
       await service.from('platform_account_amendment_revisions').delete().eq('amendment_id', amendmentId);

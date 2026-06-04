@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { RichText, Toolbar, useEditorBridge } from '@10play/tentap-editor';
 import type { EditorBridge } from '@10play/tentap-editor';
 
@@ -30,6 +30,10 @@ export interface ComposerRichEditorProps {
   renderBetweenToolbarAndContent?: React.ReactNode;
   /** Content change callback (web only) */
   onContentChange?: (text: string) => void;
+  /** HTML change callback (web only). */
+  onHtmlChange?: (html: string) => void;
+  /** Optional action to switch from rich text to HTML mode. */
+  onSwitchToHtml?: () => void;
 }
 
 /**
@@ -45,6 +49,8 @@ export function ComposerRichEditor({
   onFilesSelected: _onFilesSelected,
   renderBetweenToolbarAndContent,
   onContentChange: _onContentChange,
+  onHtmlChange: _onHtmlChange,
+  onSwitchToHtml,
 }: ComposerRichEditorProps) {
   const editor = useEditorBridge({
     autofocus: false,
@@ -65,6 +71,24 @@ export function ComposerRichEditor({
 
   return (
     <View style={{ minHeight, borderRadius: 12, overflow: 'hidden', backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: '#2A2A2A' }}>
+      {onSwitchToHtml ? (
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 8, paddingTop: 8 }}>
+          <Pressable
+            onPress={onSwitchToHtml}
+            style={{
+              minHeight: 36,
+              paddingHorizontal: 12,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.18)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text className="text-xs font-instrument-medium text-white">HTML</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <RichText editor={editor} />
       <Toolbar editor={editor} />
       {renderBetweenToolbarAndContent}

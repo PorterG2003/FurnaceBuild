@@ -2,6 +2,8 @@
  * Email node A/B variants stored in flow_data (builder) and mirrored in nodes.node_data.
  */
 
+import type { EmailEditorMode } from './emailHtmlMode.js';
+
 export const LEGACY_EMAIL_VARIANT_ID = 'a0000000-0000-4000-8000-000000000001';
 
 export type EmailNodeVariant = {
@@ -11,6 +13,7 @@ export type EmailNodeVariant = {
   template: string;
   body_html?: string;
   body_text?: string;
+  editor_mode?: EmailEditorMode;
   isActive: boolean;
   order: number;
 };
@@ -55,10 +58,11 @@ export function normalizeLegacyEmailNodeData(data: Record<string, unknown>): {
     template: String(raw.template ?? ''),
     body_html: raw.body_html != null ? String(raw.body_html) : undefined,
     body_text: raw.body_text != null ? String(raw.body_text) : undefined,
+    editor_mode: raw.editor_mode === 'html' ? 'html' : 'richText',
     isActive: true,
     order: 0,
   };
-  const { subject, template, body_html, body_text, variants: _vv, ...rest } = raw;
+  const { subject, template, body_html, body_text, editor_mode, variants: _vv, ...rest } = raw;
   return { variants: [variant], legacyFields: rest };
 }
 
@@ -76,6 +80,7 @@ function normalizeOneVariant(v: unknown, index: number): EmailNodeVariant {
     template: String(o.template ?? ''),
     body_html: o.body_html != null ? String(o.body_html) : undefined,
     body_text: o.body_text != null ? String(o.body_text) : undefined,
+    editor_mode: o.editor_mode === 'html' ? 'html' : 'richText',
     isActive,
     order,
   };

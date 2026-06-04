@@ -42,6 +42,10 @@ export interface ComposerRichEditorProps {
   renderBetweenToolbarAndContent?: React.ReactNode;
   /** Called when editor content changes (e.g. for live preview). Passes plain text. */
   onContentChange?: (text: string) => void;
+  /** Called when editor HTML changes. */
+  onHtmlChange?: (html: string) => void;
+  /** Optional action to switch from rich text to HTML mode. */
+  onSwitchToHtml?: () => void;
 }
 
 /**
@@ -57,6 +61,8 @@ export function ComposerRichEditor({
   onFilesSelected,
   renderBetweenToolbarAndContent,
   onContentChange,
+  onHtmlChange,
+  onSwitchToHtml,
 }: ComposerRichEditorProps) {
   const placeholderRef = useRef(placeholder);
   const [linkPopoverOpen, setLinkPopoverOpen] = useState(false);
@@ -136,13 +142,16 @@ export function ComposerRichEditor({
   }, [editor, editorRef]);
 
   useEffect(() => {
-    if (!editor || !onContentChange) return;
-    const handleUpdate = () => onContentChange(editor.getText());
+    if (!editor || (!onContentChange && !onHtmlChange)) return;
+    const handleUpdate = () => {
+      onContentChange?.(editor.getText());
+      onHtmlChange?.(editor.getHTML());
+    };
     editor.on('update', handleUpdate);
     return () => {
       editor.off('update', handleUpdate);
     };
-  }, [editor, onContentChange]);
+  }, [editor, onContentChange, onHtmlChange]);
 
   useEffect(() => {
     if (!editor) return;
@@ -436,6 +445,15 @@ export function ComposerRichEditor({
             </label>
           </>
         )}
+
+        {onSwitchToHtml ? (
+          <>
+            <div className="composer-toolbar-divider" />
+            <ToolbarButton onClick={onSwitchToHtml} active={false} title="HTML">
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4 }}>HTML</span>
+            </ToolbarButton>
+          </>
+        ) : null}
 
         <div style={{ marginLeft: 'auto' }} />
 

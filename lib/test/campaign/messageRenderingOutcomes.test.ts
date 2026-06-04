@@ -182,3 +182,111 @@ test('rendered campaign content stays aligned through sent event persistence and
     await harness.cleanup();
   }
 });
+
+test('html-mode campaign content preserves full-document markup through sent persistence', async () => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('message-rendering-html-mode'),
+  });
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Message Rendering HTML Mode Outcomes',
+      status: 'running',
+      flowKind: 'emailOnly',
+      mailboxes: [
+        {
+          key: 'mailbox-1',
+          emailAddress: `sender-${harness.namespace}@example.com`,
+          displayName: 'Sender',
+        },
+      ],
+      leads: [
+        buildCampaignLead({
+          key: 'render-target',
+          email: `lead-${harness.namespace}@example.com`,
+          firstName: 'Casey',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: new Date(Date.now() - 60_000).toISOString(),
+          }),
+        }),
+      ],
+    });
+
+    const lead = graph.leadsByKey.get('render-target')!;
+    const mailboxId = graph.mailboxIdsByKey.get('mailbox-1')!;
+    const nodeId = graph.nodeIdsByFlowNodeId.get('email-1')!;
+    const scheduledAt = new Date().toISOString();
+    const messageJobId = randomUUID();
+
+    const { error: jobError } = await harness.supabase.from('message_jobs').insert({
+      id: messageJobId,
+      enrollment_id: lead.enrollmentId,
+      campaign_id: graph.campaignId,
+      account_id: graph.accountId,
+      lead_id: lead.leadId,
+      mailbox_id: mailboxId,
+      node_id: nodeId,
+      status: 'reserved',
+      scheduled_at: scheduledAt,
+      reserved_at: scheduledAt,
+      lease_expires_at: null,
+      claim_token: null,
+      sending_started_at: null,
+      sent_at: null,
+      provider_message_id: null,
+      error_message: null,
+      retry_count: 0,
+      message_type: 'campaign',
+      send_wait_reason: null,
+      interval_id: null,
+      message_data: {
+        node_config: {
+          subject: 'HTML mode for {{first_name}}',
+          editor_mode: 'html',
+          body_html:
+            '<!DOCTYPE html><html><head><style>.hero{color:#fff}</style></head><body><table><tr><td class="hero">Hello {{first_name}}</td></tr></table></body></html>',
+          body_text: 'Hello {{first_name}}',
+        },
+      },
+    } as any);
+    assert.equal(jobError, null);
+    graph.manifest.messageJobIds.push(messageJobId);
+
+    const sendWorker = new SendWorker({
+      supabase: harness.supabase as any,
+      databaseClient: {} as any,
+      campaignEmailSender: async () => '<provider@example.com>',
+    });
+    (sendWorker as any).smtpPool = {
+      getTransporter: async () => ({}),
+      markMessageSent: () => {},
+      closeAll: async () => {},
+    };
+
+    const { data: messageJobRow, error: messageJobLoadError } = await harness.supabase
+      .from('message_jobs')
+      .select('*')
+      .eq('id', messageJobId)
+      .single();
+    assert.equal(messageJobLoadError, null);
+
+    await (sendWorker as any).processMessageJob(messageJobRow);
+
+    const { data: sentEvent, error: sentEventError } = await harness.supabase
+      .from('events')
+      .select('event_data')
+      .eq('message_job_id', messageJobId)
+      .eq('event_type', 'sent')
+      .single();
+    assert.equal(sentEventError, null);
+
+    const eventData = (sentEvent as any).event_data as Record<string, string | null>;
+    assert.match(eventData.sent_body_html ?? '', /<html>/i);
+    assert.match(eventData.sent_body_html ?? '', /<table>/i);
+    assert.equal(eventData.sent_body_text, 'Hello Casey');
+  } finally {
+    await harness.cleanup();
+  }
+});

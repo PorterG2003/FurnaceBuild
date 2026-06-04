@@ -3,13 +3,16 @@ import { View, Text, TextInput, ScrollView, Pressable } from 'react-native';
 import { PaperAirplaneIcon } from 'react-native-heroicons/outline';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/Checkbox';
+import { ConfirmModal } from '@/components/ui/modals';
 import { ComposerAttachments } from './ComposerAttachments';
 import { ComposerRichEditor } from './ComposerRichEditor';
 import { MessageBody } from './MessageBody';
 import { stripHtml } from '@/lib/email';
+import type { EmailEditorMode } from '@/lib/email';
 import type { EditorBridge } from '@10play/tentap-editor';
 import type { ComposerAttachmentItem } from './ComposerAttachments';
 import { MAX_ATTACHMENTS, MAX_TOTAL_BYTES, MAX_FILE_BYTES } from './inboxConstants';
+import { EmailHtmlCodeEditor } from '@/components/email/EmailHtmlCodeEditor';
 
 export interface InboxComposerFormProps {
   mode: 'reply' | 'forward';
@@ -38,6 +41,20 @@ export interface InboxComposerFormProps {
   includeSignature: boolean;
   setIncludeSignature: React.Dispatch<React.SetStateAction<boolean>>;
   forwardQuoteHtml: string;
+  replyEditorMode: EmailEditorMode;
+  forwardEditorMode: EmailEditorMode;
+  replyHtmlDraft: string;
+  setReplyHtmlDraft: React.Dispatch<React.SetStateAction<string>>;
+  forwardHtmlDraft: string;
+  setForwardHtmlDraft: React.Dispatch<React.SetStateAction<string>>;
+  replyRichInitialContent: string;
+  forwardRichInitialContent: string;
+  onSwitchReplyToHtml: () => void;
+  onSwitchForwardToHtml: () => void;
+  switchToRichConfirmMode: 'reply' | 'forward' | null;
+  onRequestSwitchToRich: (mode: 'reply' | 'forward') => void;
+  onCancelSwitchToRich: () => void;
+  onConfirmSwitchToRich: () => void;
   /** Actions */
   onSendReply: () => void;
   onSendForward: () => void;
@@ -76,6 +93,20 @@ export function InboxComposerForm({
   includeSignature,
   setIncludeSignature,
   forwardQuoteHtml,
+  replyEditorMode,
+  forwardEditorMode,
+  replyHtmlDraft,
+  setReplyHtmlDraft,
+  forwardHtmlDraft,
+  setForwardHtmlDraft,
+  replyRichInitialContent,
+  forwardRichInitialContent,
+  onSwitchReplyToHtml,
+  onSwitchForwardToHtml,
+  switchToRichConfirmMode,
+  onRequestSwitchToRich,
+  onCancelSwitchToRich,
+  onConfirmSwitchToRich,
   onSendReply,
   onSendForward,
   sendingReply,
@@ -160,16 +191,35 @@ export function InboxComposerForm({
               <Text className="text-gray-300 font-instrument text-sm">Include signature</Text>
             </Pressable>
           </View>
-          <ComposerRichEditor
-            key={`reply${editorKeySuffix}`}
-            initialContent="<p></p>"
-            placeholder="Write your reply…"
-            editorRef={composerEditorRef}
-            minHeight={140}
-            attachmentCount={composerAttachments.length}
-            onFilesSelected={onFilesSelected}
-            renderBetweenToolbarAndContent={attachmentsBlock}
-          />
+          {replyEditorMode === 'html' ? (
+            <>
+              <EmailHtmlCodeEditor
+                value={replyHtmlDraft}
+                onChangeText={setReplyHtmlDraft}
+                label="Message HTML"
+                placeholder="<p>Write your reply…</p>"
+                minHeight={180}
+                trailingElement={
+                  <Pressable onPress={() => onRequestSwitchToRich('reply')} className="rounded-xl border border-[#3A3A3A] px-3 py-2">
+                    <Text className="text-gray-300 font-instrument-medium text-xs">Rich text</Text>
+                  </Pressable>
+                }
+              />
+              {attachmentsBlock}
+            </>
+          ) : (
+            <ComposerRichEditor
+              key={`reply${editorKeySuffix}:${replyRichInitialContent}`}
+              initialContent={replyRichInitialContent}
+              placeholder="Write your reply…"
+              editorRef={composerEditorRef}
+              minHeight={140}
+              attachmentCount={composerAttachments.length}
+              onFilesSelected={onFilesSelected}
+              renderBetweenToolbarAndContent={attachmentsBlock}
+              onSwitchToHtml={onSwitchReplyToHtml}
+            />
+          )}
           <View className="mb-5" />
           <Button
             onPress={onSendReply}
@@ -232,16 +282,35 @@ export function InboxComposerForm({
               <Text className="text-gray-300 font-instrument text-sm">Include signature</Text>
             </Pressable>
           </View>
-          <ComposerRichEditor
-            key={`forward${editorKeySuffix}`}
-            initialContent="<p></p>"
-            placeholder="Write your message…"
-            editorRef={composerEditorRef}
-            minHeight={140}
-            attachmentCount={composerAttachments.length}
-            onFilesSelected={onFilesSelected}
-            renderBetweenToolbarAndContent={attachmentsBlock}
-          />
+          {forwardEditorMode === 'html' ? (
+            <>
+              <EmailHtmlCodeEditor
+                value={forwardHtmlDraft}
+                onChangeText={setForwardHtmlDraft}
+                label="Message HTML"
+                placeholder="<p>Write your message…</p>"
+                minHeight={180}
+                trailingElement={
+                  <Pressable onPress={() => onRequestSwitchToRich('forward')} className="rounded-xl border border-[#3A3A3A] px-3 py-2">
+                    <Text className="text-gray-300 font-instrument-medium text-xs">Rich text</Text>
+                  </Pressable>
+                }
+              />
+              {attachmentsBlock}
+            </>
+          ) : (
+            <ComposerRichEditor
+              key={`forward${editorKeySuffix}:${forwardRichInitialContent}`}
+              initialContent={forwardRichInitialContent}
+              placeholder="Write your message…"
+              editorRef={composerEditorRef}
+              minHeight={140}
+              attachmentCount={composerAttachments.length}
+              onFilesSelected={onFilesSelected}
+              renderBetweenToolbarAndContent={attachmentsBlock}
+              onSwitchToHtml={onSwitchForwardToHtml}
+            />
+          )}
           <View className="mt-4 mb-5 rounded-xl border border-[#2A2A2A] bg-[#202020] px-4 py-3">
             <Text className="text-gray-400 font-instrument-medium text-sm mb-2">Forwarded content</Text>
             <MessageBody
@@ -265,6 +334,14 @@ export function InboxComposerForm({
           </Button>
         </ScrollView>
       )}
+      <ConfirmModal
+        visible={switchToRichConfirmMode != null}
+        onClose={onCancelSwitchToRich}
+        onConfirm={onConfirmSwitchToRich}
+        title="Switch back to Rich text?"
+        message="Complex HTML may be simplified or replaced when it is converted back into the Rich text editor."
+        confirmLabel="Switch"
+      />
     </View>
   );
 }

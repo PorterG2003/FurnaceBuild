@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated } from 'react-native';
 import { mergeInboxComposeHtml } from '@/lib/email/buildCampaignEmailContent';
-import { stripHtml } from '@/lib/email';
+import {
+  canonicalizeEmailContentForSave,
+  convertHtmlToRichTextSeed,
+  mergeHtmlEmailWithSignature,
+  seedHtmlModeFromRichText,
+  stripHtml,
+  type EmailEditorMode,
+} from '@/lib/email';
 import { buildForwardedConversationHtml } from '@/lib/inbox';
+import { buildForwardComposerHtml } from '@/lib/inbox';
 import { resolveReplyComposerTarget } from '@/lib/inbox/resolveReplyComposerTarget';
 import {
   createReplyJob,
@@ -117,6 +125,13 @@ export function useInboxComposer({
   const [pendingReplies, setPendingReplies] = useState<PendingReply[]>([]);
   const [includeSignature, setIncludeSignature] = useState(true);
   const [forwardQuoteHtml, setForwardQuoteHtml] = useState('');
+  const [replyEditorMode, setReplyEditorMode] = useState<EmailEditorMode>('richText');
+  const [forwardEditorMode, setForwardEditorMode] = useState<EmailEditorMode>('richText');
+  const [replyHtmlDraft, setReplyHtmlDraft] = useState('');
+  const [forwardHtmlDraft, setForwardHtmlDraft] = useState('');
+  const [replyRichInitialContent, setReplyRichInitialContent] = useState('<p></p>');
+  const [forwardRichInitialContent, setForwardRichInitialContent] = useState('<p></p>');
+  const [switchToRichConfirmMode, setSwitchToRichConfirmMode] = useState<'reply' | 'forward' | null>(null);
   const [, setSendImmediatelyJobId] = useState<string | null>(null);
 
   const composerEditorRef = useRef<EditorBridge | null>(null);
@@ -139,6 +154,13 @@ export function useInboxComposer({
       setComposerAttachmentsSkipMessage(null);
       setIncludeSignature(true);
       setForwardQuoteHtml('');
+      setReplyEditorMode('richText');
+      setForwardEditorMode('richText');
+      setReplyHtmlDraft('');
+      setForwardHtmlDraft('');
+      setReplyRichInitialContent('<p></p>');
+      setForwardRichInitialContent('<p></p>');
+      setSwitchToRichConfirmMode(null);
     });
   }, [slideAnim]);
 
@@ -344,6 +366,9 @@ export function useInboxComposer({
       }
       setReplyCc(ccList.join(', '));
       setIncludeSignature(true);
+      setReplyEditorMode('richText');
+      setReplyHtmlDraft('');
+      setReplyRichInitialContent('<p></p>');
       setComposerMode('reply');
     },
     [selectedThread, messages, currentLeadEmail, currentLeadName]
@@ -360,10 +385,36 @@ export function useInboxComposer({
       setForwardSubject(fwdSubject);
       setIncludeSignature(true);
       setForwardQuoteHtml(buildForwardedConversationHtml(messages, _message, subject));
+      setForwardEditorMode('richText');
+      setForwardHtmlDraft('');
+      setForwardRichInitialContent('<p></p>');
       setComposerMode('forward');
     },
     [selectedThread, messages]
   );
+
+  const switchComposerToHtml = useCallback((mode: 'reply' | 'forward') => {
+    const editorBodyHtml = composerEditorRef.current?.getHTML?.() ?? '<p></p>';
+    const seeded = seedHtmlModeFromRichText(editorBodyHtml);
+    if (mode === 'reply') {
+      setReplyHtmlDraft(seeded);
+      setReplyEditorMode('html');
+      return;
+    }
+    setForwardHtmlDraft(seeded);
+    setForwardEditorMode('html');
+  }, []);
+
+  const confirmSwitchComposerToRich = useCallback(() => {
+    if (switchToRichConfirmMode === 'reply') {
+      setReplyRichInitialContent(convertHtmlToRichTextSeed(replyHtmlDraft));
+      setReplyEditorMode('richText');
+    } else if (switchToRichConfirmMode === 'forward') {
+      setForwardRichInitialContent(convertHtmlToRichTextSeed(forwardHtmlDraft));
+      setForwardEditorMode('richText');
+    }
+    setSwitchToRichConfirmMode(null);
+  }, [forwardHtmlDraft, replyHtmlDraft, switchToRichConfirmMode]);
 
   const retryFailedReply = useCallback(
     async (jobId: string) => {
@@ -450,15 +501,40 @@ export function useInboxComposer({
       }
       setSendingReply(true);
       try {
-        const editorBodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
-        const editorBodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? editorBodyText;
-        const { bodyHtmlMerged } = mergeInboxComposeHtml(
-          editorBodyHtml,
-          mailboxSignatureRaw,
-          includeSignature
-        );
-        const finalBodyHtml = bodyHtmlMerged || editorBodyText;
-        const finalBodyText = stripHtml(finalBodyHtml);
+        let finalBodyHtml = '';
+        let finalBodyText = '';
+        if (replyEditorMode === 'html') {
+          const canonicalDraft = canonicalizeEmailContentForSave({
+            editorMode: 'html',
+            bodyHtml: replyHtmlDraft,
+          });
+          const canonicalFinal = canonicalizeEmailContentForSave({
+            editorMode: 'html',
+            bodyHtml: mergeHtmlEmailWithSignature(
+              canonicalDraft.bodyHtml,
+              mailboxSignatureRaw,
+              includeSignature
+            ),
+          });
+          finalBodyHtml = canonicalFinal.bodyHtml;
+          finalBodyText = canonicalFinal.bodyText;
+        } else {
+          const editorBodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
+          const editorBodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? editorBodyText;
+          const { bodyHtmlMerged } = mergeInboxComposeHtml(
+            editorBodyHtml,
+            mailboxSignatureRaw,
+            includeSignature
+          );
+          const canonicalFinal = canonicalizeEmailContentForSave({
+            editorMode: 'richText',
+            bodyHtml: bodyHtmlMerged || editorBodyText,
+            bodyText: stripHtml(bodyHtmlMerged || editorBodyText),
+            template: editorBodyText,
+          });
+          finalBodyHtml = canonicalFinal.bodyHtml || editorBodyText;
+          finalBodyText = canonicalFinal.bodyText || editorBodyText;
+        }
         const replyAttachments =
           composerAttachments.length > 0
             ? composerAttachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
@@ -523,6 +599,8 @@ export function useInboxComposer({
       closeComposerPanel,
       toast,
       setBlockedRecipientConfirm,
+      replyEditorMode,
+      replyHtmlDraft,
     ]
   );
 
@@ -552,15 +630,39 @@ export function useInboxComposer({
       }
       setSendingForward(true);
       try {
-        const editorBodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
-        const editorBodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? editorBodyText;
-        const { bodyHtmlMerged } = mergeInboxComposeHtml(
-          editorBodyHtml,
-          mailboxSignatureRaw,
-          includeSignature
-        );
-        const finalBodyHtml = `${bodyHtmlMerged || editorBodyText}${forwardQuoteHtml}`;
-        const finalBodyText = stripHtml(finalBodyHtml);
+        let finalBodyHtml = '';
+        let finalBodyText = '';
+        if (forwardEditorMode === 'html') {
+          const canonicalDraft = canonicalizeEmailContentForSave({
+            editorMode: 'html',
+            bodyHtml: forwardHtmlDraft,
+          });
+          const authoredHtml = mergeHtmlEmailWithSignature(
+            canonicalDraft.bodyHtml,
+            mailboxSignatureRaw,
+            includeSignature
+          );
+          const canonicalFinal = canonicalizeEmailContentForSave({
+            editorMode: 'html',
+            bodyHtml: buildForwardComposerHtml(authoredHtml, forwardQuoteHtml),
+          });
+          finalBodyHtml = canonicalFinal.bodyHtml;
+          finalBodyText = canonicalFinal.bodyText;
+        } else {
+          const editorBodyText = (await composerEditorRef.current?.getText())?.trim() ?? '';
+          const editorBodyHtml = (await composerEditorRef.current?.getHTML())?.trim() ?? editorBodyText;
+          const { bodyHtmlMerged } = mergeInboxComposeHtml(
+            editorBodyHtml,
+            mailboxSignatureRaw,
+            includeSignature
+          );
+          const canonicalFinal = canonicalizeEmailContentForSave({
+            editorMode: 'html',
+            bodyHtml: buildForwardComposerHtml(bodyHtmlMerged || editorBodyText, forwardQuoteHtml),
+          });
+          finalBodyHtml = canonicalFinal.bodyHtml || editorBodyText;
+          finalBodyText = canonicalFinal.bodyText || editorBodyText;
+        }
         const forwardAttachments =
           composerAttachments.length > 0
             ? composerAttachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
@@ -625,6 +727,8 @@ export function useInboxComposer({
       loadMessages,
       toast,
       setBlockedRecipientConfirm,
+      forwardEditorMode,
+      forwardHtmlDraft,
     ]
   );
 
@@ -773,11 +877,27 @@ export function useInboxComposer({
     includeSignature,
     setIncludeSignature,
     forwardQuoteHtml,
+    replyEditorMode,
+    setReplyEditorMode,
+    forwardEditorMode,
+    setForwardEditorMode,
+    replyHtmlDraft,
+    setReplyHtmlDraft,
+    forwardHtmlDraft,
+    setForwardHtmlDraft,
+    replyRichInitialContent,
+    setReplyRichInitialContent,
+    forwardRichInitialContent,
+    setForwardRichInitialContent,
+    switchToRichConfirmMode,
+    setSwitchToRichConfirmMode,
     composerEditorRef,
     slideAnim,
     closeComposerPanel,
     openReplyComposer,
     openForwardComposer,
+    switchComposerToHtml,
+    confirmSwitchComposerToRich,
     sendReply,
     sendForward,
     sendPendingImmediately,

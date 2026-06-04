@@ -9,8 +9,6 @@ backend:
         - echo "=== Starting function dependency installation ==="
         - cd amplify/functions/testMailboxConnection && npm install && cd - || (echo "Failed to install testMailboxConnection dependencies" && exit 1)
         - cd amplify/functions/enrollmentMetric && npm install && cd - || (echo "Failed to install enrollmentMetric dependencies" && exit 1)
-        - cd amplify/functions/sendInvitationEmail && npm install && cd - || (echo "Failed to install sendInvitationEmail dependencies" && exit 1)
-        - cd amplify/functions/sendPlatformInvitationEmail && npm install && cd - || (echo "Failed to install sendPlatformInvitationEmail dependencies" && exit 1)
         - cd amplify/functions/fetchEmailAttachment && npm install && cd - || (echo "Failed to install fetchEmailAttachment dependencies" && exit 1)
         - cd amplify/functions/foundryRegistryApi && npm install && cd - || (echo "Failed to install foundryRegistryApi dependencies" && exit 1)
         - cd amplify/functions/foundryNormalizeJob && npm install && cd - || (echo "Failed to install foundryNormalizeJob dependencies" && exit 1)
@@ -27,7 +25,8 @@ backend:
         - cd amplify/functions/fluxGenerate && npm install && cd - || (echo "Failed to install fluxGenerate dependencies" && exit 1)
         - cd amplify/functions/fluxEditorChat && npm install && cd - || (echo "Failed to install fluxEditorChat dependencies" && exit 1)
         - cd amplify/functions/processWebhookEvent && npm install && cd - || (echo "Failed to install processWebhookEvent dependencies" && exit 1)
-        - cd amplify/functions/platformBilling && npm install && cd - || (echo "Failed to install platformBilling dependencies" && exit 1)
+        - cd amplify/functions/sendTransactionalEmail && npm install && cd - || (echo "Failed to install sendTransactionalEmail dependencies" && exit 1)
+        - cd amplify/functions/platformCommerce && npm install && cd - || (echo "Failed to install platformCommerce dependencies" && exit 1)
         - cd amplify/functions/stripeWebhook && npm install && cd - || (echo "Failed to install stripeWebhook dependencies" && exit 1)
         - cd amplify/functions/clientApi && npm install && cd - || (echo "Failed to install clientApi dependencies" && exit 1)
         - cd amplify/functions/clientApiBulkImport && npm install && cd - || (echo "Failed to install clientApiBulkImport dependencies" && exit 1)

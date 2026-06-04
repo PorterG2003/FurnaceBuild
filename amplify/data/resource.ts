@@ -1,21 +1,7 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
-import { sendInvitationEmail } from '../functions/sendInvitationEmail/resource';
 import { testMailboxConnection } from '../functions/testMailboxConnection/resource';
 
 const schema = a.schema({
-  sendInvitationEmail: a
-    .query()
-    .arguments({
-      to: a.string().required(),
-      inviterName: a.string().required(),
-      inviterEmail: a.string().required(),
-      accountName: a.string().required(),
-      acceptUrl: a.string(),
-    })
-    .returns(a.json())
-    .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.function(sendInvitationEmail)),
-  
   testMailboxConnection: a
     .query()
     .arguments({

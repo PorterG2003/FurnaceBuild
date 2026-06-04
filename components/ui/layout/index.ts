@@ -1,3 +1,5 @@
+export { AcceptStandaloneCard } from './AcceptStandaloneCard';
+export { BrandedStandalonePageShell } from './BrandedStandalonePageShell';
 export { PageLayout, type MobileLayoutMode } from './PageLayout';
 export { PageHeader } from './PageHeader';
 export { LAYOUT_BREAKPOINT, DETAIL_CONTENT_MAX_WIDTH } from './constants';

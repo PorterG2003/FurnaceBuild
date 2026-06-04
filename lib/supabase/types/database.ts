@@ -97,6 +97,17 @@ export interface Database {
           billing_anchor_day: number;
           frontend_access_blocked_at: string | null;
           last_payment_failed_at: string | null;
+          agreement_type: 'platform_agreement' | 'managed_services_agreement' | null;
+          proposal_snapshot_json: Record<string, unknown> | null;
+          terms_version: string | null;
+          terms_snapshot_markdown: string | null;
+          accepted_amendment_id: string | null;
+          preferred_payment_route: 'card' | 'ach' | null;
+          pending_first_delta_coupon_cents: number | null;
+          upgrade_delta_invoice_id: string | null;
+          upgrade_delta_charged_at: string | null;
+          scheduled_monthly_retainer_cents: number | null;
+          scheduled_retainer_effective_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -877,9 +888,7 @@ export interface Database {
           invited_by_user_id: string;
           status:
             | 'draft'
-            | 'approved'
             | 'sent'
-            | 'pending'
             | 'pending_payment'
             | 'active'
             | 'expired'
@@ -889,7 +898,6 @@ export interface Database {
           proposed_account_name: string | null;
           monthly_retainer_cents: number;
           currency: string;
-          first_month_discount_cents: number;
           proposal_snapshot_json: Json;
           agreement_type: 'platform_agreement' | 'managed_services_agreement';
           terms_version: string;
@@ -913,9 +921,14 @@ export interface Database {
           selected_payment_route_fee_cents: number;
           selected_payment_subtotal_cents: number | null;
           selected_payment_total_cents: number | null;
+          upfront_stripe_invoice_id: string | null;
+          upfront_stripe_payment_intent_id: string | null;
           stripe_checkout_session_id: string | null;
           stripe_customer_id: string | null;
           stripe_subscription_id: string | null;
+          recurring_anchor_at: string | null;
+          first_recurring_invoice_target_cents: number | null;
+          first_recurring_coupon_id: string | null;
           payment_completed_at: string | null;
           completed_at: string | null;
           created_at: string;
@@ -927,9 +940,7 @@ export interface Database {
           invited_by_user_id: string;
           status?:
             | 'draft'
-            | 'approved'
             | 'sent'
-            | 'pending'
             | 'pending_payment'
             | 'active'
             | 'expired'
@@ -939,7 +950,6 @@ export interface Database {
           proposed_account_name?: string | null;
           monthly_retainer_cents: number;
           currency?: string;
-          first_month_discount_cents?: number;
           proposal_snapshot_json?: Json;
           agreement_type?: 'platform_agreement' | 'managed_services_agreement';
           terms_version: string;
@@ -963,9 +973,14 @@ export interface Database {
           selected_payment_route_fee_cents?: number;
           selected_payment_subtotal_cents?: number | null;
           selected_payment_total_cents?: number | null;
+          upfront_stripe_invoice_id?: string | null;
+          upfront_stripe_payment_intent_id?: string | null;
           stripe_checkout_session_id?: string | null;
           stripe_customer_id?: string | null;
           stripe_subscription_id?: string | null;
+          recurring_anchor_at?: string | null;
+          first_recurring_invoice_target_cents?: number | null;
+          first_recurring_coupon_id?: string | null;
           payment_completed_at?: string | null;
           completed_at?: string | null;
           created_at?: string;
@@ -977,9 +992,7 @@ export interface Database {
           invited_by_user_id?: string;
           status?:
             | 'draft'
-            | 'approved'
             | 'sent'
-            | 'pending'
             | 'pending_payment'
             | 'active'
             | 'expired'
@@ -989,7 +1002,6 @@ export interface Database {
           proposed_account_name?: string | null;
           monthly_retainer_cents?: number;
           currency?: string;
-          first_month_discount_cents?: number;
           proposal_snapshot_json?: Json;
           agreement_type?: 'platform_agreement' | 'managed_services_agreement';
           terms_version?: string;
@@ -1013,9 +1025,14 @@ export interface Database {
           selected_payment_route_fee_cents?: number;
           selected_payment_subtotal_cents?: number | null;
           selected_payment_total_cents?: number | null;
+          upfront_stripe_invoice_id?: string | null;
+          upfront_stripe_payment_intent_id?: string | null;
           stripe_checkout_session_id?: string | null;
           stripe_customer_id?: string | null;
           stripe_subscription_id?: string | null;
+          recurring_anchor_at?: string | null;
+          first_recurring_invoice_target_cents?: number | null;
+          first_recurring_coupon_id?: string | null;
           payment_completed_at?: string | null;
           completed_at?: string | null;
           created_at?: string;
@@ -1031,7 +1048,6 @@ export interface Database {
           proposed_account_name: string | null;
           monthly_retainer_cents: number;
           currency: string;
-          first_month_discount_cents: number;
           proposal_snapshot_json: Json;
           agreement_type: 'platform_agreement' | 'managed_services_agreement';
           terms_version: string;
@@ -1048,7 +1064,6 @@ export interface Database {
           proposed_account_name?: string | null;
           monthly_retainer_cents: number;
           currency?: string;
-          first_month_discount_cents?: number;
           proposal_snapshot_json?: Json;
           agreement_type?: 'platform_agreement' | 'managed_services_agreement';
           terms_version: string;
@@ -1065,7 +1080,6 @@ export interface Database {
           proposed_account_name?: string | null;
           monthly_retainer_cents?: number;
           currency?: string;
-          first_month_discount_cents?: number;
           proposal_snapshot_json?: Json;
           agreement_type?: 'platform_agreement' | 'managed_services_agreement';
           terms_version?: string;

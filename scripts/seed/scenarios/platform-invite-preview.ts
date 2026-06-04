@@ -1,8 +1,8 @@
-import { buildAdminInvitePreviewUrl } from '@/lib/platform-invite/preview';
+import { buildAdminInvitePreviewUrl } from '@/lib/platform/invite/preview';
 import {
   getProposalPlanPreset,
   type ProposalPlanTier,
-} from '@/lib/platform-invite/proposalPlans';
+} from '@/lib/platform/contract/proposalPlans';
 import type { SeedModule } from '../types';
 
 type PreviewVariant = {
@@ -227,7 +227,6 @@ export const platformInvitePreviewSeedModule: SeedModule = {
         proposed_account_name: variant.companyName,
         monthly_retainer_cents: preset.paymentDefaultCents,
         currency: 'usd',
-        first_month_discount_cents: 0,
         proposal_snapshot_json: buildProposalSnapshot(variant),
         agreement_type: terms.agreement_type,
         terms_version: terms.version,
@@ -251,7 +250,6 @@ export const platformInvitePreviewSeedModule: SeedModule = {
         proposed_account_name: variant.companyName,
         monthly_retainer_cents: preset.paymentDefaultCents,
         currency: 'usd',
-        first_month_discount_cents: 0,
         proposal_snapshot_json: buildProposalSnapshot(variant),
         agreement_type: terms.agreement_type,
         terms_version: terms.version,

@@ -14,13 +14,15 @@ import {
   type PlatformAccountManagementRecord,
 } from '@/lib/supabase/services/platform';
 import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
-import { StatusBadge, formatUsd } from '@/components/admin/account-management/shared';
+import { ClientLinkPill, StatusBadge, formatUsd } from '@/components/platform/admin/shared';
+import { isProposalPlanTier } from '@/lib/platform/contract/proposalPlans';
 import {
   AccountManagementFiltersModal,
   countActiveAccountManagementFilters,
   type AccountManagementBillingFilter,
   type AccountManagementLifecycleFilter,
-} from '@/components/admin/account-management/AccountManagementFiltersModal';
+} from '@/components/platform/admin/AccountManagementFiltersModal';
+import { matchesAccountManagementLifecycleFilter } from '@/components/platform/admin/accountManagementFilters';
 
 function formatTimestamp(value: string | null) {
   if (!value) return 'Never';
@@ -75,8 +77,11 @@ export default function AccountManagementPage() {
         !searchValue ||
         record.display_name.toLowerCase().includes(searchValue) ||
         (record.primary_email ?? '').toLowerCase().includes(searchValue);
-      const matchesLifecycle =
-        selectedLifecycleFilter === 'all' || record.lifecycle_status === selectedLifecycleFilter;
+      const matchesLifecycle = matchesAccountManagementLifecycleFilter(
+        record.lifecycle_status,
+        selectedLifecycleFilter,
+        record,
+      );
       const billingValue = record.billing_status ?? 'none';
       const matchesBilling =
         selectedBillingFilter === 'all' || billingValue === selectedBillingFilter;
@@ -101,14 +106,35 @@ export default function AccountManagementPage() {
         minWidth: 220,
         flex: 2,
         render: (record) => (
-          <View className="min-w-0">
+          <View className="min-w-0 gap-1">
             <Text className="text-white font-instrument-medium" numberOfLines={1}>
               {record.display_name}
             </Text>
             {record.primary_email ? (
-              <Text className="text-gray-400 font-instrument text-xs mt-1" numberOfLines={1}>
+              <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1}>
                 {record.primary_email}
               </Text>
+            ) : null}
+            {record.account_id ? (
+              <View className="flex-row flex-wrap gap-1 mt-1">
+                {record.has_pending_terms ? (
+                  <ClientLinkPill label="Pending terms" tone="drift" />
+                ) : null}
+                {record.has_amendment_draft ? (
+                  <ClientLinkPill label="Draft amendment" tone="offline" />
+                ) : null}
+                {record.billing_status === 'payment_required' ? (
+                  <ClientLinkPill label="Payment required" tone="drift" />
+                ) : null}
+                {record.has_scheduled_downgrade ? (
+                  <ClientLinkPill label="Scheduled downgrade" tone="offline" />
+                ) : null}
+                {record.plan_tier && isProposalPlanTier(record.plan_tier) ? (
+                  <ClientLinkPill label={record.plan_tier} tone="live" />
+                ) : record.agreement_type === 'platform_agreement' ? (
+                  <ClientLinkPill label="Platform Access" tone="live" />
+                ) : null}
+              </View>
             ) : null}
           </View>
         ),
@@ -182,6 +208,20 @@ export default function AccountManagementPage() {
                   }),
                 icon: EyeIcon,
               },
+              ...(record.account_id
+                ? [
+                    {
+                      key: 'manage-contract',
+                      label: 'Manage contract & billing',
+                      onPress: () =>
+                        router.push({
+                          pathname: '/admin/accounts/sign-account-amendment',
+                          params: { accountId: record.account_id },
+                        }),
+                      icon: EyeIcon,
+                    },
+                  ]
+                : []),
               ...(record.record_kind === 'invitation' && record.invitation_id
                 ? [
                     {
@@ -292,7 +332,7 @@ export default function AccountManagementPage() {
         {filteredRecords.length === 0 ? (
           <EmptyState
             title="No matching accounts"
-            description="Try a different search or filter, or sign a new client to create a draft."
+            description="Try a different search or filter, use the Revoked or Expired lifecycle filters to view archived invites, or sign a new client to create a draft."
             action={
               <Button onPress={() => router.push('/admin/accounts/sign-new-client')}>
                 Sign New Client
@@ -302,42 +342,64 @@ export default function AccountManagementPage() {
         ) : isMobile ? (
           <View className="gap-3">
             {filteredRecords.map((record) => (
-              <Pressable
+              <View
                 key={`${record.record_kind}-${record.record_id}`}
-                onPress={() =>
-                  router.push({
-                    pathname: '/admin/accounts/[id]',
-                    params: { id: record.record_id, kind: record.record_kind },
-                  })
-                }
-                className="rounded-xl border border-[#2A2A2A] bg-[#121212] p-4 active:opacity-80"
+                className="rounded-xl border border-[#2A2A2A] bg-[#121212] p-4 gap-3"
               >
-                <View className="flex-row items-start justify-between gap-3">
-                  <View className="flex-1">
-                    <Text className="text-base font-instrument-medium text-white">
-                      {record.display_name}
-                    </Text>
-                    {record.primary_email ? (
-                      <Text className="mt-1 text-sm font-instrument text-gray-400">
-                        {record.primary_email}
+                <Pressable
+                  onPress={() =>
+                    router.push({
+                      pathname: '/admin/accounts/[id]',
+                      params: { id: record.record_id, kind: record.record_kind },
+                    })
+                  }
+                  className="active:opacity-80"
+                >
+                  <View className="flex-row items-start justify-between gap-3">
+                    <View className="flex-1">
+                      <Text className="text-base font-instrument-medium text-white">
+                        {record.display_name}
                       </Text>
-                    ) : null}
+                      {record.primary_email ? (
+                        <Text className="mt-1 text-sm font-instrument text-gray-400">
+                          {record.primary_email}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <StatusBadge status={record.lifecycle_status} />
                   </View>
-                  <StatusBadge status={record.lifecycle_status} />
-                </View>
 
-                <View className="mt-4 gap-2">
-                  <Text className="text-sm font-instrument text-gray-300">
-                    Retainer: {record.monthly_retainer_cents ? formatUsd(record.monthly_retainer_cents) : '-'}
-                  </Text>
-                  <Text className="text-sm font-instrument text-gray-400">
-                    {record.revision_state ?? 'Legacy account'}
-                  </Text>
-                  <Text className="text-xs font-instrument text-gray-500">
-                    Updated {formatTimestamp(record.updated_at)}
-                  </Text>
-                </View>
-              </Pressable>
+                  <View className="mt-4 gap-2">
+                    <Text className="text-sm font-instrument text-gray-300">
+                      Retainer:{' '}
+                      {record.monthly_retainer_cents
+                        ? formatUsd(record.monthly_retainer_cents)
+                        : '-'}
+                    </Text>
+                    <Text className="text-sm font-instrument text-gray-400">
+                      {record.revision_state ?? 'Legacy account'}
+                    </Text>
+                    <Text className="text-xs font-instrument text-gray-500">
+                      Updated {formatTimestamp(record.updated_at)}
+                    </Text>
+                  </View>
+                </Pressable>
+                {record.account_id ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="self-start"
+                    onPress={() =>
+                      router.push({
+                        pathname: '/admin/accounts/sign-account-amendment',
+                        params: { accountId: record.account_id! },
+                      })
+                    }
+                  >
+                    Manage contract & billing
+                  </Button>
+                ) : null}
+              </View>
             ))}
           </View>
         ) : (

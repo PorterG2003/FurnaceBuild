@@ -13,6 +13,6 @@ export {
 export type { BottomSheetTakeoverOptions } from './PickerInsideBottomSheetContext';
 export { ConfirmDeleteModal } from './ConfirmDeleteModal';
 export { ConfirmModal } from './ConfirmModal';
+export { AccessIssueDialog } from './AccessIssueDialog';
 export { ModalFooter } from './ModalFooter';
-export { ModalStepIndicator } from './ModalStepIndicator';
 

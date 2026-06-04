@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Platform, Alert, useWindowDimensions } from 'react-native';
 import Papa from 'papaparse';
-import { BaseModal, ModalFooter, ModalStepIndicator } from '@/components/ui/modals';
+import { BaseModal, ModalFooter } from '@/components/ui/modals';
+import { WizardStepIndicator } from '@/components/ui/wizard';
 import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
@@ -1167,7 +1168,7 @@ function LeadSourceNodeModal({
         height={Math.round(windowHeight * 0.9)}
       >
         <View className="gap-6">
-          <ModalStepIndicator steps={csvSteps} activeIndex={csvStep} wrap />
+          <WizardStepIndicator steps={csvSteps} activeIndex={csvStep} wrap />
 
           {renderCsvStepContent()}
         </View>

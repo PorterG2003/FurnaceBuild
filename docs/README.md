@@ -32,5 +32,6 @@ Decision records documenting architectural choices and rationale.
 ### Engineering standards
 
 - **[engineering/bulk-operations-standards.md](./engineering/bulk-operations-standards.md)** - Bulk/async jobs, RPC conventions, webhooks, and testing checklist
+- **[engineering/stripe-platform-billing.md](./engineering/stripe-platform-billing.md)** - Stripe billing constraints, webhook activation rules, and testing checklist
 - **[engineering/test-convention.md](./engineering/test-convention.md)** - Domain-first outcome testing
 - **[infrastructure/CLIENT_API_WEBHOOKS.md](./infrastructure/CLIENT_API_WEBHOOKS.md)** - Client API atomic vs batch webhook reference

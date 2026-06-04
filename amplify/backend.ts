@@ -13,8 +13,7 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
-import { sendInvitationEmail } from './functions/sendInvitationEmail/resource';
-import { sendPlatformInvitationEmail } from './functions/sendPlatformInvitationEmail/resource';
+import { sendTransactionalEmail } from './functions/sendTransactionalEmail/resource';
 import { sendFluxQuizSubmission } from './functions/sendFluxQuizSubmission/resource';
 import { testMailboxConnection } from './functions/testMailboxConnection/resource';
 import { enrollmentMetric } from './functions/enrollmentMetric/resource';
@@ -30,7 +29,7 @@ import { foundryGoogleAdsVerificationJob } from './functions/foundryGoogleAdsVer
 import { foundryCsvBuilderExportJob } from './functions/foundryCsvBuilderExportJob/resource';
 import { processNotificationEvent } from './functions/processNotificationEvent/resource';
 import { processWebhookEvent } from './functions/processWebhookEvent/resource';
-import { platformBilling } from './functions/platformBilling/resource';
+import { platformCommerce } from './functions/platformCommerce/resource';
 import { stripeWebhook } from './functions/stripeWebhook/resource';
 import { clientApi } from './functions/clientApi/resource';
 import { clientApiBulkImport } from './functions/clientApiBulkImport/resource';
@@ -57,8 +56,7 @@ const smartleadMigrationEnabled = !['false', '0'].includes(
 const backend = defineBackend({
   auth,
   data,
-  sendInvitationEmail,
-  sendPlatformInvitationEmail,
+  sendTransactionalEmail,
   sendFluxQuizSubmission,
   testMailboxConnection,
   enrollmentMetric,
@@ -73,7 +71,7 @@ const backend = defineBackend({
   foundryCsvBuilderExportJob,
   processNotificationEvent,
   processWebhookEvent,
-  platformBilling,
+  platformCommerce,
   stripeWebhook,
   clientApi,
   clientApiBulkImport,
@@ -127,10 +125,10 @@ const allowPublicInvokeViaUrl = new lambda.CfnPermission(fetchAttachmentLambda.s
 });
 allowPublicInvokeViaUrl.addPropertyOverride('InvokedViaFunctionUrl', true);
 
-// Send invitation email: Function URL + Supabase auth.getUser() for token verification
-const sendInvitationLambda = backend.sendInvitationEmail.resources.lambda as lambda.Function;
-sendInvitationLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
-const sendInvitationUrl = sendInvitationLambda.addFunctionUrl({
+// Transactional email: Function URL + Supabase auth.getUser() for token verification
+const sendTransactionalEmailLambda = backend.sendTransactionalEmail.resources.lambda as lambda.Function;
+sendTransactionalEmailLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+const sendTransactionalEmailUrl = sendTransactionalEmailLambda.addFunctionUrl({
   authType: lambda.FunctionUrlAuthType.NONE,
   cors: {
     allowedOrigins: ['*'],
@@ -138,18 +136,22 @@ const sendInvitationUrl = sendInvitationLambda.addFunctionUrl({
     allowedHeaders: ['Authorization', 'Content-Type'],
   },
 });
-new lambda.CfnPermission(sendInvitationLambda.stack, 'AllowPublicSendInvitationUrlInvoke', {
+new lambda.CfnPermission(sendTransactionalEmailLambda.stack, 'AllowPublicSendTransactionalEmailUrlInvoke', {
   action: 'lambda:InvokeFunctionUrl',
-  functionName: sendInvitationLambda.functionName,
+  functionName: sendTransactionalEmailLambda.functionName,
   principal: '*',
   functionUrlAuthType: 'NONE',
 });
-const allowPublicSendInvitationInvoke = new lambda.CfnPermission(sendInvitationLambda.stack, 'AllowPublicSendInvitationInvokeViaUrl', {
-  action: 'lambda:InvokeFunction',
-  functionName: sendInvitationLambda.functionName,
-  principal: '*',
-});
-allowPublicSendInvitationInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+const allowPublicSendTransactionalEmailInvoke = new lambda.CfnPermission(
+  sendTransactionalEmailLambda.stack,
+  'AllowPublicSendTransactionalEmailInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: sendTransactionalEmailLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicSendTransactionalEmailInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
 // Test mailbox connection: Function URL + Supabase auth.getUser() for token verification
 const testMailboxLambda = backend.testMailboxConnection.resources.lambda as lambda.Function;
@@ -175,42 +177,14 @@ const allowPublicTestMailboxInvoke = new lambda.CfnPermission(testMailboxLambda.
 });
 allowPublicTestMailboxInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
-// Platform invitation email: Function URL + Supabase auth.getUser() for token verification
-const sendPlatformInvitationLambda = backend.sendPlatformInvitationEmail.resources.lambda as lambda.Function;
-sendPlatformInvitationLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
-const sendPlatformInvitationUrl = sendPlatformInvitationLambda.addFunctionUrl({
-  authType: lambda.FunctionUrlAuthType.NONE,
-  cors: {
-    allowedOrigins: ['*'],
-    allowedMethods: [lambda.HttpMethod.POST],
-    allowedHeaders: ['Authorization', 'Content-Type'],
-  },
-});
-new lambda.CfnPermission(sendPlatformInvitationLambda.stack, 'AllowPublicSendPlatformInvitationUrlInvoke', {
-  action: 'lambda:InvokeFunctionUrl',
-  functionName: sendPlatformInvitationLambda.functionName,
-  principal: '*',
-  functionUrlAuthType: 'NONE',
-});
-const allowPublicSendPlatformInvitationInvoke = new lambda.CfnPermission(
-  sendPlatformInvitationLambda.stack,
-  'AllowPublicSendPlatformInvitationInvokeViaUrl',
-  {
-    action: 'lambda:InvokeFunction',
-    functionName: sendPlatformInvitationLambda.functionName,
-    principal: '*',
-  }
-);
-allowPublicSendPlatformInvitationInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
-
-// Platform billing: public Function URL, action-specific auth inside handler
-const platformBillingLambda = backend.platformBilling.resources.lambda as lambda.Function;
-platformBillingLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
-platformBillingLambda.addEnvironment(
+// Platform commerce: public Function URL, action-specific auth inside handler
+const platformCommerceLambda = backend.platformCommerce.resources.lambda as lambda.Function;
+platformCommerceLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+platformCommerceLambda.addEnvironment(
   'WEB_APP_ORIGIN',
   process.env.WEB_APP_ORIGIN ?? 'https://build.getfurnace.io',
 );
-const platformBillingUrl = platformBillingLambda.addFunctionUrl({
+const platformCommerceUrl = platformCommerceLambda.addFunctionUrl({
   authType: lambda.FunctionUrlAuthType.NONE,
   cors: {
     allowedOrigins: ['*'],
@@ -218,22 +192,22 @@ const platformBillingUrl = platformBillingLambda.addFunctionUrl({
     allowedHeaders: ['Authorization', 'Content-Type'],
   },
 });
-new lambda.CfnPermission(platformBillingLambda.stack, 'AllowPublicPlatformBillingUrlInvoke', {
+new lambda.CfnPermission(platformCommerceLambda.stack, 'AllowPublicPlatformCommerceUrlInvoke', {
   action: 'lambda:InvokeFunctionUrl',
-  functionName: platformBillingLambda.functionName,
+  functionName: platformCommerceLambda.functionName,
   principal: '*',
   functionUrlAuthType: 'NONE',
 });
-const allowPublicPlatformBillingInvoke = new lambda.CfnPermission(
-  platformBillingLambda.stack,
-  'AllowPublicPlatformBillingInvokeViaUrl',
+const allowPublicPlatformCommerceInvoke = new lambda.CfnPermission(
+  platformCommerceLambda.stack,
+  'AllowPublicPlatformCommerceInvokeViaUrl',
   {
     action: 'lambda:InvokeFunction',
-    functionName: platformBillingLambda.functionName,
+    functionName: platformCommerceLambda.functionName,
     principal: '*',
-  }
+  },
 );
-allowPublicPlatformBillingInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+allowPublicPlatformCommerceInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
 // Stripe webhook: public Function URL authenticated by Stripe signature
 const stripeWebhookLambda = backend.stripeWebhook.resources.lambda as lambda.Function;
@@ -1768,11 +1742,10 @@ processNotificationLambda.addEventSource(
 
 const customOutputs: Record<string, string> = {
   fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
-  sendInvitationEmailUrl: sendInvitationUrl.url,
-  sendPlatformInvitationEmailUrl: sendPlatformInvitationUrl.url,
+  sendTransactionalEmailUrl: sendTransactionalEmailUrl.url,
   sendFluxQuizSubmissionUrl: sendFluxQuizSubmissionUrl.url,
   testMailboxConnectionUrl: testMailboxUrl.url,
-  platformBillingUrl: platformBillingUrl.url,
+  platformCommerceUrl: platformCommerceUrl.url,
   stripeWebhookUrl: stripeWebhookUrl.url,
   foundryRegistryApiUrl: foundryRegistryUrl.url,
   clientApiFunctionUrl: clientApiUrl.url,

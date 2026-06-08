@@ -2,7 +2,12 @@ import { reportErrorToSlack } from '@furnace/slack-lib';
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { ImapFlow } from 'imapflow';
+import connectionErrors, { type ImapErrorDetails } from '../../../lib/mailbox/connectionErrors.js';
+import imapInbox from '../../../lib/mailbox/imapInbox.js';
 import type { Schema } from '../../data/resource';
+
+const { formatImapError } = connectionErrors;
+const { verifyImapInboxAccess } = imapInbox;
 
 function isFunctionUrlEvent(event: any): event is { headers: Record<string, string>; body?: string | null; isBase64Encoded?: boolean } {
   return event && typeof event.headers === 'object' && !event.arguments;
@@ -23,6 +28,8 @@ interface TestMailboxConnectionArgs {
   imap_password: string;
   imap_use_ssl: boolean;
 }
+
+type ImapTestDetails = ImapErrorDetails;
 
 /**
  * Test SMTP connection
@@ -47,6 +54,9 @@ async function testSMTP(config: {
       tls: {
         rejectUnauthorized: false, // Allow self-signed certificates
       },
+      connectionTimeout: 15_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
     });
 
     // Test the connection
@@ -70,8 +80,19 @@ async function testIMAP(config: {
   username: string;
   password: string;
   useSSL: boolean;
-}): Promise<{ success: boolean; error?: string }> {
+  smtpHost: string;
+  smtpPort: number;
+}): Promise<{ success: boolean; error?: string; details?: ImapTestDetails }> {
   let client: ImapFlow | null = null;
+  const details: ImapTestDetails = {
+    stage: 'unknown',
+    host: config.host,
+    port: config.port,
+    secure: config.useSSL,
+    sameHostAsSmtp: config.host.toLowerCase() === config.smtpHost.toLowerCase(),
+    samePortAsSmtp: config.port === config.smtpPort,
+  };
+
   try {
     client = new ImapFlow({
       host: config.host,
@@ -82,19 +103,25 @@ async function testIMAP(config: {
         pass: config.password,
       },
       logger: false, // Disable logging
+      connectionTimeout: 15_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
     });
 
-    // Connect and authenticate
+    details.stage = 'connect';
     await client.connect();
-    
-    // Try to access a mailbox to verify authentication
-    const mailbox = await client.mailboxOpen('INBOX');
-    
-    return { success: true };
-  } catch (error: any) {
+    details.serverName = (client as { serverInfo?: { name?: string } }).serverInfo?.name;
+
+    details.stage = 'mailboxOpen';
+    await verifyImapInboxAccess(client);
+
+    return { success: true, details };
+  } catch (error: unknown) {
+    const formatted = formatImapError(error, details);
     return {
       success: false,
-      error: error.message || 'IMAP connection failed',
+      error: formatted.error,
+      details: formatted.details,
     };
   } finally {
     if (client) {
@@ -123,6 +150,8 @@ async function testMailboxConnectionLogic(args: TestMailboxConnectionArgs) {
       username: args.imap_username,
       password: args.imap_password,
       useSSL: args.imap_use_ssl,
+      smtpHost: args.smtp_host,
+      smtpPort: args.smtp_port,
     }),
   ]);
 

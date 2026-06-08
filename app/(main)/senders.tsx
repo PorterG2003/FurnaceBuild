@@ -22,7 +22,7 @@ import {
   deleteMailbox,
   getMailboxOverviewsByAccount,
   updateMailbox,
-  updateMailboxStatus,
+  updateMailboxConnectionHealth,
 } from '@/lib/supabase/services';
 import type { MailboxOverview } from '@/lib/supabase/services/mailboxes';
 import { testMailboxConnection } from '@/lib/services/email';
@@ -41,6 +41,16 @@ function buildBulkUpdatePayload(
   if (formData.daily_limit != null) payload.daily_limit = formData.daily_limit;
   if (formData.hourly_limit != null) payload.hourly_limit = formData.hourly_limit;
   return payload;
+}
+
+function buildMailboxConnectionHealthUpdate(
+  result: TestConnectionResult,
+): Pick<MailboxUpdate, 'status' | 'smtp_status' | 'error_message'> {
+  return {
+    status: result.imap?.success === false ? 'error' : 'connected',
+    smtp_status: result.smtp?.success === false ? 'error' : 'active',
+    error_message: result.success ? null : result.message,
+  };
 }
 
 export default function SendersPage() {
@@ -263,11 +273,9 @@ export default function SendersPage() {
         imap_use_ssl: mailbox.imap_use_ssl,
       });
 
-      const newStatus = result.success ? 'connected' : 'error';
-      await updateMailboxStatus(
+      await updateMailboxConnectionHealth(
         mailbox.id,
-        newStatus,
-        result.success ? null : result.message
+        buildMailboxConnectionHealthUpdate(result),
       );
 
       setTestResult(result);
@@ -287,8 +295,6 @@ export default function SendersPage() {
         message,
       };
 
-      await updateMailboxStatus(mailbox.id, 'error', message);
-
       setTestResult(failure);
       setTestResultMailboxEmail(mailbox.email_address);
 
@@ -298,8 +304,6 @@ export default function SendersPage() {
         toast.error(message);
         setShowTestResultModal(true);
       }
-
-      await loadMailboxes({ silent: true });
     } finally {
       setTestingMailboxId(null);
     }

@@ -4,6 +4,12 @@ import type { AccountBilling, AccountUser, BlockListEntry, Invitation, User } fr
 import type { PlatformAdminAccessStatus } from '@/lib/account/platformAdminAccess';
 
 const CACHE_KEY = 'furnace:account-cache';
+const PREFERRED_ACCOUNT_KEY = 'furnace:preferred-account-id';
+
+interface PreferredAccountState {
+  userId: string;
+  accountId: string;
+}
 
 export interface CachedAccountState {
   userId: string;
@@ -16,6 +22,14 @@ export interface CachedAccountState {
   platformAdminAccess: Exclude<PlatformAdminAccessStatus, 'loading'>;
   billing: AccountBilling | null;
   cachedAt: number;
+}
+
+export function resolveBootstrapPreferredAccountId(
+  inMemory: string | null,
+  persisted: string | null,
+  cached: string | null,
+): string | null {
+  return inMemory ?? persisted ?? cached ?? null;
 }
 
 export async function loadAccountCache(userId: string): Promise<CachedAccountState | null> {
@@ -44,9 +58,37 @@ export async function saveAccountCache(userId: string, state: Omit<CachedAccount
   }
 }
 
+export async function loadPreferredAccountId(userId: string): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PREFERRED_ACCOUNT_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as PreferredAccountState;
+    if (parsed.userId !== userId) return null;
+    return parsed.accountId;
+  } catch {
+    return null;
+  }
+}
+
+export async function savePreferredAccountId(userId: string, accountId: string): Promise<void> {
+  try {
+    const payload: PreferredAccountState = {
+      userId,
+      accountId,
+    };
+    await AsyncStorage.setItem(PREFERRED_ACCOUNT_KEY, JSON.stringify(payload));
+  } catch {
+    // Cache persistence is best-effort.
+  }
+}
+
 export async function clearAccountCache(): Promise<void> {
   try {
-    await AsyncStorage.removeItem(CACHE_KEY);
+    await Promise.all([
+      AsyncStorage.removeItem(CACHE_KEY),
+      AsyncStorage.removeItem(PREFERRED_ACCOUNT_KEY),
+    ]);
   } catch {
     // Cache clearing is best-effort.
   }

@@ -1,12 +1,17 @@
 import { supabase } from '../../client';
 import { generateGlobalLeadId } from '@/lib/leads';
+import { buildSavedListExportRows, mapAccountSummaryToSavedListPeopleRow } from '@/lib/leads/export/buildExportRows';
+import { LEADS_EXPORT_CHUNK_SIZE } from '@/lib/leads/export/constants';
 import { DEFAULT_SAVED_LIST_COLUMNS } from '@/lib/leads/columns/defaults';
+import { columnsNeedWorkbenchDataset, layoutNeedsReplyActivity, type LeadsTableRow } from '@/lib/leads/columns';
 import {
   assertColumnLayoutWritable,
   parseColumnLayout,
 } from '@/lib/leads/columns/parseColumnLayout';
 import type { LeadsColumnDef } from '@/lib/leads/columns/types';
 import {
+  getAccountLeadPeoplePage,
+  getAccountLeadWorkbenchDataset,
   fetchAllAccountLeadGlobalLeadIds,
   resolveExplorerCampaignIds,
   type AccountLeadExplorerQuery,
@@ -20,7 +25,8 @@ import type {
 
 const POSTGREST_IN_CHUNK_SIZE = 100;
 const POSTGREST_RANGE_PAGE_SIZE = 500;
-const SAVED_LIST_PAGE_MAX = 1000;
+/** Must match LEAST(..., 500) cap in saved_lead_list_people_page RPC. */
+const SAVED_LIST_PAGE_MAX = 500;
 
 export interface AddMembersToSavedLeadListResult {
   added: number;
@@ -776,6 +782,94 @@ export async function fetchAllSavedLeadListGlobalLeadIds(
   }
 
   return { globalLeadIds, totalCount };
+}
+
+async function fetchSavedLeadListSelectionRows(
+  accountId: string,
+  columns: LeadsColumnDef[],
+  query: Omit<SavedLeadListPeopleQuery, 'limit' | 'offset'>,
+  globalLeadIds: string[],
+): Promise<LeadsTableRow[]> {
+  const rows: LeadsTableRow[] = [];
+  const needsWorkbench = columnsNeedWorkbenchDataset(columns);
+
+  for (const idChunk of chunk(unique(globalLeadIds.filter(Boolean)), LEADS_EXPORT_CHUNK_SIZE)) {
+    const page = await getAccountLeadPeoplePage(accountId, {
+      searchQuery: query.searchQuery,
+      campaignIds: query.campaignIds,
+      campaignTagIds: query.campaignTagIds,
+      replyStatuses: query.replyStatuses,
+      enrollmentStates: query.enrollmentStates,
+      replyCategories: query.replyCategories,
+      sortColumn: query.sortColumn,
+      sortDirection: query.sortDirection,
+      globalLeadIds: idChunk,
+      limit: idChunk.length,
+      offset: 0,
+    });
+
+    const pageRows = page.rows.map(mapAccountSummaryToSavedListPeopleRow);
+    const nextDataset =
+      needsWorkbench && pageRows.length > 0
+        ? await getAccountLeadWorkbenchDataset(accountId, pageRows.map((row) => row.globalLeadId), {
+            includeReplyActivity: layoutNeedsReplyActivity(columns),
+          })
+        : { campaigns: [], people: [] };
+
+    rows.push(
+      ...buildSavedListExportRows({
+        columns,
+        pageRows,
+        workbenchPeople: nextDataset.people,
+      }),
+    );
+  }
+
+  return rows;
+}
+
+export async function getSavedLeadListExportRows(
+  accountId: string,
+  listId: string,
+  params: {
+    columns: LeadsColumnDef[];
+    query?: Omit<SavedLeadListPeopleQuery, 'limit' | 'offset'>;
+    globalLeadIds?: string[];
+  },
+): Promise<LeadsTableRow[]> {
+  const query = params.query ?? {};
+  const columns = params.columns;
+
+  if (params.globalLeadIds?.length) {
+    return fetchSavedLeadListSelectionRows(accountId, columns, query, params.globalLeadIds);
+  }
+
+  const rows: LeadsTableRow[] = [];
+  const needsWorkbench = columnsNeedWorkbenchDataset(columns);
+  for (let offset = 0; ; offset += SAVED_LIST_PAGE_MAX) {
+    const page = await getSavedLeadListPeoplePage(accountId, listId, {
+      ...query,
+      limit: SAVED_LIST_PAGE_MAX,
+      offset,
+    });
+    const nextDataset =
+      needsWorkbench && page.rows.length > 0
+        ? await getAccountLeadWorkbenchDataset(accountId, page.rows.map((row) => row.globalLeadId), {
+            includeReplyActivity: layoutNeedsReplyActivity(columns),
+          })
+        : { campaigns: [], people: [] };
+
+    rows.push(
+      ...buildSavedListExportRows({
+        columns,
+        pageRows: page.rows,
+        workbenchPeople: nextDataset.people,
+      }),
+    );
+    if (page.rows.length < SAVED_LIST_PAGE_MAX) break;
+  }
+
+  return rows;
 }
 
 export async function addExplorerViewToSavedLeadList(

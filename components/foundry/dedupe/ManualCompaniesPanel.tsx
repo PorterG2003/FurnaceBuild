@@ -22,7 +22,7 @@ import {
   type ManualCompaniesFilters,
 } from '@/components/foundry/dedupe/dedupeManualFilterTypes';
 import { useDebouncedValue } from '@/components/foundry/dedupe/useDebouncedValue';
-import { fetchManualCompanies, postCompanyMerge } from '@/lib/foundry/registry-client';
+import { fetchAllManualCompanyIds, fetchManualCompanies, postCompanyMerge } from '@/lib/foundry/registry-client';
 import type { ParsedCompanyDetail, RegistryCompany } from '@/lib/foundry/registry-types';
 
 const PAGE_SIZE = 50;
@@ -67,6 +67,17 @@ export function ManualCompaniesPanel() {
     [debouncedQ, filters, page, sortColumn, sortDirection],
   );
 
+  const handleFetchViewKeys = useCallback(async () => {
+    const { companyIds } = await fetchAllManualCompanyIds({
+      q: debouncedQ.length >= 2 ? debouncedQ : undefined,
+      has_normalized_key: presenceFilterToBool(filters.normalizedKey),
+      has_notes: presenceFilterToBool(filters.notes),
+      sort_by: sortColumn,
+      sort_direction: sortDirection,
+    });
+    return companyIds;
+  }, [debouncedQ, filters.normalizedKey, filters.notes, sortColumn, sortDirection]);
+
   const loadPage = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -89,7 +100,7 @@ export function ManualCompaniesPanel() {
 
   useEffect(() => {
     setSelectedKeys(new Set());
-  }, [page]);
+  }, [debouncedQ, filters, sortColumn, sortDirection]);
 
   const selectedRows = useMemo(() => rows.filter((row) => selectedKeys.has(row.id)), [rows, selectedKeys]);
   const deleteTargetId = getSelectedDeleteTargetId(selectedRows);
@@ -191,6 +202,7 @@ export function ManualCompaniesPanel() {
         loading={loading}
         selectedKeys={selectedKeys}
         onSelectionChange={setSelectedKeys}
+        onFetchViewKeys={handleFetchViewKeys}
         onRowPress={(company) => router.push(`/foundry/companies/${company.id}`)}
         emptyMessage={loading ? 'Loading companies…' : 'No companies match these filters.'}
         currentPage={page}

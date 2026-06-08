@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Linking, Platform, Pressable, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { FunnelIcon, MagnifyingGlassIcon, QueueListIcon } from 'react-native-heroicons/outline';
 import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
@@ -15,6 +15,7 @@ import {
   EMPTY_EXPLORER_FILTERS,
   LeadsAddToCampaignModal,
   LeadsCreateListFromSelectionModal,
+  LeadsExportModal,
   LeadsExplorerFiltersModal,
   LeadsActionBar,
   LeadsImportCsvModal,
@@ -30,19 +31,36 @@ import {
 } from '@/components/leads/workbench';
 import {
   EXPLORER_COLUMNS,
+  type LeadsTableRow,
 } from '@/lib/leads/columns';
 import { getCampaignTags, type CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import {
+  downloadCsvOnWeb,
+  exportLeadsWorkbenchToCsv,
+} from '@/components/leads/export/exportLeadsWorkbenchCsv';
+import {
   buildExplorerRows,
+  fetchAllAccountLeadGlobalLeadIds,
+  getAccountLeadExplorerExportRows,
   getAccountLeadCampaigns,
   getAccountLeadPeoplePage,
 } from '@/lib/supabase/services/leads/account-leads';
+import { formatLeadsExportFilename } from '@/lib/leads/export/formatLeadsExportFilename';
+import { LEADS_EXPORT_SYNC_THRESHOLD } from '@/lib/leads/export/constants';
 import { openLeadDetail } from '@/lib/leads/navigation';
+import { startLeadsExport } from '@/lib/leads/export/startLeadsExport';
 import {
   buildLeadsWorkbenchActionGroups,
   buildLeadsWorkbenchScopeLabel,
 } from '@/lib/leads/workbench/buildLeadsWorkbenchActionGroups';
-import type { LeadsListDefinition, LeadsPeopleRow } from '@/lib/devtools/leads-workbench/types';
+import { getAccessToken } from '@/lib/supabase/client';
+import type { LeadsListDefinition } from '@/lib/devtools/leads-workbench/types';
+import {
+  enqueueAccountImportJob,
+  mapImportJobToLeadsExportResult,
+  startLeadsExportJob,
+} from '@/lib/supabase/services/leads/export-jobs';
+import { pollImportJobUntilDone } from '@/lib/leads/workbench/bulk/pollImportJobUntilDone';
 import type { AccountLeadExplorerQuery } from '@/lib/supabase/services/leads/account-leads';
 
 const MOBILE_EXPLORER_PAGE_SIZE = 20;
@@ -67,6 +85,10 @@ export default function LeadsIndexPage() {
   const [resumeOpen, setResumeOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportModalPhase, setExportModalPhase] = useState<'running' | 'failed'>('running');
+  const [exportError, setExportError] = useState<string | null>(null);
   const [listMembershipModal, setListMembershipModal] = useState<{
     mode: ListMembershipMode;
     scope: ListMembershipScope;
@@ -107,6 +129,7 @@ export default function LeadsIndexPage() {
     () => [...selectedKeys],
     [selectedKeys],
   );
+  const selectedCount = selectedGlobalLeadIds.length;
   const explorerQuery = useMemo<Omit<AccountLeadExplorerQuery, 'limit' | 'offset'>>(
     () => ({
       searchQuery: explorerList.filters.searchQuery,
@@ -120,6 +143,12 @@ export default function LeadsIndexPage() {
     }),
     [explorerList.filters, sortColumn, sortDirection],
   );
+
+  const handleFetchViewKeys = useCallback(async () => {
+    if (!accountId) return [];
+    const { globalLeadIds } = await fetchAllAccountLeadGlobalLeadIds(accountId, explorerQuery);
+    return globalLeadIds;
+  }, [accountId, explorerQuery]);
 
   useEffect(() => {
     setPageSize(isMobile ? MOBILE_EXPLORER_PAGE_SIZE : DESKTOP_EXPLORER_PAGE_SIZE);
@@ -230,17 +259,20 @@ export default function LeadsIndexPage() {
   ]);
 
   useEffect(() => {
-    setSelectedKeys((current) => new Set([...current].filter((key) => rows.some((row) => row.globalLeadId === key))));
-  }, [rows]);
-
-  useEffect(() => {
     setSelectedKeys(new Set());
-  }, [appliedFilters, currentPage, searchQuery, pageSize, sortColumn, sortDirection]);
+  }, [appliedFilters, searchQuery, pageSize, sortColumn, sortDirection]);
 
   const openImportCsv = useCallback(() => {
     if (isMobile) return;
     setImportCsvOpen(true);
   }, [isMobile]);
+
+  const closeExportModal = useCallback(() => {
+    if (exporting && exportModalPhase === 'running') return;
+    setExportModalVisible(false);
+    setExportModalPhase('running');
+    setExportError(null);
+  }, [exportModalPhase, exporting]);
 
   const handleListCreated = useCallback((listId: string) => {
     setSelectedKeys(new Set());
@@ -323,7 +355,7 @@ export default function LeadsIndexPage() {
   );
 
   const handleRowPress = useCallback(
-    (row: LeadsPeopleRow) => {
+    (row: LeadsTableRow) => {
       void openLeadDetail(router, { globalLeadId: row.globalLeadId, from: 'explorer' });
     },
     [router],
@@ -378,6 +410,97 @@ export default function LeadsIndexPage() {
   );
   const explorerScopeLabel = buildLeadsWorkbenchScopeLabel(explorerActionContext);
 
+  const handleExport = useCallback(async () => {
+    if (!accountId || exporting) return;
+    if (Platform.OS !== 'web') {
+      toast.info('Lead export is currently available on web only.');
+      return;
+    }
+
+    const rowCount = selectedCount > 0 ? selectedCount : totalCount;
+    if (rowCount === 0) {
+      toast.info(selectedCount > 0 ? 'No selected leads to export.' : 'No leads match the current filters.');
+      return;
+    }
+
+    setExporting(true);
+    setExportError(null);
+    setExportModalPhase('running');
+
+    try {
+      const exportFilename = formatLeadsExportFilename('leads-explorer', accountId);
+      const selectedIds = selectedCount > 0 ? selectedGlobalLeadIds : undefined;
+      const accessToken =
+        rowCount > LEADS_EXPORT_SYNC_THRESHOLD ? await getAccessToken() : null;
+      if (rowCount > LEADS_EXPORT_SYNC_THRESHOLD && !accessToken) {
+        throw new Error('Sign in required to run large export jobs.');
+      }
+      const result = await startLeadsExport({
+        rowCount,
+        onSyncExport: async () => {
+          const exportRows = await getAccountLeadExplorerExportRows(accountId, {
+            query: explorerQuery,
+            columns: EXPLORER_COLUMNS,
+            globalLeadIds: selectedIds,
+          });
+          if (exportRows.length === 0) {
+            throw new Error(selectedIds?.length ? 'No selected leads to export.' : 'No leads match the current filters.');
+          }
+          const csv = exportLeadsWorkbenchToCsv(exportRows, EXPLORER_COLUMNS);
+          downloadCsvOnWeb(exportFilename, csv);
+          return { count: exportRows.length };
+        },
+        onAsyncExport: async () => {
+          const jobId = await startLeadsExportJob(accountId, {
+            source: 'explorer',
+            globalLeadIds: selectedIds,
+            query: explorerQuery,
+            columns: EXPLORER_COLUMNS,
+            totalCount: rowCount,
+            filenameBase: 'leads-explorer',
+          });
+          await enqueueAccountImportJob(jobId, accessToken!);
+          return { jobId };
+        },
+      });
+
+      if (result.mode === 'sync') {
+        toast.success(
+          selectedIds?.length
+            ? `Exported ${result.result.count} selected lead(s).`
+            : `Exported ${result.result.count} lead(s).`,
+        );
+        return;
+      }
+
+      setExportModalVisible(true);
+      const job = await pollImportJobUntilDone(result.jobId);
+      const exportResult = mapImportJobToLeadsExportResult(job);
+      if (job.status === 'failed' || !exportResult.downloadUrl) {
+        throw new Error('Lead export job failed.');
+      }
+
+      await Linking.openURL(exportResult.downloadUrl);
+      setExportModalVisible(false);
+      toast.success(
+        selectedIds?.length
+          ? `Exported ${exportResult.rowsExported || rowCount} selected lead(s).`
+          : `Exported ${exportResult.rowsExported || rowCount} lead(s).`,
+      );
+    } catch (nextError) {
+      const message = nextError instanceof Error ? nextError.message : 'Failed to export leads.';
+      setExportError(message);
+      if (exportModalVisible || rowCount > LEADS_EXPORT_SYNC_THRESHOLD) {
+        setExportModalVisible(true);
+        setExportModalPhase('failed');
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setExporting(false);
+    }
+  }, [accountId, exportModalVisible, explorerQuery, exporting, selectedCount, selectedGlobalLeadIds, toast, totalCount]);
+
   const headerActions = isMobile ? (
     <MobileHeaderButton
       variant="actions"
@@ -388,6 +511,14 @@ export default function LeadsIndexPage() {
     <View className="flex-row gap-2">
       <Button variant="secondary" size="sm" onPress={() => router.push('/leads/lists')}>
         Saved lists
+      </Button>
+      <Button
+        variant="secondary"
+        size="sm"
+        onPress={() => void handleExport()}
+        disabled={exporting || loading || (selectedCount === 0 && totalCount === 0)}
+      >
+        {exporting ? 'Exporting…' : selectedCount > 0 ? 'Export selected' : 'Export'}
       </Button>
       <Button variant="secondary" size="sm" onPress={openImportCsv}>
         Import CSV
@@ -469,12 +600,12 @@ export default function LeadsIndexPage() {
               columns={EXPLORER_COLUMNS}
               selectedKeys={selectedKeys}
               onSelectionChange={setSelectedKeys}
+              onFetchViewKeys={handleFetchViewKeys}
               onMoveColumnLeft={() => {}}
               onMoveColumnRight={() => {}}
               selectable={!isMobile}
               allowColumnReorder={false}
               plainColumnHeaders
-              selectAllScope="page"
               paginationMode="server"
               currentPage={currentPage}
               totalItems={totalCount}
@@ -571,6 +702,13 @@ export default function LeadsIndexPage() {
           onSuccess={handleListMembershipSuccess}
         />
       ) : null}
+
+      <LeadsExportModal
+        visible={exportModalVisible}
+        onClose={closeExportModal}
+        phase={exportModalPhase}
+        errorMessage={exportError}
+      />
 
       {isMobile ? (
         <BottomSheet visible={mobileActionsOpen} onClose={() => setMobileActionsOpen(false)}>

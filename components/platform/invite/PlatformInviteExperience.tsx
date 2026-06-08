@@ -392,7 +392,7 @@ export function PlatformInviteExperience({
             variant="info"
             message="This invitation was already accepted. Open your workspace to continue."
           />
-          <Button onPress={onContinueCompleted}>Open workspace</Button>
+          <Button onPress={onContinueCompleted}>Open</Button>
         </View>
       );
     }
@@ -408,7 +408,7 @@ export function PlatformInviteExperience({
         return (
           <View className="gap-4 py-8">
             <Alert variant="warning" message={activationError} />
-            {onRetryActivation ? <Button onPress={onRetryActivation}>Check again</Button> : null}
+            {onRetryActivation ? <Button onPress={onRetryActivation}>Retry</Button> : null}
           </View>
         );
       }
@@ -439,7 +439,7 @@ export function PlatformInviteExperience({
               }
             }}
           >
-            Sign out and continue
+            Signout
           </Button>
         </View>
       );
@@ -461,6 +461,8 @@ export function PlatformInviteExperience({
               : 'I have reviewed this agreement, and I agree that completing payment will make it binding.'
           }
           continueLabel="Continue"
+          proposalContinueLabel="Continue"
+          proposalBackLabel="Back"
           onContinue={() => setStep(isFreeFlow ? 'account' : 'payment')}
           onStepChange={setStep}
         />
@@ -617,13 +619,15 @@ export function PlatformInviteExperience({
           >
             {submitting
               ? mode === 'preview'
-                ? 'Opening preview...'
+                ? 'Opening'
                 : isFreeFlow
-                  ? 'Creating workspace...'
-                  : 'Starting payment...'
+                  ? 'Creating'
+                  : 'Starting'
               : mode === 'preview'
-                ? (isFreeFlow ? 'Preview free workspace' : `Preview ${activeRouteOption.label.toLowerCase()} checkout`)
-                : (isFreeFlow ? 'Create workspace' : activeRouteOption.checkoutButtonLabel)}
+                ? 'Preview'
+                : isFreeFlow
+                  ? 'Create'
+                  : activeRouteOption.checkoutButtonLabel}
           </Button>
         </View>
       </View>

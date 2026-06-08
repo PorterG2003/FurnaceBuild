@@ -114,14 +114,14 @@ export default function AcceptPlatformInvitePage() {
     }
     if (result.kind === 'timed_out') {
       setActivationError(
-        'Payment succeeded, but workspace setup is taking longer than expected. Click "Check again" in a few seconds.',
+        'Payment succeeded, but workspace setup is taking longer than expected. Click Retry in a few seconds.',
       );
       return;
     }
     setActivationError(
       result.message
         ? `We could not confirm your workspace access yet: ${result.message}`
-        : 'We could not confirm your workspace access yet. Click "Check again" to retry.',
+        : 'We could not confirm your workspace access yet. Click Retry to try again.',
     );
   }, [router, user?.id]);
 

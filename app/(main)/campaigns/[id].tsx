@@ -34,6 +34,7 @@ import {
   type CampaignVariantStatRow,
 } from '@/lib/supabase/services/campaigns';
 import {
+  fetchAllCampaignLeadIds,
   getCampaignLeadTablePage,
   getCampaignLeadTableExportRows,
   getLeadCount,
@@ -217,6 +218,25 @@ export default function CampaignPage() {
       }),
     [leadFilters],
   );
+
+  const handleFetchLeadViewKeys = useCallback(async () => {
+    if (!id) return [];
+    const { leadIds } = await fetchAllCampaignLeadIds(id, {
+      search: debouncedLeadSearchQuery || undefined,
+      sortBy: leadSortColumn,
+      sortDirection: leadSortDirection,
+      enrollmentStates: leadFilters.enrollmentStates.length > 0 ? leadFilters.enrollmentStates : undefined,
+      replyCategories: leadFilters.replyCategories.length > 0 ? leadFilters.replyCategories : undefined,
+    });
+    return leadIds;
+  }, [
+    debouncedLeadSearchQuery,
+    id,
+    leadFilters.enrollmentStates,
+    leadFilters.replyCategories,
+    leadSortColumn,
+    leadSortDirection,
+  ]);
 
   const loadCampaign = useCallback(async (silent = false) => {
     if (!id) return;
@@ -1219,6 +1239,7 @@ export default function CampaignPage() {
                   selectable={!isSmartlead}
                   selectedKeys={selectedLeadIds}
                   onSelectionChange={setSelectedLeadIds}
+                  onFetchViewKeys={handleFetchLeadViewKeys}
                   headerSummary={
                     <Text className="text-gray-400 font-instrument text-sm">
                       {selectedLeadIds.size > 0

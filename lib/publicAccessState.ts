@@ -323,9 +323,9 @@ export function resolvePublicAccessDialog(args: {
     const continueHref = buildSignOutContinuationHref(args.state);
     return {
       ...copy,
-      primaryLabel: 'Sign out',
+      primaryLabel: 'Signout',
       primaryAction: { kind: 'sign_out_and_navigate', href: continueHref },
-      secondaryLabel: 'Stay here',
+      secondaryLabel: 'Stay',
       secondaryAction: { kind: 'none' },
       closeAction: { kind: 'none' },
     };
@@ -333,7 +333,7 @@ export function resolvePublicAccessDialog(args: {
 
   return {
     ...copy,
-    primaryLabel: args.surface === 'auth' ? 'Go to sign in' : 'Continue',
+    primaryLabel: args.surface === 'auth' ? 'Signin' : 'Continue',
     primaryAction: { kind: 'none' },
     closeAction: { kind: 'none' },
   };

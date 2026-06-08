@@ -1,0 +1,2 @@
+export const LEADS_EXPORT_SYNC_THRESHOLD = 500;
+export const LEADS_EXPORT_CHUNK_SIZE = 500;

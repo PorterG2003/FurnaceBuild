@@ -58,10 +58,11 @@ interface LeadsTableProps {
    * mutating UI must be hidden or disabled when readOnly is true.
    */
   readOnly?: boolean;
-  /** When true with `selectedKeys` / `onSelectionChange`, shows row checkboxes (page-scoped select-all). */
+  /** When true with `selectedKeys` / `onSelectionChange`, shows row checkboxes with view-wide select-all. */
   selectable?: boolean;
   selectedKeys?: Set<string>;
   onSelectionChange?: (keys: Set<string>) => void;
+  onFetchViewKeys?: () => Promise<string[]>;
   headerSummary?: ReactNode;
   headerActions?: ReactNode;
 }
@@ -95,6 +96,7 @@ export function LeadsTable({
   selectable = false,
   selectedKeys,
   onSelectionChange,
+  onFetchViewKeys,
   headerSummary,
   headerActions,
 }: LeadsTableProps) {
@@ -395,6 +397,7 @@ export function LeadsTable({
         selectable={selectable && !!selectedKeys && !!onSelectionChange}
         selectedKeys={selectedKeys}
         onSelectionChange={onSelectionChange}
+        onFetchViewKeys={onFetchViewKeys}
       />
 
       {selectedLead && (

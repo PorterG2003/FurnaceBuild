@@ -14,6 +14,7 @@ export function LeadsWorkbenchWorkspace({
   rows,
   selectedKeys,
   onSelectionChange,
+  onFetchViewKeys,
   onMoveColumnLeft,
   onMoveColumnRight,
   onAddToCampaign,
@@ -24,7 +25,7 @@ export function LeadsWorkbenchWorkspace({
   onRemoveFromList,
   onClearSelection,
   onRowPress,
-  selectAllScope = 'page',
+  selectAllScope = 'all',
   pagination = true,
   paginationMode = 'server',
   currentPage,
@@ -42,6 +43,7 @@ export function LeadsWorkbenchWorkspace({
   rows: LeadsTableRow[];
   selectedKeys: Set<string>;
   onSelectionChange: (next: Set<string>) => void;
+  onFetchViewKeys?: () => Promise<string[]>;
   onMoveColumnLeft: (columnId: string) => void;
   onMoveColumnRight: (columnId: string) => void;
   onAddToCampaign: () => void;
@@ -104,6 +106,7 @@ export function LeadsWorkbenchWorkspace({
         columns={columns}
         selectedKeys={selectedKeys}
         onSelectionChange={onSelectionChange}
+        onFetchViewKeys={onFetchViewKeys}
         onMoveColumnLeft={onMoveColumnLeft}
         onMoveColumnRight={onMoveColumnRight}
         onRowPress={onRowPress}

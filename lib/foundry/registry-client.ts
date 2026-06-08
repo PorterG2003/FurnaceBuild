@@ -222,6 +222,34 @@ export async function fetchManualCompanies(params?: {
   };
 }
 
+export async function fetchAllManualCompanyIds(params?: {
+  q?: string;
+  has_normalized_key?: boolean;
+  has_notes?: boolean;
+  sort_by?: string;
+  sort_direction?: 'asc' | 'desc';
+}): Promise<{ companyIds: string[]; totalCount: number }> {
+  const companyIds: string[] = [];
+  const pageSize = 500;
+  let totalCount = 0;
+
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await fetchManualCompanies({
+      ...params,
+      limit: pageSize,
+      offset,
+    });
+    if (offset === 0) {
+      totalCount = coerceNonNegativeInt(response.total_count, 0);
+    }
+    if (response.companies.length === 0) break;
+    companyIds.push(...response.companies.map((company) => company.id));
+    if (response.companies.length < pageSize) break;
+  }
+
+  return { companyIds, totalCount };
+}
+
 /** Batch fetch companies by id (order preserved; max 50 ids). */
 export async function fetchCompaniesByIds(ids: string[]): Promise<RegistryCompaniesResponse> {
   const uniq = [...new Set(ids.filter(Boolean))].slice(0, 50);
@@ -300,6 +328,35 @@ export async function fetchManualEntityOwners(params?: {
     offset: coerceNonNegativeInt(response.offset, params?.offset ?? 0),
     total_count: coerceNonNegativeInt(response.total_count, 0),
   };
+}
+
+export async function fetchAllManualEntityOwnerIds(params?: {
+  q?: string;
+  is_current?: boolean;
+  has_owner_normalized_key?: boolean;
+  state_entity_id?: string;
+  sort_by?: string;
+  sort_direction?: 'asc' | 'desc';
+}): Promise<{ entityOwnerIds: string[]; totalCount: number }> {
+  const entityOwnerIds: string[] = [];
+  const pageSize = 500;
+  let totalCount = 0;
+
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await fetchManualEntityOwners({
+      ...params,
+      limit: pageSize,
+      offset,
+    });
+    if (offset === 0) {
+      totalCount = coerceNonNegativeInt(response.total_count, 0);
+    }
+    if (response.entity_owners.length === 0) break;
+    entityOwnerIds.push(...response.entity_owners.map((row) => row.id));
+    if (response.entity_owners.length < pageSize) break;
+  }
+
+  return { entityOwnerIds, totalCount };
 }
 
 export async function fetchIngestionRuns(params?: {

@@ -220,10 +220,10 @@ export default function AcceptInvitationPage() {
                 Use the same email this invitation was sent to when you continue.
               </Text>
               <Button onPress={() => navigateToAuth('signUp')} variant="default">
-                Create account
+                Signup
               </Button>
               <Button onPress={() => navigateToAuth('signIn')} variant="outline">
-                Sign in
+                Signin
               </Button>
             </>
           ) : (
@@ -243,7 +243,7 @@ export default function AcceptInvitationPage() {
                     setAccepting(true);
                   }}
                 >
-                  Try again
+                  Retry
                 </Button>
               ) : null}
             </View>
@@ -289,10 +289,10 @@ export default function AcceptInvitationPage() {
                 }}
                 variant="outline"
               >
-                Try again
+                Retry
               </Button>
               <Button onPress={() => router.replace('/')} variant="default">
-                Go to home
+                Home
               </Button>
             </>
           }

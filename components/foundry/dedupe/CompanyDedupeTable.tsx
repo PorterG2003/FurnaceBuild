@@ -53,6 +53,7 @@ export function CompanyDedupeTable({
   loading,
   selectedKeys,
   onSelectionChange,
+  onFetchViewKeys,
   onRowPress,
   emptyMessage,
   currentPage,
@@ -66,6 +67,7 @@ export function CompanyDedupeTable({
   loading?: boolean;
   selectedKeys: Set<string>;
   onSelectionChange: (keys: Set<string>) => void;
+  onFetchViewKeys?: () => Promise<string[]>;
   onRowPress?: (company: RegistryCompany) => void;
   emptyMessage?: string;
   currentPage?: number;
@@ -100,6 +102,7 @@ export function CompanyDedupeTable({
       selectable
       selectedKeys={selectedKeys}
       onSelectionChange={onSelectionChange}
+      onFetchViewKeys={onFetchViewKeys}
       equalColumnWidths={false}
       itemsPerPage={50}
       onRowPress={onRowPress}

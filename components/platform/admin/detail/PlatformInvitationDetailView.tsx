@@ -347,7 +347,7 @@ export function PlatformInvitationDetailView({
             : 'Restore revision?'
         }
         message="This copies the selected revision into a new draft revision. Publish to client when ready."
-        confirmLabel="Restore revision"
+        confirmLabel="Restore"
       />
 
       <ConfirmModal

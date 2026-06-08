@@ -5,6 +5,7 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { Skeleton, useSmoothLoading, type UseSmoothLoadingOptions } from '@/components/ui/feedback';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { applyAnchoredSelection } from '@/lib/selection/applyAnchoredSelection';
+import { getViewSelectAllState } from '@/lib/selection/viewSelectAllState';
 
 /** Extra padding on the left of the first column and right of the last column so content isn't flush to the table edges. */
 const OUTER_EDGE_PADDING_X = 24;
@@ -170,7 +171,9 @@ interface DataTableProps<T> {
   selectable?: boolean;
   selectedKeys?: Set<string>;
   onSelectionChange?: (keys: Set<string>) => void;
-  /** Whether header select-all applies to the current page or all sorted items. Default `page`. */
+  /** Required for server-paginated view-wide select-all. Returns keys for the full filtered result set. */
+  onFetchViewKeys?: () => Promise<string[]>;
+  /** Whether header select-all applies to the current page or all sorted items. Default `all`. */
   selectAllScope?: 'page' | 'all';
   /** When false, show all sorted items and hide pagination UI. Default true. */
   pagination?: boolean;
@@ -226,7 +229,8 @@ export function DataTable<T>({
   selectable = false,
   selectedKeys,
   onSelectionChange,
-  selectAllScope = 'page',
+  onFetchViewKeys,
+  selectAllScope = 'all',
   pagination: paginationEnabled = true,
   renderEmpty,
   equalColumnWidths = false,
@@ -251,6 +255,7 @@ export function DataTable<T>({
   const [tableContainerWidth, setTableContainerWidth] = useState<number>(0);
   const [internalSortDirection, setInternalSortDirection] = useState<SortDirection>('asc');
   const [internalCurrentPage, setInternalCurrentPage] = useState(1);
+  const [selectAllLoading, setSelectAllLoading] = useState(false);
   const selectedKeysRef = useRef(selectedKeys);
   const orderedVisibleKeysRef = useRef<string[]>([]);
   const selectableRef = useRef(selectable);
@@ -328,33 +333,68 @@ export function DataTable<T>({
   };
 
   const selectAllItems = selectAllScope === 'all' ? sortedItems : visibleItems;
+  const selectAllKeys = useMemo(() => selectAllItems.map(getItemKey), [selectAllItems, getItemKey]);
+  const { allSelected, someSelected } = useMemo(
+    () => getViewSelectAllState({
+      selectable,
+      selectedKeys,
+      scopeKeys: selectAllKeys,
+      selectAllScope,
+      isServerPagination,
+      totalItems: safeServerTotal,
+    }),
+    [selectable, selectedKeys, selectAllKeys, selectAllScope, isServerPagination, safeServerTotal]
+  );
 
-  const allSelected =
-    selectable &&
-    selectAllItems.length > 0 &&
-    selectedKeys != null &&
-    selectAllItems.every((item) => selectedKeys.has(getItemKey(item)));
+  const toggleSelectAll = useCallback(() => {
+    if (!selectable || !onSelectionChange || selectedKeys == null || selectAllLoading) return;
 
-  const someSelected =
-    selectable &&
-    selectedKeys != null &&
-    selectAllItems.some((item) => selectedKeys.has(getItemKey(item))) &&
-    !allSelected;
+    if (isServerPagination && selectAllScope === 'all') {
+      selectionAnchorKeyRef.current = null;
+      if (allSelected) {
+        onSelectionChange(new Set());
+        return;
+      }
+      if (!onFetchViewKeys) {
+        console.error('DataTable requires onFetchViewKeys for server-paginated view selection.');
+        return;
+      }
+      setSelectAllLoading(true);
+      void onFetchViewKeys()
+        .then((keys) => {
+          onSelectionChange(new Set(keys));
+        })
+        .catch((error) => {
+          console.error('Failed to fetch view selection keys.', error);
+        })
+        .finally(() => {
+          setSelectAllLoading(false);
+        });
+      return;
+    }
 
-  const toggleSelectAll = () => {
-    if (!selectable || !onSelectionChange || selectedKeys == null) return;
-    const scopeKeys = new Set(selectAllItems.map(getItemKey));
+    const scopeKeys = new Set(selectAllKeys);
     if (allSelected) {
       const next = new Set(selectedKeys);
-      scopeKeys.forEach((k) => next.delete(k));
+      scopeKeys.forEach((key) => next.delete(key));
       onSelectionChange(next);
     } else {
       const next = new Set(selectedKeys);
-      scopeKeys.forEach((k) => next.add(k));
+      scopeKeys.forEach((key) => next.add(key));
       onSelectionChange(next);
     }
     selectionAnchorKeyRef.current = null;
-  };
+  }, [
+    selectable,
+    onSelectionChange,
+    selectedKeys,
+    selectAllLoading,
+    isServerPagination,
+    selectAllScope,
+    allSelected,
+    onFetchViewKeys,
+    selectAllKeys,
+  ]);
 
   const getSortIdentifier = (column: TableColumn<T>) => column.serverSortKey ?? column.key;
 
@@ -1071,11 +1111,16 @@ export function DataTable<T>({
                   className="py-2 justify-center items-center"
                   style={{ width: SELECT_COLUMN_WIDTH, paddingHorizontal: SELECT_COLUMN_PADDING_X }}
                 >
-                  <Checkbox
-                    checked={allSelected}
-                    indeterminate={someSelected}
-                    onPress={toggleSelectAll}
-                  />
+                  {selectAllLoading ? (
+                    <ActivityIndicator size="small" color="#f85102" />
+                  ) : (
+                    <Checkbox
+                      checked={allSelected}
+                      indeterminate={someSelected}
+                      onPress={toggleSelectAll}
+                      disabled={selectAllLoading}
+                    />
+                  )}
                 </View>
               )}
               {columns.map((column, index) => renderHeaderCell(column, index))}

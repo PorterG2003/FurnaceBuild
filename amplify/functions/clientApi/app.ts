@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import { Hono } from 'hono';
 import type { Context, Next } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -60,6 +61,7 @@ type Variables = {
 type Supabase = ReturnType<typeof createServiceRoleClient>;
 
 const sqs = new SQSClient({ region: process.env.AWS_REGION || 'us-west-2' });
+const sfn = new SFNClient({ region: process.env.AWS_REGION || 'us-west-2' });
 
 function getBaseUrl(c: Context): string {
   const configured = process.env.CLIENT_API_BASE_URL?.trim() || process.env.CLIENT_API_DOCS_ORIGIN?.trim();
@@ -2168,7 +2170,7 @@ app.post('/internal/import-jobs/:id/enqueue', async (c) => {
 
   const { data: job, error: jobError } = await supabase
     .from('api_import_jobs')
-    .select('id, account_id, status')
+    .select('id, account_id, status, input')
     .eq('id', jobId)
     .maybeSingle();
   if (jobError) throw new Error(`Failed to load import job: ${jobError.message}`);
@@ -2183,6 +2185,23 @@ app.post('/internal/import-jobs/:id/enqueue', async (c) => {
   if (membershipError) throw new Error(`Failed to verify membership: ${membershipError.message}`);
   if (!membership) {
     forbidden('account_member_required', 'Account membership is required to enqueue import jobs');
+  }
+
+  const input = (job.input && typeof job.input === 'object' ? job.input : {}) as Record<string, unknown>;
+  const operation = typeof input.operation === 'string' ? input.operation : null;
+
+  if (operation === 'export_leads') {
+    const stateMachineArn = process.env.LEADS_EXPORT_STATE_MACHINE_ARN?.trim();
+    if (!stateMachineArn) {
+      throw new Error('LEADS_EXPORT_STATE_MACHINE_ARN is not configured.');
+    }
+    await sfn.send(
+      new StartExecutionCommand({
+        stateMachineArn,
+        input: JSON.stringify({ jobId: job.id }),
+      }),
+    );
+    return jsonResponse(c, { data: { id: job.id, enqueued: true } }, 202);
   }
 
   const queueUrl = process.env.CLIENT_API_IMPORT_QUEUE_URL?.trim();

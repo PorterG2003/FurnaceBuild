@@ -108,3 +108,68 @@ export interface TestConnectionResult {
   smtp?: { success: boolean; error?: string };
   imap?: { success: boolean; error?: string };
 }
+
+export type BulkMailboxTagMode = 'patch' | 'replace';
+
+export interface BulkMailboxTagChanges {
+  mode: BulkMailboxTagMode;
+  addTagIds: string[];
+  removeTagIds: string[];
+  replaceTagIds: string[];
+}
+
+export const EMPTY_BULK_MAILBOX_TAG_CHANGES: BulkMailboxTagChanges = {
+  mode: 'patch',
+  addTagIds: [],
+  removeTagIds: [],
+  replaceTagIds: [],
+};
+
+export function hasBulkMailboxTagChanges(changes: BulkMailboxTagChanges): boolean {
+  if (changes.mode === 'replace') return changes.replaceTagIds.length > 0;
+  const { addTagIds, removeTagIds } = normalizeBulkMailboxPatchTags(changes);
+  return addTagIds.length > 0 || removeTagIds.length > 0;
+}
+
+/** Returns tag ids present in both add and remove lists (patch mode only). */
+export function getBulkMailboxTagConflicts(changes: BulkMailboxTagChanges): string[] {
+  if (changes.mode === 'replace') return [];
+  const removeSet = new Set(changes.removeTagIds);
+  return changes.addTagIds.filter((id) => removeSet.has(id));
+}
+
+/** Ensures a tag cannot appear in both add and remove lists; add wins when normalizing. */
+export function normalizeBulkMailboxPatchTags(changes: BulkMailboxTagChanges): {
+  addTagIds: string[];
+  removeTagIds: string[];
+} {
+  const addSet = new Set(changes.addTagIds);
+  return {
+    addTagIds: changes.addTagIds,
+    removeTagIds: changes.removeTagIds.filter((id) => !addSet.has(id)),
+  };
+}
+
+export function withBulkMailboxAddTagIds(
+  changes: BulkMailboxTagChanges,
+  addTagIds: string[],
+): BulkMailboxTagChanges {
+  const addSet = new Set(addTagIds);
+  return {
+    ...changes,
+    addTagIds,
+    removeTagIds: changes.removeTagIds.filter((id) => !addSet.has(id)),
+  };
+}
+
+export function withBulkMailboxRemoveTagIds(
+  changes: BulkMailboxTagChanges,
+  removeTagIds: string[],
+): BulkMailboxTagChanges {
+  const removeSet = new Set(removeTagIds);
+  return {
+    ...changes,
+    removeTagIds,
+    addTagIds: changes.addTagIds.filter((id) => !removeSet.has(id)),
+  };
+}

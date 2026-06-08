@@ -5,7 +5,9 @@ import { Tabs, type Tab } from '@/components/ui/tabs';
 import { ComposerRichEditor } from '@/components/inbox';
 import type { EditorBridge } from '@10play/tentap-editor';
 import type { Mailbox } from '@/lib/supabase/types';
-import type { MailboxFormData } from './types';
+import type { MailboxTag } from '@/lib/supabase/services/mailbox-tags';
+import { BulkMailboxTagsEditor } from './BulkMailboxTagsEditor';
+import type { BulkMailboxTagChanges, MailboxFormData } from './types';
 
 const EDIT_MODAL_TABS: Tab[] = [
   { id: 'profile', label: 'Profile' },
@@ -33,6 +35,11 @@ export interface EditMailboxModalProps {
   saving: boolean;
   onSave: () => void;
   editSignatureEditorRef: React.RefObject<EditorBridge | null>;
+  accountId?: string;
+  accountTags?: MailboxTag[];
+  bulkTagChanges?: BulkMailboxTagChanges;
+  onBulkTagChangesChange?: (changes: BulkMailboxTagChanges) => void;
+  onTagCreated?: (tag: MailboxTag) => void;
 }
 
 export function EditMailboxModal({
@@ -47,6 +54,11 @@ export function EditMailboxModal({
   saving,
   onSave,
   editSignatureEditorRef,
+  accountId,
+  accountTags = [],
+  bulkTagChanges,
+  onBulkTagChangesChange,
+  onTagCreated,
 }: EditMailboxModalProps) {
   const isBulk = editMailboxIds.length > 0;
   const title = isBulk ? 'Update mailboxes' : 'Edit Mailbox';
@@ -173,6 +185,17 @@ export function EditMailboxModal({
               />
               <Text className="text-xs text-gray-500 font-instrument mt-2">Hourly email limit for this mailbox (default: 10).</Text>
             </View>
+
+            {isBulk && accountId && bulkTagChanges && onBulkTagChangesChange && onTagCreated ? (
+              <BulkMailboxTagsEditor
+                accountId={accountId}
+                selectedMailboxCount={editMailboxIds.length}
+                accountTags={accountTags}
+                changes={bulkTagChanges}
+                onChange={onBulkTagChangesChange}
+                onTagCreated={onTagCreated}
+              />
+            ) : null}
           </View>
         )}
 

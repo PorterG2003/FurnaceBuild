@@ -6,6 +6,7 @@ interface LeadSourceNodeData {
   source?: string;
   customFieldKeys?: string[];
   mappedStandardFieldKeys?: string[];
+  readOnly?: boolean;
 }
 
 interface LeadSourceNodeProps {
@@ -25,7 +26,15 @@ function LeadSourceNode({ data, selected, id }: LeadSourceNodeProps) {
   };
   
   return (
-    <BaseNode label={displayLabel} borderColor="#F3440D" onEdit={handleEdit} icon={IconComponent && <IconComponent size={16} color="#f85102" />}>
+    <BaseNode
+      label={displayLabel}
+      borderColor="#F3440D"
+      onEdit={handleEdit}
+      icon={IconComponent && <IconComponent size={16} color="#f85102" />}
+      showActions={!data.readOnly}
+      canDelete={false}
+      nodeLabel={displayLabel}
+    >
       {data.source && (
         <div style={{
           color: '#9CA3AF',

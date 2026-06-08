@@ -1,7 +1,7 @@
 import { ActivityIndicator, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheet, getBottomSheetBodyScrollMaxHeight } from '@/components/ui/modals';
-import { PencilIcon, PlayIcon, TrashIcon } from 'react-native-heroicons/outline';
+import { PencilIcon, PlayIcon, TagIcon, TrashIcon } from 'react-native-heroicons/outline';
 import { TestConnectionResultPanel } from './TestConnectionResultPanel';
 import type { TestConnectionResult } from './types';
 import type { Mailbox } from '@/lib/supabase/types';
@@ -14,6 +14,7 @@ export interface MailboxActionsSheetProps {
   testResult: TestConnectionResult | null;
   testResultMailboxEmail: string | null;
   onTest: (mailbox: Mailbox) => void;
+  onManageTags: (mailbox: Mailbox) => void;
   onEdit: (mailbox: Mailbox) => void;
   onDelete: (mailbox: Mailbox) => void;
   /** Clear sheet test UI and close sheet (Done on result, or after dismiss). */
@@ -28,6 +29,7 @@ export function MailboxActionsSheet({
   testResult,
   testResultMailboxEmail,
   onTest,
+  onManageTags,
   onEdit,
   onDelete,
   onDismissTestResult,
@@ -91,6 +93,23 @@ export function MailboxActionsSheet({
               >
                 <PlayIcon size={20} color="#9CA3AF" />
                 <Text className="text-white font-instrument-medium text-base">Test connection</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  onManageTags(mailbox);
+                  onClose();
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  paddingVertical: 14,
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#2A2A2A',
+                }}
+              >
+                <TagIcon size={20} color="#9CA3AF" />
+                <Text className="text-white font-instrument-medium text-base">Manage tags</Text>
               </Pressable>
               <Pressable
                 onPress={() => {

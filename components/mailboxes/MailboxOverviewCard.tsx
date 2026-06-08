@@ -1,16 +1,25 @@
 import { Text, View } from 'react-native';
 import { EllipsisVerticalIcon } from 'react-native-heroicons/outline';
 import { IconButton } from '@/components/ui/icon-button';
+import { TagChipRow } from '@/components/tags';
 import { formatMailboxLastSent, formatMailboxMinGap, formatMailboxUsage } from '@/lib/mailboxes/overview-format';
 import { MailboxStatusPill } from './MailboxStatusPill';
 import type { MailboxOverview } from '@/lib/supabase/services/mailboxes';
+import type { MailboxTag } from '@/lib/supabase/services/mailbox-tags';
+
+const EMPTY_MAILBOX_TAGS: MailboxTag[] = [];
 
 export interface MailboxOverviewCardProps {
   mailbox: MailboxOverview;
+  tags?: MailboxTag[];
   onPressMenu: () => void;
 }
 
-export function MailboxOverviewCard({ mailbox, onPressMenu }: MailboxOverviewCardProps) {
+export function MailboxOverviewCard({
+  mailbox,
+  tags = EMPTY_MAILBOX_TAGS,
+  onPressMenu,
+}: MailboxOverviewCardProps) {
   return (
     <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-4">
       <View className="flex-row items-center justify-between gap-3">
@@ -41,6 +50,11 @@ export function MailboxOverviewCard({ mailbox, onPressMenu }: MailboxOverviewCar
       >
         {mailbox.email_address}
       </Text>
+      {tags.length > 0 ? (
+        <View className="mt-2">
+          <TagChipRow tags={tags} maxVisible={3} />
+        </View>
+      ) : null}
       <View className="mt-3 gap-1.5">
         <Text className="text-gray-300 font-instrument text-xs">
           Daily {formatMailboxUsage(mailbox.throttleTodaySent, mailbox.effectiveDailyLimit)} | Hour {formatMailboxUsage(mailbox.throttleThisHourSent, mailbox.effectiveHourlyLimit)}

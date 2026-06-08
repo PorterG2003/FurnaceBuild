@@ -1497,6 +1497,49 @@ export interface Database {
           updated_at?: string;
         };
       };
+      mailbox_tags: {
+        Row: {
+          id: string;
+          account_id: string;
+          name: string;
+          color: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          name: string;
+          color?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          name?: string;
+          color?: string | null;
+          created_at?: string;
+        };
+      };
+      mailbox_tag_assignments: {
+        Row: {
+          mailbox_id: string;
+          tag_id: string;
+          account_id: string;
+          created_at: string;
+        };
+        Insert: {
+          mailbox_id: string;
+          tag_id: string;
+          account_id: string;
+          created_at?: string;
+        };
+        Update: {
+          mailbox_id?: string;
+          tag_id?: string;
+          account_id?: string;
+          created_at?: string;
+        };
+      };
       email_threads: {
         Row: {
           id: string;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Linking, Platform, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FunnelIcon, MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { DetailPageShell, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
@@ -14,6 +14,7 @@ import {
   LeadsAddToCampaignModal,
   LeadsExplorerFiltersModal,
   LeadsActionBar,
+  LeadsExportModal,
   LeadsListMembershipModal,
   LeadsPauseMembershipsModal,
   LeadsRemoveMembershipsModal,
@@ -25,8 +26,15 @@ import {
   type ListMembershipScope,
   type ListMembershipSuccessResult,
 } from '@/components/leads/workbench';
+import {
+  downloadCsvOnWeb,
+  exportLeadsWorkbenchToCsv,
+} from '@/components/leads/export/exportLeadsWorkbenchCsv';
 import { ColumnLayoutSaveIndicator } from '@/components/leads/workbench/ColumnLayoutSaveIndicator';
 import { LeadsEditColumnsModal } from '@/components/leads/workbench/LeadsEditColumnsModal';
+import { LEADS_EXPORT_SYNC_THRESHOLD } from '@/lib/leads/export/constants';
+import { formatLeadsExportFilename } from '@/lib/leads/export/formatLeadsExportFilename';
+import { startLeadsExport } from '@/lib/leads/export/startLeadsExport';
 import type { AddGlobalLeadsToCampaignResult } from '@/lib/supabase/services/leads/add-to-campaign';
 import {
   DEFAULT_SAVED_LIST_COLUMNS,
@@ -43,13 +51,22 @@ import {
   buildLeadsWorkbenchScopeLabel,
 } from '@/lib/leads/workbench/buildLeadsWorkbenchActionGroups';
 import { getCampaignTags, type CampaignTag } from '@/lib/supabase/services/campaign-tags';
+import { getAccessToken } from '@/lib/supabase/client';
 import { getAccountLeadCampaigns, getAccountLeadWorkbenchDataset } from '@/lib/supabase/services/leads/account-leads';
 import {
+  fetchAllSavedLeadListGlobalLeadIds,
+  getSavedLeadListExportRows,
   getSavedLeadListMetadata,
   getSavedLeadListPeoplePage,
   type SavedLeadListMetadata,
   type SavedLeadListPeopleQuery,
 } from '@/lib/supabase/services/leads/saved-lists';
+import {
+  enqueueAccountImportJob,
+  mapImportJobToLeadsExportResult,
+  startLeadsExportJob,
+} from '@/lib/supabase/services/leads/export-jobs';
+import { pollImportJobUntilDone } from '@/lib/leads/workbench/bulk/pollImportJobUntilDone';
 import type { LeadsListDefinition, LeadsWorkbenchDataset, MockCampaign } from '@/lib/devtools/leads-workbench/types';
 
 const pageSize = 50;
@@ -117,6 +134,10 @@ export default function LeadsWorkbenchPage() {
   const [sortColumn, setSortColumn] = useState<string>('rollup-activity');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [hasInitialLoadCompleted, setHasInitialLoadCompleted] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportModalPhase, setExportModalPhase] = useState<'running' | 'failed'>('running');
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const listFilters = useMemo<LeadsListDefinition['filters']>(
     () => ({
@@ -127,6 +148,8 @@ export default function LeadsWorkbenchPage() {
   );
 
   const activeFilterCount = countActiveExplorerFilters(listFilters);
+  const selectedGlobalLeadIds = useMemo(() => [...selectedKeys], [selectedKeys]);
+  const selectedCount = selectedGlobalLeadIds.length;
   const hasActiveListFilters =
     activeFilterCount > 0 || searchQuery.trim().length > 0;
   const showFilteredListRemove =
@@ -149,13 +172,19 @@ export default function LeadsWorkbenchPage() {
     [listFilters, sortColumn, sortDirection],
   );
 
+  const handleFetchViewKeys = useCallback(async () => {
+    if (!accountId || !listId) return [];
+    const { globalLeadIds } = await fetchAllSavedLeadListGlobalLeadIds(accountId, listId, listPeopleQuery);
+    return globalLeadIds;
+  }, [accountId, listId, listPeopleQuery]);
+
   const handleSortChange = useCallback((columnKey: string, direction: 'asc' | 'desc') => {
     setSortColumn(columnKey);
     setSortDirection(direction);
   }, []);
 
   const { saveStatus, markLoaded, resetLoaded } = useAutoSaveColumnLayout({
-    accountId,
+    accountId: accountId ?? undefined,
     listId,
     columns,
     enabled: !isMobile && Boolean(listMetadata),
@@ -273,7 +302,7 @@ export default function LeadsWorkbenchPage() {
 
   useEffect(() => {
     setSelectedKeys(new Set());
-  }, [appliedFilters, currentPage, searchQuery, sortColumn, sortDirection]);
+  }, [appliedFilters, searchQuery, sortColumn, sortDirection]);
 
   useEffect(() => {
     if (!accountId || !listId || !listMetadata) {
@@ -331,10 +360,6 @@ export default function LeadsWorkbenchPage() {
       cancelled = true;
     };
   }, [accountId, columns, currentPage, listId, listMetadata, listPeopleQuery, peopleRefreshNonce]);
-
-  useEffect(() => {
-    setSelectedKeys((current) => new Set([...current].filter((key) => rows.some((row) => row.globalLeadId === key))));
-  }, [rows]);
 
   const openEnrollmentAction = useCallback(
     (kind: 'pause' | 'resume', params: { globalLeadIds: string[]; scopeLabel: string }) => {
@@ -454,10 +479,116 @@ export default function LeadsWorkbenchPage() {
     setColumns(nextColumns);
   }, []);
 
-  const handleExport = useCallback(() => {
-    if (isMobile) return;
-    toast.info('Export is not wired in this slice yet.');
-  }, [isMobile, toast]);
+  const closeExportModal = useCallback(() => {
+    if (exporting && exportModalPhase === 'running') return;
+    setExportModalVisible(false);
+    setExportModalPhase('running');
+    setExportError(null);
+  }, [exportModalPhase, exporting]);
+
+  const handleExport = useCallback(async () => {
+    if (!accountId || !listId || exporting) return;
+    if (Platform.OS !== 'web') {
+      toast.info('Lead export is currently available on web only.');
+      return;
+    }
+
+    const rowCount = selectedCount > 0 ? selectedCount : totalPeople;
+    if (rowCount === 0) {
+      toast.info(selectedCount > 0 ? 'No selected leads to export.' : 'No leads match the current filters.');
+      return;
+    }
+
+    setExporting(true);
+    setExportError(null);
+    setExportModalPhase('running');
+
+    try {
+      const selectedIds = selectedCount > 0 ? selectedGlobalLeadIds : undefined;
+      const filename = formatLeadsExportFilename(listMetadata?.name ?? 'saved-list-export', listId);
+      const accessToken =
+        rowCount > LEADS_EXPORT_SYNC_THRESHOLD ? await getAccessToken() : null;
+      if (rowCount > LEADS_EXPORT_SYNC_THRESHOLD && !accessToken) {
+        throw new Error('Sign in required to run large export jobs.');
+      }
+      const result = await startLeadsExport({
+        rowCount,
+        onSyncExport: async () => {
+          const exportRows = await getSavedLeadListExportRows(accountId, listId, {
+            columns,
+            query: listPeopleQuery,
+            globalLeadIds: selectedIds,
+          });
+          if (exportRows.length === 0) {
+            throw new Error(selectedIds?.length ? 'No selected leads to export.' : 'No leads match the current filters.');
+          }
+          const csv = exportLeadsWorkbenchToCsv(exportRows, columns);
+          downloadCsvOnWeb(filename, csv);
+          return { count: exportRows.length };
+        },
+        onAsyncExport: async () => {
+          const jobId = await startLeadsExportJob(accountId, {
+            source: 'saved_list',
+            listId,
+            globalLeadIds: selectedIds,
+            query: listPeopleQuery,
+            columns,
+            totalCount: rowCount,
+            filenameBase: listMetadata?.name ?? 'saved-list-export',
+          });
+          await enqueueAccountImportJob(jobId, accessToken!);
+          return { jobId };
+        },
+      });
+
+      if (result.mode === 'sync') {
+        toast.success(
+          selectedIds?.length
+            ? `Exported ${result.result.count} selected lead(s).`
+            : `Exported ${result.result.count} lead(s).`,
+        );
+        return;
+      }
+
+      setExportModalVisible(true);
+      const job = await pollImportJobUntilDone(result.jobId);
+      const exportResult = mapImportJobToLeadsExportResult(job);
+      if (job.status === 'failed' || !exportResult.downloadUrl) {
+        throw new Error('Lead export job failed.');
+      }
+
+      await Linking.openURL(exportResult.downloadUrl);
+      setExportModalVisible(false);
+      toast.success(
+        selectedIds?.length
+          ? `Exported ${exportResult.rowsExported || rowCount} selected lead(s).`
+          : `Exported ${exportResult.rowsExported || rowCount} lead(s).`,
+      );
+    } catch (nextError) {
+      const message = nextError instanceof Error ? nextError.message : 'Failed to export leads.';
+      setExportError(message);
+      if (exportModalVisible || rowCount > LEADS_EXPORT_SYNC_THRESHOLD) {
+        setExportModalVisible(true);
+        setExportModalPhase('failed');
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setExporting(false);
+    }
+  }, [
+    accountId,
+    columns,
+    exportModalVisible,
+    exporting,
+    listId,
+    listMetadata?.name,
+    listPeopleQuery,
+    selectedCount,
+    selectedGlobalLeadIds,
+    toast,
+    totalPeople,
+  ]);
 
   const listViewActionContext = useMemo(() => {
     if (!listMetadata) return null;
@@ -516,8 +647,13 @@ export default function LeadsWorkbenchPage() {
       <Button variant="secondary" size="sm" onPress={() => setEditColumnsOpen(true)}>
         Edit columns
       </Button>
-      <Button variant="secondary" size="sm" onPress={handleExport}>
-        Export
+      <Button
+        variant="secondary"
+        size="sm"
+        onPress={() => void handleExport()}
+        disabled={exporting || tableLoading || (selectedCount === 0 && totalPeople === 0)}
+      >
+        {exporting ? 'Exporting…' : selectedCount > 0 ? 'Export selected' : 'Export'}
       </Button>
     </View>
   );
@@ -628,7 +764,7 @@ export default function LeadsWorkbenchPage() {
                 rows={rows}
                 selectedKeys={selectedKeys}
                 onSelectionChange={setSelectedKeys}
-                selectAllScope="page"
+                onFetchViewKeys={handleFetchViewKeys}
                 paginationMode="server"
                 currentPage={currentPage}
                 totalItems={totalPeople}
@@ -695,6 +831,12 @@ export default function LeadsWorkbenchPage() {
 
             {!isMobile ? (
               <>
+                <LeadsExportModal
+                  visible={exportModalVisible}
+                  onClose={closeExportModal}
+                  phase={exportModalPhase}
+                  errorMessage={exportError}
+                />
                 <LeadsEditColumnsModal
                   visible={editColumnsOpen}
                   campaigns={campaigns}

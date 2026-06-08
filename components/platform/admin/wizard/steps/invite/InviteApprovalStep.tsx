@@ -69,10 +69,10 @@ export function InviteApprovalStep({
           Back
         </Button>
         <Button variant="secondary" onPress={onSaveDraft} disabled={saving}>
-          {saving ? 'Saving draft...' : 'Save draft'}
+          {saving ? 'Saving' : 'Save'}
         </Button>
         <Button onPress={onPublish} disabled={saving}>
-          {saving ? 'Publishing...' : 'Publish to client'}
+          {saving ? 'Publishing' : 'Publish'}
         </Button>
       </View>
     </View>

@@ -18,12 +18,12 @@ export function getInvitationIsPublished(invitation: InvitationRevisionPointers)
 
 export function getInvitationPublishActionLabel(invitation: InvitationRevisionPointers): string {
   if (!getInvitationIsPublished(invitation)) {
-    return 'Publish to client';
+    return 'Publish';
   }
   if (getInvitationHasUnpublishedChanges(invitation)) {
-    return 'Publish changes to client';
+    return 'Publish';
   }
-  return 'Resend invite email';
+  return 'Resend';
 }
 
 export function getInvitationPublishConfirmTitle(invitation: InvitationRevisionPointers): string {
@@ -51,9 +51,9 @@ export function getInvitationPublishConfirmLabel(invitation: InvitationRevisionP
     return 'Publish';
   }
   if (getInvitationHasUnpublishedChanges(invitation)) {
-    return 'Publish changes';
+    return 'Publish';
   }
-  return 'Send email';
+  return 'Send';
 }
 
 export function getPublishedRevision(

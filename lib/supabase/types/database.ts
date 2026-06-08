@@ -2306,6 +2306,19 @@ export interface Database {
         };
         Returns: Json;
       };
+      start_leads_export_job: {
+        Args: {
+          p_account_id: string;
+          p_source: string;
+          p_global_lead_ids?: string[] | null;
+          p_list_id?: string | null;
+          p_query?: Json;
+          p_column_layout?: Json;
+          p_total_count?: number | null;
+          p_filename_base?: string | null;
+        };
+        Returns: string;
+      };
       start_add_to_campaign_job: {
         Args: {
           p_account_id: string;

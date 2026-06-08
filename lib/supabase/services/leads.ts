@@ -686,6 +686,66 @@ export async function getCampaignLeadTablePage(
   };
 }
 
+export async function fetchAllCampaignLeadIds(
+  campaignId: string,
+  query?: Omit<CampaignLeadTableQuery, 'limit' | 'offset'>,
+): Promise<{ leadIds: string[]; totalCount: number }> {
+  const sortBy = getCampaignLeadTableSortBy(query?.sortBy);
+  const ascending = query?.sortDirection === 'asc';
+  const pageSize = 500;
+  const leadIds: string[] = [];
+  let totalCount = 0;
+  const scopedLeadIds = await resolveCampaignLeadScopeIds(campaignId, query);
+  const scopedLeadIdsForQuery = scopedLeadIds ?? null;
+
+  if (scopedLeadIds?.length === 0) {
+    return { leadIds, totalCount };
+  }
+
+  if (campaignScopedLeadIdsNeedRpc(scopedLeadIdsForQuery)) {
+    for (let offset = 0; ; offset += pageSize) {
+      const { rows, totalCount: nextTotalCount } = await fetchCampaignLeadsTablePageRpc(
+        campaignId,
+        query,
+        scopedLeadIdsForQuery ?? [],
+        sortBy,
+        ascending,
+        pageSize,
+        offset,
+      );
+      if (offset === 0) {
+        totalCount = nextTotalCount;
+      }
+      if (rows.length === 0) break;
+      leadIds.push(...rows.map((lead) => lead.id));
+      if (rows.length < pageSize) break;
+    }
+    return { leadIds, totalCount };
+  }
+
+  for (let offset = 0; ; offset += pageSize) {
+    const leadsQuery = buildCampaignLeadTableQuery(campaignId, query, offset === 0, scopedLeadIdsForQuery);
+    const { data, error, count } = await leadsQuery
+      .order(sortBy, { ascending, nullsFirst: !ascending })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) {
+      throw new Error(`Failed to fetch leads: ${error.message}`);
+    }
+
+    if (offset === 0) {
+      totalCount = count ?? 0;
+    }
+
+    const leadRows = (data ?? []) as CampaignLeadBaseRow[];
+    if (leadRows.length === 0) break;
+    leadIds.push(...leadRows.map((lead) => lead.id));
+    if (leadRows.length < pageSize) break;
+  }
+
+  return { leadIds, totalCount };
+}
+
 export async function getCampaignLeadTableExportRows(
   campaignId: string,
   query?: Omit<CampaignLeadTableQuery, 'limit' | 'offset'>,

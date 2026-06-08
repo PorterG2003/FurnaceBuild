@@ -7,6 +7,9 @@ import {
 } from './fetch-leads-by-global-ids';
 import { resolvePersonSummaryCellValue } from '@/lib/leads/columns/resolveCellValue';
 import type { LeadsColumnDef } from '@/lib/leads/columns/types';
+import { EXPLORER_COLUMNS, type LeadsTableRow } from '@/lib/leads/columns';
+import { buildExplorerExportRows } from '@/lib/leads/export/buildExportRows';
+import { LEADS_EXPORT_CHUNK_SIZE } from '@/lib/leads/export/constants';
 import type {
   LeadsCellValue,
   LeadsListDefinition,
@@ -272,6 +275,56 @@ export async function fetchAllAccountLeadGlobalLeadIds(
   }
 
   return { globalLeadIds, totalCount };
+}
+
+async function fetchAccountLeadPeopleForExportSelection(
+  accountId: string,
+  query: Omit<AccountLeadExplorerQuery, 'limit' | 'offset'>,
+  globalLeadIds: string[],
+): Promise<AccountLeadPersonSummary[]> {
+  const rows: AccountLeadPersonSummary[] = [];
+
+  for (const idChunk of chunk(unique(globalLeadIds.filter(Boolean)), LEADS_EXPORT_CHUNK_SIZE)) {
+    const page = await getAccountLeadPeoplePage(accountId, {
+      ...query,
+      globalLeadIds: idChunk,
+      limit: idChunk.length,
+      offset: 0,
+    });
+    rows.push(...page.rows);
+  }
+
+  return rows;
+}
+
+export async function getAccountLeadExplorerExportRows(
+  accountId: string,
+  params: {
+    query?: Omit<AccountLeadExplorerQuery, 'limit' | 'offset'>;
+    columns?: LeadsColumnDef[];
+    globalLeadIds?: string[];
+  } = {},
+): Promise<LeadsTableRow[]> {
+  const query = params.query ?? {};
+  const columns = params.columns ?? EXPLORER_COLUMNS;
+
+  if (params.globalLeadIds?.length) {
+    const people = await fetchAccountLeadPeopleForExportSelection(accountId, query, params.globalLeadIds);
+    return buildExplorerExportRows(people, columns);
+  }
+
+  const rows: LeadsTableRow[] = [];
+  for (let offset = 0; ; offset += EXPLORER_PAGE_MAX) {
+    const page = await getAccountLeadPeoplePage(accountId, {
+      ...query,
+      limit: EXPLORER_PAGE_MAX,
+      offset,
+    });
+    rows.push(...buildExplorerExportRows(page.rows, columns));
+    if (page.rows.length < EXPLORER_PAGE_MAX) break;
+  }
+
+  return rows;
 }
 
 export function buildExplorerRows(

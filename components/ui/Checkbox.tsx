@@ -12,6 +12,7 @@ interface CheckboxProps {
   checked: boolean;
   onPress: (event?: any) => void;
   indeterminate?: boolean;
+  disabled?: boolean;
   size?: number;
   circleSize?: number;
 }
@@ -20,6 +21,7 @@ export function Checkbox({
   checked,
   onPress,
   indeterminate = false,
+  disabled = false,
   size = 20,
   circleSize = 40,
 }: CheckboxProps) {
@@ -62,6 +64,9 @@ export function Checkbox({
   }, [checked, checkboxScale]);
 
   const handlePress = (e?: any) => {
+    if (disabled) {
+      return;
+    }
     if (e?.stopPropagation) {
       e.stopPropagation();
     }
@@ -93,7 +98,9 @@ export function Checkbox({
         height: circleSize,
         alignItems: 'center',
         justifyContent: 'center',
+        opacity: disabled ? 0.5 : 1,
       }}
+      disabled={disabled}
       // @ts-ignore - web-only prop
       onMouseEnter={() => Platform.OS === 'web' && setIsHovered(true)}
       onMouseLeave={() => Platform.OS === 'web' && setIsHovered(false)}

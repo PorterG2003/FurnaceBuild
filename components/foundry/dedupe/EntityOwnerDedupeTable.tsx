@@ -78,6 +78,7 @@ export function EntityOwnerDedupeTable({
   loading,
   selectedKeys,
   onSelectionChange,
+  onFetchViewKeys,
   emptyMessage,
   currentPage,
   totalItems,
@@ -90,6 +91,7 @@ export function EntityOwnerDedupeTable({
   loading?: boolean;
   selectedKeys: Set<string>;
   onSelectionChange: (keys: Set<string>) => void;
+  onFetchViewKeys?: () => Promise<string[]>;
   emptyMessage?: string;
   currentPage?: number;
   totalItems?: number;
@@ -123,6 +125,7 @@ export function EntityOwnerDedupeTable({
       selectable
       selectedKeys={selectedKeys}
       onSelectionChange={onSelectionChange}
+      onFetchViewKeys={onFetchViewKeys}
       equalColumnWidths={false}
       itemsPerPage={50}
       emptyMessage={emptyMessage ?? 'No contacts match these filters.'}

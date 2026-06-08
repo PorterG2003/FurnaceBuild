@@ -89,7 +89,7 @@ test('resolvePublicAccessDialog returns sign-out continuation for signed-in wron
   });
 
   assert.equal(dialog.title, 'Wrong account signed in');
-  assert.equal(dialog.primaryLabel, 'Sign out and continue');
+  assert.equal(dialog.primaryLabel, 'Signout');
   assert.deepEqual(dialog.primaryAction, {
     kind: 'sign_out_and_navigate',
     href: '/auth?invitation_id=invite-123&email=owner%40example.com',

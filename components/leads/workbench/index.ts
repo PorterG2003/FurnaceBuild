@@ -11,6 +11,7 @@ export {
   LeadsResumeMembershipsModal,
 } from './LeadsEnrollmentActionModal';
 export { LeadsImportCsvModal } from './LeadsImportCsvModal';
+export { LeadsExportModal } from './LeadsExportModal';
 export { LeadsCreateListFromSelectionModal } from './LeadsCreateListFromSelectionModal';
 export { LeadsSaveViewAsListModal } from './LeadsSaveViewAsListModal';
 export {

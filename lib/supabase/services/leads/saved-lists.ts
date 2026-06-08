@@ -1,7 +1,8 @@
 import { supabase } from '../../client';
 import { generateGlobalLeadId } from '@/lib/leads';
 import { buildSavedListExportRows, mapAccountSummaryToSavedListPeopleRow } from '@/lib/leads/export/buildExportRows';
-import { LEADS_EXPORT_CHUNK_SIZE } from '@/lib/leads/export/constants';
+import { shouldContinueSavedListExportPagination } from '@/lib/leads/export/pagination';
+import { LEADS_EXPORT_CHUNK_SIZE, SAVED_LIST_PAGE_MAX } from '@/lib/leads/export/constants';
 import { DEFAULT_SAVED_LIST_COLUMNS } from '@/lib/leads/columns/defaults';
 import { columnsNeedWorkbenchDataset, layoutNeedsReplyActivity, type LeadsTableRow } from '@/lib/leads/columns';
 import {
@@ -25,8 +26,6 @@ import type {
 
 const POSTGREST_IN_CHUNK_SIZE = 100;
 const POSTGREST_RANGE_PAGE_SIZE = 500;
-/** Must match LEAST(..., 500) cap in saved_lead_list_people_page RPC. */
-const SAVED_LIST_PAGE_MAX = 500;
 
 export interface AddMembersToSavedLeadListResult {
   added: number;
@@ -775,7 +774,7 @@ export async function fetchAllSavedLeadListGlobalLeadIds(
       globalLeadIds.push(row.globalLeadId);
     }
 
-    if (page.rows.length < SAVED_LIST_PAGE_MAX) {
+    if (!shouldContinueSavedListExportPagination(page.rows.length)) {
       break;
     }
     offset += SAVED_LIST_PAGE_MAX;
@@ -866,7 +865,7 @@ export async function getSavedLeadListExportRows(
         workbenchPeople: nextDataset.people,
       }),
     );
-    if (page.rows.length < SAVED_LIST_PAGE_MAX) break;
+    if (!shouldContinueSavedListExportPagination(page.rows.length)) break;
   }
 
   return rows;

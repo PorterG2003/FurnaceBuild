@@ -22,8 +22,9 @@ import type {
   SavedLeadListPeoplePageRow,
   SavedLeadListPeopleQuery,
 } from '../../../lib/leads/export-server/types.js';
-import { LEADS_EXPORT_CHUNK_SIZE } from '../../../lib/leads/export/constants.js';
+import { LEADS_EXPORT_CHUNK_SIZE, SAVED_LIST_PAGE_MAX } from '../../../lib/leads/export/constants.js';
 import { formatLeadsExportFilename } from '../../../lib/leads/export/formatLeadsExportFilename.js';
+import { shouldContinueSavedListExportPagination } from '../../../lib/leads/export/pagination.js';
 import { createServiceRoleClient } from '../../../lib/client-api/service-role.js';
 import type { Json } from '../../../lib/supabase/types/database.js';
 import { fetchLeadsByGlobalLeadIdsWithClient } from '../../../lib/supabase/services/leads/fetch-leads-by-global-ids-with-client.js';
@@ -599,10 +600,10 @@ async function buildSavedListRowsForJob(
   let processed = 0;
   let total = totalCountHint;
 
-  for (let offset = 0; ; offset += EXPORT_PAGE_SIZE) {
+  for (let offset = 0; ; offset += SAVED_LIST_PAGE_MAX) {
     const page = await getSavedLeadListPeoplePageWithClient(db, accountId, listId, {
       ...query,
-      limit: EXPORT_PAGE_SIZE,
+      limit: SAVED_LIST_PAGE_MAX,
       offset,
     });
     if (offset === 0) total = total || page.totalCount;
@@ -624,7 +625,7 @@ async function buildSavedListRowsForJob(
     );
     processed += page.rows.length;
     await onProgress(processed, total);
-    if (page.rows.length < EXPORT_PAGE_SIZE) break;
+    if (!shouldContinueSavedListExportPagination(page.rows.length)) break;
   }
 
   return rows;

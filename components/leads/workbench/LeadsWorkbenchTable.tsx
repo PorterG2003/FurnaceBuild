@@ -75,6 +75,7 @@ export function LeadsWorkbenchTable({
   columns,
   selectedKeys,
   onSelectionChange,
+  onFetchViewKeys,
   onMoveColumnLeft,
   onMoveColumnRight,
   selectable = true,
@@ -99,6 +100,7 @@ export function LeadsWorkbenchTable({
   columns: LeadsColumnDef[];
   selectedKeys: Set<string>;
   onSelectionChange: (next: Set<string>) => void;
+  onFetchViewKeys?: () => Promise<string[]>;
   onMoveColumnLeft: (columnId: string) => void;
   onMoveColumnRight: (columnId: string) => void;
   selectable?: boolean;
@@ -245,6 +247,7 @@ export function LeadsWorkbenchTable({
       selectable={selectable}
       selectedKeys={selectedKeys}
       onSelectionChange={onSelectionChange}
+      onFetchViewKeys={onFetchViewKeys}
       selectAllScope={selectAllScope}
       pagination={pagination}
       paginationMode={paginationMode}

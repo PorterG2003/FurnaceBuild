@@ -19,7 +19,7 @@ import {
   type ManualEntityOwnersFilters,
 } from '@/components/foundry/dedupe/dedupeManualFilterTypes';
 import { useDebouncedValue } from '@/components/foundry/dedupe/useDebouncedValue';
-import { fetchManualEntityOwners, postEntityOwnerMerge } from '@/lib/foundry/registry-client';
+import { fetchAllManualEntityOwnerIds, fetchManualEntityOwners, postEntityOwnerMerge } from '@/lib/foundry/registry-client';
 import type { RegistryEntityOwnerRow } from '@/lib/foundry/registry-types';
 
 const PAGE_SIZE = 50;
@@ -61,6 +61,25 @@ export function ManualEntityOwnersPanel() {
     [debouncedQ, filters, page, sortColumn, sortDirection],
   );
 
+  const handleFetchViewKeys = useCallback(async () => {
+    const { entityOwnerIds } = await fetchAllManualEntityOwnerIds({
+      q: debouncedQ.length >= 2 ? debouncedQ : undefined,
+      is_current: filters.currentOnly ? true : undefined,
+      has_owner_normalized_key: presenceFilterToBool(filters.ownerNormalizedKey),
+      state_entity_id: filters.stateEntityId.trim() || undefined,
+      sort_by: sortColumn,
+      sort_direction: sortDirection,
+    });
+    return entityOwnerIds;
+  }, [
+    debouncedQ,
+    filters.currentOnly,
+    filters.ownerNormalizedKey,
+    filters.stateEntityId,
+    sortColumn,
+    sortDirection,
+  ]);
+
   const loadPage = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -83,7 +102,7 @@ export function ManualEntityOwnersPanel() {
 
   useEffect(() => {
     setSelectedKeys(new Set());
-  }, [page]);
+  }, [debouncedQ, filters, sortColumn, sortDirection]);
 
   const selectedRows = useMemo(() => rows.filter((row) => selectedKeys.has(row.id)), [rows, selectedKeys]);
   const deleteTargetId = getSelectedDeleteTargetId(selectedRows);
@@ -151,6 +170,7 @@ export function ManualEntityOwnersPanel() {
         loading={loading}
         selectedKeys={selectedKeys}
         onSelectionChange={setSelectedKeys}
+        onFetchViewKeys={handleFetchViewKeys}
         emptyMessage={loading ? 'Loading contacts…' : 'No contacts match these filters.'}
         currentPage={page}
         totalItems={safeTotalCount(totalCount)}

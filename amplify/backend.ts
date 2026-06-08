@@ -33,6 +33,7 @@ import { platformCommerce } from './functions/platformCommerce/resource';
 import { stripeWebhook } from './functions/stripeWebhook/resource';
 import { clientApi } from './functions/clientApi/resource';
 import { clientApiBulkImport } from './functions/clientApiBulkImport/resource';
+import { leadsExportJob } from './functions/leadsExportJob/resource';
 import { fluxGenerate } from './functions/fluxGenerate/resource';
 import { fluxEditorChat } from './functions/fluxEditorChat/resource';
 import { googlePlaces } from './functions/googlePlaces/resource';
@@ -75,6 +76,7 @@ const backend = defineBackend({
   stripeWebhook,
   clientApi,
   clientApiBulkImport,
+  leadsExportJob,
   fluxGenerate,
   fluxEditorChat,
   googlePlaces,
@@ -1373,14 +1375,85 @@ processWebhookLambda.addEventSource(
 );
 
 const clientApiBulkImportLambda = backend.clientApiBulkImport.resources.lambda as lambda.Function;
+const leadsExportJobLambda = backend.leadsExportJob.resources.lambda as lambda.Function;
+const clientApiStack = clientApiLambda.stack;
 clientApiBulkImportLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 clientApiBulkImportLambda.addEnvironment('WEBHOOK_QUEUE_URL', webhookQueue.queueUrl);
+leadsExportJobLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 importQueue.grantConsumeMessages(clientApiBulkImportLambda);
 webhookQueue.grantSendMessages(clientApiBulkImportLambda);
 clientApiBulkImportLambda.addEventSource(
   new lambdaEventSources.SqsEventSource(importQueue, {
     batchSize: 1,
     reportBatchItemFailures: true,
+  }),
+);
+
+const leadsExportBucket = new s3.Bucket(clientApiStack, 'LeadsExportBucket', {
+  blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+  encryption: s3.BucketEncryption.S3_MANAGED,
+  enforceSSL: true,
+  versioned: false,
+  cors: [
+    {
+      allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.HEAD, s3.HttpMethods.PUT],
+      allowedOrigins: ['*'],
+      allowedHeaders: ['*'],
+      exposedHeaders: ['ETag'],
+    },
+  ],
+  lifecycleRules: [
+    {
+      prefix: 'leads-exports/',
+      expiration: cdk.Duration.days(3),
+    },
+  ],
+  removalPolicy: cdk.RemovalPolicy.RETAIN,
+});
+leadsExportBucket.grantReadWrite(leadsExportJobLambda);
+leadsExportJobLambda.addEnvironment('LEADS_EXPORT_BUCKET', leadsExportBucket.bucketName);
+
+const leadsExportRun = new sfnTasks.LambdaInvoke(clientApiStack, 'LeadsExportRun', {
+  lambdaFunction: leadsExportJobLambda,
+  payload: sfn.TaskInput.fromObject({
+    'jobId.$': '$.jobId',
+  }),
+  payloadResponseOnly: true,
+});
+const leadsExportFail = new sfnTasks.LambdaInvoke(clientApiStack, 'LeadsExportFail', {
+  lambdaFunction: leadsExportJobLambda,
+  payload: sfn.TaskInput.fromObject({
+    action: 'fail',
+    'jobId.$': '$.jobId',
+    'message.$': '$.error.Cause',
+  }),
+  payloadResponseOnly: true,
+});
+const leadsExportDone = new sfn.Succeed(clientApiStack, 'LeadsExportDone');
+const leadsExportAfterFail = new sfn.Succeed(clientApiStack, 'LeadsExportAfterFail');
+leadsExportRun.next(leadsExportDone);
+leadsExportFail.next(leadsExportAfterFail);
+leadsExportRun.addCatch(leadsExportFail, {
+  errors: [sfn.Errors.ALL],
+  resultPath: '$.error',
+});
+const leadsExportStateMachineName = `leads-export-${clientApiWorkerEnvironment}`;
+const leadsExportStateMachine = new sfn.StateMachine(clientApiStack, 'LeadsExportSm', {
+  stateMachineName: leadsExportStateMachineName,
+  definitionBody: sfn.DefinitionBody.fromChainable(leadsExportRun),
+});
+const leadsExportStateMachineArn = cdk.Stack.of(clientApiStack).formatArn({
+  service: 'states',
+  resource: 'stateMachine',
+  resourceName: leadsExportStateMachineName,
+  arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+});
+clientApiLambda.addEnvironment('LEADS_EXPORT_STATE_MACHINE_ARN', leadsExportStateMachineArn);
+clientApiLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    sid: 'ClientApiStartLeadsExportExecution',
+    actions: ['states:StartExecution'],
+    resources: [leadsExportStateMachineArn],
   }),
 );
 
@@ -1401,7 +1474,6 @@ const clientApiWafWebAclArn =
     : undefined;
 // Co-locate CloudFront with the clientApi Lambda to avoid a function <-> root stack cycle:
 // distribution needs the function URL; the function needs CLIENT_API_BASE_URL from the distribution.
-const clientApiStack = clientApiLambda.stack;
 const clientApiCachePolicy = new cloudfront.CachePolicy(clientApiStack, 'ClientApiCachePolicy', {
   defaultTtl: cdk.Duration.seconds(0),
   minTtl: cdk.Duration.seconds(0),

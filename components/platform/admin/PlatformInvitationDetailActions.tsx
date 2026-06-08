@@ -108,12 +108,12 @@ export function PlatformInvitationDetailDesktopActions({
       ) : null}
       {invitation.published_revision_number ? (
         <Button variant="outline" size="sm" onPress={onCopyInvite}>
-          Copy Invite Link
+          Copy
         </Button>
       ) : null}
       {invitation.published_revision_number ? (
         <Button variant="outline" size="sm" onPress={onOpenInvite}>
-          Open Invite
+          Open
         </Button>
       ) : null}
       {canRevokeInvitation ? (
@@ -191,7 +191,7 @@ export function PlatformInvitationDetailMobileActions(props: PlatformInvitationD
   if (invitation.published_revision_number) {
     rows.push({
       key: 'copy',
-      label: 'Copy Invite Link',
+      label: 'Copy',
       onPress: () => {
         void onCopyInvite();
         closeSheet();
@@ -199,7 +199,7 @@ export function PlatformInvitationDetailMobileActions(props: PlatformInvitationD
     });
     rows.push({
       key: 'open',
-      label: 'Open Invite',
+      label: 'Open',
       onPress: () => {
         onOpenInvite();
         closeSheet();

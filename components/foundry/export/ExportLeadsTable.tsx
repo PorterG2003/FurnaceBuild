@@ -23,6 +23,7 @@ export function ExportLeadsTable({
   selectable,
   selectedKeys,
   onSelectionChange,
+  onFetchViewKeys,
   currentPage,
   totalItems,
   onPageChange,
@@ -33,6 +34,7 @@ export function ExportLeadsTable({
   selectable?: boolean;
   selectedKeys?: Set<string>;
   onSelectionChange?: (keys: Set<string>) => void;
+  onFetchViewKeys?: () => Promise<string[]>;
   currentPage: number;
   totalItems: number;
   onPageChange: (page: number) => void;
@@ -147,6 +149,7 @@ export function ExportLeadsTable({
       selectable={selectable}
       selectedKeys={selectedKeys}
       onSelectionChange={onSelectionChange}
+      onFetchViewKeys={onFetchViewKeys}
     />
   );
 }

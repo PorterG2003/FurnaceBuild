@@ -23,6 +23,7 @@ import { buildAmendmentAcceptUrl } from '@/lib/platform/amendment/acceptFlow';
 import { isPendingAmendmentStatus } from '@/lib/platform/amendment/acceptFlow';
 import {
   getDefaultPreviewRevisionNumber,
+  getInvitationHasUnpublishedChanges,
   getInvitationPublishConfirmLabel,
 } from '@/lib/platform/invite/invitationAdminState';
 import type { PlatformInvitePreviewViewport } from '@/components/platform/invite/PlatformInvitePreviewFrame';
@@ -309,9 +310,9 @@ export function useAccountManagementDetail({
       });
       const publishLabel = getInvitationPublishConfirmLabel(invitation);
       toast.success(
-        publishLabel === 'Send email'
+        publishLabel === 'Send'
           ? 'Invite email sent.'
-          : publishLabel === 'Publish changes'
+          : getInvitationHasUnpublishedChanges(invitation)
             ? 'Changes published to client.'
             : 'Invite published to client.',
       );

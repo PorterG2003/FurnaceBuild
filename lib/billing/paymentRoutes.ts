@@ -56,13 +56,13 @@ export const PLATFORM_PAYMENT_ROUTE_OPTIONS: readonly PlatformPaymentRouteOption
     id: 'card',
     label: 'Card',
     description: 'Pay instantly with a credit or debit card.',
-    checkoutButtonLabel: 'Continue to card payment',
+    checkoutButtonLabel: 'Pay',
   },
   {
     id: 'ach',
     label: 'ACH',
     description: 'Pay from a US bank account.',
-    checkoutButtonLabel: 'Continue to ACH payment',
+    checkoutButtonLabel: 'Pay',
   },
 ] as const;
 

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildPublicAccessRedirectHref,
+  hasPublicAccessParams,
   parsePublicAccessState,
   resolvePublicAccessDialog,
   stripPublicAccessParams,
@@ -74,6 +75,18 @@ test('parsePublicAccessState preserves legacy platform invite access_issue suppo
       resourceId: 'platform-456',
     },
   );
+});
+
+test('hasPublicAccessParams accepts valid access redirects', () => {
+  assert.equal(
+    hasPublicAccessParams('?access_flow=platform_invite&access_issue=resource_completed'),
+    true,
+  );
+});
+
+test('hasPublicAccessParams rejects incomplete or unrelated query strings', () => {
+  assert.equal(hasPublicAccessParams('?access_flow=platform_invite'), false);
+  assert.equal(hasPublicAccessParams('?foo=bar'), false);
 });
 
 test('resolvePublicAccessDialog returns sign-out continuation for signed-in wrong-email states', () => {

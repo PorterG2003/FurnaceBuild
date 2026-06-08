@@ -1,4 +1,5 @@
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
+import { hasPublicAccessParams } from '@/lib/publicAccessState';
 
 /**
  * True when the web app is running as an installed PWA / standalone window
@@ -61,13 +62,18 @@ export function isAuthInviteFlowRoute(pathname: string, search = ''): boolean {
   return params.has('invitation_id') || params.has('amendment_id');
 }
 
+export function isPublicAccessDialogRoute(search = ''): boolean {
+  return hasPublicAccessParams(search);
+}
+
 /** Routes that must not be redirected to `/install` on mobile web. */
 export function isInstallGateExemptRoute(pathname: string, search = ''): boolean {
   const path = normalizeInstallGatePathname(pathname);
   if (path === '/install') return true;
   if (isFluxPublicLandingRoute(pathname)) return true;
   if (isPublicAcceptRoute(pathname)) return true;
-  return isAuthInviteFlowRoute(pathname, search);
+  if (isAuthInviteFlowRoute(pathname, search)) return true;
+  return isPublicAccessDialogRoute(search);
 }
 
 /** @deprecated Use {@link isInstallGateExemptRoute} */

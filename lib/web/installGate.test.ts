@@ -26,6 +26,44 @@ describe('isInstallGateExemptRoute', () => {
     assert.strictEqual(isInstallGateExemptRoute('/auth', '?amendment_id=abc'), true);
   });
 
+  it('exempts routes carrying valid public access dialog params', () => {
+    assert.strictEqual(
+      isInstallGateExemptRoute(
+        '/auth',
+        '?access_flow=platform_invite&access_issue=resource_completed',
+      ),
+      true,
+    );
+    assert.strictEqual(
+      isInstallGateExemptRoute(
+        '/',
+        '?access_flow=platform_invite&access_issue=resource_completed',
+      ),
+      true,
+    );
+    assert.strictEqual(
+      isInstallGateExemptRoute(
+        '/account',
+        '?access_flow=team_invite&access_issue=resource_completed',
+      ),
+      true,
+    );
+    assert.strictEqual(
+      isInstallGateExemptRoute(
+        '/auth',
+        '?access_flow=platform_invite&access_issue=wrong_email&access_resource_id=abc',
+      ),
+      true,
+    );
+    assert.strictEqual(
+      isInstallGateExemptRoute(
+        '/auth',
+        '?access_flow=account_amendment&access_issue=not_owner',
+      ),
+      true,
+    );
+  });
+
   it('does not exempt other app routes', () => {
     assert.strictEqual(isInstallGateExemptRoute('/auth'), false);
     assert.strictEqual(isInstallGateExemptRoute('/'), false);
@@ -33,6 +71,10 @@ describe('isInstallGateExemptRoute', () => {
     assert.strictEqual(isInstallGateExemptRoute('/account'), false);
     assert.strictEqual(isInstallGateExemptRoute('/flux'), false);
     assert.strictEqual(isInstallGateExemptRoute('/preview'), false);
+    assert.strictEqual(
+      isInstallGateExemptRoute('/campaigns', '?access_flow=platform_invite'),
+      false,
+    );
   });
 });
 

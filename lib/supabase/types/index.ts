@@ -67,6 +67,10 @@ export type BillingAdjustmentUpdate = Database['public']['Tables']['billing_adju
 export type Mailbox = Database['public']['Tables']['mailboxes']['Row'];
 export type MailboxInsert = Database['public']['Tables']['mailboxes']['Insert'];
 export type MailboxUpdate = Database['public']['Tables']['mailboxes']['Update'];
+export type MailboxTag = Database['public']['Tables']['mailbox_tags']['Row'];
+export type MailboxTagInsert = Database['public']['Tables']['mailbox_tags']['Insert'];
+export type MailboxTagUpdate = Database['public']['Tables']['mailbox_tags']['Update'];
+export type MailboxTagAssignment = Database['public']['Tables']['mailbox_tag_assignments']['Row'];
 
 export type EmailThread = Database['public']['Tables']['email_threads']['Row'];
 export type EmailThreadInsert = Database['public']['Tables']['email_threads']['Insert'];

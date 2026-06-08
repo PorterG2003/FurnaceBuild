@@ -1,19 +1,29 @@
-import { Text, View } from 'react-native';
-import { PencilIcon, PlayIcon, TrashIcon } from 'react-native-heroicons/outline';
-import { IconButton } from '@/components/ui/icon-button';
+import { ActivityIndicator, Text, View } from 'react-native';
+import {
+  EllipsisHorizontalIcon,
+  PencilIcon,
+  PlayIcon,
+  TagIcon,
+  TrashIcon,
+} from 'react-native-heroicons/outline';
+import { RowOverflowMenu } from '@/components/ui/RowOverflowMenu';
+import { TagChipRow } from '@/components/tags';
 import { formatMailboxLastSent, formatMailboxMinGap, formatMailboxUsage } from '@/lib/mailboxes/overview-format';
 import { MailboxStatusPill } from './MailboxStatusPill';
 import type { TableColumn } from '@/components/ui/DataTable';
 import type { MailboxOverview } from '@/lib/supabase/services/mailboxes';
+import type { MailboxTag } from '@/lib/supabase/services/mailbox-tags';
 
 interface BuildMailboxOverviewColumnsOptions {
   emailLabel?: string;
   todayLabel?: string;
   includeActions?: boolean;
   testingMailboxId?: string | null;
+  mailboxTagsMap?: Record<string, MailboxTag[]>;
   onTestMailbox?: (mailbox: MailboxOverview) => void;
   onEditMailbox?: (mailbox: MailboxOverview) => void;
   onDeleteMailbox?: (mailbox: MailboxOverview) => void;
+  onManageTags?: (mailbox: MailboxOverview) => void;
 }
 
 export function buildMailboxOverviewColumns({
@@ -21,9 +31,11 @@ export function buildMailboxOverviewColumns({
   todayLabel = 'Today Sent',
   includeActions = false,
   testingMailboxId = null,
+  mailboxTagsMap = {},
   onTestMailbox,
   onEditMailbox,
   onDeleteMailbox,
+  onManageTags,
 }: BuildMailboxOverviewColumnsOptions = {}): TableColumn<MailboxOverview>[] {
   const columns: TableColumn<MailboxOverview>[] = [
     {
@@ -40,12 +52,15 @@ export function buildMailboxOverviewColumns({
     {
       key: 'email',
       label: emailLabel,
-      minWidth: 240,
-      flex: 2.2,
+      minWidth: 280,
+      flex: 2.7,
       render: (mailbox) => (
-        <Text className="text-gray-400 font-instrument text-sm" numberOfLines={2}>
-          {mailbox.email_address}
-        </Text>
+        <View className="gap-2">
+          <Text className="text-gray-400 font-instrument text-sm" numberOfLines={2}>
+            {mailbox.email_address}
+          </Text>
+          <TagChipRow tags={mailboxTagsMap[mailbox.id] ?? []} maxVisible={3} />
+        </View>
       ),
     },
     {
@@ -121,32 +136,56 @@ export function buildMailboxOverviewColumns({
   columns.push({
     key: 'actions',
     label: 'Actions',
-    minWidth: 234,
-    flex: 1.8,
-    render: (mailbox) => (
-      <View className="flex-row gap-1.5">
-        <IconButton
-          variant="secondary"
-          size="sm"
-          icon={PlayIcon}
-          label={testingMailboxId === mailbox.id ? 'Testing...' : 'Test'}
-          onPress={() => onTestMailbox?.(mailbox)}
-          disabled={testingMailboxId === mailbox.id}
+    minWidth: 100,
+    flex: 0.8,
+    align: 'end',
+    render: (mailbox) => {
+      if (testingMailboxId === mailbox.id) {
+        return (
+          <View className="flex-row items-center gap-2 justify-end">
+            <ActivityIndicator size="small" color="#F3440D" />
+            <Text className="text-gray-400 font-instrument text-sm">Testing…</Text>
+          </View>
+        );
+      }
+
+      return (
+        <RowOverflowMenu
+          items={[
+            {
+              key: 'test',
+              label: 'Test connection',
+              icon: PlayIcon,
+              onPress: () => onTestMailbox?.(mailbox),
+            },
+            {
+              key: 'tags',
+              label: 'Manage tags',
+              icon: TagIcon,
+              onPress: () => onManageTags?.(mailbox),
+            },
+            {
+              key: 'edit',
+              label: 'Edit mailbox',
+              icon: PencilIcon,
+              onPress: () => onEditMailbox?.(mailbox),
+            },
+            {
+              key: 'delete',
+              label: 'Delete mailbox',
+              icon: TrashIcon,
+              tone: 'destructive',
+              onPress: () => onDeleteMailbox?.(mailbox),
+            },
+          ]}
+          menuMinWidth={184}
+          triggerIcon={EllipsisHorizontalIcon}
+          triggerAccessibilityLabel="Mailbox actions"
+          horizontalAlign="end"
+          sheetTitle={mailbox.display_name || mailbox.email_address}
         />
-        <IconButton
-          variant="secondary"
-          size="sm"
-          icon={PencilIcon}
-          onPress={() => onEditMailbox?.(mailbox)}
-        />
-        <IconButton
-          variant="destructive"
-          size="sm"
-          icon={TrashIcon}
-          onPress={() => onDeleteMailbox?.(mailbox)}
-        />
-      </View>
-    ),
+      );
+    },
   });
 
   return columns;

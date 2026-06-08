@@ -7,6 +7,7 @@ interface DataSenderNodeData {
   endpoint_url?: string;
   payload?: string;
   on_failure?: 'continue' | 'stop';
+  readOnly?: boolean;
 }
 
 interface DataSenderNodeProps {
@@ -25,9 +26,22 @@ function DataSenderNode({ data, selected, id }: DataSenderNodeProps) {
       (window as any).__reactFlowEditNode?.(id, 'dataSender');
     }
   };
+
+  const handleDelete = () => {
+    if (typeof window !== 'undefined') {
+      (window as any).__reactFlowDeleteNode?.(id);
+    }
+  };
   
   return (
-    <BaseNode label={displayLabel} onEdit={handleEdit} icon={IconComponent && <IconComponent size={16} color="#f85102" />}>
+    <BaseNode
+      label={displayLabel}
+      onEdit={handleEdit}
+      onDelete={handleDelete}
+      icon={IconComponent && <IconComponent size={16} color="#f85102" />}
+      showActions={!data.readOnly}
+      nodeLabel={displayLabel}
+    >
       {endpoint && (
         <div style={{
           color: '#9CA3AF',

@@ -83,6 +83,23 @@ input[type="password"]:focus {
   box-shadow: none !important;
 }
 
+/* Furnace flow canvas - shared builder and read-only diagram */
+.furnace-flow-canvas {
+  --xy-background-color-default: #121212;
+  background-color: #121212;
+}
+
+.furnace-flow-canvas--contained {
+  --xy-background-color-default: #1A1A1A;
+  background-color: #1A1A1A;
+  border-radius: inherit;
+}
+
+.furnace-flow-dot-background {
+  z-index: 0;
+  border-radius: inherit;
+}
+
 /* React Flow node styling overrides - remove only React Flow's default wrapper styling */
 .react-flow__node {
   background: transparent !important;
@@ -168,13 +185,31 @@ input[type="password"]:focus {
   stroke-width: 2 !important;
 }
 
-.react-flow__edge.selected .react-flow__edge-path {
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge-deletable:hover .react-flow__edge-path,
+.furnace-flow-edge-path--active {
   stroke: #F3440D !important;
   stroke-width: 3 !important;
 }
 
 .react-flow__edge.selected .react-flow__edge-path:hover {
   stroke: #F3440D !important;
+}
+
+/* Deletable edges: ensure hover hit-testing works on the stroke */
+.react-flow__edge-deletable {
+  pointer-events: visibleStroke !important;
+}
+
+.furnace-edge-delete-btn {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-out;
+}
+
+.furnace-edge-delete-btn--visible {
+  opacity: 1;
+  pointer-events: all;
 }
 
 /* Breadcrumb hover effects */

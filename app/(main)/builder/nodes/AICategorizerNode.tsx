@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Handle } from './HandleWrapper';
 import { nodeIcons } from './nodeMetadata';
+import { FlowNodeActionsMenu } from '../components/FlowNodeActionsMenu';
 
 interface AICategorizerNodeData {
   label?: string;
   categories?: string[];
+  readOnly?: boolean;
 }
 
 interface AICategorizerNodeProps {
@@ -12,22 +14,6 @@ interface AICategorizerNodeProps {
   selected?: boolean;
   id?: string;
 }
-
-// Simple pencil icon SVG
-const PencilIcon = ({ size = 16, color = '#ffffff' }: { size?: number; color?: string }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke={color}
-    strokeWidth="2.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-  </svg>
-);
 
 export function AICategorizerNode({ data, selected, id }: AICategorizerNodeProps) {
   if (!Handle) return null;
@@ -40,6 +26,12 @@ export function AICategorizerNode({ data, selected, id }: AICategorizerNodeProps
   const handleEdit = () => {
     if (typeof window !== 'undefined') {
       (window as any).__reactFlowEditNode?.(id, 'aiCategorizer');
+    }
+  };
+
+  const handleDelete = () => {
+    if (typeof window !== 'undefined') {
+      (window as any).__reactFlowDeleteNode?.(id);
     }
   };
   
@@ -60,43 +52,25 @@ export function AICategorizerNode({ data, selected, id }: AICategorizerNodeProps
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Edit Button - Top Right Corner */}
-      {isHovered && handleEdit && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleEdit();
-          }}
+      {isHovered && !data.readOnly ? (
+        <div
           style={{
             position: 'absolute',
-            top: '-8px',
-            right: '-8px',
-            width: '24px',
-            height: '24px',
-            backgroundColor: 'rgba(42, 42, 42, 0.95)',
-            border: '1px solid #3A3A3A',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            padding: 0,
+            top: -8,
+            right: -8,
             zIndex: 1000,
-            transition: 'all 0.15s ease',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.4)',
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(42, 42, 42, 1)';
-            e.currentTarget.style.borderColor = '#4A4A4A';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(42, 42, 42, 0.95)';
-            e.currentTarget.style.borderColor = '#3A3A3A';
-          }}
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
         >
-          <PencilIcon size={12} color="#f85102" />
-        </button>
-      )}
+          <FlowNodeActionsMenu
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            label={displayLabel}
+          />
+        </div>
+      ) : null}
+
       <Handle
         type="target"
         position="top"

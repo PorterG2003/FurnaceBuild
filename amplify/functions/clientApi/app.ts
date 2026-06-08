@@ -27,6 +27,13 @@ import {
   getTagsForCampaignIds,
   listAccountCampaignTags,
 } from '../../../lib/client-api/campaign-tags.js';
+import {
+  applyMailboxTagPatch,
+  attachTagsToMailboxRow,
+  getMailboxIdsMatchingAnyTag,
+  getTagsForMailboxIds,
+  listAccountMailboxTags,
+} from '../../../lib/client-api/mailbox-tags.js';
 import { hashRequestBody } from '../../../lib/client-api/idempotency.js';
 import { startApiImportJob } from '../../../lib/client-api/jobs.js';
 import {
@@ -183,6 +190,23 @@ async function loadCampaignOrThrow(supabase: Supabase, accountId: string, campai
   }
   if (!data) {
     notFound('campaign_not_found', 'Campaign not found');
+  }
+  return data;
+}
+
+async function loadMailboxOrThrow(supabase: Supabase, accountId: string, mailboxId: string) {
+  const { data, error } = await supabase
+    .from('mailboxes')
+    .select('*')
+    .eq('id', mailboxId)
+    .eq('account_id', accountId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Failed to fetch mailbox: ${error.message}`);
+  }
+  if (!data) {
+    notFound('mailbox_not_found', 'Mailbox not found');
   }
   return data;
 }
@@ -1719,40 +1743,147 @@ app.delete('/v1/lead-lists/:id/members', async (c) => {
   );
 });
 
+app.get('/v1/mailbox-tags', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const tags = await listAccountMailboxTags(supabase, auth.accountId);
+  return jsonResponse(c, { data: tags }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/mailbox-tags', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = parseJsonBody<{ name?: string; color?: string | null }>(await c.req.text());
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) invalidRequest('validation_error', 'name is required');
+  const { data, error } = await supabase
+    .from('mailbox_tags')
+    .insert({
+      account_id: auth.accountId,
+      name,
+      color: body.color ?? null,
+    })
+    .select('id, name, color, created_at')
+    .single();
+  if (error) throw new Error(`Failed to create mailbox tag: ${error.message}`);
+  return jsonResponse(c, { data }, 201, c.get('rateLimitHeaders'));
+});
+
+app.patch('/v1/mailbox-tags/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const tagId = c.req.param('id');
+  const body = parseJsonBody<{ name?: string; color?: string | null }>(await c.req.text());
+  const updates: { name?: string; color?: string | null } = {};
+  if (typeof body.name === 'string') updates.name = body.name.trim();
+  if (body.color !== undefined) updates.color = body.color;
+  if (Object.keys(updates).length === 0) {
+    invalidRequest('validation_error', 'No mutable fields provided');
+  }
+  const { data, error } = await supabase
+    .from('mailbox_tags')
+    .update(updates)
+    .eq('id', tagId)
+    .eq('account_id', auth.accountId)
+    .select('id, name, color, created_at')
+    .single();
+  if (error) throw new Error(`Failed to update mailbox tag: ${error.message}`);
+  if (!data) notFound('tag_not_found', 'Mailbox tag not found');
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.delete('/v1/mailbox-tags/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const tagId = c.req.param('id');
+  const { data, error } = await supabase
+    .from('mailbox_tags')
+    .delete()
+    .eq('id', tagId)
+    .eq('account_id', auth.accountId)
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(`Failed to delete mailbox tag: ${error.message}`);
+  if (!data) notFound('tag_not_found', 'Mailbox tag not found');
+  return jsonResponse(c, { data: { id: data.id, deleted: true } }, 200, c.get('rateLimitHeaders'));
+});
+
 app.get('/v1/mailboxes', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
   const limit = parseIntQuery(c, 'limit', DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const offset = parseIntQuery(c, 'offset', 0);
-  const { data, error, count } = await supabase
+  const tagIdsParam = c.req.query('tag_ids')?.trim();
+  const tagFilterIds = tagIdsParam
+    ? tagIdsParam.split(',').map((value) => value.trim()).filter(Boolean)
+    : [];
+  let query = supabase
     .from('mailboxes')
     .select('*', { count: 'exact' })
     .eq('account_id', auth.accountId)
     .is('deleted_at', null)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+    .order('created_at', { ascending: false });
+  if (tagFilterIds.length > 0) {
+    const matchingIds = await getMailboxIdsMatchingAnyTag(supabase, auth.accountId, tagFilterIds);
+    if (matchingIds.length === 0) {
+      return jsonResponse(c, buildListPayload([], limit, offset, 0), 200, c.get('rateLimitHeaders'));
+    }
+    query = query.in('id', matchingIds);
+  }
+  const { data, error, count } = await query.range(offset, offset + limit - 1);
   if (error) throw new Error(`Failed to list mailboxes: ${error.message}`);
+  const rows = data ?? [];
+  const tagsMap = await getTagsForMailboxIds(
+    supabase,
+    rows.map((row) => row.id),
+  );
+  const enriched = rows.map((row) =>
+    toPublicMailbox(attachTagsToMailboxRow(row as Record<string, unknown>, tagsMap)),
+  );
   return jsonResponse(
     c,
-    buildListPayload((data ?? []).map((mailbox) => toPublicMailbox(mailbox as any)), limit, offset, count ?? 0),
+    buildListPayload(enriched, limit, offset, count ?? 0),
     200,
     c.get('rateLimitHeaders')
+  );
+});
+
+app.patch('/v1/mailboxes/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const mailbox = await loadMailboxOrThrow(supabase, auth.accountId, c.req.param('id'));
+  const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
+  const tagIds = Array.isArray(body.tag_ids) ? body.tag_ids.filter((value): value is string => typeof value === 'string') : undefined;
+  const addTagIds = Array.isArray(body.add_tag_ids) ? body.add_tag_ids.filter((value): value is string => typeof value === 'string') : [];
+  const removeTagIds = Array.isArray(body.remove_tag_ids) ? body.remove_tag_ids.filter((value): value is string => typeof value === 'string') : [];
+  if (tagIds === undefined && addTagIds.length === 0 && removeTagIds.length === 0) {
+    invalidRequest('validation_error', 'No mutable fields provided');
+  }
+  await applyMailboxTagPatch(supabase, auth.accountId, mailbox.id, {
+    tag_ids: tagIds,
+    add_tag_ids: addTagIds,
+    remove_tag_ids: removeTagIds,
+  });
+  const tagsMap = await getTagsForMailboxIds(supabase, [mailbox.id]);
+  return jsonResponse(
+    c,
+    { data: toPublicMailbox(attachTagsToMailboxRow(mailbox as Record<string, unknown>, tagsMap)) },
+    200,
+    c.get('rateLimitHeaders'),
   );
 });
 
 app.get('/v1/mailboxes/:id', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
-  const { data, error } = await supabase
-    .from('mailboxes')
-    .select('*')
-    .eq('id', c.req.param('id'))
-    .eq('account_id', auth.accountId)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (error) throw new Error(`Failed to fetch mailbox: ${error.message}`);
-  if (!data) notFound('mailbox_not_found', 'Mailbox not found');
-  return jsonResponse(c, { data: toPublicMailbox(data as any) }, 200, c.get('rateLimitHeaders'));
+  const mailbox = await loadMailboxOrThrow(supabase, auth.accountId, c.req.param('id'));
+  const tagsMap = await getTagsForMailboxIds(supabase, [mailbox.id]);
+  return jsonResponse(
+    c,
+    { data: toPublicMailbox(attachTagsToMailboxRow(mailbox as Record<string, unknown>, tagsMap)) },
+    200,
+    c.get('rateLimitHeaders'),
+  );
 });
 
 app.get('/v1/threads', async (c) => {

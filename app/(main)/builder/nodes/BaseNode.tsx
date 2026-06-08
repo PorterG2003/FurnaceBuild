@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Handle } from './HandleWrapper';
+import { FlowNodeActionsMenu } from '../components/FlowNodeActionsMenu';
 
 interface BaseNodeProps {
   label: string;
@@ -10,7 +11,11 @@ interface BaseNodeProps {
   children?: React.ReactNode;
   borderColor?: string;
   onEdit?: () => void;
+  onDelete?: () => void;
   icon?: React.ReactNode;
+  showActions?: boolean;
+  canDelete?: boolean;
+  nodeLabel?: string;
 }
 
 function BaseNode({ 
@@ -19,7 +24,11 @@ function BaseNode({
   children,
   borderColor = '#2A2A2A',
   onEdit,
-  icon
+  onDelete,
+  icon,
+  showActions = true,
+  canDelete = true,
+  nodeLabel,
 }: BaseNodeProps) {
   if (!Handle) return null;
   
@@ -56,6 +65,25 @@ function BaseNode({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {showActions && isHovered && onEdit ? (
+        <div
+          style={{
+            position: 'absolute',
+            top: -8,
+            right: -8,
+            zIndex: 1000,
+          }}
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <FlowNodeActionsMenu
+            onEdit={onEdit}
+            onDelete={canDelete ? onDelete : undefined}
+            label={nodeLabel || label}
+          />
+        </div>
+      ) : null}
+
       {handles.target && (
         <Handle
           type="target"

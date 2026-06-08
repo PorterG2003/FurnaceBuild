@@ -11,13 +11,14 @@ export function WebInstallGate() {
   const blocked = useWebInstallGateBlocked();
   const pathname = usePathname();
   const router = useRouter();
+  const search = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.search : '';
 
   useLayoutEffect(() => {
     if (Platform.OS !== 'web') return;
     if (!blocked) return;
-    if (isInstallGateExemptRoute(pathname)) return;
+    if (isInstallGateExemptRoute(pathname, search)) return;
     router.replace('/install');
-  }, [blocked, pathname, router]);
+  }, [blocked, pathname, router, search]);
 
   return null;
 }

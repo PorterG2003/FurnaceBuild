@@ -4,6 +4,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy and build @furnace/email-lib first (worker depends on file:../../lib/email)
+RUN mkdir -p /app/lib/email /app/lib/mailbox /app/lib/slack /app/workers/send-worker
 COPY lib/email/package*.json lib/email/tsconfig.build.json ./lib/email/
 COPY lib/email/*.ts ./lib/email/
 WORKDIR /app/lib/email
@@ -17,8 +18,7 @@ RUN npm install && npm run build
 
 # Copy and build @furnace/slack-lib (worker depends on file:../../lib/slack)
 WORKDIR /app
-COPY lib/slack/package*.json lib/slack/tsconfig.build.json ./lib/slack/
-COPY lib/slack/*.ts ./lib/slack/
+COPY lib/slack/package.json lib/slack/package-lock.json lib/slack/tsconfig.build.json lib/slack/*.ts ./lib/slack/
 WORKDIR /app/lib/slack
 RUN npm install && npm run build
 

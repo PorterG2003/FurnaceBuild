@@ -386,6 +386,29 @@ test('SendWorker still fails and stops enrollment for non-retryable pre-send cam
   }
 });
 
+test('SendWorker marks mailbox smtp_status=error for permanent SMTP auth failures', async () => {
+  const supabase = new TrackingSupabase();
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+  });
+
+  await (worker as any).markMailboxSmtpFailureIfPermanent('mailbox-1', {
+    code: 'EAUTH',
+    message: 'Invalid login',
+  });
+
+  assert.equal(supabase.calls.length, 1);
+  assert.equal(supabase.calls[0].table, 'mailboxes');
+  assert.deepEqual(supabase.calls[0].updates, {
+    smtp_status: 'error',
+    error_message: 'Invalid login',
+  });
+  assert.deepEqual(supabase.calls[0].filters, [
+    { op: 'eq', column: 'id', value: 'mailbox-1' },
+  ]);
+});
+
 test('SendWorker locks lead mailbox after first successful campaign send', async () => {
   const supabase = new TrackingSupabase([{ data: { id: 'lead-1', mailbox_id: 'mailbox-1' }, error: null }]);
   const worker = new SendWorker({

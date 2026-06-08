@@ -9,6 +9,12 @@ COPY lib/email/*.ts ./lib/email/
 WORKDIR /app/lib/email
 RUN npm install && npm run build
 
+# Copy and build @furnace/mailbox-lib (worker depends on file:../../lib/mailbox)
+WORKDIR /app
+COPY lib/mailbox/package*.json lib/mailbox/tsconfig.build.json lib/mailbox/*.ts ./lib/mailbox/
+WORKDIR /app/lib/mailbox
+RUN npm install && npm run build
+
 # Copy and build @furnace/slack-lib (worker depends on file:../../lib/slack)
 WORKDIR /app
 COPY lib/slack/package*.json lib/slack/tsconfig.build.json ./lib/slack/
@@ -32,6 +38,8 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copy email-lib and slack-lib (package.json + dist only) so file:../../lib/* from worker dir resolve
+COPY --from=builder /app/lib/mailbox/package.json ./lib/mailbox/
+COPY --from=builder /app/lib/mailbox/dist ./lib/mailbox/dist
 COPY --from=builder /app/lib/email/package.json ./lib/email/
 COPY --from=builder /app/lib/email/dist ./lib/email/dist
 COPY --from=builder /app/lib/slack/package.json ./lib/slack/

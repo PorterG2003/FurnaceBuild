@@ -224,7 +224,7 @@ export function UploadMailboxesCSVModal({
   const hasAutoTestedRef = useRef(false);
   const testsAbortedRef = useRef(false);
 
-  const CONNECTION_TEST_BATCH_SIZE = 5;
+  const CONNECTION_TEST_BATCH_SIZE = 1;
 
   const runConnectionTests = async () => {
     testsAbortedRef.current = false;
@@ -244,27 +244,26 @@ export function UploadMailboxesCSVModal({
     for (let b = 0; b < validIndices.length; b += CONNECTION_TEST_BATCH_SIZE) {
       if (testsAbortedRef.current) { setTestingConnections(false); return; }
       const batch = validIndices.slice(b, b + CONNECTION_TEST_BATCH_SIZE);
-      const results = await Promise.all(
-        batch.map(async ({ index1Based, row }) => {
-          try {
-            return await testMailboxConnection(rowToTestParams(row));
-          } catch (err) {
-            return {
-              success: false,
-              smtp: { success: false, error: err instanceof Error ? err.message : 'Failed' },
-              imap: { success: false, error: err instanceof Error ? err.message : 'Failed' },
-              message: err instanceof Error ? err.message : 'Connection test failed',
-            };
-          }
-        })
-      );
-      if (testsAbortedRef.current) { setTestingConnections(false); return; }
-      const batchUpdate: Record<number, ConnectionTestResult> = {};
-      batch.forEach(({ index1Based }, j) => {
-        batchUpdate[index1Based] = results[j];
-      });
-      setConnectionResults((prev) => ({ ...prev, ...batchUpdate }));
+
+      for (const { index1Based, row } of batch) {
+        if (testsAbortedRef.current) { setTestingConnections(false); return; }
+        let result: ConnectionTestResult;
+        try {
+          result = await testMailboxConnection(rowToTestParams(row));
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : 'Failed';
+          result = {
+            success: false,
+            smtp: { success: false, error: errMsg },
+            imap: { success: false, error: errMsg },
+            message: errMsg,
+          };
+        }
+
+        setConnectionResults((prev) => ({ ...prev, [index1Based]: result }));
+      }
     }
+
     setTestingConnections(false);
   };
 
@@ -539,57 +538,55 @@ export function UploadMailboxesCSVModal({
             </View>
           )}
           {validCount > 0 && (
-            <View className="border border-white/20 rounded-lg overflow-hidden min-h-[120px]" style={{ borderImage: 'none' }}>
-              <DataTable
-                items={previewTableItems}
-                columns={[
-                  {
-                    key: 'email',
-                    label: 'Email',
-                    flex: 1,
-                    render: (item) => (
-                      <Text className="text-white text-sm" numberOfLines={1}>
-                        {getCell(item.row, 'from_email') || '—'}
-                      </Text>
-                    ),
-                  },
-                  {
-                    key: 'status',
-                    label: 'Status',
-                    flex: 1,
-                    render: (item) => {
-                      const r = item.connectionResult;
-                      if (r === undefined) return <Text className="text-gray-500 text-sm">—</Text>;
-                      if (r === 'testing') {
-                        return (
-                          <View className="flex-row items-center gap-1">
-                            <ActivityIndicator size="small" color="#9ca3af" />
-                            <Text className="text-gray-400 text-sm">Testing…</Text>
-                          </View>
-                        );
-                      }
-                      const smtpOk = r.smtp?.success ?? false;
-                      const imapOk = r.imap?.success ?? false;
-                      if (smtpOk && imapOk) {
-                        return <Text className="text-emerald-400 text-sm">SMTP ✓ IMAP ✓</Text>;
-                      }
-                      const parts: string[] = [];
-                      if (!smtpOk) parts.push(`SMTP ✗${r.smtp?.error ? ` ${r.smtp.error}` : ''}`);
-                      if (!imapOk) parts.push(`IMAP ✗${r.imap?.error ? ` ${r.imap.error}` : ''}`);
+            <DataTable
+              items={previewTableItems}
+              columns={[
+                {
+                  key: 'email',
+                  label: 'Email',
+                  flex: 1,
+                  render: (item) => (
+                    <Text className="text-white text-sm" numberOfLines={1}>
+                      {getCell(item.row, 'from_email') || '—'}
+                    </Text>
+                  ),
+                },
+                {
+                  key: 'status',
+                  label: 'Status',
+                  flex: 1,
+                  render: (item) => {
+                    const r = item.connectionResult;
+                    if (r === undefined) return <Text className="text-gray-500 text-sm">—</Text>;
+                    if (r === 'testing') {
                       return (
-                        <Text className="text-red-400 text-sm" numberOfLines={2}>
-                          {parts.join(' · ')}
-                        </Text>
+                        <View className="flex-row items-center gap-1">
+                          <ActivityIndicator size="small" color="#9ca3af" />
+                          <Text className="text-gray-400 text-sm">Testing…</Text>
+                        </View>
                       );
-                    },
+                    }
+                    const smtpOk = r.smtp?.success ?? false;
+                    const imapOk = r.imap?.success ?? false;
+                    if (smtpOk && imapOk) {
+                      return <Text className="text-emerald-400 text-sm">SMTP ✓ IMAP ✓</Text>;
+                    }
+                    const parts: string[] = [];
+                    if (!smtpOk) parts.push(`SMTP ✗${r.smtp?.error ? ` ${r.smtp.error}` : ''}`);
+                    if (!imapOk) parts.push(`IMAP ✗${r.imap?.error ? ` ${r.imap.error}` : ''}`);
+                    return (
+                      <Text className="text-red-400 text-sm" numberOfLines={2}>
+                        {parts.join(' · ')}
+                      </Text>
+                    );
                   },
-                ]}
-                getItemKey={(item) => String(item.rowIndex1Based)}
-                pagination={false}
-                emptyMessage="No valid rows"
-                equalColumnWidths
-              />
-            </View>
+                },
+              ]}
+              getItemKey={(item) => String(item.rowIndex1Based)}
+              pagination={false}
+              emptyMessage="No valid rows"
+              equalColumnWidths
+            />
           )}
         </View>
       )}

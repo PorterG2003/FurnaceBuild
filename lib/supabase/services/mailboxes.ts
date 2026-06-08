@@ -207,10 +207,20 @@ export async function updateMailboxStatus(
   status: 'connected' | 'disconnected' | 'error',
   errorMessage?: string | null
 ): Promise<Mailbox> {
-  return updateMailbox(id, {
+  return updateMailboxConnectionHealth(id, {
     status,
     error_message: errorMessage ?? null,
   });
+}
+
+/**
+ * Update mailbox IMAP/SMTP health fields without touching credentials or profile data.
+ */
+export async function updateMailboxConnectionHealth(
+  id: string,
+  patch: Pick<MailboxUpdate, 'status' | 'smtp_status' | 'error_message'>
+): Promise<Mailbox> {
+  return updateMailbox(id, patch);
 }
 
 /**

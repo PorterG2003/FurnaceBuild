@@ -399,6 +399,7 @@ async function ensureMailbox(params: {
   const { data: found, error: lookupError } = await supabase
     .from('mailboxes')
     .select('id')
+    .eq('account_id', accountId)
     .eq('email_address', spec.emailAddress)
     .maybeSingle();
   if (lookupError) {

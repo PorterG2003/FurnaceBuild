@@ -5,6 +5,10 @@ import {
   isRetryableSupabaseReadError,
   reportErrorToSlack,
 } from '@furnace/slack-lib';
+import {
+  applyMailboxSmtpFailureUpdate,
+  classifySmtpError,
+} from '@furnace/mailbox-lib';
 import { DatabaseClient } from './database.js';
 import { sendEmail, sendReplyEmail } from './email.js';
 import type { ReplyEmailOptions } from './email.js';
@@ -171,6 +175,24 @@ export class SendWorker {
       })
       .eq('id', enrollmentId)
       .in('state', ['active', 'paused']);
+  }
+
+  private async markMailboxSmtpFailureIfPermanent(mailboxId: string, error: unknown): Promise<void> {
+    const classified = classifySmtpError(error);
+    const updates = applyMailboxSmtpFailureUpdate(classified.kind, classified.message);
+
+    if (updates == null) {
+      return;
+    }
+
+    const { error: updateError } = await this.supabase
+      .from('mailboxes')
+      .update(updates)
+      .eq('id', mailboxId);
+
+    if (updateError) {
+      console.error(`[SEND WORKER] Failed to mark mailbox ${mailboxId} smtp_status=error:`, updateError);
+    }
   }
 
   private async cancelMessageJob(messageJobId: string, reason: string): Promise<void> {
@@ -787,6 +809,7 @@ export class SendWorker {
             console.error(`[SEND WORKER] SMTP connection error for mailbox ${mailbox.id}, removing from pool:`, error);
             this.smtpPool.removeTransporter(mailbox.id);
           }
+          await this.markMailboxSmtpFailureIfPermanent(mailbox.id, error);
           throw new CampaignAttemptError(formatUnknownError(error), 'provider_error');
         }
       }
@@ -1109,6 +1132,7 @@ export class SendWorker {
       if (err.code === 'EAUTH' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT') {
         this.smtpPool.removeTransporter(mailbox.id);
       }
+      await this.markMailboxSmtpFailureIfPermanent(mailbox.id, err);
       throw err;
     }
 
@@ -1287,6 +1311,7 @@ export class SendWorker {
       if (err.code === 'EAUTH' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT') {
         this.smtpPool.removeTransporter(mailbox.id);
       }
+      await this.markMailboxSmtpFailureIfPermanent(mailbox.id, err);
       throw err;
     }
 

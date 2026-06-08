@@ -56,6 +56,10 @@ interface TestMailboxConnectionResult {
   message: string;
 }
 
+function isRetryableInfraStatus(status: number): boolean {
+  return status === 502 || status === 503 || status === 504;
+}
+
 /**
  * Test mailbox SMTP and IMAP connections via the testMailboxConnection Lambda (Function URL + Supabase JWT).
  */
@@ -73,22 +77,40 @@ export async function testMailboxConnection(
     throw new Error('You must be signed in to test mailbox connection.');
   }
 
-  const res = await fetch(TEST_MAILBOX_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(params),
-  });
+  const maxAttempts = 3;
+  let lastError: Error | null = null;
 
-  const data = await res.json().catch(() => ({}));
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(TEST_MAILBOX_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(params),
+    });
 
-  if (!res.ok) {
-    const msg = (data as { error?: string }).error || res.statusText;
-    reportErrorToSlack('Test mailbox connection failed', { severity: 'warning', error: msg });
-    throw new Error(msg || 'Failed to test mailbox connection');
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const msg =
+        res.status === 502
+          ? 'Connection test timed out on the server. Try again or test one mailbox at a time.'
+          : (data as { error?: string }).error || res.statusText;
+      lastError = new Error(msg || 'Failed to test mailbox connection');
+      if (attempt < maxAttempts && isRetryableInfraStatus(res.status)) {
+        continue;
+      }
+      reportErrorToSlack('Test mailbox connection failed', { severity: 'warning', error: msg });
+      throw lastError;
+    }
+
+    return data as TestMailboxConnectionResult;
   }
 
-  return data as TestMailboxConnectionResult;
+  reportErrorToSlack('Test mailbox connection failed', {
+    severity: 'warning',
+    error: lastError?.message ?? 'Failed to test mailbox connection',
+  });
+  throw lastError ?? new Error('Failed to test mailbox connection');
 }

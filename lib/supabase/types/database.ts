@@ -1419,6 +1419,7 @@ export interface Database {
           smtp_password: string;
           smtp_use_tls: boolean;
           smtp_use_ssl: boolean;
+          smtp_status: 'active' | 'throttled' | 'error' | 'disabled';
           imap_host: string;
           imap_port: number;
           imap_username: string;
@@ -1448,6 +1449,7 @@ export interface Database {
           smtp_password: string;
           smtp_use_tls?: boolean;
           smtp_use_ssl?: boolean;
+          smtp_status?: 'active' | 'throttled' | 'error' | 'disabled';
           imap_host: string;
           imap_port?: number;
           imap_username: string;
@@ -1477,6 +1479,7 @@ export interface Database {
           smtp_password?: string;
           smtp_use_tls?: boolean;
           smtp_use_ssl?: boolean;
+          smtp_status?: 'active' | 'throttled' | 'error' | 'disabled';
           imap_host?: string;
           imap_port?: number;
           imap_username?: string;

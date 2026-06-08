@@ -1,4 +1,0 @@
-{"sessionId":"2525a8","location":"ModalSlideViews.tsx:animate","message":"reanimated slide","data":{"activeIndex":1,"clipWidth":462,"target":0,"hasDetail":true},"timestamp":1779765604208,"hypothesisId":"K","runId":"post-fix-4"}
-{"sessionId":"2525a8","location":"TagsAssignmentPanel.tsx:slideEnd","message":"slide transition end","data":{"index":1},"timestamp":1779765604216,"hypothesisId":"D","runId":"post-fix"}
-{"sessionId":"2525a8","location":"ModalSlideViews.tsx:animate","message":"reanimated slide","data":{"activeIndex":1,"clipWidth":462,"target":0,"hasDetail":true},"timestamp":1779765605318,"hypothesisId":"K","runId":"post-fix-4"}
-{"sessionId":"2525a8","location":"TagsAssignmentPanel.tsx:slideEnd","message":"slide transition end","data":{"index":1},"timestamp":1779765605322,"hypothesisId":"D","runId":"post-fix"}

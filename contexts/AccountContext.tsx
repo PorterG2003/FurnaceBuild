@@ -7,7 +7,10 @@ import type { PlatformAdminAccessStatus } from '@/lib/account/platformAdminAcces
 import {
   clearAccountCache,
   loadAccountCache,
+  loadPreferredAccountId,
+  resolveBootstrapPreferredAccountId,
   saveAccountCache,
+  savePreferredAccountId,
   type CachedAccountState,
 } from '@/lib/account/accountCache';
 import type { Account, AccountBilling, AccountUser, BlockListEntry, Invitation, User } from '@/lib/supabase/types';
@@ -121,7 +124,7 @@ async function fetchAccountScopedData(accountId: string, authUserId: string) {
 }
 
 export function AccountProvider({ children }: { children: React.ReactNode }) {
-  const { user: authUser } = useAuth();
+  const { user: authUser, loading: authLoading } = useAuth();
   const [supabaseUser, setSupabaseUser] = useState<User | null>(null);
   const [memberships, setMemberships] = useState<AccountMembership[]>([]);
   const [currentAccountId, setCurrentAccountIdState] = useState<string | null>(null);
@@ -154,17 +157,24 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     setPlatformAdminAccess('loading');
   }, [authUser?.id]);
 
-  const applyCachedState = useCallback((cached: CachedAccountState) => {
+  const applyCachedState = useCallback((cached: CachedAccountState, preferredAccountId: string | null) => {
+    const resolvedAccountId =
+      preferredAccountId && cached.memberships.some((m) => m.account.id === preferredAccountId)
+        ? preferredAccountId
+        : cached.currentAccountId;
+    const canReuseScopedCache = resolvedAccountId === cached.currentAccountId;
+
     setSupabaseUser(cached.user);
     setMemberships(cached.memberships);
-    setCurrentAccountIdState(cached.currentAccountId);
-    preferredAccountIdRef.current = cached.currentAccountId;
-    setTeamMembers(cached.teamMembers);
-    setInvitations(cached.invitations);
-    setBlockList(cached.blockList);
-    setBilling(cached.billing);
+    setCurrentAccountIdState(resolvedAccountId);
+    preferredAccountIdRef.current = resolvedAccountId;
+    setTeamMembers(canReuseScopedCache ? cached.teamMembers : []);
+    setInvitations(canReuseScopedCache ? cached.invitations : []);
+    setBlockList(canReuseScopedCache ? cached.blockList : []);
+    setBilling(canReuseScopedCache ? cached.billing : null);
+    setPendingAmendment(null);
     setPlatformAdminAccess(cached.platformAdminAccess);
-    accountDataLoadedForRef.current = cached.currentAccountId;
+    accountDataLoadedForRef.current = canReuseScopedCache ? resolvedAccountId : null;
   }, []);
 
   const resetState = useCallback(() => {
@@ -218,6 +228,9 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
     if (!authUser) {
       resetState();
       void clearAccountCache();
@@ -230,12 +243,20 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
 
     void (async () => {
-      const cached = await loadAccountCache(authUserId);
+      const [cached, persistedPreferredAccountId] = await Promise.all([
+        loadAccountCache(authUserId),
+        loadPreferredAccountId(authUserId),
+      ]);
       if (cancelled || bootstrapRunIdRef.current !== runId) return;
 
+      const preferredAccountId = resolveBootstrapPreferredAccountId(
+        preferredAccountIdRef.current,
+        persistedPreferredAccountId,
+        cached?.currentAccountId ?? null,
+      );
       const hadCache = !!cached;
       if (cached) {
-        applyCachedState(cached);
+        applyCachedState(cached, preferredAccountId);
         setLoading(false);
       } else {
         setLoading(true);
@@ -245,7 +266,6 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       setError(null);
 
       try {
-        const preferredAccountId = preferredAccountIdRef.current ?? cached?.currentAccountId ?? null;
         const result = await bootstrap(authUserId, email, preferredAccountId);
         if (cancelled || bootstrapRunIdRef.current !== runId) return;
 
@@ -261,6 +281,9 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         setPlatformAdminAccess(result.platformAdminAccess);
         accountDataLoadedForRef.current = result.currentAccountId;
 
+        if (result.currentAccountId) {
+          await savePreferredAccountId(authUserId, result.currentAccountId);
+        }
         await saveAccountCache(authUserId, {
           user: result.user,
           memberships: result.memberships,
@@ -298,7 +321,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [authUser?.id, applyCachedState, bootstrap, resetState]);
+  }, [authLoading, authUser?.id, applyCachedState, bootstrap, resetState]);
 
   useEffect(() => {
     if (!authUser || !currentAccountId || memberships.length === 0) {
@@ -344,14 +367,16 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
 
   const setCurrentAccountId = useCallback(
     (accountId: string) => {
-      setCurrentAccountIdState((prev) => {
-        const isMember = memberships.some((m) => m.account.id === accountId);
-        if (!isMember) return prev;
-        preferredAccountIdRef.current = accountId;
-        return accountId;
-      });
+      const isMember = memberships.some((m) => m.account.id === accountId);
+      if (!isMember) return;
+
+      preferredAccountIdRef.current = accountId;
+      setCurrentAccountIdState(accountId);
+      if (authUser) {
+        void savePreferredAccountId(authUser.id, accountId);
+      }
     },
-    [memberships]
+    [authUser, memberships]
   );
 
   const account = useMemo(() => {
@@ -411,6 +436,9 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       setPlatformAdminAccess(result.platformAdminAccess);
       accountDataLoadedForRef.current = result.currentAccountId;
 
+      if (result.currentAccountId) {
+        await savePreferredAccountId(authUser.id, result.currentAccountId);
+      }
       await saveAccountCache(authUser.id, {
         user: result.user,
         memberships: result.memberships,

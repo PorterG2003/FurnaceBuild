@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { openImapInbox } from '../../../lib/mailbox/imapInbox.js';
 import { ImapFlow } from 'imapflow';
 
 /**
@@ -186,7 +187,7 @@ export const handler = async (event: FunctionUrlEvent): Promise<FunctionUrlRespo
 
   try {
     await client.connect();
-    await client.mailboxOpen('INBOX');
+    await openImapInbox(client);
 
     const parsed = await client.download(imapUid, params.part, { uid: true });
     const chunks: Buffer[] = [];

@@ -9,9 +9,10 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "backfill:reparse": "tsx src/backfill-reparse.ts",
-    "test": "node --import tsx --test src/thread-manager.test.ts src/worker.test.ts"
+    "test": "npm --prefix ../../lib/mailbox run build && node --import tsx --test src/thread-manager.test.ts src/worker.test.ts"
   },
   "dependencies": {
+    "@furnace/mailbox-lib": "file:../../lib/mailbox",
     "@furnace/slack-lib": "file:../../lib/slack",
     "@aws-sdk/client-sqs": "^3.0.0",
     "@aws-sdk/client-ssm": "^3.0.0",

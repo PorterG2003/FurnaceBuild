@@ -1,4 +1,5 @@
 import { reportErrorToSlack } from '@furnace/slack-lib';
+import { openImapInbox } from '@furnace/mailbox-lib';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { countReferenceTokens, getHeaderCi, logParseDiagnostics } from './parse-diagnostics.js';
@@ -28,7 +29,7 @@ export class ImapClient {
 
     try {
       await client.connect();
-      await client.mailboxOpen('INBOX');
+      await openImapInbox(client);
 
       // Build search criteria: messages since last_synced_at (or last 7 days if never synced)
       let searchCriteria: any;

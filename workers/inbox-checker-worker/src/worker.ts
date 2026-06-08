@@ -5,6 +5,10 @@ import {
   reportErrorToSlack,
 } from '@furnace/slack-lib';
 import pLimit from 'p-limit';
+import {
+  applyMailboxImapFailureUpdate,
+  classifyImapError,
+} from '@furnace/mailbox-lib';
 import { DatabaseClient } from './database.js';
 import { ImapClient } from './imap-client.js';
 import { MessageProcessor } from './message-processor.js';
@@ -190,44 +194,24 @@ export class InboxCheckerWorker {
     } catch (error) {
       console.error(`[INBOX CHECKER] Error processing mailbox ${mailbox.id}:`, error);
 
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      reportErrorToSlack(`Inbox-checker failed to process mailbox: ${errorMessage}`, {
-        severity: 'critical',
+      const classified = classifyImapError(error);
+      reportErrorToSlack(`Inbox-checker failed to process mailbox: ${classified.message}`, {
+        severity: 'warning',
+        alertPolicy: 'persistent_config_warning',
+        aggregationKey: `inbox-checker-imap:${mailbox.imap_host}:${classified.kind}`,
         mailbox_id: mailbox.id,
         email_address: mailbox.email_address,
+        summaryFields: {
+          imap_host: mailbox.imap_host,
+          failure_kind: classified.kind,
+          example_email: mailbox.email_address,
+        },
       });
 
-      // Record error_message so the UI can show it. Only set status = 'error' for
-      // failures that look permanent (bad config), so we don't stop checking on
-      // transient network issues.
-      const err = error instanceof Error ? error : new Error(String(error));
-      const code = (err as NodeJS.ErrnoException).code;
-      const isAuthError =
-        err.message.includes('authentication') ||
-        err.message.includes('login') ||
-        err.message.includes('credentials');
-      // ENOTFOUND = wrong hostname → treat as config error, stop claiming
-      const isConfigError = code === 'ENOTFOUND' ||
-        (err.message && err.message.includes('getaddrinfo ENOTFOUND'));
-      // Timeouts/refused might be transient → record but keep status
-      const isTransientError =
-        code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'ENETUNREACH';
-
-      const msg = isConfigError
-        ? `IMAP host unreachable: ${err.message} (check IMAP host, e.g. imap.titan.email for Titan)`
-        : err.message;
-
-      if (isAuthError || isConfigError) {
-        await this.supabase
-          .from('mailboxes')
-          .update({ status: 'error', error_message: msg })
-          .eq('id', mailbox.id);
-      } else if (isTransientError) {
-        await this.supabase
-          .from('mailboxes')
-          .update({ error_message: msg })
-          .eq('id', mailbox.id);
-      }
+      await this.supabase
+        .from('mailboxes')
+        .update(applyMailboxImapFailureUpdate(classified.kind, classified.message))
+        .eq('id', mailbox.id);
 
       throw error;
     }

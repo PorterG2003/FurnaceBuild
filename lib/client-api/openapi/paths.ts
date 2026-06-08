@@ -260,6 +260,66 @@ export function buildClientApiPaths() {
         },
       },
     },
+    '/v1/mailbox-tags': {
+      get: {
+        operationId: 'listMailboxTags',
+        tags: ['Mailboxes'],
+        summary: 'List mailbox tags',
+        description: 'Lists account-scoped mailbox tag definitions.',
+        responses: {
+          200: jsonResponse('MailboxTagListResponse', 'Mailbox tag list.'),
+          ...authenticatedErrors(),
+        },
+      },
+      post: {
+        operationId: 'createMailboxTag',
+        tags: ['Mailboxes'],
+        summary: 'Create mailbox tag',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: schemaRef('MailboxTagCreate'),
+              example: { name: 'Warm-up pool', color: '#22C55E' },
+            },
+          },
+        },
+        responses: {
+          201: jsonResponse('MailboxTagResponse', 'Created mailbox tag.'),
+          ...authenticatedErrors('ValidationError'),
+        },
+      },
+    },
+    '/v1/mailbox-tags/{id}': {
+      patch: {
+        operationId: 'updateMailboxTag',
+        tags: ['Mailboxes'],
+        summary: 'Update mailbox tag',
+        parameters: [parameterRef('MailboxTagId')],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: schemaRef('MailboxTagUpdate'),
+            },
+          },
+        },
+        responses: {
+          200: jsonResponse('MailboxTagResponse', 'Updated mailbox tag.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+      delete: {
+        operationId: 'deleteMailboxTag',
+        tags: ['Mailboxes'],
+        summary: 'Delete mailbox tag',
+        parameters: [parameterRef('MailboxTagId')],
+        responses: {
+          200: jsonResponse('DeleteResponse', 'Mailbox tag deleted.'),
+          ...authenticatedErrors('NotFoundError'),
+        },
+      },
+    },
     '/v1/campaigns/{id}/pause': {
       post: {
         operationId: 'pauseCampaign',
@@ -823,8 +883,8 @@ export function buildClientApiPaths() {
         operationId: 'listMailboxes',
         tags: ['Mailboxes'],
         summary: 'List mailboxes',
-        description: 'Lists active account mailboxes. Furnace strips `smtp_password` and `imap_password` before returning each mailbox.',
-        parameters: [parameterRef('Limit'), parameterRef('Offset')],
+        description: 'Lists active account mailboxes. Furnace strips `smtp_password` and `imap_password` before returning each mailbox. Results can be filtered by mailbox tags.',
+        parameters: [parameterRef('Limit'), parameterRef('Offset'), parameterRef('MailboxTagIds')],
         responses: {
           200: jsonResponse('MailboxListResponse', 'Mailbox page.'),
           ...authenticatedErrors(),
@@ -832,6 +892,18 @@ export function buildClientApiPaths() {
       },
     },
     '/v1/mailboxes/{id}': {
+      patch: {
+        operationId: 'updateMailbox',
+        tags: ['Mailboxes'],
+        summary: 'Update mailbox',
+        description: 'Updates mailbox tag assignments. Mailbox profile and credential fields remain read-only on the Client API.',
+        parameters: [parameterRef('MailboxId')],
+        requestBody: jsonRequestBody('MailboxUpdate'),
+        responses: {
+          200: jsonResponse('MailboxResponse', 'Updated mailbox.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
       get: {
         operationId: 'getMailbox',
         tags: ['Mailboxes'],

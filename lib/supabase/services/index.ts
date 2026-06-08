@@ -7,6 +7,7 @@ export * from './campaigns';
 export * from './leads';
 export * from './accounts';
 export * from './mailboxes';
+export * from './mailbox-tags';
 export * from './inbox';
 export * from './block-list';
 export * from './thread-tags';

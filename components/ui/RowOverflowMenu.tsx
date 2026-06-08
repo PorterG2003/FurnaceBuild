@@ -7,6 +7,8 @@ import {
   Text,
   View,
   useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
   type LayoutChangeEvent,
 } from 'react-native';
 import { EllipsisVerticalIcon } from 'react-native-heroicons/outline';
@@ -43,6 +45,8 @@ export interface RowOverflowMenuProps {
   triggerIcon?: MenuIcon;
   triggerAccessibilityLabel?: string;
   horizontalAlign?: 'start' | 'end';
+  triggerContainerClassName?: string;
+  triggerContainerStyle?: StyleProp<ViewStyle>;
 }
 
 export function RowOverflowMenu({
@@ -53,6 +57,8 @@ export function RowOverflowMenu({
   triggerIcon: TriggerIcon = EllipsisVerticalIcon,
   triggerAccessibilityLabel = 'Row actions',
   horizontalAlign = 'start',
+  triggerContainerClassName,
+  triggerContainerStyle,
 }: RowOverflowMenuProps) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isMobile = screenWidth < LAYOUT_BREAKPOINT;
@@ -158,7 +164,12 @@ export function RowOverflowMenu({
 
   return (
     <>
-      <View ref={anchorRef} collapsable={false} className="shrink-0 self-start">
+      <View
+        ref={anchorRef}
+        collapsable={false}
+        className={triggerContainerClassName ?? 'shrink-0 self-start'}
+        style={triggerContainerStyle}
+      >
         <IconButton
           icon={TriggerIcon}
           variant="overflow"

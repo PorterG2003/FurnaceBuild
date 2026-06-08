@@ -1,36 +1,7 @@
 import { useMemo } from 'react';
 import { View, Text, Platform } from 'react-native';
-
-// Conditionally import React Flow only on web
-let ReactFlow: any = null;
-let ReactFlowProvider: any = null;
-let FlowBackground: any = null;
-
-if (Platform.OS === 'web' && typeof window !== 'undefined') {
-  try {
-    // Import CSS
-    require('@xyflow/react/dist/style.css');
-    
-    // Dynamic require for React Flow
-    const ReactFlowModule = require('@xyflow/react');
-    ReactFlow = ReactFlowModule.default || ReactFlowModule.ReactFlow;
-    ReactFlowProvider = ReactFlowModule.ReactFlowProvider;
-    FlowBackground = ReactFlowModule.Background;
-  } catch (error) {
-    console.error('Failed to load React Flow:', error);
-  }
-}
-
-// Import node types from builder
-let nodeTypes: any = {};
-if (Platform.OS === 'web' && typeof window !== 'undefined') {
-  try {
-    const builderNodeTypes = require('@/app/(main)/builder/nodes/nodeTypes');
-    nodeTypes = builderNodeTypes.nodeTypes || {};
-  } catch (error) {
-    console.error('Failed to load node types:', error);
-  }
-}
+import { FlowCanvas, isReactFlowWebAvailable } from '@/lib/flow';
+import { nodeTypes } from '@/app/(main)/builder/nodes/nodeTypes';
 
 interface FlowDiagramProps {
   nodes: any[];
@@ -44,7 +15,7 @@ interface FlowDiagramProps {
  * Displays a flow diagram without any interaction (no drag, zoom, pan, etc.)
  */
 export function FlowDiagram({ nodes, edges, height = 400 }: FlowDiagramProps) {
-  if (!ReactFlow || !ReactFlowProvider || Platform.OS !== 'web') {
+  if (!isReactFlowWebAvailable() || Platform.OS !== 'web') {
     return (
       <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6" style={{ minHeight: height || 400 }}>
         <Text className="text-gray-400 font-instrument text-sm text-center">
@@ -102,34 +73,28 @@ export function FlowDiagram({ nodes, edges, height = 400 }: FlowDiagramProps) {
       const pos = node.position;
       const x = typeof pos?.x === 'number' ? pos.x : index * 200;
       const y = typeof pos?.y === 'number' ? pos.y : 0;
-      return { ...node, position: { x, y } };
+      return {
+        ...node,
+        data: { ...node.data, readOnly: true },
+        position: { x, y },
+      };
     });
   }, [nodes]);
 
   const diagramHeight = height || 400;
   return (
-    <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl" style={{ height: diagramHeight, padding: 0 }}>
-      <ReactFlowProvider>
-        <ReactFlow
-          nodes={safeNodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-          panOnDrag={false}
-          preventScrolling={false}
-          zoomOnScroll={false}
-          zoomOnPinch={false}
-          zoomOnDoubleClick={false}
-          selectNodesOnDrag={false}
-          fitView
-          fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-          style={{ width: '100%', height: '100%' }}
-        >
-          <FlowBackground />
-        </ReactFlow>
-      </ReactFlowProvider>
+    <View
+      className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl"
+      style={{ height: diagramHeight, padding: 0, overflow: 'hidden', borderRadius: 12 }}
+    >
+      <FlowCanvas
+        mode="readonly"
+        nodes={safeNodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+      />
     </View>
   );
 }

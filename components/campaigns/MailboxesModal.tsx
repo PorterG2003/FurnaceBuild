@@ -15,14 +15,16 @@ import { buildMailboxOverviewColumns } from '@/components/mailboxes';
 import { BaseModal, BottomSheet, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/DataTable';
-import { Select } from '@/components/ui/forms';
+import { SearchAndSelectMulti, Select } from '@/components/ui/forms';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import { useConfirmClose } from '@/hooks/useConfirmClose';
+import { useMailboxTags } from '@/lib/mailboxes/useMailboxTags';
 import { assignMailboxesToCampaign } from '@/lib/supabase/services/campaigns';
 import {
   getMailboxOverviewsByAccount,
   type MailboxOverview,
 } from '@/lib/supabase/services/mailboxes';
+import { resolveTagColor } from '@/lib/tags/tag-colors';
 
 type StatusFilter = 'all' | 'connected' | 'disconnected' | 'error';
 type CampaignLoadFilter = 'all' | '0' | '1' | '2+';
@@ -55,11 +57,13 @@ function countActiveMailboxFilters(filters: {
   statusFilter: StatusFilter;
   campaignLoadFilter: CampaignLoadFilter;
   selectionFilter: SelectionFilter;
+  tagIds: string[];
 }) {
   return (
     (filters.statusFilter !== 'all' ? 1 : 0) +
     (filters.campaignLoadFilter !== 'all' ? 1 : 0) +
-    (filters.selectionFilter !== 'all' ? 1 : 0)
+    (filters.selectionFilter !== 'all' ? 1 : 0) +
+    (filters.tagIds.length > 0 ? 1 : 0)
   );
 }
 
@@ -88,6 +92,7 @@ export function MailboxesModal({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [campaignLoadFilter, setCampaignLoadFilter] = useState<CampaignLoadFilter>('all');
   const [selectionFilter, setSelectionFilter] = useState<SelectionFilter>('all');
+  const [tagIds, setTagIds] = useState<string[]>([]);
   const [showFiltersPopup, setShowFiltersPopup] = useState(false);
   const [filterTriggerLayout, setFilterTriggerLayout] = useState<{
     x: number;
@@ -98,6 +103,8 @@ export function MailboxesModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingMailboxes, setIsLoadingMailboxes] = useState(false);
   const filterTriggerRef = useRef<View>(null);
+  const mailboxIds = useMemo(() => accountMailboxes.map((mailbox) => mailbox.id), [accountMailboxes]);
+  const { accountMailboxTags, mailboxTagsMap } = useMailboxTags(accountId, mailboxIds);
 
   const baseFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -125,9 +132,17 @@ export function MailboxesModal({
         return false;
       }
 
+      if (tagIds.length > 0) {
+        const mailboxTagIds = new Set((mailboxTagsMap[mailbox.id] ?? []).map((tag) => tag.id));
+        const hasAny = tagIds.some((id) => mailboxTagIds.has(id));
+        if (!hasAny) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [accountMailboxes, campaignLoadFilter, search, statusFilter]);
+  }, [accountMailboxes, campaignLoadFilter, mailboxTagsMap, search, statusFilter, tagIds]);
   const filtered = useMemo(() => {
     if (selectionFilter === 'all') return baseFiltered;
     return baseFiltered.filter((mailbox) => {
@@ -137,19 +152,26 @@ export function MailboxesModal({
     });
   }, [baseFiltered, selectedIds, selectionFilter]);
   const tableColumns = useMemo(
-    () => buildMailboxOverviewColumns({ emailLabel: 'Email', todayLabel: 'Today' }),
-    []
+    () =>
+      buildMailboxOverviewColumns({
+        emailLabel: 'Email',
+        todayLabel: 'Today',
+        mailboxTagsMap,
+      }),
+    [mailboxTagsMap]
   );
   const activeFilterCount = countActiveMailboxFilters({
     statusFilter,
     campaignLoadFilter,
     selectionFilter,
+    tagIds,
   });
 
   const clearAllFilters = useCallback(() => {
     setStatusFilter('all');
     setCampaignLoadFilter('all');
     setSelectionFilter('all');
+    setTagIds([]);
   }, []);
 
   useEffect(() => {
@@ -288,6 +310,24 @@ export function MailboxesModal({
         onChange={(id) => setSelectionFilter(id as SelectionFilter)}
         placeholder="All mailboxes"
         listMaxHeight={200}
+        size="compact"
+        panelSize="compact"
+      />
+
+      <SearchAndSelectMulti
+        label="Mailbox tags"
+        items={accountMailboxTags}
+        getItemId={(tag) => tag.id}
+        getItemLabel={(tag) => tag.name}
+        getItemColor={(tag) => resolveTagColor(tag.color)}
+        value={tagIds}
+        onChange={setTagIds}
+        placeholder="All mailbox tags"
+        searchPlaceholder="Search mailbox tags…"
+        listMaxHeight={220}
+        emptyMessage={(hasSearch) =>
+          hasSearch ? 'No matching mailbox tags.' : 'No mailbox tags yet.'
+        }
         size="compact"
         panelSize="compact"
       />

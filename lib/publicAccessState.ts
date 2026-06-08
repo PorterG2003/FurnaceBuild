@@ -155,6 +155,19 @@ export function parsePublicAccessState(
   };
 }
 
+export function hasPublicAccessParams(search: string): boolean {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  const nextParams: Record<string, string> = {};
+
+  for (const [key, value] of params.entries()) {
+    if (!(key in nextParams) && value.length > 0) {
+      nextParams[key] = value;
+    }
+  }
+
+  return parsePublicAccessState(nextParams) !== null;
+}
+
 function getSignedInDestination(state: PublicAccessState): string {
   if (state.flow === 'team_invite' && (state.issue === 'wrong_email' || state.issue === 'resource_completed')) {
     return buildHref('/account', {

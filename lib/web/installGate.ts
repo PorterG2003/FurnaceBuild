@@ -40,11 +40,34 @@ export function isFluxPublicLandingRoute(pathname: string): boolean {
   return path === '/p' || path.startsWith('/p/');
 }
 
+/** Public onboarding accept routes that should stay reachable in mobile web. */
+export function isPublicAcceptRoute(pathname: string): boolean {
+  const path = normalizeInstallGatePathname(pathname);
+  return (
+    path === '/accept-invitation' ||
+    path.startsWith('/accept-invitation/') ||
+    path === '/accept-platform-invite' ||
+    path.startsWith('/accept-platform-invite/') ||
+    path === '/accept-account-amendment' ||
+    path.startsWith('/accept-account-amendment/')
+  );
+}
+
+/** Invite-scoped auth routes should stay reachable until onboarding completes. */
+export function isAuthInviteFlowRoute(pathname: string, search = ''): boolean {
+  const path = normalizeInstallGatePathname(pathname);
+  if (path !== '/auth') return false;
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  return params.has('invitation_id') || params.has('amendment_id');
+}
+
 /** Routes that must not be redirected to `/install` on mobile web. */
-export function isInstallGateExemptRoute(pathname: string): boolean {
+export function isInstallGateExemptRoute(pathname: string, search = ''): boolean {
   const path = normalizeInstallGatePathname(pathname);
   if (path === '/install') return true;
-  return isFluxPublicLandingRoute(pathname);
+  if (isFluxPublicLandingRoute(pathname)) return true;
+  if (isPublicAcceptRoute(pathname)) return true;
+  return isAuthInviteFlowRoute(pathname, search);
 }
 
 /** @deprecated Use {@link isInstallGateExemptRoute} */

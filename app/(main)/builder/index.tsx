@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
 import { View, Platform, Text, Pressable } from 'react-native';
+import { ConfirmModal } from '@/components/ui/modals';
 import { Breadcrumb } from '@/components/ui/layout';
 import { NavBar } from '@/components/ui/layout/NavBar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,6 +10,7 @@ import { debounce } from '@/lib/utils/debounce';
 import { isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 import { nodeTypes } from './nodes/nodeTypes';
+import { edgeTypes } from './edges/edgeTypes';
 import { NodeSidebar } from './components/NodeSidebar';
 import { nodeModalRegistry } from './components/nodeModals';
 import { 
@@ -18,6 +20,14 @@ import {
   createAICategorizerNode,
   createDataSenderNode,
 } from './nodes/factories';
+import {
+  FlowCanvas,
+  isReactFlowWebAvailable,
+  Controls,
+  addEdge,
+  useNodesState,
+  useEdgesState,
+} from '@/lib/flow';
 
 type FlowNodeRecord = Record<string, any>;
 type FlowEdgeRecord = Record<string, any>;
@@ -39,8 +49,11 @@ function sanitizeFlowNode(node: FlowNodeRecord): FlowNodeRecord {
 }
 
 function sanitizeFlowEdge(edge: FlowEdgeRecord): FlowEdgeRecord {
-  const { selected: _selected, ...rest } = edge;
-  return rest;
+  const { selected: _selected, type, ...rest } = edge;
+  if (type === 'deletable') {
+    return rest;
+  }
+  return type !== undefined ? { ...rest, type } : rest;
 }
 
 function sanitizeFlowData(
@@ -51,38 +64,6 @@ function sanitizeFlowData(
     nodes: Array.isArray(nodes) ? nodes.map((node) => sanitizeFlowNode(node)) : [],
     edges: Array.isArray(edges) ? edges.map((edge) => sanitizeFlowEdge(edge)) : [],
   };
-}
-
-// Conditionally import React Flow only on web
-let ReactFlow: any = null;
-let ReactFlowProvider: any = null;
-let FlowBackground: any = null;
-let Controls: any = null;
-let MiniMap: any = null;
-let addEdge: any = null;
-let useNodesState: any = null;
-let useEdgesState: any = null;
-let Handle: any = null;
-
-if (Platform.OS === 'web' && typeof window !== 'undefined') {
-  try {
-    // Import CSS
-    require('@xyflow/react/dist/style.css');
-    
-    // Dynamic require for React Flow
-    const ReactFlowModule = require('@xyflow/react');
-    ReactFlow = ReactFlowModule.default || ReactFlowModule.ReactFlow;
-    ReactFlowProvider = ReactFlowModule.ReactFlowProvider;
-    FlowBackground = ReactFlowModule.Background;
-    Controls = ReactFlowModule.Controls;
-    MiniMap = ReactFlowModule.MiniMap;
-    addEdge = ReactFlowModule.addEdge;
-    useNodesState = ReactFlowModule.useNodesState;
-    useEdgesState = ReactFlowModule.useEdgesState;
-    Handle = ReactFlowModule.Handle;
-  } catch (error) {
-    console.error('Failed to load React Flow:', error);
-  }
 }
 
 /** Label for the flow editor / builder page in breadcrumbs and UI. Change here to rename globally. */
@@ -125,11 +106,6 @@ interface FlowEditorProps {
   initialEdges?: any[];
   onFlowChange?: (nodes: any[], edges: any[]) => void;
   campaignStatus?: Campaign['status'] | null;
-}
-
-// Only mount FlowEditor when React Flow is loaded (avoids hooks-before-return in FlowEditor)
-function isReactFlowAvailable() {
-  return !!(useNodesState && useEdgesState && addEdge && ReactFlow && ReactFlowProvider);
 }
 
 function FlowEditor({
@@ -194,46 +170,39 @@ function FlowEditor({
     }
   }, [setNodes]); // Only run once on mount
 
-  // Prevent deletion of Lead Bucket node
+  // Pending delete confirmation state
+  const [pendingDelete, setPendingDelete] = useState<{
+    removeChanges: any[];
+    labels: string[];
+    isLive: boolean;
+  } | null>(null);
+
+  const applyPendingDelete = useCallback(() => {
+    if (!pendingDelete) return;
+    onNodesChange(pendingDelete.removeChanges);
+    setPendingDelete(null);
+  }, [onNodesChange, pendingDelete]);
+
+  const cancelPendingDelete = useCallback(() => {
+    setPendingDelete(null);
+  }, []);
+
+  // Node deletion is only allowed via the action rail + confirm modal.
+  // Ignore any remove changes (e.g. from keyboard) — deleteKeyCode is disabled on ReactFlow.
   const handleNodesChange = useCallback((changes: any[]) => {
-    const removableNodes = changes
-      .filter((change: any) => change.type === 'remove')
-      .map((change: any) => nodes.find((node: any) => node.id === change.id))
-      .filter((node: any) => node && node.type !== 'leadSource' && !node.data?.isRequired);
-
-    if (removableNodes.length > 0) {
-      const labels = removableNodes.map((node: any) => node.data?.label || node.type || 'Node');
-      const campaignWarning =
-        campaignStatus && campaignStatus !== 'draft'
-          ? 'This campaign is already live. Deleting nodes can affect active enrollments and future sends.\n\n'
-          : '';
-      const confirmed =
-        typeof window !== 'undefined'
-          ? window.confirm(
-              `${campaignWarning}Delete ${removableNodes.length} node${removableNodes.length === 1 ? '' : 's'}?\n\n${labels.join('\n')}`
-            )
-          : false;
-      if (!confirmed) {
-        return;
-      }
-    }
-
-    // Filter out any delete changes for Lead Bucket nodes
-    const filteredChanges = changes.filter((change: any) => {
-      if (change.type === 'remove') {
-        const node = nodes.find((n: any) => n.id === change.id);
-        // Prevent deletion of Lead Bucket nodes
-        if (node?.type === 'leadSource' || node?.data?.isRequired) {
-          return false;
-        }
-      }
-      return true;
-    });
-    
+    const filteredChanges = changes.filter((change: any) => change.type !== 'remove');
     if (filteredChanges.length > 0) {
       onNodesChange(filteredChanges);
     }
-  }, [campaignStatus, nodes, onNodesChange]);
+  }, [onNodesChange]);
+
+  // Edge deletion is only allowed via the edge delete button.
+  const handleEdgesChange = useCallback((changes: any[]) => {
+    const filteredChanges = changes.filter((change: any) => change.type !== 'remove');
+    if (filteredChanges.length > 0) {
+      onEdgesChange(filteredChanges);
+    }
+  }, [onEdgesChange]);
 
   const onConnect = useCallback(
     (params: any) => setEdges((eds: any) => addEdge(params, eds)),
@@ -278,7 +247,20 @@ function FlowEditor({
     (window as any).__reactFlowEditNode = (nodeId: string, nodeType: string) => {
       onEditNode(nodeId, nodeType);
     };
-  }, [setNodes, onEditNode]);
+
+    (window as any).__reactFlowDeleteNode = (nodeId: string) => {
+      const currentNodes: any[] = (window as any).__reactFlowGetNodes?.() ?? [];
+      const node = currentNodes.find((n: any) => n.id === nodeId);
+      if (!node || node.type === 'leadSource' || node.data?.isRequired) return;
+      const label = node.data?.label || node.type || 'Node';
+      const isLive = !!(campaignStatus && campaignStatus !== 'draft');
+      setPendingDelete({ removeChanges: [{ type: 'remove', id: nodeId }], labels: [label], isLive });
+    };
+
+    (window as any).__reactFlowDeleteEdge = (edgeId: string) => {
+      onEdgesChange([{ type: 'remove', id: edgeId }]);
+    };
+  }, [campaignStatus, onEditNode, onEdgesChange, setNodes]);
 
   // Expose setNodes and getNodes for updating node data
   useEffect(() => {
@@ -311,27 +293,55 @@ function FlowEditor({
     }
   }, [onEditNode]);
 
+  const deleteConfirmTitle = pendingDelete
+    ? pendingDelete.labels.length === 1
+      ? `Delete "${pendingDelete.labels[0]}"?`
+      : `Delete ${pendingDelete.labels.length} nodes?`
+    : '';
+
+  const deleteConfirmMessage = pendingDelete
+    ? [
+        pendingDelete.isLive
+          ? 'This campaign is already live. Deleting nodes can affect active enrollments and future sends.'
+          : null,
+        'This action cannot be undone.',
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : '';
+
   return (
-    <ReactFlowProvider>
-      <ReactFlow
+    <>
+      <FlowCanvas
+        mode="editor"
         nodes={nodes}
         edges={edges}
         onNodesChange={handleNodesChange}
-        onEdgesChange={onEdgesChange}
+        onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
         onNodeClick={handleNodeClick}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        defaultEdgeOptions={{ type: 'deletable' }}
+        deleteKeyCode={null}
         fitView
-        style={{ width: '100%', height: '100%' }}
         onInit={(instance: any) => {
           // Store React Flow instance for accessing viewport
           (window as any).__reactFlowInstance = instance;
         }}
       >
-        <FlowBackground />
         <Controls />
-      </ReactFlow>
-    </ReactFlowProvider>
+      </FlowCanvas>
+      <ConfirmModal
+        visible={pendingDelete !== null}
+        onClose={cancelPendingDelete}
+        onConfirm={applyPendingDelete}
+        title={deleteConfirmTitle}
+        message={deleteConfirmMessage}
+        confirmLabel="Delete"
+        confirmVariant="destructive"
+      />
+    </>
   );
 }
 
@@ -592,7 +602,7 @@ export default function BuilderPage() {
             backgroundColor: 'transparent'
           }}
         >
-          {initialFlowData !== null && isReactFlowAvailable() ? (
+          {initialFlowData !== null && isReactFlowWebAvailable() ? (
             <FlowEditor 
               onEditNode={handleEditNode}
               initialNodes={initialFlowData.nodes}

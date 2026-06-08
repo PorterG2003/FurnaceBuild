@@ -14,8 +14,23 @@ describe('isInstallGateExemptRoute', () => {
     assert.strictEqual(isInstallGateExemptRoute('/p/acme-corp/'), true);
   });
 
+  it('exempts public invite acceptance routes', () => {
+    assert.strictEqual(isInstallGateExemptRoute('/accept-platform-invite/abc'), true);
+    assert.strictEqual(isInstallGateExemptRoute('/accept-invitation/abc'), true);
+    assert.strictEqual(isInstallGateExemptRoute('/accept-account-amendment/abc'), true);
+  });
+
+  it('exempts invite-scoped auth routes', () => {
+    assert.strictEqual(isInstallGateExemptRoute('/auth', '?invitation_id=abc'), true);
+    assert.strictEqual(isInstallGateExemptRoute('/auth', 'invitation_id=abc'), true);
+    assert.strictEqual(isInstallGateExemptRoute('/auth', '?amendment_id=abc'), true);
+  });
+
   it('does not exempt other app routes', () => {
+    assert.strictEqual(isInstallGateExemptRoute('/auth'), false);
     assert.strictEqual(isInstallGateExemptRoute('/'), false);
+    assert.strictEqual(isInstallGateExemptRoute('/campaigns'), false);
+    assert.strictEqual(isInstallGateExemptRoute('/account'), false);
     assert.strictEqual(isInstallGateExemptRoute('/flux'), false);
     assert.strictEqual(isInstallGateExemptRoute('/preview'), false);
   });

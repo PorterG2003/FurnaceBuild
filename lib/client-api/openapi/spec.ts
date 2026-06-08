@@ -42,7 +42,7 @@ const tagDescriptions = [
   },
   {
     name: 'Mailboxes',
-    description: 'Read account mailboxes with secret password fields removed.',
+    description: 'Read account mailboxes, manage mailbox tags, and keep secret password fields out of responses.',
   },
   {
     name: 'Inbox',
@@ -64,7 +64,7 @@ const tagDescriptions = [
 
 function buildDescription() {
   return [
-    'Account-scoped REST API for campaigns, leads, people, saved lists, inbox, mailboxes, stats, and block list.',
+    'Account-scoped REST API for campaigns, leads, people, saved lists, inbox, mailboxes, mailbox tags, stats, and block list.',
     '',
     '## Authentication',
     `Send your account API key as \`Authorization: Bearer ${API_KEY_PREFIX}...\`. Keys are created in Furnace Account Settings. Revoked, expired, or unknown keys return \`401 authentication_error\`.`,

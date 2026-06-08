@@ -1,21 +1,35 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { FunnelIcon, MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { useAccount } from '@/contexts/AccountContext';
 import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Button } from '@/components/ui/button';
 import { Alert, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
+import { IconButton } from '@/components/ui/icon-button';
 import {
   ConnectMailboxModal,
   CREATE_MAILBOX_FORM_DATA,
   EditMailboxModal,
+  MailboxListFiltersModal,
   MailboxesTable,
+  MailboxTagsManager,
   TestResultModal,
   UploadMailboxesCSVModal,
   type MailboxFormData,
   type Provider,
   type TestConnectionResult,
+  EMPTY_BULK_MAILBOX_TAG_CHANGES,
+  getBulkMailboxTagConflicts,
+  hasBulkMailboxTagChanges,
+  type BulkMailboxTagChanges,
 } from '@/components/senders';
+import {
+  countActiveMailboxListFilters,
+  EMPTY_MAILBOX_LIST_FILTERS,
+  filterMailboxes,
+  type MailboxListFilters,
+} from '@/components/senders/MailboxListFilterBar';
 import { BLANK_MAILBOX_FORM_DATA } from '@/components/senders/types';
 import {
   createMailbox,
@@ -25,6 +39,7 @@ import {
   updateMailboxConnectionHealth,
 } from '@/lib/supabase/services';
 import type { MailboxOverview } from '@/lib/supabase/services/mailboxes';
+import { useMailboxTags } from '@/lib/mailboxes/useMailboxTags';
 import { testMailboxConnection } from '@/lib/services/email';
 import type { Mailbox, MailboxUpdate } from '@/lib/supabase/types';
 import type { EditorBridge } from '@10play/tentap-editor';
@@ -67,6 +82,10 @@ export default function SendersPage() {
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showUploadCSVModal, setShowUploadCSVModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [managingTagsMailboxId, setManagingTagsMailboxId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState<MailboxListFilters>(EMPTY_MAILBOX_LIST_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [showTestResultModal, setShowTestResultModal] = useState(false);
   const [testResultMailboxEmail, setTestResultMailboxEmail] = useState<string | null>(null);
   const [mailboxToDelete, setMailboxToDelete] = useState<Mailbox | null>(null);
@@ -83,11 +102,28 @@ export default function SendersPage() {
   const [editMailboxIds, setEditMailboxIds] = useState<string[]>([]);
   const [editFormData, setEditFormData] = useState<MailboxFormData | null>(null);
   const [editModalActiveTab, setEditModalActiveTab] = useState<string>('profile');
+  const [bulkTagChanges, setBulkTagChanges] = useState<BulkMailboxTagChanges>(EMPTY_BULK_MAILBOX_TAG_CHANGES);
   const [saving, setSaving] = useState(false);
   const editSignatureEditorRef = useRef<EditorBridge | null>(null);
   const connectSignatureEditorRef = useRef<EditorBridge | null>(null);
 
   const [formData, setFormData] = useState<MailboxFormData>(CREATE_MAILBOX_FORM_DATA);
+  const mailboxIds = useMemo(() => mailboxes.map((mailbox) => mailbox.id), [mailboxes]);
+  const {
+    accountMailboxTags,
+    mailboxTagsMap,
+    handleTagCreated,
+    handleAddTagToMailbox,
+    handleRemoveTagFromMailbox,
+    handleUpdateTag,
+    handleDeleteTag,
+    applyBulkTagChanges,
+  } = useMailboxTags(accountId, mailboxIds);
+  const activeFilterCount = countActiveMailboxListFilters(appliedFilters);
+  const filteredMailboxes = useMemo(
+    () => filterMailboxes(mailboxes, searchQuery, appliedFilters, mailboxTagsMap),
+    [appliedFilters, mailboxTagsMap, mailboxes, searchQuery],
+  );
 
   const loadMailboxes = useCallback(async (options?: { silent?: boolean }) => {
     if (!accountId) return;
@@ -253,9 +289,10 @@ export default function SendersPage() {
 
   const handleTestMailbox = useCallback(async (
     mailbox: Mailbox,
-    options?: { fromActionsSheet?: boolean }
+    options?: { fromActionsSheet?: boolean; fromTable?: boolean }
   ) => {
     const fromSheet = options?.fromActionsSheet === true;
+    const fromTable = options?.fromTable === true;
     setTestingMailboxId(mailbox.id);
 
     try {
@@ -283,8 +320,14 @@ export default function SendersPage() {
 
       const showInSheet =
         fromSheet && actionsSheetMailboxRef.current?.id === mailbox.id;
-      if (!showInSheet) {
+      if (!showInSheet && !fromTable) {
         setShowTestResultModal(true);
+      } else if (fromTable) {
+        if (result.success) {
+          toast.success('Connection test successful!');
+        } else {
+          toast.error(result.message);
+        }
       }
 
       await loadMailboxes({ silent: true });
@@ -300,9 +343,11 @@ export default function SendersPage() {
 
       const showInSheet =
         fromSheet && actionsSheetMailboxRef.current?.id === mailbox.id;
-      if (!showInSheet) {
+      if (!showInSheet && !fromTable) {
         toast.error(message);
         setShowTestResultModal(true);
+      } else if (fromTable) {
+        toast.error(message);
       }
     } finally {
       setTestingMailboxId(null);
@@ -336,12 +381,17 @@ export default function SendersPage() {
     setShowEditModal(true);
   }, []);
 
+  const resetBulkEditState = useCallback(() => {
+    setBulkTagChanges(EMPTY_BULK_MAILBOX_TAG_CHANGES);
+  }, []);
+
   const handleBulkEdit = () => {
     const ids = Array.from(selectedMailboxes);
     if (ids.length < 2) return;
     setEditMailbox(null);
     setEditMailboxIds(ids);
     setEditFormData({ ...BLANK_MAILBOX_FORM_DATA });
+    resetBulkEditState();
     setEditModalActiveTab('profile');
     setShowEditModal(true);
   };
@@ -356,16 +406,35 @@ export default function SendersPage() {
     try {
       if (isBulk) {
         const payload = buildBulkUpdatePayload(editFormData, signatureHtml);
-        if (Object.keys(payload).length === 0) {
-          toast.error('Fill in at least one field to update');
+        const hasFieldUpdates = Object.keys(payload).length > 0;
+        const hasTagUpdates = hasBulkMailboxTagChanges(bulkTagChanges);
+        if (getBulkMailboxTagConflicts(bulkTagChanges).length > 0) {
+          toast.error('A tag cannot be both added and removed in the same update');
           setSaving(false);
           return;
         }
-        await Promise.all(editMailboxIds.map((id) => updateMailbox(id, payload)));
-        toast.success(`${editMailboxIds.length} mailboxes updated`);
+        if (!hasFieldUpdates && !hasTagUpdates) {
+          toast.error('Fill in at least one field or tag change to update');
+          setSaving(false);
+          return;
+        }
+        await Promise.all(
+          editMailboxIds.map(async (id) => {
+            if (hasFieldUpdates) await updateMailbox(id, payload);
+          }),
+        );
+        if (hasTagUpdates) {
+          await applyBulkTagChanges(editMailboxIds, bulkTagChanges);
+        }
+        const count = editMailboxIds.length;
+        const parts: string[] = [];
+        if (hasFieldUpdates) parts.push(`${count} mailboxes updated`);
+        if (hasTagUpdates) parts.push('tags applied');
+        toast.success(parts.join('; '));
         setShowEditModal(false);
         setEditMailboxIds([]);
         setEditFormData(null);
+        resetBulkEditState();
         setSelectedMailboxes(new Set());
       } else {
         await updateMailbox(editMailbox!.id, {
@@ -471,15 +540,54 @@ export default function SendersPage() {
         />
       ) : null}
 
+      <View className="mb-4 flex-row items-center" style={{ minWidth: 0, gap: 10 }}>
+        <View
+          className="flex-1 flex-row items-center rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-3 py-2.5"
+          style={{ borderWidth: 1, minWidth: 0 }}
+        >
+          <MagnifyingGlassIcon size={20} color="#6B7280" style={{ marginRight: 10 }} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search by mailbox name or email"
+            placeholderTextColor="#6B7280"
+            className="flex-1 text-white font-instrument text-base py-0"
+            style={{ minHeight: 24 }}
+          />
+        </View>
+        <View className="relative" style={{ flexShrink: 0 }}>
+          <IconButton
+            icon={FunnelIcon}
+            variant="secondary"
+            size="sm"
+            matchButtonPadding="sm"
+            className="!h-11 !w-11 !bg-[#1A1A1A] !border-[#2A2A2A]"
+            accessibilityLabel="Mailbox filters"
+            onPress={() => setFiltersOpen(true)}
+          />
+          {activeFilterCount > 0 ? (
+            <View className="absolute -top-1 -right-1 min-w-[18px] min-h-[18px] px-1 items-center justify-center rounded-full bg-brand-orange border border-[#1A1A1A]">
+              <Text className="text-white font-instrument-semibold text-[10px] leading-none">
+                {activeFilterCount}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+
       <MailboxesTable
         isLoading={isLoading}
         showSkeleton={showSkeleton}
         isMobile={isMobile}
         allowAddMailboxes={!isMobile}
-        mailboxes={mailboxes}
+        mailboxes={filteredMailboxes}
+        totalMailboxes={mailboxes.length}
+        hasActiveFilters={activeFilterCount > 0 || searchQuery.trim().length > 0}
+        mailboxTagsMap={mailboxTagsMap}
         selectedMailboxes={selectedMailboxes}
         onSelectionChange={setSelectedMailboxes}
         onTestMailbox={handleTestMailbox}
+        onManageTags={(mailbox) => setManagingTagsMailboxId(mailbox.id)}
         onEditMailbox={handleEditMailbox}
         onDeleteClick={handleDeleteClick}
         testingMailboxId={testingMailboxId}
@@ -491,6 +599,31 @@ export default function SendersPage() {
         onActionsSheetMailboxChange={handleActionsSheetMailboxChange}
         testResult={testResult}
         testResultMailboxEmail={testResultMailboxEmail}
+      />
+
+      {accountId && managingTagsMailboxId ? (
+        <MailboxTagsManager
+          accountId={accountId}
+          mailboxId={managingTagsMailboxId}
+          visible={managingTagsMailboxId !== null}
+          onClose={() => setManagingTagsMailboxId(null)}
+          tags={mailboxTagsMap[managingTagsMailboxId] ?? []}
+          accountTags={accountMailboxTags}
+          onTagCreated={handleTagCreated}
+          onAddTag={handleAddTagToMailbox}
+          onRemoveTag={handleRemoveTagFromMailbox}
+          onUpdateTag={handleUpdateTag}
+          onDeleteTag={handleDeleteTag}
+        />
+      ) : null}
+
+      <MailboxListFiltersModal
+        visible={filtersOpen}
+        filters={appliedFilters}
+        accountTags={accountMailboxTags}
+        onApply={setAppliedFilters}
+        onClear={() => setAppliedFilters({ ...EMPTY_MAILBOX_LIST_FILTERS })}
+        onClose={() => setFiltersOpen(false)}
       />
 
       <ConnectMailboxModal
@@ -542,6 +675,7 @@ export default function SendersPage() {
             setEditMailbox(null);
             setEditMailboxIds([]);
             setEditFormData(null);
+            resetBulkEditState();
           }}
           editMailbox={editMailbox}
           editMailboxIds={editMailboxIds}
@@ -552,6 +686,11 @@ export default function SendersPage() {
           saving={saving}
           onSave={handleSaveMailbox}
           editSignatureEditorRef={editSignatureEditorRef}
+          accountId={accountId ?? undefined}
+          accountTags={accountMailboxTags}
+          bulkTagChanges={editMailboxIds.length > 0 ? bulkTagChanges : undefined}
+          onBulkTagChangesChange={setBulkTagChanges}
+          onTagCreated={handleTagCreated}
         />
       )}
 

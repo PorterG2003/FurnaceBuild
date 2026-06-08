@@ -5,6 +5,7 @@ interface WaitTimeNodeData {
   label?: string;
   duration?: string;
   unit?: 'minutes' | 'hours' | 'days';
+  readOnly?: boolean;
 }
 
 interface WaitTimeNodeProps {
@@ -26,9 +27,22 @@ function WaitTimeNode({ data, selected, id }: WaitTimeNodeProps) {
       (window as any).__reactFlowEditNode?.(id, 'waitTime');
     }
   };
+
+  const handleDelete = () => {
+    if (typeof window !== 'undefined') {
+      (window as any).__reactFlowDeleteNode?.(id);
+    }
+  };
   
   return (
-    <BaseNode label={displayLabel} onEdit={handleEdit} icon={IconComponent && <IconComponent size={16} color="#f85102" />}>
+    <BaseNode
+      label={displayLabel}
+      onEdit={handleEdit}
+      onDelete={handleDelete}
+      icon={IconComponent && <IconComponent size={16} color="#f85102" />}
+      showActions={!data.readOnly}
+      nodeLabel={displayLabel}
+    >
       {displayDuration && (
         <div style={{
           color: '#9CA3AF',

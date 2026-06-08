@@ -225,7 +225,7 @@ export default function MissionControlPage() {
                 {flowBuilt ? 'Edit flow' : 'Build flow'}
               </Button>
             </View>
-            <View style={{ margin: 12, marginTop: 16, borderRadius: 8, overflow: 'hidden', pointerEvents: 'none' }}>
+            <View style={{ margin: 12, marginTop: 16, pointerEvents: 'none' }}>
               {flowData?.nodes && flowData.nodes.length > 0 ? (
                 <FlowDiagram
                   nodes={flowData.nodes}

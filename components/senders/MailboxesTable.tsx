@@ -9,6 +9,7 @@ import { SendersCardListSkeleton } from '@/components/skeletons';
 import type { TestConnectionResult } from './types';
 import type { Mailbox } from '@/lib/supabase/types';
 import type { MailboxOverview } from '@/lib/supabase/services/mailboxes';
+import type { MailboxTag } from '@/lib/supabase/services/mailbox-tags';
 
 export interface MailboxesTableProps {
   isLoading: boolean;
@@ -16,9 +17,13 @@ export interface MailboxesTableProps {
   isMobile: boolean;
   allowAddMailboxes: boolean;
   mailboxes: MailboxOverview[];
+  totalMailboxes?: number;
+  hasActiveFilters?: boolean;
+  mailboxTagsMap: Record<string, MailboxTag[]>;
   selectedMailboxes: Set<string>;
   onSelectionChange: (next: Set<string>) => void;
-  onTestMailbox: (mailbox: Mailbox, options?: { fromActionsSheet?: boolean }) => void;
+  onTestMailbox: (mailbox: Mailbox, options?: { fromActionsSheet?: boolean; fromTable?: boolean }) => void;
+  onManageTags: (mailbox: Mailbox) => void;
   onEditMailbox: (mailbox: Mailbox) => void;
   onDeleteClick: (mailbox: Mailbox) => void;
   testingMailboxId: string | null;
@@ -39,9 +44,13 @@ export function MailboxesTable({
   isMobile,
   allowAddMailboxes,
   mailboxes,
+  totalMailboxes = mailboxes.length,
+  hasActiveFilters = false,
+  mailboxTagsMap,
   selectedMailboxes,
   onSelectionChange,
   onTestMailbox,
+  onManageTags,
   onEditMailbox,
   onDeleteClick,
   testingMailboxId,
@@ -60,11 +69,13 @@ export function MailboxesTable({
       buildMailboxOverviewColumns({
         includeActions: true,
         testingMailboxId,
-        onTestMailbox: (mailbox) => onTestMailbox(mailbox),
+        mailboxTagsMap,
+        onTestMailbox: (mailbox) => onTestMailbox(mailbox, { fromTable: true }),
+        onManageTags: (mailbox) => onManageTags(mailbox),
         onEditMailbox: (mailbox) => onEditMailbox(mailbox),
         onDeleteMailbox: (mailbox) => onDeleteClick(mailbox),
       }),
-    [onDeleteClick, onEditMailbox, onTestMailbox, testingMailboxId]
+    [mailboxTagsMap, onDeleteClick, onEditMailbox, onManageTags, onTestMailbox, testingMailboxId]
   );
 
   useEffect(() => {
@@ -104,6 +115,14 @@ export function MailboxesTable({
   }
 
   if (mailboxes.length === 0) {
+    if (totalMailboxes > 0 && hasActiveFilters) {
+      return (
+        <EmptyState
+          title="No mailboxes match"
+          description="Try adjusting your search or filters."
+        />
+      );
+    }
     if (allowAddMailboxes) {
       return (
         <EmptyState
@@ -140,6 +159,7 @@ export function MailboxesTable({
             <MailboxOverviewCard
               key={mailbox.id}
               mailbox={mailbox}
+              tags={mailboxTagsMap[mailbox.id] ?? []}
               onPressMenu={() => {
                 setMenuMailbox(mailbox);
                 onActionsSheetMailboxChange?.(mailbox);
@@ -158,6 +178,7 @@ export function MailboxesTable({
           testResult={testResult}
           testResultMailboxEmail={testResultMailboxEmail}
           onTest={(m) => onTestMailbox(m, { fromActionsSheet: true })}
+          onManageTags={onManageTags}
           onEdit={onEditMailbox}
           onDelete={onDeleteClick}
           onDismissTestResult={() => {

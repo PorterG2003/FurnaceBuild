@@ -145,6 +145,19 @@ export function buildClientApiComponents() {
         description: 'Campaign tag id.',
         schema: { type: 'string', format: 'uuid' },
       },
+      MailboxTagIds: {
+        name: 'tag_ids',
+        in: 'query',
+        description: 'Comma-separated mailbox tag ids. Returns mailboxes that have any of the listed tags.',
+        schema: { type: 'string', example: 'uuid-1,uuid-2' },
+      },
+      MailboxTagId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Mailbox tag id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
       GlobalLeadId: {
         name: 'globalLeadId',
         in: 'path',
@@ -707,9 +720,75 @@ export function buildClientApiComponents() {
           provider: { type: 'string', nullable: true },
           created_at: { type: 'string', format: 'date-time', nullable: true },
           updated_at: { type: 'string', format: 'date-time', nullable: true },
+          tags: {
+            type: 'array',
+            items: schemaRef('MailboxTag'),
+            description: 'Mailbox tags assigned to this mailbox.',
+          },
         },
         required: ['id'],
         additionalProperties: true,
+      },
+      MailboxTag: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          color: { type: 'string', nullable: true },
+          created_at: { type: 'string', format: 'date-time' },
+        },
+        required: ['id', 'name', 'created_at'],
+      },
+      MailboxTagCreate: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          color: { type: 'string', nullable: true },
+        },
+        required: ['name'],
+        additionalProperties: false,
+      },
+      MailboxTagUpdate: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          color: { type: 'string', nullable: true },
+        },
+        additionalProperties: false,
+      },
+      MailboxTagResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('MailboxTag'),
+        },
+        required: ['data'],
+      },
+      MailboxTagListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('MailboxTag') },
+        },
+        required: ['data'],
+      },
+      MailboxUpdate: {
+        type: 'object',
+        description: 'Mutable mailbox fields currently support tag assignment only.',
+        properties: {
+          tag_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+            description: 'Replace all tag assignments on the mailbox.',
+          },
+          add_tag_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+          },
+          remove_tag_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+          },
+        },
+        additionalProperties: false,
       },
       Thread: {
         type: 'object',

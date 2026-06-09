@@ -236,6 +236,10 @@ async function auditMailbox(
   mailbox: MailboxRow,
   args: Args,
 ): Promise<{ samples: MessageSample[]; errors: string[]; scanned: number }> {
+  const samples: MessageSample[] = [];
+  const errors: string[] = [];
+  let scanned = 0;
+
   const client = new ImapFlow({
     host: mailbox.imap_host,
     port: mailbox.imap_port,
@@ -247,12 +251,11 @@ async function auditMailbox(
     logger: false,
     connectionTimeout: 15_000,
     greetingTimeout: 10_000,
-    socketTimeout: 20_000,
+    socketTimeout: 45_000,
   });
-
-  const samples: MessageSample[] = [];
-  const errors: string[] = [];
-  let scanned = 0;
+  client.on('error', (error) => {
+    errors.push(error instanceof Error ? error.message : String(error));
+  });
 
   try {
     await client.connect();
@@ -399,15 +402,26 @@ async function main() {
 
   for (const mailbox of mailboxes) {
     process.stdout.write(`Scanning ${mailbox.email_address}... `);
-    const result = await auditMailbox(mailbox, args);
-    allSamples.push(...result.samples);
-    mailboxResults.push({
-      email: mailbox.email_address,
-      imapHost: mailbox.imap_host,
-      scanned: result.scanned,
-      errors: result.errors,
-    });
-    console.log(`${result.scanned} message(s)${result.errors.length ? `, ${result.errors.length} error(s)` : ''}`);
+    try {
+      const result = await auditMailbox(mailbox, args);
+      allSamples.push(...result.samples);
+      mailboxResults.push({
+        email: mailbox.email_address,
+        imapHost: mailbox.imap_host,
+        scanned: result.scanned,
+        errors: result.errors,
+      });
+      console.log(`${result.scanned} message(s)${result.errors.length ? `, ${result.errors.length} error(s)` : ''}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      mailboxResults.push({
+        email: mailbox.email_address,
+        imapHost: mailbox.imap_host,
+        scanned: 0,
+        errors: [message],
+      });
+      console.log(`failed (${message})`);
+    }
   }
 
   const summary = summarize(allSamples);

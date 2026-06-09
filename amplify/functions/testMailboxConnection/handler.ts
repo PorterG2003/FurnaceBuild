@@ -2,8 +2,8 @@ import { reportErrorToSlack } from '@furnace/slack-lib';
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { ImapFlow } from 'imapflow';
-import { formatImapError, type ImapErrorDetails } from '../../../lib/mailbox/connectionErrors.js';
-import { verifyImapInboxAccess } from '../../../lib/mailbox/imapInbox.js';
+import { formatImapError, type ImapErrorDetails } from '../../../lib/mailbox/connectionErrors';
+import { verifyImapInboxAccess } from '../../../lib/mailbox/imapInbox';
 import type { Schema } from '../../data/resource';
 
 function isFunctionUrlEvent(event: any): event is { headers: Record<string, string>; body?: string | null; isBase64Encoded?: boolean } {

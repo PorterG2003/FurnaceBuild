@@ -841,7 +841,7 @@ export async function upsertCampaignFromSmartlead(
     smartlead_created_at: sl.created_at ?? null,
     locked: false,
     sending_interval_seconds: 300,
-    created_at: now,
+    created_at: sl.created_at ?? now,
     updated_at: now,
   };
 

@@ -1,7 +1,68 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { fetchSmartleadCampaignStats, fetchSmartleadCampaignStatsByDay } from './migration';
+import {
+  fetchSmartleadCampaignStats,
+  fetchSmartleadCampaignStatsByDay,
+  upsertCampaignFromSmartlead,
+} from './migration';
+
+function createMockMigrationDb(capture: { upsertRow?: Record<string, unknown> }) {
+  const chain = {
+    upsert(row: Record<string, unknown>) {
+      capture.upsertRow = row;
+      return chain;
+    },
+    select() {
+      return chain;
+    },
+    single() {
+      return Promise.resolve({
+        data: { id: 'campaign-uuid', ...capture.upsertRow },
+        error: null,
+      });
+    },
+  };
+
+  return {
+    from() {
+      return chain;
+    },
+  };
+}
+
+test('upsertCampaignFromSmartlead uses Smartlead created_at for campaigns.created_at', async () => {
+  const capture: { upsertRow?: Record<string, unknown> } = {};
+  const smartleadCreatedAt = '2024-06-15T10:30:00.000Z';
+
+  await upsertCampaignFromSmartlead(
+    { id: 42, name: 'Test Campaign', created_at: smartleadCreatedAt },
+    'account-id',
+    'owner-id',
+    createMockMigrationDb(capture),
+  );
+
+  assert.equal(capture.upsertRow?.created_at, smartleadCreatedAt);
+  assert.equal(capture.upsertRow?.smartlead_created_at, smartleadCreatedAt);
+});
+
+test('upsertCampaignFromSmartlead falls back to now when Smartlead created_at is missing', async () => {
+  const capture: { upsertRow?: Record<string, unknown> } = {};
+  const before = Date.now();
+
+  await upsertCampaignFromSmartlead(
+    { id: 43, name: 'No Date Campaign' },
+    'account-id',
+    'owner-id',
+    createMockMigrationDb(capture),
+  );
+
+  const after = Date.now();
+  assert.equal(capture.upsertRow?.smartlead_created_at, null);
+  assert.equal(typeof capture.upsertRow?.created_at, 'string');
+  const createdAtMs = new Date(capture.upsertRow!.created_at as string).getTime();
+  assert.ok(createdAtMs >= before && createdAtMs <= after);
+});
 
 test('fetchSmartleadCampaignStats parses reply_count from Smartlead totals responses', async () => {
   const originalFetch = globalThis.fetch;

@@ -131,12 +131,22 @@ export interface SmartleadStatsByDay {
   bounce: number;
 }
 
+export type FurnaceThreadCategory = 'Interested' | 'Neutral' | 'Not Interested';
+
+export interface SmartleadLeadCategory {
+  id: number;
+  name: string;
+  sentiment_type?: string;
+}
+
 export interface SmartleadInboxReplyLead {
   email_lead_id: number;
   email_campaign_id: number | null;
   lead_email?: string;
   lead_first_name?: string;
   lead_last_name?: string;
+  categoryId?: number;
+  categoryName?: string;
 }
 
 export interface SmartleadMessageHistoryItem {
@@ -296,7 +306,18 @@ export async function fetchSmartleadLeads(
     }
     offset += data.length;
   }
-  return all;
+  return dedupeSmartleadLeadsById(all);
+}
+
+/** Last occurrence wins when Smartlead returns duplicate lead ids in one fetch. */
+export function dedupeSmartleadLeadsById(leads: SmartleadLead[]): SmartleadLead[] {
+  const byId = new Map<number, SmartleadLead>();
+  for (const lead of leads) {
+    if (Number.isFinite(lead.id) && lead.id > 0) {
+      byId.set(lead.id, lead);
+    }
+  }
+  return [...byId.values()];
 }
 
 function smartleadApiErrorMessage(res: Response, resource: string): string {
@@ -324,18 +345,89 @@ function buildSmartleadLeadName(firstName?: string, lastName?: string): string |
   return fullName || null;
 }
 
-function parseSmartleadInboxReplyLead(item: unknown): SmartleadInboxReplyLead | null {
+function parseSmartleadCategoryFromInboxRow(row: Record<string, unknown>): {
+  categoryId?: number;
+  categoryName?: string;
+} {
+  const category = row.category;
+  if (category != null && typeof category === 'object' && !Array.isArray(category)) {
+    const cat = category as Record<string, unknown>;
+    return {
+      categoryId: numberOrNull(cat.id) ?? undefined,
+      categoryName: stringOrUndefined(cat.name),
+    };
+  }
+  const categoryId =
+    numberOrNull(row.lead_category_id) ??
+    numberOrNull(row.category_id) ??
+    numberOrNull(row.lead_category);
+  const categoryName = stringOrUndefined(row.lead_category_name) ?? stringOrUndefined(row.category_name);
+  return {
+    categoryId: categoryId ?? undefined,
+    categoryName,
+  };
+}
+
+export function parseSmartleadInboxReplyLead(item: unknown): SmartleadInboxReplyLead | null {
   if (item == null || typeof item !== 'object' || Array.isArray(item)) return null;
   const row = item as Record<string, unknown>;
   const emailLeadId = numberOrNull(row.email_lead_id);
   if (emailLeadId == null) return null;
+  const { categoryId, categoryName } = parseSmartleadCategoryFromInboxRow(row);
   return {
     email_lead_id: emailLeadId,
     email_campaign_id: numberOrNull(row.email_campaign_id),
     lead_email: stringOrUndefined(row.lead_email),
     lead_first_name: stringOrUndefined(row.lead_first_name),
     lead_last_name: stringOrUndefined(row.lead_last_name),
+    categoryId,
+    categoryName,
   };
+}
+
+export async function fetchSmartleadLeadCategories(apiKey: string): Promise<SmartleadLeadCategory[]> {
+  const enc = (s: string) => encodeURIComponent(s);
+  const url = `${SMARTLEAD_BASE}/leads/fetch-categories?api_key=${enc(apiKey)}`;
+  const res = await smartleadRequest({ url });
+  if (!res.ok) {
+    console.warn('[Smartlead migration] fetch-categories failed', { status: res.status });
+    return [];
+  }
+  const raw = await res.json();
+  const rows = Array.isArray(raw) ? raw : Array.isArray((raw as any)?.data) ? (raw as any).data : [];
+  const out: SmartleadLeadCategory[] = [];
+  for (const item of rows) {
+    if (item == null || typeof item !== 'object' || Array.isArray(item)) continue;
+    const row = item as Record<string, unknown>;
+    const id = numberOrNull(row.id);
+    const name = stringOrUndefined(row.name);
+    if (id == null || !name) continue;
+    out.push({
+      id,
+      name,
+      sentiment_type: stringOrUndefined(row.sentiment_type),
+    });
+  }
+  return out;
+}
+
+export function mapSmartleadCategoryToFurnace(
+  categoryId: number | undefined,
+  categoryName: string | undefined,
+  categories: SmartleadLeadCategory[],
+): FurnaceThreadCategory | null {
+  const byId = categoryId != null ? categories.find((c) => c.id === categoryId) : undefined;
+  const name = (byId?.name ?? categoryName ?? '').trim();
+  const sentiment = byId?.sentiment_type?.toLowerCase();
+
+  if (sentiment === 'negative' || /not interested|do not contact/i.test(name)) {
+    return 'Not Interested';
+  }
+  if (sentiment === 'positive' || /\binterested\b|meeting/i.test(name)) {
+    return 'Interested';
+  }
+  if (name) return 'Neutral';
+  return null;
 }
 
 async function fetchSmartleadInboxRepliesPage(
@@ -902,7 +994,7 @@ export async function upsertLeadsFromSmartlead(
   const allLeadIds: string[] = [];
 
   for (let i = 0; i < smartleadLeads.length; i += LEAD_BATCH_SIZE) {
-    const batch = smartleadLeads.slice(i, i + LEAD_BATCH_SIZE);
+    const batch = dedupeSmartleadLeadsById(smartleadLeads.slice(i, i + LEAD_BATCH_SIZE));
     const now = new Date().toISOString();
 
     const rows = await Promise.all(
@@ -938,7 +1030,7 @@ export async function upsertLeadsFromSmartlead(
 
     const { data, error } = await database
       .from('leads')
-      .upsert(rows as any, { onConflict: 'smartlead_lead_id' })
+      .upsert(rows as any, { onConflict: 'campaign_id,smartlead_lead_id' })
       .select('id');
 
     if (error) throw new Error(`Failed to upsert leads batch: ${error.message}`);
@@ -1017,6 +1109,138 @@ export async function upsertImportedCampaignStatsByDay(
   }
   if (process.env.NODE_ENV !== 'production') {
     console.log('[Smartlead migration] upsertImportedCampaignStatsByDay ok', { campaignId, rowCount: byDay.length });
+  }
+}
+
+/** Merge analytics totals with imported thread counts (inbox is authoritative for replied/positive). */
+export function computeFinalImportedCampaignStats(
+  analytics: SmartleadCampaignStats | null | undefined,
+  threadReplyCount: number,
+  interestedThreadCount: number,
+): SmartleadCampaignStats {
+  const base = analytics ?? {
+    sent: 0,
+    replied: 0,
+    positiveReply: 0,
+    bounce: 0,
+    lastBounceAt: null,
+  };
+  const replied = Math.max(base.replied, threadReplyCount);
+  const positiveReply = Math.max(base.positiveReply, interestedThreadCount);
+  if (replied > base.replied || positiveReply > base.positiveReply) {
+    console.log('[Smartlead migration] finalizeImportedCampaignStats: inbox threads exceed analytics', {
+      analyticsReplied: base.replied,
+      threadReplyCount,
+      analyticsPositive: base.positiveReply,
+      interestedThreadCount,
+      finalReplied: replied,
+      finalPositive: positiveReply,
+    });
+  }
+  return {
+    sent: base.sent,
+    replied,
+    positiveReply,
+    bounce: base.bounce,
+    lastBounceAt: base.lastBounceAt,
+  };
+}
+
+async function countImportedThreadStats(
+  campaignId: string,
+  db: MigrationDatabaseClient,
+): Promise<{ replyCount: number; interestedCount: number }> {
+  const { data, error } = await (db
+    .from('email_threads')
+    .select('has_reply, category')
+    .eq('campaign_id', campaignId) as any);
+  if (error) {
+    throw new Error(`Failed to count imported thread stats: ${error.message}`);
+  }
+  const rows = (data ?? []) as Array<{ has_reply: boolean; category: string | null }>;
+  let replyCount = 0;
+  let interestedCount = 0;
+  for (const row of rows) {
+    if (row.has_reply) replyCount += 1;
+    if (row.category === 'Interested') interestedCount += 1;
+  }
+  return { replyCount, interestedCount };
+}
+
+export async function finalizeImportedCampaignStats(
+  furnaceCampaignId: string,
+  accountId: string,
+  analyticsStats: SmartleadCampaignStats | null | undefined,
+  db?: MigrationDatabaseClient,
+): Promise<void> {
+  const database = await resolveMigrationDb(db);
+  const { replyCount, interestedCount } = await countImportedThreadStats(furnaceCampaignId, database);
+  const finalStats = computeFinalImportedCampaignStats(analyticsStats, replyCount, interestedCount);
+  await upsertCampaignStatsFromSmartlead(furnaceCampaignId, accountId, finalStats, database);
+}
+
+/**
+ * Remove prior Smartlead import data for a campaign so re-runs from the UI are idempotent.
+ * Keeps the campaign shell (and bucket); wipes leads, enrollments, threads, and imported stats.
+ */
+export async function clearSmartleadCampaignImportArtifacts(
+  campaignId: string,
+  db?: MigrationDatabaseClient,
+): Promise<void> {
+  const database = await resolveMigrationDb(db);
+
+  const { data: threadRows, error: threadSelectError } = await (database
+    .from('email_threads')
+    .select('id')
+    .eq('campaign_id', campaignId) as any);
+  if (threadSelectError) {
+    throw new Error(`Failed to list Smartlead import threads for wipe: ${threadSelectError.message}`);
+  }
+  const threadIds = ((threadRows ?? []) as Array<{ id: string }>).map((row) => row.id);
+
+  if (threadIds.length > 0) {
+    for (let i = 0; i < threadIds.length; i += ENROLLMENTS_IN_QUERY_BATCH_SIZE) {
+      const batch = threadIds.slice(i, i + ENROLLMENTS_IN_QUERY_BATCH_SIZE);
+      const { error: messagesError } = await database
+        .from('email_messages')
+        .delete()
+        .in('thread_id', batch);
+      if (messagesError) {
+        throw new Error(`Failed to wipe Smartlead import messages: ${messagesError.message}`);
+      }
+    }
+  }
+
+  const { error: threadsError } = await database
+    .from('email_threads')
+    .delete()
+    .eq('campaign_id', campaignId);
+  if (threadsError) {
+    throw new Error(`Failed to wipe Smartlead import threads: ${threadsError.message}`);
+  }
+
+  const { error: enrollmentsError } = await database
+    .from('enrollments')
+    .delete()
+    .eq('campaign_id', campaignId);
+  if (enrollmentsError) {
+    throw new Error(`Failed to wipe Smartlead import enrollments: ${enrollmentsError.message}`);
+  }
+
+  const { error: leadsError } = await database
+    .from('leads')
+    .delete()
+    .eq('campaign_id', campaignId);
+  if (leadsError) {
+    throw new Error(`Failed to wipe Smartlead import leads: ${leadsError.message}`);
+  }
+
+  const { error: byDayError } = await database
+    .from('imported_campaign_stats_by_day')
+    .delete()
+    .eq('campaign_id', campaignId);
+  if (byDayError) {
+    throw new Error(`Failed to wipe Smartlead imported stats by day: ${byDayError.message}`);
   }
 }
 
@@ -1173,9 +1397,10 @@ async function upsertSmartleadConversationThread(params: {
   enrollmentId: string | null;
   smartleadLeadId: number;
   messages: SmartleadMessageHistoryItem[];
+  category?: FurnaceThreadCategory | null;
   db?: MigrationDatabaseClient;
 }): Promise<string> {
-  const { accountId, campaignId, leadId, enrollmentId, smartleadLeadId, messages, db } = params;
+  const { accountId, campaignId, leadId, enrollmentId, smartleadLeadId, messages, category, db } = params;
   const database = await resolveMigrationDb(db);
   const subject = getSmartleadThreadSubject(messages);
   const participants = getSmartleadThreadParticipants(messages);
@@ -1196,6 +1421,7 @@ async function upsertSmartleadConversationThread(params: {
       last_message_at: lastMessageAt,
       message_count: messages.length,
       has_reply: true,
+      category: category ?? null,
       updated_at: new Date().toISOString(),
     } as any, { onConflict: 'campaign_id,smartlead_lead_id' })
     .select('id')
@@ -1348,9 +1574,11 @@ export async function migrateSingleSmartleadCampaign(
     const campaign = await upsertCampaignFromSmartlead(sl, accountId, ownerId, database);
     campaignResult.campaignId = campaign.id;
 
+    await clearSmartleadCampaignImportArtifacts(campaign.id, database);
+
     onProgress?.({ campaignIndex, campaignCount, campaignName: sl.name, phase: 'leads' });
 
-    const smartleadLeads = await fetchSmartleadLeads(apiKey, sl.id);
+    const smartleadLeads = dedupeSmartleadLeadsById(await fetchSmartleadLeads(apiKey, sl.id));
 
     const leadIds = await upsertLeadsFromSmartlead(
       campaign.id,
@@ -1397,6 +1625,8 @@ export async function migrateSingleSmartleadCampaign(
           detail: `fetching replied threads (${totalFetched} found)...`,
         }),
     );
+
+    const leadCategories = await fetchSmartleadLeadCategories(apiKey);
 
     const leadEnrollmentMap = await getSmartleadLeadEnrollmentMap(
       campaign.id,
@@ -1478,6 +1708,11 @@ export async function migrateSingleSmartleadCampaign(
         enrollmentId: mapping.enrollmentId,
         smartleadLeadId: repliedLead.email_lead_id,
         messages: messageHistory,
+        category: mapSmartleadCategoryToFurnace(
+          repliedLead.categoryId,
+          repliedLead.categoryName,
+          leadCategories,
+        ),
         db: database,
       });
       const threadSubject = getSmartleadThreadSubject(messageHistory);
@@ -1504,13 +1739,14 @@ export async function migrateSingleSmartleadCampaign(
 
     onProgress?.({ campaignIndex, campaignCount, campaignName: sl.name, phase: 'stats' });
 
+    let analyticsStats: SmartleadCampaignStats | null = null;
     try {
-      const stats = await fetchSmartleadCampaignStats(apiKey, sl.id);
-      await upsertCampaignStatsFromSmartlead(campaign.id, accountId, stats, database);
+      analyticsStats = await fetchSmartleadCampaignStats(apiKey, sl.id);
+      await upsertCampaignStatsFromSmartlead(campaign.id, accountId, analyticsStats, database);
       campaignResult.totalsStatsImported = true;
 
       const startDate = (sl.created_at ?? new Date().toISOString()).slice(0, 10);
-      const endDate = await findSmartleadCampaignStatsEndDate(apiKey, sl.id, startDate, stats);
+      const endDate = await findSmartleadCampaignStatsEndDate(apiKey, sl.id, startDate, analyticsStats);
       if (process.env.NODE_ENV !== 'production') {
         console.log('[Smartlead migration] day-by-day range', {
           campaignName: sl.name,
@@ -1518,7 +1754,7 @@ export async function migrateSingleSmartleadCampaign(
           smartleadCampaignId: sl.id,
           startDate,
           endDate,
-          totals: { sent: stats.sent, replied: stats.replied, bounce: stats.bounce },
+          totals: { sent: analyticsStats.sent, replied: analyticsStats.replied, bounce: analyticsStats.bounce },
         });
       }
       const byDay = await fetchSmartleadCampaignStatsByDay(apiKey, sl.id, startDate, endDate);
@@ -1542,6 +1778,8 @@ export async function migrateSingleSmartleadCampaign(
         statsError,
       );
     }
+
+    await finalizeImportedCampaignStats(campaign.id, accountId, analyticsStats, database);
 
     return campaignResult;
   } catch (error: unknown) {

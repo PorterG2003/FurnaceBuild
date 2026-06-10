@@ -2,9 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  computeFinalImportedCampaignStats,
+  dedupeSmartleadLeadsById,
   fetchSmartleadCampaignStats,
   fetchSmartleadCampaignStatsByDay,
+  mapSmartleadCategoryToFurnace,
+  parseSmartleadInboxReplyLead,
   upsertCampaignFromSmartlead,
+  upsertLeadsFromSmartlead,
 } from './migration';
 
 function createMockMigrationDb(capture: { upsertRow?: Record<string, unknown> }) {
@@ -133,4 +138,97 @@ test('fetchSmartleadCampaignStatsByDay keeps reply_count parsing aligned with to
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('dedupeSmartleadLeadsById keeps one row per smartlead id (last wins)', () => {
+  const deduped = dedupeSmartleadLeadsById([
+    { id: 10, email: 'first@example.com' },
+    { id: 20, email: 'b@example.com' },
+    { id: 10, email: 'second@example.com' },
+  ]);
+  assert.equal(deduped.length, 2);
+  assert.equal(deduped.find((l) => l.id === 10)?.email, 'second@example.com');
+});
+
+test('upsertLeadsFromSmartlead dedupes duplicate ids within a batch before upsert', async () => {
+  const upsertedRows: Record<string, unknown>[] = [];
+  const db = {
+    from(table: string) {
+      assert.equal(table, 'leads');
+      return {
+        upsert(rows: Record<string, unknown>[]) {
+          upsertedRows.push(...rows);
+          return {
+            select() {
+              return Promise.resolve({
+                data: rows.map((_, i) => ({ id: `lead-${i}` })),
+                error: null,
+              });
+            },
+          };
+        },
+      };
+    },
+  };
+
+  await upsertLeadsFromSmartlead(
+    'campaign-id',
+    'bucket-id',
+    'account-id',
+    [
+      { id: 1, email: 'a@example.com' },
+      { id: 1, email: 'a-dup@example.com' },
+      { id: 2, email: 'b@example.com' },
+    ],
+    db,
+  );
+
+  assert.equal(upsertedRows.length, 2);
+  assert.equal(upsertedRows[0].smartlead_lead_id, 1);
+  assert.equal(upsertedRows[0].email, 'a-dup@example.com');
+});
+
+test('computeFinalImportedCampaignStats prefers inbox thread counts when higher than analytics', () => {
+  const finalStats = computeFinalImportedCampaignStats(
+    { sent: 7937, replied: 52, positiveReply: 0, bounce: 8, lastBounceAt: null },
+    61,
+    3,
+  );
+  assert.deepEqual(finalStats, {
+    sent: 7937,
+    replied: 61,
+    positiveReply: 3,
+    bounce: 8,
+    lastBounceAt: null,
+  });
+});
+
+test('parseSmartleadInboxReplyLead extracts nested category', () => {
+  const parsed = parseSmartleadInboxReplyLead({
+    email_lead_id: 99,
+    email_campaign_id: 123,
+    lead_email: 'lead@example.com',
+    category: { id: 1, name: 'Interested' },
+  });
+  assert.equal(parsed?.email_lead_id, 99);
+  assert.equal(parsed?.categoryId, 1);
+  assert.equal(parsed?.categoryName, 'Interested');
+});
+
+test('mapSmartleadCategoryToFurnace maps positive sentiment to Interested', () => {
+  const category = mapSmartleadCategoryToFurnace(
+    5,
+    'Meeting Booked',
+    [{ id: 5, name: 'Meeting Booked', sentiment_type: 'positive' }],
+  );
+  assert.equal(category, 'Interested');
+});
+
+test('mapSmartleadCategoryToFurnace maps negative sentiment to Not Interested', () => {
+  const category = mapSmartleadCategoryToFurnace(
+    3,
+    'Not Interested',
+    [{ id: 3, name: 'Not Interested', sentiment_type: 'negative' }],
+  );
+  assert.equal(category, 'Not Interested');
 });

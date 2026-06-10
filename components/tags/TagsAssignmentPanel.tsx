@@ -9,6 +9,7 @@ import { EditTagForm } from './EditTagForm';
 import { tagChipContainerStyle } from './TagChip';
 import type { TagLike } from '@/lib/tags/types';
 import { TAG_PRESET_COLORS, pickRandomPresetColor, resolveTagColor } from '@/lib/tags/tag-colors';
+import { findTagByName, getTagDuplicateNameMessage } from '@/lib/tags/errors';
 
 const CHIP_GAP = 8;
 const DOT_SIZE = 10;
@@ -107,7 +108,11 @@ export function TagsAssignmentPanel({
   const handleCreate = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      toast.error('Name is required');
+      toast.error('Enter a tag name.');
+      return;
+    }
+    if (findTagByName(accountTags, trimmed)) {
+      toast.error(getTagDuplicateNameMessage(trimmed));
       return;
     }
     setIsSubmitting(true);
@@ -116,7 +121,7 @@ export function TagsAssignmentPanel({
       onCreated?.(tag);
       goToList();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create tag');
+      toast.error(e instanceof Error ? e.message : "Couldn't create tag. Try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -126,7 +131,11 @@ export function TagsAssignmentPanel({
     if (!editingTag) return;
     const trimmed = name.trim();
     if (!trimmed) {
-      toast.error('Name is required');
+      toast.error('Enter a tag name.');
+      return;
+    }
+    if (findTagByName(accountTags, trimmed, editingTag.id)) {
+      toast.error(getTagDuplicateNameMessage(trimmed));
       return;
     }
     setIsSubmitting(true);
@@ -135,7 +144,7 @@ export function TagsAssignmentPanel({
       onUpdateTag?.(updated);
       goToList();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to update tag');
+      toast.error(e instanceof Error ? e.message : "Couldn't save tag changes. Try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -150,7 +159,7 @@ export function TagsAssignmentPanel({
       setShowDeleteConfirm(false);
       goToList();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to delete tag');
+      toast.error(e instanceof Error ? e.message : "Couldn't delete tag. Try again.");
     } finally {
       setIsDeleting(false);
     }

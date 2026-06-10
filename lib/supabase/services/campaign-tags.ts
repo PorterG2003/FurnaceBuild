@@ -1,4 +1,5 @@
 import { supabase } from '../client';
+import { getTagCreateErrorMessage, getTagUpdateErrorMessage } from '@/lib/tags/errors';
 
 export interface CampaignTag {
   id: string;
@@ -44,7 +45,7 @@ export async function createCampaignTag(
     .single();
 
   if (error) {
-    throw new Error(`Failed to create campaign tag: ${error.message}`);
+    throw new Error(getTagCreateErrorMessage(error, params.name));
   }
 
   return data;
@@ -70,7 +71,7 @@ export async function updateCampaignTag(
     .single();
 
   if (error) {
-    throw new Error(`Failed to update campaign tag: ${error.message}`);
+    throw new Error(getTagUpdateErrorMessage(error, params.name));
   }
 
   return data;

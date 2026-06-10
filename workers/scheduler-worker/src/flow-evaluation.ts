@@ -26,7 +26,7 @@ export interface LatestMessageJobStatus {
   enrollment_id: string;
   node_id: string;
   sent_at: string | null;
-  status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'blocked' | 'cancelled';
+  status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'blocked' | 'cancelled' | 'held';
   status_reason?: string | null;
   error_message?: string | null;
   created_at?: string;
@@ -346,6 +346,17 @@ export async function evaluateFlow(
       current_node_id: enrollment.current_node_id ?? '',
     });
     throw new Error(error);
+  }
+
+  // Categorizer node: always re-run the handler (same precedent as deferred
+  // emails). The handler is idempotent and owns edge selection by
+  // sourceHandle - generic edge-following below would return ALL branch
+  // targets, which must never happen for a categorizer.
+  if (currentNode.node_type === 'aiCategorizer') {
+    console.log(
+      `[FLOW ${enrollmentId}] Categorizer node ${currentNode.id.substring(0, 8)} is current. Re-running categorizer handler.`,
+    );
+    return { nodes: [currentNode] };
   }
 
   // If current node is an email node, check if the message_job has been sent

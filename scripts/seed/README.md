@@ -147,6 +147,31 @@ The CLI loads [`dotenv`](https://github.com/motdotla/dotenv) from the repo root 
 
 This means local machine values in `.env.local` win over `.env`, which is usually what you want for seed runs.
 
+### `categorizer-flow` scenario
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `SEED_ACCOUNT_ID` | Yes | Account UUID (`accounts.id`) for the seeded campaign |
+| `SEED_OWNER_USER_ID` | Yes | `users.id` for `campaigns.owner_id` and `mailboxes.user_id` |
+| `SEED_CATEGORIZER_CAMPAIGN_ID` | No | Dedicated campaign UUID; defaults to a built-in constant |
+
+Pre-prod gate for the **Categorizer node** — the one place the real OpenRouter classify
+path is exercised before production. Seeds a running campaign whose flow contains a
+categorizer (AI on, all three branch edges, in-thread reply emails), one lead per reply
+type (interested / neutral / not interested / dated OOO / header-stamped OOO / no-reply
+control), real replied threads, then routes each replied enrollment through the real
+`park_or_advance_enrollment_on_reply` RPC so the **live dev scheduler** classifies them
+with an actual cheap-model call.
+
+Requires the dev scheduler worker to run with `OPENROUTER_API_KEY`. Expected outcomes and
+verification SQL: [`docs/implementation/flow/CATEGORIZER_VERIFICATION.md`](../../docs/implementation/flow/CATEGORIZER_VERIFICATION.md).
+
+```bash
+npx tsx scripts/seed/index.ts --scenario=categorizer-flow --dry-run
+```
+
+Re-runs clean and replace only the seed-owned slice for the dedicated campaign id.
+
 ### `platform-invite-preview` scenario
 
 Creates deterministic draft platform invitations for admin-only preview QA, including:

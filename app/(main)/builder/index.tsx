@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
 import { View, Platform, Text, Pressable } from 'react-native';
 import { ConfirmModal } from '@/components/ui/modals';
+import { useToast } from '@/components/ui/feedback';
 import { Breadcrumb } from '@/components/ui/layout';
 import { NavBar } from '@/components/ui/layout/NavBar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -20,6 +21,7 @@ import {
   createAICategorizerNode,
   createDataSenderNode,
 } from './nodes/factories';
+import { backfillCategorizerEdgeHandles } from '@/lib/categorizer';
 import {
   FlowCanvas,
   isReactFlowWebAvailable,
@@ -60,10 +62,13 @@ function sanitizeFlowData(
   nodes: FlowNodeRecord[] | null | undefined,
   edges: FlowEdgeRecord[] | null | undefined,
 ): { nodes: FlowNodeRecord[]; edges: FlowEdgeRecord[] } {
-  return {
-    nodes: Array.isArray(nodes) ? nodes.map((node) => sanitizeFlowNode(node)) : [],
-    edges: Array.isArray(edges) ? edges.map((edge) => sanitizeFlowEdge(edge)) : [],
-  };
+  const sanitizedNodes = Array.isArray(nodes) ? nodes.map((node) => sanitizeFlowNode(node)) : [];
+
+  const sanitizedEdges = Array.isArray(edges)
+    ? backfillCategorizerEdgeHandles(edges.map((edge) => sanitizeFlowEdge(edge)), sanitizedNodes)
+    : [];
+
+  return { nodes: sanitizedNodes, edges: sanitizedEdges };
 }
 
 /** Label for the flow editor / builder page in breadcrumbs and UI. Change here to rename globally. */
@@ -221,6 +226,16 @@ function FlowEditor({
       const factory = nodeFactories[nodeType];
       if (!factory) return;
 
+      const currentNodes: any[] = (window as any).__reactFlowGetNodes?.() ?? [];
+
+      // Only one Categorizer per flow.
+      if (
+        nodeType === 'aiCategorizer' &&
+        currentNodes.some((n: any) => n.type === 'aiCategorizer')
+      ) {
+        return;
+      }
+
       // Get viewport center or use default position
       let position = { x: 400, y: 300 };
       
@@ -240,6 +255,14 @@ function FlowEditor({
       }
 
       const newNode = factory(position);
+      // Emails added after a Categorizer default to reply mode (sent in the
+      // replied thread) - the common post-categorization action.
+      if (
+        nodeType === 'email' &&
+        currentNodes.some((n: any) => n.type === 'aiCategorizer')
+      ) {
+        newNode.data = { ...newNode.data, send_mode: 'reply' };
+      }
       setNodes((nds: any) => [...nds, newNode]);
     };
 
@@ -348,6 +371,7 @@ function FlowEditor({
 export default function BuilderPage() {
   const { campaignId } = useLocalSearchParams<{ campaignId: string }>();
   const router = useRouter();
+  const { toast } = useToast();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [editingNode, setEditingNode] = useState<{ id: string; type: string; data: any } | null>(null);
@@ -483,6 +507,13 @@ export default function BuilderPage() {
   }
 
   const handleAddNode = (nodeType: string) => {
+    if (nodeType === 'aiCategorizer') {
+      const nodes: any[] = (window as any).__reactFlowGetNodes?.() ?? [];
+      if (nodes.some((n: any) => n.type === 'aiCategorizer')) {
+        toast.error('A flow can only have one Categorizer.');
+        return;
+      }
+    }
     // Call the stored function to add node
     if ((window as any).__reactFlowAddNode) {
       (window as any).__reactFlowAddNode(nodeType);
@@ -663,12 +694,19 @@ export default function BuilderPage() {
           };
         } else if (editingNode.type === 'email') {
           const { customFieldKeys, mappedStandardFieldKeys } = getLeadSourceFieldKeysFromFlow();
+          const flowNodes: any[] = (window as any).__reactFlowGetNodes?.() ?? [];
           modalData = {
             ...editingNode.data,
             campaignId: campaignId,
             campaignStatus: campaign?.status,
             customFieldKeys,
             mappedStandardFieldKeys,
+            flowHasCategorizer: flowNodes.some((n: any) => n.type === 'aiCategorizer'),
+          };
+        } else if (editingNode.type === 'aiCategorizer') {
+          modalData = {
+            ...editingNode.data,
+            campaignId: campaignId,
           };
         } else if (editingNode.type === 'dataSender') {
           const { customFieldKeys, mappedStandardFieldKeys } = getLeadSourceFieldKeysFromFlow();

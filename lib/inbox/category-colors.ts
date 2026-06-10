@@ -6,6 +6,7 @@ export const THREAD_CATEGORY_COLORS: Record<string, string> = {
   Interested: '#34D399', // emerald – positive, engaged
   Neutral: '#94A3B8', // slate gray – non-committal
   'Not Interested': '#EA580C', // orange-600 – red-orange, negative intent
+  'Auto Reply': '#A78BFA', // violet – automated OOO/autoresponder
 };
 
 /**

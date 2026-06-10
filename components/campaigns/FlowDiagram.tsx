@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { View, Text, Platform } from 'react-native';
 import { FlowCanvas, isReactFlowWebAvailable } from '@/lib/flow';
 import { nodeTypes } from '@/app/(main)/builder/nodes/nodeTypes';
+import { edgeTypes } from '@/app/(main)/builder/edges/edgeTypes';
+import { backfillCategorizerEdgeHandles } from '@/lib/categorizer';
 
 interface FlowDiagramProps {
   nodes: any[];
@@ -81,6 +83,14 @@ export function FlowDiagram({ nodes, edges, height = 400 }: FlowDiagramProps) {
     });
   }, [nodes]);
 
+  const safeEdges = useMemo(() => {
+    return backfillCategorizerEdgeHandles(edges ?? [], nodes ?? []).map((edge: any) => ({
+      ...edge,
+      type: edge.type ?? 'deletable',
+      data: { ...edge.data, readOnly: true },
+    }));
+  }, [edges, nodes]);
+
   const diagramHeight = height || 400;
   return (
     <View
@@ -90,8 +100,10 @@ export function FlowDiagram({ nodes, edges, height = 400 }: FlowDiagramProps) {
       <FlowCanvas
         mode="readonly"
         nodes={safeNodes}
-        edges={edges}
+        edges={safeEdges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        defaultEdgeOptions={{ type: 'deletable' }}
         fitView
         fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
       />

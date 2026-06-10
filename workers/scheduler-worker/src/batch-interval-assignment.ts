@@ -273,7 +273,7 @@ export async function batchAssignIntervalJobs(
       // No message_job should exist for this enrollment+node combination
       const { data: emailNodes, error: nodesError } = await supabase
         .from('nodes')
-        .select('id')
+        .select('id, node_data')
         .eq('campaign_id', campaign.id)
         .is('deleted_at', null)
         .eq('node_type', 'email');
@@ -282,7 +282,17 @@ export async function batchAssignIntervalJobs(
         continue;
       }
       
-      const emailNodeIds = emailNodes.map(n => n.id);
+      // Reply-mode email nodes (send_mode='reply') are handled by the
+      // scheduler directly as campaign_reply jobs - never interval-assigned.
+      const intervalEmailNodes = emailNodes.filter(
+        (n: any) => n.node_data?.send_mode !== 'reply',
+      );
+
+      if (intervalEmailNodes.length === 0) {
+        continue;
+      }
+
+      const emailNodeIds = intervalEmailNodes.map(n => n.id);
       
       // Find enrollments with email node as current_node_id
       const { data: enrollments, error: enrollmentsError } = await supabase

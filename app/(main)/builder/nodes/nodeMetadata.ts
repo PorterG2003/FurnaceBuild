@@ -37,9 +37,9 @@ export const nodeTypeMetadata = {
     description: 'Wait for a specified duration',
   },
   aiCategorizer: {
-    label: 'AI Categorizer',
+    label: 'Categorizer',
     category: 'logic',
-    description: 'Categorize content using AI',
+    description: 'Branch on reply sentiment',
   },
   dataSender: {
     label: 'Data Sender',

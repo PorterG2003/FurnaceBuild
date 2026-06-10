@@ -39,6 +39,8 @@ async function fetchSecretFromParameterStore(
  *
  * Optional (for local dev, set in workers/scheduler-worker/.env):
  * - SLACK_ERROR_WEBHOOK_URL: Incoming Webhook URL for error reporting to Slack
+ * - OPENROUTER_API_KEY (or OPENROUTER_API_KEY_PARAM_PATH): categorizer AI classification
+ * - OPENROUTER_CATEGORIZER_MODEL: model override (default google/gemini-2.5-flash-lite)
  */
 async function main() {
   try {
@@ -81,6 +83,28 @@ async function main() {
     if (!secretKey) {
       throw new Error(
         'Missing SUPABASE_SECRET_KEY. Provide either SUPABASE_SECRET_KEY or SUPABASE_SECRET_KEY_PARAM_PATH'
+      );
+    }
+
+    // OpenRouter key for the categorizer node (AI reply classification).
+    // Non-fatal: without it, AI categorizer nodes defer-retry and alert
+    // instead of classifying; everything else runs normally.
+    const openRouterApiKeyParamPath = process.env.OPENROUTER_API_KEY_PARAM_PATH;
+    if (openRouterApiKeyParamPath && !process.env.OPENROUTER_API_KEY) {
+      try {
+        process.env.OPENROUTER_API_KEY = await fetchSecretFromParameterStore(
+          openRouterApiKeyParamPath,
+          awsRegion
+        );
+        console.log('[scheduler-worker] OPENROUTER_API_KEY fetched from Parameter Store');
+      } catch (fetchErr) {
+        const errMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+        console.error('[scheduler-worker] OPENROUTER_API_KEY SSM fetch failed (AI categorizer disabled):', errMsg);
+      }
+    } else {
+      console.log(
+        '[scheduler-worker] OpenRouter key:',
+        process.env.OPENROUTER_API_KEY ? 'set via env' : openRouterApiKeyParamPath ? 'param path set' : 'not configured'
       );
     }
 

@@ -31,6 +31,7 @@ backend:
         - cd amplify/functions/stripeWebhook && npm install && cd - || (echo "Failed to install stripeWebhook dependencies" && exit 1)
         - cd amplify/functions/clientApi && npm install && cd - || (echo "Failed to install clientApi dependencies" && exit 1)
         - cd amplify/functions/clientApiBulkImport && npm install && cd - || (echo "Failed to install clientApiBulkImport dependencies" && exit 1)
+        - cd amplify/functions/categorizerPreview && npm install && cd - || (echo "Failed to install categorizerPreview dependencies" && exit 1)
         - cd amplify/functions/sendFluxQuizSubmission && npm install && cd - || (echo "Failed to install sendFluxQuizSubmission dependencies" && exit 1)
         - |
           FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"

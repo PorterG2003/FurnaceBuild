@@ -794,15 +794,18 @@ export function DataTable<T>({
     const column = columns.find((col) => col.key === columnKey);
     const fallbackAlignment: TableColumnAlignment = 'start';
     const alignment = column ? getColumnAlignment(column) : fallbackAlignment;
+    const isCenterAligned = alignment === 'center';
     const controlStyle = {
-      alignSelf: getAlignItemsForAlignment(alignment),
+      alignSelf: isCenterAligned ? ('stretch' as const) : getAlignItemsForAlignment(alignment),
       justifyContent: column ? getJustifyContentForColumn(column) : getJustifyContentForAlignment(fallbackAlignment),
       minHeight: HEADER_CONTROL_MIN_HEIGHT,
+      ...(isCenterAligned ? { width: '100%' as const } : {}),
     };
+    const horizontalPaddingClass = isCenterAligned ? 'px-0' : 'pl-0 pr-3';
     if (!column || !column.sortable) {
       if (typeof label === 'string' || typeof label === 'number') {
         return (
-          <View className="flex-row items-center gap-1 pl-0 pr-3 py-2 max-w-full" style={controlStyle}>
+          <View className={`flex-row items-center gap-1 py-2 max-w-full ${horizontalPaddingClass}`} style={controlStyle}>
             <TableHeaderLabel style={{ textAlign: getTextAlignForAlignment(alignment) }}>
               {label}
             </TableHeaderLabel>
@@ -810,7 +813,7 @@ export function DataTable<T>({
         );
       }
       return (
-        <View className="flex-row items-center gap-1 pl-0 pr-3 py-2 max-w-full" style={controlStyle}>
+        <View className={`flex-row items-center gap-1 py-2 max-w-full ${horizontalPaddingClass}`} style={controlStyle}>
           <View className="min-w-0 flex-row items-center" style={{ justifyContent: getJustifyContentForAlignment(alignment) }}>
             {label}
           </View>
@@ -822,7 +825,7 @@ export function DataTable<T>({
     return (
       <Pressable
         onPress={() => handleSort(columnKey)}
-        className="flex-row items-center gap-1 pl-0 pr-3 py-2 active:opacity-70 max-w-full"
+        className={`flex-row items-center gap-1 py-2 active:opacity-70 max-w-full ${horizontalPaddingClass}`}
         style={controlStyle}
       >
         {typeof label === 'string' || typeof label === 'number' ? (
@@ -1046,11 +1049,11 @@ export function DataTable<T>({
           key={column.key}
           collapsable={measure ? false : undefined}
           onLayout={onLayout}
-          className="px-2 py-2 justify-center items-start min-w-0"
+          className="px-2 py-2 justify-center min-w-0"
           style={{
             ...layoutStyle,
             ...getColumnPaddingStyle(index),
-            alignItems: 'stretch',
+            alignItems: getAlignItemsForColumn(column),
           }}
         >
           <SortButton columnKey={column.key} label={column.label} />

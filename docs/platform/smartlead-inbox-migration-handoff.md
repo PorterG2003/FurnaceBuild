@@ -27,37 +27,52 @@ Outbound sends get a generated `Message-ID` stored as `provider_message_id` (`wo
 
 ### Confirmed (runtime, this session)
 
-- **150 InboxAlways mailboxes**: SMTP + IMAP credentials valid; CSV connection tests pass (~149–150/150).
+- **150 InboxAlways mailboxes** imported to prod under **Foot Traffic Co** (`account_id: 40a23e97-8fa7-4668-bbd5-287f50fa2745`).
+- All 150 on `clinicfoottrafficcocom.austin.inboxalways.com`.
+- SMTP + IMAP credentials valid; CSV connection tests pass (~149–150/150).
 - **Production inbox-checker IMAP fix deployed** — `openImapInbox()` works on InboxAlways hosts.
-- **The 150 migration mailboxes are not imported to prod yet** — credentials exist in CSV only.
 
-### Not confirmed (original Smartlead header concern)
+### Confirmed (IMAP header audit, 2026-06-09 — Foot Traffic Co)
 
-We have **not** inspected inbound mail on the 150 migration mailboxes. An earlier audit accidentally scanned **existing customer mailboxes already in prod** (Scroll, Workflow Academy, 1956 US) — useful as a rough signal for InboxAlways hosts in general, but **not** validation of the migration account.
+Ran `npm run audit:inboxalways-headers` against all **150 Foot Traffic Co mailboxes**. Polled **5,154 recent messages** (last 40 per mailbox, 90 days).
 
-**To confirm on the right mailboxes:** run the header audit against the Smartlead CSV (no prod import required):
+| Classification | Count | % of reply-like |
+|----------------|------:|----------------:|
+| Has `In-Reply-To` (normal) | 3,434 | 98.96% |
+| `References` only (no `In-Reply-To`) | 30 | 0.86% |
+| Headerless but `Re:`/`Fwd:` subject | 6 | 0.17% |
+| **Would miss `isReply()` gate** | **36** | **1.04%** |
 
-```bash
-npm run audit:inboxalways-headers -- --csv /path/to/smartlead-mailboxes.csv --mailbox-limit 150 --messages 40 --days 90
-```
+- **0 IMAP connection failures** across all 150 mailboxes.
+- **Normal replies are fine** — 99% carry `In-Reply-To`.
+- **`References`-only replies are more common here than expected** (~0.9%). Subjects often don't say `Re:` (e.g. "Sprint Retrospective") but `References` points at the outbound message. These would be skipped by `isReply()` today even though `handleReply()` could match them.
+- **Truly headerless `Re:` replies are rare** (~0.2%).
+- Re-run:
+  ```bash
+  SELF_RECOVERY_TARGET_ENV=prod npm run audit:inboxalways-headers -- \
+    --account-id 40a23e97-8fa7-4668-bbd5-287f50fa2745 \
+    --mailbox-limit 150 --messages 40 --days 90
+  ```
 
-Then, after import: one Furnace send → one normal reply → verify it lands in Furnace.
+**Still not done:** one live Furnace send → reply → thread match (needs a test send from Furnace so `provider_message_id` exists).
 
-### Known code gap (minor)
+### Known code gap (minor, now quantified)
 
-`isReply()` only checks `In-Reply-To`; `handleReply()` also searches `References`. Replies with **References only** may be skipped. Not tested on the 150 migration mailboxes.
+`isReply()` only checks `In-Reply-To`; `handleReply()` also searches `References`. On Foot Traffic Co, **30 messages (0.86%)** have `References` only and would be skipped. Expanding `isReply()` to include `References` would recover those; the 6 headerless `Re:` subjects (~0.2%) still won't match without subject-based fallback.
 
 ---
 
 ## What blocks replies today
 
-1. ~~**Deploy inbox-checker prod**~~ — done; `openImapInbox()` fix is live.
+1. ~~**Deploy inbox-checker prod**~~ — done; polling works on InboxAlways hosts.
 
-2. **Import 150 mailboxes** via CSV (not done yet).
+2. ~~**Import 150 mailboxes**~~ — done (Foot Traffic Co).
 
 3. **Send from Furnace** (not Smartlead) so `provider_message_id` exists for matching.
 
 4. **Smartlead wizard** if you need historical threads or replies to pre-cutover sends to link up.
+
+5. **(Optional) Fix `isReply()`** to also check `References` — recovers ~0.9% of replies on this account.
 
 ---
 
@@ -68,14 +83,15 @@ Then, after import: one Furnace send → one normal reply → verify it lands in
 | Furnace send after cutover | Yes, if headers normal + inbox-checker polling |
 | Smartlead send before cutover | Only if history imported and headers reference a known message ID |
 | Email with no threading headers | No (by design; same as Smartlead) |
+| Reply with `References` only | **No today** — skipped by `isReply()` gate (~0.9% of replies here) |
 
 ---
 
 ## Verify after deploy
 
-- [ ] Header audit on the Smartlead CSV (not other prod accounts)
-- [ ] Import 150 mailboxes to prod
-- [ ] Inbox-checker logs: successful poll on migration mailboxes (no "Command failed")
+- [x] Import 150 mailboxes to prod (Foot Traffic Co)
+- [x] Header audit on Foot Traffic Co mailboxes — 99% have `In-Reply-To`; ~1% would miss `isReply()` gate
+- [x] Inbox-checker IMAP connect works on all 150 mailboxes (0 connection failures)
 - [ ] One Furnace send → one normal reply → appears in Furnace thread
 
 ---

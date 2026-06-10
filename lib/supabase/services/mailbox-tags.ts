@@ -1,5 +1,6 @@
 import { supabase } from '../client';
 import type { MailboxTag, MailboxTagAssignment } from '../types';
+import { getTagCreateErrorMessage, getTagUpdateErrorMessage } from '@/lib/tags/errors';
 
 export type { MailboxTag, MailboxTagAssignment };
 
@@ -32,7 +33,7 @@ export async function createMailboxTag(
     .single();
 
   if (error) {
-    throw new Error(`Failed to create mailbox tag: ${error.message}`);
+    throw new Error(getTagCreateErrorMessage(error, params.name));
   }
 
   return data;
@@ -59,7 +60,7 @@ export async function updateMailboxTag(
     .single();
 
   if (error) {
-    throw new Error(`Failed to update mailbox tag: ${error.message}`);
+    throw new Error(getTagUpdateErrorMessage(error, params.name));
   }
 
   return data;

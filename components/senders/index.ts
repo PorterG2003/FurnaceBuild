@@ -25,5 +25,6 @@ export {
   type BulkMailboxTagChanges,
   type BulkMailboxTagMode,
   EMPTY_BULK_MAILBOX_TAG_CHANGES,
+  getBulkMailboxTagConflicts,
   hasBulkMailboxTagChanges,
 } from './types';

@@ -7,6 +7,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/feedback';
 import { createMailboxTag, type MailboxTag } from '@/lib/supabase/services/mailbox-tags';
 import { pickRandomPresetColor, resolveTagColor } from '@/lib/tags/tag-colors';
+import { findTagByName, getTagDuplicateNameMessage } from '@/lib/tags/errors';
 import type { BulkMailboxTagChanges } from './types';
 import { withBulkMailboxAddTagIds, withBulkMailboxRemoveTagIds } from './types';
 
@@ -51,7 +52,11 @@ export function BulkMailboxTagsEditor({
   const handleCreateTag = async () => {
     const trimmed = newTagName.trim();
     if (!trimmed) {
-      toast.error('Name is required');
+      toast.error('Enter a tag name.');
+      return;
+    }
+    if (findTagByName(accountTags, trimmed)) {
+      toast.error(getTagDuplicateNameMessage(trimmed));
       return;
     }
     setIsSubmittingTag(true);
@@ -70,7 +75,7 @@ export function BulkMailboxTagsEditor({
       setNewTagColor(pickRandomPresetColor());
       setCreatingTag(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create tag');
+      toast.error(error instanceof Error ? error.message : "Couldn't create tag. Try again.");
     } finally {
       setIsSubmittingTag(false);
     }

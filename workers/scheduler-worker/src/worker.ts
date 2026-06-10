@@ -14,15 +14,19 @@ import {
 } from './flow-evaluation.js';
 import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
 import { handleAICategorizerNode } from './node-handlers/ai-categorizer-handler.js';
+import { handleReplyEmailNode } from './node-handlers/reply-email-handler.js';
 import { handleDataSenderNode } from './node-handlers/data-sender-handler.js';
 import { maintainCampaignIntervals } from './interval-management.js';
 import { batchAssignIntervalJobs } from './batch-interval-assignment.js';
 import { resolveOooResumePollIntervalMs, runOutOfOfficeResumeTick } from './ooo-resume-tick.js';
+import type { CategorizerLlmTransport } from './categorizer/classify.js';
 import type { CampaignSchedule, Enrollment } from './types.js';
 
 export interface WorkerConfig {
   supabase: SupabaseClient;
   databaseClient: DatabaseClient;
+  /** Injectable categorizer LLM transport (tests use a scripted fake). */
+  categorizerClassifyTransport?: CategorizerLlmTransport;
 }
 
 type CampaignAccountRelation =
@@ -66,6 +70,8 @@ interface CampaignProcessingContext extends FlowEvaluationSharedContext {
 const FULL_BATCH_BACKOFF_MS = 750;
 const RESERVED_RECLAIM_INTERVAL_MS = 5 * 60 * 1000;
 const SELF_RECOVERY_AUDIT_INTERVAL_MS = 15 * 60 * 1000;
+const CATEGORIZER_SWEEP_INTERVAL_MS = 30 * 60 * 1000;
+const CATEGORIZER_SWEEP_BATCH_SIZE = 100;
 const RESERVED_RECLAIM_BATCH_SIZE = 50;
 const RESERVED_RECLAIM_REARM_DELAY_SECONDS = 60;
 const STALE_SENDING_BATCH_SIZE = 20;
@@ -96,10 +102,13 @@ export class SchedulerWorker {
   private oooResumeTimer?: ReturnType<typeof setInterval>;
   private staleReservedReclaimTimer?: ReturnType<typeof setInterval>;
   private selfRecoveryAuditTimer?: ReturnType<typeof setInterval>;
+  private categorizerSweepTimer?: ReturnType<typeof setInterval>;
+  private readonly categorizerClassifyTransport?: CategorizerLlmTransport;
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
     this.databaseClient = config.databaseClient;
+    this.categorizerClassifyTransport = config.categorizerClassifyTransport;
   }
 
   /**
@@ -121,6 +130,7 @@ export class SchedulerWorker {
     this.startOutOfOfficeResumeProcessing();
     this.startStaleReservedReclaim();
     this.startSelfRecoveryAudit();
+    this.startCategorizerSweep();
 
     console.log('Scheduler worker started. Polling database...');
 
@@ -268,6 +278,9 @@ export class SchedulerWorker {
     }
     if (this.selfRecoveryAuditTimer) {
       clearInterval(this.selfRecoveryAuditTimer);
+    }
+    if (this.categorizerSweepTimer) {
+      clearInterval(this.categorizerSweepTimer);
     }
   }
 
@@ -637,6 +650,50 @@ export class SchedulerWorker {
     });
   }
 
+  /**
+   * Safety net for lost categorizer wake events: wakes parked enrollments
+   * whose latest replied thread is actionable. Event-driven wakes
+   * (inbox-checker park RPC, manual category) are the primary mechanism;
+   * this is expected to wake ~0 rows.
+   */
+  private startCategorizerSweep(): void {
+    this.categorizerSweepTimer = this.startSingleFlightInterval({
+      taskName: 'CATEGORIZER SWEEP',
+      intervalMs: CATEGORIZER_SWEEP_INTERVAL_MS,
+      runImmediately: false,
+      task: async () => {
+        const { data, error } = await this.supabase.rpc('sweep_parked_categorizer_enrollments', {
+          p_batch_size: CATEGORIZER_SWEEP_BATCH_SIZE,
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        const woken = typeof data === 'number' ? data : 0;
+        if (woken > 0) {
+          console.log(`[CATEGORIZER SWEEP] Woke ${woken} parked enrollment(s) with actionable replies`);
+        }
+      },
+      onError: (error) => {
+        const msg = formatUnknownError(error);
+        console.error('[CATEGORIZER SWEEP] Error:', msg);
+        reportErrorToSlack('Scheduler: categorizer sweep failed', {
+          severity: isRetryableSupabaseReadError(msg) ? 'warning' : 'critical',
+          error: msg,
+          alertPolicy: isRetryableSupabaseReadError(msg)
+            ? 'transient_retryable_warning'
+            : 'critical_failure',
+          aggregationKey: 'scheduler-categorizer-sweep',
+          summaryFields: {
+            worker: 'scheduler',
+            operation: 'sweep_parked_categorizer_enrollments',
+          },
+        });
+      },
+    });
+  }
+
   private startSelfRecoveryAudit(): void {
     this.selfRecoveryAuditTimer = this.startSingleFlightInterval({
       taskName: 'SELF RECOVERY AUDIT',
@@ -675,25 +732,47 @@ export class SchedulerWorker {
         }
 
         const health = Array.isArray(healthRows) ? healthRows[0] : null;
-        if (!health) {
+
+        // Categorizer invariants: orphaned holds (held jobs whose enrollment
+        // is no longer active) and stale parks (branchable category
+        // unprocessed >24h - both the wake event and the sweep failed).
+        const { data: categorizerHealthRows, error: categorizerHealthError } = await this.supabase.rpc(
+          'get_categorizer_health',
+        );
+
+        if (categorizerHealthError) {
+          throw categorizerHealthError;
+        }
+
+        const categorizerHealth = Array.isArray(categorizerHealthRows)
+          ? categorizerHealthRows[0]
+          : null;
+        const orphanedHeldJobs = Number(categorizerHealth?.orphaned_held_jobs ?? 0);
+        const staleParkedEnrollments = Number(categorizerHealth?.stale_parked_enrollments ?? 0);
+
+        if (!health && orphanedHeldJobs === 0 && staleParkedEnrollments === 0) {
           return;
         }
 
-        const retryableStoppedCount = Number(health.retryable_stopped_count ?? 0);
-        const staleReservedCount = Number(health.stale_reserved_count ?? 0);
-        const staleSendingCount = Number(health.stale_sending_count ?? 0);
+        const retryableStoppedCount = Number(health?.retryable_stopped_count ?? 0);
+        const staleReservedCount = Number(health?.stale_reserved_count ?? 0);
+        const staleSendingCount = Number(health?.stale_sending_count ?? 0);
 
         if (
           retryableStoppedCount > 0 ||
           staleReservedCount > 0 ||
           staleSendingCount > 0 ||
-          finalizedCount > 0
+          finalizedCount > 0 ||
+          orphanedHeldJobs > 0 ||
+          staleParkedEnrollments > 0
         ) {
           const summary =
             `retryable_stopped=${retryableStoppedCount}, ` +
             `stale_reserved=${staleReservedCount}, ` +
             `stale_sending=${staleSendingCount}, ` +
-            `finalized_stale_sending=${finalizedCount}`;
+            `finalized_stale_sending=${finalizedCount}, ` +
+            `orphaned_held_jobs=${orphanedHeldJobs}, ` +
+            `stale_categorizer_parks=${staleParkedEnrollments}`;
           console.log(`[SELF RECOVERY AUDIT] ${summary}`);
           reportErrorToSlack('Scheduler: self-recovery audit found outstanding job-health issues', {
             severity: 'warning',
@@ -1013,7 +1092,16 @@ export class SchedulerWorker {
       for (const node of nextNodes) {
         console.log(`[ENROLLMENT ${enrollmentId}] Processing node: ${node.node_type} (${node.id.substring(0, 8)})`);
         
-        if (node.node_type === 'email') {
+        if (node.node_type === 'email' && node.node_data?.send_mode === 'reply') {
+          console.log(`[ENROLLMENT ${enrollmentId}] Handling reply-mode email node...`);
+          // Reply-mode email: scheduler creates a campaign_reply job directly
+          // (thread mailbox + threading headers); bypasses interval pacing.
+          await handleReplyEmailNode(enrollment, node, this.supabase, {
+            schedule: campaign.schedule,
+            activeFlowVersionNumber,
+          });
+          console.log(`[ENROLLMENT ${enrollmentId}] Reply-mode email node processed.`);
+        } else if (node.node_type === 'email') {
           console.log(`[ENROLLMENT ${enrollmentId}] Handling email node...`);
           // Email node: just set current_node_id and stop
           // Job creation will be handled by batch interval assignment once next_run_at is due.
@@ -1040,121 +1128,20 @@ export class SchedulerWorker {
           );
           console.log(`[ENROLLMENT ${enrollmentId}] WaitTime node processed. Updated next_run_at.`);
         } else if (node.node_type === 'aiCategorizer') {
-          console.log(`[ENROLLMENT ${enrollmentId}] Handling AICategorizer node...`);
-          // Handle AICategorizer node (branching logic)
-          const selectedFlowNodeId = await handleAICategorizerNode(
+          console.log(`[ENROLLMENT ${enrollmentId}] Handling Categorizer node...`);
+          // The categorizer handler owns all enrollment updates: park,
+          // classify, restore (Auto Reply), or branch by sourceHandle.
+          await handleAICategorizerNode(
             enrollment,
             node,
             campaign.flow_data,
-            this.supabase
+            this.supabase,
+            {
+              activeFlowVersionNumber,
+              classifyTransport: this.categorizerClassifyTransport,
+            },
           );
-          console.log(`[ENROLLMENT ${enrollmentId}] AICategorizer selected flow node: ${selectedFlowNodeId || 'none'}`);
-
-          if (selectedFlowNodeId) {
-            let selectedNode = context?.nodesByFlowNodeId?.get(selectedFlowNodeId) ?? null;
-            let selectedNodeError: { message: string } | null = null;
-
-            if (!selectedNode && !context?.nodesByFlowNodeId) {
-              const response = await this.supabase
-                .from('nodes')
-                .select('*')
-                .eq('campaign_id', enrollment.campaign_id)
-                .eq('flow_node_id', selectedFlowNodeId)
-                .is('deleted_at', null)
-                .single();
-              selectedNode = response.data as DatabaseNode | null;
-              selectedNodeError = response.error;
-            }
-
-            if (selectedNodeError) {
-              const errMsg = formatUnknownError(selectedNodeError);
-              const retryableSelectedNodeRead = isRetryableSupabaseReadError(errMsg);
-              console.error(`Selected node ${selectedFlowNodeId} lookup failed: ${errMsg}`);
-              reportErrorToSlack(
-                retryableSelectedNodeRead
-                  ? 'Scheduler: selected node lookup deferred (retryable read-path error)'
-                  : 'Scheduler: selected node lookup failed',
-                {
-                  severity: 'warning',
-                  enrollment_id: enrollment.id,
-                  campaign_id: enrollment.campaign_id,
-                  flow_node_id: selectedFlowNodeId,
-                  error: errMsg,
-                  alertPolicy: retryableSelectedNodeRead
-                    ? 'transient_retryable_warning'
-                    : 'persistent_config_warning',
-                  aggregationKey: retryableSelectedNodeRead
-                    ? `scheduler-selected-node-read:${enrollment.campaign_id}`
-                    : `scheduler-selected-node-lookup:${enrollment.campaign_id}:${selectedFlowNodeId}`,
-                  summaryFields: {
-                    campaign_id: enrollment.campaign_id,
-                    flow_node_id: selectedFlowNodeId,
-                  },
-                },
-              );
-              // Update enrollment to AICategorizer node and set next_run_at for retry
-              await this.supabase
-                .from('enrollments')
-                .update({
-                  current_node_id: node.id,
-                  current_flow_version_number: activeFlowVersionNumber,
-                  next_run_at: new Date(Date.now() + 60000).toISOString(), // Retry in 1 minute
-                })
-                .eq('id', enrollment.id);
-            } else if (!selectedNode) {
-              console.error(`Selected node ${selectedFlowNodeId} not found: Node not found`);
-              reportErrorToSlack('Scheduler: selected node not found (flow inconsistency)', {
-                severity: 'warning',
-                enrollment_id: enrollment.id,
-                campaign_id: enrollment.campaign_id,
-                flow_node_id: selectedFlowNodeId,
-                error: 'Node not found',
-                alertPolicy: 'persistent_config_warning',
-                aggregationKey: `scheduler-selected-node-missing:${enrollment.campaign_id}:${selectedFlowNodeId}`,
-                summaryFields: {
-                  campaign_id: enrollment.campaign_id,
-                  flow_node_id: selectedFlowNodeId,
-                },
-              });
-              await this.supabase
-                .from('enrollments')
-                .update({
-                  current_node_id: node.id,
-                  current_flow_version_number: activeFlowVersionNumber,
-                  next_run_at: new Date(Date.now() + 60000).toISOString(), // Retry in 1 minute
-                })
-                .eq('id', enrollment.id);
-            } else {
-              // Update enrollment to AICategorizer node, then process the selected node
-              await this.supabase
-                .from('enrollments')
-                .update({
-                  current_node_id: node.id,
-                  current_flow_version_number: activeFlowVersionNumber,
-                })
-                .eq('id', enrollment.id);
-
-              // Set next_run_at to process the selected node immediately
-              await this.supabase
-                .from('enrollments')
-                .update({
-                  current_node_id: selectedNode.id,
-                  current_flow_version_number: activeFlowVersionNumber,
-                  next_run_at: new Date().toISOString(),
-                })
-                .eq('id', enrollment.id);
-            }
-          } else {
-            // No category selected, update enrollment and set next_run_at for retry
-            await this.supabase
-              .from('enrollments')
-              .update({
-                current_node_id: node.id,
-                current_flow_version_number: activeFlowVersionNumber,
-                next_run_at: new Date(Date.now() + 60000).toISOString(), // Retry in 1 minute
-              })
-              .eq('id', enrollment.id);
-          }
+          console.log(`[ENROLLMENT ${enrollmentId}] Categorizer node processed.`);
         } else if (node.node_type === 'dataSender') {
           console.log(`[ENROLLMENT ${enrollmentId}] Handling DataSender node...`);
           // Handle DataSender node (placeholder)

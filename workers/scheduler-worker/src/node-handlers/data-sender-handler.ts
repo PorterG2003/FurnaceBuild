@@ -183,14 +183,15 @@ export async function handleDataSenderNode(
   let lastError: string | null = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetch(safeUrl, {
+      const response = await fetch(safeUrl.toString(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'Furnace-DataSender/1.0',
         },
         body: JSON.stringify(renderedPayload),
-        signal: AbortSignal.timeout(30_000),
+        // Cast: ambient node-fetch v2 types conflict with the runtime DOM AbortSignal.
+        signal: AbortSignal.timeout(30_000) as any,
       });
       if (!response.ok) {
         lastError = `HTTP ${response.status}`;

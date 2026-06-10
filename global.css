@@ -192,6 +192,20 @@ input[type="password"]:focus {
   stroke-width: 3 !important;
 }
 
+.react-flow__edge-path.furnace-flow-edge-path--categorized {
+  stroke: var(--furnace-edge-color) !important;
+}
+
+.react-flow__edge.selected .react-flow__edge-path.furnace-flow-edge-path--categorized,
+.react-flow__edge-deletable:hover .react-flow__edge-path.furnace-flow-edge-path--categorized,
+.furnace-flow-edge-path--categorized.furnace-flow-edge-path--active {
+  stroke: var(--furnace-edge-color) !important;
+}
+
+.react-flow__edge.selected .react-flow__edge-path.furnace-flow-edge-path--categorized:hover {
+  stroke: var(--furnace-edge-color) !important;
+}
+
 .react-flow__edge.selected .react-flow__edge-path:hover {
   stroke: #F3440D !important;
 }

@@ -422,6 +422,71 @@ test('evaluateFlow uses newest-first ordering for multiple message jobs', async 
   ]);
 });
 
+test('evaluateFlow returns ONLY the categorizer node itself, never its branch targets', async () => {
+  // Generic edge-following would return BOTH branch targets here; the
+  // categorizer handler owns edge selection by sourceHandle, so flow
+  // evaluation must hand back the categorizer node alone.
+  const categorizerNode = {
+    id: enrollment.current_node_id!,
+    campaign_id: enrollment.campaign_id,
+    flow_node_id: 'aiCategorizer-1',
+    node_type: 'aiCategorizer',
+    node_data: { use_ai: true },
+    deleted_at: null,
+  };
+  const interestedTarget = {
+    id: '0c63dd1d-32ff-4f2b-9b6c-3f55f9b9a001',
+    campaign_id: enrollment.campaign_id,
+    flow_node_id: 'email-3',
+    node_type: 'email',
+    node_data: { send_mode: 'reply' },
+    deleted_at: null,
+  };
+  const notInterestedTarget = {
+    id: '0c63dd1d-32ff-4f2b-9b6c-3f55f9b9a002',
+    campaign_id: enrollment.campaign_id,
+    flow_node_id: 'email-4',
+    node_type: 'email',
+    node_data: {},
+    deleted_at: null,
+  };
+
+  const supabase = {
+    from() {
+      throw new Error('evaluateFlow should not query Supabase when shared context is provided');
+    },
+  };
+
+  const result = await evaluateFlow(
+    enrollment,
+    enrollment.campaign_id,
+    {
+      edges: [
+        { source: 'aiCategorizer-1', sourceHandle: 'interested', target: 'email-3' },
+        { source: 'aiCategorizer-1', sourceHandle: 'not-interested', target: 'email-4' },
+      ],
+    },
+    supabase as any,
+    {
+      nodesById: new Map([
+        [categorizerNode.id, categorizerNode],
+        [interestedTarget.id, interestedTarget],
+        [notInterestedTarget.id, notInterestedTarget],
+      ]),
+      nodesByFlowNodeId: new Map([
+        [categorizerNode.flow_node_id, categorizerNode],
+        [interestedTarget.flow_node_id, interestedTarget],
+        [notInterestedTarget.flow_node_id, notInterestedTarget],
+      ]),
+      latestMessageJobByPair: new Map(),
+    },
+  );
+
+  assert.deepEqual(result.nodes.map((node) => node.id), [categorizerNode.id]);
+  assert.equal(result.waitingForEmail, undefined);
+  assert.equal(result.stopEnrollment, undefined);
+});
+
 test('evaluateFlow uses preloaded nodes and message jobs without extra reads', async () => {
   const currentNode = {
     id: enrollment.current_node_id!,

@@ -11,6 +11,11 @@ export interface Enrollment {
   state: 'active' | 'paused' | 'stopped' | 'completed';
   next_run_at: string | null;
   flow_position: Record<string, any>;
+  /** Thread the categorizer branched on (set once at branch time). */
+  reply_thread_id?: string | null;
+  /** Outbound position snapshot while the sequence is held (categorizer flows). */
+  held_node_id?: string | null;
+  held_next_run_at?: string | null;
   deleted_at?: string | null;
   created_at: string;
   updated_at: string;

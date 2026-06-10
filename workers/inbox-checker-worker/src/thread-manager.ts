@@ -9,6 +9,7 @@ import {
   extractCandidateEmails,
   classifyBounce,
 } from './bounce-detection/index.js';
+import { isAutoReplyMessage } from './message-processor.js';
 import { emitEmailReceivedNotification } from './emit-notification-event.js';
 import { emitWebhookEvent } from './emit-webhook-event.js';
 
@@ -40,11 +41,45 @@ const OOO_CLEAR_FOR_NEW_INBOUND_REPLY = {
   ooo_resume_processed_at: null,
 } as const;
 
+const CATEGORIZER_CACHE_TTL_MS = 60 * 1000;
+
 /**
  * Thread manager for creating email threads and messages
  */
 export class ThreadManager {
+  /** Per-campaign "flow has a categorizer node" cache (TTL = one worker tick). */
+  private categorizerCache = new Map<string, { value: boolean; expiresAt: number }>();
+
   constructor(private supabase: SupabaseClient) {}
+
+  /**
+   * Whether the campaign's flow contains a live categorizer node.
+   * Cached per campaign for roughly one worker tick.
+   */
+  private async campaignHasCategorizer(campaignId: string): Promise<boolean> {
+    const cached = this.categorizerCache.get(campaignId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+
+    const { data, error } = await this.supabase
+      .from('nodes')
+      .select('id')
+      .eq('campaign_id', campaignId)
+      .eq('node_type', 'aiCategorizer')
+      .is('deleted_at', null)
+      .limit(1);
+
+    if (error) {
+      // Fail open to the legacy stop path; do not cache errors.
+      console.error(`[INBOX CHECKER] Failed to check categorizer for campaign ${campaignId}:`, error);
+      return false;
+    }
+
+    const value = (data?.length ?? 0) > 0;
+    this.categorizerCache.set(campaignId, { value, expiresAt: Date.now() + CATEGORIZER_CACHE_TTL_MS });
+    return value;
+  }
 
   /**
    * Normalize Message-ID for consistent storage and matching
@@ -158,7 +193,8 @@ export class ThreadManager {
    */
   async handleReply(
     mailbox: Mailbox,
-    message: ProcessedMessage
+    message: ProcessedMessage,
+    options?: { isUnsubscribe?: boolean }
   ): Promise<boolean> {
     // Normalize the incoming message's Message-ID
     const normalizedMessageId = this.normalizeMessageId(message.messageId);
@@ -385,6 +421,26 @@ export class ThreadManager {
       throw messageError;
     }
 
+    // Auto Reply category handling:
+    // - header-detected autoresponder stamps the thread Auto Reply (never
+    //   overwriting a user-set category)
+    // - a real inbound reply clears a machine-set Auto Reply so the new
+    //   message gets classified
+    const inboundIsAutoReply = isAutoReplyMessage(message.headers);
+    const threadCategory: string | null = (thread as any).category ?? null;
+    const threadCategorySource: string | null = (thread as any).category_source ?? null;
+    let threadCategoryPatch: Record<string, unknown> = {};
+    if (inboundIsAutoReply) {
+      if (threadCategorySource !== 'user') {
+        threadCategoryPatch = { category: 'Auto Reply', category_source: 'system' };
+      }
+    } else if (
+      threadCategory === 'Auto Reply' &&
+      (threadCategorySource === 'system' || threadCategorySource === 'ai')
+    ) {
+      threadCategoryPatch = { category: null, category_source: null };
+    }
+
     // Update thread: set has_reply = true, update last_message_at
     // Recalculate message_count from actual count to avoid race conditions
     const { count: actualMessageCount, error: countError } = await this.supabase
@@ -408,6 +464,7 @@ export class ThreadManager {
             ...message.to.map(t => t.address),
           ])),
           ...OOO_CLEAR_FOR_NEW_INBOUND_REPLY,
+          ...threadCategoryPatch,
         })
         .eq('id', thread.id);
     } else {
@@ -423,25 +480,86 @@ export class ThreadManager {
             ...message.to.map(t => t.address),
           ])),
           ...OOO_CLEAR_FOR_NEW_INBOUND_REPLY,
+          ...threadCategoryPatch,
         })
         .eq('id', thread.id);
     }
 
-    // Only stop the enrollment if this is a reply to the original sent message
+    // Only act on the enrollment if this is a reply to the original sent message
     // (not a reply to a reply)
     if (isReplyToOriginal && originalJob) {
-      const stoppedAt = new Date().toISOString();
-      await this.supabase
-        .from('enrollments')
-        .update({ state: 'stopped', stopped_reason: 'replied', stopped_at: stoppedAt })
-        .eq('id', originalJob.enrollment_id)
-        .is('deleted_at', null);
-
       const isCampaignReply =
         (originalJob as any).message_type !== 'inbox_reply' &&
         (originalJob as any).message_type !== 'inbox_forward' &&
         (originalJob as any).message_data?.source !== 'inbox_reply' &&
         (originalJob as any).message_data?.source !== 'inbox_forward';
+
+      // Categorizer flows: hold the outbound sequence and fast-forward to the
+      // categorizer instead of stopping. Unsubscribe replies keep the legacy
+      // hard stop. Any failure falls back to the legacy stop (safe: halts
+      // outbound for someone who replied).
+      let parkStatus: string | null = null;
+      const categorizerFlow =
+        isCampaignReply &&
+        !!originalJob.enrollment_id &&
+        (await this.campaignHasCategorizer(originalJob.campaign_id));
+      if (categorizerFlow && !options?.isUnsubscribe) {
+        const { data: parkResult, error: parkError } = await this.supabase.rpc(
+          'park_or_advance_enrollment_on_reply',
+          {
+            p_enrollment_id: originalJob.enrollment_id,
+            p_thread_id: thread.id,
+          }
+        );
+
+        if (parkError) {
+          console.error(
+            `[INBOX CHECKER] park_or_advance_enrollment_on_reply failed for enrollment ${originalJob.enrollment_id}:`,
+            parkError
+          );
+          reportErrorToSlack('Inbox-checker: park_or_advance_enrollment_on_reply failed', {
+            severity: 'critical',
+            campaign_id: originalJob.campaign_id,
+            enrollment_id: originalJob.enrollment_id,
+            thread_id: thread.id,
+            error: parkError.message,
+            alertPolicy: 'critical_failure',
+            aggregationKey: `categorizer-park:${originalJob.campaign_id}`,
+            summaryFields: {
+              campaign_id: originalJob.campaign_id,
+            },
+          });
+        } else {
+          parkStatus = (parkResult as string | null) ?? null;
+        }
+      }
+
+      if (parkStatus === 'held' || parkStatus === 'woken' || parkStatus === 'branched') {
+        console.log(
+          `[INBOX CHECKER] Reply routed to categorizer (${parkStatus}) for enrollment ${originalJob.enrollment_id}`
+        );
+      } else {
+        const stoppedAt = new Date().toISOString();
+        await this.supabase
+          .from('enrollments')
+          .update({ state: 'stopped', stopped_reason: 'replied', stopped_at: stoppedAt })
+          .eq('id', originalJob.enrollment_id)
+          .is('deleted_at', null);
+
+        // Held-job hygiene for categorizer flows that hard-stopped anyway
+        // (unsubscribe reply or park RPC failure with a prior hold in place).
+        if (categorizerFlow) {
+          const { error: heldCancelError } = await this.supabase.rpc('cancel_held_jobs_for_enrollment', {
+            p_enrollment_id: originalJob.enrollment_id,
+          });
+          if (heldCancelError) {
+            console.error(
+              `[INBOX CHECKER] Failed to cancel held jobs for stopped enrollment ${originalJob.enrollment_id}:`,
+              heldCancelError
+            );
+          }
+        }
+      }
 
       if (isCampaignReply) {
         const isPositive = (thread as any).category === 'Interested';
@@ -474,7 +592,9 @@ export class ThreadManager {
         }
       }
 
-      console.log(`Reply to original message detected and processed: message_job ${originalJob.id}, enrollment ${originalJob.enrollment_id} stopped`);
+      console.log(
+        `Reply to original message detected and processed: message_job ${originalJob.id}, enrollment ${originalJob.enrollment_id} ${parkStatus ? `routed to categorizer (${parkStatus})` : 'stopped'}`
+      );
     } else {
       console.log(`Reply to reply detected and processed: added to thread ${thread.id}`);
     }
@@ -967,6 +1087,17 @@ export class ThreadManager {
         .update({ state: 'stopped', stopped_reason: 'bounced', stopped_at: stoppedAt })
         .eq('id', enrollmentId)
         .is('deleted_at', null);
+
+      // Held-job hygiene: a stopped enrollment must never leave restorable holds.
+      const { error: heldCancelError } = await this.supabase.rpc('cancel_held_jobs_for_enrollment', {
+        p_enrollment_id: enrollmentId,
+      });
+      if (heldCancelError) {
+        console.error(
+          `[INBOX CHECKER] Failed to cancel held jobs for bounced enrollment ${enrollmentId}:`,
+          heldCancelError
+        );
+      }
     }
 
     console.log(

@@ -1,20 +1,26 @@
-import { useState } from 'react';
-import { View, Text, TextInput, ScrollView } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, TextInput } from 'react-native';
 import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
-import { IconButton } from '@/components/ui/icon-button';
-import { TrashIcon } from 'react-native-heroicons/outline';
+import { Toggle } from '@/components/ui/Toggle';
+import { Alert } from '@/components/ui/feedback/Alert';
+import { EyeIcon } from 'react-native-heroicons/outline';
+import { CategorizerPreviewModal } from './CategorizerPreviewModal';
 
+/**
+ * Categorizer node config: fixed Interested / Neutral / Not Interested
+ * branches. AI off = manual categorization via the Master Inbox; AI on =
+ * automatic classification of each reply (cheap LLM). Auto-replies (OOO)
+ * never branch - they release the held sequence.
+ */
 interface AICategorizerNodeModalProps {
   visible: boolean;
   onClose: () => void;
-  onSave: (data: {
-    label?: string;
-    categories?: string[];
-  }) => void;
+  onSave: (data: { label?: string; use_ai?: boolean }) => void;
   initialData?: {
     label?: string;
-    categories?: string[];
+    use_ai?: boolean;
+    campaignId?: string;
   };
 }
 
@@ -24,30 +30,18 @@ export function AICategorizerNodeModal({
   onSave,
   initialData,
 }: AICategorizerNodeModalProps) {
-  const [label, setLabel] = useState(initialData?.label || 'AI Categorizer');
-  const [categories, setCategories] = useState<string[]>(
-    initialData?.categories || ['']
-  );
+  const [label, setLabel] = useState(initialData?.label || 'Categorizer');
+  const [useAi, setUseAi] = useState(initialData?.use_ai ?? false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  const handleAddCategory = () => {
-    setCategories([...categories, '']);
-  };
-
-  const handleRemoveCategory = (index: number) => {
-    setCategories(categories.filter((_, i) => i !== index));
-  };
-
-  const handleCategoryChange = (index: number, value: string) => {
-    const newCategories = [...categories];
-    newCategories[index] = value;
-    setCategories(newCategories);
-  };
+  useEffect(() => {
+    if (!visible) return;
+    setLabel(initialData?.label || 'Categorizer');
+    setUseAi(initialData?.use_ai ?? false);
+  }, [visible, initialData]);
 
   const handleSave = () => {
-    onSave({
-      label,
-      categories: categories.filter((c) => c.trim() !== ''),
-    });
+    onSave({ label, use_ai: useAi });
     onClose();
   };
 
@@ -56,96 +50,102 @@ export function AICategorizerNodeModal({
       <Button variant="secondary" onPress={onClose}>
         Cancel
       </Button>
-      <Button onPress={handleSave}>
-        Save
-      </Button>
+      <Button onPress={handleSave}>Save</Button>
     </ModalFooter>
   );
 
   const footerMobile = (
     <ModalFooter>
-      <Button onPress={handleSave}>
-        Save
-      </Button>
+      <Button onPress={handleSave}>Save</Button>
     </ModalFooter>
   );
 
   return (
-    <BaseModal
-      visible={visible}
-      onClose={onClose}
-      title="Configure AI Categorizer Node"
-      description="Configure the categories for AI categorization"
-      footer={footer}
-      footerMobile={footerMobile}
-      maxWidth="lg"
-    >
-      <View className="gap-4">
-        <View>
-          <Text className="text-sm font-instrument-medium mb-2 text-gray-300">
-            Label
-          </Text>
-          <TextInput
-            value={label}
-            onChangeText={setLabel}
-            placeholder="Node label"
-            placeholderTextColor="#666"
-            className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
-            style={{
-              borderColor: '#FFFFFF4D',
-              backgroundColor: '#FFFFFF0D',
-              color: '#FFFFFF',
-              borderWidth: 1,
-            }}
-            selectionColor="#FF4D00"
-            underlineColorAndroid="transparent"
-          />
-        </View>
-
-        <View>
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-sm font-instrument-medium text-gray-300">
-              Categories
+    <>
+      <BaseModal
+        visible={visible}
+        onClose={onClose}
+        title="Configure Categorizer"
+        description="Waits for a reply, categorizes it, and branches on Interested, Neutral, or Not Interested."
+        footer={footer}
+        footerMobile={footerMobile}
+        maxWidth="lg"
+      >
+        <View className="gap-4">
+          <View>
+            <Text className="text-sm font-instrument-medium mb-2 text-gray-300">
+              Label
             </Text>
-            <Button variant="secondary" size="sm" onPress={handleAddCategory}>
-              Add Category
+            <TextInput
+              value={label}
+              onChangeText={setLabel}
+              placeholder="Node label"
+              placeholderTextColor="#666"
+              className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
+              style={{
+                borderColor: '#FFFFFF4D',
+                backgroundColor: '#FFFFFF0D',
+                color: '#FFFFFF',
+                borderWidth: 1,
+              }}
+              selectionColor="#FF4D00"
+              underlineColorAndroid="transparent"
+            />
+          </View>
+
+          <View className="flex-row items-center justify-between gap-3 py-0.5">
+            <View className="flex-1 shrink">
+              <Text className="text-sm font-instrument-medium text-gray-300">
+                Categorize with AI
+              </Text>
+              <Text className="text-xs font-instrument text-gray-500 mt-0.5">
+                Off = you categorize replies manually in the Master Inbox.
+              </Text>
+            </View>
+            <View className="shrink-0" style={{ paddingVertical: 2 }}>
+              <Toggle value={useAi} onValueChange={setUseAi} />
+            </View>
+          </View>
+
+          {useAi ? (
+            <Alert
+              variant="warning"
+              message="AI categorization can get things wrong. It's a good idea to collect a few real replies first and check how they'd be categorized with the preview below."
+            />
+          ) : null}
+
+          <View>
+            <Text className="text-xs font-instrument text-gray-500 mb-2 leading-5">
+              Out-of-office and other auto-replies never branch — the sequence
+              picks up where it left off (when a return date is stated, after
+              that date).
+            </Text>
+            <Button
+              variant="secondary"
+              onPress={() => setPreviewOpen(true)}
+              disabled={!initialData?.campaignId}
+            >
+              <View className="flex-row items-center gap-2">
+                <EyeIcon size={16} color="#FFFFFF" />
+                <Text className="text-white font-instrument-medium">
+                  Preview with existing replies
+                </Text>
+              </View>
             </Button>
           </View>
-          <ScrollView className="max-h-64" showsVerticalScrollIndicator={false}>
-            <View className="gap-2">
-              {categories.map((category, index) => (
-                <View key={index} className="flex-row items-center gap-2">
-                  <TextInput
-                    value={category}
-                    onChangeText={(value) => handleCategoryChange(index, value)}
-                    placeholder={`Category ${index + 1}`}
-                    placeholderTextColor="#666"
-                    className="flex-1 border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
-                    style={{
-                      borderColor: '#FFFFFF4D',
-                      backgroundColor: '#FFFFFF0D',
-                      color: '#FFFFFF',
-                      borderWidth: 1,
-                    }}
-                    selectionColor="#FF4D00"
-                    underlineColorAndroid="transparent"
-                  />
-                  {categories.length > 1 && (
-                    <IconButton
-                      variant="destructive"
-                      icon={TrashIcon}
-                      onPress={() => handleRemoveCategory(index)}
-                    />
-                  )}
-                </View>
-              ))}
-            </View>
-          </ScrollView>
         </View>
-      </View>
-    </BaseModal>
+      </BaseModal>
+
+      {initialData?.campaignId ? (
+        <CategorizerPreviewModal
+          visible={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          campaignId={initialData.campaignId}
+          useAi={useAi}
+        />
+      ) : null}
+    </>
   );
 }
 
 export default AICategorizerNodeModal;
-

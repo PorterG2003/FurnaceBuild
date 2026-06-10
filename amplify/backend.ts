@@ -39,6 +39,7 @@ import { fluxEditorChat } from './functions/fluxEditorChat/resource';
 import { googlePlaces } from './functions/googlePlaces/resource';
 import { fluxCompetitorAuditJob } from './functions/fluxCompetitorAuditJob/resource';
 import { fluxCompetitorAuditStart } from './functions/fluxCompetitorAuditStart/resource';
+import { categorizerPreview } from './functions/categorizerPreview/resource';
 
 // Load .env.local so EXPO_PUBLIC_SUPABASE_URL is available for Lambdas at synth time
 config({ path: '.env.local' });
@@ -82,6 +83,7 @@ const backend = defineBackend({
   googlePlaces,
   fluxCompetitorAuditJob,
   fluxCompetitorAuditStart,
+  categorizerPreview,
   ...(smartleadMigrationEnabled ? { launchSmartleadMigration } : {}),
 });
 
@@ -1622,6 +1624,40 @@ const allowPublicFluxEditorChatInvoke = new lambda.CfnPermission(
 );
 allowPublicFluxEditorChatInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
+// Categorizer preview (Function URL + Supabase JWT) — read-only AI categorization preview for the builder
+const categorizerPreviewLambda = backend.categorizerPreview.resources.lambda as lambda.Function;
+categorizerPreviewLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+if (process.env.OPENROUTER_CATEGORIZER_MODEL) {
+  categorizerPreviewLambda.addEnvironment(
+    'OPENROUTER_CATEGORIZER_MODEL',
+    process.env.OPENROUTER_CATEGORIZER_MODEL,
+  );
+}
+const categorizerPreviewUrl = categorizerPreviewLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(categorizerPreviewLambda.stack, 'AllowPublicCategorizerPreviewUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: categorizerPreviewLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicCategorizerPreviewInvoke = new lambda.CfnPermission(
+  categorizerPreviewLambda.stack,
+  'AllowPublicCategorizerPreviewInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: categorizerPreviewLambda.functionName,
+    principal: '*',
+  },
+);
+allowPublicCategorizerPreviewInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
 // Google Places API (New) proxy — Function URL + Supabase JWT (flux or foundry flag)
 const googlePlacesLambda = backend.googlePlaces.resources.lambda as lambda.Function;
 googlePlacesLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
@@ -1835,6 +1871,7 @@ const customOutputs: Record<string, string> = {
   fluxEditorChatUrl: fluxEditorChatUrl.url,
   googlePlacesUrl: googlePlacesUrl.url,
   fluxCompetitorAuditStartUrl: fluxCompetitorAuditStartUrl.url,
+  categorizerPreviewUrl: categorizerPreviewUrl.url,
 };
 if (launchSmartleadMigrationUrlRef) {
   customOutputs.launchSmartleadMigrationUrl = launchSmartleadMigrationUrlRef.url;

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/feedback';
 import { computeOooResumeAtIso, utcNoonIsoFromYmd, type OooScheduleMode } from '@/lib/inbox/outOfOfficeSchedule';
 import { markEmailThreadOutOfOffice } from '@/lib/supabase/services/inbox/out-of-office';
+import { supabase } from '@/lib/supabase/client';
 
 export type { OooScheduleMode };
 
@@ -37,14 +38,44 @@ export function MarkOutOfOfficeModal({
   const [returnDateYmd, setReturnDateYmd] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Resume scheduling only applies to enrollments stopped by a reply
+  // (apply_ooo_resume_core is a no-op otherwise). Categorizer flows never
+  // stop on reply - there, setting the thread category to "Auto Reply" is
+  // the equivalent action - so hide the option instead of saving a no-op.
+  const [resumeEligible, setResumeEligible] = useState<boolean | null>(null);
+
   useEffect(() => {
     if (!visible) return;
     setResumeCampaign(true);
     setMode('return_date');
     setReturnDateYmd(prefilledReturnDateYmd ?? '');
-  }, [visible, prefilledReturnDateYmd]);
 
-  const canResume = enrollmentId != null;
+    if (!enrollmentId) {
+      setResumeEligible(false);
+      return;
+    }
+    setResumeEligible(null);
+    let cancelled = false;
+    void supabase
+      .from('enrollments')
+      .select('state, stopped_reason')
+      .eq('id', enrollmentId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) {
+          // Can't verify - keep prior behavior (RPC no-ops if ineligible).
+          setResumeEligible(true);
+          return;
+        }
+        setResumeEligible(data.state === 'stopped' && data.stopped_reason === 'replied');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, prefilledReturnDateYmd, enrollmentId]);
+
+  const canResume = enrollmentId != null && resumeEligible === true;
 
   const { minReturnYmd, maxReturnYmd } = useMemo(() => {
     const today = new Date();
@@ -63,8 +94,7 @@ export function MarkOutOfOfficeModal({
   }, [resumeCampaign, mode, returnDateYmd]);
 
   const validationError = useMemo(() => {
-    if (!resumeCampaign) return null;
-    if (!canResume) return 'This thread has no enrollment, so the campaign cannot be scheduled to resume.';
+    if (!resumeCampaign || !canResume) return null;
     if (mode === 'return_date') {
       if (!returnDateYmd.trim()) return 'Pick a return date.';
       if (!utcNoonIsoFromYmd(returnDateYmd.trim())) return 'Pick a valid return date.';
@@ -77,8 +107,9 @@ export function MarkOutOfOfficeModal({
       toast.error(validationError);
       return;
     }
+    const resumeRequested = resumeCampaign && canResume;
     const resumeAt = computeResumeAtIso();
-    if (resumeCampaign && !resumeAt) {
+    if (resumeRequested && !resumeAt) {
       toast.error('Could not compute resume time.');
       return;
     }
@@ -87,8 +118,8 @@ export function MarkOutOfOfficeModal({
       await markEmailThreadOutOfOffice({
         threadId,
         outOfOffice: true,
-        resumeRequested: resumeCampaign,
-        resumeAt: resumeCampaign ? resumeAt : null,
+        resumeRequested,
+        resumeAt: resumeRequested ? resumeAt : null,
       });
       toast.success('Out of office saved');
       onSaved();
@@ -129,18 +160,15 @@ export function MarkOutOfOfficeModal({
       maxHeight={520}
     >
       <View className="gap-4">
-        <View className="flex-row items-center justify-between gap-3 py-0.5">
-          <Text className="text-sm font-instrument text-gray-300 flex-1 shrink">
-            Resume campaign after return
-          </Text>
-          <View className="shrink-0" style={{ paddingVertical: 2 }}>
-            <Toggle value={resumeCampaign} onValueChange={setResumeCampaign} disabled={!canResume} />
+        {canResume ? (
+          <View className="flex-row items-center justify-between gap-3 py-0.5">
+            <Text className="text-sm font-instrument text-gray-300 flex-1 shrink">
+              Resume campaign after return
+            </Text>
+            <View className="shrink-0" style={{ paddingVertical: 2 }}>
+              <Toggle value={resumeCampaign} onValueChange={setResumeCampaign} />
+            </View>
           </View>
-        </View>
-        {!canResume ? (
-          <Text className="text-xs font-instrument text-amber-400/90">
-            Resume is unavailable without a campaign enrollment on this thread.
-          </Text>
         ) : null}
 
         {resumeCampaign && canResume ? (

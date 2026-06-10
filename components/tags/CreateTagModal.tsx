@@ -37,7 +37,7 @@ export function CreateTagModal({
   const handleCreate = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      toast.error('Name is required');
+      toast.error('Enter a tag name.');
       return;
     }
     setIsSubmitting(true);
@@ -46,7 +46,7 @@ export function CreateTagModal({
       onCreated(tag);
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create tag');
+      toast.error(e instanceof Error ? e.message : "Couldn't create tag. Try again.");
     } finally {
       setIsSubmitting(false);
     }

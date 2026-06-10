@@ -162,7 +162,7 @@ export class InboxCheckerWorker {
               }
             } else {
               // Not a reply to our message - might be spam or unrelated
-              console.log(`[INBOX CHECKER] Message ${message.messageId} has In-Reply-To but doesn't match any sent message`);
+              console.log(`[INBOX CHECKER] Message ${message.messageId} has threading headers but doesn't match any sent message`);
               if (isUnsubscribe) {
                 await this.threadManager.autoBlockUnsubscribe(mailbox, message);
                 unsubscribes++;

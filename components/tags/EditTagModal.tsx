@@ -48,7 +48,7 @@ export function EditTagModal({
     if (!tag) return;
     const trimmed = name.trim();
     if (!trimmed) {
-      toast.error('Name is required');
+      toast.error('Enter a tag name.');
       return;
     }
     setIsSubmitting(true);
@@ -57,7 +57,7 @@ export function EditTagModal({
       onSaved(updated);
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to update tag');
+      toast.error(e instanceof Error ? e.message : "Couldn't save tag changes. Try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -72,7 +72,7 @@ export function EditTagModal({
       setShowDeleteConfirm(false);
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to delete tag');
+      toast.error(e instanceof Error ? e.message : "Couldn't delete tag. Try again.");
     } finally {
       setIsDeleting(false);
     }

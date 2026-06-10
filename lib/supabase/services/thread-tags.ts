@@ -1,4 +1,5 @@
 import { supabase } from '../client';
+import { getTagCreateErrorMessage, getTagUpdateErrorMessage } from '@/lib/tags/errors';
 
 export interface ThreadTag {
   id: string;
@@ -49,7 +50,7 @@ export async function createThreadTag(
     .single();
 
   if (error) {
-    throw new Error(`Failed to create thread tag: ${error.message}`);
+    throw new Error(getTagCreateErrorMessage(error, params.name));
   }
 
   return data;
@@ -78,7 +79,7 @@ export async function updateThreadTag(
     .single();
 
   if (error) {
-    throw new Error(`Failed to update thread tag: ${error.message}`);
+    throw new Error(getTagUpdateErrorMessage(error, params.name));
   }
 
   return data;

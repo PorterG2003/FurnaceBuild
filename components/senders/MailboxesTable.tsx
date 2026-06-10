@@ -67,6 +67,7 @@ export function MailboxesTable({
   const desktopColumns = useMemo(
     () =>
       buildMailboxOverviewColumns({
+        includeDomain: true,
         includeActions: true,
         testingMailboxId,
         mailboxTagsMap,
@@ -110,6 +111,7 @@ export function MailboxesTable({
         onSelectionChange={onSelectionChange}
         pagination={false}
         widthMode="weighted-fill"
+        compactHeader
       />
     );
   }
@@ -230,6 +232,7 @@ export function MailboxesTable({
         onSelectionChange={onSelectionChange}
         pagination={false}
         widthMode="weighted-fill"
+        compactHeader
       />
     </>
   );

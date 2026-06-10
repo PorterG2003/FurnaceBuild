@@ -369,6 +369,7 @@ test('handleReply treats inbound unsubscribe-like replies as normal replies', as
     { data: null, error: null },
     { data: { id: 'notification-event-row-1' }, error: null },
     { data: { id: 'notification-event-1' }, error: null },
+    { data: { id: 'webhook-event-1' }, error: null },
   ]);
   const manager = new ThreadManager(supabase as any);
   const mailbox = createMailbox();
@@ -408,6 +409,92 @@ test('handleReply treats inbound unsubscribe-like replies as normal replies', as
   assert.equal(threadUpdatePayload.ooo_resume_requested, false);
   assert.equal(threadUpdatePayload.ooo_resume_at, null);
   assert.equal(threadUpdatePayload.ooo_resume_processed_at, null);
+});
+
+test('handleReply routes campaign replies on categorizer flows through the park RPC instead of stopping', async () => {
+  const existingThread = {
+    id: 'thread-1',
+    account_id: 'account-1',
+    mailbox_id: 'mailbox-1',
+    message_count: 1,
+    participants: ['porterg@furnaceoutbound.com', 'lead@example.com'],
+    category: null,
+    category_source: null,
+  };
+  const supabase = new MockSupabase([
+    { data: [] }, // email_messages dup check
+    { data: [createMessageJob()] }, // message_jobs search (campaign send)
+    { data: [existingThread] }, // getOrCreateThread by message_job_id
+    { data: { id: 'email-message-1', received_at: '2026-04-06T02:58:50.000Z' }, error: null },
+    { count: 2, error: null }, // email_messages count
+    { data: null, error: null }, // email_threads update
+    { data: [{ id: 'node-categorizer' }], error: null }, // nodes (campaignHasCategorizer)
+    { data: 'held', error: null }, // rpc park_or_advance_enrollment_on_reply
+    { data: true, error: null }, // rpc record_replied_event_and_increment
+    { data: { id: 'notification-event-1' }, error: null }, // notification_events
+    { data: { id: 'webhook-event-1' }, error: null }, // webhook_events
+  ]);
+  const manager = new ThreadManager(supabase as any);
+
+  const handled = await manager.handleReply(createMailbox(), createProcessedMessage());
+
+  assert.equal(handled, true);
+  const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
+  assert.deepEqual(
+    rpcCalls.map((c) => c.fn),
+    ['park_or_advance_enrollment_on_reply', 'record_replied_event_and_increment'],
+  );
+  assert.equal(rpcCalls[0].args.p_enrollment_id, 'enrollment-1');
+  assert.equal(rpcCalls[0].args.p_thread_id, 'thread-1');
+
+  // Parked, never stopped: no enrollments update of any kind.
+  assert.ok(!supabase.calls.some((c) => (c as QueryCall).table === 'enrollments'));
+});
+
+test('handleReply falls back to the legacy hard stop (with held-job hygiene) when the park RPC fails', async () => {
+  const existingThread = {
+    id: 'thread-1',
+    account_id: 'account-1',
+    mailbox_id: 'mailbox-1',
+    message_count: 1,
+    participants: ['porterg@furnaceoutbound.com', 'lead@example.com'],
+    category: null,
+    category_source: null,
+  };
+  const supabase = new MockSupabase([
+    { data: [] }, // email_messages dup check
+    { data: [createMessageJob()] }, // message_jobs search (campaign send)
+    { data: [existingThread] }, // getOrCreateThread by message_job_id
+    { data: { id: 'email-message-1', received_at: '2026-04-06T02:58:50.000Z' }, error: null },
+    { count: 2, error: null }, // email_messages count
+    { data: null, error: null }, // email_threads update
+    { data: [{ id: 'node-categorizer' }], error: null }, // nodes (campaignHasCategorizer)
+    { data: null, error: { message: 'park exploded' } }, // rpc park (FAILS)
+    { data: null, error: null }, // enrollments legacy stop
+    { data: 0, error: null }, // rpc cancel_held_jobs_for_enrollment
+    { data: true, error: null }, // rpc record_replied_event_and_increment
+    { data: { id: 'notification-event-1' }, error: null }, // notification_events
+    { data: { id: 'webhook-event-1' }, error: null }, // webhook_events
+  ]);
+  const manager = new ThreadManager(supabase as any);
+
+  const handled = await manager.handleReply(createMailbox(), createProcessedMessage());
+
+  assert.equal(handled, true);
+  const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
+  assert.deepEqual(
+    rpcCalls.map((c) => c.fn),
+    [
+      'park_or_advance_enrollment_on_reply',
+      'cancel_held_jobs_for_enrollment',
+      'record_replied_event_and_increment',
+    ],
+  );
+
+  // Fail-safe: halting outbound for someone who replied is always safe.
+  const enrollCalls = supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[];
+  assert.equal(enrollCalls.length, 1);
+  assert.match(JSON.stringify(enrollCalls[0].insertPayloads[0]), /"stopped_reason":"replied"/);
 });
 
 test('getOrCreateThread reloads the canonical thread after a unique-violation race', async () => {
@@ -664,9 +751,11 @@ test('handleBounce matched hard bounce calls record_bounced_event_and_increment,
     },
     { data: [{ id: 'lead-1', email: 'matched-lead@example.com' }] },
     { data: { suppress_bounced_emails: true } },
-    { data: null, error: null },
-    { data: null, error: null },
-    { data: null, error: null },
+    { data: null, error: null }, // rpc record_bounced_event_and_increment
+    { data: null, error: null }, // block_list upsert
+    { data: { id: 'webhook-event-1' }, error: null }, // webhook_events insert
+    { data: null, error: null }, // enrollments stop
+    { data: 0, error: null }, // rpc cancel_held_jobs_for_enrollment
   ]);
   const manager = new ThreadManager(supabase as any);
   const mailbox = createMailbox();
@@ -681,10 +770,13 @@ test('handleBounce matched hard bounce calls record_bounced_event_and_increment,
   await manager.handleBounce(mailbox, message);
 
   const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
-  assert.equal(rpcCalls.length, 1);
-  assert.equal(rpcCalls[0].fn, 'record_bounced_event_and_increment');
+  assert.deepEqual(
+    rpcCalls.map((c) => c.fn),
+    ['record_bounced_event_and_increment', 'cancel_held_jobs_for_enrollment'],
+  );
   assert.equal(rpcCalls[0].args.p_campaign_id, 'campaign-1');
   assert.equal(rpcCalls[0].args.p_message_job_id, 'job-1');
+  assert.equal(rpcCalls[1].args.p_enrollment_id, 'enrollment-1');
 
   const blockCall = supabase.calls.find((c) => (c as QueryCall).table === 'block_list') as QueryCall;
   assert.ok(blockCall);
@@ -758,8 +850,10 @@ test('handleBounce matched soft bounce does not upsert block_list', async () => 
     },
     { data: [{ id: 'lead-soft', email: 'soft-lead@example.com' }] },
     { data: { suppress_bounced_emails: true } },
-    { data: null, error: null },
-    { data: null, error: null },
+    { data: null, error: null }, // rpc record_bounced_event_and_increment
+    { data: { id: 'webhook-event-soft' }, error: null }, // webhook_events insert
+    { data: null, error: null }, // enrollments stop
+    { data: 0, error: null }, // rpc cancel_held_jobs_for_enrollment
   ]);
   const manager = new ThreadManager(supabase as any);
   const mailbox = createMailbox();
@@ -775,7 +869,10 @@ test('handleBounce matched soft bounce does not upsert block_list', async () => 
 
   assert.ok(!supabase.calls.some((c) => (c as QueryCall).table === 'block_list'));
   const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
-  assert.equal(rpcCalls.length, 1);
+  assert.deepEqual(
+    rpcCalls.map((c) => c.fn),
+    ['record_bounced_event_and_increment', 'cancel_held_jobs_for_enrollment'],
+  );
 });
 
 test('handleBounce dedupes enrollment stop when multiple matched jobs share enrollment_id', async () => {
@@ -801,9 +898,12 @@ test('handleBounce dedupes enrollment stop when multiple matched jobs share enro
     },
     { data: [{ id: 'lead-1', email: 'dup-lead@example.com' }] },
     { data: { suppress_bounced_emails: false } },
-    { data: null, error: null },
-    { data: null, error: null },
-    { data: null, error: null },
+    { data: null, error: null }, // rpc record_bounced (job-a)
+    { data: { id: 'webhook-event-a' }, error: null }, // webhook_events (job-a)
+    { data: null, error: null }, // rpc record_bounced (job-b)
+    { data: { id: 'webhook-event-b' }, error: null }, // webhook_events (job-b)
+    { data: null, error: null }, // enrollments stop (deduped to one)
+    { data: 0, error: null }, // rpc cancel_held_jobs_for_enrollment (deduped)
   ]);
   const manager = new ThreadManager(supabase as any);
   const mailbox = createMailbox();
@@ -818,7 +918,14 @@ test('handleBounce dedupes enrollment stop when multiple matched jobs share enro
   await manager.handleBounce(mailbox, message);
 
   const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
-  assert.equal(rpcCalls.length, 2);
+  assert.deepEqual(
+    rpcCalls.map((c) => c.fn),
+    [
+      'record_bounced_event_and_increment',
+      'record_bounced_event_and_increment',
+      'cancel_held_jobs_for_enrollment',
+    ],
+  );
   const enrollCalls = supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[];
   assert.equal(enrollCalls.length, 1);
 });

@@ -19,6 +19,8 @@ export function createEmailNode(
     subject?: string;
     template?: string;
     mailboxId?: string;
+    /** 'reply' = send in the replied thread (requires an upstream Categorizer). */
+    send_mode?: 'new' | 'reply';
   }
 ): Node {
   const variantId = generateEmailVariantId();
@@ -28,6 +30,7 @@ export function createEmailNode(
     data: {
       label: data?.label || 'Send Email',
       mailboxId: data?.mailboxId || '',
+      send_mode: data?.send_mode || 'new',
       variants: [
         {
           id: variantId,
@@ -91,15 +94,15 @@ export function createAICategorizerNode(
   position: { x: number; y: number },
   data?: {
     label?: string;
-    categories?: string[];
+    use_ai?: boolean;
   }
 ): Node {
   return {
     id: generateId(),
     type: 'aiCategorizer',
     data: {
-      label: data?.label || 'AI Categorizer',
-      categories: data?.categories || [],
+      label: data?.label || 'Categorizer',
+      use_ai: data?.use_ai ?? false,
     },
     position,
   };

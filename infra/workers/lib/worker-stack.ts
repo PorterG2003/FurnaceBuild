@@ -60,6 +60,13 @@ export interface WorkerStackProps extends cdk.StackProps {
    * Same Amplify secret segment as `GOOGLE_PLACES_API_KEY` in Amplify.
    */
   googlePlacesApiKeyParamPath?: string;
+
+  /**
+   * Optional: SSM parameter name (with leading slash) for the OpenRouter API key used by the
+   * scheduler worker's categorizer node (AI reply classification). Secret segment: `OPENROUTER_API_KEY`.
+   * Passed to the scheduler container as `OPENROUTER_API_KEY_PARAM_PATH`; fetched at runtime.
+   */
+  openRouterApiKeyParamPath?: string;
 }
 
 export class WorkerStack extends cdk.Stack {
@@ -89,6 +96,7 @@ export class WorkerStack extends cdk.Stack {
       leadsSupabaseSecretParamPath,
       foundryOpenRouterApiKeyParamPath,
       googlePlacesApiKeyParamPath,
+      openRouterApiKeyParamPath,
     } = props;
 
     if (!supabaseSecretKeyParamPath?.trim()) {
@@ -622,6 +630,10 @@ export class WorkerStack extends cdk.Stack {
         SUPABASE_URL: supabaseUrl,
         SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
         ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
+        // Categorizer node AI classification (OpenRouter); fetched from SSM at startup.
+        ...(openRouterApiKeyParamPath?.trim()
+          ? { OPENROUTER_API_KEY_PARAM_PATH: openRouterApiKeyParamPath.trim() }
+          : {}),
       },
     });
 

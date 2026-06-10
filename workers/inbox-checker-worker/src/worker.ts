@@ -153,7 +153,7 @@ export class InboxCheckerWorker {
 
           // Check for reply
           if (this.messageProcessor.isReply(message)) {
-            const handled = await this.threadManager.handleReply(mailbox, message);
+            const handled = await this.threadManager.handleReply(mailbox, message, { isUnsubscribe });
             if (handled) {
               replies++;
               if (isUnsubscribe) {

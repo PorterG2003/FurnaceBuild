@@ -105,6 +105,9 @@ const devFoundryOpenRouterApiKeyParamPath = ssmParamUnderPrefix(devSecretSsmPref
 const prodFoundryOpenRouterApiKeyParamPath = ssmParamUnderPrefix(prodSecretSsmPrefix, 'FOUNDRY_OPENROUTER_API_KEY');
 const devGooglePlacesApiKeyParamPath = ssmParamUnderPrefix(devSecretSsmPrefix, 'GOOGLE_PLACES_API_KEY');
 const prodGooglePlacesApiKeyParamPath = ssmParamUnderPrefix(prodSecretSsmPrefix, 'GOOGLE_PLACES_API_KEY');
+// Scheduler categorizer (AI reply classification) OpenRouter key
+const devOpenRouterApiKeyParamPath = ssmParamUnderPrefix(devSecretSsmPrefix, 'OPENROUTER_API_KEY');
+const prodOpenRouterApiKeyParamPath = ssmParamUnderPrefix(prodSecretSsmPrefix, 'OPENROUTER_API_KEY');
 
 // Dev Stack
 new WorkerStack(app, 'WorkerStack-Dev', {
@@ -118,6 +121,7 @@ new WorkerStack(app, 'WorkerStack-Dev', {
   slackErrorWebhookUrl: devSlackErrorWebhookUrl,
   foundryOpenRouterApiKeyParamPath: devFoundryOpenRouterApiKeyParamPath,
   googlePlacesApiKeyParamPath: devGooglePlacesApiKeyParamPath,
+  openRouterApiKeyParamPath: devOpenRouterApiKeyParamPath,
   ...(devLeadsSupabaseUrl
     ? { leadsSupabaseUrl: devLeadsSupabaseUrl, leadsSupabaseSecretParamPath: devLeadsSecretParamPath }
     : {}),
@@ -140,6 +144,7 @@ new WorkerStack(app, 'WorkerStack-Prod', {
   slackErrorWebhookUrl: prodSlackErrorWebhookUrl,
   foundryOpenRouterApiKeyParamPath: prodFoundryOpenRouterApiKeyParamPath,
   googlePlacesApiKeyParamPath: prodGooglePlacesApiKeyParamPath,
+  openRouterApiKeyParamPath: prodOpenRouterApiKeyParamPath,
   ...(prodLeadsSupabaseUrl
     ? { leadsSupabaseUrl: prodLeadsSupabaseUrl, leadsSupabaseSecretParamPath: prodLeadsSecretParamPath }
     : {}),

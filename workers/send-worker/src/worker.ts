@@ -508,7 +508,11 @@ export class SendWorker {
     if (messageJob.message_type === 'inbox_forward') {
       return this.processInboxForwardJob(messageJob);
     }
-    // Campaign (or null/legacy): continue with campaign send flow
+    // Campaign (or null/legacy): continue with campaign send flow.
+    // campaign_reply jobs (scheduler-created in-thread replies after a
+    // categorizer branch) ride the same pipeline with reply threading
+    // overrides: subject/In-Reply-To/References come from message_data.
+    const isReplyMode = messageJob.message_type === 'campaign_reply';
 
     let enteredSending = false;
 
@@ -684,7 +688,10 @@ export class SendWorker {
       // Throttle check passed - proceed with sending
 
       // 2b. Get first sent message for this campaign+lead (for thread continuation)
-      const threadFirst = await this.getFirstSentMessageForCampaignLead(messageJob.campaign_id, messageJob.lead_id);
+      // Reply-mode jobs carry explicit threading from the replied thread instead.
+      const threadFirst = isReplyMode
+        ? null
+        : await this.getFirstSentMessageForCampaignLead(messageJob.campaign_id, messageJob.lead_id);
 
       // 3. Generate email content from template (shared pipeline with preview)
       let content;
@@ -726,7 +733,27 @@ export class SendWorker {
       let subject: string;
       let inReplyTo: string | null = null;
       let references: string | null = null;
-      if (threadFirst) {
+      if (isReplyMode) {
+        // In-thread reply: "Re: <thread subject>" + headers from the replied
+        // thread (stamped by the scheduler's reply-email handler).
+        const md = messageJob.message_data || {};
+        subject = (md.subject || '').trim() || (currentSubject.trim() || '(No subject)');
+        inReplyTo = md.in_reply_to ?? null;
+        references = md.message_references ?? md.in_reply_to ?? null;
+        if (!inReplyTo) {
+          reportErrorToSlack('Send-worker: campaign_reply job missing In-Reply-To header (sending without threading)', {
+            severity: 'warning',
+            message_job_id: message_job_id,
+            campaign_id: messageJob.campaign_id,
+            enrollment_id: messageJob.enrollment_id,
+            alertPolicy: 'persistent_config_warning',
+            aggregationKey: `send-worker-campaign-reply-headers:${messageJob.campaign_id}`,
+            summaryFields: {
+              campaign_id: messageJob.campaign_id,
+            },
+          });
+        }
+      } else if (threadFirst) {
         if (threadFirst.provider_message_id) {
           inReplyTo = threadFirst.provider_message_id;
           references = threadFirst.provider_message_id;
@@ -820,6 +847,23 @@ export class SendWorker {
       await this.reconcileLeadMailboxAfterSuccessfulSend(messageJob, lead.mailbox_id);
 
       // 6a. Throttle counters were committed atomically with final sent status.
+
+      // 6a-bis. Reply-mode: record the sent reply in the replied thread so the
+      // master inbox shows it and future References chains include it.
+      // Best-effort: the email is already sent.
+      if (isReplyMode) {
+        await this.recordCampaignReplyInThread(
+          messageJob,
+          mailbox,
+          lead,
+          subject,
+          isHtmlBody ? emailBody : null,
+          isHtmlBody ? (emailBodyText ?? '') : emailBody,
+          providerMessageId,
+          inReplyTo,
+          references,
+        );
+      }
 
       // 6b. Update enrollment to trigger scheduler re-evaluation
       // This allows the scheduler to pick up the enrollment immediately and proceed to next node
@@ -1031,6 +1075,107 @@ export class SendWorker {
       
       // Re-throw to be caught by Promise.allSettled in the main loop
       throw error;
+    }
+  }
+
+  /**
+   * Record a sent campaign_reply in its replied thread (email_messages row +
+   * thread counters), mirroring processInboxReplyJob steps 4-6. Best-effort:
+   * failures are reported but never fail the already-sent job.
+   */
+  private async recordCampaignReplyInThread(
+    messageJob: MessageJob,
+    mailbox: Mailbox,
+    lead: Lead,
+    subject: string,
+    bodyHtml: string | null,
+    bodyText: string,
+    providerMessageId: string,
+    inReplyTo: string | null,
+    references: string | null,
+  ): Promise<void> {
+    const threadId = (messageJob.message_data || {}).thread_id;
+    if (!threadId) {
+      reportErrorToSlack('Send-worker: campaign_reply job missing thread_id (sent reply not recorded in thread)', {
+        severity: 'warning',
+        message_job_id: messageJob.id,
+        campaign_id: messageJob.campaign_id,
+        enrollment_id: messageJob.enrollment_id,
+        alertPolicy: 'persistent_config_warning',
+        aggregationKey: `send-worker-campaign-reply-thread:${messageJob.campaign_id}`,
+        summaryFields: {
+          campaign_id: messageJob.campaign_id,
+        },
+      });
+      return;
+    }
+
+    try {
+      const { data: thread, error: threadError } = await this.supabase
+        .from('email_threads')
+        .select('participants, message_count, account_id')
+        .eq('id', threadId)
+        .single();
+      if (threadError || !thread) {
+        throw new Error(`Failed to load thread ${threadId}: ${threadError?.message}`);
+      }
+
+      const now = new Date().toISOString();
+      const participants = (thread.participants || []) as string[];
+      const newParticipants = [...new Set([...participants, lead.email])];
+
+      const { error: insertError } = await this.supabase.from('email_messages').insert({
+        thread_id: threadId,
+        account_id: thread.account_id,
+        message_job_id: messageJob.id,
+        direction: 'sent',
+        from_email: mailbox.email_address,
+        from_name: mailbox.display_name,
+        to_email: lead.email,
+        to_name: lead.first_name || lead.last_name
+          ? `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim()
+          : null,
+        subject,
+        body_text: bodyText,
+        body_html: bodyHtml,
+        message_id: providerMessageId,
+        in_reply_to: inReplyTo,
+        message_references: references,
+        received_at: now,
+      });
+      if (insertError) {
+        throw new Error(`Failed to insert email_messages for campaign reply: ${insertError.message}`);
+      }
+
+      const { error: updateThreadError } = await this.supabase
+        .from('email_threads')
+        .update({
+          last_message_at: now,
+          message_count: (thread.message_count || 0) + 1,
+          participants: newParticipants,
+          updated_at: now,
+        })
+        .eq('id', threadId);
+      if (updateThreadError) {
+        throw new Error(`Failed to update email_threads for campaign reply: ${updateThreadError.message}`);
+      }
+    } catch (error) {
+      const msg = formatUnknownError(error);
+      console.error(`[SEND WORKER] Failed to record campaign_reply ${messageJob.id} in thread ${threadId}:`, error);
+      reportErrorToSlack('Send-worker: failed to record sent campaign_reply in thread (master inbox may be missing the reply)', {
+        severity: 'warning',
+        message_job_id: messageJob.id,
+        campaign_id: messageJob.campaign_id,
+        thread_id: threadId,
+        error: msg,
+        alertPolicy: isRetryableSupabaseReadError(msg)
+          ? 'transient_retryable_warning'
+          : 'persistent_config_warning',
+        aggregationKey: `send-worker-campaign-reply-record:${messageJob.campaign_id}`,
+        summaryFields: {
+          campaign_id: messageJob.campaign_id,
+        },
+      });
     }
   }
 

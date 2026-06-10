@@ -5,7 +5,7 @@ import type { ReplacementReason } from '../../supabase/types';
 
 type DbClient = SupabaseClient;
 
-export type CampaignFlowKind = 'emailOnly' | 'emailWaitEmail';
+export type CampaignFlowKind = 'emailOnly' | 'emailWaitEmail' | 'emailWaitEmailCategorizer';
 export type CampaignStatus = 'draft' | 'running' | 'paused' | 'stopped';
 export type EnrollmentState = 'active' | 'paused' | 'stopped' | 'completed';
 export type EnrollmentStoppedReason = 'replied' | 'bounced' | 'unsubscribed' | 'error';
@@ -17,8 +17,9 @@ export type MessageJobStatus =
   | 'deferred'
   | 'failed'
   | 'cancelled'
-  | 'blocked';
-export type MessageJobType = 'campaign' | 'inbox_reply' | 'inbox_forward';
+  | 'blocked'
+  | 'held';
+export type MessageJobType = 'campaign' | 'campaign_reply' | 'inbox_reply' | 'inbox_forward';
 
 export type CampaignMailboxSpec = {
   key: string;
@@ -85,6 +86,12 @@ export type CampaignEnrollmentSpec = {
   stoppedReason?: EnrollmentStoppedReason | null;
   stoppedAt?: string | null;
   stoppedErrorMessage?: string | null;
+  /** Outbound hold snapshot (categorizer flows): flow node id to restore to. */
+  heldNodeFlowNodeId?: string | null;
+  /** Outbound hold snapshot: next_run_at to restore. */
+  heldNextRunAt?: string | null;
+  /** Set enrollments.reply_thread_id to the lead's seeded thread (post-branch state). */
+  attachReplyThread?: boolean;
 };
 
 export type CampaignLeadSpec = {
@@ -116,6 +123,8 @@ export type CampaignGraphSpec = {
   name: string;
   status?: CampaignStatus;
   flowKind?: CampaignFlowKind;
+  /** Categorizer node AI toggle (emailWaitEmailCategorizer flows only). */
+  categorizerUseAi?: boolean;
   sendingIntervalSeconds?: number;
   schedule?: Json;
   mailboxes?: CampaignMailboxSpec[];
@@ -191,6 +200,8 @@ const DEFAULT_SECOND_EMAIL_VARIANT_IDS = [
   'f0000000-0000-4000-8000-00000000eb21',
   'f0000000-0000-4000-8000-00000000eb22',
 ] as const;
+const DEFAULT_REPLY_EMAIL_VARIANT_ID = 'f0000000-0000-4000-8000-00000000ec31';
+const DEFAULT_BREAKUP_EMAIL_VARIANT_ID = 'f0000000-0000-4000-8000-00000000ed41';
 
 function chunk<T>(items: T[], size = INSERT_CHUNK_SIZE): T[][] {
   const out: T[][] = [];
@@ -233,7 +244,152 @@ export function buildAlwaysOnSchedule(): Json {
   } as unknown as Json;
 }
 
-export function buildFlowData(flowKind: CampaignFlowKind): Json {
+export function buildFlowData(
+  flowKind: CampaignFlowKind,
+  options?: { categorizerUseAi?: boolean },
+): Json {
+  if (flowKind === 'emailWaitEmailCategorizer') {
+    return {
+      nodes: [
+        {
+          id: 'leadSource-1',
+          type: 'leadSource',
+          position: { x: 0, y: 0 },
+          data: { label: 'Seed Lead Source' },
+        },
+        {
+          id: 'email-1',
+          type: 'email',
+          position: { x: 220, y: 0 },
+          data: {
+            label: 'Initial Touch',
+            send_mode: 'new',
+            variants: [
+              {
+                id: DEFAULT_EMAIL_VARIANT_IDS[0],
+                label: 'Primary',
+                subject: 'Quick check-in for {{name}}',
+                template: 'Hi {{name}} - sending a seeded campaign touch for manual QA.',
+                isActive: true,
+                order: 0,
+              },
+              {
+                id: DEFAULT_EMAIL_VARIANT_IDS[1],
+                label: 'Backup',
+                subject: 'Following up for {{name}}',
+                template: 'Hi {{name}} - seeded backup variant for campaign QA.',
+                isActive: true,
+                order: 1,
+              },
+            ],
+          },
+        },
+        {
+          id: 'waitTime-1',
+          type: 'waitTime',
+          position: { x: 460, y: 0 },
+          data: {
+            label: 'Wait Step',
+            wait_duration_seconds: 3600,
+          },
+        },
+        {
+          id: 'email-2',
+          type: 'email',
+          position: { x: 700, y: 0 },
+          data: {
+            label: 'Follow-up',
+            send_mode: 'new',
+            variants: [
+              {
+                id: DEFAULT_SECOND_EMAIL_VARIANT_IDS[0],
+                label: 'Follow-up Primary',
+                subject: 'Checking back in with {{name}}',
+                template: 'Hi {{name}} - seeded second touch after the wait step.',
+                isActive: true,
+                order: 0,
+              },
+              {
+                id: DEFAULT_SECOND_EMAIL_VARIANT_IDS[1],
+                label: 'Follow-up Backup',
+                subject: 'Wanted to circle back with {{name}}',
+                template: 'Hi {{name}} - seeded backup follow-up after the wait step.',
+                isActive: true,
+                order: 1,
+              },
+            ],
+          },
+        },
+        {
+          id: 'aiCategorizer-1',
+          type: 'aiCategorizer',
+          position: { x: 940, y: 0 },
+          data: {
+            label: 'Categorizer',
+            use_ai: options?.categorizerUseAi ?? false,
+          },
+        },
+        {
+          id: 'email-3',
+          type: 'email',
+          position: { x: 1180, y: -120 },
+          data: {
+            label: 'Interested Reply',
+            send_mode: 'reply',
+            variants: [
+              {
+                id: DEFAULT_REPLY_EMAIL_VARIANT_ID,
+                label: 'Reply Primary',
+                subject: '',
+                template: 'Hi {{name}} - great to hear back, sending the details now.',
+                isActive: true,
+                order: 0,
+              },
+            ],
+          },
+        },
+        {
+          id: 'email-4',
+          type: 'email',
+          position: { x: 1180, y: 120 },
+          data: {
+            label: 'Not Interested Breakup',
+            send_mode: 'new',
+            variants: [
+              {
+                id: DEFAULT_BREAKUP_EMAIL_VARIANT_ID,
+                label: 'Breakup Primary',
+                subject: 'Closing the loop with {{name}}',
+                template: 'Hi {{name}} - no worries, closing the loop on my end.',
+                isActive: true,
+                order: 0,
+              },
+            ],
+          },
+        },
+      ],
+      edges: [
+        { id: 'e1', source: 'leadSource-1', target: 'email-1' },
+        { id: 'e2', source: 'email-1', target: 'waitTime-1' },
+        { id: 'e3', source: 'waitTime-1', target: 'email-2' },
+        { id: 'e4', source: 'email-2', target: 'aiCategorizer-1' },
+        {
+          id: 'e5',
+          source: 'aiCategorizer-1',
+          sourceHandle: 'interested',
+          target: 'email-3',
+        },
+        {
+          id: 'e6',
+          source: 'aiCategorizer-1',
+          sourceHandle: 'not-interested',
+          target: 'email-4',
+        },
+        // Intentionally no edge for 'neutral': covers the no-edge completion path.
+      ],
+    } as unknown as Json;
+  }
+
   if (flowKind === 'emailWaitEmail') {
     return {
       nodes: [
@@ -649,7 +805,9 @@ async function upsertCampaign(params: {
     account_id: accountId,
     organization_id: null,
     status: spec.status ?? 'running',
-    flow_data: buildFlowData(spec.flowKind ?? 'emailOnly'),
+    flow_data: buildFlowData(spec.flowKind ?? 'emailOnly', {
+      categorizerUseAi: spec.categorizerUseAi,
+    }),
     schedule: (spec.schedule ?? buildAlwaysOnSchedule()) as any,
     sending_interval_seconds: spec.sendingIntervalSeconds ?? DEFAULT_SENDING_INTERVAL_SECONDS,
     deleted_at: null,
@@ -836,6 +994,8 @@ export async function materializeCampaignGraph(
   const flowNodeIds = ['email-1'];
   if ((spec.flowKind ?? 'emailOnly') === 'emailWaitEmail') {
     flowNodeIds.push('waitTime-1', 'email-2');
+  } else if (spec.flowKind === 'emailWaitEmailCategorizer') {
+    flowNodeIds.push('waitTime-1', 'email-2', 'aiCategorizer-1', 'email-3', 'email-4');
   }
 
   const nodeIdsByFlowNodeId = new Map<string, string>();
@@ -885,6 +1045,7 @@ export async function materializeCampaignGraph(
       enrollmentId = randomId();
       const enrollmentState = leadSpec.enrollment.state ?? 'active';
       const currentFlowNodeId = leadSpec.enrollment.currentFlowNodeId ?? null;
+      const heldNodeFlowNodeId = leadSpec.enrollment.heldNodeFlowNodeId ?? null;
       enrollmentRows.push({
         id: enrollmentId,
         campaign_id: campaignId,
@@ -893,12 +1054,17 @@ export async function materializeCampaignGraph(
         current_node_id: currentFlowNodeId ? nodeIdsByFlowNodeId.get(currentFlowNodeId) ?? null : null,
         state: enrollmentState,
         next_run_at:
-          leadSpec.enrollment.nextRunAt ??
-          (enrollmentState === 'active' ? nowIso() : null),
+          leadSpec.enrollment.nextRunAt !== undefined
+            ? leadSpec.enrollment.nextRunAt
+            : enrollmentState === 'active'
+              ? nowIso()
+              : null,
         flow_position: leadSpec.enrollment.flowPosition ?? {},
         stopped_reason: leadSpec.enrollment.stoppedReason ?? null,
         stopped_at: leadSpec.enrollment.stoppedAt ?? null,
         stopped_error_message: leadSpec.enrollment.stoppedErrorMessage ?? null,
+        held_node_id: heldNodeFlowNodeId ? nodeIdsByFlowNodeId.get(heldNodeFlowNodeId) ?? null : null,
+        held_next_run_at: leadSpec.enrollment.heldNextRunAt ?? null,
       });
       manifest.enrollmentIds.push(enrollmentId);
     }
@@ -928,7 +1094,7 @@ export async function materializeCampaignGraph(
         throw new Error(`campaign harness: missing mailbox for job ${key} on lead ${leadSpec.key}`);
       }
       const nodeId =
-        messageType === 'campaign'
+        messageType === 'campaign' || messageType === 'campaign_reply'
           ? nodeIdsByFlowNodeId.get(jobSpec.nodeFlowNodeId ?? 'email-1') ?? null
           : null;
       jobRows.push({
@@ -1050,6 +1216,28 @@ export async function materializeCampaignGraph(
     const { error } = await supabase.from('email_messages').insert(batchRows as any);
     if (error) {
       throw new Error(`campaign harness: email_message insert failed: ${error.message}`);
+    }
+  }
+
+  // Post-pass: link enrollments to their seeded reply thread (categorizer
+  // post-branch state). Threads are inserted after enrollments, so the FK
+  // can only be stamped here.
+  for (const leadSpec of spec.leads) {
+    if (!leadSpec.enrollment?.attachReplyThread) {
+      continue;
+    }
+    const materialized = leadsByKey.get(leadSpec.key);
+    if (!materialized?.enrollmentId || !materialized.threadId) {
+      throw new Error(
+        `campaign harness: attachReplyThread requires enrollment + thread on lead ${leadSpec.key}`,
+      );
+    }
+    const { error } = await supabase
+      .from('enrollments')
+      .update({ reply_thread_id: materialized.threadId } as any)
+      .eq('id', materialized.enrollmentId);
+    if (error) {
+      throw new Error(`campaign harness: reply_thread_id link failed: ${error.message}`);
     }
   }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { TrashIcon } from 'react-native-heroicons/outline';
 import { EdgeLabelRenderer, getBezierPath } from '@/lib/flow';
+import { getCategorizerSourceHandleColor, resolveCategorizerSourceHandle } from '@/lib/categorizer';
 
 const BTN = 12;
 const INSET = 2;
@@ -35,26 +36,35 @@ const btnStyle: React.CSSProperties = {
 
 interface DeletableFlowEdgeProps {
   id: string;
+  source?: string;
   sourceX: number;
   sourceY: number;
   targetX: number;
   targetY: number;
   sourcePosition: any;
   targetPosition: any;
+  sourceHandle?: string | null;
+  data?: { readOnly?: boolean };
   selected?: boolean;
 }
 
 export function DeletableFlowEdge({
   id,
+  source,
   sourceX,
   sourceY,
   targetX,
   targetY,
   sourcePosition,
   targetPosition,
+  sourceHandle,
+  data,
   selected,
 }: DeletableFlowEdgeProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const readOnly = !!data?.readOnly;
+  const resolvedSourceHandle = resolveCategorizerSourceHandle(sourceHandle, id, source);
+  const categoryColor = getCategorizerSourceHandleColor(resolvedSourceHandle);
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -64,7 +74,7 @@ export function DeletableFlowEdge({
     targetPosition,
   });
 
-  const isActive = isHovered || selected;
+  const isActive = !readOnly && (isHovered || selected);
 
   const handleDelete = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -76,23 +86,31 @@ export function DeletableFlowEdge({
   return (
     <>
       <g
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseEnter={readOnly ? undefined : () => setIsHovered(true)}
+        onMouseLeave={readOnly ? undefined : () => setIsHovered(false)}
       >
-        <path
-          d={edgePath}
-          fill="none"
-          stroke="transparent"
-          strokeWidth={24}
-          pointerEvents="stroke"
-        />
+        {!readOnly ? (
+          <path
+            d={edgePath}
+            fill="none"
+            stroke="transparent"
+            strokeWidth={24}
+            pointerEvents="stroke"
+          />
+        ) : null}
         <path
           d={edgePath}
           fill="none"
           pointerEvents="none"
-          className={`react-flow__edge-path${isActive ? ' furnace-flow-edge-path--active' : ''}`}
+          className={`react-flow__edge-path${categoryColor ? ' furnace-flow-edge-path--categorized' : ''}${isActive ? ' furnace-flow-edge-path--active' : ''}`}
+          style={
+            categoryColor
+              ? ({ '--furnace-edge-color': categoryColor } as React.CSSProperties)
+              : undefined
+          }
         />
       </g>
+      {!readOnly ? (
       <EdgeLabelRenderer>
         <div
           className={`nodrag nopan furnace-edge-delete-btn${isActive ? ' furnace-edge-delete-btn--visible' : ''}`}
@@ -125,6 +143,7 @@ export function DeletableFlowEdge({
           </div>
         </div>
       </EdgeLabelRenderer>
+      ) : null}
     </>
   );
 }

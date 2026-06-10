@@ -2,6 +2,7 @@ import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Pressable, Platform, ScrollView, type ViewStyle } from 'react-native';
 import { BaseModal, ConfirmModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
+import { Toggle } from '@/components/ui/Toggle';
 import { Alert } from '@/components/ui/feedback/Alert';
 import { MergeTagVariablePicker } from '@/components/builder/MergeTagVariablePicker';
 import {
@@ -220,6 +221,10 @@ export interface EmailNodeModalProps {
     mappedStandardFieldKeys?: string[];
     /** Campaign lifecycle: draft = pre-start */
     campaignStatus?: 'draft' | 'running' | 'paused' | 'stopped';
+    /** 'reply' = send in the replied thread (after a Categorizer branch). */
+    send_mode?: 'new' | 'reply';
+    /** Reply mode requires a Categorizer in the flow (set by the builder). */
+    flowHasCategorizer?: boolean;
   };
 }
 
@@ -227,6 +232,7 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
   const isPostStart = initialData?.campaignStatus != null && initialData.campaignStatus !== 'draft';
 
   const [label, setLabel] = useState(initialData?.label || 'Send Email');
+  const [sendMode, setSendMode] = useState<'new' | 'reply'>(initialData?.send_mode === 'reply' ? 'reply' : 'new');
   const [variants, setVariants] = useState<EmailNodeVariant[]>([]);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const bodyEditorRef = useRef<{ getHTML: () => string; getText: () => string } | null>(null);
@@ -262,6 +268,7 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
   useEffect(() => {
     if (!visible || !initialData) return;
     setLabel(initialData.label ?? 'Send Email');
+    setSendMode(initialData.send_mode === 'reply' ? 'reply' : 'new');
     const { variants: v, legacyFields } = normalizeLegacyEmailNodeData(
       initialData as Record<string, unknown>
     );
@@ -433,6 +440,7 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
     onSave({
       label,
       mailboxId: (initialData as { mailboxId?: string })?.mailboxId ?? '',
+      send_mode: initialData?.flowHasCategorizer ? sendMode : 'new',
       variants: withSystemLabels,
     });
     onClose();
@@ -533,6 +541,30 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
               selectionColor="#FF4D00"
             />
           </View>
+
+          {initialData?.flowHasCategorizer ? (
+            <View
+              style={{ flexShrink: 0 }}
+              className="flex-row items-center justify-between gap-3 py-0.5"
+            >
+              <View className="flex-1 shrink">
+                <Text className="text-sm font-instrument-medium text-gray-300">
+                  Send as reply in the lead&apos;s thread
+                </Text>
+                <Text className="text-xs font-instrument text-gray-500 mt-0.5">
+                  Sends from the mailbox the lead replied to with an automatic
+                  &quot;Re:&quot; subject (the subject below is ignored). Requires the
+                  Categorizer to have branched.
+                </Text>
+              </View>
+              <View className="shrink-0" style={{ paddingVertical: 2 }}>
+                <Toggle
+                  value={sendMode === 'reply'}
+                  onValueChange={(on) => setSendMode(on ? 'reply' : 'new')}
+                />
+              </View>
+            </View>
+          ) : null}
 
           <View
             style={{
@@ -703,7 +735,9 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
                     variables={leadVariables}
                   />
                   <Text className="text-xs text-gray-500 mt-1.5">
-                    Leave empty on follow-ups to keep the same thread.
+                    {sendMode === 'reply'
+                      ? 'Reply mode: the subject is ignored — the email uses "Re: <thread subject>" automatically.'
+                      : 'Leave empty on follow-ups to keep the same thread.'}
                   </Text>
                 </View>
 

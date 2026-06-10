@@ -250,6 +250,15 @@ test('SchedulerWorker self recovery audit calls stale sending finalize and healt
         ],
         error: null,
       },
+      {
+        data: [
+          {
+            orphaned_held_jobs: 0,
+            stale_parked_enrollments: 0,
+          },
+        ],
+        error: null,
+      },
     ]) as any,
     databaseClient: {
       async poll() {
@@ -298,6 +307,10 @@ test('SchedulerWorker self recovery audit calls stale sending finalize and healt
           p_reserved_stale_minutes: 5,
           p_sending_stale_minutes: 30,
         },
+      },
+      {
+        fn: 'get_categorizer_health',
+        args: undefined,
       },
     ]);
   } finally {

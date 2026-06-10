@@ -50,4 +50,17 @@ export async function updateThreadCategory(
       }
     }
   }
+
+  // Manual categorization is a wake event for categorizer flows: if the
+  // thread's enrollment is parked at a categorizer node (active,
+  // next_run_at NULL), nudge it so the scheduler branches on this category.
+  // No-op for non-campaign threads and non-categorizer flows.
+  if (category && thread?.campaign_id) {
+    const { error: wakeError } = await supabase.rpc('wake_enrollment_for_thread_category', {
+      p_thread_id: threadId,
+    });
+    if (wakeError) {
+      console.error('[updateThreadCategory] Failed to wake parked enrollment for thread:', wakeError);
+    }
+  }
 }

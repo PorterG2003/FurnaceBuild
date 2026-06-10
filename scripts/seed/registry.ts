@@ -14,6 +14,11 @@ import {
   oooInboxMessagesModule,
   oooInboxOooStatesModule,
 } from './scenarios/ooo-mixed-inbox/index';
+import {
+  categorizerFlowEnvModule,
+  categorizerFlowBaseGraphModule,
+  categorizerFlowRepliesModule,
+} from './scenarios/categorizer-flow/index';
 import { devDefaultScenarioModule } from './scenarios/dev-default';
 import { platformInvitePreviewSeedModule } from './scenarios/platform-invite-preview';
 import { campaignHtmlDemoSeedModule } from './scenarios/campaign-html-demo';
@@ -32,6 +37,9 @@ export const allModules: Record<string, SeedModule> = {
   oooInbox_threads: oooInboxThreadsModule,
   oooInbox_messages: oooInboxMessagesModule,
   oooInbox_oooStates: oooInboxOooStatesModule,
+  categorizerFlow_env: categorizerFlowEnvModule,
+  categorizerFlow_baseGraph: categorizerFlowBaseGraphModule,
+  categorizerFlow_replies: categorizerFlowRepliesModule,
   devDefault_seed: devDefaultScenarioModule,
   platformInvitePreview_seed: platformInvitePreviewSeedModule,
   campaignHtmlDemo_seed: campaignHtmlDemoSeedModule,
@@ -47,6 +55,7 @@ export const scenarioModuleIds: Record<string, string[]> = {
   'campaign-smoke': ['campaignSmoke_batchAssign'],
   'campaign-html-demo': ['campaignHtmlDemo_seed'],
   'ooo-mixed-inbox': ['oooInbox_oooStates'],
+  'categorizer-flow': ['categorizerFlow_replies'],
   'platform-invite-preview': ['platformInvitePreview_seed'],
 };
 

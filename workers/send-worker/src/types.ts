@@ -8,10 +8,11 @@
  * - Copy types from lib/supabase/types/
  */
 
-export type MessageType = 'campaign' | 'inbox_reply' | 'inbox_forward';
+export type MessageType = 'campaign' | 'campaign_reply' | 'inbox_reply' | 'inbox_forward';
 
 /**
  * True if this job is a campaign send (scheduler-created). False for inbox_reply/inbox_forward.
+ * campaign_reply counts as a campaign job (enrollment-driven, campaign stats/events).
  * Use this instead of ad-hoc checks so campaign vs manual is defined in one place.
  */
 export function isCampaignMessageJob(job: { message_type?: MessageType | null }): boolean {
@@ -27,7 +28,7 @@ export interface MessageJob {
   mailbox_id: string;
   node_id: string | null;
   message_type?: MessageType;
-  status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'cancelled' | 'blocked';
+  status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'cancelled' | 'blocked' | 'held';
   status_reason?: string | null;
   scheduled_at: string;
   reserved_at: string | null;
@@ -43,7 +44,7 @@ export interface MessageJob {
     variant?: { id?: string; label_snapshot?: string };
     lead_data?: any;
     campaign_data?: any;
-    source?: 'inbox_reply' | 'inbox_forward';
+    source?: 'inbox_reply' | 'inbox_forward' | 'campaign_reply';
     thread_id?: string;
     in_reply_to_message_id?: string;
     forwarded_message_id?: string;

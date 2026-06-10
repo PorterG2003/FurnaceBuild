@@ -243,7 +243,11 @@ export function MessagePanelHeader({
             <Select<{ id: string; name: string }>
               items={categoryItems}
               getItemId={(i) => i.id}
-              getItemLabel={(i) => ({ primary: i.name })}
+              getItemLabel={(i) => ({
+                primary: i.name,
+                // Auto Reply releases a held outbound sequence in categorizer flows.
+                secondary: i.id === 'Auto Reply' ? 'Not a real reply — sequence continues' : undefined,
+              })}
               getItemColor={(item) => getCategoryColor(item.id || null)}
               itemColorVariant="tint"
               value={category ?? ''}

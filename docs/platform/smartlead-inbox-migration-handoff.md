@@ -41,11 +41,11 @@ Ran `npm run audit:inboxalways-headers` against all **150 Foot Traffic Co mailbo
 | Has `In-Reply-To` (normal) | 3,434 | 98.96% |
 | `References` only (no `In-Reply-To`) | 30 | 0.86% |
 | Headerless but `Re:`/`Fwd:` subject | 6 | 0.17% |
-| **Would miss `isReply()` gate** | **36** | **1.04%** |
+| **Would miss `isReply()` gate (before fix)** | **36** | **1.04%** |
 
 - **0 IMAP connection failures** across all 150 mailboxes.
 - **Normal replies are fine** — 99% carry `In-Reply-To`.
-- **`References`-only replies are more common here than expected** (~0.9%). Subjects often don't say `Re:` (e.g. "Sprint Retrospective") but `References` points at the outbound message. These would be skipped by `isReply()` today even though `handleReply()` could match them.
+- **`References`-only replies are more common here than expected** (~0.9%). Subjects often don't say `Re:` (e.g. "Sprint Retrospective") but `References` points at the outbound message.
 - **Truly headerless `Re:` replies are rare** (~0.2%).
 - Re-run:
   ```bash
@@ -56,9 +56,11 @@ Ran `npm run audit:inboxalways-headers` against all **150 Foot Traffic Co mailbo
 
 **Still not done:** one live Furnace send → reply → thread match (needs a test send from Furnace so `provider_message_id` exists).
 
-### Known code gap (minor, now quantified)
+### Fixed: `isReply()` now checks `References`
 
-`isReply()` only checks `In-Reply-To`; `handleReply()` also searches `References`. On Foot Traffic Co, **30 messages (0.86%)** have `References` only and would be skipped. Expanding `isReply()` to include `References` would recover those; the 6 headerless `Re:` subjects (~0.2%) still won't match without subject-based fallback.
+`isReply()` in `message-processor.ts` now treats `In-Reply-To` or `References` as a reply. This recovers the ~30 `References`-only messages (0.86%). The remaining ~6 headerless `Re:` subjects (~0.2%) still won't match without subject-based fallback (same as Smartlead).
+
+**Deploy required:** redeploy inbox-checker prod after merge.
 
 ---
 
@@ -72,7 +74,7 @@ Ran `npm run audit:inboxalways-headers` against all **150 Foot Traffic Co mailbo
 
 4. **Smartlead wizard** if you need historical threads or replies to pre-cutover sends to link up.
 
-5. **(Optional) Fix `isReply()`** to also check `References` — recovers ~0.9% of replies on this account.
+5. ~~**Fix `isReply()` to also check `References`**~~ — done in code; deploy inbox-checker to apply.
 
 ---
 
@@ -83,15 +85,18 @@ Ran `npm run audit:inboxalways-headers` against all **150 Foot Traffic Co mailbo
 | Furnace send after cutover | Yes, if headers normal + inbox-checker polling |
 | Smartlead send before cutover | Only if history imported and headers reference a known message ID |
 | Email with no threading headers | No (by design; same as Smartlead) |
-| Reply with `References` only | **No today** — skipped by `isReply()` gate (~0.9% of replies here) |
+| Reply with `References` only | Yes, after inbox-checker deploy (~0.9% of replies here) |
+| Reply with headerless `Re:` subject | No (~0.2%; same as Smartlead) |
 
 ---
 
 ## Verify after deploy
 
 - [x] Import 150 mailboxes to prod (Foot Traffic Co)
-- [x] Header audit on Foot Traffic Co mailboxes — 99% have `In-Reply-To`; ~1% would miss `isReply()` gate
+- [x] Header audit on Foot Traffic Co mailboxes — 99% have `In-Reply-To`; ~1% would miss old `isReply()` gate
 - [x] Inbox-checker IMAP connect works on all 150 mailboxes (0 connection failures)
+- [x] Fix `isReply()` to include `References`
+- [ ] Deploy inbox-checker prod with `isReply()` fix
 - [ ] One Furnace send → one normal reply → appears in Furnace thread
 
 ---
@@ -103,6 +108,7 @@ Ran `npm run audit:inboxalways-headers` against all **150 Foot Traffic Co mailbo
 | CSV import | `components/senders/UploadMailboxesCSVModal.tsx` |
 | IMAP fix | `lib/mailbox/imapInbox.ts` |
 | Inbox polling | `workers/inbox-checker-worker/src/imap-client.ts` |
+| Reply gate | `workers/inbox-checker-worker/src/message-processor.ts` |
 | Reply matching | `workers/inbox-checker-worker/src/thread-manager.ts` |
 | Outbound Message-ID | `workers/send-worker/src/email.ts` |
 | Smartlead import | `lib/smartlead/migration.ts` |

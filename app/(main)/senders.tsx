@@ -24,6 +24,7 @@ import {
   hasBulkMailboxTagChanges,
   type BulkMailboxTagChanges,
 } from '@/components/senders';
+import { formatBulkMailboxTagConflictMessage } from '@/lib/tags/errors';
 import {
   countActiveMailboxListFilters,
   EMPTY_MAILBOX_LIST_FILTERS,
@@ -408,13 +409,14 @@ export default function SendersPage() {
         const payload = buildBulkUpdatePayload(editFormData, signatureHtml);
         const hasFieldUpdates = Object.keys(payload).length > 0;
         const hasTagUpdates = hasBulkMailboxTagChanges(bulkTagChanges);
-        if (getBulkMailboxTagConflicts(bulkTagChanges).length > 0) {
-          toast.error('A tag cannot be both added and removed in the same update');
+        const conflictTagIds = getBulkMailboxTagConflicts(bulkTagChanges);
+        if (conflictTagIds.length > 0) {
+          toast.error(formatBulkMailboxTagConflictMessage(conflictTagIds, accountMailboxTags));
           setSaving(false);
           return;
         }
         if (!hasFieldUpdates && !hasTagUpdates) {
-          toast.error('Fill in at least one field or tag change to update');
+          toast.error('Change at least one field or update tags before saving.');
           setSaving(false);
           return;
         }
@@ -427,10 +429,14 @@ export default function SendersPage() {
           await applyBulkTagChanges(editMailboxIds, bulkTagChanges);
         }
         const count = editMailboxIds.length;
-        const parts: string[] = [];
-        if (hasFieldUpdates) parts.push(`${count} mailboxes updated`);
-        if (hasTagUpdates) parts.push('tags applied');
-        toast.success(parts.join('; '));
+        const mailboxLabel = count === 1 ? 'mailbox' : 'mailboxes';
+        if (hasFieldUpdates && hasTagUpdates) {
+          toast.success(`Updated ${count} ${mailboxLabel} and applied tag changes.`);
+        } else if (hasFieldUpdates) {
+          toast.success(`Updated ${count} ${mailboxLabel}.`);
+        } else {
+          toast.success(`Applied tag changes to ${count} ${mailboxLabel}.`);
+        }
         setShowEditModal(false);
         setEditMailboxIds([]);
         setEditFormData(null);

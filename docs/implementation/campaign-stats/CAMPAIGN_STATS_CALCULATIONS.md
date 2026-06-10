@@ -48,6 +48,16 @@ A **bounce was detected** for a Furnace campaign send that can be **matched** to
 - **Unmatched bounces** (e.g. warmup mail or sends outside Furnace) are **not** written to `events`, do not change `campaign_stats`, and do not stop enrollments. They are logged as structured JSON with `tag: bounce_unmatched` for operators.
 - **Code:** [workers/inbox-checker-worker/src/thread-manager.ts](../../../workers/inbox-checker-worker/src/thread-manager.ts) — `record_bounced_event_and_increment` (atomic event + increment) only after a positive recipient match.
 
+### Smartlead-imported campaigns
+
+Campaigns with `source = 'smartlead'` get totals from the Smartlead migration worker ([lib/smartlead/migration.ts](../../../lib/smartlead/migration.ts)), not from Furnace send/inbox workers.
+
+- **Sent / bounce:** Smartlead analytics API → `campaign_stats` and `imported_campaign_stats_by_day`.
+- **Replied / positive reply (list totals):** After conversations import, `finalizeImportedCampaignStats` sets `replied_count` and `positive_reply_count` to `MAX(analytics, imported thread counts)`. Smartlead’s inbox-replies API often reports more replies than analytics (e.g. includes OOO); thread count matches the Smartlead UI “Replied w/OOO” column.
+- **Positive reply on threads:** Inbox-replies category is mapped to `email_threads.category` (`Interested`, etc.); interested thread count feeds the positive total above.
+- **Per-day charts:** Still read `imported_campaign_stats_by_day` (analytics API only). Day-level replied/positive may be lower than list totals when analytics undercounts; list totals are authoritative for Smartlead parity.
+- **Re-run:** Each migration run calls `clearSmartleadCampaignImportArtifacts` first (wipes leads, enrollments, threads, imported stats for that campaign) so the UI wizard can safely re-import all campaigns.
+
 ### Enrollment count
 
 Total **enrollments** for the campaign. Not stored in `campaign_stats`; computed in the app from the `enrollments` table.

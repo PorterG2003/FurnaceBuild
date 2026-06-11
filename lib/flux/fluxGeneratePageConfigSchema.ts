@@ -227,6 +227,7 @@ export const blockSchema = z.discriminatedUnion('type', [
       lastAuditAt: z.string().optional(),
       mapImageFit: z.enum(FLUX_IMAGE_FITS).optional(),
       exampleImageFit: z.enum(FLUX_IMAGE_FITS).optional(),
+      advertiserLinkLabel: z.string().optional(),
       competitors: z.array(
         z.object({
           name: z.string(),

@@ -207,6 +207,8 @@ export interface CompetitorAdAuditBlockProps {
   lastAuditAt?: string;
   mapImageFit?: FluxImageFit;
   exampleImageFit?: FluxImageFit;
+  /** Label for the per-competitor Google Ads link. Use `{name}` for the competitor name. */
+  advertiserLinkLabel?: string;
   competitors: CompetitorAdAuditRowProps[];
 }
 

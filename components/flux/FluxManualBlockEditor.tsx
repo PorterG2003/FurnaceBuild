@@ -979,6 +979,19 @@ export function renderFluxManualBlockEditor(
             placeholder="Competitor ad audit"
             placeholderTextColor="#555"
           />
+          <Text className={labelClass}>Google Ads link label</Text>
+          <TextInput
+            className={inputClass}
+            value={p.advertiserLinkLabel ?? ''}
+            onChangeText={(value) =>
+              updateProps(block.id, { advertiserLinkLabel: value.trim() ? value : undefined })
+            }
+            placeholder="See all of {name}'s Google Ads"
+            placeholderTextColor="#555"
+          />
+          <Text className="text-gray-500 text-xs font-instrument leading-5 mb-1">
+            Use {'{name}'} for the competitor title. Button colors are under Appearance above.
+          </Text>
           <Text className={labelClass}>Discovery mode</Text>
           <View className="flex-row flex-wrap gap-2 mb-2">
             {[

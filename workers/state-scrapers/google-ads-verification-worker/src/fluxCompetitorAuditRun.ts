@@ -638,7 +638,49 @@ export async function runFluxCompetitorAuditJob(params: {
       }
     }
 
-    const nextBlocks = blocks.map((b) => {
+    let persistCfg = cfg;
+    if (discoveryMode === 'curated_domains') {
+      const { data: freshPage, error: freshPageErr } = await flux
+        .from('flux_prospect_pages')
+        .select('page_config')
+        .eq('id', pageId)
+        .maybeSingle();
+      if (freshPageErr) {
+        throw new Error(`Failed to re-fetch page before persist: ${freshPageErr.message}`);
+      }
+      if (freshPage?.page_config && typeof freshPage.page_config === 'object') {
+        persistCfg = freshPage.page_config as PageConfig;
+      }
+      const freshBlocks = Array.isArray(persistCfg.blocks) ? persistCfg.blocks : blocks;
+      const freshBlock = freshBlocks.find(
+        (b) => b && typeof b === 'object' && (b as { id?: string }).id === blockId,
+      ) as { props?: Record<string, unknown> } | undefined;
+      const { data: freshProspect, error: freshProspectErr } = await flux
+        .from('flux_prospects')
+        .select('competitor_audit_curated_domains')
+        .eq('id', page.prospect_id as string)
+        .maybeSingle();
+      if (freshProspectErr) {
+        throw new Error(`Failed to re-fetch prospect before persist: ${freshProspectErr.message}`);
+      }
+      const freshCurated = fluxCompetitorAuditDiscovery.resolveEffectiveCuratedDomains({
+        blockDomains: freshBlock?.props?.curatedDomains,
+        prospectDomains: freshProspect?.competitor_audit_curated_domains,
+      });
+      const curatedNameByDomain = new Map(
+        freshCurated.map((seed) => [seed.domain, seed.name?.trim() || seed.domain] as const),
+      );
+      for (let wi = 0; wi < winners.length; wi += 1) {
+        const winner = winners[wi]!;
+        const curatedName = curatedNameByDomain.get(winner.domain);
+        if (curatedName && competitorRows[wi]) {
+          competitorRows[wi]!.name = curatedName;
+        }
+      }
+    }
+
+    const persistBlocks = Array.isArray(persistCfg.blocks) ? persistCfg.blocks : blocks;
+    const nextBlocks = persistBlocks.map((b) => {
       if (!b || typeof b !== 'object' || (b as { id?: string }).id !== blockId) return b;
       const o = b as { type?: string; props?: Record<string, unknown> };
       if (o.type !== 'competitor_ad_audit') return b;
@@ -658,7 +700,7 @@ export async function runFluxCompetitorAuditJob(params: {
 
     const { error: updatePageErr } = await flux
       .from('flux_prospect_pages')
-      .update({ page_config: { ...cfg, blocks: nextBlocks } as never })
+      .update({ page_config: { ...persistCfg, blocks: nextBlocks } as never })
       .eq('id', pageId);
     if (updatePageErr) {
       throw new Error(`Failed to persist completed competitor audit: ${updatePageErr.message}`);

@@ -1,3 +1,4 @@
+import { applyCuratedNamesToCompetitors } from './fluxCompetitorAuditDiscovery';
 import type { CompetitorAdAuditBlock, PageConfig } from './types';
 
 function clonePageConfig(config: PageConfig): PageConfig {
@@ -17,6 +18,10 @@ export function mergeServerCompetitorAuditBlocksIntoDraft(draft: PageConfig, ser
     if (!serverBlock || serverBlock.type !== 'competitor_ad_audit') return block;
 
     const { lastAuditDomainReport: _omitReport, ...draftAuditProps } = block.props;
+    const competitors = applyCuratedNamesToCompetitors(
+      serverBlock.props.competitors,
+      block.props.curatedDomains,
+    );
     const merged: CompetitorAdAuditBlock = {
       ...block,
       props: {
@@ -24,7 +29,7 @@ export function mergeServerCompetitorAuditBlocksIntoDraft(draft: PageConfig, ser
         status: serverBlock.props.status,
         errorMessage: serverBlock.props.errorMessage,
         lastAuditAt: serverBlock.props.lastAuditAt,
-        competitors: serverBlock.props.competitors,
+        competitors,
         heading: block.props.heading,
       },
     };

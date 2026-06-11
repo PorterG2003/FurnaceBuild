@@ -1,5 +1,9 @@
 import { normalizeGoogleAdsSearchDomain } from '../foundry/registry-server/searchDomain';
-import type { FluxCompetitorAuditDiscoveryMode, FluxCuratedDomainSeed } from './types';
+import type {
+  CompetitorAdAuditBlockProps,
+  FluxCompetitorAuditDiscoveryMode,
+  FluxCuratedDomainSeed,
+} from './types';
 
 export const FLUX_COMPETITOR_AUDIT_DISCOVERY_MODES = ['local_places', 'curated_domains'] as const;
 export const MAX_CURATED_COMPETITOR_DOMAINS = 12;
@@ -39,6 +43,29 @@ export function resolveEffectiveCuratedDomains(params: {
   return parseFluxCuratedDomains(params.blockDomains);
 }
 
+/** Map curated domain labels onto published competitor rows (matches by normalized domain in `row.name`). */
+export function applyCuratedNamesToCompetitors(
+  competitors: CompetitorAdAuditBlockProps['competitors'],
+  curatedDomains: unknown,
+): CompetitorAdAuditBlockProps['competitors'] {
+  const seeds = parseFluxCuratedDomains(curatedDomains);
+  if (competitors.length < 1 || seeds.length < 1) return competitors;
+
+  const nameByDomain = new Map<string, string>();
+  for (const seed of seeds) {
+    const label = seed.name?.trim();
+    if (label) nameByDomain.set(seed.domain, label);
+  }
+  if (nameByDomain.size < 1) return competitors;
+
+  return competitors.map((row) => {
+    const domainKey = normalizeGoogleAdsSearchDomain(row.name?.trim() ?? '') ?? row.name?.trim();
+    if (!domainKey) return row;
+    const label = nameByDomain.get(domainKey);
+    return label ? { ...row, name: label } : row;
+  });
+}
+
 const fluxCompetitorAuditDiscovery = {
   FLUX_COMPETITOR_AUDIT_DISCOVERY_MODES,
   MAX_CURATED_COMPETITOR_DOMAINS,
@@ -46,6 +73,7 @@ const fluxCompetitorAuditDiscovery = {
   normalizeFluxCompetitorAuditDiscoveryMode,
   parseFluxCuratedDomains,
   resolveEffectiveCuratedDomains,
+  applyCuratedNamesToCompetitors,
   domainFromCuratedSeed,
 };
 

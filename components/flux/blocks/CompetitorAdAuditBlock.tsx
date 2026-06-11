@@ -20,60 +20,9 @@ function statusLabel(status: CompetitorAdAuditBlockProps['status']): string {
   }
 }
 
-function formatAuditDate(value: string): string {
-  const parsed = new Date(`${value}T12:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-}
-
-function parseLastShownFromAdsSummary(adsSummary: string): string | null {
-  const recentMatch = adsSummary.match(/(?:most recent creative shown|last shown)\s+([^.;]+)/i);
-  const recent = recentMatch?.[1]?.trim();
-  if (!recent || /^unknown$/i.test(recent)) return null;
-  return recent;
-}
-
-function daysSinceIsoDate(iso: string): number | null {
-  const timestamp = Date.parse(`${iso}T12:00:00Z`);
-  if (!Number.isFinite(timestamp)) return null;
-  return Math.floor((Date.now() - timestamp) / 86_400_000);
-}
-
-function relativeRecencyClause(daysSince: number): string | null {
-  if (daysSince < 0) return null;
-  if (daysSince <= 7) return 'within the past week';
-  if (daysSince <= 30) return 'within the past month';
-  return null;
-}
-
-function summarizeAdRecency(adsSummary: string): string {
-  const lastShown = parseLastShownFromAdsSummary(adsSummary);
-  if (!lastShown) {
-    return "We couldn't confirm how recently they've been running Google Ads.";
-  }
-
-  const formatted = formatAuditDate(lastShown);
-  const daysSince = daysSinceIsoDate(lastShown);
-  const relative = daysSince == null ? null : relativeRecencyClause(daysSince);
-
-  if (relative) {
-    return `They were still running Google Ads ${relative} — most recently as of ${formatted}.`;
-  }
-  return `They were still running Google Ads as recently as ${formatted}.`;
-}
-
 function advertiserUrlFromSourceUrl(sourceUrl: string): string {
   const match = sourceUrl.match(/^(https:\/\/adstransparency\.google\.com\/advertiser\/[^/]+)/i);
   return match?.[1] ?? sourceUrl;
-}
-
-function buildAuditSummary(row: CompetitorAdAuditBlockProps['competitors'][number]): string {
-  return summarizeAdRecency(row.adsSummary);
 }
 
 export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBlockProps }) {
@@ -216,9 +165,6 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                     <Text className="text-xl md:text-2xl" style={{ color: theme.textColor, fontFamily: headingFont }}>
                       {row.name}
                     </Text>
-                    <Text className="text-sm leading-6 md:text-[15px]" style={{ color: theme.textColor, opacity: presentation.mutedTextOpacity, fontFamily: bodyFont }}>
-                      {buildAuditSummary(row)}
-                    </Text>
                     {advertiserUrl ? (
                       <Pressable className="self-start" onPress={() => Linking.openURL(advertiserUrl)}>
                         <Text className="text-sm" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
@@ -281,9 +227,6 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                             {row.name}
                           </Text>
                         </View>
-                        <Text className="text-sm leading-6 md:text-[15px]" style={{ color: theme.textColor, fontFamily: bodyFont }}>
-                          {buildAuditSummary(row)}
-                        </Text>
                       </View>
 
                       {advertiserUrl ? (

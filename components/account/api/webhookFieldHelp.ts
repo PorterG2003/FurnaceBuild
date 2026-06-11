@@ -8,7 +8,7 @@ export const ACCOUNT_WEBHOOK_FIELD_HELP = {
     'Event types Furnace will deliver to your endpoint. If none are selected, all event types are sent. Select only the types you want to receive.',
 } as const;
 
-/** Tooltip copy for campaign webhook overrides (`CampaignWebhookOverrideCard`). */
+/** Tooltip copy for campaign webhook overrides (`CampaignWebhookOverrideModal`). */
 export const CAMPAIGN_WEBHOOK_FIELD_HELP = {
   overrideUrl:
     'Replaces the account webhook URL for this campaign only. Leave empty to use the account default. Saving verifies the URL with a challenge before it is stored.',

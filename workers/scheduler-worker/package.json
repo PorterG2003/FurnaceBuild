@@ -11,6 +11,7 @@
     "test": "node --import tsx --test src/*.test.ts src/categorizer/*.test.ts src/node-handlers/*.test.ts"
   },
   "dependencies": {
+    "@furnace/campaign-lib": "file:../../lib/campaign",
     "@furnace/slack-lib": "file:../../lib/slack",
     "@aws-sdk/client-sqs": "^3.0.0",
     "@aws-sdk/client-ssm": "^3.0.0",

@@ -147,9 +147,11 @@ Current node is `aiCategorizer` + `reply_thread_id IS NULL` → return `{ nodes:
 ## Reply-mode email node
 
 - Node data `send_mode: 'new' | 'reply'` (absent = `'new'`). Builder defaults to `'reply'` when the flow contains a Categorizer at node creation.
-- `handleReplyEmailNode` (scheduler): requires `reply_thread_id` (NULL → stop with `stopped_reason='error'`). Builds a `campaign_reply` job like `create_inbox_reply_job`: thread's mailbox, `In-Reply-To` = latest inbound `message_id`, `References` = full chain, subject `Re: <thread subject>`, body from the node's variant pipeline, `node_id` set, `interval_id` NULL, `scheduled_at` = NOW clamped to campaign schedule (no jitter/interval).
+- `handleReplyEmailNode` (scheduler): requires `reply_thread_id` (NULL -> stop with `stopped_reason='error'`). Builds a `campaign_reply` job like `create_inbox_reply_job`: thread's mailbox, `In-Reply-To` = latest inbound `message_id`, `References` = full chain, subject `Re: <thread subject>`, body from the node's variant pipeline, `node_id` set, `interval_id` NULL, `scheduled_at` = NOW clamped to campaign schedule (no jitter/interval).
 - Mailbox disconnected/paused/deleted → no job, `next_run_at +6h`, never another mailbox.
-- Send worker: `campaign_reply` claimed in the manual-priority lane, routed to `sendReplyEmail`, sent message appended to the existing thread, enrollment bumped after send, `sent` event recorded.
+- Send worker: `campaign_reply` is claimed in the manual-priority lane, routed through the campaign send pipeline with reply threading, and still honors mailbox throttles.
+- Throttle retries stay on the same `campaign_reply` row (reply-lane semantics) instead of falling back to campaign deferred/recreate behavior. Retry `scheduled_at` is clamped to the next allowed campaign send window, so reply-mode sends respect both the mailbox throttle floor and the campaign schedule.
+- After SMTP success, the send worker performs an idempotent thread write: it ensures an `email_messages` row exists for the sent `campaign_reply`, relinks an existing row by `message_id` if needed, and repairs `email_threads.message_count`, `last_message_at`, and `participants` from the observed thread rows before bumping the enrollment.
 
 ## Inbox / UI
 
@@ -169,6 +171,7 @@ Current node is `aiCategorizer` + `reply_thread_id IS NULL` → return `{ nodes:
 
 - **Critical**: park RPC failure (reply failed to halt outbound), restore failure (stranded holds), branch-time failure (double-process/leak risk).
 - **Warning**: LLM failures after 3 consecutive (aggregated per campaign), stats-sync failure post-classification, reply-email mailbox unavailable (first occurrence, aggregated), `reply_thread_id NULL` at reply node, edge mismatch, sweep timer `onError`.
+- **Warning**: `campaign_reply` post-send thread persistence failure (email already sent, Master Inbox row may need repair).
 - **Audit**: self-recovery additions — orphaned holds (held jobs on dead enrollments) and stale parks (branchable category unprocessed > 24h).
 
 Client-side failures stay console-only; the sweep covers a lost manual wake within 30 minutes.
@@ -183,6 +186,7 @@ Client-side failures stay console-only; the sweep covers a lost manual wake with
 - Recategorization after branch updates stats but never re-routes.
 - Old freeform-category draft nodes must be re-connected to the new fixed handles.
 - Auto-replies still count in `replied_count` (event recorded before classification).
+- Already-sent prod rows that predate the durable thread-write fix can be repaired with `scripts/repair-campaign-reply-inbox-rows.ts`.
 
 ## Test strategy
 

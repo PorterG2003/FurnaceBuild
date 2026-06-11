@@ -29,6 +29,7 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
       ? withFluxAlpha(presentation.onPrimaryColor, 'd0')
       : presentation.mutedTextColor;
   const onCtaPress = () => handleFluxCtaPress(props.ctaUrl, pageScroll ?? undefined);
+  const subheadline = props.subheadline?.trim() ?? '';
   const heroImage = props.heroImageUrl ? (
     <Image
       source={{ uri: props.heroImageUrl }}
@@ -80,15 +81,17 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
           >
             {props.headline}
           </Text>
-          <Text
-            className="text-base md:text-xl leading-7 mb-8 max-w-2xl"
-            style={{
-              color: subheadlineColor,
-              fontFamily: bodyFont,
-            }}
-          >
-            {props.subheadline}
-          </Text>
+          {subheadline ? (
+            <Text
+              className="text-base md:text-xl leading-7 mb-8 max-w-2xl"
+              style={{
+                color: subheadlineColor,
+                fontFamily: bodyFont,
+              }}
+            >
+              {subheadline}
+            </Text>
+          ) : null}
           {heroImage ? <View className="mb-8">{heroImage}</View> : null}
           {cta}
         </View>
@@ -120,12 +123,14 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
             >
               {props.headline}
             </Text>
-            <Text
-              className="text-base md:text-lg leading-7 mb-8"
-              style={{ color: subheadlineColor, fontFamily: bodyFont }}
-            >
-              {props.subheadline}
-            </Text>
+            {subheadline ? (
+              <Text
+                className="text-base md:text-lg leading-7 mb-8"
+                style={{ color: subheadlineColor, fontFamily: bodyFont }}
+              >
+                {subheadline}
+              </Text>
+            ) : null}
             {cta}
           </View>
           <View
@@ -174,12 +179,14 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
           >
             {props.headline}
           </Text>
-          <Text
-            className="text-base md:text-lg leading-7 mb-8 max-w-3xl"
-            style={{ color: subheadlineColor, fontFamily: bodyFont }}
-          >
-            {props.subheadline}
-          </Text>
+          {subheadline ? (
+            <Text
+              className="text-base md:text-lg leading-7 mb-8 max-w-3xl"
+              style={{ color: subheadlineColor, fontFamily: bodyFont }}
+            >
+              {subheadline}
+            </Text>
+          ) : null}
           {heroImage ? <View className="mb-8">{heroImage}</View> : null}
           <Pressable className="px-8 py-3 self-start" style={presentation.primaryButton} onPress={onCtaPress}>
             <Text
@@ -205,12 +212,14 @@ export function HeroBlock({ props }: { props: HeroBlockProps }) {
       >
         {props.headline}
       </Text>
-      <Text
-        className="text-base md:text-lg text-center mb-8 max-w-xl"
-        style={{ color: subheadlineColor, fontFamily: bodyFont }}
-      >
-        {props.subheadline}
-      </Text>
+      {subheadline ? (
+        <Text
+          className="text-base md:text-lg text-center mb-8 max-w-xl"
+          style={{ color: subheadlineColor, fontFamily: bodyFont }}
+        >
+          {subheadline}
+        </Text>
+      ) : null}
       {heroImage ? <View className="w-full max-w-3xl mb-8">{heroImage}</View> : null}
       {cta}
     </View>

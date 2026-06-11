@@ -96,3 +96,55 @@ test('mergeServerCompetitorAuditBlocksIntoDraft keeps draft heading but refreshe
   assert.equal(auditBlock.props.competitors.length, 1);
   assert.equal(auditBlock.props.competitors[0]?.name, 'Winner HVAC');
 });
+
+test('mergeServerCompetitorAuditBlocksIntoDraft applies curated domain titles onto server competitor rows', () => {
+  const draft = page([
+    {
+      id: 'audit',
+      type: 'competitor_ad_audit',
+      order: 0,
+      props: {
+        heading: 'Custom draft heading',
+        status: 'ready',
+        discoveryMode: 'curated_domains',
+        curatedDomains: [
+          { domain: 'yourcomfortfirst.com', name: 'Comfort First' },
+          { domain: 'allphaseair.com', name: 'All-Phase Heating & Cooling' },
+        ],
+        competitors: [],
+      },
+    },
+  ]);
+
+  const server = page([
+    {
+      id: 'audit',
+      type: 'competitor_ad_audit',
+      order: 0,
+      props: {
+        heading: 'Server heading',
+        status: 'ready',
+        competitors: [
+          {
+            name: 'yourcomfortfirst.com',
+            mapImageUrl: '',
+            adsSummary: '40 ads',
+            examples: [
+              {
+                headline: 'Ad',
+                body: 'Body',
+                sourceUrl: 'https://adstransparency.google.com/advertiser/AR1/creative/CR1',
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ]);
+
+  const merged = mergeServerCompetitorAuditBlocksIntoDraft(draft, server);
+  const auditBlock = merged.blocks[0];
+  assert.equal(auditBlock.type, 'competitor_ad_audit');
+  if (auditBlock.type !== 'competitor_ad_audit') return;
+  assert.equal(auditBlock.props.competitors[0]?.name, 'Comfort First');
+});

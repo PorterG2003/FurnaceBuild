@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   MAX_CURATED_COMPETITOR_DOMAINS,
+  applyCuratedNamesToCompetitors,
   domainFromCuratedSeed,
   normalizeFluxCompetitorAuditDiscoveryMode,
   parseFluxCuratedDomains,
@@ -58,4 +59,41 @@ test('resolveEffectiveCuratedDomains prefers prospect override only when it has 
     }),
     blockDomains,
   );
+});
+
+test('applyCuratedNamesToCompetitors replaces domain labels with curated titles', () => {
+  const competitors = applyCuratedNamesToCompetitors(
+    [
+      {
+        name: 'yourcomfortfirst.com',
+        mapImageUrl: '',
+        adsSummary: '40 ads',
+        examples: [
+          {
+            headline: 'Ad',
+            body: 'Body',
+            sourceUrl: 'https://adstransparency.google.com/advertiser/AR1/creative/CR1',
+          },
+        ],
+      },
+      {
+        name: 'Aspire Heating & Cooling',
+        mapImageUrl: '',
+        adsSummary: '24 ads',
+        examples: [
+          {
+            headline: 'Ad',
+            body: 'Body',
+            sourceUrl: 'https://adstransparency.google.com/advertiser/AR2/creative/CR2',
+          },
+        ],
+      },
+    ],
+    [
+      { domain: 'yourcomfortfirst.com', name: 'Comfort First' },
+      { domain: 'aspireheatingcooling.com', name: 'Aspire Heating & Cooling' },
+    ],
+  );
+  assert.equal(competitors[0]?.name, 'Comfort First');
+  assert.equal(competitors[1]?.name, 'Aspire Heating & Cooling');
 });

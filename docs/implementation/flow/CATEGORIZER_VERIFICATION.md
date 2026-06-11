@@ -153,8 +153,6 @@ repaired with:
 
 ```bash
 CAMPAIGN_ID=f0000000-0000-4000-8000-00000000c701 \
-SUPABASE_URL=... \
-SUPABASE_SERVICE_ROLE_KEY=... \
 npx tsx scripts/repair-campaign-reply-inbox-rows.ts
 ```
 
@@ -163,10 +161,12 @@ Apply the repair once the dry-run preview looks correct:
 ```bash
 CAMPAIGN_ID=f0000000-0000-4000-8000-00000000c701 \
 APPLY=true \
-SUPABASE_URL=... \
-SUPABASE_SERVICE_ROLE_KEY=... \
 npx tsx scripts/repair-campaign-reply-inbox-rows.ts
 ```
+
+For prod, set `SELF_RECOVERY_TARGET_ENV=prod` (requires `PROD_SUPABASE_URL` and
+`PROD_SECRET_SSM_PREFIX` in `infra/workers/.env.local`, or explicit secret env vars).
+The script loads repo `.env.local` and worker infra env automatically.
 
 After repair, confirm the thread has the sent row and repaired counters:
 

@@ -15,6 +15,7 @@
     "verify:amplify-yml-installs": "node scripts/verify-amplify-yml-installs.mjs",
     "verify:email-parsing": "tsx scripts/verify-email-parsing.ts",
     "audit:inboxalways-headers": "NODE_PATH=workers/inbox-checker-worker/node_modules:lib/mailbox/node_modules tsx scripts/audit-inboxalways-reply-headers.ts",
+    "audit:june-training-replies": "NODE_PATH=workers/inbox-checker-worker/node_modules:lib/mailbox/node_modules tsx scripts/audit-june-training-replies.ts",
     "generate:supabase-email-templates": "tsx scripts/generate-supabase-email-templates.ts",
     "send:email-samples": "tsx scripts/send-transactional-email-samples.ts",
     "send:campaign-html-qa": "tsx scripts/send-campaign-html-live-qa.ts",

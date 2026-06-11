@@ -43,6 +43,36 @@ type SeededLead = {
   queuedJobId: string;
 };
 
+async function seedThrottleRow(
+  harness: CampaignDbHarness,
+  params: {
+    mailboxId: string;
+    sentCount: number;
+    hourlySent?: Record<string, number>;
+    dailyLimit?: number;
+    hourlyLimit?: number;
+    minGapSeconds?: number;
+    lastSentAt?: string | null;
+  },
+) {
+  const today = new Date().toISOString().slice(0, 10);
+  const { error } = await harness.supabase
+    .from('mailbox_throttles')
+    .upsert({
+      mailbox_id: params.mailboxId,
+      account_id: harness.env.accountId,
+      date: today,
+      sent_count: params.sentCount,
+      hourly_sent: params.hourlySent ?? {},
+      daily_limit: params.dailyLimit ?? 50,
+      hourly_limit: params.hourlyLimit ?? 10,
+      min_gap_seconds: params.minGapSeconds ?? 180,
+      last_sent_at: params.lastSentAt ?? null,
+    });
+
+  assert.equal(error, null);
+}
+
 async function seedMidSequenceLead(
   harness: CampaignDbHarness,
   params: { name: string; useAi: boolean },
@@ -339,6 +369,74 @@ test('manual mode: parks with holds kept until the user categorizes, then wakes 
     assert.equal(cancelledJob?.status, 'cancelled');
     assert.equal(cancelledJob?.status_reason, 'reply_received');
     assert.equal(scripted.calls.length, 0);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('campaign_reply throttle retries stay on the same priority-lane job while respecting schedule windows', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-reply-throttle') });
+  resetCategorizerLlmFailureTracking();
+
+  try {
+    const seeded = await seedMidSequenceLead(harness, { name: 'Categorizer Reply Retry Lane', useAi: true });
+    await deliverReply(harness, seeded, {
+      bodyText: 'Interested - send over pricing.',
+    });
+
+    const scripted = createScriptedCategorizerTransport([{ kind: 'classify', category: 'Interested' }]);
+    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
+    await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]); // branch
+    await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]); // arm reply email
+
+    const jobsBeforeClaim = await getJobsForEnrollment(harness, seeded.enrollmentId);
+    const replyJob = jobsBeforeClaim.find((row) => row.message_type === 'campaign_reply');
+    assert.ok(replyJob, 'reply-mode branch must create a campaign_reply job');
+
+    const claim = await harness.supabase.rpc('claim_manual_message_jobs_ready', {
+      p_batch_size: 50,
+      p_processing_timeout_minutes: 5,
+    });
+    assert.equal(claim.error, null);
+
+    const { data: reservedReplyJob } = await harness.supabase
+      .from('message_jobs')
+      .select('*')
+      .eq('id', replyJob!.id)
+      .single();
+    assert.equal(reservedReplyJob?.status, 'reserved');
+
+    const lastSentAt = new Date(Date.now() - 2 * 60_000).toISOString();
+    await seedThrottleRow(harness, {
+      mailboxId: replyJob!.mailbox_id!,
+      sentCount: 0,
+      dailyLimit: 50,
+      hourlyLimit: 50,
+      minGapSeconds: 3600,
+      lastSentAt,
+    });
+
+    const sendWorker = createTestSendWorker(harness);
+    await (sendWorker as any).processMessageJob(reservedReplyJob);
+
+    const { data: retriedReplyJob } = await harness.supabase
+      .from('message_jobs')
+      .select('id, status, status_reason, scheduled_at, send_wait_reason')
+      .eq('id', replyJob!.id)
+      .single();
+    assert.equal(retriedReplyJob?.status, 'queued');
+    assert.equal(retriedReplyJob?.status_reason, null);
+    assert.equal(retriedReplyJob?.send_wait_reason, 'Waiting for minimum time between sends');
+    assert.ok(Date.parse(retriedReplyJob!.scheduled_at) >= Date.parse(lastSentAt) + 3600_000);
+
+    const jobsAfterRetry = await getJobsForEnrollment(harness, seeded.enrollmentId);
+    const replyJobs = jobsAfterRetry.filter((row) => row.message_type === 'campaign_reply');
+    assert.equal(replyJobs.length, 1, 'retry should stay on the existing campaign_reply job');
+
+    await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
+    const jobsAfterScheduler = await getJobsForEnrollment(harness, seeded.enrollmentId);
+    const replyJobsAfterScheduler = jobsAfterScheduler.filter((row) => row.message_type === 'campaign_reply');
+    assert.equal(replyJobsAfterScheduler.length, 1, 'scheduler must not recreate a deferred retry job');
   } finally {
     await harness.cleanup();
   }

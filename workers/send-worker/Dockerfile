@@ -4,7 +4,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy and build @furnace/email-lib first (worker depends on file:../../lib/email)
-RUN mkdir -p /app/lib/email /app/lib/mailbox /app/lib/slack /app/workers/send-worker
+RUN mkdir -p /app/lib/email /app/lib/mailbox /app/lib/slack /app/lib/campaign /app/workers/send-worker
 COPY lib/email/package*.json lib/email/tsconfig.build.json ./lib/email/
 COPY lib/email/*.ts ./lib/email/
 WORKDIR /app/lib/email
@@ -22,7 +22,15 @@ COPY lib/slack/package.json lib/slack/package-lock.json lib/slack/tsconfig.build
 WORKDIR /app/lib/slack
 RUN npm install && npm run build
 
-# Worker: copy package files and install (file:../../lib/email and file:../../lib/slack resolve)
+# Copy @furnace/campaign-lib (worker depends on file:../../lib/campaign)
+WORKDIR /app
+COPY lib/campaign/package.json ./lib/campaign/
+COPY lib/campaign/*.js ./lib/campaign/
+COPY lib/campaign/*.d.ts ./lib/campaign/
+WORKDIR /app/lib/campaign
+RUN npm install
+
+# Worker: copy package files and install (file:../../lib/* resolve)
 WORKDIR /app/workers/send-worker
 COPY workers/send-worker/package*.json ./
 RUN npm ci
@@ -32,18 +40,25 @@ COPY workers/send-worker/src ./src
 COPY workers/send-worker/tsconfig.json ./
 RUN npm run build
 
-# Production stage (keep same layout as builder so file:../../lib/email resolves)
+# Production stage (keep same layout as builder so file:../../lib/* resolves)
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy email-lib and slack-lib (package.json + dist only) so file:../../lib/* from worker dir resolve
+# Copy shared libs so file:../../lib/* from worker dir resolve
 COPY --from=builder /app/lib/mailbox/package.json ./lib/mailbox/
 COPY --from=builder /app/lib/mailbox/dist ./lib/mailbox/dist
 COPY --from=builder /app/lib/email/package.json ./lib/email/
 COPY --from=builder /app/lib/email/dist ./lib/email/dist
+COPY --from=builder /app/lib/email/node_modules ./lib/email/node_modules
 COPY --from=builder /app/lib/slack/package.json ./lib/slack/
 COPY --from=builder /app/lib/slack/dist ./lib/slack/dist
+COPY --from=builder /app/lib/campaign/package.json ./lib/campaign/
+COPY --from=builder /app/lib/campaign/schedule.js ./lib/campaign/
+COPY --from=builder /app/lib/campaign/schedule.d.ts ./lib/campaign/
+COPY --from=builder /app/lib/campaign/mailbox-send-time.js ./lib/campaign/
+COPY --from=builder /app/lib/campaign/mailbox-send-time.d.ts ./lib/campaign/
+COPY --from=builder /app/lib/campaign/node_modules ./lib/campaign/node_modules
 
 # Copy worker package and built output into workers/send-worker
 COPY workers/send-worker/package*.json ./workers/send-worker/

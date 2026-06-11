@@ -40,10 +40,21 @@ type RecordedCall = {
 class MutationStub implements PromiseLike<{ data: any; error: any }> {
   constructor(
     private readonly call: RecordedCall,
-    private readonly result: { data: any; error: any } = { data: null, error: null }
+    private readonly result:
+      | { data: any; error: any }
+      | (() => { data: any; error: any }) = { data: null, error: null }
   ) {}
 
+  private resolveResult() {
+    return typeof this.result === 'function' ? this.result() : this.result;
+  }
+
   update(payload: Record<string, unknown>) {
+    this.call.updates = payload;
+    return this;
+  }
+
+  insert(payload: Record<string, unknown>) {
     this.call.updates = payload;
     return this;
   }
@@ -69,14 +80,18 @@ class MutationStub implements PromiseLike<{ data: any; error: any }> {
   }
 
   maybeSingle() {
-    return Promise.resolve(this.result);
+    return Promise.resolve(this.resolveResult());
+  }
+
+  single() {
+    return Promise.resolve(this.resolveResult());
   }
 
   then<TResult1 = { data: any; error: any }, TResult2 = never>(
     onfulfilled?: ((value: { data: any; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
-    return Promise.resolve(this.result).then(onfulfilled ?? undefined, onrejected ?? undefined);
+    return Promise.resolve(this.resolveResult()).then(onfulfilled ?? undefined, onrejected ?? undefined);
   }
 }
 
@@ -204,6 +219,153 @@ class ProcessMessageSupabase {
         },
         error: null,
       };
+    }
+    return { data: null, error: null };
+  }
+}
+
+class ReplyRetrySupabase {
+  readonly calls: RecordedCall[] = [];
+  readonly rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+  readonly retryFloor: string;
+
+  constructor() {
+    this.retryFloor = new Date(Date.now() + 30 * 60_000).toISOString();
+  }
+
+  from(table: string) {
+    const call: RecordedCall = {
+      table,
+      updates: null,
+      filters: [],
+      selectedColumns: null,
+    };
+    this.calls.push(call);
+    return new MutationStub(call, () => this.resolveTableResult(call));
+  }
+
+  rpc(fn: string, args: Record<string, unknown>) {
+    this.rpcCalls.push({ fn, args });
+    return {
+      single: async () =>
+        fn === 'check_mailbox_throttle_and_reserve'
+          ? {
+              data: {
+                success: false,
+                failure_reason: 'Minimum gap between sends not met',
+              },
+              error: null,
+            }
+          : { data: null, error: null },
+    };
+  }
+
+  private resolveTableResult(call: RecordedCall) {
+    if (call.table === 'campaigns') {
+      return {
+        data: {
+          account_id: 'account-1',
+          status: 'running',
+          deleted_at: null,
+          schedule: {
+            timezone: 'America/Chicago',
+            start_hour: 9,
+            start_minute: 0,
+            end_hour: 17,
+            end_minute: 0,
+            days_of_week: [1, 2, 3, 4, 5],
+          },
+        },
+        error: null,
+      };
+    }
+    if (call.table === 'enrollments' && call.updates == null) {
+      if (call.selectedColumns?.includes('next_run_at')) {
+        return {
+          data: {
+            next_run_at: this.retryFloor,
+          },
+          error: null,
+        };
+      }
+      return {
+        data: {
+          deleted_at: null,
+          state: 'active',
+        },
+        error: null,
+      };
+    }
+    if (call.table === 'nodes') {
+      return { data: null, error: null };
+    }
+    if (call.table === 'message_jobs' && call.updates == null) {
+      return {
+        data: {
+          status: 'deferred',
+          send_wait_reason: 'Waiting for minimum time between sends',
+        },
+        error: null,
+      };
+    }
+    if (call.table === 'message_jobs' && call.updates != null) {
+      return {
+        data: {
+          id: 'message-job-1',
+        },
+        error: null,
+      };
+    }
+    return { data: null, error: null };
+  }
+}
+
+class ThreadRecordingSupabase {
+  readonly calls: RecordedCall[] = [];
+  constructor(private readonly insertError: string | null = null) {}
+
+  from(table: string) {
+    const call: RecordedCall = {
+      table,
+      updates: null,
+      filters: [],
+      selectedColumns: null,
+    };
+    this.calls.push(call);
+    return new MutationStub(call, () => this.resolveTableResult(call));
+  }
+
+  private resolveTableResult(call: RecordedCall) {
+    if (call.table === 'email_threads' && call.updates == null) {
+      return {
+        data: {
+          account_id: 'account-1',
+          participants: ['owner@example.com', 'lead@example.com'],
+          message_count: 2,
+          last_message_at: '2026-05-12T20:00:00.000Z',
+        },
+        error: null,
+      };
+    }
+    if (call.table === 'email_messages' && call.updates == null) {
+      if (call.selectedColumns === 'id, received_at, message_job_id') {
+        return { data: null, error: null };
+      }
+      if (call.selectedColumns === 'received_at') {
+        return {
+          data: [
+            { received_at: '2026-05-12T20:00:00.000Z' },
+            { received_at: '2026-05-12T21:00:00.000Z' },
+            { received_at: '2026-05-12T22:00:00.000Z' },
+          ],
+          error: null,
+        };
+      }
+    }
+    if (call.table === 'email_messages' && call.updates != null) {
+      return this.insertError
+        ? { data: null, error: { message: this.insertError } }
+        : { data: null, error: null };
     }
     return { data: null, error: null };
   }
@@ -380,6 +542,151 @@ test('SendWorker still fails and stops enrollment for non-retryable pre-send cam
     assert.equal(
       slack.calls.some((body) => body.includes('Send-worker failed to process message job')),
       true
+    );
+  } finally {
+    slack.restore();
+  }
+});
+
+test('SendWorker keeps throttled campaign_reply retries on the reply lane', async () => {
+  const supabase = new ReplyRetrySupabase();
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+  });
+  const messageJob = createCampaignMessageJob({
+    message_type: 'campaign_reply',
+    message_data: { thread_id: 'thread-1' },
+  });
+
+  (worker as any).loadJobData = async () => ({
+    lead: {
+      id: 'lead-1',
+      email: 'lead@example.com',
+      deleted_at: null,
+      mailbox_id: 'mailbox-1',
+    },
+    mailbox: {
+      id: 'mailbox-1',
+      email_address: 'owner@example.com',
+      display_name: 'Owner',
+      deleted_at: null,
+    },
+    nodeConfig: {
+      subject: 'Subject',
+      body_html: '<p>Hello</p>',
+      body_text: 'Hello',
+      template: null,
+      body: null,
+      editor_mode: 'rich',
+    },
+  });
+
+  await (worker as any).processMessageJob(messageJob);
+
+  const replyRetryUpdate = supabase.calls.find(
+    (call) => call.table === 'message_jobs' && call.updates?.status === 'queued',
+  );
+  assert.ok(replyRetryUpdate, 'campaign_reply retry should be re-queued, not left deferred');
+  assert.equal(replyRetryUpdate?.updates?.status_reason, null);
+  assert.equal(
+    replyRetryUpdate?.updates?.send_wait_reason,
+    'Waiting for minimum time between sends',
+  );
+  assert.equal(typeof replyRetryUpdate?.updates?.scheduled_at, 'string');
+  assert.ok(
+    Date.parse(String(replyRetryUpdate?.updates?.scheduled_at)) >= Date.parse(supabase.retryFloor),
+  );
+
+  const enrollmentUpdate = supabase.calls.find(
+    (call) => call.table === 'enrollments' && call.updates?.next_run_at,
+  );
+  assert.ok(enrollmentUpdate, 'enrollment should stay aligned to the re-queued retry time');
+  assert.equal(enrollmentUpdate?.updates?.next_run_at, replyRetryUpdate?.updates?.scheduled_at);
+});
+
+test('SendWorker records sent campaign_reply messages in the replied thread', async () => {
+  const supabase = new ThreadRecordingSupabase();
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+  });
+
+  await (worker as any).recordCampaignReplyInThread(
+    createCampaignMessageJob({
+      id: 'reply-job-1',
+      message_type: 'campaign_reply',
+      message_data: { thread_id: 'thread-1' },
+    }),
+    {
+      id: 'mailbox-1',
+      email_address: 'owner@example.com',
+      display_name: 'Owner',
+    },
+    {
+      id: 'lead-1',
+      email: 'lead@example.com',
+      first_name: 'Test',
+      last_name: 'Lead',
+    },
+    'Re: Hello',
+    '<p>Hello</p>',
+    'Hello',
+    '<provider@furnace.test>',
+    '<reply@furnace.test>',
+    '<reply@furnace.test> <provider@furnace.test>',
+  );
+
+  const insertCall = supabase.calls.find(
+    (call) => call.table === 'email_messages' && call.updates?.message_job_id === 'reply-job-1',
+  );
+  assert.ok(insertCall, 'campaign_reply should create an email_messages row');
+  assert.equal(insertCall?.updates?.message_id, '<provider@furnace.test>');
+  assert.equal(insertCall?.updates?.thread_id, 'thread-1');
+
+  const updateThreadCall = supabase.calls.find(
+    (call) => call.table === 'email_threads' && call.updates?.message_count === 3,
+  );
+  assert.ok(updateThreadCall, 'thread counters should be repaired from the observed message rows');
+});
+
+test('SendWorker surfaces campaign_reply thread persistence failures to Slack', async () => {
+  const slack = setupSlackCapture();
+  const supabase = new ThreadRecordingSupabase('insert blocked');
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+  });
+
+  try {
+    await (worker as any).recordCampaignReplyInThread(
+      createCampaignMessageJob({
+        id: 'reply-job-2',
+        message_type: 'campaign_reply',
+        message_data: { thread_id: 'thread-2' },
+      }),
+      {
+        id: 'mailbox-1',
+        email_address: 'owner@example.com',
+        display_name: 'Owner',
+      },
+      {
+        id: 'lead-1',
+        email: 'lead@example.com',
+        first_name: 'Test',
+        last_name: 'Lead',
+      },
+      'Re: Hello',
+      '<p>Hello</p>',
+      'Hello',
+      '<provider@furnace.test>',
+      '<reply@furnace.test>',
+      '<reply@furnace.test> <provider@furnace.test>',
+    );
+
+    assert.equal(
+      slack.calls.some((body) => body.includes('failed to record sent campaign_reply in thread')),
+      true,
     );
   } finally {
     slack.restore();

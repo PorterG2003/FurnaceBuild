@@ -11,6 +11,7 @@
     "test": "npm --prefix ../../lib/mailbox run build && npm --prefix ../../lib/email run build && node --import tsx --test src/email.test.ts src/worker.test.ts"
   },
   "dependencies": {
+    "@furnace/campaign-lib": "file:../../lib/campaign",
     "@furnace/mailbox-lib": "file:../../lib/mailbox",
     "@furnace/slack-lib": "file:../../lib/slack",
     "@furnace/email-lib": "file:../../lib/email",

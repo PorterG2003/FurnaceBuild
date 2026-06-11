@@ -1,3 +1,7 @@
+import type { CampaignSchedule } from '@furnace/campaign-lib/schedule.js';
+
+export type { CampaignSchedule } from '@furnace/campaign-lib/schedule.js';
+
 /**
  * Type definitions for scheduler worker
  */
@@ -33,13 +37,6 @@ export interface Campaign {
   sending_interval_seconds: number;
   deleted_at?: string | null;
   created_at: string;
-}
-
-export interface CampaignSchedule {
-  timezone: string;
-  start_hour: number;
-  end_hour: number;
-  days_of_week: number[] | null;
 }
 
 export interface Mailbox {

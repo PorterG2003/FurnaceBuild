@@ -16,6 +16,8 @@ import { SmtpPool } from './smtp-pool.js';
 import { emitWebhookEvent } from './emit-webhook-event.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
 import { isCampaignMessageJob } from './types.js';
+import { calculateNextRunAt } from '@furnace/campaign-lib/schedule.js';
+import type { CampaignSchedule } from '@furnace/campaign-lib/schedule.js';
 
 class CampaignAttemptError extends Error {
   constructor(
@@ -26,6 +28,24 @@ class CampaignAttemptError extends Error {
     this.name = 'CampaignAttemptError';
   }
 }
+
+type SentThreadMessageRecord = {
+  threadId: string;
+  messageJobId: string;
+  fromEmail: string;
+  fromName: string | null;
+  toEmail: string;
+  toName: string | null;
+  cc?: string[] | null;
+  subject: string;
+  bodyText: string;
+  bodyHtml: string | null;
+  messageId: string;
+  inReplyTo: string | null;
+  references: string | null;
+  receivedAt?: string;
+  attachments?: unknown[] | null;
+};
 
 export interface WorkerConfig {
   supabase: SupabaseClient;
@@ -291,6 +311,105 @@ export class SendWorker {
     return true;
   }
 
+  private async requeueCampaignReplyJob(
+    messageJob: MessageJob,
+    schedule: CampaignSchedule | null,
+    params: {
+      retryFloor: Date;
+      sendWaitReason?: string | null;
+      errorMessage?: string | null;
+    },
+  ): Promise<boolean> {
+    const now = new Date().toISOString();
+    const scheduledAt = calculateNextRunAt(params.retryFloor, schedule);
+    const { data, error } = await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'queued',
+        status_reason: null,
+        scheduled_at: scheduledAt,
+        reserved_at: null,
+        lease_expires_at: null,
+        claim_token: null,
+        send_wait_reason: params.sendWaitReason ?? null,
+        error_message: params.errorMessage ?? null,
+        updated_at: now,
+      } as any)
+      .eq('id', messageJob.id)
+      .in('status', ['reserved', 'deferred'])
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to re-queue campaign_reply ${messageJob.id}: ${error.message}`);
+    }
+
+    if (!data?.id) {
+      return false;
+    }
+
+    const { error: enrollmentError } = await this.supabase
+      .from('enrollments')
+      .update({
+        next_run_at: scheduledAt,
+        updated_at: now,
+      })
+      .eq('id', messageJob.enrollment_id)
+      .eq('state', 'active');
+
+    if (enrollmentError) {
+      throw new Error(
+        `Failed to re-arm enrollment ${messageJob.enrollment_id} for campaign_reply retry: ${enrollmentError.message}`
+      );
+    }
+
+    return true;
+  }
+
+  private async promoteCampaignReplyThrottleRetry(
+    messageJob: MessageJob,
+    schedule: CampaignSchedule | null,
+    failureReason: string | null | undefined,
+  ): Promise<boolean> {
+    const [{ data: currentJob, error: jobError }, { data: enrollment, error: enrollmentError }] =
+      await Promise.all([
+        this.supabase
+          .from('message_jobs')
+          .select('status, send_wait_reason')
+          .eq('id', messageJob.id)
+          .maybeSingle(),
+        this.supabase
+          .from('enrollments')
+          .select('next_run_at')
+          .eq('id', messageJob.enrollment_id)
+          .maybeSingle(),
+      ]);
+
+    if (jobError) {
+      throw new Error(`Failed to inspect campaign_reply ${messageJob.id} after throttle defer: ${jobError.message}`);
+    }
+    if (enrollmentError) {
+      throw new Error(
+        `Failed to inspect enrollment ${messageJob.enrollment_id} after campaign_reply throttle defer: ${enrollmentError.message}`
+      );
+    }
+
+    const currentStatus = currentJob?.status ?? null;
+    if (currentStatus === 'queued') {
+      return true;
+    }
+    if (currentStatus !== 'reserved' && currentStatus !== 'deferred') {
+      return false;
+    }
+
+    const retryFloor = enrollment?.next_run_at ? new Date(enrollment.next_run_at) : new Date();
+    return this.requeueCampaignReplyJob(messageJob, schedule, {
+      retryFloor,
+      sendWaitReason: currentJob?.send_wait_reason ?? failureReason ?? null,
+      errorMessage: null,
+    });
+  }
+
   private async finalizeCampaignMessageJobSent(
     messageJobId: string,
     providerMessageId: string,
@@ -306,6 +425,138 @@ export class SendWorker {
 
     if (data !== true) {
       throw new Error(`Failed to finalize sent message job ${messageJobId}: job was not in sending state`);
+    }
+  }
+
+  private async recordSentMessageInThread(params: SentThreadMessageRecord): Promise<void> {
+    const { data: thread, error: threadError } = await this.supabase
+      .from('email_threads')
+      .select('account_id, participants, message_count, last_message_at')
+      .eq('id', params.threadId)
+      .single();
+
+    if (threadError || !thread) {
+      throw new Error(`Failed to load thread ${params.threadId}: ${threadError?.message}`);
+    }
+
+    const now = params.receivedAt ?? new Date().toISOString();
+    const { data: byJob, error: byJobError } = await this.supabase
+      .from('email_messages')
+      .select('id, received_at, message_job_id')
+      .eq('thread_id', params.threadId)
+      .eq('message_job_id', params.messageJobId)
+      .maybeSingle();
+
+    if (byJobError) {
+      throw new Error(`Failed to inspect email_messages for ${params.messageJobId}: ${byJobError.message}`);
+    }
+
+    let effectiveReceivedAt = byJob?.received_at ?? now;
+
+    if (!byJob) {
+      const { data: byMessageId, error: byMessageIdError } = await this.supabase
+        .from('email_messages')
+        .select('id, received_at, message_job_id')
+        .eq('thread_id', params.threadId)
+        .eq('message_id', params.messageId)
+        .maybeSingle();
+
+      if (byMessageIdError) {
+        throw new Error(
+          `Failed to inspect existing email_messages by message_id for ${params.messageId}: ${byMessageIdError.message}`
+        );
+      }
+
+      if (byMessageId) {
+        effectiveReceivedAt = byMessageId.received_at ?? now;
+
+        if (byMessageId.message_job_id !== params.messageJobId) {
+          const { error: relinkError } = await this.supabase
+            .from('email_messages')
+            .update({
+              message_job_id: params.messageJobId,
+            })
+            .eq('id', byMessageId.id);
+
+          if (relinkError) {
+            throw new Error(
+              `Failed to relink email_messages ${byMessageId.id} to message job ${params.messageJobId}: ${relinkError.message}`
+            );
+          }
+        }
+      } else {
+        const { error: insertError } = await this.supabase
+          .from('email_messages')
+          .insert({
+            thread_id: params.threadId,
+            account_id: thread.account_id,
+            message_job_id: params.messageJobId,
+            direction: 'sent',
+            from_email: params.fromEmail,
+            from_name: params.fromName,
+            to_email: params.toEmail,
+            to_name: params.toName,
+            cc: params.cc && params.cc.length > 0 ? params.cc : null,
+            subject: params.subject,
+            body_text: params.bodyText,
+            body_html: params.bodyHtml,
+            message_id: params.messageId,
+            in_reply_to: params.inReplyTo,
+            message_references: params.references,
+            received_at: now,
+            attachments: params.attachments ?? null,
+          });
+
+        if (insertError) {
+          throw new Error(`Failed to insert email_messages for sent thread message: ${insertError.message}`);
+        }
+      }
+    }
+
+    const { data: threadMessages, error: threadMessagesError } = await this.supabase
+      .from('email_messages')
+      .select('received_at')
+      .eq('thread_id', params.threadId);
+
+    if (threadMessagesError) {
+      throw new Error(`Failed to reload thread messages for ${params.threadId}: ${threadMessagesError.message}`);
+    }
+
+    const participants = new Set<string>((thread.participants || []) as string[]);
+    participants.add(params.fromEmail);
+    participants.add(params.toEmail);
+    for (const address of params.cc ?? []) {
+      if (address) {
+        participants.add(address);
+      }
+    }
+
+    const observedLastMessageAt = (threadMessages ?? []).reduce<string | null>((latest, row) => {
+      if (!row?.received_at) {
+        return latest;
+      }
+      if (!latest) {
+        return row.received_at;
+      }
+      return Date.parse(row.received_at) > Date.parse(latest) ? row.received_at : latest;
+    }, null);
+    const lastMessageAt =
+      [thread.last_message_at, observedLastMessageAt, effectiveReceivedAt]
+        .filter((value): value is string => Boolean(value))
+        .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? now;
+
+    const { error: updateThreadError } = await this.supabase
+      .from('email_threads')
+      .update({
+        last_message_at: lastMessageAt,
+        message_count: threadMessages?.length ?? thread.message_count ?? 0,
+        participants: [...participants],
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', params.threadId);
+
+    if (updateThreadError) {
+      throw new Error(`Failed to update email_threads for ${params.threadId}: ${updateThreadError.message}`);
     }
   }
 
@@ -489,7 +740,7 @@ export class SendWorker {
     ];
     if (requeueReasons.includes(fr)) {
       console.log(
-        `[SEND WORKER] Throttle check deferred ${jobLabel} ${messageJobId}: ${fr}. Scheduler will recreate a future retry attempt.`
+        `[SEND WORKER] Throttle check deferred ${jobLabel} ${messageJobId}: ${fr}.`
       );
     } else {
       console.log(
@@ -515,6 +766,7 @@ export class SendWorker {
     const isReplyMode = messageJob.message_type === 'campaign_reply';
 
     let enteredSending = false;
+    let campaignSchedule: CampaignSchedule | null = null;
 
     try {
       const message_job_id = messageJob.id;
@@ -536,9 +788,11 @@ export class SendWorker {
       // 1b. Block list check — skip campaign sends to blocked addresses
       const { data: campaign } = await this.supabase
         .from('campaigns')
-        .select('account_id, status, deleted_at')
+        .select('account_id, status, deleted_at, schedule')
         .eq('id', messageJob.campaign_id)
         .single();
+
+      campaignSchedule = (campaign?.schedule ?? null) as CampaignSchedule | null;
 
       const canFinishClaimedJob =
         campaign &&
@@ -648,6 +902,21 @@ export class SendWorker {
       const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
 
       if (!result?.success) {
+        if (isReplyMode) {
+          const requeued = await this.promoteCampaignReplyThrottleRetry(
+            messageJob,
+            campaignSchedule,
+            result?.failure_reason,
+          );
+          if (requeued) {
+            console.log(
+              `[SEND WORKER] Re-queued campaign_reply ${message_job_id} on the reply lane after throttle deferral: ${result?.failure_reason ?? 'unknown reason'}.`
+            );
+          } else {
+            this.logThrottleCheckOutcome('campaign_reply job', message_job_id, result?.failure_reason);
+          }
+          return;
+        }
         this.logThrottleCheckOutcome('message job', message_job_id, result?.failure_reason);
         return;
       }
@@ -1008,13 +1277,18 @@ export class SendWorker {
 
       if (retryableJobError && isCampaignMessageJob(messageJob) && !enteredSending) {
         try {
-          const deferred = await this.deferCampaignMessageJobForRetryableError(
-            messageJob,
-            errorMessage
-          );
+          const deferred = isReplyMode
+            ? await this.requeueCampaignReplyJob(messageJob, campaignSchedule, {
+                retryFloor: new Date(Date.now() + 60_000),
+                sendWaitReason: null,
+                errorMessage,
+              })
+            : await this.deferCampaignMessageJobForRetryableError(messageJob, errorMessage);
           if (deferred) {
             console.log(
-              `[SEND WORKER] Deferred retryable pre-send failure for message job ${messageJob.id}`
+              isReplyMode
+                ? `[SEND WORKER] Re-queued retryable pre-send failure for campaign_reply ${messageJob.id}`
+                : `[SEND WORKER] Deferred retryable pre-send failure for message job ${messageJob.id}`
             );
           } else {
             console.log(
@@ -1079,9 +1353,8 @@ export class SendWorker {
   }
 
   /**
-   * Record a sent campaign_reply in its replied thread (email_messages row +
-   * thread counters), mirroring processInboxReplyJob steps 4-6. Best-effort:
-   * failures are reported but never fail the already-sent job.
+   * Record a sent campaign_reply in its replied thread and repair any stale
+   * thread counters if a prior best-effort write partially succeeded.
    */
   private async recordCampaignReplyInThread(
     messageJob: MessageJob,
@@ -1111,54 +1384,24 @@ export class SendWorker {
     }
 
     try {
-      const { data: thread, error: threadError } = await this.supabase
-        .from('email_threads')
-        .select('participants, message_count, account_id')
-        .eq('id', threadId)
-        .single();
-      if (threadError || !thread) {
-        throw new Error(`Failed to load thread ${threadId}: ${threadError?.message}`);
-      }
-
-      const now = new Date().toISOString();
-      const participants = (thread.participants || []) as string[];
-      const newParticipants = [...new Set([...participants, lead.email])];
-
-      const { error: insertError } = await this.supabase.from('email_messages').insert({
-        thread_id: threadId,
-        account_id: thread.account_id,
-        message_job_id: messageJob.id,
-        direction: 'sent',
-        from_email: mailbox.email_address,
-        from_name: mailbox.display_name,
-        to_email: lead.email,
-        to_name: lead.first_name || lead.last_name
-          ? `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim()
-          : null,
+      await this.recordSentMessageInThread({
+        threadId,
+        messageJobId: messageJob.id,
+        fromEmail: mailbox.email_address,
+        fromName: mailbox.display_name ?? null,
+        toEmail: lead.email,
+        toName:
+          lead.first_name || lead.last_name
+            ? `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim()
+            : null,
         subject,
-        body_text: bodyText,
-        body_html: bodyHtml,
-        message_id: providerMessageId,
-        in_reply_to: inReplyTo,
-        message_references: references,
-        received_at: now,
+        bodyText: bodyText,
+        bodyHtml,
+        messageId: providerMessageId,
+        inReplyTo,
+        references,
+        receivedAt: new Date().toISOString(),
       });
-      if (insertError) {
-        throw new Error(`Failed to insert email_messages for campaign reply: ${insertError.message}`);
-      }
-
-      const { error: updateThreadError } = await this.supabase
-        .from('email_threads')
-        .update({
-          last_message_at: now,
-          message_count: (thread.message_count || 0) + 1,
-          participants: newParticipants,
-          updated_at: now,
-        })
-        .eq('id', threadId);
-      if (updateThreadError) {
-        throw new Error(`Failed to update email_threads for campaign reply: ${updateThreadError.message}`);
-      }
     } catch (error) {
       const msg = formatUnknownError(error);
       console.error(`[SEND WORKER] Failed to record campaign_reply ${messageJob.id} in thread ${threadId}:`, error);

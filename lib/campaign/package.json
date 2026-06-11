@@ -1,0 +1,16 @@
+{
+  "name": "@furnace/campaign-lib",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schedule": "./schedule.js",
+    "./schedule.js": "./schedule.js",
+    "./mailbox-send-time": "./mailbox-send-time.js",
+    "./mailbox-send-time.js": "./mailbox-send-time.js"
+  },
+  "dependencies": {
+    "@furnace/slack-lib": "file:../slack",
+    "date-fns-tz": "^3.0.0"
+  }
+}

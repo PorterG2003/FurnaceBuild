@@ -142,6 +142,44 @@ WHERE et.campaign_id = 'f0000000-0000-4000-8000-00000000c701'
 ORDER BY et.id, em.received_at;
 ```
 
+If a reply-mode send is throttle-limited, expect the same `campaign_reply` row to stay in
+`status='queued'` with a future `scheduled_at` inside campaign hours; the scheduler should
+not mint a replacement job for that retry.
+
+## 3. Repairing already-sent missing thread rows
+
+Older sent `campaign_reply` jobs that predate the durable thread-write fix can be previewed or
+repaired with:
+
+```bash
+CAMPAIGN_ID=f0000000-0000-4000-8000-00000000c701 \
+SUPABASE_URL=... \
+SUPABASE_SERVICE_ROLE_KEY=... \
+npx tsx scripts/repair-campaign-reply-inbox-rows.ts
+```
+
+Apply the repair once the dry-run preview looks correct:
+
+```bash
+CAMPAIGN_ID=f0000000-0000-4000-8000-00000000c701 \
+APPLY=true \
+SUPABASE_URL=... \
+SUPABASE_SERVICE_ROLE_KEY=... \
+npx tsx scripts/repair-campaign-reply-inbox-rows.ts
+```
+
+After repair, confirm the thread has the sent row and repaired counters:
+
+```sql
+SELECT et.id, et.message_count, et.last_message_at, em.message_job_id, em.message_id
+FROM email_threads et
+JOIN email_messages em ON em.thread_id = et.id
+WHERE et.campaign_id = 'f0000000-0000-4000-8000-00000000c701'
+  AND em.direction = 'sent'
+  AND em.message_job_id IS NOT NULL
+ORDER BY et.last_message_at DESC;
+```
+
 ### Stats sync
 
 ```sql

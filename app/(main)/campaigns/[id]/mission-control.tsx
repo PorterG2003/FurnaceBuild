@@ -8,7 +8,7 @@ import { MissionControlSkeleton } from '@/components/skeletons';
 import { Button } from '@/components/ui/button';
 import { FlowDiagram, CampaignStatusMenu } from '@/components/campaigns';
 import { useCampaignStatusActions } from '@/lib/campaigns/useCampaignStatusActions';
-import { CampaignWebhookOverrideCard } from '@/components/campaigns/CampaignWebhookOverrideCard';
+import { CampaignWebhookOverrideModal } from '@/components/campaigns/CampaignWebhookOverrideModal';
 import { ScheduleModal } from '@/components/campaigns/ScheduleModal';
 import { MailboxesModal } from '@/components/campaigns/MailboxesModal';
 import {
@@ -38,6 +38,7 @@ export default function MissionControlPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showMailboxesModal, setShowMailboxesModal] = useState(false);
+  const [showWebhookOverrideModal, setShowWebhookOverrideModal] = useState(false);
 
   const loadCampaign = useCallback(async (silent = false) => {
     if (!id) return;
@@ -146,6 +147,20 @@ export default function MissionControlPage() {
     onStop: handleStop,
   };
 
+  const showHeaderActions = !isLoading && !loadError && !!campaign;
+  const headerActions = showHeaderActions ? (
+    <View className="flex-row gap-2 items-center">
+      <Button
+        variant="secondary"
+        size="sm"
+        onPress={() => setShowWebhookOverrideModal(true)}
+      >
+        Webhook override
+      </Button>
+      {showStatusMenu ? <CampaignStatusMenu {...statusMenuProps} /> : null}
+    </View>
+  ) : undefined;
+
   const missionControlHeader = (
     <DetailPageHeader
       breadcrumbItems={[
@@ -158,10 +173,8 @@ export default function MissionControlPage() {
       ]}
       backHref={id ? `/campaigns/${id}` : '/campaigns'}
       title="Mission Control"
-      actions={showStatusMenu ? <CampaignStatusMenu {...statusMenuProps} /> : undefined}
-      mobileRightAction={
-        showStatusMenu ? <CampaignStatusMenu {...statusMenuProps} /> : undefined
-      }
+      actions={headerActions}
+      mobileRightAction={headerActions}
     />
   );
 
@@ -324,13 +337,6 @@ export default function MissionControlPage() {
             </Pressable>
           </View>
 
-          {campaign ? (
-            <CampaignWebhookOverrideCard
-              campaign={campaign}
-              onSaved={() => loadCampaign(true)}
-            />
-          ) : null}
-
           {/* Launch Readiness Section */}
           {isDraft && (
             <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6">
@@ -394,6 +400,12 @@ export default function MissionControlPage() {
         campaignId={id || ''}
         accountId={campaign?.account_id ?? null}
         currentMailboxIds={mailboxIds}
+      />
+      <CampaignWebhookOverrideModal
+        visible={showWebhookOverrideModal}
+        onClose={() => setShowWebhookOverrideModal(false)}
+        onSaved={() => loadCampaign(true)}
+        campaign={campaign}
       />
     </PageLayout>
   );

@@ -19,6 +19,8 @@ export { LeadActivityModal } from './LeadActivityModal';
 export { ScheduleTab } from './ScheduleTab';
 export { ScheduleModal } from './ScheduleModal';
 export { MailboxesModal } from './MailboxesModal';
+export { CampaignWebhookOverrideModal } from './CampaignWebhookOverrideModal';
+export type { CampaignWebhookOverrideModalProps } from './CampaignWebhookOverrideModal';
 export { IntervalMinutesInput } from './IntervalMinutesInput';
 export type { IntervalMinutesInputProps } from './IntervalMinutesInput';
 export { CampaignTagsSection } from './CampaignTagsSection';

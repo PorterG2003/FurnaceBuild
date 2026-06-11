@@ -64,6 +64,7 @@ test('plain human replies are not flagged', () => {
     false,
   );
   assert.equal(isAutoReplyMessage({ 'auto-submitted': undefined }), false);
+});
 
 test('isReply returns true when In-Reply-To is present', () => {
   const processor = new MessageProcessor();

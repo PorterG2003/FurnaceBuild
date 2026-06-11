@@ -126,6 +126,7 @@ const competitorAdAuditBlockPropsSchema = z.object({
   lastAuditAt: z.string().optional(),
   mapImageFit: fluxImageFitSchema.optional(),
   exampleImageFit: fluxImageFitSchema.optional(),
+  advertiserLinkLabel: z.string().optional(),
   competitors: z.array(competitorAdAuditRowPropsSchema),
 });
 

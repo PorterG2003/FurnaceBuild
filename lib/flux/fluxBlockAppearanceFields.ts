@@ -85,6 +85,10 @@ export const FLUX_BLOCK_APPEARANCE_FIELDS: Record<BlockType, FluxBlockAppearance
   competitor_ad_audit: [
     { key: 'sectionBackgroundColor', label: 'Section background', placeholder: '#f5f5f5', fallbackHex: '#f5f5f5' },
     { key: 'surfaceColor', label: 'Card background', placeholder: '#ffffff', fallbackHex: '#ffffff' },
+    { key: 'headingColor', label: 'Heading color', placeholder: '#1a1a1a', fallbackHex: '#1a1a1a' },
+    { key: 'primaryColor', label: 'Link button fill', placeholder: '#4f46e5', fallbackHex: '#4f46e5' },
+    { key: 'onPrimaryColor', label: 'Text on link button', placeholder: '#ffffff', fallbackHex: '#ffffff' },
+    { key: 'accentColor', label: 'Accent (labels & badges)', placeholder: '#4f46e5', fallbackHex: '#4f46e5' },
     { key: 'errorColor', label: 'Error text color', placeholder: '#b91c1c', fallbackHex: '#b91c1c' },
   ],
   quiz_and_book: [

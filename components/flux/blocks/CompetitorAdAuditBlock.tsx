@@ -1,9 +1,12 @@
 import React from 'react';
-import { View, Text, Image, Pressable, Linking } from 'react-native';
+import { View, Text, Image, Pressable, Linking, type ViewStyle, type TextStyle } from 'react-native';
 import type { CompetitorAdAuditBlockProps } from '@/lib/flux/types';
 import { fluxImageResizeMode } from '@/lib/flux/fluxImageFit';
 import { fluxPreviewFontFamily } from '@/lib/flux/fluxPreviewFontFamily';
-import { useFluxPresentation, useFluxTheme } from '../FluxThemeProvider';
+import { withFluxAlpha } from '@/lib/flux/fluxPresentationTokens';
+import { useFluxBlockPresentation, useFluxTheme } from '../FluxThemeProvider';
+
+const DEFAULT_ADVERTISER_LINK_LABEL = "See all of {name}'s Google Ads";
 
 function statusLabel(status: CompetitorAdAuditBlockProps['status']): string {
   switch (status) {
@@ -25,14 +28,45 @@ function advertiserUrlFromSourceUrl(sourceUrl: string): string {
   return match?.[1] ?? sourceUrl;
 }
 
+function formatAdvertiserLinkLabel(template: string | undefined, name: string): string {
+  const pattern = template?.trim() || DEFAULT_ADVERTISER_LINK_LABEL;
+  return pattern.replace(/\{name\}/g, name);
+}
+
+function AdvertiserLinkButton({
+  label,
+  url,
+  buttonStyle,
+  labelStyle,
+}: {
+  label: string;
+  url: string;
+  buttonStyle: ViewStyle;
+  labelStyle: TextStyle;
+}) {
+  return (
+    <Pressable
+      className="self-start px-8 py-3 min-h-[44px] justify-center"
+      style={buttonStyle}
+      onPress={() => Linking.openURL(url)}
+    >
+      <Text className="text-base" style={labelStyle}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBlockProps }) {
   const theme = useFluxTheme();
-  const presentation = useFluxPresentation();
+  const presentation = useFluxBlockPresentation();
   const complexLayout = presentation.layouts.complex;
   const discoveryMode = props.discoveryMode ?? 'local_places';
   const headingFont = fluxPreviewFontFamily(theme.fontFamily, '600');
   const bodyFont = fluxPreviewFontFamily(theme.fontFamily, '400');
-  const outerBackground = theme.backgroundColor;
+  const accentColor = theme.accentColor?.trim() || theme.primaryColor;
+  const headingColor = presentation.headingColor;
+  const outerBackground = presentation.sectionBackgroundColor;
   const frameClassName = complexLayout === 'dashboard' ? 'w-full max-w-5xl self-center' : 'w-full max-w-4xl self-center';
   const introCardStyle =
     complexLayout === 'soft'
@@ -40,6 +74,11 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
       : complexLayout === 'dashboard'
         ? presentation.strongCard
         : presentation.card;
+  const advertiserButtonStyle = presentation.primaryButton;
+  const advertiserButtonTextStyle: TextStyle = {
+    color: presentation.onPrimaryColor,
+    fontFamily: headingFont,
+  };
 
   return (
     <View className="w-full py-10 px-4 md:px-6" style={{ backgroundColor: outerBackground }}>
@@ -48,13 +87,13 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
           <View className="flex-1 min-w-[260px]">
             <Text
               className="text-[10px] md:text-xs uppercase tracking-[3px] mb-2"
-              style={{ color: theme.primaryColor, fontFamily: headingFont }}
+              style={{ color: accentColor, fontFamily: headingFont }}
             >
               Competitive ad snapshot
             </Text>
             <Text
               className="text-2xl md:text-3xl"
-              style={{ color: theme.textColor, fontFamily: headingFont }}
+              style={{ color: headingColor, fontFamily: headingFont }}
             >
               {props.heading?.trim() || 'Competitor ad audit'}
             </Text>
@@ -62,11 +101,11 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
           <View
             className="px-3 py-1 rounded-full border"
             style={{
-              borderColor: theme.primaryColor,
-              backgroundColor: `${theme.primaryColor}18`,
+              borderColor: accentColor,
+              backgroundColor: withFluxAlpha(accentColor, '18'),
             }}
           >
-            <Text className="text-xs font-instrument-semibold" style={{ color: theme.primaryColor }}>
+            <Text className="text-xs font-instrument-semibold" style={{ color: accentColor, fontFamily: headingFont }}>
               {statusLabel(props.status)}
             </Text>
           </View>
@@ -103,6 +142,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
               const advertiserUrl = row.examples[0]?.sourceUrl
                 ? advertiserUrlFromSourceUrl(row.examples[0].sourceUrl)
                 : null;
+              const advertiserLinkLabel = formatAdvertiserLinkLabel(props.advertiserLinkLabel, row.name);
               const examples = row.examples.length > 0 ? (
                 <View className="gap-3 mt-5">
                   <Text
@@ -133,11 +173,11 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                             <View className="gap-2">
                               <Text
                                 className="text-[11px] uppercase tracking-[2px]"
-                                style={{ color: theme.primaryColor, fontFamily: headingFont }}
+                                style={{ color: accentColor, fontFamily: headingFont }}
                               >
                                 Live ad detected
                               </Text>
-                              <Text className="text-base" style={{ color: theme.textColor, fontFamily: headingFont }}>
+                              <Text className="text-base" style={{ color: headingColor, fontFamily: headingFont }}>
                                 {ex.headline?.trim() || 'Google Ad example'}
                               </Text>
                               <Text
@@ -147,7 +187,7 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                                 {ex.body?.trim() || 'Preview unavailable for this ad creative, but the Transparency record is still included.'}
                               </Text>
                             </View>
-                            <Text className="text-sm" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
+                            <Text className="text-sm" style={{ color: accentColor, fontFamily: headingFont }}>
                               View ad details →
                             </Text>
                           </View>
@@ -162,15 +202,16 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                 const isReversed = i % 2 === 1;
                 const textCol = (
                   <View className="flex-[2] min-w-[220px] gap-3">
-                    <Text className="text-xl md:text-2xl" style={{ color: theme.textColor, fontFamily: headingFont }}>
+                    <Text className="text-xl md:text-2xl" style={{ color: headingColor, fontFamily: headingFont }}>
                       {row.name}
                     </Text>
                     {advertiserUrl ? (
-                      <Pressable className="self-start" onPress={() => Linking.openURL(advertiserUrl)}>
-                        <Text className="text-sm" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
-                          {`View ${row.name}'s Google Ads →`}
-                        </Text>
-                      </Pressable>
+                      <AdvertiserLinkButton
+                        label={advertiserLinkLabel}
+                        url={advertiserUrl}
+                        buttonStyle={advertiserButtonStyle}
+                        labelStyle={advertiserButtonTextStyle}
+                      />
                     ) : null}
                   </View>
                 );
@@ -195,11 +236,11 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                   <View
                     key={`${row.name}-${i}`}
                     className="py-8"
-                    style={i > 0 ? { borderTopWidth: 1, borderColor: `${theme.primaryColor}20` } : undefined}
+                    style={i > 0 ? { borderTopWidth: 1, borderColor: withFluxAlpha(accentColor, '20') } : undefined}
                   >
                     <Text
                       className="text-[10px] uppercase tracking-[3px] mb-4"
-                      style={{ color: theme.primaryColor, opacity: 0.7, fontFamily: headingFont }}
+                      style={{ color: accentColor, opacity: 0.7, fontFamily: headingFont }}
                     >
                       Competitor {i + 1}
                     </Text>
@@ -218,27 +259,27 @@ export function CompetitorAdAuditBlock({ props }: { props: CompetitorAdAuditBloc
                     <View className="flex-1 min-w-[280px] gap-4">
                       <View className="gap-3">
                         <View className="flex-row flex-wrap items-center gap-3">
-                          <View className="px-2.5 py-1" style={{ ...presentation.chip, backgroundColor: `${theme.primaryColor}16` }}>
-                            <Text className="text-xs" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
+                          <View
+                            className="px-2.5 py-1"
+                            style={{ ...presentation.chip, backgroundColor: withFluxAlpha(accentColor, '16') }}
+                          >
+                            <Text className="text-xs" style={{ color: accentColor, fontFamily: headingFont }}>
                               Competitor {i + 1}
                             </Text>
                           </View>
-                          <Text className="text-xl md:text-2xl flex-1" style={{ color: theme.textColor, fontFamily: headingFont }}>
+                          <Text className="text-xl md:text-2xl flex-1" style={{ color: headingColor, fontFamily: headingFont }}>
                             {row.name}
                           </Text>
                         </View>
                       </View>
 
                       {advertiserUrl ? (
-                        <Pressable
-                          className="self-start px-3 py-2 rounded-lg min-h-[44px] justify-center"
-                          style={{ backgroundColor: `${theme.primaryColor}08` }}
-                          onPress={() => Linking.openURL(advertiserUrl)}
-                        >
-                          <Text className="text-sm" style={{ color: theme.primaryColor, fontFamily: headingFont }}>
-                            {`See all of ${row.name}'s Google Ads`}
-                          </Text>
-                        </Pressable>
+                        <AdvertiserLinkButton
+                          label={advertiserLinkLabel}
+                          url={advertiserUrl}
+                          buttonStyle={advertiserButtonStyle}
+                          labelStyle={advertiserButtonTextStyle}
+                        />
                       ) : null}
                     </View>
 

@@ -1,0 +1,91 @@
+
+> furnacebuild@1.0.0 audit:june-training-replies
+> NODE_PATH=workers/inbox-checker-worker/node_modules:lib/mailbox/node_modules tsx scripts/audit-june-training-replies.ts --since 2026-06-09 --output docs/audit/june-training/03-imap-results.json --concurrency 5
+
+Target env: prod
+Supabase URL from PROD_SUPABASE_URL
+Supabase secret from Parameter Store /amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY
+Campaign: 3d6a8efa-c7b0-42e0-8550-56865ef4da9e
+Since: 2026-06-09T00:00:00.000Z
+Campaign mailboxes: 64
+Sent jobs loaded: 3408
+Ingested received message_ids: 633
+Scanning sonntag@getmynexttherapisttoday.com... Scanning sonntag@getnexttherapisttoday.com... Scanning sonntag@gonexttherapist.com... Scanning sonntag@joinnexttherapist.com... Scanning sonntag@mynexttherapist.com... 72 inbound, 41 reply-like, 0 missed
+Scanning sonntag@mynexttherapisttoday.com... 93 inbound, 44 reply-like, 0 missed
+Scanning sonntag@nexttherapisttoday.com... 91 inbound, 43 reply-like, 0 missed
+Scanning sonntag@nexttherapisttodayapp.com... 71 inbound, 43 reply-like, 0 missed
+Scanning sonntag@nexttherapisttodayonline.com... 80 inbound, 40 reply-like, 0 missed
+Scanning sonntag@teamnexttherapist.com... 92 inbound, 42 reply-like, 0 missed
+Scanning sonntag@trynexttherapist.com... 87 inbound, 40 reply-like, 0 missed
+Scanning sonntag@trynexttherapisttoday.com... 73 inbound, 43 reply-like, 0 missed
+Scanning sonntag@usenexttherapist.com... 77 inbound, 41 reply-like, 0 missed
+Scanning sonntag@usenexttherapisttoday.com... 71 inbound, 40 reply-like, 0 missed
+Scanning stephanie.sonntag@getmynexttherapistnow.com... 68 inbound, 43 reply-like, 0 missed
+Scanning stephanie.sonntag@getnexttherapisttoday.com... 78 inbound, 42 reply-like, 0 missed
+Scanning stephanie.sonntag@gonexttherapist.com... 84 inbound, 42 reply-like, 0 missed
+Scanning stephanie.sonntag@joinnexttherapist.com... 68 inbound, 37 reply-like, 0 missed
+Scanning stephanie.sonntag@mynexttherapist.com... 69 inbound, 40 reply-like, 0 missed
+Scanning stephanie.sonntag@nexttherapisttoday.com... 77 inbound, 41 reply-like, 0 missed
+Scanning stephanie.sonntag@nexttherapisttodayapp.com... 9 inbound, 0 reply-like, 0 missed
+Scanning stephanie.sonntag@teamnexttherapist.com... 85 inbound, 37 reply-like, 0 missed
+Scanning stephanie.sonntag@trynexttherapist.com... 89 inbound, 44 reply-like, 0 missed
+Scanning stephanie.sonntag@trynexttherapisttoday.com... 87 inbound, 36 reply-like, 0 missed
+Scanning stephanie.sonntag@usenexttherapisttoday.com... 81 inbound, 42 reply-like, 0 missed
+Scanning stephanie@getmynexttherapistnow.com... 85 inbound, 39 reply-like, 0 missed
+Scanning stephanie@getmynexttherapisttoday.com... 75 inbound, 37 reply-like, 0 missed
+Scanning stephanie@getnextherapist.com... 71 inbound, 35 reply-like, 0 missed
+Scanning stephanie@getnexttherapisttoday.com... 88 inbound, 40 reply-like, 0 missed
+Scanning stephanie@getyournexttherapist.com... 79 inbound, 39 reply-like, 0 missed
+Scanning stephanie@getyournexttherapisttoday.com... 79 inbound, 46 reply-like, 0 missed
+Scanning stephanie@gonexttherapist.com... 76 inbound, 43 reply-like, 0 missed
+Scanning stephanie@joinnexttherapist.com... 85 inbound, 45 reply-like, 0 missed
+Scanning stephanie@mynexttherapist.com... 74 inbound, 39 reply-like, 0 missed
+Scanning stephanie@mynexttherapistapp.com... 81 inbound, 48 reply-like, 0 missed
+Scanning stephanie@mynexttherapisttoday.com... 75 inbound, 39 reply-like, 0 missed
+Scanning stephanie@nexttherapisttoday.com... 76 inbound, 43 reply-like, 0 missed
+Scanning stephanie@nexttherapisttodayapp.com... 65 inbound, 38 reply-like, 0 missed
+Scanning stephanie@nexttherapisttodayonline.com... 74 inbound, 44 reply-like, 0 missed
+Scanning stephanie@teamnexttherapist.com... 81 inbound, 44 reply-like, 0 missed
+Scanning stephanie@trynexttherapist.com... 70 inbound, 47 reply-like, 0 missed
+Scanning stephanie@trynexttherapisttoday.com... 76 inbound, 42 reply-like, 0 missed
+Scanning stephanie@usenexttherapist.com... 77 inbound, 39 reply-like, 0 missed
+Scanning stephanie@usenexttherapisttoday.com... 77 inbound, 47 reply-like, 0 missed
+Scanning stephanie@yournexttherapist.com... 81 inbound, 40 reply-like, 0 missed
+Scanning stephanieso@getmynexttherapistnow.com... 73 inbound, 39 reply-like, 0 missed
+Scanning stephanieso@getmynexttherapisttoday.com... 77 inbound, 41 reply-like, 0 missed
+Scanning stephanieso@getnextherapist.com... 69 inbound, 36 reply-like, 0 missed
+Scanning stephanieso@getnexttherapisttoday.com... 79 inbound, 42 reply-like, 0 missed
+Scanning stephanieso@getyournexttherapist.com... 70 inbound, 39 reply-like, 0 missed
+Scanning stephanieso@getyournexttherapisttoday.com... 85 inbound, 41 reply-like, 0 missed
+Scanning stephanieso@gonexttherapist.com... 76 inbound, 41 reply-like, 0 missed
+Scanning stephanieso@mynexttherapist.com... 82 inbound, 42 reply-like, 0 missed
+Scanning stephanieso@mynexttherapistapp.com... 65 inbound, 34 reply-like, 0 missed
+Scanning stephanieso@mynexttherapisttoday.com... 80 inbound, 40 reply-like, 0 missed
+Scanning stephanieso@nexttherapisttoday.com... 88 inbound, 41 reply-like, 0 missed
+Scanning stephanieso@nexttherapisttodayapp.com... 71 inbound, 39 reply-like, 0 missed
+Scanning stephanieso@nexttherapisttodayonline.com... 75 inbound, 40 reply-like, 0 missed
+Scanning stephanieso@teamnexttherapist.com... 91 inbound, 43 reply-like, 0 missed
+Scanning stephanieso@trynexttherapist.com... 79 inbound, 42 reply-like, 0 missed
+Scanning stephanieso@trynexttherapisttoday.com... 78 inbound, 43 reply-like, 0 missed
+Scanning stephanieso@usenexttherapist.com... 70 inbound, 39 reply-like, 0 missed
+Scanning stephanieso@usenexttherapisttoday.com... 77 inbound, 39 reply-like, 0 missed
+Scanning stephanieso@yournexttherapist.com... 89 inbound, 40 reply-like, 0 missed
+81 inbound, 39 reply-like, 0 missed
+79 inbound, 41 reply-like, 0 missed
+79 inbound, 40 reply-like, 0 missed
+72 inbound, 38 reply-like, 0 missed
+
+=== IMAP audit summary ===
+Mailboxes scanned: 64
+Bucket counts:
+- ingested: 16
+- missed_matchable: 0
+- unmatchable_no_headers: 0
+- unmatchable_no_job: 2558
+- unrelated: 0
+
+Results written to:
+- /Users/porter/Projects/FurnaceBuild/docs/audit/june-training/03-imap-results.json
+- /Users/porter/Projects/FurnaceBuild/docs/audit/june-training/03-imap-results-summary.csv
+
+Recommendation: No large matchable gap; low rate likely real or headerless.

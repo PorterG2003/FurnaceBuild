@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { View } from 'react-native';
-import { useSmoothLoading } from '@/components/ui/feedback';
 import {
   getThreadsByAccount,
-  getThreadById,
   getMessagesByThread,
   getBlockList,
   isEmailBlockedByEntries,
@@ -26,44 +24,32 @@ import { THREAD_PAGE_SIZE, SEARCH_DEBOUNCE_MS } from '@/components/inbox/inboxCo
 
 export interface UseInboxDataOptions {
   accountId: string | null;
-  /** When false, never auto-open the first thread after load/refresh (mobile list-first UX). */
-  autoSelectFirstThread?: boolean;
-  /**
-   * Current `?thread=` from the route. After a list reload, if selection state was lost
-   * but this id is still in the list, open it instead of defaulting to the first thread.
-   */
-  routeThreadId?: string | null;
-  /** Called when `routeThreadId` is set but the thread cannot be loaded for this account. */
-  onRouteThreadUnavailable?: () => void;
+  /** Thread id from route path; null when at `/inbox`. */
+  selectedThreadId: string | null;
 }
 
-export function useInboxData({
-  accountId,
-  autoSelectFirstThread = true,
-  routeThreadId = null,
-  onRouteThreadUnavailable,
-}: UseInboxDataOptions) {
+export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOptions) {
   const [threads, setThreads] = useState<EmailThread[]>([]);
   const [threadsLoading, setThreadsLoading] = useState(true);
   const [threadsError, setThreadsError] = useState<string | null>(null);
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<EmailMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [threadSearchQuery, setThreadSearchQuery] = useState('');
-  const [mailboxFilterId, setMailboxFilterId] = useState<string | null>(null);
-  const [campaignFilterId, setCampaignFilterId] = useState<string | null>(null);
-  const [unreadOnlyFilter, setUnreadOnlyFilter] = useState(false);
-  const [datePreset, setDatePreset] = useState<'7d' | '30d' | null>(null);
-  const [tagFilterIds, setTagFilterIds] = useState<string[]>([]);
-  const [campaignTagFilterIds, setCampaignTagFilterIds] = useState<string[]>([]);
-  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
-  const [includeOutOfOfficeFilter, setIncludeOutOfOfficeFilter] = useState(false);
+  const [threadSearchQuery, setThreadSearchQueryState] = useState('');
+  const [mailboxFilterId, setMailboxFilterIdState] = useState<string | null>(null);
+  const [campaignFilterId, setCampaignFilterIdState] = useState<string | null>(null);
+  const [unreadOnlyFilter, setUnreadOnlyFilterState] = useState(false);
+  const [datePreset, setDatePresetState] = useState<'7d' | '30d' | null>(null);
+  const [tagFilterIds, setTagFilterIdsState] = useState<string[]>([]);
+  const [campaignTagFilterIds, setCampaignTagFilterIdsState] = useState<string[]>([]);
+  const [categoryFilter, setCategoryFilterState] = useState<string | null>(null);
+  const [includeOutOfOfficeFilter, setIncludeOutOfOfficeFilterState] = useState(false);
   const [threadOffset, setThreadOffset] = useState(0);
   const [hasMoreThreads, setHasMoreThreads] = useState(false);
   const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
+  const [initialThreadsLoadSettled, setInitialThreadsLoadSettled] = useState(false);
 
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -78,15 +64,20 @@ export function useInboxData({
 
   const filterButtonRef = useRef<View>(null);
   const loadThreadsRef = useRef<(options?: { append?: boolean }) => Promise<void>>(() => Promise.resolve());
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
   const initialLoadDoneRef = useRef<string | null>(null);
   const filtersEffectRanRef = useRef(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const routeThreadDeepLinkAttemptRef = useRef<string | null>(null);
+  const prevAccountIdRef = useRef<string | null>(null);
+  const prevSearchAccountIdRef = useRef<string | null>(null);
 
-  const selectedThread = threads.find((t) => t.id === selectedThreadId);
-  const threadsLoadingOrNoAccount = threadsLoading || !accountId;
-  const showThreadSkeleton = useSmoothLoading(threadsLoadingOrNoAccount);
-  const showMessagesSkeleton = useSmoothLoading(messagesLoading);
+  const threadIdsKey = useMemo(
+    () => [...threads.map((thread) => thread.id)].sort().join(','),
+    [threads]
+  );
+
+  const selectedThread = selectedThreadId ? threads.find((t) => t.id === selectedThreadId) : undefined;
 
   const displayThreads = threads;
   const hasActiveFilters =
@@ -99,6 +90,31 @@ export function useInboxData({
     !!categoryFilter ||
     includeOutOfOfficeFilter ||
     threadSearchQuery.trim().length > 0;
+
+  const clearAllFilters = useCallback(() => {
+    setThreadSearchQueryState('');
+    setMailboxFilterIdState(null);
+    setCampaignFilterIdState(null);
+    setUnreadOnlyFilterState(false);
+    setDatePresetState(null);
+    setTagFilterIdsState([]);
+    setCampaignTagFilterIdsState([]);
+    setCategoryFilterState(null);
+    setIncludeOutOfOfficeFilterState(false);
+  }, []);
+
+  const resetForAccountChange = useCallback(() => {
+    clearAllFilters();
+    setThreads([]);
+    setMessages([]);
+    setThreadOffset(0);
+    setHasMoreThreads(false);
+    setThreadsError(null);
+    setMessagesError(null);
+    filtersEffectRanRef.current = false;
+    initialLoadDoneRef.current = null;
+    setInitialThreadsLoadSettled(false);
+  }, [clearAllFilters]);
 
   const selectedThreadProspectEmails = useMemo(() => {
     if (!selectedThreadId) return [];
@@ -231,32 +247,20 @@ export function useInboxData({
           setThreads(list);
           setThreadOffset(list.length);
           setHasMoreThreads(list.length >= THREAD_PAGE_SIZE);
-          if (list.length === 0) {
-            setSelectedThreadId(null);
-          } else {
-            setSelectedThreadId((prev) => {
-              const stillInList = prev && list.some((t) => t.id === prev);
-              if (stillInList) return prev;
-              const fromRoute =
-                routeThreadId && list.some((t) => t.id === routeThreadId)
-                  ? routeThreadId
-                  : null;
-              if (fromRoute) return fromRoute;
-              if (autoSelectFirstThread) return list[0].id;
-              return null;
-            });
-          }
         }
       } catch (err) {
         if (!append) {
           setThreadsError(err instanceof Error ? err.message : 'Failed to load conversations');
         }
       } finally {
+        if (!append) {
+          setInitialThreadsLoadSettled(true);
+        }
         setThreadsLoading(false);
         setLoadingMoreThreads(false);
       }
     },
-    [accountId, buildThreadFilters, threadOffset, autoSelectFirstThread, routeThreadId]
+    [accountId, buildThreadFilters, threadOffset]
   );
   loadThreadsRef.current = loadThreads;
 
@@ -294,28 +298,12 @@ export function useInboxData({
       ]);
       setThreads(list);
       setHasMoreThreads(list.length >= THREAD_PAGE_SIZE);
-      if (list.length === 0) {
-        setSelectedThreadId(null);
-      } else {
-        setSelectedThreadId((prev) => {
-          const stillInList = prev && list.some((t) => t.id === prev);
-          if (stillInList) return prev;
-          const fromRoute =
-            routeThreadId && list.some((t) => t.id === routeThreadId)
-              ? routeThreadId
-              : null;
-          if (fromRoute) return fromRoute;
-          if (autoSelectFirstThread) return list[0].id;
-          return null;
-        });
-      }
     } finally {
       setRefreshing(false);
     }
-  }, [accountId, buildThreadFilters, loadBlockList, autoSelectFirstThread, routeThreadId]);
+  }, [accountId, buildThreadFilters, loadBlockList]);
 
-  const handleSelectThread = useCallback((threadId: string) => {
-    setSelectedThreadId(threadId);
+  const markThreadReadOptimistic = useCallback((threadId: string) => {
     markThreadMessagesRead(threadId).catch((err) => console.error('Failed to mark thread as read:', err));
     setThreads((prev) =>
       prev.map((t) => (t.id === threadId && 'unread_count' in t ? { ...t, unread_count: 0 } : t))
@@ -328,53 +316,25 @@ export function useInboxData({
       setThreads([]);
       setBlockList([]);
       initialLoadDoneRef.current = null;
+      prevAccountIdRef.current = null;
+      setInitialThreadsLoadSettled(false);
       return;
     }
+
+    if (prevAccountIdRef.current != null && prevAccountIdRef.current !== accountId) {
+      resetForAccountChange();
+    }
+    prevAccountIdRef.current = accountId;
+
     if (initialLoadDoneRef.current === accountId) return;
     initialLoadDoneRef.current = accountId;
     loadMailboxesAndCampaigns();
     loadThreads();
     loadBlockList();
-  }, [accountId, loadThreads, loadBlockList, loadMailboxesAndCampaigns]);
+  }, [accountId, loadThreads, loadBlockList, loadMailboxesAndCampaigns, resetForAccountChange]);
 
   useEffect(() => {
-    if (!routeThreadId) {
-      routeThreadDeepLinkAttemptRef.current = null;
-      return;
-    }
-    if (!accountId || threadsLoading) return;
-    if (threads.some((t) => t.id === routeThreadId)) {
-      routeThreadDeepLinkAttemptRef.current = null;
-      return;
-    }
-    if (routeThreadDeepLinkAttemptRef.current === routeThreadId) return;
-    routeThreadDeepLinkAttemptRef.current = routeThreadId;
-
-    let cancelled = false;
-    void getThreadById(routeThreadId)
-      .then((row) => {
-        if (cancelled) return;
-        if (row && row.account_id === accountId) {
-          setThreads((prev) => {
-            if (prev.some((t) => t.id === row.id)) return prev;
-            const withUnread = { ...row, unread_count: 0 };
-            return [withUnread, ...prev.filter((t) => t.id !== row.id)];
-          });
-        } else {
-          onRouteThreadUnavailable?.();
-        }
-      })
-      .catch(() => {
-        if (!cancelled) onRouteThreadUnavailable?.();
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [accountId, threadsLoading, routeThreadId, threads, onRouteThreadUnavailable]);
-
-  useEffect(() => {
-    if (threads.length === 0) {
+    if (!threadIdsKey) {
       setThreadTagsMap({});
       setThreadSnippetsMap({});
       setLeadDisplayNamesMap({});
@@ -382,8 +342,9 @@ export function useInboxData({
       setLeadReplacementSummaryMap({});
       return;
     }
-    const ids = threads.map((t) => t.id);
-    const leadIds = [...new Set(threads.map((t) => t.lead_id).filter(Boolean))] as string[];
+    const snapshot = threadsRef.current;
+    const ids = snapshot.map((thread) => thread.id);
+    const leadIds = [...new Set(snapshot.map((thread) => thread.lead_id).filter(Boolean))] as string[];
     Promise.all([
       getTagsForThreads(ids),
       getThreadSnippets(ids),
@@ -405,7 +366,7 @@ export function useInboxData({
         setLeadReplacementSummaryMap(replacementSummaries);
       })
       .catch((err) => console.error('Failed to load thread tags/snippets/leads:', err));
-  }, [threads]);
+  }, [threadIdsKey]);
 
   useEffect(() => {
     if (!accountId) return;
@@ -428,10 +389,22 @@ export function useInboxData({
   ]);
 
   useEffect(() => {
-    if (!accountId) return;
+    if (!accountId) {
+      prevSearchAccountIdRef.current = null;
+      return;
+    }
+    const accountJustChanged = prevSearchAccountIdRef.current !== accountId;
+    prevSearchAccountIdRef.current = accountId;
+
     if (searchDebounceRef.current) {
       clearTimeout(searchDebounceRef.current);
     }
+
+    // Account mount/switch already loads threads in the account effect.
+    if (accountJustChanged && threadSearchQuery.trim() === '') {
+      return;
+    }
+
     searchDebounceRef.current = setTimeout(() => {
       searchDebounceRef.current = null;
       setThreadOffset(0);
@@ -446,6 +419,7 @@ export function useInboxData({
 
   useEffect(() => {
     if (selectedThreadId) {
+      setMessages([]);
       loadMessages(selectedThreadId);
     } else {
       setMessages([]);
@@ -458,31 +432,31 @@ export function useInboxData({
     messages,
     setMessages,
     selectedThreadId,
-    setSelectedThreadId,
     selectedThread,
     threadsLoading,
     threadsError,
+    initialThreadsLoadSettled,
     messagesLoading,
     messagesError,
     refreshing,
     threadSearchQuery,
-    setThreadSearchQuery,
+    setThreadSearchQuery: setThreadSearchQueryState,
     mailboxFilterId,
-    setMailboxFilterId,
+    setMailboxFilterId: setMailboxFilterIdState,
     campaignFilterId,
-    setCampaignFilterId,
+    setCampaignFilterId: setCampaignFilterIdState,
     unreadOnlyFilter,
-    setUnreadOnlyFilter,
+    setUnreadOnlyFilter: setUnreadOnlyFilterState,
     datePreset,
-    setDatePreset,
+    setDatePreset: setDatePresetState,
     tagFilterIds,
-    setTagFilterIds,
+    setTagFilterIds: setTagFilterIdsState,
     campaignTagFilterIds,
-    setCampaignTagFilterIds,
+    setCampaignTagFilterIds: setCampaignTagFilterIdsState,
     categoryFilter,
-    setCategoryFilter,
+    setCategoryFilter: setCategoryFilterState,
     includeOutOfOfficeFilter,
-    setIncludeOutOfOfficeFilter,
+    setIncludeOutOfOfficeFilter: setIncludeOutOfOfficeFilterState,
     threadOffset,
     hasMoreThreads,
     loadingMoreThreads,
@@ -500,9 +474,6 @@ export function useInboxData({
     accountCampaignTags,
     displayThreads,
     hasActiveFilters,
-    threadsLoadingOrNoAccount,
-    showThreadSkeleton,
-    showMessagesSkeleton,
     selectedThreadProspectEmails,
     blockedProspectEmails,
     filterButtonRef,
@@ -510,7 +481,8 @@ export function useInboxData({
     loadMessages,
     loadMoreThreads,
     handleRefresh,
-    handleSelectThread,
+    markThreadReadOptimistic,
     loadBlockList,
+    clearAllFilters,
   };
 }

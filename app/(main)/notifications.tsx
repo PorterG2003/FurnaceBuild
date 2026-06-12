@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Text, View, useWindowDimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
 import {
   PageLayout,
@@ -13,25 +13,13 @@ import { Tabs } from '@/components/ui/tabs';
 import { useSmoothLoading } from '@/components/ui/feedback';
 import { NotificationsList } from '@/components/notifications/NotificationsList';
 import { useNotifications } from '@/hooks/useNotifications';
+import { buildInboxThreadHref, parseInboxNotificationUrl } from '@/lib/inbox/inboxRoutes';
 import type {
   AppNotification,
   NotificationListFilter,
 } from '@/lib/supabase/services/notifications';
 
 const DESKTOP_CONTENT_MAX_WIDTH = 720;
-
-/** Parse `/inbox?thread=` from stored `action_url` for structured Expo Router navigation. */
-function parseInboxThreadDeepLink(actionUrl: string | null | undefined): { thread: string } | null {
-  if (!actionUrl?.startsWith('/inbox')) return null;
-  try {
-    const u = new URL(actionUrl, 'https://local.invalid');
-    if (u.pathname !== '/inbox') return null;
-    const thread = u.searchParams.get('thread');
-    return thread ? { thread } : null;
-  } catch {
-    return null;
-  }
-}
 
 const breadcrumbItems = [{ label: 'Settings', href: '/account' }, { label: 'Notifications' }];
 
@@ -60,9 +48,9 @@ export default function NotificationsPage() {
       if (!n.read_at) {
         void markRead(n.id);
       }
-      const inboxThread = parseInboxThreadDeepLink(n.action_url);
-      if (inboxThread) {
-        router.push({ pathname: '/inbox', params: inboxThread });
+      const inboxLink = parseInboxNotificationUrl(n.action_url ?? '');
+      if (inboxLink?.threadId) {
+        router.push(buildInboxThreadHref(inboxLink.threadId) as Href);
         return;
       }
       const target = n.action_url?.startsWith('/') ? n.action_url : '/inbox';

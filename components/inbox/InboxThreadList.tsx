@@ -13,8 +13,10 @@ export interface InboxThreadListProps {
   threads: EmailThread[];
   displayThreads: EmailThread[];
   threadsError: string | null;
-  threadsLoadingOrNoAccount: boolean;
-  showThreadSkeleton: boolean;
+  showThreadListSkeleton: boolean;
+  suppressEmptyStates: boolean;
+  keepPreviousThreadList: boolean;
+  threadsLoading: boolean;
   threadSearchQuery: string;
   setThreadSearchQuery: (q: string) => void;
   filterButtonRef: RefObject<View | null>;
@@ -42,8 +44,10 @@ export function InboxThreadList({
   threads,
   displayThreads,
   threadsError,
-  threadsLoadingOrNoAccount,
-  showThreadSkeleton,
+  showThreadListSkeleton,
+  suppressEmptyStates,
+  keepPreviousThreadList,
+  threadsLoading,
   threadSearchQuery,
   setThreadSearchQuery,
   filterButtonRef,
@@ -65,6 +69,21 @@ export function InboxThreadList({
   onRetryLoadThreads,
   scrollPaddingBottom,
 }: InboxThreadListProps) {
+  const showListContent =
+    keepPreviousThreadList || (!threadsLoading && threads.length > 0);
+  const showEmptyInbox =
+    !threadsLoading &&
+    !suppressEmptyStates &&
+    threads.length === 0 &&
+    !threadsError &&
+    !hasActiveFilters;
+  const showEmptyFiltered =
+    !threadsLoading &&
+    !suppressEmptyStates &&
+    displayThreads.length === 0 &&
+    !threadsError &&
+    hasActiveFilters;
+
   return (
     <>
       <View className="px-4 py-4">
@@ -113,21 +132,19 @@ export function InboxThreadList({
           />
         </View>
       )}
-      {(threadsLoadingOrNoAccount || showThreadSkeleton) ? (
-        <ThreadListSkeleton />
-      ) : threads.length === 0 && !threadsError ? (
+      {showEmptyInbox ? (
         <EmptyState
           title="No conversations yet"
           description="Replies to your campaign emails will appear here."
           className="flex-1 px-5"
         />
-      ) : displayThreads.length === 0 ? (
+      ) : showEmptyFiltered ? (
         <EmptyState
           title="No matching conversations"
           description="Try a different search term."
           className="flex-1 px-5"
         />
-      ) : (
+      ) : showListContent ? (
         <ScrollView
           className="flex-1"
           contentContainerStyle={{ paddingTop: 0, paddingBottom: scrollPaddingBottom }}
@@ -170,6 +187,10 @@ export function InboxThreadList({
             </Pressable>
           )}
         </ScrollView>
+      ) : showThreadListSkeleton && !keepPreviousThreadList ? (
+        <ThreadListSkeleton />
+      ) : (
+        <ThreadListSkeleton />
       )}
     </>
   );

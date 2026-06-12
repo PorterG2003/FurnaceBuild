@@ -16,7 +16,7 @@ import {
   UserGroupIcon,
   BuildingLibraryIcon,
 } from 'react-native-heroicons/outline';
-import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
+import { isInboxPath } from '@/lib/inbox/inboxRoutes';
 
 const baseNavItems = [
   { path: '/campaigns', icon: MegaphoneIcon },
@@ -32,7 +32,7 @@ function isActive(path: string, pathname: string | null) {
     return pathname === '/campaigns';
   }
   if (path === '/inbox') {
-    return pathname === '/inbox' || pathname === '/';
+    return isInboxPath(pathname) || pathname === '/';
   }
   if (path === '/leads') {
     return pathname === '/leads' || (pathname?.startsWith('/leads/') ?? false);

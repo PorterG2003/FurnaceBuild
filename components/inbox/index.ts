@@ -49,5 +49,7 @@ export { InboxModals } from './InboxModals';
 export type { InboxModalsProps } from './InboxModals';
 export { InboxThreadList } from './InboxThreadList';
 export type { InboxThreadListProps } from './InboxThreadList';
+export { InboxScreen } from './InboxScreen';
+export type { InboxScreenProps } from './InboxScreen';
 export { InboxThreadInfoSheet } from './InboxThreadInfoSheet';
 export type { InboxThreadInfoSheetProps } from './InboxThreadInfoSheet';

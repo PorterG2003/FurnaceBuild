@@ -8,7 +8,7 @@ test('buildAppRoutePath string href', () => {
 
 test('buildAppRoutePath pathname with params', () => {
   assert.equal(
-    buildAppRoutePath({ pathname: '/inbox', params: { thread: 't-1' } }),
-    '/inbox?thread=t-1',
+    buildAppRoutePath({ pathname: '/inbox/[threadId]', params: { threadId: 't-1' } }),
+    '/inbox/[threadId]?threadId=t-1',
   );
 });

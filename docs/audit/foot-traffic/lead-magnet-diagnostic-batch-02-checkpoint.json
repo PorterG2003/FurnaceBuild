@@ -1,0 +1,322 @@
+{
+  "kind": "audit",
+  "version": 1,
+  "generatedAt": "2026-06-12T03:41:48.432Z",
+  "updatedAt": "2026-06-12T03:46:14.285Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "selectedMailboxIds": [
+    "f44422b1-2574-46b8-bf53-0801084b000a",
+    "7772343e-7275-4460-a464-3d6b9595d1af",
+    "a2406292-679c-49db-9067-0c1e6a9bad78",
+    "e41d9099-a479-43f4-9dcc-53c529804eb3",
+    "b43d2a70-54b3-419d-8d35-82885e24f2c2",
+    "0cde3eb8-29b0-46b4-8011-2bbfbbc10624"
+  ],
+  "args": {
+    "since": "2026-05-06T00:00:00.000Z",
+    "until": null,
+    "maxSentMessagesPerMailbox": 60,
+    "maxInboxMessagesPerMailbox": 10,
+    "concurrency": 1,
+    "copySource": "smartlead_api"
+  },
+  "completedMailboxIds": [
+    "f44422b1-2574-46b8-bf53-0801084b000a",
+    "7772343e-7275-4460-a464-3d6b9595d1af",
+    "a2406292-679c-49db-9067-0c1e6a9bad78",
+    "e41d9099-a479-43f4-9dcc-53c529804eb3",
+    "b43d2a70-54b3-419d-8d35-82885e24f2c2",
+    "0cde3eb8-29b0-46b4-8011-2bbfbbc10624"
+  ],
+  "sentIndexSize": 0,
+  "sentSubjectSummary": [],
+  "sentFolderUsage": [
+    {
+      "mailboxEmail": "d_m@clinicfoottrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 60,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "d_m@clinictrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 60,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "d_m@clinictrafficdr.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 60,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "d_mowery@clinicfoottrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 60,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "d_mowery@clinictrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 60,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "d_mowery@clinictrafficdr.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 60,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    }
+  ],
+  "candidates": [],
+  "review": [],
+  "dropped": 0,
+  "errors": [],
+  "diagnostics": {
+    "copy": {
+      "source": "smartlead_api",
+      "stepCount": 3,
+      "sampleSteps": [
+        {
+          "label": "sequence_1_A",
+          "normalizedSubject": "{new patients|patient flow|consistent patient flow| {{clinic_type}} patients}",
+          "bodyFingerprintSample": "hi {{first_name}}, {would you mind | mind} if i {put together | made | pulled together} a report {that shows | showing}"
+        },
+        {
+          "label": "sequence_1_B",
+          "normalizedSubject": "{new patients|patient flow|consistent patient flow| {{clinic_type}} patients}",
+          "bodyFingerprintSample": "hi {{first_name}}, {not sure if|wasn't sure whether} paid search {is part of the mix|is part of your current strategy|is"
+        },
+        {
+          "label": "sequence_2",
+          "normalizedSubject": "(no subject)",
+          "bodyFingerprintSample": "{let me know! | just let me know! | thoughts?}"
+        }
+      ],
+      "warnings": []
+    },
+    "comparisonNotes": [
+      "Recovery only anchors replies to tagged Sent rows on the same mailbox.",
+      "Live inbox threading first matches normalized Message-IDs against stored outbound provider_message_id values.",
+      "Overlapping lead emails in recovery require Smartlead subject or body copy proof before the Sent row is tagged."
+    ],
+    "totals": {
+      "sent": {
+        "scannedSent": 360,
+        "toLead": 0,
+        "noLeadMatch": 360,
+        "copySubjectMatch": 0,
+        "copyBodyMatch": 0,
+        "tagged": 0,
+        "untaggedOverlapNoCopy": 0,
+        "uniqueLeadTaggedWithoutCopy": 0
+      },
+      "inbox": {
+        "scannedInbox": 60,
+        "leadMatches": 0,
+        "noSearchIds": 0,
+        "searchIdsNoSentHit": 0,
+        "searchIdsHitWrongLead": 0,
+        "anchored": 0,
+        "leadOnlySubjectMatch": 0,
+        "leadOnlyBodyMatch": 0,
+        "review": 0,
+        "dropped": 0
+      }
+    },
+    "mailboxes": [
+      {
+        "mailboxEmail": "d_m@clinicfoottrafficco.com",
+        "folderPath": "Sent Items",
+        "sent": {
+          "scannedSent": 60,
+          "toLead": 0,
+          "noLeadMatch": 60,
+          "copySubjectMatch": 0,
+          "copyBodyMatch": 0,
+          "tagged": 0,
+          "untaggedOverlapNoCopy": 0,
+          "uniqueLeadTaggedWithoutCopy": 0
+        },
+        "inbox": {
+          "scannedInbox": 10,
+          "leadMatches": 0,
+          "noSearchIds": 0,
+          "searchIdsNoSentHit": 0,
+          "searchIdsHitWrongLead": 0,
+          "anchored": 0,
+          "leadOnlySubjectMatch": 0,
+          "leadOnlyBodyMatch": 0,
+          "review": 0,
+          "dropped": 0
+        },
+        "skippedSentSamples": [],
+        "replyMissSamples": []
+      },
+      {
+        "mailboxEmail": "d_m@clinictrafficco.com",
+        "folderPath": "Sent Items",
+        "sent": {
+          "scannedSent": 60,
+          "toLead": 0,
+          "noLeadMatch": 60,
+          "copySubjectMatch": 0,
+          "copyBodyMatch": 0,
+          "tagged": 0,
+          "untaggedOverlapNoCopy": 0,
+          "uniqueLeadTaggedWithoutCopy": 0
+        },
+        "inbox": {
+          "scannedInbox": 10,
+          "leadMatches": 0,
+          "noSearchIds": 0,
+          "searchIdsNoSentHit": 0,
+          "searchIdsHitWrongLead": 0,
+          "anchored": 0,
+          "leadOnlySubjectMatch": 0,
+          "leadOnlyBodyMatch": 0,
+          "review": 0,
+          "dropped": 0
+        },
+        "skippedSentSamples": [],
+        "replyMissSamples": []
+      },
+      {
+        "mailboxEmail": "d_m@clinictrafficdr.com",
+        "folderPath": "Sent Items",
+        "sent": {
+          "scannedSent": 60,
+          "toLead": 0,
+          "noLeadMatch": 60,
+          "copySubjectMatch": 0,
+          "copyBodyMatch": 0,
+          "tagged": 0,
+          "untaggedOverlapNoCopy": 0,
+          "uniqueLeadTaggedWithoutCopy": 0
+        },
+        "inbox": {
+          "scannedInbox": 10,
+          "leadMatches": 0,
+          "noSearchIds": 0,
+          "searchIdsNoSentHit": 0,
+          "searchIdsHitWrongLead": 0,
+          "anchored": 0,
+          "leadOnlySubjectMatch": 0,
+          "leadOnlyBodyMatch": 0,
+          "review": 0,
+          "dropped": 0
+        },
+        "skippedSentSamples": [],
+        "replyMissSamples": []
+      },
+      {
+        "mailboxEmail": "d_mowery@clinicfoottrafficco.com",
+        "folderPath": "Sent Items",
+        "sent": {
+          "scannedSent": 60,
+          "toLead": 0,
+          "noLeadMatch": 60,
+          "copySubjectMatch": 0,
+          "copyBodyMatch": 0,
+          "tagged": 0,
+          "untaggedOverlapNoCopy": 0,
+          "uniqueLeadTaggedWithoutCopy": 0
+        },
+        "inbox": {
+          "scannedInbox": 10,
+          "leadMatches": 0,
+          "noSearchIds": 0,
+          "searchIdsNoSentHit": 0,
+          "searchIdsHitWrongLead": 0,
+          "anchored": 0,
+          "leadOnlySubjectMatch": 0,
+          "leadOnlyBodyMatch": 0,
+          "review": 0,
+          "dropped": 0
+        },
+        "skippedSentSamples": [],
+        "replyMissSamples": []
+      },
+      {
+        "mailboxEmail": "d_mowery@clinictrafficco.com",
+        "folderPath": "Sent Items",
+        "sent": {
+          "scannedSent": 60,
+          "toLead": 0,
+          "noLeadMatch": 60,
+          "copySubjectMatch": 0,
+          "copyBodyMatch": 0,
+          "tagged": 0,
+          "untaggedOverlapNoCopy": 0,
+          "uniqueLeadTaggedWithoutCopy": 0
+        },
+        "inbox": {
+          "scannedInbox": 10,
+          "leadMatches": 0,
+          "noSearchIds": 0,
+          "searchIdsNoSentHit": 0,
+          "searchIdsHitWrongLead": 0,
+          "anchored": 0,
+          "leadOnlySubjectMatch": 0,
+          "leadOnlyBodyMatch": 0,
+          "review": 0,
+          "dropped": 0
+        },
+        "skippedSentSamples": [],
+        "replyMissSamples": []
+      },
+      {
+        "mailboxEmail": "d_mowery@clinictrafficdr.com",
+        "folderPath": "Sent Items",
+        "sent": {
+          "scannedSent": 60,
+          "toLead": 0,
+          "noLeadMatch": 60,
+          "copySubjectMatch": 0,
+          "copyBodyMatch": 0,
+          "tagged": 0,
+          "untaggedOverlapNoCopy": 0,
+          "uniqueLeadTaggedWithoutCopy": 0
+        },
+        "inbox": {
+          "scannedInbox": 10,
+          "leadMatches": 0,
+          "noSearchIds": 0,
+          "searchIdsNoSentHit": 0,
+          "searchIdsHitWrongLead": 0,
+          "anchored": 0,
+          "leadOnlySubjectMatch": 0,
+          "leadOnlyBodyMatch": 0,
+          "review": 0,
+          "dropped": 0
+        },
+        "skippedSentSamples": [],
+        "replyMissSamples": []
+      }
+    ]
+  }
+}

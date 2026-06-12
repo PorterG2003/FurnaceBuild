@@ -1,0 +1,169 @@
+Target env: prod
+Supabase URL from PROD_SUPABASE_URL
+Supabase secret from Parameter Store /amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY
+Mode: audit
+Campaign: 315e72b5-3ca0-4258-9307-b5e786e6868a
+Since: 2026-05-01T00:00:00.000Z
+Message window: all Sent/INBOX mail since --since (no per-mailbox cap)
+Checkpoint: /Users/porter/Projects/FurnaceBuild/docs/audit/foot-traffic/lead-magnet-all-150-checkpoint.json
+Campaign name: Foot Traffic - Apollo Contacts (Lead Magnet)
+Smartlead campaign id: 3295280
+Smartlead sends since 2026-05-01: this campaign 3220, Foot Traffic - Scraped Emails 2 2730, combined 5950 (operator combined expectation: 6000). Recovery ratio uses this campaign only (3220).
+Senders: furnace_account_mailboxes | assigned=0 intersection=0 selected=150 coverage=yes
+[recover-smartlead] Sent scan 4/150: b_lenz@clinicfoottrafficco.com (446 messages since 2026-05-01)
+[recover-smartlead] Sent scan 5/150: b_lenz@clinictrafficco.com (438 messages since 2026-05-01)
+[recover-smartlead] Sent scan 6/150: b_lenz@clinictrafficdr.com (445 messages since 2026-05-01)
+[recover-smartlead] Sent scan 7/150: b-lenz@clinicfoottrafficco.com (438 messages since 2026-05-01)
+[recover-smartlead] Sent scan 8/150: b-lenz@clinictrafficco.com (437 messages since 2026-05-01)
+[recover-smartlead] Sent scan 9/150: b-lenz@clinictrafficdr.com (438 messages since 2026-05-01)
+[recover-smartlead] Sent scan 10/150: b.l@clinicfoottrafficco.com (439 messages since 2026-05-01)
+[recover-smartlead] Sent scan 11/150: b.l@clinictrafficco.com (442 messages since 2026-05-01)
+[recover-smartlead] Sent scan 12/150: b.l@clinictrafficdr.com (436 messages since 2026-05-01)
+[recover-smartlead] Sent scan 13/150: b.lenz@clinicfoottrafficco.com (436 messages since 2026-05-01)
+[recover-smartlead] Sent scan 14/150: b.lenz@clinictrafficco.com (433 messages since 2026-05-01)
+[recover-smartlead] Sent scan 15/150: b.lenz@clinictrafficdr.com (442 messages since 2026-05-01)
+[recover-smartlead] Sent scan 16/150: bl@clinicfoottrafficco.com (452 messages since 2026-05-01)
+[recover-smartlead] Sent scan 17/150: bl@clinictrafficco.com (445 messages since 2026-05-01)
+[recover-smartlead] Sent scan 18/150: bl@clinictrafficdr.com (454 messages since 2026-05-01)
+[recover-smartlead] Sent scan 19/150: blenz@clinicfoottrafficco.com (458 messages since 2026-05-01)
+[recover-smartlead] Sent scan 20/150: blenz@clinictrafficco.com (453 messages since 2026-05-01)
+[recover-smartlead] Sent scan 21/150: blenz@clinictrafficdr.com (471 messages since 2026-05-01)
+[recover-smartlead] Sent scan 22/150: braxton_l@clinicfoottrafficco.com (527 messages since 2026-05-01)
+[recover-smartlead] Sent scan 23/150: braxton_l@clinictrafficco.com (535 messages since 2026-05-01)
+[recover-smartlead] Sent scan 24/150: braxton_l@clinictrafficdr.com (526 messages since 2026-05-01)
+[recover-smartlead] Sent scan 25/150: braxton_lenz@clinicfoottrafficco.com (532 messages since 2026-05-01)
+[recover-smartlead] Sent scan 26/150: braxton_lenz@clinictrafficco.com (505 messages since 2026-05-01)
+[recover-smartlead] Sent scan 27/150: braxton_lenz@clinictrafficdr.com (529 messages since 2026-05-01)
+[recover-smartlead] Sent scan 28/150: braxton-l@clinicfoottrafficco.com (454 messages since 2026-05-01)
+[recover-smartlead] Sent scan 29/150: braxton-l@clinictrafficco.com (518 messages since 2026-05-01)
+[recover-smartlead] Sent scan 30/150: braxton-l@clinictrafficdr.com (522 messages since 2026-05-01)
+[recover-smartlead] Sent scan 31/150: braxton-lenz@clinicfoottrafficco.com (518 messages since 2026-05-01)
+[recover-smartlead] Sent scan 32/150: braxton-lenz@clinictrafficco.com (523 messages since 2026-05-01)
+[recover-smartlead] Sent scan 33/150: braxton-lenz@clinictrafficdr.com (514 messages since 2026-05-01)
+[recover-smartlead] Sent scan 34/150: braxton.l@clinicfoottrafficco.com (477 messages since 2026-05-01)
+[recover-smartlead] Sent scan 35/150: braxton.l@clinictrafficco.com (535 messages since 2026-05-01)
+[recover-smartlead] Sent scan 36/150: braxton.l@clinictrafficdr.com (521 messages since 2026-05-01)
+[recover-smartlead] Sent scan 37/150: braxton.lenz@clinicfoottrafficco.com (533 messages since 2026-05-01)
+[recover-smartlead] Sent scan 38/150: braxton.lenz@clinictrafficco.com (563 messages since 2026-05-01)
+[recover-smartlead] Sent scan 39/150: braxton.lenz@clinictrafficdr.com (523 messages since 2026-05-01)
+[recover-smartlead] Sent scan 40/150: braxton@clinicfoottrafficco.com (532 messages since 2026-05-01)
+[recover-smartlead] Sent scan 42/150: braxton@clinictrafficdr.com (532 messages since 2026-05-01)
+[recover-smartlead] Sent scan 41/150: braxton@clinictrafficco.com (537 messages since 2026-05-01)
+[recover-smartlead] Sent scan 43/150: braxtonl@clinicfoottrafficco.com (490 messages since 2026-05-01)
+[recover-smartlead] Sent scan 44/150: braxtonl@clinictrafficco.com (529 messages since 2026-05-01)
+[recover-smartlead] Sent scan 45/150: braxtonl@clinictrafficdr.com (534 messages since 2026-05-01)
+[recover-smartlead] Sent scan 46/150: braxtonlenz@clinicfoottrafficco.com (535 messages since 2026-05-01)
+[recover-smartlead] Sent scan 47/150: braxtonlenz@clinictrafficco.com (532 messages since 2026-05-01)
+[recover-smartlead] Sent scan 48/150: braxtonlenz@clinictrafficdr.com (525 messages since 2026-05-01)
+[recover-smartlead] Sent scan 49/150: d_m@clinicfoottrafficco.com (506 messages since 2026-05-01)
+[recover-smartlead] Sent scan 50/150: d_m@clinictrafficco.com (518 messages since 2026-05-01)
+[recover-smartlead] Sent scan 51/150: d_m@clinictrafficdr.com (514 messages since 2026-05-01)
+[recover-smartlead] Sent scan 52/150: d_mowery@clinicfoottrafficco.com (515 messages since 2026-05-01)
+[recover-smartlead] Sent scan 54/150: d_mowery@clinictrafficdr.com (514 messages since 2026-05-01)
+[recover-smartlead] Sent scan 55/150: d-mowery@clinicfoottrafficco.com (533 messages since 2026-05-01)
+[recover-smartlead] Sent scan 56/150: d-mowery@clinictrafficco.com (543 messages since 2026-05-01)
+[recover-smartlead] Sent scan 57/150: d-mowery@clinictrafficdr.com (513 messages since 2026-05-01)
+[recover-smartlead] Sent scan 58/150: d.m@clinicfoottrafficco.com (499 messages since 2026-05-01)
+[recover-smartlead] Sent scan 59/150: d.m@clinictrafficco.com (509 messages since 2026-05-01)
+[recover-smartlead] Sent scan 60/150: d.m@clinictrafficdr.com (507 messages since 2026-05-01)
+[recover-smartlead] Sent scan 61/150: d.mowery@clinicfoottrafficco.com (510 messages since 2026-05-01)
+[recover-smartlead] Sent scan 62/150: d.mowery@clinictrafficco.com (504 messages since 2026-05-01)
+[recover-smartlead] Sent scan 63/150: d.mowery@clinictrafficdr.com (497 messages since 2026-05-01)
+[recover-smartlead] Sent scan 64/150: daniel_m@clinicfoottrafficco.com (546 messages since 2026-05-01)
+[recover-smartlead] Sent scan 65/150: daniel_m@clinictrafficco.com (542 messages since 2026-05-01)
+[recover-smartlead] Sent scan 66/150: daniel_m@clinictrafficdr.com (530 messages since 2026-05-01)
+[recover-smartlead] Sent scan 67/150: daniel_mowery@clinicfoottrafficco.com (539 messages since 2026-05-01)
+[recover-smartlead] Sent scan 68/150: daniel_mowery@clinictrafficco.com (548 messages since 2026-05-01)
+[recover-smartlead] Sent scan 69/150: daniel_mowery@clinictrafficdr.com (536 messages since 2026-05-01)
+[recover-smartlead] Sent scan 70/150: daniel-m@clinicfoottrafficco.com (571 messages since 2026-05-01)
+[recover-smartlead] Sent scan 71/150: daniel-m@clinictrafficco.com (562 messages since 2026-05-01)
+[recover-smartlead] Sent scan 72/150: daniel-m@clinictrafficdr.com (514 messages since 2026-05-01)
+[recover-smartlead] Sent scan 73/150: daniel-mowery@clinicfoottrafficco.com (533 messages since 2026-05-01)
+[recover-smartlead] Sent scan 74/150: daniel-mowery@clinictrafficco.com (522 messages since 2026-05-01)
+[recover-smartlead] Sent scan 75/150: daniel-mowery@clinictrafficdr.com (530 messages since 2026-05-01)
+[recover-smartlead] Sent scan 76/150: daniel.m@clinicfoottrafficco.com (546 messages since 2026-05-01)
+[recover-smartlead] Sent scan 77/150: daniel.m@clinictrafficco.com (547 messages since 2026-05-01)
+[recover-smartlead] Sent scan 78/150: daniel.m@clinictrafficdr.com (500 messages since 2026-05-01)
+[recover-smartlead] Sent scan 79/150: daniel.mowery@clinicfoottrafficco.com (545 messages since 2026-05-01)
+[recover-smartlead] Sent scan 80/150: daniel.mowery@clinictrafficco.com (545 messages since 2026-05-01)
+[recover-smartlead] Sent scan 81/150: daniel.mowery@clinictrafficdr.com (535 messages since 2026-05-01)
+[recover-smartlead] Sent scan 82/150: daniel@clinicfoottrafficco.com (544 messages since 2026-05-01)
+[recover-smartlead] Sent scan 84/150: daniel@clinictrafficdr.com (553 messages since 2026-05-01)
+[recover-smartlead] Sent scan 83/150: daniel@clinictrafficco.com (551 messages since 2026-05-01)
+[recover-smartlead] Sent scan 85/150: danielm@clinicfoottrafficco.com (536 messages since 2026-05-01)
+[recover-smartlead] Sent scan 86/150: danielm@clinictrafficco.com (543 messages since 2026-05-01)
+[recover-smartlead] Sent scan 88/150: danielmowery@clinicfoottrafficco.com (546 messages since 2026-05-01)
+[recover-smartlead] Sent scan 89/150: danielmowery@clinictrafficco.com (547 messages since 2026-05-01)
+[recover-smartlead] Sent scan 90/150: danielmowery@clinictrafficdr.com (552 messages since 2026-05-01)
+[recover-smartlead] Sent scan 91/150: dm@clinicfoottrafficco.com (541 messages since 2026-05-01)
+[recover-smartlead] Sent scan 92/150: dm@clinictrafficco.com (539 messages since 2026-05-01)
+[recover-smartlead] Sent scan 93/150: dm@clinictrafficdr.com (543 messages since 2026-05-01)
+[recover-smartlead] Sent scan 94/150: dmowery@clinicfoottrafficco.com (547 messages since 2026-05-01)
+[recover-smartlead] Sent scan 96/150: dmowery@clinictrafficdr.com (552 messages since 2026-05-01)
+[recover-smartlead] Sent scan 97/150: l.braxton@clinicfoottrafficco.com (548 messages since 2026-05-01)
+[recover-smartlead] Sent scan 98/150: l.braxton@clinictrafficco.com (547 messages since 2026-05-01)
+[recover-smartlead] Sent scan 99/150: l.braxton@clinictrafficdr.com (558 messages since 2026-05-01)
+[recover-smartlead] Sent scan 100/150: l.lenz@clinicfoottrafficco.com (548 messages since 2026-05-01)
+Target env: prod
+Supabase URL from PROD_SUPABASE_URL
+Supabase secret from Parameter Store /amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY
+Mode: audit
+Campaign: 315e72b5-3ca0-4258-9307-b5e786e6868a
+Since: 2026-05-01T00:00:00.000Z
+Message window: all Sent/INBOX mail since --since (no per-mailbox cap)
+Checkpoint: /Users/porter/Projects/FurnaceBuild/docs/audit/foot-traffic/lead-magnet-all-150-checkpoint.json
+Campaign name: Foot Traffic - Apollo Contacts (Lead Magnet)
+Smartlead campaign id: 3295280
+Smartlead sends since 2026-05-01: this campaign 3220, Foot Traffic - Scraped Emails 2 2730, combined 5950 (operator combined expectation: 6000). Recovery ratio uses this campaign only (3220).
+Senders: furnace_account_mailboxes | assigned=0 intersection=0 selected=150 coverage=yes
+[recover-smartlead] Sent scan 101/150: l.lenz@clinictrafficco.com (543 messages since 2026-05-01)
+[recover-smartlead] Sent scan 103/150: lbraxton@clinicfoottrafficco.com (547 messages since 2026-05-01)
+[recover-smartlead] Sent scan 102/150: l.lenz@clinictrafficdr.com (550 messages since 2026-05-01)
+Target env: prod
+Supabase URL from PROD_SUPABASE_URL
+Supabase secret from Parameter Store /amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY
+Mode: audit
+Campaign: 315e72b5-3ca0-4258-9307-b5e786e6868a
+Since: 2026-05-01T00:00:00.000Z
+Message window: all Sent/INBOX mail since --since (no per-mailbox cap)
+Checkpoint: /Users/porter/Projects/FurnaceBuild/docs/audit/foot-traffic/lead-magnet-all-150-checkpoint.json
+Campaign name: Foot Traffic - Apollo Contacts (Lead Magnet)
+Smartlead campaign id: 3295280
+Smartlead sends since 2026-05-01: this campaign 3220, Foot Traffic - Scraped Emails 2 2730, combined 5950 (operator combined expectation: 6000). Recovery ratio uses this campaign only (3220).
+Senders: furnace_account_mailboxes | assigned=0 intersection=0 selected=150 coverage=yes
+[recover-smartlead] Sent scan 101/150: l.lenz@clinictrafficco.com (543 messages since 2026-05-01)
+[recover-smartlead] Sent scan 102/150: l.lenz@clinictrafficdr.com (550 messages since 2026-05-01)
+[recover-smartlead] Sent scan 103/150: lbraxton@clinicfoottrafficco.com (547 messages since 2026-05-01)
+[recover-smartlead] Sent scan 104/150: lbraxton@clinictrafficco.com (554 messages since 2026-05-01)
+[recover-smartlead] Sent scan 105/150: lbraxton@clinictrafficdr.com (378 messages since 2026-05-01)
+[recover-smartlead] Sent scan 106/150: lenz.b@clinicfoottrafficco.com (551 messages since 2026-05-01)
+PID=97801
+Target env: prod
+Supabase URL from PROD_SUPABASE_URL
+Supabase secret from Parameter Store /amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY
+Mode: audit
+Campaign: 315e72b5-3ca0-4258-9307-b5e786e6868a
+Since: 2026-05-01T00:00:00.000Z
+Message window: all Sent/INBOX mail since --since (no per-mailbox cap)
+Checkpoint: /Users/porter/Projects/FurnaceBuild/docs/audit/foot-traffic/lead-magnet-all-150-checkpoint.json
+Campaign name: Foot Traffic - Apollo Contacts (Lead Magnet)
+Smartlead campaign id: 3295280
+Smartlead sends since 2026-05-01: this campaign 3220, Foot Traffic - Scraped Emails 2 2730, combined 5950 (operator combined expectation: 6000). Recovery ratio uses this campaign only (3220).
+Senders: furnace_account_mailboxes | assigned=0 intersection=0 selected=150 coverage=yes
+[recover-smartlead] Sent scan 105/150: lbraxton@clinictrafficdr.com (378 messages since 2026-05-01)
+[recover-smartlead] Sent scan 104/150: lbraxton@clinictrafficco.com (554 messages since 2026-05-01)
+[recover-smartlead] Sent scan 106/150: lenz.b@clinicfoottrafficco.com (551 messages since 2026-05-01)
+[recover-smartlead] Sent scan 107/150: lenz.b@clinictrafficco.com (543 messages since 2026-05-01)
+[recover-smartlead] Sent scan 108/150: lenz.b@clinictrafficdr.com (556 messages since 2026-05-01)
+[recover-smartlead] Sent scan 109/150: lenz.braxton@clinicfoottrafficco.com (564 messages since 2026-05-01)
+[recover-smartlead] Sent scan 110/150: lenz.braxton@clinictrafficco.com (567 messages since 2026-05-01)
+[recover-smartlead] Sent scan 111/150: lenz.braxton@clinictrafficdr.com (558 messages since 2026-05-01)
+[recover-smartlead] Sent scan 112/150: lenz@clinicfoottrafficco.com (561 messages since 2026-05-01)
+[recover-smartlead] Sent scan 114/150: lenz@clinictrafficdr.com (551 messages since 2026-05-01)
+[recover-smartlead] Sent scan 116/150: lenzb@clinictrafficco.com (428 messages since 2026-05-01)
+[recover-smartlead] Sent scan 115/150: lenzb@clinicfoottrafficco.com (543 messages since 2026-05-01)
+[recover-smartlead] Sent scan 117/150: lenzb@clinictrafficdr.com (557 messages since 2026-05-01)
+[recover-smartlead] Sent scan 118/150: lenzbraxton@clinicfoottrafficco.com (564 messages since 2026-05-01)
+[recover-smartlead] Sent scan 119/150: lenzbraxton@clinictrafficco.com (537 messages since 2026-05-01)
+[recover-smartlead] Sent scan 120/150: lenzbraxton@clinictrafficdr.com (547 messages since 2026-05-01)
+[recover-smartlead] Sent scan 121/150: llenz@clinicfoottrafficco.com (551 messages since 2026-05-01)

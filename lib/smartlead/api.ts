@@ -36,6 +36,10 @@ export interface SmartleadRequestOptions {
   body?: string;
 }
 
+const SMARTLEAD_USER_AGENT =
+  process.env.SMARTLEAD_USER_AGENT?.trim() ||
+  'FurnaceBuildSmartleadClient/1.0';
+
 /**
  * Perform a single Smartlead API request. Enforces minimum spacing between
  * requests and retries on 429 with exponential backoff (cap 5 minutes).
@@ -53,6 +57,7 @@ export async function smartleadRequest(
       method,
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': SMARTLEAD_USER_AGENT,
         ...headers,
       },
       body,

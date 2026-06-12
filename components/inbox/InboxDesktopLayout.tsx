@@ -17,8 +17,10 @@ export interface InboxDesktopThreadListProps {
   threads: EmailThread[];
   displayThreads: EmailThread[];
   threadsError: string | null;
-  threadsLoadingOrNoAccount: boolean;
-  showThreadSkeleton: boolean;
+  showThreadListSkeleton: boolean;
+  suppressEmptyStates: boolean;
+  keepPreviousThreadList: boolean;
+  threadsLoading: boolean;
   threadSearchQuery: string;
   setThreadSearchQuery: (q: string) => void;
   filterButtonRef: RefObject<View | null>;
@@ -42,10 +44,11 @@ export interface InboxDesktopThreadListProps {
 }
 
 export interface InboxDesktopMessagePaneProps {
+  showMessagePaneSkeleton: boolean;
+  showMessageBodySkeleton: boolean;
   selectedThread: EmailThread | undefined;
   displayMessages: EmailMessage[];
   messagesError: string | null;
-  showMessagesSkeleton: boolean;
   loadMessages: (threadId: string, options?: { silent?: boolean }) => void;
   selectedThreadProspectEmails: string[];
   blockedProspectEmails: Set<string>;
@@ -96,8 +99,10 @@ export function InboxDesktopLayout({
     threads,
     displayThreads,
     threadsError,
-    threadsLoadingOrNoAccount,
-    showThreadSkeleton,
+    showThreadListSkeleton,
+    suppressEmptyStates,
+    keepPreviousThreadList,
+    threadsLoading,
     threadSearchQuery,
     setThreadSearchQuery,
     filterButtonRef,
@@ -121,10 +126,11 @@ export function InboxDesktopLayout({
   } = threadList;
 
   const {
+    showMessagePaneSkeleton,
+    showMessageBodySkeleton,
     selectedThread,
     displayMessages,
     messagesError,
-    showMessagesSkeleton,
     loadMessages,
     selectedThreadProspectEmails,
     blockedProspectEmails,
@@ -150,8 +156,6 @@ export function InboxDesktopLayout({
   const { slideAnim, replyPanelWidth } = layout;
   const { composerMode, closeComposerPanel, composerFormProps } = composerPanel;
 
-  const showLoading = threadsLoadingOrNoAccount || showThreadSkeleton;
-
   return (
     <View className="flex-1 flex-row bg-[#121212]">
       <View style={{ flex: 1, minWidth: 0, minHeight: 0 }} className="flex-row">
@@ -167,8 +171,10 @@ export function InboxDesktopLayout({
             threads={threads}
             displayThreads={displayThreads}
             threadsError={threadsError}
-            threadsLoadingOrNoAccount={threadsLoadingOrNoAccount}
-            showThreadSkeleton={showThreadSkeleton}
+            showThreadListSkeleton={showThreadListSkeleton}
+            suppressEmptyStates={suppressEmptyStates}
+            keepPreviousThreadList={keepPreviousThreadList}
+            threadsLoading={threadsLoading}
             threadSearchQuery={threadSearchQuery}
             setThreadSearchQuery={setThreadSearchQuery}
             filterButtonRef={filterButtonRef}
@@ -193,7 +199,7 @@ export function InboxDesktopLayout({
         </Animated.View>
 
         <View className="flex-1 min-h-0">
-          {showLoading ? (
+          {showMessagePaneSkeleton ? (
             <>
               <MessagePanelHeaderSkeleton />
               <MessageListSkeleton />
@@ -203,7 +209,7 @@ export function InboxDesktopLayout({
               selectedThread={selectedThread}
               displayMessages={displayMessages}
               messagesError={messagesError}
-              showMessagesSkeleton={showMessagesSkeleton}
+              showMessagesSkeleton={showMessageBodySkeleton}
               selectedThreadId={selectedThreadId}
               loadMessages={loadMessages}
               leadDisplayNamesMap={leadDisplayNamesMap}

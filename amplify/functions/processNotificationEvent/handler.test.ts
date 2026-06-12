@@ -236,11 +236,8 @@ function createFakeSupabase(params?: {
   return { supabase, state };
 }
 
-test('buildInboxNotificationActionUrl keeps thread and account context', () => {
-  assert.equal(
-    buildInboxNotificationActionUrl('thread-1', 'acct-1'),
-    '/inbox?thread=thread-1&accountId=acct-1'
-  );
+test('buildInboxNotificationActionUrl is path only', () => {
+  assert.equal(buildInboxNotificationActionUrl('thread-1'), '/inbox/thread-1');
 });
 
 test('processNotificationRecord still inserts an in-app notification when web push is muted', async () => {
@@ -263,7 +260,7 @@ test('processNotificationRecord still inserts an in-app notification when web pu
   assert.deepEqual(result, {});
   assert.equal(pushCallCount, 0);
   assert.equal(state.notificationsInserted.length, 1);
-  assert.equal(state.notificationsInserted[0]?.action_url, '/inbox?thread=thread-1&accountId=acct-1');
+  assert.equal(state.notificationsInserted[0]?.action_url, '/inbox/thread-1');
 });
 
 test('sendWebPushDeliveries fans out to every active subscription for the user', async () => {
@@ -283,7 +280,7 @@ test('sendWebPushDeliveries fans out to every active subscription for the user',
     eventId: 'evt-1',
     title: 'Person Example',
     bodyText: 'Body preview text',
-    actionUrl: buildInboxNotificationActionUrl('thread-1', 'acct-1'),
+    actionUrl: buildInboxNotificationActionUrl('thread-1'),
     webOrigin: 'https://build.getfurnace.io',
     async sendNotification(subscription, payload) {
       pushCalls.push({ endpoint: subscription.endpoint, payload: String(payload) });
@@ -295,7 +292,7 @@ test('sendWebPushDeliveries fans out to every active subscription for the user',
     pushCalls.map((call) => call.endpoint),
     ['https://push.example/1', 'https://push.example/2']
   );
-  assert.match(pushCalls[0]!.payload, /accountId=acct-1/);
+  assert.match(pushCalls[0]!.payload, /\/inbox\/thread-1/);
   assert.deepEqual(state.pushSubscriptionEqCalls, [['user_id', 'user-1']]);
   assert.deepEqual(state.pushSubscriptionIsCalls, [['revoked_at', null]]);
   assert.deepEqual(
@@ -319,7 +316,7 @@ test('sendWebPushDeliveries revokes a 410 subscription and marks the delivery fa
     eventId: 'evt-1',
     title: 'Person Example',
     bodyText: 'Body preview text',
-    actionUrl: buildInboxNotificationActionUrl('thread-1', 'acct-1'),
+    actionUrl: buildInboxNotificationActionUrl('thread-1'),
     webOrigin: 'https://build.getfurnace.io',
     async sendNotification() {
       const err = new Error('gone') as Error & { statusCode?: number };

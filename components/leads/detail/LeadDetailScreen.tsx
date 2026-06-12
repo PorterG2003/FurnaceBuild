@@ -7,6 +7,7 @@ import { LeadDetailSkeleton } from '@/components/skeletons';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { useAccountBootstrap } from '@/lib/account/useAccountBootstrap';
 import type { LeadDetailFrom } from '@/lib/leads/navigation';
+import { buildInboxThreadHref, buildInboxThreadPath } from '@/lib/inbox/inboxRoutes';
 import { getAccountLeadDetail } from '@/lib/supabase/services/leads/lead-detail';
 import type { AccountLeadDetail } from '@/lib/leads/types';
 import { LeadProfileSection } from './LeadProfileSection';
@@ -120,25 +121,25 @@ export function LeadDetailScreen() {
       return [
         {
           label: 'Inbox',
-          href: threadId ? `/inbox?thread=${threadId}` : '/inbox',
+          href: threadId ? buildInboxThreadPath(threadId) : '/inbox',
           openInNewTab: true,
         },
         { label: displayName },
       ];
     }
     return [{ label: 'Leads', href: '/leads', openInNewTab: true }, { label: displayName }];
-  }, [campaignId, campaignName, displayName, from, listId, listName, threadId]);
+  }, [campaignId, campaignName, displayName, from, listId, listName, threadId, accountId]);
 
   const backHref = useMemo(() => {
     if (from === 'list' && listId) return `/leads/lists/${listId}`;
     if (from === 'campaign' && campaignId) return `/campaigns/${campaignId}`;
-    if (from === 'inbox' && threadId) return `/inbox?thread=${threadId}`;
+    if (from === 'inbox' && threadId) return buildInboxThreadPath(threadId);
     return '/leads';
-  }, [campaignId, from, listId, threadId]);
+  }, [accountId, campaignId, from, listId, threadId]);
 
   const handleExitPage = useCallback(() => {
     if (from === 'inbox' && threadId) {
-      router.push({ pathname: '/inbox', params: { thread: threadId } });
+      router.push(buildInboxThreadHref(threadId) as import('expo-router').Href);
       return;
     }
     router.push(backHref);

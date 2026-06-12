@@ -74,8 +74,8 @@ export async function preferenceEnabled(
   return { enabled: row.enabled, frequency: row.frequency ?? 'instant' };
 }
 
-export function buildInboxNotificationActionUrl(threadId: string, accountId: string): string {
-  return `/inbox?${new URLSearchParams({ thread: threadId, accountId }).toString()}`;
+export function buildInboxNotificationActionUrl(threadId: string): string {
+  return `/inbox/${encodeURIComponent(threadId)}`;
 }
 
 export async function listActivePushSubscriptionsForUser(
@@ -284,7 +284,7 @@ export async function processNotificationRecord(params: {
     const bodyText = previewRaw
       ? truncateText(previewRaw, MAX_NOTIFICATION_BODY_CHARS)
       : '';
-    const actionUrl = buildInboxNotificationActionUrl(payload.thread_id, accountId);
+    const actionUrl = buildInboxNotificationActionUrl(payload.thread_id);
 
     const { data: notif, error: insErr } = await supabase
       .from('notifications')

@@ -3,6 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { format } from 'date-fns';
 import { openAppRoute } from '@/lib/navigation/openAppRoute';
+import { buildInboxThreadHref } from '@/lib/inbox/inboxRoutes';
 import { ChevronRightIcon } from 'react-native-heroicons/outline';
 import { TagChipRow } from '@/components/tags';
 import { EmptyState } from '@/components/ui/feedback';
@@ -54,7 +55,7 @@ export function LeadConversationsSection({ detail }: { detail: AccountLeadDetail
               <Pressable
                 className="gap-2"
                 onPress={() =>
-                  openAppRoute(router, { pathname: '/inbox', params: { thread: thread.id } }, { newTab: true })
+                  openAppRoute(router, buildInboxThreadHref(thread.id), { newTab: true })
                 }
               >
                 <View className="flex-row items-start justify-between gap-3">

@@ -6,7 +6,12 @@ import { ReplaceLeadScreen } from '@/components/inbox/ReplaceLeadScreen';
 import { Alert } from '@/components/ui/feedback';
 import { DetailPageHeader, PageLayout } from '@/components/ui/layout';
 import { useAccount } from '@/contexts/AccountContext';
-import { normalizeInboxThreadParam } from '@/hooks/useInboxThreadRouteSync';
+import {
+  buildInboxInternalThreadHref,
+  buildInboxListHref,
+  normalizeRouteParam,
+} from '@/lib/inbox/inboxRoutes';
+import type { Href } from 'expo-router';
 import { getMessagesByThread, getThreadById } from '@/lib/supabase/services/inbox';
 import { getLeadById } from '@/lib/supabase/services/leads';
 import type { Lead, EmailThread } from '@/lib/supabase/types';
@@ -15,7 +20,7 @@ export default function ReplaceLeadPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { thread: threadParamRaw } = useLocalSearchParams<{ thread?: string | string[] }>();
-  const threadId = normalizeInboxThreadParam(threadParamRaw) ?? null;
+  const threadId = normalizeRouteParam(threadParamRaw) ?? null;
   const { account } = useAccount();
   const accountId = account?.id ?? null;
 
@@ -26,7 +31,9 @@ export default function ReplaceLeadPage() {
   const [sourceMessageId, setSourceMessageId] = useState<string | null>(null);
 
   const returnToInbox = useCallback(() => {
-    router.replace(threadId ? { pathname: '/inbox', params: { thread: threadId } } : '/inbox');
+    router.replace(
+      threadId ? (buildInboxInternalThreadHref(threadId) as Href) : buildInboxListHref()
+    );
   }, [router, threadId]);
 
   useEffect(() => {

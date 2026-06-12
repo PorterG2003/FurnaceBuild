@@ -172,6 +172,42 @@ const SMARTLEAD_INBOX_REPLIES_PAGE_LIMIT = 20;
 /** Max lead_id count per enrollments request to avoid URL length 400 (Supabase/PostgREST). */
 const ENROLLMENTS_IN_QUERY_BATCH_SIZE = 25;
 
+/** Rows deleted per wipe statement to stay under Postgres statement timeouts on large campaigns. */
+const WIPE_DELETE_BATCH_SIZE = 250;
+
+async function deleteCampaignScopedRowsInBatches(
+  database: MigrationDatabaseClient,
+  table: 'enrollments' | 'leads' | 'email_threads' | 'message_jobs',
+  campaignId: string,
+  wipeLabel: string,
+): Promise<void> {
+  while (true) {
+    const { data: rowData, error: selectError } = await (database
+      .from(table)
+      .select('id')
+      .eq('campaign_id', campaignId)
+      .limit(WIPE_DELETE_BATCH_SIZE) as any);
+
+    if (selectError) {
+      throw new Error(`Failed to list Smartlead import ${wipeLabel} for wipe: ${selectError.message}`);
+    }
+
+    const ids = ((rowData ?? []) as Array<{ id: string }>).map((row) => row.id);
+    if (ids.length === 0) {
+      return;
+    }
+
+    const { error: deleteError } = await database.from(table).delete().in('id', ids);
+    if (deleteError) {
+      throw new Error(`Failed to wipe Smartlead import ${wipeLabel}: ${deleteError.message}`);
+    }
+
+    if (ids.length < WIPE_DELETE_BATCH_SIZE) {
+      return;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Smartlead API helpers
 // ---------------------------------------------------------------------------
@@ -318,6 +354,60 @@ export function dedupeSmartleadLeadsById(leads: SmartleadLead[]): SmartleadLead[
     }
   }
   return [...byId.values()];
+}
+
+export interface SmartleadCampaignEmailAccount {
+  id: number;
+  from_email: string;
+  from_name?: string;
+  is_smtp_success?: boolean;
+  is_imap_success?: boolean;
+  type?: string;
+}
+
+/** Fetch sender email accounts assigned to a Smartlead campaign. */
+export async function fetchSmartleadCampaignEmailAccounts(
+  apiKey: string,
+  smartleadCampaignId: number,
+): Promise<SmartleadCampaignEmailAccount[]> {
+  const enc = (s: string) => encodeURIComponent(s);
+  const url =
+    `${SMARTLEAD_BASE}/campaigns/${smartleadCampaignId}/email-accounts` +
+    `?api_key=${enc(apiKey)}`;
+  const res = await smartleadRequest({ url });
+  if (!res.ok) {
+    throw new Error(
+      `${smartleadApiErrorMessage(res, 'campaign email accounts')} for campaign ${smartleadCampaignId}.`,
+    );
+  }
+  const json = await res.json() as unknown;
+  const data = Array.isArray(json)
+    ? json
+    : Array.isArray((json as { data?: unknown[] })?.data)
+      ? (json as { data: unknown[] }).data
+      : [];
+
+  const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
+
+  const accounts: SmartleadCampaignEmailAccount[] = [];
+  for (const item of data) {
+    if (item == null || typeof item !== 'object' || Array.isArray(item)) continue;
+    const row = item as Record<string, unknown>;
+    const id = num(row.id);
+    const fromEmailRaw = stringOrUndefined(row.from_email) ?? stringOrUndefined(row.username);
+    const from_email = fromEmailRaw?.trim().toLowerCase();
+    if (!id || !from_email) continue;
+    accounts.push({
+      id,
+      from_email,
+      from_name: stringOrUndefined(row.from_name),
+      is_smtp_success: bool(row.is_smtp_success),
+      is_imap_success: bool(row.is_imap_success),
+      type: stringOrUndefined(row.type),
+    });
+  }
+  return accounts;
 }
 
 function smartleadApiErrorMessage(res: Response, resource: string): string {
@@ -1211,29 +1301,10 @@ export async function clearSmartleadCampaignImportArtifacts(
     }
   }
 
-  const { error: threadsError } = await database
-    .from('email_threads')
-    .delete()
-    .eq('campaign_id', campaignId);
-  if (threadsError) {
-    throw new Error(`Failed to wipe Smartlead import threads: ${threadsError.message}`);
-  }
-
-  const { error: enrollmentsError } = await database
-    .from('enrollments')
-    .delete()
-    .eq('campaign_id', campaignId);
-  if (enrollmentsError) {
-    throw new Error(`Failed to wipe Smartlead import enrollments: ${enrollmentsError.message}`);
-  }
-
-  const { error: leadsError } = await database
-    .from('leads')
-    .delete()
-    .eq('campaign_id', campaignId);
-  if (leadsError) {
-    throw new Error(`Failed to wipe Smartlead import leads: ${leadsError.message}`);
-  }
+  await deleteCampaignScopedRowsInBatches(database, 'email_threads', campaignId, 'threads');
+  await deleteCampaignScopedRowsInBatches(database, 'message_jobs', campaignId, 'message jobs');
+  await deleteCampaignScopedRowsInBatches(database, 'enrollments', campaignId, 'enrollments');
+  await deleteCampaignScopedRowsInBatches(database, 'leads', campaignId, 'leads');
 
   const { error: byDayError } = await database
     .from('imported_campaign_stats_by_day')

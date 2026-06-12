@@ -10,13 +10,20 @@ import { HELP_EMAIL } from '@/components/ui/help/HelpModal';
 import { TermsAcceptanceRequiredScreen } from '@/components/platform/amendment/TermsAcceptanceRequiredScreen';
 import { PendingTermsBanner } from '@/components/platform/amendment/PendingTermsBanner';
 import { usePublicAccessDialog } from '@/hooks/usePublicAccessDialog';
+import { InboxScreen } from '@/components/inbox/InboxScreen';
+import {
+  buildInboxThreadHref,
+  isInboxPath,
+  isReplaceLeadInboxPath,
+  parseInboxNotificationUrl,
+  parseInboxThreadIdFromPathname,
+} from '@/lib/inbox/inboxRoutes';
 
 /** Same `type` string as public/sw.js postMessage fallback when WindowClient.navigate is missing. */
 const SW_NAVIGATE_MESSAGE_TYPE = 'furnace-notification-navigate';
 
 function WebPushNavigationBridge() {
   const router = useRouter();
-  const { memberships, setCurrentAccountId } = useAccount();
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -29,17 +36,10 @@ function WebPushNavigationBridge() {
       try {
         const u = new URL(data.url);
         if (u.origin !== window.location.origin) return;
-        const accountId = u.searchParams.get('accountId');
-        if (accountId && memberships.some((m) => m.account.id === accountId)) {
-          setCurrentAccountId(accountId);
-        }
-        u.searchParams.delete('accountId');
-        if (u.pathname === '/inbox') {
-          const thread = u.searchParams.get('thread');
-          if (thread) {
-            router.replace({ pathname: '/inbox', params: { thread } });
-            return;
-          }
+        const parsed = parseInboxNotificationUrl(`${u.pathname}${u.search}`);
+        if (parsed?.threadId) {
+          router.replace(buildInboxThreadHref(parsed.threadId) as Href);
+          return;
         }
         router.replace(`${u.pathname}${u.search}` as Href);
       } catch {
@@ -49,7 +49,7 @@ function WebPushNavigationBridge() {
 
     navigator.serviceWorker.addEventListener('message', handler);
     return () => navigator.serviceWorker.removeEventListener('message', handler);
-  }, [memberships, router, setCurrentAccountId]);
+  }, [router]);
 
   return null;
 }
@@ -89,6 +89,9 @@ function MainAccessGate() {
   const allowAdminWithoutWorkspace = platformAdminAccess === 'allowed' && (pathname === '/admin' || pathname?.startsWith('/admin/'));
   const allowAmendmentAcceptRoute = pathname?.startsWith('/accept-account-amendment/');
   const showLoadingOverlay = !initialized || loading || platformAdminAccess === 'loading';
+  const showInboxShell =
+    !showLoadingOverlay && isInboxPath(pathname) && !isReplaceLeadInboxPath(pathname);
+  const inboxRouteThreadId = showInboxShell ? parseInboxThreadIdFromPathname(pathname) : null;
 
   useEffect(() => {
     if (!initialized) return;
@@ -138,6 +141,11 @@ function MainAccessGate() {
           headerShown: false,
         }}
       />
+      {showInboxShell ? (
+        <View style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]} className="flex-1">
+          <InboxScreen routeThreadId={inboxRouteThreadId} />
+        </View>
+      ) : null}
       {showLoadingOverlay ? (
         <View pointerEvents="auto" style={StyleSheet.absoluteFillObject}>
           <AppBootScreen />

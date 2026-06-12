@@ -12,6 +12,17 @@
 - `notification_preferences` remain per `(user_id, account_id, event_type, channel)` and gate whether a given account may send web push.
 - Push deep links include `accountId` so the app can switch to the right account before opening the target thread.
 
+## Inbox deep link URL shape
+
+Thread links use path-based routes:
+
+- `/inbox/{threadId}` — open a conversation (shareable within the current workspace)
+- `/inbox/{threadId}?accountId={accountId}` — switch workspace when the user is a member, then open the thread
+
+Legacy links with `?thread=` on `/inbox` are redirected client-side to the path form.
+
+Notification `action_url` values and web push payloads use the path form above.
+
 ## Deploy order
 
 1. Apply Supabase migrations:

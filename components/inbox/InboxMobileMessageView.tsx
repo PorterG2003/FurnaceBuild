@@ -1,5 +1,4 @@
 import React, { type RefObject } from 'react';
-import { View, ScrollView } from 'react-native';
 import { DetailPageHeader } from '@/components/ui/layout';
 import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { MessageListSkeleton, type MessageListSkeletonProps } from './MessageListSkeleton';
@@ -12,12 +11,11 @@ import type { Campaign } from '@/lib/supabase/types';
 import type { PendingReplyInfo } from './InboxMessageList';
 
 export interface InboxMobileMessagePaneProps {
-  threadsLoadingOrNoAccount: boolean;
-  showThreadSkeleton: boolean;
+  showMessagePaneSkeleton: boolean;
+  showMessageBodySkeleton: boolean;
   selectedThread: EmailThread | null;
   displayMessages: EmailMessage[];
   messagesError: string | null;
-  showMessagesSkeleton: boolean;
   selectedThreadId: string | null;
   loadMessages: (threadId: string, options?: { silent?: boolean }) => void;
   leadDisplayNamesMap: Record<string, string>;
@@ -35,7 +33,7 @@ export interface InboxMobileMessagePaneProps {
   onOpenTagsPanel: (() => void) | undefined;
   category: string | null;
   onSetCategory: (category: string | null) => Promise<void>;
-  messagesScrollViewRef: RefObject<ScrollView | null>;
+  messagesScrollViewRef: RefObject<import('react-native').ScrollView | null>;
   onContentSizeChange: (width: number, height: number) => void;
   onReply: (message: EmailMessage) => void;
   onForward: (message: EmailMessage) => void;
@@ -59,12 +57,11 @@ export interface InboxMobileMessageViewProps {
 
 export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessageViewProps) {
   const {
-    threadsLoadingOrNoAccount,
-    showThreadSkeleton,
+    showMessagePaneSkeleton,
+    showMessageBodySkeleton,
     selectedThread,
     displayMessages,
     messagesError,
-    showMessagesSkeleton,
     selectedThreadId,
     loadMessages,
     leadDisplayNamesMap,
@@ -95,38 +92,9 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
 
   const { mobileMessageViewTitle, onBack, onOpenMessageActions } = mobile;
 
-  const showLoading = threadsLoadingOrNoAccount || showThreadSkeleton;
-
   const mobileMessageListSkeletonProps = { variant: 'mobile' as const } satisfies MessageListSkeletonProps;
 
-  if (showLoading) {
-    return (
-      <>
-        <DetailPageHeader
-          breadcrumbItems={[{ label: 'Inbox', href: '/inbox' }, { label: mobileMessageViewTitle ?? 'Conversation' }]}
-          backHref="/inbox"
-          title={mobileMessageViewTitle ?? 'Conversation'}
-          subtitle={selectedThreadProspectEmails[0] ?? selectedThreadRecipientEmail ?? null}
-          onBack={onBack}
-          onTitlePress={onOpenLeadDetail}
-          mobileRightAction={
-            selectedThread ? (
-              <MobileHeaderButton
-                variant="actions"
-                onPress={onOpenMessageActions}
-                accessibilityLabel="Message actions"
-              />
-            ) : undefined
-          }
-        />
-        <MessageListSkeleton {...mobileMessageListSkeletonProps} />
-      </>
-    );
-  }
-
-  if (!selectedThread) return null;
-
-  const listHeaderComponent = (
+  const header = (
     <DetailPageHeader
       breadcrumbItems={[{ label: 'Inbox', href: '/inbox' }, { label: mobileMessageViewTitle ?? 'Conversation' }]}
       backHref="/inbox"
@@ -135,21 +103,34 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       onBack={onBack}
       onTitlePress={onOpenLeadDetail}
       mobileRightAction={
-        <MobileHeaderButton
-          variant="actions"
-          onPress={onOpenMessageActions}
-          accessibilityLabel="Message actions"
-        />
+        selectedThread ? (
+          <MobileHeaderButton
+            variant="actions"
+            onPress={onOpenMessageActions}
+            accessibilityLabel="Message actions"
+          />
+        ) : undefined
       }
     />
   );
+
+  if (showMessagePaneSkeleton) {
+    return (
+      <>
+        {header}
+        <MessageListSkeleton {...mobileMessageListSkeletonProps} />
+      </>
+    );
+  }
+
+  if (!selectedThread) return null;
 
   return (
     <InboxMessageList
       selectedThread={selectedThread}
       displayMessages={displayMessages}
       messagesError={messagesError}
-      showMessagesSkeleton={showMessagesSkeleton}
+      showMessagesSkeleton={showMessageBodySkeleton}
       selectedThreadId={selectedThreadId}
       loadMessages={loadMessages}
       leadDisplayNamesMap={leadDisplayNamesMap}
@@ -169,7 +150,7 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       categoryOptions={THREAD_CATEGORIES}
       showToolbar={false}
       showTitleAndEmail={false}
-      listHeaderComponent={listHeaderComponent}
+      listHeaderComponent={header}
       messagesScrollViewRef={messagesScrollViewRef}
       onContentSizeChange={onContentSizeChange}
       contentContainerStyle={{

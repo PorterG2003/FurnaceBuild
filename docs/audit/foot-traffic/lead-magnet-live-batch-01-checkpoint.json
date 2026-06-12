@@ -1,0 +1,87 @@
+{
+  "kind": "audit",
+  "version": 1,
+  "generatedAt": "2026-06-12T03:15:52.970Z",
+  "updatedAt": "2026-06-12T03:19:06.878Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "selectedMailboxIds": [
+    "cf3c45d9-b153-458b-b171-0aef37174630",
+    "4f5ef17a-8ad0-45c8-a64e-43ada9870c0f",
+    "bcb98161-3c9d-415e-b37e-075f6bf0e60a",
+    "182be906-d35e-4f51-a2a2-a547753abed7",
+    "ad6dae46-a3b1-4c60-bcfe-d3aebac9b475"
+  ],
+  "args": {
+    "since": "2026-05-06T00:00:00.000Z",
+    "until": null,
+    "maxSentMessagesPerMailbox": 100,
+    "maxInboxMessagesPerMailbox": 10,
+    "concurrency": 2,
+    "copySource": "smartlead_api"
+  },
+  "completedMailboxIds": [
+    "4f5ef17a-8ad0-45c8-a64e-43ada9870c0f",
+    "cf3c45d9-b153-458b-b171-0aef37174630",
+    "bcb98161-3c9d-415e-b37e-075f6bf0e60a",
+    "182be906-d35e-4f51-a2a2-a547753abed7",
+    "ad6dae46-a3b1-4c60-bcfe-d3aebac9b475"
+  ],
+  "sentIndexSize": 0,
+  "sentSubjectSummary": [],
+  "sentFolderUsage": [
+    {
+      "mailboxEmail": "b_l@clinictrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 100,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "b_l@clinicfoottrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 100,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "b_l@clinictrafficdr.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 100,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "b_lenz@clinicfoottrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 100,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "b_lenz@clinictrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 100,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    }
+  ],
+  "candidates": [],
+  "review": [],
+  "dropped": 0,
+  "errors": []
+}

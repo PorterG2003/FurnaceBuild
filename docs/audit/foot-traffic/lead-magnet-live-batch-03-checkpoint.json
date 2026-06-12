@@ -1,0 +1,119 @@
+{
+  "kind": "audit",
+  "version": 1,
+  "generatedAt": "2026-06-12T03:24:02.950Z",
+  "updatedAt": "2026-06-12T03:29:32.078Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "selectedMailboxIds": [
+    "f44422b1-2574-46b8-bf53-0801084b000a",
+    "7772343e-7275-4460-a464-3d6b9595d1af",
+    "a2406292-679c-49db-9067-0c1e6a9bad78",
+    "e41d9099-a479-43f4-9dcc-53c529804eb3",
+    "b43d2a70-54b3-419d-8d35-82885e24f2c2",
+    "0cde3eb8-29b0-46b4-8011-2bbfbbc10624"
+  ],
+  "args": {
+    "since": "2026-05-06T00:00:00.000Z",
+    "until": null,
+    "maxSentMessagesPerMailbox": 100,
+    "maxInboxMessagesPerMailbox": 10,
+    "concurrency": 1,
+    "copySource": "smartlead_api"
+  },
+  "completedMailboxIds": [
+    "f44422b1-2574-46b8-bf53-0801084b000a",
+    "7772343e-7275-4460-a464-3d6b9595d1af",
+    "a2406292-679c-49db-9067-0c1e6a9bad78",
+    "e41d9099-a479-43f4-9dcc-53c529804eb3",
+    "b43d2a70-54b3-419d-8d35-82885e24f2c2",
+    "0cde3eb8-29b0-46b4-8011-2bbfbbc10624"
+  ],
+  "sentIndexSize": 0,
+  "sentSubjectSummary": [],
+  "sentFolderUsage": [
+    {
+      "mailboxEmail": "d_m@clinicfoottrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 100,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "d_m@clinictrafficco.com",
+      "folderPath": null,
+      "outboundTagged": 0,
+      "scannedSent": 0,
+      "scannedInbox": 0,
+      "errors": [
+        "open INBOX before Sent discovery failed: Command failed [NO] (7 SELECT INBOX)",
+        "LIST failed: Command failed [NO] (8 LIST \"\" \"*\")",
+        "LIST INBOX* failed: Command failed [NO] (9 LIST \"\" \"INBOX*\")",
+        "LIST % failed: Command failed [NO] (A LIST \"\" \"%\")",
+        "LIST Sent* failed: Command failed [NO] (B LIST \"\" \"Sent*\")",
+        "LIST *Sent* failed: Command failed [NO] (C LIST \"\" \"*Sent*\")",
+        "open Sent: Command failed [NO] (D LIST \"\" \"Sent\")",
+        "open Sent Mail: Command failed [NO] (E LIST \"\" \"Sent Mail\")",
+        "open Sent Items: Command failed [NO] (F LIST \"\" \"Sent Items\")",
+        "open Sent Messages: Command failed [NO] (10 LIST \"\" \"Sent Messages\")",
+        "open INBOX.Sent: Command failed [NO] (11 LIST \"\" \"INBOX.Sent\")",
+        "open INBOX.Sent Items: Command failed [NO] (12 LIST \"\" \"INBOX.Sent Items\")",
+        "open INBOX.Sent Mail: Command failed [NO] (13 LIST \"\" \"INBOX.Sent Mail\")",
+        "open INBOX.Sent Messages: Command failed [NO] (14 LIST \"\" \"INBOX.Sent Messages\")",
+        "open INBOX/Sent: Command failed [NO] (15 LIST \"\" \"INBOX/Sent\")",
+        "open INBOX/Sent Items: Command failed [NO] (16 LIST \"\" \"INBOX/Sent Items\")",
+        "open INBOX/Sent Mail: Command failed [NO] (17 LIST \"\" \"INBOX/Sent Mail\")",
+        "open [Gmail]/Sent Mail: Command failed [NO] (18 LIST \"\" \"[Gmail]/Sent Mail\")",
+        "Command failed [NO] (1A SELECT INBOX)"
+      ]
+    },
+    {
+      "mailboxEmail": "d_m@clinictrafficdr.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 100,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "d_mowery@clinicfoottrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 100,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "d_mowery@clinictrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 100,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "d_mowery@clinictrafficdr.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 100,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    }
+  ],
+  "candidates": [],
+  "review": [],
+  "dropped": 0,
+  "errors": [
+    "d_m@clinictrafficco.com: open INBOX before Sent discovery failed: Command failed [NO] (7 SELECT INBOX); LIST failed: Command failed [NO] (8 LIST \"\" \"*\"); LIST INBOX* failed: Command failed [NO] (9 LIST \"\" \"INBOX*\"); LIST % failed: Command failed [NO] (A LIST \"\" \"%\"); LIST Sent* failed: Command failed [NO] (B LIST \"\" \"Sent*\"); LIST *Sent* failed: Command failed [NO] (C LIST \"\" \"*Sent*\"); open Sent: Command failed [NO] (D LIST \"\" \"Sent\"); open Sent Mail: Command failed [NO] (E LIST \"\" \"Sent Mail\"); open Sent Items: Command failed [NO] (F LIST \"\" \"Sent Items\"); open Sent Messages: Command failed [NO] (10 LIST \"\" \"Sent Messages\"); open INBOX.Sent: Command failed [NO] (11 LIST \"\" \"INBOX.Sent\"); open INBOX.Sent Items: Command failed [NO] (12 LIST \"\" \"INBOX.Sent Items\"); open INBOX.Sent Mail: Command failed [NO] (13 LIST \"\" \"INBOX.Sent Mail\"); open INBOX.Sent Messages: Command failed [NO] (14 LIST \"\" \"INBOX.Sent Messages\"); open INBOX/Sent: Command failed [NO] (15 LIST \"\" \"INBOX/Sent\"); open INBOX/Sent Items: Command failed [NO] (16 LIST \"\" \"INBOX/Sent Items\"); open INBOX/Sent Mail: Command failed [NO] (17 LIST \"\" \"INBOX/Sent Mail\"); open [Gmail]/Sent Mail: Command failed [NO] (18 LIST \"\" \"[Gmail]/Sent Mail\"); Command failed [NO] (1A SELECT INBOX)"
+  ]
+}

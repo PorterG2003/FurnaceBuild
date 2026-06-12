@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-06-12T03:07:04.013Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "campaignName": "Foot Traffic - Apollo Contacts (Lead Magnet)",
+  "accountId": "40a23e97-8fa7-4668-bbd5-287f50fa2745",
+  "copySource": null,
+  "scannedMailboxes": 2,
+  "sentIndexSize": 0,
+  "sentSubjectSummary": [],
+  "sentFolderUsage": [
+    {
+      "mailboxEmail": "b_l@clinicfoottrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 25,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "b_l@clinictrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 25,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    }
+  ],
+  "candidates": [],
+  "review": [],
+  "dropped": 0,
+  "errors": []
+}

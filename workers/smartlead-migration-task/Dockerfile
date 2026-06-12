@@ -39,9 +39,10 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy built internal libs so worker file: deps resolve
+# Copy built internal libs so file:../../lib/* deps resolve (email-lib needs sanitize-html at runtime)
 COPY --from=builder /app/lib/email/package.json ./lib/email/
 COPY --from=builder /app/lib/email/dist ./lib/email/dist
+COPY --from=builder /app/lib/email/node_modules ./lib/email/node_modules
 COPY --from=builder /app/lib/slack/package.json ./lib/slack/
 COPY --from=builder /app/lib/slack/dist ./lib/slack/dist
 

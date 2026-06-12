@@ -1,0 +1,195 @@
+{
+  "generatedAt": "2026-06-12T03:54:28.305Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "campaignName": "Foot Traffic - Apollo Contacts (Lead Magnet)",
+  "accountId": "40a23e97-8fa7-4668-bbd5-287f50fa2745",
+  "copySource": "smartlead_api",
+  "scannedMailboxes": 1,
+  "sentIndexSize": 0,
+  "sentSubjectSummary": [],
+  "sentFolderUsage": [
+    {
+      "mailboxEmail": "b_l@clinicfoottrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 388,
+      "scannedInbox": 5,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    }
+  ],
+  "candidates": [],
+  "review": [],
+  "dropped": 0,
+  "errors": [],
+  "diagnostics": {
+    "copy": {
+      "source": "smartlead_api",
+      "stepCount": 3,
+      "sampleSteps": [
+        {
+          "label": "sequence_1_A",
+          "normalizedSubject": "{new patients|patient flow|consistent patient flow| {{clinic_type}} patients}",
+          "bodyFingerprintSample": "hi {{first_name}}, {would you mind | mind} if i {put together | made | pulled together} a report {that shows | showing}"
+        },
+        {
+          "label": "sequence_1_B",
+          "normalizedSubject": "{new patients|patient flow|consistent patient flow| {{clinic_type}} patients}",
+          "bodyFingerprintSample": "hi {{first_name}}, {not sure if|wasn't sure whether} paid search {is part of the mix|is part of your current strategy|is"
+        },
+        {
+          "label": "sequence_2",
+          "normalizedSubject": "(no subject)",
+          "bodyFingerprintSample": "{let me know! | just let me know! | thoughts?}"
+        }
+      ],
+      "warnings": []
+    },
+    "comparisonNotes": [
+      "Recovery only anchors replies to tagged Sent rows on the same mailbox.",
+      "Live inbox threading first matches normalized Message-IDs against stored outbound provider_message_id values.",
+      "Overlapping lead emails in recovery require Smartlead subject or body copy proof before the Sent row is tagged."
+    ],
+    "totals": {
+      "sent": {
+        "scannedSent": 388,
+        "toLead": 0,
+        "noLeadMatch": 388,
+        "copySubjectMatch": 0,
+        "copyBodyMatch": 0,
+        "tagged": 0,
+        "untaggedOverlapNoCopy": 0,
+        "uniqueLeadTaggedWithoutCopy": 0
+      },
+      "inbox": {
+        "scannedInbox": 5,
+        "leadMatches": 0,
+        "noSearchIds": 0,
+        "searchIdsNoSentHit": 0,
+        "searchIdsHitWrongLead": 0,
+        "anchored": 0,
+        "leadOnlySubjectMatch": 0,
+        "leadOnlyBodyMatch": 0,
+        "review": 0,
+        "dropped": 0
+      }
+    },
+    "mailboxes": [
+      {
+        "mailboxEmail": "b_l@clinicfoottrafficco.com",
+        "folderPath": "Sent Items",
+        "sent": {
+          "scannedSent": 388,
+          "toLead": 0,
+          "noLeadMatch": 388,
+          "copySubjectMatch": 0,
+          "copyBodyMatch": 0,
+          "tagged": 0,
+          "untaggedOverlapNoCopy": 0,
+          "uniqueLeadTaggedWithoutCopy": 0
+        },
+        "inbox": {
+          "scannedInbox": 5,
+          "leadMatches": 0,
+          "noSearchIds": 0,
+          "searchIdsNoSentHit": 0,
+          "searchIdsHitWrongLead": 0,
+          "anchored": 0,
+          "leadOnlySubjectMatch": 0,
+          "leadOnlyBodyMatch": 0,
+          "review": 0,
+          "dropped": 0
+        },
+        "skippedSentSamples": [
+          {
+            "uid": 984,
+            "leadEmail": null,
+            "overlapCount": null,
+            "subject": "Re: wine tasting reminder",
+            "normalizedSubject": "wine tasting reminder",
+            "bodySnippet": "Grapes sidebar-distance Galore!\n\nBest,\nBraxton\n\nOn Thu, Apr 30, 2026 at 5:24 PM Alaina Arnold <aarnold@growflo.info> wrote:\n\n\n\n> just a reminder about the wine tasting weekly-recen",
+            "to": [
+              "aarnold@growflo.info"
+            ],
+            "messageId": "6125173f-9e63-8168-bdd2-0be7a8a090b7@clinicfoottrafficco.com",
+            "rawMessageId": "<6125173f-9e63-8168-bdd2-0be7a8a090b7@clinicfoottrafficco.com>",
+            "subjectMatched": false,
+            "bodyMatched": false,
+            "stepLabel": null,
+            "reason": "no campaign lead recipient matched any Sent recipient"
+          },
+          {
+            "uid": 989,
+            "leadEmail": null,
+            "overlapCount": null,
+            "subject": "Re: big news about our new gadget",
+            "normalizedSubject": "big news about our new gadget",
+            "bodySnippet": "so stood-scare excited!!!\n\nRegards,\nBraxton\n\nOn Sat, May 2, 2026 at 2:34 AM Ava White <avawhite.m@blackdogcreativearts.com>\nwrote:\n\n\n\n> we're launching a groundbreaking tech gadget",
+            "to": [
+              "avawhite.m@blackdogcreativearts.com"
+            ],
+            "messageId": "bbc75411-a985-0cfb-bb75-ffef4f9b09f7@clinicfoottrafficco.com",
+            "rawMessageId": "<bbc75411-a985-0cfb-bb75-ffef4f9b09f7@clinicfoottrafficco.com>",
+            "subjectMatched": false,
+            "bodyMatched": false,
+            "stepLabel": null,
+            "reason": "no campaign lead recipient matched any Sent recipient"
+          },
+          {
+            "uid": 994,
+            "leadEmail": null,
+            "overlapCount": null,
+            "subject": "Green Initiatives Taking Root",
+            "normalizedSubject": "green initiatives taking root",
+            "bodySnippet": "Hi,\n\nHave you heard the latest news from our R&D department? Our new biodegradable\npackaging option has officially passed its testing phase.\n\nWe've been making strides to improve o",
+            "to": [
+              "kegan.k.english@atlanticcoasts.info"
+            ],
+            "messageId": "5cee7783-87de-63df-59f3-20ec25afb918@clinicfoottrafficco.com",
+            "rawMessageId": "<5cee7783-87de-63df-59f3-20ec25afb918@clinicfoottrafficco.com>",
+            "subjectMatched": false,
+            "bodyMatched": false,
+            "stepLabel": null,
+            "reason": "no campaign lead recipient matched any Sent recipient"
+          },
+          {
+            "uid": 999,
+            "leadEmail": null,
+            "overlapCount": null,
+            "subject": "Re: Early Access Opportunity for Premium Subscribers",
+            "normalizedSubject": "early access opportunity for premium subscribers",
+            "bodySnippet": "Just a quick note to let you know, as a valued subscriber, you veneration-ginger\nget exclusive early access to our latest product. We'd love to hear your\nthoughts before it hits th",
+            "to": [
+              "stephon.j@growconnectoneai.help"
+            ],
+            "messageId": "7410cc9e-b9ae-576c-cf76-12b205bfcef7@clinicfoottrafficco.com",
+            "rawMessageId": "<7410cc9e-b9ae-576c-cf76-12b205bfcef7@clinicfoottrafficco.com>",
+            "subjectMatched": false,
+            "bodyMatched": false,
+            "stepLabel": null,
+            "reason": "no campaign lead recipient matched any Sent recipient"
+          },
+          {
+            "uid": 1004,
+            "leadEmail": null,
+            "overlapCount": null,
+            "subject": "agenda tweak?",
+            "normalizedSubject": "agenda tweak?",
+            "bodySnippet": "let's rethink our crystal-slowly agenda to keep next fri's meeting concise and\nfocused.\n\nRegards,\nBraxton",
+            "to": [
+              "mialancaster@prospectrampt.help"
+            ],
+            "messageId": "3d33cc80-c2df-97e8-b137-e92d888ebb57@clinicfoottrafficco.com",
+            "rawMessageId": "<3d33cc80-c2df-97e8-b137-e92d888ebb57@clinicfoottrafficco.com>",
+            "subjectMatched": false,
+            "bodyMatched": false,
+            "stepLabel": null,
+            "reason": "no campaign lead recipient matched any Sent recipient"
+          }
+        ],
+        "replyMissSamples": []
+      }
+    ]
+  }
+}

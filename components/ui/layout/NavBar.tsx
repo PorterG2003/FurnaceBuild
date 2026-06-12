@@ -16,6 +16,7 @@ import {
   BuildingLibraryIcon,
 } from 'react-native-heroicons/outline';
 import { useAccount } from '@/contexts/AccountContext';
+import { isInboxPath } from '@/lib/inbox/inboxRoutes';
 import { WorkspaceSwitcherPopover } from '@/components/ui/WorkspaceSwitcherPopover';
 import { HelpModal } from '@/components/ui/help';
 import { NavBarButton } from './NavBarButton';
@@ -145,7 +146,7 @@ export function NavBar() {
       return pathname === '/campaigns';
     }
     if (path === '/inbox') {
-      return pathname === '/inbox' || pathname === '/';
+      return isInboxPath(pathname) || pathname === '/';
     }
     if (path === '/leads') {
       return pathname === '/leads' || pathname?.startsWith('/leads/');

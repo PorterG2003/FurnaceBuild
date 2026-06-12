@@ -1,0 +1,142 @@
+{
+  "kind": "audit",
+  "version": 1,
+  "generatedAt": "2026-06-12T03:58:23.205Z",
+  "updatedAt": "2026-06-12T03:58:25.516Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "selectedMailboxIds": [
+    "cf3c45d9-b153-458b-b171-0aef37174630"
+  ],
+  "args": {
+    "since": "2025-01-01T00:00:00.000Z",
+    "until": null,
+    "maxSentMessagesPerMailbox": 5000,
+    "maxInboxMessagesPerMailbox": 5,
+    "concurrency": 1,
+    "copySource": "smartlead_api"
+  },
+  "completedMailboxIds": [
+    "cf3c45d9-b153-458b-b171-0aef37174630"
+  ],
+  "sentIndexSize": 0,
+  "sentSubjectSummary": [],
+  "sentFolderUsage": [
+    {
+      "mailboxEmail": "b_l@clinicfoottrafficco.com",
+      "folderPath": null,
+      "outboundTagged": 0,
+      "scannedSent": 0,
+      "scannedInbox": 0,
+      "errors": [
+        "open INBOX before Sent discovery failed: Command failed [NO] (7 SELECT INBOX)",
+        "LIST failed: Command failed [NO] (8 LIST \"\" \"*\")",
+        "LIST INBOX* failed: Command failed [NO] (9 LIST \"\" \"INBOX*\")",
+        "LIST % failed: Command failed [NO] (A LIST \"\" \"%\")",
+        "LIST Sent* failed: Command failed [NO] (B LIST \"\" \"Sent*\")",
+        "LIST *Sent* failed: Command failed [NO] (C LIST \"\" \"*Sent*\")",
+        "open Sent: Command failed [NO] (D LIST \"\" \"Sent\")",
+        "open Sent Mail: Command failed [NO] (E LIST \"\" \"Sent Mail\")",
+        "open Sent Items: Command failed [NO] (F LIST \"\" \"Sent Items\")",
+        "open Sent Messages: Command failed [NO] (10 LIST \"\" \"Sent Messages\")",
+        "open INBOX.Sent: Command failed [NO] (11 LIST \"\" \"INBOX.Sent\")",
+        "open INBOX.Sent Items: Command failed [NO] (12 LIST \"\" \"INBOX.Sent Items\")",
+        "open INBOX.Sent Mail: Command failed [NO] (13 LIST \"\" \"INBOX.Sent Mail\")",
+        "open INBOX.Sent Messages: Command failed [NO] (14 LIST \"\" \"INBOX.Sent Messages\")",
+        "open INBOX/Sent: Command failed [NO] (15 LIST \"\" \"INBOX/Sent\")",
+        "open INBOX/Sent Items: Command failed [NO] (16 LIST \"\" \"INBOX/Sent Items\")",
+        "open INBOX/Sent Mail: Command failed [NO] (17 LIST \"\" \"INBOX/Sent Mail\")",
+        "open [Gmail]/Sent Mail: Command failed [NO] (18 LIST \"\" \"[Gmail]/Sent Mail\")",
+        "Command failed [NO] (1A SELECT INBOX)"
+      ]
+    }
+  ],
+  "candidates": [],
+  "review": [],
+  "dropped": 0,
+  "errors": [
+    "b_l@clinicfoottrafficco.com: open INBOX before Sent discovery failed: Command failed [NO] (7 SELECT INBOX); LIST failed: Command failed [NO] (8 LIST \"\" \"*\"); LIST INBOX* failed: Command failed [NO] (9 LIST \"\" \"INBOX*\"); LIST % failed: Command failed [NO] (A LIST \"\" \"%\"); LIST Sent* failed: Command failed [NO] (B LIST \"\" \"Sent*\"); LIST *Sent* failed: Command failed [NO] (C LIST \"\" \"*Sent*\"); open Sent: Command failed [NO] (D LIST \"\" \"Sent\"); open Sent Mail: Command failed [NO] (E LIST \"\" \"Sent Mail\"); open Sent Items: Command failed [NO] (F LIST \"\" \"Sent Items\"); open Sent Messages: Command failed [NO] (10 LIST \"\" \"Sent Messages\"); open INBOX.Sent: Command failed [NO] (11 LIST \"\" \"INBOX.Sent\"); open INBOX.Sent Items: Command failed [NO] (12 LIST \"\" \"INBOX.Sent Items\"); open INBOX.Sent Mail: Command failed [NO] (13 LIST \"\" \"INBOX.Sent Mail\"); open INBOX.Sent Messages: Command failed [NO] (14 LIST \"\" \"INBOX.Sent Messages\"); open INBOX/Sent: Command failed [NO] (15 LIST \"\" \"INBOX/Sent\"); open INBOX/Sent Items: Command failed [NO] (16 LIST \"\" \"INBOX/Sent Items\"); open INBOX/Sent Mail: Command failed [NO] (17 LIST \"\" \"INBOX/Sent Mail\"); open [Gmail]/Sent Mail: Command failed [NO] (18 LIST \"\" \"[Gmail]/Sent Mail\"); Command failed [NO] (1A SELECT INBOX)"
+  ],
+  "diagnostics": {
+    "copy": {
+      "source": "smartlead_api",
+      "stepCount": 3,
+      "sampleSteps": [
+        {
+          "label": "sequence_1_A",
+          "normalizedSubject": "{new patients|patient flow|consistent patient flow| {{clinic_type}} patients}",
+          "bodyFingerprintSample": "hi {{first_name}}, {would you mind | mind} if i {put together | made | pulled together} a report {that shows | showing}"
+        },
+        {
+          "label": "sequence_1_B",
+          "normalizedSubject": "{new patients|patient flow|consistent patient flow| {{clinic_type}} patients}",
+          "bodyFingerprintSample": "hi {{first_name}}, {not sure if|wasn't sure whether} paid search {is part of the mix|is part of your current strategy|is"
+        },
+        {
+          "label": "sequence_2",
+          "normalizedSubject": "(no subject)",
+          "bodyFingerprintSample": "{let me know! | just let me know! | thoughts?}"
+        }
+      ],
+      "warnings": []
+    },
+    "comparisonNotes": [
+      "Recovery only anchors replies to tagged Sent rows on the same mailbox.",
+      "Live inbox threading first matches normalized Message-IDs against stored outbound provider_message_id values.",
+      "Overlapping lead emails in recovery require Smartlead subject or body copy proof before the Sent row is tagged."
+    ],
+    "totals": {
+      "sent": {
+        "scannedSent": 0,
+        "toLead": 0,
+        "noLeadMatch": 0,
+        "copySubjectMatch": 0,
+        "copyBodyMatch": 0,
+        "tagged": 0,
+        "untaggedOverlapNoCopy": 0,
+        "uniqueLeadTaggedWithoutCopy": 0
+      },
+      "inbox": {
+        "scannedInbox": 0,
+        "leadMatches": 0,
+        "noSearchIds": 0,
+        "searchIdsNoSentHit": 0,
+        "searchIdsHitWrongLead": 0,
+        "anchored": 0,
+        "leadOnlySubjectMatch": 0,
+        "leadOnlyBodyMatch": 0,
+        "review": 0,
+        "dropped": 0
+      }
+    },
+    "mailboxes": [
+      {
+        "mailboxEmail": "b_l@clinicfoottrafficco.com",
+        "folderPath": null,
+        "sent": {
+          "scannedSent": 0,
+          "toLead": 0,
+          "noLeadMatch": 0,
+          "copySubjectMatch": 0,
+          "copyBodyMatch": 0,
+          "tagged": 0,
+          "untaggedOverlapNoCopy": 0,
+          "uniqueLeadTaggedWithoutCopy": 0
+        },
+        "inbox": {
+          "scannedInbox": 0,
+          "leadMatches": 0,
+          "noSearchIds": 0,
+          "searchIdsNoSentHit": 0,
+          "searchIdsHitWrongLead": 0,
+          "anchored": 0,
+          "leadOnlySubjectMatch": 0,
+          "leadOnlyBodyMatch": 0,
+          "review": 0,
+          "dropped": 0
+        },
+        "skippedSentSamples": [],
+        "replyMissSamples": []
+      }
+    ]
+  }
+}

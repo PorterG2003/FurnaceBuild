@@ -1,0 +1,51 @@
+{
+  "kind": "audit",
+  "version": 1,
+  "generatedAt": "2026-06-12T03:07:04.013Z",
+  "updatedAt": "2026-06-12T03:08:28.337Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "selectedMailboxIds": [
+    "cf3c45d9-b153-458b-b171-0aef37174630",
+    "4f5ef17a-8ad0-45c8-a64e-43ada9870c0f"
+  ],
+  "args": {
+    "since": "2026-05-06T00:00:00.000Z",
+    "until": null,
+    "maxSentMessagesPerMailbox": 25,
+    "maxInboxMessagesPerMailbox": 10,
+    "concurrency": 1,
+    "copySource": null
+  },
+  "completedMailboxIds": [
+    "cf3c45d9-b153-458b-b171-0aef37174630",
+    "4f5ef17a-8ad0-45c8-a64e-43ada9870c0f"
+  ],
+  "sentIndexSize": 0,
+  "sentSubjectSummary": [],
+  "sentFolderUsage": [
+    {
+      "mailboxEmail": "b_l@clinicfoottrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 25,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    },
+    {
+      "mailboxEmail": "b_l@clinictrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 25,
+      "scannedInbox": 10,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    }
+  ],
+  "candidates": [],
+  "review": [],
+  "dropped": 0,
+  "errors": []
+}

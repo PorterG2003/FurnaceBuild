@@ -49,7 +49,7 @@ function StaggeredFadeIn({ index, children }: { index: number; children: ReactNo
   return <Animated.View style={{ opacity }}>{children}</Animated.View>;
 }
 
-/** Skeleton loading for thread list (left panel). Only shown after 200ms delay. */
+/** Skeleton loading for thread list (left panel). Visibility controlled by inbox loading policy. */
 export function ThreadListSkeleton() {
   return (
     <ScrollView

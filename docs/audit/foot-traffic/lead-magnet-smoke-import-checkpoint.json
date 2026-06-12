@@ -1,0 +1,20 @@
+{
+  "kind": "import",
+  "version": 1,
+  "generatedAt": "2026-06-12T03:08:27.979Z",
+  "updatedAt": "2026-06-12T03:08:28.390Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "inputPath": "docs/audit/foot-traffic/lead-magnet-smoke-audit.json",
+  "minConfidence": 0.8,
+  "processedCandidateKeys": [],
+  "summary": {
+    "generatedAt": "2026-06-12T03:08:27.979Z",
+    "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+    "createdThreads": 0,
+    "skippedExistingThreads": 0,
+    "skippedExistingMessages": 0,
+    "insertedMessages": 0,
+    "importedLeadEmails": [],
+    "skipped": []
+  }
+}

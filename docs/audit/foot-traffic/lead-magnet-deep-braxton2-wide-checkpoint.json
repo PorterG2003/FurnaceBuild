@@ -1,0 +1,208 @@
+{
+  "kind": "audit",
+  "version": 1,
+  "generatedAt": "2026-06-12T03:58:42.273Z",
+  "updatedAt": "2026-06-12T04:03:49.361Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "selectedMailboxIds": [
+    "4f5ef17a-8ad0-45c8-a64e-43ada9870c0f"
+  ],
+  "args": {
+    "since": "2025-01-01T00:00:00.000Z",
+    "until": null,
+    "maxSentMessagesPerMailbox": 5000,
+    "maxInboxMessagesPerMailbox": 5,
+    "concurrency": 1,
+    "copySource": "smartlead_api"
+  },
+  "completedMailboxIds": [
+    "4f5ef17a-8ad0-45c8-a64e-43ada9870c0f"
+  ],
+  "sentIndexSize": 0,
+  "sentSubjectSummary": [],
+  "sentFolderUsage": [
+    {
+      "mailboxEmail": "b_l@clinictrafficco.com",
+      "folderPath": "Sent Items",
+      "outboundTagged": 0,
+      "scannedSent": 565,
+      "scannedInbox": 5,
+      "errors": [
+        "LIST failed: Command failed [BAD] (9 LSUB \"\" \"*\")"
+      ]
+    }
+  ],
+  "candidates": [],
+  "review": [],
+  "dropped": 0,
+  "errors": [],
+  "diagnostics": {
+    "copy": {
+      "source": "smartlead_api",
+      "stepCount": 3,
+      "sampleSteps": [
+        {
+          "label": "sequence_1_A",
+          "normalizedSubject": "{new patients|patient flow|consistent patient flow| {{clinic_type}} patients}",
+          "bodyFingerprintSample": "hi {{first_name}}, {would you mind | mind} if i {put together | made | pulled together} a report {that shows | showing}"
+        },
+        {
+          "label": "sequence_1_B",
+          "normalizedSubject": "{new patients|patient flow|consistent patient flow| {{clinic_type}} patients}",
+          "bodyFingerprintSample": "hi {{first_name}}, {not sure if|wasn't sure whether} paid search {is part of the mix|is part of your current strategy|is"
+        },
+        {
+          "label": "sequence_2",
+          "normalizedSubject": "(no subject)",
+          "bodyFingerprintSample": "{let me know! | just let me know! | thoughts?}"
+        }
+      ],
+      "warnings": []
+    },
+    "comparisonNotes": [
+      "Recovery only anchors replies to tagged Sent rows on the same mailbox.",
+      "Live inbox threading first matches normalized Message-IDs against stored outbound provider_message_id values.",
+      "Overlapping lead emails in recovery require Smartlead subject or body copy proof before the Sent row is tagged."
+    ],
+    "totals": {
+      "sent": {
+        "scannedSent": 565,
+        "toLead": 0,
+        "noLeadMatch": 565,
+        "copySubjectMatch": 0,
+        "copyBodyMatch": 0,
+        "tagged": 0,
+        "untaggedOverlapNoCopy": 0,
+        "uniqueLeadTaggedWithoutCopy": 0
+      },
+      "inbox": {
+        "scannedInbox": 5,
+        "leadMatches": 0,
+        "noSearchIds": 0,
+        "searchIdsNoSentHit": 0,
+        "searchIdsHitWrongLead": 0,
+        "anchored": 0,
+        "leadOnlySubjectMatch": 0,
+        "leadOnlyBodyMatch": 0,
+        "review": 0,
+        "dropped": 0
+      }
+    },
+    "mailboxes": [
+      {
+        "mailboxEmail": "b_l@clinictrafficco.com",
+        "folderPath": "Sent Items",
+        "sent": {
+          "scannedSent": 565,
+          "toLead": 0,
+          "noLeadMatch": 565,
+          "copySubjectMatch": 0,
+          "copyBodyMatch": 0,
+          "tagged": 0,
+          "untaggedOverlapNoCopy": 0,
+          "uniqueLeadTaggedWithoutCopy": 0
+        },
+        "inbox": {
+          "scannedInbox": 5,
+          "leadMatches": 0,
+          "noSearchIds": 0,
+          "searchIdsNoSentHit": 0,
+          "searchIdsHitWrongLead": 0,
+          "anchored": 0,
+          "leadOnlySubjectMatch": 0,
+          "leadOnlyBodyMatch": 0,
+          "review": 0,
+          "dropped": 0
+        },
+        "skippedSentSamples": [
+          {
+            "uid": 1,
+            "leadEmail": null,
+            "overlapCount": null,
+            "subject": "Test email from - Braxton Lenz",
+            "normalizedSubject": "test email from - braxton lenz",
+            "bodySnippet": "Testing SMTP email account.",
+            "to": [
+              "porter@getfurnace.io"
+            ],
+            "messageId": "cab1bcf8-c9c2-c585-4d95-1514c96729d4@clinictrafficco.com",
+            "rawMessageId": "<cab1bcf8-c9c2-c585-4d95-1514c96729d4@clinictrafficco.com>",
+            "subjectMatched": false,
+            "bodyMatched": false,
+            "stepLabel": null,
+            "reason": "no campaign lead recipient matched any Sent recipient"
+          },
+          {
+            "uid": 6,
+            "leadEmail": null,
+            "overlapCount": null,
+            "subject": "Business Development Strategies",
+            "normalizedSubject": "business development strategies",
+            "bodySnippet": "Meeting folks-offer next week to discuss new business development strategies. Please prepare your ideas.",
+            "to": [
+              "brooklyn@goscalezone.com"
+            ],
+            "messageId": "501ec621-ba14-776d6b6e15-4ed0-b92a-581c8ff56279@clinictrafficco.com",
+            "rawMessageId": "<501ec621-ba14-776d6b6e15-4ed0-b92a-581c8ff56279@clinictrafficco.com>",
+            "subjectMatched": false,
+            "bodyMatched": false,
+            "stepLabel": null,
+            "reason": "no campaign lead recipient matched any Sent recipient"
+          },
+          {
+            "uid": 11,
+            "leadEmail": null,
+            "overlapCount": null,
+            "subject": "Streamlining Your Company's Workflow",
+            "normalizedSubject": "streamlining your company's workflow",
+            "bodySnippet": "Hi there,\n\nUnderstanding your current workflow is our priority. Our goal is to enhance your\ncompany's productivity by decluttering processes and eliminating redundancy.\n\nWe retriev",
+            "to": [
+              "samantha.jane@wezing-workpop.com"
+            ],
+            "messageId": "4be31662-1cbf-5350-b5b2-351c41e0ac60@clinictrafficco.com",
+            "rawMessageId": "<4be31662-1cbf-5350-b5b2-351c41e0ac60@clinictrafficco.com>",
+            "subjectMatched": false,
+            "bodyMatched": false,
+            "stepLabel": null,
+            "reason": "no campaign lead recipient matched any Sent recipient"
+          },
+          {
+            "uid": 18,
+            "leadEmail": null,
+            "overlapCount": null,
+            "subject": "Innovative Educational Content Available",
+            "normalizedSubject": "innovative educational content available",
+            "bodySnippet": "Hi there,\n\nExcited to inform you confirm-observe about our new selection of educational\ncontent that has been carefully curated to enhance learning experiences. These\nresources cov",
+            "to": [
+              "carsonspitzke@spitzprcommunications.org"
+            ],
+            "messageId": "6f2f1e31-5b17-d4d7-49b2-c662f3b9854e@clinictrafficco.com",
+            "rawMessageId": "<6f2f1e31-5b17-d4d7-49b2-c662f3b9854e@clinictrafficco.com>",
+            "subjectMatched": false,
+            "bodyMatched": false,
+            "stepLabel": null,
+            "reason": "no campaign lead recipient matched any Sent recipient"
+          },
+          {
+            "uid": 24,
+            "leadEmail": null,
+            "overlapCount": null,
+            "subject": "You're awesome!",
+            "normalizedSubject": "you're awesome!",
+            "bodySnippet": "Thanks shrine-green a ton! Here's a meme to celebrate!\n\nRegards,\nBraxton",
+            "to": [
+              "kegan_g_english@atlanticcoastbbportal.com"
+            ],
+            "messageId": "23095d03-c5a4-c32e-f033-c41e21b89aed@clinictrafficco.com",
+            "rawMessageId": "<23095d03-c5a4-c32e-f033-c41e21b89aed@clinictrafficco.com>",
+            "subjectMatched": false,
+            "bodyMatched": false,
+            "stepLabel": null,
+            "reason": "no campaign lead recipient matched any Sent recipient"
+          }
+        ],
+        "replyMissSamples": []
+      }
+    ]
+  }
+}

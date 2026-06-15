@@ -8,6 +8,7 @@ import {
   fetchSmartleadCampaignStatsByDay,
   fetchSmartleadLeads,
   finalizeImportedCampaignStats,
+  upsertLeadsFromSmartlead,
 } from '../lib/smartlead/migration.js';
 import { fetchSecretFromParameterStore, loadSelfRecoveryEnv, resolveSecretParamPathForTarget, resolveSelfRecoveryTargetEnv, resolveSupabaseUrlForTarget } from './self-recovery-env.js';
 import { openImapInbox } from '@furnace/mailbox-lib';
@@ -16,7 +17,7 @@ import { simpleParser } from 'mailparser';
 
 loadSelfRecoveryEnv();
 
-type Mode = 'spike' | 'audit' | 'import' | 'materialize-export';
+type Mode = 'spike' | 'audit' | 'import' | 'materialize-export' | 'preflight-export' | 'import-export';
 
 type Args = {
   mode: Mode;
@@ -43,9 +44,26 @@ type Args = {
 type CampaignRow = {
   id: string;
   account_id: string;
+  bucket_id: string;
   name: string;
   smartlead_campaign_id: number | null;
   source: string | null;
+};
+
+type FurnaceLeadJoinRow = {
+  leadId: string;
+  enrollmentId: string | null;
+  smartleadLeadId: number | null;
+  email: string;
+};
+
+type AccountLeadLookupRow = {
+  leadId: string;
+  email: string;
+  campaignId: string;
+  campaignName: string;
+  smartleadLeadId: number | null;
+  enrollmentId: string | null;
 };
 
 type MailboxRow = {
@@ -123,13 +141,6 @@ type CampaignSentExpectationDiagnostics = {
   projectedRecoveryRatio: number | null;
   meetsOperatorExpectation: boolean;
   warnings: string[];
-};
-
-type FurnaceLeadJoinRow = {
-  leadId: string;
-  enrollmentId: string | null;
-  smartleadLeadId: number | null;
-  email: string;
 };
 
 type CopyStep = {
@@ -379,12 +390,36 @@ type AuditOutput = {
 type ImportSummary = {
   generatedAt: string;
   campaignId: string;
+  dryRun?: boolean;
+  wouldCreateThreads?: number;
   createdThreads: number;
   skippedExistingThreads: number;
   skippedExistingMessages: number;
   insertedMessages: number;
   importedLeadEmails: string[];
   skipped: Array<{ leadEmail: string; reason: string }>;
+};
+
+type ExportPreflightRow = {
+  leadEmail: string;
+  smartleadLeadId: number | null;
+  importReadiness: ImportReadiness;
+  exportLeadId: string | null;
+  resolvedLeadId: string | null;
+  resolvedEnrollmentId: string | null;
+  resolution: string;
+  otherCampaigns: Array<{ campaignId: string; campaignName: string; leadId: string }>;
+  action: string;
+};
+
+type ExportPreflightReport = {
+  generatedAt: string;
+  campaignId: string;
+  exportPath: string;
+  threadCount: number;
+  importableCount: number;
+  blockedCount: number;
+  rows: ExportPreflightRow[];
 };
 
 type AuditCheckpoint = {
@@ -486,7 +521,7 @@ function parseArgs(argv: string[]): Args {
       copyPath = argv[++i]!;
     } else if (arg === '--input' && argv[i + 1]) {
       inputPath = argv[++i]!;
-      if (mode !== 'materialize-export') {
+      if (mode !== 'materialize-export' && mode !== 'preflight-export' && mode !== 'import-export') {
         mode = 'import';
       }
     } else if (arg === '--output' && argv[i + 1]) {
@@ -495,6 +530,10 @@ function parseArgs(argv: string[]): Args {
       exportOutputPath = argv[++i]!;
     } else if (arg === '--materialize-export') {
       mode = 'materialize-export';
+    } else if (arg === '--preflight-export') {
+      mode = 'preflight-export';
+    } else if (arg === '--import-export') {
+      mode = 'import-export';
     } else if (arg === '--checkpoint' && argv[i + 1]) {
       checkpointPath = argv[++i]!;
     } else if (arg === '--resume-from' && argv[i + 1]) {
@@ -1004,7 +1043,7 @@ async function createSupabase(): Promise<{
 async function fetchCampaign(supabase: SupabaseClient, campaignId: string): Promise<CampaignRow> {
   const { data, error } = await supabase
     .from('campaigns')
-    .select('id, account_id, name, smartlead_campaign_id, source')
+    .select('id, account_id, bucket_id, name, smartlead_campaign_id, source')
     .eq('id', campaignId)
     .single();
   if (error || !data) throw new Error(`Failed to load campaign ${campaignId}: ${error?.message ?? 'not found'}`);
@@ -2588,6 +2627,673 @@ function requireApply(): void {
   }
 }
 
+function isRecoveryExportPackage(raw: unknown): raw is RecoveryExportPackage {
+  if (!raw || typeof raw !== 'object') return false;
+  const value = raw as RecoveryExportPackage;
+  return value.version === 1 && Array.isArray(value.threads);
+}
+
+function exportThreadCheckpointKey(thread: RecoveryThreadExport): string {
+  return [
+    thread.leadEmail,
+    thread.mailboxId,
+    thread.receivedMessage?.messageId ?? '',
+    thread.threadDraft.lastMessageAt,
+  ].join('|');
+}
+
+function dedupeExportThreads(threads: RecoveryThreadExport[]): RecoveryThreadExport[] {
+  const seen = new Set<string>();
+  const deduped: RecoveryThreadExport[] = [];
+  for (const thread of threads.sort((a, b) =>
+    a.threadDraft.lastMessageAt.localeCompare(b.threadDraft.lastMessageAt),
+  )) {
+    const key = exportThreadCheckpointKey(thread);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(thread);
+  }
+  return deduped;
+}
+
+function resolveLeadFromJoinData(
+  leadEmail: string,
+  smartleadLeadId: number | null,
+  joinData: Awaited<ReturnType<typeof fetchFurnaceLeadJoinData>>,
+): FurnaceLeadJoinRow | null {
+  const email = normalizeEmail(leadEmail);
+  if (!email) return null;
+  const byEmail = joinData.byEmail.get(email);
+  if (byEmail) return byEmail;
+  if (smartleadLeadId != null) {
+    return joinData.bySmartleadId.get(smartleadLeadId) ?? null;
+  }
+  return null;
+}
+
+async function fetchAccountLeadLookup(
+  supabase: SupabaseClient,
+  accountId: string,
+  emails: string[],
+  smartleadLeadIds: number[],
+): Promise<AccountLeadLookupRow[]> {
+  const normalizedEmails = [...new Set(emails.map((email) => normalizeEmail(email)).filter(Boolean))] as string[];
+  const slIds = [...new Set(smartleadLeadIds.filter((id) => Number.isFinite(id) && id > 0))];
+  if (normalizedEmails.length === 0 && slIds.length === 0) return [];
+
+  let query = supabase
+    .from('leads')
+    .select('id, email, campaign_id, smartlead_lead_id, campaigns!inner(id, name, account_id)')
+    .eq('campaigns.account_id', accountId);
+
+  if (normalizedEmails.length > 0 && slIds.length > 0) {
+    query = query.or(`email.in.(${normalizedEmails.join(',')}),smartlead_lead_id.in.(${slIds.join(',')})`);
+  } else if (normalizedEmails.length > 0) {
+    query = query.in('email', normalizedEmails);
+  } else {
+    query = query.in('smartlead_lead_id', slIds);
+  }
+
+  const { data: leadRows, error: leadsError } = await query;
+  if (leadsError) throw new Error(`Failed account lead lookup: ${leadsError.message}`);
+
+  const leadIds = (leadRows ?? []).map((row) => (row as { id: string }).id);
+  const enrollmentByLeadId = new Map<string, string>();
+  if (leadIds.length > 0) {
+    const { data: enrollmentRows, error: enrollmentError } = await supabase
+      .from('enrollments')
+      .select('id, lead_id, campaign_id')
+      .in('lead_id', leadIds);
+    if (enrollmentError) throw new Error(`Failed enrollment lookup: ${enrollmentError.message}`);
+    for (const row of (enrollmentRows ?? []) as EnrollmentRow[]) {
+      if (!enrollmentByLeadId.has(row.lead_id)) enrollmentByLeadId.set(row.lead_id, row.id);
+    }
+  }
+
+  return (leadRows ?? []).map((row) => {
+    const lead = row as {
+      id: string;
+      email: string | null;
+      campaign_id: string;
+      smartlead_lead_id: number | null;
+      campaigns: { id: string; name: string } | { id: string; name: string }[];
+    };
+    const campaign = Array.isArray(lead.campaigns) ? lead.campaigns[0] : lead.campaigns;
+    const email = normalizeEmail(lead.email) ?? '';
+    return {
+      leadId: lead.id,
+      email,
+      campaignId: lead.campaign_id,
+      campaignName: campaign?.name ?? lead.campaign_id,
+      smartleadLeadId: lead.smartlead_lead_id,
+      enrollmentId: enrollmentByLeadId.get(lead.id) ?? null,
+    };
+  });
+}
+
+async function ensureCampaignEnrollmentsForLeadIds(
+  supabase: SupabaseClient,
+  campaign: CampaignRow,
+  leadIds: string[],
+): Promise<void> {
+  if (leadIds.length === 0) return;
+  const rows = leadIds.map((leadId) => ({
+    campaign_id: campaign.id,
+    account_id: campaign.account_id,
+    lead_id: leadId,
+    current_node_id: null,
+    state: 'active',
+    next_run_at: new Date().toISOString(),
+    flow_position: {},
+  }));
+  const { error } = await supabase
+    .from('enrollments')
+    .upsert(rows as any, { onConflict: 'campaign_id,lead_id', ignoreDuplicates: true });
+  if (error) throw new Error(`Failed to ensure enrollments: ${error.message}`);
+}
+
+async function backfillMissingLeadsFromSmartlead(
+  supabase: SupabaseClient,
+  campaign: CampaignRow,
+  smartleadApiKey: string,
+  smartleadLeadIds: number[],
+): Promise<string[]> {
+  if (!campaign.smartlead_campaign_id) {
+    throw new Error('Campaign has no smartlead_campaign_id; cannot backfill leads.');
+  }
+  const uniqueIds = [...new Set(smartleadLeadIds.filter((id) => Number.isFinite(id) && id > 0))];
+  if (uniqueIds.length === 0) return [];
+
+  const smartleadLeads = await fetchSmartleadLeads(smartleadApiKey, campaign.smartlead_campaign_id);
+  const wanted = new Set(uniqueIds);
+  const toImport = smartleadLeads.filter((lead) => wanted.has(lead.id));
+  if (toImport.length === 0) {
+    throw new Error(`No Smartlead leads found for ids: ${uniqueIds.join(', ')}`);
+  }
+
+  const leadIds = await upsertLeadsFromSmartlead(
+    campaign.id,
+    campaign.bucket_id,
+    campaign.account_id,
+    toImport,
+    supabase as any,
+  );
+  await ensureCampaignEnrollmentsForLeadIds(supabase, campaign, leadIds);
+  console.log(`Backfilled ${leadIds.length} lead(s) from Smartlead for ${campaign.name}`);
+  return leadIds;
+}
+
+function resolveLeadForImportThread(
+  campaign: CampaignRow,
+  leadEmail: string,
+  smartleadLeadId: number | null,
+  joinData: Awaited<ReturnType<typeof fetchFurnaceLeadJoinData>>,
+  accountMatches: AccountLeadLookupRow[],
+): FurnaceLeadJoinRow | null {
+  const fromJoin = resolveLeadFromJoinData(leadEmail, smartleadLeadId, joinData);
+  if (fromJoin) return fromJoin;
+
+  const email = normalizeEmail(leadEmail);
+  const inCampaign =
+    accountMatches.find((match) => match.campaignId === campaign.id && match.email === email) ??
+    (smartleadLeadId != null
+      ? accountMatches.find(
+          (match) => match.campaignId === campaign.id && match.smartleadLeadId === smartleadLeadId,
+        )
+      : undefined);
+  if (!inCampaign) return null;
+  return {
+    leadId: inCampaign.leadId,
+    enrollmentId: inCampaign.enrollmentId,
+    smartleadLeadId: inCampaign.smartleadLeadId,
+    email: inCampaign.email,
+  };
+}
+
+async function preflightRecoveryExport(
+  supabase: SupabaseClient,
+  campaign: CampaignRow,
+  args: Args,
+): Promise<ExportPreflightReport> {
+  if (!args.inputPath) throw new Error('preflight-export requires --input (recovery export JSON).');
+  const raw = readJsonFile<RecoveryExportPackage>(args.inputPath);
+  if (!isRecoveryExportPackage(raw)) throw new Error('Input is not a recovery export package (version 1 with threads[]).');
+  if (raw.campaign.furnaceId !== campaign.id) {
+    console.warn(`Export campaign ${raw.campaign.furnaceId} differs from --campaign-id ${campaign.id}`);
+  }
+
+  const threads = dedupeExportThreads(raw.threads);
+  const joinData = await fetchFurnaceLeadJoinData(supabase, campaign);
+  const emails = threads.map((thread) => thread.leadEmail);
+  const smartleadLeadIds = threads
+    .map((thread) => thread.smartleadLeadId)
+    .filter((id): id is number => id != null);
+  const accountLookup = await fetchAccountLeadLookup(supabase, campaign.account_id, emails, smartleadLeadIds);
+  const lookupByEmail = new Map<string, AccountLeadLookupRow[]>();
+  for (const row of accountLookup) {
+    const list = lookupByEmail.get(row.email) ?? [];
+    list.push(row);
+    lookupByEmail.set(row.email, list);
+  }
+
+  const rows: ExportPreflightRow[] = threads.map((thread) => {
+    const matches = lookupByEmail.get(normalizeEmail(thread.leadEmail) ?? thread.leadEmail) ?? [];
+    const resolved = resolveLeadForImportThread(
+      campaign,
+      thread.leadEmail,
+      thread.smartleadLeadId,
+      joinData,
+      matches,
+    );
+    const otherCampaigns = matches
+      .filter((match) => match.campaignId !== campaign.id)
+      .map((match) => ({
+        campaignId: match.campaignId,
+        campaignName: match.campaignName,
+        leadId: match.leadId,
+      }));
+
+    let resolution = 'missing_in_target_campaign';
+    let action = 'backfill_from_smartlead';
+    if (resolved) {
+      resolution = 'found_in_target_campaign';
+      action = 'import_ready';
+    } else if (matches.some((match) => match.campaignId === campaign.id)) {
+      resolution = 'found_by_email_in_target_campaign';
+      action = 'import_ready';
+    } else if (otherCampaigns.length > 0) {
+      resolution = 'found_in_other_campaign_only';
+      action = 'backfill_or_copy_lead_to_target_campaign';
+    }
+
+    const resolvedLeadId =
+      resolved?.leadId ??
+      matches.find((match) => match.campaignId === campaign.id)?.leadId ??
+      null;
+    const resolvedEnrollmentId =
+      resolved?.enrollmentId ??
+      matches.find((match) => match.campaignId === campaign.id)?.enrollmentId ??
+      null;
+
+    return {
+      leadEmail: thread.leadEmail,
+      smartleadLeadId: thread.smartleadLeadId,
+      importReadiness: thread.importReadiness,
+      exportLeadId: thread.leadId,
+      resolvedLeadId,
+      resolvedEnrollmentId,
+      resolution,
+      otherCampaigns,
+      action,
+    };
+  });
+
+  const importableCount = rows.filter((row) => row.resolvedLeadId).length;
+  const blockedCount = rows.length - importableCount;
+  const report: ExportPreflightReport = {
+    generatedAt: new Date().toISOString(),
+    campaignId: campaign.id,
+    exportPath: args.inputPath,
+    threadCount: rows.length,
+    importableCount,
+    blockedCount,
+    rows,
+  };
+
+  console.log(`Preflight: ${rows.length} threads, ${importableCount} importable now, ${blockedCount} blocked`);
+  for (const row of rows.filter((entry) => !entry.resolvedLeadId)) {
+    console.log(
+      `[blocked] ${row.leadEmail} sl=${row.smartleadLeadId ?? 'none'} resolution=${row.resolution} action=${row.action}`,
+    );
+  }
+  for (const row of rows.filter((entry) => entry.resolvedLeadId && entry.exportLeadId == null)) {
+    console.log(`[resolved-live] ${row.leadEmail} -> ${row.resolvedLeadId} (export had null leadId)`);
+  }
+
+  return report;
+}
+
+type InsertRecoveredThreadParams = {
+  supabase: SupabaseClient;
+  campaign: CampaignRow;
+  mailbox: MailboxRow;
+  leadId: string;
+  enrollmentId: string | null;
+  smartleadLeadId: number | null;
+  leadEmail: string;
+  subject: string;
+  participants: string[];
+  lastMessageAt: string;
+  sentMessages: RecoveryMessageExport[];
+  receivedMessage: RecoveryMessageExport;
+  sentFolderPath: string | null;
+  existingMessageIds: Set<string>;
+};
+
+async function insertRecoveredThread(params: InsertRecoveredThreadParams): Promise<{ threadId: string; insertedMessages: number }> {
+  const {
+    supabase,
+    campaign,
+    mailbox,
+    leadId,
+    enrollmentId,
+    smartleadLeadId,
+    leadEmail,
+    subject,
+    participants,
+    lastMessageAt,
+    sentMessages,
+    receivedMessage,
+    sentFolderPath,
+    existingMessageIds,
+  } = params;
+
+  const { data: insertedThread, error: threadError } = await (supabase
+    .from('email_threads')
+    .insert({
+      account_id: campaign.account_id,
+      campaign_id: campaign.id,
+      lead_id: leadId,
+      enrollment_id: enrollmentId,
+      message_job_id: null,
+      mailbox_id: mailbox.id,
+      smartlead_lead_id: smartleadLeadId,
+      subject,
+      participants,
+      last_message_at: lastMessageAt,
+      message_count: sentMessages.length + 1,
+      has_reply: true,
+    } as any)
+    .select('id')
+    .single() as any);
+  if (threadError || !insertedThread?.id) {
+    throw new Error(`Failed to insert recovered thread for ${leadEmail}: ${threadError?.message ?? 'missing thread id'}`);
+  }
+
+  const threadId = insertedThread.id as string;
+  const rows: Array<Record<string, unknown>> = [];
+  for (const message of sentMessages) {
+    if (message.messageId && existingMessageIds.has(message.messageId)) continue;
+    rows.push({
+      thread_id: threadId,
+      account_id: campaign.account_id,
+      message_job_id: null,
+      direction: 'sent',
+      from_email: message.from ?? mailbox.email_address,
+      from_name: mailbox.display_name,
+      to_email: leadEmail,
+      to_name: null,
+      subject: message.subject,
+      body_text: message.bodyText,
+      body_html: message.bodyHtml,
+      message_id: message.messageId,
+      in_reply_to: message.inReplyTo,
+      message_references: message.references,
+      received_at: message.date,
+      headers: {
+        source: 'imap_recovery',
+        folder: message.folder ?? sentFolderPath,
+        uid: message.uid,
+      },
+      attachments: [],
+    });
+  }
+
+  rows.push({
+    thread_id: threadId,
+    account_id: campaign.account_id,
+    message_job_id: null,
+    direction: 'received',
+    from_email: leadEmail,
+    from_name: null,
+    to_email: mailbox.email_address,
+    to_name: mailbox.display_name,
+    subject: receivedMessage.subject,
+    body_text: receivedMessage.bodyText,
+    body_html: receivedMessage.bodyHtml,
+    message_id: receivedMessage.messageId,
+    in_reply_to: receivedMessage.inReplyTo,
+    message_references: receivedMessage.references,
+    received_at: receivedMessage.date,
+    headers: {
+      source: 'imap_recovery',
+      folder: receivedMessage.folder ?? 'INBOX',
+      uid: receivedMessage.uid,
+    },
+    attachments: [],
+    imap_uid: receivedMessage.uid,
+  });
+
+  if (rows.length > 0) {
+    let insertedCount = 0;
+    for (const row of rows) {
+      const messageId = row.message_id as string | null | undefined;
+      if (messageId && existingMessageIds.has(messageId)) continue;
+      const { error: messageError } = await (supabase.from('email_messages').insert(row as any) as any);
+      if (messageError) {
+        if (messageError.message.includes('idx_email_messages_account_message_id_unique')) {
+          if (messageId) existingMessageIds.add(messageId);
+          continue;
+        }
+        await supabase.from('email_threads').delete().eq('id', threadId);
+        throw new Error(`Failed to insert recovered messages for ${leadEmail}: ${messageError.message}`);
+      }
+      insertedCount += 1;
+      if (messageId) existingMessageIds.add(messageId);
+    }
+    if (insertedCount === 0) {
+      await supabase.from('email_threads').delete().eq('id', threadId);
+      throw new Error(`Failed to insert recovered messages for ${leadEmail}: no messages inserted`);
+    }
+    return { threadId, insertedMessages: insertedCount };
+  }
+
+  await supabase.from('email_threads').delete().eq('id', threadId);
+  throw new Error(`Failed to insert recovered messages for ${leadEmail}: no message rows built`);
+}
+
+async function importRecoveryExport(
+  supabase: SupabaseClient,
+  campaign: CampaignRow,
+  args: Args,
+): Promise<ImportSummary> {
+  const dryRun = process.env.APPLY !== 'true';
+  if (!args.inputPath) throw new Error('import-export requires --input (recovery export JSON).');
+  const raw = readJsonFile<RecoveryExportPackage>(args.inputPath);
+  if (!isRecoveryExportPackage(raw)) throw new Error('Input is not a recovery export package (version 1 with threads[]).');
+
+  const checkpointPath = resolveCheckpointPath(args);
+  const importCheckpoint = loadImportCheckpoint(
+    checkpointPath,
+    campaign.id,
+    args.inputPath,
+    args.minConfidence,
+  );
+  const mailboxes = await fetchAccountMailboxes(supabase, campaign.account_id, null);
+  const mailboxById = new Map(mailboxes.map((mailbox) => [mailbox.id, mailbox]));
+  const threads = dedupeExportThreads(raw.threads);
+  const joinData = await fetchFurnaceLeadJoinData(supabase, campaign);
+  const accountLookup = await fetchAccountLeadLookup(
+    supabase,
+    campaign.account_id,
+    threads.map((thread) => thread.leadEmail),
+    threads.map((thread) => thread.smartleadLeadId).filter((id): id is number => id != null),
+  );
+  const lookupByEmail = new Map<string, AccountLeadLookupRow[]>();
+  for (const row of accountLookup) {
+    const list = lookupByEmail.get(row.email) ?? [];
+    list.push(row);
+    lookupByEmail.set(row.email, list);
+  }
+
+  const processedThreadKeys = new Set(importCheckpoint?.processedCandidateKeys ?? []);
+  const summary: ImportSummary = importCheckpoint?.summary ?? {
+    generatedAt: new Date().toISOString(),
+    campaignId: campaign.id,
+    dryRun,
+    wouldCreateThreads: 0,
+    createdThreads: 0,
+    skippedExistingThreads: 0,
+    skippedExistingMessages: 0,
+    insertedMessages: 0,
+    importedLeadEmails: [],
+    skipped: [],
+  };
+  summary.dryRun = dryRun;
+
+  const persistCurrentImportCheckpoint = (): void => {
+    if (!checkpointPath || !args.inputPath || dryRun) return;
+    persistImportCheckpoint(checkpointPath, {
+      kind: 'import',
+      version: 1,
+      generatedAt: importCheckpoint?.generatedAt ?? summary.generatedAt,
+      updatedAt: new Date().toISOString(),
+      campaignId: campaign.id,
+      inputPath: args.inputPath,
+      minConfidence: args.minConfidence,
+      processedCandidateKeys: [...processedThreadKeys],
+      summary,
+    });
+  };
+
+  console.log(`${dryRun ? '[dry-run] ' : ''}Importing ${threads.length} threads from export`);
+
+  for (const thread of threads) {
+    const threadKey = exportThreadCheckpointKey(thread);
+    if (processedThreadKeys.has(threadKey)) continue;
+
+    if (!thread.receivedMessage || !hasMessageBody(thread.receivedMessage)) {
+      summary.skipped.push({ leadEmail: thread.leadEmail, reason: 'missing received message body in export' });
+      processedThreadKeys.add(threadKey);
+      persistCurrentImportCheckpoint();
+      continue;
+    }
+
+    const mailbox = mailboxById.get(thread.mailboxId);
+    if (!mailbox) {
+      summary.skipped.push({ leadEmail: thread.leadEmail, reason: `mailbox ${thread.mailboxId} not found` });
+      processedThreadKeys.add(threadKey);
+      persistCurrentImportCheckpoint();
+      continue;
+    }
+
+    const matches = lookupByEmail.get(normalizeEmail(thread.leadEmail) ?? thread.leadEmail) ?? [];
+    const resolved = resolveLeadForImportThread(
+      campaign,
+      thread.leadEmail,
+      thread.smartleadLeadId,
+      joinData,
+      matches,
+    );
+    const leadId = resolved?.leadId ?? null;
+    if (!isImportableLeadId(leadId)) {
+      summary.skipped.push({
+        leadEmail: thread.leadEmail,
+        reason: 'no Furnace lead_id in target campaign (run preflight + backfill first)',
+      });
+      processedThreadKeys.add(threadKey);
+      persistCurrentImportCheckpoint();
+      continue;
+    }
+
+    let enrollmentId = resolved?.enrollmentId ?? thread.enrollmentId ?? null;
+    if (!enrollmentId && !dryRun) {
+      await ensureCampaignEnrollmentsForLeadIds(supabase, campaign, [leadId]);
+      const refreshed = await fetchFurnaceLeadJoinData(supabase, campaign);
+      enrollmentId = resolveLeadFromJoinData(thread.leadEmail, thread.smartleadLeadId, refreshed)?.enrollmentId ?? null;
+    }
+
+    const existingThreadId = await fetchExistingThreadId(supabase, campaign.id, thread.smartleadLeadId);
+    if (existingThreadId) {
+      const hasRecovery = await threadHasRecoveryMessages(supabase, existingThreadId);
+      if (hasRecovery) {
+        summary.skippedExistingThreads += 1;
+        summary.skipped.push({ leadEmail: thread.leadEmail, reason: 'thread already exists for campaign + smartlead_lead_id' });
+        processedThreadKeys.add(threadKey);
+        persistCurrentImportCheckpoint();
+        continue;
+      }
+      if (!dryRun) {
+        console.log(`Repairing orphan thread for ${thread.leadEmail} (${existingThreadId})`);
+        await deleteOrphanRecoveryThread(supabase, existingThreadId);
+      }
+    }
+
+    const allMessageIds = [
+      ...thread.sentMessages.map((message) => message.messageId),
+      thread.receivedMessage.messageId,
+    ].filter((value): value is string => !!value);
+    const existingMessageIds = await fetchExistingMessageIds(supabase, campaign.account_id, allMessageIds);
+    if (thread.receivedMessage.messageId && existingMessageIds.has(thread.receivedMessage.messageId)) {
+      summary.skippedExistingMessages += 1;
+      summary.skipped.push({ leadEmail: thread.leadEmail, reason: 'received message_id already exists in email_messages' });
+      processedThreadKeys.add(threadKey);
+      persistCurrentImportCheckpoint();
+      continue;
+    }
+
+    const participants = Array.from(
+      new Set(
+        [
+          mailbox.email_address,
+          thread.leadEmail,
+          ...thread.sentMessages.flatMap((message) => message.to),
+          normalizeEmail(thread.receivedMessage.from) ?? '',
+        ].filter(Boolean),
+      ),
+    );
+    const lastMessageAt = thread.receivedMessage.date;
+    const subject = thread.sentMessages[0]?.subject ?? thread.receivedMessage.subject ?? thread.threadDraft.subject;
+    const sentFolderPath = thread.sentMessages[0]?.folder ?? null;
+
+    if (dryRun) {
+      summary.wouldCreateThreads = (summary.wouldCreateThreads ?? 0) + 1;
+      summary.importedLeadEmails.push(thread.leadEmail);
+      console.log(`[dry-run] would import ${thread.leadEmail} (${thread.bucket}, ${thread.importReadiness})`);
+      processedThreadKeys.add(threadKey);
+      continue;
+    }
+
+    const { insertedMessages } = await insertRecoveredThread({
+      supabase,
+      campaign,
+      mailbox,
+      leadId,
+      enrollmentId,
+      smartleadLeadId: thread.smartleadLeadId,
+      leadEmail: thread.leadEmail,
+      subject,
+      participants,
+      lastMessageAt,
+      sentMessages: thread.sentMessages,
+      receivedMessage: thread.receivedMessage,
+      sentFolderPath,
+      existingMessageIds,
+    });
+
+    summary.createdThreads += 1;
+    summary.insertedMessages += insertedMessages;
+    summary.importedLeadEmails.push(thread.leadEmail);
+    processedThreadKeys.add(threadKey);
+    persistCurrentImportCheckpoint();
+    console.log(`Imported ${thread.leadEmail} (${insertedMessages} messages)`);
+  }
+
+  if (!dryRun) {
+    const { data: currentStats, error: statsError } = await supabase
+      .from('campaign_stats')
+      .select('sent_count, replied_count, positive_reply_count, bounce_count, last_bounce_at')
+      .eq('campaign_id', campaign.id)
+      .maybeSingle();
+    if (statsError) throw new Error(`Failed to load campaign_stats for reconciliation: ${statsError.message}`);
+
+    const currentSmartleadStats: SmartleadCampaignStats | null = currentStats
+      ? {
+        sent: currentStats.sent_count ?? 0,
+        replied: currentStats.replied_count ?? 0,
+        positiveReply: currentStats.positive_reply_count ?? 0,
+        bounce: currentStats.bounce_count ?? 0,
+        lastBounceAt: currentStats.last_bounce_at ?? null,
+      }
+      : null;
+    await finalizeImportedCampaignStats(campaign.id, campaign.account_id, currentSmartleadStats, supabase as any);
+    persistCurrentImportCheckpoint();
+  }
+
+  summary.generatedAt = new Date().toISOString();
+  summary.campaignId = campaign.id;
+  console.log(
+    `${dryRun ? '[dry-run] ' : ''}Import summary: created=${summary.createdThreads || summary.wouldCreateThreads || 0} skipped=${summary.skipped.length} messages=${summary.insertedMessages}`,
+  );
+  return summary;
+}
+
+async function fixLeadGapsFromPreflight(
+  supabase: SupabaseClient,
+  campaign: CampaignRow,
+  args: Args,
+  smartleadApiKey: string | null,
+): Promise<void> {
+  requireApply();
+  const report = await preflightRecoveryExport(supabase, campaign, args);
+  const blocked = report.rows.filter((row) => !row.resolvedLeadId);
+  if (blocked.length === 0) {
+    console.log('No blocked leads; nothing to backfill.');
+    return;
+  }
+  if (!smartleadApiKey) {
+    throw new Error('SMARTLEAD_API_KEY required to backfill missing leads from Smartlead.');
+  }
+  const smartleadLeadIds = blocked
+    .map((row) => row.smartleadLeadId)
+    .filter((id): id is number => id != null);
+  await backfillMissingLeadsFromSmartlead(supabase, campaign, smartleadApiKey, smartleadLeadIds);
+  const after = await preflightRecoveryExport(supabase, campaign, args);
+  if (after.blockedCount > 0) {
+    throw new Error(`Still blocked after backfill: ${after.blockedCount} thread(s). See preflight output.`);
+  }
+}
+
 async function fetchExistingThreadId(
   supabase: SupabaseClient,
   campaignId: string,
@@ -2602,6 +3308,24 @@ async function fetchExistingThreadId(
     .maybeSingle();
   if (error) throw new Error(`Failed to check existing thread: ${error.message}`);
   return data?.id ?? null;
+}
+
+async function threadHasRecoveryMessages(supabase: SupabaseClient, threadId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('email_messages')
+    .select('id, headers')
+    .eq('thread_id', threadId)
+    .eq('direction', 'received');
+  if (error) throw new Error(`Failed to check recovery messages: ${error.message}`);
+  return (data ?? []).some((row) => {
+    const headers = (row as { headers: { source?: string } | null }).headers;
+    return headers?.source === 'imap_recovery';
+  });
+}
+
+async function deleteOrphanRecoveryThread(supabase: SupabaseClient, threadId: string): Promise<void> {
+  await supabase.from('email_messages').delete().eq('thread_id', threadId);
+  await supabase.from('email_threads').delete().eq('id', threadId);
 }
 
 async function fetchExistingMessageIds(
@@ -3182,6 +3906,30 @@ async function main(): Promise<void> {
     );
     const exportPkg = await materializeRecoveryExport(supabase, campaign, args, audit);
     logExportSummary(exportPkg, args.exportOutputPath);
+    return;
+  }
+
+  if (args.mode === 'preflight-export') {
+    if (!args.inputPath) throw new Error('preflight-export requires --input (recovery export JSON).');
+    const report = await preflightRecoveryExport(supabase, campaign, args);
+    if (args.outputPath) {
+      writeJson(args.outputPath, report);
+      console.log(`Preflight report written to ${resolve(process.cwd(), args.outputPath)}`);
+    }
+    if (process.env.FIX_LEAD_GAPS === 'true') {
+      await fixLeadGapsFromPreflight(supabase, campaign, args, args.smartleadApiKey);
+    }
+    return;
+  }
+
+  if (args.mode === 'import-export') {
+    const summary = await importRecoveryExport(supabase, campaign, args);
+    if (args.outputPath) {
+      writeJson(args.outputPath, summary);
+      console.log(`Import summary written to ${resolve(process.cwd(), args.outputPath)}`);
+    } else {
+      console.log(JSON.stringify(summary, null, 2));
+    }
     return;
   }
 

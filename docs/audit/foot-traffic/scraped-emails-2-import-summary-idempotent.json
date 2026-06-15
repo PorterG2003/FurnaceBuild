@@ -1,0 +1,73 @@
+{
+  "generatedAt": "2026-06-15T05:41:54.413Z",
+  "campaignId": "eecac452-8248-4809-8a45-26761b5c5a31",
+  "dryRun": false,
+  "wouldCreateThreads": 0,
+  "createdThreads": 0,
+  "skippedExistingThreads": 15,
+  "skippedExistingMessages": 0,
+  "insertedMessages": 0,
+  "importedLeadEmails": [],
+  "skipped": [
+    {
+      "leadEmail": "myexperience@aarons.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "myexperience@aarons.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "hello@uhmedical.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "info@blueoakfamilychiro.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "info@centralparkaesthetics.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "drsegler@docontherun.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "info@citysquares.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "support@myadvice.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "inquiries@andersenorthopedics.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "miguel@drfurze.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "admin@sorensonfootandankle.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "hello@mycorederm.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "leland.webb@webbplasticsurgery.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "allison@columbineaesthetics.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "hello@patientfi.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    }
+  ]
+}

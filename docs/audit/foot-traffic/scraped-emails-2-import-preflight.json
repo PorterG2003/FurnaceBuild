@@ -1,0 +1,270 @@
+{
+  "generatedAt": "2026-06-15T05:39:12.781Z",
+  "campaignId": "eecac452-8248-4809-8a45-26761b5c5a31",
+  "exportPath": "docs/audit/foot-traffic/scraped-emails-2-all-150-recovery-export.json",
+  "threadCount": 15,
+  "importableCount": 15,
+  "blockedCount": 0,
+  "rows": [
+    {
+      "leadEmail": "myexperience@aarons.com",
+      "smartleadLeadId": 3543494127,
+      "importReadiness": "needs_review",
+      "exportLeadId": "fdeb335d-7ed6-4326-8ebe-abe5d7401fc6",
+      "resolvedLeadId": "fdeb335d-7ed6-4326-8ebe-abe5d7401fc6",
+      "resolvedEnrollmentId": "d165a35d-47f0-43fd-9660-bada94a898fb",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "ac652b6a-4c19-451d-a5c7-6cb122df30d8"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "myexperience@aarons.com",
+      "smartleadLeadId": 3543494127,
+      "importReadiness": "needs_review",
+      "exportLeadId": "fdeb335d-7ed6-4326-8ebe-abe5d7401fc6",
+      "resolvedLeadId": "fdeb335d-7ed6-4326-8ebe-abe5d7401fc6",
+      "resolvedEnrollmentId": "d165a35d-47f0-43fd-9660-bada94a898fb",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "ac652b6a-4c19-451d-a5c7-6cb122df30d8"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "hello@uhmedical.com",
+      "smartleadLeadId": 3521211160,
+      "importReadiness": "ready",
+      "exportLeadId": "ef874a30-5479-4ef3-baa2-243ff61de457",
+      "resolvedLeadId": "ef874a30-5479-4ef3-baa2-243ff61de457",
+      "resolvedEnrollmentId": "45502bec-a6e0-4373-93ff-ba7696e4ed1a",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "c4df3c68-82de-4974-8f20-9daec1c14d32",
+          "campaignName": "Foot Traffic - Patient Care (Ran Ads)",
+          "leadId": "b632782d-944e-4520-9468-774feb50d368"
+        },
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "53309d63-4a98-43ab-9531-e4cf9d0576d5"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "info@blueoakfamilychiro.com",
+      "smartleadLeadId": 3543445459,
+      "importReadiness": "ready",
+      "exportLeadId": "60e48633-3a00-41f1-980c-d0030633bfa3",
+      "resolvedLeadId": "60e48633-3a00-41f1-980c-d0030633bfa3",
+      "resolvedEnrollmentId": "e0457e1d-6e10-4e79-b606-912c19567912",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "3437e09b-c2fb-4fb6-8560-c444b0f10d2b"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "info@centralparkaesthetics.com",
+      "smartleadLeadId": 3543445671,
+      "importReadiness": "needs_review",
+      "exportLeadId": "e7960e0b-00f7-41c5-84ad-eb4e1389f135",
+      "resolvedLeadId": "e7960e0b-00f7-41c5-84ad-eb4e1389f135",
+      "resolvedEnrollmentId": "6b52ce03-7258-4582-a989-bea35c79c11c",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "087c803d-01b6-49e6-afce-f75be6923618"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "drsegler@docontherun.com",
+      "smartleadLeadId": 3543496177,
+      "importReadiness": "needs_review",
+      "exportLeadId": "6afb5d3b-bb87-4e92-a76e-2376b239b08a",
+      "resolvedLeadId": "6afb5d3b-bb87-4e92-a76e-2376b239b08a",
+      "resolvedEnrollmentId": "2ef84525-74e1-40a6-97bf-2fb7b404ccdf",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "ccab3022-08e6-4585-a737-8b52bd4d5243"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "info@citysquares.com",
+      "smartleadLeadId": 3543496053,
+      "importReadiness": "needs_review",
+      "exportLeadId": "b1d64b2c-61bc-4443-8480-78a18ec99e68",
+      "resolvedLeadId": "b1d64b2c-61bc-4443-8480-78a18ec99e68",
+      "resolvedEnrollmentId": "75d3b480-907c-4788-96b4-e887eda0d4e3",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "317f5f9b-67ab-4b63-98d3-f5fd5d40a752"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "support@myadvice.com",
+      "smartleadLeadId": 3543436284,
+      "importReadiness": "ready",
+      "exportLeadId": "0257ac4f-6cf5-40e2-9f48-10697560c651",
+      "resolvedLeadId": "0257ac4f-6cf5-40e2-9f48-10697560c651",
+      "resolvedEnrollmentId": "f330ae13-2e01-4b50-894c-dceb126b627b",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "7be9419a-be21-4380-81a1-811822ec71dd"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "inquiries@andersenorthopedics.com",
+      "smartleadLeadId": 3543436370,
+      "importReadiness": "needs_review",
+      "exportLeadId": "a008cdd2-e0df-4456-9e6e-605190a5368e",
+      "resolvedLeadId": "a008cdd2-e0df-4456-9e6e-605190a5368e",
+      "resolvedEnrollmentId": "233a23fc-d5d8-4d75-99b1-0c1a9eb87025",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "9ea5be3f-046c-4f59-9015-cb0c70a6fcec"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "miguel@drfurze.com",
+      "smartleadLeadId": 3543436502,
+      "importReadiness": "needs_review",
+      "exportLeadId": "a73ac767-2075-4ef7-b7ee-4b48f519295d",
+      "resolvedLeadId": "a73ac767-2075-4ef7-b7ee-4b48f519295d",
+      "resolvedEnrollmentId": "ca6cb3a8-97fe-4d29-95b3-c3f4817f43d3",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "0593825f-ddc2-459c-a978-9f6325fee7d4"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "admin@sorensonfootandankle.com",
+      "smartleadLeadId": 3543496514,
+      "importReadiness": "ready",
+      "exportLeadId": "21dd4794-8fda-48d0-a400-2ba46956d955",
+      "resolvedLeadId": "21dd4794-8fda-48d0-a400-2ba46956d955",
+      "resolvedEnrollmentId": "6f1681f7-44e4-4d2e-a71e-cfe8538c770e",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "45c7fd7c-3f95-4f22-ac49-7a2035216a12"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "hello@mycorederm.com",
+      "smartleadLeadId": 3543446428,
+      "importReadiness": "needs_review",
+      "exportLeadId": "5f4f957b-cd7e-4c4c-beae-0aedc4a54916",
+      "resolvedLeadId": "5f4f957b-cd7e-4c4c-beae-0aedc4a54916",
+      "resolvedEnrollmentId": "795052a2-75c3-4352-98ba-5cb97ccfc4db",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "ce01657d-781f-487c-8275-c190e1715736"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "leland.webb@webbplasticsurgery.com",
+      "smartleadLeadId": 3543436371,
+      "importReadiness": "ready",
+      "exportLeadId": "6df74d8a-9b82-46fc-b61f-72c64482d683",
+      "resolvedLeadId": "6df74d8a-9b82-46fc-b61f-72c64482d683",
+      "resolvedEnrollmentId": "4af12851-0f0d-44fd-875c-5230c155ed0d",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "e5a011d2-2a47-46d7-b086-9c0bf24c8bf0"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "allison@columbineaesthetics.com",
+      "smartleadLeadId": 3543446202,
+      "importReadiness": "ready",
+      "exportLeadId": "24fe9dee-d47f-4537-be51-bc04c6fc8319",
+      "resolvedLeadId": "24fe9dee-d47f-4537-be51-bc04c6fc8319",
+      "resolvedEnrollmentId": "cd00478a-1740-405f-8904-e87c23ab0f91",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "65c7567a-ba0f-42f3-bdbb-a743f5bc9945"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "hello@patientfi.com",
+      "smartleadLeadId": 3543454845,
+      "importReadiness": "ready",
+      "exportLeadId": "a2eaf80e-a266-47d8-b78c-0aa97b1d8bd6",
+      "resolvedLeadId": "a2eaf80e-a266-47d8-b78c-0aa97b1d8bd6",
+      "resolvedEnrollmentId": "dd0b2130-e837-4aba-a6d6-f4eab8f86121",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "7b7a7e52-5faf-4ce4-9649-0dbdf32b2a52",
+          "campaignName": "Foot Traffic - Scraped Emails",
+          "leadId": "ec7fb157-0c86-4c87-8ffc-55377f048d2a"
+        }
+      ],
+      "action": "import_ready"
+    }
+  ]
+}

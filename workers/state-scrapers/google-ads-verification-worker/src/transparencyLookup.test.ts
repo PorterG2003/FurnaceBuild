@@ -3,6 +3,8 @@ import test from 'node:test';
 import {
   clipCreativePreviewBox,
   isAcceptableCreativePreviewCandidate,
+  layoutClipCenterPanel,
+  layoutClipFromMetadataAnchor,
   pickBestCreativePreviewCandidate,
   selectCreativeHrefsForSampling,
   type CreativePreviewCandidate,
@@ -71,7 +73,7 @@ test('isAcceptableCreativePreviewCandidate rejects tiny low-signal nodes', () =>
   );
 });
 
-test('isAcceptableCreativePreviewCandidate rejects textless iframe-backed creatives', () => {
+test('isAcceptableCreativePreviewCandidate rejects textless iframe-backed creatives in strict mode', () => {
   assert.equal(
     isAcceptableCreativePreviewCandidate(
       candidate({
@@ -82,6 +84,41 @@ test('isAcceptableCreativePreviewCandidate rejects textless iframe-backed creati
         hasIframe: true,
       }),
       VIEWPORT,
+      'strict',
+    ),
+    false,
+  );
+});
+
+test('isAcceptableCreativePreviewCandidate accepts sized textless iframe creatives in relaxed mode', () => {
+  assert.equal(
+    isAcceptableCreativePreviewCandidate(
+      candidate({
+        width: 380,
+        height: 187,
+        textLength: 0,
+        imageCount: 1,
+        hasIframe: true,
+      }),
+      VIEWPORT,
+      'relaxed',
+    ),
+    true,
+  );
+});
+
+test('isAcceptableCreativePreviewCandidate still rejects tiny textless iframe creatives in relaxed mode', () => {
+  assert.equal(
+    isAcceptableCreativePreviewCandidate(
+      candidate({
+        width: 90,
+        height: 30,
+        textLength: 0,
+        imageCount: 1,
+        hasIframe: true,
+      }),
+      VIEWPORT,
+      'relaxed',
     ),
     false,
   );
@@ -182,6 +219,45 @@ test('pickBestCreativePreviewCandidate returns null when only bad candidates exi
   );
 
   assert.equal(best, null);
+});
+
+test('pickBestCreativePreviewCandidate prefers strict acceptable candidate over relaxed-only iframe', () => {
+  const textlessIframe = candidate({
+    width: 380,
+    height: 187,
+    textLength: 0,
+    imageCount: 1,
+    hasIframe: true,
+    priority: 0,
+  });
+  const textCreative = candidate({
+    width: 340,
+    height: 110,
+    textLength: 92,
+    imageCount: 1,
+    priority: 2,
+  });
+
+  assert.equal(pickBestCreativePreviewCandidate([textlessIframe, textCreative], VIEWPORT, 'strict')?.width, 340);
+  assert.equal(pickBestCreativePreviewCandidate([textlessIframe], VIEWPORT, 'strict'), null);
+  assert.equal(pickBestCreativePreviewCandidate([textlessIframe], VIEWPORT, 'relaxed')?.width, 380);
+});
+
+test('layoutClipFromMetadataAnchor builds a bounded crop above metadata labels', () => {
+  const clip = layoutClipFromMetadataAnchor(720, VIEWPORT);
+  assert.ok(clip);
+  assert.ok(clip!.width >= 120);
+  assert.ok(clip!.height >= 48);
+  assert.ok(clip!.y + clip!.height <= 720);
+});
+
+test('layoutClipCenterPanel stays within the default viewport', () => {
+  const clip = layoutClipCenterPanel(VIEWPORT);
+  assert.ok(clip.x >= 0);
+  assert.ok(clip.y >= 0);
+  assert.ok(clip.x + clip.width <= VIEWPORT.width);
+  assert.ok(clip.y + clip.height <= VIEWPORT.height);
+  assert.ok(clip.width * clip.height >= 8_000);
 });
 
 test('selectCreativeHrefsForSampling keeps one advertiser cluster per domain', () => {

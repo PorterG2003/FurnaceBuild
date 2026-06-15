@@ -38,6 +38,12 @@ workers/state-scrapers/website-verification-worker/tmp/
 # typescript
 *.tsbuildinfo
 
+# lib/mailbox build artifacts (output belongs in lib/mailbox/dist/)
+lib/mailbox/*.js
+lib/mailbox/*.js.map
+lib/mailbox/*.d.ts
+lib/mailbox/*.d.ts.map
+
 # generated native folders
 /ios
 /android

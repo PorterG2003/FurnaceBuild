@@ -6,14 +6,14 @@ export {
   formatImapError,
   type ConnectionFailureKind,
   type ImapErrorDetails,
-} from './connectionErrors.js';
+} from './connectionErrors';
 
 export {
   isExchangeLsubError,
   openImapInbox,
   verifyImapInboxAccess,
   type ImapClientLike,
-} from './imapInbox.js';
+} from './imapInbox';
 
-export { default as connectionErrors } from './connectionErrors.js';
-export { default as imapInbox } from './imapInbox.js';
+export { default as connectionErrors } from './connectionErrors';
+export { default as imapInbox } from './imapInbox';

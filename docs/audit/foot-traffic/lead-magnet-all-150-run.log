@@ -167,3 +167,43 @@ Senders: furnace_account_mailboxes | assigned=0 intersection=0 selected=150 cove
 [recover-smartlead] Sent scan 119/150: lenzbraxton@clinictrafficco.com (537 messages since 2026-05-01)
 [recover-smartlead] Sent scan 120/150: lenzbraxton@clinictrafficdr.com (547 messages since 2026-05-01)
 [recover-smartlead] Sent scan 121/150: llenz@clinicfoottrafficco.com (551 messages since 2026-05-01)
+[recover-smartlead] Sent scan 122/150: llenz@clinictrafficco.com (566 messages since 2026-05-01)
+[recover-smartlead] Sent scan 123/150: llenz@clinictrafficdr.com (562 messages since 2026-05-01)
+[recover-smartlead] Sent scan 124/150: m.daniel@clinicfoottrafficco.com (547 messages since 2026-05-01)
+[recover-smartlead] Sent scan 125/150: m.daniel@clinictrafficco.com (545 messages since 2026-05-01)
+[recover-smartlead] Sent scan 126/150: m.daniel@clinictrafficdr.com (558 messages since 2026-05-01)
+[recover-smartlead] Sent scan 127/150: m.mowery@clinicfoottrafficco.com (552 messages since 2026-05-01)
+[recover-smartlead] Sent scan 128/150: m.mowery@clinictrafficco.com (550 messages since 2026-05-01)
+[recover-smartlead] Sent scan 129/150: m.mowery@clinictrafficdr.com (561 messages since 2026-05-01)
+[recover-smartlead] Sent scan 130/150: mdaniel@clinicfoottrafficco.com (547 messages since 2026-05-01)
+[recover-smartlead] Sent scan 131/150: mdaniel@clinictrafficco.com (565 messages since 2026-05-01)
+[recover-smartlead] Sent scan 132/150: mdaniel@clinictrafficdr.com (551 messages since 2026-05-01)
+[recover-smartlead] Sent scan 133/150: mmowery@clinicfoottrafficco.com (556 messages since 2026-05-01)
+[recover-smartlead] Sent scan 134/150: mmowery@clinictrafficco.com (554 messages since 2026-05-01)
+[recover-smartlead] Sent scan 135/150: mmowery@clinictrafficdr.com (559 messages since 2026-05-01)
+[recover-smartlead] Sent scan 136/150: mowery.d@clinicfoottrafficco.com (565 messages since 2026-05-01)
+[recover-smartlead] Sent scan 137/150: mowery.d@clinictrafficco.com (557 messages since 2026-05-01)
+[recover-smartlead] Sent scan 138/150: mowery.d@clinictrafficdr.com (561 messages since 2026-05-01)
+[recover-smartlead] Sent scan 139/150: mowery.daniel@clinicfoottrafficco.com (562 messages since 2026-05-01)
+[recover-smartlead] Sent scan 140/150: mowery.daniel@clinictrafficco.com (555 messages since 2026-05-01)
+[recover-smartlead] Sent scan 141/150: mowery.daniel@clinictrafficdr.com (566 messages since 2026-05-01)
+[recover-smartlead] Sent scan 142/150: mowery@clinicfoottrafficco.com (543 messages since 2026-05-01)
+[recover-smartlead] Sent scan 143/150: mowery@clinictrafficco.com (560 messages since 2026-05-01)
+[recover-smartlead] Sent scan 144/150: mowery@clinictrafficdr.com (569 messages since 2026-05-01)
+[recover-smartlead] Sent scan 145/150: moweryd@clinicfoottrafficco.com (559 messages since 2026-05-01)
+[recover-smartlead] Sent scan 146/150: moweryd@clinictrafficco.com (542 messages since 2026-05-01)
+[recover-smartlead] Sent scan 147/150: moweryd@clinictrafficdr.com (509 messages since 2026-05-01)
+[recover-smartlead] Sent scan 148/150: mowerydaniel@clinicfoottrafficco.com (549 messages since 2026-05-01)
+[recover-smartlead] Sent scan 149/150: mowerydaniel@clinictrafficco.com (560 messages since 2026-05-01)
+[recover-smartlead] Sent scan 150/150: mowerydaniel@clinictrafficdr.com (558 messages since 2026-05-01)
+Campaign Sent recovery: tagged=3040 expected=3220 ratio=94%
+Audit output written to /Users/porter/Projects/FurnaceBuild/docs/audit/foot-traffic/lead-magnet-all-150-audit.json
+Candidates: 17
+Review: 22
+Dropped: 0
+Recipients: smartlead_campaign_leads | smartleadLeads=3933 furnaceMapped=1000 unmapped=2933
+Senders: furnace_account_mailboxes | assigned=0 intersection=0 selected=150 coverage=yes
+Sent funnel: toLead=3040 noLeadMatch=69338 tagged=3040
+Warnings/errors: 7
+Gate: go
+Gate reason: Tagged Sent rows were found and the sample produced candidate or review rows worth operator review.

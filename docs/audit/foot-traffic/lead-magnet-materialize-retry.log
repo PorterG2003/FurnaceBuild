@@ -1,0 +1,29 @@
+Target env: prod
+Supabase URL from PROD_SUPABASE_URL
+Supabase secret from Parameter Store /amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY
+Mode: materialize-export
+Campaign: 315e72b5-3ca0-4258-9307-b5e786e6868a
+Since: 2026-05-01T00:00:00.000Z
+Message window: all Sent/INBOX mail since --since (no per-mailbox cap)
+Campaign name: Foot Traffic - Apollo Contacts (Lead Magnet)
+Smartlead campaign id: 3295280
+Materializing export from /Users/porter/Projects/FurnaceBuild/docs/audit/foot-traffic/lead-magnet-all-150-audit.json (17 candidates, 22 review)
+[materialize] fetching vincentp@thesaltsuite.com from daniel.m@clinictrafficdr.com…
+[materialize] fetching keith@eastvalleykravmaga.com from mmowery@clinicfoottrafficco.com…
+[materialize] fetching britta@focusptva.com from mowery.daniel@clinicfoottrafficco.com…
+Target env: prod
+Supabase URL from PROD_SUPABASE_URL
+Supabase secret from Parameter Store /amplify/shared/d1jtp0rz0l9mcn/SUPABASE_SECRET_KEY
+Mode: materialize-export
+Campaign: 315e72b5-3ca0-4258-9307-b5e786e6868a
+Since: 2026-05-01T00:00:00.000Z
+Message window: all Sent/INBOX mail since --since (no per-mailbox cap)
+Campaign name: Foot Traffic - Apollo Contacts (Lead Magnet)
+Smartlead campaign id: 3295280
+Materializing export from /Users/porter/Projects/FurnaceBuild/docs/audit/foot-traffic/lead-magnet-all-150-audit.json (17 candidates, 22 review)
+[materialize] loaded 39 threads from existing export
+[materialize] fetching frank@pure-physicaltherapy.com from lenzb@clinictrafficdr.com…
+[materialize] attempt 1/3 failed for frank@pure-physicaltherapy.com: Command failed
+[materialize] fetching aneri@leapsandboundsil.com from lenz@clinicfoottrafficco.com…
+[materialize] fetching caitlin@thelotusmethodsf.com from mowerydaniel@clinictrafficco.com…
+[materialize] fetching michele@danupt.com from mmowery@clinicfoottrafficco.com…

@@ -1,8 +1,6 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 import {
-  fluxPublicPageCanonicalPath,
-  fluxPublicPageTrailingSlashPath,
   normalizeSlugParam,
   resolveFluxPublicPageSlug,
   slugFromFluxPublicPathname,
@@ -23,11 +21,12 @@ describe('slugFromFluxPublicPathname', () => {
   });
 });
 
-describe('fluxPublicPageTrailingSlashPath', () => {
-  it('detects trailing-slash Flux public URLs', () => {
-    assert.strictEqual(fluxPublicPageTrailingSlashPath('/p/purept/'), '/p/purept');
-    assert.strictEqual(fluxPublicPageTrailingSlashPath('/p/purept'), null);
-    assert.strictEqual(fluxPublicPageCanonicalPath('/p/purept/', '?utm=1', '#x'), '/p/purept?utm=1#x');
+describe('normalizeSlugParam', () => {
+  it('accepts a single slug and rejects multi-segment catch-all params', () => {
+    assert.strictEqual(normalizeSlugParam('purept'), 'purept');
+    assert.strictEqual(normalizeSlugParam(['purept']), 'purept');
+    assert.strictEqual(normalizeSlugParam(['purept', 'extra']), undefined);
+    assert.strictEqual(normalizeSlugParam(['']), undefined);
   });
 });
 
@@ -36,9 +35,13 @@ describe('resolveFluxPublicPageSlug', () => {
     assert.strictEqual(resolveFluxPublicPageSlug('peakpt', '/p/other/'), 'peakpt');
   });
 
-  it('falls back to pathname when params are empty (Amplify trailing slash)', () => {
+  it('falls back to pathname when params are empty or invalid', () => {
     assert.strictEqual(resolveFluxPublicPageSlug('', '/p/purept/'), 'purept');
     assert.strictEqual(resolveFluxPublicPageSlug(undefined, '/p/purept/'), 'purept');
-    assert.strictEqual(normalizeSlugParam(['']), undefined);
+    assert.strictEqual(resolveFluxPublicPageSlug(['purept', 'extra'], '/p/purept/'), 'purept');
+  });
+
+  it('rejects nested paths instead of treating them as a valid public page', () => {
+    assert.strictEqual(resolveFluxPublicPageSlug(['purept', 'extra'], '/p/purept/extra'), undefined);
   });
 });

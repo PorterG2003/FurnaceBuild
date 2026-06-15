@@ -1,7 +1,7 @@
 import { useLayoutEffect } from 'react';
 import { Platform } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { isInstallGateExemptRoute } from '@/lib/web/installGate';
+import { getCurrentWebPathname, isInstallGateExemptRoute } from '@/lib/web/installGate';
 import { useWebInstallGateBlocked } from '@/lib/web/useWebInstallGateBlocked';
 
 /**
@@ -12,13 +12,14 @@ export function WebInstallGate() {
   const pathname = usePathname();
   const router = useRouter();
   const search = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.search : '';
+  const currentPathname = Platform.OS === 'web' ? getCurrentWebPathname(pathname) : pathname;
 
   useLayoutEffect(() => {
     if (Platform.OS !== 'web') return;
     if (!blocked) return;
-    if (isInstallGateExemptRoute(pathname, search)) return;
+    if (isInstallGateExemptRoute(currentPathname, search)) return;
     router.replace('/install');
-  }, [blocked, pathname, router, search]);
+  }, [blocked, currentPathname, router, search]);
 
   return null;
 }

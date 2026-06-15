@@ -1,6 +1,6 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
-import { isFluxPublicLandingRoute, isInstallGateExemptRoute } from './installGate';
+import { getCurrentWebPathname, isFluxPublicLandingRoute, isInstallGateExemptRoute } from './installGate';
 
 describe('isInstallGateExemptRoute', () => {
   it('exempts /install', () => {
@@ -84,5 +84,29 @@ describe('isFluxPublicLandingRoute', () => {
     assert.strictEqual(isFluxPublicLandingRoute('/p/acme-corp'), true);
     assert.strictEqual(isFluxPublicLandingRoute('/p/acme-corp/'), true);
     assert.strictEqual(isFluxPublicLandingRoute('/flux'), false);
+  });
+});
+
+describe('getCurrentWebPathname', () => {
+  it('prefers the live browser pathname when available', () => {
+    const previousWindow = globalThis.window;
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { location: { pathname: '/p/acme-corp/' } },
+    });
+
+    try {
+      assert.strictEqual(getCurrentWebPathname('/fallback'), '/p/acme-corp/');
+    } finally {
+      if (previousWindow === undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete (globalThis as { window?: Window }).window;
+      } else {
+        Object.defineProperty(globalThis, 'window', {
+          configurable: true,
+          value: previousWindow,
+        });
+      }
+    }
   });
 });

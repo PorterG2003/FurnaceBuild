@@ -11,8 +11,7 @@ import { FeedbackProvider } from '@/components/ui/feedback';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AccountProvider } from '@/contexts/AccountContext';
 import { WebInstallGate } from '@/components/web/WebInstallGate';
-import { isFluxPublicLandingRoute } from '@/lib/web/installGate';
-import { useFluxPublicPageTrailingSlashRedirect } from '@/lib/web/useFluxPublicPageTrailingSlashRedirect';
+import { getCurrentWebPathname, isFluxPublicLandingRoute } from '@/lib/web/installGate';
 
 const MIN_BOOT_MS = 350;
 const MAX_FONT_BOOT_MS = 3000;
@@ -32,14 +31,10 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const pathname = usePathname();
-  useFluxPublicPageTrailingSlashRedirect();
+  const currentPathname = getCurrentWebPathname(pathname);
   const skipAppBoot = useMemo(() => {
-    if (isFluxPublicLandingRoute(pathname)) return true;
-    if (typeof window !== 'undefined' && isFluxPublicLandingRoute(window.location.pathname)) {
-      return true;
-    }
-    return false;
-  }, [pathname]);
+    return isFluxPublicLandingRoute(currentPathname);
+  }, [currentPathname]);
 
   const [minBootElapsed, setMinBootElapsed] = useState(false);
   const [fontBootTimedOut, setFontBootTimedOut] = useState(false);

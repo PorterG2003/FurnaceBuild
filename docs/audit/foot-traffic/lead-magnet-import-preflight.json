@@ -1,0 +1,673 @@
+{
+  "generatedAt": "2026-06-15T05:39:06.042Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "exportPath": "docs/audit/foot-traffic/lead-magnet-all-150-recovery-export.json",
+  "threadCount": 39,
+  "importableCount": 39,
+  "blockedCount": 0,
+  "rows": [
+    {
+      "leadEmail": "vincentp@thesaltsuite.com",
+      "smartleadLeadId": 3433842721,
+      "importReadiness": "ready",
+      "exportLeadId": "93a30a12-6651-4a4a-8481-452d1636712b",
+      "resolvedLeadId": "93a30a12-6651-4a4a-8481-452d1636712b",
+      "resolvedEnrollmentId": "0033093d-a7a3-4de0-85ef-22c103c59a89",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "cb99a870-ac9f-4e22-99a7-a9bb3f4ab775"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "keith@eastvalleykravmaga.com",
+      "smartleadLeadId": 3433842988,
+      "importReadiness": "ready",
+      "exportLeadId": "84fc0611-79e4-45bd-8c0c-38255759088b",
+      "resolvedLeadId": "84fc0611-79e4-45bd-8c0c-38255759088b",
+      "resolvedEnrollmentId": "edc0be21-5936-4f7e-93e5-9ef3a03fba94",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "250460a6-58f6-440f-8ae7-ed105d679acc"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "maryjean@greatfallspt.com",
+      "smartleadLeadId": 3433843141,
+      "importReadiness": "needs_review",
+      "exportLeadId": "ce888071-04b6-4d1d-9934-4593c37a0e03",
+      "resolvedLeadId": "ce888071-04b6-4d1d-9934-4593c37a0e03",
+      "resolvedEnrollmentId": "3f43c130-0ad2-4640-9210-70f72be880ef",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "651b61a1-2d24-4551-953a-92fb74608029"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "ann@balinmo.com",
+      "smartleadLeadId": 3433843757,
+      "importReadiness": "needs_review",
+      "exportLeadId": "29532680-e2bc-47de-b9c0-7c39ccf43dab",
+      "resolvedLeadId": "29532680-e2bc-47de-b9c0-7c39ccf43dab",
+      "resolvedEnrollmentId": "71788c19-df9a-489c-b0ad-e4a71efc250f",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "4287cd84-ec03-4d23-b1f3-20c12d4a4463"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "rob@opisafe.com",
+      "smartleadLeadId": 3433844147,
+      "importReadiness": "needs_review",
+      "exportLeadId": "476bc37c-ec0f-45e5-9e53-cc61a6bc9388",
+      "resolvedLeadId": "476bc37c-ec0f-45e5-9e53-cc61a6bc9388",
+      "resolvedEnrollmentId": "f4b0e11b-8123-4679-94c2-75bb486ded4b",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "8061460e-4ac0-4dd6-973e-9e4b3ce5f376"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "maddie@rangeptmontana.com",
+      "smartleadLeadId": 3433844269,
+      "importReadiness": "needs_review",
+      "exportLeadId": "fce96294-d280-4c51-b6f6-6b4be5ed4275",
+      "resolvedLeadId": "fce96294-d280-4c51-b6f6-6b4be5ed4275",
+      "resolvedEnrollmentId": "4c51e110-6db0-4aa7-b745-7b79dd4f9ff3",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "8ea715e8-9d99-4768-988b-157f48bf2595"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "morgan@morganpetro.com",
+      "smartleadLeadId": 3433844289,
+      "importReadiness": "needs_review",
+      "exportLeadId": "6026abce-3a1b-40e3-9c44-5880befb6562",
+      "resolvedLeadId": "6026abce-3a1b-40e3-9c44-5880befb6562",
+      "resolvedEnrollmentId": "26deead8-e3f9-494a-82e4-807fafccf1cf",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "1ac5f684-3f02-4e30-8930-2702093a6057"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "craynor@pennpain.com",
+      "smartleadLeadId": 3433844622,
+      "importReadiness": "needs_review",
+      "exportLeadId": "a1d6f768-ef6d-4406-b7d2-ca645c00083e",
+      "resolvedLeadId": "a1d6f768-ef6d-4406-b7d2-ca645c00083e",
+      "resolvedEnrollmentId": "b944ae05-f781-48c8-a8da-1517c78caaf3",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "c5d97722-c7c4-4dd0-8792-fe9a88d7ed08"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "britta@focusptva.com",
+      "smartleadLeadId": 3433844728,
+      "importReadiness": "ready",
+      "exportLeadId": "45b43e81-cece-4df3-b486-b4a1b46ab75a",
+      "resolvedLeadId": "45b43e81-cece-4df3-b486-b4a1b46ab75a",
+      "resolvedEnrollmentId": "4e87f047-162d-4c66-98a7-a80632c329e3",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "91abe22e-c54b-4390-bbd6-089196b95ded"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "bridget@peakphysicaltherapypa.com",
+      "smartleadLeadId": 3433844895,
+      "importReadiness": "needs_review",
+      "exportLeadId": "e86ef30c-2d79-4e92-a5d7-92684d0d7da0",
+      "resolvedLeadId": "e86ef30c-2d79-4e92-a5d7-92684d0d7da0",
+      "resolvedEnrollmentId": "277772b6-c277-4308-907c-cb575a8662b3",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "392b8e64-07ce-486d-91cb-3a1eedb1c6aa"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "trevor@empoweruptp.com",
+      "smartleadLeadId": 3433844876,
+      "importReadiness": "needs_review",
+      "exportLeadId": "2d502e46-c719-48ab-8fa6-bde104ba0368",
+      "resolvedLeadId": "2d502e46-c719-48ab-8fa6-bde104ba0368",
+      "resolvedEnrollmentId": "692c9da9-74a5-4e58-ab95-0e227b95f07b",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "84d4c350-89f2-4a83-8f03-02dcd492196f"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "deborah@centertruehealth.com",
+      "smartleadLeadId": 3433845106,
+      "importReadiness": "needs_review",
+      "exportLeadId": "f424519a-efa7-4489-bff3-25f8c4254d4b",
+      "resolvedLeadId": "f424519a-efa7-4489-bff3-25f8c4254d4b",
+      "resolvedEnrollmentId": "d706ad9c-15e0-4ad3-b410-8a3b39f5f825",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "b512b60d-c287-456a-bdd6-8df282a5acbb"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "ed@proformpt.com",
+      "smartleadLeadId": 3433845193,
+      "importReadiness": "needs_review",
+      "exportLeadId": "5e0cfbaf-65cb-47c6-aea6-87fb5c7813d1",
+      "resolvedLeadId": "5e0cfbaf-65cb-47c6-aea6-87fb5c7813d1",
+      "resolvedEnrollmentId": "711edbfb-00f5-46f2-8986-ba89a8eb545d",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "85d1b148-cfbf-4f63-99d6-b810548ee899"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "koverton@levelupwellpt.com",
+      "smartleadLeadId": 3433845355,
+      "importReadiness": "needs_review",
+      "exportLeadId": "a2ae3812-5429-4a83-97fc-ceba1ee9b700",
+      "resolvedLeadId": "a2ae3812-5429-4a83-97fc-ceba1ee9b700",
+      "resolvedEnrollmentId": "057d7497-69e8-4aab-9667-25ef56175172",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "42be61eb-d82a-409f-9eee-326443fb139e"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "frank@pure-physicaltherapy.com",
+      "smartleadLeadId": 3433845225,
+      "importReadiness": "ready",
+      "exportLeadId": "d5453fa6-001c-4e0f-9a4c-7751696a0cc7",
+      "resolvedLeadId": "d5453fa6-001c-4e0f-9a4c-7751696a0cc7",
+      "resolvedEnrollmentId": "09299d40-b24f-470e-b1bc-1db10d3c48db",
+      "resolution": "found_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "59dbc03e-ef30-42e3-8eb0-c82fbbfa0ca3"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "tracy@yogaexperience.net",
+      "smartleadLeadId": 3433845389,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "9c81901b-eb40-4045-a011-ded81f3b516e",
+      "resolvedEnrollmentId": "e58eb01d-a2c6-41cd-a4c0-1de7ed00458b",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "74444306-184c-4c9a-bfcf-f37650496ee5"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "aneri@leapsandboundsil.com",
+      "smartleadLeadId": 3433845500,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "798439a0-9d0a-4eb1-822f-791db3dd11d1",
+      "resolvedEnrollmentId": "24796ba4-dc87-4cac-803e-db60f9af2aa2",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "44ac09ff-a0ad-4655-bd20-c60575d370db"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "caitlin@thelotusmethodsf.com",
+      "smartleadLeadId": 3433845544,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "bd013295-5c98-4856-9bf2-7f91fef2087a",
+      "resolvedEnrollmentId": "12442ef3-90c4-4dc0-bb17-2fdbe047f8a4",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "c0f545c2-5eee-451f-bb98-6553e0ee14b1"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "michele@danupt.com",
+      "smartleadLeadId": 3433845871,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "1febb3a8-d34d-44a2-a779-444d7352e3e8",
+      "resolvedEnrollmentId": "7196a547-99bf-4f6e-b47f-8f5afdf138f5",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "b6cae702-dc18-4525-80aa-862f1ef84137"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "drjpierce@desertplasticsurgery.com",
+      "smartleadLeadId": 3433846073,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "0e3feeb2-e860-464b-b99a-09d022fccb85",
+      "resolvedEnrollmentId": "8c7db772-eb63-4cfa-82ee-c9279f682c44",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "9980cd7b-4d89-4034-b2b7-f7a459ab899b"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "kelly@craniosacralgr.com",
+      "smartleadLeadId": 3433845927,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "a82ff180-53b1-4631-87bc-2efe0744e96e",
+      "resolvedEnrollmentId": "53f52ca2-b4e0-4c10-8dc2-8119b00d0e90",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "703c6c5e-535b-4df9-8804-02d0f6984da3"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "jenny@alltogetherwellness.net",
+      "smartleadLeadId": 3433846145,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "54c533c2-cd49-4568-86e0-e6c05098f43d",
+      "resolvedEnrollmentId": "a2a9ff5c-bcad-46a3-9515-7e961f09f26e",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "ff344242-6375-4c2b-814b-b971f643a9ce"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "drlodha@puradermatology.com",
+      "smartleadLeadId": 3433846238,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "d99d4c08-489c-4ea6-b45a-1770ef0b71aa",
+      "resolvedEnrollmentId": "4b83c98d-2966-4811-9ad9-adec88990074",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "6db6afe2-6a30-4182-856c-ccccc62d1efc"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "brooke@thebloommethod.com",
+      "smartleadLeadId": 3433846278,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "7ca7cc86-74d3-45be-ab31-5385fc836b21",
+      "resolvedEnrollmentId": "84b23a65-62f6-4135-bc19-703db0544e34",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "8fc1a680-3d98-46c6-90e5-438713fdee10"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "ryan@bodybyheart.com",
+      "smartleadLeadId": 3433846443,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "6052eb0c-94f0-4acf-9736-8a6627c079cf",
+      "resolvedEnrollmentId": "38505fd7-5b53-419a-be2b-5407cd06e987",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "dba443fc-77e2-4232-9e68-40460cd92a42"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "mmorath@journey-fit.com",
+      "smartleadLeadId": 3433846669,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "0ac21444-c335-44cf-ae1b-0f028dbe70f6",
+      "resolvedEnrollmentId": "8a0df2db-fefd-440a-b63c-c0d58dffac0e",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "95fa0d35-c11f-4e8a-b91e-3d3e34691fc9"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "sarah@smithperformancecenter.com",
+      "smartleadLeadId": 3433846770,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "e81e9974-7af2-43ac-baa1-de98d30998e5",
+      "resolvedEnrollmentId": "95131004-e79d-4a95-8205-9cefc65db4fb",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "8887112b-19a2-4383-a885-4ab6728bbc70"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "manuelb@medcessity.com",
+      "smartleadLeadId": 3433847243,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "baf29216-f10b-406e-8bd8-7d11aac7bbf1",
+      "resolvedEnrollmentId": "145a0ca2-588f-436c-98c0-d4fbbb14a260",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "2427e231-195a-4616-9d49-6634515be7c8"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "joy@drskinmedspa.com",
+      "smartleadLeadId": 3433847453,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "4eba30b1-0d6b-4652-8d21-b689ab76487b",
+      "resolvedEnrollmentId": "b2cee3f9-d0d1-4e18-ba83-90b9d8dcb17d",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "c7d18f02-a8cb-49d2-90a4-9b5c1ccae99c"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "amy@go2beyondmotion.com",
+      "smartleadLeadId": 3433847498,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "e7ec6ade-ac6b-43c9-968b-fafc3ec1e8d0",
+      "resolvedEnrollmentId": "03fc03e1-041a-4449-bf55-9fe6d5e8f38a",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "10d744a7-133e-4303-9780-dcab87c321f8"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "susie@drsusieg.com",
+      "smartleadLeadId": 3433847552,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "04b0601d-3444-416b-8b9a-e0e9079ba05e",
+      "resolvedEnrollmentId": "8a09c496-6036-4c0b-8458-b50e3262c7db",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "7a05a2a2-6946-4980-af7f-c20f7819ae9c"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "gianara@fpspt.com",
+      "smartleadLeadId": 3433847555,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "4c34aacb-b805-4620-b697-eb58796fa33a",
+      "resolvedEnrollmentId": "4d87d891-f5c8-441e-ac33-4e98e56fd900",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "1d2aaea9-5790-453f-a90d-b6517b15d71e"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "rebecca@dynamicbodypilates.com",
+      "smartleadLeadId": 3433847679,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "d36c4847-e674-4d87-bd25-1145b897c3dc",
+      "resolvedEnrollmentId": "07a02d41-df63-415e-bb31-ac4e182ec4b9",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "9959dd8f-2db4-4c5c-a038-f403ab4c4b77"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "kim@phitwell.com",
+      "smartleadLeadId": 3433848132,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "639d97a0-e967-4a36-b635-f3ab24068a71",
+      "resolvedEnrollmentId": "e46a3191-3f82-44bd-8d5f-48a0544609ea",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "fa3b9023-a219-4e77-bf67-0b61e1f909c5"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "ashley@seattleselitept.com",
+      "smartleadLeadId": 3433848134,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "01c155e4-1cb7-4fa9-b45d-d9a4b43c2e9f",
+      "resolvedEnrollmentId": "ddc04233-eea6-4022-9f98-399c3012facf",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "5b737fa8-d276-482b-afb1-9c86604f1ff1"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "mattdixon@purplepatchfitness.com",
+      "smartleadLeadId": 3433848197,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "1c752b75-b5dc-40fd-a44d-2ae677160dae",
+      "resolvedEnrollmentId": "9c8c2dd5-c00e-4bf0-b8e5-3c2d1a6c7211",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "27470314-9a39-47f9-9f3c-f79580e2036b"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "padromd@mindandsoultherapy.com",
+      "smartleadLeadId": 3433848531,
+      "importReadiness": "needs_review",
+      "exportLeadId": null,
+      "resolvedLeadId": "66cb293f-597c-4aa9-9ac8-daf552178575",
+      "resolvedEnrollmentId": "d38fa036-5c9b-41e3-a843-0d02e190a58e",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "be935d5b-eb58-491c-9b91-c396a1722638"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "janice@fitnessfest.org",
+      "smartleadLeadId": 3433848491,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "26c6ec96-794b-4d67-b43e-1f1e000dfaf1",
+      "resolvedEnrollmentId": "31971ee7-379e-488f-9f7d-e4dc159d764f",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "d73f8d05-656d-455e-b5f9-0c458c072298"
+        }
+      ],
+      "action": "import_ready"
+    },
+    {
+      "leadEmail": "jon@nebraskapeakpt.com",
+      "smartleadLeadId": 3433848516,
+      "importReadiness": "needs_lead_mapping",
+      "exportLeadId": null,
+      "resolvedLeadId": "0b663ea6-653a-4d9d-971d-a9eec9e7a96d",
+      "resolvedEnrollmentId": "e4ff5cdb-1afa-483f-9dfc-09f85cee88a4",
+      "resolution": "found_by_email_in_target_campaign",
+      "otherCampaigns": [
+        {
+          "campaignId": "fe5f470d-c5ce-4475-8544-99e8180d4ea7",
+          "campaignName": "Foot Traffic - Apollo Contacts",
+          "leadId": "c4af50bb-603c-4396-8dcf-94e1c6ad3a90"
+        }
+      ],
+      "action": "import_ready"
+    }
+  ]
+}

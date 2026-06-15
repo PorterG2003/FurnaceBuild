@@ -1,0 +1,907 @@
+{
+  "version": 1,
+  "generatedAt": "2026-06-15T05:22:19.202Z",
+  "campaign": {
+    "furnaceId": "eecac452-8248-4809-8a45-26761b5c5a31",
+    "smartleadId": 3332649,
+    "name": "Foot Traffic - Scraped Emails 2",
+    "accountId": "40a23e97-8fa7-4668-bbd5-287f50fa2745",
+    "since": "2026-05-13T00:00:00.000Z",
+    "until": null
+  },
+  "auditSummary": {
+    "scannedMailboxes": 150,
+    "sentIndexSize": 995,
+    "sentRecoveryRatio": 0.402834008097166,
+    "candidateCount": 7,
+    "reviewCount": 8,
+    "gateStatus": "no_go"
+  },
+  "threads": [
+    {
+      "bucket": "review",
+      "confidence": 45,
+      "matchType": "review",
+      "reason": "lead sender without anchored Sent match",
+      "leadEmail": "myexperience@aarons.com",
+      "leadId": "fdeb335d-7ed6-4326-8ebe-abe5d7401fc6",
+      "enrollmentId": "d165a35d-47f0-43fd-9660-bada94a898fb",
+      "smartleadLeadId": 3543494127,
+      "mailboxId": "c2db35af-c696-4c67-ae50-5a478b553f4e",
+      "mailboxEmail": "dm@clinictrafficdr.com",
+      "importReadiness": "needs_review",
+      "receivedMessage": {
+        "uid": 793,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "1518539918.24122.1778779363880@app134027.ytz201.service-now.com",
+        "rawMessageId": "<1518539918.24122.1778779363880@app134027.ytz201.service-now.com>",
+        "inReplyTo": null,
+        "references": null,
+        "subject": "Your customer service request has been opened",
+        "from": "myexperience@aarons.com",
+        "to": [
+          "dm@clinictrafficdr.com"
+        ],
+        "date": "2026-05-14T17:22:43.000Z",
+        "bodyText": "Your customer service request has been opened.\n\n\nThank you for contacting Aaron's Customer Support. Please allow 1-2 business\ndays for our Divisional Management Team to contact you.\n\nYour customer service reference number is: HSC1744891. If you have not been\ncontacted within 1-2 business days, please call 1-800-950-7368 or update your\ncustomer service request by replying to this email.\n\n\nYou can also update your request by replying to this email.\n\n\n\n \n\nThank You for the opportunity to serve you,\n\nAaron's Customer Service Team \n\n \n\n \nRef:MSG36372269",
+        "bodyHtml": "<!-- [if (gte mso 9)|(IE)]>\n  <table width=\"540\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">\n    <tr>\n      <td>\n<![endif]--><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"></head><body><table class=\"content\" style=\"width: 100%; max-width: 540px;\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\n<tbody>\n<tr>\n<td>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\"><strong><span style=\"color: #1b4377;\" data-darkreader-inline-color=\"\">Your customer service request has been opened.</span></strong></span></p>\n<p><br><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">Thank you for contacting Aaron's Customer Support. Please allow 1-2 business days for our Divisional Management Team to contact you.</span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">Your customer service reference number is: <strong>HSC1744891</strong>. If you have not been contacted within 1-2 business days, please call 1-800-950-7368 or update your customer service request by replying to this email.<br></span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">You can also update your request by replying to this email.</span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\"></span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">&nbsp;</span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">Thank You for the opportunity to serve you,</span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">Aaron's Customer Service Team&nbsp;</span></p>\n<div>&nbsp;</div>\n</td>\n</tr>\n</tbody>\n</table>\n<!-- [if (gte mso 9)|(IE)]>\n      </td>\n    </tr>\n</table>\n<![endif]--><div>&nbsp;</div><div style=\"display:inline\">Ref:MSG36372269</div></body></html>"
+      },
+      "sentMessages": [
+        {
+          "uid": 1922,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "aee4fd9b-dc8e-sl70-4fca-8cf1-0873772585e6@clinictrafficdr.com",
+          "rawMessageId": "<aee4fd9b-dc8e-sl70-4fca-8cf1-0873772585e6@clinictrafficdr.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "dm@clinictrafficdr.com",
+          "to": [
+            "myexperience@aarons.com"
+          ],
+          "date": "2026-05-14T17:20:44.000Z",
+          "bodyText": "Hi!\n\n\nMost podiatrists lose new patients to a competitor that ranks higher in search.\n\n\nOur medical practice clients average over 15 new patients a month from sponsored\nsearch. \n\n\nMind if I send over what that would look like for you?",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>Most podiatrists lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "dm@clinictrafficdr.com",
+          "myexperience@aarons.com"
+        ],
+        "lastMessageAt": "2026-05-14T17:22:43.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "review",
+      "confidence": 45,
+      "matchType": "review",
+      "reason": "lead sender without anchored Sent match",
+      "leadEmail": "myexperience@aarons.com",
+      "leadId": "fdeb335d-7ed6-4326-8ebe-abe5d7401fc6",
+      "enrollmentId": "d165a35d-47f0-43fd-9660-bada94a898fb",
+      "smartleadLeadId": 3543494127,
+      "mailboxId": "c2db35af-c696-4c67-ae50-5a478b553f4e",
+      "mailboxEmail": "dm@clinictrafficdr.com",
+      "importReadiness": "needs_review",
+      "receivedMessage": {
+        "uid": 795,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "1544570248.27165.1778779558915@app136038.ytz201.service-now.com",
+        "rawMessageId": "<1544570248.27165.1778779558915@app136038.ytz201.service-now.com>",
+        "inReplyTo": null,
+        "references": null,
+        "subject": "Thank you for contacting Aaron's Customer Support.",
+        "from": "myexperience@aarons.com",
+        "to": [
+          "dm@clinictrafficdr.com"
+        ],
+        "date": "2026-05-14T17:25:58.000Z",
+        "bodyText": "Thank you for contacting Aaron's Customer Support. Please see the attached\ndocument(s) regarding your request.\n\nYour issue number is: HSC1744891. If you have any questions, please call\n1-800-950-7368 and reference your issue number.\n\n\nYou can also update your request by replying to this email.\n\n\n\n \n\nThank You,\n\nAaron's Customer Support\n\n \n\n \nRef:MSG36372327",
+        "bodyHtml": "<!-- [if (gte mso 9)|(IE)]>\n  <table width=\"540\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">\n    <tr>\n      <td>\n<![endif]--><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"></head><body><table class=\"content\" style=\"width: 100%; max-width: 540px;\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\n<tbody>\n<tr>\n<td>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">Thank you for contacting Aaron's&nbsp;Customer Support. Please see the attached document(s) regarding your request.</span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">Your issue number is: <strong>HSC1744891</strong>. If you have any questions, please call 1-800-950-7368&nbsp;and reference your issue number.<br></span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">You can also update your request by replying to this email.</span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\"></span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">&nbsp;</span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">Thank You,</span></p>\n<p><span style=\"font-size: 12pt; font-family: arial, helvetica, sans-serif;\">Aaron's Customer Support</span></p>\n<div>&nbsp;</div>\n</td>\n</tr>\n</tbody>\n</table>\n<!-- [if (gte mso 9)|(IE)]>\n      </td>\n    </tr>\n</table>\n<![endif]--><div>&nbsp;</div><div style=\"display:inline\">Ref:MSG36372327</div></body></html>"
+      },
+      "sentMessages": [
+        {
+          "uid": 1922,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "aee4fd9b-dc8e-sl70-4fca-8cf1-0873772585e6@clinictrafficdr.com",
+          "rawMessageId": "<aee4fd9b-dc8e-sl70-4fca-8cf1-0873772585e6@clinictrafficdr.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "dm@clinictrafficdr.com",
+          "to": [
+            "myexperience@aarons.com"
+          ],
+          "date": "2026-05-14T17:20:44.000Z",
+          "bodyText": "Hi!\n\n\nMost podiatrists lose new patients to a competitor that ranks higher in search.\n\n\nOur medical practice clients average over 15 new patients a month from sponsored\nsearch. \n\n\nMind if I send over what that would look like for you?",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>Most podiatrists lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "dm@clinictrafficdr.com",
+          "myexperience@aarons.com"
+        ],
+        "lastMessageAt": "2026-05-14T17:25:58.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "candidate",
+      "confidence": 95,
+      "matchType": "thread_anchor",
+      "reason": "reply references tagged Sent message on same mailbox",
+      "leadEmail": "hello@uhmedical.com",
+      "leadId": "ef874a30-5479-4ef3-baa2-243ff61de457",
+      "enrollmentId": "45502bec-a6e0-4373-93ff-ba7696e4ed1a",
+      "smartleadLeadId": 3521211160,
+      "mailboxId": "c2db35af-c696-4c67-ae50-5a478b553f4e",
+      "mailboxEmail": "dm@clinictrafficdr.com",
+      "importReadiness": "ready",
+      "receivedMessage": {
+        "uid": 821,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "cajac4wkghqrooey93zv_r_zvgedx0nqbf6w7eekatgx1owcmsq@mail.gmail.com",
+        "rawMessageId": "<CAJac4wKGhqRoOey93Zv_r_ZVGEdX0nqbF6w7eEkATgx1owCmSQ@mail.gmail.com>",
+        "inReplyTo": "297e1fb2-d160-sl75-4a02-8bd9-fd5e195ef898@clinictrafficdr.com",
+        "references": "297e1fb2-d160-sl75-4a02-8bd9-fd5e195ef898@clinictrafficdr.com",
+        "subject": "Re: Patient flow",
+        "from": "hello@uhmedical.com",
+        "to": [
+          "dm@clinictrafficdr.com"
+        ],
+        "date": "2026-05-15T16:24:09.000Z",
+        "bodyText": "We are not interested in this thanks!\nBest regards,\n\nUltimate Health Medical Clinic\n7735 W Long Dr, Suite 12\nLittleton, CO 80123\n📞 (303) 904-0331 | 🌐 UHmedical.com\n\n\nOn Fri, May 15, 2026 at 10:10 AM Daniel Mowery <dm@clinictrafficdr.com>\nwrote:\n\n> Hi!\n>\n> A lot of chiropractors miss out on new patients simply because a\n> competitor ranks higher in search results.\n>\n> The chiropractors we work with average over 15 new patients a month from\n> paid search.\n>\n> Want me to send over what that would look like for you?\n>\n\n-- \n7735 West Long Dr. Suite 12Littleton, CO 80123\nP: 303-904-0331\nF: \n303-948-3153 \nhttp://uhmedical.com <http://uhmedical.com>",
+        "bodyHtml": "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><div dir=\"ltr\"><div>We are not interested&nbsp;in this thanks!</div><div><div dir=\"ltr\" class=\"gmail_signature\" data-smartmail=\"gmail_signature\"><div dir=\"ltr\"><div>Best regards,</div><div><br></div><div>Ultimate Health Medical Clinic&nbsp;&nbsp;</div><div>7735 W Long Dr, Suite 12&nbsp;&nbsp;</div><div>Littleton, CO 80123&nbsp;&nbsp;</div><div>📞 (303) 904-0331 | 🌐&nbsp;UHmedical.com</div><div><img src=\"https://ci3.googleusercontent.com/mail-sig/AIorK4x7kpIDN4K-pMEyPHcZ88P4buS1nXA7EpqShi58l8Hq8sZhYvnrN3npl2dauiyrijeFKTOevaNxuqC_\" width=\"200\" height=\"38\"></div></div></div></div><br></div><br><div class=\"gmail_quote gmail_quote_container\"><div dir=\"ltr\" class=\"gmail_attr\">On Fri, May 15, 2026 at 10:10 AM Daniel Mowery &lt;<a href=\"mailto:dm@clinictrafficdr.com\">dm@clinictrafficdr.com</a>&gt; wrote:<br></div><blockquote class=\"gmail_quote\" style=\"margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex\"><u></u>\n\n    \n     \n      \n    \n  \n  \n  <div>\n  <div>Hi!</div><div><br></div><div>A lot of chiropractors miss out on new patients simply because a competitor ranks higher in search results. </div><div><br></div><div> The chiropractors we work with average over 15 new patients a month from paid search.&nbsp;</div><div><br></div><div>Want me to send over what that would look like for you?</div>\n  </div>\n  \n  \n</blockquote></div>\n\n<br>\n<font size=\"3\">7735 West Long Dr. Suite 12</font><div><font size=\"3\">Littleton, CO 80123</font></div><div><font size=\"3\">P: 303-904-0331</font></div><div><font size=\"3\">F: 303-948-3153&nbsp;</font></div><div><font size=\"3\"><a href=\"http://uhmedical.com\" target=\"_blank\">http://uhmedical.com</a></font></div>"
+      },
+      "sentMessages": [
+        {
+          "uid": 1989,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "297e1fb2-d160-sl75-4a02-8bd9-fd5e195ef898@clinictrafficdr.com",
+          "rawMessageId": "<297e1fb2-d160-sl75-4a02-8bd9-fd5e195ef898@clinictrafficdr.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "dm@clinictrafficdr.com",
+          "to": [
+            "hello@uhmedical.com"
+          ],
+          "date": "2026-05-15T16:09:56.000Z",
+          "bodyText": "Hi!\n\n\nA lot of chiropractors miss out on new patients simply because a competitor\nranks higher in search results.\n\n\nThe chiropractors we work with average over 15 new patients a month from paid\nsearch. \n\n\nWant me to send over what that would look like for you?",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>A lot of chiropractors miss out on new patients simply because a competitor ranks higher in search results. </div><div><br></div><div> The chiropractors we work with average over 15 new patients a month from paid search.&nbsp;</div><div><br></div><div>Want me to send over what that would look like for you?</div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "dm@clinictrafficdr.com",
+          "hello@uhmedical.com"
+        ],
+        "lastMessageAt": "2026-05-15T16:24:09.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "candidate",
+      "confidence": 95,
+      "matchType": "thread_anchor",
+      "reason": "reply references tagged Sent message on same mailbox",
+      "leadEmail": "info@blueoakfamilychiro.com",
+      "leadId": "60e48633-3a00-41f1-980c-d0030633bfa3",
+      "enrollmentId": "e0457e1d-6e10-4e79-b606-912c19567912",
+      "smartleadLeadId": 3543445459,
+      "mailboxId": "c2db35af-c696-4c67-ae50-5a478b553f4e",
+      "mailboxEmail": "dm@clinictrafficdr.com",
+      "importReadiness": "ready",
+      "receivedMessage": {
+        "uid": 823,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "caldunzqg-2scxsenroai3ue=mbmb=d7=0ud4lpxwyqiddx6ezq@mail.gmail.com",
+        "rawMessageId": "<CALDuNzQg-2ScXSEnroai3ue=MbmB=D7=0uD4LpxwyqiDdx6eZQ@mail.gmail.com>",
+        "inReplyTo": "34632b28-da92-sl42-46ca-85a8-fbc97ef44160@clinictrafficdr.com",
+        "references": "34632b28-da92-sl42-46ca-85a8-fbc97ef44160@clinictrafficdr.com",
+        "subject": "Re: Patient flow",
+        "from": "info@blueoakfamilychiro.com",
+        "to": [
+          "dm@clinictrafficdr.com"
+        ],
+        "date": "2026-05-15T16:54:45.000Z",
+        "bodyText": "Please take me off emailing list\n\n\n*Haley Turpin, DC*\n*Pediatric and Family Chiropractor *\n(720)445-8200\n\nBlue Oak Family Chiropractic\ninfo@blueoakfamilychiro.com\n6343 W 120th Ave, Suite 105\nBroomfield, CO\n\n\nOn Fri, May 15, 2026 at 10:54 AM Daniel Mowery <dm@clinictrafficdr.com>\nwrote:\n\n> Hi!\n>\n> Most chiropractors lose new patients to a competitor that ranks higher in\n> search.\n>\n> Our medical practice clients average over 15 new patients a month from\n> sponsored search.\n>\n> Mind if I send over what that would look like for you?\n>",
+        "bodyHtml": "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><div dir=\"auto\">Please take me off emailing list&nbsp;</div><div><br clear=\"all\"><br clear=\"all\"><div><div dir=\"ltr\" class=\"gmail_signature\" data-smartmail=\"gmail_signature\"><div dir=\"ltr\"><div><b>Haley Turpin, DC</b><div><i>Pediatric and Family Chiropractor&nbsp;</i></div><div><div>(720)445-8200</div></div><div><br></div><div>Blue Oak Family Chiropractic</div><div><a href=\"mailto:info@blueoakfamilychiro.com\" target=\"_blank\">info@blueoakfamilychiro.com</a>&nbsp;</div></div><div>6343 W 120th Ave, Suite 105</div><div>Broomfield, CO</div><div><img width=\"200\" height=\"146\" src=\"https://ci3.googleusercontent.com/mail-sig/AIorK4x8FO5JiJe2Ic5tekzxC_OZBxUY4EeY6PeXXi33_4TKXZh1xenMoq0ge_7CTTEaVkCrbCgPeQsZ9lOa\"><br></div><div><b></b></div></div></div></div></div><div><br><div class=\"gmail_quote gmail_quote_container\"><div dir=\"ltr\" class=\"gmail_attr\">On Fri, May 15, 2026 at 10:54 AM Daniel Mowery &lt;<a href=\"mailto:dm@clinictrafficdr.com\">dm@clinictrafficdr.com</a>&gt; wrote:<br></div><blockquote class=\"gmail_quote\" style=\"margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex\"><u></u>\n\n    \n     \n      \n    \n  \n  \n  <div>\n  <div>Hi!</div><div><br></div><div>Most chiropractors lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div>\n  </div>\n  \n  \n</blockquote></div></div>"
+      },
+      "sentMessages": [
+        {
+          "uid": 1994,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "34632b28-da92-sl42-46ca-85a8-fbc97ef44160@clinictrafficdr.com",
+          "rawMessageId": "<34632b28-da92-sl42-46ca-85a8-fbc97ef44160@clinictrafficdr.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "dm@clinictrafficdr.com",
+          "to": [
+            "info@blueoakfamilychiro.com"
+          ],
+          "date": "2026-05-15T16:54:03.000Z",
+          "bodyText": "Hi!\n\n\nMost chiropractors lose new patients to a competitor that ranks higher in\nsearch.\n\n\nOur medical practice clients average over 15 new patients a month from sponsored\nsearch. \n\n\nMind if I send over what that would look like for you?",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>Most chiropractors lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "dm@clinictrafficdr.com",
+          "info@blueoakfamilychiro.com"
+        ],
+        "lastMessageAt": "2026-05-15T16:54:45.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "review",
+      "confidence": 45,
+      "matchType": "review",
+      "reason": "lead sender without anchored Sent match",
+      "leadEmail": "info@centralparkaesthetics.com",
+      "leadId": "e7960e0b-00f7-41c5-84ad-eb4e1389f135",
+      "enrollmentId": "6b52ce03-7258-4582-a989-bea35c79c11c",
+      "smartleadLeadId": 3543445671,
+      "mailboxId": "7927d6e5-7596-4cef-9351-1c464a3eceff",
+      "mailboxEmail": "m.daniel@clinicfoottrafficco.com",
+      "importReadiness": "needs_review",
+      "receivedMessage": {
+        "uid": 881,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "cahuc7l6q0t5c5ew9+ds64eetos+m5j5nkm1snh02qpzgwzjj3q@mail.gmail.com",
+        "rawMessageId": "<CAHUC7L6q0T5C5EW9+DS64EETOs+M5J5Nkm1SNH02qpzgwzjj3Q@mail.gmail.com>",
+        "inReplyTo": null,
+        "references": null,
+        "subject": "Thank You for Reaching Out to Central Park Aesthetics ✨ Re: Patient flow",
+        "from": "info@centralparkaesthetics.com",
+        "to": [
+          "m.daniel@clinicfoottrafficco.com"
+        ],
+        "date": "2026-05-15T16:55:42.000Z",
+        "bodyText": "Hello,\n\nThank you so much for reaching out to Central Park Aesthetics. Your inquiry is\nimportant to me, and I’ll be in touch within 48 hours to provide the support and\ninformation you’re looking for.\n\nIn the meantime, I look forward to connecting with you and helping you feel your\nbest.\n\nWith care,\nEleanor Brammer\nCentral Park Aesthetics\n\n\n\n--\n\nWarmly,\n[https://ci3.googleusercontent.com/mail-sig/AIorK4z5vIfBecK9HMQExgUblYZKvVYfqbRlmn9fLRK-mhNXgb95XgaNMsN1Te1LzsWKw69rhLsCXfPXcpvJ]",
+        "bodyHtml": "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><div dir=\"ltr\"><p>Hello,</p>\n<p>Thank you so much for reaching out to Central Park Aesthetics. Your inquiry is important to me, and I’ll be in touch within 48 hours to provide the support and information you’re looking for.</p>\n<p>In the meantime, I look forward to connecting with you and helping you feel your best.</p>\n<p>With care,<br>\nEleanor Brammer<br>\nCentral Park Aesthetics</p></div><br><br>-- <br><div dir=\"ltr\">Warmly,<br><img data-aii=\"CiExMEpsOF94dEhkem5taWZORzlkVFRWWkRHUWdSQXhDUVY\" src=\"https://ci3.googleusercontent.com/mail-sig/AIorK4z5vIfBecK9HMQExgUblYZKvVYfqbRlmn9fLRK-mhNXgb95XgaNMsN1Te1LzsWKw69rhLsCXfPXcpvJ\" data-os=\"https://lh3.googleusercontent.com/d/10Jl8_xtHdznmifNG9dTTVZDGQgRAxCQV\"><br></div><br>"
+      },
+      "sentMessages": [
+        {
+          "uid": 1816,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "e8d718e8-1cb1-sl84-4b71-b288-90a797de4918@clinicfoottrafficco.com",
+          "rawMessageId": "<e8d718e8-1cb1-sl84-4b71-b288-90a797de4918@clinicfoottrafficco.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "m.daniel@clinicfoottrafficco.com",
+          "to": [
+            "info@centralparkaesthetics.com"
+          ],
+          "date": "2026-05-15T16:55:32.000Z",
+          "bodyText": "Hi!\n\n\nA lot of med spas miss out on new patients simply because a competitor ranks\nhigher in search results.\n\n\nThe med spas we work with average over 15 new patients a month from paid\nsearch. \n\n\nWant me to send over what that would look like for you?\n\n\n\nThanks,\n\n\nDaniel Mowery\nFounder at Foot Traffic Co",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>A lot of med spas miss out on new patients simply because a competitor ranks higher in search results. </div><div><br></div><div> The med spas we work with average over 15 new patients a month from paid search.&nbsp;</div><div><br></div><div>Want me to send over what that would look like for you?</div><p></p> <div rtrvr-ls=\"12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Thanks,</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Daniel Mowery</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Founder at Foot Traffic Co</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "m.daniel@clinicfoottrafficco.com",
+          "info@centralparkaesthetics.com"
+        ],
+        "lastMessageAt": "2026-05-15T16:55:42.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "review",
+      "confidence": 45,
+      "matchType": "review",
+      "reason": "lead sender without anchored Sent match",
+      "leadEmail": "drsegler@docontherun.com",
+      "leadId": "6afb5d3b-bb87-4e92-a76e-2376b239b08a",
+      "enrollmentId": "2ef84525-74e1-40a6-97bf-2fb7b404ccdf",
+      "smartleadLeadId": 3543496177,
+      "mailboxId": "35c3ebb6-4d01-4475-98c9-1881a93bfc14",
+      "mailboxEmail": "lenzbraxton@clinictrafficco.com",
+      "importReadiness": "needs_review",
+      "receivedMessage": {
+        "uid": 1445,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "cakb7mk0huw9fv4pzp0gqwbc1d7jqtrfvxdq-pa+gfcsuqp9dea@mail.gmail.com",
+        "rawMessageId": "<CAKB7mk0huW9fv4PZp0gQwbC1d7JqtRfvxdQ-PA+GFCsuqP9DeA@mail.gmail.com>",
+        "inReplyTo": null,
+        "references": null,
+        "subject": "This email is not monitored Re: Patient flow",
+        "from": "drsegler@docontherun.com",
+        "to": [
+          "srs0=9e71=dm=clinictrafficco.com=lenzbraxton@docontherun.com"
+        ],
+        "date": "2026-05-15T17:31:44.000Z",
+        "bodyText": "This email is now used for outgoing email only and is not monitored at all.  \n\n\n\nIf you are a new client who needs help with a running injury, click here\n[https://www.docontherun.com/talk-to-the-expert/]:\n\n\nIf you are an existing client and want to check in or get follow-up advice after\na web-cam consultation, click here\n[https://docontherun.clickfunnels.com/follow-up-options-for-runners]: \n\nOr to speak with Dr. Segler immediately please call 415-308-0833.\n(phone calls only, text messages are never viewed)\n\n\nPlease note: if you send a reply to this email we will not see it. Please choose\none of the options above to connect with Dr. Segler. \n\nHave a great day!\n\n\nThe Doc On The Run Team\n\n\n--\n\nDr. Christopher Segler\nAward Winning Foot & Ankle Surgeon\n15-Time Ironman Finisher\n50 Miler Finisher\nBoard Certified, ABPM\n(415) 308-0833\ndrsegler@docontherun.com [drsegler@docontherun.com]\nwww.DocOnTheRun.com [http://www.DocOnTheRun.com]\n\nDoc On The Run Podcast [https://www.docontherun.com/doc-on-the-run-podcast/]\nDoc On the Run Podcast on iTunes\n[https://podcasts.apple.com/us/podcast/doc-on-the-run-podcast/id1152725637]\nwww.Orthovation.com [http://orthovation.com/]\nFollow Me on Twitter [http://www.twitter.com/myrunningdoc]\nhttp://www.twitter.com/myrunningdoc\nStay Fit. Go Long. Run Fast. Be Strong.\n\n\nPlease Note: \n\nDr. Segler does not read, respond or view text messages.\nDr. Segler does not answer follow-up questions nor provide consultations via\nemail. \n\n\nIf you need to schedule a phone consult, webcam-visit or in-person appointment,\nyou can access the online scheduling to block Dr. Segler's calendar here.\n[https://www.docontherun.com/talk-to-the-expert/]\n\n\nIf you are one of our Elite Concierge Clients, you may feel free to call Dr.\nSegler on the concierge cell 24/7 to get an immediate response. \n\n\nTHIS MESSAGE IS INTENDED ONLY FOR THE USE OF THE INDIVIDUAL OR ENTITY TO WHICH\nIT IS ADDRESSED AND MAY CONTAIN INFORMATION THAT IS PRIVILEGED, CONFIDENTIAL AND\nEXEMPT FROM DISCLOSURE.\n--------------------------------------------------------------------------------\nIf the reader of this message is not the intended recipient or an employee or\nagent responsible for delivering the message to the intended recipient, you are\nhereby notified that any dissemination, distribution, or copying of this\ncommunication is strictly prohibited. If you have received this communication in\nerror, please immediately notify me and you are hereby instructed to delete all\nelectronic copies and destroy all printed copies. By replying to this email, you\nacknowledge that email is not secure and agree to the risks associated with\nemail communication. Please contact Dr. Segler at 415-308-0833 if you prefer to\nnot communicate via email.",
+        "bodyHtml": "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><div dir=\"ltr\"><div><div><b>This email is now used for <font color=\"#ff0000\">outgoing email only</font> and is <u>not monitored at all</u>.&nbsp;&nbsp;</b><br></div><div><br></div><div>If you are a new client who needs <a href=\"https://www.docontherun.com/talk-to-the-expert/\" target=\"_blank\">help with a running injury, click here</a>:</div><div><br></div><div>If you are an existing client and want to check in or get&nbsp;<a href=\"https://docontherun.clickfunnels.com/follow-up-options-for-runners\" target=\"_blank\">follow-up advice after a web-cam consultation, click here</a>:&nbsp;</div><div><div><br>Or to speak with Dr. Segler immediately please&nbsp;<b>call 415-308-0833</b>.</div><div><i>(phone calls only, text messages are never viewed)</i></div><div><br></div></div><div>Please note: if you send a reply to this email we will not see it. Please choose one of the options above to connect with Dr. Segler.&nbsp;</div></div><div><div><div><br>Have a great day!</div></div><div><br></div><div>The Doc On The Run Team</div></div></div><br><br>-- <br><div dir=\"ltr\"><div dir=\"ltr\"><div dir=\"ltr\"><div dir=\"ltr\"><div dir=\"ltr\"><div dir=\"ltr\"><div dir=\"ltr\"><div dir=\"ltr\"><div dir=\"ltr\"><div dir=\"ltr\"><div dir=\"ltr\">Dr. Christopher Segler<br>Award Winning Foot &amp; Ankle Surgeon</div><div dir=\"ltr\"><div>15-Time Ironman Finisher</div><div>50 Miler Finisher<br>Board Certified, ABPM</div><div>(415) 308-0833</div><div><font color=\"#3d85c6\"><a href=\"mailto:drsegler@docontherun.com\" style=\"background-color:rgb(255,255,255)\" target=\"_blank\">drsegler@docontherun.com</a><br><a href=\"http://www.DocOnTheRun.com\" style=\"background-color:rgb(255,255,255)\" target=\"_blank\">www.DocOnTheRun.com</a><br></font></div><div><a href=\"https://www.docontherun.com/doc-on-the-run-podcast/\" target=\"_blank\">Doc On The Run Podcast</a></div><div><a href=\"https://podcasts.apple.com/us/podcast/doc-on-the-run-podcast/id1152725637\" target=\"_blank\">Doc On the Run Podcast on iTunes</a></div><div><font color=\"#3d85c6\"><font style=\"background-color:rgb(255,255,255)\"><a href=\"http://orthovation.com/\" target=\"_blank\">www.Orthovation.com</a></font></font><br><span style=\"color:rgb(0,0,153);background-color:rgb(255,255,255);font-weight:bold\"><a href=\"http://www.twitter.com/myrunningdoc\" target=\"_blank\">Follow Me on Twitter</a></span></div><div><a href=\"http://www.twitter.com/myrunningdoc\" target=\"_blank\"></a><font color=\"#660000\"><b><br></b></font><b style=\"color:rgb(102,0,0);font-family:arial\">Stay Fit.&nbsp;Go Long.&nbsp;Run Fast. Be Strong.</b><div style=\"font-family:arial\"><b><br></b></div><div style=\"font-family:arial\"><b>Please Note:&nbsp;</b><br></div><div><b style=\"font-family:arial\"><font color=\"#ff0000\">Dr. Segler does not read, respond or view text messages.</font></b></div><div><b style=\"font-family:arial\"><font color=\"#ff0000\">Dr. Segler does not answer follow-up questions nor provide consultations via email.</font></b><b style=\"font-family:arial\">&nbsp;</b></div><div><b style=\"font-family:arial\"><br></b></div><div><font face=\"arial\"><b>If you need to schedule a phone consult, webcam-visit or in-person appointment, you can&nbsp;<a href=\"https://www.docontherun.com/talk-to-the-expert/\" target=\"_blank\">access the online scheduling to block Dr. Segler's calendar here.</a></b></font></div><div><font face=\"arial\"><b><br></b></font></div><div><font face=\"arial\"><b>If you are one of our Elite Concierge Clients, you may feel free to call Dr. Segler on the concierge cell 24/7 to get an immediate response.&nbsp;</b></font></div></div><div><b><span style=\"font-family:arial;font-size:small;border-collapse:separate;font-weight:normal\"><div><br></div></span></b></div><div>THIS MESSAGE IS INTENDED ONLY FOR THE USE OF THE INDIVIDUAL OR ENTITY TO WHICH IT IS ADDRESSED AND MAY CONTAIN INFORMATION THAT IS PRIVILEGED, CONFIDENTIAL AND EXEMPT FROM DISCLOSURE. <br>--------------------------------------------------------------------------------<br>If the reader of this message is not the intended recipient or an employee or agent responsible for delivering the message to the intended recipient, you are hereby notified that any dissemination, distribution, or copying of this communication is strictly prohibited. If you have received this communication in error, please immediately notify me and you are hereby instructed to delete all electronic copies and destroy all printed copies.&nbsp;<span style=\"font-family:arial\">By replying to this email, you acknowledge that email is not secure and agree to the risks associated with email communication. Please contact Dr. Segler at 415-308-0833 if you prefer to not communicate via email.&nbsp;</span></div></div></div></div></div></div></div></div></div></div></div></div><br>"
+      },
+      "sentMessages": [
+        {
+          "uid": 1823,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "9e39b341-27da-sl98-4b0f-a4d7-606800cae6b4@clinictrafficco.com",
+          "rawMessageId": "<9e39b341-27da-sl98-4b0f-a4d7-606800cae6b4@clinictrafficco.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "lenzbraxton@clinictrafficco.com",
+          "to": [
+            "drsegler@docontherun.com"
+          ],
+          "date": "2026-05-15T17:31:30.000Z",
+          "bodyText": "Hi!\n\n\nMost podiatrists lose new patients to a competitor that ranks higher in search.\n\n\nOur medical practice clients average over 15 new patients a month from sponsored\nsearch. \n\n\nMind if I send over what that would look like for you?\n\n\n\nThanks,\n\n\nBraxton Lenz\nFounder @ Foot Traffic Co",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>Most podiatrists lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div><p></p> <div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Thanks,</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Braxton Lenz</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Founder @ Foot Traffic Co</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "lenzbraxton@clinictrafficco.com",
+          "drsegler@docontherun.com"
+        ],
+        "lastMessageAt": "2026-05-15T17:31:44.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "review",
+      "confidence": 45,
+      "matchType": "review",
+      "reason": "lead sender without anchored Sent match",
+      "leadEmail": "info@citysquares.com",
+      "leadId": "b1d64b2c-61bc-4443-8480-78a18ec99e68",
+      "enrollmentId": "75d3b480-907c-4788-96b4-e887eda0d4e3",
+      "smartleadLeadId": 3543496053,
+      "mailboxId": "a1fb69ac-8921-437f-a2c2-9cbd01cf7d37",
+      "mailboxEmail": "lbraxton@clinictrafficco.com",
+      "importReadiness": "needs_review",
+      "receivedMessage": {
+        "uid": 785,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "cad5qmfakm97bo4m5zmiqa2fqpxt4r1-ni704h9fbxn0zq0+oua@mail.gmail.com",
+        "rawMessageId": "<CAD5QMFaKM97BO4m5zmiqA2Fqpxt4R1-Ni704h9fbXn0ZQ0+OUA@mail.gmail.com>",
+        "inReplyTo": null,
+        "references": null,
+        "subject": "Important information regarding your request Re: Patient flow",
+        "from": "info@citysquares.com",
+        "to": [
+          "lbraxton@clinictrafficco.com"
+        ],
+        "date": "2026-05-15T18:24:21.000Z",
+        "bodyText": "Thanks for getting in contact, the below information will help with resolving\nyour request as quickly as possible.\n\n\nBusinesses\nUpdates to Citysquares listings and other changes must be submitted via the\nchange request [https://citysquares.com/change_requests/new] page. This includes\nthe following actions:\n - Claim a listing\n - Update the details of a listing\n - Report a duplicate listing\n - Request a change of ownership\n - Remove a listing\n\n\nDigital Agencies\nPlease refer to our Partner Program [https://citysquares.com/partner].\n\n\nAll the best,\n\nThe Citysquares Team",
+        "bodyHtml": "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><div dir=\"ltr\"><div>Thanks for getting in contact, the below information will help with resolving your request as quickly as possible.</div><div><br></div><div><div><b>Businesses</b></div><div>Updates to Citysquares listings and other changes <b>must</b> be submitted via the <a href=\"https://citysquares.com/change_requests/new\" target=\"_blank\">change request</a> page. This includes the following actions:</div><div><div>&nbsp;- Claim a listing</div><div>&nbsp;- Update the details of a listing</div><div>&nbsp;- Report a duplicate listing</div><div>&nbsp;- Request a change of ownership</div><div>&nbsp;- Remove a listing</div></div></div><div><br></div><div><b>Digital Agencies</b></div><div>Please refer to our <a href=\"https://citysquares.com/partner\" target=\"_blank\">Partner Program</a>.</div><div><br></div><div>All the best,<br></div><div>The Citysquares Team</div><div><br></div><br></div>"
+      },
+      "sentMessages": [
+        {
+          "uid": 1901,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "bf001c7f-8d1a-sl91-4baf-b54b-9a22af5ef46c@clinictrafficco.com",
+          "rawMessageId": "<bf001c7f-8d1a-sl91-4baf-b54b-9a22af5ef46c@clinictrafficco.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "lbraxton@clinictrafficco.com",
+          "to": [
+            "info@citysquares.com"
+          ],
+          "date": "2026-05-15T18:24:07.000Z",
+          "bodyText": "Hi!\n\n\nMost podiatrists lose new patients to a competitor that ranks higher in search.\n\n\nOur medical practice clients average over 15 new patients a month from sponsored\nsearch. \n\n\nMind if I send over what that would look like for you?\n\n\n\nAppreciate it,\n\n\nBraxton Lenz\nFounder @ Foot Traffic Co",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>Most podiatrists lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div><p></p> <div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Appreciate it,</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Braxton Lenz</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Founder @ Foot Traffic Co</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "lbraxton@clinictrafficco.com",
+          "info@citysquares.com"
+        ],
+        "lastMessageAt": "2026-05-15T18:24:21.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "candidate",
+      "confidence": 95,
+      "matchType": "thread_anchor",
+      "reason": "reply references tagged Sent message on same mailbox",
+      "leadEmail": "support@myadvice.com",
+      "leadId": "0257ac4f-6cf5-40e2-9f48-10697560c651",
+      "enrollmentId": "f330ae13-2e01-4b50-894c-dceb126b627b",
+      "smartleadLeadId": 3543436284,
+      "mailboxId": "a83bb74b-bbc9-4434-9bd8-43a361dc3b8d",
+      "mailboxEmail": "dmowery@clinicfoottrafficco.com",
+      "importReadiness": "ready",
+      "receivedMessage": {
+        "uid": 923,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "m2dklwrp442_6a0b41259930e_461c6b5bd9928f_sprut@zendesk.com",
+        "rawMessageId": "<M2DKLWRP442_6a0b41259930e_461c6b5bd9928f_sprut@zendesk.com>",
+        "inReplyTo": "c68d982c-15da-sl30-47de-80c5-23655082f0f4@clinicfoottrafficco.com",
+        "references": "m2dklwrp442@zendesk.com c68d982c-15da-sl30-47de-80c5-23655082f0f4@clinicfoottrafficco.com",
+        "subject": "[Request received]",
+        "from": "support@myadvice.com",
+        "to": [
+          "dmowery@clinicfoottrafficco.com"
+        ],
+        "date": "2026-05-18T16:41:09.000Z",
+        "bodyText": "##- Please type your reply above this line -##\n\nYour request (145176) has been received and is being reviewed by our support staff.\n\nTicket Details:\n\n\nTo add additional comments, reply to this email.\n\n\n\n--------------------------------\nThis email is a service from MyAdvice.\n\n\n\n\n\n\n\n\n\n[M2DKLW-RP442]",
+        "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n  <style type=\"text/css\">\n    table td {\n      border-collapse: collapse;\n    }\n    body[dir=rtl] .directional_text_wrapper { direction: rtl; unicode-bidi: embed; }\n\n  </style>\n\n          <style type=\"text/css\">\n            @media only screen and (max-width: 768px) {\n              .simplified-email-footer .namecard {\n                display: block;\n                min-width: 100%;\n                padding: 0 0 16px 0; }\n\n              .simplified-email-footer .content {\n                padding: 16px; }\n            }\n          </style>\n        </head>\n<body lang=\"en-us\" style=\"width: 100%!important; margin: 0; padding: 0;\">\n  <div style=\"padding: 10px; line-height: 1.5; font-family: 'Lucida Grande',Verdana,Arial,sans-serif; font-size: 12px; color:#444444;\">\n    <div style=\"color: #b5b5b5;\">##- Please type your reply above this line -##</div>\n    <p dir=\"ltr\">Your request (145176) has been received and is being reviewed by our support staff.</p><p dir=\"ltr\">Ticket Details:</p><p dir=\"ltr\">To add additional comments, reply to this email.</p>\n  </div>\n  <div style=\"padding: 10px; line-height: 1.5; font-family: 'Lucida Grande',Verdana,Arial,sans-serif; font-size: 12px; color: #aaaaaa; margin: 10px 0 14px 0; padding-top: 10px; border-top: 1px solid #eeeeee;\">\n    This email is a service from MyAdvice. Delivered by <a href=\"https://www.zendesk.com/support/?utm_campaign=text&amp;utm_content=MyAdvice&amp;utm_medium=poweredbyzendesk&amp;utm_source=email-notification\" style=\"color:black;\" target=\"_blank\">Zendesk</a>\n  </div>\n<span style=\"color:#FFFFFF\" aria-hidden=\"true\" class=\"zd_encoded_id\">[M2DKLW-RP442]</span>\n\n<div itemscope=\"\" itemtype=\"http://schema.org/EmailMessage\" style=\"display:none\">  <div itemprop=\"action\" itemscope=\"\" itemtype=\"http://schema.org/ViewAction\">    <link itemprop=\"url\" href=\"https://support.advicemedia.com/hc/requests/145176\">    <meta itemprop=\"name\" content=\"View ticket\">  </div></div></body></html>"
+      },
+      "sentMessages": [
+        {
+          "uid": 2019,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "c68d982c-15da-sl30-47de-80c5-23655082f0f4@clinicfoottrafficco.com",
+          "rawMessageId": "<c68d982c-15da-sl30-47de-80c5-23655082f0f4@clinicfoottrafficco.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "dmowery@clinicfoottrafficco.com",
+          "to": [
+            "support@myadvice.com"
+          ],
+          "date": "2026-05-18T16:40:27.000Z",
+          "bodyText": "Hi!\n\n\nA lot of plastic surgeons miss out on new patients simply because a competitor\nranks higher in search results.\n\n\nThe plastic surgeons we work with average over 15 new patients a month from paid\nsearch. \n\n\nWant me to send over what that would look like for you?",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>A lot of plastic surgeons miss out on new patients simply because a competitor ranks higher in search results. </div><div><br></div><div> The plastic surgeons we work with average over 15 new patients a month from paid search.&nbsp;</div><div><br></div><div>Want me to send over what that would look like for you?</div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "dmowery@clinicfoottrafficco.com",
+          "support@myadvice.com"
+        ],
+        "lastMessageAt": "2026-05-18T16:41:09.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "review",
+      "confidence": 45,
+      "matchType": "review",
+      "reason": "lead sender without anchored Sent match",
+      "leadEmail": "inquiries@andersenorthopedics.com",
+      "leadId": "a008cdd2-e0df-4456-9e6e-605190a5368e",
+      "enrollmentId": "233a23fc-d5d8-4d75-99b1-0c1a9eb87025",
+      "smartleadLeadId": 3543436370,
+      "mailboxId": "a1fb69ac-8921-437f-a2c2-9cbd01cf7d37",
+      "mailboxEmail": "lbraxton@clinictrafficco.com",
+      "importReadiness": "needs_review",
+      "receivedMessage": {
+        "uid": 840,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "cakanq=cu3obnelt5iyzummnd8n8tkhraszhfmjfocwd-73wwba@mail.gmail.com",
+        "rawMessageId": "<CAKaNQ=cu3ObnELt5iYZUmmnd8n8tKhrAszHFmJfOcwD-73WwbA@mail.gmail.com>",
+        "inReplyTo": null,
+        "references": null,
+        "subject": "Andersen Orthopedics Inquiry Re: Patient flow",
+        "from": "inquiries@andersenorthopedics.com",
+        "to": [
+          "lbraxton@clinictrafficco.com"
+        ],
+        "date": "2026-05-18T16:41:22.000Z",
+        "bodyText": "Thank for your inquiry.  A member of our staff will be in touch with you in the\nnext 2-3 business days (or sooner).  If you believe your condition is urgent,\nplease contact us via phone at 925.400.6900.  Thanks for allowing us to help you\nstep confidently and pain free into the future!\n\n\nNote:  Due to COVID 19 (Corona Virus) and compliance with the Shelter-In-Place\norder, our business hours have been shortened.  However, we are checking phone\nmessages twice per day and email several times per week.  Thank you for your\nunderstanding.  Please stay well!",
+        "bodyHtml": "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><div dir=\"ltr\">Thank for your inquiry.&nbsp; A member of our staff will be in touch with you in the next 2-3 business days (or sooner).&nbsp; If you believe your condition is urgent, please contact us via phone at 925.400.6900.&nbsp; Thanks for allowing us to help you step confidently and pain free into the future!<div><br></div><div><b>Note:</b>&nbsp; Due to COVID 19 (Corona Virus) and compliance with the Shelter-In-Place order, our business hours have been shortened.&nbsp; However, we are checking phone messages twice per day and email several times per week.&nbsp; Thank you for your understanding.&nbsp; Please stay well!<br><br></div></div>"
+      },
+      "sentMessages": [
+        {
+          "uid": 2073,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "2924d3aa-2dd1-sl79-4f1e-b683-45d9f97447a6@clinictrafficco.com",
+          "rawMessageId": "<2924d3aa-2dd1-sl79-4f1e-b683-45d9f97447a6@clinictrafficco.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "lbraxton@clinictrafficco.com",
+          "to": [
+            "inquiries@andersenorthopedics.com"
+          ],
+          "date": "2026-05-18T16:41:10.000Z",
+          "bodyText": "Hi!\n\n\nMost orthopedic surgeons lose new patients to a competitor that ranks higher in\nsearch.\n\n\nOur medical practice clients average over 15 new patients a month from sponsored\nsearch. \n\n\nMind if I send over what that would look like for you?\n\n\n\nAppreciate it,\n\n\nBraxton Lenz\nFounder @ Foot Traffic Co",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>Most orthopedic surgeons lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div><p></p> <div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Appreciate it,</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Braxton Lenz</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Founder @ Foot Traffic Co</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "lbraxton@clinictrafficco.com",
+          "inquiries@andersenorthopedics.com"
+        ],
+        "lastMessageAt": "2026-05-18T16:41:22.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "review",
+      "confidence": 45,
+      "matchType": "review",
+      "reason": "lead sender without anchored Sent match",
+      "leadEmail": "miguel@drfurze.com",
+      "leadId": "a73ac767-2075-4ef7-b7ee-4b48f519295d",
+      "enrollmentId": "ca6cb3a8-97fe-4d29-95b3-c3f4817f43d3",
+      "smartleadLeadId": 3543436502,
+      "mailboxId": "9ce0024e-726c-48e3-aece-188b70b62fac",
+      "mailboxEmail": "mowery.d@clinictrafficdr.com",
+      "importReadiness": "needs_review",
+      "receivedMessage": {
+        "uid": 1003,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "cahhcy81t8g_qjqbzcxlmd3ke_znbnv6drtfbqgxww7hkufahqg@mail.gmail.com",
+        "rawMessageId": "<CAHhcy81t8g_qJqbzCXLMd3Ke_znBnV6drtFbQGXww7HkUFAHQg@mail.gmail.com>",
+        "inReplyTo": null,
+        "references": null,
+        "subject": "Email out of service Re: Patient flow",
+        "from": "miguel@drfurze.com",
+        "to": [
+          "mowery.d@clinictrafficdr.com"
+        ],
+        "date": "2026-05-18T16:43:09.000Z",
+        "bodyText": "This email is currently out of service, if you need to reach our\noffice please call (949)389-6673 during our office hours 9 AM to 5 PM\nPacific Time.\n\nPlease note we are closed on most federal holidays and during lunch\nfrom 12 PM to 1 PM.\n\nThank you\n\n-- \n\n[image: photo]\n*Miguel*\nMedia Coordinator\n\nFacial Plastic and Reconstructive Surgery & Nasal and Sinus Surgery\n\nOffices of Dr. Alexis Furze\n\n1-949-389- <1-800-498-3223>6673  | FAX 1-949- <1-949-945-0479>389-6673\n | *miguel@drfurze.com\n<Lorena@drfurze.com>*\n\nwww.drfurze.com\n520 Superior Ave, Ste #270, Newport Beach, CA 92663\n<https://maps.google.com/?q=520+Superior+Ave,+Ste+%23270,+Newport+Beach,+CA+92663&entry=gmail&source=g>\n<http://www.facebook.com/drfurze/?ref=settings> <http://twitter.com/DrFurze>\n<http://www.instagram.com/drfurze/>\n<http://plus.google.com/u/0/109967532337414794465>\n<http://www.yelp.com/biz/alexis-furze-md-facial-plastic-surgery-newport-beach-3>\n\n\nCONFIDENTIALITY NOTICE: Please note that the information contained in this\nmessage and any files transmitted with it are privileged and confidential\nand are protected from disclosure under the law, including the Health\nInsurance Portability and Accountability Act (HIPAA). If the reader of this\nmessage is not the intended recipient, or an employee or agent responsible\nfor delivering this message to the intended recipient, you are hereby\nnotified that any dissemination, distribution or copying of this\ncommunication is strictly prohibited and may subject you to criminal or\ncivil penalties. If you have received this communication in error, please\nnotify the sender by replying to the message and delete the material from\nany computer.",
+        "bodyHtml": null
+      },
+      "sentMessages": [
+        {
+          "uid": 2102,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "b71ff97a-7b6d-sl25-49dc-9fe8-e266e91e7b5f@clinictrafficdr.com",
+          "rawMessageId": "<b71ff97a-7b6d-sl25-49dc-9fe8-e266e91e7b5f@clinictrafficdr.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "mowery.d@clinictrafficdr.com",
+          "to": [
+            "miguel@drfurze.com"
+          ],
+          "date": "2026-05-18T16:42:57.000Z",
+          "bodyText": "Hi!\n\n\nMost plastic surgeons lose new patients to a competitor that ranks higher in\nsearch.\n\n\nOur medical practice clients average over 15 new patients a month from sponsored\nsearch. \n\n\nMind if I send over what that would look like for you?\n\n\n\nThanks,\n\n\nDaniel Mowery\nFounder @ Foot Traffic Co",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>Most plastic surgeons lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div><p></p> <div rtrvr-ls=\"12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Thanks,</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Daniel Mowery</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Founder @ Foot Traffic Co</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "mowery.d@clinictrafficdr.com",
+          "miguel@drfurze.com"
+        ],
+        "lastMessageAt": "2026-05-18T16:43:09.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "candidate",
+      "confidence": 95,
+      "matchType": "thread_anchor",
+      "reason": "reply references tagged Sent message on same mailbox",
+      "leadEmail": "admin@sorensonfootandankle.com",
+      "leadId": "21dd4794-8fda-48d0-a400-2ba46956d955",
+      "enrollmentId": "6f1681f7-44e4-4d2e-a71e-cfe8538c770e",
+      "smartleadLeadId": 3543496514,
+      "mailboxId": "4abd7e61-b4dc-4f57-9237-5b3de5579025",
+      "mailboxEmail": "braxton_lenz@clinicfoottrafficco.com",
+      "importReadiness": "ready",
+      "receivedMessage": {
+        "uid": 1085,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "calojfudk58j6tvyomckrzyuw+klnvfejy2jzqqb_vnk1h_dezw@mail.gmail.com",
+        "rawMessageId": "<CALOjFUDk58j6TvYOmckrzyUw+KLNvfejy2JZqQb_Vnk1H_DEZw@mail.gmail.com>",
+        "inReplyTo": "26244003-c3d6-sl88-4cca-942c-a1903a4e06c6@clinicfoottrafficco.com",
+        "references": "26244003-c3d6-sl88-4cca-942c-a1903a4e06c6@clinicfoottrafficco.com",
+        "subject": "Re: Patient flow",
+        "from": "admin@sorensonfootandankle.com",
+        "to": [
+          "braxton_lenz@clinicfoottrafficco.com"
+        ],
+        "date": "2026-05-18T18:58:00.000Z",
+        "bodyText": "Hi Braxton,\n\nThanks for reaching out. I am not interested at this time.\n\nBest,\n\nDr Sorenson\n\nOn Mon, May 18, 2026 at 1:24 PM Braxton Lenz <\nbraxton_lenz@clinicfoottrafficco.com> wrote:\n\n> Hi!\n>\n> A lot of podiatrists miss out on new patients simply because a competitor\n> ranks higher in search results.\n>\n> The podiatrists we work with average over 15 new patients a month from\n> paid search.\n>\n> Want me to send over what that would look like for you?\n>\n> Thanks,\n>\n> Braxton Lenz\n> Founder at Foot Traffic Co\n>\n>",
+        "bodyHtml": "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><div dir=\"ltr\"><div dir=\"ltr\">Hi Braxton,<br><br>Thanks for reaching out. I am not interested at this time.<div><br></div><div>Best,<br><div><br>Dr Sorenson</div></div></div><br><img width=\"0\" height=\"0\" class=\"mailtrack-img\" alt=\"\" style=\"display:flex\" src=\"https://mailtrack.io/trace/mail/05a09d68e65bb9aa5bff06224cef4d240904e961.png?u=12804215\"><div class=\"gmail_quote gmail_quote_container\"><div dir=\"ltr\" class=\"gmail_attr\">On Mon, May 18, 2026 at 1:24 PM Braxton Lenz &lt;<a href=\"mailto:braxton_lenz@clinicfoottrafficco.com\">braxton_lenz@clinicfoottrafficco.com</a>&gt; wrote:<br></div><blockquote class=\"gmail_quote\" style=\"margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex\"><u></u>\n\n    \n     \n      \n    \n  \n  \n  <div>\n  <div>Hi!</div><div><br></div><div>A lot of podiatrists miss out on new patients simply because a competitor ranks higher in search results. </div><div><br></div><div> The podiatrists we work with average over 15 new patients a month from paid search.&nbsp;</div><div><br></div><div>Want me to send over what that would look like for you?</div><p></p> <div>Thanks,</div><div><br></div><div>Braxton Lenz</div><div>Founder at Foot Traffic Co</div><div><br></div>\n  </div>\n  \n  \n</blockquote></div></div>"
+      },
+      "sentMessages": [
+        {
+          "uid": 1933,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "26244003-c3d6-sl88-4cca-942c-a1903a4e06c6@clinicfoottrafficco.com",
+          "rawMessageId": "<26244003-c3d6-sl88-4cca-942c-a1903a4e06c6@clinicfoottrafficco.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "braxton_lenz@clinicfoottrafficco.com",
+          "to": [
+            "admin@sorensonfootandankle.com"
+          ],
+          "date": "2026-05-18T18:23:51.000Z",
+          "bodyText": "Hi!\n\n\nA lot of podiatrists miss out on new patients simply because a competitor ranks\nhigher in search results.\n\n\nThe podiatrists we work with average over 15 new patients a month from paid\nsearch. \n\n\nWant me to send over what that would look like for you?\n\n\n\nThanks,\n\n\nBraxton Lenz\nFounder at Foot Traffic Co",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>A lot of podiatrists miss out on new patients simply because a competitor ranks higher in search results. </div><div><br></div><div> The podiatrists we work with average over 15 new patients a month from paid search.&nbsp;</div><div><br></div><div>Want me to send over what that would look like for you?</div><p></p> <div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Thanks,</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Braxton Lenz</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Founder at Foot Traffic Co</div><div rtrvr-ls=\"12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "braxton_lenz@clinicfoottrafficco.com",
+          "admin@sorensonfootandankle.com"
+        ],
+        "lastMessageAt": "2026-05-18T18:58:00.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "review",
+      "confidence": 45,
+      "matchType": "review",
+      "reason": "lead sender without anchored Sent match",
+      "leadEmail": "hello@mycorederm.com",
+      "leadId": "5f4f957b-cd7e-4c4c-beae-0aedc4a54916",
+      "enrollmentId": "795052a2-75c3-4352-98ba-5cb97ccfc4db",
+      "smartleadLeadId": 3543446428,
+      "mailboxId": "318579a7-56f6-482a-a1b7-ec48408b5165",
+      "mailboxEmail": "blenz@clinictrafficco.com",
+      "importReadiness": "needs_review",
+      "receivedMessage": {
+        "uid": 874,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "caomtjkvj7bdrzn_ngztqtfzxm7_sksn5nqqgc=puzgfbm1j1xw@mail.gmail.com",
+        "rawMessageId": "<CAOMtJkVj7bDrzn_NGztQtfzxM7_sKSn5nQQGc=pUZgFbM1J1Xw@mail.gmail.com>",
+        "inReplyTo": null,
+        "references": null,
+        "subject": "Thank you for your email... Re: Patient flow",
+        "from": "hello@mycorederm.com",
+        "to": [
+          "blenz@clinictrafficco.com"
+        ],
+        "date": "2026-05-18T19:58:12.000Z",
+        "bodyText": "Hello and thank you for contacting Core Dermatology!\n\n\nBook online! https://mycorederm.com/book-online/\n[https://mycorederm.com/book-online/]\n\n\nThis email is checked every few business days. For urgent matters or a more\ntimely response, please call the office at 303-355-3000 or text us directly at\n720-704-1186.  You may also \"message us\" using the\nKlara pop-up on www.mycorederm.com [http://www.mycorederm.com/].  \n\n\nThe Core Dermatology Team\n\n\n\n\n\n\n--\n\nCORE Dermatology\n4500 Cherry Creek South Drive, Suite 600\n303-355-3000 (phone)  \n833-615-8210 (fax) \nwww.mycorederm.com [http://www.mycorederm.com]\nhttps://www.facebook.com/mycorederm [https://www.facebook.com/mycorederm]\n\nInstagram @coredermatology\n\n\nEmails are answered during office hours 8-4:30 M-F.  If you do not receive a\nresponse within 24 hours, please call the office instead. Email is not intended\nor recommended for emergency situations. If you are experiencing a life\nthreatening emergency, you should call 911 or visit your nearest emergency\nroom. \n\n\nIn compliance with the Health Portability and Accountability Act (HIPAA rule\n104-91) and the Electronic Communications Privacy Act, 18 U.S.C. Section\n2510-2521, this message and any attachments are intended only for the use of\nthe individual or entity to which it is addressed and may contain information\nthat is privileged, confidential and exempt from disclosure. If the reader of\nthis electronic message is not the intended recipient or the employee or agent\nresponsible for delivering the message to the intended recipient, please note\nthat any dissemination, distribution or copying of this communication is\nprohibited. The sender does not waive any privilege in the event this message\nwas inadvertently disseminated. If you have received this communication in error\nor it was forwarded to you without permission, please forward this message back\nto the sender at the email address above, delete this message from all mailboxes\nand any other electronic storage medium and destroy all copies.\n\n\nBecause you have chosen to communicate Patient Identifiable Information by\ne-mail, you are consenting to associated e-mail risks. Please note that e-mail\nis not secure, and it cannot be guaranteed that the information transmitted will\nremain confidential.",
+        "bodyHtml": "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><div dir=\"ltr\"><span><font color=\"#000000\"><div>Hello and thank you for contacting Core Dermatology!</div><div><br></div><div>Book online! <a href=\"https://mycorederm.com/book-online/\" target=\"_blank\">https://mycorederm.com/book-online/</a></div><div><br></div><div>This email is checked every few business days. For urgent matters or a more timely response, please call the office at 303-355-3000 or text us directly at 720-704-1186.&nbsp; You may also &quot;message us&quot; using the Klara&nbsp;<span style=\"border-color:rgb(226,232,240)\">pop-up&nbsp;</span>on&nbsp;<a href=\"http://www.mycorederm.com/\" style=\"border-color:rgb(226,232,240)\" target=\"_blank\">www.mycorederm.com</a>.&nbsp;&nbsp;</div><div><br></div></font></span><div><font color=\"#000000\">The Core Dermatology Team</font></div><div><font face=\"arial, helvetica, sans-serif\"><br></font></div><div><div style=\"color:rgb(0,0,0)\"><br></div></div></div><br><br>-- <br><div dir=\"ltr\"><div><div dir=\"ltr\"><div dir=\"ltr\">CORE Dermatology<div>4500 Cherry Creek South Drive, Suite 600</div><div>303-355-3000&nbsp;(phone)&nbsp;&nbsp;</div><div>833-615-8210 (fax)&nbsp;</div><div><a href=\"http://www.mycorederm.com\" target=\"_blank\">www.mycorederm.com</a></div><div><a href=\"https://www.facebook.com/mycorederm\" target=\"_blank\">https://www.facebook.com/mycorederm</a><br></div><div>Instagram @coredermatology</div><div><br></div><div><i>Emails are answered during office hours 8-4:30 M-F.&nbsp; If you do not receive a response within 24 hours, please call the office instead.&nbsp;</i><font face=\"arial, helvetica, sans-serif\"><i style=\"color:rgb(0,0,0)\"><font color=\"#000000\">Email is not intended or recommended for emergency situations. If you are experiencing a life threatening emergency, you should call 911 or visit your nearest emergency room.</font></i><i>&nbsp;</i></font></div><div><font face=\"arial, helvetica, sans-serif\"><br></font></div><div><div style=\"color:rgb(0,0,0)\"><font face=\"arial, helvetica, sans-serif\"><i><font color=\"#000000\"><span style=\"line-height:normal\">I</span><span style=\"line-height:normal\">n compliance with the Health Portability and Accou</span><span style=\"font-size:12px;line-height:normal\">ntability Act (HIPAA rule 104-91) and</span>&nbsp;the Electronic Communications Privacy Act, 18 U.S.C. Section 2510-2521,&nbsp;<span style=\"font-size:12px\">this message and any attachments are intended only for the use of the&nbsp;individual or entity to which it is addressed and may contain information that is privileged, confidential and exempt from disclosure. If the reader of this&nbsp;electronic message is not the intended recipient or the employee or agent responsible for delivering the message to the intended recipient, please note that any&nbsp;dissemination, distribution or copying of this communication is prohibited. The sender does not waive any privilege in the event this message was inadvertently disseminated.&nbsp;</span></font></i><i><font color=\"#000000\"><span style=\"font-size:12px\">If you have received this communication in error or it was forwarded to you&nbsp;without permission, please forward this message back to the sender at the email address above, delete this message from all mailboxes and any other&nbsp;electronic storage medium and destroy all copies.</span></font></i></font></div><div style=\"color:rgb(0,0,0)\"><span style=\"font-size:12px;line-height:normal\"><font color=\"#000000\" face=\"arial, helvetica, sans-serif\"><br></font></span></div><div style=\"color:rgb(0,0,0)\"><font color=\"#000000\" face=\"arial, helvetica, sans-serif\"><span style=\"font-size:12px\"><i>Because you have chosen to communicate Patient Identifiable Information by e-mail, you are consenting to associated e-mail&nbsp;risks. Please note that e-mail is not secure, and it cannot be guaranteed that the information transmitted will remain confidential.</i></span></font></div></div></div></div></div></div><br>"
+      },
+      "sentMessages": [
+        {
+          "uid": 1792,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "fd655171-a670-sl65-4c83-b37c-16da617f79ef@clinictrafficco.com",
+          "rawMessageId": "<fd655171-a670-sl65-4c83-b37c-16da617f79ef@clinictrafficco.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "blenz@clinictrafficco.com",
+          "to": [
+            "hello@mycorederm.com"
+          ],
+          "date": "2026-05-18T19:58:00.000Z",
+          "bodyText": "Hi!\n\n\nMost dermatologists lose new patients to a competitor that ranks higher in\nsearch.\n\n\nOur medical practice clients average over 15 new patients a month from sponsored\nsearch. \n\n\nMind if I send over what that would look like for you?",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>Most dermatologists lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "blenz@clinictrafficco.com",
+          "hello@mycorederm.com"
+        ],
+        "lastMessageAt": "2026-05-18T19:58:12.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "candidate",
+      "confidence": 95,
+      "matchType": "thread_anchor",
+      "reason": "reply references tagged Sent message on same mailbox",
+      "leadEmail": "leland.webb@webbplasticsurgery.com",
+      "leadId": "6df74d8a-9b82-46fc-b61f-72c64482d683",
+      "enrollmentId": "4af12851-0f0d-44fd-875c-5230c155ed0d",
+      "smartleadLeadId": 3543436371,
+      "mailboxId": "d2b39c69-e627-4661-bbd4-edbf502a6d9e",
+      "mailboxEmail": "l.lenz@clinictrafficco.com",
+      "importReadiness": "ready",
+      "receivedMessage": {
+        "uid": 941,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "1373c43c-ae09-44c2-9c8a-4a78e3ce5e05@webbplasticsurgery.com",
+        "rawMessageId": "<1373C43C-AE09-44C2-9C8A-4A78E3CE5E05@webbplasticsurgery.com>",
+        "inReplyTo": "b3d1b539-3582-sl58-4e8a-aea6-20c1f7ab763e@clinictrafficco.com",
+        "references": "b3d1b539-3582-sl58-4e8a-aea6-20c1f7ab763e@clinictrafficco.com",
+        "subject": "Re: Patient flow",
+        "from": "leland.webb@webbplasticsurgery.com",
+        "to": [
+          "l.lenz@clinictrafficco.com"
+        ],
+        "date": "2026-05-18T21:31:32.000Z",
+        "bodyText": "Sure send it over and I’ll look\nLW\n\n> On May 18, 2026, at 09:41, Braxton Lenz <l.lenz@clinictrafficco.com> wrote:\n> \n> ﻿\n> Hi!\n> \n> Most plastic surgeons lose new patients to a competitor that ranks higher in search.\n> \n> Our medical practice clients average over 15 new patients a month from sponsored search. \n> \n> Mind if I send over what that would look like for you?\n> Best,\n> \n> Braxton Lenz\n> Founder @ Foot Traffic Co\n>",
+        "bodyHtml": "<html class=\"apple-mail-supports-explicit-dark-mode\"><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"></head><body dir=\"auto\">Sure send it over and I’ll look<br id=\"lineBreakAtBeginningOfSignature\"><div dir=\"ltr\">LW</div><div dir=\"ltr\"><br><blockquote type=\"cite\">On May 18, 2026, at 09:41, Braxton Lenz &lt;l.lenz@clinictrafficco.com&gt; wrote:<br><br></blockquote></div><blockquote type=\"cite\"><div dir=\"ltr\">﻿\n<title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  \n  \n  \n  <div>Hi!</div><div><br></div><div>Most plastic surgeons lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div><p></p> <div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Best,</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Braxton Lenz</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Founder @ Foot Traffic Co</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div>\n  \n  \n  \n</div></blockquote></body></html>"
+      },
+      "sentMessages": [
+        {
+          "uid": 1996,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "b3d1b539-3582-sl58-4e8a-aea6-20c1f7ab763e@clinictrafficco.com",
+          "rawMessageId": "<b3d1b539-3582-sl58-4e8a-aea6-20c1f7ab763e@clinictrafficco.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "l.lenz@clinictrafficco.com",
+          "to": [
+            "leland.webb@webbplasticsurgery.com"
+          ],
+          "date": "2026-05-18T16:40:56.000Z",
+          "bodyText": "Hi!\n\n\nMost plastic surgeons lose new patients to a competitor that ranks higher in\nsearch.\n\n\nOur medical practice clients average over 15 new patients a month from sponsored\nsearch. \n\n\nMind if I send over what that would look like for you?\n\n\n\nBest,\n\n\nBraxton Lenz\nFounder @ Foot Traffic Co",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>Most plastic surgeons lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div><p></p> <div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Best,</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Braxton Lenz</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Founder @ Foot Traffic Co</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "l.lenz@clinictrafficco.com",
+          "leland.webb@webbplasticsurgery.com"
+        ],
+        "lastMessageAt": "2026-05-18T21:31:32.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "candidate",
+      "confidence": 95,
+      "matchType": "thread_anchor",
+      "reason": "reply references tagged Sent message on same mailbox",
+      "leadEmail": "allison@columbineaesthetics.com",
+      "leadId": "24fe9dee-d47f-4537-be51-bc04c6fc8319",
+      "enrollmentId": "cd00478a-1740-405f-8904-e87c23ab0f91",
+      "smartleadLeadId": 3543446202,
+      "mailboxId": "50d53908-3458-41a5-aa75-9ad9679d77f3",
+      "mailboxEmail": "braxton.l@clinictrafficco.com",
+      "importReadiness": "ready",
+      "receivedMessage": {
+        "uid": 934,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "caenrjqlva+qsksstnovnl106j4ooo1xne_i_r-_9arrgke3gcg@mail.gmail.com",
+        "rawMessageId": "<CAENrJqLvA+QsKsStNoVnL106J4OOo1xNe_i_r-_9arrGke3GCg@mail.gmail.com>",
+        "inReplyTo": "9f228015-7f9c-sl10-4a6f-81a2-0ddb53637b57@clinictrafficco.com",
+        "references": "9f228015-7f9c-sl10-4a6f-81a2-0ddb53637b57@clinictrafficco.com",
+        "subject": "Re: Patient flow",
+        "from": "allison@columbineaesthetics.com",
+        "to": [
+          "braxton.l@clinictrafficco.com"
+        ],
+        "date": "2026-05-18T21:47:31.000Z",
+        "bodyText": "No thanks\nOn Mon, May 18, 2026 at 1:13 PM Braxton Lenz <braxton.l@clinictrafficco.com>\nwrote:\n\n> Hi!\n>\n> Most med spas lose new patients to a competitor that ranks higher in\n> search.\n>\n> Our medical practice clients average over 15 new patients a month from\n> sponsored search.\n>\n> Mind if I send over what that would look like for you?\n>\n> Appreciate it,\n>\n> Braxton Lenz\n> Founder @ Foot Traffic Co\n>\n>",
+        "bodyHtml": "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><div dir=\"auto\">No thanks<br><div class=\"gmail_quote gmail_quote_container\"><div dir=\"ltr\" class=\"gmail_attr\">On Mon, May 18, 2026 at 1:13 PM Braxton Lenz &lt;<a href=\"mailto:braxton.l@clinictrafficco.com\">braxton.l@clinictrafficco.com</a>&gt; wrote:<br></div><blockquote class=\"gmail_quote\" style=\"margin:0 0 0 .8ex;border-left:1px #ccc solid;padding-left:1ex\"><u></u>\n\n    \n     \n      \n    \n  \n  \n  <div>\n  <div>Hi!</div><div><br></div><div>Most med spas lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div><p></p> <div>Appreciate it,</div><div><br></div><div>Braxton Lenz</div><div>Founder @ Foot Traffic Co</div><div><br></div>\n  </div>\n  \n  \n</blockquote></div></div>"
+      },
+      "sentMessages": [
+        {
+          "uid": 2002,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "9f228015-7f9c-sl10-4a6f-81a2-0ddb53637b57@clinictrafficco.com",
+          "rawMessageId": "<9f228015-7f9c-sl10-4a6f-81a2-0ddb53637b57@clinictrafficco.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient flow",
+          "from": "braxton.l@clinictrafficco.com",
+          "to": [
+            "allison@columbineaesthetics.com"
+          ],
+          "date": "2026-05-18T19:13:38.000Z",
+          "bodyText": "Hi!\n\n\nMost med spas lose new patients to a competitor that ranks higher in search.\n\n\nOur medical practice clients average over 15 new patients a month from sponsored\nsearch. \n\n\nMind if I send over what that would look like for you?\n\n\n\nAppreciate it,\n\n\nBraxton Lenz\nFounder @ Foot Traffic Co",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>Patient flow</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>Most med spas lose new patients to a competitor that ranks higher in search. </div><div><br></div><div>Our medical practice clients  average over 15 new patients a month from sponsored search.&nbsp;</div><div><br></div><div>Mind if I send over what that would look like for you?</div><p></p> <div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Appreciate it,</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Braxton Lenz</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Founder @ Foot Traffic Co</div><div rtrvr-ls=\"12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient flow",
+        "participants": [
+          "braxton.l@clinictrafficco.com",
+          "allison@columbineaesthetics.com"
+        ],
+        "lastMessageAt": "2026-05-18T21:47:31.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    },
+    {
+      "bucket": "candidate",
+      "confidence": 95,
+      "matchType": "thread_anchor",
+      "reason": "reply references tagged Sent message on same mailbox",
+      "leadEmail": "hello@patientfi.com",
+      "leadId": "a2eaf80e-a266-47d8-b78c-0aa97b1d8bd6",
+      "enrollmentId": null,
+      "smartleadLeadId": 3543454845,
+      "mailboxId": "a45f60ca-e88f-4cc7-bfd6-466da9c03813",
+      "mailboxEmail": "lenz.b@clinictrafficdr.com",
+      "importReadiness": "ready",
+      "receivedMessage": {
+        "uid": 1337,
+        "folder": "INBOX",
+        "direction": "received",
+        "messageId": "751n1j6vrx9_6a1ddb06a18a5_01097e2ebb2452_sprut@zendesk.com",
+        "rawMessageId": "<751N1J6VRX9_6a1ddb06a18a5_01097e2ebb2452_sprut@zendesk.com>",
+        "inReplyTo": "86eb3576-90f9-4f77-aa5f-8e31593318f6@clinictrafficdr.com",
+        "references": "751n1j6vrx9@zendesk.com 86eb3576-90f9-4f77-aa5f-8e31593318f6@clinictrafficdr.com",
+        "subject": "We hear you! - PatientFi",
+        "from": "hello@patientfi.com",
+        "to": [
+          "lenz.b@clinictrafficdr.com"
+        ],
+        "date": "2026-06-01T19:18:30.000Z",
+        "bodyText": "Hi Braxton,\n\nThank you so much for reaching out to us! We will have a member of our team in contact with you very shortly.\n\nThank you for your patience.\n\nSincerely,\nPatientFi Support\n\nPhone: 866.734.5979\nEmail: support@patientfi.com\nHours: 6am - 7pm PST\n\n--------------------------------\nThis email is a service from PatientFi.\n\n\n\n\n\n\n\n\n\n[751N1J-6VRX9]",
+        "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n  <style type=\"text/css\">\n    table td {\n      border-collapse: collapse;\n    }\n    body[dir=rtl] .directional_text_wrapper { direction: rtl; unicode-bidi: embed; }\n\n  </style>\n\n          <style type=\"text/css\">\n            @media only screen and (max-width: 768px) {\n              .simplified-email-footer .namecard {\n                display: block;\n                min-width: 100%;\n                padding: 0 0 16px 0; }\n\n              .simplified-email-footer .content {\n                padding: 16px; }\n            }\n          </style>\n        </head>\n<body lang=\"en-us\" style=\"width: 100%!important; margin: 0; padding: 0;\">\n  <div style=\"padding: 10px; line-height: 1.5; font-family: 'Lucida Grande',Verdana,Arial,sans-serif; font-size: 12px; color:#444444;\">\n    <p dir=\"ltr\">Hi Braxton,</p><p dir=\"ltr\">Thank you so much for reaching out to us! We will have a member of our team in contact with you very shortly.</p><p dir=\"ltr\">Thank you for your patience.</p><p dir=\"ltr\">Sincerely,<br>PatientFi Support</p><p dir=\"ltr\">Phone: 866.734.5979<br>Email: support@patientfi.com<br>Hours: 6am - 7pm PST</p>\n  </div>\n  <div style=\"padding: 10px; line-height: 1.5; font-family: 'Lucida Grande',Verdana,Arial,sans-serif; font-size: 12px; color: #aaaaaa; margin: 10px 0 14px 0; padding-top: 10px; border-top: 1px solid #eeeeee;\">\n    <br><div class=\"fb-container\"><span style=\"color:#313940; font-size:12px; text-align:left\"> Message us on</span><div class=\"fb-social-buttons\"><table cellpadding=\"3\" cellspacing=\"2\" style=\"display: inline-table\"><tbody><tr>    <td>\n       <a href=\"https://www.instagram.com/patient.fi\" style=\"cursor:pointer; text-decoration:none;\">\n       <img height=\"16\" width=\"16\" alt=\"instagram logo\" src=\"https://static.zdassets.com/classic/images/brands/social_buttons/instagram_footer.png\">\n       </a>\n     </td>\n    <td>\n       <a href=\"https://m.me/PatientFi\" style=\"cursor:pointer; text-decoration:none;\">\n       <img height=\"16\" width=\"16\" alt=\"messenger logo\" src=\"https://static.zdassets.com/classic/images/brands/social_buttons/messenger_footer.png\">\n       </a>\n     </td>\n</tr></tbody></table></div></div>This email is a service from PatientFi.\n  </div>\n<span style=\"color:#FFFFFF\" aria-hidden=\"true\" class=\"zd_encoded_id\">[751N1J-6VRX9]</span>\n\n<div itemscope=\"\" itemtype=\"http://schema.org/EmailMessage\" style=\"display:none\">  <div itemprop=\"action\" itemscope=\"\" itemtype=\"http://schema.org/ViewAction\">    <link itemprop=\"url\" href=\"https://support.patientfi.com/hc/requests/473944\">    <meta itemprop=\"name\" content=\"View ticket\">  </div></div></body></html>"
+      },
+      "sentMessages": [
+        {
+          "uid": 3145,
+          "folder": "Sent Items",
+          "direction": "sent",
+          "messageId": "86eb3576-90f9-4f77-aa5f-8e31593318f6@clinictrafficdr.com",
+          "rawMessageId": "<86eb3576-90f9-4f77-aa5f-8e31593318f6@clinictrafficdr.com>",
+          "inReplyTo": null,
+          "references": null,
+          "subject": "Patient Visibility",
+          "from": "lenz.b@clinictrafficdr.com",
+          "to": [
+            "hello@patientfi.com"
+          ],
+          "date": "2026-06-01T19:18:09.000Z",
+          "bodyText": "Hi!\n\n\nA lot of plastic surgeons miss out on new patients simply because a competitor\nranks higher in search results.\n\n\nThe plastic surgeons we work with average over 15 extra patients per/a month\nfrom paid search. \n\n\nWant me to send over an analysis on how to beat your online competition in Los\nGatos to get more patients? \n\n\n\nAppreciate it,\n\n\nBraxton Lenz\nFounder at Foot Traffic Co",
+          "bodyHtml": "<!DOCTYPE html><html><head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title> Patient Visibility</title>\n    <!-- </meta> -->\n     \n      <!-- </meta> -->\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><!-- </meta> -->\n  </head>\n  \n  <body>\n  <div>Hi!</div><div><br></div><div>A lot of plastic surgeons miss out on new patients simply because a competitor ranks higher in search results. </div><div><br></div><div> The plastic surgeons we work with average over 15 extra patients per/a month from paid search.&nbsp;</div><div><br></div><div>Want me to send over an analysis on how to beat your online competition in Los Gatos to get more patients?&nbsp;</div><p></p> <div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Appreciate it,</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Braxton Lenz</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\">Founder at Foot Traffic Co</div><div rtrvr-ls=\"5~hs,6~hs,8~hs,9~hs,12~ow,13~lc,15~ow,16~hs,47~lc\" rtrvr-ro=\"42\"><br></div>\n  </body>\n  \n  </html>"
+        }
+      ],
+      "threadDraft": {
+        "subject": "Patient Visibility",
+        "participants": [
+          "lenz.b@clinictrafficdr.com",
+          "hello@patientfi.com"
+        ],
+        "lastMessageAt": "2026-06-01T19:18:30.000Z",
+        "messageCount": 2,
+        "hasReply": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,169 @@
+{
+  "generatedAt": "2026-06-15T05:41:50.067Z",
+  "campaignId": "315e72b5-3ca0-4258-9307-b5e786e6868a",
+  "dryRun": false,
+  "wouldCreateThreads": 0,
+  "createdThreads": 0,
+  "skippedExistingThreads": 39,
+  "skippedExistingMessages": 0,
+  "insertedMessages": 0,
+  "importedLeadEmails": [],
+  "skipped": [
+    {
+      "leadEmail": "vincentp@thesaltsuite.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "keith@eastvalleykravmaga.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "maryjean@greatfallspt.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "ann@balinmo.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "rob@opisafe.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "maddie@rangeptmontana.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "morgan@morganpetro.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "craynor@pennpain.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "britta@focusptva.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "bridget@peakphysicaltherapypa.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "trevor@empoweruptp.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "deborah@centertruehealth.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "ed@proformpt.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "koverton@levelupwellpt.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "frank@pure-physicaltherapy.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "tracy@yogaexperience.net",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "aneri@leapsandboundsil.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "caitlin@thelotusmethodsf.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "michele@danupt.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "drjpierce@desertplasticsurgery.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "kelly@craniosacralgr.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "jenny@alltogetherwellness.net",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "drlodha@puradermatology.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "brooke@thebloommethod.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "ryan@bodybyheart.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "mmorath@journey-fit.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "sarah@smithperformancecenter.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "manuelb@medcessity.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "joy@drskinmedspa.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "amy@go2beyondmotion.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "susie@drsusieg.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "gianara@fpspt.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "rebecca@dynamicbodypilates.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "kim@phitwell.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "ashley@seattleselitept.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "mattdixon@purplepatchfitness.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "padromd@mindandsoultherapy.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "janice@fitnessfest.org",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    },
+    {
+      "leadEmail": "jon@nebraskapeakpt.com",
+      "reason": "thread already exists for campaign + smartlead_lead_id"
+    }
+  ]
+}

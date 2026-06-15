@@ -1,0 +1,58 @@
+{
+  "kind": "import",
+  "version": 1,
+  "generatedAt": "2026-06-15T05:41:28.781Z",
+  "updatedAt": "2026-06-15T05:41:36.071Z",
+  "campaignId": "eecac452-8248-4809-8a45-26761b5c5a31",
+  "inputPath": "docs/audit/foot-traffic/scraped-emails-2-all-150-recovery-export.json",
+  "minConfidence": 80,
+  "processedCandidateKeys": [
+    "myexperience@aarons.com|c2db35af-c696-4c67-ae50-5a478b553f4e|1518539918.24122.1778779363880@app134027.ytz201.service-now.com|2026-05-14T17:22:43.000Z",
+    "myexperience@aarons.com|c2db35af-c696-4c67-ae50-5a478b553f4e|1544570248.27165.1778779558915@app136038.ytz201.service-now.com|2026-05-14T17:25:58.000Z",
+    "hello@uhmedical.com|c2db35af-c696-4c67-ae50-5a478b553f4e|cajac4wkghqrooey93zv_r_zvgedx0nqbf6w7eekatgx1owcmsq@mail.gmail.com|2026-05-15T16:24:09.000Z",
+    "info@blueoakfamilychiro.com|c2db35af-c696-4c67-ae50-5a478b553f4e|caldunzqg-2scxsenroai3ue=mbmb=d7=0ud4lpxwyqiddx6ezq@mail.gmail.com|2026-05-15T16:54:45.000Z",
+    "info@centralparkaesthetics.com|7927d6e5-7596-4cef-9351-1c464a3eceff|cahuc7l6q0t5c5ew9+ds64eetos+m5j5nkm1snh02qpzgwzjj3q@mail.gmail.com|2026-05-15T16:55:42.000Z",
+    "drsegler@docontherun.com|35c3ebb6-4d01-4475-98c9-1881a93bfc14|cakb7mk0huw9fv4pzp0gqwbc1d7jqtrfvxdq-pa+gfcsuqp9dea@mail.gmail.com|2026-05-15T17:31:44.000Z",
+    "info@citysquares.com|a1fb69ac-8921-437f-a2c2-9cbd01cf7d37|cad5qmfakm97bo4m5zmiqa2fqpxt4r1-ni704h9fbxn0zq0+oua@mail.gmail.com|2026-05-15T18:24:21.000Z",
+    "support@myadvice.com|a83bb74b-bbc9-4434-9bd8-43a361dc3b8d|m2dklwrp442_6a0b41259930e_461c6b5bd9928f_sprut@zendesk.com|2026-05-18T16:41:09.000Z",
+    "inquiries@andersenorthopedics.com|a1fb69ac-8921-437f-a2c2-9cbd01cf7d37|cakanq=cu3obnelt5iyzummnd8n8tkhraszhfmjfocwd-73wwba@mail.gmail.com|2026-05-18T16:41:22.000Z",
+    "miguel@drfurze.com|9ce0024e-726c-48e3-aece-188b70b62fac|cahhcy81t8g_qjqbzcxlmd3ke_znbnv6drtfbqgxww7hkufahqg@mail.gmail.com|2026-05-18T16:43:09.000Z",
+    "admin@sorensonfootandankle.com|4abd7e61-b4dc-4f57-9237-5b3de5579025|calojfudk58j6tvyomckrzyuw+klnvfejy2jzqqb_vnk1h_dezw@mail.gmail.com|2026-05-18T18:58:00.000Z",
+    "hello@mycorederm.com|318579a7-56f6-482a-a1b7-ec48408b5165|caomtjkvj7bdrzn_ngztqtfzxm7_sksn5nqqgc=puzgfbm1j1xw@mail.gmail.com|2026-05-18T19:58:12.000Z",
+    "leland.webb@webbplasticsurgery.com|d2b39c69-e627-4661-bbd4-edbf502a6d9e|1373c43c-ae09-44c2-9c8a-4a78e3ce5e05@webbplasticsurgery.com|2026-05-18T21:31:32.000Z",
+    "allison@columbineaesthetics.com|50d53908-3458-41a5-aa75-9ad9679d77f3|caenrjqlva+qsksstnovnl106j4ooo1xne_i_r-_9arrgke3gcg@mail.gmail.com|2026-05-18T21:47:31.000Z",
+    "hello@patientfi.com|a45f60ca-e88f-4cc7-bfd6-466da9c03813|751n1j6vrx9_6a1ddb06a18a5_01097e2ebb2452_sprut@zendesk.com|2026-06-01T19:18:30.000Z"
+  ],
+  "summary": {
+    "generatedAt": "2026-06-15T05:41:28.781Z",
+    "campaignId": "eecac452-8248-4809-8a45-26761b5c5a31",
+    "dryRun": false,
+    "wouldCreateThreads": 0,
+    "createdThreads": 14,
+    "skippedExistingThreads": 1,
+    "skippedExistingMessages": 0,
+    "insertedMessages": 28,
+    "importedLeadEmails": [
+      "myexperience@aarons.com",
+      "hello@uhmedical.com",
+      "info@blueoakfamilychiro.com",
+      "info@centralparkaesthetics.com",
+      "drsegler@docontherun.com",
+      "info@citysquares.com",
+      "support@myadvice.com",
+      "inquiries@andersenorthopedics.com",
+      "miguel@drfurze.com",
+      "admin@sorensonfootandankle.com",
+      "hello@mycorederm.com",
+      "leland.webb@webbplasticsurgery.com",
+      "allison@columbineaesthetics.com",
+      "hello@patientfi.com"
+    ],
+    "skipped": [
+      {
+        "leadEmail": "myexperience@aarons.com",
+        "reason": "thread already exists for campaign + smartlead_lead_id"
+      }
+    ]
+  }
+}

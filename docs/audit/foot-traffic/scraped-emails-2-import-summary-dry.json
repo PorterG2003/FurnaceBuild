@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-06-15T05:39:20.315Z",
+  "campaignId": "eecac452-8248-4809-8a45-26761b5c5a31",
+  "dryRun": true,
+  "wouldCreateThreads": 15,
+  "createdThreads": 0,
+  "skippedExistingThreads": 0,
+  "skippedExistingMessages": 0,
+  "insertedMessages": 0,
+  "importedLeadEmails": [
+    "myexperience@aarons.com",
+    "myexperience@aarons.com",
+    "hello@uhmedical.com",
+    "info@blueoakfamilychiro.com",
+    "info@centralparkaesthetics.com",
+    "drsegler@docontherun.com",
+    "info@citysquares.com",
+    "support@myadvice.com",
+    "inquiries@andersenorthopedics.com",
+    "miguel@drfurze.com",
+    "admin@sorensonfootandankle.com",
+    "hello@mycorederm.com",
+    "leland.webb@webbplasticsurgery.com",
+    "allison@columbineaesthetics.com",
+    "hello@patientfi.com"
+  ],
+  "skipped": []
+}

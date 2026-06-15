@@ -56,12 +56,14 @@ aws amplify update-app --app-id d1jtp0rz0l9mcn --region us-west-2 \
 
 ## Flux public pages (`/p/{slug}`)
 
-URLs like `/p/acme/` (trailing slash) do not match expo-router’s `/p/[slug]` route, so visitors see a **white screen**. Fix is in the app (requires deploy):
+Flux public pages should support both `/p/acme` and `/p/acme/` in-app without a redirect dependency. The current implementation should keep hosting simple and let the route itself accept either URL form:
 
-- **`public/index.html`** — synchronous `location.replace` strips the trailing slash before React loads
-- **`app/_layout.tsx`** — `useFluxPublicPageTrailingSlashRedirect()` as a backup once the router mounts
+- **`public/index.html`** — uses `history.replaceState(...)` to strip a trailing slash from `/p/{slug}/` before React mounts, avoiding a second document request
+- **`app/p/[...slug].tsx`** — catch-all route resolves exactly one slug segment and rejects nested non-page URLs
+- **`lib/web/fluxPublicPageSlug.ts`** — normalizes exactly one slug segment and falls back to parsing the browser pathname
+- **`app/_layout.tsx`** + **`components/web/WebInstallGate.tsx`** — use the current browser pathname consistently when deciding whether Flux public pages should bypass the normal app boot/install gate
 
-Amplify cannot express `/p/<slug>/` → `/p/<slug>` redirects (wildcards cannot precede a trailing `/`).
+Avoid full-page slash normalization for `/p/*` in `public/index.html`; hard navigations can loop if a host/browser preserves the opposite slash form. Amplify also cannot express `/p/<slug>/` → `/p/<slug>` redirects (wildcards cannot precede a trailing `/`).
 
 ## Why this matters
 

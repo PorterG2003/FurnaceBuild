@@ -29,7 +29,6 @@ function response(statusCode: number, body: Record<string, unknown>) {
     statusCode,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
     },
     body: JSON.stringify(body),
   };

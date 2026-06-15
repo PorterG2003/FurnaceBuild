@@ -18,6 +18,13 @@ The web app is an Expo SPA. Configure these **Rewrites and redirects** in the Am
 
 ## JSON (for Amplify JSON editor)
 
+Canonical copy in repo: [`amplifyCustomRules.json`](../../amplifyCustomRules.json). Apply to the hosting app:
+
+```bash
+aws amplify update-app --app-id d1jtp0rz0l9mcn --region us-west-2 \
+  --custom-rules file://amplifyCustomRules.json
+```
+
 ```json
 [
   {
@@ -46,6 +53,10 @@ The web app is an Expo SPA. Configure these **Rewrites and redirects** in the Am
   }
 ]
 ```
+
+## Flux public pages (`/p/{slug}`)
+
+Amplify adds a trailing slash when serving SPA paths (`/p/acme` → `/p/acme/`). That left expo-router with an **empty `slug` param**, so live pages showed **Page not found** without hitting Supabase. The app normalizes this in `app/p/_layout.tsx` and resolves the slug from the pathname in `app/p/[slug].tsx`. Amplify does not allow a wildcard redirect like `/p/<*>/` → `/p/<*>`.
 
 ## Why this matters
 

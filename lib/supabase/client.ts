@@ -59,7 +59,13 @@ export async function getCurrentUser(): Promise<User | null> {
  * Prefer this over raw getSession() when you only need the token.
  */
 export async function getAccessToken(): Promise<string | null> {
-  const session = await getSession();
+  // Validate/refresh the session with Supabase Auth before returning a Bearer token
+  // for Function URLs. getSession() alone can return a stale access_token from storage.
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    return null;
+  }
+  const { data: { session } } = await supabase.auth.getSession();
   return session?.access_token ?? null;
 }
 

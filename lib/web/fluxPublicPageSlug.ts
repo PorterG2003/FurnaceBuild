@@ -13,6 +13,23 @@ export function slugFromFluxPublicPathname(pathname: string): string | undefined
   return slug || undefined;
 }
 
+/** True when pathname is `/p/{slug}/` (trailing slash breaks expo-router route matching on web). */
+export function fluxPublicPageTrailingSlashPath(pathname: string): string | null {
+  const match = pathname.match(/^\/p\/([^/]+)\/$/);
+  const slug = match?.[1]?.trim();
+  return slug ? `/p/${slug}` : null;
+}
+
+/**
+ * Canonical path for a Flux public page URL, stripping a trailing slash when present.
+ * Returns null when the path is not a trailing-slash `/p/{slug}/` URL.
+ */
+export function fluxPublicPageCanonicalPath(pathname: string, search = '', hash = ''): string | null {
+  const base = fluxPublicPageTrailingSlashPath(pathname);
+  if (!base) return null;
+  return `${base}${search}${hash}`;
+}
+
 /**
  * Resolve the prospect page slug from route params, falling back to the browser pathname.
  * Amplify adds a trailing slash (`/p/foo/`) which can leave `useLocalSearchParams().slug` empty.

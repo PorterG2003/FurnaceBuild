@@ -94,7 +94,9 @@ export async function testMailboxConnection(
 
     if (!res.ok) {
       const msg =
-        res.status === 502
+        res.status === 401
+          ? 'Your session expired. Sign out and back in, then try again.'
+          : res.status === 502
           ? 'Connection test timed out on the server. Try again or test one mailbox at a time.'
           : (data as { error?: string }).error || res.statusText;
       lastError = new Error(msg || 'Failed to test mailbox connection');

@@ -182,11 +182,17 @@ export const handler: Schema['testMailboxConnection']['functionHandler'] = async
       const supabase = createClient(supabaseUrl, supabaseSecretKey);
       const { data: { user }, error: authError } = await supabase.auth.getUser(token);
       if (authError || !user) {
+        console.warn('testMailboxConnection auth failed:', authError?.message ?? 'no user');
         return { statusCode: 401, body: JSON.stringify({ error: 'Invalid or expired token' }) };
       }
       const body = event.body ? (event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body) : '{}';
       const args = JSON.parse(body) as TestMailboxConnectionArgs;
       const result = await testMailboxConnectionLogic(args);
+      console.log('testMailboxConnection result', {
+        success: result.success,
+        smtp: result.smtp.success,
+        imap: result.imap.success,
+      });
       return { statusCode: 200, body: JSON.stringify(result) };
     }
 

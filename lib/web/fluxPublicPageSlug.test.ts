@@ -1,6 +1,8 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 import {
+  fluxPublicPageCanonicalPath,
+  fluxPublicPageTrailingSlashPath,
   normalizeSlugParam,
   resolveFluxPublicPageSlug,
   slugFromFluxPublicPathname,
@@ -18,6 +20,14 @@ describe('slugFromFluxPublicPathname', () => {
     assert.strictEqual(slugFromFluxPublicPathname('/p/'), undefined);
     assert.strictEqual(slugFromFluxPublicPathname('/p/foo/bar'), undefined);
     assert.strictEqual(slugFromFluxPublicPathname('/flux/purept'), undefined);
+  });
+});
+
+describe('fluxPublicPageTrailingSlashPath', () => {
+  it('detects trailing-slash Flux public URLs', () => {
+    assert.strictEqual(fluxPublicPageTrailingSlashPath('/p/purept/'), '/p/purept');
+    assert.strictEqual(fluxPublicPageTrailingSlashPath('/p/purept'), null);
+    assert.strictEqual(fluxPublicPageCanonicalPath('/p/purept/', '?utm=1', '#x'), '/p/purept?utm=1#x');
   });
 });
 

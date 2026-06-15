@@ -56,7 +56,12 @@ aws amplify update-app --app-id d1jtp0rz0l9mcn --region us-west-2 \
 
 ## Flux public pages (`/p/{slug}`)
 
-Amplify adds a trailing slash when serving SPA paths (`/p/acme` → `/p/acme/`). That left expo-router with an **empty `slug` param**, so live pages showed **Page not found** without hitting Supabase. The app normalizes this in `app/p/_layout.tsx` and resolves the slug from the pathname in `app/p/[slug].tsx`. Amplify does not allow a wildcard redirect like `/p/<*>/` → `/p/<*>`.
+URLs like `/p/acme/` (trailing slash) do not match expo-router’s `/p/[slug]` route, so visitors see a **white screen**. Fix is in the app (requires deploy):
+
+- **`public/index.html`** — synchronous `location.replace` strips the trailing slash before React loads
+- **`app/_layout.tsx`** — `useFluxPublicPageTrailingSlashRedirect()` as a backup once the router mounts
+
+Amplify cannot express `/p/<slug>/` → `/p/<slug>` redirects (wildcards cannot precede a trailing `/`).
 
 ## Why this matters
 

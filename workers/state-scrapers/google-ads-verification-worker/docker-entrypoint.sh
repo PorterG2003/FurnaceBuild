@@ -15,7 +15,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "google-ads-verification-xvfb-start:$DISPLAY_NUM"
-Xvfb "$DISPLAY_NUM" -screen 0 1280x720x24 >"$XVFB_LOG" 2>&1 &
+Xvfb "$DISPLAY_NUM" -screen 0 1440x960x24 >"$XVFB_LOG" 2>&1 &
 XVFB_PID=$!
 sleep 1
 

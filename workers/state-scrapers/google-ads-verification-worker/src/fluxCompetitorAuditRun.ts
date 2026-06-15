@@ -366,7 +366,7 @@ export async function runFluxCompetitorAuditJob(params: {
           (signal) =>
             runGoogleAdsTransparencyAuditSamples({
             domain: c.domain,
-            headless: true,
+            headless: false,
             region: transparencyRegion,
             timeoutMs: 50_000,
             maxSamples: MAX_PUBLISHED_SAMPLES_PER_WINNER,

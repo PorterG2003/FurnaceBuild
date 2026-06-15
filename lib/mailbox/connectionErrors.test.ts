@@ -6,7 +6,7 @@ import {
   classifyImapError,
   classifySmtpError,
   formatImapError,
-} from './connectionErrors.js';
+} from './connectionErrors';
 
 test('classifyImapError treats Exchange LSUB BAD as transient', () => {
   const result = classifyImapError({

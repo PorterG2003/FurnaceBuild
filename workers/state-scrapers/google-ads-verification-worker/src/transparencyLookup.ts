@@ -393,7 +393,10 @@ async function collectCreativeHrefs(page: Page): Promise<string[]> {
 const CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS = 12_000;
 const CREATIVE_IMG_WAIT_MS = 22_000;
 const CREATIVE_POST_PAINT_SETTLE_MS = 900;
-const CREATIVE_PAGE_READY_WAIT_MS = 5_000;
+const CREATIVE_PAGE_READY_WAIT_MS = 12_000;
+const CREATIVE_PAGE_READY_LONG_WAIT_MS = CREATIVE_IMG_WAIT_MS;
+const CREATIVE_CANDIDATE_RETRY_WAIT_MS = 4_000;
+const CREATIVE_CANDIDATE_FINAL_RETRY_WAIT_MS = 8_000;
 /** Ignore degenerate captures (e.g. 1×1 placeholder). */
 const MIN_CREATIVE_PNG_BYTES = 400;
 const CREATIVE_CLIP_PADDING_X = 16;
@@ -421,6 +424,11 @@ const CREATIVE_PREVIEW_ROOT_SELECTORS = [
   CREATIVE_IFRAME,
   SYNDICATED_IMG,
   MAIN_REGION_MEDIA,
+] as const;
+const CREATIVE_PREVIEW_SURFACE_SCROLL_SELECTORS = [
+  CREATIVE_IFRAME,
+  'html-renderer',
+  '[class*="creative-container"]',
 ] as const;
 
 type ClipBox = {
@@ -476,6 +484,24 @@ type CreativePreviewLogContext = {
   sourceUrl?: string;
 };
 
+export type CreativePreviewAcceptanceMode = 'strict' | 'relaxed';
+
+type CreativePreviewFallbackTarget =
+  | 'creative_iframe'
+  | 'html_renderer'
+  | 'creative_container'
+  | 'html_container'
+  | 'syndicated_img'
+  | 'layout_metadata'
+  | 'layout_center';
+
+type CreativePreviewCollectionResult = {
+  candidates: CreativePreviewCandidate[];
+  candidateCountsByLabel: Record<string, number>;
+  candidateCountsByPriority: Record<string, number>;
+  candidateCollectionPass: number;
+};
+
 function pngBufferFromScreenshot(raw: Buffer | Uint8Array): Buffer | null {
   if (!raw || raw.length < MIN_CREATIVE_PNG_BYTES) return null;
   return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
@@ -514,13 +540,15 @@ export function clipCreativePreviewBox(
 export function isAcceptableCreativePreviewCandidate(
   candidate: CreativePreviewCandidate,
   viewport = VIEWPORT,
+  mode: CreativePreviewAcceptanceMode = 'strict',
 ): boolean {
-  return getCreativePreviewCandidateRejectionReason(candidate, viewport) == null;
+  return getCreativePreviewCandidateRejectionReason(candidate, viewport, mode) == null;
 }
 
 function getCreativePreviewCandidateRejectionReason(
   candidate: CreativePreviewCandidate,
   viewport = VIEWPORT,
+  mode: CreativePreviewAcceptanceMode = 'strict',
 ): CreativePreviewCandidateRejectionReason | null {
   if (
     ![candidate.x, candidate.y, candidate.width, candidate.height, candidate.textLength, candidate.imageCount].every(
@@ -530,7 +558,13 @@ function getCreativePreviewCandidateRejectionReason(
     return 'non_finite';
   }
   if (candidate.hasVideo) return 'contains_video';
-  if (candidate.hasIframe && candidate.textLength < MIN_CREATIVE_TEXT_LENGTH) return 'textless_iframe';
+  if (
+    mode === 'strict' &&
+    candidate.hasIframe &&
+    candidate.textLength < MIN_CREATIVE_TEXT_LENGTH
+  ) {
+    return 'textless_iframe';
+  }
   if (candidate.width < MIN_CREATIVE_BOX_WIDTH || candidate.height < MIN_CREATIVE_BOX_HEIGHT) return 'too_small';
   if (candidate.width * candidate.height < MIN_CREATIVE_BOX_AREA) return 'too_small';
   if (candidate.width > viewport.width * MAX_CREATIVE_BOX_WIDTH_RATIO) return 'too_wide';
@@ -544,7 +578,9 @@ function getCreativePreviewCandidateRejectionReason(
     return 'too_flat_media';
   }
   if (candidate.textLength < MIN_CREATIVE_TEXT_LENGTH && candidate.imageCount < 1) return 'low_signal';
-  return clipCreativePreviewBox(candidate, viewport) != null ? null : 'invalid_clip';
+  const clip = clipCreativePreviewBox(candidate, viewport);
+  if (!clip || clip.width * clip.height < MIN_CREATIVE_BOX_AREA) return 'invalid_clip';
+  return null;
 }
 
 function rankCreativePreviewCandidate(
@@ -559,11 +595,12 @@ function rankCreativePreviewCandidate(
 export function pickBestCreativePreviewCandidate(
   candidates: CreativePreviewCandidate[],
   viewport = VIEWPORT,
+  mode: CreativePreviewAcceptanceMode = 'strict',
 ): CreativePreviewCandidateBox | null {
   let best: CreativePreviewCandidateBox | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
   for (const candidate of candidates) {
-    if (!isAcceptableCreativePreviewCandidate(candidate, viewport)) continue;
+    if (!isAcceptableCreativePreviewCandidate(candidate, viewport, mode)) continue;
     const clip = clipCreativePreviewBox(candidate, viewport);
     if (!clip) continue;
     const scoredCandidate: CreativePreviewCandidateBox = { ...candidate, clip };
@@ -697,24 +734,8 @@ async function waitForCreativePageReady(page: Page): Promise<void> {
   ]);
 }
 
-/**
- * Element screenshot of the ad preview on a creative detail page.
- * Waits for syndicated assets, scrolls targets into view (ECS/Xvfb can be slow),
- * then returns null if we cannot identify a tight ad-card crop.
- */
-async function screenshotCreativePreview(page: Page, logContext: CreativePreviewLogContext = {}): Promise<Buffer | null> {
-  const rootsReady = await waitForCreativePreviewRoots(page, CREATIVE_PAGE_READY_WAIT_MS).catch(() => false);
-  if (!rootsReady) {
-    await page
-      .locator(SYNDICATED_IMG)
-      .first()
-      .waitFor({ state: 'visible', timeout: CREATIVE_PAGE_READY_WAIT_MS })
-      .catch(() => {});
-  }
-  await new Promise((r) => setTimeout(r, CREATIVE_POST_PAINT_SETTLE_MS));
-
-  const viewport = page.viewportSize() ?? VIEWPORT;
-  const locatorAttempts: CreativePreviewCollectionSpec[] = [
+function buildCreativePreviewLocatorAttempts(page: Page): CreativePreviewCollectionSpec[] {
+  return [
     { label: 'creative_iframe', locator: page.locator(CREATIVE_IFRAME), priority: 0, maxMatches: 6 },
     { label: 'html_renderer_iframe', locator: page.locator('html-renderer iframe'), priority: 1, maxMatches: 6 },
     {
@@ -746,6 +767,36 @@ async function screenshotCreativePreview(page: Page, logContext: CreativePreview
       maxMatches: 12,
     },
   ];
+}
+
+async function prepareCreativePreviewSurface(page: Page, rootWaitMs = CREATIVE_PAGE_READY_WAIT_MS): Promise<void> {
+  const rootsReady = await waitForCreativePreviewRoots(page, rootWaitMs).catch(() => false);
+  if (!rootsReady) {
+    await page
+      .locator(SYNDICATED_IMG)
+      .first()
+      .waitFor({ state: 'visible', timeout: rootWaitMs })
+      .catch(() => {});
+  }
+  for (const selector of CREATIVE_PREVIEW_SURFACE_SCROLL_SELECTORS) {
+    const locator = page.locator(selector);
+    try {
+      const count = await locator.count();
+      for (let i = 0; i < Math.min(count, 4); i += 1) {
+        const target = locator.nth(i);
+        if (!(await target.isVisible().catch(() => false))) continue;
+        await target.scrollIntoViewIfNeeded({ timeout: CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS }).catch(() => {});
+        break;
+      }
+    } catch {
+      // Keep trying other preview roots if one selector is detached.
+    }
+  }
+  await new Promise((r) => setTimeout(r, CREATIVE_POST_PAINT_SETTLE_MS));
+}
+
+async function collectCreativePreviewCandidatesOnce(page: Page): Promise<Omit<CreativePreviewCollectionResult, 'candidateCollectionPass'>> {
+  const locatorAttempts = buildCreativePreviewLocatorAttempts(page);
   const candidateCountsByLabel: Record<string, number> = {};
   const candidateCountsByPriority: Record<string, number> = {};
   const candidates: CreativePreviewCandidate[] = [];
@@ -761,24 +812,49 @@ async function screenshotCreativePreview(page: Page, logContext: CreativePreview
     candidateCountsByPriority[String(priority)] = (candidateCountsByPriority[String(priority)] ?? 0) + found.length;
     candidates.push(...found);
   }
+  return { candidates, candidateCountsByLabel, candidateCountsByPriority };
+}
+
+async function collectAllCreativePreviewCandidates(page: Page): Promise<CreativePreviewCollectionResult> {
+  await prepareCreativePreviewSurface(page);
+  let collected = await collectCreativePreviewCandidatesOnce(page);
+  if (collected.candidates.length > 0) {
+    return { ...collected, candidateCollectionPass: 1 };
+  }
+  await new Promise((r) => setTimeout(r, CREATIVE_CANDIDATE_RETRY_WAIT_MS));
+  await prepareCreativePreviewSurface(page);
+  collected = await collectCreativePreviewCandidatesOnce(page);
+  if (collected.candidates.length > 0) {
+    return { ...collected, candidateCollectionPass: 2 };
+  }
+  await new Promise((r) => setTimeout(r, CREATIVE_CANDIDATE_FINAL_RETRY_WAIT_MS));
+  await prepareCreativePreviewSurface(page, CREATIVE_PAGE_READY_LONG_WAIT_MS);
+  collected = await collectCreativePreviewCandidatesOnce(page);
+  return { ...collected, candidateCollectionPass: 3 };
+}
+
+function countRejectionsByReason(
+  candidates: CreativePreviewCandidate[],
+  viewport = VIEWPORT,
+): Record<string, number> {
   const rejectCountsByReason: Record<string, number> = {};
   for (const candidate of candidates) {
-    const reason = getCreativePreviewCandidateRejectionReason(candidate, viewport);
+    const reason = getCreativePreviewCandidateRejectionReason(candidate, viewport, 'strict');
     if (reason) incrementCounter(rejectCountsByReason, reason);
   }
-  const best = pickBestCreativePreviewCandidate(candidates, viewport);
-  if (!best) {
-    workerJsonLog('creative_preview_selection', {
-      ...logContext,
-      outcome: 'no_acceptable_candidate',
-      viewport,
-      candidateCount: candidates.length,
-      candidateCountsByLabel,
-      candidateCountsByPriority,
-      rejectCountsByReason,
-    });
-    return null;
-  }
+  return rejectCountsByReason;
+}
+
+async function screenshotFromCandidateClip(
+  page: Page,
+  best: CreativePreviewCandidateBox,
+  viewport: { width: number; height: number },
+  logContext: CreativePreviewLogContext,
+  collectionMeta: CreativePreviewCollectionResult,
+  rejectCountsByReason: Record<string, number>,
+  selectionMode: CreativePreviewAcceptanceMode,
+): Promise<Buffer | null> {
+  const outcomeOk = selectionMode === 'strict' ? 'ok' : 'ok_relaxed';
   try {
     const viewportOrigin = await page
       .evaluate(() => ({ x: window.scrollX || 0, y: window.scrollY || 0 }))
@@ -788,11 +864,13 @@ async function screenshotCreativePreview(page: Page, logContext: CreativePreview
       workerJsonLog('creative_preview_selection', {
         ...logContext,
         outcome: 'clip_invalid',
+        selectionMode,
         viewport,
         viewportOrigin,
-        candidateCount: candidates.length,
-        candidateCountsByLabel,
-        candidateCountsByPriority,
+        candidateCount: collectionMeta.candidates.length,
+        candidateCollectionPass: collectionMeta.candidateCollectionPass,
+        candidateCountsByLabel: collectionMeta.candidateCountsByLabel,
+        candidateCountsByPriority: collectionMeta.candidateCountsByPriority,
         rejectCountsByReason,
         acceptedCandidate: summarizeCreativePreviewCandidate(best),
       });
@@ -807,12 +885,14 @@ async function screenshotCreativePreview(page: Page, logContext: CreativePreview
     const preview = pngBufferFromScreenshot(raw);
     workerJsonLog('creative_preview_selection', {
       ...logContext,
-      outcome: preview ? 'ok' : 'png_rejected',
+      outcome: preview ? outcomeOk : 'png_rejected',
+      selectionMode,
       viewport,
       viewportOrigin,
-      candidateCount: candidates.length,
-      candidateCountsByLabel,
-      candidateCountsByPriority,
+      candidateCount: collectionMeta.candidates.length,
+      candidateCollectionPass: collectionMeta.candidateCollectionPass,
+      candidateCountsByLabel: collectionMeta.candidateCountsByLabel,
+      candidateCountsByPriority: collectionMeta.candidateCountsByPriority,
       rejectCountsByReason,
       acceptedCandidate: summarizeCreativePreviewCandidate(best),
       clip,
@@ -824,16 +904,228 @@ async function screenshotCreativePreview(page: Page, logContext: CreativePreview
     workerJsonLog('creative_preview_selection', {
       ...logContext,
       outcome: 'screenshot_failed',
+      selectionMode,
       viewport,
-      candidateCount: candidates.length,
-      candidateCountsByLabel,
-      candidateCountsByPriority,
+      candidateCount: collectionMeta.candidates.length,
+      candidateCollectionPass: collectionMeta.candidateCollectionPass,
+      candidateCountsByLabel: collectionMeta.candidateCountsByLabel,
+      candidateCountsByPriority: collectionMeta.candidateCountsByPriority,
       rejectCountsByReason,
       acceptedCandidate: summarizeCreativePreviewCandidate(best),
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
   }
+}
+
+const CREATIVE_PREVIEW_FALLBACK_TARGETS: Array<{ target: CreativePreviewFallbackTarget; selector: string }> = [
+  { target: 'creative_iframe', selector: CREATIVE_IFRAME },
+  { target: 'html_renderer', selector: 'html-renderer' },
+  { target: 'creative_container', selector: '[class*="creative-container"]' },
+  { target: 'html_container', selector: '.html-container' },
+  { target: 'syndicated_img', selector: SYNDICATED_IMG },
+];
+
+async function screenshotFromClipBox(
+  page: Page,
+  clip: ClipBox,
+  logContext: CreativePreviewLogContext,
+  selectionMode: 'fallback' | 'layout',
+  fallbackTarget: CreativePreviewFallbackTarget,
+): Promise<Buffer | null> {
+  try {
+    const raw = await page.screenshot({
+      type: 'png',
+      clip,
+      animations: 'disabled',
+      timeout: CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS,
+    });
+    const preview = pngBufferFromScreenshot(raw);
+    workerJsonLog('creative_preview_selection', {
+      ...logContext,
+      selectionMode,
+      fallbackTarget,
+      outcome: preview ? (selectionMode === 'layout' ? 'ok_layout' : 'ok_fallback') : 'fallback_failed',
+      clip,
+      rawByteLength: raw.length,
+      previewByteLength: preview?.length ?? 0,
+    });
+    return preview;
+  } catch (error) {
+    workerJsonLog('creative_preview_selection', {
+      ...logContext,
+      selectionMode,
+      fallbackTarget,
+      outcome: 'fallback_failed',
+      clip,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+export function layoutClipFromMetadataAnchor(
+  anchorY: number,
+  viewport: { width: number; height: number },
+): ClipBox | null {
+  const x = Math.max(0, Math.floor(viewport.width * 0.12));
+  const y = Math.max(72, Math.floor(viewport.height * 0.22));
+  const width = Math.min(Math.floor(viewport.width * 0.76), viewport.width - x);
+  const height = Math.min(Math.max(Math.floor(anchorY - y - 24), MIN_CREATIVE_BOX_HEIGHT), Math.floor(viewport.height * 0.58));
+  if (width < MIN_CREATIVE_BOX_WIDTH || height < MIN_CREATIVE_BOX_HEIGHT) return null;
+  if (width * height < MIN_CREATIVE_BOX_AREA) return null;
+  return { x, y, width, height };
+}
+
+export function layoutClipCenterPanel(viewport: { width: number; height: number }): ClipBox {
+  const x = Math.floor(viewport.width * 0.18);
+  const y = Math.floor(viewport.height * 0.3);
+  const width = Math.floor(viewport.width * 0.64);
+  const height = Math.floor(viewport.height * 0.48);
+  return { x, y, width, height };
+}
+
+async function screenshotCreativePreviewLayoutFallback(
+  page: Page,
+  viewport: { width: number; height: number },
+  logContext: CreativePreviewLogContext = {},
+): Promise<Buffer | null> {
+  for (const label of ['Last shown:', 'Format:', 'First shown:'] as const) {
+    const anchor = page.getByText(label, { exact: false }).first();
+    try {
+      if ((await anchor.count()) < 1) continue;
+      if (!(await anchor.isVisible().catch(() => false))) continue;
+      const box = await anchor.boundingBox();
+      if (!box || box.y < 180) continue;
+      const clip = layoutClipFromMetadataAnchor(box.y, viewport);
+      if (!clip) continue;
+      const preview = await screenshotFromClipBox(page, clip, logContext, 'layout', 'layout_metadata');
+      if (preview) return preview;
+    } catch {
+      // Try the next metadata anchor label.
+    }
+  }
+  const centerClip = layoutClipCenterPanel(viewport);
+  return screenshotFromClipBox(page, centerClip, logContext, 'layout', 'layout_center');
+}
+
+async function screenshotElementLocatorFallback(
+  page: Page,
+  locator: Locator,
+  logContext: CreativePreviewLogContext,
+  fallbackTarget: CreativePreviewFallbackTarget,
+): Promise<Buffer | null> {
+  try {
+    if (!(await locator.isVisible().catch(() => false))) return null;
+    await locator.scrollIntoViewIfNeeded({ timeout: CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS }).catch(() => {});
+    await new Promise((r) => setTimeout(r, CREATIVE_POST_PAINT_SETTLE_MS));
+    const raw = await locator.screenshot({
+      type: 'png',
+      timeout: CREATIVE_PREVIEW_SCREENSHOT_TIMEOUT_MS,
+    });
+    const preview = pngBufferFromScreenshot(raw);
+    workerJsonLog('creative_preview_selection', {
+      ...logContext,
+      selectionMode: 'fallback',
+      fallbackTarget,
+      outcome: preview ? 'ok_fallback' : 'fallback_failed',
+      rawByteLength: raw.length,
+      previewByteLength: preview?.length ?? 0,
+    });
+    return preview;
+  } catch (error) {
+    workerJsonLog('creative_preview_selection', {
+      ...logContext,
+      selectionMode: 'fallback',
+      fallbackTarget,
+      outcome: 'fallback_failed',
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+async function screenshotCreativePreviewFallback(
+  page: Page,
+  logContext: CreativePreviewLogContext = {},
+): Promise<Buffer | null> {
+  for (const { target, selector } of CREATIVE_PREVIEW_FALLBACK_TARGETS) {
+    const locator = page.locator(selector);
+    let count = 0;
+    try {
+      count = await locator.count();
+    } catch {
+      continue;
+    }
+    for (let i = 0; i < Math.min(count, 6); i += 1) {
+      const preview = await screenshotElementLocatorFallback(page, locator.nth(i), logContext, target);
+      if (preview) return preview;
+    }
+  }
+  workerJsonLog('creative_preview_selection', {
+    ...logContext,
+    selectionMode: 'fallback',
+    outcome: 'fallback_failed',
+  });
+  return null;
+}
+
+/**
+ * Element screenshot of the ad preview on a creative detail page.
+ * Waits for syndicated assets, scrolls targets into view (ECS/Xvfb can be slow),
+ * then returns null if we cannot identify a tight ad-card crop.
+ */
+async function screenshotCreativePreview(page: Page, logContext: CreativePreviewLogContext = {}): Promise<Buffer | null> {
+  const viewport = page.viewportSize() ?? VIEWPORT;
+  const collectionMeta = await collectAllCreativePreviewCandidates(page);
+  const { candidates } = collectionMeta;
+  const rejectCountsByReason = countRejectionsByReason(candidates, viewport);
+
+  const strictBest = pickBestCreativePreviewCandidate(candidates, viewport, 'strict');
+  if (strictBest) {
+    const preview = await screenshotFromCandidateClip(
+      page,
+      strictBest,
+      viewport,
+      logContext,
+      collectionMeta,
+      rejectCountsByReason,
+      'strict',
+    );
+    if (preview) return preview;
+  }
+
+  const relaxedBest = pickBestCreativePreviewCandidate(candidates, viewport, 'relaxed');
+  if (relaxedBest) {
+    const preview = await screenshotFromCandidateClip(
+      page,
+      relaxedBest,
+      viewport,
+      logContext,
+      collectionMeta,
+      rejectCountsByReason,
+      'relaxed',
+    );
+    if (preview) return preview;
+  }
+
+  const fallbackPreview = await screenshotCreativePreviewFallback(page, logContext);
+  if (fallbackPreview) return fallbackPreview;
+
+  const layoutPreview = await screenshotCreativePreviewLayoutFallback(page, viewport, logContext);
+  if (layoutPreview) return layoutPreview;
+
+  workerJsonLog('creative_preview_selection', {
+    ...logContext,
+    outcome: 'no_acceptable_candidate',
+    viewport,
+    candidateCount: candidates.length,
+    candidateCollectionPass: collectionMeta.candidateCollectionPass,
+    candidateCountsByLabel: collectionMeta.candidateCountsByLabel,
+    candidateCountsByPriority: collectionMeta.candidateCountsByPriority,
+    rejectCountsByReason,
+  });
+  return null;
 }
 
 async function captureTopCreativeLastShown(
@@ -867,6 +1159,7 @@ async function captureTopCreativeLastShown(
   try {
     await page.goto(creativeUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
     await waitForCreativePageReady(page);
+    await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => {});
     const bodyText = await page.locator('body').innerText().catch(() => '');
     const lastShownLabel = parseLastShownDateLabel(bodyText);
     const firstShownLabel = parseFirstShownDateLabel(bodyText);

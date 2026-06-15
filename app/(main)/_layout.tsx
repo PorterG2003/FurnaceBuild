@@ -10,13 +10,9 @@ import { HELP_EMAIL } from '@/components/ui/help/HelpModal';
 import { TermsAcceptanceRequiredScreen } from '@/components/platform/amendment/TermsAcceptanceRequiredScreen';
 import { PendingTermsBanner } from '@/components/platform/amendment/PendingTermsBanner';
 import { usePublicAccessDialog } from '@/hooks/usePublicAccessDialog';
-import { InboxScreen } from '@/components/inbox/InboxScreen';
 import {
   buildInboxThreadHref,
-  isInboxPath,
-  isReplaceLeadInboxPath,
   parseInboxNotificationUrl,
-  parseInboxThreadIdFromPathname,
 } from '@/lib/inbox/inboxRoutes';
 
 /** Same `type` string as public/sw.js postMessage fallback when WindowClient.navigate is missing. */
@@ -89,9 +85,6 @@ function MainAccessGate() {
   const allowAdminWithoutWorkspace = platformAdminAccess === 'allowed' && (pathname === '/admin' || pathname?.startsWith('/admin/'));
   const allowAmendmentAcceptRoute = pathname?.startsWith('/accept-account-amendment/');
   const showLoadingOverlay = !initialized || loading || platformAdminAccess === 'loading';
-  const showInboxShell =
-    !showLoadingOverlay && isInboxPath(pathname) && !isReplaceLeadInboxPath(pathname);
-  const inboxRouteThreadId = showInboxShell ? parseInboxThreadIdFromPathname(pathname) : null;
 
   useEffect(() => {
     if (!initialized) return;
@@ -103,7 +96,11 @@ function MainAccessGate() {
   }, [allowAdminWithoutWorkspace, initialized, loading, memberships.length, platformAdminAccess, router]);
 
   if (!showLoadingOverlay && !memberships.length && !allowAdminWithoutWorkspace) {
-    return <AppBootScreen />;
+    return (
+      <View style={styles.flexFill}>
+        <AppBootScreen />
+      </View>
+    );
   }
 
   if (
@@ -126,7 +123,7 @@ function MainAccessGate() {
   }
 
   return (
-    <>
+    <View style={styles.flexFill}>
       <WebPushNavigationBridge />
       <NotificationToastSubscriber />
       {!showLoadingOverlay &&
@@ -139,21 +136,29 @@ function MainAccessGate() {
       <Stack
         screenOptions={{
           headerShown: false,
+          contentStyle: styles.stackContent,
         }}
       />
-      {showInboxShell ? (
-        <View style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]} className="flex-1">
-          <InboxScreen routeThreadId={inboxRouteThreadId} />
-        </View>
-      ) : null}
       {showLoadingOverlay ? (
         <View pointerEvents="auto" style={StyleSheet.absoluteFillObject}>
           <AppBootScreen />
         </View>
       ) : null}
-    </>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  flexFill: {
+    flex: 1,
+    position: 'relative',
+    backgroundColor: '#121212',
+  },
+  stackContent: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+});
 
 export default function MainLayout() {
   const { user, loading, isRecoverySession } = useAuth();
@@ -175,7 +180,13 @@ export default function MainLayout() {
     if (typeof document !== 'undefined') (document.activeElement as HTMLElement)?.blur();
   }, [pathname]);
 
-  if (loading || !user || isRecoverySession) return <AppBootScreen />;
+  if (loading || !user || isRecoverySession) {
+    return (
+      <View style={styles.flexFill}>
+        <AppBootScreen />
+      </View>
+    );
+  }
 
   return <MainAccessGate />;
 }

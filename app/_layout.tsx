@@ -14,6 +14,7 @@ import { WebInstallGate } from '@/components/web/WebInstallGate';
 import { isFluxPublicLandingRoute } from '@/lib/web/installGate';
 
 const MIN_BOOT_MS = 350;
+const MAX_FONT_BOOT_MS = 3000;
 
 // Suppress pointerEvents deprecation from react-native-web (triggered by @react-navigation)
 if (typeof console !== 'undefined' && console.warn) {
@@ -39,6 +40,7 @@ export default function RootLayout() {
   }, [pathname]);
 
   const [minBootElapsed, setMinBootElapsed] = useState(false);
+  const [fontBootTimedOut, setFontBootTimedOut] = useState(false);
   const [fontsLoaded, fontError] = useFonts({
     InstrumentSans_400Regular,
     InstrumentSans_500Medium,
@@ -57,7 +59,11 @@ export default function RootLayout() {
   useEffect(() => {
     if (skipAppBoot) return;
     const timer = setTimeout(() => setMinBootElapsed(true), MIN_BOOT_MS);
-    return () => clearTimeout(timer);
+    const fontTimer = setTimeout(() => setFontBootTimedOut(true), MAX_FONT_BOOT_MS);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(fontTimer);
+    };
   }, [skipAppBoot]);
 
   useEffect(() => {
@@ -71,7 +77,7 @@ export default function RootLayout() {
   }, [skipAppBoot, fontsLoaded, fontError, minBootElapsed]);
 
   const bootComplete =
-    skipAppBoot || (minBootElapsed && (fontsLoaded || !!fontError));
+    skipAppBoot || (minBootElapsed && (fontsLoaded || !!fontError || fontBootTimedOut));
 
   const safeAreaRootStyle = {
     flex: 1,

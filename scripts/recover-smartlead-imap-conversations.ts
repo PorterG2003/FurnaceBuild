@@ -16,7 +16,7 @@ import { simpleParser } from 'mailparser';
 
 loadSelfRecoveryEnv();
 
-type Mode = 'spike' | 'audit' | 'import';
+type Mode = 'spike' | 'audit' | 'import' | 'materialize-export';
 
 type Args = {
   mode: Mode;
@@ -26,6 +26,7 @@ type Args = {
   copyPath: string | null;
   inputPath: string | null;
   outputPath: string | null;
+  exportOutputPath: string | null;
   checkpointPath: string | null;
   resumeFromPath: string | null;
   mailboxLimit: number | null;
@@ -193,6 +194,71 @@ type CandidateRow = {
   stepLabel: string | null;
   ambiguousLeadEmail: boolean;
   bodyFingerprintMatched: boolean;
+  receivedMessage?: RecoveryMessageExport | null;
+  sentMessages?: RecoveryMessageExport[];
+};
+
+type RecoveryMessageExport = {
+  uid: number;
+  folder: string;
+  direction: 'sent' | 'received';
+  messageId: string | null;
+  rawMessageId: string | null;
+  inReplyTo: string | null;
+  references: string | null;
+  subject: string;
+  from: string | null;
+  to: string[];
+  date: string;
+  bodyText: string | null;
+  bodyHtml: string | null;
+};
+
+type ImportReadiness = 'ready' | 'needs_lead_mapping' | 'needs_review';
+
+type RecoveryThreadExport = {
+  bucket: 'candidate' | 'review';
+  confidence: number;
+  matchType: CandidateMatchType;
+  reason: string;
+  leadEmail: string;
+  leadId: string | null;
+  enrollmentId: string | null;
+  smartleadLeadId: number | null;
+  mailboxId: string;
+  mailboxEmail: string;
+  importReadiness: ImportReadiness;
+  receivedMessage: RecoveryMessageExport | null;
+  sentMessages: RecoveryMessageExport[];
+  threadDraft: {
+    subject: string;
+    participants: string[];
+    lastMessageAt: string;
+    messageCount: number;
+    hasReply: true;
+  };
+};
+
+type RecoveryExportPackage = {
+  version: 1;
+  generatedAt: string;
+  campaign: {
+    furnaceId: string;
+    smartleadId: number | null;
+    name: string;
+    accountId: string;
+    since: string;
+    until: string | null;
+  };
+  auditSummary: {
+    scannedMailboxes: number;
+    sentIndexSize: number;
+    sentRecoveryRatio: number | null;
+    candidateCount: number;
+    reviewCount: number;
+    gateStatus: string;
+  };
+  threads: RecoveryThreadExport[];
 };
 
 type CopyDiagnosticStep = {
@@ -386,6 +452,7 @@ function parseArgs(argv: string[]): Args {
   let copyPath = process.env.RECOVERY_COPY?.trim() || null;
   let inputPath = process.env.RECOVERY_INPUT?.trim() || null;
   let outputPath = process.env.RECOVERY_OUTPUT?.trim() || null;
+  let exportOutputPath = process.env.RECOVERY_EXPORT_OUTPUT?.trim() || null;
   let checkpointPath = process.env.RECOVERY_CHECKPOINT?.trim() || null;
   let resumeFromPath = process.env.RECOVERY_RESUME_FROM?.trim() || null;
   let mailboxLimit = process.env.RECOVERY_MAILBOX_LIMIT ? Number(process.env.RECOVERY_MAILBOX_LIMIT) : null;
@@ -419,9 +486,15 @@ function parseArgs(argv: string[]): Args {
       copyPath = argv[++i]!;
     } else if (arg === '--input' && argv[i + 1]) {
       inputPath = argv[++i]!;
-      mode = 'import';
+      if (mode !== 'materialize-export') {
+        mode = 'import';
+      }
     } else if (arg === '--output' && argv[i + 1]) {
       outputPath = argv[++i]!;
+    } else if (arg === '--export-output' && argv[i + 1]) {
+      exportOutputPath = argv[++i]!;
+    } else if (arg === '--materialize-export') {
+      mode = 'materialize-export';
     } else if (arg === '--checkpoint' && argv[i + 1]) {
       checkpointPath = argv[++i]!;
     } else if (arg === '--resume-from' && argv[i + 1]) {
@@ -455,6 +528,7 @@ function parseArgs(argv: string[]): Args {
     copyPath,
     inputPath,
     outputPath,
+    exportOutputPath,
     checkpointPath,
     resumeFromPath,
     mailboxLimit: mailboxLimit != null && Number.isFinite(mailboxLimit) ? mailboxLimit : null,
@@ -637,6 +711,157 @@ function leadsSameIdentity(
 function isImportableLeadId(leadId: string | null | undefined): boolean {
   if (!leadId) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadId);
+}
+
+type ParsedImapMessage = Awaited<ReturnType<typeof parseImapMessage>>;
+
+function parsedToExportMessage(
+  parsed: ParsedImapMessage,
+  folder: string,
+  direction: 'sent' | 'received',
+): RecoveryMessageExport {
+  return {
+    uid: parsed.uid,
+    folder,
+    direction,
+    messageId: parsed.messageId,
+    rawMessageId: parsed.rawMessageId,
+    inReplyTo: parsed.inReplyTo,
+    references: parsed.messageReferences,
+    subject: parsed.subject,
+    from: parsed.from,
+    to: parsed.to,
+    date: parsed.date.toISOString(),
+    bodyText: parsed.bodyText,
+    bodyHtml: parsed.bodyHtml,
+  };
+}
+
+function sentRecordToExportMessage(sent: SentMessageRecord): RecoveryMessageExport {
+  return {
+    uid: sent.uid,
+    folder: sent.sentFolderPath,
+    direction: 'sent',
+    messageId: sent.messageId,
+    rawMessageId: sent.rawMessageId,
+    inReplyTo: sent.inReplyTo,
+    references: sent.messageReferences,
+    subject: sent.subject,
+    from: sent.mailboxEmail,
+    to: [sent.leadEmail],
+    date: sent.sentAt,
+    bodyText: sent.bodyText,
+    bodyHtml: sent.bodyHtml,
+  };
+}
+
+function selectSentMessagesForExport(
+  taggedSentMessages: SentMessageRecord[],
+  leadEmail: string,
+  receivedAt: string,
+): RecoveryMessageExport[] {
+  const receivedTime = new Date(receivedAt).getTime();
+  return taggedSentMessages
+    .filter(
+      (sent) =>
+        sent.leadEmail === leadEmail &&
+        new Date(sent.sentAt).getTime() <= receivedTime,
+    )
+    .sort((a, b) => a.sentAt.localeCompare(b.sentAt))
+    .map((sent) => sentRecordToExportMessage(sent));
+}
+
+function resolveImportReadiness(row: CandidateRow, bucket: 'candidate' | 'review'): ImportReadiness {
+  if (bucket === 'review' || row.matchType === 'review') return 'needs_review';
+  if (!isImportableLeadId(row.leadId)) return 'needs_lead_mapping';
+  if (row.matchType === 'thread_anchor' || row.matchType === 'subject_lead') return 'ready';
+  return 'needs_review';
+}
+
+function buildThreadDraft(
+  row: CandidateRow,
+  receivedMessage: RecoveryMessageExport | null,
+  sentMessages: RecoveryMessageExport[],
+): RecoveryThreadExport['threadDraft'] {
+  const participants = Array.from(
+    new Set(
+      [
+        row.mailboxEmail,
+        row.leadEmail,
+        ...sentMessages.flatMap((message) => message.to),
+        receivedMessage?.from ?? '',
+      ].filter(Boolean),
+    ),
+  );
+  const subject = sentMessages[0]?.subject ?? row.subject;
+  const lastMessageAt = receivedMessage?.date ?? row.receivedAt;
+  return {
+    subject,
+    participants,
+    lastMessageAt,
+    messageCount: sentMessages.length + (receivedMessage ? 1 : 0),
+    hasReply: true,
+  };
+}
+
+function candidateToThreadExport(row: CandidateRow, bucket: 'candidate' | 'review'): RecoveryThreadExport {
+  const receivedMessage = row.receivedMessage ?? null;
+  const sentMessages = row.sentMessages ?? [];
+  return {
+    bucket,
+    confidence: row.confidence,
+    matchType: row.matchType,
+    reason: row.reason,
+    leadEmail: row.leadEmail,
+    leadId: isImportableLeadId(row.leadId) ? row.leadId : null,
+    enrollmentId: row.enrollmentId,
+    smartleadLeadId: row.smartleadLeadId,
+    mailboxId: row.mailboxId,
+    mailboxEmail: row.mailboxEmail,
+    importReadiness: resolveImportReadiness(row, bucket),
+    receivedMessage,
+    sentMessages,
+    threadDraft: buildThreadDraft(row, receivedMessage, sentMessages),
+  };
+}
+
+function buildRecoveryExportPackage(
+  audit: AuditOutput,
+  campaign: CampaignRow,
+  args: Args,
+  gate: { status: string },
+): RecoveryExportPackage {
+  const threads = [
+    ...dedupeCandidates(audit.candidates).map((row) => candidateToThreadExport(row, 'candidate')),
+    ...dedupeCandidates(audit.review).map((row) => candidateToThreadExport(row, 'review')),
+  ].sort((a, b) => a.threadDraft.lastMessageAt.localeCompare(b.threadDraft.lastMessageAt));
+
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    campaign: {
+      furnaceId: campaign.id,
+      smartleadId: campaign.smartlead_campaign_id,
+      name: campaign.name,
+      accountId: campaign.account_id,
+      since: args.since.toISOString(),
+      until: args.until?.toISOString() ?? null,
+    },
+    auditSummary: {
+      scannedMailboxes: audit.scannedMailboxes,
+      sentIndexSize: audit.sentIndexSize,
+      sentRecoveryRatio: audit.diagnostics.campaignSentExpectation.recoveryRatio,
+      candidateCount: audit.candidates.length,
+      reviewCount: audit.review.length,
+      gateStatus: gate.status,
+    },
+    threads,
+  };
+}
+
+function hasMessageBody(message: RecoveryMessageExport | null | undefined): boolean {
+  if (!message) return false;
+  return Boolean(message.bodyText?.trim() || message.bodyHtml?.trim());
 }
 
 function createEmptyAuditDiagnostics(copy: CopyConfig | null, warnings: string[]): AuditDiagnostics {
@@ -2107,6 +2332,9 @@ async function buildAuditOutput(
 
       await openInboxResilient(client);
       const inboxUids = await fetchFolderUids(client, args.since, args.until);
+      console.log(
+        `[recover-smartlead] INBOX scan ${mailboxOrdinalById.get(mailbox.id) ?? index + 1}/${mailboxes.length}: ${mailbox.email_address} (${inboxUids.length} messages since ${args.since.toISOString().slice(0, 10)})`,
+      );
       usage.scannedInbox = inboxUids.length;
       mailboxDiagnostics.inbox.scannedInbox = inboxUids.length;
       const sentById = new Map<string, SentMessageRecord>();
@@ -2194,6 +2422,8 @@ async function buildAuditOutput(
             stepLabel: parentSent?.stepLabel ?? subjectMatch.stepLabel ?? bodyMatch.stepLabel,
             ambiguousLeadEmail: lead.overlapCount > 1,
             bodyFingerprintMatched: bodyMatch.matched || !!parentSent?.bodyMatched,
+            receivedMessage: parsedToExportMessage(parsed, 'INBOX', 'received'),
+            sentMessages: selectSentMessagesForExport(taggedSentMessages, lead.email, parsed.date.toISOString()),
           };
 
           if (confidence >= 75 && matchType !== 'review') {
@@ -2300,6 +2530,10 @@ async function buildAuditOutput(
       candidateRows.push(...mailboxCandidates);
       reviewRows.push(...mailboxReview);
       dropped += mailboxDropped;
+      const mailboxNum = mailboxOrdinalById.get(mailbox.id) ?? index + 1;
+      console.log(
+        `[recover-smartlead] Done ${mailboxNum}/${mailboxes.length}: ${mailbox.email_address} — taggedSent=${taggedSentMessages.length} +${mailboxCandidates.length} candidates +${mailboxReview.length} review (totals: ${candidateRows.length} candidates, ${reviewRows.length} review)`,
+      );
       if (usage.errors.some((value) => value.includes('inbox uid') || value.includes('SELECT INBOX'))) {
         errors.push(`${usage.mailboxEmail}: ${usage.errors.join('; ')}`);
       }
@@ -2390,6 +2624,8 @@ async function fetchExistingMessageIds(
   );
 }
 
+type ThreadFetchProgress = (message: string) => void;
+
 async function fetchThreadMessagesForImport(
   mailbox: MailboxRow,
   since: Date,
@@ -2397,32 +2633,48 @@ async function fetchThreadMessagesForImport(
   leadEmail: string,
   receivedAt: string,
   sentMessageId: string | null,
+  targetMessageId: string | null = null,
+  onProgress?: ThreadFetchProgress,
 ): Promise<{ sentMessages: ReturnType<typeof parseImapMessage>[]; receivedMessage: Awaited<ReturnType<typeof parseImapMessage>> | null; sentFolderPath: string | null }> {
   let client: ImapFlow | null = null;
+  const receivedAtMs = new Date(receivedAt).getTime();
+  const normalizedTargetMessageId = targetMessageId ? normalizeMessageId(targetMessageId) : null;
+  const log = (message: string): void => {
+    onProgress?.(message);
+  };
   try {
+    log(`connecting to ${mailbox.email_address}…`);
     client = await connectMailbox(mailbox);
     const sentFolder = await resolveSentFolder(client);
     const sentMessages: Array<Awaited<ReturnType<typeof parseImapMessage>>> = [];
 
     if (sentFolder.selectedPath) {
       const sentUids = await fetchFolderUids(client, since, until);
+      log(`Sent folder "${sentFolder.selectedPath}": scanning ${sentUids.length} messages…`);
       for (const uid of sentUids) {
         const parsed = await parseImapMessage(client, uid);
         if (until && parsed.date > until) continue;
         if (!parsed.to.includes(leadEmail)) continue;
-        if (new Date(parsed.date).getTime() > new Date(receivedAt).getTime()) continue;
+        if (new Date(parsed.date).getTime() > receivedAtMs) continue;
         sentMessages.push(parsed);
       }
+      log(`Sent folder: ${sentMessages.length} message(s) to ${leadEmail} before reply`);
     }
 
     await openInboxResilient(client);
     const inboxUids = await fetchFolderUids(client, since, until);
+    log(`INBOX: scanning ${inboxUids.length} messages for ${leadEmail}…`);
     let receivedMessage: Awaited<ReturnType<typeof parseImapMessage>> | null = null;
     for (const uid of inboxUids) {
       const parsed = await parseImapMessage(client, uid);
       if (until && parsed.date > until) continue;
       if (normalizeEmail(parsed.from) !== leadEmail) continue;
-      if (Math.abs(new Date(parsed.date).getTime() - new Date(receivedAt).getTime()) > 60_000) continue;
+      const parsedMessageId = normalizeMessageId(parsed.messageId);
+      if (normalizedTargetMessageId && parsedMessageId === normalizedTargetMessageId) {
+        receivedMessage = parsed;
+        break;
+      }
+      if (Math.abs(new Date(parsed.date).getTime() - receivedAtMs) > 86_400_000) continue;
       if (sentMessageId && normalizeMessageId(parsed.inReplyTo) === sentMessageId) {
         receivedMessage = parsed;
         break;
@@ -2433,6 +2685,12 @@ async function fetchThreadMessagesForImport(
     }
 
     const sortedSent = sentMessages.sort((a, b) => a.date.getTime() - b.date.getTime());
+    if (receivedMessage) {
+      const hasBody = Boolean(receivedMessage.bodyText?.trim() || receivedMessage.bodyHtml?.trim());
+      log(`INBOX: found reply (body=${hasBody ? 'yes' : 'no'})`);
+    } else {
+      log('INBOX: no matching reply found');
+    }
     return { sentMessages: sortedSent, receivedMessage, sentFolderPath: sentFolder.selectedPath };
   } finally {
     if (client) {
@@ -2442,6 +2700,146 @@ async function fetchThreadMessagesForImport(
         // ignore
       }
     }
+  }
+}
+
+async function materializeRecoveryExport(
+  supabase: SupabaseClient,
+  campaign: CampaignRow,
+  args: Args,
+  audit: AuditOutput,
+): Promise<RecoveryExportPackage> {
+  const mailboxes = await fetchAccountMailboxes(supabase, campaign.account_id, null);
+  const mailboxById = new Map(mailboxes.map((mailbox) => [mailbox.id, mailbox]));
+
+  const existingByKey = new Map<string, RecoveryThreadExport>();
+  if (args.exportOutputPath && existsSync(args.exportOutputPath)) {
+    try {
+      const existing = readJsonFile<RecoveryExportPackage>(args.exportOutputPath);
+      for (const thread of existing.threads ?? []) {
+        existingByKey.set(`${thread.leadEmail}|${thread.threadDraft.lastMessageAt}`, thread);
+      }
+      console.log(`[materialize] loaded ${existingByKey.size} threads from existing export`);
+    } catch {
+      // ignore corrupt prior export
+    }
+  }
+
+  const allRows = [...dedupeCandidates(audit.candidates), ...dedupeCandidates(audit.review)];
+  const rowsNeedingFetch = allRows.filter((row) => {
+    const existingKey = `${row.leadEmail}|${row.receivedAt}`;
+    const existingThread = existingByKey.get(existingKey);
+    if (existingThread?.receivedMessage && hasMessageBody(existingThread.receivedMessage)) return false;
+    if (row.receivedMessage && hasMessageBody(row.receivedMessage)) return false;
+    return true;
+  });
+  console.log(
+    `[materialize] plan: ${allRows.length} threads total, ${allRows.length - rowsNeedingFetch.length} already have bodies, ${rowsNeedingFetch.length} to fetch from IMAP`,
+  );
+  if (rowsNeedingFetch.length > 0) {
+    console.log(`[materialize] missing bodies: ${rowsNeedingFetch.map((row) => row.leadEmail).join(', ')}`);
+  }
+
+  const fetchIndexByLead = new Map(
+    rowsNeedingFetch.map((row, index) => [row.leadEmail, index + 1] as const),
+  );
+  const enrichRow = async (row: CandidateRow): Promise<CandidateRow> => {
+    const existingKey = `${row.leadEmail}|${row.receivedAt}`;
+    const existingThread = existingByKey.get(existingKey);
+    if (existingThread?.receivedMessage && hasMessageBody(existingThread.receivedMessage)) {
+      return {
+        ...row,
+        receivedMessage: existingThread.receivedMessage,
+        sentMessages: existingThread.sentMessages,
+      };
+    }
+    if (row.receivedMessage && hasMessageBody(row.receivedMessage)) {
+      return row;
+    }
+    const mailbox = mailboxById.get(row.mailboxId);
+    if (!mailbox) {
+      console.warn(`[materialize] mailbox not found for ${row.leadEmail}`);
+      return row;
+    }
+    const fetchIndex = fetchIndexByLead.get(row.leadEmail);
+    const fetchTotal = rowsNeedingFetch.length;
+    if (fetchIndex == null) {
+      return row;
+    }
+    console.log(
+      `[materialize] [${fetchIndex}/${fetchTotal}] ${row.leadEmail} via ${mailbox.email_address}`,
+    );
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      if (attempt > 1) {
+        console.log(`[materialize] [${fetchIndex}/${fetchTotal}] retry ${attempt}/${maxAttempts} for ${row.leadEmail}`);
+      }
+      try {
+        const thread = await fetchThreadMessagesForImport(
+          mailbox,
+          args.since,
+          args.until,
+          row.leadEmail,
+          row.receivedAt,
+          row.sentMessageId,
+          row.messageId,
+          (message) => console.log(`[materialize] [${fetchIndex}/${fetchTotal}] ${row.leadEmail}: ${message}`),
+        );
+        const sentFolderPath = thread.sentFolderPath ?? row.sentFolderPath ?? 'Sent Items';
+        const enriched: CandidateRow = {
+          ...row,
+          receivedMessage: thread.receivedMessage
+            ? parsedToExportMessage(thread.receivedMessage, 'INBOX', 'received')
+            : row.receivedMessage ?? null,
+          sentMessages: thread.sentMessages.map((message) =>
+            parsedToExportMessage(message, sentFolderPath, 'sent'),
+          ),
+        };
+        const gotBody = hasMessageBody(enriched.receivedMessage);
+        console.log(
+          `[materialize] [${fetchIndex}/${fetchTotal}] done ${row.leadEmail} — ${gotBody ? 'body captured' : 'WARNING: no body'}`,
+        );
+        return enriched;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (attempt >= maxAttempts) {
+          console.warn(`[materialize] [${fetchIndex}/${fetchTotal}] FAILED ${row.leadEmail}: ${message}`);
+          return row;
+        }
+        console.warn(`[materialize] [${fetchIndex}/${fetchTotal}] attempt ${attempt}/${maxAttempts} failed: ${message}`);
+        await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+      }
+    }
+    return row;
+  };
+
+  const materializeConcurrency = Math.min(args.concurrency, 3);
+  const enrichedRows = await runWithConcurrency(allRows, materializeConcurrency, enrichRow);
+  const candidateCount = dedupeCandidates(audit.candidates).length;
+  const candidates = enrichedRows.slice(0, candidateCount);
+  const review = enrichedRows.slice(candidateCount);
+  const enrichedAudit: AuditOutput = { ...audit, candidates, review };
+  const gate = evaluateAuditGate(audit);
+  return buildRecoveryExportPackage(enrichedAudit, campaign, args, gate);
+}
+
+function logExportSummary(exportPkg: RecoveryExportPackage, exportPath: string): void {
+  writeJson(exportPath, exportPkg);
+  console.log(`Recovery export written to ${resolve(process.cwd(), exportPath)}`);
+  console.log(`Export threads: ${exportPkg.threads.length}`);
+  const readiness = exportPkg.threads.reduce<Record<ImportReadiness, number>>(
+    (acc, thread) => {
+      acc[thread.importReadiness] = (acc[thread.importReadiness] ?? 0) + 1;
+      return acc;
+    },
+    { ready: 0, needs_lead_mapping: 0, needs_review: 0 },
+  );
+  console.log(
+    `Import readiness: ready=${readiness.ready} needs_lead_mapping=${readiness.needs_lead_mapping} needs_review=${readiness.needs_review}`,
+  );
+  const missingBodies = exportPkg.threads.filter((thread) => !hasMessageBody(thread.receivedMessage)).length;
+  if (missingBodies > 0) {
+    console.log(`Warning: ${missingBodies} threads missing received message body`);
   }
 }
 
@@ -2768,6 +3166,22 @@ async function main(): Promise<void> {
     for (const reason of gate.reasons) {
       console.log(`Gate reason: ${reason}`);
     }
+    if (args.exportOutputPath) {
+      const exportPkg = buildRecoveryExportPackage(audit, campaign, args, gate);
+      logExportSummary(exportPkg, args.exportOutputPath);
+    }
+    return;
+  }
+
+  if (args.mode === 'materialize-export') {
+    if (!args.inputPath) throw new Error('materialize-export requires --input (audit JSON).');
+    if (!args.exportOutputPath) throw new Error('materialize-export requires --export-output.');
+    const audit = readJsonFile<AuditOutput>(args.inputPath);
+    console.log(
+      `Materializing export from ${resolve(process.cwd(), args.inputPath)} (${audit.candidates.length} candidates, ${audit.review.length} review)`,
+    );
+    const exportPkg = await materializeRecoveryExport(supabase, campaign, args, audit);
+    logExportSummary(exportPkg, args.exportOutputPath);
     return;
   }
 

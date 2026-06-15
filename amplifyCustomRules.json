@@ -1,0 +1,22 @@
+[
+  {
+    "source": "/auth/",
+    "target": "/auth",
+    "status": "302"
+  },
+  {
+    "source": "/manifest.json",
+    "target": "/manifest.json",
+    "status": "200"
+  },
+  {
+    "source": "/sw.js",
+    "target": "/sw.js",
+    "status": "200"
+  },
+  {
+    "source": "</^[^.]+$|\\.(?!(css|gif|ico|jpg|js|mjs|png|txt|svg|woff|woff2|ttf|map|json|webp)$)([^.]+$)/>",
+    "target": "/index.html",
+    "status": "200"
+  }
+]

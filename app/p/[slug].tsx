@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, Platform } from 'react-native';
+import { useLocalSearchParams, usePathname } from 'expo-router';
 import Head from 'expo-router/head';
 import { supabase } from '@/lib/supabase/client';
 import type { FluxProspectPageRow } from '@/lib/flux/types';
@@ -8,16 +8,18 @@ import { coercePageConfig } from '@/lib/flux/coercePageConfig';
 import { fetchFluxPageContentAssets } from '@/lib/flux/fetchFluxPageContentAssets';
 import type { ContentAsset } from '@/lib/flux/types';
 import { PageRenderer } from '@/components/flux/PageRenderer';
-
-function normalizeSlugParam(raw: string | string[] | undefined): string | undefined {
-  if (raw == null) return undefined;
-  if (Array.isArray(raw)) return raw[0];
-  return raw;
-}
+import { resolveFluxPublicPageSlug } from '@/lib/web/fluxPublicPageSlug';
 
 export default function PublicProspectPage() {
   const { slug: slugRaw } = useLocalSearchParams<{ slug: string | string[] }>();
-  const slug = normalizeSlugParam(slugRaw);
+  const pathname = usePathname();
+  const slug = useMemo(() => {
+    const fromPath =
+      Platform.OS === 'web' && typeof window !== 'undefined'
+        ? window.location.pathname
+        : pathname;
+    return resolveFluxPublicPageSlug(slugRaw, fromPath);
+  }, [slugRaw, pathname]);
   const [page, setPage] = useState<FluxProspectPageRow | null>(null);
   const [contentAssets, setContentAssets] = useState<ContentAsset[]>([]);
   const [loading, setLoading] = useState(true);

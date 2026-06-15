@@ -2,18 +2,22 @@
  * PWA service worker: lifecycle + pass-through fetch (installability) + Web Push.
  *
  * Must stay in sync with app/(main)/_layout.tsx: message type `furnace-notification-navigate`.
+ *
+ * Bump SW_BUILD when changing this file so installed PWAs pick up updates.
  */
+var SW_BUILD = '2026-06-15-pwa-cache-fix';
+
 self.addEventListener('install', function () {
   self.skipWaiting();
 });
-self.addEventListener('activate', function () {
-  self.clients.claim();
+
+self.addEventListener('activate', function (event) {
+  event.waitUntil(self.clients.claim());
 });
 
 /**
  * Pass-through fetch handler so the page is controlled by this worker.
- * Chrome treats PWAs as installable only when a SW actively handles network;
- * without this, "Install" / standalone launch from the icon may not work reliably.
+ * Navigation/HTML always goes to network first so deploys reach PWAs without reinstall.
  */
 self.addEventListener('fetch', function (event) {
   var req = event.request;
@@ -24,6 +28,21 @@ self.addEventListener('fetch', function (event) {
   } catch (e) {
     return;
   }
+
+  var isDocument =
+    req.mode === 'navigate' ||
+    req.destination === 'document' ||
+    (req.headers.get('accept') || '').indexOf('text/html') !== -1;
+
+  if (isDocument) {
+    event.respondWith(
+      fetch(req).catch(function () {
+        return new Response('', { status: 503, statusText: 'Network error' });
+      })
+    );
+    return;
+  }
+
   event.respondWith(
     fetch(req).catch(function () {
       return new Response('', { status: 503, statusText: 'Network error' });

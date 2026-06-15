@@ -17,6 +17,7 @@ import {
   BuildingLibraryIcon,
 } from 'react-native-heroicons/outline';
 import { isInboxPath } from '@/lib/inbox/inboxRoutes';
+import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
 
 const baseNavItems = [
   { path: '/campaigns', icon: MegaphoneIcon },

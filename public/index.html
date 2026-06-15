@@ -74,17 +74,10 @@
     <script>
       (function () {
         var path = window.location.pathname || '';
-        var m = path.match(/^\/p\/([^/]+)\/$/);
-        if (m) {
-          var next =
-            '/p/' +
-            m[1] +
-            (window.location.search || '') +
-            (window.location.hash || '');
-          window.location.replace(next);
-          return;
-        }
         var normalized = path.replace(/\/$/, '') || '/';
+        if (path !== normalized && normalized.indexOf('/p/') === 0) {
+          window.history.replaceState(null, '', normalized + (window.location.search || '') + (window.location.hash || ''));
+        }
         if (normalized === '/p' || normalized.indexOf('/p/') === 0) {
           document.documentElement.setAttribute('data-flux-landing', '1');
         }

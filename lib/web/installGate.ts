@@ -35,6 +35,13 @@ export function normalizeInstallGatePathname(pathname: string): string {
   return pathname;
 }
 
+export function getCurrentWebPathname(fallbackPathname: string): string {
+  if (typeof window !== 'undefined' && window.location.pathname) {
+    return window.location.pathname;
+  }
+  return fallbackPathname;
+}
+
 /** Flux public prospect landing pages (`/p/{slug}`). */
 export function isFluxPublicLandingRoute(pathname: string): boolean {
   const path = normalizeInstallGatePathname(pathname);

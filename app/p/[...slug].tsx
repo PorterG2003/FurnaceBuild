@@ -33,7 +33,11 @@ export default function PublicProspectPage() {
     }
 
     (async () => {
+      setLoading(true);
+      setNotFound(false);
+      setPage(null);
       setContentAssets([]);
+
       // Do not filter by status here: RLS allows anon only `live` rows; authenticated users in
       // the account can read drafts—matching Flux preview. A client-side `.eq('status','live')`
       // made `/p/{slug}` 404 for owners until they toggled Live.

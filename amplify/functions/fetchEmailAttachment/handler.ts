@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { openImapInbox } from '../../../lib/mailbox/imapInbox.js';
+import { openImapInbox } from '../../../lib/mailbox/imapInbox';
 import { ImapFlow } from 'imapflow';
 
 /**

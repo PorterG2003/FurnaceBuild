@@ -1,4 +1,4 @@
-import { isExchangeLsubError } from './imapInbox.js';
+import { isExchangeLsubError } from './imapInbox';
 
 export type ConnectionFailureKind = 'permanent' | 'transient' | 'unknown';
 

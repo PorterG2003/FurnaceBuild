@@ -3,9 +3,11 @@ import { View, Text, Platform } from 'react-native';
 import { useLocalSearchParams, usePathname } from 'expo-router';
 import Head from 'expo-router/head';
 import { supabase } from '@/lib/supabase/client';
+import { publicSupabase } from '@/lib/supabase/publicClient';
 import type { FluxProspectPageRow } from '@/lib/flux/types';
 import { coercePageConfig } from '@/lib/flux/coercePageConfig';
 import { fetchFluxPageContentAssets } from '@/lib/flux/fetchFluxPageContentAssets';
+import { loadFluxProspectPage } from '@/lib/flux/loadFluxProspectPage';
 import type { ContentAsset } from '@/lib/flux/types';
 import { PageRenderer } from '@/components/flux/PageRenderer';
 import { resolveFluxPublicPageSlug } from '@/lib/web/fluxPublicPageSlug';
@@ -38,27 +40,21 @@ export default function PublicProspectPage() {
       setPage(null);
       setContentAssets([]);
 
-      // Do not filter by status here: RLS allows anon only `live` rows; authenticated users in
-      // the account can read drafts—matching Flux preview. A client-side `.eq('status','live')`
-      // made `/p/{slug}` 404 for owners until they toggled Live.
-      const { data, error } = await supabase
-        .from('flux_prospect_pages')
-        .select('*')
-        .eq('slug', slug)
-        .maybeSingle();
+      const { page, access } = await loadFluxProspectPage(slug);
 
-      if (error || !data) {
+      if (!page) {
         setNotFound(true);
         setContentAssets([]);
       } else {
-        const row = data as FluxProspectPageRow;
+        const row = page as FluxProspectPageRow;
         setPage(row);
-        const assets = await fetchFluxPageContentAssets(slug);
+        const pageClient = access === 'account' ? supabase : publicSupabase;
+        const assets = await fetchFluxPageContentAssets(slug, pageClient);
         setContentAssets(assets);
         if (row.status === 'live' && coercePageConfig(row.page_config)) {
           void (async () => {
             try {
-              await supabase.rpc('flux_increment_page_view', { p_slug: slug });
+              await publicSupabase.rpc('flux_increment_page_view', { p_slug: slug });
             } catch {
               // ignore view-count failures (e.g. RPC not deployed yet)
             }

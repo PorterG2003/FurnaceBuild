@@ -146,6 +146,230 @@ class MockSupabase {
   }
 }
 
+type StatefulBounceConfig = {
+  jobs: Array<{
+    id: string;
+    campaign_id: string;
+    enrollment_id: string;
+    lead_id: string;
+    message_type?: string | null;
+    sent_at: string;
+    created_at?: string;
+  }>;
+  leads: Array<{ id: string; email: string }>;
+  suppressBouncedEmails: boolean;
+};
+
+type StoredBounceEvent = {
+  id: string;
+  mailbox_id: string;
+  message_job_id: string;
+  event_data: Record<string, unknown>;
+  bounce_dedupe_key: string | null;
+};
+
+class StatefulQueryBuilder implements PromiseLike<Response> {
+  constructor(
+    private readonly call: QueryCall,
+    private readonly resolver: (call: QueryCall) => Response
+  ) {}
+
+  select(columns: string, options?: Record<string, unknown>) {
+    this.call.selects.push({ columns, options });
+    return this;
+  }
+
+  insert(payload: unknown) {
+    this.call.insertPayloads.push(payload);
+    return this;
+  }
+
+  upsert(payload: unknown, _options?: Record<string, unknown>) {
+    this.call.insertPayloads.push(payload);
+    return this;
+  }
+
+  update(payload: unknown) {
+    this.call.insertPayloads.push(payload);
+    return this;
+  }
+
+  eq(column: string, value: unknown) {
+    this.call.filters.push({ op: 'eq', column, value });
+    return this;
+  }
+
+  gte(column: string, value: unknown) {
+    this.call.filters.push({ op: 'gte', column, value });
+    return this;
+  }
+
+  lte(column: string, value: unknown) {
+    this.call.filters.push({ op: 'lte', column, value });
+    return this;
+  }
+
+  is(column: string, value: unknown) {
+    this.call.filters.push({ op: 'is', column, value });
+    return this;
+  }
+
+  in(column: string, value: unknown) {
+    this.call.filters.push({ op: 'in', column, value });
+    return this;
+  }
+
+  filter(column: string, op: string, value: unknown) {
+    this.call.filters.push({ op: `filter:${op}`, column, value });
+    return this;
+  }
+
+  or(value: string) {
+    this.call.filters.push({ op: 'or', value });
+    return this;
+  }
+
+  order(column: string, options?: Record<string, unknown>) {
+    this.call.orders.push({ column, options });
+    return this;
+  }
+
+  limit(value: number) {
+    this.call.limits.push(value);
+    return this;
+  }
+
+  maybeSingle() {
+    this.call.singleMode = 'maybeSingle';
+    return this;
+  }
+
+  single() {
+    this.call.singleMode = 'single';
+    return this;
+  }
+
+  then<TResult1 = Response, TResult2 = never>(
+    onfulfilled?: ((value: Response) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
+  ): Promise<TResult1 | TResult2> {
+    return Promise.resolve(this.resolver(this.call)).then(onfulfilled ?? undefined, onrejected ?? undefined);
+  }
+}
+
+class StatefulBounceSupabase {
+  readonly calls: Array<QueryCall | RpcCall> = [];
+  readonly bouncedEvents: StoredBounceEvent[] = [];
+  private eventCounter = 0;
+  private webhookCounter = 0;
+
+  constructor(private readonly config: StatefulBounceConfig) {}
+
+  from(table: string) {
+    const call: QueryCall = {
+      kind: 'query',
+      table,
+      filters: [],
+      orders: [],
+      limits: [],
+      selects: [],
+      insertPayloads: [],
+      singleMode: null,
+    };
+    this.calls.push(call);
+    return new StatefulQueryBuilder(call, (queryCall) => this.resolveQuery(queryCall));
+  }
+
+  async rpc(fn: string, args: Record<string, unknown>) {
+    this.calls.push({ kind: 'rpc', fn, args });
+
+    if (fn === 'record_bounced_event_and_increment') {
+      const eventData = { ...((args.p_event_data as Record<string, unknown> | undefined) ?? {}) };
+      const normalizedMessageId =
+        typeof eventData.bounce_message_id === 'string'
+          ? eventData.bounce_message_id.trim().replace(/^<|>$/g, '').toLowerCase() || null
+          : null;
+      const bounceUid =
+        eventData.bounce_uid === null || eventData.bounce_uid === undefined
+          ? null
+          : String(eventData.bounce_uid).trim() || null;
+      const bounceDedupeKey = normalizedMessageId
+        ? `mid:${normalizedMessageId}`
+        : bounceUid
+          ? `uid:${bounceUid}`
+          : null;
+      const existing = this.bouncedEvents.find(
+        (event) =>
+          event.mailbox_id === String(args.p_mailbox_id) &&
+          event.bounce_dedupe_key !== null &&
+          event.bounce_dedupe_key === bounceDedupeKey
+      );
+      if (existing) {
+        return { data: false, error: null };
+      }
+
+      this.eventCounter += 1;
+      this.bouncedEvents.push({
+        id: `bounce-event-${this.eventCounter}`,
+        mailbox_id: String(args.p_mailbox_id),
+        message_job_id: String(args.p_message_job_id),
+        event_data: eventData,
+        bounce_dedupe_key: bounceDedupeKey,
+      });
+      return { data: true, error: null };
+    }
+
+    if (fn === 'cancel_held_jobs_for_enrollment') {
+      return { data: 0, error: null };
+    }
+
+    throw new Error(`Unexpected rpc ${fn}`);
+  }
+
+  private resolveQuery(call: QueryCall): Response {
+    switch (call.table) {
+      case 'events':
+        return this.resolveEvents(call);
+      case 'message_jobs':
+        return { data: this.config.jobs, error: null };
+      case 'leads':
+        return { data: this.config.leads, error: null };
+      case 'accounts':
+        return {
+          data: { suppress_bounced_emails: this.config.suppressBouncedEmails },
+          error: null,
+        };
+      case 'block_list':
+      case 'enrollments':
+        return { data: null, error: null };
+      case 'webhook_events':
+        this.webhookCounter += 1;
+        return { data: { id: `webhook-event-${this.webhookCounter}` }, error: null };
+      default:
+        throw new Error(`Unexpected table ${call.table}`);
+    }
+  }
+
+  private resolveEvents(call: QueryCall): Response {
+    const mailboxId = call.filters.find((filter) => filter.op === 'eq' && filter.column === 'mailbox_id')?.value;
+    const eventType = call.filters.find((filter) => filter.op === 'eq' && filter.column === 'event_type')?.value;
+    const subset = call.filters.find((filter) => filter.op === 'filter:cs' && filter.column === 'event_data')?.value;
+
+    const matches = this.bouncedEvents.filter((event) => {
+      if (eventType && eventType !== 'bounced') return false;
+      if (mailboxId && event.mailbox_id !== mailboxId) return false;
+      if (!subset || typeof subset !== 'object' || Array.isArray(subset)) return true;
+      return Object.entries(subset).every(([key, value]) => event.event_data[key] === value);
+    });
+
+    if (call.singleMode === 'maybeSingle' || call.singleMode === 'single') {
+      return { data: matches[0] ? { id: matches[0].id } : null, error: null };
+    }
+
+    return { data: matches.map((event) => ({ id: event.id, event_data: event.event_data })), error: null };
+  }
+}
+
 function createMailbox(overrides: Partial<Mailbox> = {}): Mailbox {
   return {
     id: 'mailbox-1',
@@ -183,6 +407,7 @@ function createMessageJob(overrides: Partial<MessageJob> = {}): MessageJob {
     lead_id: 'lead-1',
     mailbox_id: 'mailbox-1',
     node_id: 'node-1',
+    message_type: null,
     status: 'sent',
     scheduled_at: '2026-04-05T00:00:00.000Z',
     reserved_at: null,
@@ -751,7 +976,7 @@ test('handleBounce matched hard bounce calls record_bounced_event_and_increment,
     },
     { data: [{ id: 'lead-1', email: 'matched-lead@example.com' }] },
     { data: { suppress_bounced_emails: true } },
-    { data: null, error: null }, // rpc record_bounced_event_and_increment
+    { data: true, error: null }, // rpc record_bounced_event_and_increment
     { data: null, error: null }, // block_list upsert
     { data: { id: 'webhook-event-1' }, error: null }, // webhook_events insert
     { data: null, error: null }, // enrollments stop
@@ -850,7 +1075,7 @@ test('handleBounce matched soft bounce does not upsert block_list', async () => 
     },
     { data: [{ id: 'lead-soft', email: 'soft-lead@example.com' }] },
     { data: { suppress_bounced_emails: true } },
-    { data: null, error: null }, // rpc record_bounced_event_and_increment
+    { data: true, error: null }, // rpc record_bounced_event_and_increment
     { data: { id: 'webhook-event-soft' }, error: null }, // webhook_events insert
     { data: null, error: null }, // enrollments stop
     { data: 0, error: null }, // rpc cancel_held_jobs_for_enrollment
@@ -875,35 +1100,35 @@ test('handleBounce matched soft bounce does not upsert block_list', async () => 
   );
 });
 
-test('handleBounce dedupes enrollment stop when multiple matched jobs share enrollment_id', async () => {
+test('handleBounce chooses one canonical job when multiple matched jobs share an enrollment', async () => {
   const supabase = new MockSupabase([
     { data: null },
     {
       data: [
         {
-          id: 'job-a',
+          id: 'job-inbox-reply',
           campaign_id: 'campaign-1',
           enrollment_id: 'enrollment-dup',
           lead_id: 'lead-1',
+          message_type: 'inbox_reply',
           sent_at: '2026-04-05T02:00:00.000Z',
         },
         {
-          id: 'job-b',
+          id: 'job-campaign',
           campaign_id: 'campaign-1',
           enrollment_id: 'enrollment-dup',
           lead_id: 'lead-1',
+          message_type: null,
           sent_at: '2026-04-05T01:00:00.000Z',
         },
       ],
     },
     { data: [{ id: 'lead-1', email: 'dup-lead@example.com' }] },
     { data: { suppress_bounced_emails: false } },
-    { data: null, error: null }, // rpc record_bounced (job-a)
-    { data: { id: 'webhook-event-a' }, error: null }, // webhook_events (job-a)
-    { data: null, error: null }, // rpc record_bounced (job-b)
-    { data: { id: 'webhook-event-b' }, error: null }, // webhook_events (job-b)
-    { data: null, error: null }, // enrollments stop (deduped to one)
-    { data: 0, error: null }, // rpc cancel_held_jobs_for_enrollment (deduped)
+    { data: true, error: null }, // rpc record_bounced (canonical campaign job)
+    { data: { id: 'webhook-event-a' }, error: null }, // webhook_events insert
+    { data: null, error: null }, // enrollments stop
+    { data: 0, error: null }, // rpc cancel_held_jobs_for_enrollment
   ]);
   const manager = new ThreadManager(supabase as any);
   const mailbox = createMailbox();
@@ -922,10 +1147,111 @@ test('handleBounce dedupes enrollment stop when multiple matched jobs share enro
     rpcCalls.map((c) => c.fn),
     [
       'record_bounced_event_and_increment',
-      'record_bounced_event_and_increment',
       'cancel_held_jobs_for_enrollment',
     ],
   );
+  assert.equal(rpcCalls[0].args.p_message_job_id, 'job-campaign');
   const enrollCalls = supabase.calls.filter((c) => (c as QueryCall).table === 'enrollments') as QueryCall[];
   assert.equal(enrollCalls.length, 1);
+  const webhookCalls = supabase.calls.filter((c) => (c as QueryCall).table === 'webhook_events') as QueryCall[];
+  assert.equal(webhookCalls.length, 1);
+});
+
+test('handleBounce records one bounced event for the same bounce across repeated processing attempts', async () => {
+  const supabase = new StatefulBounceSupabase({
+    jobs: [
+      {
+        id: 'job-campaign',
+        campaign_id: 'campaign-1',
+        enrollment_id: 'enrollment-dup',
+        lead_id: 'lead-1',
+        message_type: null,
+        sent_at: '2026-04-05T02:00:00.000Z',
+      },
+      {
+        id: 'job-campaign-reply',
+        campaign_id: 'campaign-1',
+        enrollment_id: 'enrollment-dup',
+        lead_id: 'lead-1',
+        message_type: 'campaign_reply',
+        sent_at: '2026-04-05T01:30:00.000Z',
+      },
+      {
+        id: 'job-inbox-reply',
+        campaign_id: 'campaign-1',
+        enrollment_id: 'enrollment-dup',
+        lead_id: 'lead-1',
+        message_type: 'inbox_reply',
+        sent_at: '2026-04-05T01:00:00.000Z',
+      },
+    ],
+    leads: [{ id: 'lead-1', email: 'dup-lead@example.com' }],
+    suppressBouncedEmails: false,
+  });
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({
+    uid: 8465,
+    messageId: '<same-bounce@mail>',
+    from: { address: 'mailer-daemon@example.com' },
+    subject: 'Delivery Status Notification (Failure)',
+    bodyText: '550 5.1.1 dup-lead@example.com',
+    to: [{ address: mailbox.email_address, name: 'Box' }],
+  });
+
+  await manager.handleBounce(mailbox, message);
+  await manager.handleBounce(mailbox, message);
+
+  const bounceCalls = supabase.calls.filter(
+    (c) => (c as RpcCall).kind === 'rpc' && (c as RpcCall).fn === 'record_bounced_event_and_increment'
+  ) as RpcCall[];
+
+  assert.equal(
+    bounceCalls.length,
+    1,
+    'the same underlying bounce should only be recorded once even if the mailbox is polled again'
+  );
+  assert.equal(supabase.bouncedEvents.length, 1);
+});
+
+test('handleBounce skips bounce side effects when the bounce RPC reports a duplicate insert', async () => {
+  const supabase = new MockSupabase([
+    { data: null },
+    {
+      data: [
+        {
+          id: 'job-1',
+          campaign_id: 'campaign-1',
+          enrollment_id: 'enrollment-1',
+          lead_id: 'lead-1',
+          sent_at: '2026-04-05T01:00:00.000Z',
+          message_type: null,
+        },
+      ],
+    },
+    { data: [{ id: 'lead-1', email: 'duplicate-lead@example.com' }] },
+    { data: { suppress_bounced_emails: true } },
+    { data: false, error: null }, // rpc record_bounced_event_and_increment
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const mailbox = createMailbox();
+  const message = createProcessedMessage({
+    uid: 9988,
+    messageId: '<bounce-duplicate@mail>',
+    from: { address: 'mailer-daemon@example.com' },
+    subject: 'Delivery Status Notification (Failure)',
+    bodyText: '550 5.1.1 duplicate-lead@example.com',
+    to: [{ address: mailbox.email_address, name: 'Box' }],
+  });
+
+  await manager.handleBounce(mailbox, message);
+
+  assert.ok(!supabase.calls.some((c) => (c as QueryCall).table === 'block_list'));
+  assert.ok(!supabase.calls.some((c) => (c as QueryCall).table === 'webhook_events'));
+  assert.ok(!supabase.calls.some((c) => (c as QueryCall).table === 'enrollments'));
+  const rpcCalls = supabase.calls.filter((c) => (c as RpcCall).kind === 'rpc') as RpcCall[];
+  assert.deepEqual(
+    rpcCalls.map((c) => c.fn),
+    ['record_bounced_event_and_increment'],
+  );
 });

@@ -57,6 +57,7 @@ export interface MessageJob {
   lead_id: string;
   mailbox_id: string;
   node_id: string;
+  message_type?: string | null;
   status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'cancelled' | 'blocked';
   scheduled_at: string;
   reserved_at: string | null;
@@ -65,6 +66,7 @@ export interface MessageJob {
   error_message: string | null;
   message_data: {
     subject?: string;
+    source?: string;
     node_config?: {
       subject?: string;
       body?: string;

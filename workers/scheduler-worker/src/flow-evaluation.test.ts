@@ -47,6 +47,7 @@ function createSupabaseForCurrentNode(result: {
 function createSupabaseForEmailNode(messageJob: {
   status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'blocked' | 'cancelled';
   sent_at: string | null;
+  status_reason?: string | null;
 }) {
   return createSupabaseForEmailNodeQuery({
     messageJobs: [
@@ -54,6 +55,7 @@ function createSupabaseForEmailNode(messageJob: {
         id: '62dd8162-0853-4574-b9da-34f6634d74bf',
         sent_at: messageJob.sent_at,
         status: messageJob.status,
+        status_reason: messageJob.status_reason ?? null,
       },
     ],
   });
@@ -64,6 +66,7 @@ function createSupabaseForEmailNodeQuery(options: {
     id: string;
     sent_at: string | null;
     status: 'queued' | 'reserved' | 'sending' | 'sent' | 'deferred' | 'failed' | 'blocked' | 'cancelled';
+    status_reason?: string | null;
   }>;
   messageJobsError?: { message: string } | null;
   orderCalls?: Array<{ column: string; options?: Record<string, unknown> }>;
@@ -286,6 +289,25 @@ test('evaluateFlow stops enrollments on cancelled email jobs', async () => {
 
   assert.equal(result.stopEnrollment, true);
   assert.equal(result.waitingForEmail, undefined);
+});
+
+test('evaluateFlow advances after inbox manual override cancels a campaign reply', async () => {
+  const supabase = createSupabaseForEmailNode({
+    status: 'cancelled',
+    sent_at: null,
+    status_reason: 'inbox_manual_override',
+  });
+
+  const result = await evaluateFlow(
+    enrollment,
+    enrollment.campaign_id,
+    { edges: [{ source: 'email-1', target: 'wait-1' }] },
+    supabase as any
+  );
+
+  assert.equal(result.stopEnrollment, undefined);
+  assert.equal(result.waitingForEmail, undefined);
+  assert.deepEqual(result.nodes.map((node) => node.id), ['a901edbf-bdfd-4cad-90ab-434a946bf97c']);
 });
 
 test('evaluateFlow defers when message job lookup errors', async () => {

@@ -314,6 +314,9 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     composerAttachmentsLoading,
     composerAttachmentsSkipMessage,
     pendingReplies,
+    autoReplyPipelineState,
+    replyDuplicateConfirm,
+    setReplyDuplicateConfirm,
     includeSignature,
     setIncludeSignature,
     forwardQuoteHtml,
@@ -337,6 +340,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     sendReply,
     sendForward,
     sendPendingImmediately,
+    cancelPendingOutbound,
     retryFailedReply,
     handleComposerFilesSelected,
   } = composer;
@@ -682,6 +686,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
             scheduledAt: p.scheduledAt,
             sendWaitReason: p.sendWaitReason,
             isSendingImmediately: p.isSendingImmediately,
+            campaignName: p.kind === 'campaign_reply' ? selectedThreadCampaignName : null,
           }));
 
   const threadListProps = useMemo(
@@ -774,8 +779,10 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       onDownloadAttachment: FETCH_ATTACHMENT_URL ? handleDownloadAttachment : undefined,
       onFetchAttachmentPreview: FETCH_ATTACHMENT_URL ? handleFetchAttachmentBlob : undefined,
       pendingReplies: pendingRepliesInfo,
+      autoReplyPipelineState,
       onRetryFailedReply: retryFailedReply,
       onSendImmediately: sendPendingImmediately,
+      onCancelPendingOutbound: cancelPendingOutbound,
     }),
     [
       loadingPolicy.showMessagePaneSkeleton,
@@ -793,7 +800,6 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       blockedProspectEmails,
       selectedThreadReplacementSummary,
       accountId,
-      selectedThread?.category,
       setBlockModalVisible,
       setOooModalVisible,
       openReplaceLead,
@@ -806,8 +812,10 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       handleDownloadAttachment,
       handleFetchAttachmentBlob,
       pendingRepliesInfo,
+      autoReplyPipelineState,
       retryFailedReply,
       sendPendingImmediately,
+      cancelPendingOutbound,
     ]
   );
 
@@ -934,6 +942,8 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         setShowMessageActionsSheet,
         blockedRecipientConfirm,
         setBlockedRecipientConfirm,
+        replyDuplicateConfirm,
+        setReplyDuplicateConfirm,
         infoSheetVisible,
         setInfoSheetVisible,
       },
@@ -998,6 +1008,8 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       setShowMessageActionsSheet,
       blockedRecipientConfirm,
       setBlockedRecipientConfirm,
+      replyDuplicateConfirm,
+      setReplyDuplicateConfirm,
       infoSheetVisible,
       setInfoSheetVisible,
       accountId,
@@ -1023,14 +1035,11 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     ]
   );
 
-  const desktopMessagePane = useMemo(
-    () => ({
-      ...messageViewProps,
-      selectedThread: selectedThread ?? undefined,
-      onSetCategory: selectedThreadId && accountId ? handleSetThreadCategory : undefined,
-    }),
-    [messageViewProps, selectedThread, selectedThreadId, accountId, handleSetThreadCategory]
-  );
+  const desktopMessagePane = {
+    ...messageViewProps,
+    selectedThread: selectedThread ?? undefined,
+    onSetCategory: selectedThreadId && accountId ? handleSetThreadCategory : undefined,
+  };
 
   const mobileMessageViewScrollable = isMobile && (!!selectedThreadId || loadingPolicy.showMessagePaneSkeleton);
 

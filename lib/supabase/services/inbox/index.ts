@@ -16,15 +16,20 @@ export {
 export { updateThreadCategory } from './thread-categories';
 export { markEmailThreadOutOfOffice, type MarkEmailThreadOutOfOfficeParams } from './out-of-office';
 export {
+  cancelPendingOutboundJob,
   createReplyJob,
   createForwardJob,
   getMessageJobStatus,
+  getPendingCampaignReplyJobs,
   getPendingInboxManualJobs,
   getPendingInboxReplyJobs,
+  getThreadAutoReplyPipelineState,
   requestImmediateManualSend,
+  type ThreadAutoReplyPipelineState,
   type CreateReplyJobParams,
   type CreateForwardJobParams,
   type MessageJobStatus,
+  type PendingCampaignReplyJob,
   type PendingInboxManualJob,
   type PendingInboxReplyJob,
 } from './reply-jobs';

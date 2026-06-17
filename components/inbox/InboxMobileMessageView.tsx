@@ -9,6 +9,7 @@ import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
 import type { PendingReplyInfo } from './InboxMessageList';
+import type { ThreadAutoReplyPipelineState } from '@/lib/supabase/services';
 
 export interface InboxMobileMessagePaneProps {
   showMessagePaneSkeleton: boolean;
@@ -40,8 +41,10 @@ export interface InboxMobileMessagePaneProps {
   onDownloadAttachment: ((emailMessageId: string, part: string, filename: string) => Promise<void>) | undefined;
   onFetchAttachmentPreview: ((emailMessageId: string, part: string) => Promise<Blob | null>) | undefined;
   pendingReplies: PendingReplyInfo[];
+  autoReplyPipelineState?: ThreadAutoReplyPipelineState | null;
   onRetryFailedReply: (jobId: string) => void;
   onSendImmediately: (jobId: string) => void;
+  onCancelPendingOutbound: (jobId: string) => void;
 }
 
 export interface InboxMobileMessageViewMobileProps {
@@ -86,8 +89,10 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
     onDownloadAttachment,
     onFetchAttachmentPreview,
     pendingReplies,
+    autoReplyPipelineState,
     onRetryFailedReply,
     onSendImmediately,
+    onCancelPendingOutbound,
   } = messagePane;
 
   const { mobileMessageViewTitle, onBack, onOpenMessageActions } = mobile;
@@ -164,8 +169,10 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       onDownloadAttachment={onDownloadAttachment}
       onFetchAttachmentPreview={onFetchAttachmentPreview}
       pendingReplies={pendingReplies}
+      autoReplyPipelineState={autoReplyPipelineState}
       onRetryFailedReply={onRetryFailedReply}
       onSendImmediately={onSendImmediately}
+      onCancelPendingOutbound={onCancelPendingOutbound}
     />
   );
 }

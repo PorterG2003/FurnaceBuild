@@ -10,7 +10,7 @@ import {
 import type { EmailMessage } from '@/lib/supabase/types';
 import { getDisplayBody } from '@/lib/email/index';
 import { formatMessageDate, getInitials } from '@/lib/inbox';
-import { BottomSheet } from '@/components/ui/modals';
+import { BottomSheet, ConfirmModal } from '@/components/ui/modals';
 import { MessageBody } from './MessageBody';
 import { MessageAttachments } from './MessageAttachments';
 
@@ -56,6 +56,12 @@ export function MessageBubble({
   pendingSendWaitReason,
   isSendingImmediately,
   onSendImmediately,
+  onCancel,
+  pendingDisplayLabel,
+  pendingSecondaryLabel,
+  cancelLabel,
+  cancelConfirmTitle,
+  cancelConfirmMessage,
   onRetry,
   messageActionsLayout = 'inline',
 }: {
@@ -67,16 +73,23 @@ export function MessageBubble({
   isPending?: boolean;
   isFailed?: boolean;
   errorMessage?: string | null;
-  pendingJobStatus?: 'pending' | 'reserved' | 'sending';
+  pendingJobStatus?: 'queued' | 'reserved' | 'sending';
   pendingScheduledAt?: string | null;
   pendingSendWaitReason?: string | null;
   isSendingImmediately?: boolean;
   onSendImmediately?: () => void;
+  onCancel?: () => void;
+  pendingDisplayLabel?: string;
+  pendingSecondaryLabel?: string | null;
+  cancelLabel?: string;
+  cancelConfirmTitle?: string;
+  cancelConfirmMessage?: string;
   onRetry?: () => void;
   /** `overflowSheet`: three-dots opens a bottom sheet with Reply / Forward (mobile). */
   messageActionsLayout?: MessageBubbleActionsLayout;
 }) {
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const rawBody = message.body_text ?? message.body_html ?? '';
   const body = getDisplayBody(rawBody, {
     format: message.body_text ? 'text' : 'html',
@@ -93,7 +106,7 @@ export function MessageBubble({
   const fullWidthCard = messageActionsLayout === 'overflowSheet';
   const scheduledAtMs = pendingScheduledAt ? new Date(pendingScheduledAt).getTime() : NaN;
   const hasFutureSchedule =
-    pendingJobStatus === 'pending' &&
+    pendingJobStatus === 'queued' &&
     Number.isFinite(scheduledAtMs) &&
     scheduledAtMs > Date.now();
   const headerStatusText = isFailed
@@ -108,15 +121,22 @@ export function MessageBubble({
   const pendingPrimaryText = hasFutureSchedule && pendingScheduledAt
     ? `Sends after ${formatPendingScheduledTime(pendingScheduledAt)}`
     : null;
-  const showPendingCallout =
-    !!(isPending && !isFailed && (pendingPrimaryText || pendingSendWaitReason));
   const showSendImmediatelyButton =
     !!(
       isPending &&
       !isFailed &&
-      pendingJobStatus === 'pending' &&
+      pendingJobStatus === 'queued' &&
       onSendImmediately &&
       (hasFutureSchedule || pendingSendWaitReason)
+    );
+  const showHeaderCancelButton =
+    !!(onCancel && isPending && !isFailed && pendingJobStatus === 'queued');
+  const showCancelButton = !!(onCancel && isFailed);
+  const showPendingCallout =
+    !!(
+      isPending &&
+      !isFailed &&
+      (pendingPrimaryText || pendingSendWaitReason || showSendImmediatelyButton)
     );
 
   const borderPulse = useRef(new Animated.Value(0)).current;
@@ -201,16 +221,30 @@ export function MessageBubble({
             </View>
             <View className="ml-3 items-start flex-1 min-w-0">
               <Text className="text-white font-instrument-semibold text-base" numberOfLines={1}>
-                {isSent ? 'You' : sender}
+                {pendingDisplayLabel ?? (isSent ? 'You' : sender)}
               </Text>
               <Text className="text-gray-400 font-instrument text-xs mt-0.5" numberOfLines={1}>
-                {message.from_email}
+                {pendingSecondaryLabel ?? message.from_email}
               </Text>
             </View>
             {(!fullWidthCard || isFailed || isPending) && (
-              <Text className="text-gray-500 font-instrument text-xs flex-shrink-0 ml-2">
-                {headerStatusText}
-              </Text>
+              <View className="flex-row items-center gap-2 flex-shrink-0 ml-2">
+                {showHeaderCancelButton ? (
+                  <Pressable
+                    onPress={() => setCancelConfirmOpen(true)}
+                    className="rounded-lg px-3 py-2"
+                    hitSlop={8}
+                    style={{ backgroundColor: 'rgba(239, 68, 68, 0.14)' }}
+                  >
+                    <Text className="font-instrument-medium text-sm" style={{ color: '#FCA5A5' }}>
+                      {cancelLabel ?? 'Cancel'}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <Text className="text-gray-500 font-instrument text-xs">
+                  {headerStatusText}
+                </Text>
+              </View>
             )}
           </View>
           {showRetry && (
@@ -273,40 +307,55 @@ export function MessageBubble({
             <View className="flex-1">
               <Text className="text-red-400 font-instrument-semibold text-sm mb-1">Failed to send</Text>
               <Text className="text-red-300 font-instrument text-xs">{errorMessage}</Text>
+              {showCancelButton ? (
+                <Pressable
+                  onPress={() => setCancelConfirmOpen(true)}
+                  className="mt-3 flex-row items-center justify-center self-start rounded-lg px-3 py-2"
+                  style={{ backgroundColor: 'rgba(239, 68, 68, 0.16)' }}
+                >
+                  <Text className="font-instrument-medium text-sm" style={{ color: '#FCA5A5' }}>
+                    {cancelLabel ?? 'Cancel'}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         ) : null}
         {showPendingCallout ? (
           <View
-            className="mb-3 rounded-lg p-3"
+            className="mb-3 flex-row items-center gap-3 rounded-lg p-3"
             style={{ backgroundColor: 'rgba(243, 68, 13, 0.08)', borderWidth: 1, borderColor: 'rgba(243, 68, 13, 0.16)' }}
           >
-            {pendingPrimaryText ? (
-              <Text className="text-[#F97316] font-instrument-semibold text-sm">
-                {pendingPrimaryText}
-              </Text>
-            ) : null}
-            {pendingSendWaitReason ? (
-              <Text className="text-orange-200 font-instrument text-xs mt-1">
-                {pendingSendWaitReason}
-              </Text>
-            ) : null}
+            <View className="flex-1 min-w-0">
+              {pendingPrimaryText ? (
+                <Text className="text-[#F97316] font-instrument-semibold text-sm">
+                  {pendingPrimaryText}
+                </Text>
+              ) : null}
+              {pendingSendWaitReason ? (
+                <Text className="text-orange-200 font-instrument text-xs mt-1">
+                  {pendingSendWaitReason}
+                </Text>
+              ) : null}
+            </View>
             {showSendImmediatelyButton ? (
-              <Pressable
-                onPress={onSendImmediately}
-                disabled={isSendingImmediately}
-                accessibilityLabel="Send now, bypass mailbox send limits for this message"
-                className="mt-3 flex-row items-center justify-center self-start rounded-lg px-3 py-2"
-                style={{ backgroundColor: 'rgba(243, 68, 13, 0.14)' }}
-              >
-                {isSendingImmediately ? (
-                  <ActivityIndicator size="small" color="#F97316" />
-                ) : (
-                  <Text className="font-instrument-medium text-sm" style={{ color: '#F97316' }}>
-                    Send now
-                  </Text>
-                )}
-              </Pressable>
+              <View className="flex-row items-center gap-2 flex-shrink-0">
+                <Pressable
+                  onPress={onSendImmediately}
+                  disabled={isSendingImmediately}
+                  accessibilityLabel="Send now, bypass hourly send limits and minimum gap for this message"
+                  className="flex-row items-center justify-center rounded-lg px-3 py-2"
+                  style={{ backgroundColor: 'rgba(243, 68, 13, 0.14)' }}
+                >
+                  {isSendingImmediately ? (
+                    <ActivityIndicator size="small" color="#F97316" />
+                  ) : (
+                    <Text className="font-instrument-medium text-sm" style={{ color: '#F97316' }}>
+                      Send now
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
             ) : null}
           </View>
         ) : null}
@@ -377,6 +426,19 @@ export function MessageBubble({
           )}
         </BottomSheet>
       )}
+      <ConfirmModal
+        visible={cancelConfirmOpen}
+        onClose={() => setCancelConfirmOpen(false)}
+        onConfirm={() => {
+          setCancelConfirmOpen(false);
+          onCancel?.();
+        }}
+        title={cancelConfirmTitle ?? 'Cancel pending message?'}
+        message={cancelConfirmMessage ?? 'This will cancel the pending message before it sends.'}
+        confirmLabel={cancelLabel ?? 'Cancel'}
+        cancelLabel="Keep"
+        confirmVariant="destructive"
+      />
     </View>
   );
 }

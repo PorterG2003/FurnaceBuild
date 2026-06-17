@@ -3,13 +3,14 @@ import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailThread } from '@/lib/supabase/types';
 import type { Mailbox, Campaign } from '@/lib/supabase/types';
-import { ConfirmDeleteModal } from '@/components/ui/modals';
+import { ConfirmDeleteModal, ConfirmModal } from '@/components/ui/modals';
 import { BlockSenderModal } from './BlockSenderModal';
 import { InboxFilterDropdown } from './InboxFilterDropdown';
 import { InboxMessageActionsSheet } from './InboxMessageActionsSheet';
 import { InboxThreadInfoSheet } from './InboxThreadInfoSheet';
 import { TagsPanelModal } from './TagsPanelModal';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
+import type { ReplyDuplicateConfirmState } from '@/hooks/useInboxComposer';
 
 export interface InboxModalsFiltersProps {
   filterMenuOpen: boolean;
@@ -49,6 +50,8 @@ export interface InboxModalsVisibilityProps {
   setShowMessageActionsSheet: (v: boolean) => void;
   blockedRecipientConfirm: { mode: 'reply' | 'forward'; onConfirm: () => void } | null;
   setBlockedRecipientConfirm: (v: { mode: 'reply' | 'forward'; onConfirm: () => void } | null) => void;
+  replyDuplicateConfirm: ReplyDuplicateConfirmState;
+  setReplyDuplicateConfirm: (v: ReplyDuplicateConfirmState) => void;
   infoSheetVisible: boolean;
   setInfoSheetVisible: (v: boolean) => void;
 }
@@ -118,6 +121,8 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     setShowMessageActionsSheet,
     blockedRecipientConfirm,
     setBlockedRecipientConfirm,
+    replyDuplicateConfirm,
+    setReplyDuplicateConfirm,
     infoSheetVisible,
     setInfoSheetVisible,
   } = visibility;
@@ -237,6 +242,20 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
           confirmLabel="Send anyway"
           cancelLabel="Cancel"
           requireConfirmation={false}
+        />
+      )}
+
+      {replyDuplicateConfirm && (
+        <ConfirmModal
+          visible={!!replyDuplicateConfirm}
+          onClose={() => setReplyDuplicateConfirm(null)}
+          onConfirm={() => {
+            replyDuplicateConfirm.onConfirm();
+          }}
+          title={replyDuplicateConfirm.title}
+          message={replyDuplicateConfirm.message}
+          confirmLabel="Reply anyway"
+          cancelLabel="Cancel"
         />
       )}
     </>

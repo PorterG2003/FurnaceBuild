@@ -3,17 +3,19 @@ import { View, ScrollView } from 'react-native';
 import { Alert } from '@/components/ui/feedback';
 import { DateDivider } from './DateDivider';
 import { MessageBubble, type MessageBubbleActionsLayout } from './MessageBubble';
+import { AutoReplyPipelineCallout } from './AutoReplyPipelineCallout';
 import { BlockedThreadCallout } from './BlockedThreadCallout';
 import { MessagePanelHeader } from './MessagePanelHeader';
 import { MessageListSkeleton } from './MessageListSkeleton';
 import { groupMessagesByDate } from '@/lib/inbox';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
+import type { ThreadAutoReplyPipelineState } from '@/lib/supabase/services';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
 
 export type PendingReplyInfo = {
-  kind: 'reply' | 'forward';
+  kind: 'reply' | 'forward' | 'campaign_reply';
   threadId: string;
   jobId: string;
   isFailed?: boolean;
@@ -22,6 +24,7 @@ export type PendingReplyInfo = {
   scheduledAt: string | null;
   sendWaitReason: string | null;
   isSendingImmediately?: boolean;
+  campaignName?: string | null;
 };
 
 export interface InboxMessageListProps {
@@ -61,8 +64,10 @@ export interface InboxMessageListProps {
   onDownloadAttachment: ((emailMessageId: string, part: string, filename: string) => Promise<void>) | undefined;
   onFetchAttachmentPreview: ((emailMessageId: string, part: string) => Promise<Blob | null>) | undefined;
   pendingReplies: PendingReplyInfo[];
+  autoReplyPipelineState?: ThreadAutoReplyPipelineState | null;
   onRetryFailedReply: (jobId: string) => void;
   onSendImmediately: (jobId: string) => void;
+  onCancelPendingOutbound: (jobId: string) => void;
 }
 
 export function InboxMessageList({
@@ -99,8 +104,10 @@ export function InboxMessageList({
   onDownloadAttachment,
   onFetchAttachmentPreview,
   pendingReplies,
+  autoReplyPipelineState,
   onRetryFailedReply,
   onSendImmediately,
+  onCancelPendingOutbound,
 }: InboxMessageListProps) {
   if (!selectedThread) return null;
 
@@ -186,6 +193,19 @@ export function InboxMessageList({
                 </View>
               )
             ) : null}
+            {autoReplyPipelineState?.active ? (
+              messageColumnNarrow ? (
+                <View className="mb-4 flex-row w-full justify-center items-start">
+                  <View className="w-[92%] max-w-[92%]">
+                    <AutoReplyPipelineCallout label={autoReplyPipelineState.label ?? 'Automated reply preparing...'} />
+                  </View>
+                </View>
+              ) : (
+                <View className="mb-4 w-full">
+                  <AutoReplyPipelineCallout label={autoReplyPipelineState.label ?? 'Automated reply preparing...'} />
+                </View>
+              )
+            ) : null}
             {groupMessagesByDate(displayMessages).map((group) => (
               <View key={group.label}>
                 <DateDivider label={group.label} />
@@ -220,6 +240,35 @@ export function InboxMessageList({
                         pendingInfo && !pendingInfo.isFailed
                           ? () => onSendImmediately(pendingInfo.jobId)
                           : undefined
+                      }
+                      onCancel={
+                        pendingInfo &&
+                        ((pendingInfo.jobStatus === 'queued' && !pendingInfo.isFailed) || pendingInfo.isFailed)
+                          ? () => onCancelPendingOutbound(pendingInfo.jobId)
+                          : undefined
+                      }
+                      pendingDisplayLabel={
+                        pendingInfo?.kind === 'campaign_reply' ? 'Campaign reply' : undefined
+                      }
+                      pendingSecondaryLabel={
+                        pendingInfo?.kind === 'campaign_reply'
+                          ? pendingInfo.campaignName ?? null
+                          : undefined
+                      }
+                      cancelLabel={
+                        pendingInfo?.kind === 'campaign_reply'
+                          ? 'Cancel scheduled reply'
+                          : 'Cancel send'
+                      }
+                      cancelConfirmTitle={
+                        pendingInfo?.kind === 'campaign_reply'
+                          ? 'Cancel automated reply?'
+                          : 'Discard this message?'
+                      }
+                      cancelConfirmMessage={
+                        pendingInfo?.kind === 'campaign_reply'
+                          ? 'This will stop the automated reply from sending and let you take over manually.'
+                          : 'This will cancel the pending manual message before it sends.'
                       }
                       onRetry={
                         pendingInfo?.isFailed && pendingInfo.kind === 'reply' && pendingJobId

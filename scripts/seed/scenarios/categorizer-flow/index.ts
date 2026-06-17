@@ -458,6 +458,7 @@ async function ensureMailbox(ctx: SeedContext): Promise<{ id: string; email: str
         user_id: store.ownerUserId,
         display_name: 'Categorizer Gate',
         status: 'connected',
+        smtp_status: 'active',
         deleted_at: null,
         updated_at: now,
       })
@@ -488,6 +489,7 @@ async function ensureMailbox(ctx: SeedContext): Promise<{ id: string; email: str
       imap_password: 'test-password',
       imap_use_ssl: true,
       status: 'connected',
+      smtp_status: 'active',
       created_at: now,
       updated_at: now,
     })
@@ -497,6 +499,34 @@ async function ensureMailbox(ctx: SeedContext): Promise<{ id: string; email: str
     throw new Error(`categorizer-flow: mailbox insert failed: ${insErr?.message}`);
   }
   return { id: inserted.id as string, email };
+}
+
+/** Re-arm reply-mode enrollments deferred by mailbox-unavailable handling. */
+async function wakeDeferredReplyModeEnrollments(ctx: SeedContext) {
+  const { supabase } = ctx;
+  const now = new Date().toISOString();
+  const { data: replyNodes, error: nodeErr } = await supabase
+    .from('nodes')
+    .select('id')
+    .eq('campaign_id', store.campaignId)
+    .eq('node_type', 'email')
+    .contains('node_data', { send_mode: 'reply' });
+  if (nodeErr) {
+    throw new Error(`categorizer-flow: reply node lookup failed: ${nodeErr.message}`);
+  }
+  const replyNodeIds = (replyNodes ?? []).map((n) => n.id as string);
+  if (replyNodeIds.length === 0) return;
+
+  const { error: wakeErr } = await supabase
+    .from('enrollments')
+    .update({ next_run_at: now, updated_at: now })
+    .eq('campaign_id', store.campaignId)
+    .eq('state', 'active')
+    .not('reply_thread_id', 'is', null)
+    .in('current_node_id', replyNodeIds);
+  if (wakeErr) {
+    throw new Error(`categorizer-flow: wake reply enrollments failed: ${wakeErr.message}`);
+  }
 }
 
 async function insertRuntimeReadyCampaignIntervals(ctx: SeedContext) {
@@ -934,6 +964,8 @@ export const categorizerFlowRepliesModule: SeedModule = {
 
       ctx.log(`case ${seedCase.key}: thread=${seedCase.threadId} park=held`);
     }
+
+    await wakeDeferredReplyModeEnrollments(ctx);
 
     ctx.log(
       `categorizer gate replies seeded: ${store.cases.filter((c) => c.hasReply).length} parked at the categorizer, ` +

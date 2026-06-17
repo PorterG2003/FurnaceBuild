@@ -359,9 +359,6 @@ export function useInboxComposer({
         if (cancelled) return;
         const manualJobsForThread = pendingManualJobs.filter((j) => j.thread_id === selectedThreadId);
         const campaignJobsForThread = pendingCampaignJobs.filter((j) => j.thread_id === selectedThreadId);
-        // #region agent log
-        fetch('http://127.0.0.1:7447/ingest/0a9c766e-cfbc-4a65-8b11-aa0dd657a9e5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e7ef89'},body:JSON.stringify({sessionId:'e7ef89',location:'useInboxComposer.ts:pending-fetch',message:'pending jobs fetched',data:{selectedThreadId,accountCampaignJobsTotal:pendingCampaignJobs.length,accountCampaignJobThreadIds:pendingCampaignJobs.map((j)=>j.thread_id),campaignJobsForThread:campaignJobsForThread.map((j)=>({id:j.id,status:j.status,thread_id:j.thread_id})),manualJobsForThread:manualJobsForThread.length},timestamp:Date.now(),hypothesisId:'H1-H3'})}).catch(()=>{});
-        // #endregion
 
         const threadMessages = await getMessagesByThread(selectedThreadId);
         if (cancelled) return;
@@ -405,9 +402,6 @@ export function useInboxComposer({
     (async () => {
       try {
         const state = await getThreadAutoReplyPipelineState(selectedThreadId);
-        // #region agent log
-        fetch('http://127.0.0.1:7447/ingest/0a9c766e-cfbc-4a65-8b11-aa0dd657a9e5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e7ef89'},body:JSON.stringify({sessionId:'e7ef89',location:'useInboxComposer.ts:pipeline-fetch',message:'auto reply pipeline state',data:{selectedThreadId,state,pendingRepliesOnThread:pendingRepliesRef.current.filter((p)=>p.threadId===selectedThreadId).length},timestamp:Date.now(),hypothesisId:'H2-H5'})}).catch(()=>{});
-        // #endregion
         if (!cancelled) {
           setAutoReplyPipelineState(state);
         }

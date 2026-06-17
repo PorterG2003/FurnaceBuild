@@ -243,6 +243,28 @@ export class SendWorker {
     await this.stopCampaignEnrollment(messageJob.enrollment_id, reason);
   }
 
+  private async markMessageJobSendingIfReserved(messageJobId: string): Promise<boolean> {
+    const now = new Date().toISOString();
+    const { data, error } = await this.supabase
+      .from('message_jobs')
+      .update({
+        status: 'sending',
+        status_reason: null,
+        sending_started_at: now,
+        updated_at: now,
+      })
+      .eq('id', messageJobId)
+      .eq('status', 'reserved')
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to mark message job ${messageJobId} as sending: ${error.message}`);
+    }
+
+    return !!data?.id;
+  }
+
   private async failCampaignMessageJob(
     messageJob: MessageJob,
     reason: string,
@@ -942,16 +964,13 @@ export class SendWorker {
         return;
       }
 
-      await this.supabase
-        .from('message_jobs')
-        .update({
-          status: 'sending',
-          status_reason: null,
-          sending_started_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', message_job_id)
-        .eq('status', 'reserved');
+      const markedSending = await this.markMessageJobSendingIfReserved(message_job_id);
+      if (!markedSending) {
+        console.log(
+          `[SEND WORKER] Message job ${message_job_id} left reserved state before SMTP send; skipping.`
+        );
+        return;
+      }
       enteredSending = true;
 
       // Throttle check passed - proceed with sending
@@ -1473,6 +1492,14 @@ export class SendWorker {
       return;
     }
 
+    const markedSending = await this.markMessageJobSendingIfReserved(message_job_id);
+    if (!markedSending) {
+      console.log(
+        `[SEND WORKER] Reply job ${message_job_id} left reserved state before SMTP send; skipping.`
+      );
+      return;
+    }
+
     // 3. Send reply via SMTP
     const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
     const rawAttachments = Array.isArray(md.attachments) ? md.attachments : [];
@@ -1651,6 +1678,14 @@ export class SendWorker {
     const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
     if (!result?.success) {
       this.logThrottleCheckOutcome('forward job', message_job_id, result?.failure_reason);
+      return;
+    }
+
+    const markedSending = await this.markMessageJobSendingIfReserved(message_job_id);
+    if (!markedSending) {
+      console.log(
+        `[SEND WORKER] Forward job ${message_job_id} left reserved state before SMTP send; skipping.`
+      );
       return;
     }
 

@@ -9,18 +9,26 @@ import {
   stripHtml,
   type EmailEditorMode,
 } from '@/lib/email';
-import { buildForwardedConversationHtml } from '@/lib/inbox';
-import { buildForwardComposerHtml } from '@/lib/inbox';
+import {
+  buildForwardComposerHtml,
+  buildForwardedConversationHtml,
+  renderPendingCampaignReplyContent,
+} from '@/lib/inbox';
 import { resolveReplyComposerTarget } from '@/lib/inbox/resolveReplyComposerTarget';
 import {
+  cancelPendingOutboundJob,
   createReplyJob,
   createForwardJob,
   getMessageJobStatus,
+  getPendingCampaignReplyJobs,
   getPendingInboxManualJobs,
+  getThreadAutoReplyPipelineState,
   getMessagesByThread,
   isEmailBlockedByEntries,
   requestImmediateManualSend,
+  type PendingCampaignReplyJob,
   type PendingInboxManualJob,
+  type ThreadAutoReplyPipelineState,
 } from '@/lib/supabase/services';
 import type { EmailMessage } from '@/lib/supabase/types';
 import type { BlockListEntry } from '@/lib/supabase/types';
@@ -30,7 +38,7 @@ import type { ComposerAttachmentItem } from '@/components/inbox';
 import { MAX_ATTACHMENTS, MAX_TOTAL_BYTES, MAX_FILE_BYTES } from '@/components/inbox/inboxConstants';
 
 export type PendingReply = {
-  kind: 'reply' | 'forward';
+  kind: 'reply' | 'forward' | 'campaign_reply';
   threadId: string;
   jobId: string;
   subject: string;
@@ -48,10 +56,17 @@ export type PendingReply = {
   sendWaitReason: string | null;
   throttleBypassNextAttempt: boolean;
   isSendingImmediately?: boolean;
+  campaignId?: string;
   inReplyToMessageId?: string;
   forwardedMessageId?: string;
   attachments?: Array<{ filename: string; contentType: string; content: string }>;
 };
+
+export type ReplyDuplicateConfirmState = {
+  title: string;
+  message: string;
+  onConfirm: () => void;
+} | null;
 
 export interface UseInboxComposerOptions {
   accountId: string | null;
@@ -93,6 +108,37 @@ function jobToPendingReply(job: PendingInboxManualJob, fromEmail: string): Pendi
   };
 }
 
+function jobToPendingCampaignReply(
+  job: PendingCampaignReplyJob,
+  fromEmail: string,
+  mailboxSignatureRaw: string | null
+): PendingReply {
+  const preview = renderPendingCampaignReplyContent({
+    messageData: job.message_data,
+    mailboxSignature: mailboxSignatureRaw,
+  });
+  return {
+    kind: 'campaign_reply',
+    threadId: job.thread_id,
+    jobId: job.id,
+    subject: job.message_data.subject,
+    bodyText: preview.bodyText,
+    bodyHtml: preview.bodyHtml ?? preview.bodyText,
+    toEmail: job.message_data.to_email,
+    toName: job.message_data.to_name || null,
+    cc: [],
+    fromEmail,
+    receivedAt: job.created_at,
+    errorMessage: job.error_message,
+    isFailed: job.status === 'failed',
+    jobStatus: job.status,
+    scheduledAt: job.scheduled_at,
+    sendWaitReason: job.send_wait_reason,
+    throttleBypassNextAttempt: job.throttle_bypass_next_attempt,
+    campaignId: job.campaign_id,
+  };
+}
+
 export function useInboxComposer({
   accountId,
   mailboxSignatureRaw,
@@ -123,6 +169,10 @@ export function useInboxComposer({
   const [composerAttachmentsLoading, setComposerAttachmentsLoading] = useState(false);
   const [composerAttachmentsSkipMessage, setComposerAttachmentsSkipMessage] = useState<string | null>(null);
   const [pendingReplies, setPendingReplies] = useState<PendingReply[]>([]);
+  const [autoReplyPipelineState, setAutoReplyPipelineState] =
+    useState<ThreadAutoReplyPipelineState | null>(null);
+  const [replyDuplicateConfirm, setReplyDuplicateConfirm] =
+    useState<ReplyDuplicateConfirmState>(null);
   const [includeSignature, setIncludeSignature] = useState(true);
   const [forwardQuoteHtml, setForwardQuoteHtml] = useState('');
   const [replyEditorMode, setReplyEditorMode] = useState<EmailEditorMode>('richText');
@@ -161,6 +211,7 @@ export function useInboxComposer({
       setReplyRichInitialContent('<p></p>');
       setForwardRichInitialContent('<p></p>');
       setSwitchToRichConfirmMode(null);
+      setReplyDuplicateConfirm(null);
     });
   }, [slideAnim]);
 
@@ -178,6 +229,8 @@ export function useInboxComposer({
 
   useEffect(() => {
     setPendingReplies([]);
+    setAutoReplyPipelineState(null);
+    setReplyDuplicateConfirm(null);
   }, [selectedThreadId]);
 
   useEffect(() => {
@@ -299,17 +352,32 @@ export function useInboxComposer({
     let cancelled = false;
     (async () => {
       try {
-        const pendingJobs = await getPendingInboxManualJobs(accountId);
+        const [pendingManualJobs, pendingCampaignJobs] = await Promise.all([
+          getPendingInboxManualJobs(accountId),
+          getPendingCampaignReplyJobs(accountId),
+        ]);
         if (cancelled) return;
-        const jobsForThread = pendingJobs.filter((j) => j.thread_id === selectedThreadId);
+        const manualJobsForThread = pendingManualJobs.filter((j) => j.thread_id === selectedThreadId);
+        const campaignJobsForThread = pendingCampaignJobs.filter((j) => j.thread_id === selectedThreadId);
+        // #region agent log
+        fetch('http://127.0.0.1:7447/ingest/0a9c766e-cfbc-4a65-8b11-aa0dd657a9e5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e7ef89'},body:JSON.stringify({sessionId:'e7ef89',location:'useInboxComposer.ts:pending-fetch',message:'pending jobs fetched',data:{selectedThreadId,accountCampaignJobsTotal:pendingCampaignJobs.length,accountCampaignJobThreadIds:pendingCampaignJobs.map((j)=>j.thread_id),campaignJobsForThread:campaignJobsForThread.map((j)=>({id:j.id,status:j.status,thread_id:j.thread_id})),manualJobsForThread:manualJobsForThread.length},timestamp:Date.now(),hypothesisId:'H1-H3'})}).catch(()=>{});
+        // #endregion
 
         const threadMessages = await getMessagesByThread(selectedThreadId);
         if (cancelled) return;
         const fromEmail = threadMessages.find((m) => m.direction === 'sent')?.from_email ?? '';
 
-        const dbIds = new Set(jobsForThread.map((j) => j.id));
+        const dbIds = new Set([
+          ...manualJobsForThread.map((j) => j.id),
+          ...campaignJobsForThread.map((j) => j.id),
+        ]);
         setPendingReplies((prev) => {
-          const fromDb = jobsForThread.map((j) => jobToPendingReply(j, fromEmail));
+          const fromDb = [
+            ...manualJobsForThread.map((j) => jobToPendingReply(j, fromEmail)),
+            ...campaignJobsForThread.map((j) =>
+              jobToPendingCampaignReply(j, fromEmail, mailboxSignatureRaw)
+            ),
+          ];
           const optimistic = prev.filter(
             (p) => p.threadId === selectedThreadId && !dbIds.has(p.jobId)
           );
@@ -326,9 +394,36 @@ export function useInboxComposer({
     return () => {
       cancelled = true;
     };
-  }, [accountId, selectedThreadId, threadsLoading]);
+  }, [accountId, mailboxSignatureRaw, selectedThreadId, threadsLoading]);
 
-  const openReplyComposer = useCallback(
+  useEffect(() => {
+    if (!selectedThreadId || threadsLoading) {
+      setAutoReplyPipelineState(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const state = await getThreadAutoReplyPipelineState(selectedThreadId);
+        // #region agent log
+        fetch('http://127.0.0.1:7447/ingest/0a9c766e-cfbc-4a65-8b11-aa0dd657a9e5',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'e7ef89'},body:JSON.stringify({sessionId:'e7ef89',location:'useInboxComposer.ts:pipeline-fetch',message:'auto reply pipeline state',data:{selectedThreadId,state,pendingRepliesOnThread:pendingRepliesRef.current.filter((p)=>p.threadId===selectedThreadId).length},timestamp:Date.now(),hypothesisId:'H2-H5'})}).catch(()=>{});
+        // #endregion
+        if (!cancelled) {
+          setAutoReplyPipelineState(state);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to fetch auto-reply pipeline state:', err);
+          setAutoReplyPipelineState(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedThread?.category, selectedThreadId, threadsLoading, pendingReplies.length]);
+
+  const finishOpenReplyComposer = useCallback(
     (message: EmailMessage) => {
       if (!selectedThread) return;
       const lastReceived = [...messages].reverse().find((m) => m.direction === 'received');
@@ -372,6 +467,35 @@ export function useInboxComposer({
       setComposerMode('reply');
     },
     [selectedThread, messages, currentLeadEmail, currentLeadName]
+  );
+
+  const openReplyComposer = useCallback(
+    (message: EmailMessage) => {
+      const hasPendingCampaignReply = pendingReplies.some(
+        (p) => p.threadId === selectedThreadId && p.kind === 'campaign_reply'
+      );
+      if (autoReplyPipelineState || hasPendingCampaignReply) {
+        const stateLabel =
+          autoReplyPipelineState?.label ??
+          'An automated campaign reply is scheduled to send automatically.';
+        setReplyDuplicateConfirm({
+          title: 'Reply anyway?',
+          message: `${stateLabel} Replying now may send a duplicate message.`,
+          onConfirm: () => {
+            setReplyDuplicateConfirm(null);
+            finishOpenReplyComposer(message);
+          },
+        });
+        return;
+      }
+      finishOpenReplyComposer(message);
+    },
+    [
+      autoReplyPipelineState,
+      finishOpenReplyComposer,
+      pendingReplies,
+      selectedThreadId,
+    ]
   );
 
   const openForwardComposer = useCallback(
@@ -777,6 +901,20 @@ export function useInboxComposer({
     [accountId, selectedThreadId, loadMessages, toast]
   );
 
+  const cancelPendingOutbound = useCallback(
+    async (jobId: string) => {
+      if (!selectedThreadId) return;
+      try {
+        await cancelPendingOutboundJob(jobId);
+        setPendingReplies((prev) => prev.filter((p) => p.jobId !== jobId));
+        loadMessages(selectedThreadId, { silent: true });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to cancel pending outbound');
+      }
+    },
+    [loadMessages, selectedThreadId, toast]
+  );
+
   const handleComposerFilesSelected = useCallback(
     async (files: FileList) => {
       if (!files?.length) return;
@@ -874,6 +1012,9 @@ export function useInboxComposer({
     composerAttachmentsLoading,
     composerAttachmentsSkipMessage,
     pendingReplies,
+    autoReplyPipelineState,
+    replyDuplicateConfirm,
+    setReplyDuplicateConfirm,
     includeSignature,
     setIncludeSignature,
     forwardQuoteHtml,
@@ -901,6 +1042,7 @@ export function useInboxComposer({
     sendReply,
     sendForward,
     sendPendingImmediately,
+    cancelPendingOutbound,
     retryFailedReply,
     handleComposerFilesSelected,
   };

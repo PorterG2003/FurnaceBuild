@@ -2,10 +2,26 @@
  * Preview or repair duplicate bounced events for one campaign.
  *
  * Usage:
- *   CAMPAIGN_ID=<uuid> SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/repair-duplicate-bounce-events.ts
- *   CAMPAIGN_ID=<uuid> APPLY=true SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/repair-duplicate-bounce-events.ts
- *   CAMPAIGN_ID=<uuid> APPLY=true REPAIR_RELATED=true SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/repair-duplicate-bounce-events.ts
+ *   CAMPAIGN_ID=<uuid> npx tsx scripts/repair-duplicate-bounce-events.ts
+ *   CAMPAIGN_ID=<uuid> APPLY=true npx tsx scripts/repair-duplicate-bounce-events.ts
+ *   CAMPAIGN_ID=<uuid> APPLY=true REPAIR_RELATED=true npx tsx scripts/repair-duplicate-bounce-events.ts
+ *
+ * Resolution order:
+ *   1. Load repo `.env.local` / `.env` plus `infra/workers/.env.local` / `.env`
+ *   2. Resolve Supabase URL from explicit env, then prod worker env, then dev env
+ *   3. Prefer `SUPABASE_SECRET_KEY_PARAM_PATH` (or derive it from worker SSM prefixes)
+ *   4. Fall back to `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SECRET_KEY`
  */
+
+import {
+  fetchSecretFromParameterStore,
+  loadSelfRecoveryEnv,
+  resolveSecretParamPathForTarget,
+  resolveSelfRecoveryTargetEnv,
+  resolveSupabaseUrlForTarget,
+} from './self-recovery-env.js';
+
+loadSelfRecoveryEnv();
 
 type BounceEventRow = {
   id: string;
@@ -93,15 +109,49 @@ function chooseKeeper(events: BounceEventRow[], jobsById: Map<string, MessageJob
 }
 
 async function main() {
-  const url = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+  const targetEnv = resolveSelfRecoveryTargetEnv();
+  const { url, source: urlSource } = resolveSupabaseUrlForTarget(targetEnv);
   const campaignId = process.env.CAMPAIGN_ID?.trim();
   const apply = process.env.APPLY === 'true';
   const repairRelated = process.env.REPAIR_RELATED === 'true';
+  const awsRegion =
+    process.env.AWS_REGION?.trim() ||
+    process.env.CDK_DEFAULT_REGION?.trim() ||
+    'us-west-2';
+
+  let key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+    process.env.SUPABASE_SECRET_KEY?.trim() ||
+    null;
+
+  const secretParamPath = resolveSecretParamPathForTarget(targetEnv);
+  if (secretParamPath) {
+    try {
+      key = await fetchSecretFromParameterStore(secretParamPath, awsRegion);
+      process.env.SUPABASE_SECRET_KEY = key;
+    } catch (error) {
+      if (!key) {
+        throw error;
+      }
+      console.warn(
+        `[repair-duplicate-bounce-events] Failed to fetch ${secretParamPath}; falling back to existing secret env.`
+      );
+    }
+  }
 
   if (!url || !key || !campaignId) {
-    console.error('Set CAMPAIGN_ID plus SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY).');
+    console.error(
+      'Missing Supabase configuration. Provide CAMPAIGN_ID plus a resolvable URL and either SSM worker secret prefixes / SUPABASE_SECRET_KEY_PARAM_PATH, or SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SECRET_KEY.'
+    );
     process.exit(1);
+  }
+
+  console.log(`Target env: ${targetEnv}`);
+  console.log(`Resolved SUPABASE_URL from ${urlSource}.`);
+  if (secretParamPath) {
+    console.log(`Resolved SUPABASE secret from Parameter Store path ${secretParamPath}.`);
+  } else {
+    console.log('Resolved SUPABASE secret from environment variable.');
   }
 
   const { createClient } = await import('@supabase/supabase-js');

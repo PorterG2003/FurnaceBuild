@@ -19,7 +19,7 @@
 ## Current sending pipeline (campaign emails)
 
 1. **Scheduler** assigns enrollments to campaign intervals and creates **message_jobs** (enrollment_id, campaign_id, lead_id, mailbox_id, node_id, interval_id, scheduled_at, message_data with node_config subject/body templates).
-2. **Send worker** polls via `claim_message_jobs_ready` (status = `pending`, scheduled_at ≤ NOW()), claims jobs as `reserved`.
+2. **Send worker** polls via `claim_message_jobs_ready` (status = `queued`, scheduled_at ≤ NOW()), claims jobs as `reserved`.
 3. For each job: **throttle** via `check_mailbox_throttle_and_reserve(p_message_job_id)` (uses mailbox_throttles; on failure job is set to `cancelled`).
 4. Worker loads lead, mailbox, node config; **merges templates** (subject/body from node_config + lead data); sends via **SMTP**; sets message_job to `sent`, updates **enrollment** `next_run_at`, runs **check_and_update_processed_intervals**, creates **event**.
 5. Worker does **not** insert into `email_messages` or `email_threads` — those are created/updated by the **inbox-checker** when replies are detected (thread created/updated, received messages stored).
@@ -37,7 +37,7 @@ So: campaign sends are **message_job → send worker → SMTP → message_job + 
 - **Body**: user-written (no template).
 - **Headers**: `Message-ID` (new), `In-Reply-To` (message_id of the message we’re replying to), `References` (thread history from that message).
 - **Persistence**: insert `email_messages` (direction = sent) with to/cc as needed; update `email_threads` (last_message_at, message_count, participants if needed). Schema may need CC storage (e.g. `cc` column or headers) for sent messages.
-- **Throttle**: same mailbox as campaign sends — reply must count toward mailbox daily/hourly/min-gap limits.
+- **Throttle**: same mailbox as campaign sends — reply must still count toward mailbox daily/hourly/min-gap usage, but reply-lane sends no longer wait on the daily cap.
 - **Priority**: Manual sends (replies, forwards) **take priority over campaign sends**. When throttle or send capacity is constrained, manual sends are processed first; campaign jobs wait or yield. Implementation: e.g. worker claims manual/reply jobs before campaign `message_jobs`, or direct API for replies bypasses the job queue and gets first access to throttle.
 
 ---
@@ -56,10 +56,11 @@ So: campaign sends are **message_job → send worker → SMTP → message_job + 
 
 ### 2. Throttle (mailbox limits)
 
-- Campaign sends and replies share the same mailbox; both must respect **mailbox_throttles** (daily, hourly, min gap).
-- **Manual sends take priority over campaign sends**: when at or near the limit, manual (reply/forward) sends get the slot; campaign jobs wait or are deferred. So: (a) if using direct API for replies, the API reserves throttle first and campaign worker only claims jobs when manual path isn’t using the slot, or (b) if using worker, it must claim and process manual/reply jobs before campaign jobs (e.g. poll `reply_jobs` or high-priority queue first, then `message_jobs`).
-- **If API sends**: need a way to “reserve” throttle before sending, and ensure manual reserve takes priority. Options: (a) new RPC e.g. `reserve_mailbox_send_slot(mailbox_id, priority: 'manual' | 'campaign')` that prefers manual when both contend, or (b) manual sends use the same throttle but are processed first (e.g. API runs synchronously; worker only runs when no pending manual send).
-- **If worker sends**: worker should poll/claim reply (or manual) jobs before campaign jobs so replies/forwards are sent first; reuse `check_mailbox_throttle_and_reserve` for both, with manual jobs in a separate queue or ordered first.
+- Campaign sends and replies share the same mailbox, and all successful sends still update **mailbox_throttles** (daily, hourly, min gap).
+- **Reply-lane daily exemption**: `inbox_reply`, `inbox_forward`, and `campaign_reply` never wait for the daily mailbox cap. Only dedicated `campaign` sends defer until tomorrow.
+- **Hourly + min-gap still apply**: reply-lane sends can still be delayed by hourly throttles, an existing in-flight mailbox send, or the minimum-gap floor.
+- **Manual sends take priority over campaign sends**: when capacity is constrained, manual inbox sends are claimed first. `campaign_reply` also rides the reply lane, so it is processed before dedicated campaign sends.
+- **Send now**: the manual inbox UI can set `throttle_bypass_next_attempt` on queued `inbox_reply` / `inbox_forward` jobs. That bypass skips hourly/min-gap waiting once, but it does not bypass accounting: the successful send still increments the mailbox's daily and hourly counters in `finalize_message_job_sent`.
 
 ### 3. Enrollment / campaign flow
 
@@ -104,31 +105,31 @@ Answer these so the implementation can be specified precisely.
 
 ### Throttle
 
-3. **Should inbox replies share the same mailbox throttle (daily/hourly/min gap) as campaign sends?**  
-   - Assumption: yes. Confirm.
+1. **Should inbox replies share the same mailbox throttle (daily/hourly/min gap) as campaign sends?**  
+   - **Decided**: yes for accounting, but reply-lane sends (`inbox_reply`, `inbox_forward`, `campaign_reply`) skip the daily wait. Dedicated `campaign` sends still defer on the daily cap.
 
-4. ~~If direct API: how to reserve throttle~~ → **N/A**: Using worker; throttle is `check_mailbox_throttle_and_reserve` for both; priority is via claim order (manual jobs claimed first).
+2. ~~If direct API: how to reserve throttle~~ → **N/A**: Using worker; throttle is `check_mailbox_throttle_and_reserve` for both; priority is via claim order (manual jobs claimed first).
 
-5. **Priority implementation** *(aligned with Option B)*: Worker claims **manual-type jobs first** (e.g. `message_type IN ('inbox_reply','inbox_forward')`), then campaign jobs — via two-phase poll (claim manual, then claim campaign) or one claim that orders by `message_type` so manual rows are returned first.
+3. **Priority implementation** *(aligned with Option B)*: Worker claims **manual-type jobs first** (e.g. `message_type IN ('inbox_reply','inbox_forward')`), then campaign jobs — via two-phase poll (claim manual, then claim campaign) or one claim that orders by `message_type` so manual rows are returned first.
 
 ### Campaign flow
 
-6. ~~When a user sends an inbox reply, should that advance the enrollment?~~ **Decided**: No. Inbox reply is not a manual step; the flow is irrelevant. Do not update enrollment or intervals for reply jobs.
+1. ~~When a user sends an inbox reply, should that advance the enrollment?~~ **Decided**: No. Inbox reply is not a manual step; the flow is irrelevant. Do not update enrollment or intervals for reply jobs.
 
-7. **Should we create an `events` row for inbox replies (e.g. event_type = ‘inbox_reply’)?**  
+2. **Should we create an `events` row for inbox replies (e.g. event_type = ‘inbox_reply’)?**  
    - Useful for analytics and “replied” state in the builder; not required for threading.
 
 ### Recipients and threading
 
-8. **Cc**: Support CC in composer (confirmed). Prefill “Reply to all” from message To/Cc or thread participants? Store CC on `email_messages` (schema change) or only in headers?
+1. **Cc**: Support CC in composer (confirmed). Prefill “Reply to all” from message To/Cc or thread participants? Store CC on `email_messages` (schema change) or only in headers?
 
-9. ~~Who can send a reply?~~ **Decided**: Any account member.
+2. ~~Who can send a reply?~~ **Decided**: Any account member.
 
 ### Data model
 
-10. **For the sent reply, `email_messages.message_job_id`**: Set to the **message_job id** of the reply job (we use the worker and create a message_job for the reply). Enables “sent by user” reporting and traceability.
+1. **For the sent reply, `email_messages.message_job_id`**: Set to the **message_job id** of the reply job (we use the worker and create a message_job for the reply). Enables “sent by user” reporting and traceability.
 
-11. ~~Should the thread’s `participants` array be updated when we send a reply?~~ **Decided**: Yes. Add To + Cc recipients if not already in participants; keeps participants in sync for display/filtering.
+2. ~~Should the thread’s `participants` array be updated when we send a reply?~~ **Decided**: Yes. Add To + Cc recipients if not already in participants; keeps participants in sync for display/filtering.
 
 ---
 

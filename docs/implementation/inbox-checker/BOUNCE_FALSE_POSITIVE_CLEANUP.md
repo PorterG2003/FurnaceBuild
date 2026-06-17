@@ -7,9 +7,9 @@ Use this runbook if you need to fix campaign data after such a mistake.
 For duplicate physical bounces created before the canonical-match / idempotent-bounce fix, prefer the scripted audit/repair flow first:
 
 ```bash
-CAMPAIGN_ID=<CAMPAIGN_UUID> SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/repair-duplicate-bounce-events.ts
-CAMPAIGN_ID=<CAMPAIGN_UUID> APPLY=true SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/repair-duplicate-bounce-events.ts
-CAMPAIGN_ID=<CAMPAIGN_UUID> APPLY=true REPAIR_RELATED=true SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npx tsx scripts/repair-duplicate-bounce-events.ts
+CAMPAIGN_ID=<CAMPAIGN_UUID> npx tsx scripts/repair-duplicate-bounce-events.ts
+CAMPAIGN_ID=<CAMPAIGN_UUID> APPLY=true npx tsx scripts/repair-duplicate-bounce-events.ts
+CAMPAIGN_ID=<CAMPAIGN_UUID> APPLY=true REPAIR_RELATED=true npx tsx scripts/repair-duplicate-bounce-events.ts
 ```
 
 Use the manual SQL below when you are fixing a one-off false positive or need to inspect specific rows by hand.

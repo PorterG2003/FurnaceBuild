@@ -404,10 +404,17 @@ export async function evaluateFlow(
 
     const isSent =
       latestMessageJob.sent_at !== null || latestMessageJob.status === 'sent';
+    const isManualOverrideCancel =
+      latestMessageJob.status === 'cancelled'
+      && latestMessageJob.status_reason === 'inbox_manual_override';
 
     if (isSent) {
       console.log(
         `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} has message_job sent. Proceeding to next node.`,
+      );
+    } else if (isManualOverrideCancel) {
+      console.log(
+        `[FLOW ${enrollmentId}] Email node ${currentNode.id.substring(0, 8)} was cancelled via inbox manual override. Proceeding to next node.`,
       );
     } else if (latestMessageJob.status === 'deferred') {
       console.log(

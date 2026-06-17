@@ -12,6 +12,7 @@ import { InboxComposerPanel } from './InboxComposerPanel';
 import { THREAD_CATEGORIES } from './inboxConstants';
 import type { PendingReplyInfo } from './InboxMessageList';
 import type { InboxComposerFormProps } from './InboxComposerForm';
+import type { ThreadAutoReplyPipelineState } from '@/lib/supabase/services';
 
 export interface InboxDesktopThreadListProps {
   threads: EmailThread[];
@@ -67,8 +68,10 @@ export interface InboxDesktopMessagePaneProps {
   onDownloadAttachment: ((emailMessageId: string, part: string, filename: string) => Promise<void>) | undefined;
   onFetchAttachmentPreview: ((emailMessageId: string, part: string) => Promise<Blob | null>) | undefined;
   pendingReplies: PendingReplyInfo[];
+  autoReplyPipelineState?: ThreadAutoReplyPipelineState | null;
   onRetryFailedReply: (jobId: string) => void;
   onSendImmediately: (jobId: string) => void;
+  onCancelPendingOutbound: (jobId: string) => void;
 }
 
 export interface InboxDesktopLayoutOptions {
@@ -149,8 +152,10 @@ export function InboxDesktopLayout({
     onDownloadAttachment,
     onFetchAttachmentPreview,
     pendingReplies,
+    autoReplyPipelineState,
     onRetryFailedReply,
     onSendImmediately,
+    onCancelPendingOutbound,
   } = messagePane;
 
   const { slideAnim, replyPanelWidth } = layout;
@@ -236,8 +241,10 @@ export function InboxDesktopLayout({
               onDownloadAttachment={onDownloadAttachment}
               onFetchAttachmentPreview={onFetchAttachmentPreview}
               pendingReplies={pendingReplies}
+              autoReplyPipelineState={autoReplyPipelineState}
               onRetryFailedReply={onRetryFailedReply}
               onSendImmediately={onSendImmediately}
+              onCancelPendingOutbound={onCancelPendingOutbound}
             />
           ) : (
             <View className="flex-1 items-center justify-center px-8">

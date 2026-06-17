@@ -54,4 +54,4 @@ amplify_outputs*
 amplifyconfiguration*
 
 # cursor
-.cursor/debug.log
+.cursor/debug*.log

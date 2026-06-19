@@ -1138,7 +1138,6 @@ export class SchedulerWorker {
             this.supabase,
             {
               activeFlowVersionNumber,
-              classifyTransport: this.categorizerClassifyTransport,
             },
           );
           console.log(`[ENROLLMENT ${enrollmentId}] Categorizer node processed.`);

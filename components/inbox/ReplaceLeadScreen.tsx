@@ -11,6 +11,11 @@ import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/forms';
 import { Alert, useToast } from '@/components/ui/feedback';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
+import type {
+  ReplaceLeadCompletionIntent,
+  ReplaceLeadCompletionPayload,
+} from '@/lib/inbox/replaceLeadCompletion';
+import type { ReplaceLeadPrefill } from '@/lib/inbox/replaceLeadPrefill';
 import {
   replaceLeadWithNewContact,
   updateLeadProfileFields,
@@ -43,8 +48,9 @@ const REPLACEMENT_REASON_OPTIONS: Array<{ id: ReplacementReason; name: string; d
 
 export interface ReplaceLeadScreenProps {
   oldLead: Lead | null;
+  prefill?: ReplaceLeadPrefill | null;
   sourceMessageId?: string | null;
-  onReplaced: (result: ReplaceLeadWithNewContactResult) => void;
+  onReplaced: (result: ReplaceLeadWithNewContactResult, completion: ReplaceLeadCompletionPayload) => void;
   onCancel: () => void;
   layout?: 'modal' | 'page';
 }
@@ -122,8 +128,23 @@ function normalizeNullable(value: string): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
+function buildForwardTargetName(
+  result: ReplaceLeadWithNewContactResult,
+  fields: Pick<StandardFieldsState, 'name' | 'firstName' | 'lastName'>
+): string | null {
+  const leadName = result.newLead.name?.trim();
+  if (leadName) return leadName;
+
+  const explicitName = normalizeNullable(fields.name);
+  if (explicitName) return explicitName;
+
+  const composedName = [fields.firstName.trim(), fields.lastName.trim()].filter(Boolean).join(' ');
+  return composedName || null;
+}
+
 export function ReplaceLeadScreen({
   oldLead,
+  prefill = null,
   sourceMessageId,
   onReplaced,
   onCancel,
@@ -137,17 +158,24 @@ export function ReplaceLeadScreen({
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [reason, setReason] = useState<ReplacementReason>('manual_referral');
   const [reasonNote, setReasonNote] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [savingIntent, setSavingIntent] = useState<ReplaceLeadCompletionIntent | null>(null);
 
   const oldLeadId = oldLead?.id ?? null;
+  const prefillEmail = prefill?.email?.trim() || null;
+  const prefillName = prefill?.name?.trim() || null;
+  const prefillReason = prefill?.reason ?? null;
+  const prefillReasonNote = prefill?.reasonNote?.trim() || null;
 
   useEffect(() => {
     if (!oldLead) return;
-    setFields(seedStandardFields(oldLead));
+    const nextFields = seedStandardFields(oldLead);
+    if (prefillEmail) nextFields.email = prefillEmail;
+    if (prefillName) nextFields.name = prefillName;
+    setFields(nextFields);
     setCustomFields(buildInitialCustomFields(oldLead));
-    setReason('manual_referral');
-    setReasonNote('');
-  }, [oldLeadId, oldLead]);
+    setReason(prefillReason ?? 'manual_referral');
+    setReasonNote(prefillReasonNote ?? '');
+  }, [oldLeadId, oldLead, prefillEmail, prefillName, prefillReason, prefillReasonNote]);
 
   const customEntries = useMemo(() => readCustomLeadEntries(oldLead), [oldLead]);
 
@@ -165,6 +193,7 @@ export function ReplaceLeadScreen({
     }
     return null;
   }, [fields.email, oldLead?.email]);
+  const saving = savingIntent !== null;
 
   if (!oldLead) return null;
 
@@ -172,13 +201,13 @@ export function ReplaceLeadScreen({
     setFields((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleSave = async () => {
+  const handleSave = async (intent: ReplaceLeadCompletionIntent) => {
     if (validationError) {
       toast.error(validationError);
       return;
     }
 
-    setSaving(true);
+    setSavingIntent(intent);
     try {
       const result = await replaceLeadWithNewContact({
         oldLeadId: oldLead.id,
@@ -193,12 +222,10 @@ export function ReplaceLeadScreen({
       });
 
       const profilePatch = buildProfilePatch(oldLead, fields, customFields, customEntries);
-      let profileUpdateFailed = false;
       if (profilePatch) {
         try {
           await updateLeadProfileFields({ leadId: result.newLeadId, ...profilePatch });
         } catch (err) {
-          profileUpdateFailed = true;
           toast.error(
             err instanceof Error
               ? `Replacement saved, but profile edits couldn't be applied: ${err.message}`
@@ -207,14 +234,18 @@ export function ReplaceLeadScreen({
         }
       }
 
-      if (!profileUpdateFailed) {
-        toast.success('Replacement lead created.');
-      }
-      onReplaced(result);
+      onReplaced(result, {
+        intent,
+        preferredForwardMessageId: sourceMessageId ?? null,
+        forwardTarget: {
+          toEmail: result.newLead.email ?? fields.email.trim(),
+          toName: buildForwardTargetName(result, fields),
+        },
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to replace lead.');
     } finally {
-      setSaving(false);
+      setSavingIntent(null);
     }
   };
 
@@ -226,7 +257,7 @@ export function ReplaceLeadScreen({
             <ColumnHeader label="Current lead" subtitle={oldLead.email ?? 'No email on file'} />
           </View>
           <View className="flex-1">
-            <ColumnHeader label="Replacement contact" subtitle="Pre-filled from current lead" />
+            <ColumnHeader label="Replacement contact" subtitle="Pre-filled from current lead and reply context" />
           </View>
         </View>
       )}
@@ -377,27 +408,41 @@ export function ReplaceLeadScreen({
         className="mb-0"
       />
 
-      <View className="flex-row gap-2 flex-wrap">
+      <View className="gap-2">
         <Button
           variant="default"
-          className="flex-1 min-w-[120px]"
-          onPress={() => void handleSave()}
+          fullWidth
+          onPress={() => void handleSave('replace_and_forward')}
           disabled={saving}
         >
-          {saving ? (
+          {savingIntent === 'replace_and_forward' ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text className="text-white font-instrument-medium">Replace lead</Text>
+            <Text className="text-white font-instrument-medium">Replace + forward with message</Text>
           )}
         </Button>
-        <Button
-          variant="secondary"
-          className="flex-1 min-w-[120px]"
-          onPress={onCancel}
-          disabled={saving}
-        >
-          <Text className="text-gray-200 font-instrument-medium">Cancel</Text>
-        </Button>
+        <View className="flex-row gap-2 flex-wrap">
+          <Button
+            variant="secondary"
+            className="flex-1 min-w-[120px]"
+            onPress={() => void handleSave('replace_only')}
+            disabled={saving}
+          >
+            {savingIntent === 'replace_only' ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text className="text-gray-200 font-instrument-medium">Just replace</Text>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1 min-w-[120px]"
+            onPress={onCancel}
+            disabled={saving}
+          >
+            <Text className="text-gray-200 font-instrument-medium">Cancel</Text>
+          </Button>
+        </View>
       </View>
     </View>
   );

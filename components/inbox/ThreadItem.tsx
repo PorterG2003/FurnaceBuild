@@ -5,6 +5,7 @@ import { formatThreadDateWithTime, hexToPillBackground } from '@/lib/inbox';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import { TagChipRow } from '@/components/tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
+import { OpenConversationIndicator } from './OpenConversationIndicator';
 
 const MAX_VISIBLE_TAGS = 3;
 const BOTTOM_BADGE_MAX_WIDTH = 180;
@@ -32,6 +33,7 @@ export function ThreadItem({
 }) {
   const hasCategory = !!thread.category;
   const isSmartleadSource = sourceLabel === 'Smartlead';
+  const isOpenConversation = thread.conversation_status === 'open';
 
   return (
     <Pressable
@@ -68,29 +70,19 @@ export function ThreadItem({
               </View>
             );
           })()}
-          {thread.out_of_office ? (
-            <View
-              className="rounded-lg px-2 py-0.5 border"
-              style={{
-                backgroundColor: 'rgba(234, 179, 8, 0.12)',
-                borderColor: 'rgba(234, 179, 8, 0.35)',
-              }}
-            >
-              <Text className="text-xs font-instrument" style={{ color: '#FACC15' }}>
-                OOO
-              </Text>
-            </View>
-          ) : null}
         </View>
       </View>
 
       {/* Bold title: lead name or email fallback */}
-      <Text
-        className={`text-base mb-1 ${isUnread ? 'font-instrument-bold text-white' : 'font-instrument-semibold text-white'}`}
-        numberOfLines={1}
-      >
-        {cardTitle ?? thread.subject ?? '(No subject)'}
-      </Text>
+      <View className="mb-1 flex-row items-center gap-2">
+        {isOpenConversation ? <OpenConversationIndicator /> : null}
+        <Text
+          className={`flex-1 text-base ${isUnread ? 'font-instrument-bold text-white' : 'font-instrument-semibold text-white'}`}
+          numberOfLines={1}
+        >
+          {cardTitle ?? thread.subject ?? '(No subject)'}
+        </Text>
+      </View>
 
       {/* Message preview */}
       {preview ? (

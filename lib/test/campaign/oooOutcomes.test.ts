@@ -323,3 +323,141 @@ test('only stopped/replied threads can be scheduled for OOO resume through the p
     await harness.cleanup();
   }
 });
+
+test('schedule_thread_ooo_resume unifies stopped and non-resumable legacy threads without throwing', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('ooo-facade-legacy') });
+  const now = Date.now();
+
+  try {
+    const probe = await harness.supabase.rpc('schedule_thread_ooo_resume', {
+      p_thread_id: '00000000-0000-4000-8000-000000000000',
+      p_resume_at: new Date(now).toISOString(),
+      p_return_date: null,
+      p_mark_auto_reply: true,
+    });
+    if (probe.error?.code === 'PGRST202') {
+      return;
+    }
+
+    const graph = await harness.createCampaignGraph({
+      name: 'OOO Facade Legacy',
+      status: 'running',
+      flowKind: 'emailWaitEmail',
+      leads: [
+        buildCampaignLead({
+          key: 'resumable',
+          email: `facade-resumable-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({
+            state: 'stopped',
+            currentFlowNodeId: 'waitTime-1',
+            nextRunAt: null,
+            stoppedReason: 'replied',
+            stoppedAt: new Date(now - 30 * 60 * 1000).toISOString(),
+          }),
+          thread: buildCampaignThread({
+            subject: '[OOO FACADE] resumable',
+            lastMessageAt: new Date(now - 10 * 60 * 1000).toISOString(),
+          }),
+        }),
+        buildCampaignLead({
+          key: 'non-resumable',
+          email: `facade-non-resumable-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-2',
+          enrollment: buildCampaignEnrollment({
+            state: 'stopped',
+            currentFlowNodeId: 'waitTime-1',
+            nextRunAt: null,
+            stoppedReason: 'bounced',
+            stoppedAt: new Date(now - 30 * 60 * 1000).toISOString(),
+          }),
+          thread: buildCampaignThread({
+            subject: '[OOO FACADE] non-resumable',
+            lastMessageAt: new Date(now - 10 * 60 * 1000).toISOString(),
+          }),
+        }),
+        buildCampaignLead({
+          key: 'mark-only',
+          email: `facade-mark-only-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-3',
+          enrollment: buildCampaignEnrollment({
+            state: 'stopped',
+            currentFlowNodeId: 'waitTime-1',
+            nextRunAt: null,
+            stoppedReason: 'bounced',
+            stoppedAt: new Date(now - 30 * 60 * 1000).toISOString(),
+          }),
+          thread: buildCampaignThread({
+            subject: '[OOO FACADE] mark-only',
+            lastMessageAt: new Date(now - 10 * 60 * 1000).toISOString(),
+          }),
+        }),
+      ],
+    });
+
+    const resumeAt = new Date(now + 2 * 60 * 60 * 1000).toISOString();
+    const resumable = graph.leadsByKey.get('resumable')!;
+    const nonResumable = graph.leadsByKey.get('non-resumable')!;
+    const markOnly = graph.leadsByKey.get('mark-only')!;
+
+    const { data: resumableResult, error: resumableError } = await harness.supabase.rpc(
+      'schedule_thread_ooo_resume',
+      {
+        p_thread_id: resumable.threadId!,
+        p_resume_at: resumeAt,
+        p_return_date: resumeAt.slice(0, 10),
+        p_mark_auto_reply: true,
+      }
+    );
+    assert.equal(resumableError, null);
+    assert.equal(resumableResult, 'scheduled_stopped');
+
+    const { data: nonResumableResult, error: nonResumableError } = await harness.supabase.rpc(
+      'schedule_thread_ooo_resume',
+      {
+        p_thread_id: nonResumable.threadId!,
+        p_resume_at: resumeAt,
+        p_return_date: resumeAt.slice(0, 10),
+        p_mark_auto_reply: true,
+      }
+    );
+    assert.equal(nonResumableError, null);
+    assert.equal(nonResumableResult, 'no_resumable_execution_state');
+
+    const { data: markOnlyResult, error: markOnlyError } = await harness.supabase.rpc(
+      'schedule_thread_ooo_resume',
+      {
+        p_thread_id: markOnly.threadId!,
+        p_resume_at: null,
+        p_return_date: null,
+        p_mark_auto_reply: true,
+      }
+    );
+    assert.equal(markOnlyError, null);
+    assert.equal(markOnlyResult, 'marked_only');
+
+    const { data: threadRows, error: threadError } = await harness.supabase
+      .from('email_threads')
+      .select('id, category, out_of_office, ooo_resume_requested, ooo_resume_at')
+      .in('id', [resumable.threadId!, nonResumable.threadId!, markOnly.threadId!]);
+    assert.equal(threadError, null);
+    const rowsById = new Map((threadRows ?? []).map((row: any) => [row.id, row]));
+
+    assert.equal(rowsById.get(resumable.threadId!)?.category, 'Auto Reply');
+    assert.equal(rowsById.get(resumable.threadId!)?.out_of_office, true);
+    assert.equal(rowsById.get(resumable.threadId!)?.ooo_resume_requested, true);
+    assert.equal(rowsById.get(resumable.threadId!)?.ooo_resume_at, resumeAt);
+
+    assert.equal(rowsById.get(nonResumable.threadId!)?.category, 'Auto Reply');
+    assert.equal(rowsById.get(nonResumable.threadId!)?.out_of_office, true);
+    assert.equal(rowsById.get(nonResumable.threadId!)?.ooo_resume_requested, false);
+    assert.equal(rowsById.get(nonResumable.threadId!)?.ooo_resume_at, null);
+
+    assert.equal(rowsById.get(markOnly.threadId!)?.category, 'Auto Reply');
+    assert.equal(rowsById.get(markOnly.threadId!)?.out_of_office, true);
+    assert.equal(rowsById.get(markOnly.threadId!)?.ooo_resume_requested, false);
+    assert.equal(rowsById.get(markOnly.threadId!)?.ooo_resume_at, null);
+  } finally {
+    await harness.cleanup();
+  }
+});

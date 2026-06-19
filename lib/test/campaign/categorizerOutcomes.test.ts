@@ -579,6 +579,76 @@ test('headerless OOO: AI classifies Auto Reply, writes the category, and restore
   }
 });
 
+test('schedule_thread_ooo_resume restores held categorizer enrollments through the same user-facing action', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-ooo-facade') });
+  resetCategorizerLlmFailureTracking();
+
+  try {
+    const probe = await harness.supabase.rpc('schedule_thread_ooo_resume', {
+      p_thread_id: '00000000-0000-4000-8000-000000000000',
+      p_resume_at: new Date().toISOString(),
+      p_return_date: null,
+      p_mark_auto_reply: true,
+    });
+    if (probe.error?.code === 'PGRST202') {
+      return;
+    }
+
+    const seeded = await seedMidSequenceLead(harness, { name: 'Categorizer OOO Facade', useAi: true });
+    const { graph } = seeded;
+    const returnDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const { threadId } = await deliverReply(harness, seeded, {
+      subject: 'Automatic reply: Unified OOO',
+      bodyText: `I am out of the office and will return on ${returnDate}.`,
+      autoReply: true,
+    });
+
+    const heldEnrollment = await getEnrollmentRow(harness, seeded.enrollmentId);
+    assertHeldState({ enrollment: heldEnrollment, graph, heldFlowNodeId: 'waitTime-1' });
+    const heldNextRunAt = heldEnrollment.held_next_run_at as string;
+
+    const { data: result, error } = await harness.supabase.rpc('schedule_thread_ooo_resume', {
+      p_thread_id: threadId,
+      p_resume_at: `${returnDate}T12:00:00.000Z`,
+      p_return_date: returnDate,
+      p_mark_auto_reply: true,
+    });
+    assert.equal(error, null);
+    assert.equal(result, 'resumed_held');
+
+    const restored = await getEnrollmentRow(harness, seeded.enrollmentId);
+    assert.equal(restored.state, 'active');
+    assert.equal(
+      restored.current_node_id,
+      graph.nodeIdsByFlowNodeId.get('waitTime-1'),
+      'facade restore puts the enrollment back at its exact pre-reply position',
+    );
+    assert.equal(restored.held_node_id, null);
+    assert.equal(restored.reply_thread_id, null, 'Auto Reply facade restore never branches');
+
+    const resumeFloorMs = Date.parse(`${returnDate}T12:00:00.000Z`);
+    assert.ok(
+      Date.parse(restored.next_run_at) >= Math.max(resumeFloorMs, Date.parse(heldNextRunAt)),
+      'facade restore honors the chosen resume time and the original wait',
+    );
+
+    const thread = await getThreadRow(harness, threadId);
+    assert.equal(thread.category, 'Auto Reply');
+    assert.equal(thread.out_of_office, true);
+
+    const { data: restoredJob } = await harness.supabase
+      .from('message_jobs')
+      .select('status, scheduled_at')
+      .eq('id', seeded.queuedJobId)
+      .single();
+    assert.equal(restoredJob?.status, 'queued');
+    assert.ok(Date.parse(restoredJob!.scheduled_at) >= resumeFloorMs);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test('no reply ever: enrollment walks to the categorizer and parks; sweep never wakes it', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-no-reply') });
   resetCategorizerLlmFailureTracking();

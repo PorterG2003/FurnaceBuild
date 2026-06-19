@@ -83,18 +83,23 @@ function MessagePanelHeaderSkeleton() {
       className="px-5 py-3.5 border-b border-[#2A2A2A] bg-[#0D0D0D]"
       style={{ borderBottomWidth: 1 }}
     >
-      <View className="flex-row items-center justify-between gap-3">
+      <View className="flex-row items-start justify-between gap-3">
         {/* Left: name + email (tight between) */}
         <View className="flex-1 min-w-0">
           <Skeleton style={{ height: 20, borderRadius: 4, marginBottom: 2, maxWidth: 200 }} />
           <Skeleton style={{ height: 14, borderRadius: 4, maxWidth: 260 }} />
         </View>
         {/* Right: toolbar */}
-        <View className="flex-row items-center gap-2 flex-shrink-0">
-          <Skeleton style={{ width: 48, height: 24, borderRadius: 6 }} />
-          <Skeleton style={{ width: 72, height: 24, borderRadius: 6 }} />
-          <Skeleton style={{ width: 100, height: 28, borderRadius: 8 }} />
-          <Skeleton style={{ width: 56, height: 28, borderRadius: 8 }} />
+        <View className="flex-row items-center gap-2 min-w-0" style={{ flexShrink: 1 }}>
+          <View className="flex-row items-center gap-2 shrink-0">
+            <Skeleton style={{ width: 48, height: 24, borderRadius: 6 }} />
+            <Skeleton style={{ width: 72, height: 24, borderRadius: 6 }} />
+          </View>
+          <View className="flex-row items-center gap-2 flex-1 min-w-0">
+            <Skeleton style={{ width: 112, height: 28, borderRadius: 8 }} />
+          </View>
+          <Skeleton style={{ width: 96, height: 28, borderRadius: 8 }} />
+          <Skeleton style={{ width: 20, height: 20, borderRadius: 10 }} />
         </View>
       </View>
     </View>

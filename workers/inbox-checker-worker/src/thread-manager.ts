@@ -10,6 +10,7 @@ import {
   classifyBounce,
 } from './bounce-detection/index.js';
 import { isAutoReplyMessage } from './message-processor.js';
+import { emitClassifyReplyJob } from './emit-classify-reply-job.js';
 import { emitEmailReceivedNotification } from './emit-notification-event.js';
 import { emitWebhookEvent } from './emit-webhook-event.js';
 
@@ -43,12 +44,17 @@ const OOO_CLEAR_FOR_NEW_INBOUND_REPLY = {
 
 const CATEGORIZER_CACHE_TTL_MS = 60 * 1000;
 
+type CategorizerConfig = {
+  hasCategorizer: boolean;
+  useAi: boolean;
+};
+
 /**
  * Thread manager for creating email threads and messages
  */
 export class ThreadManager {
   /** Per-campaign "flow has a categorizer node" cache (TTL = one worker tick). */
-  private categorizerCache = new Map<string, { value: boolean; expiresAt: number }>();
+  private categorizerCache = new Map<string, { value: CategorizerConfig; expiresAt: number }>();
 
   constructor(private supabase: SupabaseClient) {}
 
@@ -56,7 +62,7 @@ export class ThreadManager {
    * Whether the campaign's flow contains a live categorizer node.
    * Cached per campaign for roughly one worker tick.
    */
-  private async campaignHasCategorizer(campaignId: string): Promise<boolean> {
+  private async getCampaignCategorizerConfig(campaignId: string): Promise<CategorizerConfig> {
     const cached = this.categorizerCache.get(campaignId);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.value;
@@ -64,7 +70,7 @@ export class ThreadManager {
 
     const { data, error } = await this.supabase
       .from('nodes')
-      .select('id')
+      .select('id, node_data')
       .eq('campaign_id', campaignId)
       .eq('node_type', 'aiCategorizer')
       .is('deleted_at', null)
@@ -73,10 +79,14 @@ export class ThreadManager {
     if (error) {
       // Fail open to the legacy stop path; do not cache errors.
       console.error(`[INBOX CHECKER] Failed to check categorizer for campaign ${campaignId}:`, error);
-      return false;
+      return { hasCategorizer: false, useAi: false };
     }
 
-    const value = (data?.length ?? 0) > 0;
+    const row = data?.[0] as { node_data?: Record<string, unknown> | null } | undefined;
+    const value = {
+      hasCategorizer: (data?.length ?? 0) > 0,
+      useAi: row?.node_data?.use_ai === true,
+    };
     this.categorizerCache.set(campaignId, { value, expiresAt: Date.now() + CATEGORIZER_CACHE_TTL_MS });
     return value;
   }
@@ -475,6 +485,23 @@ export class ThreadManager {
       threadCategoryPatch = { category: null, category_source: null };
     }
 
+    const threadUpdateBase = {
+      has_reply: true,
+      last_message_at: message.date.toISOString(),
+      participants: Array.from(new Set([
+        ...(thread.participants || []),
+        message.from.address,
+        ...message.to.map((t) => t.address),
+      ])),
+      conversation_status: inboundIsAutoReply ? 'closed' : 'open',
+      conversation_status_source: 'system',
+      classification_status: inboundIsAutoReply ? 'complete' : 'pending',
+      classification_requested_at: message.date.toISOString(),
+      classification_completed_at: inboundIsAutoReply ? message.date.toISOString() : null,
+      ...OOO_CLEAR_FOR_NEW_INBOUND_REPLY,
+      ...threadCategoryPatch,
+    };
+
     // Update thread: set has_reply = true, update last_message_at
     // Recalculate message_count from actual count to avoid race conditions
     const { count: actualMessageCount, error: countError } = await this.supabase
@@ -489,38 +516,24 @@ export class ThreadManager {
       await this.supabase
         .from('email_threads')
         .update({
-          has_reply: true,
-          last_message_at: message.date.toISOString(),
+          ...threadUpdateBase,
           message_count: fallbackCount,
-          participants: Array.from(new Set([
-            ...(thread.participants || []),
-            message.from.address,
-            ...message.to.map(t => t.address),
-          ])),
-          ...OOO_CLEAR_FOR_NEW_INBOUND_REPLY,
-          ...threadCategoryPatch,
         })
         .eq('id', thread.id);
     } else {
       await this.supabase
         .from('email_threads')
         .update({
-          has_reply: true,
-          last_message_at: message.date.toISOString(),
+          ...threadUpdateBase,
           message_count: actualMessageCount || 1, // Use actual count to avoid race conditions
-          participants: Array.from(new Set([
-            ...(thread.participants || []),
-            message.from.address,
-            ...message.to.map(t => t.address),
-          ])),
-          ...OOO_CLEAR_FOR_NEW_INBOUND_REPLY,
-          ...threadCategoryPatch,
         })
         .eq('id', thread.id);
     }
 
     // Only act on the enrollment if this is a reply to the original sent message
     // (not a reply to a reply)
+    let queueHasCategorizer = false;
+    let queueUseAi = false;
     if (isReplyToOriginal && originalJob) {
       const isCampaignReply =
         (originalJob as any).message_type !== 'inbox_reply' &&
@@ -533,10 +546,13 @@ export class ThreadManager {
       // hard stop. Any failure falls back to the legacy stop (safe: halts
       // outbound for someone who replied).
       let parkStatus: string | null = null;
-      const categorizerFlow =
-        isCampaignReply &&
-        !!originalJob.enrollment_id &&
-        (await this.campaignHasCategorizer(originalJob.campaign_id));
+      const categorizerConfig =
+        isCampaignReply && !!originalJob.enrollment_id && originalJob.campaign_id
+          ? await this.getCampaignCategorizerConfig(originalJob.campaign_id)
+          : { hasCategorizer: false, useAi: false };
+      const categorizerFlow = isCampaignReply && !!originalJob.enrollment_id && categorizerConfig.hasCategorizer;
+      queueHasCategorizer = categorizerConfig.hasCategorizer;
+      queueUseAi = categorizerConfig.useAi;
       if (categorizerFlow && !options?.isUnsubscribe) {
         const { data: parkResult, error: parkError } = await this.supabase.rpc(
           'park_or_advance_enrollment_on_reply',
@@ -642,6 +658,20 @@ export class ThreadManager {
       fromName: message.from.name || null,
       subject: message.subject,
       receivedAt: emailMessage.received_at,
+    });
+
+    if (!queueHasCategorizer && thread.campaign_id) {
+      const fallbackCategorizerConfig = await this.getCampaignCategorizerConfig(thread.campaign_id);
+      queueHasCategorizer = fallbackCategorizerConfig.hasCategorizer;
+      queueUseAi = fallbackCategorizerConfig.useAi;
+    }
+    await emitClassifyReplyJob({
+      emailMessageId: emailMessage.id,
+      threadId: thread.id,
+      enrollmentId: thread.enrollment_id ?? null,
+      campaignId: thread.campaign_id ?? null,
+      hasCategorizer: queueHasCategorizer,
+      useAi: queueUseAi,
     });
 
     if (isReplyToOriginal && originalJob) {

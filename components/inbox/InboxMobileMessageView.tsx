@@ -8,8 +8,7 @@ import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
-import type { PendingReplyInfo } from './InboxMessageList';
-import type { ThreadAutoReplyPipelineState } from '@/lib/supabase/services';
+import type { PendingReplyInfo, ThreadStatusCalloutProps } from './InboxMessageList';
 
 export interface InboxMobileMessagePaneProps {
   showMessagePaneSkeleton: boolean;
@@ -30,6 +29,8 @@ export interface InboxMobileMessagePaneProps {
   onBlock: (() => void) | undefined;
   onMarkOutOfOffice?: (() => void) | undefined;
   onReplaceLead?: (() => void) | undefined;
+  onCloseConversation?: (() => void) | undefined;
+  onOpenConversation?: (() => void) | undefined;
   onOpenLeadDetail?: (() => void) | undefined;
   onOpenTagsPanel: (() => void) | undefined;
   category: string | null;
@@ -41,10 +42,10 @@ export interface InboxMobileMessagePaneProps {
   onDownloadAttachment: ((emailMessageId: string, part: string, filename: string) => Promise<void>) | undefined;
   onFetchAttachmentPreview: ((emailMessageId: string, part: string) => Promise<Blob | null>) | undefined;
   pendingReplies: PendingReplyInfo[];
-  autoReplyPipelineState?: ThreadAutoReplyPipelineState | null;
   onRetryFailedReply: (jobId: string) => void;
   onSendImmediately: (jobId: string) => void;
   onCancelPendingOutbound: (jobId: string) => void;
+  threadStatusCallout?: ThreadStatusCalloutProps | null;
 }
 
 export interface InboxMobileMessageViewMobileProps {
@@ -78,6 +79,8 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
     onBlock,
     onMarkOutOfOffice,
     onReplaceLead,
+    onCloseConversation,
+    onOpenConversation,
     onOpenLeadDetail,
     onOpenTagsPanel,
     category,
@@ -89,10 +92,10 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
     onDownloadAttachment,
     onFetchAttachmentPreview,
     pendingReplies,
-    autoReplyPipelineState,
     onRetryFailedReply,
     onSendImmediately,
     onCancelPendingOutbound,
+    threadStatusCallout,
   } = messagePane;
 
   const { mobileMessageViewTitle, onBack, onOpenMessageActions } = mobile;
@@ -147,6 +150,8 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       onBlock={onBlock}
       onMarkOutOfOffice={onMarkOutOfOffice}
       onReplaceLead={onReplaceLead}
+      onCloseConversation={onCloseConversation}
+      onOpenConversation={onOpenConversation}
       onOpenLeadDetail={onOpenLeadDetail}
       accountId={accountId}
       onOpenTagsPanel={onOpenTagsPanel}
@@ -169,10 +174,10 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       onDownloadAttachment={onDownloadAttachment}
       onFetchAttachmentPreview={onFetchAttachmentPreview}
       pendingReplies={pendingReplies}
-      autoReplyPipelineState={autoReplyPipelineState}
       onRetryFailedReply={onRetryFailedReply}
       onSendImmediately={onSendImmediately}
       onCancelPendingOutbound={onCancelPendingOutbound}
+      threadStatusCallout={threadStatusCallout}
     />
   );
 }

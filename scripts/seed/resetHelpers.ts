@@ -4,6 +4,11 @@ import {
   type OooInboxCaseKey,
 } from './constants/oooMixedInbox';
 import {
+  DEFAULT_SEED_SMART_HANDLING_AI_CAMPAIGN_ID,
+  DEFAULT_SEED_SMART_HANDLING_MANUAL_CAMPAIGN_ID,
+  smartHandlingMailboxLocalPart,
+} from './constants/smartHandlingFlow';
+import {
   DEV_DEFAULT_CAMPAIGN_IDS,
   DEV_DEFAULT_MAILBOX_SPECS,
 } from '../../lib/test/campaign/productionLikeSeed';
@@ -14,7 +19,7 @@ import {
 } from './theme/falloutOooCopy';
 import type { SeedContext } from './types';
 
-export type ResetScope = 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default';
+export type ResetScope = 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default' | 'smart-handling-flow';
 
 export type ScopePlan = {
   scope: ResetScope;
@@ -36,7 +41,7 @@ export type ScopeCounts = {
 
 export function resolveScopePlans(
   accountId: string,
-  requestedScope: 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default' | 'all' | null
+  requestedScope: 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default' | 'smart-handling-flow' | 'all' | null
 ): ScopePlan[] {
   const plans: ScopePlan[] = [];
   const wantCampaignSmoke =
@@ -49,10 +54,12 @@ export function resolveScopePlans(
     (!requestedScope && !!process.env.SEED_OOO_CAMPAIGN_ID);
   const wantDevDefault =
     requestedScope === 'dev-default' || requestedScope === 'all';
+  const wantSmartHandling =
+    requestedScope === 'smart-handling-flow' || requestedScope === 'all';
 
-  if (!wantCampaignSmoke && !wantOoo && !wantDevDefault) {
+  if (!wantCampaignSmoke && !wantOoo && !wantDevDefault && !wantSmartHandling) {
     throw new Error(
-      'seed:reset requires an explicit scope (--scope=campaign-smoke|ooo-mixed-inbox|dev-default|all) or at least one scoped campaign env (SEED_CAMPAIGN_ID / SEED_OOO_CAMPAIGN_ID).'
+      'seed:reset requires an explicit scope (--scope=campaign-smoke|ooo-mixed-inbox|dev-default|smart-handling-flow|all) or at least one scoped campaign env (SEED_CAMPAIGN_ID / SEED_OOO_CAMPAIGN_ID).'
     );
   }
 
@@ -94,6 +101,31 @@ export function resolveScopePlans(
         mailboxEmails: DEV_DEFAULT_MAILBOX_SPECS.map((mailbox) => mailbox.emailAddress),
       });
     }
+  }
+
+  if (wantSmartHandling) {
+    const manualCampaignId =
+      process.env.SEED_SMART_HANDLING_MANUAL_CAMPAIGN_ID?.trim() ||
+      DEFAULT_SEED_SMART_HANDLING_MANUAL_CAMPAIGN_ID;
+    const aiCampaignId =
+      process.env.SEED_SMART_HANDLING_AI_CAMPAIGN_ID?.trim() ||
+      DEFAULT_SEED_SMART_HANDLING_AI_CAMPAIGN_ID;
+    plans.push({
+      scope: 'smart-handling-flow',
+      campaignId: manualCampaignId,
+      accountId,
+      mailboxEmails: [
+        `${smartHandlingMailboxLocalPart('manual', manualCampaignId)}@furnace.test`,
+      ],
+    });
+    plans.push({
+      scope: 'smart-handling-flow',
+      campaignId: aiCampaignId,
+      accountId,
+      mailboxEmails: [
+        `${smartHandlingMailboxLocalPart('ai', aiCampaignId)}@furnace.test`,
+      ],
+    });
   }
 
   return plans;

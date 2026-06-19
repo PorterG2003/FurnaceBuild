@@ -13,7 +13,6 @@ import { openLeadDetail } from '@/lib/leads/navigation';
 import {
   addTagToThread,
   removeTagFromThread,
-  updateThreadCategory,
 } from '@/lib/supabase/services';
 import { fetchAttachment } from '@/lib/services/attachments';
 import { getAccessToken } from '@/lib/services/auth-token';
@@ -30,7 +29,11 @@ import {
 } from '@/components/inbox';
 import { getDisplayBody } from '@/lib/email/index';
 import { resolveThreadCardTitle, resolveThreadRecipientEmail } from '@/lib/inbox';
+import { buildReplaceLeadPrefill } from '@/lib/inbox/replaceLeadPrefill';
 import { parseOutOfOfficeReturnDate } from '@/lib/inbox/parseOutOfOfficeReturnDate';
+import { parseSmartHandlingMetadata } from '@/lib/inbox/smartHandling';
+import { resolveThreadStatusCallout } from '@/lib/inbox/threadStatusCallout';
+import { closeConversation, reopenConversation, updateThreadCategory } from '@/lib/supabase/services';
 import {
   buildInboxInternalThreadHref,
   buildInboxListHref,
@@ -45,6 +48,7 @@ import { useInboxLoadingPolicy } from '@/hooks/useInboxLoadingPolicy';
 import { useInboxRouteAccess } from '@/hooks/useInboxRouteAccess';
 import { useInboxComposer } from '@/hooks/useInboxComposer';
 import { useInboxFilterUI } from '@/hooks/useInboxFilterUI';
+import { useInboxThreadActions } from '@/hooks/useInboxThreadActions';
 import outputs from '@/amplify_outputs.json';
 
 const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
@@ -142,6 +146,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     threadsError,
     initialThreadsLoadSettled,
     messagesLoading,
+    messagesLoadedForThreadId,
     messagesError,
     refreshing,
     threadSearchQuery,
@@ -152,7 +157,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     tagFilterIds,
     campaignTagFilterIds,
     categoryFilter,
-    includeOutOfOfficeFilter,
+    conversationStatusFilter,
     hasMoreThreads,
     loadingMoreThreads,
     mailboxes,
@@ -192,6 +197,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     threadCount: threads.length,
     threadsError,
     messagesLoading,
+    messagesLoadedForThreadId,
     hasActiveFilters,
     refreshing,
   });
@@ -244,7 +250,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
   const setTagFilterIds = wrapFilterChange(inboxData.setTagFilterIds);
   const setCampaignTagFilterIds = wrapFilterChange(inboxData.setCampaignTagFilterIds);
   const setCategoryFilter = wrapFilterChange(inboxData.setCategoryFilter);
-  const setIncludeOutOfOfficeFilter = wrapFilterChange(inboxData.setIncludeOutOfOfficeFilter);
+  const setConversationStatusFilter = wrapFilterChange(inboxData.setConversationStatusFilter);
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
@@ -263,18 +269,14 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     openFilterMenu,
   } = useInboxFilterUI();
   const [blockModalVisible, setBlockModalVisible] = useState(false);
-  const [oooModalVisible, setOooModalVisible] = useState(false);
-  const [replaceLeadModalVisible, setReplaceLeadModalVisible] = useState(false);
   const [tagsPanelVisible, setTagsPanelVisible] = useState(false);
   const [showMessageActionsSheet, setShowMessageActionsSheet] = useState(false);
   const [infoSheetVisible, setInfoSheetVisible] = useState(false);
+  const [smartHandlingDismissedForCurrentView, setSmartHandlingDismissedForCurrentView] = useState(false);
   const [blockedRecipientConfirm, setBlockedRecipientConfirm] = useState<{
     mode: 'reply' | 'forward';
     onConfirm: () => void;
   } | null>(null);
-
-  /** Set true when user chooses Replace lead from the message actions sheet; consumed when that sheet finishes closing. */
-  const pendingOpenReplaceLeadRef = useRef(false);
 
   const composer = useInboxComposer({
     accountId,
@@ -327,6 +329,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     forwardHtmlDraft,
     setForwardHtmlDraft,
     replyRichInitialContent,
+    setReplyRichInitialContent,
     forwardRichInitialContent,
     switchToRichConfirmMode,
     setSwitchToRichConfirmMode,
@@ -441,6 +444,117 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     return parsed ? format(parsed, 'yyyy-MM-dd') : null;
   }, [latestReceivedInbound]);
 
+  const smartHandlingMetadata = useMemo(
+    () => parseSmartHandlingMetadata(selectedThread?.handling_metadata ?? null),
+    [selectedThread?.handling_metadata]
+  );
+  const replaceLeadPrefill = useMemo(
+    () =>
+      buildReplaceLeadPrefill({
+        metadata: smartHandlingMetadata,
+        inboundFromEmail: latestReceivedInbound?.from_email,
+      }),
+    [smartHandlingMetadata, latestReceivedInbound?.from_email]
+  );
+
+  const dismissSmartHandling = useCallback(() => {
+    setSmartHandlingDismissedForCurrentView(true);
+  }, []);
+
+  const buildSuggestedReplyHtml = useCallback((value: string) => {
+    const escaped = value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return `<p>${escaped.replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br/>')}</p>`;
+  }, []);
+
+  const handleSetThreadCategory = useCallback(
+    async (cat: string | null) => {
+      if (!selectedThreadId || !accountId) return;
+      try {
+        await updateThreadCategory(selectedThreadId, cat);
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.id === selectedThreadId
+              ? {
+                  ...t,
+                  category: cat,
+                  category_source: cat ? 'user' : null,
+                }
+              : t,
+          )
+        );
+      } catch (e) {
+        console.error('Failed to update category:', e);
+        toast.error(e instanceof Error ? e.message : 'Failed to update category.');
+      }
+    },
+    [selectedThreadId, accountId, setThreads, toast]
+  );
+
+  const threadActions = useInboxThreadActions({
+    accountId,
+    selectedThreadId,
+    selectedThread,
+    isMobile,
+    router,
+    smartHandlingMetadata,
+    selectedThreadProspectEmails,
+    latestReceivedInbound,
+    messages,
+    setThreads,
+    loadThreads,
+    loadMessages,
+    loadBlockList,
+    setCategory: handleSetThreadCategory,
+    openReplyComposer,
+    openForwardComposer,
+    setReplyHtmlDraft,
+    setReplyRichInitialContent,
+    buildSuggestedReplyHtml,
+    dismissSmartHandling,
+    toast,
+  });
+
+  const closeSelectedConversation = useCallback(
+    async (source: 'user' | 'system' = 'user') => {
+      if (!selectedThreadId) return;
+      await closeConversation(selectedThreadId, source);
+      setThreads((prev) =>
+        prev.map((thread) =>
+          thread.id === selectedThreadId
+            ? {
+                ...thread,
+                conversation_status: 'closed',
+                conversation_status_source: source,
+              }
+            : thread,
+        ),
+      );
+    },
+    [selectedThreadId, setThreads]
+  );
+
+  const openSelectedConversation = useCallback(
+    async (source: 'user' | 'system' = 'user') => {
+      if (!selectedThreadId) return;
+      await reopenConversation(selectedThreadId, source);
+      setThreads((prev) =>
+        prev.map((thread) =>
+          thread.id === selectedThreadId
+            ? {
+                ...thread,
+                conversation_status: 'open',
+                conversation_status_source: source,
+              }
+            : thread,
+        ),
+      );
+    },
+    [selectedThreadId, setThreads]
+  );
+
   const scrollMessagesToEnd = useCallback((reason: string, nextHeight?: number) => {
     if (typeof nextHeight === 'number') {
       lastContentHeightRef.current = nextHeight;
@@ -460,29 +574,10 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     }
   }, [scrollMessagesToEnd]);
 
-  const handleSetThreadCategory = useCallback(
-    async (cat: string | null) => {
-      if (!selectedThreadId || !accountId) return;
-      try {
-        await updateThreadCategory(selectedThreadId, cat);
-        setThreads((prev) =>
-          prev.map((t) => (t.id === selectedThreadId ? { ...t, category: cat } : t))
-        );
-      } catch (e) {
-        console.error('Failed to update category:', e);
-      }
-    },
-    [selectedThreadId, accountId, setThreads]
-  );
-
-  const openReplaceLead = useCallback(() => {
-    if (!accountId || !selectedThreadId || !selectedThread?.lead_id) return;
-    if (isMobile) {
-      router.push({ pathname: '/inbox/replace-lead', params: { thread: selectedThreadId } });
-      return;
-    }
-    setReplaceLeadModalVisible(true);
-  }, [accountId, selectedThread?.lead_id, selectedThreadId, isMobile, router]);
+  const effectiveOooPrefillYmd =
+    threadActions.oooModalPrefillOverride !== undefined
+      ? threadActions.oooModalPrefillOverride
+      : oooPrefillYmd;
 
   const openLeadDetailFromInbox = useCallback(() => {
     if (!selectedThread?.lead_id) return;
@@ -506,15 +601,43 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
 
   useEffect(() => {
     if (showMessageActionsSheet) {
-      pendingOpenReplaceLeadRef.current = false;
+      threadActions.clearQueuedOpen();
     }
-  }, [showMessageActionsSheet]);
+  }, [showMessageActionsSheet, threadActions.clearQueuedOpen]);
 
-  const handleMessageActionsSheetAfterClose = useCallback(() => {
-    if (!pendingOpenReplaceLeadRef.current) return;
-    pendingOpenReplaceLeadRef.current = false;
-    openReplaceLead();
-  }, [openReplaceLead]);
+  useEffect(() => {
+    setSmartHandlingDismissedForCurrentView(false);
+  }, [selectedThreadId]);
+
+  const threadStatusCalloutView = useMemo(() => {
+    if (!selectedThreadId || !selectedThread) return null;
+
+    const resolved = resolveThreadStatusCallout({
+      conversationStatus: selectedThread.conversation_status,
+      classificationStatus: selectedThread.classification_status,
+      category: selectedThread.category,
+      categorySource: selectedThread.category_source,
+      handlingMetadata: smartHandlingMetadata,
+      pipelineState: autoReplyPipelineState,
+      dismissedForCurrentView: smartHandlingDismissedForCurrentView,
+    });
+
+    if (!resolved) return null;
+
+    return {
+      ...resolved,
+      onAction: resolved.kind === 'manual_actions' ? threadActions.runFromSmartHandling : undefined,
+      onDismiss: resolved.dismissible ? () => dismissSmartHandling() : undefined,
+    };
+  }, [
+    autoReplyPipelineState,
+    dismissSmartHandling,
+    threadActions.runFromSmartHandling,
+    selectedThread,
+    selectedThreadId,
+    smartHandlingDismissedForCurrentView,
+    smartHandlingMetadata,
+  ]);
 
   const handleTagCreated = useCallback(
     async (tag: ThreadTag) => {
@@ -765,9 +888,17 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       accountId,
       onBlock: accountId ? () => setBlockModalVisible(true) : undefined,
       onMarkOutOfOffice:
-        accountId && selectedThreadId ? () => setOooModalVisible(true) : undefined,
+        accountId && selectedThreadId
+          ? () => void threadActions.runFromMessageMenu('mark_out_of_office')
+          : undefined,
       onReplaceLead:
-        accountId && selectedThread?.lead_id ? openReplaceLead : undefined,
+        accountId && selectedThread?.lead_id
+          ? () => void threadActions.runFromMessageMenu('replace_lead')
+          : undefined,
+      onCloseConversation:
+        selectedThread?.conversation_status !== 'closed' ? () => void closeSelectedConversation('user') : undefined,
+      onOpenConversation:
+        selectedThread?.conversation_status === 'closed' ? () => void openSelectedConversation('user') : undefined,
       onOpenLeadDetail: selectedThread?.lead_id ? openLeadDetailFromInbox : undefined,
       onOpenTagsPanel: selectedThreadId && accountId ? () => setTagsPanelVisible(true) : undefined,
       category: selectedThread?.category ?? null,
@@ -779,14 +910,15 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       onDownloadAttachment: FETCH_ATTACHMENT_URL ? handleDownloadAttachment : undefined,
       onFetchAttachmentPreview: FETCH_ATTACHMENT_URL ? handleFetchAttachmentBlob : undefined,
       pendingReplies: pendingRepliesInfo,
-      autoReplyPipelineState,
       onRetryFailedReply: retryFailedReply,
       onSendImmediately: sendPendingImmediately,
       onCancelPendingOutbound: cancelPendingOutbound,
+      threadStatusCallout: loadingPolicy.messagePaneContentReady ? threadStatusCalloutView : null,
     }),
     [
       loadingPolicy.showMessagePaneSkeleton,
       loadingPolicy.showMessageBodySkeleton,
+      loadingPolicy.messagePaneContentReady,
       selectedThread,
       displayMessages,
       messagesError,
@@ -801,8 +933,9 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       selectedThreadReplacementSummary,
       accountId,
       setBlockModalVisible,
-      setOooModalVisible,
-      openReplaceLead,
+      threadActions.runFromMessageMenu,
+      closeSelectedConversation,
+      openSelectedConversation,
       openLeadDetailFromInbox,
       setTagsPanelVisible,
       handleSetThreadCategory,
@@ -812,10 +945,10 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       handleDownloadAttachment,
       handleFetchAttachmentBlob,
       pendingRepliesInfo,
-      autoReplyPipelineState,
       retryFailedReply,
       sendPendingImmediately,
       cancelPendingOutbound,
+      threadStatusCalloutView,
     ]
   );
 
@@ -919,12 +1052,12 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         setCampaignFilterId,
         categoryFilter,
         setCategoryFilter,
+        conversationStatusFilter,
+        setConversationStatusFilter,
         tagFilterIds,
         setTagFilterIds,
         campaignTagFilterIds,
         setCampaignTagFilterIds,
-        includeOutOfOfficeFilter,
-        setIncludeOutOfOfficeFilter,
         mailboxes,
         campaigns,
         accountTags,
@@ -963,14 +1096,28 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         onUpdateTag: handleUpdateTag,
         onDeleteTag: handleDeleteTag,
         onMarkOutOfOffice:
-          accountId && selectedThreadId ? () => setOooModalVisible(true) : undefined,
+          accountId && selectedThreadId
+            ? () => void threadActions.runFromMessageMenu('mark_out_of_office')
+            : undefined,
         onReplaceLead:
           accountId && selectedThread?.lead_id
             ? () => {
-                pendingOpenReplaceLeadRef.current = true;
+                threadActions.queueDeferredOpen('replace_lead');
               }
             : undefined,
-        onMessageActionsSheetAfterClose: handleMessageActionsSheetAfterClose,
+        onCloseConversation:
+          selectedThread?.conversation_status !== 'closed'
+            ? () => {
+                void closeSelectedConversation('user');
+              }
+            : undefined,
+        onOpenConversation:
+          selectedThread?.conversation_status === 'closed'
+            ? () => {
+                void openSelectedConversation('user');
+              }
+            : undefined,
+        onMessageActionsSheetAfterClose: threadActions.consumeQueuedOpen,
       },
     }),
     [
@@ -987,12 +1134,12 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       setCampaignFilterId,
       categoryFilter,
       setCategoryFilter,
+      conversationStatusFilter,
+      setConversationStatusFilter,
       tagFilterIds,
       setTagFilterIds,
       campaignTagFilterIds,
       setCampaignTagFilterIds,
-      includeOutOfOfficeFilter,
-      setIncludeOutOfOfficeFilter,
       mailboxes,
       campaigns,
       accountTags,
@@ -1026,12 +1173,13 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       handleRemoveTagFromSelectedThread,
       handleUpdateTag,
       handleDeleteTag,
-      includeOutOfOfficeFilter,
-      setIncludeOutOfOfficeFilter,
-      setOooModalVisible,
+      threadActions.runFromMessageMenu,
+      threadActions.queueDeferredOpen,
+      threadActions.consumeQueuedOpen,
       selectedThread?.lead_id,
-      setReplaceLeadModalVisible,
-      handleMessageActionsSheetAfterClose,
+      selectedThread?.conversation_status,
+      closeSelectedConversation,
+      openSelectedConversation,
     ]
   );
 
@@ -1092,30 +1240,30 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
 
       {accountId && selectedThreadId && selectedThread ? (
         <MarkOutOfOfficeModal
-          visible={oooModalVisible}
-          onClose={() => setOooModalVisible(false)}
+          key={`${selectedThreadId}:${threadActions.pendingOooActionId ?? 'mark_out_of_office'}`}
+          visible={threadActions.oooModalVisible}
+          onClose={threadActions.closeOooModal}
           threadId={selectedThreadId}
-          enrollmentId={selectedThread.enrollment_id}
-          prefilledReturnDateYmd={oooPrefillYmd}
+          prefilledReturnDateYmd={effectiveOooPrefillYmd}
           isCurrentlyOutOfOffice={!!selectedThread.out_of_office}
-          onSaved={() => {
-            void loadThreads();
-            void loadMessages(selectedThreadId, { silent: true });
-          }}
+          markAutoReplyOnSave
+          onSaved={() =>
+            threadActions.completeDeferredAction(
+              threadActions.pendingOooActionId ?? 'mark_out_of_office',
+            )
+          }
         />
       ) : null}
 
       {!isMobile && accountId && selectedThread?.lead_id ? (
         <ReplaceLeadModal
-          visible={replaceLeadModalVisible}
-          onClose={() => setReplaceLeadModalVisible(false)}
+          visible={threadActions.replaceLeadModalVisible}
+          onClose={() => threadActions.setReplaceLeadModalVisible(false)}
           oldLead={leadByIdMap[selectedThread.lead_id] ?? null}
+          prefill={replaceLeadPrefill}
           sourceMessageId={latestReceivedInbound?.id ?? null}
-          onReplaced={() => {
-            void loadThreads();
-            if (selectedThreadId) {
-              void loadMessages(selectedThreadId, { silent: true });
-            }
+          onReplaced={(_result, completion) => {
+            void threadActions.completeDeferredAction('replace_lead', completion);
           }}
         />
       ) : null}

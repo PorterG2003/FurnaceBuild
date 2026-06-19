@@ -21,6 +21,7 @@ backend:
         - cd amplify/functions/leadsExportJob && npm install && cd - || (echo "Failed to install leadsExportJob dependencies" && exit 1)
         - cd amplify/functions/googlePlaces && npm install && cd - || (echo "Failed to install googlePlaces dependencies" && exit 1)
         - cd amplify/functions/processNotificationEvent && npm install && cd - || (echo "Failed to install processNotificationEvent dependencies" && exit 1)
+        - cd amplify/functions/classifyReply && npm install && cd - || (echo "Failed to install classifyReply dependencies" && exit 1)
         - cd amplify/functions/fluxCompetitorAuditStart && npm install && cd - || (echo "Failed to install fluxCompetitorAuditStart dependencies" && exit 1)
         - cd amplify/functions/fluxCompetitorAuditJob && npm install && cd - || (echo "Failed to install fluxCompetitorAuditJob dependencies" && exit 1)
         - cd amplify/functions/fluxGenerate && npm install && cd - || (echo "Failed to install fluxGenerate dependencies" && exit 1)
@@ -90,6 +91,16 @@ backend:
               echo "Or set AMPLIFY_EMBED_NOTIFICATION_QUEUE or AMPLIFY_NOTIFICATION_QUEUE_ARN (see docs/notifications/NOTIFICATIONS.md)."
               exit 1
             fi
+          fi
+          CLASSIFY_EXPORT="FurnaceClassifyReplyQueueArn-$WORKER_ENVIRONMENT"
+          export_value=$(aws cloudformation list-exports \
+            --region "$WORKER_STACK_REGION" \
+            --query "Exports[?Name=='${CLASSIFY_EXPORT}'].Value | [0]" \
+            --output text)
+          if [ -z "$export_value" ] || [ "$export_value" = "None" ]; then
+            echo "Missing CloudFormation export: $CLASSIFY_EXPORT (region $WORKER_STACK_REGION)"
+            echo "Deploy infra/workers for $WORKER_ENVIRONMENT so the classify-reply queue exists."
+            exit 1
           fi
           REQUIRED_SSM_PARAMS=(
             "/furnace/ecs/${WORKER_ENVIRONMENT}/utah-scraper/task-definition-arn"

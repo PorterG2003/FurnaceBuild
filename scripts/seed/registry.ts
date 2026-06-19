@@ -19,6 +19,12 @@ import {
   categorizerFlowBaseGraphModule,
   categorizerFlowRepliesModule,
 } from './scenarios/categorizer-flow/index';
+import {
+  smartHandlingFlowEnvModule,
+  smartHandlingFlowBaseGraphModule,
+  smartHandlingFlowThreadsModule,
+  smartHandlingFlowLiveRepliesModule,
+} from './scenarios/smart-handling-flow/index';
 import { devDefaultScenarioModule } from './scenarios/dev-default';
 import { platformInvitePreviewSeedModule } from './scenarios/platform-invite-preview';
 import { campaignHtmlDemoSeedModule } from './scenarios/campaign-html-demo';
@@ -40,6 +46,10 @@ export const allModules: Record<string, SeedModule> = {
   categorizerFlow_env: categorizerFlowEnvModule,
   categorizerFlow_baseGraph: categorizerFlowBaseGraphModule,
   categorizerFlow_replies: categorizerFlowRepliesModule,
+  smartHandlingFlow_env: smartHandlingFlowEnvModule,
+  smartHandlingFlow_baseGraph: smartHandlingFlowBaseGraphModule,
+  smartHandlingFlow_threads: smartHandlingFlowThreadsModule,
+  smartHandlingFlow_liveReplies: smartHandlingFlowLiveRepliesModule,
   devDefault_seed: devDefaultScenarioModule,
   platformInvitePreview_seed: platformInvitePreviewSeedModule,
   campaignHtmlDemo_seed: campaignHtmlDemoSeedModule,
@@ -56,6 +66,7 @@ export const scenarioModuleIds: Record<string, string[]> = {
   'campaign-html-demo': ['campaignHtmlDemo_seed'],
   'ooo-mixed-inbox': ['oooInbox_oooStates'],
   'categorizer-flow': ['categorizerFlow_replies'],
+  'smart-handling-flow': ['smartHandlingFlow_liveReplies'],
   'platform-invite-preview': ['platformInvitePreview_seed'],
 };
 

@@ -14,6 +14,7 @@ import {
 import { EllipsisVerticalIcon } from 'react-native-heroicons/outline';
 import { BottomSheet } from '@/components/ui/modals';
 import { IconButton } from '@/components/ui/icon-button';
+import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 
 const EDGE_INSET = 8;
@@ -35,6 +36,8 @@ export interface RowOverflowMenuItem {
   icon: MenuIcon;
   accessibilityLabel?: string;
   tone?: 'default' | 'destructive';
+  iconColor?: string;
+  textColor?: string;
 }
 
 export interface RowOverflowMenuProps {
@@ -47,6 +50,10 @@ export interface RowOverflowMenuProps {
   horizontalAlign?: 'start' | 'end';
   triggerContainerClassName?: string;
   triggerContainerStyle?: StyleProp<ViewStyle>;
+  /** Passed to the trigger `IconButton` when `triggerVariant` is `overflow`. */
+  triggerClassName?: string;
+  /** `mobile-actions` matches inbox `MobileHeaderButton` three-dots styling. */
+  triggerVariant?: 'overflow' | 'mobile-actions';
 }
 
 export function RowOverflowMenu({
@@ -59,6 +66,8 @@ export function RowOverflowMenu({
   horizontalAlign = 'start',
   triggerContainerClassName,
   triggerContainerStyle,
+  triggerClassName,
+  triggerVariant = 'overflow',
 }: RowOverflowMenuProps) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isMobile = screenWidth < LAYOUT_BREAKPOINT;
@@ -137,11 +146,8 @@ export function RowOverflowMenu({
 
   const renderItem = useCallback(
     (item: RowOverflowMenuItem, rowClassName: string) => {
-      const color = item.tone === 'destructive' ? '#f87171' : '#9CA3AF';
-      const textClassName =
-        item.tone === 'destructive'
-          ? 'text-red-400 font-instrument-medium text-sm'
-          : 'text-white font-instrument-medium text-sm';
+      const iconColor = item.iconColor ?? (item.tone === 'destructive' ? '#f87171' : '#9CA3AF');
+      const textColor = item.textColor ?? (item.tone === 'destructive' ? '#f87171' : '#FFFFFF');
       const Icon = item.icon;
       return (
         <Pressable
@@ -154,8 +160,10 @@ export function RowOverflowMenu({
           accessibilityRole="button"
           accessibilityLabel={item.accessibilityLabel ?? item.label}
         >
-          <Icon size={18} color={color} />
-          <Text className={textClassName}>{item.label}</Text>
+          <Icon size={18} color={iconColor} />
+          <Text className="font-instrument-medium text-sm" style={{ color: textColor }}>
+            {item.label}
+          </Text>
         </Pressable>
       );
     },
@@ -170,17 +178,29 @@ export function RowOverflowMenu({
         className={triggerContainerClassName ?? 'shrink-0 self-start'}
         style={triggerContainerStyle}
       >
-        <IconButton
-          icon={TriggerIcon}
-          variant="overflow"
-          onPress={(e) => {
-            e?.stopPropagation?.();
-            openMenu();
-          }}
-          disabled={disabled}
-          hitSlop={8}
-          accessibilityLabel={triggerAccessibilityLabel}
-        />
+        {triggerVariant === 'mobile-actions' ? (
+          <MobileHeaderButton
+            variant="actions"
+            onPress={() => openMenu()}
+            disabled={disabled}
+            accessibilityLabel={triggerAccessibilityLabel}
+            className={triggerClassName ?? '!w-8 !h-8'}
+            iconSize={20}
+          />
+        ) : (
+          <IconButton
+            icon={TriggerIcon}
+            variant="overflow"
+            className={triggerClassName}
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              openMenu();
+            }}
+            disabled={disabled}
+            hitSlop={8}
+            accessibilityLabel={triggerAccessibilityLabel}
+          />
+        )}
       </View>
 
       {isMobile ? (

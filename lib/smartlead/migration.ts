@@ -1461,7 +1461,7 @@ function getParticipantName(
   return email.trim().toLowerCase() === leadEmail.trim().toLowerCase() ? leadName : null;
 }
 
-async function upsertSmartleadConversationThread(params: {
+export async function upsertSmartleadConversationThread(params: {
   accountId: string;
   campaignId: string;
   leadId: string;
@@ -1492,6 +1492,8 @@ async function upsertSmartleadConversationThread(params: {
       last_message_at: lastMessageAt,
       message_count: messages.length,
       has_reply: true,
+      conversation_status: 'closed',
+      conversation_status_source: 'system',
       category: category ?? null,
       updated_at: new Date().toISOString(),
     } as any, { onConflict: 'campaign_id,smartlead_lead_id' })

@@ -96,12 +96,30 @@ require_service() {
   fi
 }
 
+get_desired_count() {
+  local service_name="$1"
+  aws ecs describe-services \
+    --cluster "$CLUSTER_NAME" \
+    --services "$service_name" \
+    --region "$REGION" \
+    --query 'services[0].desiredCount' \
+    --output text 2>/dev/null || echo "?"
+}
+
 # Function to restart a service
 restart_service() {
   local service_name="$1"
   local service_type="$2"
+  local desired_count="$3"
 
   echo "🔄 Restarting $service_type ($service_name)..."
+
+  if [ "$desired_count" = "0" ]; then
+    echo "⚠️  $service_type is scaled to 0."
+    echo "   Force-new-deployment will not start a new task while desired count is 0."
+    echo "   Scale it up first: bash scripts/scale-services.sh $ENVIRONMENT 1 1 1"
+    return
+  fi
 
   if ! aws ecs update-service \
     --cluster "$CLUSTER_NAME" \
@@ -117,18 +135,20 @@ restart_service() {
 
 if [ "$TARGET" = "all" ] || [ "$TARGET" = "send-worker" ]; then
   require_service "$SEND_SERVICE_FULL" "SendWorkerService"
-  restart_service "$SEND_SERVICE_FULL" "Send Worker Service"
+  SEND_DESIRED=$(get_desired_count "$SEND_SERVICE_FULL")
+  restart_service "$SEND_SERVICE_FULL" "Send Worker Service" "$SEND_DESIRED"
 fi
 
 if [ "$TARGET" = "all" ] || [ "$TARGET" = "scheduler-worker" ]; then
   require_service "$SCHEDULER_SERVICE_FULL" "SchedulerWorkerService"
-  restart_service "$SCHEDULER_SERVICE_FULL" "Scheduler Worker Service"
+  SCHEDULER_DESIRED=$(get_desired_count "$SCHEDULER_SERVICE_FULL")
+  restart_service "$SCHEDULER_SERVICE_FULL" "Scheduler Worker Service" "$SCHEDULER_DESIRED"
 fi
 
 if [ "$TARGET" = "all" ] || [ "$TARGET" = "inbox-checker-worker" ]; then
   require_service "$INBOX_CHECKER_SERVICE_FULL" "InboxCheckerWorkerService"
-  restart_service "$INBOX_CHECKER_SERVICE_FULL" "Inbox Checker Worker Service"
-  DESIRED=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$INBOX_CHECKER_SERVICE_FULL" --region "$REGION" --query 'services[0].desiredCount' --output text 2>/dev/null || echo "?")
+  DESIRED=$(get_desired_count "$INBOX_CHECKER_SERVICE_FULL")
+  restart_service "$INBOX_CHECKER_SERVICE_FULL" "Inbox Checker Worker Service" "$DESIRED"
   if [ "$DESIRED" = "0" ]; then
     echo "   💡 Inbox checker desired count is 0 - no new task will start until you run: npm run scale:$ENVIRONMENT"
   fi

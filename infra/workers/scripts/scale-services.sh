@@ -32,29 +32,21 @@ fi
 
 CLUSTER_NAME="furnace-cluster-$ENVIRONMENT"
 
-# Get actual service names from CloudFormation stack outputs or ECS
-STACK_NAME="WorkerStack-$(echo "${ENVIRONMENT:0:1}" | tr '[:lower:]' '[:upper:]')${ENVIRONMENT:1}"
-
 echo "🔍 Finding service names in cluster: $CLUSTER_NAME..."
 echo "   Note: Services are isolated by cluster - dev and prod won't mix"
 echo ""
-SEND_SERVICE_FULL=$(aws ecs list-services \
-  --cluster "$CLUSTER_NAME" \
-  --region "$REGION" \
-  --query "serviceArns[?contains(@, 'SendWorker')]" \
-  --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+LIST_SERVICES_ARGS=(--cluster "$CLUSTER_NAME" --region "$REGION" --max-items 100)
+SEND_SERVICE_FULL=$(aws ecs list-services "${LIST_SERVICES_ARGS[@]}" \
+  --query "serviceArns[?contains(@, 'SendWorker')] | [0]" \
+  --output text 2>/dev/null | awk -F'/' '{print $NF}')
 
-SCHEDULER_SERVICE_FULL=$(aws ecs list-services \
-  --cluster "$CLUSTER_NAME" \
-  --region "$REGION" \
-  --query "serviceArns[?contains(@, 'SchedulerWorker')]" \
-  --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+SCHEDULER_SERVICE_FULL=$(aws ecs list-services "${LIST_SERVICES_ARGS[@]}" \
+  --query "serviceArns[?contains(@, 'SchedulerWorker')] | [0]" \
+  --output text 2>/dev/null | awk -F'/' '{print $NF}')
 
-INBOX_CHECKER_SERVICE_FULL=$(aws ecs list-services \
-  --cluster "$CLUSTER_NAME" \
-  --region "$REGION" \
-  --query "serviceArns[?contains(@, 'InboxCheckerWorker')]" \
-  --output text 2>/dev/null | head -1 | awk -F'/' '{print $NF}')
+INBOX_CHECKER_SERVICE_FULL=$(aws ecs list-services "${LIST_SERVICES_ARGS[@]}" \
+  --query "serviceArns[?contains(@, 'InboxCheckerWorker')] | [0]" \
+  --output text 2>/dev/null | awk -F'/' '{print $NF}')
 
 if [ -z "$SEND_SERVICE_FULL" ] || [ "$SEND_SERVICE_FULL" = "None" ]; then
   echo "❌ Error: Could not find SendWorkerService in cluster $CLUSTER_NAME"

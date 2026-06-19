@@ -47,6 +47,40 @@ type SentThreadMessageRecord = {
   attachments?: unknown[] | null;
 };
 
+type NormalizedSendAttachment = {
+  filename: string;
+  contentType: string;
+  content: string;
+};
+
+function normalizeSendAttachments(rawAttachments: unknown[]): NormalizedSendAttachment[] {
+  return rawAttachments
+    .map((att) => {
+      const a = att as {
+        filename?: string;
+        contentType?: string;
+        content_type?: string;
+        content?: string;
+      };
+      return {
+        filename: a.filename ?? 'attachment',
+        contentType: a.contentType ?? a.content_type ?? 'application/octet-stream',
+        content: a.content ?? '',
+      };
+    })
+    .filter((att) => typeof att.content === 'string' && att.content.length > 0);
+}
+
+function buildSentAttachmentMetadata(
+  attachments: Array<{ filename: string; contentType?: string; content: string }>
+): Array<{ filename: string; contentType: string; size: number }> {
+  return attachments.map((att) => ({
+    filename: att.filename,
+    contentType: att.contentType ?? 'application/octet-stream',
+    size: Buffer.from(att.content, 'base64').length,
+  }));
+}
+
 export interface WorkerConfig {
   supabase: SupabaseClient;
   databaseClient: DatabaseClient;
@@ -1504,16 +1538,7 @@ export class SendWorker {
     const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
     const rawAttachments = Array.isArray(md.attachments) ? md.attachments : [];
     // Normalize: support both camelCase (from client) and snake_case (if DB/PostgREST ever returns it)
-    const fileAttachments = rawAttachments
-      .map((att: Record<string, unknown>) => {
-        const a = att as { filename?: string; contentType?: string; content_type?: string; content?: string };
-        return {
-          filename: a.filename ?? 'attachment',
-          contentType: a.contentType ?? a.content_type ?? 'application/octet-stream',
-          content: a.content ?? '',
-        };
-      })
-      .filter((att) => typeof att.content === 'string' && att.content.length > 0);
+    const fileAttachments = normalizeSendAttachments(rawAttachments);
     console.log(`[SEND WORKER] Reply job ${message_job_id} attachments: ${fileAttachments.length} (raw: ${rawAttachments.length})`);
     const replyOptions: ReplyEmailOptions = {
       toEmail: md.to_email || '',
@@ -1568,11 +1593,7 @@ export class SendWorker {
     // Build attachment metadata for email_messages (filename, contentType, size; no base64)
     const replyAttachmentMeta =
       fileAttachments.length > 0
-        ? fileAttachments.map((att: { filename: string; contentType?: string; content: string }) => ({
-            filename: att.filename,
-            contentType: att.contentType ?? 'application/octet-stream',
-            size: Buffer.from(att.content, 'base64').length,
-          }))
+        ? buildSentAttachmentMetadata(fileAttachments)
         : [];
 
     // 5. Insert email_messages (sent reply)
@@ -1632,8 +1653,8 @@ export class SendWorker {
   }
 
   /**
-   * Process an inbox forward job: send forward email to new recipients.
-   * Forward is send-only (no email_messages insert, no email_threads update).
+   * Process an inbox forward job: send forward email to new recipients and
+   * persist the sent message into the existing thread.
    */
   private async processInboxForwardJob(messageJob: MessageJob): Promise<void> {
     const message_job_id = messageJob.id;
@@ -1692,16 +1713,7 @@ export class SendWorker {
     // 3. Send forward via SMTP (no In-Reply-To/References)
     const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
     const rawForwardAttachments = Array.isArray(md.attachments) ? md.attachments : [];
-    const forwardFileAttachments = rawForwardAttachments
-      .map((att: Record<string, unknown>) => {
-        const a = att as { filename?: string; contentType?: string; content_type?: string; content?: string };
-        return {
-          filename: a.filename ?? 'attachment',
-          contentType: a.contentType ?? a.content_type ?? 'application/octet-stream',
-          content: a.content ?? '',
-        };
-      })
-      .filter((att) => typeof att.content === 'string' && att.content.length > 0);
+    const forwardFileAttachments = normalizeSendAttachments(rawForwardAttachments);
     console.log(`[SEND WORKER] Forward job ${message_job_id} attachments: ${forwardFileAttachments.length} (raw: ${rawForwardAttachments.length})`);
     const forwardOptions: ReplyEmailOptions = {
       toEmail: md.to_email || '',
@@ -1727,8 +1739,9 @@ export class SendWorker {
         },
       });
     }
+    let providerMessageId: string;
     try {
-      await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, forwardOptions);
+      providerMessageId = await sendReplyEmail(transporter, mailbox as Mailbox, messageJob, forwardOptions);
       this.smtpPool.markMessageSent(mailbox.id);
     } catch (err: any) {
       if (err.code === 'EAUTH' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT') {
@@ -1738,14 +1751,38 @@ export class SendWorker {
       throw err;
     }
 
-    // 4. Mark message_job sent (no email_messages or email_threads update)
+    const forwardAttachmentMeta =
+      forwardFileAttachments.length > 0
+        ? buildSentAttachmentMetadata(forwardFileAttachments)
+        : [];
+
     const now = new Date().toISOString();
+    await this.recordSentMessageInThread({
+      threadId,
+      messageJobId: message_job_id,
+      fromEmail: mailbox.email_address,
+      fromName: mailbox.display_name ?? null,
+      toEmail: forwardOptions.toEmail,
+      toName: forwardOptions.toName ?? null,
+      cc: forwardOptions.cc ?? null,
+      subject: forwardOptions.subject,
+      bodyText: forwardOptions.bodyText,
+      bodyHtml: forwardOptions.bodyHtml ?? null,
+      messageId: providerMessageId,
+      inReplyTo: null,
+      references: null,
+      receivedAt: now,
+      attachments: forwardAttachmentMeta,
+    });
+
+    // 4. Mark message_job sent after thread persistence succeeds
     await this.supabase
       .from('message_jobs')
       .update({
         status: 'sent',
         status_reason: 'sent_successfully',
         sent_at: now,
+        provider_message_id: providerMessageId,
         updated_at: now,
       })
       .eq('id', message_job_id);

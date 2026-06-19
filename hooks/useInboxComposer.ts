@@ -83,7 +83,7 @@ export interface UseInboxComposerOptions {
   messages: EmailMessage[];
   loadMessages: (threadId: string, options?: { silent?: boolean }) => void;
   blockList: BlockListEntry[];
-  toast: { error: (message: string) => void };
+  toast: { error: (message: string) => void; success: (message: string) => void };
   setBlockedRecipientConfirm: (value: { mode: 'reply' | 'forward'; onConfirm: () => void } | null) => void;
   threadsLoading?: boolean;
 }
@@ -303,6 +303,18 @@ export function useInboxComposer({
             jobStatus.status === 'cancelled' ||
             jobStatus.status === 'blocked'
           ) {
+            if (p.kind === 'forward') {
+              if (jobStatus.status === 'sent') {
+                toast.success(`Forwarded to ${p.toEmail}`);
+              } else {
+                toast.error(
+                  jobStatus.error_message ??
+                    (jobStatus.status === 'blocked'
+                      ? 'Forward was blocked and did not send.'
+                      : 'Forward was cancelled and did not send.')
+                );
+              }
+            }
             setPendingReplies((prev) => prev.filter((x) => x.jobId !== p.jobId));
           } else {
             setPendingReplies((prev) =>
@@ -350,7 +362,7 @@ export function useInboxComposer({
         pollingIntervalRef.current = null;
       }
     };
-  }, [selectedThreadId, threadsLoading, loadMessages]);
+  }, [selectedThreadId, threadsLoading, loadMessages, toast]);
 
   useEffect(() => {
     if (!accountId || !selectedThreadId || threadsLoading) return;

@@ -8,6 +8,7 @@ import {
   extractCampaignSubject,
   extractLeadEmail,
   heuristicMatchJobInSentEntries,
+  isIncompleteMailboxResult,
   matchJobInSentIndex,
   normalizeMessageId,
   type CampaignJobSnapshot,
@@ -145,5 +146,32 @@ describe('campaignSendIntegrity helpers', () => {
     assert.equal(deduped.length, 2);
     assert.equal(deduped.find((row) => row.mailbox_id === 'a')?.confirmed, 99);
     assert.deepEqual(completedMailboxIdsFromResults(deduped), ['a']);
+  });
+
+  it('treats partial IMAP scans with connection errors as incomplete', () => {
+    const partial = {
+      mailbox_id: 'c',
+      scanned_sent_messages: 245,
+      confirmed: 47,
+      missing_imap_match: 114,
+      jobs_checked: 161,
+      errors: ['uid 15367: Connection not available'],
+    };
+    assert.equal(isIncompleteMailboxResult(partial), true);
+    assert.deepEqual(completedMailboxIdsFromResults([partial]), []);
+
+    const complete = {
+      mailbox_id: 'c',
+      scanned_sent_messages: 756,
+      confirmed: 160,
+      missing_imap_match: 0,
+      jobs_checked: 160,
+      errors: [],
+    };
+    assert.equal(isIncompleteMailboxResult(complete), false);
+    assert.equal(
+      dedupeMailboxResults([partial, complete]).find((row) => row.mailbox_id === 'c')?.confirmed,
+      160,
+    );
   });
 });

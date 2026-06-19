@@ -6,7 +6,7 @@
  *   SELF_RECOVERY_TARGET_ENV=prod npm run audit:june-training-replies -- \
  *     --campaign-id 3d6a8efa-c7b0-42e0-8550-56865ef4da9e \
  *     --since 2026-06-09 \
- *     --output docs/audit/june-training/03-imap-results.json
+ *     --output tmp/audit/june-training/03-imap-results.json
  *
  *   --dry-run   list mailboxes only
  *   --limit N   scan first N mailboxes (for testing)
@@ -96,7 +96,7 @@ function parseArgs(argv: string[]): Args {
   let untilStr = process.env.AUDIT_UNTIL?.trim() || null;
   let outputPath =
     process.env.AUDIT_OUTPUT?.trim() ||
-    'docs/audit/june-training/03-imap-results.json';
+    'tmp/audit/june-training/03-imap-results.json';
   let dryRun = false;
   let limit: number | null = null;
   let concurrency = Number(process.env.AUDIT_CONCURRENCY ?? '5');

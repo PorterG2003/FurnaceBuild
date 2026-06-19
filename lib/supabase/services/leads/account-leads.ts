@@ -7,7 +7,8 @@ import {
 } from './fetch-leads-by-global-ids';
 import { resolvePersonSummaryCellValue } from '@/lib/leads/columns/resolveCellValue';
 import type { LeadsColumnDef } from '@/lib/leads/columns/types';
-import { EXPLORER_COLUMNS, type LeadsTableRow } from '@/lib/leads/columns';
+import type { LeadsTableRow } from '@/lib/leads/columns/buildTableColumns';
+import { EXPLORER_COLUMNS } from '@/lib/leads/columns/defaults';
 import { buildExplorerExportRows } from '@/lib/leads/export/buildExportRows';
 import { LEADS_EXPORT_CHUNK_SIZE } from '@/lib/leads/export/constants';
 import type {

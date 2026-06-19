@@ -8,7 +8,7 @@
  *   SELF_RECOVERY_TARGET_ENV=prod npm run audit:campaign-send-integrity -- \
  *     --campaign-id 3d6a8efa-c7b0-42e0-8550-56865ef4da9e \
  *     --since 2026-06-09 \
- *     --output docs/audit/june-training/send-integrity-results.json
+ *     --output tmp/audit/june-training/send-integrity-results.json
  *
  *   --dry-run       list mailboxes only
  *   --skip-imap     DB phase only
@@ -28,9 +28,10 @@ import {
   completedMailboxIdsFromResults,
   dedupeMailboxResults,
   heuristicMatchJobInSentEntries,
-  isTimeoutOnlyMailboxResult,
+  isIncompleteMailboxResult,
   matchJobInSentIndex,
   normalizeMessageId,
+  pickPreferredMailboxResult,
   summarizeDbBuckets,
   type CampaignJobSnapshot,
   type DbAnomalyBucket,
@@ -148,7 +149,7 @@ function parseArgs(argv: string[]): Args {
   let untilStr = process.env.AUDIT_UNTIL?.trim() || null;
   let outputPath =
     process.env.AUDIT_OUTPUT?.trim() ||
-    'docs/audit/june-training/send-integrity-results.json';
+    'tmp/audit/june-training/send-integrity-results.json';
   let checkpointPath = process.env.AUDIT_CHECKPOINT?.trim() || '';
   let resumeFromPath = process.env.AUDIT_RESUME_FROM?.trim() || null;
   let explicitCheckpoint = Boolean(checkpointPath.trim());
@@ -560,7 +561,10 @@ function upsertMailboxResult(
 ): void {
   const index = checkpoint.mailboxResults.findIndex((row) => row.mailbox_id === summary.mailbox_id);
   if (index >= 0) {
-    checkpoint.mailboxResults[index] = summary;
+    checkpoint.mailboxResults[index] = pickPreferredMailboxResult(
+      summary,
+      checkpoint.mailboxResults[index],
+    );
   } else {
     checkpoint.mailboxResults.push(summary);
   }
@@ -603,8 +607,16 @@ async function scanMailboxSentFolder(
     if (timer) clearTimeout(timer);
 
     if (outcome === 'success' && payload?.summary) {
-      await onProgress.markComplete(payload.summary, payload.imapResults ?? []);
       const summary = payload.summary;
+      if (isIncompleteMailboxResult(summary)) {
+        await onProgress.markIncomplete(summary);
+        log(
+          `Done ${onProgress.completedCount()}/${onProgress.totalCount}: ${mailbox.email_address} — incomplete Sent scan (will retry on resume): scanned=${summary.scanned_sent_messages}, checked=${summary.jobs_checked}, confirmed=${summary.confirmed}, suspect=${summary.missing_imap_match}${summary.errors.length ? `, ${summary.errors.length} err` : ''}`,
+        );
+        return;
+      }
+
+      await onProgress.markComplete(payload.summary, payload.imapResults ?? []);
       log(
         `Done ${onProgress.completedCount()}/${onProgress.totalCount}: ${mailbox.email_address} — scanned=${summary.scanned_sent_messages}, checked=${summary.jobs_checked}, confirmed=${summary.confirmed}, suspect=${summary.missing_imap_match}${summary.errors.length ? `, ${summary.errors.length} err` : ''}`,
       );
@@ -939,9 +951,10 @@ async function main() {
           markIncomplete: async (summary) => {
             checkpointWriteChain = checkpointWriteChain.then(async () => {
               upsertMailboxResult(checkpoint, summary);
-              if (!isTimeoutOnlyMailboxResult(summary)) {
-                completedMailboxIdSet.delete(mailbox.id);
-              }
+              completedMailboxIdSet.delete(mailbox.id);
+              checkpoint.imapJobResults = checkpoint.imapJobResults.filter(
+                (row) => row.mailbox_id !== mailbox.id,
+              );
               checkpoint.errors.push(
                 ...summary.errors.map((error) => `${mailbox.email_address}: ${error}`),
               );
@@ -956,13 +969,20 @@ async function main() {
 
   normalizeCheckpointState(checkpoint);
 
+  const completeMailboxResults = checkpoint.mailboxResults.filter(
+    (row) => !isIncompleteMailboxResult(row),
+  );
+  const incompleteMailboxResults = checkpoint.mailboxResults.filter((row) =>
+    isIncompleteMailboxResult(row),
+  );
+
   const imapBucketCounts: Record<ImapMatchBucket, number> = {
-    db_sent_and_imap_confirmed: checkpoint.mailboxResults.reduce((sum, row) => sum + row.confirmed, 0),
-    db_sent_missing_imap_match: checkpoint.mailboxResults.reduce(
+    db_sent_and_imap_confirmed: completeMailboxResults.reduce((sum, row) => sum + row.confirmed, 0),
+    db_sent_missing_imap_match: completeMailboxResults.reduce(
       (sum, row) => sum + row.missing_imap_match,
       0,
     ),
-    db_failed_uncertain_but_imap_found: checkpoint.mailboxResults.reduce(
+    db_failed_uncertain_but_imap_found: completeMailboxResults.reduce(
       (sum, row) => sum + row.uncertain_but_found,
       0,
     ),
@@ -988,6 +1008,14 @@ async function main() {
     imapSummary: {
       bucketCounts: imapBucketCounts,
       mailboxResults: checkpoint.mailboxResults,
+      incompleteMailboxes: incompleteMailboxResults.map((row) => ({
+        mailbox_id: row.mailbox_id,
+        mailbox_email: row.mailbox_email,
+        scanned_sent_messages: row.scanned_sent_messages,
+        confirmed: row.confirmed,
+        missing_imap_match: row.missing_imap_match,
+        error_count: row.errors.length,
+      })),
       suspectJobs: checkpoint.imapJobResults.filter(
         (row) =>
           row.bucket === 'db_sent_missing_imap_match' ||
@@ -1004,6 +1032,11 @@ async function main() {
 
   log('=== Send integrity audit summary ===');
   log(`Mailboxes completed: ${checkpoint.completedMailboxIds.length}/${mailboxes.length}`);
+  if (incompleteMailboxResults.length > 0) {
+    log(
+      `Incomplete IMAP scans (excluded from totals, retry on resume): ${incompleteMailboxResults.map((row) => row.mailbox_email).join(', ')}`,
+    );
+  }
   log(`DB suspect rows: ${dbSummary.dbSuspectCount}`);
   log(`IMAP missing matches: ${imapBucketCounts.db_sent_missing_imap_match}`);
   log(`Uncertain failed but found in Sent: ${imapBucketCounts.db_failed_uncertain_but_imap_found}`);

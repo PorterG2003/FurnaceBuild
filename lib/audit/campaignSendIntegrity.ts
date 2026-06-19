@@ -221,6 +221,8 @@ export type MailboxScanSummaryLike = {
   mailbox_id: string;
   scanned_sent_messages: number;
   confirmed: number;
+  missing_imap_match?: number;
+  jobs_checked?: number;
   errors: string[];
 };
 
@@ -232,10 +234,36 @@ export function isTimeoutOnlyMailboxResult(row: MailboxScanSummaryLike): boolean
   );
 }
 
+function hasImapConnectionErrors(errors: string[]): boolean {
+  return errors.some((error) =>
+    /connection not available|timed out|econnreset|socket hang up|connection closed/i.test(error),
+  );
+}
+
+/** Partial Sent-folder scan — do not treat as complete or count misses in campaign totals. */
+export function isIncompleteMailboxResult(row: MailboxScanSummaryLike): boolean {
+  if (isTimeoutOnlyMailboxResult(row)) return true;
+
+  const missing = row.missing_imap_match ?? 0;
+  if (missing <= 0) return false;
+
+  if (hasImapConnectionErrors(row.errors)) return true;
+
+  // Many per-UID fetch failures usually means the index is incomplete.
+  if (row.errors.length >= 10) return true;
+
+  return false;
+}
+
 export function pickPreferredMailboxResult<T extends MailboxScanSummaryLike>(
   a: T,
   b: T,
 ): T {
+  const aIncomplete = isIncompleteMailboxResult(a);
+  const bIncomplete = isIncompleteMailboxResult(b);
+  if (aIncomplete && !bIncomplete) return b;
+  if (bIncomplete && !aIncomplete) return a;
+
   const aTimeout = isTimeoutOnlyMailboxResult(a);
   const bTimeout = isTimeoutOnlyMailboxResult(b);
   if (aTimeout && !bTimeout) return b;
@@ -269,11 +297,11 @@ export function dedupeMailboxResults<T extends MailboxScanSummaryLike & { mailbo
   return [...byId.values()];
 }
 
-/** Rebuild completed IDs from scan results; timeout-only rows are not considered complete. */
+/** Rebuild completed IDs from scan results; timeout/partial rows are not considered complete. */
 export function completedMailboxIdsFromResults<T extends MailboxScanSummaryLike & { mailbox_id: string }>(
   results: T[],
 ): string[] {
   return dedupeMailboxResults(results)
-    .filter((row) => !isTimeoutOnlyMailboxResult(row))
+    .filter((row) => !isIncompleteMailboxResult(row))
     .map((row) => row.mailbox_id);
 }

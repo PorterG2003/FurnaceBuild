@@ -18,15 +18,13 @@ import { fetchAttachment } from '@/lib/services/attachments';
 import { getAccessToken } from '@/lib/services/auth-token';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailMessage } from '@/lib/supabase/types';
-import {
-  InboxComposerPanel,
-  InboxDesktopLayout,
-  InboxMobileMessageView,
-  InboxModals,
-  InboxThreadList,
-  MarkOutOfOfficeModal,
-  ReplaceLeadModal,
-} from '@/components/inbox';
+import { InboxComposerPanel } from './InboxComposerPanel';
+import { InboxDesktopLayout } from './InboxDesktopLayout';
+import { InboxMobileMessageView } from './InboxMobileMessageView';
+import { InboxModals } from './InboxModals';
+import { InboxThreadList } from './InboxThreadList';
+import { MarkOutOfOfficeModal } from './MarkOutOfOfficeModal';
+import { ReplaceLeadModal } from './ReplaceLeadModal';
 import { getDisplayBody } from '@/lib/email/index';
 import { resolveThreadCardTitle, resolveThreadRecipientEmail } from '@/lib/inbox';
 import { buildReplaceLeadPrefill } from '@/lib/inbox/replaceLeadPrefill';

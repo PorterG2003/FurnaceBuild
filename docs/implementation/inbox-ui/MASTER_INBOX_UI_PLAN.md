@@ -100,7 +100,7 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 ### Accomplished
 
 - **Backend**: Reuses same send path as reply (`message_type = 'inbox_forward'`); `create_inbox_forward_job` RPC; send-worker processes forward jobs; send only (no thread link).
-- **UI** (`app/(main)/inbox.tsx`): Forward action opens composer with subject "Fwd: …", body with quoted original via `buildForwardedConversationHtml` (single Gmail-style header + **clicked** message body so content matches the bubble you forward, without concatenating the whole thread); To/Cc fields; attachments supported via `ComposerAttachments`; optimistic UI and polling.
+- **UI** (`app/(main)/inbox.tsx`): Forward action opens composer with subject "Fwd: …", body with quoted original via `buildForwardedConversationHtml` (Gmail-style blocks for the full conversation up to the clicked message, so forwarding a later bubble includes the earlier chain without pulling in newer replies); To/Cc fields; attachments supported via `ComposerAttachments`; optimistic UI and polling.
 
 ---
 

@@ -1557,6 +1557,12 @@ export interface Database {
           has_reply: boolean;
           category: string | null;
           category_source: string | null;
+          conversation_status: string;
+          conversation_status_source: string;
+          classification_status: string;
+          classification_requested_at: string | null;
+          classification_completed_at: string | null;
+          handling_metadata: Json | null;
           out_of_office: boolean;
           ooo_resume_requested: boolean;
           ooo_resume_at: string | null;
@@ -1580,6 +1586,12 @@ export interface Database {
           has_reply?: boolean;
           category?: string | null;
           category_source?: string | null;
+          conversation_status?: string;
+          conversation_status_source?: string;
+          classification_status?: string;
+          classification_requested_at?: string | null;
+          classification_completed_at?: string | null;
+          handling_metadata?: Json | null;
           out_of_office?: boolean;
           ooo_resume_requested?: boolean;
           ooo_resume_at?: string | null;
@@ -1603,6 +1615,12 @@ export interface Database {
           has_reply?: boolean;
           category?: string | null;
           category_source?: string | null;
+          conversation_status?: string;
+          conversation_status_source?: string;
+          classification_status?: string;
+          classification_requested_at?: string | null;
+          classification_completed_at?: string | null;
+          handling_metadata?: Json | null;
           out_of_office?: boolean;
           ooo_resume_requested?: boolean;
           ooo_resume_at?: string | null;
@@ -2130,6 +2148,15 @@ export interface Database {
           p_resume_at?: string | null;
         };
         Returns: undefined;
+      };
+      schedule_thread_ooo_resume: {
+        Args: {
+          p_thread_id: string;
+          p_resume_at?: string | null;
+          p_return_date?: string | null;
+          p_mark_auto_reply?: boolean;
+        };
+        Returns: string;
       };
       process_due_out_of_office_resumes: {
         Args: {

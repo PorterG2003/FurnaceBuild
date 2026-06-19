@@ -19,6 +19,7 @@ export interface InboxLoadingPolicyInput {
   threadCount: number;
   threadsError: string | null;
   messagesLoading: boolean;
+  messagesLoadedForThreadId: string | null;
   hasActiveFilters: boolean;
   refreshing: boolean;
 }
@@ -31,6 +32,8 @@ export interface InboxLoadingPolicyRaw {
   threadListSkeletonDelayed: boolean;
   messagePaneSkeletonImmediate: boolean;
   messageBodySkeletonDelayed: boolean;
+  /** Messages fetched for the selected thread and skeleton can be dismissed. */
+  messagePaneContentReadyRaw: boolean;
   suppressEmptyStates: boolean;
   keepPreviousThreadList: boolean;
 }
@@ -48,6 +51,7 @@ export function computeInboxLoadingPolicy(input: InboxLoadingPolicyInput): Inbox
     threadCount,
     threadsError,
     messagesLoading,
+    messagesLoadedForThreadId,
     hasActiveFilters,
     refreshing,
   } = input;
@@ -86,6 +90,10 @@ export function computeInboxLoadingPolicy(input: InboxLoadingPolicyInput): Inbox
     messagePaneSkeletonImmediate:
       isAccountTransition || isRouteResolving || (initialThreadsLoadPending && routeThreadId != null),
     messageBodySkeletonDelayed: messagesLoading && selectedThreadId != null && !isAccountTransition,
+    messagePaneContentReadyRaw:
+      selectedThreadId != null &&
+      messagesLoadedForThreadId === selectedThreadId &&
+      !messagesLoading,
     suppressEmptyStates,
     keepPreviousThreadList,
   };

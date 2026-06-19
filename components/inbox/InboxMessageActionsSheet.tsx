@@ -6,13 +6,14 @@ import {
   TagIcon,
   FolderIcon,
   ArrowPathIcon,
+  CheckCircleIcon,
   InformationCircleIcon,
 } from 'react-native-heroicons/outline';
 import { BottomSheet } from '@/components/ui/modals';
 import type { EmailThread } from '@/lib/supabase/types';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
-import { THREAD_CATEGORIES } from './inboxConstants';
+import { OPEN_CONVERSATION_COLOR, THREAD_CATEGORIES } from './inboxConstants';
 
 export interface InboxMessageActionsSheetProps {
   visible: boolean;
@@ -27,6 +28,8 @@ export interface InboxMessageActionsSheetProps {
   onBlock: () => void;
   onMarkOutOfOffice?: () => void;
   onReplaceLead?: () => void;
+  onCloseConversation?: () => void;
+  onOpenConversation?: () => void;
   onTags: () => void;
   onShowInfo: () => void;
   onSetCategory: (category: string | null) => Promise<void>;
@@ -47,6 +50,8 @@ export function InboxMessageActionsSheet({
   onBlock,
   onMarkOutOfOffice,
   onReplaceLead,
+  onCloseConversation,
+  onOpenConversation,
   onTags,
   onShowInfo,
   onSetCategory,
@@ -132,7 +137,45 @@ export function InboxMessageActionsSheet({
               }}
             >
               <ArrowPathIcon size={20} color="#FDBA74" />
-              <Text className="text-white font-instrument-medium text-base">Replace lead</Text>
+              <Text className="text-white font-instrument-medium text-base">Replace + forward</Text>
+            </Pressable>
+          )}
+          {onCloseConversation && (
+            <Pressable
+              onPress={() => {
+                onCloseConversation();
+                onClose();
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 14,
+                borderBottomWidth: 1,
+                borderBottomColor: '#2A2A2A',
+              }}
+            >
+              <CheckCircleIcon size={20} color={OPEN_CONVERSATION_COLOR} />
+              <Text className="text-white font-instrument-medium text-base">Close conversation</Text>
+            </Pressable>
+          )}
+          {onOpenConversation && (
+            <Pressable
+              onPress={() => {
+                onOpenConversation();
+                onClose();
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 14,
+                borderBottomWidth: 1,
+                borderBottomColor: '#2A2A2A',
+              }}
+            >
+              <CheckCircleIcon size={20} color={OPEN_CONVERSATION_COLOR} />
+              <Text className="text-white font-instrument-medium text-base">Open conversation</Text>
             </Pressable>
           )}
           <Pressable

@@ -51,6 +51,12 @@ export type CampaignThreadSpec = {
   hasReply?: boolean;
   category?: string | null;
   categorySource?: string | null;
+  conversationStatus?: 'open' | 'closed';
+  conversationStatusSource?: 'user' | 'system';
+  classificationStatus?: 'none' | 'pending' | 'complete' | 'failed';
+  classificationRequestedAt?: string | null;
+  classificationCompletedAt?: string | null;
+  handlingMetadata?: Json | null;
   outOfOffice?: boolean;
   oooResumeRequested?: boolean;
   oooResumeAt?: string | null;
@@ -1151,6 +1157,24 @@ export async function materializeCampaignGraph(
         has_reply: leadSpec.thread.hasReply ?? true,
         category: leadSpec.thread.category ?? null,
         category_source: leadSpec.thread.categorySource ?? null,
+        ...(leadSpec.thread.conversationStatus !== undefined
+          ? { conversation_status: leadSpec.thread.conversationStatus }
+          : {}),
+        ...(leadSpec.thread.conversationStatusSource !== undefined
+          ? { conversation_status_source: leadSpec.thread.conversationStatusSource }
+          : {}),
+        ...(leadSpec.thread.classificationStatus !== undefined
+          ? { classification_status: leadSpec.thread.classificationStatus }
+          : {}),
+        ...(leadSpec.thread.classificationRequestedAt !== undefined
+          ? { classification_requested_at: leadSpec.thread.classificationRequestedAt }
+          : {}),
+        ...(leadSpec.thread.classificationCompletedAt !== undefined
+          ? { classification_completed_at: leadSpec.thread.classificationCompletedAt }
+          : {}),
+        ...(leadSpec.thread.handlingMetadata !== undefined
+          ? { handling_metadata: leadSpec.thread.handlingMetadata }
+          : {}),
         out_of_office: leadSpec.thread.outOfOffice ?? false,
         ooo_resume_requested: leadSpec.thread.oooResumeRequested ?? false,
         ooo_resume_at: leadSpec.thread.oooResumeAt ?? null,

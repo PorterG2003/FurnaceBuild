@@ -68,6 +68,11 @@ export type ReplyDuplicateConfirmState = {
   onConfirm: () => void;
 } | null;
 
+export interface ForwardComposerPrefill {
+  toEmail?: string | null;
+  toName?: string | null;
+}
+
 export interface UseInboxComposerOptions {
   accountId: string | null;
   mailboxSignatureRaw: string | null;
@@ -493,12 +498,12 @@ export function useInboxComposer({
   );
 
   const openForwardComposer = useCallback(
-    (_message: EmailMessage) => {
+    (_message: EmailMessage, options?: ForwardComposerPrefill) => {
       if (!selectedThread) return;
       const subject = selectedThread.subject ?? '(No subject)';
       const fwdSubject = subject.startsWith('Fwd:') ? subject : `Fwd: ${subject}`;
       setForwardedMessageId(_message.id);
-      setForwardToEmail('');
+      setForwardToEmail(options?.toEmail?.trim().toLowerCase() ?? '');
       setForwardCc('');
       setForwardSubject(fwdSubject);
       setIncludeSignature(true);
@@ -512,15 +517,26 @@ export function useInboxComposer({
   );
 
   const switchComposerToHtml = useCallback((mode: 'reply' | 'forward') => {
-    const editorBodyHtml = composerEditorRef.current?.getHTML?.() ?? '<p></p>';
-    const seeded = seedHtmlModeFromRichText(editorBodyHtml);
-    if (mode === 'reply') {
-      setReplyHtmlDraft(seeded);
-      setReplyEditorMode('html');
+    const applySeededHtml = (html: string | null | undefined) => {
+      const seeded = seedHtmlModeFromRichText(html ?? '<p></p>');
+      if (mode === 'reply') {
+        setReplyHtmlDraft(seeded);
+        setReplyEditorMode('html');
+        return;
+      }
+      setForwardHtmlDraft(seeded);
+      setForwardEditorMode('html');
+    };
+
+    const editorBodyHtml = composerEditorRef.current?.getHTML?.();
+    if (editorBodyHtml instanceof Promise) {
+      void editorBodyHtml.then((html) => {
+        applySeededHtml(html);
+      });
       return;
     }
-    setForwardHtmlDraft(seeded);
-    setForwardEditorMode('html');
+
+    applySeededHtml(editorBodyHtml);
   }, []);
 
   const confirmSwitchComposerToRich = useCallback(() => {

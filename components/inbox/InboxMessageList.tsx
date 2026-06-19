@@ -3,13 +3,14 @@ import { View, ScrollView } from 'react-native';
 import { Alert } from '@/components/ui/feedback';
 import { DateDivider } from './DateDivider';
 import { MessageBubble, type MessageBubbleActionsLayout } from './MessageBubble';
-import { AutoReplyPipelineCallout } from './AutoReplyPipelineCallout';
 import { BlockedThreadCallout } from './BlockedThreadCallout';
+import { SmartHandlingCalloutSlot } from './SmartHandlingCalloutSlot';
 import { MessagePanelHeader } from './MessagePanelHeader';
 import { MessageListSkeleton } from './MessageListSkeleton';
 import { groupMessagesByDate } from '@/lib/inbox';
+import type { SmartHandlingActionOption, SmartHandlingMode } from '@/lib/inbox/smartHandling';
+import type { ThreadStatusCalloutView } from '@/lib/inbox/threadStatusCallout';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
-import type { ThreadAutoReplyPipelineState } from '@/lib/supabase/services';
 import type { EmailThread, EmailMessage } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
@@ -25,6 +26,12 @@ export type PendingReplyInfo = {
   sendWaitReason: string | null;
   isSendingImmediately?: boolean;
   campaignName?: string | null;
+};
+
+export type ThreadStatusCalloutProps = ThreadStatusCalloutView & {
+  mode: SmartHandlingMode;
+  onAction?: (action: SmartHandlingActionOption) => void;
+  onDismiss?: () => void;
 };
 
 export interface InboxMessageListProps {
@@ -43,6 +50,8 @@ export interface InboxMessageListProps {
   onBlock: (() => void) | undefined;
   onMarkOutOfOffice?: (() => void) | undefined;
   onReplaceLead?: (() => void) | undefined;
+  onCloseConversation?: (() => void) | undefined;
+  onOpenConversation?: (() => void) | undefined;
   onOpenLeadDetail?: (() => void) | undefined;
   accountId: string | null;
   onOpenTagsPanel: (() => void) | undefined;
@@ -64,10 +73,10 @@ export interface InboxMessageListProps {
   onDownloadAttachment: ((emailMessageId: string, part: string, filename: string) => Promise<void>) | undefined;
   onFetchAttachmentPreview: ((emailMessageId: string, part: string) => Promise<Blob | null>) | undefined;
   pendingReplies: PendingReplyInfo[];
-  autoReplyPipelineState?: ThreadAutoReplyPipelineState | null;
   onRetryFailedReply: (jobId: string) => void;
   onSendImmediately: (jobId: string) => void;
   onCancelPendingOutbound: (jobId: string) => void;
+  threadStatusCallout?: ThreadStatusCalloutProps | null;
 }
 
 export function InboxMessageList({
@@ -86,6 +95,8 @@ export function InboxMessageList({
   onBlock,
   onMarkOutOfOffice,
   onReplaceLead,
+  onCloseConversation,
+  onOpenConversation,
   onOpenLeadDetail,
   accountId,
   onOpenTagsPanel,
@@ -104,10 +115,10 @@ export function InboxMessageList({
   onDownloadAttachment,
   onFetchAttachmentPreview,
   pendingReplies,
-  autoReplyPipelineState,
   onRetryFailedReply,
   onSendImmediately,
   onCancelPendingOutbound,
+  threadStatusCallout,
 }: InboxMessageListProps) {
   if (!selectedThread) return null;
 
@@ -145,9 +156,13 @@ export function InboxMessageList({
         onBlock={onBlock}
         onMarkOutOfOffice={onMarkOutOfOffice}
         onReplaceLead={onReplaceLead}
+        onCloseConversation={onCloseConversation}
+        onOpenConversation={onOpenConversation}
         showBlockButton={!!accountId && selectedThreadProspectEmails.length > 0}
         showOutOfOfficeButton={!!accountId && !!selectedThreadId}
         showReplaceLeadButton={!!accountId && !!selectedThread?.lead_id}
+        showCloseConversationButton={selectedThread.conversation_status !== 'closed'}
+        showOpenConversationButton={selectedThread.conversation_status === 'closed'}
         threadTags={selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []) : []}
         onOpenTagsPanel={onOpenTagsPanel}
         category={category}
@@ -190,19 +205,6 @@ export function InboxMessageList({
               ) : (
                 <View className="mb-4 w-full">
                   <BlockedThreadCallout />
-                </View>
-              )
-            ) : null}
-            {autoReplyPipelineState?.active ? (
-              messageColumnNarrow ? (
-                <View className="mb-4 flex-row w-full justify-center items-start">
-                  <View className="w-[92%] max-w-[92%]">
-                    <AutoReplyPipelineCallout label={autoReplyPipelineState.label ?? 'Automated reply preparing...'} />
-                  </View>
-                </View>
-              ) : (
-                <View className="mb-4 w-full">
-                  <AutoReplyPipelineCallout label={autoReplyPipelineState.label ?? 'Automated reply preparing...'} />
                 </View>
               )
             ) : null}
@@ -280,6 +282,11 @@ export function InboxMessageList({
                 })}
               </View>
             ))}
+            <SmartHandlingCalloutSlot
+              callout={threadStatusCallout ?? null}
+              selectedThreadId={selectedThreadId}
+              messageColumnNarrow={messageColumnNarrow}
+            />
           </View>
         </ScrollView>
       )}

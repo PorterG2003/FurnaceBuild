@@ -29,6 +29,7 @@ import { foundryGoogleAdsVerificationJob } from './functions/foundryGoogleAdsVer
 import { foundryCsvBuilderExportJob } from './functions/foundryCsvBuilderExportJob/resource';
 import { processNotificationEvent } from './functions/processNotificationEvent/resource';
 import { processWebhookEvent } from './functions/processWebhookEvent/resource';
+import { classifyReply } from './functions/classifyReply/resource';
 import { platformCommerce } from './functions/platformCommerce/resource';
 import { stripeWebhook } from './functions/stripeWebhook/resource';
 import { clientApi } from './functions/clientApi/resource';
@@ -73,6 +74,7 @@ const backend = defineBackend({
   foundryCsvBuilderExportJob,
   processNotificationEvent,
   processWebhookEvent,
+  classifyReply,
   platformCommerce,
   stripeWebhook,
   clientApi,
@@ -1842,6 +1844,22 @@ processNotificationLambda.addEnvironment(
 notificationQueue.grantConsumeMessages(processNotificationLambda);
 processNotificationLambda.addEventSource(
   new lambdaEventSources.SqsEventSource(notificationQueue, {
+    batchSize: 5,
+    maxBatchingWindow: cdk.Duration.seconds(5),
+    reportBatchItemFailures: true,
+  }),
+);
+
+const classifyReplyQueue = sqs.Queue.fromQueueArn(
+  backend.stack,
+  'ImportedFurnaceClassifyReplyQueue',
+  cdk.Fn.importValue(`FurnaceClassifyReplyQueueArn-${notificationWorkerEnv}`),
+);
+const classifyReplyLambda = backend.classifyReply.resources.lambda as lambda.Function;
+classifyReplyLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+classifyReplyQueue.grantConsumeMessages(classifyReplyLambda);
+classifyReplyLambda.addEventSource(
+  new lambdaEventSources.SqsEventSource(classifyReplyQueue, {
     batchSize: 5,
     maxBatchingWindow: cdk.Duration.seconds(5),
     reportBatchItemFailures: true,

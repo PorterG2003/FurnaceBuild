@@ -172,6 +172,53 @@ npx tsx scripts/seed/index.ts --scenario=categorizer-flow --dry-run
 
 Re-runs clean and replace only the seed-owned slice for the dedicated campaign id.
 
+### `smart-handling-flow` scenario
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `SEED_ACCOUNT_ID` | Yes | Account UUID (`accounts.id`) for the seeded inbox data |
+| `SEED_OWNER_USER_ID` | Yes | `users.id` used for `campaigns.owner_id` and `mailboxes.user_id` |
+| `SEED_SMART_HANDLING_MANUAL_CAMPAIGN_ID` | No | Dedicated manual-categorizer campaign UUID; defaults to a built-in constant |
+| `SEED_SMART_HANDLING_AI_CAMPAIGN_ID` | No | Dedicated AI-categorizer campaign UUID; defaults to a built-in constant |
+| `SEED_SMART_HANDLING_LIVE` | No | Set to `1` to route selected cases through `ThreadManager.handleReply()` and `classifyReply` inline instead of stamping metadata directly |
+
+Creates a deterministic inbox QA slice specifically for the Master Inbox Smart Handling bar:
+
+- one **manual** campaign (`use_ai = false`) plus one **AI** campaign (`use_ai = true`)
+- one visible thread per Smart Handling profile, including:
+  - `[SH INTERESTED]`
+  - `[SH NEUTRAL]`
+  - `[SH NOT INTERESTED]`
+  - `[SH OOO DATED]`
+  - `[SH OOO NO DATE]`
+  - `[SH WRONG CONTACT]`
+  - `[SH AI INTERESTED]`
+  - `[SH PENDING]`
+  - `[SH CLOSED]`
+- realistic sent/replied message history for every thread
+- durable `email_threads` state for:
+  - `conversation_status`
+  - `classification_status`
+  - `classification_requested_at`
+  - `classification_completed_at`
+  - `handling_metadata`
+
+Default mode is deterministic and immediately renders every Smart Handling UI state without relying on external worker timing.
+
+Optional live mode still avoids queue/LLM flakiness by reusing the **real app code paths inline**:
+
+1. seed outbound history and queued follow-up jobs
+2. call `ThreadManager.handleReply()` for selected cases
+3. invoke `classifyReply` inline with a mocked OpenRouter response
+
+That means live mode exercises the same inbox-checker and classify code used by the app, but remains deterministic for manual QA.
+
+```bash
+npx tsx scripts/seed/index.ts --scenario=smart-handling-flow --dry-run
+```
+
+Re-runs clean and replace only the two dedicated Smart Handling seed campaigns (manual + AI).
+
 ### `platform-invite-preview` scenario
 
 Creates deterministic draft platform invitations for admin-only preview QA, including:
@@ -226,6 +273,7 @@ npm run seed:reset -- --dry-run
 npm run seed:reset -- --scope=dev-default --dry-run
 npm run seed:reset -- --scope=campaign-smoke --dry-run
 npm run seed:reset -- --scope=ooo-mixed-inbox --dry-run
+npm run seed:reset -- --scope=smart-handling-flow --dry-run
 ```
 
 Destructive runs require:
@@ -237,13 +285,15 @@ Optional:
 
 - `SEED_CAMPAIGN_ID` for the `campaign-smoke` slice
 - `SEED_OOO_CAMPAIGN_ID` for the `ooo-mixed-inbox` slice
-- `--scope=dev-default|campaign-smoke|ooo-mixed-inbox|all`
+- `SEED_SMART_HANDLING_MANUAL_CAMPAIGN_ID` / `SEED_SMART_HANDLING_AI_CAMPAIGN_ID` for the `smart-handling-flow` slice
+- `--scope=dev-default|campaign-smoke|ooo-mixed-inbox|smart-handling-flow|all`
 
 Reset is intentionally conservative:
 
 - if `--scope` is omitted, it only resets scopes that can be inferred from `SEED_CAMPAIGN_ID` / `SEED_OOO_CAMPAIGN_ID`
 - if `--scope=campaign-smoke` is provided, it targets that dedicated campaign id (env or built-in default)
 - if `--scope=ooo-mixed-inbox` is provided, it targets that dedicated OOO campaign id
+- if `--scope=smart-handling-flow` is provided, it targets the dedicated Smart Handling manual + AI campaign ids
 - if `--scope=dev-default` is provided, it resets the 5 built-in production-like seed campaigns and their shared seed mailboxes
 - if `--scope=all` is provided, it resets all known built-in scenario slices
 
@@ -265,6 +315,7 @@ The reset command is scoped to deterministic seed-owned data for the built-in sc
 - A **scenario** is a named list of **module** ids in [`registry.ts`](./registry.ts). Dependencies (`deps` on each `SeedModule`) are pulled in automatically and executed in **topological order** (dependencies first). Cycles are a hard error.
 - **`campaign-smoke`** registers a single leaf module; the registry expands the full dependency chain (env → campaign → mailboxes → … → `batch_assign_jobs_to_interval`).
 - **`ooo-mixed-inbox`** registers a single leaf module; the registry expands env → base graph → threads → messages → OOO state application.
+- **`smart-handling-flow`** registers a single leaf module; the registry expands env → base graph → deterministic threads → optional inline live replies.
 - Add a new module: implement `SeedModule` in e.g. `scenarios/foo.ts`, register it in `allModules`, then reference it from `scenarioModuleIds`.
 
 ## Idempotency and wipe

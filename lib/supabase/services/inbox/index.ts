@@ -14,7 +14,21 @@ export {
   type SendAttachment,
 } from './messages';
 export { updateThreadCategory } from './thread-categories';
-export { markEmailThreadOutOfOffice, type MarkEmailThreadOutOfOfficeParams } from './out-of-office';
+export {
+  markEmailThreadOutOfOffice,
+  saveEmailThreadOutOfOffice,
+  scheduleThreadOooResume,
+  type MarkEmailThreadOutOfOfficeParams,
+  type SaveEmailThreadOutOfOfficeParams,
+  type ScheduleThreadOooResumeResult,
+} from './out-of-office';
+export {
+  closeConversation,
+  reopenConversation,
+  updateConversationStatus,
+  type ConversationStatus,
+  type ConversationStatusSource,
+} from './smart-handling';
 export {
   cancelPendingOutboundJob,
   createReplyJob,

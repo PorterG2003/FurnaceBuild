@@ -1,6 +1,6 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
-import { computeOooResumeAtIso, utcNoonIsoFromYmd } from './outOfOfficeSchedule';
+import { computeOooQuickResumeAtIso, computeOooResumeAtIso, utcNoonIsoFromYmd } from './outOfOfficeSchedule';
 
 describe('utcNoonIsoFromYmd', () => {
   it('returns UTC noon ISO for valid YYYY-MM-DD', () => {
@@ -61,6 +61,41 @@ describe('computeOooResumeAtIso', () => {
         instantNow: fixedNow,
       }),
       null
+    );
+  });
+});
+
+describe('computeOooQuickResumeAtIso', () => {
+  const fixedNow = new Date('2026-04-29T15:00:00.000Z');
+
+  it('dated preset uses UTC noon on the chosen day', () => {
+    assert.strictEqual(
+      computeOooQuickResumeAtIso({
+        preset: 'dated',
+        returnDateYmd: '2026-05-12',
+        instantNow: fixedNow,
+      }),
+      '2026-05-12T12:00:00.000Z'
+    );
+  });
+
+  it('month preset uses 30 days from now', () => {
+    assert.strictEqual(
+      computeOooQuickResumeAtIso({
+        preset: 'month',
+        instantNow: fixedNow,
+      }),
+      '2026-05-29T15:00:00.000Z'
+    );
+  });
+
+  it('instant preset uses the current instant', () => {
+    assert.strictEqual(
+      computeOooQuickResumeAtIso({
+        preset: 'instant',
+        instantNow: fixedNow,
+      }),
+      '2026-04-29T15:00:00.000Z'
     );
   });
 });

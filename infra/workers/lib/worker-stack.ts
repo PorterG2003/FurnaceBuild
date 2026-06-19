@@ -403,6 +403,11 @@ export class WorkerStack extends cdk.Stack {
       visibilityTimeout: cdk.Duration.seconds(150),
       retentionPeriod: cdk.Duration.days(4),
     });
+    const classifyReplyQueue = new sqs.Queue(this, 'ClassifyReplyQueue', {
+      queueName: `furnace-classify-reply-${environment}`,
+      visibilityTimeout: cdk.Duration.seconds(150),
+      retentionPeriod: cdk.Duration.days(4),
+    });
     const webhookEventsQueueUrl = cdk.Fn.importValue(`FurnaceWebhookEventsQueueUrl-${environment}`);
     const webhookEventsQueueArn = cdk.Fn.importValue(`FurnaceWebhookEventsQueueArn-${environment}`);
 
@@ -419,6 +424,13 @@ export class WorkerStack extends cdk.Stack {
         sid: 'AllowSendNotificationEventsQueue',
         actions: ['sqs:SendMessage'],
         resources: [notificationEventsQueue.queueArn],
+      }),
+    );
+    inboxCheckerWorkerTaskRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'AllowSendClassifyReplyQueue',
+        actions: ['sqs:SendMessage'],
+        resources: [classifyReplyQueue.queueArn],
       }),
     );
     inboxCheckerWorkerTaskRole.addToPolicy(
@@ -673,6 +685,7 @@ export class WorkerStack extends cdk.Stack {
         SUPABASE_URL: supabaseUrl,
         SUPABASE_SECRET_KEY_PARAM_PATH: supabaseSecretKeyParamPath,
         NOTIFICATION_QUEUE_URL: notificationEventsQueue.queueUrl,
+        CLASSIFY_REPLY_QUEUE_URL: classifyReplyQueue.queueUrl,
         WEBHOOK_QUEUE_URL: webhookEventsQueueUrl,
         ...(slackErrorWebhookUrl ? { SLACK_ERROR_WEBHOOK_URL: slackErrorWebhookUrl } : {}),
       },
@@ -993,6 +1006,18 @@ export class WorkerStack extends cdk.Stack {
       value: notificationEventsQueue.queueArn,
       description: 'SQS ARN for notification domain events',
       exportName: `FurnaceNotificationEventsQueueArn-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'ClassifyReplyQueueUrl', {
+      value: classifyReplyQueue.queueUrl,
+      description: 'SQS URL for async classify-reply jobs',
+      exportName: `FurnaceClassifyReplyQueueUrl-${environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'ClassifyReplyQueueArn', {
+      value: classifyReplyQueue.queueArn,
+      description: 'SQS ARN for async classify-reply jobs',
+      exportName: `FurnaceClassifyReplyQueueArn-${environment}`,
     });
 
     new cdk.CfnOutput(this, 'EcsTaskExecutionRoleArn', {

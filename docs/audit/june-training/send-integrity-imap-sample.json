@@ -1,0 +1,312 @@
+{
+  "generatedAt": "2026-06-19T17:36:59.156Z",
+  "campaignId": "3d6a8efa-c7b0-42e0-8550-56865ef4da9e",
+  "since": "2026-06-09T00:00:00.000Z",
+  "until": null,
+  "mailboxCount": 1,
+  "dbSummary": {
+    "totalCampaignJobs": 10602,
+    "bucketCounts": {
+      "healthy_sent": 10200,
+      "sent_missing_provider_id": 0,
+      "sent_missing_sent_at": 0,
+      "failed_uncertain_send_state": 23,
+      "stale_sending": 0,
+      "stale_reserved": 0,
+      "other_non_sent": 379
+    },
+    "sentCampaignJobs": 10200,
+    "healthySent": 10200,
+    "dbSuspectCount": 23,
+    "campaignStats": {
+      "sent_count": 10236,
+      "replied_count": 106,
+      "positive_reply_count": 89,
+      "bounce_count": 12,
+      "updated_at": "2026-06-19T17:23:07.929127+00:00"
+    },
+    "statsDriftSentCountMinusJobs": 36
+  },
+  "dbSamples": [
+    {
+      "message_job_id": "24ea34aa-2764-4693-8ac9-27153a640e1e",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "ab7ffa30-7b3c-4385-9a52-af87ded11486",
+      "enrollment_id": "229893f4-c482-4153-9e6e-a86bd99ab3c2",
+      "lead_id": "e78142a7-2c6a-41c2-91d2-38ee81ffabf9",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "5be94a8a-8cc1-4a75-b765-9767893176fd",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "26433e0b-65a4-45e7-8a18-d8cee578a02b",
+      "enrollment_id": "4ef88345-a6c6-4fac-beab-c3793934a64b",
+      "lead_id": "464deed2-95a4-43de-bc2b-03873ac55d7c",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "8d927953-7797-4f1a-9f12-241ea2840eab",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "fcd28ea2-13ed-4486-b855-459d872575c9",
+      "enrollment_id": "cedbd300-faaf-48a7-8367-e03e51cdd66c",
+      "lead_id": "2ae3bf45-9d97-4d3e-89da-eb88090104cc",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "c5863354-2d6a-4856-8d63-09d8d31ae524",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "5b89f844-85c5-44c2-afb1-c4e9b13e2222",
+      "enrollment_id": "e66acced-8683-4f09-92fa-65e171fd09cb",
+      "lead_id": "28ea99b4-c5ec-451f-9197-907d0224bf7b",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "3bdf3c67-e079-482f-9a52-3d4c3288b38f",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "46ca1e13-68d8-43d6-bd6f-bd2cc43c2d60",
+      "enrollment_id": "eb4dfedc-8f57-492f-90f0-9c26a4af1789",
+      "lead_id": "1607c553-e9b0-418b-a5a9-1c0429ac8353",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "d133e7a0-0680-40d0-9721-888a1e186915",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "df829142-4bb3-481a-87a4-3be0c5a63689",
+      "enrollment_id": "dd3b6940-5b80-4882-ada3-836aa338d4ec",
+      "lead_id": "96f6e9a8-4767-496a-88cd-6670eabc3952",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "8e2940aa-c1fe-4c6f-a10a-fd30841c8984",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "6e8b3658-83b8-4888-b86d-164ba44df031",
+      "enrollment_id": "6bc0f07b-bbc4-4161-b59f-a62619104a61",
+      "lead_id": "d254f504-245b-4e67-bdc6-62c331747071",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "91f4cbd7-7faa-4998-b720-529ab5045127",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "07805e68-7099-4789-a840-152664214ae4",
+      "enrollment_id": "02081d8b-7585-4fcc-a807-10ebe592cdd1",
+      "lead_id": "6a952c8c-ef6a-405c-8bb0-41bdf83417e4",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "1ea8bf70-7186-4d8d-8108-b8f268125734",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "0b30939b-93fb-42d6-b6c6-da8ff76d430e",
+      "enrollment_id": "187429f2-6c9a-4e13-a169-36cf33f60e0f",
+      "lead_id": "f9304dee-cd70-46d3-ac8a-eac18deeac45",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "50c56417-b4a3-47b7-983e-8bb728f06299",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "46ca1e13-68d8-43d6-bd6f-bd2cc43c2d60",
+      "enrollment_id": "a7525b8a-df26-4afc-8010-246f5633df65",
+      "lead_id": "c70160b1-a6d8-41a5-96c5-a1acd8237f98",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "6bee0dec-242f-434e-91cc-b5601ae66bfc",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "39c20ce5-5b37-4310-9f45-dea8d9d80b4e",
+      "enrollment_id": "3a60ab18-ad80-425b-a620-c814ab0fd81e",
+      "lead_id": "8b17dbb9-611e-40c5-b8ae-8f257e4318c3",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "8b96dca1-de34-4284-a999-20ee0e6a8798",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "37e0f21d-88d7-4b10-8d8c-4b7bd3a10626",
+      "enrollment_id": "b7e7ad06-ab59-4bb9-825e-b57f28a69f6a",
+      "lead_id": "319203e7-e77c-4849-bf1f-01ef96dc6c33",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "e1f85da2-6db8-445e-90ed-a6fde4a07a1c",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "2258cb14-2171-43bd-9a3d-a6535eccacd6",
+      "enrollment_id": "b1472493-d727-4351-947c-f9ba0e490fcf",
+      "lead_id": "2bef696c-91d2-46da-987e-fe747b9369cd",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "0b49c655-cd66-433c-85e7-393148e6f3c4",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "9b47afe7-0dcb-48bd-973b-10a10e9155e1",
+      "enrollment_id": "f09fdc03-3c67-4f14-8e61-b4e1e185ab34",
+      "lead_id": "3d493b12-d236-4a08-b7f0-38fd7bcbc042",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "3e66a2cf-ef78-4843-bdbe-7668acdde8df",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "37e0f21d-88d7-4b10-8d8c-4b7bd3a10626",
+      "enrollment_id": "81795b05-414a-4f34-a37d-8460e883ad71",
+      "lead_id": "0967c0ed-43a3-401f-926e-38390e3384f7",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "7b4bacfe-f61d-4f12-86f4-18090b2caedb",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "a9fb0c4e-851b-4529-a661-f30bbb4d74dd",
+      "enrollment_id": "c07f95a5-ff0e-41c8-a6bb-42d115501e74",
+      "lead_id": "1aeb0d4a-06f9-4f08-8e87-f4d3b3c0bdcc",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "709a92d4-82d0-4f54-b7fe-f5f3ae286477",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "2c37e282-8b1d-4bac-859f-8513db24bb7c",
+      "enrollment_id": "1cef7e2e-7418-42a3-a6ed-3fb0b2c36f74",
+      "lead_id": "003dc06a-108b-43e0-9000-6c3e1390e87a",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "43b03788-c1cd-4e7e-a02a-314a8376d235",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "ef2ee571-5e6c-4a7c-b6c4-8c79bd733657",
+      "enrollment_id": "e61c90cd-6a0e-4d5f-87de-08cf9fe1e4d0",
+      "lead_id": "9679a75a-8f4d-4104-842b-dbd3ecdf4c1f",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "abb3ba53-b2f9-470c-a10f-13732d8148ff",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "0a97eb8d-da70-4df0-ba12-9f079c0124e0",
+      "enrollment_id": "20114da5-2e85-4a34-a7e4-265c531aee7c",
+      "lead_id": "4e65a4d0-32d9-4ad1-9578-402330fd7641",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "6ec023a3-c8d4-4cef-af03-42e83480a0b2",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "d4b44584-56ec-4ab7-aacf-0685f79e9917",
+      "enrollment_id": "549cd904-96e4-4a94-84bf-6113ac3cf8ef",
+      "lead_id": "fd52f8a5-b31d-4ab1-a121-bb124551645f",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "baedb1e1-d306-416c-b6a2-260f2a7386c6",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "1c9de479-635a-40c5-b2a4-5213baab528f",
+      "enrollment_id": "7924977d-943e-4baf-8107-2bd3d12907d2",
+      "lead_id": "89dbf1fc-ad14-4641-b2e0-33afce3f08d7",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "2604fe95-cdf7-435e-a1c9-67e2b0c9a0ff",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "5073aca0-71d0-496e-b4c5-d0eda6ed89ee",
+      "enrollment_id": "a69aa87b-9395-4088-b886-1b03ec178e49",
+      "lead_id": "56b474c1-85fa-4426-bdd4-207f280c7f28",
+      "provider_message_id": null,
+      "sent_at": null
+    },
+    {
+      "message_job_id": "fbe8a755-f33b-4faf-8b60-afda508dbc82",
+      "bucket": "failed_uncertain_send_state",
+      "status": "failed",
+      "status_reason": "uncertain_send_state",
+      "mailbox_id": "39c20ce5-5b37-4310-9f45-dea8d9d80b4e",
+      "enrollment_id": "553aa32a-2167-4e98-914a-df2fae87a1c9",
+      "lead_id": "172c0960-5859-4b2c-b404-37cf9f4b5882",
+      "provider_message_id": null,
+      "sent_at": null
+    }
+  ],
+  "imapSummary": {
+    "bucketCounts": {
+      "db_sent_and_imap_confirmed": 156,
+      "db_sent_missing_imap_match": 0,
+      "db_failed_uncertain_but_imap_found": 0,
+      "skipped_not_verifiable": 0
+    },
+    "mailboxResults": [
+      {
+        "mailbox_id": "122dc5bf-912b-4c2c-a66a-f1efc379ab9f",
+        "mailbox_email": "sonntag@getmynexttherapisttoday.com",
+        "sent_folder": "[Gmail]/Sent Mail",
+        "scanned_sent_messages": 748,
+        "jobs_checked": 156,
+        "confirmed": 156,
+        "missing_imap_match": 0,
+        "uncertain_but_found": 0,
+        "errors": []
+      }
+    ],
+    "suspectJobs": []
+  },
+  "recommendation": {
+    "level": "investigate_mailboxes",
+    "message": "Moderate send-side anomalies detected. Review suspect mailboxes and uncertain_send_state jobs; unlikely to fully explain a 3x-4x performance gap alone."
+  },
+  "errors": []
+}

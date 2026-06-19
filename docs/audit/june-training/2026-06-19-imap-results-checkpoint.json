@@ -1,0 +1,457 @@
+{
+  "updatedAt": "2026-06-19T17:13:14.535Z",
+  "completedMailboxes": 64,
+  "totalMailboxes": 64,
+  "mailboxResults": [
+    {
+      "email": "sonntag@getnexttherapisttoday.com",
+      "scanned": 274,
+      "replyLike": 156,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "sonntag@getmynexttherapisttoday.com",
+      "scanned": 289,
+      "replyLike": 151,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "sonntag@gonexttherapist.com",
+      "scanned": 241,
+      "replyLike": 144,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "sonntag@joinnexttherapist.com",
+      "scanned": 270,
+      "replyLike": 151,
+      "missed": 1,
+      "errors": []
+    },
+    {
+      "email": "sonntag@mynexttherapisttoday.com",
+      "scanned": 301,
+      "replyLike": 152,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "sonntag@nexttherapisttoday.com",
+      "scanned": 289,
+      "replyLike": 146,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "sonntag@nexttherapisttodayapp.com",
+      "scanned": 248,
+      "replyLike": 141,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "sonntag@mynexttherapist.com",
+      "scanned": 303,
+      "replyLike": 154,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "sonntag@teamnexttherapist.com",
+      "scanned": 265,
+      "replyLike": 145,
+      "missed": 1,
+      "errors": []
+    },
+    {
+      "email": "sonntag@usenexttherapist.com",
+      "scanned": 267,
+      "replyLike": 148,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "sonntag@trynexttherapisttoday.com",
+      "scanned": 251,
+      "replyLike": 154,
+      "missed": 3,
+      "errors": []
+    },
+    {
+      "email": "sonntag@nexttherapisttodayonline.com",
+      "scanned": 299,
+      "replyLike": 153,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "sonntag@usenexttherapisttoday.com",
+      "scanned": 257,
+      "replyLike": 137,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "sonntag@trynexttherapist.com",
+      "scanned": 284,
+      "replyLike": 153,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@getmynexttherapistnow.com",
+      "scanned": 279,
+      "replyLike": 143,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@nexttherapisttoday.com",
+      "scanned": 24,
+      "replyLike": 0,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@gonexttherapist.com",
+      "scanned": 296,
+      "replyLike": 144,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@mynexttherapist.com",
+      "scanned": 289,
+      "replyLike": 142,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@getnexttherapisttoday.com",
+      "scanned": 326,
+      "replyLike": 152,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@trynexttherapist.com",
+      "scanned": 286,
+      "replyLike": 147,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@teamnexttherapist.com",
+      "scanned": 296,
+      "replyLike": 140,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@joinnexttherapist.com",
+      "scanned": 304,
+      "replyLike": 143,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@trynexttherapisttoday.com",
+      "scanned": 296,
+      "replyLike": 149,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@getmynexttherapistnow.com",
+      "scanned": 256,
+      "replyLike": 137,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@nexttherapisttodayapp.com",
+      "scanned": 313,
+      "replyLike": 146,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie.sonntag@usenexttherapisttoday.com",
+      "scanned": 304,
+      "replyLike": 151,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@getyournexttherapist.com",
+      "scanned": 285,
+      "replyLike": 155,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@getmynexttherapisttoday.com",
+      "scanned": 263,
+      "replyLike": 147,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@getyournexttherapisttoday.com",
+      "scanned": 287,
+      "replyLike": 154,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@getnextherapist.com",
+      "scanned": 288,
+      "replyLike": 146,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@getnexttherapisttoday.com",
+      "scanned": 272,
+      "replyLike": 141,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@gonexttherapist.com",
+      "scanned": 262,
+      "replyLike": 145,
+      "missed": 6,
+      "errors": []
+    },
+    {
+      "email": "stephanie@joinnexttherapist.com",
+      "scanned": 289,
+      "replyLike": 146,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@mynexttherapisttoday.com",
+      "scanned": 260,
+      "replyLike": 151,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@mynexttherapist.com",
+      "scanned": 262,
+      "replyLike": 140,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@nexttherapisttoday.com",
+      "scanned": 260,
+      "replyLike": 142,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@nexttherapisttodayapp.com",
+      "scanned": 259,
+      "replyLike": 158,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@mynexttherapistapp.com",
+      "scanned": 273,
+      "replyLike": 145,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@trynexttherapist.com",
+      "scanned": 274,
+      "replyLike": 149,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@nexttherapisttodayonline.com",
+      "scanned": 275,
+      "replyLike": 146,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@teamnexttherapist.com",
+      "scanned": 276,
+      "replyLike": 148,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@usenexttherapisttoday.com",
+      "scanned": 254,
+      "replyLike": 142,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@trynexttherapisttoday.com",
+      "scanned": 274,
+      "replyLike": 145,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@usenexttherapist.com",
+      "scanned": 266,
+      "replyLike": 146,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanie@yournexttherapist.com",
+      "scanned": 281,
+      "replyLike": 147,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@getmynexttherapistnow.com",
+      "scanned": 268,
+      "replyLike": 150,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@getmynexttherapisttoday.com",
+      "scanned": 281,
+      "replyLike": 149,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@getnexttherapisttoday.com",
+      "scanned": 267,
+      "replyLike": 149,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@getnextherapist.com",
+      "scanned": 281,
+      "replyLike": 151,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@getyournexttherapist.com",
+      "scanned": 270,
+      "replyLike": 147,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@getyournexttherapisttoday.com",
+      "scanned": 238,
+      "replyLike": 137,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@mynexttherapist.com",
+      "scanned": 263,
+      "replyLike": 144,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@gonexttherapist.com",
+      "scanned": 292,
+      "replyLike": 153,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@nexttherapisttoday.com",
+      "scanned": 266,
+      "replyLike": 138,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@nexttherapisttodayapp.com",
+      "scanned": 268,
+      "replyLike": 139,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@mynexttherapisttoday.com",
+      "scanned": 271,
+      "replyLike": 147,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@mynexttherapistapp.com",
+      "scanned": 316,
+      "replyLike": 160,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@trynexttherapist.com",
+      "scanned": 262,
+      "replyLike": 135,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@nexttherapisttodayonline.com",
+      "scanned": 250,
+      "replyLike": 141,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@teamnexttherapist.com",
+      "scanned": 292,
+      "replyLike": 153,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@usenexttherapist.com",
+      "scanned": 299,
+      "replyLike": 143,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@trynexttherapisttoday.com",
+      "scanned": 281,
+      "replyLike": 146,
+      "missed": 0,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@usenexttherapisttoday.com",
+      "scanned": 286,
+      "replyLike": 146,
+      "missed": 1,
+      "errors": []
+    },
+    {
+      "email": "stephanieso@yournexttherapist.com",
+      "scanned": 295,
+      "replyLike": 147,
+      "missed": 0,
+      "errors": []
+    }
+  ],
+  "messagesSoFar": 9247,
+  "missedSoFar": 12
+}

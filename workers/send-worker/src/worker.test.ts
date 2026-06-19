@@ -207,6 +207,14 @@ class ProcessMessageSupabase {
         error: null,
       };
     }
+    if (table === 'message_jobs' && updates != null) {
+      return {
+        data: {
+          id: 'message-job-1',
+        },
+        error: null,
+      };
+    }
     return { data: null, error: null };
   }
 
@@ -366,6 +374,87 @@ class ThreadRecordingSupabase {
       return this.insertError
         ? { data: null, error: { message: this.insertError } }
         : { data: null, error: null };
+    }
+    return { data: null, error: null };
+  }
+}
+
+class InboxForwardSupabase {
+  readonly calls: RecordedCall[] = [];
+  readonly rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+
+  from(table: string) {
+    const call: RecordedCall = {
+      table,
+      updates: null,
+      filters: [],
+      selectedColumns: null,
+    };
+    this.calls.push(call);
+    return new MutationStub(call, () => this.resolveTableResult(call));
+  }
+
+  rpc(fn: string, args: Record<string, unknown>) {
+    this.rpcCalls.push({ fn, args });
+    return {
+      single: async () =>
+        fn === 'check_mailbox_throttle_and_reserve'
+          ? {
+              data: {
+                success: true,
+                failure_reason: null,
+              },
+              error: null,
+            }
+          : { data: null, error: null },
+    };
+  }
+
+  private resolveTableResult(call: RecordedCall) {
+    if (call.table === 'mailboxes' && call.updates == null) {
+      return {
+        data: {
+          id: 'mailbox-1',
+          email_address: 'owner@example.com',
+          display_name: 'Owner',
+          deleted_at: null,
+        },
+        error: null,
+      };
+    }
+    if (call.table === 'email_threads' && call.updates == null) {
+      return {
+        data: {
+          account_id: 'account-1',
+          participants: ['owner@example.com', 'lead@example.com'],
+          message_count: 2,
+          last_message_at: '2026-05-12T20:00:00.000Z',
+        },
+        error: null,
+      };
+    }
+    if (call.table === 'email_messages' && call.updates == null) {
+      if (call.selectedColumns === 'id, received_at, message_job_id') {
+        return { data: null, error: null };
+      }
+      if (call.selectedColumns === 'received_at') {
+        return {
+          data: [
+            { received_at: '2026-05-12T20:00:00.000Z' },
+            { received_at: '2026-05-12T21:00:00.000Z' },
+            { received_at: '2026-05-12T22:00:00.000Z' },
+          ],
+          error: null,
+        };
+      }
+    }
+    if (call.table === 'message_jobs' && call.updates != null && call.selectedColumns === 'id') {
+      return {
+        data: {
+          id: 'forward-job-1',
+        },
+        error: null,
+      };
     }
     return { data: null, error: null };
   }
@@ -691,6 +780,72 @@ test('SendWorker surfaces campaign_reply thread persistence failures to Slack', 
   } finally {
     slack.restore();
   }
+});
+
+test('SendWorker persists successful inbox_forward jobs into thread history', async () => {
+  const supabase = new InboxForwardSupabase();
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+  });
+  const messageJob = createCampaignMessageJob({
+    id: 'forward-job-1',
+    message_type: 'inbox_forward',
+    status: 'reserved',
+    message_data: {
+      thread_id: 'thread-1',
+      to_email: 'target@example.com',
+      to_name: 'Target Person',
+      cc: ['cc1@example.com', 'cc2@example.com'],
+      subject: 'Fwd: Hello',
+      body_text: 'Forward body',
+      body_html: '<p>Forward body</p>',
+      attachments: [
+        {
+          filename: 'note.txt',
+          contentType: 'text/plain',
+          content: Buffer.from('hi').toString('base64'),
+        },
+      ],
+    },
+  });
+
+  (worker as any).smtpPool = {
+    getTransporter: async () => ({
+      sendMail: async () => ({ messageId: '<forward@furnace.test>' }),
+    }),
+    markMessageSent: () => {},
+    removeTransporter: () => {},
+  };
+
+  await (worker as any).processInboxForwardJob(messageJob);
+
+  const insertCall = supabase.calls.find(
+    (call) => call.table === 'email_messages' && call.updates?.message_job_id === 'forward-job-1',
+  );
+  assert.ok(insertCall, 'inbox_forward should create an email_messages row');
+  assert.equal(insertCall?.updates?.thread_id, 'thread-1');
+  assert.equal(insertCall?.updates?.message_id, '<forward@furnace.test>');
+  assert.equal(insertCall?.updates?.in_reply_to, null);
+  assert.equal(insertCall?.updates?.message_references, null);
+  assert.deepEqual(insertCall?.updates?.attachments, [
+    {
+      filename: 'note.txt',
+      contentType: 'text/plain',
+      size: 2,
+    },
+  ]);
+
+  const finalJobUpdate = supabase.calls.find(
+    (call) => call.table === 'message_jobs' && call.updates?.status === 'sent',
+  );
+  assert.ok(finalJobUpdate, 'message job should be marked sent');
+  assert.equal(finalJobUpdate?.updates?.provider_message_id, '<forward@furnace.test>');
+
+  const threadUpdate = supabase.calls.find(
+    (call) => call.table === 'email_threads' && call.updates?.message_count === 3,
+  );
+  assert.ok(threadUpdate, 'thread metadata should be recomputed after persisting the forward');
 });
 
 test('SendWorker marks mailbox smtp_status=error for permanent SMTP auth failures', async () => {

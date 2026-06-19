@@ -250,12 +250,18 @@ export function InboxMessageList({
                           : undefined
                       }
                       pendingDisplayLabel={
-                        pendingInfo?.kind === 'campaign_reply' ? 'Campaign reply' : undefined
+                        pendingInfo?.kind === 'campaign_reply'
+                          ? 'Campaign reply'
+                          : pendingInfo?.kind === 'forward'
+                            ? 'Forward'
+                            : undefined
                       }
                       pendingSecondaryLabel={
                         pendingInfo?.kind === 'campaign_reply'
                           ? pendingInfo.campaignName ?? null
-                          : undefined
+                          : pendingInfo?.kind === 'forward'
+                            ? message.to_email
+                            : undefined
                       }
                       cancelLabel={
                         pendingInfo?.kind === 'campaign_reply'

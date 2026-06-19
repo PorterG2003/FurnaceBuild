@@ -14,6 +14,7 @@ const base = {
   threadCount: 5,
   threadsError: null as string | null,
   messagesLoading: false,
+  messagesLoadedForThreadId: null as string | null,
   hasActiveFilters: false,
   refreshing: false,
 };
@@ -136,4 +137,40 @@ test('computeInboxLoadingPolicy ready with empty inbox after load', () => {
   assert.equal(policy.suppressEmptyStates, false);
   assert.equal(policy.threadListSkeletonImmediate, false);
   assert.equal(policy.threadListSkeletonDelayed, false);
+});
+
+test('computeInboxLoadingPolicy messagePaneContentReadyRaw false while messages loading', () => {
+  const policy = computeInboxLoadingPolicy({
+    ...base,
+    routeThreadId: 'thread-1',
+    selectedThreadId: 'thread-1',
+    routeAccessStatus: 'ready',
+    messagesLoading: true,
+    messagesLoadedForThreadId: null,
+  });
+  assert.equal(policy.messagePaneContentReadyRaw, false);
+});
+
+test('computeInboxLoadingPolicy messagePaneContentReadyRaw false on thread switch stale loaded id', () => {
+  const policy = computeInboxLoadingPolicy({
+    ...base,
+    routeThreadId: 'thread-2',
+    selectedThreadId: 'thread-2',
+    routeAccessStatus: 'ready',
+    messagesLoading: false,
+    messagesLoadedForThreadId: 'thread-1',
+  });
+  assert.equal(policy.messagePaneContentReadyRaw, false);
+});
+
+test('computeInboxLoadingPolicy messagePaneContentReadyRaw true when messages loaded for selected thread', () => {
+  const policy = computeInboxLoadingPolicy({
+    ...base,
+    routeThreadId: 'thread-1',
+    selectedThreadId: 'thread-1',
+    routeAccessStatus: 'ready',
+    messagesLoading: false,
+    messagesLoadedForThreadId: 'thread-1',
+  });
+  assert.equal(policy.messagePaneContentReadyRaw, true);
 });

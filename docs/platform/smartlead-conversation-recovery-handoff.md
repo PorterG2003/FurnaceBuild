@@ -70,20 +70,20 @@ Related docs: [`smartlead-migration-fix-handoff.md`](./smartlead-migration-fix-h
 # Audit → candidates JSON (run per campaign)
 SELF_RECOVERY_TARGET_ENV=prod npx tsx scripts/recover-smartlead-imap-conversations.ts \
   --campaign-id 315e72b5-3ca0-4258-9307-b5e786e6868a \
-  --copy docs/audit/foot-traffic/lead-magnet-copy.json \
+  --copy tmp/audit/foot-traffic/lead-magnet-copy.json \
   --since 2026-05-06 \
-  --output docs/audit/foot-traffic/lead-magnet-candidates.json
+  --output tmp/audit/foot-traffic/lead-magnet-candidates.json
 
 SELF_RECOVERY_TARGET_ENV=prod npx tsx scripts/recover-smartlead-imap-conversations.ts \
   --campaign-id eecac452-8248-4809-8a45-26761b5c5a31 \
-  --copy docs/audit/foot-traffic/scraped-emails-2-copy.json \
+  --copy tmp/audit/foot-traffic/scraped-emails-2-copy.json \
   --since 2026-05-13 \
-  --output docs/audit/foot-traffic/scraped-emails-2-candidates.json
+  --output tmp/audit/foot-traffic/scraped-emails-2-candidates.json
 
 # Import after review
 SELF_RECOVERY_TARGET_ENV=prod APPLY=true npx tsx scripts/recover-smartlead-imap-conversations.ts \
   --campaign-id 315e72b5-3ca0-4258-9307-b5e786e6868a \
-  --input docs/audit/foot-traffic/lead-magnet-candidates.json \
+  --input tmp/audit/foot-traffic/lead-magnet-candidates.json \
   --min-confidence 80
 ```
 
@@ -95,7 +95,7 @@ Suggested flags: `--concurrency 5`, `--until` (cutover date), `--limit-mailboxes
 
 ## Copy input (`--copy`)
 
-Place files under `docs/audit/foot-traffic/`.
+Place files under `tmp/audit/foot-traffic/` (gitignored — never commit client audit artifacts).
 
 ```json
 {

@@ -1,18 +1,8 @@
 /**
- * Pure helpers mirroring `mark_email_thread_out_of_office`, `process_due_out_of_office_resumes`,
- * and `apply_ooo_resume_core` in `supabase/migrations/20260429143000_out_of_office_email_threads.sql`.
+ * Pure helpers mirroring the due-processing and legacy stopped-enrollment OOO
+ * resume SQL behavior in the OOO-related migrations.
  * Keep in sync when changing those functions.
  */
-
-/** Enrollment must be stopped for reply and not soft-deleted to schedule or apply OOO resume. */
-export function enrollmentQualifiesForOooResume(input: {
-  state: string | null | undefined;
-  stoppedReason: string | null | undefined;
-  deletedAt: string | null | undefined;
-}): boolean {
-  if (input.deletedAt != null) return false;
-  return input.state === 'stopped' && input.stoppedReason === 'replied';
-}
 
 /**
  * Row matches the due-thread predicate used by `process_due_out_of_office_resumes`

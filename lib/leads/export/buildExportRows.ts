@@ -1,4 +1,5 @@
-import { buildSavedListPeopleRows, type LeadsTableRow } from '@/lib/leads/columns';
+import { buildSavedListPeopleRows } from '@/lib/leads/columns/buildSavedListRows';
+import type { LeadsTableRow } from '@/lib/leads/columns/buildTableColumns';
 import { resolvePersonSummaryCellValue } from '@/lib/leads/columns/resolveCellValue';
 import type { LeadsColumnDef } from '@/lib/leads/columns/types';
 import type { LeadsPeopleRow, MockPerson } from '@/lib/devtools/leads-workbench/types';

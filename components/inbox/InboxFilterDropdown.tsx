@@ -24,6 +24,12 @@ const DATE_OPTIONS = [
   { id: '30d', name: 'Last 30 days' },
 ];
 
+const CONVERSATION_STATUS_OPTIONS = [
+  { id: 'all', name: 'All conversations' },
+  { id: 'open', name: 'Open only' },
+  { id: 'closed', name: 'Closed only' },
+] as const;
+
 const DROPDOWN_SCROLL_MAX = 560;
 
 export interface InboxFilterDropdownProps {
@@ -43,12 +49,12 @@ export interface InboxFilterDropdownProps {
   onCampaignFilterIdChange: (id: string | null) => void;
   categoryFilter: string | null;
   onCategoryFilterChange: (v: string | null) => void;
+  conversationStatusFilter: 'open' | 'closed' | 'all';
+  onConversationStatusFilterChange: (v: 'open' | 'closed' | 'all') => void;
   tagFilterIds: string[];
   onTagFilterIdsChange: (ids: string[]) => void;
   campaignTagFilterIds: string[];
   onCampaignTagFilterIdsChange: (ids: string[]) => void;
-  includeOutOfOfficeFilter: boolean;
-  onIncludeOutOfOfficeFilterChange: (v: boolean) => void;
   mailboxes: Mailbox[];
   campaigns: Campaign[];
   accountTags: ThreadTag[];
@@ -72,12 +78,12 @@ export function InboxFilterDropdown({
   onCampaignFilterIdChange,
   categoryFilter,
   onCategoryFilterChange,
+  conversationStatusFilter,
+  onConversationStatusFilterChange,
   tagFilterIds,
   onTagFilterIdsChange,
   campaignTagFilterIds,
   onCampaignTagFilterIdsChange,
-  includeOutOfOfficeFilter,
-  onIncludeOutOfOfficeFilterChange,
   mailboxes,
   campaigns,
   accountTags,
@@ -88,6 +94,7 @@ export function InboxFilterDropdown({
   const [mailboxSearch, setMailboxSearch] = useState('');
   const [campaignSearch, setCampaignSearch] = useState('');
   const [categorySearch, setCategorySearch] = useState('');
+  const [conversationStatusSearch, setConversationStatusSearch] = useState('');
 
   const mailboxItems = useMemo(
     () => [{ id: 'all', email_address: 'All' } as { id: string; email_address: string }, ...mailboxes],
@@ -106,6 +113,7 @@ export function InboxFilterDropdown({
     []
   );
   const dateItems = useMemo(() => DATE_OPTIONS, []);
+  const conversationStatusItems = useMemo(() => [...CONVERSATION_STATUS_OPTIONS], []);
   const filteredDateItems = useMemo(() => {
     if (!dateSearch.trim()) return dateItems;
     const q = dateSearch.trim().toLowerCase();
@@ -126,6 +134,11 @@ export function InboxFilterDropdown({
     const q = categorySearch.trim().toLowerCase();
     return categoryItems.filter((i) => i.name.toLowerCase().includes(q));
   }, [categoryItems, categorySearch]);
+  const filteredConversationStatusItems = useMemo(() => {
+    if (!conversationStatusSearch.trim()) return conversationStatusItems;
+    const q = conversationStatusSearch.trim().toLowerCase();
+    return conversationStatusItems.filter((item) => item.name.toLowerCase().includes(q));
+  }, [conversationStatusItems, conversationStatusSearch]);
 
   const dateValue = datePreset ?? 'all';
 
@@ -143,11 +156,6 @@ export function InboxFilterDropdown({
         <Toggle value={unreadOnlyFilter} onValueChange={onUnreadOnlyFilterChange} />
       </View>
 
-      <View className="flex-row items-center justify-between mb-4">
-        <Text className="text-xs font-instrument-medium text-gray-400">Include out of office</Text>
-        <Toggle value={includeOutOfOfficeFilter} onValueChange={onIncludeOutOfOfficeFilterChange} />
-      </View>
-
       <Select
         label="Date"
         items={filteredDateItems}
@@ -158,6 +166,19 @@ export function InboxFilterDropdown({
         onSearchChange={setDateSearch}
         searchPlaceholder="Search…"
         placeholder="All"
+        listMaxHeight={180}
+      />
+
+      <Select
+        label="Conversation status"
+        items={filteredConversationStatusItems}
+        getItemId={(i) => i.id}
+        getItemLabel={(i) => ({ primary: i.name })}
+        value={conversationStatusFilter}
+        onChange={(id) => onConversationStatusFilterChange(id as 'open' | 'closed' | 'all')}
+        onSearchChange={setConversationStatusSearch}
+        searchPlaceholder="Search…"
+        placeholder="All conversations"
         listMaxHeight={180}
       />
 

@@ -3,10 +3,12 @@ import { generateGlobalLeadId } from '@/lib/leads';
 import { buildSavedListExportRows, mapAccountSummaryToSavedListPeopleRow } from '@/lib/leads/export/buildExportRows';
 import { shouldContinueSavedListExportPagination } from '@/lib/leads/export/pagination';
 import { LEADS_EXPORT_CHUNK_SIZE, SAVED_LIST_PAGE_MAX } from '@/lib/leads/export/constants';
+import { columnsNeedWorkbenchDataset } from '@/lib/leads/columns/buildSavedListRows';
+import type { LeadsTableRow } from '@/lib/leads/columns/buildTableColumns';
 import { DEFAULT_SAVED_LIST_COLUMNS } from '@/lib/leads/columns/defaults';
-import { columnsNeedWorkbenchDataset, layoutNeedsReplyActivity, type LeadsTableRow } from '@/lib/leads/columns';
 import {
   assertColumnLayoutWritable,
+  layoutNeedsReplyActivity,
   parseColumnLayout,
 } from '@/lib/leads/columns/parseColumnLayout';
 import type { LeadsColumnDef } from '@/lib/leads/columns/types';

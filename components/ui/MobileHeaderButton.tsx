@@ -14,6 +14,7 @@ export interface MobileHeaderButtonProps {
   accessibilityLabel?: string;
   /** Icon size in px (default 22) */
   iconSize?: number;
+  disabled?: boolean;
   /** Optional className for the Pressable (e.g. size override) */
   className?: string;
 }
@@ -32,6 +33,7 @@ export function MobileHeaderButton({
   onPress,
   accessibilityLabel,
   iconSize = 22,
+  disabled = false,
   className,
 }: MobileHeaderButtonProps) {
   const label = accessibilityLabel ?? defaultLabels[variant];
@@ -40,10 +42,13 @@ export function MobileHeaderButton({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled }}
       className={cn(
         'w-12 h-12 rounded-lg items-center justify-center bg-[rgba(243,68,13,0.15)]',
+        disabled && 'opacity-50',
         className
       )}
     >

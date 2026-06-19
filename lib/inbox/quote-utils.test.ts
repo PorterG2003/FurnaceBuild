@@ -44,7 +44,7 @@ describe('buildForwardedConversationHtml', () => {
     assert.strictEqual(count, 1, 'expected single outer delimiter');
   });
 
-  it('embeds the clicked message body only (varies by which bubble you forward)', () => {
+  it('includes the full message chain up to the clicked bubble', () => {
     const early = msg({
       id: 'early',
       received_at: '2026-04-01T10:00:00.000Z',
@@ -62,22 +62,30 @@ describe('buildForwardedConversationHtml', () => {
     const htmlEarly = buildForwardedConversationHtml([early, late], early, 'sub');
     assert.ok(htmlEarly.includes('EARLY_BODY'));
     assert.ok(!htmlEarly.includes('LATE_BODY'));
+    assert.strictEqual(htmlEarly.split(FORWARD_MARKER).length - 1, 1);
 
     const htmlLate = buildForwardedConversationHtml([early, late], late, 'sub');
+    assert.ok(htmlLate.includes('EARLY_BODY'));
     assert.ok(htmlLate.includes('LATE_BODY'));
-    assert.ok(!htmlLate.includes('EARLY_BODY'));
+    assert.strictEqual(htmlLate.split(FORWARD_MARKER).length - 1, 2);
   });
 
-  it('does not strip nested quoted-looking content from body_html', () => {
-    const inner =
-      '<p>New line</p><blockquote>On Mon, Apr 1, 2026 at 9:00 AM someone wrote: prior</blockquote>';
-    const m = msg({
-      id: 'm1',
-      received_at: '2026-04-02T12:00:00.000Z',
-      body_html: inner,
+  it('uses display bodies for each message so nested quoted content is not duplicated', () => {
+    const early = msg({
+      id: 'early',
+      received_at: '2026-04-01T10:00:00.000Z',
+      body_html: '<p>Original message</p>',
     });
-    const html = buildForwardedConversationHtml([m], m, 'sub');
-    assert.ok(html.includes('someone wrote: prior'), 'quoted thread fragment should remain in forward HTML');
+    const later = msg({
+      id: 'later',
+      received_at: '2026-04-02T12:00:00.000Z',
+      body_html:
+        '<p>New line</p><blockquote>On Mon, Apr 1, 2026 at 9:00 AM someone wrote: Original message</blockquote>',
+    });
+    const html = buildForwardedConversationHtml([early, later], later, 'sub');
+    assert.ok(html.includes('Original message'));
+    assert.ok(html.includes('New line'));
+    assert.ok(!html.includes('someone wrote:'), 'quoted thread fragment should be stripped per message');
   });
 
   it('removes cid images from embedded message bodies', () => {
@@ -91,15 +99,33 @@ describe('buildForwardedConversationHtml', () => {
     assert.ok(html.includes('ok'), 'non-cid content preserved');
   });
 
-  it('uses forwarded message subject with thread fallback', () => {
+  it('falls back to sanitized raw html when the display body is empty', () => {
     const m = msg({
       id: 'm1',
       received_at: '2026-04-01T12:00:00.000Z',
-      subject: '',
-      body_html: '<p>x</p>',
+      body_text: null,
+      body_html: '<div><img src="https://example.com/image.png" alt=""></div>',
     });
-    const html = buildForwardedConversationHtml([m], m, 'Fallback Subject');
+    const html = buildForwardedConversationHtml([m], m, 'sub');
+    assert.ok(html.includes('https://example.com/image.png'));
+  });
+
+  it('uses each forwarded message subject with thread fallback', () => {
+    const early = msg({
+      id: 'early',
+      received_at: '2026-04-01T10:00:00.000Z',
+      subject: '',
+      body_html: '<p>one</p>',
+    });
+    const later = msg({
+      id: 'later',
+      received_at: '2026-04-02T10:00:00.000Z',
+      subject: 'Actual Subject',
+      body_html: '<p>two</p>',
+    });
+    const html = buildForwardedConversationHtml([early, later], later, 'Fallback Subject');
     assert.ok(html.includes('Fallback Subject'));
+    assert.ok(html.includes('Actual Subject'));
   });
 });
 

@@ -170,20 +170,22 @@ export async function cancelPendingOutboundJob(jobId: string): Promise<void> {
 export async function getThreadAutoReplyPipelineState(
   threadId: string
 ): Promise<ThreadAutoReplyPipelineState | null> {
-  const { data, error } = await supabase
-    .rpc('get_thread_auto_reply_pipeline_state', {
+  const { data, error } = await supabase.rpc(
+    'get_thread_auto_reply_pipeline_state',
+    {
       p_thread_id: threadId,
-    })
-    .maybeSingle();
+    }
+  );
   if (error) throw new Error(`Failed to fetch auto-reply pipeline state: ${error.message}`);
-  if (!data || data.active !== true) return null;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || row.active !== true) return null;
   return {
     active: true,
     phase:
-      data.phase === 'categorizing' || data.phase === 'arming_reply'
-        ? data.phase
+      row.phase === 'categorizing' || row.phase === 'arming_reply'
+        ? row.phase
         : null,
-    label: typeof data.label === 'string' ? data.label : null,
+    label: typeof row.label === 'string' ? row.label : null,
   };
 }
 

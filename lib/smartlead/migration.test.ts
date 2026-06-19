@@ -8,6 +8,7 @@ import {
   fetchSmartleadCampaignStatsByDay,
   mapSmartleadCategoryToFurnace,
   parseSmartleadInboxReplyLead,
+  upsertSmartleadConversationThread,
   upsertCampaignFromSmartlead,
   upsertLeadsFromSmartlead,
 } from './migration';
@@ -186,6 +187,35 @@ test('upsertLeadsFromSmartlead dedupes duplicate ids within a batch before upser
   assert.equal(upsertedRows.length, 2);
   assert.equal(upsertedRows[0].smartlead_lead_id, 1);
   assert.equal(upsertedRows[0].email, 'a-dup@example.com');
+});
+
+test('upsertSmartleadConversationThread defaults imported Smartlead threads to closed', async () => {
+  const capture: { upsertRow?: Record<string, unknown> } = {};
+
+  await upsertSmartleadConversationThread({
+    accountId: 'account-id',
+    campaignId: 'campaign-id',
+    leadId: 'lead-id',
+    enrollmentId: 'enrollment-id',
+    smartleadLeadId: 123,
+    category: 'Interested',
+    messages: [
+      {
+        from: 'sender@example.com',
+        to: 'lead@example.com',
+        type: 'REPLY',
+        time: '2026-06-17T12:00:00.000Z',
+        subject: 'Re: Smartlead thread',
+        email_body: 'hello',
+        raw: {},
+      },
+    ],
+    db: createMockMigrationDb(capture) as any,
+  });
+
+  assert.equal(capture.upsertRow?.conversation_status, 'closed');
+  assert.equal(capture.upsertRow?.conversation_status_source, 'system');
+  assert.equal(capture.upsertRow?.smartlead_lead_id, 123);
 });
 
 test('computeFinalImportedCampaignStats prefers inbox thread counts when higher than analytics', () => {

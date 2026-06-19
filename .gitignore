@@ -55,3 +55,7 @@ amplifyconfiguration*
 
 # cursor
 .cursor/debug*.log
+
+# Client audit artifacts — never commit
+docs/audit/
+tmp/audit/

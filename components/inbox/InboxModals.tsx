@@ -26,12 +26,12 @@ export interface InboxModalsFiltersProps {
   setCampaignFilterId: (id: string | null) => void;
   categoryFilter: string | null;
   setCategoryFilter: (v: string | null) => void;
+  conversationStatusFilter: 'open' | 'closed' | 'all';
+  setConversationStatusFilter: (v: 'open' | 'closed' | 'all') => void;
   tagFilterIds: string[];
   setTagFilterIds: (ids: string[]) => void;
   campaignTagFilterIds: string[];
   setCampaignTagFilterIds: (ids: string[]) => void;
-  includeOutOfOfficeFilter: boolean;
-  setIncludeOutOfOfficeFilter: (v: boolean) => void;
   mailboxes: Mailbox[];
   campaigns: Campaign[];
   accountTags: ThreadTag[];
@@ -73,6 +73,8 @@ export interface InboxModalsActionsProps {
   onDeleteTag: (tag: ThreadTag) => void;
   onMarkOutOfOffice?: () => void;
   onReplaceLead?: () => void;
+  onCloseConversation?: () => void;
+  onOpenConversation?: () => void;
   onMessageActionsSheetAfterClose?: () => void;
 }
 
@@ -97,12 +99,12 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     setCampaignFilterId,
     categoryFilter,
     setCategoryFilter,
+    conversationStatusFilter,
+    setConversationStatusFilter,
     tagFilterIds,
     setTagFilterIds,
     campaignTagFilterIds,
     setCampaignTagFilterIds,
-    includeOutOfOfficeFilter,
-    setIncludeOutOfOfficeFilter,
     mailboxes,
     campaigns,
     accountTags,
@@ -144,6 +146,8 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     onDeleteTag,
     onMarkOutOfOffice,
     onReplaceLead,
+    onCloseConversation,
+    onOpenConversation,
     onMessageActionsSheetAfterClose,
   } = actions;
 
@@ -165,12 +169,12 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         onCampaignFilterIdChange={setCampaignFilterId}
         categoryFilter={categoryFilter}
         onCategoryFilterChange={setCategoryFilter}
+        conversationStatusFilter={conversationStatusFilter}
+        onConversationStatusFilterChange={setConversationStatusFilter}
         tagFilterIds={tagFilterIds}
         onTagFilterIdsChange={setTagFilterIds}
         campaignTagFilterIds={campaignTagFilterIds}
         onCampaignTagFilterIdsChange={setCampaignTagFilterIds}
-        includeOutOfOfficeFilter={includeOutOfOfficeFilter}
-        onIncludeOutOfOfficeFilterChange={setIncludeOutOfOfficeFilter}
         mailboxes={mailboxes}
         campaigns={campaigns}
         accountTags={accountTags}
@@ -216,6 +220,8 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         onBlock={() => setBlockModalVisible(true)}
         onMarkOutOfOffice={onMarkOutOfOffice}
         onReplaceLead={onReplaceLead}
+        onCloseConversation={onCloseConversation}
+        onOpenConversation={onOpenConversation}
         onTags={() => setTagsPanelVisible(true)}
         onShowInfo={() => setInfoSheetVisible(true)}
         onSetCategory={onSetCategory}

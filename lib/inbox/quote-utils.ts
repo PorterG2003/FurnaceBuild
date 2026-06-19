@@ -2,9 +2,11 @@
  * Quote utilities for reply/forward: escape HTML, build forwarded conversation HTML.
  */
 import {
+  getDisplayBody,
   plainTextEmailBodyToForwardHtml,
+  sanitizeEmailBody,
   sanitizeEmailHtmlForForwardEmbed,
-} from '@/lib/email/forward-embed';
+} from '@/lib/email';
 import type { EmailMessage } from '@/lib/supabase/types';
 import { formatMessageDate } from './formatters';
 
@@ -49,34 +51,48 @@ function messageBodyFragmentHtml(message: EmailMessage): string {
   return plainTextEmailBodyToForwardHtml(message.body_text);
 }
 
-/**
- * One Gmail-style "Forwarded message" header plus the **clicked** message’s body only.
- * That MIME already includes quoted replies up to that point; we do not concatenate
- * the whole thread (which duplicated nested quotes).
- *
- * @param _messages Reserved for callers (e.g. same list as the thread UI); body always comes from `forwardedMessage`.
- */
-export function buildForwardedConversationHtml(
-  _messages: EmailMessage[],
-  forwardedMessage: EmailMessage,
+function displayBodyText(message: EmailMessage): string {
+  const textBody = message.body_text?.trim() ?? '';
+  if (textBody) {
+    return getDisplayBody(textBody, { format: 'text' });
+  }
+  const htmlBody = message.body_html?.trim() ?? '';
+  if (!htmlBody) return '';
+  const htmlWithBreaks = sanitizeEmailBody(htmlBody, { format: 'html' })
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|blockquote|li|tr|h[1-6])>/gi, '\n');
+  const htmlAsText = htmlWithBreaks
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/(^|\n)(\s*on\s+[^\n]*?wrote:)\s+/im, '$1$2\n');
+  return getDisplayBody(htmlAsText, { format: 'text' });
+}
+
+function forwardedMessageBodyHtml(message: EmailMessage): string {
+  const displayText = displayBodyText(message);
+  if (displayText.trim()) {
+    return plainTextEmailBodyToForwardHtml(displayText);
+  }
+  return messageBodyFragmentHtml(message) || '(No content)';
+}
+
+function buildSingleForwardedMessageBlock(
+  message: EmailMessage,
   threadSubjectFallback: string
 ): string {
-  const subject =
-    forwardedMessage.subject?.trim() || threadSubjectFallback.trim() || '(No subject)';
+  const subject = message.subject?.trim() || threadSubjectFallback.trim() || '(No subject)';
   const headerLines = [
     FORWARD_DELIMITER_LINE,
-    `From: ${formatFromLineHtml(forwardedMessage)}`,
-    `Date: ${escapeHtml(formatMessageDate(forwardedMessage.received_at))}`,
+    `From: ${formatFromLineHtml(message)}`,
+    `Date: ${escapeHtml(formatMessageDate(message.received_at))}`,
     `Subject: ${escapeHtml(subject)}`,
-    `To: ${formatToLineHtml(forwardedMessage)}`,
+    `To: ${formatToLineHtml(message)}`,
   ];
-  const ccLine = formatCcLineHtml(forwardedMessage);
+  const ccLine = formatCcLineHtml(message);
   if (ccLine) {
     headerLines.push(`Cc: ${ccLine}`);
   }
   const headerHtml = headerLines.join('<br>');
-
-  const innerHtml = messageBodyFragmentHtml(forwardedMessage) || '(No content)';
+  const innerHtml = forwardedMessageBodyHtml(message);
 
   return (
     `<div style="border-left: 3px solid #ccc; padding-left: 15px; margin: 1em 0; color: #666;">` +
@@ -84,6 +100,27 @@ export function buildForwardedConversationHtml(
     `<div style="color: #333; margin-top: 0.25em;">${innerHtml}</div>` +
     `</div>`
   );
+}
+
+/**
+ * Build Gmail-style forwarded message blocks for the thread up to the clicked message.
+ */
+export function buildForwardedConversationHtml(
+  messages: EmailMessage[],
+  forwardedMessage: EmailMessage,
+  threadSubjectFallback: string
+): string {
+  const sortedMessages = [...messages].sort(
+    (left, right) => new Date(left.received_at).getTime() - new Date(right.received_at).getTime()
+  );
+  const forwardIndex = sortedMessages.findIndex((message) => message.id === forwardedMessage.id);
+  if (forwardIndex < 0) {
+    return buildSingleForwardedMessageBlock(forwardedMessage, threadSubjectFallback);
+  }
+  return sortedMessages
+    .slice(0, forwardIndex + 1)
+    .map((message) => buildSingleForwardedMessageBlock(message, threadSubjectFallback))
+    .join('');
 }
 
 export function buildForwardComposerHtml(

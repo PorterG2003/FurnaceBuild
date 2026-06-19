@@ -1,47 +1,9 @@
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
 import {
-  enrollmentQualifiesForOooResume,
   nextCampaignJobScheduledAtAfterOooResume,
   threadRowIsDueForOooResumeProcessing,
 } from './outOfOfficeResumeRules';
-
-describe('enrollmentQualifiesForOooResume', () => {
-  it('is true only for stopped + replied and not deleted', () => {
-    assert.equal(
-      enrollmentQualifiesForOooResume({
-        state: 'stopped',
-        stoppedReason: 'replied',
-        deletedAt: null,
-      }),
-      true
-    );
-    assert.equal(
-      enrollmentQualifiesForOooResume({
-        state: 'stopped',
-        stoppedReason: 'bounced',
-        deletedAt: null,
-      }),
-      false
-    );
-    assert.equal(
-      enrollmentQualifiesForOooResume({
-        state: 'active',
-        stoppedReason: 'replied',
-        deletedAt: null,
-      }),
-      false
-    );
-    assert.equal(
-      enrollmentQualifiesForOooResume({
-        state: 'stopped',
-        stoppedReason: 'replied',
-        deletedAt: '2026-01-01T00:00:00Z',
-      }),
-      false
-    );
-  });
-});
 
 describe('threadRowIsDueForOooResumeProcessing', () => {
   const base = {

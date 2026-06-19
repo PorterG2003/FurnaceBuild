@@ -10,9 +10,8 @@ import { InboxThreadList } from './InboxThreadList';
 import { InboxMessageList } from './InboxMessageList';
 import { InboxComposerPanel } from './InboxComposerPanel';
 import { THREAD_CATEGORIES } from './inboxConstants';
-import type { PendingReplyInfo } from './InboxMessageList';
+import type { PendingReplyInfo, ThreadStatusCalloutProps } from './InboxMessageList';
 import type { InboxComposerFormProps } from './InboxComposerForm';
-import type { ThreadAutoReplyPipelineState } from '@/lib/supabase/services';
 
 export interface InboxDesktopThreadListProps {
   threads: EmailThread[];
@@ -58,6 +57,8 @@ export interface InboxDesktopMessagePaneProps {
   onBlock: (() => void) | undefined;
   onMarkOutOfOffice?: (() => void) | undefined;
   onReplaceLead?: (() => void) | undefined;
+  onCloseConversation?: (() => void) | undefined;
+  onOpenConversation?: (() => void) | undefined;
   onOpenLeadDetail?: (() => void) | undefined;
   onOpenTagsPanel: (() => void) | undefined;
   onSetCategory: ((cat: string | null) => Promise<void>) | undefined;
@@ -68,10 +69,10 @@ export interface InboxDesktopMessagePaneProps {
   onDownloadAttachment: ((emailMessageId: string, part: string, filename: string) => Promise<void>) | undefined;
   onFetchAttachmentPreview: ((emailMessageId: string, part: string) => Promise<Blob | null>) | undefined;
   pendingReplies: PendingReplyInfo[];
-  autoReplyPipelineState?: ThreadAutoReplyPipelineState | null;
   onRetryFailedReply: (jobId: string) => void;
   onSendImmediately: (jobId: string) => void;
   onCancelPendingOutbound: (jobId: string) => void;
+  threadStatusCallout?: ThreadStatusCalloutProps | null;
 }
 
 export interface InboxDesktopLayoutOptions {
@@ -142,6 +143,8 @@ export function InboxDesktopLayout({
     onBlock,
     onMarkOutOfOffice,
     onReplaceLead,
+    onCloseConversation,
+    onOpenConversation,
     onOpenLeadDetail,
     onOpenTagsPanel,
     onSetCategory,
@@ -152,10 +155,10 @@ export function InboxDesktopLayout({
     onDownloadAttachment,
     onFetchAttachmentPreview,
     pendingReplies,
-    autoReplyPipelineState,
     onRetryFailedReply,
     onSendImmediately,
     onCancelPendingOutbound,
+    threadStatusCallout,
   } = messagePane;
 
   const { slideAnim, replyPanelWidth } = layout;
@@ -226,6 +229,8 @@ export function InboxDesktopLayout({
               onBlock={onBlock}
               onMarkOutOfOffice={onMarkOutOfOffice}
               onReplaceLead={onReplaceLead}
+              onCloseConversation={onCloseConversation}
+              onOpenConversation={onOpenConversation}
               onOpenLeadDetail={onOpenLeadDetail}
               accountId={accountId}
               onOpenTagsPanel={onOpenTagsPanel}
@@ -241,10 +246,10 @@ export function InboxDesktopLayout({
               onDownloadAttachment={onDownloadAttachment}
               onFetchAttachmentPreview={onFetchAttachmentPreview}
               pendingReplies={pendingReplies}
-              autoReplyPipelineState={autoReplyPipelineState}
               onRetryFailedReply={onRetryFailedReply}
               onSendImmediately={onSendImmediately}
               onCancelPendingOutbound={onCancelPendingOutbound}
+              threadStatusCallout={threadStatusCallout}
             />
           ) : (
             <View className="flex-1 items-center justify-center px-8">

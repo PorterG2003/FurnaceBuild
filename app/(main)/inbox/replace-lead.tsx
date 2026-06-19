@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,14 +11,18 @@ import {
   buildInboxListHref,
   normalizeRouteParam,
 } from '@/lib/inbox/inboxRoutes';
+import { buildReplaceLeadPrefill } from '@/lib/inbox/replaceLeadPrefill';
+import { parseSmartHandlingMetadata } from '@/lib/inbox/smartHandling';
 import type { Href } from 'expo-router';
 import { getMessagesByThread, getThreadById } from '@/lib/supabase/services/inbox';
 import { getLeadById } from '@/lib/supabase/services/leads';
+import { useInboxThreadActionSession } from '@/contexts/InboxThreadActionContext';
 import type { Lead, EmailThread } from '@/lib/supabase/types';
 
 export default function ReplaceLeadPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const session = useInboxThreadActionSession();
   const { thread: threadParamRaw } = useLocalSearchParams<{ thread?: string | string[] }>();
   const threadId = normalizeRouteParam(threadParamRaw) ?? null;
   const { account } = useAccount();
@@ -28,6 +32,7 @@ export default function ReplaceLeadPage() {
   const [error, setError] = useState<string | null>(null);
   const [thread, setThread] = useState<EmailThread | null>(null);
   const [lead, setLead] = useState<Lead | null>(null);
+  const [latestInboundFromEmail, setLatestInboundFromEmail] = useState<string | null>(null);
   const [sourceMessageId, setSourceMessageId] = useState<string | null>(null);
 
   const returnToInbox = useCallback(() => {
@@ -35,6 +40,15 @@ export default function ReplaceLeadPage() {
       threadId ? (buildInboxInternalThreadHref(threadId) as Href) : buildInboxListHref()
     );
   }, [router, threadId]);
+
+  const replaceLeadPrefill = useMemo(
+    () =>
+      buildReplaceLeadPrefill({
+        metadata: parseSmartHandlingMetadata(thread?.handling_metadata ?? null),
+        inboundFromEmail: latestInboundFromEmail,
+      }),
+    [latestInboundFromEmail, thread?.handling_metadata]
+  );
 
   useEffect(() => {
     if (threadId == null || accountId == null) {
@@ -74,6 +88,7 @@ export default function ReplaceLeadPage() {
 
         setThread(loadedThread);
         setLead(loadedLead);
+        setLatestInboundFromEmail(latestInbound?.from_email ?? null);
         setSourceMessageId(latestInbound?.id ?? null);
       } catch (err) {
         if (cancelled) return;
@@ -123,9 +138,12 @@ export default function ReplaceLeadPage() {
           ) : (
             <ReplaceLeadScreen
               oldLead={lead}
+              prefill={replaceLeadPrefill}
               sourceMessageId={sourceMessageId}
-              onReplaced={() => {
-                returnToInbox();
+              onReplaced={(_result, completion) => {
+                void session.completeDeferredActionOnServer('replace_lead', completion).then(() => {
+                  returnToInbox();
+                });
               }}
               onCancel={returnToInbox}
               layout="page"

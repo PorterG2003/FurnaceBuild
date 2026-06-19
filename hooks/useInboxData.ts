@@ -34,6 +34,7 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
   const [threadsError, setThreadsError] = useState<string | null>(null);
   const [messages, setMessages] = useState<EmailMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesLoadedForThreadId, setMessagesLoadedForThreadId] = useState<string | null>(null);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -45,7 +46,7 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
   const [tagFilterIds, setTagFilterIdsState] = useState<string[]>([]);
   const [campaignTagFilterIds, setCampaignTagFilterIdsState] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilterState] = useState<string | null>(null);
-  const [includeOutOfOfficeFilter, setIncludeOutOfOfficeFilterState] = useState(false);
+  const [conversationStatusFilter, setConversationStatusFilterState] = useState<'open' | 'closed' | 'all'>('all');
   const [threadOffset, setThreadOffset] = useState(0);
   const [hasMoreThreads, setHasMoreThreads] = useState(false);
   const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
@@ -73,7 +74,7 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
   const prevSearchAccountIdRef = useRef<string | null>(null);
 
   const threadIdsKey = useMemo(
-    () => [...threads.map((thread) => thread.id)].sort().join(','),
+    () => [...threads.map((thread) => `${thread.id}:${thread.lead_id ?? ''}`)].sort().join(','),
     [threads]
   );
 
@@ -88,7 +89,7 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
     tagFilterIds.length > 0 ||
     campaignTagFilterIds.length > 0 ||
     !!categoryFilter ||
-    includeOutOfOfficeFilter ||
+    conversationStatusFilter !== 'all' ||
     threadSearchQuery.trim().length > 0;
 
   const clearAllFilters = useCallback(() => {
@@ -100,13 +101,14 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
     setTagFilterIdsState([]);
     setCampaignTagFilterIdsState([]);
     setCategoryFilterState(null);
-    setIncludeOutOfOfficeFilterState(false);
+    setConversationStatusFilterState('all');
   }, []);
 
   const resetForAccountChange = useCallback(() => {
     clearAllFilters();
     setThreads([]);
     setMessages([]);
+    setMessagesLoadedForThreadId(null);
     setThreadOffset(0);
     setHasMoreThreads(false);
     setThreadsError(null);
@@ -171,7 +173,7 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
       tagIds: tagFilterIds.length > 0 ? tagFilterIds : undefined,
       campaignTagIds: campaignTagFilterIds.length > 0 ? campaignTagFilterIds : undefined,
       category: categoryFilter ?? undefined,
-      includeOutOfOffice: includeOutOfOfficeFilter ? true : undefined,
+      conversationStatus: conversationStatusFilter,
     };
   }, [
     mailboxFilterId,
@@ -182,7 +184,7 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
     tagFilterIds,
     campaignTagFilterIds,
     categoryFilter,
-    includeOutOfOfficeFilter,
+    conversationStatusFilter,
   ]);
 
   const loadBlockList = useCallback(async () => {
@@ -213,6 +215,7 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
     } finally {
       if (!options?.silent) {
         setMessagesLoading(false);
+        setMessagesLoadedForThreadId(threadId);
       }
     }
   }, [loadBlockList]);
@@ -385,7 +388,7 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
     tagFilterIds,
     campaignTagFilterIds,
     categoryFilter,
-    includeOutOfOfficeFilter,
+    conversationStatusFilter,
   ]);
 
   useEffect(() => {
@@ -420,9 +423,11 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
   useEffect(() => {
     if (selectedThreadId) {
       setMessages([]);
+      setMessagesLoadedForThreadId(null);
       loadMessages(selectedThreadId);
     } else {
       setMessages([]);
+      setMessagesLoadedForThreadId(null);
     }
   }, [selectedThreadId, loadMessages]);
 
@@ -437,6 +442,7 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
     threadsError,
     initialThreadsLoadSettled,
     messagesLoading,
+    messagesLoadedForThreadId,
     messagesError,
     refreshing,
     threadSearchQuery,
@@ -455,8 +461,8 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
     setCampaignTagFilterIds: setCampaignTagFilterIdsState,
     categoryFilter,
     setCategoryFilter: setCategoryFilterState,
-    includeOutOfOfficeFilter,
-    setIncludeOutOfOfficeFilter: setIncludeOutOfOfficeFilterState,
+    conversationStatusFilter,
+    setConversationStatusFilter: setConversationStatusFilterState,
     threadOffset,
     hasMoreThreads,
     loadingMoreThreads,

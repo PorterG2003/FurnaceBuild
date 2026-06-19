@@ -18,6 +18,7 @@ export interface UseInboxLoadingPolicyOptions {
   threadCount: number;
   threadsError: string | null;
   messagesLoading: boolean;
+  messagesLoadedForThreadId: string | null;
   hasActiveFilters: boolean;
   refreshing: boolean;
 }
@@ -27,6 +28,7 @@ export interface InboxLoadingPolicy {
   showThreadListSkeleton: boolean;
   showMessagePaneSkeleton: boolean;
   showMessageBodySkeleton: boolean;
+  messagePaneContentReady: boolean;
   suppressEmptyStates: boolean;
   keepPreviousThreadList: boolean;
 }
@@ -43,6 +45,7 @@ export function useInboxLoadingPolicy(options: UseInboxLoadingPolicyOptions): In
     threadCount,
     threadsError,
     messagesLoading,
+    messagesLoadedForThreadId,
     hasActiveFilters,
     refreshing,
   } = options;
@@ -82,6 +85,7 @@ export function useInboxLoadingPolicy(options: UseInboxLoadingPolicyOptions): In
         threadCount,
         threadsError,
         messagesLoading,
+        messagesLoadedForThreadId,
         hasActiveFilters,
         refreshing,
       } satisfies InboxLoadingPolicyInput),
@@ -97,6 +101,7 @@ export function useInboxLoadingPolicy(options: UseInboxLoadingPolicyOptions): In
       threadCount,
       threadsError,
       messagesLoading,
+      messagesLoadedForThreadId,
       hasActiveFilters,
       refreshing,
     ],
@@ -110,6 +115,7 @@ export function useInboxLoadingPolicy(options: UseInboxLoadingPolicyOptions): In
     showThreadListSkeleton: raw.threadListSkeletonImmediate || showThreadListSkeletonDelayed,
     showMessagePaneSkeleton: raw.messagePaneSkeletonImmediate,
     showMessageBodySkeleton,
+    messagePaneContentReady: raw.messagePaneContentReadyRaw && !showMessageBodySkeleton,
     suppressEmptyStates: raw.suppressEmptyStates,
     keepPreviousThreadList: raw.keepPreviousThreadList,
   };

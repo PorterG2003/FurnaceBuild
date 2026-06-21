@@ -16,6 +16,7 @@ import type {
   ReplaceLeadCompletionPayload,
 } from '@/lib/inbox/replaceLeadCompletion';
 import type { ReplaceLeadPrefill } from '@/lib/inbox/replaceLeadPrefill';
+import { splitPersonName } from '@/lib/inbox/referralContactExtraction';
 import {
   replaceLeadWithNewContact,
   updateLeadProfileFields,
@@ -108,19 +109,34 @@ function buildInitialCustomFields(lead: Lead | null): Record<string, string> {
   return next;
 }
 
-function seedStandardFields(lead: Lead | null): StandardFieldsState {
-  if (!lead) return EMPTY_STANDARD_FIELDS;
-  return {
+function seedReplacementFields(lead: Lead | null, prefill: ReplaceLeadPrefill | null): StandardFieldsState {
+  const fields: StandardFieldsState = {
     email: '',
-    name: lead.name ?? '',
-    firstName: lead.first_name ?? '',
-    lastName: lead.last_name ?? '',
-    phoneNumber: lead.phone_number ?? '',
-    companyName: lead.company_name ?? '',
-    website: lead.website ?? '',
-    linkedinUrl: lead.linkedin_url ?? '',
-    companyLinkedinUrl: lead.company_linkedin_url ?? '',
+    name: '',
+    firstName: '',
+    lastName: '',
+    phoneNumber: '',
+    linkedinUrl: '',
+    companyName: lead?.company_name ?? '',
+    website: lead?.website ?? '',
+    companyLinkedinUrl: lead?.company_linkedin_url ?? '',
   };
+
+  if (!prefill) return fields;
+
+  if (prefill.email?.trim()) fields.email = prefill.email.trim();
+  if (prefill.name?.trim()) fields.name = prefill.name.trim();
+  if (prefill.firstName?.trim()) fields.firstName = prefill.firstName.trim();
+  if (prefill.lastName?.trim()) fields.lastName = prefill.lastName.trim();
+  if (prefill.phoneNumber?.trim()) fields.phoneNumber = prefill.phoneNumber.trim();
+
+  if (!fields.firstName && !fields.lastName && fields.name) {
+    const split = splitPersonName(fields.name);
+    if (split.firstName) fields.firstName = split.firstName;
+    if (split.lastName) fields.lastName = split.lastName;
+  }
+
+  return fields;
 }
 
 function normalizeNullable(value: string): string | null {
@@ -161,21 +177,22 @@ export function ReplaceLeadScreen({
   const [savingIntent, setSavingIntent] = useState<ReplaceLeadCompletionIntent | null>(null);
 
   const oldLeadId = oldLead?.id ?? null;
-  const prefillEmail = prefill?.email?.trim() || null;
-  const prefillName = prefill?.name?.trim() || null;
   const prefillReason = prefill?.reason ?? null;
   const prefillReasonNote = prefill?.reasonNote?.trim() || null;
 
   useEffect(() => {
     if (!oldLead) return;
-    const nextFields = seedStandardFields(oldLead);
-    if (prefillEmail) nextFields.email = prefillEmail;
-    if (prefillName) nextFields.name = prefillName;
-    setFields(nextFields);
-    setCustomFields(buildInitialCustomFields(oldLead));
+    setFields(seedReplacementFields(oldLead, prefill));
+    const nextCustomFields = buildInitialCustomFields(oldLead);
+    if (prefill?.customFields) {
+      for (const [key, value] of Object.entries(prefill.customFields)) {
+        if (key in nextCustomFields) nextCustomFields[key] = value;
+      }
+    }
+    setCustomFields(nextCustomFields);
     setReason(prefillReason ?? 'manual_referral');
     setReasonNote(prefillReasonNote ?? '');
-  }, [oldLeadId, oldLead, prefillEmail, prefillName, prefillReason, prefillReasonNote]);
+  }, [oldLeadId, oldLead, prefill, prefillReason, prefillReasonNote]);
 
   const customEntries = useMemo(() => readCustomLeadEntries(oldLead), [oldLead]);
 
@@ -257,7 +274,7 @@ export function ReplaceLeadScreen({
             <ColumnHeader label="Current lead" subtitle={oldLead.email ?? 'No email on file'} />
           </View>
           <View className="flex-1">
-            <ColumnHeader label="Replacement contact" subtitle="Pre-filled from current lead and reply context" />
+            <ColumnHeader label="Replacement contact" subtitle="Pre-filled from reply where available" />
           </View>
         </View>
       )}

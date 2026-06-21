@@ -3,6 +3,12 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { type CategorizerCategory } from '../../../lib/categorizer/index';
 import { classifyReply as runCategorizer } from '../../../workers/scheduler-worker/src/categorizer/classify';
 import type { ClassifyReplyQueuePayload } from '../../../workers/inbox-checker-worker/src/emit-classify-reply-job';
+import { detectAutoReplyRedirectSignals } from '../../../lib/inbox/autoReplyRedirectDetection';
+import {
+  buildSuggestedReferralFromExtraction,
+  extractReferralContactHeuristic,
+  type SuggestedReferralReason,
+} from '../../../lib/inbox/referralContactExtraction';
 import { parseOutOfOfficeReturnDate } from '../../../lib/inbox/parseOutOfOfficeReturnDate';
 import { buildOooSmartHandlingOptions, buildNeutralSmartHandlingOptions, buildNotInterestedSmartHandlingOptions } from '../../../lib/inbox/smartHandling';
 
@@ -20,6 +26,7 @@ type ThreadRow = {
 type MessageRow = {
   id: string;
   from_email: string;
+  from_name: string | null;
   subject: string | null;
   body_text: string | null;
   body_html: string | null;
@@ -33,12 +40,6 @@ function getSupabase() {
     throw new Error('Missing SUPABASE_URL (or EXPO_PUBLIC_SUPABASE_URL) or SUPABASE_SECRET_KEY');
   }
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
-
-function extractEmailCandidates(bodyText: string | null): string[] {
-  if (!bodyText) return [];
-  const matches = bodyText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [];
-  return [...new Set(matches.map((value) => value.trim().toLowerCase()))];
 }
 
 import {
@@ -57,23 +58,77 @@ function buildSuggestedReply(category: CategorizerCategory): string | null {
   }
 }
 
+function buildReplaceLeadMetadata(params: {
+  category: CategorizerCategory;
+  headerMismatch: boolean;
+  bodyText: string | null;
+  fromEmail: string;
+  fromName: string | null;
+  leadEmail: string | null;
+  primaryMessage: string;
+  reason: SuggestedReferralReason;
+  alternatives: Array<{ action: string; label: string }>;
+}) {
+  const {
+    category,
+    headerMismatch,
+    bodyText,
+    fromEmail,
+    fromName,
+    leadEmail,
+    primaryMessage,
+    reason,
+    alternatives,
+  } = params;
+  const extraction = extractReferralContactHeuristic({
+    bodyText,
+    fromEmail,
+    fromName,
+    leadEmail,
+  });
+
+  return {
+    mode: 'manual',
+    category,
+    return_date: null,
+    primary_message: primaryMessage,
+    primary: { action: 'replace_lead', label: 'Replace + forward with message' },
+    alternatives,
+    follow_ups: [],
+    suggested_reply: buildSuggestedReply(category),
+    suggested_referral: buildSuggestedReferralFromExtraction(extraction, reason),
+    header_mismatch: headerMismatch,
+  };
+}
+
 function buildManualMetadata(params: {
   category: CategorizerCategory;
   returnDate: string | null;
   fromEmail: string;
+  fromName: string | null;
   leadEmail: string | null;
   subject: string | null;
   bodyText: string | null;
 }) {
-  const { category, returnDate, fromEmail, leadEmail, subject, bodyText } = params;
-  const normalizedFrom = fromEmail.trim().toLowerCase();
-  const normalizedLead = leadEmail?.trim().toLowerCase() ?? null;
-  const headerMismatch = !!normalizedLead && normalizedLead !== normalizedFrom;
-  const referralEmail =
-    extractEmailCandidates(bodyText).find((candidate) => candidate !== normalizedFrom && candidate !== normalizedLead) ??
-    null;
+  const { category, returnDate, fromEmail, fromName, leadEmail, subject, bodyText } = params;
+  const redirect = detectAutoReplyRedirectSignals({ fromEmail, leadEmail, bodyText });
 
   if (category === 'Auto Reply') {
+    if (redirect.shouldReplaceLead) {
+      return buildReplaceLeadMetadata({
+        category,
+        headerMismatch: redirect.headerMismatch,
+        bodyText,
+        fromEmail,
+        fromName,
+        leadEmail,
+        primaryMessage: redirect.headerMismatch
+          ? 'This auto-reply came from a different contact. Consider replacing the lead.'
+          : 'This auto-reply redirects you to a different contact.',
+        reason: 'auto_reply_forward',
+        alternatives: [{ action: 'mark_neutral', label: 'Mark neutral' }],
+      });
+    }
     const oooOptions = buildOooSmartHandlingOptions(returnDate);
     return {
       mode: 'manual',
@@ -89,15 +144,18 @@ function buildManualMetadata(params: {
     };
   }
 
-  if (headerMismatch || referralEmail) {
-    return {
-      mode: 'manual',
+  if (redirect.shouldReplaceLead) {
+    return buildReplaceLeadMetadata({
       category,
-      return_date: null,
-      primary_message: headerMismatch
+      headerMismatch: redirect.headerMismatch,
+      bodyText,
+      fromEmail,
+      fromName,
+      leadEmail,
+      primaryMessage: redirect.headerMismatch
         ? 'This reply came from a different contact. Consider replacing the lead.'
         : 'This reply may be redirecting you to a different contact.',
-      primary: { action: 'replace_lead', label: 'Replace + forward with message' },
+      reason: redirect.headerMismatch ? 'wrong_contact' : 'manual_referral',
       alternatives:
         category === 'Interested'
           ? [
@@ -107,15 +165,7 @@ function buildManualMetadata(params: {
           : category === 'Not Interested'
             ? [{ action: 'mark_not_interested', label: 'Not Interested only' }]
             : [{ action: 'mark_neutral', label: 'Mark neutral' }],
-      follow_ups: [],
-      suggested_reply: buildSuggestedReply(category),
-      suggested_referral: {
-        email: referralEmail,
-        name: null,
-        reason: headerMismatch ? 'wrong_contact' : 'manual_referral',
-      },
-      header_mismatch: headerMismatch,
-    };
+    });
   }
 
   if (category === 'Interested') {
@@ -227,7 +277,7 @@ export async function processClassifyReplyPayload(
 
   const { data: messageData, error: messageError } = await supabase
     .from('email_messages')
-    .select('id, from_email, subject, body_text, body_html, received_at')
+    .select('id, from_email, from_name, subject, body_text, body_html, received_at')
     .eq('id', payload.emailMessageId)
     .maybeSingle();
   if (messageError) throw messageError;
@@ -272,6 +322,7 @@ export async function processClassifyReplyPayload(
         category,
         returnDate,
         fromEmail: message.from_email,
+        fromName: message.from_name,
         leadEmail,
         subject: message.subject,
         bodyText: message.body_text,

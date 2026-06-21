@@ -446,14 +446,28 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     () => parseSmartHandlingMetadata(selectedThread?.handling_metadata ?? null),
     [selectedThread?.handling_metadata]
   );
-  const replaceLeadPrefill = useMemo(
-    () =>
-      buildReplaceLeadPrefill({
-        metadata: smartHandlingMetadata,
-        inboundFromEmail: latestReceivedInbound?.from_email,
-      }),
-    [smartHandlingMetadata, latestReceivedInbound?.from_email]
-  );
+  const replaceLeadPrefill = useMemo(() => {
+    const oldLead = selectedThread?.lead_id ? leadByIdMap[selectedThread.lead_id] : null;
+    const customLeadData =
+      oldLead?.custom_lead_data &&
+      typeof oldLead.custom_lead_data === 'object' &&
+      !Array.isArray(oldLead.custom_lead_data)
+        ? Object.keys(oldLead.custom_lead_data as Record<string, unknown>)
+        : [];
+
+    return buildReplaceLeadPrefill({
+      metadata: smartHandlingMetadata,
+      inboundFromEmail: latestReceivedInbound?.from_email,
+      inboundFromName: latestReceivedInbound?.from_name,
+      customLeadDataKeys: customLeadData,
+    });
+  }, [
+    leadByIdMap,
+    latestReceivedInbound?.from_email,
+    latestReceivedInbound?.from_name,
+    selectedThread?.lead_id,
+    smartHandlingMetadata,
+  ]);
 
   const dismissSmartHandling = useCallback(() => {
     setSmartHandlingDismissedForCurrentView(true);

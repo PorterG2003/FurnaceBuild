@@ -309,6 +309,249 @@ test('manual-mode Auto Reply classification without a return date defaults to mo
   }
 });
 
+test('manual-mode Auto Reply departure autoresponder promotes replace lead with auto reply forward reason', async (t) => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('smart-handling-auto-reply-forward'),
+  });
+  const originalFetch = global.fetch;
+  const now = Date.now();
+
+  try {
+    if (!(await ensureInboxRedesignSchema(harness, t))) return;
+    process.env.SUPABASE_URL = harness.env.supabaseUrl;
+    process.env.EXPO_PUBLIC_SUPABASE_URL = harness.env.supabaseUrl;
+    process.env.SUPABASE_SECRET_KEY = harness.env.serviceRoleKey;
+    process.env.OPENROUTER_API_KEY = 'test-key';
+
+    const graph = await harness.createCampaignGraph({
+      name: 'Smart Handling Auto Reply Forward',
+      status: 'running',
+      flowKind: 'emailWaitEmailCategorizer',
+      categorizerUseAi: false,
+      leads: [
+        buildCampaignLead({
+          key: 'lead',
+          email: 'rmastropietro@passagebio.com',
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment(),
+          jobs: [
+            buildCampaignJob({
+              key: 'sent-1',
+              status: 'sent',
+              providerMessageId: `<orig-${harness.namespace}@furnace.test>`,
+              scheduledAt: new Date(now - 10 * 60_000).toISOString(),
+              sentAt: new Date(now - 10 * 60_000).toISOString(),
+            }),
+          ],
+          thread: buildCampaignThread({
+            subject: 'Automatic reply: NetSuite Renewal',
+            hasReply: true,
+            messageJobKey: 'sent-1',
+            messages: [
+              buildThreadMessage({
+                direction: 'sent',
+                messageId: `<orig-${harness.namespace}@furnace.test>`,
+                receivedAt: new Date(now - 10 * 60_000).toISOString(),
+                readAt: new Date(now - 10 * 60_000).toISOString(),
+              }),
+              buildThreadMessage({
+                direction: 'received',
+                fromEmail: 'rmastropietro_c@passagebio.com',
+                messageId: `<reply-${harness.namespace}@furnace.test>`,
+                inReplyTo: `<orig-${harness.namespace}@furnace.test>`,
+                bodyText:
+                  'Rich Mastropietro is no longer with Passage Bio. Please contact Kathleen Borthwick at kborthwick@passagebio.com with any inquiries.',
+                receivedAt: new Date(now - 5 * 60_000).toISOString(),
+                readAt: null,
+              }),
+            ],
+          }),
+        }),
+      ],
+    });
+
+    global.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('openrouter.ai')) {
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    category: 'Auto Reply',
+                    return_date: null,
+                  }),
+                },
+              },
+            ],
+          }),
+        } as Response;
+      }
+      return originalFetch(input as any, init);
+    }) as typeof fetch;
+
+    const lead = graph.leadsByKey.get('lead')!;
+    const { error: seedError } = await harness.supabase
+      .from('email_threads')
+      .update({
+        classification_status: 'pending',
+        conversation_status: 'open',
+      })
+      .eq('id', lead.threadId!);
+    assert.equal(seedError, null);
+    const emailMessageId = await getLatestReceivedMessageId(harness, lead.threadId!);
+    await classifyReplyHandler(
+      makeSqsEvent({
+        emailMessageId,
+        threadId: lead.threadId,
+        enrollmentId: lead.enrollmentId,
+        campaignId: graph.campaignId,
+        hasCategorizer: true,
+        useAi: false,
+      }),
+    );
+
+    const thread = await getThread(harness, lead.threadId!);
+    const metadata = thread.handling_metadata as any;
+
+    assert.equal(metadata.mode, 'manual');
+    assert.equal(metadata.category, 'Auto Reply');
+    assert.equal(metadata.header_mismatch, true);
+    assert.equal(metadata.primary.action, 'replace_lead');
+    assert.equal(metadata.suggested_referral.email, 'kborthwick@passagebio.com');
+    assert.equal(metadata.suggested_referral.firstName, 'Kathleen');
+    assert.equal(metadata.suggested_referral.lastName, 'Borthwick');
+    assert.equal(metadata.suggested_referral.reason, 'auto_reply_forward');
+    assert.ok(Array.isArray(metadata.alternatives));
+    assert.ok(metadata.alternatives.some((option: any) => option.action === 'mark_neutral'));
+    assert.notEqual(metadata.primary.action, 'mark_ooo_month');
+  } finally {
+    global.fetch = originalFetch;
+    await harness.cleanup();
+  }
+});
+
+test('manual-mode Auto Reply true OOO regression keeps OOO actions when sender still matches the lead', async (t) => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('smart-handling-auto-reply-regression'),
+  });
+  const originalFetch = global.fetch;
+  const now = Date.now();
+
+  try {
+    if (!(await ensureInboxRedesignSchema(harness, t))) return;
+    process.env.SUPABASE_URL = harness.env.supabaseUrl;
+    process.env.EXPO_PUBLIC_SUPABASE_URL = harness.env.supabaseUrl;
+    process.env.SUPABASE_SECRET_KEY = harness.env.serviceRoleKey;
+    process.env.OPENROUTER_API_KEY = 'test-key';
+
+    const graph = await harness.createCampaignGraph({
+      name: 'Smart Handling Auto Reply Regression',
+      status: 'running',
+      flowKind: 'emailWaitEmailCategorizer',
+      categorizerUseAi: false,
+      leads: [
+        buildCampaignLead({
+          key: 'lead',
+          email: `lead-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment(),
+          jobs: [
+            buildCampaignJob({
+              key: 'sent-1',
+              status: 'sent',
+              providerMessageId: `<orig-${harness.namespace}@furnace.test>`,
+              scheduledAt: new Date(now - 10 * 60_000).toISOString(),
+              sentAt: new Date(now - 10 * 60_000).toISOString(),
+            }),
+          ],
+          thread: buildCampaignThread({
+            subject: 'Automatic reply: Away from email',
+            hasReply: true,
+            messageJobKey: 'sent-1',
+            messages: [
+              buildThreadMessage({
+                direction: 'sent',
+                messageId: `<orig-${harness.namespace}@furnace.test>`,
+                receivedAt: new Date(now - 10 * 60_000).toISOString(),
+                readAt: new Date(now - 10 * 60_000).toISOString(),
+              }),
+              buildThreadMessage({
+                direction: 'received',
+                fromEmail: `lead-${harness.namespace}@furnace.test`,
+                messageId: `<reply-${harness.namespace}@furnace.test>`,
+                inReplyTo: `<orig-${harness.namespace}@furnace.test>`,
+                bodyText: 'I am currently away from email and will respond when I can.',
+                receivedAt: new Date(now - 5 * 60_000).toISOString(),
+                readAt: null,
+              }),
+            ],
+          }),
+        }),
+      ],
+    });
+
+    global.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('openrouter.ai')) {
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    category: 'Auto Reply',
+                    return_date: null,
+                  }),
+                },
+              },
+            ],
+          }),
+        } as Response;
+      }
+      return originalFetch(input as any, init);
+    }) as typeof fetch;
+
+    const lead = graph.leadsByKey.get('lead')!;
+    const { error: seedError } = await harness.supabase
+      .from('email_threads')
+      .update({
+        classification_status: 'pending',
+        conversation_status: 'open',
+      })
+      .eq('id', lead.threadId!);
+    assert.equal(seedError, null);
+    const emailMessageId = await getLatestReceivedMessageId(harness, lead.threadId!);
+    await classifyReplyHandler(
+      makeSqsEvent({
+        emailMessageId,
+        threadId: lead.threadId,
+        enrollmentId: lead.enrollmentId,
+        campaignId: graph.campaignId,
+        hasCategorizer: true,
+        useAi: false,
+      }),
+    );
+
+    const thread = await getThread(harness, lead.threadId!);
+    const metadata = thread.handling_metadata as any;
+
+    assert.equal(metadata.mode, 'manual');
+    assert.equal(metadata.header_mismatch, false);
+    assert.equal(metadata.suggested_referral, null);
+    assert.equal(metadata.primary.action, 'mark_ooo_month');
+    assert.equal(metadata.return_date, null);
+    assert.ok(metadata.alternatives.some((option: any) => option.action === 'mark_ooo_instant'));
+    assert.ok(metadata.alternatives.some((option: any) => option.action === 'mark_ooo_custom'));
+  } finally {
+    global.fetch = originalFetch;
+    await harness.cleanup();
+  }
+});
+
 test('manual-mode classification promotes replace lead when the inbound sender mismatches the lead email', async (t) => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('smart-handling-replace') });
   const originalFetch = global.fetch;

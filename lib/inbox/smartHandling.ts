@@ -23,10 +23,18 @@ export interface SmartHandlingActionOption {
   label: string;
 }
 
+export type ReferralContactConfidenceLevel = 'high' | 'low';
+
 export interface SmartHandlingSuggestedReferral {
-  email: string | null;
-  name: string | null;
-  reason: 'auto_reply_forward' | 'manual_referral' | 'wrong_contact' | null;
+  email?: string | null;
+  name?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  phoneNumber?: string | null;
+  title?: string | null;
+  reason?: 'auto_reply_forward' | 'manual_referral' | 'wrong_contact' | null;
+  confidence?: Partial<Record<string, ReferralContactConfidenceLevel>> | null;
+  filledFields?: string[] | null;
 }
 
 export interface SmartHandlingMetadata {
@@ -155,6 +163,61 @@ export function buildNotInterestedSmartHandlingOptions(params: {
   };
 }
 
+function parseReferralReason(value: unknown): SmartHandlingSuggestedReferral['reason'] {
+  if (
+    value === 'auto_reply_forward' ||
+    value === 'manual_referral' ||
+    value === 'wrong_contact'
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function parseReferralConfidence(value: unknown): SmartHandlingSuggestedReferral['confidence'] {
+  if (!isRecord(value)) return null;
+  const confidence: NonNullable<SmartHandlingSuggestedReferral['confidence']> = {};
+  for (const [key, level] of Object.entries(value)) {
+    if (level === 'high' || level === 'low') {
+      confidence[key] = level;
+    }
+  }
+  return Object.keys(confidence).length > 0 ? confidence : null;
+}
+
+function parseSuggestedReferral(value: unknown): SmartHandlingSuggestedReferral | null {
+  if (!isRecord(value)) return null;
+
+  const referral: SmartHandlingSuggestedReferral = {
+    reason: parseReferralReason(value.reason),
+  };
+
+  if (typeof value.email === 'string') referral.email = value.email;
+  if (typeof value.name === 'string') referral.name = value.name;
+  if (typeof value.firstName === 'string') referral.firstName = value.firstName;
+  if (typeof value.lastName === 'string') referral.lastName = value.lastName;
+  if (typeof value.phoneNumber === 'string') referral.phoneNumber = value.phoneNumber;
+  if (typeof value.title === 'string') referral.title = value.title;
+
+  const confidence = parseReferralConfidence(value.confidence);
+  if (confidence) referral.confidence = confidence;
+
+  if (Array.isArray(value.filledFields)) {
+    referral.filledFields = value.filledFields.filter((field): field is string => typeof field === 'string');
+  }
+
+  const hasAnyField =
+    referral.email != null ||
+    referral.name != null ||
+    referral.firstName != null ||
+    referral.lastName != null ||
+    referral.phoneNumber != null ||
+    referral.title != null ||
+    referral.reason != null;
+
+  return hasAnyField ? referral : null;
+}
+
 export function parseSmartHandlingMetadata(value: Json | null | undefined): SmartHandlingMetadata | null {
   if (!isRecord(value)) return null;
   return {
@@ -166,18 +229,7 @@ export function parseSmartHandlingMetadata(value: Json | null | undefined): Smar
     follow_ups: parseActionList(value.follow_ups),
     return_date: typeof value.return_date === 'string' ? value.return_date : null,
     suggested_reply: typeof value.suggested_reply === 'string' ? value.suggested_reply : null,
-    suggested_referral: isRecord(value.suggested_referral)
-      ? {
-          email: typeof value.suggested_referral.email === 'string' ? value.suggested_referral.email : null,
-          name: typeof value.suggested_referral.name === 'string' ? value.suggested_referral.name : null,
-          reason:
-            value.suggested_referral.reason === 'auto_reply_forward' ||
-            value.suggested_referral.reason === 'manual_referral' ||
-            value.suggested_referral.reason === 'wrong_contact'
-              ? value.suggested_referral.reason
-              : null,
-        }
-      : null,
+    suggested_referral: parseSuggestedReferral(value.suggested_referral),
     header_mismatch: value.header_mismatch === true,
   };
 }

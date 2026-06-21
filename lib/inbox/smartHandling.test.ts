@@ -4,6 +4,25 @@ import { buildOooSmartHandlingOptions, buildNeutralSmartHandlingOptions, buildNo
 import { isNotInterestedOptOutRequest } from './notInterestedOptOutDetection';
 import { shouldAutoCloseConversationForAction, getSmartHandlingActionSuccessMessage, SMART_HANDLING_DISMISS_SUCCESS_MESSAGE } from './smartHandlingActions';
 
+test('parseSmartHandlingMetadata reads sparse referral contact fields', () => {
+  const result = parseSmartHandlingMetadata({
+    mode: 'manual',
+    suggested_referral: {
+      email: 'kborthwick@passagebio.com',
+      firstName: 'Kathleen',
+      lastName: 'Borthwick',
+      confidence: { email: 'high', firstName: 'high', lastName: 'high' },
+      filledFields: ['email', 'firstName', 'lastName'],
+      reason: 'auto_reply_forward',
+    },
+  });
+
+  assert.equal(result?.suggested_referral?.email, 'kborthwick@passagebio.com');
+  assert.equal(result?.suggested_referral?.firstName, 'Kathleen');
+  assert.equal(result?.suggested_referral?.lastName, 'Borthwick');
+  assert.deepEqual(result?.suggested_referral?.filledFields, ['email', 'firstName', 'lastName']);
+});
+
 test('parseSmartHandlingMetadata normalizes valid action payloads', () => {
   const result = parseSmartHandlingMetadata({
     mode: 'manual',

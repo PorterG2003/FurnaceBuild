@@ -33,6 +33,7 @@ export default function ReplaceLeadPage() {
   const [thread, setThread] = useState<EmailThread | null>(null);
   const [lead, setLead] = useState<Lead | null>(null);
   const [latestInboundFromEmail, setLatestInboundFromEmail] = useState<string | null>(null);
+  const [latestInboundFromName, setLatestInboundFromName] = useState<string | null>(null);
   const [sourceMessageId, setSourceMessageId] = useState<string | null>(null);
 
   const returnToInbox = useCallback(() => {
@@ -41,14 +42,21 @@ export default function ReplaceLeadPage() {
     );
   }, [router, threadId]);
 
-  const replaceLeadPrefill = useMemo(
-    () =>
-      buildReplaceLeadPrefill({
-        metadata: parseSmartHandlingMetadata(thread?.handling_metadata ?? null),
-        inboundFromEmail: latestInboundFromEmail,
-      }),
-    [latestInboundFromEmail, thread?.handling_metadata]
-  );
+  const replaceLeadPrefill = useMemo(() => {
+    const customLeadData =
+      lead?.custom_lead_data &&
+      typeof lead.custom_lead_data === 'object' &&
+      !Array.isArray(lead.custom_lead_data)
+        ? Object.keys(lead.custom_lead_data as Record<string, unknown>)
+        : [];
+
+    return buildReplaceLeadPrefill({
+      metadata: parseSmartHandlingMetadata(thread?.handling_metadata ?? null),
+      inboundFromEmail: latestInboundFromEmail,
+      inboundFromName: latestInboundFromName,
+      customLeadDataKeys: customLeadData,
+    });
+  }, [latestInboundFromEmail, latestInboundFromName, lead?.custom_lead_data, thread?.handling_metadata]);
 
   useEffect(() => {
     if (threadId == null || accountId == null) {
@@ -89,6 +97,7 @@ export default function ReplaceLeadPage() {
         setThread(loadedThread);
         setLead(loadedLead);
         setLatestInboundFromEmail(latestInbound?.from_email ?? null);
+        setLatestInboundFromName(latestInbound?.from_name ?? null);
         setSourceMessageId(latestInbound?.id ?? null);
       } catch (err) {
         if (cancelled) return;

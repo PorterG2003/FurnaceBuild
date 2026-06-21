@@ -59,3 +59,21 @@ test('keeps oversized first item in overflow when nothing fits beside trigger', 
     overflowKeys: ['close'],
   });
 });
+
+test('fixed-width items produce deterministic slot counts', () => {
+  const result = computeToolbarOverflowSplit(
+    [
+      { key: 'close', priority: 0, width: 132 },
+      { key: 'block', priority: 2, width: 132 },
+      { key: 'ooo', priority: 3, width: 132 },
+      { key: 'replace', priority: 4, width: 132 },
+    ],
+    420,
+    { gap: 8, overflowTriggerWidth: 32 },
+  );
+
+  assert.deepEqual(result, {
+    visibleKeys: ['close', 'block'],
+    overflowKeys: ['ooo', 'replace'],
+  });
+});

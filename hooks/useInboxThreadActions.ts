@@ -32,7 +32,7 @@ export interface UseInboxThreadActionsParams {
   latestReceivedInbound: EmailMessage | null;
   messages: EmailMessage[];
   setThreads: React.Dispatch<React.SetStateAction<EmailThread[]>>;
-  loadThreads: () => Promise<void>;
+  loadThreads: (options?: { append?: boolean }) => Promise<void>;
   loadMessages: (threadId: string, options?: { silent?: boolean }) => Promise<void>;
   loadBlockList: () => Promise<void>;
   setCategory: (category: string | null) => Promise<void>;
@@ -113,7 +113,7 @@ export function useInboxThreadActions({
       await loadThreads();
       await loadMessages(threadId, { silent: true });
     },
-    [loadMessages, loadThreads],
+    [loadMessages, loadThreads, selectedThreadId],
   );
 
   useEffect(() => {

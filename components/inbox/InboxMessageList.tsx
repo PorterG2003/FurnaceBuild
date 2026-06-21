@@ -1,6 +1,7 @@
 import React, { useMemo, type ReactNode, type RefObject } from 'react';
 import { View, ScrollView } from 'react-native';
 import { Alert } from '@/components/ui/feedback';
+import { buildInboxThreadToolbarActions } from '@/lib/inbox';
 import { DateDivider } from './DateDivider';
 import { MessageBubble, type MessageBubbleActionsLayout } from './MessageBubble';
 import { BlockedThreadCallout } from './BlockedThreadCallout';
@@ -120,8 +121,6 @@ export function InboxMessageList({
   onCancelPendingOutbound,
   threadStatusCallout,
 }: InboxMessageListProps) {
-  if (!selectedThread) return null;
-
   const pendingByJobId = useMemo(() => {
     const map = new Map<string, PendingReplyInfo>();
     for (const p of pendingReplies) {
@@ -134,8 +133,41 @@ export function InboxMessageList({
     () => selectedThreadProspectEmails.some((e) => blockedProspectEmails.has(e.trim().toLowerCase())),
     [selectedThreadProspectEmails, blockedProspectEmails]
   );
+  const toolbarActions = useMemo(
+    () =>
+      buildInboxThreadToolbarActions({
+        showBlockButton: !!accountId && selectedThreadProspectEmails.length > 0,
+        onBlock,
+        showOutOfOfficeButton: !!accountId && !!selectedThreadId,
+        onMarkOutOfOffice,
+        showReplaceLeadButton: !!accountId && !!selectedThread?.lead_id,
+        onReplaceLead,
+        showCloseConversationButton: selectedThread?.conversation_status !== 'closed',
+        onCloseConversation,
+        showOpenConversationButton: selectedThread?.conversation_status === 'closed',
+        onOpenConversation,
+        onOpenTagsPanel,
+        tagCount: selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []).length : 0,
+      }),
+    [
+      accountId,
+      onBlock,
+      onCloseConversation,
+      onMarkOutOfOffice,
+      onOpenConversation,
+      onOpenTagsPanel,
+      onReplaceLead,
+      selectedThread?.lead_id,
+      selectedThread?.conversation_status,
+      selectedThreadId,
+      selectedThreadProspectEmails.length,
+      threadTagsMap,
+    ],
+  );
 
   const messageColumnNarrow = messageActionsLayout !== 'overflowSheet';
+
+  if (!selectedThread) return null;
 
   return (
     <>
@@ -153,18 +185,7 @@ export function InboxMessageList({
         sourceLabel={selectedThread.smartlead_lead_id != null ? 'Imported from Smartlead' : null}
         prospectEmails={selectedThreadProspectEmails}
         blockedEmails={blockedProspectEmails}
-        onBlock={onBlock}
-        onMarkOutOfOffice={onMarkOutOfOffice}
-        onReplaceLead={onReplaceLead}
-        onCloseConversation={onCloseConversation}
-        onOpenConversation={onOpenConversation}
-        showBlockButton={!!accountId && selectedThreadProspectEmails.length > 0}
-        showOutOfOfficeButton={!!accountId && !!selectedThreadId}
-        showReplaceLeadButton={!!accountId && !!selectedThread?.lead_id}
-        showCloseConversationButton={selectedThread.conversation_status !== 'closed'}
-        showOpenConversationButton={selectedThread.conversation_status === 'closed'}
-        threadTags={selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []) : []}
-        onOpenTagsPanel={onOpenTagsPanel}
+        toolbarActions={toolbarActions}
         category={category}
         onSetCategory={onSetCategory}
         categoryOptions={[...categoryOptions]}

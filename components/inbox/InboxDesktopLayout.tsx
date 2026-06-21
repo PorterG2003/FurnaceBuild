@@ -163,7 +163,6 @@ export function InboxDesktopLayout({
 
   const { slideAnim, replyPanelWidth } = layout;
   const { composerMode, closeComposerPanel, composerFormProps } = composerPanel;
-
   return (
     <View className="flex-1 flex-row bg-[#121212]">
       <View style={{ flex: 1, minWidth: 0, minHeight: 0 }} className="flex-row">

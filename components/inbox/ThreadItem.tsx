@@ -34,7 +34,6 @@ export function ThreadItem({
   const hasCategory = !!thread.category;
   const isSmartleadSource = sourceLabel === 'Smartlead';
   const isOpenConversation = thread.conversation_status === 'open';
-
   return (
     <Pressable
       onPress={onSelect}

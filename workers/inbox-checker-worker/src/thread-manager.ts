@@ -9,6 +9,10 @@ import {
   extractCandidateEmails,
   classifyBounce,
 } from './bounce-detection/index.js';
+import {
+  loadCampaignCategorizerConfig,
+  type CampaignCategorizerConfig,
+} from './campaign-categorizer-config.js';
 import { isAutoReplyMessage } from './message-processor.js';
 import { emitClassifyReplyJob } from './emit-classify-reply-job.js';
 import { emitEmailReceivedNotification } from './emit-notification-event.js';
@@ -44,17 +48,12 @@ const OOO_CLEAR_FOR_NEW_INBOUND_REPLY = {
 
 const CATEGORIZER_CACHE_TTL_MS = 60 * 1000;
 
-type CategorizerConfig = {
-  hasCategorizer: boolean;
-  useAi: boolean;
-};
-
 /**
  * Thread manager for creating email threads and messages
  */
 export class ThreadManager {
   /** Per-campaign "flow has a categorizer node" cache (TTL = one worker tick). */
-  private categorizerCache = new Map<string, { value: CategorizerConfig; expiresAt: number }>();
+  private categorizerCache = new Map<string, { value: CampaignCategorizerConfig; expiresAt: number }>();
 
   constructor(private supabase: SupabaseClient) {}
 
@@ -62,31 +61,13 @@ export class ThreadManager {
    * Whether the campaign's flow contains a live categorizer node.
    * Cached per campaign for roughly one worker tick.
    */
-  private async getCampaignCategorizerConfig(campaignId: string): Promise<CategorizerConfig> {
+  private async getCampaignCategorizerConfig(campaignId: string): Promise<CampaignCategorizerConfig> {
     const cached = this.categorizerCache.get(campaignId);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.value;
     }
 
-    const { data, error } = await this.supabase
-      .from('nodes')
-      .select('id, node_data')
-      .eq('campaign_id', campaignId)
-      .eq('node_type', 'aiCategorizer')
-      .is('deleted_at', null)
-      .limit(1);
-
-    if (error) {
-      // Fail open to the legacy stop path; do not cache errors.
-      console.error(`[INBOX CHECKER] Failed to check categorizer for campaign ${campaignId}:`, error);
-      return { hasCategorizer: false, useAi: false };
-    }
-
-    const row = data?.[0] as { node_data?: Record<string, unknown> | null } | undefined;
-    const value = {
-      hasCategorizer: (data?.length ?? 0) > 0,
-      useAi: row?.node_data?.use_ai === true,
-    };
+    const value = await loadCampaignCategorizerConfig(this.supabase, campaignId);
     this.categorizerCache.set(campaignId, { value, expiresAt: Date.now() + CATEGORIZER_CACHE_TTL_MS });
     return value;
   }

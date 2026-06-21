@@ -2,17 +2,9 @@ import type { SQSEvent, SQSBatchResponse } from 'aws-lambda';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { type CategorizerCategory } from '../../../lib/categorizer/index';
 import { classifyReply as runCategorizer } from '../../../workers/scheduler-worker/src/categorizer/classify';
+import type { ClassifyReplyQueuePayload } from '../../../workers/inbox-checker-worker/src/emit-classify-reply-job';
 import { parseOutOfOfficeReturnDate } from '../../../lib/inbox/parseOutOfOfficeReturnDate';
 import { buildOooSmartHandlingOptions, buildNeutralSmartHandlingOptions, buildNotInterestedSmartHandlingOptions } from '../../../lib/inbox/smartHandling';
-
-type QueuePayload = {
-  emailMessageId: string;
-  threadId: string;
-  enrollmentId: string | null;
-  campaignId: string | null;
-  hasCategorizer: boolean;
-  useAi: boolean;
-};
 
 type ThreadRow = {
   id: string;
@@ -216,8 +208,10 @@ async function syncPositiveReplyStats(
   }
 }
 
-async function classifyRecord(record: SQSEvent['Records'][number], supabase: SupabaseClient) {
-  const payload = JSON.parse(record.body ?? '{}') as QueuePayload;
+export async function processClassifyReplyPayload(
+  payload: ClassifyReplyQueuePayload,
+  supabase: SupabaseClient,
+): Promise<void> {
   if (!payload.threadId || !payload.emailMessageId) {
     return;
   }
@@ -312,33 +306,52 @@ async function classifyRecord(record: SQSEvent['Records'][number], supabase: Sup
   }
 }
 
+async function markThreadClassificationFailed(
+  supabase: SupabaseClient,
+  threadId: string,
+): Promise<void> {
+  await supabase
+    .from('email_threads')
+    .update({
+      classification_status: 'failed',
+      classification_completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', threadId);
+}
+
+export async function processClassifyReplyPayloadSafely(
+  payload: ClassifyReplyQueuePayload,
+  supabase: SupabaseClient,
+): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  try {
+    await processClassifyReplyPayload(payload, supabase);
+    return { ok: true };
+  } catch (error) {
+    console.error('[classifyReply] failed to process payload', payload.threadId, payload.emailMessageId, error);
+
+    if (payload.threadId) {
+      try {
+        await markThreadClassificationFailed(supabase, payload.threadId);
+      } catch (secondaryError) {
+        console.error('[classifyReply] failed to mark thread classification failed', secondaryError);
+      }
+    }
+
+    return { ok: false, error };
+  }
+}
+
 export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
   const supabase = getSupabase();
   const batchItemFailures: Array<{ itemIdentifier: string }> = [];
 
   await Promise.all(
     event.Records.map(async (record) => {
-      try {
-        await classifyRecord(record, supabase);
-      } catch (error) {
-        console.error('[classifyReply] failed to process record', record.messageId, error);
-
-        try {
-          const payload = JSON.parse(record.body ?? '{}') as Partial<QueuePayload>;
-          if (payload.threadId) {
-            await supabase
-              .from('email_threads')
-              .update({
-                classification_status: 'failed',
-                classification_completed_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', payload.threadId);
-          }
-        } catch (secondaryError) {
-          console.error('[classifyReply] failed to mark thread classification failed', secondaryError);
-        }
-
+      const payload = JSON.parse(record.body ?? '{}') as ClassifyReplyQueuePayload;
+      const result = await processClassifyReplyPayloadSafely(payload, supabase);
+      if (!result.ok) {
+        console.error('[classifyReply] failed to process record', record.messageId, result.error);
         batchItemFailures.push({ itemIdentifier: record.messageId });
       }
     }),

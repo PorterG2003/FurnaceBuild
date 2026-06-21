@@ -1,82 +1,77 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { View, type LayoutChangeEvent } from 'react-native';
+import {
+  getInboxThreadToolbarPriority,
+  type InboxThreadToolbarAction,
+  type InboxThreadToolbarActionKey,
+} from '@/lib/inbox';
 import { RowOverflowMenu, type RowOverflowMenuItem } from '@/components/ui/RowOverflowMenu';
 import { computeToolbarOverflowSplit } from '@/lib/ui/toolbarOverflow';
-import type { MessageToolbarActionTone, MessageToolbarMenuIcon } from './MessageToolbarActionButton';
-import { getMessageToolbarToneColors } from './MessageToolbarActionButton';
-
-export const MESSAGE_TOOLBAR_ORDER = ['close', 'open', 'block', 'ooo', 'replace', 'tags'] as const;
-
-export type MessagePanelToolbarActionKey = (typeof MESSAGE_TOOLBAR_ORDER)[number];
-
-export interface MessagePanelToolbarAction {
-  key: MessagePanelToolbarActionKey;
-  hidden?: boolean;
-  label: string;
-  icon: MessageToolbarMenuIcon;
-  onPress: () => void;
-  tone?: MessageToolbarActionTone;
-  renderInline: (measureOnly?: boolean) => ReactNode;
-  accessibilityLabel?: string;
-}
+import { MessageToolbarActionButton } from './MessageToolbarActionButton';
+import { INBOX_THREAD_TOOLBAR_ICON_MAP } from './inboxThreadToolbarIcons';
+import { getMessageToolbarToneColors, MESSAGE_TOOLBAR_INLINE_ACTION_WIDTH } from './messageToolbarStyles';
 
 interface MessagePanelToolbarProps {
-  actions: MessagePanelToolbarAction[];
+  actions: InboxThreadToolbarAction[];
   gap?: number;
+  prefix?: ReactNode;
   suffix?: ReactNode;
 }
 
 const OVERFLOW_TRIGGER_WIDTH = 32;
 
-function getPriority(key: MessagePanelToolbarActionKey) {
-  if (key === 'open') return 0;
-  return MESSAGE_TOOLBAR_ORDER.indexOf(key);
-}
-
-function getOverflowItemColors(tone: MessageToolbarActionTone | undefined) {
+function getOverflowItemColors(tone: InboxThreadToolbarAction['tone']) {
   const styles = getMessageToolbarToneColors(tone ?? 'default');
   return { iconColor: styles.iconColor, textColor: styles.textColor };
 }
 
-export function MessagePanelToolbar({ actions, gap = 8, suffix }: MessagePanelToolbarProps) {
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [widths, setWidths] = useState<Partial<Record<MessagePanelToolbarActionKey, number>>>({});
+export function MessagePanelToolbar({ actions, gap = 8, prefix, suffix }: MessagePanelToolbarProps) {
+  /** Full flex allocation for this toolbar (actions + suffix). */
+  const [toolbarWidth, setToolbarWidth] = useState(0);
+  const [prefixWidth, setPrefixWidth] = useState(0);
   const [suffixWidth, setSuffixWidth] = useState(0);
 
   const orderedActions = useMemo(
-    () => actions.filter((action) => !action.hidden).sort((a, b) => getPriority(a.key) - getPriority(b.key)),
+    () => [...actions].sort((a, b) => getInboxThreadToolbarPriority(a.key) - getInboxThreadToolbarPriority(b.key)),
     [actions],
   );
 
-  const allWidthsMeasured = orderedActions.every((action) => {
-    const width = widths[action.key];
-    return typeof width === 'number' && width > 0;
-  });
+  const hasPrefix = prefix != null;
   const hasSuffix = suffix != null;
-  const actionContainerWidth = Math.max(0, containerWidth - (hasSuffix ? suffixWidth + gap : 0));
+  const prefixReserve = hasPrefix ? prefixWidth + (orderedActions.length > 0 ? gap : 0) : 0;
+  const suffixReserve = hasSuffix ? suffixWidth + (orderedActions.length > 0 || hasPrefix ? gap : 0) : 0;
+  const actionBudget = Math.max(0, toolbarWidth - prefixReserve - suffixReserve);
 
   const { visibleKeys, overflowKeys } = useMemo(() => {
-    if (!allWidthsMeasured || actionContainerWidth <= 0) {
+    if (orderedActions.length === 0) {
       return {
-        visibleKeys: orderedActions.map((action) => action.key),
+        visibleKeys: [] as MessagePanelToolbarActionKey[],
         overflowKeys: [] as MessagePanelToolbarActionKey[],
       };
     }
 
-    return computeToolbarOverflowSplit(
-      orderedActions.map((action) => ({
-        key: action.key,
-        priority: getPriority(action.key),
-        width: widths[action.key] ?? 0,
-      })),
-      actionContainerWidth,
-      { gap, overflowTriggerWidth: OVERFLOW_TRIGGER_WIDTH },
-    ) as { visibleKeys: MessagePanelToolbarActionKey[]; overflowKeys: MessagePanelToolbarActionKey[] };
-  }, [actionContainerWidth, allWidthsMeasured, gap, orderedActions, widths]);
+    if (actionBudget <= 0) {
+      return {
+        visibleKeys: [] as MessagePanelToolbarActionKey[],
+        overflowKeys: orderedActions.map((action) => action.key),
+      };
+    }
+
+    const splitItems = orderedActions.map((action) => ({
+      key: action.key,
+      priority: getInboxThreadToolbarPriority(action.key),
+      width: MESSAGE_TOOLBAR_INLINE_ACTION_WIDTH,
+    }));
+
+    return computeToolbarOverflowSplit(splitItems, actionBudget, {
+      gap,
+      overflowTriggerWidth: OVERFLOW_TRIGGER_WIDTH,
+    }) as { visibleKeys: MessagePanelToolbarActionKey[]; overflowKeys: MessagePanelToolbarActionKey[] };
+  }, [actionBudget, gap, orderedActions]);
 
   const visibleSet = useMemo(() => new Set(visibleKeys), [visibleKeys]);
   const actionMap = useMemo(
-    () => Object.fromEntries(orderedActions.map((action) => [action.key, action])) as Record<MessagePanelToolbarActionKey, MessagePanelToolbarAction>,
+    () => Object.fromEntries(orderedActions.map((action) => [action.key, action])) as Record<MessagePanelToolbarActionKey, InboxThreadToolbarAction>,
     [orderedActions],
   );
 
@@ -88,7 +83,7 @@ export function MessagePanelToolbar({ actions, gap = 8, suffix }: MessagePanelTo
         return {
           key: action.key,
           label: action.label,
-          icon: action.icon,
+          icon: INBOX_THREAD_TOOLBAR_ICON_MAP[action.iconKey],
           onPress: action.onPress,
           tone: action.tone === 'destructive' ? 'destructive' : 'default',
           iconColor,
@@ -99,15 +94,9 @@ export function MessagePanelToolbar({ actions, gap = 8, suffix }: MessagePanelTo
     [actionMap, overflowKeys],
   );
 
-  const handleContainerLayout = (event: LayoutChangeEvent) => {
+  const handleToolbarLayout = (event: LayoutChangeEvent) => {
     const nextWidth = Math.ceil(event.nativeEvent.layout.width);
-    setContainerWidth((current) => (current === nextWidth ? current : nextWidth));
-  };
-
-  const handleMeasure = (key: MessagePanelToolbarActionKey) => (event: LayoutChangeEvent) => {
-    const nextWidth = Math.ceil(event.nativeEvent.layout.width);
-    if (nextWidth <= 0) return;
-    setWidths((current) => (current[key] === nextWidth ? current : { ...current, [key]: nextWidth }));
+    setToolbarWidth((current) => (current === nextWidth ? current : nextWidth));
   };
 
   const handleSuffixLayout = (event: LayoutChangeEvent) => {
@@ -115,52 +104,57 @@ export function MessagePanelToolbar({ actions, gap = 8, suffix }: MessagePanelTo
     setSuffixWidth((current) => (current === nextWidth ? current : nextWidth));
   };
 
+  const handlePrefixLayout = (event: LayoutChangeEvent) => {
+    const nextWidth = Math.ceil(event.nativeEvent.layout.width);
+    setPrefixWidth((current) => (current === nextWidth ? current : nextWidth));
+  };
+
   if (orderedActions.length === 0 && !hasSuffix) {
     return null;
   }
 
   return (
-    <View className="flex-1 min-w-0 relative" onLayout={handleContainerLayout}>
-      <View
-        pointerEvents="none"
-        accessible={false}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        aria-hidden
-        style={{
-          position: 'absolute',
-          opacity: 0,
-          left: 0,
-          top: 0,
-          zIndex: -1,
-        }}
-        className="flex-row items-center gap-2"
-      >
-        {orderedActions.map((action) => (
-          <View key={`measure-${action.key}`} onLayout={handleMeasure(action.key)} accessible={false}>
-            {action.renderInline(true)}
-          </View>
-        ))}
+    <View className="flex-row flex-1 min-w-0 items-center gap-2" onLayout={handleToolbarLayout}>
+      <View className="flex-1 min-w-0">
+        <View className="flex-row items-center justify-end gap-2 min-w-0">
+          {hasPrefix ? (
+            <View className="shrink-0 min-w-0" onLayout={handlePrefixLayout}>
+              {prefix}
+            </View>
+          ) : null}
+          {orderedActions.map((action) =>
+            visibleSet.has(action.key) ? (
+              <MessageToolbarActionButton
+                key={action.key}
+                label={action.label}
+                icon={INBOX_THREAD_TOOLBAR_ICON_MAP[action.iconKey]}
+                onPress={action.onPress}
+                tone={action.tone}
+                accessibilityLabel={action.accessibilityLabel}
+                trailingChevron={action.trailingChevron}
+                compactLabelColor={action.compactLabelColor}
+                maxWidth={MESSAGE_TOOLBAR_INLINE_ACTION_WIDTH}
+              />
+            ) : null,
+          )}
+        </View>
       </View>
 
-      <View className="flex-row items-center gap-2 min-w-0">
-        {orderedActions.map((action) => (visibleSet.has(action.key) ? <View key={action.key}>{action.renderInline(false)}</View> : null))}
-        {hasSuffix ? (
-          <View className="shrink-0" onLayout={handleSuffixLayout}>
-            {suffix}
-          </View>
-        ) : null}
-        {overflowItems.length > 0 ? (
-          <RowOverflowMenu
-            items={overflowItems}
-            horizontalAlign="end"
-            menuMinWidth={180}
-            triggerAccessibilityLabel="More message actions"
-            triggerContainerClassName="shrink-0"
-            triggerVariant="mobile-actions"
-          />
-        ) : null}
-      </View>
+      {hasSuffix ? (
+        <View className="shrink-0" onLayout={handleSuffixLayout}>
+          {suffix}
+        </View>
+      ) : null}
+      {overflowItems.length > 0 ? (
+        <RowOverflowMenu
+          items={overflowItems}
+          horizontalAlign="end"
+          menuMinWidth={180}
+          triggerAccessibilityLabel="More message actions"
+          triggerContainerClassName="shrink-0"
+          triggerVariant="mobile-actions"
+        />
+      ) : null}
     </View>
   );
 }

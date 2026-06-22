@@ -8,6 +8,11 @@ export { MailboxesTable } from './MailboxesTable';
 export type { MailboxesTableProps } from './MailboxesTable';
 export { UploadMailboxesCSVModal } from './UploadMailboxesCSVModal';
 export type { UploadMailboxesCSVModalProps } from './UploadMailboxesCSVModal';
+export { RetestMailboxesModal } from './RetestMailboxesModal';
+export type {
+  RetestMailboxesModalProps,
+  RetestMailboxesModalSummary,
+} from './RetestMailboxesModal';
 export { BulkMailboxTagsEditor } from './BulkMailboxTagsEditor';
 export type { BulkMailboxTagsEditorProps } from './BulkMailboxTagsEditor';
 export { MailboxTagsManager } from './MailboxTagsManager';

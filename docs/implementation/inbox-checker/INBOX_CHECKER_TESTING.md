@@ -367,9 +367,11 @@ We’re talking about the **mailboxes** table, column **`status`** (`mailboxes.s
 - **When does it get reset to `'connected'`?**  
   Only when something else updates the row:
   - User runs **“Test connection”** in the Senders UI and it succeeds → that flow sets `mailboxes.status = 'connected'` and clears `error_message`.
+  - User runs **“Re-test connections”** / **“Test selected”** in Senders → same health update flow, but sequentially for many mailboxes.
   - User adds/edits the mailbox in Senders and saves → new-connect flow sets `status: 'connected'`.
   - Manual fix (e.g. SQL or an admin):  
     `UPDATE mailboxes SET status = 'connected', error_message = NULL WHERE id = '...'`.
+  - Daily IMAP recovery tick succeeds → inbox-checker restores `status = 'connected'`, clears `error_message`, and stamps `imap_last_recovery_at`.
 
 - **Effect of `'error'`**  
   `claim_mailboxes_to_check` only returns rows where `mailboxes.status = 'connected'`. So once the worker has set `status = 'error'`, that mailbox is no longer claimed for IMAP checking until one of the resets above happens.
@@ -413,6 +415,84 @@ DNS can’t resolve the IMAP hostname. Usually this means the mailbox has the wr
        OR last_synced_at < NOW() - INTERVAL '5 minutes'
      );
    ```
+
+### Test: IMAP recovery tick
+
+**Goal**: Verify the low-frequency recovery loop can reclaim healthy `status = 'error'` mailboxes without spamming Slack for bad creds.
+
+**Step 1 - Seed an error mailbox**
+
+```sql
+UPDATE mailboxes
+SET
+  status = 'error',
+  error_message = 'seeded for recovery test',
+  imap_last_recovery_at = NULL,
+  imap_claimed_at = NULL
+WHERE id = '<your-mailbox-id>';
+```
+
+**Step 2 - Force a short local interval**
+
+Run the worker with a one-minute recovery tick:
+
+```bash
+cd /Users/porter/Projects/FurnaceBuild/workers/inbox-checker-worker
+IMAP_RECOVERY_INTERVAL_MS=60000 npm run dev
+```
+
+Look for logs:
+
+- `[IMAP RECOVERY] interval=60000ms batch=100 cooldown=24h concurrency=2`
+- `[IMAP RECOVERY] Claimed ... mailbox(es) for recovery`
+- `[IMAP RECOVERY] recovered=N, still_error=M`
+
+**Step 3 - Verify the mailbox was restored**
+
+```sql
+SELECT
+  id,
+  status,
+  error_message,
+  imap_last_recovery_at,
+  imap_claimed_at
+FROM mailboxes
+WHERE id = '<your-mailbox-id>';
+```
+
+Expected after a healthy recovery:
+
+- `status = 'connected'`
+- `error_message IS NULL`
+- `imap_last_recovery_at` is recent
+- `imap_claimed_at IS NULL`
+
+### Test: recovery RPC claim behavior
+
+```sql
+SELECT *
+FROM claim_mailboxes_for_imap_recovery(
+  p_batch_size => 10,
+  p_cooldown_hours => 24,
+  p_processing_timeout_minutes => 10
+);
+```
+
+Expected:
+
+- only `status = 'error'` rows
+- no `@furnace.test` mailboxes
+- rows are skipped if `imap_last_recovery_at` is still inside cooldown
+
+### Test: cooldown
+
+Immediately rerun the claim RPC after a recovery attempt. The same mailbox should **not** be re-claimed until `imap_last_recovery_at < NOW() - INTERVAL '24 hours'`.
+
+### Test: Slack policy for recovery
+
+- Bad creds / XOAUTH2 auth failures: **no Slack expected**
+- Healthy batch with mixed pass/fail results: **no Slack expected**
+- Simulated recovery RPC failure or systemic proxy/network outage: **critical Slack expected**
 
 ### Debug: Replied to test message but no thread was created
 

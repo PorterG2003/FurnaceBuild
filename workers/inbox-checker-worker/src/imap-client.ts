@@ -1,4 +1,5 @@
 import { reportErrorToSlack } from '@furnace/slack-lib';
+import { buildImapFlowOptions } from '@furnace/mailbox-lib';
 import { openImapInbox } from '@furnace/mailbox-lib';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
@@ -16,16 +17,15 @@ export class ImapClient {
     mailbox: Mailbox,
     lastSyncedAt: Date | null
   ): Promise<ProcessedMessage[]> {
-    const client = new ImapFlow({
-      host: mailbox.imap_host,
-      port: mailbox.imap_port,
-      secure: mailbox.imap_use_ssl,
-      auth: {
-        user: mailbox.imap_username,
-        pass: mailbox.imap_password,
-      },
-      logger: false, // Disable verbose logging
-    });
+    const client = new ImapFlow(
+      buildImapFlowOptions({
+        host: mailbox.imap_host,
+        port: mailbox.imap_port,
+        username: mailbox.imap_username,
+        password: mailbox.imap_password,
+        useSSL: mailbox.imap_use_ssl,
+      }),
+    );
 
     try {
       await client.connect();

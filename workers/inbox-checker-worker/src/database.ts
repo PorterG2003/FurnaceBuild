@@ -64,4 +64,31 @@ export class DatabaseClient {
       throw error;
     }
   }
+
+  async claimMailboxesForImapRecovery(
+    batchSize: number,
+    cooldownHours: number,
+  ): Promise<Mailbox[]> {
+    try {
+      const { data, error } = await this.supabase.rpc('claim_mailboxes_for_imap_recovery', {
+        p_batch_size: batchSize,
+        p_cooldown_hours: cooldownHours,
+        p_processing_timeout_minutes: this.processingTimeoutMinutes,
+      });
+
+      if (error) {
+        console.error('[DATABASE] Error claiming mailboxes for IMAP recovery:', error);
+        throw error;
+      }
+
+      const mailboxes = (data as Mailbox[]) || [];
+      if (mailboxes.length > 0) {
+        console.log(`[DATABASE] Claimed ${mailboxes.length} mailbox(es) for IMAP recovery`);
+      }
+      return mailboxes;
+    } catch (error) {
+      console.error('Error claiming mailboxes for IMAP recovery from database:', error);
+      throw error;
+    }
+  }
 }

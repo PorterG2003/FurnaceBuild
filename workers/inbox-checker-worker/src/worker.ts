@@ -10,15 +10,32 @@ import {
   classifyImapError,
 } from '@furnace/mailbox-lib';
 import { DatabaseClient } from './database.js';
+import {
+  IMAP_RECOVERY_BATCH_SIZE,
+  IMAP_RECOVERY_COOLDOWN_HOURS,
+  IMAP_RECOVERY_CONCURRENCY,
+  IMAP_RECOVERY_DEFAULT_INTERVAL_MS,
+  IMAP_RECOVERY_RUN_ON_START,
+} from './imap-recovery-config.js';
+import { runImapRecoveryTick } from './imap-recovery.js';
 import { ImapClient } from './imap-client.js';
 import { MessageProcessor } from './message-processor.js';
 import { ThreadManager } from './thread-manager.js';
 import type { Mailbox } from './types.js';
 
+export interface ImapRecoveryConfig {
+  intervalMs: number;
+  batchSize: number;
+  cooldownHours: number;
+  concurrency: number;
+  runOnStart: boolean;
+}
+
 export interface WorkerConfig {
   supabase: SupabaseClient;
   databaseClient: DatabaseClient;
   concurrencyLimit?: number; // Max parallel mailbox processing
+  recovery?: Partial<ImapRecoveryConfig>;
 }
 
 /**
@@ -33,6 +50,8 @@ export class InboxCheckerWorker {
   private running: boolean = false;
   private consecutiveEmptyPolls: number = 0;
   private concurrencyLimit: number;
+  private recoveryConfig: ImapRecoveryConfig;
+  private imapRecoveryTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: WorkerConfig) {
     this.supabase = config.supabase;
@@ -41,6 +60,13 @@ export class InboxCheckerWorker {
     this.messageProcessor = new MessageProcessor();
     this.threadManager = new ThreadManager(config.supabase);
     this.concurrencyLimit = config.concurrencyLimit ?? 10; // Process 10 mailboxes in parallel
+    this.recoveryConfig = {
+      intervalMs: config.recovery?.intervalMs ?? IMAP_RECOVERY_DEFAULT_INTERVAL_MS,
+      batchSize: config.recovery?.batchSize ?? IMAP_RECOVERY_BATCH_SIZE,
+      cooldownHours: config.recovery?.cooldownHours ?? IMAP_RECOVERY_COOLDOWN_HOURS,
+      concurrency: config.recovery?.concurrency ?? IMAP_RECOVERY_CONCURRENCY,
+      runOnStart: config.recovery?.runOnStart ?? IMAP_RECOVERY_RUN_ON_START,
+    };
   }
 
   /**
@@ -49,6 +75,7 @@ export class InboxCheckerWorker {
   async start(): Promise<void> {
     console.log('[INBOX CHECKER] Worker starting...');
     this.running = true;
+    this.startImapRecoveryLoop();
 
     while (this.running) {
       try {
@@ -100,6 +127,76 @@ export class InboxCheckerWorker {
         await this.sleep(5000); // Wait before retrying
       }
     }
+  }
+
+  private startSingleFlightInterval(options: {
+    taskName: string;
+    intervalMs: number;
+    runImmediately?: boolean;
+    task: () => Promise<void>;
+    onError: (error: unknown) => void;
+  }): ReturnType<typeof setInterval> {
+    let isRunning = false;
+
+    const runTask = async () => {
+      if (!this.running) {
+        return;
+      }
+      if (isRunning) {
+        console.log(`[${options.taskName}] Previous run still in progress; skipping overlapping tick`);
+        return;
+      }
+
+      isRunning = true;
+      try {
+        await options.task();
+      } catch (error) {
+        options.onError(error);
+      } finally {
+        isRunning = false;
+      }
+    };
+
+    if (options.runImmediately) {
+      void runTask();
+    }
+
+    return setInterval(() => {
+      void runTask();
+    }, options.intervalMs);
+  }
+
+  private startImapRecoveryLoop(): void {
+    if (this.imapRecoveryTimer) {
+      return;
+    }
+
+    this.imapRecoveryTimer = this.startSingleFlightInterval({
+      taskName: 'IMAP RECOVERY',
+      intervalMs: this.recoveryConfig.intervalMs,
+      runImmediately: this.recoveryConfig.runOnStart,
+      task: async () => {
+        await runImapRecoveryTick({
+          supabase: this.supabase,
+          databaseClient: this.databaseClient,
+          batchSize: this.recoveryConfig.batchSize,
+          cooldownHours: this.recoveryConfig.cooldownHours,
+          concurrency: this.recoveryConfig.concurrency,
+        });
+      },
+      onError: (error) => {
+        const message = formatUnknownError(error);
+        console.error('[IMAP RECOVERY] Error:', error);
+        reportErrorToSlack('Inbox-checker IMAP recovery failed', {
+          severity: 'critical',
+          alertPolicy: 'critical_failure',
+          error: message,
+          summaryFields: {
+            worker: 'inbox-checker',
+          },
+        });
+      },
+    });
   }
 
   /**
@@ -238,6 +335,10 @@ export class InboxCheckerWorker {
   stop(): void {
     console.log('[INBOX CHECKER] Stopping worker...');
     this.running = false;
+    if (this.imapRecoveryTimer) {
+      clearInterval(this.imapRecoveryTimer);
+      this.imapRecoveryTimer = null;
+    }
   }
 
   private sleep(ms: number): Promise<void> {

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { ImapFlow } from 'imapflow';
 import { formatImapError, type ImapErrorDetails } from '../../../lib/mailbox/connectionErrors';
+import { buildImapFlowOptions } from '../../../lib/mailbox/imapClientOptions';
 import { verifyImapInboxAccess } from '../../../lib/mailbox/imapInbox';
 import type { Schema } from '../../data/resource';
 
@@ -91,19 +92,15 @@ async function testIMAP(config: {
   };
 
   try {
-    client = new ImapFlow({
-      host: config.host,
-      port: config.port,
-      secure: config.useSSL,
-      auth: {
-        user: config.username,
-        pass: config.password,
-      },
-      logger: false, // Disable logging
-      connectionTimeout: 15_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 15_000,
-    });
+    client = new ImapFlow(
+      buildImapFlowOptions({
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        password: config.password,
+        useSSL: config.useSSL,
+      }),
+    );
 
     details.stage = 'connect';
     await client.connect();

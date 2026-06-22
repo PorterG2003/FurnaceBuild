@@ -18,21 +18,43 @@ This worker continuously polls the database for mailboxes that need IMAP checkin
 - **Processing**: Parallel processing (10 mailboxes at a time per worker)
 - **Scaling**: Horizontal scaling (multiple workers)
 - **Claim path**: Mailbox claiming now uses a single candidate-selection/update pass with an index aligned to `imap_claimed_at` and `last_synced_at`
+- **Recovery loop**: A separate daily IMAP recovery tick re-verifies `status = 'error'` mailboxes via `claim_mailboxes_for_imap_recovery()` and restores healthy rows to `connected`
 
 ## Environment Variables
 
 - `SUPABASE_URL`: Supabase project URL
 - `SUPABASE_SECRET_KEY`: Supabase Secret Key (or `SUPABASE_SECRET_KEY_PARAM_PATH` to fetch from Parameter Store)
 - `AWS_REGION`: AWS region (defaults to us-west-2)
+- `IMAP_RECOVERY_INTERVAL_MS` (optional): Override the daily recovery interval for local testing or an emergency ECS task override. If unset, the worker uses the code default in `src/imap-recovery-config.ts`.
+
+## Recovery Configuration
+
+Operational tuning for IMAP recovery follows the same pattern as the other workers: defaults live in code, not in CDK env wiring.
+
+- `src/imap-recovery-config.ts`
+  - `IMAP_RECOVERY_DEFAULT_INTERVAL_MS = 24h`
+  - `IMAP_RECOVERY_BATCH_SIZE = 100`
+  - `IMAP_RECOVERY_COOLDOWN_HOURS = 24`
+  - `IMAP_RECOVERY_CONCURRENCY = 2`
+  - `IMAP_RECOVERY_RUN_ON_START = true`
+- `IMAP_RECOVERY_INTERVAL_MS` is the only optional env override. Use it for local smoke tests such as `60000` (1 minute).
 
 ## Development
 
 ### Local Development
 
+The worker loads **repo-root** `.env.local` automatically (`EXPO_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`). Optional overrides go in `workers/inbox-checker-worker/.env` (see `.env.example`).
+
 ```bash
 cd workers/inbox-checker-worker
 npm install
-npm run dev  # Uses tsx watch for hot reload
+npm run dev
+```
+
+For recovery smoke tests, set `IMAP_RECOVERY_INTERVAL_MS=60000` in the worker `.env` or pass it inline:
+
+```bash
+IMAP_RECOVERY_INTERVAL_MS=60000 npm run dev
 ```
 
 ### Build
@@ -92,6 +114,17 @@ The inbox checker runtime in this repo is ECS-only. If you still have a legacy i
 - **CloudWatch Logs**: `/ecs/furnace/inbox-checker-worker-{environment}`
 - **Metrics**: Mailboxes processed, messages found, replies/bounces/unsubscribes detected
 - **Slack alerts**: retryable read-path issues post once immediately, then summarize repeated occurrences with counts on the next hourly rollover; critical mailbox/config failures still post immediately every time
+- **Recovery logs**: look for `[IMAP RECOVERY] interval=...`, `[IMAP RECOVERY] Claimed ...`, and `[IMAP RECOVERY] recovered=N, still_error=M`
+
+## Recovery Slack Policy
+
+The IMAP recovery tick is intentionally quiet for mailbox-level failures:
+
+- No Slack for bad credentials, XOAUTH2 auth failures, or a batch where every mailbox is still genuinely broken
+- Critical Slack only when the recovery mechanism itself is broken
+  - `claim_mailboxes_for_imap_recovery` RPC failure
+  - unhandled exception in the recovery tick
+  - systemic infra-wide proxy/network failure pattern (`ENOTFOUND`, `ETIMEDOUT`, `ECONNREFUSED`, etc. on the same proxy host across the whole batch)
 
 ## Performance
 

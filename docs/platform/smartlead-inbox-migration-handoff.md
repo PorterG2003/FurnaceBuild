@@ -101,6 +101,17 @@ Ran `npm run audit:inboxalways-headers` against all **150 Foot Traffic Co mailbo
 
 ---
 
+## Mailbox ops note
+
+For the Foot Traffic InboxAlways set, there are now two recovery paths when mailboxes get stuck in `status = 'error'` after an upstream auth/proxy blip:
+
+- **Immediate unblock**: Senders → **Re-test connections** (or bulk select → **Test selected**) to re-run mailbox tests and rewrite health on demand.
+- **Background cleanup**: inbox-checker daily IMAP recovery tick re-verifies error-status mailboxes and restores healthy ones to `connected`.
+
+The recovery tick is intentionally quiet in Slack for mailbox-level auth failures. It only sends critical Slack when the recovery mechanism itself is broken or when the whole proxy host appears down.
+
+---
+
 ## Key files
 
 | | |

@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "backfill:reparse": "tsx src/backfill-reparse.ts",
-    "test": "npm --prefix ../../lib/mailbox run build && node --import tsx --test src/thread-manager.test.ts src/worker.test.ts src/message-processor.test.ts"
+    "test": "npm --prefix ../../lib/mailbox run build && node --import tsx --test ../../lib/mailbox/connectionErrors.test.ts ../../lib/mailbox/connectionHealth.test.ts ../../lib/mailbox/bulkConnectionTest.test.ts ../../lib/mailbox/imapRecoveryAlert.test.ts src/thread-manager.test.ts src/worker.test.ts src/message-processor.test.ts src/imap-recovery.test.ts"
   },
   "dependencies": {
     "@furnace/mailbox-lib": "file:../../lib/mailbox",

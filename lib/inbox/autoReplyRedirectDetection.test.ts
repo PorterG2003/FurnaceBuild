@@ -76,3 +76,29 @@ test('extractReferralNameNearEmail strips trailing parenthesis from captured nam
     'Please contact Rebecca Price (former manager) at rebecca@example.com for help.';
   assert.equal(extractReferralNameNearEmail(body, 'rebecca@example.com'), 'Rebecca Price');
 });
+
+test('extractReferralNameNearEmail handles direct any future correspondence phrasing', () => {
+  const body =
+    'Lina Malechkova is no longer employed here. Please direct any future correspondence to Alex Kimtis at akimtis@tradepointatlantic.com.';
+  assert.equal(extractReferralNameNearEmail(body, 'akimtis@tradepointatlantic.com'), 'Alex Kimtis');
+});
+
+test('extractReferralNameNearEmail strips unicode direction marks around name and email', () => {
+  const body =
+    'Please direct any future correspondence to \u200EAlex Kimtis\u200E at \u200Eakimtis@tradepointatlantic.com\u200E.';
+  assert.equal(extractReferralNameNearEmail(body, 'akimtis@tradepointatlantic.com'), 'Alex Kimtis');
+});
+
+test('detectAutoReplyRedirectSignals flags Tradepoint Atlantic departure redirect', () => {
+  const result = detectAutoReplyRedirectSignals({
+    fromEmail: 'LMalechkova@tradepointatlantic.com',
+    leadEmail: 'lmalechkova@tradepointatlantic.com',
+    bodyText:
+      'Thank you for contacting Tradepoint Atlantic. Lina Malechkova is no longer employed here. Please direct any future correspondence to Alex Kimtis at akimtis@tradepointatlantic.com.',
+  });
+
+  assert.equal(result.headerMismatch, false);
+  assert.equal(result.referralEmail, 'akimtis@tradepointatlantic.com');
+  assert.equal(result.referralName, 'Alex Kimtis');
+  assert.equal(result.shouldReplaceLead, true);
+});

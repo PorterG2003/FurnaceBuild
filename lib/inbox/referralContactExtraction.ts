@@ -1,5 +1,6 @@
 import {
   detectAutoReplyRedirectSignals,
+  extractReferralNamePhraseNearEmail,
   resolveSuggestedReferralName,
 } from './autoReplyRedirectDetection';
 
@@ -98,20 +99,7 @@ function extractRawNamePhrase(
   bodyText: string | null | undefined,
   referralEmail: string | null | undefined,
 ): string | null {
-  if (!bodyText || !referralEmail) return null;
-
-  const emailNorm = referralEmail.trim().toLowerCase();
-  const emailIndex = bodyText.toLowerCase().indexOf(emailNorm);
-  if (emailIndex < 0) return null;
-
-  const before = bodyText.slice(0, emailIndex).trimEnd().replace(/\s+at\s*$/i, '');
-  const phraseMatch = before.match(
-    /(?:please\s+)?(?:contact|reach out to|email|direct(?:\s+any)?(?:\s+questions)?\s+to)\s+(.+)$/i,
-  );
-  if (phraseMatch) return phraseMatch[1].trim();
-
-  const nameMatch = before.match(/([A-Z][\w.'-]+(?:\s+[A-Z][\w.'-]+)+)\s*$/);
-  return nameMatch?.[1]?.trim() ?? null;
+  return extractReferralNamePhraseNearEmail(bodyText, referralEmail);
 }
 
 function stripTitleFromNamePhrase(rawPhrase: string): string {

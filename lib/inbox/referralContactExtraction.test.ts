@@ -74,6 +74,22 @@ test('isHighConfidencePersonName rejects trailing parenthesis fragments', () => 
   assert.equal(isHighConfidencePersonName('Rebecca Price'), true);
 });
 
+test('extractReferralContactHeuristic extracts Tradepoint Atlantic departure redirect', () => {
+  const bodyText =
+    'Thank you for contacting Tradepoint Atlantic. Lina Malechkova is no longer employed here. Please direct any future correspondence to \u200EAlex Kimtis\u200E at \u200Eakimtis@tradepointatlantic.com\u200E.';
+  const result = extractReferralContactHeuristic({
+    fromEmail: 'LMalechkova@tradepointatlantic.com',
+    fromName: 'Lina Malechkova',
+    leadEmail: 'lmalechkova@tradepointatlantic.com',
+    bodyText,
+  });
+
+  assert.equal(result.fields.email, 'akimtis@tradepointatlantic.com');
+  assert.equal(result.fields.name, 'Alex Kimtis');
+  assert.equal(result.fields.firstName, 'Alex');
+  assert.equal(result.fields.lastName, 'Kimtis');
+});
+
 test('buildSuggestedReferralFromExtraction writes sparse referral metadata', () => {
   const extraction = extractReferralContactHeuristic({
     fromEmail: 'brad.guimont@burryfoods.com',

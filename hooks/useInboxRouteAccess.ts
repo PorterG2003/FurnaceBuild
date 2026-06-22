@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MutableRefObject } from 'react';
+import type { EmailThread } from '@/lib/supabase/types';
 import { getThreadById } from '@/lib/supabase/services';
 import {
   buildInboxListHref,
@@ -28,6 +29,8 @@ export interface UseInboxRouteAccessResult {
   shouldClearFiltersForDeepLink: boolean;
   switchingAccount: boolean;
   consumeDeepLinkFilterClear: () => void;
+  /** Thread row from route validation; avoids a duplicate getThreadById in useInboxData. */
+  validatedThread: EmailThread | null;
 }
 
 export function useInboxRouteAccess({
@@ -46,8 +49,10 @@ export function useInboxRouteAccess({
   const [status, setStatus] = useState<InboxRouteAccessStatus>('loading');
   const [shouldClearFiltersForDeepLink, setShouldClearFiltersForDeepLink] = useState(false);
   const [switchingAccount, setSwitchingAccount] = useState(false);
+  const [validatedThread, setValidatedThread] = useState<EmailThread | null>(null);
   const deniedHandledRef = useRef<string | null>(null);
   const prevRouteThreadIdRef = useRef<string | null>(null);
+  const validatedRouteThreadIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!accountInitialized || accountLoading) {
@@ -60,6 +65,8 @@ export function useInboxRouteAccess({
       setStatus('list_only');
       setShouldClearFiltersForDeepLink(false);
       setSwitchingAccount(false);
+      setValidatedThread(null);
+      validatedRouteThreadIdRef.current = null;
       deniedHandledRef.current = null;
       prevRouteThreadIdRef.current = null;
       return;
@@ -67,6 +74,11 @@ export function useInboxRouteAccess({
 
     const routeThreadChanged = prevRouteThreadIdRef.current !== routeThreadId;
     prevRouteThreadIdRef.current = routeThreadId;
+
+    if (routeThreadChanged) {
+      setValidatedThread(null);
+      validatedRouteThreadIdRef.current = null;
+    }
 
     const allowAccountSwitch = shouldAllowInboxAccountSwitch({ routeThreadChanged });
 
@@ -85,13 +97,27 @@ export function useInboxRouteAccess({
       return;
     }
 
+    if (!routeThreadChanged && validatedRouteThreadIdRef.current === routeThreadId) {
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
-      setStatus('loading');
+      if (routeThreadChanged || validatedRouteThreadIdRef.current !== routeThreadId) {
+        setStatus('loading');
+      }
 
       const row = await getThreadById(routeThreadId).catch(() => null);
       if (cancelled) return;
+
+      if (row) {
+        setValidatedThread(row);
+        validatedRouteThreadIdRef.current = routeThreadId;
+      } else {
+        setValidatedThread(null);
+        validatedRouteThreadIdRef.current = null;
+      }
 
       const threadAccountId = row?.account_id ?? null;
 
@@ -183,5 +209,6 @@ export function useInboxRouteAccess({
     shouldClearFiltersForDeepLink,
     switchingAccount,
     consumeDeepLinkFilterClear,
+    validatedThread,
   };
 }

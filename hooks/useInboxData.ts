@@ -14,7 +14,9 @@ import {
   getThreadSnippets,
   getLeadsByIds,
   getLeadReplacementSummariesByLeadIds,
+  getThreadById,
 } from '@/lib/supabase/services';
+import { resolveSelectedThread } from '@/lib/inbox/resolveSelectedThread';
 import { getLeadDisplayName } from '@/lib/leads';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
@@ -26,9 +28,15 @@ export interface UseInboxDataOptions {
   accountId: string | null;
   /** Thread id from route path; null when at `/inbox`. */
   selectedThreadId: string | null;
+  /** Thread row already loaded by route access validation. */
+  routeValidatedThread?: EmailThread | null;
 }
 
-export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOptions) {
+export function useInboxData({
+  accountId,
+  selectedThreadId,
+  routeValidatedThread = null,
+}: UseInboxDataOptions) {
   const [threads, setThreads] = useState<EmailThread[]>([]);
   const [threadsLoading, setThreadsLoading] = useState(true);
   const [threadsError, setThreadsError] = useState<string | null>(null);
@@ -51,6 +59,7 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
   const [hasMoreThreads, setHasMoreThreads] = useState(false);
   const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
   const [initialThreadsLoadSettled, setInitialThreadsLoadSettled] = useState(false);
+  const [fetchedSelectedThread, setFetchedSelectedThread] = useState<EmailThread | null>(null);
 
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -78,7 +87,54 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
     [threads]
   );
 
-  const selectedThread = selectedThreadId ? threads.find((t) => t.id === selectedThreadId) : undefined;
+  const selectedThreadInList = useMemo(
+    () => (selectedThreadId ? threads.find((t) => t.id === selectedThreadId) : undefined),
+    [selectedThreadId, threads],
+  );
+
+  const pinnedSelectedThread = useMemo(() => {
+    if (!selectedThreadId) return null;
+    if (routeValidatedThread?.id === selectedThreadId) return routeValidatedThread;
+    if (fetchedSelectedThread?.id === selectedThreadId) return fetchedSelectedThread;
+    return null;
+  }, [selectedThreadId, routeValidatedThread, fetchedSelectedThread]);
+
+  const selectedThread = useMemo(
+    () => resolveSelectedThread(threads, selectedThreadId, pinnedSelectedThread),
+    [threads, selectedThreadId, pinnedSelectedThread],
+  );
+
+  useEffect(() => {
+    if (!selectedThreadId || !accountId) {
+      if (!selectedThreadId) setFetchedSelectedThread(null);
+      return;
+    }
+
+    if (selectedThreadInList) {
+      setFetchedSelectedThread(null);
+      return;
+    }
+
+    if (routeValidatedThread?.id === selectedThreadId) return;
+    if (fetchedSelectedThread?.id === selectedThreadId) return;
+
+    let cancelled = false;
+    void getThreadById(selectedThreadId)
+      .then((thread) => {
+        if (!cancelled) setFetchedSelectedThread(thread);
+      })
+      .catch((err) => console.error('Failed to fetch selected thread:', err));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    accountId,
+    selectedThreadId,
+    selectedThreadInList,
+    routeValidatedThread,
+    fetchedSelectedThread?.id,
+  ]);
 
   const displayThreads = threads;
   const hasActiveFilters =
@@ -420,16 +476,30 @@ export function useInboxData({ accountId, selectedThreadId }: UseInboxDataOption
     };
   }, [accountId, threadSearchQuery]);
 
+  const prevSelectedThreadIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (selectedThreadId) {
-      setMessages([]);
-      setMessagesLoadedForThreadId(null);
-      loadMessages(selectedThreadId);
-    } else {
-      setMessages([]);
-      setMessagesLoadedForThreadId(null);
+    if (!selectedThreadId) {
+      if (prevSelectedThreadIdRef.current !== null) {
+        setMessages([]);
+        setMessagesLoadedForThreadId(null);
+        prevSelectedThreadIdRef.current = null;
+      }
+      return;
     }
-  }, [selectedThreadId, loadMessages]);
+
+    if (
+      prevSelectedThreadIdRef.current === selectedThreadId &&
+      messagesLoadedForThreadId === selectedThreadId
+    ) {
+      return;
+    }
+
+    prevSelectedThreadIdRef.current = selectedThreadId;
+    setMessages([]);
+    setMessagesLoadedForThreadId(null);
+    loadMessages(selectedThreadId);
+  }, [selectedThreadId, loadMessages, messagesLoadedForThreadId]);
 
   return {
     threads,

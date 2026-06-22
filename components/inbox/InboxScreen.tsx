@@ -76,6 +76,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
   const loadedThreadIdsRef = useRef<string[]>([]);
   const loadedForAccountIdRef = useRef<string | null>(null);
   const prevAccountIdRef = useRef<string | null>(null);
+  const stickySelectedThreadIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     cleanInboxThreadUrlOnWeb(
@@ -123,16 +124,25 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     currentAccountId: accountId,
   });
 
-  const selectedThreadId =
-    routeThreadId == null
-      ? null
-      : trustLoadedThreadList || routeAccess.status === 'ready'
-        ? routeThreadId
-        : null;
+  const selectedThreadId = useMemo(() => {
+    if (routeThreadId == null) {
+      stickySelectedThreadIdRef.current = null;
+      return null;
+    }
+    if (trustLoadedThreadList || routeAccess.status === 'ready') {
+      stickySelectedThreadIdRef.current = routeThreadId;
+      return routeThreadId;
+    }
+    if (routeAccess.status === 'loading' && stickySelectedThreadIdRef.current === routeThreadId) {
+      return routeThreadId;
+    }
+    return null;
+  }, [routeThreadId, trustLoadedThreadList, routeAccess.status]);
 
   const inboxData = useInboxData({
     accountId: initialized && !accountLoading ? accountId : null,
     selectedThreadId,
+    routeValidatedThread: routeAccess.validatedThread,
   });
   const {
     threads,

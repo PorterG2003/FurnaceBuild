@@ -1,5 +1,9 @@
 import outputs from '@/amplify_outputs.json';
 import { getAccessToken } from '@/lib/services/auth-token';
+import type {
+  TestConnectionResult as SharedTestConnectionResult,
+  TestMailboxConnectionParams as SharedTestMailboxConnectionParams,
+} from '@/lib/mailbox/connectionHealth';
 import { reportErrorToSlack } from '../slack/reportErrorToSlack';
 import { sendTeamInvitationEmail as sendTeamInvitationEmailRequest } from '@/lib/services/transactionalEmail';
 
@@ -35,26 +39,8 @@ export async function sendInvitationEmail(params: SendInvitationEmailParams): Pr
   }
 }
 
-interface TestMailboxConnectionParams {
-  smtp_host: string;
-  smtp_port: number;
-  smtp_username: string;
-  smtp_password: string;
-  smtp_use_tls: boolean;
-  smtp_use_ssl: boolean;
-  imap_host: string;
-  imap_port: number;
-  imap_username: string;
-  imap_password: string;
-  imap_use_ssl: boolean;
-}
-
-interface TestMailboxConnectionResult {
-  success: boolean;
-  smtp: { success: boolean; error?: string };
-  imap: { success: boolean; error?: string };
-  message: string;
-}
+export type TestMailboxConnectionParams = SharedTestMailboxConnectionParams;
+export type TestMailboxConnectionResult = SharedTestConnectionResult;
 
 function isRetryableInfraStatus(status: number): boolean {
   return status === 502 || status === 503 || status === 504;

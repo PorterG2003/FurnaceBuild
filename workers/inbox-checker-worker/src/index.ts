@@ -1,7 +1,24 @@
+import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createSupabaseClient } from './supabase.js';
 import { DatabaseClient } from './database.js';
 import { InboxCheckerWorker } from './worker.js';
+import {
+  IMAP_RECOVERY_BATCH_SIZE,
+  IMAP_RECOVERY_CONCURRENCY,
+  IMAP_RECOVERY_COOLDOWN_HOURS,
+  IMAP_RECOVERY_RUN_ON_START,
+  resolveImapRecoveryIntervalMs,
+} from './imap-recovery-config.js';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+
+const workerDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = path.resolve(workerDir, '../..');
+
+// Repo-root secrets first; worker .env can override (e.g. IMAP_RECOVERY_INTERVAL_MS).
+dotenv.config({ path: path.join(repoRoot, '.env.local') });
+dotenv.config({ path: path.join(workerDir, '.env') });
 
 /**
  * Fetch secret from Parameter Store
@@ -32,9 +49,12 @@ async function fetchSecretFromParameterStore(
  * Main entry point for inbox checker worker
  * 
  * Environment variables required:
- * - SUPABASE_URL: Supabase project URL
+ * - SUPABASE_URL: Supabase project URL (or EXPO_PUBLIC_SUPABASE_URL for local dev)
  * - SUPABASE_SECRET_KEY: Supabase Secret Key (or SUPABASE_SECRET_KEY_PARAM_PATH to fetch from Parameter Store)
  * - AWS_REGION: AWS region (defaults to us-west-2)
+ *
+ * Optional (for local dev, set in workers/inbox-checker-worker/.env):
+ * - IMAP_RECOVERY_INTERVAL_MS: override recovery tick interval (e.g. 60000 for local smoke tests)
  */
 async function main() {
   // Log immediately on startup to verify process is running
@@ -44,9 +64,10 @@ async function main() {
   
   try {
     // Validate environment variables
-    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.EXPO_PUBLIC_SUPABASE_URL;
     const supabaseSecretKeyParamPath = process.env.SUPABASE_SECRET_KEY_PARAM_PATH;
-    const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
+    const supabaseSecretKey =
+      process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
     const awsRegion = process.env.AWS_REGION || 'us-west-2';
 
     if (!supabaseUrl) {
@@ -63,12 +84,21 @@ async function main() {
 
     if (!secretKey) {
       throw new Error(
-        'Missing SUPABASE_SECRET_KEY. Provide either SUPABASE_SECRET_KEY or SUPABASE_SECRET_KEY_PARAM_PATH'
+        'Missing SUPABASE_SECRET_KEY. Provide either SUPABASE_SECRET_KEY, SUPABASE_SERVICE_ROLE_KEY, or SUPABASE_SECRET_KEY_PARAM_PATH'
       );
     }
 
+    process.env.SUPABASE_URL = supabaseUrl;
+    process.env.SUPABASE_SECRET_KEY = secretKey;
+
     console.log('Initializing inbox checker worker...');
     console.log(`AWS Region: ${awsRegion}`);
+    const imapRecoveryIntervalMs = resolveImapRecoveryIntervalMs(
+      process.env.IMAP_RECOVERY_INTERVAL_MS,
+    );
+    console.log(
+      `[IMAP RECOVERY] interval=${imapRecoveryIntervalMs}ms batch=${IMAP_RECOVERY_BATCH_SIZE} cooldown=${IMAP_RECOVERY_COOLDOWN_HOURS}h concurrency=${IMAP_RECOVERY_CONCURRENCY}`,
+    );
 
     // Initialize clients
     const supabase = createSupabaseClient();
@@ -84,6 +114,13 @@ async function main() {
       supabase,
       databaseClient,
       concurrencyLimit: 10, // Process 10 mailboxes in parallel
+      recovery: {
+        intervalMs: imapRecoveryIntervalMs,
+        batchSize: IMAP_RECOVERY_BATCH_SIZE,
+        cooldownHours: IMAP_RECOVERY_COOLDOWN_HOURS,
+        concurrency: IMAP_RECOVERY_CONCURRENCY,
+        runOnStart: IMAP_RECOVERY_RUN_ON_START,
+      },
     });
 
     // Handle graceful shutdown

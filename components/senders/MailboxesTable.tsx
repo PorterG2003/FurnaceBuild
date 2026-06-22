@@ -29,6 +29,7 @@ export interface MailboxesTableProps {
   testingMailboxId: string | null;
   onBulkDelete: (ids: string[]) => Promise<void>;
   onBulkEdit: () => void;
+  onBulkTestSelected: (ids: string[]) => void;
   onClearSelection: () => void;
   onConnectMailbox: () => void;
   onUploadCSV?: () => void;
@@ -56,6 +57,7 @@ export function MailboxesTable({
   testingMailboxId,
   onBulkDelete,
   onBulkEdit,
+  onBulkTestSelected,
   onClearSelection,
   onConnectMailbox,
   onUploadCSV,
@@ -208,6 +210,12 @@ export function MailboxesTable({
                 <Text className="text-[#FF4D00] font-instrument-medium text-sm">Update all</Text>
               </TouchableOpacity>
             )}
+            <TouchableOpacity
+              onPress={() => onBulkTestSelected(Array.from(selectedMailboxes))}
+              className="px-4 py-2 bg-blue-500/20 border border-blue-500/30 rounded-lg"
+            >
+              <Text className="text-blue-300 font-instrument-medium text-sm">Test selected</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={async () => {
                 const ids = Array.from(selectedMailboxes);

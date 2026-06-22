@@ -1,3 +1,5 @@
+import type { TestConnectionResult as SharedTestConnectionResult } from '@/lib/mailbox/connectionHealth';
+
 export type Provider = 'gmail' | 'outlook' | 'custom';
 
 export interface MailboxFormData {
@@ -102,12 +104,7 @@ export const BLANK_MAILBOX_FORM_DATA: MailboxFormData = {
   imap_use_ssl: true,
 };
 
-export interface TestConnectionResult {
-  success: boolean;
-  message: string;
-  smtp?: { success: boolean; error?: string };
-  imap?: { success: boolean; error?: string };
-}
+export type TestConnectionResult = SharedTestConnectionResult;
 
 export type BulkMailboxTagMode = 'patch' | 'replace';
 

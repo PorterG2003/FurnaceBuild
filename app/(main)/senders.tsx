@@ -8,17 +8,22 @@ import { Alert, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { ConfirmDeleteModal } from '@/components/ui/modals';
 import { IconButton } from '@/components/ui/icon-button';
 import {
+  buildMailboxConnectionHealthUpdate,
+  mailboxToTestMailboxConnectionParams,
+  type TestConnectionResult,
+} from '@/lib/mailbox/connectionHealth';
+import {
   ConnectMailboxModal,
   CREATE_MAILBOX_FORM_DATA,
   EditMailboxModal,
   MailboxListFiltersModal,
   MailboxesTable,
   MailboxTagsManager,
+  RetestMailboxesModal,
   TestResultModal,
   UploadMailboxesCSVModal,
   type MailboxFormData,
   type Provider,
-  type TestConnectionResult,
   EMPTY_BULK_MAILBOX_TAG_CHANGES,
   getBulkMailboxTagConflicts,
   hasBulkMailboxTagChanges,
@@ -59,16 +64,6 @@ function buildBulkUpdatePayload(
   return payload;
 }
 
-function buildMailboxConnectionHealthUpdate(
-  result: TestConnectionResult,
-): Pick<MailboxUpdate, 'status' | 'smtp_status' | 'error_message'> {
-  return {
-    status: result.imap?.success === false ? 'error' : 'connected',
-    smtp_status: result.smtp?.success === false ? 'error' : 'active',
-    error_message: result.success ? null : result.message,
-  };
-}
-
 export default function SendersPage() {
   const { account, user: profile } = useAccount();
   const { toast } = useToast();
@@ -82,6 +77,7 @@ export default function SendersPage() {
   const [selectedMailboxes, setSelectedMailboxes] = useState<Set<string>>(new Set());
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showUploadCSVModal, setShowUploadCSVModal] = useState(false);
+  const [showRetestModal, setShowRetestModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [managingTagsMailboxId, setManagingTagsMailboxId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -95,6 +91,7 @@ export default function SendersPage() {
   const [testing, setTesting] = useState(false);
   const [testingMailboxId, setTestingMailboxId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
+  const [retestMailboxIds, setRetestMailboxIds] = useState<string[]>([]);
   const actionsSheetMailboxRef = useRef<Mailbox | null>(null);
   const showSkeleton = useSmoothLoading(isLoading);
 
@@ -297,19 +294,7 @@ export default function SendersPage() {
     setTestingMailboxId(mailbox.id);
 
     try {
-      const result = await testMailboxConnection({
-        smtp_host: mailbox.smtp_host,
-        smtp_port: mailbox.smtp_port,
-        smtp_username: mailbox.smtp_username,
-        smtp_password: mailbox.smtp_password,
-        smtp_use_tls: mailbox.smtp_use_tls,
-        smtp_use_ssl: mailbox.smtp_use_ssl,
-        imap_host: mailbox.imap_host,
-        imap_port: mailbox.imap_port,
-        imap_username: mailbox.imap_username,
-        imap_password: mailbox.imap_password,
-        imap_use_ssl: mailbox.imap_use_ssl,
-      });
+      const result = await testMailboxConnection(mailboxToTestMailboxConnectionParams(mailbox));
 
       await updateMailboxConnectionHealth(
         mailbox.id,
@@ -511,6 +496,22 @@ export default function SendersPage() {
     setShowUploadCSVModal(true);
   };
 
+  const openRetestModalForIds = useCallback((ids: string[]) => {
+    if (isMobile || ids.length === 0) return;
+    setRetestMailboxIds(ids);
+    setShowRetestModal(true);
+  }, [isMobile]);
+
+  const openRetestAllModal = useCallback(() => {
+    openRetestModalForIds(mailboxes.map((mailbox) => mailbox.id));
+  }, [mailboxes, openRetestModalForIds]);
+
+  const retestMailboxes = useMemo(() => {
+    if (retestMailboxIds.length === 0) return [];
+    const selectedIds = new Set(retestMailboxIds);
+    return mailboxes.filter((mailbox) => selectedIds.has(mailbox.id));
+  }, [mailboxes, retestMailboxIds]);
+
   const handleBulkDelete = async (ids: string[]) => {
     try {
       await Promise.all(ids.map((id) => deleteMailbox(id)));
@@ -524,11 +525,21 @@ export default function SendersPage() {
   };
 
   const desktopHeaderActions = (
-    <View className="flex-row gap-2">
-      <Button variant="secondary" onPress={openUploadCSVModal}>
+    <View className="flex-row flex-wrap items-center justify-end gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onPress={openRetestAllModal}
+        disabled={mailboxes.length === 0}
+      >
+        Re-test all
+      </Button>
+      <Button variant="secondary" size="sm" onPress={openUploadCSVModal}>
         Upload CSV
       </Button>
-      <Button onPress={openConnectModal}>Create mailbox</Button>
+      <Button size="sm" onPress={openConnectModal}>
+        Create mailbox
+      </Button>
     </View>
   );
 
@@ -599,6 +610,7 @@ export default function SendersPage() {
         testingMailboxId={testingMailboxId}
         onBulkDelete={handleBulkDelete}
         onBulkEdit={handleBulkEdit}
+        onBulkTestSelected={openRetestModalForIds}
         onClearSelection={() => setSelectedMailboxes(new Set())}
         onConnectMailbox={openConnectModal}
         onUploadCSV={openUploadCSVModal}
@@ -660,6 +672,28 @@ export default function SendersPage() {
         }}
         accountId={accountId ?? ''}
         userId={profile?.id ?? ''}
+      />
+
+      <RetestMailboxesModal
+        visible={showRetestModal}
+        mailboxes={retestMailboxes}
+        onClose={() => {
+          setShowRetestModal(false);
+          setRetestMailboxIds([]);
+          void loadMailboxes({ silent: true });
+        }}
+        onComplete={async ({ connected, failing, total }) => {
+          await loadMailboxes({ silent: true });
+          if (failing > 0) {
+            toast.error(
+              `${connected}/${total} mailbox${total === 1 ? '' : 'es'} connected; ${failing} still failing`,
+            );
+          } else {
+            toast.success(
+              `${connected} mailbox${connected === 1 ? '' : 'es'} connected successfully`,
+            );
+          }
+        }}
       />
 
       <TestResultModal

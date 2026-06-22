@@ -114,10 +114,11 @@ test('InboxCheckerWorker reports retryable main-loop failures as aggregated warn
         };
       },
     } as any,
+    recovery: { runOnStart: false },
   });
 
   (worker as any).sleep = async () => {
-    (worker as any).running = false;
+    worker.stop();
   };
 
   try {
@@ -141,10 +142,11 @@ test('InboxCheckerWorker keeps non-retryable main-loop failures loud', async () 
         throw new Error('Mailbox credentials rejected');
       },
     } as any,
+    recovery: { runOnStart: false },
   });
 
   (worker as any).sleep = async () => {
-    (worker as any).running = false;
+    worker.stop();
   };
 
   try {
@@ -234,4 +236,93 @@ test('InboxCheckerWorker marks permanent IMAP failures as error and aggregates S
   } finally {
     slack.restore();
   }
+});
+
+test('InboxCheckerWorker single-flight intervals skip overlapping ticks', async () => {
+  const worker = new InboxCheckerWorker({
+    supabase: {} as any,
+    databaseClient: {} as any,
+  });
+  (worker as any).running = true;
+
+  const originalSetInterval = global.setInterval;
+  const originalClearInterval = global.clearInterval;
+
+  let intervalCallback: (() => void) | undefined;
+  global.setInterval = ((callback: (...args: any[]) => void) => {
+    intervalCallback = callback as () => void;
+    return { id: 'timer-1' } as any;
+  }) as typeof setInterval;
+  global.clearInterval = (() => {}) as typeof clearInterval;
+
+  let resolveTask: (() => void) | undefined;
+  let executions = 0;
+
+  try {
+    (worker as any).startSingleFlightInterval({
+      taskName: 'TEST TASK',
+      intervalMs: 1000,
+      task: async () => {
+        executions += 1;
+        await new Promise<void>((resolve) => {
+          resolveTask = resolve;
+        });
+      },
+      onError: () => {
+        throw new Error('Unexpected task error');
+      },
+    });
+
+    assert.ok(intervalCallback);
+
+    intervalCallback();
+    intervalCallback();
+    await Promise.resolve();
+
+    assert.equal(executions, 1);
+
+    resolveTask?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    intervalCallback();
+    await Promise.resolve();
+
+    assert.equal(executions, 2);
+  } finally {
+    global.setInterval = originalSetInterval;
+    global.clearInterval = originalClearInterval;
+  }
+});
+
+test('InboxCheckerWorker starts IMAP recovery on boot when configured to run immediately', async () => {
+  let recoveryClaims = 0;
+  const worker = new InboxCheckerWorker({
+    supabase: {} as any,
+    databaseClient: {
+      async claimMailboxesToCheck() {
+        return [];
+      },
+      async claimMailboxesForImapRecovery() {
+        recoveryClaims += 1;
+        return [];
+      },
+    } as any,
+    recovery: {
+      intervalMs: 60_000,
+      batchSize: 5,
+      cooldownHours: 24,
+      concurrency: 1,
+      runOnStart: true,
+    },
+  });
+
+  (worker as any).sleep = async () => {
+    await Promise.resolve();
+    worker.stop();
+  };
+
+  await worker.start();
+
+  assert.equal(recoveryClaims, 1);
 });

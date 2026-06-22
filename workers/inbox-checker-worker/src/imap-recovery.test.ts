@@ -124,7 +124,7 @@ test('runImapRecoveryTick keeps auth failures quiet and leaves mailbox in error'
       };
     },
     notifyCritical: (title, payload) => {
-      criticalCalls.push(`${title}:${payload.error}`);
+      criticalCalls.push(`${title}:${payload?.error ?? ''}`);
     },
   });
 
@@ -161,7 +161,7 @@ test('runImapRecoveryTick notifies critical on systemic infra-wide failures', as
       };
     },
     notifyCritical: (title, payload) => {
-      criticalCalls.push(`${title}:${payload.error}`);
+      criticalCalls.push(`${title}:${payload?.error ?? ''}`);
     },
   });
 

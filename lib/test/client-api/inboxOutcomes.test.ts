@@ -4,6 +4,22 @@ import {
   ClientApiDbHarness,
   createClientApiTestNamespace,
 } from './harness.js';
+import { buildSeedInterestedMetadata } from '../../../scripts/seed/scenarios/smart-handling-flow/payloads';
+
+async function ensureInboxInteractionSchema(
+  harness: ClientApiDbHarness,
+  t: test.TestContext,
+): Promise<boolean> {
+  const { error } = await harness.supabase
+    .from('inbox_interactions')
+    .select('id')
+    .limit(1);
+  if (error) {
+    t.skip(`Inbox interaction schema not applied in shared test DB: ${error.message}`);
+    return false;
+  }
+  return true;
+}
 
 async function createInboxGraph(harness: ClientApiDbHarness) {
   return harness.campaignHarness.createCampaignGraph({
@@ -101,15 +117,25 @@ test('client api inbox list filters return matching threads', async () => {
   }
 });
 
-test('client api inbox PATCH updates category, status, and read state', async () => {
+test('client api inbox PATCH updates category, status, and read state', async (t) => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('inbox-patch'),
   });
 
   try {
+    if (!(await ensureInboxInteractionSchema(harness, t))) return;
     const graph = await createInboxGraph(harness);
     const apiKey = await harness.createApiKey();
     const threadId = graph.leadsByKey.get('lead-1')!.threadId!;
+    const { error: seedError } = await harness.supabase
+      .from('email_threads')
+      .update({
+        classification_status: 'complete',
+        classification_completed_at: '2026-06-22T18:00:00.000Z',
+        handling_metadata: buildSeedInterestedMetadata() as any,
+      })
+      .eq('id', threadId);
+    assert.equal(seedError, null);
 
     const response = await harness.request(`/v1/threads/${threadId}`, {
       method: 'PATCH',
@@ -138,12 +164,25 @@ test('client api inbox PATCH updates category, status, and read state', async ()
       .eq('direction', 'received');
     assert.equal(messageError, null);
     assert.ok((messages ?? []).every((message) => message.read_at != null));
+
+    const { data: interactions, error: interactionError } = await harness.supabase
+      .from('inbox_interactions')
+      .select('action, source, intent')
+      .eq('thread_id', threadId)
+      .order('created_at', { ascending: true });
+    assert.equal(interactionError, null);
+    assert.deepEqual(
+      (interactions ?? []).map((row) => row.action),
+      ['thread.set_category', 'thread.close_conversation'],
+    );
+    assert.equal(interactions?.[0]?.source, 'client_api');
+    assert.equal((interactions?.[0]?.intent as any)?.action_id, 'mark_interested');
   } finally {
     await harness.cleanup();
   }
 });
 
-test('client api inbox reply, forward, and message job lifecycle work', async () => {
+test('client api inbox reply, forward, and message job lifecycle work', async (t) => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('inbox-send'),
   });
@@ -151,9 +190,19 @@ test('client api inbox reply, forward, and message job lifecycle work', async ()
   const trackedJobIds: string[] = [];
 
   try {
+    if (!(await ensureInboxInteractionSchema(harness, t))) return;
     const graph = await createInboxGraph(harness);
     const apiKey = await harness.createApiKey();
     const threadId = graph.leadsByKey.get('lead-1')!.threadId!;
+    const { error: seedError } = await harness.supabase
+      .from('email_threads')
+      .update({
+        classification_status: 'complete',
+        classification_completed_at: '2026-06-22T18:00:00.000Z',
+        handling_metadata: buildSeedInterestedMetadata() as any,
+      })
+      .eq('id', threadId);
+    assert.equal(seedError, null);
 
     const messagesResponse = await harness.request(`/v1/threads/${threadId}/messages`, {
       apiKey: apiKey.secret,
@@ -236,6 +285,20 @@ test('client api inbox reply, forward, and message job lifecycle work', async ()
       .single();
     assert.equal(forwardJobError, null);
     assert.equal(forwardJob?.message_type, 'inbox_forward');
+
+    const { data: interactions, error: interactionError } = await harness.supabase
+      .from('inbox_interactions')
+      .select('action, source, changes')
+      .eq('thread_id', threadId)
+      .order('created_at', { ascending: true });
+    assert.equal(interactionError, null);
+    assert.deepEqual(
+      (interactions ?? []).map((row) => row.action),
+      ['thread.reply_sent', 'thread.forward_sent'],
+    );
+    assert.equal(interactions?.[0]?.source, 'client_api');
+    assert.equal((interactions?.[0]?.changes as any)?.[0]?.field, 'reply_job_created');
+    assert.equal((interactions?.[1]?.changes as any)?.[0]?.field, 'forward_job_created');
   } finally {
     for (const jobId of trackedJobIds) {
       await harness.supabase.from('message_jobs').delete().eq('id', jobId);

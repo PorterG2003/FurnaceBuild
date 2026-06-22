@@ -39,6 +39,7 @@ export interface SmartHandlingSuggestedReferral {
 
 export interface SmartHandlingMetadata {
   mode?: SmartHandlingMode;
+  suggestion_version?: string | null;
   category?: string | null;
   primary_message?: string | null;
   primary?: SmartHandlingActionOption | null;
@@ -222,6 +223,7 @@ export function parseSmartHandlingMetadata(value: Json | null | undefined): Smar
   if (!isRecord(value)) return null;
   return {
     mode: value.mode === 'ai' || value.mode === 'manual' ? value.mode : undefined,
+    suggestion_version: typeof value.suggestion_version === 'string' ? value.suggestion_version : null,
     category: typeof value.category === 'string' ? value.category : null,
     primary_message: typeof value.primary_message === 'string' ? value.primary_message : null,
     primary: parseActionOption(value.primary),

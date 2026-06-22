@@ -26,7 +26,13 @@ import { InboxThreadList } from './InboxThreadList';
 import { MarkOutOfOfficeModal } from './MarkOutOfOfficeModal';
 import { ReplaceLeadModal } from './ReplaceLeadModal';
 import { getDisplayBody } from '@/lib/email/index';
-import { resolveThreadCardTitle, resolveThreadRecipientEmail } from '@/lib/inbox';
+import {
+  buildInboxInteractionContext,
+  buildInteractionIntent,
+  extractSuggestionVersion,
+  resolveThreadCardTitle,
+  resolveThreadRecipientEmail,
+} from '@/lib/inbox';
 import { buildReplaceLeadPrefill } from '@/lib/inbox/replaceLeadPrefill';
 import { parseOutOfOfficeReturnDate } from '@/lib/inbox/parseOutOfOfficeReturnDate';
 import { parseSmartHandlingMetadata } from '@/lib/inbox/smartHandling';
@@ -47,6 +53,7 @@ import { useInboxRouteAccess } from '@/hooks/useInboxRouteAccess';
 import { useInboxComposer } from '@/hooks/useInboxComposer';
 import { useInboxFilterUI } from '@/hooks/useInboxFilterUI';
 import { useInboxThreadActions } from '@/hooks/useInboxThreadActions';
+import { useInboxInteractionSession } from '@/contexts/InboxInteractionContext';
 import outputs from '@/amplify_outputs.json';
 
 const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
@@ -56,6 +63,7 @@ export interface InboxScreenProps {
 }
 
 export function InboxScreen({ routeThreadId }: InboxScreenProps) {
+  const interactionSession = useInboxInteractionSession();
   const router = useRouter();
   const searchParams = useLocalSearchParams<{
     thread?: string | string[];
@@ -456,8 +464,9 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     () => parseSmartHandlingMetadata(selectedThread?.handling_metadata ?? null),
     [selectedThread?.handling_metadata]
   );
+  const selectedLead = selectedThread?.lead_id ? (leadByIdMap[selectedThread.lead_id] ?? null) : null;
   const replaceLeadPrefill = useMemo(() => {
-    const oldLead = selectedThread?.lead_id ? leadByIdMap[selectedThread.lead_id] : null;
+    const oldLead = selectedLead;
     const customLeadData =
       oldLead?.custom_lead_data &&
       typeof oldLead.custom_lead_data === 'object' &&
@@ -472,16 +481,55 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       customLeadDataKeys: customLeadData,
     });
   }, [
-    leadByIdMap,
     latestReceivedInbound?.from_email,
     latestReceivedInbound?.from_name,
-    selectedThread?.lead_id,
+    selectedLead,
     smartHandlingMetadata,
   ]);
 
+  useEffect(() => {
+    if (!accountId || !selectedThread) {
+      interactionSession.setInteractionSnapshot(null);
+      return;
+    }
+
+    const context = buildInboxInteractionContext({
+      thread: selectedThread,
+      lead: selectedLead,
+      triggerMessage: latestReceivedInbound,
+      smartHandlingMetadata,
+    });
+    if (!context) {
+      interactionSession.setInteractionSnapshot(null);
+      return;
+    }
+
+    const { suggestion_mode, suggestion_version } = extractSuggestionVersion(smartHandlingMetadata);
+    interactionSession.setInteractionSnapshot({
+      account_id: accountId,
+      thread_id: selectedThread.id,
+      lead_id: selectedThread.lead_id,
+      trigger_message_id: latestReceivedInbound?.id ?? null,
+      classification_completed_at: selectedThread.classification_completed_at,
+      suggestion_mode,
+      suggestion_version,
+      context,
+    });
+  }, [accountId, interactionSession, latestReceivedInbound, selectedLead, selectedThread, smartHandlingMetadata]);
+
   const dismissSmartHandling = useCallback(() => {
+    void interactionSession.recordInteraction({
+      action: 'thread.dismiss_suggestion',
+      source: 'smart_handling_bar',
+      intent: buildInteractionIntent({
+        metadata: smartHandlingMetadata,
+        actionId: 'dismiss',
+      }),
+    }).catch((error) => {
+      console.error('Failed to record smart handling dismiss:', error);
+    });
     setSmartHandlingDismissedForCurrentView(true);
-  }, []);
+  }, [interactionSession, smartHandlingMetadata]);
 
   const buildSuggestedReplyHtml = useCallback((value: string) => {
     const escaped = value
@@ -495,6 +543,15 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     async (cat: string | null) => {
       if (!selectedThreadId || !accountId) return;
       try {
+        await interactionSession.recordInteraction({
+          action: 'thread.set_category',
+          source: 'category_picker',
+          intent: buildInteractionIntent({
+            metadata: smartHandlingMetadata,
+            categorySelection: cat,
+          }),
+          changes: [{ field: 'category', from: selectedThread?.category ?? null, to: cat }],
+        });
         await updateThreadCategory(selectedThreadId, cat);
         setThreads((prev) =>
           prev.map((t) =>
@@ -512,7 +569,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         toast.error(e instanceof Error ? e.message : 'Failed to update category.');
       }
     },
-    [selectedThreadId, accountId, setThreads, toast]
+    [selectedThreadId, accountId, interactionSession, smartHandlingMetadata, selectedThread?.category, setThreads, toast]
   );
 
   const threadActions = useInboxThreadActions({
@@ -542,6 +599,15 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
   const closeSelectedConversation = useCallback(
     async (source: 'user' | 'system' = 'user') => {
       if (!selectedThreadId) return;
+      await interactionSession.recordInteraction({
+        action: 'thread.close_conversation',
+        source: 'thread_header',
+        intent: buildInteractionIntent({
+          metadata: smartHandlingMetadata,
+          actionId: 'close_conversation',
+        }),
+        changes: [{ field: 'conversation_status', from: selectedThread?.conversation_status ?? null, to: 'closed' }],
+      });
       await closeConversation(selectedThreadId, source);
       setThreads((prev) =>
         prev.map((thread) =>
@@ -555,12 +621,17 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         ),
       );
     },
-    [selectedThreadId, setThreads]
+    [interactionSession, selectedThread?.conversation_status, selectedThreadId, setThreads, smartHandlingMetadata]
   );
 
   const openSelectedConversation = useCallback(
     async (source: 'user' | 'system' = 'user') => {
       if (!selectedThreadId) return;
+      await interactionSession.recordInteraction({
+        action: 'thread.reopen_conversation',
+        source: 'thread_header',
+        changes: [{ field: 'conversation_status', from: selectedThread?.conversation_status ?? null, to: 'open' }],
+      });
       await reopenConversation(selectedThreadId, source);
       setThreads((prev) =>
         prev.map((thread) =>
@@ -574,7 +645,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         ),
       );
     },
-    [selectedThreadId, setThreads]
+    [interactionSession, selectedThread?.conversation_status, selectedThreadId, setThreads]
   );
 
   const scrollMessagesToEnd = useCallback((reason: string, nextHeight?: number) => {

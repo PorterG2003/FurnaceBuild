@@ -5,3 +5,8 @@ export * from './tag-colors';
 export * from './signature-utils';
 export * from './threadCardData';
 export * from './buildInboxThreadToolbarActions';
+export * from './buildInboxInteractionContext';
+export * from './buildInteractionIntent';
+export * from './inboxInteractionActions';
+export * from './inboxInteractionTypes';
+export * from './inboxInteractions';

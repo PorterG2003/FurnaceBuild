@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { BaseModal } from '@/components/ui/modals/BaseModal';
 import { useToast } from '@/components/ui/feedback';
+import { buildInteractionIntent } from '@/lib/inbox/buildInteractionIntent';
+import { parseSmartHandlingMetadata } from '@/lib/inbox/smartHandling';
 import { addBlockEntry } from '@/lib/supabase/services';
+import { useInboxInteractionSession } from '@/contexts/InboxInteractionContext';
 
 export interface BlockSenderModalProps {
   visible: boolean;
@@ -20,6 +23,7 @@ export function BlockSenderModal({
   onBlocked,
 }: BlockSenderModalProps) {
   const { toast } = useToast();
+  const interactionSession = useInboxInteractionSession();
   const [adding, setAdding] = useState<string | null>(null);
 
   const uniqueEmails = Array.from(new Set(participantEmails.map((e) => e.trim().toLowerCase()).filter(Boolean)));
@@ -33,6 +37,18 @@ export function BlockSenderModal({
         setAdding(null);
         return;
       }
+      const interactionMetadata = parseSmartHandlingMetadata(
+        interactionSession.getInteractionSnapshot()?.context.thread.handling_metadata ?? null
+      );
+      await interactionSession.recordInteraction({
+        action: 'thread.block_sender',
+        source: 'block_modal',
+        intent: buildInteractionIntent({
+          metadata: interactionMetadata,
+          actionId: 'block_sender',
+        }),
+        changes: [{ field: type === 'email' ? 'blocked_email' : 'blocked_domain', to: value }],
+      });
       await addBlockEntry(accountId, { value, type });
       onBlocked();
       onClose();

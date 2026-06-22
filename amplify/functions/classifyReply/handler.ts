@@ -11,6 +11,7 @@ import {
 } from '../../../lib/inbox/referralContactExtraction';
 import { parseOutOfOfficeReturnDate } from '../../../lib/inbox/parseOutOfOfficeReturnDate';
 import { buildOooSmartHandlingOptions, buildNeutralSmartHandlingOptions, buildNotInterestedSmartHandlingOptions } from '../../../lib/inbox/smartHandling';
+import { resolveSuggestionVersion } from '../../../lib/inbox/smartHandlingVersion';
 
 type ThreadRow = {
   id: string;
@@ -89,6 +90,7 @@ function buildReplaceLeadMetadata(params: {
 
   return {
     mode: 'manual',
+    suggestion_version: resolveSuggestionVersion('manual'),
     category,
     return_date: null,
     primary_message: primaryMessage,
@@ -132,6 +134,7 @@ function buildManualMetadata(params: {
     const oooOptions = buildOooSmartHandlingOptions(returnDate);
     return {
       mode: 'manual',
+      suggestion_version: resolveSuggestionVersion('manual'),
       category,
       return_date: oooOptions.return_date,
       primary_message: oooOptions.primary_message,
@@ -171,6 +174,7 @@ function buildManualMetadata(params: {
   if (category === 'Interested') {
     return {
       mode: 'manual',
+      suggestion_version: resolveSuggestionVersion('manual'),
       category,
       return_date: null,
       primary_message: 'This looks like an interested reply.',
@@ -190,6 +194,7 @@ function buildManualMetadata(params: {
     const notInterestedOptions = buildNotInterestedSmartHandlingOptions({ subject, bodyText });
     return {
       mode: 'manual',
+      suggestion_version: resolveSuggestionVersion('manual'),
       category,
       return_date: null,
       primary_message: notInterestedOptions.primary_message,
@@ -204,6 +209,7 @@ function buildManualMetadata(params: {
 
   return {
     mode: 'manual',
+    suggestion_version: resolveSuggestionVersion('manual'),
     category,
     return_date: null,
     ...buildNeutralSmartHandlingOptions(),
@@ -216,6 +222,7 @@ function buildManualMetadata(params: {
 function buildAiMetadata(category: CategorizerCategory) {
   return {
     mode: 'ai',
+    suggestion_version: resolveSuggestionVersion('ai'),
     category,
     primary_message: `AI categorized this reply as ${category}.`,
     primary: null,

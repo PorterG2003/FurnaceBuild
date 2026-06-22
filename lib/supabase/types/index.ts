@@ -79,6 +79,9 @@ export type EmailThreadUpdate = Database['public']['Tables']['email_threads']['U
 export type EmailMessage = Database['public']['Tables']['email_messages']['Row'];
 export type EmailMessageInsert = Database['public']['Tables']['email_messages']['Insert'];
 export type EmailMessageUpdate = Database['public']['Tables']['email_messages']['Update'];
+export type InboxInteraction = Database['public']['Tables']['inbox_interactions']['Row'];
+export type InboxInteractionInsert = Database['public']['Tables']['inbox_interactions']['Insert'];
+export type InboxInteractionUpdate = Database['public']['Tables']['inbox_interactions']['Update'];
 
 export type BlockListEntry = Database['public']['Tables']['block_list']['Row'];
 export type BlockListEntryInsert = Database['public']['Tables']['block_list']['Insert'];

@@ -3,6 +3,12 @@
 Use this runbook to preview or backfill smart handling for historical inbox
 threads that are still open but never entered the classify pipeline.
 
+Before a large backfill, bump `MANUAL_SMART_HANDLING_VERSION` in
+`lib/inbox/smartHandlingVersion.ts` if the manual smart-handling heuristics
+changed and you want the backfilled threads to land in the new feedback cohort.
+Use `docs/implementation/inbox-ui/SMART_HANDLING_FEEDBACK.md` for the versioned
+analysis workflow after the backfill.
+
 ## 1) Candidate SQL (Inspect First)
 
 Run in the Supabase SQL editor:

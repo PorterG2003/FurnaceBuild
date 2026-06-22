@@ -7,7 +7,10 @@ import { Toggle } from '@/components/ui/Toggle';
 import { Button } from '@/components/ui/button';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/feedback';
+import { useInboxInteractionSession } from '@/contexts/InboxInteractionContext';
+import { buildInteractionIntent } from '@/lib/inbox/buildInteractionIntent';
 import { computeOooResumeAtIso, utcNoonIsoFromYmd, type OooScheduleMode } from '@/lib/inbox/outOfOfficeSchedule';
+import { parseSmartHandlingMetadata } from '@/lib/inbox/smartHandling';
 import { markEmailThreadOutOfOffice, saveEmailThreadOutOfOffice } from '@/lib/supabase/services/inbox/out-of-office';
 
 export type { OooScheduleMode };
@@ -28,6 +31,23 @@ export interface MarkOutOfOfficeModalProps {
   onSaved: () => Promise<void> | void;
 }
 
+function resolveOooModalAction(params: {
+  mode: OooScheduleMode;
+  resumeCampaign: boolean;
+  returnDateYmd: string;
+  prefilledReturnDateYmd: string | null;
+}): 'thread.mark_ooo_dated' | 'thread.mark_ooo_instant' | 'thread.mark_ooo_custom' {
+  if (!params.resumeCampaign) {
+    return 'thread.mark_ooo_custom';
+  }
+  if (params.mode === 'instant') {
+    return 'thread.mark_ooo_instant';
+  }
+  return params.prefilledReturnDateYmd?.trim() && params.returnDateYmd.trim() === params.prefilledReturnDateYmd.trim()
+    ? 'thread.mark_ooo_dated'
+    : 'thread.mark_ooo_custom';
+}
+
 export function MarkOutOfOfficeModal({
   visible,
   onClose,
@@ -38,6 +58,7 @@ export function MarkOutOfOfficeModal({
   onSaved,
 }: MarkOutOfOfficeModalProps) {
   const { toast } = useToast();
+  const interactionSession = useInboxInteractionSession();
   const [resumeCampaign, setResumeCampaign] = useState(true);
   const [mode, setMode] = useState<OooScheduleMode>('return_date');
   const [returnDateYmd, setReturnDateYmd] = useState('');
@@ -88,6 +109,38 @@ export function MarkOutOfOfficeModal({
     }
     setSaving(true);
     try {
+      const action = resolveOooModalAction({
+        mode,
+        resumeCampaign,
+        returnDateYmd,
+        prefilledReturnDateYmd,
+      });
+      const metadata = parseSmartHandlingMetadata(
+        (interactionSession.getInteractionSnapshot()?.context.thread.handling_metadata ?? null) as any,
+      );
+      try {
+        await interactionSession.recordInteraction({
+          action,
+          source: 'ooo_modal',
+          intent: buildInteractionIntent({
+            metadata,
+            actionId:
+              action === 'thread.mark_ooo_dated'
+                ? 'mark_ooo_dated'
+                : action === 'thread.mark_ooo_instant'
+                  ? 'mark_ooo_instant'
+                  : 'mark_ooo_custom',
+          }),
+          changes: [
+            { field: 'out_of_office', from: false, to: true },
+            { field: 'ooo_resume_requested', to: resumeRequested },
+            { field: 'ooo_resume_at', to: resumeRequested ? resumeAt : null },
+            ...(markAutoReplyOnSave ? [{ field: 'category', to: 'Auto Reply' }] : []),
+          ],
+        });
+      } catch (error) {
+        console.error('Failed to record OOO modal interaction:', error);
+      }
       await saveEmailThreadOutOfOffice({
         threadId,
         outOfOffice: true,

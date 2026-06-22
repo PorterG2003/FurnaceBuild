@@ -3,6 +3,7 @@ import test from 'node:test';
 import { buildOooSmartHandlingOptions, buildNeutralSmartHandlingOptions, buildNotInterestedSmartHandlingOptions, getSmartHandlingReplySeed, parseSmartHandlingMetadata } from './smartHandling';
 import { isNotInterestedOptOutRequest } from './notInterestedOptOutDetection';
 import { shouldAutoCloseConversationForAction, getSmartHandlingActionSuccessMessage, SMART_HANDLING_DISMISS_SUCCESS_MESSAGE } from './smartHandlingActions';
+import { resolveSuggestionVersion } from './smartHandlingVersion';
 
 test('parseSmartHandlingMetadata reads sparse referral contact fields', () => {
   const result = parseSmartHandlingMetadata({
@@ -26,6 +27,7 @@ test('parseSmartHandlingMetadata reads sparse referral contact fields', () => {
 test('parseSmartHandlingMetadata normalizes valid action payloads', () => {
   const result = parseSmartHandlingMetadata({
     mode: 'manual',
+    suggestion_version: resolveSuggestionVersion('manual'),
     category: 'Interested',
     primary_message: 'This looks interested.',
     primary: { action: 'mark_interested_reply', label: 'Interested + reply' },
@@ -43,6 +45,7 @@ test('parseSmartHandlingMetadata normalizes valid action payloads', () => {
 
   assert.deepEqual(result, {
     mode: 'manual',
+    suggestion_version: resolveSuggestionVersion('manual'),
     category: 'Interested',
     primary_message: 'This looks interested.',
     primary: { action: 'mark_interested_reply', label: 'Interested + reply' },

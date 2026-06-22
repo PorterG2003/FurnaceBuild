@@ -46,7 +46,7 @@ const tagDescriptions = [
   },
   {
     name: 'Inbox',
-    description: 'List threads and messages and queue reply jobs.',
+    description: 'List and triage inbox threads, read messages, send replies and forwards, manage message jobs, out-of-office state, lead replacement, and thread tags.',
   },
   {
     name: 'Block list',
@@ -65,6 +65,8 @@ const tagDescriptions = [
 function buildDescription() {
   return [
     'Account-scoped REST API for campaigns, leads, people, saved lists, inbox, mailboxes, mailbox tags, stats, and block list.',
+    '',
+    'Version history is in the **Changelog** document in the sidebar.',
     '',
     '## Authentication',
     `Send your account API key as \`Authorization: Bearer ${API_KEY_PREFIX}...\`. Keys are created in Furnace Account Settings. Revoked, expired, or unknown keys return \`401 authentication_error\`.`,
@@ -89,7 +91,7 @@ function buildDescription() {
     '| 400 | `invalid_request_error` | Invalid JSON, missing parameters, bad status transitions, missing custom fields |',
     '| 401 | `authentication_error` | Missing, invalid, revoked, or expired API key |',
     '| 403 | `permission_error` | Smartlead campaign mutation, deleted campaign, admin-only operation |',
-    '| 404 | `invalid_request_error` | Campaign, lead, mailbox, thread, or import job not found in this account |',
+    '| 404 | `invalid_request_error` | Campaign, lead, mailbox, thread, message job, or import job not found in this account |',
     '| 429 | `rate_limit_error` | Too many requests or too many concurrent async import jobs |',
     '| 500 | `api_error` | Unhandled server-side error |',
     '',
@@ -122,6 +124,12 @@ function buildDescription() {
     '- Sync bulk (`POST /v1/campaigns/{id}/leads/bulk`) suppresses per-row lead webhooks and emits one `lead.bulk_import.completed` event.',
     '- Async bulk (`POST /v1/campaigns/{id}/leads/bulk/async` or `POST /v1/jobs` with `api_lead_import`) suppresses per-row lead webhooks and emits one `lead.bulk_import.completed` event when the job finishes successfully.',
     '- Poll `GET /v1/jobs/{id}` for per-row errors and aggregate counts in the job `result` payload.',
+    '',
+    '## Inbox message jobs',
+    '- Reply and forward endpoints return `202` with a `message_job` id.',
+    '- Poll outbound send status with `GET /v1/message-jobs/{id}`. Do not use `GET /v1/jobs/{id}` — that endpoint is for async import jobs only.',
+    '- Cancel or expedite queued sends with `POST /v1/message-jobs/{id}/cancel` and `POST /v1/message-jobs/{id}/send-now`.',
+    '- Update thread triage state with `PATCH /v1/threads/{id}` (`category`, `conversation_status`, `read`).',
   ].join('\n');
 }
 

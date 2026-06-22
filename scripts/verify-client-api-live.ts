@@ -103,6 +103,14 @@ async function main() {
     assert.equal(health.body.db, 'ok');
     console.log('[live-client-api] health check passed');
 
+    const changelog = await requestJson<{ info: { title: string; version: string }; paths: Record<string, unknown> }>(
+      `${baseUrl}/openapi/changelog.json`,
+    );
+    assert.equal(changelog.status, 200);
+    assert.equal(changelog.body.info.title, 'Changelog');
+    assert.equal(Object.keys(changelog.body.paths).length, 0);
+    console.log('[live-client-api] changelog document check passed');
+
     const graph = await harness.campaignHarness.createCampaignGraph({
       name: 'Client API Live Smoke',
       status: 'running',

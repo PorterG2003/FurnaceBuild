@@ -98,12 +98,31 @@ export function buildClientApiPaths() {
         },
       },
     },
+    '/openapi/changelog.json': {
+      get: {
+        operationId: 'getChangelogOpenApiDocument',
+        tags: ['Meta'],
+        summary: 'Changelog document',
+        description: 'Returns the Client API changelog as a minimal OpenAPI document for Scalar docs.',
+        security: [],
+        responses: {
+          200: {
+            description: 'Changelog OpenAPI document.',
+            content: {
+              'application/json': {
+                schema: schemaRef('OpenApiDocument'),
+              },
+            },
+          },
+        },
+      },
+    },
     '/docs': {
       get: {
         operationId: 'getDocs',
         tags: ['Meta'],
         summary: 'Scalar docs',
-        description: 'Returns the hosted Scalar API reference UI backed by `/openapi.json`.',
+        description: 'Returns the hosted Scalar API reference UI with **API Reference** and **Changelog** documents.',
         security: [],
         responses: {
           200: {
@@ -921,12 +940,20 @@ export function buildClientApiPaths() {
         operationId: 'listThreads',
         tags: ['Inbox'],
         summary: 'List inbox threads',
-        description: 'Lists inbox threads in the authenticated account. Results can be filtered by campaign or mailbox.',
+        description: 'Lists inbox threads in the authenticated account. By default only threads with at least one inbound reply are returned.',
         parameters: [
           parameterRef('Limit'),
           parameterRef('Offset'),
+          parameterRef('Search'),
           parameterRef('CampaignFilter'),
           parameterRef('MailboxFilter'),
+          parameterRef('UnreadOnly'),
+          parameterRef('ConversationStatusFilter'),
+          parameterRef('ThreadCategoryFilter'),
+          parameterRef('ThreadTagIdsFilter'),
+          parameterRef('DateFrom'),
+          parameterRef('DateTo'),
+          parameterRef('HasReplyOnly'),
         ],
         responses: {
           200: jsonResponse('ThreadListResponse', 'Thread page.'),
@@ -944,6 +971,22 @@ export function buildClientApiPaths() {
         responses: {
           200: jsonResponse('ThreadResponse', 'Thread response.'),
           ...authenticatedErrors('NotFoundError'),
+        },
+      },
+      patch: {
+        operationId: 'updateThread',
+        tags: ['Inbox'],
+        summary: 'Update thread',
+        description: 'Updates thread category, conversation status, and/or read state.',
+        parameters: [parameterRef('ThreadId')],
+        requestBody: jsonRequestBody('ThreadUpdate', {
+          category: 'Interested',
+          conversation_status: 'closed',
+          read: true,
+        }),
+        responses: {
+          200: jsonResponse('ThreadResponse', 'Updated thread.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
         },
       },
     },
@@ -978,7 +1021,7 @@ export function buildClientApiPaths() {
         operationId: 'createReplyJob',
         tags: ['Inbox'],
         summary: 'Create reply job',
-        description: 'Creates an outbound inbox reply job targeting the latest message in the thread. When subject or recipients are omitted, Furnace falls back to the most recent inbound/outbound message metadata.',
+        description: 'Creates an outbound inbox reply job. When `in_reply_to_message_id` is omitted, Furnace targets the latest message in the thread.',
         parameters: [parameterRef('ThreadId')],
         requestBody: {
           required: true,
@@ -995,6 +1038,152 @@ export function buildClientApiPaths() {
           202: jsonResponse('ReplyJobResponse', 'Reply job queued.', {
             data: { id: '7e9f1f62-27f6-4474-b22c-7197e5480de4' },
           }),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/threads/{id}/forward': {
+      post: {
+        operationId: 'createForwardJob',
+        tags: ['Inbox'],
+        summary: 'Create forward job',
+        description: 'Creates an outbound inbox forward job for a specific message in the thread.',
+        parameters: [parameterRef('ThreadId')],
+        requestBody: jsonRequestBody('ForwardRequest', {
+          forward_message_id: '306a0f4d-2aca-4d34-ab18-53a4b50b10eb',
+          to_email: 'referral@example.com',
+          body_text: 'Sharing this thread.',
+        }),
+        responses: {
+          202: jsonResponse('ReplyJobResponse', 'Forward job queued.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/threads/{id}/out-of-office': {
+      put: {
+        operationId: 'setThreadOutOfOffice',
+        tags: ['Inbox'],
+        summary: 'Set out of office',
+        description: 'Marks a thread out of office and optionally schedules campaign resume.',
+        parameters: [parameterRef('ThreadId')],
+        requestBody: jsonRequestBody('OutOfOfficeUpdate', {
+          resume_mode: 'scheduled',
+          resume_at: '2026-07-01T00:00:00.000Z',
+        }),
+        responses: {
+          200: jsonResponse('OutOfOfficeResponse', 'Out-of-office updated.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+      delete: {
+        operationId: 'clearThreadOutOfOffice',
+        tags: ['Inbox'],
+        summary: 'Clear out of office',
+        description: 'Clears out-of-office state for a thread.',
+        parameters: [parameterRef('ThreadId')],
+        responses: {
+          200: jsonResponse('ThreadResponse', 'Out-of-office cleared.'),
+          ...authenticatedErrors('NotFoundError'),
+        },
+      },
+    },
+    '/v1/threads/{id}/replace-lead': {
+      post: {
+        operationId: 'replaceThreadLead',
+        tags: ['Inbox'],
+        summary: 'Replace lead',
+        description: 'Replaces the thread lead with a new contact and optionally queues a forward job.',
+        parameters: [parameterRef('ThreadId')],
+        requestBody: jsonRequestBody('ReplaceLeadRequest', {
+          new_email: 'referral@example.com',
+          new_name: 'Jane Doe',
+        }),
+        responses: {
+          200: jsonResponse('ReplaceLeadResponse', 'Lead replaced.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/threads/{id}/tags:add': {
+      post: {
+        operationId: 'addThreadTag',
+        tags: ['Inbox'],
+        summary: 'Add thread tag',
+        description: 'Assigns an existing account thread tag to the thread.',
+        parameters: [parameterRef('ThreadId')],
+        requestBody: jsonRequestBody('ThreadTagAssignmentRequest', {
+          tag_id: '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb',
+        }),
+        responses: {
+          200: jsonResponse('ThreadTagAssignmentResponse', 'Tag assigned.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/threads/{id}/tags:remove': {
+      post: {
+        operationId: 'removeThreadTag',
+        tags: ['Inbox'],
+        summary: 'Remove thread tag',
+        description: 'Removes a thread tag assignment from the thread.',
+        parameters: [parameterRef('ThreadId')],
+        requestBody: jsonRequestBody('ThreadTagAssignmentRequest', {
+          tag_id: '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb',
+        }),
+        responses: {
+          200: jsonResponse('ThreadTagAssignmentResponse', 'Tag removed.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/thread-tags': {
+      get: {
+        operationId: 'listThreadTags',
+        tags: ['Inbox'],
+        summary: 'List thread tags',
+        description: 'Lists account thread tags available for assignment.',
+        responses: {
+          200: jsonResponse('ThreadTagListResponse', 'Thread tags.'),
+          ...authenticatedErrors(),
+        },
+      },
+    },
+    '/v1/message-jobs/{id}': {
+      get: {
+        operationId: 'getMessageJob',
+        tags: ['Inbox'],
+        summary: 'Get message job',
+        description: 'Returns the status of an outbound inbox reply or forward job.',
+        parameters: [parameterRef('MessageJobId')],
+        responses: {
+          200: jsonResponse('MessageJobResponse', 'Message job status.'),
+          ...authenticatedErrors('NotFoundError'),
+        },
+      },
+    },
+    '/v1/message-jobs/{id}/cancel': {
+      post: {
+        operationId: 'cancelMessageJob',
+        tags: ['Inbox'],
+        summary: 'Cancel message job',
+        description: 'Cancels a queued or failed outbound inbox message job.',
+        parameters: [parameterRef('MessageJobId')],
+        responses: {
+          200: jsonResponse('MessageJobResponse', 'Cancelled message job.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/message-jobs/{id}/send-now': {
+      post: {
+        operationId: 'sendMessageJobNow',
+        tags: ['Inbox'],
+        summary: 'Send message job now',
+        description: 'Requests immediate send for a queued outbound inbox message job.',
+        parameters: [parameterRef('MessageJobId')],
+        responses: {
+          200: jsonResponse('MessageJobResponse', 'Updated message job.'),
           ...authenticatedErrors('ValidationError', 'NotFoundError'),
         },
       },

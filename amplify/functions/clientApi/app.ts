@@ -51,6 +51,27 @@ import {
   WEBHOOK_VERIFY_USER_AGENT,
 } from '../../../lib/client-api/openapi/constants.js';
 import { buildClientApiOpenApiSpec } from '../../../lib/client-api/openapi/spec.js';
+import { buildChangelogOpenApiSpec } from '../../../lib/client-api/openapi/changelog.js';
+import { THREAD_CATEGORIES } from '../../../lib/client-api/inbox/constants.js';
+import {
+  cancelAccountMessageJob,
+  createInboxForwardJob,
+  createInboxReplyJob,
+  clearThreadOutOfOffice,
+  loadAccountMessageJobOrThrow,
+  loadLatestThreadMessage,
+  loadThreadMessageOrThrow,
+  saveThreadOutOfOffice,
+  sendAccountMessageJobNow,
+  toPublicMessageJob,
+  type OutboundComposerBody,
+} from '../../../lib/client-api/inbox/message-jobs.js';
+import {
+  isValidThreadCategory,
+  listAccountThreads,
+  loadAccountThreadOrThrow,
+  patchAccountThread,
+} from '../../../lib/client-api/inbox/threads.js';
 import type { Database, Json } from '../../../lib/supabase/types/database.js';
 
 type Variables = {
@@ -544,7 +565,12 @@ app.get('/openapi.json', async (c) => {
   return jsonResponse(c, getOpenApiSpec(getBaseUrl(c)));
 });
 
+app.get('/openapi/changelog.json', async (c) => {
+  return jsonResponse(c, buildChangelogOpenApiSpec(getBaseUrl(c)));
+});
+
 app.get('/docs', async (c) => {
+  const baseUrl = getBaseUrl(c);
   const html = `<!doctype html>
 <html>
   <head>
@@ -553,12 +579,21 @@ app.get('/docs', async (c) => {
     <title>Furnace Client API Docs</title>
   </head>
   <body>
-    <script
-      id="api-reference"
-      data-url="${getBaseUrl(c)}/openapi.json"
-      data-configuration='{"theme":"purple","defaultHttpClient":{"targetKey":"js","clientKey":"fetch"},"searchHotKey":"k","showSidebar":true,"expanded":true}'
-    ></script>
+    <div id="app"></div>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+    <script>
+      Scalar.createApiReference('#app', {
+        theme: 'purple',
+        defaultHttpClient: { targetKey: 'js', clientKey: 'fetch' },
+        searchHotKey: 'k',
+        showSidebar: true,
+        expanded: true,
+        sources: [
+          { title: 'API Reference', url: '${baseUrl}/openapi.json', default: true },
+          { title: 'Changelog', slug: 'changelog', url: '${baseUrl}/openapi/changelog.json' },
+        ],
+      });
+    </script>
   </body>
 </html>`;
   return c.html(html);
@@ -1434,6 +1469,12 @@ function parseCsvQueryIds(raw: string | undefined): string[] | null {
   return raw.split(',').map((value) => value.trim()).filter(Boolean);
 }
 
+function parseBoolQuery(raw: string | undefined): boolean {
+  if (!raw) return false;
+  const normalized = raw.trim().toLowerCase();
+  return normalized === 'true' || normalized === '1';
+}
+
 app.get('/v1/people', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
@@ -1893,44 +1934,91 @@ app.get('/v1/threads', async (c) => {
   const auth = c.get('apiKey');
   const limit = parseIntQuery(c, 'limit', DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const offset = parseIntQuery(c, 'offset', 0);
-  let query = supabase
-    .from('email_threads')
-    .select('*', { count: 'exact' })
-    .eq('account_id', auth.accountId)
-    .order('last_message_at', { ascending: false });
-  const campaignId = c.req.query('campaign_id');
-  const mailboxId = c.req.query('mailbox_id');
-  if (campaignId) query = query.eq('campaign_id', campaignId);
-  if (mailboxId) query = query.eq('mailbox_id', mailboxId);
-  const { data, error, count } = await query.range(offset, offset + limit - 1);
-  if (error) throw new Error(`Failed to list threads: ${error.message}`);
-  return jsonResponse(c, buildListPayload(data ?? [], limit, offset, count ?? 0), 200, c.get('rateLimitHeaders'));
+  const conversationStatusRaw = c.req.query('conversation_status')?.trim();
+  const categoryRaw = c.req.query('category')?.trim();
+  const hasReplyOnlyRaw = c.req.query('has_reply_only')?.trim();
+  const { data, totalCount } = await listAccountThreads(supabase, {
+    accountId: auth.accountId,
+    limit,
+    offset,
+    campaignId: c.req.query('campaign_id')?.trim() || undefined,
+    mailboxId: c.req.query('mailbox_id')?.trim() || undefined,
+    unreadOnly: parseBoolQuery(c.req.query('unread_only')),
+    conversationStatus:
+      conversationStatusRaw === 'open' || conversationStatusRaw === 'closed'
+        ? conversationStatusRaw
+        : undefined,
+    category: categoryRaw || undefined,
+    tagIds: parseCsvQueryIds(c.req.query('tag_ids')) ?? undefined,
+    dateFrom: c.req.query('date_from')?.trim() || undefined,
+    dateTo: c.req.query('date_to')?.trim() || undefined,
+    searchQuery: c.req.query('q')?.trim() || undefined,
+    hasReplyOnly: hasReplyOnlyRaw ? parseBoolQuery(hasReplyOnlyRaw) : true,
+  });
+  return jsonResponse(c, buildListPayload(data, limit, offset, totalCount), 200, c.get('rateLimitHeaders'));
 });
 
 app.get('/v1/threads/:id', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
-  const { data, error } = await supabase
-    .from('email_threads')
-    .select('*')
-    .eq('id', c.req.param('id'))
-    .eq('account_id', auth.accountId)
-    .maybeSingle();
-  if (error) throw new Error(`Failed to fetch thread: ${error.message}`);
+  const data = await loadAccountThreadOrThrow(supabase, auth.accountId, c.req.param('id'));
   if (!data) notFound('thread_not_found', 'Thread not found');
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.patch('/v1/threads/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const threadId = c.req.param('id');
+  const existing = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+  if (!existing) notFound('thread_not_found', 'Thread not found');
+  const body = parseJsonBody<{
+    category?: string | null;
+    conversation_status?: 'open' | 'closed';
+    read?: boolean;
+  }>(await c.req.text());
+  if (
+    body.category !== undefined
+    && body.category !== null
+    && !isValidThreadCategory(body.category)
+  ) {
+    invalidRequest(
+      'invalid_category',
+      `category must be one of: ${THREAD_CATEGORIES.join(', ')}`,
+      'category',
+    );
+  }
+  if (
+    body.conversation_status !== undefined
+    && body.conversation_status !== 'open'
+    && body.conversation_status !== 'closed'
+  ) {
+    invalidRequest(
+      'invalid_conversation_status',
+      'conversation_status must be open or closed',
+      'conversation_status',
+    );
+  }
+  if (
+    body.category === undefined
+    && body.conversation_status === undefined
+    && body.read !== true
+  ) {
+    invalidRequest('empty_update', 'At least one mutable field is required');
+  }
+  await patchAccountThread(supabase, threadId, {
+    category: body.category,
+    conversationStatus: body.conversation_status,
+    read: body.read,
+  });
+  const data = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
   return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
 });
 
 app.get('/v1/threads/:id/messages', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
-  const { data: thread, error: threadError } = await supabase
-    .from('email_threads')
-    .select('id')
-    .eq('id', c.req.param('id'))
-    .eq('account_id', auth.accountId)
-    .maybeSingle();
-  if (threadError) throw new Error(`Failed to fetch thread for messages: ${threadError.message}`);
+  const thread = await loadAccountThreadOrThrow(supabase, auth.accountId, c.req.param('id'));
   if (!thread) notFound('thread_not_found', 'Thread not found');
   const { data, error } = await supabase
     .from('email_messages')
@@ -1945,37 +2033,260 @@ app.post('/v1/threads/:id/reply', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
   const threadId = c.req.param('id');
-  const { data: thread, error: threadError } = await supabase
-    .from('email_threads')
-    .select('id, account_id, mailbox_id')
-    .eq('id', threadId)
+  const thread = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+  if (!thread) notFound('thread_not_found', 'Thread not found');
+  const body = parseJsonBody<OutboundComposerBody & { in_reply_to_message_id?: string }>(await c.req.text());
+  const targetMessage = body.in_reply_to_message_id?.trim()
+    ? await loadThreadMessageOrThrow(supabase, threadId, body.in_reply_to_message_id.trim())
+    : await loadLatestThreadMessage(supabase, threadId);
+  if (!targetMessage) {
+    invalidRequest('thread_empty', 'Thread has no messages to reply to');
+  }
+  const jobId = await createInboxReplyJob(supabase, {
+    accountId: auth.accountId,
+    threadId,
+    inReplyToMessageId: targetMessage.id,
+    body,
+    targetMessage,
+  });
+  return jsonResponse(c, { data: { id: jobId } }, 202, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/threads/:id/forward', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const threadId = c.req.param('id');
+  const thread = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+  if (!thread) notFound('thread_not_found', 'Thread not found');
+  const body = parseJsonBody<OutboundComposerBody & { forward_message_id?: string }>(await c.req.text());
+  const forwardMessageId = body.forward_message_id?.trim();
+  if (!forwardMessageId) {
+    invalidRequest('missing_forward_message_id', 'forward_message_id is required', 'forward_message_id');
+  }
+  const forwardedMessage = await loadThreadMessageOrThrow(supabase, threadId, forwardMessageId);
+  if (!forwardedMessage) {
+    invalidRequest('message_not_found', 'forward_message_id was not found in this thread', 'forward_message_id');
+  }
+  if (!body.to_email?.trim()) {
+    invalidRequest('missing_to_email', 'to_email is required for forwards', 'to_email');
+  }
+  const jobId = await createInboxForwardJob(supabase, {
+    accountId: auth.accountId,
+    threadId,
+    forwardedMessageId: forwardMessageId,
+    body,
+    forwardedMessage,
+  });
+  return jsonResponse(c, { data: { id: jobId } }, 202, c.get('rateLimitHeaders'));
+});
+
+app.put('/v1/threads/:id/out-of-office', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const threadId = c.req.param('id');
+  const thread = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+  if (!thread) notFound('thread_not_found', 'Thread not found');
+  const body = parseJsonBody<{ resume_at?: string | null; resume_mode?: string }>(await c.req.text());
+  const resumeMode = body.resume_mode?.trim() || 'scheduled';
+  if (resumeMode !== 'scheduled' && resumeMode !== 'instant' && resumeMode !== 'none') {
+    invalidRequest(
+      'invalid_resume_mode',
+      'resume_mode must be scheduled, instant, or none',
+      'resume_mode',
+    );
+  }
+  try {
+    const result = await saveThreadOutOfOffice(supabase, threadId, {
+      resumeAt: body.resume_at ?? null,
+      resumeMode,
+    });
+    const data = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+    return jsonResponse(c, { data: { thread: data, result } }, 200, c.get('rateLimitHeaders'));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update out-of-office';
+    if (message.includes('resume_at is required')) {
+      invalidRequest('missing_resume_at', message, 'resume_at');
+    }
+    throw error;
+  }
+});
+
+app.delete('/v1/threads/:id/out-of-office', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const threadId = c.req.param('id');
+  const thread = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+  if (!thread) notFound('thread_not_found', 'Thread not found');
+  await clearThreadOutOfOffice(supabase, threadId);
+  const data = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/threads/:id/replace-lead', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const threadId = c.req.param('id');
+  const thread = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+  if (!thread) notFound('thread_not_found', 'Thread not found');
+  const leadId = typeof thread.lead_id === 'string' ? thread.lead_id : null;
+  if (!leadId) {
+    invalidRequest('thread_missing_lead', 'Thread has no lead to replace');
+  }
+  const body = parseJsonBody<{
+    new_email?: string;
+    new_name?: string | null;
+    new_first_name?: string | null;
+    new_last_name?: string | null;
+    new_phone_number?: string | null;
+    reason?: string | null;
+    reason_note?: string | null;
+    source_message_id?: string | null;
+    forward_message_id?: string | null;
+  }>(await c.req.text());
+  const newEmail = body.new_email?.trim().toLowerCase();
+  if (!newEmail) {
+    invalidRequest('missing_new_email', 'new_email is required', 'new_email');
+  }
+  const { data: replacementRows, error } = await supabase.rpc('replace_lead_with_new_contact', {
+    p_old_lead_id: leadId,
+    p_new_email: newEmail,
+    p_new_name: body.new_name?.trim() || null,
+    p_new_first_name: body.new_first_name?.trim() || null,
+    p_new_last_name: body.new_last_name?.trim() || null,
+    p_new_phone_number: body.new_phone_number?.trim() || null,
+    p_reason: (body.reason?.trim() || 'manual_referral') as Database['public']['Enums']['replacement_reason_enum'],
+    p_reason_note: body.reason_note?.trim() || null,
+    p_source_message_id: body.source_message_id?.trim() || null,
+  });
+  if (error) throw new Error(`Failed to replace lead: ${error.message}`);
+  const replacement = Array.isArray(replacementRows) ? replacementRows[0] : null;
+  if (!replacement?.new_lead_id || !replacement?.replacement_id) {
+    throw new Error('Failed to replace lead: no replacement result returned');
+  }
+  let forwardJobId: string | null = null;
+  const forwardMessageId = body.forward_message_id?.trim();
+  if (forwardMessageId) {
+    const refreshedThread = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+    if (!refreshedThread) notFound('thread_not_found', 'Thread not found');
+    const forwardedMessage = await loadThreadMessageOrThrow(supabase, threadId, forwardMessageId);
+    if (!forwardedMessage) {
+      invalidRequest('message_not_found', 'forward_message_id was not found in this thread', 'forward_message_id');
+    }
+    forwardJobId = await createInboxForwardJob(supabase, {
+      accountId: auth.accountId,
+      threadId,
+      forwardedMessageId: forwardMessageId,
+      body: {
+        to_email: newEmail,
+        to_name: body.new_name?.trim() || undefined,
+        body_text: 'Forwarding the original message.',
+        body_html: 'Forwarding the original message.',
+      },
+      forwardedMessage,
+    });
+  }
+  return jsonResponse(c, {
+    data: {
+      replacement_id: replacement.replacement_id,
+      new_lead_id: replacement.new_lead_id,
+      enrollment_id: replacement.enrollment_id ?? null,
+      forward_job_id: forwardJobId,
+    },
+  }, 200, c.get('rateLimitHeaders'));
+});
+
+app.get('/v1/thread-tags', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const { data, error } = await supabase
+    .from('thread_tags')
+    .select('*')
+    .eq('account_id', auth.accountId)
+    .order('name');
+  if (error) throw new Error(`Failed to list thread tags: ${error.message}`);
+  return jsonResponse(c, { data: data ?? [] }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/threads/:id/tags:add', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const threadId = c.req.param('id');
+  const thread = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+  if (!thread) notFound('thread_not_found', 'Thread not found');
+  const body = parseJsonBody<{ tag_id?: string }>(await c.req.text());
+  const tagId = body.tag_id?.trim();
+  if (!tagId) invalidRequest('missing_tag_id', 'tag_id is required', 'tag_id');
+  const { data: tag, error: tagError } = await supabase
+    .from('thread_tags')
+    .select('id')
+    .eq('id', tagId)
     .eq('account_id', auth.accountId)
     .maybeSingle();
-  if (threadError) throw new Error(`Failed to fetch thread: ${threadError.message}`);
-  if (!thread) notFound('thread_not_found', 'Thread not found');
-  const body = parseJsonBody<{ subject?: string; body_text?: string; body_html?: string; to_email?: string; to_name?: string; cc?: string[] }>(await c.req.text());
-  const { data: messages, error: messageError } = await supabase
-    .from('email_messages')
-    .select('id, subject, from_email, from_name, to_email')
-    .eq('thread_id', threadId)
-    .order('received_at', { ascending: false })
-    .limit(1);
-  if (messageError) throw new Error(`Failed to fetch reply target message: ${messageError.message}`);
-  const lastMessage = messages?.[0];
-  if (!lastMessage) invalidRequest('thread_empty', 'Thread has no messages to reply to');
-  const { data, error } = await supabase.rpc('create_inbox_reply_job', {
-    p_account_id: auth.accountId,
-    p_thread_id: threadId,
-    p_in_reply_to_message_id: lastMessage.id,
-    p_subject: body.subject?.trim() || lastMessage.subject || 'Re:',
-    p_body_text: body.body_text?.trim() || '',
-    p_body_html: body.body_html?.trim() || body.body_text?.trim() || '',
-    p_to_email: body.to_email?.trim() || lastMessage.from_email || lastMessage.to_email,
-    p_to_name: body.to_name?.trim() || lastMessage.from_name || null,
-    p_cc: Array.isArray(body.cc) && body.cc.length > 0 ? body.cc : null,
+  if (tagError) throw new Error(`Failed to fetch thread tag: ${tagError.message}`);
+  if (!tag) notFound('thread_tag_not_found', 'Thread tag not found');
+  const { error } = await supabase.from('thread_tag_assignments').insert({
+    thread_id: threadId,
+    tag_id: tagId,
+    account_id: auth.accountId,
   });
-  if (error) throw new Error(`Failed to create reply job: ${error.message}`);
-  return jsonResponse(c, { data: { id: data } }, 202, c.get('rateLimitHeaders'));
+  if (error) throw new Error(`Failed to add tag to thread: ${error.message}`);
+  return jsonResponse(c, { data: { thread_id: threadId, tag_id: tagId } }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/threads/:id/tags:remove', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const threadId = c.req.param('id');
+  const thread = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+  if (!thread) notFound('thread_not_found', 'Thread not found');
+  const body = parseJsonBody<{ tag_id?: string }>(await c.req.text());
+  const tagId = body.tag_id?.trim();
+  if (!tagId) invalidRequest('missing_tag_id', 'tag_id is required', 'tag_id');
+  const { error } = await supabase
+    .from('thread_tag_assignments')
+    .delete()
+    .eq('thread_id', threadId)
+    .eq('tag_id', tagId);
+  if (error) throw new Error(`Failed to remove tag from thread: ${error.message}`);
+  return jsonResponse(c, { data: { thread_id: threadId, tag_id: tagId, removed: true } }, 200, c.get('rateLimitHeaders'));
+});
+
+app.get('/v1/message-jobs/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const job = await loadAccountMessageJobOrThrow(supabase, auth.accountId, c.req.param('id'));
+  if (!job) notFound('message_job_not_found', 'Message job not found');
+  return jsonResponse(c, { data: toPublicMessageJob(job) }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/message-jobs/:id/cancel', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const job = await loadAccountMessageJobOrThrow(supabase, auth.accountId, c.req.param('id'));
+  if (!job) notFound('message_job_not_found', 'Message job not found');
+  try {
+    await cancelAccountMessageJob(supabase, job);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Message job could not be cancelled';
+    invalidRequest('cancel_failed', message);
+  }
+  const refreshed = await loadAccountMessageJobOrThrow(supabase, auth.accountId, job.id);
+  return jsonResponse(c, { data: toPublicMessageJob(refreshed!) }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/message-jobs/:id/send-now', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const job = await loadAccountMessageJobOrThrow(supabase, auth.accountId, c.req.param('id'));
+  if (!job) notFound('message_job_not_found', 'Message job not found');
+  try {
+    await sendAccountMessageJobNow(supabase, job);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Message job could not be sent immediately';
+    invalidRequest('send_now_failed', message);
+  }
+  const refreshed = await loadAccountMessageJobOrThrow(supabase, auth.accountId, job.id);
+  return jsonResponse(c, { data: toPublicMessageJob(refreshed!) }, 200, c.get('rateLimitHeaders'));
 });
 
 app.get('/v1/block-list', async (c) => {

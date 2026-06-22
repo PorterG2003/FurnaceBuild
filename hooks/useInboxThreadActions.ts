@@ -18,7 +18,13 @@ import {
   type ThreadActionId,
   type ThreadActionSource,
 } from '@/lib/inbox/threadActionDefinitions';
+import { buildInteractionIntent } from '@/lib/inbox/buildInteractionIntent';
+import {
+  mapThreadActionSourceToInteractionSource,
+  mapThreadActionToInteractionAction,
+} from '@/lib/inbox/inboxInteractionActions';
 import { getSmartHandlingReplySeed, type SmartHandlingActionOption, type SmartHandlingMetadata } from '@/lib/inbox/smartHandling';
+import { useInboxInteractionSession } from '@/contexts/InboxInteractionContext';
 import { useInboxThreadActionSession } from '@/contexts/InboxThreadActionContext';
 
 export interface UseInboxThreadActionsParams {
@@ -74,6 +80,7 @@ export function useInboxThreadActions({
   toast,
 }: UseInboxThreadActionsParams) {
   const session = useInboxThreadActionSession();
+  const interactionSession = useInboxInteractionSession();
   const [oooModalVisible, setOooModalVisible] = useState(false);
   const [oooModalPrefillOverride, setOooModalPrefillOverride] = useState<string | null | undefined>(undefined);
   const [replaceLeadModalVisible, setReplaceLeadModalVisible] = useState(false);
@@ -260,13 +267,6 @@ export function useInboxThreadActions({
                     ? thread.category_source
                     : 'user'
                   : thread.category_source,
-                handling_metadata:
-                  options?.markAutoReply && thread.handling_metadata && typeof thread.handling_metadata === 'object'
-                    ? {
-                        ...thread.handling_metadata,
-                        category: 'Auto Reply',
-                      }
-                    : thread.handling_metadata,
                 ooo_resume_at:
                   result === 'marked_only' || result === 'no_resumable_execution_state'
                     ? null
@@ -286,12 +286,27 @@ export function useInboxThreadActions({
     [setThreads],
   );
 
+  const recordThreadActionInteraction = useCallback(
+    async (actionId: ThreadActionId, source: ThreadActionSource) => {
+      await interactionSession.recordInteraction({
+        action: mapThreadActionToInteractionAction(actionId),
+        source: mapThreadActionSourceToInteractionSource(source),
+        intent: buildInteractionIntent({
+          metadata: smartHandlingMetadata,
+          actionId,
+        }),
+      });
+    },
+    [interactionSession, smartHandlingMetadata],
+  );
+
   const runThreadAction = useCallback(
     async (actionId: ThreadActionId, source: ThreadActionSource) => {
       if (!selectedThreadId || !selectedThread) return;
 
       try {
         if (actionId === 'close_conversation') {
+          await recordThreadActionInteraction(actionId, source);
           await closeConversationOptimistic(selectedThreadId, 'user');
           return;
         }
@@ -306,6 +321,7 @@ export function useInboxThreadActions({
             ? getSmartHandlingReplySeed(smartHandlingMetadata, actionId as SmartHandlingActionOption['action'])
             : '';
 
+        await recordThreadActionInteraction(actionId, source);
         await applyImmediateEffects(actionId, {
           threadId: selectedThreadId,
           accountId,
@@ -337,6 +353,10 @@ export function useInboxThreadActions({
             await loadBlockList();
           },
           openComposer: (message, suggestedReplyHtml) => {
+            interactionSession.setComposerIntent({
+              actionId,
+              suggestedReply: suggestedReplyHtml ?? maybeSuggestedReply ?? null,
+            });
             openReplyComposer(message);
             if (suggestedReplyHtml) {
               setReplyHtmlDraft(suggestedReplyHtml);
@@ -410,6 +430,10 @@ export function useInboxThreadActions({
           : null;
 
       if (actionId === 'replace_lead') {
+        await recordThreadActionInteraction(actionId, pending.source);
+      }
+
+      if (actionId === 'replace_lead') {
         setReplaceLeadModalVisible(false);
       }
       if (actionId === 'mark_ooo_custom' || actionId === 'mark_out_of_office') {
@@ -465,11 +489,25 @@ export function useInboxThreadActions({
         if (!forwardMessage) {
           toast.error('Lead replaced, but there was no message available to forward.');
         } else {
+          interactionSession.setComposerIntent({
+            actionId: 'replace_lead',
+            suggestedReply: null,
+          });
           openForwardComposer(forwardMessage, followUpAction.target);
         }
       }
     },
-    [dismissSmartHandling, messages, openForwardComposer, refreshThreadData, session, setThreads, toast],
+    [
+      dismissSmartHandling,
+      interactionSession,
+      messages,
+      openForwardComposer,
+      recordThreadActionInteraction,
+      refreshThreadData,
+      session,
+      setThreads,
+      toast,
+    ],
   );
 
   const closeOooModal = useCallback(() => {

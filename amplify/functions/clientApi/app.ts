@@ -53,6 +53,7 @@ import {
 import { buildClientApiOpenApiSpec } from '../../../lib/client-api/openapi/spec.js';
 import { buildChangelogOpenApiSpec } from '../../../lib/client-api/openapi/changelog.js';
 import { THREAD_CATEGORIES } from '../../../lib/client-api/inbox/constants.js';
+import { recordClientApiInboxInteraction } from '../../../lib/client-api/inbox/interactions.js';
 import {
   cancelAccountMessageJob,
   createInboxForwardJob,
@@ -72,6 +73,8 @@ import {
   loadAccountThreadOrThrow,
   patchAccountThread,
 } from '../../../lib/client-api/inbox/threads.js';
+import { buildInteractionIntent } from '../../../lib/inbox/buildInteractionIntent.js';
+import { parseSmartHandlingMetadata } from '../../../lib/inbox/smartHandling.js';
 import type { Database, Json } from '../../../lib/supabase/types/database.js';
 
 type Variables = {
@@ -2006,11 +2009,50 @@ app.patch('/v1/threads/:id', async (c) => {
   ) {
     invalidRequest('empty_update', 'At least one mutable field is required');
   }
+  const interactionMetadata = parseSmartHandlingMetadata(existing.handling_metadata);
   await patchAccountThread(supabase, threadId, {
     category: body.category,
     conversationStatus: body.conversation_status,
     read: body.read,
   });
+  if (body.category !== undefined) {
+    await recordClientApiInboxInteraction(supabase, {
+      auth,
+      thread: existing as Database['public']['Tables']['email_threads']['Row'],
+      action: 'thread.set_category',
+      source: 'client_api',
+      intent: buildInteractionIntent({
+        metadata: interactionMetadata,
+        categorySelection: body.category,
+      }),
+      changes: [{ field: 'category', from: existing.category, to: body.category }],
+    });
+  }
+  if (body.conversation_status !== undefined) {
+    await recordClientApiInboxInteraction(supabase, {
+      auth,
+      thread: existing as Database['public']['Tables']['email_threads']['Row'],
+      action:
+        body.conversation_status === 'closed'
+          ? 'thread.close_conversation'
+          : 'thread.reopen_conversation',
+      source: 'client_api',
+      intent:
+        body.conversation_status === 'closed'
+          ? buildInteractionIntent({
+              metadata: interactionMetadata,
+              actionId: 'close_conversation',
+            })
+          : null,
+      changes: [
+        {
+          field: 'conversation_status',
+          from: existing.conversation_status,
+          to: body.conversation_status,
+        },
+      ],
+    });
+  }
   const data = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
   return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
 });
@@ -2049,6 +2091,18 @@ app.post('/v1/threads/:id/reply', async (c) => {
     body,
     targetMessage,
   });
+  await recordClientApiInboxInteraction(supabase, {
+    auth,
+    thread: thread as Database['public']['Tables']['email_threads']['Row'],
+    triggerMessage: targetMessage as Database['public']['Tables']['email_messages']['Row'],
+    action: 'thread.reply_sent',
+    source: 'client_api',
+    intent: buildInteractionIntent({
+      metadata: parseSmartHandlingMetadata(thread.handling_metadata),
+      composedBody: body.body_text ?? body.body_html ?? '',
+    }),
+    changes: [{ field: 'reply_job_created', to: jobId }],
+  });
   return jsonResponse(c, { data: { id: jobId } }, 202, c.get('rateLimitHeaders'));
 });
 
@@ -2076,6 +2130,18 @@ app.post('/v1/threads/:id/forward', async (c) => {
     forwardedMessageId: forwardMessageId,
     body,
     forwardedMessage,
+  });
+  await recordClientApiInboxInteraction(supabase, {
+    auth,
+    thread: thread as Database['public']['Tables']['email_threads']['Row'],
+    triggerMessage: forwardedMessage as Database['public']['Tables']['email_messages']['Row'],
+    action: 'thread.forward_sent',
+    source: 'client_api',
+    intent: buildInteractionIntent({
+      metadata: parseSmartHandlingMetadata(thread.handling_metadata),
+      composedBody: body.body_text ?? body.body_html ?? '',
+    }),
+    changes: [{ field: 'forward_job_created', to: jobId }],
   });
   return jsonResponse(c, { data: { id: jobId } }, 202, c.get('rateLimitHeaders'));
 });

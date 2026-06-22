@@ -17,12 +17,14 @@ import type {
 } from '@/lib/inbox/replaceLeadCompletion';
 import type { ReplaceLeadPrefill } from '@/lib/inbox/replaceLeadPrefill';
 import { splitPersonName } from '@/lib/inbox/referralContactExtraction';
+import { buildInteractionIntent } from '@/lib/inbox/buildInteractionIntent';
 import {
   replaceLeadWithNewContact,
   updateLeadProfileFields,
   type ReplaceLeadWithNewContactResult,
 } from '@/lib/supabase/services/leads';
 import type { Lead, ReplacementReason } from '@/lib/supabase/types';
+import { useInboxInteractionSession } from '@/contexts/InboxInteractionContext';
 
 const REPLACEMENT_REASON_OPTIONS: Array<{ id: ReplacementReason; name: string; description: string }> = [
   {
@@ -167,6 +169,7 @@ export function ReplaceLeadScreen({
   layout = 'modal',
 }: ReplaceLeadScreenProps) {
   const { toast } = useToast();
+  const interactionSession = useInboxInteractionSession();
   const { width } = useWindowDimensions();
   const isNarrow = layout === 'page' || width < LAYOUT_BREAKPOINT;
 
@@ -249,6 +252,20 @@ export function ReplaceLeadScreen({
               : "Replacement saved, but profile edits couldn't be applied."
           );
         }
+      }
+
+      try {
+        await interactionSession.recordInteraction({
+          action: 'lead.replaced',
+          source: 'replace_lead_flow',
+          intent: buildInteractionIntent({ actionId: 'replace_lead' }),
+          changes: [
+            { field: 'lead_id', from: oldLead.id, to: result.newLeadId },
+            { field: 'lead_email', from: oldLead.email, to: result.newLead.email ?? fields.email.trim() },
+          ],
+        });
+      } catch (error) {
+        console.error('Failed to record lead replacement interaction:', error);
       }
 
       onReplaced(result, {

@@ -1928,6 +1928,65 @@ export interface Database {
           updated_at?: string;
         };
       };
+      inbox_interactions: {
+        Row: {
+          id: string;
+          account_id: string;
+          thread_id: string;
+          lead_id: string | null;
+          trigger_message_id: string | null;
+          classification_completed_at: string | null;
+          suggestion_mode: 'manual' | 'ai' | null;
+          suggestion_version: string | null;
+          actor_type: 'user' | 'api';
+          actor_user_id: string | null;
+          actor_api_key_id: string | null;
+          action: string;
+          source: string;
+          intent: Json | null;
+          context: Json;
+          changes: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          thread_id: string;
+          lead_id?: string | null;
+          trigger_message_id?: string | null;
+          classification_completed_at?: string | null;
+          suggestion_mode?: 'manual' | 'ai' | null;
+          suggestion_version?: string | null;
+          actor_type: 'user' | 'api';
+          actor_user_id?: string | null;
+          actor_api_key_id?: string | null;
+          action: string;
+          source: string;
+          intent?: Json | null;
+          context: Json;
+          changes?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          thread_id?: string;
+          lead_id?: string | null;
+          trigger_message_id?: string | null;
+          classification_completed_at?: string | null;
+          suggestion_mode?: 'manual' | 'ai' | null;
+          suggestion_version?: string | null;
+          actor_type?: 'user' | 'api';
+          actor_user_id?: string | null;
+          actor_api_key_id?: string | null;
+          action?: string;
+          source?: string;
+          intent?: Json | null;
+          context?: Json;
+          changes?: Json | null;
+          created_at?: string;
+        };
+      };
       notification_events: {
         Row: {
           id: string;

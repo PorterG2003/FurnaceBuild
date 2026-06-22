@@ -10,11 +10,14 @@ import {
   type EmailEditorMode,
 } from '@/lib/email';
 import {
+  buildInteractionIntent,
   buildForwardComposerHtml,
   buildForwardedConversationHtml,
+  detectSuggestedReplyUsage,
   renderPendingCampaignReplyContent,
 } from '@/lib/inbox';
 import { resolveReplyComposerTarget } from '@/lib/inbox/resolveReplyComposerTarget';
+import { parseSmartHandlingMetadata } from '@/lib/inbox/smartHandling';
 import {
   cancelPendingOutboundJob,
   createReplyJob,
@@ -36,6 +39,7 @@ import type { EmailThread } from '@/lib/supabase/types';
 import type { EditorBridge } from '@10play/tentap-editor';
 import type { ComposerAttachmentItem } from '@/components/inbox';
 import { MAX_ATTACHMENTS, MAX_TOTAL_BYTES, MAX_FILE_BYTES } from '@/components/inbox/inboxConstants';
+import { useInboxInteractionSession } from '@/contexts/InboxInteractionContext';
 
 export type PendingReply = {
   kind: 'reply' | 'forward' | 'campaign_reply';
@@ -158,6 +162,7 @@ export function useInboxComposer({
   setBlockedRecipientConfirm,
   threadsLoading = false,
 }: UseInboxComposerOptions) {
+  const interactionSession = useInboxInteractionSession();
   const [composerMode, setComposerMode] = useState<'reply' | 'forward' | null>(null);
   const [inReplyToMessageId, setInReplyToMessageId] = useState<string | null>(null);
   const [replyToEmail, setReplyToEmail] = useState('');
@@ -199,6 +204,7 @@ export function useInboxComposer({
   }, [pendingReplies]);
 
   const closeComposerPanel = useCallback(() => {
+    interactionSession.setComposerIntent(null);
     Animated.timing(slideAnim, {
       toValue: 1,
       duration: 250,
@@ -218,7 +224,7 @@ export function useInboxComposer({
       setSwitchToRichConfirmMode(null);
       setReplyDuplicateConfirm(null);
     });
-  }, [slideAnim]);
+  }, [interactionSession, slideAnim]);
 
   useEffect(() => {
     if (composerMode) {
@@ -647,6 +653,9 @@ export function useInboxComposer({
       }
       setSendingReply(true);
       try {
+        const interactionMetadata = parseSmartHandlingMetadata(
+          (interactionSession.getInteractionSnapshot()?.context.thread.handling_metadata ?? null) as any
+        );
         let finalBodyHtml = '';
         let finalBodyText = '';
         if (replyEditorMode === 'html') {
@@ -697,6 +706,21 @@ export function useInboxComposer({
           cc: ccArray.length > 0 ? ccArray : undefined,
           attachments: replyAttachments,
         });
+        const composerIntent = interactionSession.consumeComposerIntent();
+        await interactionSession.recordInteraction({
+          action: 'thread.reply_sent',
+          source: 'composer',
+          intent: buildInteractionIntent({
+            metadata: interactionMetadata,
+            actionId: composerIntent?.actionId ?? null,
+            composedBody: finalBodyText || '',
+            usedSuggestedReply: detectSuggestedReplyUsage(
+              composerIntent?.suggestedReply ?? interactionMetadata?.suggested_reply ?? null,
+              finalBodyText || '',
+            ),
+          }),
+          changes: [{ field: 'reply_job_created', to: jobId }],
+        });
         const fromEmail = messages.find((m) => m.direction === 'sent')?.from_email ?? '';
         const receivedAt = new Date().toISOString();
         const newPending: PendingReply = {
@@ -729,6 +753,7 @@ export function useInboxComposer({
     },
     [
       accountId,
+      interactionSession,
       selectedThreadId,
       selectedThread,
       inReplyToMessageId,
@@ -776,6 +801,9 @@ export function useInboxComposer({
       }
       setSendingForward(true);
       try {
+        const interactionMetadata = parseSmartHandlingMetadata(
+          (interactionSession.getInteractionSnapshot()?.context.thread.handling_metadata ?? null) as any
+        );
         let finalBodyHtml = '';
         let finalBodyText = '';
         if (forwardEditorMode === 'html') {
@@ -825,6 +853,21 @@ export function useInboxComposer({
           cc: ccArray.length > 0 ? ccArray : undefined,
           attachments: forwardAttachments,
         });
+        const composerIntent = interactionSession.consumeComposerIntent();
+        await interactionSession.recordInteraction({
+          action: 'thread.forward_sent',
+          source: 'composer',
+          intent: buildInteractionIntent({
+            metadata: interactionMetadata,
+            actionId: composerIntent?.actionId ?? null,
+            composedBody: finalBodyText || '',
+            usedSuggestedReply: detectSuggestedReplyUsage(
+              composerIntent?.suggestedReply ?? interactionMetadata?.suggested_reply ?? null,
+              finalBodyText || '',
+            ),
+          }),
+          changes: [{ field: 'forward_job_created', to: jobId }],
+        });
         const fromEmail = messages.find((m) => m.direction === 'sent')?.from_email ?? '';
         const receivedAt = new Date().toISOString();
         const newPending: PendingReply = {
@@ -857,6 +900,7 @@ export function useInboxComposer({
     },
     [
       accountId,
+      interactionSession,
       selectedThreadId,
       selectedThread,
       forwardedMessageId,

@@ -11,6 +11,7 @@ import {
   createCampaignTestNamespace,
 } from '../campaign/fixtures';
 import { handler as classifyReplyHandler } from '../../../amplify/functions/classifyReply/handler';
+import { resolveSuggestionVersion } from '../../inbox/smartHandlingVersion';
 
 async function ensureInboxRedesignSchema(
   harness: CampaignDbHarness,
@@ -180,6 +181,7 @@ test('manual-mode Auto Reply classification writes dated OOO smart-handling opti
     assert.equal(thread.classification_status, 'complete');
     assert.equal(thread.conversation_status, 'open');
     assert.equal(metadata.mode, 'manual');
+    assert.equal(metadata.suggestion_version, resolveSuggestionVersion('manual'));
     assert.equal(metadata.primary.action, 'mark_ooo_dated');
     assert.equal(metadata.return_date, '2026-06-26');
     assert.ok(Array.isArray(metadata.alternatives));
@@ -298,6 +300,7 @@ test('manual-mode Auto Reply classification without a return date defaults to mo
     const metadata = thread.handling_metadata as any;
 
     assert.equal(metadata.mode, 'manual');
+    assert.equal(metadata.suggestion_version, resolveSuggestionVersion('manual'));
     assert.equal(metadata.primary.action, 'mark_ooo_month');
     assert.equal(metadata.return_date, null);
     assert.ok(metadata.alternatives.some((option: any) => option.action === 'mark_ooo_instant'));
@@ -417,6 +420,7 @@ test('manual-mode Auto Reply departure autoresponder promotes replace lead with 
     const metadata = thread.handling_metadata as any;
 
     assert.equal(metadata.mode, 'manual');
+    assert.equal(metadata.suggestion_version, resolveSuggestionVersion('manual'));
     assert.equal(metadata.category, 'Auto Reply');
     assert.equal(metadata.header_mismatch, true);
     assert.equal(metadata.primary.action, 'replace_lead');
@@ -540,6 +544,7 @@ test('manual-mode Auto Reply true OOO regression keeps OOO actions when sender s
     const metadata = thread.handling_metadata as any;
 
     assert.equal(metadata.mode, 'manual');
+    assert.equal(metadata.suggestion_version, resolveSuggestionVersion('manual'));
     assert.equal(metadata.header_mismatch, false);
     assert.equal(metadata.suggested_referral, null);
     assert.equal(metadata.primary.action, 'mark_ooo_month');
@@ -656,6 +661,7 @@ test('manual-mode classification promotes replace lead when the inbound sender m
     const metadata = thread.handling_metadata as any;
 
     assert.equal(metadata.mode, 'manual');
+    assert.equal(metadata.suggestion_version, resolveSuggestionVersion('manual'));
     assert.equal(metadata.header_mismatch, true);
     assert.equal(metadata.primary.action, 'replace_lead');
     assert.ok(Array.isArray(metadata.alternatives));

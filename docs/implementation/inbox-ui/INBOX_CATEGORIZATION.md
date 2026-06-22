@@ -11,6 +11,11 @@
 
 - `category` TEXT — e.g. "Lead replied", "Meeting set", "Not interested"
 - `category_source` — 'user' | 'system' | 'ai'
+- `handling_metadata.suggestion_version` — version of the smart-handling logic
+  the user saw when the thread was classified
+
+Version-scoped feedback analysis lives in
+`docs/implementation/inbox-ui/SMART_HANDLING_FEEDBACK.md`.
 
 See [supabase/migrations/20260214100001_add_category_to_email_threads.sql](../../../supabase/migrations/20260214100001_add_category_to_email_threads.sql).
 

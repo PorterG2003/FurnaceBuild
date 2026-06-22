@@ -4,10 +4,13 @@ import {
   buildOooSmartHandlingOptions,
   type SmartHandlingMetadata,
 } from '@/lib/inbox/smartHandling';
+import { resolveSuggestionVersion } from '@/lib/inbox/smartHandlingVersion';
 
 function withDefaults(metadata: SmartHandlingMetadata): SmartHandlingMetadata {
+  const mode = metadata.mode ?? 'manual';
   return {
-    mode: metadata.mode ?? 'manual',
+    mode,
+    suggestion_version: metadata.suggestion_version ?? resolveSuggestionVersion(mode),
     category: metadata.category ?? null,
     primary_message: metadata.primary_message ?? null,
     primary: metadata.primary ?? null,

@@ -140,6 +140,17 @@ Current node is `aiCategorizer` + `reply_thread_id IS NULL` → return `{ nodes:
 `workers/scheduler-worker/src/categorizer/classify.ts` — OpenRouter, temperature 0, JSON
 `{ "category": "...", "return_date": "YYYY-MM-DD" | null }`. Prompt: OOO/autoresponders are `Auto Reply`; extract explicit return dates (message date provided for relative phrases). `return_date` must be future and <= 90 days, else null. Canonical prompt/contract lives in `lib/categorizer/` (preview endpoint); the worker module mirrors it (workers do not import `lib/`). LLM transport is injectable for tests.
 
+### Versioning
+
+Bump `CATEGORIZER_PROMPT_VERSION` in `lib/inbox/smartHandlingVersion.ts`
+whenever the categorizer prompt, parser, or model contract changes in either
+`lib/categorizer/` or the worker mirror. New classifications stamp that version
+into `handling_metadata.suggestion_version`, which lets feedback analysis ignore
+older logic generations.
+
+Operational analysis workflow:
+`docs/implementation/inbox-ui/SMART_HANDLING_FEEDBACK.md`
+
 ### Sweep timer
 
 30-min `startSingleFlightInterval` in `worker.ts` (OOO-resume shape).

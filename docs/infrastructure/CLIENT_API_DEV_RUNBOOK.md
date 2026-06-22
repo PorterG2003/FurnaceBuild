@@ -36,7 +36,8 @@ The import queue handles all `api_import_jobs` operation types (`api_lead_import
 4. Verify health and docs:
    - `GET https://<client-api-domain-or-cloudfront>/health`
    - `GET https://<client-api-domain-or-cloudfront>/openapi.json`
-   - `GET https://<client-api-domain-or-cloudfront>/docs`
+   - `GET https://<client-api-domain-or-cloudfront>/openapi/changelog.json`
+   - `GET https://<client-api-domain-or-cloudfront>/docs` — confirm Scalar sidebar shows **API Reference** and **Changelog**
 
 ## Namecheap DNS
 
@@ -78,3 +79,17 @@ The `clientApi` Lambda writes one JSON log line per request with:
 - `api_key_id`
 
 Unhandled exceptions are also logged as structured JSON so CloudWatch queries can filter by `service = "client-api"`.
+
+## Inbox API (v1.2.0)
+
+See [CLIENT_API_CHANGELOG.md](./CLIENT_API_CHANGELOG.md) for where to edit version history (published at `/docs` → **Changelog**).
+
+The Client API inbox surface (`/v1/threads`, `/v1/message-jobs`, `/v1/thread-tags`) supports thread triage, reply/forward jobs, out-of-office updates, lead replacement, and thread tag assignment. Poll outbound send status with `GET /v1/message-jobs/{id}` — not `GET /v1/jobs/{id}`.
+
+Run the integration suite locally:
+
+```bash
+npm run test:client-api
+```
+
+Contract coverage lives in `lib/test/client-api/openApiContract.test.ts`; inbox outcome tests live in `lib/test/client-api/inboxOutcomes.test.ts`.

@@ -220,6 +220,58 @@ export function buildClientApiComponents() {
         description: 'Filter inbox threads to a single mailbox.',
         schema: { type: 'string', format: 'uuid' },
       },
+      MessageJobId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Outbound inbox message job id returned by reply or forward endpoints.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      UnreadOnly: {
+        name: 'unread_only',
+        in: 'query',
+        description: 'When true, returns only threads with unread received messages.',
+        schema: { type: 'boolean', default: false },
+      },
+      ConversationStatusFilter: {
+        name: 'conversation_status',
+        in: 'query',
+        description: 'Filter threads by conversation status.',
+        schema: { type: 'string', enum: ['open', 'closed'] },
+      },
+      ThreadCategoryFilter: {
+        name: 'category',
+        in: 'query',
+        description: 'Filter threads by category. Use `no_category` for uncategorized threads.',
+        schema: {
+          type: 'string',
+          enum: ['Interested', 'Neutral', 'Not Interested', 'Auto Reply', 'no_category'],
+        },
+      },
+      ThreadTagIdsFilter: {
+        name: 'tag_ids',
+        in: 'query',
+        description: 'Comma-separated thread tag ids. Returns threads tagged with any listed tag.',
+        schema: { type: 'string', example: 'uuid-1,uuid-2' },
+      },
+      DateFrom: {
+        name: 'date_from',
+        in: 'query',
+        description: 'Inclusive ISO-8601 timestamp filter on `last_message_at`.',
+        schema: { type: 'string', format: 'date-time' },
+      },
+      DateTo: {
+        name: 'date_to',
+        in: 'query',
+        description: 'Inclusive ISO-8601 timestamp filter on `last_message_at`.',
+        schema: { type: 'string', format: 'date-time' },
+      },
+      HasReplyOnly: {
+        name: 'has_reply_only',
+        in: 'query',
+        description: 'When true (default), returns only threads with at least one inbound reply.',
+        schema: { type: 'boolean', default: true },
+      },
       StartDate: {
         name: 'start_date',
         in: 'query',
@@ -822,8 +874,13 @@ export function buildClientApiComponents() {
       },
       ReplyRequest: {
         type: 'object',
-        description: 'Create a reply job for the latest message in the thread. When omitted, subject and recipient fields fall back to the latest message.',
+        description: 'Create a reply job for a thread message. When omitted, subject and recipient fields fall back to the target message.',
         properties: {
+          in_reply_to_message_id: {
+            type: 'string',
+            format: 'uuid',
+            description: 'Message to reply to. Defaults to the latest message in the thread.',
+          },
           subject: { type: 'string' },
           body_text: { type: 'string' },
           body_html: { type: 'string' },
@@ -835,6 +892,137 @@ export function buildClientApiComponents() {
           },
         },
         additionalProperties: false,
+      },
+      ForwardRequest: {
+        type: 'object',
+        description: 'Create a forward job for a specific message in the thread.',
+        properties: {
+          forward_message_id: { type: 'string', format: 'uuid' },
+          subject: { type: 'string' },
+          body_text: { type: 'string' },
+          body_html: { type: 'string' },
+          to_email: { type: 'string', format: 'email' },
+          to_name: { type: 'string' },
+          cc: {
+            type: 'array',
+            items: { type: 'string', format: 'email' },
+          },
+        },
+        required: ['forward_message_id', 'to_email'],
+        additionalProperties: false,
+      },
+      ThreadUpdate: {
+        type: 'object',
+        description: 'Partial thread update. All fields are optional.',
+        properties: {
+          category: {
+            type: 'string',
+            nullable: true,
+            enum: ['Interested', 'Neutral', 'Not Interested', 'Auto Reply', null],
+          },
+          conversation_status: { type: 'string', enum: ['open', 'closed'] },
+          read: {
+            type: 'boolean',
+            description: 'When true, marks all received messages in the thread as read.',
+          },
+        },
+        additionalProperties: false,
+      },
+      MessageJob: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          status: { type: 'string' },
+          message_type: { type: 'string', nullable: true },
+          thread_id: { type: 'string', format: 'uuid', nullable: true },
+          error_message: { type: 'string', nullable: true },
+          scheduled_at: { type: 'string', format: 'date-time', nullable: true },
+          send_wait_reason: { type: 'string', nullable: true },
+          status_reason: { type: 'string', nullable: true },
+        },
+        required: ['id', 'status'],
+        additionalProperties: false,
+      },
+      OutOfOfficeUpdate: {
+        type: 'object',
+        properties: {
+          resume_at: { type: 'string', format: 'date-time', nullable: true },
+          resume_mode: {
+            type: 'string',
+            enum: ['scheduled', 'instant', 'none'],
+            default: 'scheduled',
+          },
+        },
+        additionalProperties: false,
+      },
+      OutOfOfficeResponse: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              thread: schemaRef('Thread'),
+              result: { type: 'string' },
+            },
+            required: ['thread', 'result'],
+          },
+        },
+        required: ['data'],
+      },
+      ReplaceLeadRequest: {
+        type: 'object',
+        properties: {
+          new_email: { type: 'string', format: 'email' },
+          new_name: { type: 'string', nullable: true },
+          new_first_name: { type: 'string', nullable: true },
+          new_last_name: { type: 'string', nullable: true },
+          new_phone_number: { type: 'string', nullable: true },
+          reason: { type: 'string', nullable: true },
+          reason_note: { type: 'string', nullable: true },
+          source_message_id: { type: 'string', format: 'uuid', nullable: true },
+          forward_message_id: { type: 'string', format: 'uuid', nullable: true },
+        },
+        required: ['new_email'],
+        additionalProperties: false,
+      },
+      ReplaceLeadResult: {
+        type: 'object',
+        properties: {
+          replacement_id: { type: 'string', format: 'uuid' },
+          new_lead_id: { type: 'string', format: 'uuid' },
+          enrollment_id: { type: 'string', format: 'uuid', nullable: true },
+          forward_job_id: { type: 'string', format: 'uuid', nullable: true },
+        },
+        required: ['replacement_id', 'new_lead_id'],
+      },
+      ThreadTag: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          account_id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          color: { type: 'string', nullable: true },
+          created_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        required: ['id', 'account_id', 'name'],
+        additionalProperties: true,
+      },
+      ThreadTagAssignmentRequest: {
+        type: 'object',
+        properties: {
+          tag_id: { type: 'string', format: 'uuid' },
+        },
+        required: ['tag_id'],
+        additionalProperties: false,
+      },
+      ThreadTagAssignmentResult: {
+        type: 'object',
+        properties: {
+          thread_id: { type: 'string', format: 'uuid' },
+          tag_id: { type: 'string', format: 'uuid' },
+          removed: { type: 'boolean' },
+        },
+        required: ['thread_id', 'tag_id'],
       },
       ReplyJobResult: {
         type: 'object',
@@ -1239,6 +1427,34 @@ export function buildClientApiComponents() {
         type: 'object',
         properties: {
           data: schemaRef('ReplyJobResult'),
+        },
+        required: ['data'],
+      },
+      MessageJobResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('MessageJob'),
+        },
+        required: ['data'],
+      },
+      ThreadTagListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('ThreadTag') },
+        },
+        required: ['data'],
+      },
+      ThreadTagAssignmentResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('ThreadTagAssignmentResult'),
+        },
+        required: ['data'],
+      },
+      ReplaceLeadResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('ReplaceLeadResult'),
         },
         required: ['data'],
       },

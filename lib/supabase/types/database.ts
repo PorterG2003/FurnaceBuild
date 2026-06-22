@@ -2109,6 +2109,49 @@ export interface Database {
           created_at?: string;
         };
       };
+      thread_tag_assignments: {
+        Row: {
+          thread_id: string;
+          tag_id: string;
+          account_id: string;
+          created_at: string;
+        };
+        Insert: {
+          thread_id: string;
+          tag_id: string;
+          account_id: string;
+          created_at?: string;
+        };
+        Update: {
+          thread_id?: string;
+          tag_id?: string;
+          account_id?: string;
+          created_at?: string;
+        };
+      };
+      thread_tags: {
+        Row: {
+          id: string;
+          account_id: string;
+          name: string;
+          color: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          name: string;
+          color?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          name?: string;
+          color?: string | null;
+          created_at?: string;
+        };
+      };
     };
     Views: {
       [_ in never]: never;

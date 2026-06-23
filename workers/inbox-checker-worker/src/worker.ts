@@ -292,18 +292,6 @@ export class InboxCheckerWorker {
       console.error(`[INBOX CHECKER] Error processing mailbox ${mailbox.id}:`, error);
 
       const classified = classifyImapError(error);
-      reportErrorToSlack(`Inbox-checker failed to process mailbox: ${classified.message}`, {
-        severity: 'warning',
-        alertPolicy: 'persistent_config_warning',
-        aggregationKey: `inbox-checker-imap:${mailbox.imap_host}:${classified.kind}`,
-        mailbox_id: mailbox.id,
-        email_address: mailbox.email_address,
-        summaryFields: {
-          imap_host: mailbox.imap_host,
-          failure_kind: classified.kind,
-          example_email: mailbox.email_address,
-        },
-      });
 
       await this.supabase
         .from('mailboxes')

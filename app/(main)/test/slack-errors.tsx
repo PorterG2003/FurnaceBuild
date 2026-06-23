@@ -184,7 +184,7 @@ export default function SlackErrorsTestPage() {
         status: 'connected',
         provider: 'custom',
       });
-      setTriggerMessage('Test mailbox created with invalid IMAP. Inbox-checker will report an error when it tries to sync. Check Slack.');
+      setTriggerMessage('Test mailbox created with invalid IMAP. Inbox-checker will mark it as error on sync (per-mailbox IMAP failures no longer report to Slack).');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setTriggerMessage(`Error: ${msg}`);

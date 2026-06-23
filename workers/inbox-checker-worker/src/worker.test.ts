@@ -160,7 +160,7 @@ test('InboxCheckerWorker keeps non-retryable main-loop failures loud', async () 
   }
 });
 
-test('InboxCheckerWorker aggregates Slack alerts by IMAP host and failure kind', async () => {
+test('InboxCheckerWorker does not Slack-alert on per-mailbox IMAP failures', async () => {
   const slack = setupSlackCapture();
   const supabase = new TrackingSupabase();
   const worker = new InboxCheckerWorker({
@@ -184,15 +184,13 @@ test('InboxCheckerWorker aggregates Slack alerts by IMAP host and failure kind',
     await assert.rejects((worker as any).processMailbox(mailboxA));
     await assert.rejects((worker as any).processMailbox(mailboxB));
 
-    assert.equal(slack.calls.length, 1);
-    assert.match(slack.calls[0], /Inbox-checker failed to process mailbox/);
-    assert.match(slack.calls[0], /\[WARNING\]/);
+    assert.equal(slack.calls.length, 0);
   } finally {
     slack.restore();
   }
 });
 
-test('InboxCheckerWorker marks permanent IMAP failures as error and aggregates Slack alerts', async () => {
+test('InboxCheckerWorker marks permanent IMAP failures as error', async () => {
   const slack = setupSlackCapture();
   const supabase = new TrackingSupabase();
   const worker = new InboxCheckerWorker({
@@ -230,9 +228,7 @@ test('InboxCheckerWorker marks permanent IMAP failures as error and aggregates S
     assert.deepEqual(supabase.calls[0].filters, [
       { op: 'eq', column: 'id', value: 'mailbox-1' },
     ]);
-    assert.equal(slack.calls.length, 1);
-    assert.match(slack.calls[0], /Inbox-checker failed to process mailbox/);
-    assert.match(slack.calls[0], /\[WARNING\]/);
+    assert.equal(slack.calls.length, 0);
   } finally {
     slack.restore();
   }

@@ -392,6 +392,10 @@ export async function processImportJobById(
   const input = (importJob.input && typeof importJob.input === 'object' ? importJob.input : {}) as Record<string, unknown>;
   const operation = typeof input.operation === 'string' ? input.operation : 'api_lead_import';
 
+  if (importJob.status === 'uploading') {
+    return;
+  }
+
   if (importJob.status !== 'running') {
     const { error: markRunningError } = await supabase
       .from('api_import_jobs')
@@ -719,6 +723,79 @@ export async function processImportJobById(
           .eq('id', importJob.id);
       }
     }
+  } else if (operation === 'csv_lead_import_staged') {
+    totalItems = typeof input.total_count === 'number' ? input.total_count : 0;
+    if (totalItems <= 0) {
+      const { count, error: countError } = await supabase
+        .from('csv_import_staging')
+        .select('*', { count: 'exact', head: true })
+        .eq('job_id', importJob.id);
+      if (countError) {
+        throw new Error(`Failed to count staged CSV rows: ${countError.message}`);
+      }
+      totalItems = count ?? 0;
+    }
+
+    while (cursor < totalItems) {
+      if (Date.now() - startedAt > TIMEOUT_GUARD_MS) {
+        const progress = Math.round((cursor / Math.max(totalItems, 1)) * 100);
+        await supabase
+          .from('api_import_jobs')
+          .update({
+            status: 'queued',
+            cursor,
+            progress,
+            result: stats as never,
+            errors: stats.errors as never,
+            updated_at: new Date().toISOString(),
+          } as never)
+          .eq('id', importJob.id);
+        await requeueJob(importJob.id);
+        return;
+      }
+
+      const { data: stagingRows, error: stagingError } = await supabase
+        .from('csv_import_staging')
+        .select('payload')
+        .eq('job_id', importJob.id)
+        .order('row_index', { ascending: true })
+        .range(cursor, cursor + CHUNK_SIZE - 1);
+
+      if (stagingError) {
+        throw new Error(`Failed to load staged CSV rows: ${stagingError.message}`);
+      }
+
+      const chunk: Record<string, unknown>[] = [];
+      for (const row of stagingRows ?? []) {
+        const payload = row.payload;
+        if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+          chunk.push(payload as Record<string, unknown>);
+        }
+      }
+
+      if (chunk.length === 0) break;
+
+      const chunkStats = await processApiImportChunk(supabase, importJob, chunk);
+      stats = mergeStats(stats, chunkStats);
+      cursor += chunk.length;
+
+      const progress = Math.round((cursor / Math.max(totalItems, 1)) * 100);
+      await supabase
+        .from('api_import_jobs')
+        .update({
+          progress,
+          cursor,
+          result: {
+            ...stats,
+            imported: stats.created + stats.updated,
+          } as never,
+          errors: stats.errors as never,
+          updated_at: new Date().toISOString(),
+        } as never)
+        .eq('id', importJob.id);
+    }
+
+    await supabase.rpc('delete_csv_import_staging_for_job', { p_job_id: importJob.id });
   } else if (operation === 'api_lead_import' || Array.isArray(input.leads)) {
     const rows = Array.isArray(input.leads) ? (input.leads as Record<string, unknown>[]) : [];
     totalItems = rows.length;

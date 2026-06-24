@@ -1,0 +1,6 @@
+Email,First Name,Last Name,Company,Notes
+seed-alice@csv-smoke.furnace.test,Seed Alice,Updated,Seed Anderson,REMOVE — already in target campaign (from seed file)
+seed-bob@csv-smoke.furnace.test,Seed Bob,Updated,Seed Baker,REMOVE — already in target campaign
+new-diana@csv-smoke.furnace.test,New Diana,Prince,New Diana LLC,KEEP — new lead
+new-edward@csv-smoke.furnace.test,New Edward,Elric,New Edward LLC,KEEP — new lead
+seed-carol@csv-smoke.furnace.test,Seed Carol,Updated,Seed Clark,REMOVE — already in target campaign

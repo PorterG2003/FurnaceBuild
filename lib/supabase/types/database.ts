@@ -1781,7 +1781,7 @@ export interface Database {
           account_id: string;
           campaign_id: string | null;
           created_by_api_key_id: string | null;
-          status: 'queued' | 'running' | 'completed' | 'failed';
+          status: 'uploading' | 'queued' | 'running' | 'completed' | 'failed';
           progress: number;
           cursor: number;
           input: Json;
@@ -1797,7 +1797,7 @@ export interface Database {
           account_id: string;
           campaign_id?: string | null;
           created_by_api_key_id?: string | null;
-          status?: 'queued' | 'running' | 'completed' | 'failed';
+          status?: 'uploading' | 'queued' | 'running' | 'completed' | 'failed';
           progress?: number;
           cursor?: number;
           input?: Json;
@@ -1813,7 +1813,7 @@ export interface Database {
           account_id?: string;
           campaign_id?: string | null;
           created_by_api_key_id?: string | null;
-          status?: 'queued' | 'running' | 'completed' | 'failed';
+          status?: 'uploading' | 'queued' | 'running' | 'completed' | 'failed';
           progress?: number;
           cursor?: number;
           input?: Json;
@@ -1823,6 +1823,32 @@ export interface Database {
           completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+      };
+      csv_import_staging: {
+        Row: {
+          id: string;
+          job_id: string;
+          account_id: string;
+          row_index: number;
+          payload: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          job_id: string;
+          account_id: string;
+          row_index: number;
+          payload: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          job_id?: string;
+          account_id?: string;
+          row_index?: number;
+          payload?: Json;
+          created_at?: string;
         };
       };
       notification_deliveries: {
@@ -2421,6 +2447,40 @@ export interface Database {
           p_options?: Json;
         };
         Returns: Json;
+      };
+      preview_emails_in_campaigns: {
+        Args: {
+          p_account_id: string;
+          p_campaign_ids: string[];
+          p_emails: string[];
+        };
+        Returns: Json;
+      };
+      create_csv_lead_import_job: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+        };
+        Returns: string;
+      };
+      append_csv_import_staging_rows: {
+        Args: {
+          p_job_id: string;
+          p_rows: Json;
+        };
+        Returns: Json;
+      };
+      finalize_csv_lead_import_job: {
+        Args: {
+          p_job_id: string;
+        };
+        Returns: string;
+      };
+      delete_csv_import_staging_for_job: {
+        Args: {
+          p_job_id: string;
+        };
+        Returns: undefined;
       };
       backfill_account_lead_people_batch: {
         Args: {

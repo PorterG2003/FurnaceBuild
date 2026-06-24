@@ -11,14 +11,27 @@ export function buildAppRoutePath(href: AppRouteHref): string {
     return href.startsWith('/') ? href : `/${href}`;
   }
 
+  let pathname = href.pathname;
   const search = new URLSearchParams();
+  const usedInPath = new Set<string>();
+
   if (href.params) {
-    for (const [key, value] of Object.entries(href.params)) {
+    pathname = pathname.replace(/\[([^\]]+)\]/g, (match, key: string) => {
+      const value = href.params![key];
       if (value != null && value !== '') {
+        usedInPath.add(key);
+        return encodeURIComponent(value);
+      }
+      return match;
+    });
+
+    for (const [key, value] of Object.entries(href.params)) {
+      if (value != null && value !== '' && !usedInPath.has(key)) {
         search.set(key, value);
       }
     }
   }
+
   const qs = search.toString();
-  return qs ? `${href.pathname}?${qs}` : href.pathname;
+  return qs ? `${pathname}?${qs}` : pathname;
 }

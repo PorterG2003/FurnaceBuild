@@ -2,7 +2,7 @@ import type { SmartHandlingActionOption, SmartHandlingMetadata, SmartHandlingMod
 import type { ThreadAutoReplyPipelineState } from '@/lib/supabase/services';
 
 export type ThreadStatusCalloutKind = 'loading' | 'manual_actions' | 'ai_info' | 'pipeline_only';
-export type ThreadStatusCalloutTone = 'info' | 'warning' | 'ai' | 'pipeline';
+export type ThreadStatusCalloutTone = 'info' | 'ai' | 'pipeline';
 
 export interface ThreadStatusCalloutView {
   kind: ThreadStatusCalloutKind;
@@ -135,36 +135,12 @@ function resolveMode(
   return handlingMetadata?.mode ?? (categorySource === 'ai' ? 'ai' : 'manual');
 }
 
-const WARNING_PRIMARY_ACTIONS = new Set<SmartHandlingActionOption['action']>([
-  'replace_lead',
-  'block_sender',
-  'mark_not_interested_block',
-]);
-
 export function resolveThreadStatusCalloutTone(
   kind: ThreadStatusCalloutKind,
-  handlingMetadata: SmartHandlingMetadata | null | undefined
+  _handlingMetadata: SmartHandlingMetadata | null | undefined
 ): ThreadStatusCalloutTone {
   if (kind === 'pipeline_only') return 'pipeline';
   if (kind === 'ai_info') return 'ai';
-
-  if (
-    handlingMetadata?.header_mismatch ||
-    handlingMetadata?.suggested_referral?.reason === 'wrong_contact' ||
-    (handlingMetadata?.primary?.action &&
-      WARNING_PRIMARY_ACTIONS.has(handlingMetadata.primary.action))
-  ) {
-    return 'warning';
-  }
-
-  if (handlingMetadata?.suggested_referral) {
-    return 'warning';
-  }
-
-  if (handlingMetadata?.category === 'Not Interested') {
-    return 'warning';
-  }
-
   return 'info';
 }
 

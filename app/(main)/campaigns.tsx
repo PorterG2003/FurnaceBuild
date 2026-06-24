@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, Pressable, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, Pressable, Platform, useWindowDimensions } from 'react-native';
 import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,7 @@ import {
   DocumentDuplicateIcon,
   FunnelIcon,
   MagnifyingGlassIcon,
+  ArrowTopRightOnSquareIcon,
 } from 'react-native-heroicons/outline';
 import { ProgressDial } from '@/components/ui/progress-dial';
 import { isSmartleadCampaign } from '@/lib/campaigns/utils';
@@ -50,6 +51,7 @@ import {
   type CampaignListFilters,
 } from '@/components/campaigns/CampaignListFilterBar';
 import { CampaignTagsManager } from '@/components/campaigns/CampaignTagsManager';
+import { openAppRoute } from '@/lib/navigation/openAppRoute';
 
 const STAT_COLUMN_WIDTH = 72;
 const POSITIVE_COLUMN_WIDTH = 88;
@@ -362,6 +364,10 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onManageTags, isD
     router.push({ pathname: '/campaigns/[id]', params: { id: campaign.id } });
   };
 
+  const handleOpenInNewTab = () => {
+    openAppRoute(router, { pathname: '/campaigns/[id]', params: { id: campaign.id } }, { newTab: true });
+  };
+
   const handleDelete = async () => {
     await onDelete(campaign.id);
     setShowDeleteModal(false);
@@ -424,6 +430,19 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onManageTags, isD
   const repliedPct = sentCount > 0 ? Math.round((repliedCount / sentCount) * 100) : 0;
   const positivePct = repliedCount > 0 ? Math.round((positiveReplyCount / repliedCount) * 100) : 0;
 
+  const openInNewTabButton =
+    Platform.OS === 'web' && !isMobileLayout ? (
+      <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Open in new tab</Text>}>
+        <Pressable
+          onPress={handleOpenInNewTab}
+          accessibilityLabel="Open in new tab"
+          className="shrink-0 rounded-md p-1 web:transition-colors web:duration-150 web:hover:bg-white/10 web:active:bg-white/5"
+        >
+          <ArrowTopRightOnSquareIcon size={16} color="#9CA3AF" />
+        </Pressable>
+      </Tooltip>
+    ) : null;
+
   const statCells = (
     <>
       <View className="w-[72px] items-center">
@@ -471,6 +490,7 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onManageTags, isD
           </Text>
           {smartleadBadge}
           <CampaignStatusPill status={campaign.status || 'draft'} />
+          {openInNewTabButton}
         </View>
         {isDraft && (
           <Text className="text-gray-400 font-instrument text-sm mb-1">

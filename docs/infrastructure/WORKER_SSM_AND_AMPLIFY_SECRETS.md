@@ -19,11 +19,13 @@ Given a prefix (no trailing slash), CDK and helper scripts use:
 |--------|---------------------|
 | Main Supabase service role | `{prefix}/SUPABASE_SECRET_KEY` |
 | Resend (transactional email Lambdas) | `{prefix}/RESEND_API_KEY` |
+| Million Verifier (lead email scoring script) | `{prefix}/MILLION_VERIFIER_API_KEY` |
+| Apollo.io (webinar lead enrichment) | `{prefix}/APOLLO_API_KEY` |
 | Registry / leads service role | `{prefix}/LEADS_SUPABASE_SECRET_KEY` |
 | Foundry website intelligence (OpenRouter, ECS) | `{prefix}/FOUNDRY_OPENROUTER_API_KEY` |
 | Google Places API (New), `googlePlaces` Lambda only | `{prefix}/GOOGLE_PLACES_API_KEY` |
 
-Set the Foundry key with Amplify (same prefix as other sandbox secrets), for example: `npx ampx sandbox secret set FOUNDRY_OPENROUTER_API_KEY`. Set Resend with `npx ampx sandbox secret set RESEND_API_KEY` (used by invitation / platform email Lambdas and `npm run send:email-samples`). Flux LLM uses a separate secret: `OPENROUTER_API_KEY`.
+Set the Foundry key with Amplify (same prefix as other sandbox secrets), for example: `npx ampx sandbox secret set FOUNDRY_OPENROUTER_API_KEY`. Set Resend with `npx ampx sandbox secret set RESEND_API_KEY` (used by invitation / platform email Lambdas and `npm run send:email-samples`). Set Million Verifier with `npx ampx sandbox secret set MILLION_VERIFIER_API_KEY` (used by `scripts/lead-sourcing/email-scoring`). Set Apollo with `npx ampx sandbox secret set APOLLO_API_KEY` (used by webinar lead enrichment). Flux LLM uses a separate secret: `OPENROUTER_API_KEY`.
 
 For Flux / Foundry address autocomplete and place details, set a [Maps Platform](https://console.cloud.google.com/google/maps-apis) API key with **Places API (New)** enabled, then: `npx ampx sandbox secret set GOOGLE_PLACES_API_KEY` (use the same command in your deploy pipeline for production). The key is read only by the `googlePlaces` Lambda, not the Expo client.
 

@@ -20,6 +20,7 @@ import { getLeads, getLeadCount } from '@/lib/supabase/services/leads';
 import type { Lead } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
+import { MessageBody } from '@/components/inbox/MessageBody';
 
 /** Strip script tags from HTML for safe rendering. */
 function stripScripts(html: string): string {
@@ -218,6 +219,7 @@ function EmailPreviewModal({
     () => !!safeHtml && isFullHtmlDocument(safeHtml),
     [safeHtml]
   );
+  const useHtmlDevicePreview = config?.editor_mode === 'html';
 
   const footer = (
     <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
@@ -352,12 +354,16 @@ function EmailPreviewModal({
         {/* Right panel: merged message */}
         <View
           style={{ flex: 1, minWidth: 0 }}
-          onLayout={(event) => {
-            const nextWidth = event.nativeEvent.layout.width;
-            if (Math.abs(nextWidth - messagePaneWidth) > 1) {
-              setMessagePaneWidth(nextWidth);
-            }
-          }}
+          onLayout={
+            useHtmlDevicePreview
+              ? (event) => {
+                  const nextWidth = event.nativeEvent.layout.width;
+                  if (Math.abs(nextWidth - messagePaneWidth) > 1) {
+                    setMessagePaneWidth(nextWidth);
+                  }
+                }
+              : undefined
+          }
         >
           <Text className="text-sm font-instrument-medium mb-2 text-gray-300">Message</Text>
           {content ? (
@@ -368,27 +374,29 @@ function EmailPreviewModal({
               </Text>
               <View
                 style={{
-                  flexDirection: isMobileLayout ? 'column' : 'row',
-                  alignItems: isMobileLayout ? 'stretch' : 'center',
-                  justifyContent: 'space-between',
+                  flexDirection: useHtmlDevicePreview && !isMobileLayout ? 'row' : 'column',
+                  alignItems: useHtmlDevicePreview && !isMobileLayout ? 'center' : 'stretch',
+                  justifyContent: useHtmlDevicePreview ? 'space-between' : 'flex-start',
                   gap: 8,
                   marginBottom: 4,
                 }}
               >
                 <Text className="text-xs font-instrument-medium text-gray-400">Body</Text>
-                <View style={{ width: isMobileLayout ? '100%' : 220 }}>
-                  <SegmentControl
-                    options={[
-                      { value: 'mobile', label: 'Mobile' },
-                      { value: 'desktop', label: 'Desktop' },
-                    ]}
-                    value={previewViewport}
-                    onChange={(value) =>
-                      setPreviewViewport(value as PlatformInvitePreviewViewport)
-                    }
-                    unselectedVariant="outline"
-                  />
-                </View>
+                {useHtmlDevicePreview ? (
+                  <View style={{ width: isMobileLayout ? '100%' : 220 }}>
+                    <SegmentControl
+                      options={[
+                        { value: 'mobile', label: 'Mobile' },
+                        { value: 'desktop', label: 'Desktop' },
+                      ]}
+                      value={previewViewport}
+                      onChange={(value) =>
+                        setPreviewViewport(value as PlatformInvitePreviewViewport)
+                      }
+                      unselectedVariant="outline"
+                    />
+                  </View>
+                ) : null}
               </View>
               {campaignId && !previewSignature && (
                 <View
@@ -416,14 +424,18 @@ function EmailPreviewModal({
               >
                 <View
                   style={{ flex: 1, minHeight: 0 }}
-                  onLayout={(event) => {
-                    const nextHeight = event.nativeEvent.layout.height;
-                    if (Math.abs(nextHeight - previewViewportHeight) > 1) {
-                      setPreviewViewportHeight(nextHeight);
-                    }
-                  }}
+                  onLayout={
+                    useHtmlDevicePreview
+                      ? (event) => {
+                          const nextHeight = event.nativeEvent.layout.height;
+                          if (Math.abs(nextHeight - previewViewportHeight) > 1) {
+                            setPreviewViewportHeight(nextHeight);
+                          }
+                        }
+                      : undefined
+                  }
                 >
-                  {content.isHtmlBody && Platform.OS === 'web' && safeHtml ? (
+                  {useHtmlDevicePreview && Platform.OS === 'web' && safeHtml ? (
                     <PlatformInvitePreviewFrame
                       variant="inline"
                       viewport={previewViewport}
@@ -466,6 +478,13 @@ function EmailPreviewModal({
                         )
                       )}
                     </PlatformInvitePreviewFrame>
+                  ) : content.isHtmlBody && Platform.OS === 'web' ? (
+                    <MessageBody
+                      bodyHtml={content.bodyMerged}
+                      bodyText={content.bodyText}
+                      displayText={content.bodyText ?? content.bodyMerged}
+                      disableQuotedThreadCollapse
+                    />
                   ) : (
                     <Text className="text-gray-300 text-sm whitespace-pre-wrap">
                       {content.bodyMerged || '(empty)'}

@@ -1,0 +1,4 @@
+Email,First Name,Last Name,Company,Notes
+seed-alice@csv-smoke.furnace.test,Seed Alice,Anderson,Seed Anderson,Import this file FIRST — seeds campaign for overlap test
+seed-bob@csv-smoke.furnace.test,Seed Bob,Baker,Seed Baker,Import this file FIRST
+seed-carol@csv-smoke.furnace.test,Seed Carol,Clark,Seed Clark,Import this file FIRST

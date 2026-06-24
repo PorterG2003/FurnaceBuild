@@ -59,6 +59,7 @@ export interface BottomSheetProps {
   expandBodyToMax?: boolean;
   /** With `expandBodyToMax`, body height = max body × this fraction (clamped 0.35–1). Default 1. */
   expandBodyHeightFraction?: number;
+  overlayZIndex?: number;
 }
 
 const BACKDROP_OPACITY = 0.5;
@@ -79,6 +80,7 @@ export function BottomSheet({
   onAfterClose,
   expandBodyToMax = false,
   expandBodyHeightFraction = 1,
+  overlayZIndex,
 }: BottomSheetProps) {
   const onAfterCloseRef = useRef(onAfterClose);
   onAfterCloseRef.current = onAfterClose;
@@ -376,7 +378,13 @@ export function BottomSheet({
     : 'flex-1 justify-end overflow-hidden';
   /** Web: omit flex justify-end here — with RN Web it can collapse an absolutely positioned backdrop to height 0. */
   const webBackdropModalContainerClassName = 'fixed inset-0 w-screen h-screen overflow-hidden';
-  const containerStyle = isWeb ? undefined : { width: screenWidth, height: screenHeight };
+  const containerStyle = isWeb
+    ? overlayZIndex != null
+      ? { zIndex: overlayZIndex }
+      : undefined
+    : overlayZIndex != null
+      ? { width: screenWidth, height: screenHeight, zIndex: overlayZIndex }
+      : { width: screenWidth, height: screenHeight };
   const webBackdropFillStyle = {
     position: 'absolute' as const,
     left: 0,
@@ -494,6 +502,7 @@ export function BottomSheet({
           transparent
           animationType="fade"
           onRequestClose={handleBackdropOrHardwareBack}
+          {...(overlayZIndex != null ? { style: { zIndex: overlayZIndex } } : {})}
         >
           <View className={webBackdropModalContainerClassName} style={containerStyle}>
             <Animated.View style={[webBackdropFillStyle, backdropStyle]}>
@@ -506,6 +515,7 @@ export function BottomSheet({
           transparent
           animationType="slide"
           onRequestClose={handleBackdropOrHardwareBack}
+          {...(overlayZIndex != null ? { style: { zIndex: overlayZIndex } } : {})}
         >
           <View
             className="fixed inset-0 w-screen h-screen flex flex-col overflow-hidden"
@@ -530,7 +540,13 @@ export function BottomSheet({
   }
 
   return (
-    <Modal visible={isOpen} transparent animationType="none" onRequestClose={handleBackdropOrHardwareBack}>
+    <Modal
+      visible={isOpen}
+      transparent
+      animationType="none"
+      onRequestClose={handleBackdropOrHardwareBack}
+      {...(overlayZIndex != null ? { style: { zIndex: overlayZIndex } } : {})}
+    >
       <View className={containerClassName} style={containerStyle}>
         <Animated.View className="absolute inset-0" style={backdropStyle}>
           <Pressable className="absolute inset-0" onPress={handleBackdropOrHardwareBack} />

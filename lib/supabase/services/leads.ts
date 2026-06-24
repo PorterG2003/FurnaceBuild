@@ -825,6 +825,25 @@ export async function getCampaignLeadTableExportRows(
   return rows;
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
+/** Campaign lead filters; only applies bucket_id when it is a valid UUID. */
+export function buildCampaignBucketLeadFilters(
+  campaignId: string,
+  bucketId?: string | null,
+): LeadCountFilters {
+  const filters: LeadCountFilters = { campaignId };
+  if (bucketId && isUuid(bucketId)) {
+    filters.bucketId = bucketId;
+  }
+  return filters;
+}
+
 export interface LeadCountFilters {
   campaignId?: string;
   bucketId?: string;
@@ -871,6 +890,50 @@ export async function getLeadCount(filters?: LeadCountFilters): Promise<number> 
   }
 
   return count ?? 0;
+}
+
+export type BucketLeadFieldCoverage = {
+  totalCount: number;
+  fields: Array<{ fieldKey: string; filledCount: number }>;
+};
+
+/**
+ * Per-field fill counts for all live leads in a campaign bucket.
+ */
+export async function getBucketLeadFieldCoverage(
+  campaignId: string,
+  bucketId: string,
+): Promise<BucketLeadFieldCoverage> {
+  const { data, error } = await supabase.rpc('bucket_lead_field_coverage', {
+    p_campaign_id: campaignId,
+    p_bucket_id: bucketId,
+  });
+
+  if (error) {
+    throw new Error(`Failed to fetch bucket lead field coverage: ${error.message}`);
+  }
+
+  const rows = (data ?? []) as Array<{
+    field_key: string;
+    filled_count: number | string;
+    total_count: number | string;
+  }>;
+
+  let totalCount = 0;
+  const fields: BucketLeadFieldCoverage['fields'] = [];
+
+  for (const row of rows) {
+    const rowTotal = Number(row.total_count ?? 0);
+    if (rowTotal > totalCount) {
+      totalCount = rowTotal;
+    }
+    fields.push({
+      fieldKey: row.field_key,
+      filledCount: Number(row.filled_count ?? 0),
+    });
+  }
+
+  return { totalCount, fields };
 }
 
 /**

@@ -1,30 +1,56 @@
-import { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Platform, Alert, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, Platform, Alert, useWindowDimensions } from 'react-native';
 import Papa from 'papaparse';
 import { BaseModal, ModalFooter } from '@/components/ui/modals';
+import { EmptyState } from '@/components/ui/feedback';
 import { WizardStepIndicator } from '@/components/ui/wizard';
-import { Tabs } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
+import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
+import { CsvImportDedupeStep } from './CsvImportDedupeStep';
+import { CsvImportReviewStep, type CsvImportReviewSummary } from './CsvImportReviewStep';
+import { CsvImportWizardContentShell } from './CsvImportWizardContentShell';
 import { useAccount } from '@/contexts/AccountContext';
-import { getClientApiBaseUrl } from '@/lib/client-api/client';
-import { createLeads, getLeadCount, getLeads } from '@/lib/supabase/services/leads';
-import { generateGlobalLeadId } from '@/lib/leads';
-import { ensureCampaignEnrollmentsForLeads } from '@/lib/supabase/services/campaigns';
-import type { LeadInsert, Lead } from '@/lib/supabase/types';
+import {
+  buildCampaignBucketLeadFilters,
+  getBucketLeadFieldCoverage,
+  getLeadCount,
+  getLeads,
+} from '@/lib/supabase/services/leads';
+import {
+  extractUniqueEmailsFromRows,
+  mapCsvRowsToLeadPayloads,
+  runCsvDedupePipeline,
+  type CsvDedupeResult,
+} from '@/lib/leads/csv-dedupe';
+import { previewCsvEmailsInCampaigns } from '@/lib/supabase/services/leads/csv-import-preview';
+import {
+  createCsvLeadImportJob,
+  enqueueCsvImportJob,
+  finalizeCsvLeadImportJob,
+  importCsvLeadsSync,
+  pollCsvImportJobUntilDone,
+  shouldUseAsyncCsvImport,
+  uploadCsvLeadsToStagingJob,
+  mapImportJobToCsvResult,
+  type CsvImportStats,
+} from '@/lib/supabase/services/leads/csv-import-jobs';
+import { CampaignPickerModal } from '@/components/campaigns/CampaignPickerModal';
+import { getCampaignsListSummary, type CampaignListSummary } from '@/lib/supabase/services/campaigns/campaign-list-summary';
+import { useConfirmClose } from '@/hooks/useConfirmClose';
+import { usePreventTabClose } from '@/hooks/usePreventTabClose';
+import type { Lead } from '@/lib/supabase/types';
 
 interface LeadSourceNodeModalProps {
   visible: boolean;
   onClose: () => void;
   onSave: (data: {
-    label?: string;
     source?: string;
     bucketId?: string;
     customFieldKeys?: string[];
     mappedStandardFieldKeys?: string[];
   }) => void;
   initialData?: {
-    label?: string;
     source?: string;
     campaignId?: string;
     bucketId?: string;
@@ -41,6 +67,61 @@ interface ParsedCSV {
 
 const INSIGHTS_COLUMN_MIN_WIDTH = 160;
 const INSIGHTS_COLUMN_MAX_WIDTH = 240;
+const BUCKET_TABLE_PAGE_SIZE = 20;
+
+const STANDARD_BUCKET_FIELD_ORDER = [
+  'email',
+  'name',
+  'first_name',
+  'last_name',
+  'company_name',
+  'website',
+  'linkedin_url',
+  'company_linkedin_url',
+  'source',
+] as const;
+
+type BucketTableRow = Record<string, string> & { __rowKey: string };
+
+type BucketFieldCoverageMap = Record<string, { filled: number; empty: number }>;
+
+function leadToBucketRecord(lead: Lead): Record<string, string> {
+  const record: Record<string, string> = {};
+
+  if (lead.email) record.email = lead.email;
+  if (lead.name) record.name = lead.name;
+  if (lead.first_name) record.first_name = lead.first_name;
+  if (lead.last_name) record.last_name = lead.last_name;
+  if (lead.company_name) record.company_name = lead.company_name;
+  if (lead.website) record.website = lead.website;
+  if (lead.linkedin_url) record.linkedin_url = lead.linkedin_url;
+  if (lead.company_linkedin_url) record.company_linkedin_url = lead.company_linkedin_url;
+  if (lead.source) record.source = lead.source;
+
+  if (lead.custom_lead_data && typeof lead.custom_lead_data === 'object') {
+    Object.entries(lead.custom_lead_data).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) {
+        record[key] = String(value);
+      }
+    });
+  }
+
+  return record;
+}
+
+function sortBucketFieldKeys(keys: string[]): string[] {
+  const remaining = new Set(keys);
+  const ordered: string[] = [];
+
+  for (const fieldKey of STANDARD_BUCKET_FIELD_ORDER) {
+    if (remaining.has(fieldKey)) {
+      ordered.push(fieldKey);
+      remaining.delete(fieldKey);
+    }
+  }
+
+  return [...ordered, ...Array.from(remaining).sort()];
+}
 
 const UTF8_BOM = '\ufeff';
 
@@ -86,16 +167,9 @@ function parseCSV(csvText: string): ParsedCSV {
   };
 }
 
-const leadSourceTabs = [
-  { id: 'details', label: 'Details' },
-  { id: 'csv', label: 'Import' },
-  { id: 'api', label: 'API' },
-  { id: 'insights', label: 'Insights' },
-] as const;
+const csvSteps = ['Upload CSV', 'Map Fields', 'Dedupe', 'Review'] as const;
 
-type TabId = typeof leadSourceTabs[number]['id'];
-
-const csvSteps = ['Upload CSV', 'Map Fields', 'Review'] as const;
+type CsvImportPhase = 'idle' | 'sync' | 'uploading' | 'importing';
 
 const mappingFields = [
   { id: 'email', label: 'Email Address', required: true },
@@ -149,29 +223,68 @@ function LeadSourceNodeModal({
   onSave,
   initialData,
 }: LeadSourceNodeModalProps) {
-  const { account } = useAccount();
-  const [label, setLabel] = useState(initialData?.label || 'Lead Bucket');
-  const [activeTab, setActiveTab] = useState<TabId>('details');
+  const { account, blockList } = useAccount();
   const [isImporting, setIsImporting] = useState(false);
   const [isSavingImport, setIsSavingImport] = useState(false);
+  const [importPhase, setImportPhase] = useState<CsvImportPhase>('idle');
+  const [importProgress, setImportProgress] = useState({ processed: 0, total: 0, message: '' });
+  const [importResult, setImportResult] = useState<CsvImportStats | null>(null);
   const [csvStep, setCsvStep] = useState(0);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [fieldMappings, setFieldMappings] = useState<Record<FieldKey, string>>(() => createEmptyMappings());
   const [customFieldColumns, setCustomFieldColumns] = useState<string[]>([]);
+  const [filterInCampaignsEnabled, setFilterInCampaignsEnabled] = useState(false);
+  const [filterBlockListEnabled, setFilterBlockListEnabled] = useState(true);
+  const [selectedDedupeCampaignIds, setSelectedDedupeCampaignIds] = useState<string[]>([]);
+  const [campaignSummaries, setCampaignSummaries] = useState<CampaignListSummary[]>([]);
+  const [showCampaignPicker, setShowCampaignPicker] = useState(false);
+  const [dedupeResult, setDedupeResult] = useState<CsvDedupeResult | null>(null);
+  const [dedupePreviewLoading, setDedupePreviewLoading] = useState(false);
+  const [dedupePreviewError, setDedupePreviewError] = useState<string | null>(null);
+  const dedupePreviewRequestRef = useRef(0);
   const [importSummary, setImportSummary] = useState<{
     totalRows: number;
+    readyRows: number;
+    dedupeRemoved: number;
+    dedupeStats: CsvDedupeResult['stats'] | null;
     mappedFields: Record<FieldKey, string>;
     customFields: string[];
     unmappedColumns: string[];
   } | null>(null);
-  const [importedCount, setImportedCount] = useState<number | null>(null);
   const [isImportWizardOpen, setIsImportWizardOpen] = useState(false);
-  const [dbLeads, setDbLeads] = useState<Lead[]>([]);
+  const [tableLeads, setTableLeads] = useState<Lead[]>([]);
   const [leadCount, setLeadCount] = useState<number | null>(null);
-  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
-  const { height: windowHeight } = useWindowDimensions();
+  const [fieldCoverage, setFieldCoverage] = useState<BucketFieldCoverageMap>({});
+  const [tablePage, setTablePage] = useState(1);
+  const [isLoadingBucket, setIsLoadingBucket] = useState(false);
+  const [isTableLoading, setIsTableLoading] = useState(false);
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isDedupeCompactLayout = windowWidth < LAYOUT_BREAKPOINT;
+
+  const reviewSummary = useMemo((): CsvImportReviewSummary | null => {
+    if (!importSummary) return null;
+
+    const mappedFields: CsvImportReviewSummary['mappedFields'] = [];
+    for (const field of mappingFields) {
+      const column = importSummary.mappedFields[field.id];
+      if (column) {
+        mappedFields.push({ label: field.label, column });
+      }
+    }
+    for (const column of importSummary.customFields) {
+      mappedFields.push({ label: `Custom: ${column}`, column });
+    }
+
+    return {
+      totalRows: importSummary.totalRows,
+      readyRows: importSummary.readyRows,
+      dedupeRemoved: importSummary.dedupeRemoved,
+      mappedFields,
+      unmappedColumns: importSummary.unmappedColumns,
+    };
+  }, [importSummary]);
 
   const displayColumns = useMemo(() => csvColumns.slice(0, 6), [csvColumns]);
   const hiddenColumnCount = csvColumns.length > displayColumns.length ? csvColumns.length - displayColumns.length : 0;
@@ -186,147 +299,280 @@ function LeadSourceNodeModal({
 
   const previewRows = useMemo(() => csvRows.slice(0, 3), [csvRows]);
 
-  // Fetch leads from database when modal opens and Insights tab is active
-  useEffect(() => {
-    if (visible && activeTab === 'insights' && initialData?.campaignId) {
-      const fetchLeads = async () => {
-        setIsLoadingLeads(true);
-        try {
-          const filters: { campaignId?: string; bucketId?: string } = {
-            campaignId: initialData.campaignId,
+  const loadBucketSummary = useCallback(async (): Promise<number> => {
+    if (!initialData?.campaignId) {
+      setLeadCount(0);
+      setFieldCoverage({});
+      return 0;
+    }
+
+    const filters = buildCampaignBucketLeadFilters(
+      initialData.campaignId,
+      initialData.bucketId,
+    );
+    const resolvedBucketId = filters.bucketId;
+
+    if (resolvedBucketId) {
+      try {
+        const coverage = await getBucketLeadFieldCoverage(
+          initialData.campaignId,
+          resolvedBucketId,
+        );
+        setLeadCount(coverage.totalCount);
+
+        const coverageMap: BucketFieldCoverageMap = {};
+        for (const field of coverage.fields) {
+          coverageMap[field.fieldKey] = {
+            filled: field.filledCount,
+            empty: coverage.totalCount - field.filledCount,
           };
-          
-          // If bucketId is available, filter by bucket; otherwise get all campaign leads
-          if (initialData.bucketId) {
-            filters.bucketId = initialData.bucketId;
-          }
-          
-          const [count, leads] = await Promise.all([
-            getLeadCount(filters),
-            getLeads({ ...filters, limit: 200 }),
-          ]);
-          setLeadCount(count);
-          setDbLeads(leads);
-        } catch (error) {
-          console.error('Failed to fetch leads for insights:', error);
-          setLeadCount(null);
-          setDbLeads([]);
-        } finally {
-          setIsLoadingLeads(false);
         }
-      };
-      
-      fetchLeads();
+        setFieldCoverage(coverageMap);
+        return coverage.totalCount;
+      } catch (error) {
+        console.warn('Bucket field coverage unavailable; falling back to lead count', error);
+      }
     }
-  }, [visible, activeTab, initialData?.campaignId, initialData?.bucketId]);
 
-  // Convert database leads to the format needed for insights
-  const leadsForInsights = useMemo(() => {
-    if (dbLeads.length === 0) {
-      return csvRows; // Fallback to CSV rows if no DB leads
-    }
-    
-    // Convert Lead objects to Record<string, string> format
-    return dbLeads.map(lead => {
-      const record: Record<string, string> = {};
+    const count = await getLeadCount(filters);
+    setLeadCount(count);
+    setFieldCoverage({});
+    return count;
+  }, [initialData?.campaignId, initialData?.bucketId]);
 
-      // Map all lead fields from database schema
-      if (lead.email) record.email = lead.email;
-      if (lead.name) record.name = lead.name;
-      if (lead.first_name) record.first_name = lead.first_name;
-      if (lead.last_name) record.last_name = lead.last_name;
-      if (lead.company_name) record.company_name = lead.company_name;
-      if (lead.website) record.website = lead.website;
-      if (lead.linkedin_url) record.linkedin_url = lead.linkedin_url;
-      if (lead.company_linkedin_url) record.company_linkedin_url = lead.company_linkedin_url;
-      if (lead.source) record.source = lead.source;
-
-      // Add any custom lead data if it exists
-      if (lead.custom_lead_data && typeof lead.custom_lead_data === 'object') {
-        Object.entries(lead.custom_lead_data).forEach(([key, value]) => {
-          if (value !== null && value !== undefined) {
-            record[key] = String(value);
-          }
-        });
+  const loadTablePage = useCallback(
+    async (page: number) => {
+      if (!initialData?.campaignId) {
+        setTableLeads([]);
+        setTablePage(1);
+        return;
       }
 
-      return record;
-    });
-  }, [dbLeads, csvRows]);
+      setIsTableLoading(true);
+      try {
+        const filters = buildCampaignBucketLeadFilters(
+          initialData.campaignId,
+          initialData.bucketId,
+        );
+        const leads = await getLeads({
+          ...filters,
+          limit: BUCKET_TABLE_PAGE_SIZE,
+          offset: (page - 1) * BUCKET_TABLE_PAGE_SIZE,
+        });
+        setTableLeads(leads);
+        setTablePage(page);
+      } catch (error) {
+        console.error('Failed to fetch bucket leads page:', error);
+        setTableLeads([]);
+      } finally {
+        setIsTableLoading(false);
+      }
+    },
+    [initialData?.campaignId, initialData?.bucketId],
+  );
 
-  const insightSummary = useMemo(() => {
-    const dataToAnalyze = leadsForInsights.length > 0 ? leadsForInsights : csvRows;
-    
-    if (!dataToAnalyze.length) {
-      return {
-        totalRows: 0,
-        fields: [] as Array<{ field: string; percentage: number }>,
-        examples: [] as Record<string, string>[],
-      };
+  const loadBucketData = useCallback(async () => {
+    setIsLoadingBucket(true);
+    try {
+      const total = await loadBucketSummary();
+      if (total > 0) {
+        await loadTablePage(1);
+      } else {
+        setTableLeads([]);
+        setTablePage(1);
+      }
+    } catch (error) {
+      console.error('Failed to load bucket data:', error);
+      setLeadCount(0);
+      setFieldCoverage({});
+      setTableLeads([]);
+      setTablePage(1);
+    } finally {
+      setIsLoadingBucket(false);
     }
+  }, [loadBucketSummary, loadTablePage]);
 
-    const fieldCounts = new Map<string, number>();
-    dataToAnalyze.forEach(row => {
-      Object.entries(row).forEach(([field, value]) => {
-        if ((value ?? '').toString().trim()) {
-          fieldCounts.set(field, (fieldCounts.get(field) || 0) + 1);
+  useEffect(() => {
+    if (visible) {
+      void loadBucketData();
+    }
+  }, [visible, initialData?.campaignId, initialData?.bucketId, loadBucketData]);
+
+  const bucketTableRows = useMemo((): BucketTableRow[] => {
+    return tableLeads.map((lead) => ({
+      ...leadToBucketRecord(lead),
+      __rowKey: lead.id,
+    }));
+  }, [tableLeads]);
+
+  const bucketTableColumnKeys = useMemo(() => {
+    const keys = new Set<string>(['email']);
+    initialData?.mappedStandardFieldKeys?.forEach((key) => keys.add(key));
+    initialData?.customFieldKeys?.forEach((key) => keys.add(key));
+    Object.keys(fieldCoverage).forEach((key) => keys.add(key));
+    bucketTableRows.forEach((row) => {
+      Object.keys(row).forEach((key) => {
+        if (key !== '__rowKey') {
+          keys.add(key);
         }
       });
     });
+    return sortBucketFieldKeys(Array.from(keys));
+  }, [
+    bucketTableRows,
+    fieldCoverage,
+    initialData?.customFieldKeys,
+    initialData?.mappedStandardFieldKeys,
+  ]);
 
-    const totalRows = dataToAnalyze.length;
-    const fields = Array.from(fieldCounts.entries())
-      .map(([field, count]) => ({
-        field,
-        percentage: Math.min(100, Math.round((count / totalRows) * 100)),
-      }))
-      .sort((a, b) => b.percentage - a.percentage);
+  const bucketTableColumns = useMemo((): TableColumn<BucketTableRow>[] => {
+    const total = leadCount ?? 0;
 
-    return {
-      totalRows,
-      fields,
-      examples: dataToAnalyze.slice(0, 3),
-    };
-  }, [leadsForInsights, csvRows]);
+    return bucketTableColumnKeys.map((fieldKey) => {
+      const stats = fieldCoverage[fieldKey] ?? { filled: 0, empty: total };
+      const minFromLabel = Math.ceil(fieldKey.length * 8);
+      const minWidth = Math.min(
+        INSIGHTS_COLUMN_MAX_WIDTH,
+        Math.max(INSIGHTS_COLUMN_MIN_WIDTH, minFromLabel),
+      );
 
-  const endpointUrl = useMemo(() => {
-    const bucketSegment = initialData?.bucketId ?? 'your-bucket-id';
-    const baseUrl = getClientApiBaseUrl();
-    if (!baseUrl) {
-      return `https://api.getfurnace.io/v1/campaigns/${initialData?.campaignId ?? 'your-campaign-id'}/leads`;
-    }
-    return `${baseUrl}/v1/campaigns/${initialData?.campaignId ?? 'your-campaign-id'}/leads`;
-  }, [initialData?.bucketId, initialData?.campaignId]);
+      return {
+        key: fieldKey,
+        label: fieldKey,
+        flex: 0,
+        minWidth,
+        maxWidth: INSIGHTS_COLUMN_MAX_WIDTH,
+        headerStats: { filled: stats.filled, empty: stats.empty },
+        render: (item) => (
+          <Text className="text-white font-instrument text-sm" numberOfLines={1}>
+            {item[fieldKey] ?? '—'}
+          </Text>
+        ),
+      };
+    });
+  }, [bucketTableColumnKeys, fieldCoverage, leadCount]);
 
-  const docsUrl = useMemo(() => {
-    const baseUrl = getClientApiBaseUrl();
-    return baseUrl ? `${baseUrl}/docs` : 'https://api.getfurnace.io/docs';
-  }, []);
-
-  const payloadExample = useMemo(() => {
-    return `{
-  "email": "jane@example.com",
-  "name": "Jane Doe",
-  "first_name": "Jane",
-  "last_name": "Doe",
-  "company_name": "Acme Co",
-  "website": "https://www.acmeco.com",
-  "linkedin_url": "https://www.linkedin.com/in/janedoe",
-  "company_linkedin_url": "https://www.linkedin.com/company/acme-co",
-  "custom_lead_data": {
-    "company": "Acme Co",
-    "source": "Landing Page"
-  }
-}`;
-  }, []);
+  const handleTablePageChange = useCallback(
+    (page: number) => {
+      void loadTablePage(page);
+    },
+    [loadTablePage],
+  );
 
   const isNextDisabled = isSavingImport
     ? true
     : csvStep === 0
-    ? csvColumns.length === 0
-    : csvStep === 1
-      ? mappingErrors.length > 0
-      : false;
+      ? csvColumns.length === 0
+      : csvStep === 1
+        ? mappingErrors.length > 0
+        : csvStep === 2
+          ? dedupePreviewLoading ||
+              (dedupeResult?.stats.kept ?? 0) === 0 ||
+              (filterInCampaignsEnabled && selectedDedupeCampaignIds.length === 0)
+          : false;
+
+  const preventTabClose = isSavingImport && importPhase !== 'importing';
+  usePreventTabClose(preventTabClose);
+
+  const computeDedupePreview = useCallback(async () => {
+    const requestId = dedupePreviewRequestRef.current + 1;
+    dedupePreviewRequestRef.current = requestId;
+    setDedupePreviewLoading(true);
+    setDedupePreviewError(null);
+
+    const emailColumn = fieldMappings.email || undefined;
+    let matchingCampaignEmails = new Set<string>();
+
+    try {
+      if (
+        account?.id &&
+        filterInCampaignsEnabled &&
+        selectedDedupeCampaignIds.length > 0 &&
+        emailColumn
+      ) {
+        const emails = extractUniqueEmailsFromRows(csvRows, emailColumn);
+        const preview = await previewCsvEmailsInCampaigns(
+          account.id,
+          selectedDedupeCampaignIds,
+          emails,
+        );
+        matchingCampaignEmails = preview.matchingEmails;
+      }
+
+      if (dedupePreviewRequestRef.current !== requestId) return;
+
+      const result = runCsvDedupePipeline(csvRows, {
+        dedupeWithinFile: true,
+        filterInCampaigns: filterInCampaignsEnabled,
+        filterBlockList: filterBlockListEnabled,
+        emailColumn,
+        matchingCampaignEmails,
+        blockListEntries: blockList,
+      });
+      setDedupeResult(result);
+    } catch (error) {
+      if (dedupePreviewRequestRef.current !== requestId) return;
+      const message = error instanceof Error ? error.message : 'Failed to check campaigns.';
+      setDedupePreviewError(message);
+      const result = runCsvDedupePipeline(csvRows, {
+        dedupeWithinFile: true,
+        filterInCampaigns: false,
+        filterBlockList: filterBlockListEnabled,
+        emailColumn,
+        matchingCampaignEmails: new Set(),
+        blockListEntries: blockList,
+      });
+      setDedupeResult(result);
+    } finally {
+      if (dedupePreviewRequestRef.current === requestId) {
+        setDedupePreviewLoading(false);
+      }
+    }
+  }, [
+    account?.id,
+    blockList,
+    csvRows,
+    fieldMappings.email,
+    filterBlockListEnabled,
+    filterInCampaignsEnabled,
+    selectedDedupeCampaignIds,
+  ]);
+
+  useEffect(() => {
+    if (!isImportWizardOpen || csvStep !== 2) return;
+    const timer = setTimeout(() => {
+      void computeDedupePreview();
+    }, csvStep === 2 ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [
+    computeDedupePreview,
+    csvStep,
+    isImportWizardOpen,
+    filterInCampaignsEnabled,
+    filterBlockListEnabled,
+    selectedDedupeCampaignIds,
+  ]);
+
+  useEffect(() => {
+    if (!isImportWizardOpen || !account?.id) return;
+    getCampaignsListSummary(account.id)
+      .then((rows) => setCampaignSummaries(rows))
+      .catch(() => setCampaignSummaries([]));
+  }, [account?.id, isImportWizardOpen]);
+
+  const selectedCampaignNames = useMemo(() => {
+    const byId = new Map(campaignSummaries.map((campaign) => [campaign.id, campaign.name]));
+    return selectedDedupeCampaignIds
+      .map((id) => byId.get(id))
+      .filter((name): name is string => Boolean(name));
+  }, [campaignSummaries, selectedDedupeCampaignIds]);
+
+  const handleFilterInCampaignsChange = (enabled: boolean) => {
+    setFilterInCampaignsEnabled(enabled);
+    if (!enabled) {
+      setSelectedDedupeCampaignIds([]);
+    }
+  };
 
   const handleSave = () => {
     const customFieldKeys = Array.from(
@@ -338,7 +584,6 @@ function LeadSourceNodeModal({
         : (initialData?.mappedStandardFieldKeys ?? undefined);
 
     onSave({
-      label,
       bucketId: initialData?.bucketId,
       customFieldKeys,
       mappedStandardFieldKeys,
@@ -346,7 +591,7 @@ function LeadSourceNodeModal({
     onClose();
   };
 
-  const resetCsvFlow = (options?: { resetCount?: boolean }) => {
+  const resetCsvFlow = () => {
     setCsvStep(0);
     setCsvFileName(null);
     setCsvRows([]);
@@ -354,9 +599,15 @@ function LeadSourceNodeModal({
     setFieldMappings(createEmptyMappings());
     setCustomFieldColumns([]);
     setImportSummary(null);
-    if (options?.resetCount) {
-      setImportedCount(null);
-    }
+    setDedupeResult(null);
+    setDedupePreviewError(null);
+    setDedupePreviewLoading(false);
+    setFilterInCampaignsEnabled(false);
+    setFilterBlockListEnabled(true);
+    setSelectedDedupeCampaignIds([]);
+    setImportPhase('idle');
+    setImportProgress({ processed: 0, total: 0, message: '' });
+    setImportResult(null);
   };
 
   const handleOpenImportWizard = () => {
@@ -364,16 +615,29 @@ function LeadSourceNodeModal({
     setIsImportWizardOpen(true);
   };
 
-  const handleCloseImportWizard = (options?: { preserveData?: boolean }) => {
+  const closeImportWizard = (options?: { preserveData?: boolean }) => {
     if (!options?.preserveData) {
       resetCsvFlow();
     }
     setIsSavingImport(false);
+    setImportPhase('idle');
     setIsImportWizardOpen(false);
   };
 
+  const handleCloseImportWizard = useConfirmClose(
+    isSavingImport && importPhase !== 'importing',
+    () => closeImportWizard(),
+    {
+      title: 'Leave import?',
+      message:
+        'Import in progress. Leaving now may leave your upload incomplete. Stay on this page?',
+      discardLabel: 'Leave',
+      keepLabel: 'Stay',
+    },
+  );
+
   const handleWizardReset = () => {
-    resetCsvFlow({ resetCount: true });
+    resetCsvFlow();
   };
 
   const handleCsvFileSelect = async () => {
@@ -423,7 +687,6 @@ function LeadSourceNodeModal({
           setFieldMappings(() => ({ ...createEmptyMappings(), ...autoMappings }));
           setCustomFieldColumns([]);
           setImportSummary(null);
-          setImportedCount(null);
           setCsvStep(1);
         } catch (error: any) {
           const message =
@@ -466,7 +729,7 @@ function LeadSourceNodeModal({
     });
   };
 
-  const buildImportSummary = () => {
+  const buildImportSummary = (result: CsvDedupeResult | null = dedupeResult) => {
     const mappedFields = mappingFields.reduce((acc, field) => {
       if (fieldMappings[field.id]) {
         acc[field.id] = fieldMappings[field.id];
@@ -475,10 +738,18 @@ function LeadSourceNodeModal({
     }, {} as Record<FieldKey, string>);
 
     const mappedSet = new Set<string>([...Object.values(fieldMappings).filter(Boolean), ...customFieldColumns]);
-    const unmappedColumns = csvColumns.filter(column => !mappedSet.has(column));
+    const unmappedColumns = csvColumns.filter((column) => !mappedSet.has(column));
+    const stats = result?.stats ?? null;
+    const readyRows = stats?.kept ?? csvRows.length;
+    const dedupeRemoved = stats
+      ? stats.removedWithinFile + stats.removedInCampaigns + stats.removedBlocked
+      : 0;
 
     setImportSummary({
       totalRows: csvRows.length,
+      readyRows,
+      dedupeRemoved,
+      dedupeStats: stats,
       mappedFields,
       customFields: [...customFieldColumns],
       unmappedColumns,
@@ -497,7 +768,26 @@ function LeadSourceNodeModal({
     }
 
     if (csvStep === 1) {
-      buildImportSummary();
+      setCsvStep(2);
+      return;
+    }
+
+    if (csvStep === 2) {
+      if (filterInCampaignsEnabled && selectedDedupeCampaignIds.length === 0) {
+        Alert.alert(
+          'Campaigns required',
+          'Choose at least one campaign to check against, or turn off “Remove leads already in campaigns”.',
+        );
+        return;
+      }
+      if (!dedupeResult || dedupeResult.stats.kept === 0) {
+        Alert.alert(
+          'No leads to import',
+          'All leads were removed by your filters. Adjust settings or upload a different file.',
+        );
+        return;
+      }
+      buildImportSummary(dedupeResult);
     }
 
     if (csvStep < csvSteps.length - 1) {
@@ -512,7 +802,7 @@ function LeadSourceNodeModal({
   };
 
   const handleConfirmImport = async () => {
-    if (!importSummary) {
+    if (!importSummary || !dedupeResult) {
       Alert.alert('Review required', 'Review the mapping before importing leads.');
       return;
     }
@@ -522,170 +812,176 @@ function LeadSourceNodeModal({
       return;
     }
 
-    if (csvRows.length === 0) {
-      Alert.alert('No data', 'Upload a CSV file before importing.');
+    if (!account?.id) {
+      Alert.alert('Missing account', 'Select an account before importing leads.');
+      return;
+    }
+
+    const rowsToImport = dedupeResult.kept;
+    const leadPayloads = mapCsvRowsToLeadPayloads(rowsToImport, fieldMappings, customFieldColumns);
+
+    if (leadPayloads.length === 0) {
+      Alert.alert('No leads to import', 'We could not find any rows with valid emails after applying your filters.');
       return;
     }
 
     try {
       setIsSavingImport(true);
+      setImportResult(null);
 
-      const sanitizeValue = (value?: string): string | null => {
-        if (typeof value !== 'string') return null;
-        const trimmed = value.trim();
-        return trimmed.length > 0 ? trimmed : null;
-      };
+      if (shouldUseAsyncCsvImport(leadPayloads.length)) {
+        setImportPhase('uploading');
+        setImportProgress({
+          processed: 0,
+          total: leadPayloads.length,
+          message: 'Uploading your file — don\'t close this tab or the upload will stop.',
+        });
 
-      const leadsToSave = (await Promise.all(
-        csvRows.map(async (row) => {
-          const valueForColumn = (columnName?: string) => sanitizeValue(columnName ? row[columnName] : undefined);
+        const jobId = await createCsvLeadImportJob(account.id, initialData.campaignId);
+        await uploadCsvLeadsToStagingJob(jobId, leadPayloads, (processed, total) => {
+          setImportProgress({
+            processed,
+            total,
+            message: `Uploading ${processed.toLocaleString()} of ${total.toLocaleString()}…`,
+          });
+        });
 
-          const email = valueForColumn(fieldMappings.email);
-          const firstName = valueForColumn(fieldMappings.first_name);
-          const lastName = valueForColumn(fieldMappings.last_name);
-          const combinedName = valueForColumn(fieldMappings.name);
-          const companyName = valueForColumn(fieldMappings.company_name);
-          const website = valueForColumn(fieldMappings.website);
-          const linkedinUrl = valueForColumn(fieldMappings.linkedin_url);
-          const companyLinkedinUrl = valueForColumn(fieldMappings.company_linkedin_url);
+        await finalizeCsvLeadImportJob(jobId);
+        await enqueueCsvImportJob(jobId);
 
-          const derivedName =
-            combinedName ||
-            [firstName, lastName].filter(Boolean).join(' ').trim() ||
-            null;
+        setImportPhase('importing');
+        setImportProgress({
+          processed: 0,
+          total: leadPayloads.length,
+          message:
+            'Import is running in the background. You can close this tab — reopen this bucket to see results.',
+        });
 
-          const customData = customFieldColumns.reduce<Record<string, string>>((acc, column) => {
-            const value = valueForColumn(column);
-            if (value !== null) {
-              acc[column] = value;
-            }
-            return acc;
-          }, {});
+        const job = await pollCsvImportJobUntilDone(jobId, {
+          onProgress: (progress) => {
+            setImportProgress((prev) => ({
+              ...prev,
+              processed: Math.round((progress / 100) * prev.total),
+              message: `Importing… ${progress}%`,
+            }));
+          },
+        });
 
-          const hasPrimaryFields = email || derivedName || firstName || lastName || companyName;
-          if (!hasPrimaryFields && Object.keys(customData).length === 0) {
-            return null;
-          }
+        if (job.status === 'failed') {
+          throw new Error('CSV import job failed.');
+        }
 
-          if (!account?.id) throw new Error('No account selected');
-          const lead: LeadInsert = {
-            campaign_id: initialData.campaignId!,
-            bucket_id: initialData.bucketId!,
-            account_id: account.id,
-            email,
-            name: derivedName,
-            first_name: firstName,
-            last_name: lastName,
-            company_name: companyName,
-            website,
-            linkedin_url: linkedinUrl,
-            company_linkedin_url: companyLinkedinUrl,
-            source: initialData?.source || 'CSV Import',
-          };
+        const stats = mapImportJobToCsvResult(job);
+        setImportResult(stats);
+        Alert.alert(
+          'Import complete',
+          `Imported ${(stats.created + stats.updated).toLocaleString()} lead${stats.created + stats.updated === 1 ? '' : 's'}.`,
+        );
+      } else {
+        setImportPhase('sync');
+        setImportProgress({
+          processed: 0,
+          total: leadPayloads.length,
+          message: 'Keep this tab open until import finishes.',
+        });
 
-          if (Object.keys(customData).length > 0) {
-            lead.custom_lead_data = customData;
-          }
-
-          if (email) {
-            lead.global_lead_id = await generateGlobalLeadId(email);
-          }
-
-          return lead;
-        })
-      )).filter((lead): lead is LeadInsert => lead !== null);
-
-      if (leadsToSave.length === 0) {
-        Alert.alert('No leads to import', 'We could not find any rows with data after applying your mappings.');
-        return;
-      }
-
-      const savedLeads = await createLeads(leadsToSave);
-      if (initialData.campaignId && savedLeads.length > 0) {
-        await ensureCampaignEnrollmentsForLeads(
+        const stats = await importCsvLeadsSync(
+          account.id,
           initialData.campaignId,
-          savedLeads.map((lead) => lead.id)
+          leadPayloads,
+          (processed, total) => {
+            setImportProgress({
+              processed,
+              total,
+              message: `Importing ${processed.toLocaleString()} of ${total.toLocaleString()}…`,
+            });
+          },
+        );
+
+        setImportResult(stats);
+        Alert.alert(
+          'Import complete',
+          `Imported ${(stats.created + stats.updated).toLocaleString()} lead${stats.created + stats.updated === 1 ? '' : 's'}.`,
         );
       }
 
-      setImportedCount(savedLeads.length);
-      Alert.alert('Import complete', `Successfully saved ${savedLeads.length} lead${savedLeads.length === 1 ? '' : 's'}.`);
-      handleCloseImportWizard({ preserveData: true });
-      setActiveTab('insights');
-    } catch (error: any) {
+      await loadBucketData();
+      closeImportWizard({ preserveData: true });
+    } catch (error: unknown) {
       console.error('Failed to import leads:', error);
-      Alert.alert('Import failed', error?.message || 'Unable to save leads right now. Please try again.');
+      Alert.alert('Import failed', error instanceof Error ? error.message : 'Unable to save leads right now. Please try again.');
+      setImportPhase('idle');
     } finally {
       setIsSavingImport(false);
     }
   };
 
-  const handleCopy = (value: string, label: string) => {
-    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(value).then(() => {
-        Alert.alert('Copied', `${label} copied to clipboard.`);
-      }).catch(() => {
-        Alert.alert('Copy failed', 'Unable to copy to clipboard.');
-      });
-    } else {
-      Alert.alert('Clipboard', 'Copy to clipboard is available in the web builder.');
-    }
-  };
+  const renderImportProgress = () => {
+    const pct =
+      importProgress.total > 0
+        ? Math.min(100, Math.round((importProgress.processed / importProgress.total) * 100))
+        : 0;
+    const isBackgroundPhase = importPhase === 'importing';
 
-  const handleOpenDocs = () => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.open(docsUrl, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    Alert.alert('Open docs', docsUrl);
-  };
-
-  const renderDetailsTab = () => (
+    return (
       <View className="gap-4">
-        <View>
-          <Text className="text-sm font-instrument-medium mb-2 text-gray-300">
-            Label
+        <View
+          className={`p-3 border rounded-xl ${
+            isBackgroundPhase
+              ? 'border-green-500/40 bg-green-500/10'
+              : 'border-yellow-500/40 bg-yellow-500/10'
+          }`}
+        >
+          <Text
+            className={`text-sm font-instrument-medium ${
+              isBackgroundPhase ? 'text-green-300' : 'text-yellow-200'
+            }`}
+          >
+            {importProgress.message}
           </Text>
-          <TextInput
-            value={label}
-            onChangeText={setLabel}
-            placeholder="Node label"
-            placeholderTextColor="#666"
-            className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
+        </View>
+        <View className="gap-2">
+          <View
             style={{
-              borderColor: '#FFFFFF4D',
-              backgroundColor: '#FFFFFF0D',
-              color: '#FFFFFF',
-              borderWidth: 1,
+              height: 8,
+              borderRadius: 999,
+              backgroundColor: 'rgba(255,255,255,0.08)',
+              overflow: 'hidden',
             }}
-            selectionColor="#FF4D00"
-            underlineColorAndroid="transparent"
-          />
+          >
+            <View
+              style={{
+                width: `${pct}%`,
+                height: '100%',
+                backgroundColor: '#F3440D',
+              }}
+            />
+          </View>
+          <Text className="text-xs text-gray-400">
+            {importProgress.processed.toLocaleString()} of {importProgress.total.toLocaleString()}
+          </Text>
         </View>
-
-      <View className="p-4 border border-white/10 rounded-xl bg-white/5">
-        <Text className="text-sm text-white font-instrument-medium">
-          Lead Source Overview
-        </Text>
-        <Text className="text-xs text-gray-400 mt-2">
-          Use the tabs above to import leads from CSV, connect an API endpoint, and understand the structure of your data.
-        </Text>
+        {importResult ? (
+          <View className="p-3 border border-white/10 rounded-xl bg-white/5">
+            <Text className="text-sm text-white font-instrument-medium">
+              Created {importResult.created.toLocaleString()} · Updated {importResult.updated.toLocaleString()}
+            </Text>
+            {importResult.failed > 0 ? (
+              <Text className="text-xs text-red-300 mt-1">
+                {importResult.failed.toLocaleString()} failed
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
       </View>
-
-      {importedCount !== null && (
-        <View className="p-4 border border-green-500/40 bg-green-500/10 rounded-xl">
-          <Text className="text-sm text-green-300 font-instrument-medium">
-            {importedCount} leads prepared for import
-          </Text>
-          <Text className="text-xs text-green-200/80 mt-1">
-            Switch to Lead Insights to preview example records and field coverage.
-          </Text>
-        </View>
-      )}
-    </View>
-  );
+    );
+  };
 
   const renderCsvStepContent = () => {
+    if (isSavingImport) {
+      return renderImportProgress();
+    }
+
     switch (csvStep) {
       case 0:
         return (
@@ -867,252 +1163,89 @@ function LeadSourceNodeModal({
         );
       case 2:
         return (
-          <View className="gap-4">
-            {importSummary ? (
-              <>
-                <View className="p-3 border border-white/10 rounded-xl bg-white/5">
-                  <Text className="text-sm text-white font-instrument-medium">
-                    {importSummary.totalRows} leads ready
-                  </Text>
-                  <Text className="text-xs text-gray-400 mt-1">
-                    Review the mapping before finalizing the import.
-                  </Text>
-                </View>
-
-                <View className="p-3 border border-white/10 rounded-xl bg-white/5">
-                  <Text className="text-xs text-gray-400 uppercase tracking-[0.2em] mb-2">
-                    Field Mapping
-                  </Text>
-                  {Object.entries(importSummary.mappedFields).length > 0 ? (
-                    Object.entries(importSummary.mappedFields).map(([field, column]) => (
-                      <View key={field} className="flex-row justify-between py-1.5">
-                        <Text className="text-sm text-gray-300 capitalize">{field}</Text>
-                        <Text className="text-sm text-white font-instrument-medium">{column}</Text>
-                      </View>
-                    ))
-                  ) : (
-                    <Text className="text-sm text-gray-400">
-                      No fields mapped yet.
-                    </Text>
-                  )}
-                </View>
-
-                <View className="p-3 border border-white/10 rounded-xl bg-white/5">
-                  <Text className="text-xs text-gray-400 uppercase tracking-[0.2em] mb-2">
-                    Custom Fields
-                  </Text>
-                  {importSummary.customFields.length > 0 ? (
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                      {importSummary.customFields.map(field => (
-                        <View key={field} style={{ borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: 'rgba(255,255,255,0.08)' }}>
-                          <Text style={{ color: '#FFFFFF', fontSize: 12 }}>{field}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text className="text-sm text-gray-400">
-                      No extra fields selected.
-                    </Text>
-                  )}
-                </View>
-
-                {importSummary.unmappedColumns.length > 0 && (
-                  <View className="p-3 border border-yellow-500/40 bg-yellow-500/10 rounded-xl">
-                    <Text className="text-sm text-yellow-200 font-instrument-medium mb-1">
-                      {importSummary.unmappedColumns.length} column{importSummary.unmappedColumns.length === 1 ? '' : 's'} left unmapped
-                    </Text>
-                    <Text className="text-xs text-yellow-200/80">
-                      {importSummary.unmappedColumns.join(', ')}
-                    </Text>
-                  </View>
-                )}
-
-                {importedCount !== null && (
-                  <View className="p-3 border border-green-500/40 bg-green-500/10 rounded-xl">
-                    <Text className="text-sm text-green-300 font-instrument-medium">
-                      Imported {importedCount} lead{importedCount === 1 ? '' : 's'} into this bucket
-                    </Text>
-                    <Text className="text-xs text-green-200/80 mt-1">
-                      Connect downstream workflows to act on the newly added leads.
-                    </Text>
-                  </View>
-                )}
-              </>
-            ) : (
-              <View className="p-3 border border-white/10 rounded-xl bg-white/5">
-                <Text className="text-sm text-gray-300">
-                  Complete the field mapping to review your import.
-                </Text>
-              </View>
-            )}
-          </View>
+          <CsvImportDedupeStep
+            isCompactLayout={isDedupeCompactLayout}
+            filterInCampaignsEnabled={filterInCampaignsEnabled}
+            onFilterInCampaignsChange={handleFilterInCampaignsChange}
+            filterBlockListEnabled={filterBlockListEnabled}
+            onFilterBlockListChange={setFilterBlockListEnabled}
+            selectedDedupeCampaignIds={selectedDedupeCampaignIds}
+            selectedCampaignNames={selectedCampaignNames}
+            onOpenCampaignPicker={() => setShowCampaignPicker(true)}
+            dedupeResult={dedupeResult}
+            dedupePreviewLoading={dedupePreviewLoading}
+            dedupePreviewError={dedupePreviewError}
+          />
+        );
+      case 3:
+        return (
+          <CsvImportReviewStep fileName={csvFileName} summary={reviewSummary} />
         );
       default:
         return null;
     }
   };
 
-  const renderImportTab = () => (
-    <View className="gap-4">
-      <View className="p-4 border border-white/10 rounded-xl bg-white/5 gap-3">
-        <View className="gap-1">
-          <Text className="text-sm text-white font-instrument-medium">
-            CSV Import Wizard
-          </Text>
-          <Text className="text-xs text-gray-400">
-            Launch the step-by-step wizard to upload a CSV, map your fields, and prepare leads for this bucket.
-          </Text>
-        </View>
-        <Button onPress={handleOpenImportWizard}>
-          Start Import
-        </Button>
-      </View>
-
-      {importedCount !== null && (
-        <View className="p-4 border border-green-500/40 bg-green-500/10 rounded-xl">
-          <Text className="text-sm text-green-300 font-instrument-medium">
-            {importedCount} lead{importedCount === 1 ? '' : 's'} imported
-          </Text>
-          <Text className="text-xs text-green-200/80 mt-1">
-            Switch to Insights to preview examples or run another import to add more leads.
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-
-  const renderApiTab = () => (
-    <View className="gap-4">
-      <View className="p-4 border border-brand-orange/30 rounded-xl bg-brand-orange/10">
-        <Text className="text-xs text-brand-orange uppercase tracking-[0.2em] mb-2">
-          Client API
-        </Text>
-        <Text className="text-sm text-white">
-          Use your account API keys from Account Settings and the live Client API docs for request examples, schemas, and authentication details.
-        </Text>
-        <View style={{ flexDirection: 'row', marginTop: 16 }}>
-          <Button size="sm" onPress={handleOpenDocs}>
-            Open API Docs
-          </Button>
-        </View>
-      </View>
-
-      <View className="p-4 border border-white/10 rounded-xl bg-white/5">
-        <Text className="text-xs text-gray-400 uppercase tracking-[0.2em] mb-2">
-          Endpoint URL
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <Text style={{ flex: 1, color: '#FFFFFF', fontSize: 13, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>
-            {endpointUrl}
-          </Text>
-          <Button variant="secondary" size="sm" onPress={() => handleCopy(endpointUrl, 'Endpoint URL')}>
-            Copy
-          </Button>
-        </View>
-        <Text className="text-xs text-gray-400 mt-3">
-          Send a POST request to this campaign endpoint to create or upsert leads. Async imports are also available under `/bulk/async`.
-        </Text>
-      </View>
-
-      <View className="p-4 border border-white/10 rounded-xl bg-white/5">
-        <Text className="text-xs text-gray-400 uppercase tracking-[0.2em] mb-2">
-          Example Request
-        </Text>
-        <View className="bg-black/40 border border-white/10 rounded-lg p-3">
-          <Text
-            style={{
-              fontFamily: 'Menlo, Consolas, monospace',
-              fontSize: 12,
-              lineHeight: 18,
-              color: '#E5E7EB',
-            }}
-          >
-            {payloadExample}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 }}>
-          <Button variant="secondary" size="sm" onPress={() => handleCopy(payloadExample, 'Payload example')}>
-            Copy Payload
-          </Button>
-          <Button onPress={handleOpenDocs}>
-            View Full Docs
-          </Button>
-        </View>
-      </View>
-    </View>
-  );
-
-  const renderInsightsTab = () => (
-    <View className="gap-4">
-      {isLoadingLeads ? (
+  const renderMainContent = () => {
+    if (isLoadingBucket) {
+      return (
         <View className="p-4 border border-white/10 rounded-xl bg-white/5">
-          <Text className="text-sm text-gray-300">
-            Loading insights...
-          </Text>
+          <Text className="text-sm text-gray-300 font-instrument">Loading leads…</Text>
         </View>
-      ) : insightSummary.totalRows === 0 ? (
-        <View className="p-4 border border-white/10 rounded-xl bg-white/5">
-          <Text className="text-sm text-gray-300">
-            No leads found for this campaign.
-          </Text>
-          <Text className="text-xs text-gray-400 mt-2">
-            Import leads via CSV or use the API endpoint to populate data.
-          </Text>
-        </View>
-      ) : (
-        <>
-          <View className="p-4 border border-white/10 rounded-xl bg-white/5">
+      );
+    }
+
+    const leadTotal = leadCount ?? 0;
+    const hasLeads = leadTotal > 0;
+
+    if (!hasLeads) {
+      return (
+        <EmptyState
+          title="No leads yet"
+          description="Import a CSV to add leads to this bucket."
+          actionText="Import leads"
+          onAction={handleOpenImportWizard}
+        />
+      );
+    }
+
+    return (
+      <View className="gap-4">
+        <View className="flex-row flex-wrap items-center justify-between gap-3">
+          <View className="flex-1 min-w-0">
             <Text className="text-sm text-white font-instrument-medium">
-              {dbLeads.length > 0
-                ? `${leadCount ?? dbLeads.length} lead${(leadCount ?? dbLeads.length) === 1 ? '' : 's'} in campaign`
-                : `${insightSummary.totalRows} lead${insightSummary.totalRows === 1 ? '' : 's'} imported in latest upload`}
+              {leadTotal.toLocaleString()} lead{leadTotal === 1 ? '' : 's'} in bucket
             </Text>
-            <Text className="text-xs text-gray-400 mt-2">
-              Showing field coverage across {dbLeads.length > 0 ? 'all' : 'imported'} records.
+            <Text className="text-xs text-gray-400 mt-1 font-instrument">
+              Showing field coverage across imported records.
             </Text>
           </View>
+          <Button onPress={handleOpenImportWizard}>Import more leads</Button>
+        </View>
 
-          <DataTable
-            items={leadsForInsights.map((row, i) => ({ ...row, __rowKey: `row-${i}` })) as (Record<string, string> & { __rowKey: string })[]}
-            columns={insightSummary.fields.map(
-              (f): TableColumn<Record<string, string> & { __rowKey: string }> => {
-                const filled = Math.round(insightSummary.totalRows * (f.percentage / 100));
-                const empty = insightSummary.totalRows - filled;
-                const minFromLabel = Math.ceil(f.field.length * 8);
-                const minWidth = Math.min(
-                  INSIGHTS_COLUMN_MAX_WIDTH,
-                  Math.max(INSIGHTS_COLUMN_MIN_WIDTH, minFromLabel)
-                );
-                return {
-                  key: f.field,
-                  label: f.field,
-                  flex: 0,
-                  minWidth,
-                  maxWidth: INSIGHTS_COLUMN_MAX_WIDTH,
-                  headerStats: { filled, empty },
-                  render: (item) => (
-                    <Text className="text-white font-instrument text-sm" numberOfLines={1}>
-                      {item[f.field] ?? '—'}
-                    </Text>
-                  ),
-                };
-              }
-            )}
-            itemsPerPage={20}
-            emptyMessage="No sample records"
-            getItemKey={(item) => item.__rowKey}
-          />
-        </>
-      )}
-    </View>
-  );
+        <DataTable
+          items={bucketTableRows}
+          columns={bucketTableColumns}
+          itemsPerPage={BUCKET_TABLE_PAGE_SIZE}
+          paginationMode="server"
+          currentPage={tablePage}
+          totalItems={leadTotal}
+          onPageChange={handleTablePageChange}
+          loading={isTableLoading}
+          smoothLoading
+          emptyMessage="No sample records"
+          getItemKey={(item) => item.__rowKey}
+        />
+      </View>
+    );
+  };
 
   const renderImportWizardModal = () => {
     if (!isImportWizardOpen) {
       return null;
     }
 
-    const isLastStep = csvStep === csvSteps.length - 1;
+    const isLastStep = csvStep === csvSteps.length - 1 && !isSavingImport;
 
     const wizardFooter = (
       <View className="flex-row items-center justify-between">
@@ -1157,38 +1290,33 @@ function LeadSourceNodeModal({
     );
 
     return (
-      <BaseModal
-        visible={isImportWizardOpen}
-        onClose={handleCloseImportWizard}
-        title="Import Leads"
-        description="Upload a CSV, match your fields, and review before saving leads to this bucket"
-        footer={wizardFooter}
-        footerMobile={wizardFooterMobile}
-        maxWidth="full"
-        height={Math.round(windowHeight * 0.9)}
-      >
-        <View className="gap-6">
-          <WizardStepIndicator steps={csvSteps} activeIndex={csvStep} wrap />
-
-          {renderCsvStepContent()}
-        </View>
-      </BaseModal>
+      <>
+        <BaseModal
+          visible={isImportWizardOpen}
+          onClose={handleCloseImportWizard}
+          title="Import Leads"
+          description="Upload a CSV, map fields, configure dedupe, and review before importing leads"
+          footer={wizardFooter}
+          footerMobile={wizardFooterMobile}
+          maxWidth="3xl"
+          maxHeight={Math.min(780, Math.round(windowHeight * 0.82))}
+          overlayZIndex={1000}
+        >
+          <CsvImportWizardContentShell>
+            <WizardStepIndicator steps={csvSteps} activeIndex={csvStep} wrap />
+            {renderCsvStepContent()}
+          </CsvImportWizardContentShell>
+        </BaseModal>
+        <CampaignPickerModal
+          visible={showCampaignPicker}
+          onClose={() => setShowCampaignPicker(false)}
+          accountId={account?.id ?? null}
+          selectedCampaignIds={selectedDedupeCampaignIds}
+          onSelectionChange={setSelectedDedupeCampaignIds}
+          overlayZIndex={1100}
+        />
+      </>
     );
-  };
-
-  const renderActiveTab = () => {
-    switch (activeTab) {
-      case 'details':
-        return renderDetailsTab();
-      case 'csv':
-        return renderImportTab();
-      case 'api':
-        return renderApiTab();
-      case 'insights':
-        return renderInsightsTab();
-      default:
-        return null;
-    }
   };
 
   const footer = (
@@ -1196,7 +1324,7 @@ function LeadSourceNodeModal({
       <Button variant="secondary" onPress={onClose}>
         Cancel
       </Button>
-      <Button onPress={handleSave} disabled={!label.trim()}>
+      <Button onPress={handleSave}>
         Save
       </Button>
     </ModalFooter>
@@ -1204,7 +1332,7 @@ function LeadSourceNodeModal({
 
   const footerMobile = (
     <ModalFooter>
-      <Button onPress={handleSave} disabled={!label.trim()}>
+      <Button onPress={handleSave}>
         Save
       </Button>
     </ModalFooter>
@@ -1216,23 +1344,14 @@ function LeadSourceNodeModal({
         visible={visible}
         onClose={onClose}
         title="Configure Lead Source Node"
-        description="Configure CSV imports, API access, and data insights for this lead bucket"
+        description="Import leads from CSV and review bucket data"
         footer={footer}
         footerMobile={footerMobile}
         maxWidth="full"
         height={Math.round(windowHeight * 0.9)}
       >
-        <View className="gap-6">
-          <Tabs
-            tabs={[...leadSourceTabs]}
-            activeTab={activeTab}
-            onTabChange={(id) => setActiveTab(id as TabId)}
-            layout="content"
-          />
-
-          {renderActiveTab()}
-      </View>
-    </BaseModal>
+        {renderMainContent()}
+      </BaseModal>
 
       {renderImportWizardModal()}
     </>

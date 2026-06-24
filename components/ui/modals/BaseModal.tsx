@@ -28,6 +28,8 @@ interface BaseModalProps {
   height?: number;
   /** When true, omits the content area. Use for modals with only title, description, and footer. */
   compact?: boolean;
+  /** Stacking order for nested modals on web (e.g. picker over wizard). */
+  overlayZIndex?: number;
 }
 
 const maxWidthClasses = {
@@ -57,6 +59,7 @@ export function BaseModal({
   maxHeight,
   height,
   compact = false,
+  overlayZIndex,
 }: BaseModalProps) {
   const { width, height: screenHeight } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
@@ -99,7 +102,7 @@ export function BaseModal({
 
   if (isMobile) {
     return (
-      <BottomSheet visible={visible} onClose={handleDismiss}>
+      <BottomSheet visible={visible} onClose={handleDismiss} overlayZIndex={overlayZIndex}>
         <View style={{ flex: 1, minHeight: 0 }}>
           <View className="border-b border-[#2A2A2A] pb-4 mb-4 flex-shrink-0">
             {onBack ? (
@@ -157,9 +160,14 @@ export function BaseModal({
       transparent
       animationType="fade"
       onRequestClose={handleDismiss}
+      {...(overlayZIndex != null ? { style: { zIndex: overlayZIndex } } : {})}
     >
       <Pressable
-        style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
+        style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          ...(overlayZIndex != null ? { zIndex: overlayZIndex } : null),
+        }}
         onPress={handleDismiss}
       >
         <View

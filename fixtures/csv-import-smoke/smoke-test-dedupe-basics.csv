@@ -1,0 +1,14 @@
+Email,First Name,Last Name,Company,Title,Notes
+alice@csv-smoke.furnace.test,Alice,Anderson,Anderson Builders,Owner,KEEP — first row for this email
+ALICE@csv-smoke.furnace.test,Alice,Duplicate,Anderson Builders,Owner,REMOVE — within-file duplicate (case-insensitive)
+bob@csv-smoke.furnace.test,Bob,Baker,Baker Homes,PM,KEEP
+bob@csv-smoke.furnace.test,Bob,Again,Baker Homes,PM,REMOVE — within-file duplicate
+carol@csv-smoke.furnace.test,Carol,Clark,Clark Custom,CEO,KEEP
+dave@csv-smoke.furnace.test,Dave,Davis,Davis Design,Founder,KEEP
+eve@csv-smoke.furnace.test,Eve,Evans,Evans Electric,Ops,KEEP
+blocked@csv-smoke.furnace.test,Blocked,User,Blocked Co,—,REMOVE — add this exact email to block list before import
+frank@other-smoke.furnace.test,Frank,Foster,Foster Framing,—,REMOVE — add domain other-smoke.furnace.test to block list
+grace@csv-smoke.furnace.test,Grace,Garcia,Garcia Group,—,KEEP
+henry@csv-smoke.furnace.test,Henry,Hill,Hill Homes,—,KEEP
+,,,Empty Row Co,—,REMOVE — no email
+invalid-email,Hank,Hill,Hill Homes,—,REMOVE — invalid email (no @)

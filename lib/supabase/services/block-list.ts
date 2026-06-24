@@ -119,37 +119,7 @@ export async function removeBlockEntry(
   }
 }
 
-/**
- * Extract domain from email (part after @). Returns null if malformed.
- */
-function getDomainFromEmail(email: string): string | null {
-  const trimmed = email.trim().toLowerCase();
-  const atIndex = trimmed.indexOf('@');
-  if (atIndex === -1 || atIndex === trimmed.length - 1) return null;
-  return trimmed.slice(atIndex + 1);
-}
-
-/**
- * Check if an email is blocked by any entry in the account's block list.
- * Matches exact email (type='email') or domain (type='domain').
- */
-export function isEmailBlockedByEntries(
-  email: string,
-  entries: BlockListEntry[]
-): boolean {
-  const normalizedEmail = email.trim().toLowerCase();
-  const domain = getDomainFromEmail(email);
-
-  for (const entry of entries) {
-    const entryValue = entry.value.trim().toLowerCase();
-    if (entry.type === 'email') {
-      if (entryValue === normalizedEmail) return true;
-    } else if (entry.type === 'domain' && domain) {
-      if (entryValue === domain) return true;
-    }
-  }
-  return false;
-}
+export { isEmailBlockedByEntries } from '@/lib/leads/block-list-match';
 
 /**
  * Check if an email is blocked for an account. Fetches block list and checks.

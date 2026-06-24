@@ -18,6 +18,7 @@ export {
 export { LeadActivityModal } from './LeadActivityModal';
 export { ScheduleTab } from './ScheduleTab';
 export { ScheduleModal } from './ScheduleModal';
+export { CampaignPickerModal } from './CampaignPickerModal';
 export { MailboxesModal } from './MailboxesModal';
 export { CampaignWebhookOverrideModal } from './CampaignWebhookOverrideModal';
 export type { CampaignWebhookOverrideModalProps } from './CampaignWebhookOverrideModal';

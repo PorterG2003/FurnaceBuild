@@ -75,6 +75,23 @@ npx tsx scripts/seed/index.ts --scenario=campaign-smoke --dry-run
 
 Use a **dedicated** seed campaign id so re-runs do not touch unrelated campaigns; the scenario deletes and recreates leads/enrollments (and linked `message_jobs`) for that campaign id.
 
+### `bucket-insights-smoke` scenario
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `SEED_ACCOUNT_ID` | Yes | Account UUID (`accounts.id`) for the seeded campaign |
+| `SEED_OWNER_USER_ID` | Yes | `users.id` for `campaigns.owner_id` |
+| `SEED_CAMPAIGN_ID` | No | Fixed campaign UUID; defaults to [`constants/bucketInsightsSmoke.ts`](./constants/bucketInsightsSmoke.ts) |
+
+Creates a **draft** campaign named **Bucket Insights Smoke (2500 leads)** with **2,500** leads in the campaign bucket and **predictable column fill rates** for the builder Lead Bucket modal (pagination + coverage headers). See [`fixtures/bucket-insights-smoke/README.md`](../fixtures/bucket-insights-smoke/README.md) for expected counts.
+
+```bash
+npx tsx scripts/seed/index.ts --scenario=bucket-insights-smoke --dry-run
+npx tsx scripts/seed/index.ts --scenario=bucket-insights-smoke
+```
+
+Re-runs delete all leads for the seeded campaign id and import fresh rows.
+
 ### `ooo-mixed-inbox` scenario
 
 | Variable | Required | Description |

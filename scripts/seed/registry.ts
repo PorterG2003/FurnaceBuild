@@ -28,6 +28,7 @@ import {
 import { devDefaultScenarioModule } from './scenarios/dev-default';
 import { platformInvitePreviewSeedModule } from './scenarios/platform-invite-preview';
 import { campaignHtmlDemoSeedModule } from './scenarios/campaign-html-demo';
+import { bucketInsightsSmokeModule } from './scenarios/bucket-insights-smoke';
 
 export const allModules: Record<string, SeedModule> = {
   minimal: minimalModule,
@@ -53,6 +54,7 @@ export const allModules: Record<string, SeedModule> = {
   devDefault_seed: devDefaultScenarioModule,
   platformInvitePreview_seed: platformInvitePreviewSeedModule,
   campaignHtmlDemo_seed: campaignHtmlDemoSeedModule,
+  bucketInsightsSmoke_seed: bucketInsightsSmokeModule,
 };
 
 /**
@@ -68,6 +70,7 @@ export const scenarioModuleIds: Record<string, string[]> = {
   'categorizer-flow': ['categorizerFlow_replies'],
   'smart-handling-flow': ['smartHandlingFlow_liveReplies'],
   'platform-invite-preview': ['platformInvitePreview_seed'],
+  'bucket-insights-smoke': ['bucketInsightsSmoke_seed'],
 };
 
 function collectModuleIdsWithDeps(seedIds: string[]): Set<string> {

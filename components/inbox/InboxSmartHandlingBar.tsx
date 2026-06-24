@@ -2,7 +2,6 @@ import React from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import {
   ArrowPathIcon,
-  ExclamationTriangleIcon,
   LightBulbIcon,
   SparklesIcon,
   XMarkIcon,
@@ -94,14 +93,6 @@ const TONE_STYLES = {
     containerBg: 'rgba(59, 130, 246, 0.10)',
     containerBorder: 'rgba(96, 165, 250, 0.35)',
   },
-  warning: {
-    titleClass: 'text-amber-100',
-    bodyClass: 'text-amber-100/90',
-    accent: '#FBBF24',
-    buttonAccent: '#D97706',
-    containerBg: 'rgba(245, 158, 11, 0.10)',
-    containerBorder: 'rgba(251, 191, 36, 0.35)',
-  },
   ai: {
     titleClass: 'text-sky-100',
     bodyClass: 'text-sky-100/90',
@@ -155,8 +146,6 @@ export function InboxSmartHandlingBar({
             <ArrowPathIcon size={22} color={styles.accent} />
           ) : resolvedTone === 'ai' ? (
             <SparklesIcon size={22} color={styles.accent} />
-          ) : resolvedTone === 'warning' ? (
-            <ExclamationTriangleIcon size={22} color={styles.accent} />
           ) : (
             <LightBulbIcon size={22} color={styles.accent} />
           )}

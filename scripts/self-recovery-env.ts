@@ -104,6 +104,8 @@ export function resolveAmplifySecretParamPathForTarget(
   const explicitPathBySegment: Record<string, string | undefined> = {
     SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY_PARAM_PATH?.trim(),
     RESEND_API_KEY: process.env.RESEND_API_KEY_PARAM_PATH?.trim(),
+    APOLLO_API_KEY: process.env.APOLLO_API_KEY_PARAM_PATH?.trim(),
+    MILLION_VERIFIER_API_KEY: process.env.MILLION_VERIFIER_API_KEY_PARAM_PATH?.trim(),
   };
   const explicitPath = explicitPathBySegment[secretSegment];
   if (explicitPath) {
@@ -133,6 +135,18 @@ export function resolveResendApiKeyParamPathForTarget(
   return resolveAmplifySecretParamPathForTarget(targetEnv, 'RESEND_API_KEY');
 }
 
+export function resolveApolloApiKeyParamPathForTarget(
+  targetEnv: 'prod' | 'dev',
+): string | null {
+  return resolveAmplifySecretParamPathForTarget(targetEnv, 'APOLLO_API_KEY');
+}
+
+export function resolveMillionVerifierApiKeyParamPathForTarget(
+  targetEnv: 'prod' | 'dev',
+): string | null {
+  return resolveAmplifySecretParamPathForTarget(targetEnv, 'MILLION_VERIFIER_API_KEY');
+}
+
 export async function resolveResendApiKey(options?: {
   targetEnv?: 'prod' | 'dev';
   awsRegion?: string;
@@ -157,5 +171,54 @@ export async function resolveResendApiKey(options?: {
 
   throw new Error(
     'Missing RESEND_API_KEY. Set RESEND_API_KEY, RESEND_API_KEY_PARAM_PATH, or DEV_SECRET_SSM_PREFIX / PROD_SECRET_SSM_PREFIX (same Amplify secrets folder as SUPABASE_SECRET_KEY).',
+  );
+}
+
+export async function resolveApolloApiKey(options?: {
+  targetEnv?: 'prod' | 'dev';
+  awsRegion?: string;
+}): Promise<{ apiKey: string; source: string }> {
+  const targetEnv = options?.targetEnv ?? resolveSelfRecoveryTargetEnv();
+  const awsRegion =
+    options?.awsRegion?.trim() ||
+    process.env.AWS_REGION?.trim() ||
+    process.env.CDK_DEFAULT_REGION?.trim() ||
+    'us-west-2';
+
+  const fromEnv = process.env.APOLLO_API_KEY?.trim();
+  if (fromEnv) {
+    return { apiKey: fromEnv, source: 'APOLLO_API_KEY environment variable' };
+  }
+
+  const paramPath = resolveApolloApiKeyParamPathForTarget(targetEnv);
+  if (paramPath) {
+    const apiKey = await fetchSecretFromParameterStore(paramPath, awsRegion);
+    return { apiKey, source: `Parameter Store ${paramPath}` };
+  }
+
+  throw new Error(
+    'Missing APOLLO_API_KEY. Set APOLLO_API_KEY, APOLLO_API_KEY_PARAM_PATH, or DEV_SECRET_SSM_PREFIX / PROD_SECRET_SSM_PREFIX (same Amplify secrets folder as SUPABASE_SECRET_KEY).',
+  );
+}
+
+export async function resolveMillionVerifierApiKey(options?: {
+  targetEnv?: 'prod' | 'dev';
+  awsRegion?: string;
+}): Promise<{ apiKey: string; source: string }> {
+  const targetEnv = options?.targetEnv ?? resolveSelfRecoveryTargetEnv();
+  const awsRegion =
+    options?.awsRegion?.trim() ||
+    process.env.AWS_REGION?.trim() ||
+    process.env.CDK_DEFAULT_REGION?.trim() ||
+    'us-west-2';
+
+  const paramPath = resolveMillionVerifierApiKeyParamPathForTarget(targetEnv);
+  if (paramPath) {
+    const apiKey = await fetchSecretFromParameterStore(paramPath, awsRegion);
+    return { apiKey, source: `Parameter Store ${paramPath}` };
+  }
+
+  throw new Error(
+    'Missing MILLION_VERIFIER_API_KEY. Set MILLION_VERIFIER_API_KEY_PARAM_PATH or DEV_SECRET_SSM_PREFIX / PROD_SECRET_SSM_PREFIX (same Amplify secrets folder as SUPABASE_SECRET_KEY).',
   );
 }

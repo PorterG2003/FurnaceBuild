@@ -20,7 +20,7 @@ test('pending manual classification merges pipeline categorizing hint into one l
   assert.deepEqual(result, {
     kind: 'loading',
     mode: 'manual',
-    tone: 'default',
+    tone: 'info',
     title: 'Smart handling',
     message: 'Classifying the latest reply. An automated campaign reply may send once classification completes.',
     secondaryMessage: null,
@@ -53,7 +53,7 @@ test('complete manual interested classification keeps primary message and adds s
   assert.deepEqual(result, {
     kind: 'manual_actions',
     mode: 'manual',
-    tone: 'default',
+    tone: 'info',
     title: 'Suggested next step',
     message: 'This looks interested.',
     secondaryMessage: 'Your selection determines whether the campaign sends its automated follow-up.',
@@ -92,7 +92,7 @@ test('complete manual OOO classification uses OOO-specific pipeline secondary co
   assert.deepEqual(result, {
     kind: 'manual_actions',
     mode: 'manual',
-    tone: 'default',
+    tone: 'info',
     title: 'Suggested next step',
     message: 'Lead may be out of office until 2026-06-28.',
     secondaryMessage: null,
@@ -127,7 +127,7 @@ test('complete AI classification uses primary message and preparing secondary me
   assert.deepEqual(result, {
     kind: 'ai_info',
     mode: 'ai',
-    tone: 'default',
+    tone: 'ai',
     title: 'AI classification',
     message: 'AI categorized this reply as Interested.',
     secondaryMessage: "The campaign's automated follow-up is being prepared.",
@@ -166,7 +166,7 @@ test('wrong-contact manual message keeps primary copy and adds replace-lead pipe
   assert.deepEqual(result, {
     kind: 'manual_actions',
     mode: 'manual',
-    tone: 'action',
+    tone: 'info',
     title: 'Suggested next step',
     message: 'This reply came from a different contact. Consider replacing the lead.',
     secondaryMessage: 'The campaign may email the wrong contact until the lead is replaced.',
@@ -197,7 +197,7 @@ test('dismissed smart handling falls back to pipeline-only callout while pipelin
 
   assert.deepEqual(result, {
     kind: 'pipeline_only',
-    mode: 'ai',
+    mode: 'manual',
     tone: 'pipeline',
     title: 'Automated reply in progress',
     message: 'Awaiting categorization - an automated reply may send after you categorize.',
@@ -235,7 +235,7 @@ test('closed conversation with active pipeline still shows pipeline-only fallbac
   });
 });
 
-test('complete manual not interested classification uses warning tone', () => {
+test('complete manual not interested classification uses info tone', () => {
   const result = resolveThreadStatusCallout({
     conversationStatus: 'open',
     classificationStatus: 'complete',
@@ -252,7 +252,7 @@ test('complete manual not interested classification uses warning tone', () => {
     dismissedForCurrentView: false,
   });
 
-  assert.equal(result?.tone, 'warning');
+  assert.equal(result?.tone, 'info');
 });
 
 test('returns null when neither smart handling nor pipeline state is eligible', () => {

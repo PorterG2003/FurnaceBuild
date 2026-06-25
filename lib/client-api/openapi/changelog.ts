@@ -1,11 +1,6 @@
-import {
-  CLIENT_API_OPENAPI_VERSION,
-  CLIENT_API_VERSION,
-} from './constants.js';
-
 export function buildChangelogMarkdown(): string {
   return [
-    'Version numbers match `info.version` on the **API Reference** OpenAPI document.',
+    'Version numbers match `info.version` on this API.',
     '',
     'Breaking changes increment the major version. Additive endpoints and fields increment minor. Patch is reserved for documentation-only or non-contract fixes.',
     '',
@@ -16,6 +11,9 @@ export function buildChangelogMarkdown(): string {
     '**Inbox expansion** — triage, outbound messaging, and ops endpoints for programmatic inbox use.',
     '',
     '### Added',
+    '',
+    '- **Webhooks** guide in `/docs` (Guide → Webhooks) with example payloads for every outbound event type',
+    '- Consolidated `/docs` into a single Scalar document with Guide and API sidebar sections',
     '',
     '**Thread list & triage**',
     '',
@@ -78,17 +76,4 @@ export function buildChangelogMarkdown(): string {
     '- Atomic webhooks: `lead.*`, campaign lifecycle, `email.sent`, `reply.received`, `bounce.detected`',
     '- OpenAPI at `/openapi.json`, Scalar UI at `/docs`',
   ].join('\n');
-}
-
-export function buildChangelogOpenApiSpec(baseUrl: string) {
-  return {
-    openapi: CLIENT_API_OPENAPI_VERSION,
-    info: {
-      title: 'Changelog',
-      version: CLIENT_API_VERSION,
-      description: buildChangelogMarkdown(),
-    },
-    servers: [{ url: baseUrl }],
-    paths: {},
-  };
 }

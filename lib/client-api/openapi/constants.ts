@@ -10,7 +10,6 @@ export const BULK_ASYNC_LIMIT = 1000;
 export const MAX_ASYNC_JOBS_PER_ACCOUNT = 3;
 export const IDEMPOTENCY_TTL_HOURS = 24;
 export const API_KEY_PREFIX = 'f_';
-export const WEBHOOK_VERIFY_USER_AGENT = 'Furnace-Webhook-Verify/1.0';
 
 export const IMPORT_JOB_OPERATIONS = [
   'api_lead_import',

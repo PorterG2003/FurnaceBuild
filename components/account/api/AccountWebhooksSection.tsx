@@ -7,7 +7,7 @@ import { Skeleton, useToast } from '@/components/ui/feedback';
 import type { Account } from '@/lib/supabase/types';
 import { fetchFailedWebhookDeliveries } from '@/lib/supabase/services/accounts';
 import type { WebhookDeliveryRow } from '@/hooks/useAccountSettingsData';
-import { parseWebhookEnabledEvents } from './constants';
+import { formatWebhookEventsSummary } from './constants';
 import { ConfigureWebhookModal } from './ConfigureWebhookModal';
 import { FailedWebhookDeliveriesModal } from './FailedWebhookDeliveriesModal';
 
@@ -26,11 +26,33 @@ function truncateUrl(url: string, maxLen = 48): string {
   return `${url.slice(0, maxLen - 1)}…`;
 }
 
-function webhookStatusLabel(account: Account): string {
+function webhookStatusLabel(account: Account, failedCount: number): { label: string; tone: 'neutral' | 'ok' | 'warn' } {
   const url = account.webhook_url?.trim();
-  if (!url) return 'Not configured';
-  if (account.webhook_url_verified_at) return 'Verified';
-  return 'Configured (unverified)';
+  if (!url) return { label: 'Not configured', tone: 'neutral' };
+  if (failedCount > 0) return { label: `Active · ${failedCount} failed`, tone: 'warn' };
+  return { label: 'Active', tone: 'ok' };
+}
+
+function statusToneClasses(tone: 'neutral' | 'ok' | 'warn'): string {
+  switch (tone) {
+    case 'ok':
+      return 'border-green-900/60 bg-green-950/40';
+    case 'warn':
+      return 'border-amber-900/60 bg-amber-950/40';
+    default:
+      return 'border-[#2A2A2A] bg-[#1F1F1F]';
+  }
+}
+
+function statusTextClasses(tone: 'neutral' | 'ok' | 'warn'): string {
+  switch (tone) {
+    case 'ok':
+      return 'text-green-300';
+    case 'warn':
+      return 'text-amber-300';
+    default:
+      return 'text-gray-300';
+  }
 }
 
 function failedDeliveriesSummary(count: number): string {
@@ -59,8 +81,8 @@ export function AccountWebhooksSection({
   const [configureModalVisible, setConfigureModalVisible] = useState(false);
   const [deliveriesModalVisible, setDeliveriesModalVisible] = useState(false);
 
-  const enabledEvents = useMemo(
-    () => parseWebhookEnabledEvents(account.webhook_enabled_events),
+  const eventsSummary = useMemo(
+    () => formatWebhookEventsSummary(account.webhook_enabled_events),
     [account.webhook_enabled_events]
   );
 
@@ -73,6 +95,20 @@ export function AccountWebhooksSection({
     !loading || deliveries.length > 0
       ? failedDeliveries.length
       : (initialFailedDeliveryCount ?? 0);
+
+  const status = webhookStatusLabel(account, displayCount);
+
+  const previewLabels = useMemo(() => {
+    if (eventsSummary.kind === 'all') return [] as string[];
+    if (eventsSummary.kind === 'groups') return eventsSummary.labels.slice(0, 3);
+    return eventsSummary.events.slice(0, 3);
+  }, [eventsSummary]);
+
+  const extraLabelCount = useMemo(() => {
+    if (eventsSummary.kind === 'all') return 0;
+    if (eventsSummary.kind === 'groups') return Math.max(0, eventsSummary.labels.length - 3);
+    return Math.max(0, eventsSummary.events.length - 3);
+  }, [eventsSummary]);
 
   const refreshDeliveries = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -103,8 +139,8 @@ export function AccountWebhooksSection({
     await refreshDeliveries({ silent: true });
   };
 
-  const previewEvents = enabledEvents.slice(0, 3);
-  const extraEventCount = enabledEvents.length - previewEvents.length;
+  const previewEvents = previewLabels;
+  const extraEventCount = extraLabelCount;
 
   return (
     <Card variant={cardVariant} className={cardClassName ?? ''}>
@@ -131,9 +167,9 @@ export function AccountWebhooksSection({
       <View className="mb-5 rounded-xl border border-[#2A2A2A] bg-[#141414] p-3 gap-3">
         <View className="flex-row items-center justify-between gap-3">
           <Text className="text-white text-sm font-instrument-medium">Account webhook</Text>
-          <View className="rounded-full border border-[#2A2A2A] bg-[#1F1F1F] px-2.5 py-1">
-            <Text className="text-[11px] text-gray-300 font-instrument-medium">
-              {webhookStatusLabel(account)}
+          <View className={`rounded-full border px-2.5 py-1 ${statusToneClasses(status.tone)}`}>
+            <Text className={`text-[11px] font-instrument-medium ${statusTextClasses(status.tone)}`}>
+              {status.label}
             </Text>
           </View>
         </View>
@@ -151,16 +187,16 @@ export function AccountWebhooksSection({
         </View>
         <View>
           <Text className="text-xs text-gray-500 font-instrument mb-1">Events</Text>
-          {enabledEvents.length === 0 ? (
-            <Text className="text-sm text-gray-400 font-instrument">None selected</Text>
+          {eventsSummary.kind === 'all' ? (
+            <Text className="text-sm text-gray-400 font-instrument">All events</Text>
           ) : (
             <View className="flex-row flex-wrap gap-1.5">
-              {previewEvents.map((event) => (
+              {previewEvents.map((label) => (
                 <View
-                  key={event}
+                  key={label}
                   className="rounded-full border border-[#2A2A2A] bg-[#1F1F1F] px-2 py-0.5"
                 >
-                  <Text className="text-[11px] text-gray-300 font-instrument">{event}</Text>
+                  <Text className="text-[11px] text-gray-300 font-instrument">{label}</Text>
                 </View>
               ))}
               {extraEventCount > 0 ? (

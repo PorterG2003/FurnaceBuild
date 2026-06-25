@@ -103,13 +103,17 @@ async function main() {
     assert.equal(health.body.db, 'ok');
     console.log('[live-client-api] health check passed');
 
-    const changelog = await requestJson<{ info: { title: string; version: string }; paths: Record<string, unknown> }>(
-      `${baseUrl}/openapi/changelog.json`,
-    );
-    assert.equal(changelog.status, 200);
-    assert.equal(changelog.body.info.title, 'Changelog');
-    assert.equal(Object.keys(changelog.body.paths).length, 0);
-    console.log('[live-client-api] changelog document check passed');
+    const openapi = await requestJson<{
+      info: { title: string; version: string };
+      paths: Record<string, unknown>;
+      'x-tagGroups': Array<{ name: string; tags: string[] }>;
+    }>(`${baseUrl}/openapi.json`);
+    assert.equal(openapi.status, 200);
+    assert.equal(openapi.body.info.title, 'Furnace Client API');
+    assert.ok('/documentation/changelog' in openapi.body.paths);
+    assert.ok('/documentation/webhooks/email-activity' in openapi.body.paths);
+    assert.ok(openapi.body['x-tagGroups'].some((group) => group.name === 'Guide'));
+    console.log('[live-client-api] openapi guide paths check passed');
 
     const graph = await harness.campaignHarness.createCampaignGraph({
       name: 'Client API Live Smoke',
@@ -122,7 +126,6 @@ async function main() {
     const apiKey = await harness.createApiKey('live-smoke');
     console.log(`[live-client-api] created API key ${apiKey.id}`);
 
-    const verifiedAt = new Date().toISOString();
     const signingSecret = `whsec_${crypto.randomUUID().replace(/-/g, '')}`;
     const { error: webhookConfigError } = await harness.supabase
       .from('accounts')
@@ -130,8 +133,7 @@ async function main() {
         webhook_url: webhookUrl,
         webhook_signing_secret: signingSecret,
         webhook_enabled_events: ['lead.created'],
-        webhook_url_verified_at: verifiedAt,
-        updated_at: verifiedAt,
+        updated_at: new Date().toISOString(),
       } as never)
       .eq('id', harness.accountId);
     if (webhookConfigError) {

@@ -30,6 +30,8 @@ interface BaseModalProps {
   compact?: boolean;
   /** Stacking order for nested modals on web (e.g. picker over wizard). */
   overlayZIndex?: number;
+  /** With maxHeight: shrink to content and scroll when needed instead of pinning dialog to maxHeight. */
+  fitContent?: boolean;
 }
 
 const maxWidthClasses = {
@@ -60,6 +62,7 @@ export function BaseModal({
   height,
   compact = false,
   overlayZIndex,
+  fitContent = false,
 }: BaseModalProps) {
   const { width, height: screenHeight } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
@@ -77,9 +80,11 @@ export function BaseModal({
       : dialogMaxHeight != null
         ? { maxHeight: dialogMaxHeight }
         : {};
-  /** Desktop modal: `maxHeight` without `height` — pin dialog height and flex the body so footer stays inside the frame. */
+  /** Desktop modal: maxHeight without height or fitContent — pin dialog height and flex the body. */
   const fillMaxHeightColumn =
-    maxHeight != null && !stretchContent && !compact && dialogMaxHeight != null;
+    maxHeight != null && !stretchContent && !compact && !fitContent && dialogMaxHeight != null;
+  const fitContentScrollMaxHeight =
+    fitContent && dialogMaxHeight != null ? Math.max(160, dialogMaxHeight - 200) : undefined;
   const dialogRef = useRef<View>(null);
   const webKeyboardInset = useVisualViewportKeyboardInset();
   const handleDismiss = useCallback(() => {
@@ -132,7 +137,7 @@ export function BaseModal({
               style={{ flex: 1, minHeight: 0 }}
               contentContainerStyle={{
                 paddingBottom: ((footerMobile ?? footer) ? 12 : 0) + (webKeyboardInset > 0 ? webKeyboardInset : 0),
-                flexGrow: 1,
+                flexGrow: fitContent ? 0 : 1,
                 width: '100%',
                 maxWidth: '100%',
               }}
@@ -240,7 +245,7 @@ export function BaseModal({
               >
                 {maxHeight != null && !stretchContent ? (
                   <ScrollView
-                    style={{ flex: 1 }}
+                    style={fillMaxHeightColumn ? { flex: 1 } : fitContentScrollMaxHeight != null ? { maxHeight: fitContentScrollMaxHeight } : undefined}
                     contentContainerStyle={{
                       paddingBottom: footer ? 12 : 0,
                       flexGrow: fillMaxHeightColumn ? 1 : 0,

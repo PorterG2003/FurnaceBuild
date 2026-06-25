@@ -4,6 +4,7 @@ import {
   IMPORT_JOB_OPERATIONS,
   MAX_ASYNC_JOBS_PER_ACCOUNT,
 } from './constants.js';
+import { buildGuidePaths } from './guidePaths.js';
 import { parameterRef, responseRef, schemaRef } from './schemas.js';
 
 function rateLimitHeaders() {
@@ -50,6 +51,7 @@ function jsonRequestBody(schemaName: string, example?: unknown) {
 
 export function buildClientApiPaths() {
   return {
+    ...buildGuidePaths(),
     '/health': {
       get: {
         operationId: 'getHealth',
@@ -98,31 +100,12 @@ export function buildClientApiPaths() {
         },
       },
     },
-    '/openapi/changelog.json': {
-      get: {
-        operationId: 'getChangelogOpenApiDocument',
-        tags: ['Meta'],
-        summary: 'Changelog document',
-        description: 'Returns the Client API changelog as a minimal OpenAPI document for Scalar docs.',
-        security: [],
-        responses: {
-          200: {
-            description: 'Changelog OpenAPI document.',
-            content: {
-              'application/json': {
-                schema: schemaRef('OpenApiDocument'),
-              },
-            },
-          },
-        },
-      },
-    },
     '/docs': {
       get: {
         operationId: 'getDocs',
         tags: ['Meta'],
         summary: 'Scalar docs',
-        description: 'Returns the hosted Scalar API reference UI with **API Reference** and **Changelog** documents.',
+        description: 'Returns the hosted Scalar API reference UI with **Guide** and **API** sections in the sidebar.',
         security: [],
         responses: {
           200: {

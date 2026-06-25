@@ -1,10 +1,6 @@
-import crypto from 'node:crypto';
 import type { SQSBatchResponse, SQSEvent } from 'aws-lambda';
 import { createServiceRoleClient } from '../../../lib/client-api/service-role.js';
-
-function buildSignature(secret: string, body: string): string {
-  return `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`;
-}
+import { deliverWebhookPost } from '../../../lib/client-api/webhooks/deliverWebhookPost.js';
 
 export async function processWebhookEventById(eventId: string): Promise<void> {
   const supabase = createServiceRoleClient();
@@ -18,7 +14,7 @@ export async function processWebhookEventById(eventId: string): Promise<void> {
 
   const { data: account, error: accountError } = await supabase
     .from('accounts')
-    .select('webhook_url, webhook_signing_secret, webhook_enabled_events, webhook_url_verified_at')
+    .select('webhook_url, webhook_signing_secret, webhook_enabled_events')
     .eq('id', evt.account_id)
     .maybeSingle();
   if (accountError) throw new Error(`Failed to load account webhook settings: ${accountError.message}`);
@@ -26,7 +22,7 @@ export async function processWebhookEventById(eventId: string): Promise<void> {
   const { data: campaign } = evt.campaign_id
     ? await supabase
         .from('campaigns')
-        .select('webhook_url_override, webhook_signing_secret_override, webhook_enabled_events_override, webhook_url_override_verified_at')
+        .select('webhook_url_override, webhook_signing_secret_override, webhook_enabled_events_override')
         .eq('id', evt.campaign_id)
         .maybeSingle()
     : { data: null };
@@ -41,16 +37,10 @@ export async function processWebhookEventById(eventId: string): Promise<void> {
   if (enabledEvents.length > 0 && !enabledEvents.includes(evt.event_type)) {
     return;
   }
-  if (campaign?.webhook_url_override && !campaign?.webhook_url_override_verified_at) return;
-  if (!campaign?.webhook_url_override && !account?.webhook_url_verified_at) return;
   const secret = (campaign?.webhook_signing_secret_override || account?.webhook_signing_secret || '').trim();
-  const payload = {
-    id: evt.id,
-    type: evt.event_type,
-    occurred_at: new Date().toISOString(),
-    data: evt.payload,
-  };
-  const requestBody = JSON.stringify(payload);
+  const payload = evt.payload && typeof evt.payload === 'object'
+    ? (evt.payload as Record<string, unknown>)
+    : {};
 
   const { data: delivery, error: deliveryError } = await supabase
     .from('webhook_deliveries')
@@ -62,7 +52,12 @@ export async function processWebhookEventById(eventId: string): Promise<void> {
       event_type: evt.event_type,
       status: 'sending',
       attempt_count: 0,
-      request_body: payload,
+      request_body: {
+        id: evt.id,
+        type: evt.event_type,
+        occurred_at: new Date().toISOString(),
+        data: payload,
+      },
       last_attempt_at: new Date().toISOString(),
     } as never)
     .select('*')
@@ -76,40 +71,38 @@ export async function processWebhookEventById(eventId: string): Promise<void> {
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetch(endpointUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Furnace-Event': evt.event_type,
-          'X-Furnace-Delivery': delivery.id,
-          ...(secret ? { 'X-Furnace-Signature': buildSignature(secret, requestBody) } : {}),
-        },
-        body: requestBody,
+      const result = await deliverWebhookPost({
+        endpointUrl,
+        signingSecret: secret || undefined,
+        eventType: evt.event_type,
+        payload,
+        deliveryId: delivery.id,
+        eventId: evt.id,
       });
-      lastStatus = response.status;
-      responseBody = await response.text();
-      if (response.ok) {
+      lastStatus = result.status;
+      responseBody = result.responseBody;
+      if (result.ok) {
         delivered = true;
         await supabase
           .from('webhook_deliveries')
           .update({
             status: 'delivered',
             attempt_count: attempt,
-            response_status: response.status,
-            response_body: responseBody.slice(0, 4000),
+            response_status: result.status,
+            response_body: result.responseBody.slice(0, 4000),
             delivered_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           } as never)
           .eq('id', delivery.id);
         break;
       }
-      lastError = `HTTP ${response.status}`;
+      lastError = `HTTP ${result.status}`;
       await supabase
         .from('webhook_deliveries')
         .update({
           attempt_count: attempt,
-          response_status: response.status,
-          response_body: responseBody.slice(0, 4000),
+          response_status: result.status,
+          response_body: result.responseBody.slice(0, 4000),
           error: lastError,
           updated_at: new Date().toISOString(),
         } as never)

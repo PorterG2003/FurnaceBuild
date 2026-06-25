@@ -1,5 +1,6 @@
 import outputs from '@/amplify_outputs.json';
 import { getAccessToken } from '@/lib/supabase/client';
+import type { WebhookEventType } from '@/lib/client-api/webhooks/webhookEvents';
 
 const custom = (outputs as { custom?: { clientApiUrl?: string } }).custom;
 
@@ -14,20 +15,30 @@ export function getClientApiBaseUrl(): string | null {
   return custom?.clientApiUrl?.replace(/\/$/, '') ?? null;
 }
 
-export async function verifyWebhookUrl(params: {
+export type SendTestWebhookResult = {
+  success: boolean;
+  status: number;
+  response_body: string;
+  event_type: string;
+  request_body: Record<string, unknown>;
+};
+
+export async function sendTestWebhook(params: {
   accountId: string;
   campaignId?: string | null;
-  url: string;
-}): Promise<{ verified: boolean; status: number; token: string; response_body: string }> {
+  url?: string;
+  signingSecret?: string;
+  eventType?: WebhookEventType;
+}): Promise<SendTestWebhookResult> {
   const token = await getAccessToken();
   if (!token) {
-    throw new Error('You must be signed in to verify webhook URLs.');
+    throw new Error('You must be signed in to send test webhooks.');
   }
   const clientApiUrl = getClientApiBaseUrl();
   if (!clientApiUrl) {
     throw new Error('Client API URL is not configured in amplify outputs.');
   }
-  const response = await fetch(`${clientApiUrl}/internal/webhook/verify`, {
+  const response = await fetch(`${clientApiUrl}/internal/webhook/test`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -37,7 +48,15 @@ export async function verifyWebhookUrl(params: {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok && !payload?.data) {
-    throw new Error(payload?.error?.message || 'Webhook verification failed.');
+    throw new Error(payload?.error?.message || 'Test webhook delivery failed.');
   }
-  return payload.data as { verified: boolean; status: number; token: string; response_body: string };
+  return payload.data as SendTestWebhookResult;
+}
+
+export function isValidHttpsWebhookUrl(url: string): boolean {
+  try {
+    return new URL(url.trim()).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }

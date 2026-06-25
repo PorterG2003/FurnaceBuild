@@ -1,0 +1,79 @@
+import crypto from 'node:crypto';
+
+export type WebhookEnvelope = {
+  id: string;
+  type: string;
+  occurred_at: string;
+  data: Record<string, unknown>;
+};
+
+export function buildWebhookSignature(secret: string, body: string): string {
+  return `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`;
+}
+
+export function buildWebhookEnvelope(
+  eventType: string,
+  data: Record<string, unknown>,
+  eventId?: string,
+): WebhookEnvelope {
+  return {
+    id: eventId ?? crypto.randomUUID(),
+    type: eventType,
+    occurred_at: new Date().toISOString(),
+    data,
+  };
+}
+
+export function isValidHttpsWebhookUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export async function deliverWebhookPost(params: {
+  endpointUrl: string;
+  signingSecret?: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  deliveryId?: string;
+  eventId?: string;
+}): Promise<{
+  ok: boolean;
+  status: number;
+  responseBody: string;
+  requestBody: string;
+  envelope: WebhookEnvelope;
+}> {
+  const envelope = buildWebhookEnvelope(params.eventType, params.payload, params.eventId);
+  const requestBody = JSON.stringify(envelope);
+  const secret = params.signingSecret?.trim() ?? '';
+  const deliveryId = params.deliveryId ?? crypto.randomUUID();
+
+  const response = await fetch(params.endpointUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Furnace-Event': params.eventType,
+      'X-Furnace-Delivery': deliveryId,
+      ...(secret ? { 'X-Furnace-Signature': buildWebhookSignature(secret, requestBody) } : {}),
+    },
+    body: requestBody,
+  });
+
+  let responseBody = '';
+  try {
+    responseBody = await response.text();
+  } catch {
+    responseBody = '';
+  }
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    responseBody,
+    requestBody,
+    envelope,
+  };
+}

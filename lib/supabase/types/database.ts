@@ -58,7 +58,6 @@ export interface Database {
           webhook_url: string | null;
           webhook_signing_secret: string | null;
           webhook_enabled_events: Json;
-          webhook_url_verified_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -70,7 +69,6 @@ export interface Database {
           webhook_url?: string | null;
           webhook_signing_secret?: string | null;
           webhook_enabled_events?: Json;
-          webhook_url_verified_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -82,7 +80,6 @@ export interface Database {
           webhook_url?: string | null;
           webhook_signing_secret?: string | null;
           webhook_enabled_events?: Json;
-          webhook_url_verified_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -349,7 +346,6 @@ export interface Database {
           webhook_url_override: string | null;
           webhook_signing_secret_override: string | null;
           webhook_enabled_events_override: Json | null;
-          webhook_url_override_verified_at: string | null;
           current_flow_version_number: number;
           deleted_at: string | null;
           created_at: string;
@@ -374,7 +370,6 @@ export interface Database {
           webhook_url_override?: string | null;
           webhook_signing_secret_override?: string | null;
           webhook_enabled_events_override?: Json | null;
-          webhook_url_override_verified_at?: string | null;
           current_flow_version_number?: number;
           deleted_at?: string | null;
           created_at?: string;
@@ -399,7 +394,6 @@ export interface Database {
           webhook_url_override?: string | null;
           webhook_signing_secret_override?: string | null;
           webhook_enabled_events_override?: Json | null;
-          webhook_url_override_verified_at?: string | null;
           current_flow_version_number?: number;
           deleted_at?: string | null;
           created_at?: string;

@@ -37,6 +37,24 @@ export function webhookEventsFromGroupsAndLegacy(
 
 export const WEBHOOK_EVENT_GROUP_ITEMS = WEBHOOK_EVENT_GROUP_SELECT_ITEMS;
 
+export type WebhookEventsSummary =
+  | { kind: 'all' }
+  | { kind: 'groups'; labels: string[] }
+  | { kind: 'events'; events: WebhookEventType[] };
+
+export function formatWebhookEventsSummary(raw: unknown): WebhookEventsSummary {
+  const events = parseWebhookEnabledEvents(raw);
+  if (events.length === 0) return { kind: 'all' };
+  const groupIds = parseWebhookGroupIds(raw);
+  if (groupIds.length > 0) {
+    const labels = groupIds
+      .map((id) => WEBHOOK_EVENT_GROUP_ITEMS.find((group) => group.value === id)?.label)
+      .filter((label): label is string => Boolean(label));
+    if (labels.length > 0) return { kind: 'groups', labels };
+  }
+  return { kind: 'events', events };
+}
+
 /** @deprecated Use WEBHOOK_EVENT_GROUP_ITEMS for grouped picker. */
 export const WEBHOOK_EVENT_SELECT_ITEMS = WEBHOOK_EVENT_OPTIONS.map((event) => ({
   value: event,

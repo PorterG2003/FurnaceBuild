@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CLIENT_API_VERSION, DEFAULT_ALLOWED_WEBHOOK_EVENTS } from '../../client-api/openapi/constants.js';
-import { buildChangelogOpenApiSpec } from '../../client-api/openapi/changelog.js';
 import { buildClientApiOpenApiSpec } from '../../client-api/openapi/spec.js';
+import {
+  buildWebhookSamplePreview,
+  WEBHOOK_DOC_SAMPLE_CONTEXT,
+} from '../../client-api/webhooks/webhookTestSamples.js';
 import {
   ClientApiDbHarness,
   createClientApiTestNamespace,
@@ -12,6 +15,7 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   const spec = buildClientApiOpenApiSpec('https://api.example.com') as {
     info: { description: string };
     tags: Array<{ name: string; description: string }>;
+    'x-tagGroups': Array<{ name: string; tags: string[] }>;
     components: {
       schemas: Record<string, unknown>;
       parameters: Record<string, unknown>;
@@ -24,11 +28,21 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   assert.match(spec.info.description, /X-RateLimit-Limit/);
   assert.match(spec.info.description, /Idempotency-Key/);
   assert.match(spec.info.description, /Smartlead campaigns are read-only/);
-  assert.match(spec.info.description, /Changelog.*sidebar/);
+  assert.match(spec.info.description, /Guide → Changelog/);
+  assert.match(spec.info.description, /Guide → Webhooks/);
 
+  assert.ok(spec.tags.some((tag) => tag.name === 'Changelog'));
+  assert.ok(spec.tags.some((tag) => tag.name === 'Webhooks'));
   assert.ok(spec.tags.some((tag) => tag.name === 'Campaigns'));
   assert.ok(spec.tags.some((tag) => tag.name === 'Inbox'));
   assert.match(spec.info.description, /Inbox message jobs/);
+
+  const guideGroup = spec['x-tagGroups'].find((group) => group.name === 'Guide');
+  const apiGroup = spec['x-tagGroups'].find((group) => group.name === 'API');
+  assert.ok(guideGroup);
+  assert.deepEqual(guideGroup?.tags, ['Changelog', 'Webhooks']);
+  assert.ok(apiGroup?.tags.includes('Campaigns'));
+  assert.ok(apiGroup?.tags.includes('Meta'));
 
   assert.ok('LeadCreate' in spec.components.schemas);
   assert.ok('ThreadUpdate' in spec.components.schemas);
@@ -54,9 +68,15 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   assert.ok(DEFAULT_ALLOWED_WEBHOOK_EVENTS.includes('lead.added_to_campaign.completed'));
 
   const expectedOperations: Record<string, string[]> = {
+    '/documentation/changelog': ['get'],
+    '/documentation/webhooks': ['get'],
+    '/documentation/webhooks/lead-added-updated': ['get'],
+    '/documentation/webhooks/lead-removed': ['get'],
+    '/documentation/webhooks/enrollment-pause-resume': ['get'],
+    '/documentation/webhooks/campaign-status': ['get'],
+    '/documentation/webhooks/email-activity': ['get'],
     '/health': ['get'],
     '/openapi.json': ['get'],
-    '/openapi/changelog.json': ['get'],
     '/docs': ['get'],
     '/v1/campaigns': ['get'],
     '/v1/campaign-tags': ['get', 'post'],
@@ -117,7 +137,8 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
 
       const isMutating = method === 'post' || method === 'patch';
       const skipRequestBody =
-        path === '/v1/campaigns/{id}/pause'
+        path.startsWith('/documentation/')
+        || path === '/v1/campaigns/{id}/pause'
         || path === '/v1/campaigns/{id}/stop'
         || path === '/v1/campaigns/{id}/resume'
         || path === '/v1/message-jobs/{id}/cancel'
@@ -130,22 +151,32 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   }
 });
 
-test('client api changelog openapi document is published for scalar sidebar', () => {
-  const changelog = buildChangelogOpenApiSpec('https://api.example.com') as {
-    openapi: string;
-    info: { title: string; version: string; description: string };
-    paths: Record<string, unknown>;
-    servers: Array<{ url: string }>;
+test('client api guide documentation pages include webhook examples', () => {
+  const spec = buildClientApiOpenApiSpec('https://api.example.com') as {
+    paths: Record<string, { get?: { description?: string } }>;
   };
 
-  assert.equal(changelog.openapi, '3.1.0');
-  assert.equal(changelog.info.title, 'Changelog');
-  assert.equal(changelog.info.version, CLIENT_API_VERSION);
-  assert.equal(Object.keys(changelog.paths).length, 0);
-  assert.equal(changelog.servers[0]?.url, 'https://api.example.com');
-  assert.match(changelog.info.description, /Breaking changes increment the major version/);
-  assert.match(changelog.info.description, /## 1\.2\.0/);
-  assert.match(changelog.info.description, /Inbox expansion/);
+  const changelog = spec.paths['/documentation/changelog']?.get?.description ?? '';
+  assert.match(changelog, /Breaking changes increment the major version/);
+  assert.match(changelog, /## 1\.2\.0/);
+
+  const webhooksOverview = spec.paths['/documentation/webhooks']?.get?.description ?? '';
+  assert.match(webhooksOverview, /Quick start/);
+  assert.match(webhooksOverview, /Verifying signatures/);
+
+  const emailActivity = spec.paths['/documentation/webhooks/email-activity']?.get?.description ?? '';
+  assert.match(emailActivity, /Documentation only — this path is not callable/);
+  assert.match(emailActivity, /`email.sent`/);
+  assert.match(emailActivity, /`reply.received`/);
+  assert.match(emailActivity, /`bounce.detected`/);
+
+  const liveEmailSentExample = buildWebhookSamplePreview(
+    'email.sent',
+    WEBHOOK_DOC_SAMPLE_CONTEXT,
+    { includeTestFlag: false },
+  );
+  assert.ok(emailActivity.includes(liveEmailSentExample));
+  assert.doesNotMatch(liveEmailSentExample, /"test": true/);
 });
 
 test('client api exposes a public openapi contract and health endpoint', async () => {
@@ -164,14 +195,17 @@ test('client api exposes a public openapi contract and health endpoint', async (
     assert.equal(openapi.status, 200);
     const spec = await openapi.json() as {
       openapi: string;
-      paths: Record<string, Record<string, { requestBody?: unknown; responses?: Record<string, unknown> }>>;
+      paths: Record<string, Record<string, { requestBody?: unknown; responses?: Record<string, unknown>; description?: string }>>;
       info: { title: string; description: string };
       components: { schemas: Record<string, unknown> };
+      'x-tagGroups': Array<{ name: string; tags: string[] }>;
     };
     assert.equal(spec.openapi, '3.1.0');
     assert.equal(spec.info.title, 'Furnace Client API');
     assert.equal(spec.info.version, CLIENT_API_VERSION);
     assert.ok('/v1/campaigns' in spec.paths);
+    assert.ok('/documentation/changelog' in spec.paths);
+    assert.ok('/documentation/webhooks/email-activity' in spec.paths);
     assert.ok('/v1/campaigns/{id}/leads/bulk/async' in spec.paths);
     assert.ok('/v1/jobs' in spec.paths);
     assert.ok('/v1/people' in spec.paths);
@@ -180,17 +214,17 @@ test('client api exposes a public openapi contract and health endpoint', async (
     assert.ok('LeadCreate' in spec.components.schemas);
     assert.ok(spec.paths['/v1/campaigns/{id}/leads'].post?.requestBody);
     assert.ok(spec.paths['/v1/threads/{id}/reply'].post?.responses?.['202']);
+    assert.ok(spec['x-tagGroups'].some((group) => group.name === 'Guide'));
+    assert.match(
+      spec.paths['/documentation/webhooks/email-activity']?.get?.description ?? '',
+      /"type": "email.sent"/,
+    );
 
-    const changelog = await harness.request('/openapi/changelog.json');
-    assert.equal(changelog.status, 200);
-    const changelogSpec = await changelog.json() as {
-      info: { title: string; version: string; description: string };
-      paths: Record<string, unknown>;
-    };
-    assert.equal(changelogSpec.info.title, 'Changelog');
-    assert.equal(changelogSpec.info.version, CLIENT_API_VERSION);
-    assert.equal(Object.keys(changelogSpec.paths).length, 0);
-    assert.match(changelogSpec.info.description, /## 1\.2\.0/);
+    const removedChangelog = await harness.request('/openapi/changelog.json');
+    assert.equal(removedChangelog.status, 404);
+
+    const removedWebhooks = await harness.request('/openapi/webhooks.json');
+    assert.equal(removedWebhooks.status, 404);
   } finally {
     await harness.cleanup();
   }

@@ -35,7 +35,7 @@ function DedupePreviewPanel({
   selectedCampaignNames: string[];
 }) {
   if (dedupePreviewLoading) {
-    return <WorkbenchBulkReviewSkeleton metricCount={5} />;
+    return <WorkbenchBulkReviewSkeleton metricCount={5} showHero />;
   }
 
   const stats = dedupeResult?.stats;

@@ -973,23 +973,37 @@ export function DataTable<T>({
               <View
                 className="flex-row border-b border-[#2A2A2A] bg-[#1F1F1F]"
               >
-                {Array.from({ length: skeletonColumnCount }).map((_, i) => (
-                  <View
-                    key={i}
-                    className="py-2 justify-center"
-                    style={{
-                      width: i === 0 && selectable ? SELECT_COLUMN_WIDTH : undefined,
-                      ...(i === 0 && selectable
-                        ? {}
-                        : getColumnLayoutStyle(columns[selectable ? i - 1 : i], selectable ? i - 1 : i)),
-                      paddingHorizontal: i === 0 && selectable ? SELECT_COLUMN_PADDING_X : undefined,
-                      paddingLeft: i === 0 && !selectable ? OUTER_EDGE_PADDING_X : undefined,
-                      paddingRight: i === skeletonColumnCount - 1 && !selectable ? OUTER_EDGE_PADDING_X : undefined,
-                    }}
-                  >
-                    <Skeleton style={{ height: 14, width: i === 0 && selectable ? 20 : 70, borderRadius: 4 }} />
-                  </View>
-                ))}
+                {Array.from({ length: skeletonColumnCount }).map((_, i) => {
+                  const isSelectColumn = i === 0 && selectable;
+                  const column = isSelectColumn ? null : columns[selectable ? i - 1 : i];
+                  const showStatsBar = !isSelectColumn && hasAnyHeaderStats && column?.headerStats != null;
+
+                  return (
+                    <View
+                      key={i}
+                      className="py-2 justify-center"
+                      style={{
+                        width: isSelectColumn ? SELECT_COLUMN_WIDTH : undefined,
+                        ...(isSelectColumn
+                          ? {}
+                          : getColumnLayoutStyle(columns[selectable ? i - 1 : i], selectable ? i - 1 : i)),
+                        paddingHorizontal: isSelectColumn ? SELECT_COLUMN_PADDING_X : undefined,
+                        paddingLeft: i === 0 && !selectable ? OUTER_EDGE_PADDING_X : undefined,
+                        paddingRight: i === skeletonColumnCount - 1 && !selectable ? OUTER_EDGE_PADDING_X : undefined,
+                        minHeight: showStatsBar ? 44 : undefined,
+                      }}
+                    >
+                      <Skeleton
+                        style={{ height: 14, width: isSelectColumn ? 20 : 70, borderRadius: 4 }}
+                      />
+                      {showStatsBar ? (
+                        <View style={{ height: 4, marginTop: HEADER_BAR_SPACING }}>
+                          <Skeleton style={{ width: '50%', height: 4, borderRadius: 2 }} />
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
               {Array.from({ length: skeletonRowCount }).map((_, rowIndex) => (
                 <View

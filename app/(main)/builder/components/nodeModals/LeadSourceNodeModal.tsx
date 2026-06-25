@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, Platform, Alert, useWindowDimensions } fr
 import Papa from 'papaparse';
 import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { EmptyState } from '@/components/ui/feedback';
+import { LeadSourceBucketSkeleton } from '@/components/skeletons';
 import { WizardStepIndicator } from '@/components/ui/wizard';
 import { Button } from '@/components/ui/button';
 import { DataTable, type TableColumn } from '@/components/ui/DataTable';
@@ -1188,11 +1189,7 @@ function LeadSourceNodeModal({
 
   const renderMainContent = () => {
     if (isLoadingBucket) {
-      return (
-        <View className="p-4 border border-white/10 rounded-xl bg-white/5">
-          <Text className="text-sm text-gray-300 font-instrument">Loading leads…</Text>
-        </View>
-      );
+      return <LeadSourceBucketSkeleton />;
     }
 
     const leadTotal = leadCount ?? 0;

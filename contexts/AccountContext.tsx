@@ -28,6 +28,9 @@ import {
   type PendingPlatformAccountAmendment,
 } from '@/lib/supabase/services/platform';
 import { getUserHasPlatformAdminAccess } from '@/lib/supabase/services/user-access-flags';
+import type { AccountSyncSnapshot } from '@/lib/account/membershipActivation';
+
+export type { AccountSyncSnapshot };
 
 interface AccountContextValue {
   user: User | null;
@@ -46,7 +49,10 @@ interface AccountContextValue {
   isAccountOwner: boolean;
   isFrontendBlocked: boolean;
   requiresTermsAcceptance: boolean;
-  refetch: () => Promise<void>;
+  refetch: (
+    preferredAccountId?: string | null,
+    options?: { userId?: string; email?: string },
+  ) => Promise<AccountSyncSnapshot | null>;
   refetchAccountData: () => Promise<void>;
   setCurrentAccountId: (accountId: string) => void;
 }
@@ -414,15 +420,20 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     }
   }, [authUser, currentAccountId, memberships, supabaseUser]);
 
-  const refetch = useCallback(async () => {
-    if (!authUser) return;
-    const email = authUser.email ?? '';
+  const refetch = useCallback(async (
+    preferredAccountIdOverride?: string | null,
+    options?: { userId?: string; email?: string },
+  ) => {
+    const authUserId = authUser?.id ?? options?.userId;
+    if (!authUserId) return null;
+    const email = options?.email ?? authUser?.email ?? '';
     setRefetching(true);
     setError(null);
 
     try {
-      const preferredAccountId = preferredAccountIdRef.current ?? currentAccountId;
-      const result = await bootstrap(authUser.id, email, preferredAccountId);
+      const preferredAccountId =
+        preferredAccountIdOverride ?? preferredAccountIdRef.current ?? currentAccountId;
+      const result = await bootstrap(authUserId, email, preferredAccountId);
 
       setSupabaseUser(result.user);
       setMemberships(result.memberships);
@@ -437,9 +448,9 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       accountDataLoadedForRef.current = result.currentAccountId;
 
       if (result.currentAccountId) {
-        await savePreferredAccountId(authUser.id, result.currentAccountId);
+        await savePreferredAccountId(authUserId, result.currentAccountId);
       }
-      await saveAccountCache(authUser.id, {
+      await saveAccountCache(authUserId, {
         user: result.user,
         memberships: result.memberships,
         currentAccountId: result.currentAccountId,
@@ -449,9 +460,15 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         platformAdminAccess: result.platformAdminAccess,
         billing: result.billing,
       });
+
+      return {
+        memberships: result.memberships,
+        currentAccountId: result.currentAccountId,
+      } satisfies AccountSyncSnapshot;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       setError(message);
+      return null;
     } finally {
       setRefetching(false);
     }

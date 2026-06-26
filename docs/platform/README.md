@@ -71,6 +71,16 @@ Stripe and webhook guardrails:
 - `/accept-platform-invite/[id]`
 - `/accept-account-amendment/[id]`
 
+## Workspace activation after provisioning
+
+Any accept/signup flow that creates or grants `account_users` membership must sync client state before entering `(main)`:
+
+- Use [`useEnterWorkspace`](../../lib/account/useEnterWorkspace.ts) (`enterWorkspace({ destination, expectedAccountId?, userId? })`)
+- Under the hood: [`syncMembershipToContext`](../../lib/account/membershipActivation.ts) polls Postgres, then calls `AccountContext.refetch()`
+- Do not navigate with raw `router.replace('/campaigns')` (or similar) immediately after an RPC/webhook creates membership
+
+`MainAccessGate` includes a bounded refetch retry before `/no-workspace`, but new flows should still call `enterWorkspace` explicitly.
+
 ## Admin routes
 
 - `/admin/accounts` — list

@@ -404,14 +404,6 @@ export function PlatformInviteExperience({
         (isFreeFlow
           ? 'We are provisioning your account now.'
           : 'Payment succeeded. We are provisioning your account now.');
-      if (activationError) {
-        return (
-          <View className="gap-4 py-8">
-            <Alert variant="warning" message={activationError} />
-            {onRetryActivation ? <Button onPress={onRetryActivation}>Retry</Button> : null}
-          </View>
-        );
-      }
       return (
         <View className="items-center justify-center py-12">
           <ActivityIndicator size="large" color="#f85102" />
@@ -421,6 +413,11 @@ export function PlatformInviteExperience({
           <Text selectable={false} className="text-center text-gray-300 font-instrument">
             {message}
           </Text>
+          {activationError ? (
+            <Text selectable={false} className="text-center text-gray-500 font-instrument text-sm mt-4 px-4">
+              {activationError}
+            </Text>
+          ) : null}
         </View>
       );
     }

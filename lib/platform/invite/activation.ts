@@ -1,34 +1,40 @@
+import {
+  pollMembershipVisibility,
+  type MembershipActivationResult,
+} from '@/lib/account/membershipActivation';
+import type { AccountMembership } from '@/lib/supabase/services/accounts';
+
 export type InviteActivationPollResult =
   | { kind: 'ready' }
   | { kind: 'timed_out' }
   | { kind: 'error'; message: string };
 
+/** @deprecated Prefer syncMembershipToContext / useEnterWorkspace from lib/account */
 export async function waitForInviteActivation(args: {
   checkMemberships: () => Promise<number>;
   maxAttempts?: number;
   delayMs?: number;
 }): Promise<InviteActivationPollResult> {
-  const maxAttempts = args.maxAttempts ?? 10;
-  const delayMs = args.delayMs ?? 1500;
+  const result = await pollMembershipVisibility({
+    maxAttempts: args.maxAttempts,
+    delayMs: args.delayMs,
+    async fetchMemberships() {
+      const count = await args.checkMemberships();
+      if (count <= 0) return [];
+      return [
+        {
+          account: { id: '__legacy__' },
+          membership: { is_owner: true },
+        } as AccountMembership,
+      ];
+    },
+  });
 
-  try {
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const membershipCount = await args.checkMemberships();
-      if (membershipCount > 0) {
-        return { kind: 'ready' };
-      }
-      if (attempt < maxAttempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-    return { kind: 'timed_out' };
-  } catch (error) {
-    return {
-      kind: 'error',
-      message:
-        error instanceof Error
-          ? error.message
-          : 'We could not confirm your workspace access yet.',
-    };
+  if (result.kind === 'ready') {
+    return { kind: 'ready' };
   }
+
+  return result as Exclude<MembershipActivationResult, { kind: 'ready' }>;
 }
+
+export { pollMembershipVisibility, syncMembershipToContext } from '@/lib/account/membershipActivation';

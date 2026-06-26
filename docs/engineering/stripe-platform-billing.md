@@ -85,6 +85,8 @@ If a customer-visible success screen depends on asynchronous provisioning:
 - show a human-readable failure message
 - never leave the user on an indefinite loading screen after the polling window ends
 
+After provisioning creates or grants membership, call `useEnterWorkspace().enterWorkspace(...)` from [`lib/account/useEnterWorkspace.ts`](../../lib/account/useEnterWorkspace.ts) before navigating into `(main)`. That helper polls for DB visibility and refreshes `AccountContext` via `refetch()`. DB visibility alone is insufficient — stale client context will still hit `/no-workspace`.
+
 ## Current key files
 
 - `amplify/functions/platformCommerce/handler.ts`
@@ -98,3 +100,5 @@ If a customer-visible success screen depends on asynchronous provisioning:
 - `lib/billing/paymentRoutes.ts`
 - `lib/test/platform/accountAmendmentOutcomes.test.ts`
 - `lib/test/platform/platformInviteOutcomes.test.ts`
+- `lib/account/useEnterWorkspace.ts`
+- `lib/account/membershipActivation.ts`

@@ -13,6 +13,10 @@ import {
   type InvitationInfo,
 } from '@/lib/supabase/services/accounts';
 import { buildPublicAccessRedirectHref } from '@/lib/publicAccessState';
+import {
+  membershipActivationFailureMessage,
+  useEnterWorkspace,
+} from '@/lib/account/useEnterWorkspace';
 
 function inviterLabel(info: InvitationInfo | null): string {
   const name = info?.inviter_name?.trim();
@@ -24,6 +28,7 @@ export default function AcceptInvitationPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user: authUser, loading: authLoading } = useAuth();
+  const { enterWorkspace } = useEnterWorkspace();
   const [bootstrapping, setBootstrapping] = useState(true);
   const [info, setInfo] = useState<InvitationInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -146,11 +151,29 @@ export default function AcceptInvitationPage() {
 
       switch (result.status) {
         case 'accepted':
-        case 'already_member':
-          router.replace(
-            result.account_id ? `/account?switch_account=${result.account_id}` : '/account',
-          );
+        case 'already_member': {
+          const destination = result.account_id
+            ? `/account?switch_account=${result.account_id}`
+            : '/account';
+          const activation = await enterWorkspace({
+            destination,
+            expectedAccountId: result.account_id ?? null,
+            email: authUser?.email ?? info.invitee_email ?? null,
+          });
+          if (activation.kind !== 'ready') {
+            if (activation.kind === 'timed_out' || activation.kind === 'error') {
+              setAcceptError(
+                membershipActivationFailureMessage(
+                  activation,
+                  'You joined the workspace, but setup is taking longer than expected. Please refresh or email support.',
+                ),
+              );
+            }
+            setAccepting(false);
+            acceptAttemptedRef.current = false;
+          }
           break;
+        }
         case 'email_mismatch':
           router.replace(
             buildPublicAccessRedirectHref({
@@ -189,7 +212,7 @@ export default function AcceptInvitationPage() {
       setAcceptError(err instanceof Error ? err.message : 'Failed to accept invitation.');
       setAccepting(false);
     }
-  }, [authUser, id, info, router]);
+  }, [authUser, enterWorkspace, id, info, router]);
 
   useEffect(() => {
     if (!bootstrapping && !guestMode && info && accepting && !acceptAttemptedRef.current) {

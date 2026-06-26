@@ -11,13 +11,11 @@ import {
   preparePlatformInvitationCheckout,
   type PlatformInvitationInfo,
 } from '@/lib/supabase/services/platform';
-import { getAccountMembershipsForUser } from '@/lib/supabase/services/accounts';
 import {
   createPlatformCheckoutSession,
   ensurePlatformInviteAuthUser,
   getPlatformCheckoutQuote,
 } from '@/lib/services/platform';
-import { waitForInviteActivation } from '@/lib/platform/invite/activation';
 import {
   isPlatformInviteCompletedStatus,
   isPlatformInviteUnavailableStatus,
@@ -30,6 +28,16 @@ import type {
 import { normalizeAgreementType } from '@/lib/platform/contract/terms';
 import { resolveInviteAcceptFlow } from '@/lib/platform/invite/acceptFlow';
 import { buildPublicAccessRedirectHref } from '@/lib/publicAccessState';
+import {
+  membershipActivationFailureMessage,
+  useEnterWorkspace,
+} from '@/lib/account/useEnterWorkspace';
+
+type PendingWorkspaceActivation = {
+  accountId: string | null;
+  userId: string;
+  email: string;
+};
 
 function mapInvitationInfo(
   invitationId: string,
@@ -63,11 +71,15 @@ export default function AcceptPlatformInvitePage() {
   const router = useRouter();
   const { id, checkout } = useLocalSearchParams<{ id: string; checkout?: string }>();
   const { user, loading: authLoading, signOut } = useAuth();
+  const { enterWorkspace } = useEnterWorkspace();
   const checkoutSuccess = checkout === 'success';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<PlatformInvitationInfo | null>(null);
   const [activationError, setActivationError] = useState<string | null>(null);
+  const [pendingActivation, setPendingActivation] = useState<PendingWorkspaceActivation | null>(
+    null,
+  );
   const activationRunIdRef = useRef(0);
 
   useEffect(() => {
@@ -97,38 +109,55 @@ export default function AcceptPlatformInvitePage() {
     };
   }, [checkout, id]);
 
-  const runActivationCheck = useCallback(async () => {
-    if (!user?.id) return;
-    const runId = ++activationRunIdRef.current;
-    setActivationError(null);
-    const result = await waitForInviteActivation({
-      async checkMemberships() {
-        const memberships = await getAccountMembershipsForUser(user.id);
-        return memberships.length;
-      },
-    });
-    if (activationRunIdRef.current !== runId) return;
-    if (result.kind === 'ready') {
-      router.replace('/campaigns');
-      return;
-    }
-    if (result.kind === 'timed_out') {
-      setActivationError(
-        'Payment succeeded, but workspace setup is taking longer than expected. Click Retry in a few seconds.',
-      );
-      return;
-    }
-    setActivationError(
-      result.message
-        ? `We could not confirm your workspace access yet: ${result.message}`
-        : 'We could not confirm your workspace access yet. Click Retry to try again.',
-    );
-  }, [router, user?.id]);
+  const runActivationCheck = useCallback(
+    async (pending?: PendingWorkspaceActivation | null) => {
+      const payload = pending ?? null;
+      const userId = payload?.userId ?? user?.id;
+      if (!userId) return;
+
+      const runId = ++activationRunIdRef.current;
+      setActivationError(null);
+
+      const result = await enterWorkspace({
+        destination: '/campaigns',
+        expectedAccountId: payload?.accountId ?? null,
+        userId,
+        email: payload?.email ?? user?.email ?? info?.invitee_email ?? null,
+      });
+
+      if (activationRunIdRef.current !== runId) return;
+
+      if (result.kind === 'ready') {
+        setPendingActivation(null);
+        return;
+      }
+
+      if (result.kind === 'timed_out' || result.kind === 'error') {
+        setActivationError(
+          membershipActivationFailureMessage(
+            result,
+            'Workspace setup is taking longer than expected. Please refresh or email support.',
+          ),
+        );
+      }
+    },
+    [enterWorkspace, info?.invitee_email, user?.email, user?.id],
+  );
 
   useEffect(() => {
     if (checkout !== 'success' || !user?.id) return;
-    void runActivationCheck();
-  }, [checkout, runActivationCheck, user?.id]);
+    void runActivationCheck({
+      accountId: null,
+      userId: user.id,
+      email: user.email ?? info?.invitee_email ?? '',
+    });
+  }, [checkout, info?.invitee_email, runActivationCheck, user?.email, user?.id]);
+
+  useEffect(() => {
+    if (!pendingActivation) return;
+    void runActivationCheck(pendingActivation);
+  }, [pendingActivation, runActivationCheck]);
+
   const viewData = useMemo(
     () => (id && info ? mapInvitationInfo(id, info) : null),
     [id, info],
@@ -198,10 +227,6 @@ export default function AcceptPlatformInvitePage() {
     router.replace(redirectHref as any);
   }, [redirectHref, router]);
 
-  const handleRetryActivation = useCallback(() => {
-    void runActivationCheck();
-  }, [runActivationCheck]);
-
   const redirectToAccessDestination = useCallback(
     (issue: 'resource_unavailable' | 'resource_completed' | 'wrong_email') => {
       if (!id) return;
@@ -248,13 +273,16 @@ export default function AcceptPlatformInvitePage() {
         throw new Error('Invalid invitation link.');
       }
 
+      let signedInUserId: string | null = null;
+
       if (!hasMatchingAuthUser) {
         await ensurePlatformInviteAuthUser(invitationId, password);
-        const { error: signInError } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
           email: inviteEmail,
           password,
         });
         if (signInError) throw new Error(signInError.message);
+        signedInUserId = signInData.user?.id ?? null;
       }
 
       if (resolveInviteAcceptFlow(info?.monthly_retainer_cents) === 'free') {
@@ -263,13 +291,21 @@ export default function AcceptPlatformInvitePage() {
           fullName,
           accountName,
         });
-        router.replace('/campaigns');
+        const accountId =
+          result && typeof result === 'object' && 'account_id' in result
+            ? (result.account_id as string | null | undefined)
+            : null;
+        const activationUserId = signedInUserId ?? user?.id;
+        if (activationUserId) {
+          setPendingActivation({
+            accountId: accountId ?? null,
+            userId: activationUserId,
+            email: inviteEmail,
+          });
+        }
         return {
           kind: 'activated',
-          accountId:
-            result && typeof result === 'object' && 'account_id' in result
-              ? (result.account_id as string | null | undefined)
-              : null,
+          accountId: accountId ?? null,
         } as const;
       }
 
@@ -297,7 +333,7 @@ export default function AcceptPlatformInvitePage() {
       }
       return { kind: 'redirect' } as const;
     },
-    [info?.monthly_retainer_cents, router],
+    [info?.monthly_retainer_cents, user?.id],
   );
 
   if (bootstrapping || showBootScreen) {
@@ -313,7 +349,6 @@ export default function AcceptPlatformInvitePage() {
       currentUserEmail={user?.email}
       checkoutSuccess={checkoutSuccess}
       activationError={activationError}
-      onRetryActivation={checkoutSuccess ? handleRetryActivation : undefined}
       onContinueExpired={() => redirectToAccessDestination('resource_unavailable')}
       onContinueCompleted={() => redirectToAccessDestination('resource_completed')}
       onSignOut={() => {

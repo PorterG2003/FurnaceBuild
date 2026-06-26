@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Stack, usePathname, useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -81,21 +81,65 @@ function MainAccessGate() {
     requiresTermsAcceptance,
     pendingAmendment,
     isAccountOwner,
+    refetch,
   } = useAccount();
   const allowAdminWithoutWorkspace = platformAdminAccess === 'allowed' && (pathname === '/admin' || pathname?.startsWith('/admin/'));
   const allowAmendmentAcceptRoute = pathname?.startsWith('/accept-account-amendment/');
-  const showLoadingOverlay = !initialized || loading || platformAdminAccess === 'loading';
+  const [recoveringWorkspace, setRecoveringWorkspace] = useState(false);
+  const [redirectNoWorkspace, setRedirectNoWorkspace] = useState(false);
+  const recoveryRunIdRef = useRef(0);
+  const showLoadingOverlay =
+    !initialized || loading || platformAdminAccess === 'loading' || recoveringWorkspace;
 
   useEffect(() => {
     if (!initialized) return;
     if (loading) return;
     if (platformAdminAccess === 'loading') return;
-    if (!memberships.length && !allowAdminWithoutWorkspace) {
-      router.replace('/no-workspace');
+    if (memberships.length > 0 || allowAdminWithoutWorkspace) {
+      setRecoveringWorkspace(false);
+      setRedirectNoWorkspace(false);
+      return;
     }
-  }, [allowAdminWithoutWorkspace, initialized, loading, memberships.length, platformAdminAccess, router]);
+    if (redirectNoWorkspace) {
+      router.replace('/no-workspace');
+      return;
+    }
+    if (recoveringWorkspace) return;
 
-  if (!showLoadingOverlay && !memberships.length && !allowAdminWithoutWorkspace) {
+    const runId = ++recoveryRunIdRef.current;
+    setRecoveringWorkspace(true);
+
+    void (async () => {
+      const maxAttempts = 2;
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (recoveryRunIdRef.current !== runId) return;
+        if (attempt > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        const snapshot = await refetch();
+        if (recoveryRunIdRef.current !== runId) return;
+        if (snapshot?.memberships.length) {
+          setRecoveringWorkspace(false);
+          return;
+        }
+      }
+      if (recoveryRunIdRef.current !== runId) return;
+      setRecoveringWorkspace(false);
+      setRedirectNoWorkspace(true);
+    })();
+  }, [
+    allowAdminWithoutWorkspace,
+    initialized,
+    loading,
+    memberships.length,
+    platformAdminAccess,
+    recoveringWorkspace,
+    redirectNoWorkspace,
+    refetch,
+    router,
+  ]);
+
+  if (!showLoadingOverlay && !memberships.length && !allowAdminWithoutWorkspace && !recoveringWorkspace) {
     return (
       <View style={styles.flexFill}>
         <AppBootScreen />

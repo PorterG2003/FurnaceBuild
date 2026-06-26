@@ -7,11 +7,12 @@ import { tokenizeJsonSyntax } from './jsonSyntaxTokens';
 
 export { getJsonTokenColor, tokenizeJsonSyntax, type JsonSyntaxPart } from './jsonSyntaxTokens';
 
-export function JsonSyntaxLayer({ value }: { value: string }) {
+export function JsonSyntaxLayer({ value, selectable = false }: { value: string; selectable?: boolean }) {
   const parts = tokenizeJsonSyntax(value);
 
   return (
     <Text
+      selectable={selectable}
       style={{
         color: CODE_EDITOR_DEFAULT_TEXT_COLOR,
         ...CODE_EDITOR_TEXT_STYLE,

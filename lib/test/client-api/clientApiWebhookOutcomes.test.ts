@@ -5,19 +5,21 @@ import {
   createClientApiTestNamespace,
 } from './harness.js';
 
-function installWebhookVerifyFetchMock() {
+function installWebhookTestFetchMock() {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (url.startsWith('https://webhook-verify.test/')) {
-      const body = JSON.parse(String(init?.body ?? '{}')) as { type?: string; token?: string };
-      if (url.includes('/no-echo')) {
-        return new Response('verification failed', { status: 200 });
+    if (url.startsWith('https://webhook-test.test/')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { type?: string; data?: Record<string, unknown> };
+      if (url.includes('/fail')) {
+        return new Response('upstream error', { status: 502 });
       }
-      if (body.type === 'webhook.verify' && body.token) {
-        return new Response(body.token, { status: 200 });
+      if (url.includes('/http-only')) {
+        return new Response('bad scheme', { status: 200 });
       }
-      return new Response('missing token', { status: 200 });
+      return new Response(JSON.stringify({ received: body.type, test: body.data?.test }), {
+        status: 200,
+      });
     }
     return originalFetch(input, init);
   };
@@ -26,84 +28,125 @@ function installWebhookVerifyFetchMock() {
   };
 }
 
-test('internal webhook verify succeeds when endpoint echoes the token', async (t) => {
-  const restoreFetch = installWebhookVerifyFetchMock();
+test('internal webhook test succeeds and returns envelope metadata', async (t) => {
+  const restoreFetch = installWebhookTestFetchMock();
   t.after(restoreFetch);
 
   const harness = new ClientApiDbHarness({
-    namespace: createClientApiTestNamespace('webhook-verify-ok'),
+    namespace: createClientApiTestNamespace('webhook-test-ok'),
   });
 
   try {
-    const response = await harness.requestAsOwner('/internal/webhook/verify', {
+    const response = await harness.requestAsOwner('/internal/webhook/test', {
       method: 'POST',
       body: {
         accountId: harness.accountId,
-        url: 'https://webhook-verify.test/echo',
+        url: 'https://webhook-test.test/ok',
+        eventType: 'email.sent',
       },
     });
     assert.equal(response.status, 200);
-    const body = await response.json() as { data: { verified: boolean; status: number } };
-    assert.equal(body.data.verified, true);
+    const body = await response.json() as {
+      data: { success: boolean; status: number; event_type: string; request_body: { type: string; data: { test: boolean } } };
+    };
+    assert.equal(body.data.success, true);
     assert.equal(body.data.status, 200);
+    assert.equal(body.data.event_type, 'email.sent');
+    assert.equal(body.data.request_body.type, 'email.sent');
+    assert.equal(body.data.request_body.data.test, true);
   } finally {
     await harness.cleanup();
   }
 });
 
-test('internal webhook verify returns 422 when endpoint does not echo the token', async (t) => {
-  const restoreFetch = installWebhookVerifyFetchMock();
+test('internal webhook test returns 422 when endpoint is not successful', async (t) => {
+  const restoreFetch = installWebhookTestFetchMock();
   t.after(restoreFetch);
 
   const harness = new ClientApiDbHarness({
-    namespace: createClientApiTestNamespace('webhook-verify-fail'),
+    namespace: createClientApiTestNamespace('webhook-test-fail'),
   });
 
   try {
-    const response = await harness.requestAsOwner('/internal/webhook/verify', {
+    const response = await harness.requestAsOwner('/internal/webhook/test', {
       method: 'POST',
       body: {
         accountId: harness.accountId,
-        url: 'https://webhook-verify.test/no-echo',
+        url: 'https://webhook-test.test/fail',
+        eventType: 'reply.received',
       },
     });
     assert.equal(response.status, 422);
-    const body = await response.json() as { data: { verified: boolean } };
-    assert.equal(body.data.verified, false);
+    const body = await response.json() as { data: { success: boolean; status: number; event_type: string } };
+    assert.equal(body.data.success, false);
+    assert.equal(body.data.status, 502);
+    assert.equal(body.data.event_type, 'reply.received');
   } finally {
     await harness.cleanup();
   }
 });
 
-test('internal webhook verify rejects api keys and non-admin members', async (t) => {
-  const restoreFetch = installWebhookVerifyFetchMock();
+test('internal webhook test rejects invalid event types and non-https urls', async (t) => {
+  const restoreFetch = installWebhookTestFetchMock();
   t.after(restoreFetch);
 
   const harness = new ClientApiDbHarness({
-    namespace: createClientApiTestNamespace('webhook-verify-auth'),
+    namespace: createClientApiTestNamespace('webhook-test-validate'),
+  });
+
+  try {
+    const invalidEvent = await harness.requestAsOwner('/internal/webhook/test', {
+      method: 'POST',
+      body: {
+        accountId: harness.accountId,
+        url: 'https://webhook-test.test/ok',
+        eventType: 'webhook.test',
+      },
+    });
+    assert.equal(invalidEvent.status, 400);
+
+    const invalidUrl = await harness.requestAsOwner('/internal/webhook/test', {
+      method: 'POST',
+      body: {
+        accountId: harness.accountId,
+        url: 'http://webhook-test.test/http-only',
+      },
+    });
+    assert.equal(invalidUrl.status, 400);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('internal webhook test rejects api keys and non-admin members', async (t) => {
+  const restoreFetch = installWebhookTestFetchMock();
+  t.after(restoreFetch);
+
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('webhook-test-auth'),
   });
 
   try {
     await harness.ensureOwnerAuthUser();
     const apiKey = await harness.createApiKey();
 
-    const apiKeyAttempt = await harness.request('/internal/webhook/verify', {
+    const apiKeyAttempt = await harness.request('/internal/webhook/test', {
       method: 'POST',
       apiKey: apiKey.secret,
       body: {
         accountId: harness.accountId,
-        url: 'https://webhook-verify.test/echo',
+        url: 'https://webhook-test.test/ok',
       },
     });
     assert.equal(apiKeyAttempt.status, 401);
 
     const member = await harness.createMemberUser();
-    const memberAttempt = await harness.request('/internal/webhook/verify', {
+    const memberAttempt = await harness.request('/internal/webhook/test', {
       method: 'POST',
       headers: { Authorization: `Bearer ${member.accessToken}` },
       body: {
         accountId: harness.accountId,
-        url: 'https://webhook-verify.test/echo',
+        url: 'https://webhook-test.test/ok',
       },
     });
     assert.equal(memberAttempt.status, 403);

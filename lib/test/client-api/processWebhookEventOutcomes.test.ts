@@ -22,17 +22,15 @@ function installWebhookDeliveryFetchMock(status: number) {
 
 async function seedWebhookEvent(
   harness: ClientApiDbHarness,
-  params: { endpointUrl: string; verified: boolean; enabledEvents: string[] },
+  params: { endpointUrl: string; enabledEvents: string[] },
   dedupeSuffix: string
 ) {
-  const verifiedAt = params.verified ? new Date().toISOString() : null;
   const { error: accountError } = await harness.supabase
     .from('accounts')
     .update({
       webhook_url: params.endpointUrl,
       webhook_signing_secret: 'whsec_test',
       webhook_enabled_events: params.enabledEvents,
-      webhook_url_verified_at: verifiedAt,
     } as never)
     .eq('id', harness.accountId);
   assert.equal(accountError, null);
@@ -53,7 +51,7 @@ async function seedWebhookEvent(
   return event.id as string;
 }
 
-test('processWebhookEvent delivers to a verified endpoint', async (t) => {
+test('processWebhookEvent delivers when endpoint URL is configured', async (t) => {
   const restoreFetch = installWebhookDeliveryFetchMock(200);
   t.after(restoreFetch);
 
@@ -66,7 +64,6 @@ test('processWebhookEvent delivers to a verified endpoint', async (t) => {
       harness,
       {
         endpointUrl: 'https://webhook-delivery.test/ok',
-        verified: true,
         enabledEvents: ['lead.created'],
       },
       'ok'
@@ -105,7 +102,6 @@ test('processWebhookEvent marks delivery failed after retries', async (t) => {
       harness,
       {
         endpointUrl: 'https://webhook-delivery.test/fail',
-        verified: true,
         enabledEvents: ['lead.created'],
       },
       'fail'
@@ -131,7 +127,7 @@ test('processWebhookEvent marks delivery failed after retries', async (t) => {
   }
 });
 
-test('processWebhookEvent skips unverified accounts and disabled event types', async (t) => {
+test('processWebhookEvent skips disabled event types', async (t) => {
   const restoreFetch = installWebhookDeliveryFetchMock(200);
   t.after(restoreFetch);
 
@@ -140,28 +136,10 @@ test('processWebhookEvent skips unverified accounts and disabled event types', a
   });
 
   try {
-    const unverifiedEventId = await seedWebhookEvent(
-      harness,
-      {
-        endpointUrl: 'https://webhook-delivery.test/skip-unverified',
-        verified: false,
-        enabledEvents: ['lead.created'],
-      },
-      'skip-unverified'
-    );
-    await processWebhookEventById(unverifiedEventId);
-
-    const { data: unverifiedDelivery } = await harness.supabase
-      .from('webhook_deliveries')
-      .select('id')
-      .eq('webhook_event_id', unverifiedEventId);
-    assert.equal(unverifiedDelivery?.length ?? 0, 0);
-
     const disabledEventId = await seedWebhookEvent(
       harness,
       {
         endpointUrl: 'https://webhook-delivery.test/skip-disabled',
-        verified: true,
         enabledEvents: ['email.sent'],
       },
       'skip-disabled'
@@ -194,7 +172,6 @@ test('processWebhookEvent delivers batch completion events when enabled', async 
         webhook_url: 'https://webhook-delivery.test/batch',
         webhook_signing_secret: 'whsec_test',
         webhook_enabled_events: ['lead.added_to_campaign.completed'],
-        webhook_url_verified_at: new Date().toISOString(),
       } as never)
       .eq('id', harness.accountId);
     assert.equal(accountError, null);

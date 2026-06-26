@@ -91,7 +91,6 @@ async function updateCampaignSettingsWithClient(
       webhook_url_override: sourceCampaign.webhook_url_override,
       webhook_signing_secret_override: sourceCampaign.webhook_signing_secret_override,
       webhook_enabled_events_override: sourceCampaign.webhook_enabled_events_override,
-      webhook_url_override_verified_at: null,
       locked: false,
       updated_at: new Date().toISOString(),
     })

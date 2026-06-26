@@ -5,7 +5,6 @@ import {
   CLIENT_API_OPENAPI_VERSION,
   CLIENT_API_TITLE,
   CLIENT_API_VERSION,
-  DEFAULT_ALLOWED_WEBHOOK_EVENTS,
   DEFAULT_PAGE_SIZE,
   IDEMPOTENCY_TTL_HOURS,
   MAX_ASYNC_JOBS_PER_ACCOUNT,
@@ -15,7 +14,18 @@ import {
 import { buildClientApiPaths } from './paths.js';
 import { buildClientApiComponents } from './schemas.js';
 
-const tagDescriptions = [
+const guideTags = [
+  {
+    name: 'Changelog',
+    description: 'Client API version history.',
+  },
+  {
+    name: 'Webhooks',
+    description: 'Outbound webhook setup, verification, and example payloads.',
+  },
+];
+
+const apiTags = [
   {
     name: 'Campaigns',
     description: 'Read and mutate campaigns that belong to the authenticated account.',
@@ -62,11 +72,15 @@ const tagDescriptions = [
   },
 ];
 
+const tagDescriptions = [...guideTags, ...apiTags];
+
+const apiTagNames = apiTags.map((tag) => tag.name);
+
 function buildDescription() {
   return [
     'Account-scoped REST API for campaigns, leads, people, saved lists, inbox, mailboxes, mailbox tags, stats, and block list.',
     '',
-    'Version history is in the **Changelog** document in the sidebar.',
+    'Open **Guide → Changelog** or **Guide → Webhooks** in the sidebar for version history and webhook integration docs.',
     '',
     '## Authentication',
     `Send your account API key as \`Authorization: Bearer ${API_KEY_PREFIX}...\`. Keys are created in Furnace Account Settings. Revoked, expired, or unknown keys return \`401 authentication_error\`.`,
@@ -101,30 +115,6 @@ function buildDescription() {
     `- Async bulk imports accept up to ${BULK_ASYNC_LIMIT} leads per request and allow at most ${MAX_ASYNC_JOBS_PER_ACCOUNT} queued/running jobs per account.`,
     '- When a campaign defines custom lead fields, every key must be present in `custom_lead_data` on create and bulk import requests.',
     '',
-    '## Outbound Webhooks',
-    `Client API actions can emit webhook events such as ${DEFAULT_ALLOWED_WEBHOOK_EVENTS.join(', ')}. Event delivery is configured in Furnace; this OpenAPI document covers the initiating REST calls and the event types they may trigger.`,
-    '',
-    '### Atomic vs batch webhooks',
-    '- **Atomic tier** — single-lead synchronous requests emit one entity event (`lead.created`, `lead.updated`, `lead.deleted`, campaign status, email activity).',
-    '- **Batch tier** — async jobs and sync bulk actions (>1 lead or dedicated bulk endpoints) emit exactly one operation-specific `*.completed` event. Per-row lead webhooks are never emitted during bulk processing.',
-    '',
-    '### Batch completion payload',
-    'Batch completion events use the `BatchCompletionWebhookPayload` schema: `job_id` (null for sync), `source` (`async` | `sync`), `campaign_id`, `operation`, `counts`, and `errors[]`.',
-    '',
-    '| Operation | Completion event |',
-    '| --- | --- |',
-    '| `api_lead_import` | `lead.bulk_import.completed` |',
-    '| `add_to_campaign` | `lead.added_to_campaign.completed` |',
-    '| `remove_from_campaign` | `lead.removed_from_campaign.completed` |',
-    '| `remove_from_all_campaigns` | `lead.removed_from_all_campaigns.completed` |',
-    '| `pause_enrollments` | `enrollment.pause_completed` |',
-    '| `resume_enrollments` | `enrollment.resume_completed` |',
-    '',
-    '### Bulk import webhook policy',
-    '- Sync bulk (`POST /v1/campaigns/{id}/leads/bulk`) suppresses per-row lead webhooks and emits one `lead.bulk_import.completed` event.',
-    '- Async bulk (`POST /v1/campaigns/{id}/leads/bulk/async` or `POST /v1/jobs` with `api_lead_import`) suppresses per-row lead webhooks and emits one `lead.bulk_import.completed` event when the job finishes successfully.',
-    '- Poll `GET /v1/jobs/{id}` for per-row errors and aggregate counts in the job `result` payload.',
-    '',
     '## Inbox message jobs',
     '- Reply and forward endpoints return `202` with a `message_job` id.',
     '- Poll outbound send status with `GET /v1/message-jobs/{id}`. Do not use `GET /v1/jobs/{id}` — that endpoint is for async import jobs only.',
@@ -143,6 +133,10 @@ export function buildClientApiOpenApiSpec(baseUrl: string) {
     },
     servers: [{ url: baseUrl }],
     tags: tagDescriptions,
+    'x-tagGroups': [
+      { name: 'Guide', tags: ['Changelog', 'Webhooks'] },
+      { name: 'API', tags: apiTagNames },
+    ],
     components: buildClientApiComponents(),
     security: [{ bearerAuth: [] }],
     paths: buildClientApiPaths(),

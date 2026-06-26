@@ -52,7 +52,7 @@ async function main() {
 
   const { data: acct } = await supabase
     .from('accounts')
-    .select('webhook_url, webhook_url_verified_at, webhook_enabled_events')
+    .select('webhook_url, webhook_enabled_events')
     .eq('id', accountId)
     .single();
   console.log('[e2e] account webhook:', acct);

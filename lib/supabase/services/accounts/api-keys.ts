@@ -116,7 +116,7 @@ export async function updateAccountWebhookSettings(
   accountId: string,
   updates: Pick<
     Account,
-    'webhook_url' | 'webhook_signing_secret' | 'webhook_enabled_events' | 'webhook_url_verified_at'
+    'webhook_url' | 'webhook_signing_secret' | 'webhook_enabled_events'
   >
 ): Promise<Account> {
   const { data, error } = await supabase

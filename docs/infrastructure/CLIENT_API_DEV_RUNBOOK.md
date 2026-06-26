@@ -36,8 +36,8 @@ The import queue handles all `api_import_jobs` operation types (`api_lead_import
 4. Verify health and docs:
    - `GET https://<client-api-domain-or-cloudfront>/health`
    - `GET https://<client-api-domain-or-cloudfront>/openapi.json`
-   - `GET https://<client-api-domain-or-cloudfront>/openapi/changelog.json`
-   - `GET https://<client-api-domain-or-cloudfront>/docs` — confirm Scalar sidebar shows **API Reference** and **Changelog**
+   - `GET https://<client-api-domain-or-cloudfront>/openapi.json` — confirm guide paths (`/documentation/changelog`, `/documentation/webhooks/...`) and `x-tagGroups`
+   - `GET https://<client-api-domain-or-cloudfront>/docs` — confirm single sidebar with **Guide** (Changelog + Webhooks) and **API** sections
 
 ## Namecheap DNS
 

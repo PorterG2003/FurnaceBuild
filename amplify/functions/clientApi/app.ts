@@ -48,10 +48,13 @@ import {
   MAX_ASYNC_JOBS_PER_ACCOUNT,
   MAX_PAGE_SIZE,
   RATE_LIMIT_REQUESTS_PER_MINUTE,
-  WEBHOOK_VERIFY_USER_AGENT,
 } from '../../../lib/client-api/openapi/constants.js';
+import { deliverWebhookPost, isValidHttpsWebhookUrl } from '../../../lib/client-api/webhooks/deliverWebhookPost.js';
+import {
+  buildWebhookTestPayload,
+  isAllowedWebhookEventType,
+} from '../../../lib/client-api/webhooks/webhookTestSamples.js';
 import { buildClientApiOpenApiSpec } from '../../../lib/client-api/openapi/spec.js';
-import { buildChangelogOpenApiSpec } from '../../../lib/client-api/openapi/changelog.js';
 import { THREAD_CATEGORIES } from '../../../lib/client-api/inbox/constants.js';
 import { recordClientApiInboxInteraction } from '../../../lib/client-api/inbox/interactions.js';
 import {
@@ -568,10 +571,6 @@ app.get('/openapi.json', async (c) => {
   return jsonResponse(c, getOpenApiSpec(getBaseUrl(c)));
 });
 
-app.get('/openapi/changelog.json', async (c) => {
-  return jsonResponse(c, buildChangelogOpenApiSpec(getBaseUrl(c)));
-});
-
 app.get('/docs', async (c) => {
   const baseUrl = getBaseUrl(c);
   const html = `<!doctype html>
@@ -591,10 +590,8 @@ app.get('/docs', async (c) => {
         searchHotKey: 'k',
         showSidebar: true,
         expanded: true,
-        sources: [
-          { title: 'API Reference', url: '${baseUrl}/openapi.json', default: true },
-          { title: 'Changelog', slug: 'changelog', url: '${baseUrl}/openapi/changelog.json' },
-        ],
+        defaultOpenFirstTag: false,
+        sources: [{ url: '${baseUrl}/openapi.json' }],
       });
     </script>
   </body>
@@ -2491,13 +2488,19 @@ app.get('/v1/campaigns/:id/stats', async (c) => {
 
 app.use('/internal/*', internalJwtAuth);
 
-app.post('/internal/webhook/verify', async (c) => {
+app.post('/internal/webhook/test', async (c) => {
   const supabase = createServiceRoleClient();
-  const body = parseJsonBody<{ accountId?: string; campaignId?: string | null; url?: string }>(await c.req.text());
+  const body = parseJsonBody<{
+    accountId?: string;
+    campaignId?: string | null;
+    url?: string;
+    signingSecret?: string;
+    eventType?: string;
+  }>(await c.req.text());
   const accountId = body.accountId?.trim();
-  const url = body.url?.trim();
   const userId = (c as any).get('userId') as string;
-  if (!accountId || !url) invalidRequest('missing_fields', 'accountId and url are required');
+  if (!accountId) invalidRequest('missing_fields', 'accountId is required');
+
   const { data: membership, error: membershipError } = await supabase
     .from('account_users')
     .select('role')
@@ -2506,38 +2509,67 @@ app.post('/internal/webhook/verify', async (c) => {
     .maybeSingle();
   if (membershipError) throw new Error(`Failed to verify membership: ${membershipError.message}`);
   if (!membership || !['owner', 'admin'].includes(membership.role)) {
-    forbidden('account_admin_required', 'Only account owners and admins can verify webhook URLs');
+    forbidden('account_admin_required', 'Only account owners and admins can send test webhooks');
   }
-  const verifyToken = crypto.randomUUID();
-  const verifyPayload = {
-    type: 'webhook.verify',
-    token: verifyToken,
-    account_id: accountId,
-    campaign_id: body.campaignId ?? null,
-  };
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': WEBHOOK_VERIFY_USER_AGENT,
-    },
-    body: JSON.stringify(verifyPayload),
+
+  const campaignId = body.campaignId?.trim() || null;
+  const eventType = (body.eventType?.trim() || 'email.sent') as string;
+  if (!isAllowedWebhookEventType(eventType)) {
+    invalidRequest('invalid_event_type', `Unsupported webhook event type: ${eventType}`);
+  }
+
+  const { data: account, error: accountError } = await supabase
+    .from('accounts')
+    .select('webhook_url, webhook_signing_secret')
+    .eq('id', accountId)
+    .maybeSingle();
+  if (accountError) throw new Error(`Failed to load account webhook settings: ${accountError.message}`);
+  if (!account) notFound('account_not_found', 'Account not found');
+
+  let endpointUrl = body.url?.trim() || '';
+  let signingSecret = body.signingSecret?.trim() || '';
+
+  if (campaignId) {
+    const { data: campaign, error: campaignError } = await supabase
+      .from('campaigns')
+      .select('webhook_url_override, webhook_signing_secret_override, account_id')
+      .eq('id', campaignId)
+      .maybeSingle();
+    if (campaignError) throw new Error(`Failed to load campaign webhook settings: ${campaignError.message}`);
+    if (!campaign || campaign.account_id !== accountId) {
+      notFound('campaign_not_found', 'Campaign not found in this account');
+    }
+    if (!endpointUrl) endpointUrl = (campaign.webhook_url_override || account.webhook_url || '').trim();
+    if (!signingSecret) {
+      signingSecret = (campaign.webhook_signing_secret_override || account.webhook_signing_secret || '').trim();
+    }
+  } else {
+    if (!endpointUrl) endpointUrl = (account.webhook_url || '').trim();
+    if (!signingSecret) signingSecret = (account.webhook_signing_secret || '').trim();
+  }
+
+  if (!endpointUrl) invalidRequest('missing_webhook_url', 'Webhook URL is required');
+  if (!isValidHttpsWebhookUrl(endpointUrl)) {
+    invalidRequest('invalid_webhook_url', 'Webhook URL must use HTTPS');
+  }
+
+  const testPayload = buildWebhookTestPayload(eventType, { accountId, campaignId });
+  const result = await deliverWebhookPost({
+    endpointUrl,
+    signingSecret: signingSecret || undefined,
+    eventType,
+    payload: testPayload,
   });
-  let responseBody = '';
-  try {
-    responseBody = await response.text();
-  } catch {
-    responseBody = '';
-  }
-  const isVerified = response.ok && responseBody.includes(verifyToken);
+
   return jsonResponse(c, {
     data: {
-      verified: isVerified,
-      status: response.status,
-      token: verifyToken,
-      response_body: responseBody.slice(0, 2000),
+      success: result.ok,
+      status: result.status,
+      response_body: result.responseBody.slice(0, 2000),
+      event_type: eventType,
+      request_body: JSON.parse(result.requestBody) as Record<string, unknown>,
     },
-  }, isVerified ? 200 : 422);
+  }, result.ok ? 200 : 422);
 });
 
 app.post('/internal/import-jobs/:id/enqueue', async (c) => {

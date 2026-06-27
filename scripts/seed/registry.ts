@@ -26,6 +26,7 @@ import {
   smartHandlingFlowLiveRepliesModule,
 } from './scenarios/smart-handling-flow/index';
 import { devDefaultScenarioModule } from './scenarios/dev-default';
+import { demoHubScenarioModule } from './scenarios/demo-hub';
 import { platformInvitePreviewSeedModule } from './scenarios/platform-invite-preview';
 import { campaignHtmlDemoSeedModule } from './scenarios/campaign-html-demo';
 import { bucketInsightsSmokeModule } from './scenarios/bucket-insights-smoke';
@@ -52,6 +53,7 @@ export const allModules: Record<string, SeedModule> = {
   smartHandlingFlow_threads: smartHandlingFlowThreadsModule,
   smartHandlingFlow_liveReplies: smartHandlingFlowLiveRepliesModule,
   devDefault_seed: devDefaultScenarioModule,
+  demoHub_seed: demoHubScenarioModule,
   platformInvitePreview_seed: platformInvitePreviewSeedModule,
   campaignHtmlDemo_seed: campaignHtmlDemoSeedModule,
   bucketInsightsSmoke_seed: bucketInsightsSmokeModule,
@@ -64,6 +66,7 @@ export const allModules: Record<string, SeedModule> = {
 export const scenarioModuleIds: Record<string, string[]> = {
   minimal: ['minimal'],
   'dev-default': ['devDefault_seed'],
+  'demo-hub': ['demoHub_seed'],
   'campaign-smoke': ['campaignSmoke_batchAssign'],
   'campaign-html-demo': ['campaignHtmlDemo_seed'],
   'ooo-mixed-inbox': ['oooInbox_oooStates'],

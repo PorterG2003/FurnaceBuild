@@ -12,6 +12,10 @@ import {
   DEV_DEFAULT_CAMPAIGN_IDS,
   DEV_DEFAULT_MAILBOX_SPECS,
 } from '../../lib/test/campaign/productionLikeSeed';
+import {
+  DEMO_HUB_CAMPAIGN_IDS,
+  DEMO_HUB_MAILBOX_SPECS,
+} from '../../lib/test/campaign/demoHubSeed';
 import { smokeMailboxLocalPart } from './theme/falloutCopy';
 import {
   OOO_CASE_COPY,
@@ -19,7 +23,7 @@ import {
 } from './theme/falloutOooCopy';
 import type { SeedContext } from './types';
 
-export type ResetScope = 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default' | 'smart-handling-flow';
+export type ResetScope = 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default' | 'demo-hub' | 'smart-handling-flow';
 
 export type ScopePlan = {
   scope: ResetScope;
@@ -41,7 +45,7 @@ export type ScopeCounts = {
 
 export function resolveScopePlans(
   accountId: string,
-  requestedScope: 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default' | 'smart-handling-flow' | 'all' | null
+  requestedScope: 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default' | 'demo-hub' | 'smart-handling-flow' | 'all' | null
 ): ScopePlan[] {
   const plans: ScopePlan[] = [];
   const wantCampaignSmoke =
@@ -54,12 +58,13 @@ export function resolveScopePlans(
     (!requestedScope && !!process.env.SEED_OOO_CAMPAIGN_ID);
   const wantDevDefault =
     requestedScope === 'dev-default' || requestedScope === 'all';
+  const wantDemoHub = requestedScope === 'demo-hub' || requestedScope === 'all';
   const wantSmartHandling =
     requestedScope === 'smart-handling-flow' || requestedScope === 'all';
 
-  if (!wantCampaignSmoke && !wantOoo && !wantDevDefault && !wantSmartHandling) {
+  if (!wantCampaignSmoke && !wantOoo && !wantDevDefault && !wantDemoHub && !wantSmartHandling) {
     throw new Error(
-      'seed:reset requires an explicit scope (--scope=campaign-smoke|ooo-mixed-inbox|dev-default|smart-handling-flow|all) or at least one scoped campaign env (SEED_CAMPAIGN_ID / SEED_OOO_CAMPAIGN_ID).'
+      'seed:reset requires an explicit scope (--scope=campaign-smoke|ooo-mixed-inbox|dev-default|demo-hub|smart-handling-flow|all) or at least one scoped campaign env (SEED_CAMPAIGN_ID / SEED_OOO_CAMPAIGN_ID).'
     );
   }
 
@@ -99,6 +104,17 @@ export function resolveScopePlans(
         campaignId,
         accountId,
         mailboxEmails: DEV_DEFAULT_MAILBOX_SPECS.map((mailbox) => mailbox.emailAddress),
+      });
+    }
+  }
+
+  if (wantDemoHub) {
+    for (const campaignId of DEMO_HUB_CAMPAIGN_IDS) {
+      plans.push({
+        scope: 'demo-hub',
+        campaignId,
+        accountId,
+        mailboxEmails: DEMO_HUB_MAILBOX_SPECS.map((mailbox) => mailbox.emailAddress),
       });
     }
   }

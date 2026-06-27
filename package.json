@@ -48,6 +48,7 @@
     "migrate:users": "tsx scripts/migrate-cognito-users-to-supabase-auth.ts",
     "migrate:users:dry": "DRY_RUN=1 tsx scripts/migrate-cognito-users-to-supabase-auth.ts",
     "seed": "tsx scripts/seed/index.ts",
+    "seed:demo": "tsx scripts/seed/index.ts --scenario=demo-hub",
     "seed:reset": "tsx scripts/seed/reset.ts",
     "seed:wipe": "tsx scripts/seed/index.ts --wipe",
     "seed:help": "tsx scripts/seed/index.ts --help",

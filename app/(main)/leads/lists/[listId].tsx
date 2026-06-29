@@ -414,6 +414,7 @@ export default function LeadsWorkbenchPage() {
       const parts = [
         result.created > 0 ? `${result.created} added` : null,
         result.updated > 0 ? `${result.updated} updated` : null,
+        result.incomplete > 0 ? `${result.incomplete} with missing personalization fields` : null,
         result.skipped > 0 ? `${result.skipped} skipped` : null,
         result.failed > 0 ? `${result.failed} failed` : null,
       ].filter(Boolean);

@@ -131,6 +131,8 @@ export type CampaignGraphSpec = {
   flowKind?: CampaignFlowKind;
   /** Categorizer node AI toggle (emailWaitEmailCategorizer flows only). */
   categorizerUseAi?: boolean;
+  /** Required custom (personalization) keys to seed on the lead source node. */
+  leadSourceCustomFieldKeys?: string[];
   sendingIntervalSeconds?: number;
   schedule?: Json;
   mailboxes?: CampaignMailboxSpec[];
@@ -252,8 +254,13 @@ export function buildAlwaysOnSchedule(): Json {
 
 export function buildFlowData(
   flowKind: CampaignFlowKind,
-  options?: { categorizerUseAi?: boolean },
+  options?: { categorizerUseAi?: boolean; leadSourceCustomFieldKeys?: string[] },
 ): Json {
+  const leadSourceData: Record<string, unknown> = { label: 'Seed Lead Source' };
+  if (options?.leadSourceCustomFieldKeys?.length) {
+    leadSourceData.customFieldKeys = options.leadSourceCustomFieldKeys;
+  }
+
   if (flowKind === 'emailWaitEmailCategorizer') {
     return {
       nodes: [
@@ -261,7 +268,7 @@ export function buildFlowData(
           id: 'leadSource-1',
           type: 'leadSource',
           position: { x: 0, y: 0 },
-          data: { label: 'Seed Lead Source' },
+          data: leadSourceData,
         },
         {
           id: 'email-1',
@@ -403,7 +410,7 @@ export function buildFlowData(
           id: 'leadSource-1',
           type: 'leadSource',
           position: { x: 0, y: 0 },
-          data: { label: 'Seed Lead Source' },
+          data: leadSourceData,
         },
         {
           id: 'email-1',
@@ -481,7 +488,7 @@ export function buildFlowData(
         id: 'leadSource-1',
         type: 'leadSource',
         position: { x: 0, y: 0 },
-        data: { label: 'Seed Lead Source' },
+        data: leadSourceData,
       },
       {
         id: 'email-1',
@@ -813,6 +820,7 @@ async function upsertCampaign(params: {
     status: spec.status ?? 'running',
     flow_data: buildFlowData(spec.flowKind ?? 'emailOnly', {
       categorizerUseAi: spec.categorizerUseAi,
+      leadSourceCustomFieldKeys: spec.leadSourceCustomFieldKeys,
     }),
     schedule: (spec.schedule ?? buildAlwaysOnSchedule()) as any,
     sending_interval_seconds: spec.sendingIntervalSeconds ?? DEFAULT_SENDING_INTERVAL_SECONDS,

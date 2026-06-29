@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  autoMapExistingCustomKeys,
   createEmptyCsvFieldMappings,
   dedupeWithinFile,
   extractUniqueEmailsFromRows,
   filterBlockedEmails,
   filterExistingCampaignEmails,
+  isValidCustomFieldKey,
   mapCsvRowToLeadPayload,
+  normalizeCustomFieldKey,
   runCsvDedupePipeline,
 } from './csv-dedupe';
 import type { BlockListEntry } from '@/lib/supabase/types';
@@ -131,6 +134,89 @@ test('mapCsvRowToLeadPayload skips rows with no primary data', () => {
   const mappings = createEmptyCsvFieldMappings();
   const payload = mapCsvRowToLeadPayload({ Notes: 'only custom' }, mappings, []);
   assert.equal(payload, null);
+});
+
+test('normalizeCustomFieldKey trims surrounding whitespace but preserves the inner key', () => {
+  assert.equal(normalizeCustomFieldKey(' Title '), 'Title');
+  assert.equal(normalizeCustomFieldKey('Title'), 'Title');
+  assert.equal(normalizeCustomFieldKey('# Employees'), '# Employees');
+  assert.equal(normalizeCustomFieldKey('  Years Until 2026  '), 'Years Until 2026');
+});
+
+test('isValidCustomFieldKey rejects blanks and template-breaking characters', () => {
+  assert.equal(isValidCustomFieldKey(''), false);
+  assert.equal(isValidCustomFieldKey('   '), false);
+  assert.equal(isValidCustomFieldKey('a{b'), false);
+  assert.equal(isValidCustomFieldKey('a}b'), false);
+  assert.equal(isValidCustomFieldKey('{{custom.x}}'), false);
+  assert.equal(isValidCustomFieldKey('# Employees'), true);
+  assert.equal(isValidCustomFieldKey('Years Until 2026'), true);
+});
+
+test('mapCsvRowToLeadPayload writes existing custom keys under the normalized key name', () => {
+  const mappings = { ...createEmptyCsvFieldMappings(), email: 'Email' };
+  const payload = mapCsvRowToLeadPayload(
+    { Email: 'person@test.com', IndustryColumn: 'SaaS' },
+    mappings,
+    [],
+    { Industry: 'IndustryColumn' },
+  );
+  assert.ok(payload);
+  assert.deepEqual(payload.custom_lead_data, { Industry: 'SaaS' });
+});
+
+test('mapCsvRowToLeadPayload trims a new custom column so it matches the DB-required key', () => {
+  const mappings = { ...createEmptyCsvFieldMappings(), email: 'Email' };
+  const payload = mapCsvRowToLeadPayload(
+    { Email: 'person@test.com', ' Title ': 'CEO' },
+    mappings,
+    [' Title '],
+  );
+  assert.ok(payload);
+  assert.deepEqual(payload.custom_lead_data, { Title: 'CEO' });
+});
+
+test('mapCsvRowToLeadPayload omits blank/unmapped existing custom keys', () => {
+  const mappings = { ...createEmptyCsvFieldMappings(), email: 'Email' };
+  const payload = mapCsvRowToLeadPayload(
+    { Email: 'person@test.com', IndustryColumn: '' },
+    mappings,
+    [],
+    { Industry: 'IndustryColumn', Title: '' },
+  );
+  assert.ok(payload);
+  assert.equal(payload.custom_lead_data, undefined);
+});
+
+test('mapCsvRowToLeadPayload collision: existing-key mapping wins over a colliding new column', () => {
+  const mappings = { ...createEmptyCsvFieldMappings(), email: 'Email' };
+  const payload = mapCsvRowToLeadPayload(
+    { Email: 'person@test.com', Industry: 'FromExistingMap', 'Industry ': 'FromNewColumn' },
+    mappings,
+    ['Industry '],
+    { Industry: 'Industry' },
+  );
+  assert.ok(payload);
+  // The new column "Industry " normalizes to "Industry" which the existing-key
+  // mapping already owns, so it must not overwrite or duplicate.
+  assert.deepEqual(payload.custom_lead_data, { Industry: 'FromExistingMap' });
+});
+
+test('autoMapExistingCustomKeys prefers exact header match then normalized fallback', () => {
+  const headers = ['Email', 'Industry', 'job title'];
+  const normalizedHeaders = headers.map((header) => header.trim().toLowerCase());
+  const result = autoMapExistingCustomKeys(headers, normalizedHeaders, ['Industry', 'Job Title', 'Region']);
+  assert.equal(result.Industry, 'Industry');
+  assert.equal(result['Job Title'], 'job title');
+  assert.equal(result.Region, undefined);
+});
+
+test('autoMapExistingCustomKeys does not reuse a column for two keys', () => {
+  const headers = ['industry'];
+  const normalizedHeaders = ['industry'];
+  const result = autoMapExistingCustomKeys(headers, normalizedHeaders, ['Industry', 'industry']);
+  const usedColumns = Object.values(result);
+  assert.equal(new Set(usedColumns).size, usedColumns.length);
 });
 
 test('runCsvDedupePipeline aggregates stats correctly', () => {

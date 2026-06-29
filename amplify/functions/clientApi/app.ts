@@ -1202,6 +1202,7 @@ app.post('/v1/campaigns/:id/leads/bulk', async (c) => {
   const errors: Array<{ index: number; message: string }> = [];
   let imported = 0;
   let failed = 0;
+  let incomplete = 0;
 
   const { data: rpcResult, error: rpcError } = await supabase.rpc('import_api_leads_to_campaign', {
     p_account_id: auth.accountId,
@@ -1215,6 +1216,7 @@ app.post('/v1/campaigns/:id/leads/bulk', async (c) => {
   imported = (typeof resultRow.created === 'number' ? resultRow.created : 0)
     + (typeof resultRow.updated === 'number' ? resultRow.updated : 0);
   failed = typeof resultRow.failed === 'number' ? resultRow.failed : 0;
+  incomplete = typeof resultRow.incomplete === 'number' ? resultRow.incomplete : 0;
   if (Array.isArray(resultRow.errors)) {
     for (const [index, entry] of (resultRow.errors as Array<Record<string, unknown>>).entries()) {
       errors.push({ index, message: String(entry.message ?? 'Import failed') });
@@ -1233,6 +1235,7 @@ app.post('/v1/campaigns/:id/leads/bulk', async (c) => {
         updated: typeof resultRow.updated === 'number' ? resultRow.updated : 0,
         enrolled: typeof resultRow.enrolled === 'number' ? resultRow.enrolled : 0,
         skipped: typeof resultRow.skipped === 'number' ? resultRow.skipped : 0,
+        incomplete,
         failed,
       },
       syncScopeKey: hashRequestBody(rawBody),
@@ -1246,7 +1249,7 @@ app.post('/v1/campaigns/:id/leads/bulk', async (c) => {
     }
   }
 
-  const payload = { imported, failed, errors };
+  const payload = { imported, incomplete, failed, errors };
   await saveIdempotencyResponse(supabase, auth.accountId, idempotencyKey, getRequestPath(c), bodyHash, payload);
   return jsonResponse(c, payload, 200, c.get('rateLimitHeaders'));
 });
@@ -1350,6 +1353,7 @@ app.post('/v1/campaigns/:id/leads:add', async (c) => {
       updated: typeof result.updated === 'number' ? result.updated : 0,
       enrolled: typeof result.enrolled === 'number' ? result.enrolled : 0,
       skipped: typeof result.skipped === 'number' ? result.skipped : 0,
+      incomplete: typeof result.incomplete === 'number' ? result.incomplete : 0,
       failed: typeof result.failed === 'number' ? result.failed : 0,
     },
     globalLeadIds,

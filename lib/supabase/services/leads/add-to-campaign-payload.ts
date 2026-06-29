@@ -8,6 +8,8 @@ export type AddToCampaignPayloadResult =
       kind: 'ready';
       globalLeadId: string;
       email: string;
+      /** True when one or more of the campaign's required custom fields are blank/missing. */
+      incomplete: boolean;
       insertPayload: Omit<LeadInsert, 'campaign_id' | 'bucket_id' | 'account_id'>;
     }
   | {
@@ -75,14 +77,14 @@ export function buildAddToCampaignPayloads(params: {
       (source.custom_lead_data ?? {}) as Record<string, string | number | null>,
     );
 
+    // Missing required custom fields no longer skip the lead; we add it with
+    // blanks and flag it as incomplete so callers can surface the count.
+    let incomplete = false;
     for (const key of requiredCustomKeys) {
       const value = customLeadData[key];
       if (value === undefined || value === null || value === '') {
-        return {
-          kind: 'skipped',
-          globalLeadId,
-          reason: `Missing required custom field "${key}" for the target campaign.`,
-        };
+        incomplete = true;
+        break;
       }
     }
 
@@ -90,6 +92,7 @@ export function buildAddToCampaignPayloads(params: {
       kind: 'ready',
       globalLeadId,
       email: source.email.trim().toLowerCase(),
+      incomplete,
       insertPayload: {
         email: source.email.trim().toLowerCase(),
         name: buildDisplayName(source),

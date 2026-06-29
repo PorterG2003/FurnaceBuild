@@ -135,6 +135,102 @@ test('import_api_leads_to_campaign upserts existing email without duplicating ro
   }
 });
 
+test('import_api_leads_to_campaign imports a row missing a required custom field and counts it incomplete', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('csv-incomplete') });
+  const completeEmail = `csv-complete-${harness.namespace}@furnace.test`;
+  const incompleteEmail = `csv-incomplete-${harness.namespace}@furnace.test`;
+  const blankEmailRow = { email: '   ', custom_lead_data: { Industry: 'SaaS', Title: 'CEO' } };
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'CSV Incomplete Target',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leadSourceCustomFieldKeys: ['Industry', 'Title'],
+      leads: [],
+    });
+
+    const { data, error } = await harness.supabase.rpc('import_api_leads_to_campaign', {
+      p_account_id: harness.env.accountId,
+      p_campaign_id: graph.campaignId,
+      p_leads: [
+        { email: completeEmail, custom_lead_data: { Industry: 'SaaS', Title: 'CEO' } },
+        // Missing "Title" -> still imported, counted incomplete.
+        { email: incompleteEmail, custom_lead_data: { Industry: 'SaaS' } },
+        // Blank email -> still skipped (the one hard requirement).
+        blankEmailRow,
+      ],
+      p_options: { emit_row_webhooks: false },
+    });
+    assert.equal(error, null);
+    const result = data as { created?: number; skipped?: number; incomplete?: number };
+    assert.equal(result.created, 2);
+    assert.equal(result.skipped, 1);
+    assert.equal(result.incomplete, 1);
+
+    const { data: incompleteLead, error: incompleteError } = await harness.supabase
+      .from('leads')
+      .select('id, custom_lead_data')
+      .eq('campaign_id', graph.campaignId)
+      .eq('email', incompleteEmail)
+      .is('deleted_at', null)
+      .single();
+    assert.equal(incompleteError, null);
+    assert.ok(incompleteLead?.id, 'incomplete lead row should exist');
+    assert.equal((incompleteLead?.custom_lead_data as Record<string, unknown>)?.Industry, 'SaaS');
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('import_api_leads_to_campaign merges custom data on re-import instead of wiping unmapped keys', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('csv-merge') });
+  const email = `csv-merge-${harness.namespace}@furnace.test`;
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'CSV Merge Target',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leadSourceCustomFieldKeys: ['Industry', 'Title'],
+      leads: [],
+    });
+
+    const first = await harness.supabase.rpc('import_api_leads_to_campaign', {
+      p_account_id: harness.env.accountId,
+      p_campaign_id: graph.campaignId,
+      p_leads: [{ email, custom_lead_data: { Industry: 'SaaS', Title: 'CEO' } }],
+      p_options: { emit_row_webhooks: false },
+    });
+    assert.equal(first.error, null);
+    assert.equal((first.data as { created?: number }).created, 1);
+
+    // Re-import the same email with only a partial custom mapping (Title only).
+    const second = await harness.supabase.rpc('import_api_leads_to_campaign', {
+      p_account_id: harness.env.accountId,
+      p_campaign_id: graph.campaignId,
+      p_leads: [{ email, custom_lead_data: { Title: 'Founder' } }],
+      p_options: { emit_row_webhooks: false },
+    });
+    assert.equal(second.error, null);
+    assert.equal((second.data as { updated?: number }).updated, 1);
+
+    const { data: lead, error: leadError } = await harness.supabase
+      .from('leads')
+      .select('custom_lead_data')
+      .eq('campaign_id', graph.campaignId)
+      .eq('email', email)
+      .is('deleted_at', null)
+      .single();
+    assert.equal(leadError, null);
+    const custom = (lead?.custom_lead_data ?? {}) as Record<string, unknown>;
+    assert.equal(custom.Industry, 'SaaS', 'unmapped Industry key must be preserved (merge, not replace)');
+    assert.equal(custom.Title, 'Founder', 'mapped Title key must be updated');
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test('csv_lead_import_staged job imports staged rows and cleans up staging', async (t) => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('csv-staged') });
   const email = `csv-staged-${harness.namespace}@furnace.test`;
@@ -194,6 +290,69 @@ test('csv_lead_import_staged job imports staged rows and cleans up staging', asy
       .select('id', { count: 'exact', head: true })
       .eq('job_id', jobId as string);
     assert.equal(stagingCount, 0);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('csv_lead_import_staged job surfaces incomplete rows in the job result', async (t) => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('csv-staged-incomplete') });
+  const completeEmail = `csv-staged-complete-${harness.namespace}@furnace.test`;
+  const incompleteEmail = `csv-staged-incomplete-${harness.namespace}@furnace.test`;
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'CSV Staged Incomplete Target',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leadSourceCustomFieldKeys: ['Industry'],
+      leads: [],
+    });
+
+    const { data: jobId, error: createError } = await harness.supabase.rpc('create_csv_lead_import_job', {
+      p_account_id: harness.env.accountId,
+      p_campaign_id: graph.campaignId,
+    });
+    if (isCsvImportDedupeRpcSchemaMismatch(createError)) {
+      t.skip('DB-backed test target has not applied csv import dedupe migration; refresh PostgREST schema after migrate');
+      return;
+    }
+    assert.equal(createError, null);
+    assert.ok(jobId);
+
+    const { error: appendError } = await harness.supabase.rpc('append_csv_import_staging_rows', {
+      p_job_id: jobId,
+      p_rows: [
+        { email: completeEmail, custom_lead_data: { Industry: 'SaaS' } },
+        { email: incompleteEmail },
+      ],
+    });
+    assert.equal(appendError, null);
+
+    const { error: finalizeError } = await harness.supabase.rpc('finalize_csv_lead_import_job', {
+      p_job_id: jobId,
+    });
+    assert.equal(finalizeError, null);
+
+    await processImportJobById(jobId as string, { supabase: harness.supabase as never });
+
+    const { data: job, error: jobError } = await harness.supabase
+      .from('api_import_jobs')
+      .select('status, result')
+      .eq('id', jobId as string)
+      .single();
+    assert.equal(jobError, null);
+    assert.equal(job?.status, 'completed');
+    const result = (job?.result ?? {}) as { incomplete?: number };
+    assert.equal(result.incomplete, 1);
+
+    const { count: leadCount } = await harness.supabase
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('campaign_id', graph.campaignId)
+      .in('email', [completeEmail, incompleteEmail])
+      .is('deleted_at', null);
+    assert.equal(leadCount, 2);
   } finally {
     await harness.cleanup();
   }

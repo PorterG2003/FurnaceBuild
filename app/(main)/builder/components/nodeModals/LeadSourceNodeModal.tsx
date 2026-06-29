@@ -19,8 +19,11 @@ import {
   getLeads,
 } from '@/lib/supabase/services/leads';
 import {
+  autoMapExistingCustomKeys,
   extractUniqueEmailsFromRows,
+  isValidCustomFieldKey,
   mapCsvRowsToLeadPayloads,
+  normalizeCustomFieldKey,
   runCsvDedupePipeline,
   type CsvDedupeResult,
 } from '@/lib/leads/csv-dedupe';
@@ -170,6 +173,17 @@ function parseCSV(csvText: string): ParsedCSV {
 
 const csvSteps = ['Upload CSV', 'Map Fields', 'Dedupe', 'Review'] as const;
 
+function buildImportCompleteMessage(stats: CsvImportStats): string {
+  const imported = stats.created + stats.updated;
+  const base = `Imported ${imported.toLocaleString()} lead${imported === 1 ? '' : 's'}.`;
+  if (stats.incomplete > 0) {
+    return `${base} ${stats.incomplete.toLocaleString()} ${
+      stats.incomplete === 1 ? 'was' : 'were'
+    } missing one or more personalization fields.`;
+  }
+  return base;
+}
+
 type CsvImportPhase = 'idle' | 'sync' | 'uploading' | 'importing';
 
 const mappingFields = [
@@ -236,6 +250,7 @@ function LeadSourceNodeModal({
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [fieldMappings, setFieldMappings] = useState<Record<FieldKey, string>>(() => createEmptyMappings());
   const [customFieldColumns, setCustomFieldColumns] = useState<string[]>([]);
+  const [customFieldMappings, setCustomFieldMappings] = useState<Record<string, string>>({});
   const [filterInCampaignsEnabled, setFilterInCampaignsEnabled] = useState(false);
   const [filterBlockListEnabled, setFilterBlockListEnabled] = useState(true);
   const [selectedDedupeCampaignIds, setSelectedDedupeCampaignIds] = useState<string[]>([]);
@@ -252,6 +267,7 @@ function LeadSourceNodeModal({
     dedupeStats: CsvDedupeResult['stats'] | null;
     mappedFields: Record<FieldKey, string>;
     customFields: string[];
+    personalizationFields: Array<{ key: string; column: string }>;
     unmappedColumns: string[];
   } | null>(null);
   const [isImportWizardOpen, setIsImportWizardOpen] = useState(false);
@@ -264,6 +280,11 @@ function LeadSourceNodeModal({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isDedupeCompactLayout = windowWidth < LAYOUT_BREAKPOINT;
 
+  const existingCustomKeys = useMemo(
+    () => (initialData?.customFieldKeys ?? []).filter((key) => key && key.length > 0),
+    [initialData?.customFieldKeys],
+  );
+
   const reviewSummary = useMemo((): CsvImportReviewSummary | null => {
     if (!importSummary) return null;
 
@@ -273,6 +294,9 @@ function LeadSourceNodeModal({
       if (column) {
         mappedFields.push({ label: field.label, column });
       }
+    }
+    for (const { key, column } of importSummary.personalizationFields) {
+      mappedFields.push({ label: `Personalization: ${key}`, column });
     }
     for (const column of importSummary.customFields) {
       mappedFields.push({ label: `Custom: ${column}`, column });
@@ -290,13 +314,65 @@ function LeadSourceNodeModal({
   const displayColumns = useMemo(() => csvColumns.slice(0, 6), [csvColumns]);
   const hiddenColumnCount = csvColumns.length > displayColumns.length ? csvColumns.length - displayColumns.length : 0;
 
+  const normalizedExistingKeySet = useMemo(
+    () => new Set(existingCustomKeys.map((key) => normalizeCustomFieldKey(key))),
+    [existingCustomKeys],
+  );
+
+  const standardMappedColumns = useMemo(
+    () => new Set(Object.values(fieldMappings).filter(Boolean)),
+    [fieldMappings],
+  );
+
+  const personalizationMappedColumns = useMemo(
+    () => new Set(Object.values(customFieldMappings).filter(Boolean)),
+    [customFieldMappings],
+  );
+
+  // Pill selector is reserved for genuinely NEW columns: not used by a standard
+  // mapping, not used by a personalization mapping, and not (after normalization)
+  // an existing campaign custom key (those collision-merge into the existing key).
+  const availableCustomPillColumns = useMemo(
+    () =>
+      csvColumns.filter((column) => {
+        if (standardMappedColumns.has(column)) return false;
+        if (personalizationMappedColumns.has(column)) return false;
+        if (normalizedExistingKeySet.has(normalizeCustomFieldKey(column))) return false;
+        return true;
+      }),
+    [csvColumns, normalizedExistingKeySet, personalizationMappedColumns, standardMappedColumns],
+  );
+
+  // Existing campaign keys that are themselves template-breaking (legacy data).
+  const invalidExistingKeys = useMemo(
+    () => existingCustomKeys.filter((key) => !isValidCustomFieldKey(key)),
+    [existingCustomKeys],
+  );
+
+  // New custom columns selected for import whose normalized key is invalid.
+  const invalidSelectedCustomColumns = useMemo(
+    () => customFieldColumns.filter((column) => !isValidCustomFieldKey(column)),
+    [customFieldColumns],
+  );
+
   const mappingErrors = useMemo(() => {
     const errors: string[] = [];
     if (!fieldMappings.email) {
       errors.push('Email must be mapped to import leads.');
     }
+    if (invalidSelectedCustomColumns.length > 0) {
+      errors.push(
+        `These custom field names contain "{" or "}", which breaks personalization tokens: ${invalidSelectedCustomColumns.join(', ')}. Rename the column headers or deselect them.`,
+      );
+    }
+    const mappedInvalidExistingKeys = invalidExistingKeys.filter((key) => customFieldMappings[key]);
+    if (mappedInvalidExistingKeys.length > 0) {
+      errors.push(
+        `These campaign personalization fields contain "{" or "}" and can't be imported: ${mappedInvalidExistingKeys.join(', ')}.`,
+      );
+    }
     return errors;
-  }, [fieldMappings]);
+  }, [customFieldMappings, fieldMappings, invalidExistingKeys, invalidSelectedCustomColumns]);
 
   const previewRows = useMemo(() => csvRows.slice(0, 3), [csvRows]);
 
@@ -577,7 +653,14 @@ function LeadSourceNodeModal({
 
   const handleSave = () => {
     const customFieldKeys = Array.from(
-      new Set([...(initialData?.customFieldKeys ?? []), ...customFieldColumns])
+      new Set(
+        [
+          ...(initialData?.customFieldKeys ?? []),
+          ...customFieldColumns,
+        ]
+          .map((key) => normalizeCustomFieldKey(key))
+          .filter((key) => key.length > 0),
+      ),
     );
     const mappedStandardFieldKeys =
       csvColumns.length > 0
@@ -599,6 +682,7 @@ function LeadSourceNodeModal({
     setCsvColumns([]);
     setFieldMappings(createEmptyMappings());
     setCustomFieldColumns([]);
+    setCustomFieldMappings({});
     setImportSummary(null);
     setDedupeResult(null);
     setDedupePreviewError(null);
@@ -687,6 +771,23 @@ function LeadSourceNodeModal({
           const autoMappings = buildAutoMappings(parsed.headers, parsed.normalizedHeaders);
           setFieldMappings(() => ({ ...createEmptyMappings(), ...autoMappings }));
           setCustomFieldColumns([]);
+
+          // Auto-map the campaign's existing personalization keys to CSV columns,
+          // avoiding any column already claimed by a standard field mapping.
+          const standardColumns = new Set(Object.values(autoMappings).filter(Boolean));
+          const autoCustomMappings = autoMapExistingCustomKeys(
+            parsed.headers,
+            parsed.normalizedHeaders,
+            existingCustomKeys,
+          );
+          const seededCustomMappings: Record<string, string> = {};
+          for (const [key, column] of Object.entries(autoCustomMappings)) {
+            if (!standardColumns.has(column)) {
+              seededCustomMappings[key] = column;
+            }
+          }
+          setCustomFieldMappings(seededCustomMappings);
+
           setImportSummary(null);
           setCsvStep(1);
         } catch (error: any) {
@@ -713,12 +814,46 @@ function LeadSourceNodeModal({
     }));
 
     if (column) {
+      // A column used by a standard field can't also be a new custom column or a
+      // personalization mapping.
       setCustomFieldColumns(prev => prev.filter(item => item !== column));
+      setCustomFieldMappings(prev => {
+        const next: Record<string, string> = {};
+        for (const [key, mappedColumn] of Object.entries(prev)) {
+          next[key] = mappedColumn === column ? '' : mappedColumn;
+        }
+        return next;
+      });
+    }
+  };
+
+  const handleCustomFieldMappingChange = (existingKey: string, column: string) => {
+    setCustomFieldMappings(prev => ({
+      ...prev,
+      [existingKey]: column,
+    }));
+
+    if (column) {
+      // Claiming a column for a personalization key removes it from the new-column
+      // pills and clears any standard field that pointed at it.
+      setCustomFieldColumns(prev => prev.filter(item => item !== column));
+      setFieldMappings(prev => {
+        const next = { ...prev };
+        for (const field of mappingFields) {
+          if (next[field.id] === column) {
+            next[field.id] = '';
+          }
+        }
+        return next;
+      });
     }
   };
 
   const toggleCustomFieldColumn = (column: string) => {
-    if (Object.values(fieldMappings).includes(column)) {
+    if (standardMappedColumns.has(column)) {
+      return;
+    }
+    if (personalizationMappedColumns.has(column)) {
       return;
     }
 
@@ -738,7 +873,15 @@ function LeadSourceNodeModal({
       return acc;
     }, {} as Record<FieldKey, string>);
 
-    const mappedSet = new Set<string>([...Object.values(fieldMappings).filter(Boolean), ...customFieldColumns]);
+    const personalizationFields = Object.entries(customFieldMappings)
+      .filter(([, column]) => Boolean(column))
+      .map(([key, column]) => ({ key, column }));
+
+    const mappedSet = new Set<string>([
+      ...Object.values(fieldMappings).filter(Boolean),
+      ...customFieldColumns,
+      ...personalizationFields.map(({ column }) => column),
+    ]);
     const unmappedColumns = csvColumns.filter((column) => !mappedSet.has(column));
     const stats = result?.stats ?? null;
     const readyRows = stats?.kept ?? csvRows.length;
@@ -753,6 +896,7 @@ function LeadSourceNodeModal({
       dedupeStats: stats,
       mappedFields,
       customFields: [...customFieldColumns],
+      personalizationFields,
       unmappedColumns,
     });
   };
@@ -819,7 +963,12 @@ function LeadSourceNodeModal({
     }
 
     const rowsToImport = dedupeResult.kept;
-    const leadPayloads = mapCsvRowsToLeadPayloads(rowsToImport, fieldMappings, customFieldColumns);
+    const leadPayloads = mapCsvRowsToLeadPayloads(
+      rowsToImport,
+      fieldMappings,
+      customFieldColumns,
+      customFieldMappings,
+    );
 
     if (leadPayloads.length === 0) {
       Alert.alert('No leads to import', 'We could not find any rows with valid emails after applying your filters.');
@@ -829,6 +978,7 @@ function LeadSourceNodeModal({
     try {
       setIsSavingImport(true);
       setImportResult(null);
+      let importedStats: CsvImportStats;
 
       if (shouldUseAsyncCsvImport(leadPayloads.length)) {
         setImportPhase('uploading');
@@ -872,12 +1022,8 @@ function LeadSourceNodeModal({
           throw new Error('CSV import job failed.');
         }
 
-        const stats = mapImportJobToCsvResult(job);
-        setImportResult(stats);
-        Alert.alert(
-          'Import complete',
-          `Imported ${(stats.created + stats.updated).toLocaleString()} lead${stats.created + stats.updated === 1 ? '' : 's'}.`,
-        );
+        importedStats = mapImportJobToCsvResult(job);
+        setImportResult(importedStats);
       } else {
         setImportPhase('sync');
         setImportProgress({
@@ -886,7 +1032,7 @@ function LeadSourceNodeModal({
           message: 'Keep this tab open until import finishes.',
         });
 
-        const stats = await importCsvLeadsSync(
+        importedStats = await importCsvLeadsSync(
           account.id,
           initialData.campaignId,
           leadPayloads,
@@ -899,12 +1045,23 @@ function LeadSourceNodeModal({
           },
         );
 
-        setImportResult(stats);
-        Alert.alert(
-          'Import complete',
-          `Imported ${(stats.created + stats.updated).toLocaleString()} lead${stats.created + stats.updated === 1 ? '' : 's'}.`,
-        );
+        setImportResult(importedStats);
       }
+
+      // Safety net: with blanks allowed, the only way to end up with nothing
+      // created/updated is an unexpected failure (e.g. every row had a blank
+      // email). Never report success or auto-close in that case.
+      if (importedStats.created + importedStats.updated === 0) {
+        const failureDetail =
+          importedStats.failed > 0
+            ? `${importedStats.failed.toLocaleString()} row${importedStats.failed === 1 ? '' : 's'} failed.`
+            : 'Check that your email column is mapped and that rows have valid email addresses.';
+        setImportPhase('idle');
+        Alert.alert('No leads imported', `We couldn't import any leads. ${failureDetail}`);
+        return;
+      }
+
+      Alert.alert('Import complete', buildImportCompleteMessage(importedStats));
 
       await loadBucketData();
       closeImportWizard({ preserveData: true });
@@ -967,6 +1124,11 @@ function LeadSourceNodeModal({
             <Text className="text-sm text-white font-instrument-medium">
               Created {importResult.created.toLocaleString()} · Updated {importResult.updated.toLocaleString()}
             </Text>
+            {importResult.incomplete > 0 ? (
+              <Text className="text-xs text-yellow-200 mt-1">
+                {importResult.incomplete.toLocaleString()} with missing personalization fields
+              </Text>
+            ) : null}
             {importResult.failed > 0 ? (
               <Text className="text-xs text-red-300 mt-1">
                 {importResult.failed.toLocaleString()} failed
@@ -1111,21 +1273,103 @@ function LeadSourceNodeModal({
               );
             })}
 
+            {existingCustomKeys.length > 0 && (
+              <View className="p-3 border border-white/10 rounded-xl bg-white/5">
+                <Text className="text-sm text-white font-instrument-medium mb-2">
+                  Personalization fields
+                </Text>
+                <Text className="text-xs text-gray-400 mb-3">
+                  This campaign already uses these custom fields. Map a column to fill them — leaving one blank still imports the lead (it will be counted as incomplete).
+                </Text>
+                {existingCustomKeys.map((key) => {
+                  const mappedColumn = customFieldMappings[key] ?? '';
+                  const keyInvalid = !isValidCustomFieldKey(key);
+                  return (
+                    <View
+                      key={key}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: keyInvalid ? 'rgba(248,113,113,0.5)' : 'rgba(255,255,255,0.12)',
+                        borderRadius: 12,
+                        backgroundColor: 'rgba(255,255,255,0.04)',
+                        paddingVertical: 10,
+                        paddingHorizontal: 14,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: '#FFFFFF', fontSize: 14, fontFamily: 'Instrument Sans, system-ui, sans-serif', fontWeight: '600' }}>
+                            {key}
+                          </Text>
+                          {keyInvalid ? (
+                            <Text style={{ color: '#F87171', fontSize: 11, marginTop: 2 }}>
+                              Contains "{'{'}" or "{'}'}" — can't be imported until renamed.
+                            </Text>
+                          ) : null}
+                        </View>
+                        <Text
+                          style={{
+                            color: mappedColumn ? '#34D399' : '#9CA3AF',
+                            fontSize: 12,
+                            fontFamily: 'Instrument Sans, system-ui, sans-serif',
+                            fontWeight: '600',
+                            minWidth: 90,
+                            textAlign: 'right',
+                          }}
+                        >
+                          {mappedColumn ? 'Mapped' : 'Optional'}
+                        </Text>
+                        {Platform.OS === 'web' ? (
+                          <select
+                            value={mappedColumn}
+                            disabled={keyInvalid}
+                            onChange={(event) => handleCustomFieldMappingChange(key, event.target.value)}
+                            style={{
+                              minWidth: 180,
+                              backgroundColor: 'rgba(0,0,0,0.35)',
+                              borderColor: 'rgba(255,255,255,0.2)',
+                              borderWidth: 1,
+                              borderRadius: 10,
+                              padding: '8px 12px',
+                              color: '#FFFFFF',
+                              fontSize: 13,
+                              fontFamily: 'Instrument Sans, system-ui, sans-serif',
+                              opacity: keyInvalid ? 0.4 : 1,
+                            }}
+                          >
+                            <option value="">Select column…</option>
+                            {csvColumns.map((column) => (
+                              <option value={column} key={column}>{column}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Text style={{ color: '#9CA3AF', fontSize: 12 }}>
+                            Mapping is currently available in the web builder.
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
             <View className="p-3 border border-white/10 rounded-xl bg-white/5">
               <Text className="text-sm text-white font-instrument-medium mb-2">
-                Custom Lead Fields
+                New custom fields
               </Text>
               <Text className="text-xs text-gray-400 mb-3">
-                Tag any additional columns you want stored in custom_lead_data.
+                Tag any additional columns you want stored as new personalization fields.
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {csvColumns.map(column => {
-                  const isMapped = Object.values(fieldMappings).includes(column);
+                {availableCustomPillColumns.map(column => {
                   const isSelected = customFieldColumns.includes(column);
+                  const columnInvalid = !isValidCustomFieldKey(column);
                   return (
                     <TouchableOpacity
                       key={column}
-                      disabled={isMapped}
+                      disabled={columnInvalid}
                       onPress={() => toggleCustomFieldColumn(column)}
                       style={{
                         borderRadius: 999,
@@ -1133,19 +1377,22 @@ function LeadSourceNodeModal({
                         paddingVertical: 6,
                         backgroundColor: isSelected ? 'rgba(243,68,13,0.25)' : 'rgba(255,255,255,0.05)',
                         borderWidth: 1,
-                        borderColor: isSelected ? '#F3440D' : 'rgba(255,255,255,0.12)',
-                        opacity: isMapped ? 0.4 : 1,
+                        borderColor: columnInvalid ? 'rgba(248,113,113,0.5)' : isSelected ? '#F3440D' : 'rgba(255,255,255,0.12)',
+                        opacity: columnInvalid ? 0.4 : 1,
                       }}
                     >
                       <Text style={{ color: '#FFFFFF', fontSize: 12, fontFamily: 'Instrument Sans, system-ui, sans-serif' }}>
                         {column}
+                        {columnInvalid ? ' (invalid name)' : ''}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
-                {csvColumns.length === 0 && (
+                {availableCustomPillColumns.length === 0 && (
                   <Text className="text-xs text-gray-400">
-                    Upload a CSV to manage custom fields.
+                    {csvColumns.length === 0
+                      ? 'Upload a CSV to manage custom fields.'
+                      : 'No additional columns to add as new custom fields.'}
                   </Text>
                 )}
               </View>

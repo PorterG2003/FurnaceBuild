@@ -622,6 +622,7 @@ export function buildClientApiPaths() {
         responses: {
           200: jsonResponse('BulkLeadsResult', 'Bulk import results.', {
             imported: 2,
+            incomplete: 0,
             failed: 0,
             errors: [],
           }),

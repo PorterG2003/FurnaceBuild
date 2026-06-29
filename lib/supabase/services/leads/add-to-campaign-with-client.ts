@@ -29,6 +29,8 @@ export interface AddGlobalLeadsToCampaignResult {
   updated: number;
   enrolled: number;
   skipped: number;
+  /** Leads added but missing one or more required custom (personalization) fields. */
+  incomplete: number;
   failed: number;
   errors: Array<{ globalLeadId: string; message: string }>;
 }
@@ -277,6 +279,7 @@ export async function addGlobalLeadsToCampaignWithClient(
     updated: 0,
     enrolled: 0,
     skipped: 0,
+    incomplete: 0,
     failed: 0,
     errors: [],
   };
@@ -333,6 +336,10 @@ export async function addGlobalLeadsToCampaignWithClient(
       result.errors.push({ globalLeadId: payload.globalLeadId, message: payload.reason });
       reportProgress(1);
       continue;
+    }
+
+    if (payload.incomplete) {
+      result.incomplete += 1;
     }
 
     const existing = existingByGlobalId.get(payload.globalLeadId);

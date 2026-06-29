@@ -31,6 +31,7 @@ type ChunkStats = {
   updated: number;
   enrolled: number;
   skipped: number;
+  incomplete: number;
   failed: number;
   paused: number;
   resumed: number;
@@ -44,6 +45,7 @@ function mergeStats(existing: ChunkStats, chunk: ChunkStats): ChunkStats {
     updated: existing.updated + chunk.updated,
     enrolled: existing.enrolled + chunk.enrolled,
     skipped: existing.skipped + chunk.skipped,
+    incomplete: existing.incomplete + chunk.incomplete,
     failed: existing.failed + chunk.failed,
     paused: existing.paused + chunk.paused,
     resumed: existing.resumed + chunk.resumed,
@@ -59,6 +61,7 @@ function parseStats(value: Json | null | undefined): ChunkStats {
     updated: typeof row.updated === 'number' ? row.updated : 0,
     enrolled: typeof row.enrolled === 'number' ? row.enrolled : 0,
     skipped: typeof row.skipped === 'number' ? row.skipped : 0,
+    incomplete: typeof row.incomplete === 'number' ? row.incomplete : 0,
     failed: typeof row.failed === 'number' ? row.failed : 0,
     paused: typeof row.paused === 'number' ? row.paused : 0,
     resumed: typeof row.resumed === 'number' ? row.resumed : 0,
@@ -140,6 +143,7 @@ async function processPauseEnrollmentsChunk(
     resumed: 0,
     removed: 0,
     skipped: typeof row.skipped === 'number' ? row.skipped : 0,
+    incomplete: 0,
     failed: 0,
     errors: Array.isArray(row.errors) ? (row.errors as Array<Record<string, unknown>>) : [],
   };
@@ -166,6 +170,7 @@ async function processResumeEnrollmentsChunk(
     resumed: typeof row.resumed === 'number' ? row.resumed : 0,
     removed: 0,
     skipped: typeof row.skipped === 'number' ? row.skipped : 0,
+    incomplete: 0,
     failed: 0,
     errors: Array.isArray(row.errors) ? (row.errors as Array<Record<string, unknown>>) : [],
   };
@@ -192,6 +197,7 @@ async function processRemoveFromCampaignChunk(
     resumed: 0,
     removed: typeof row.removed === 'number' ? row.removed : 0,
     skipped: typeof row.skipped === 'number' ? row.skipped : 0,
+    incomplete: 0,
     failed: 0,
     errors: Array.isArray(row.errors) ? (row.errors as Array<Record<string, unknown>>) : [],
   };
@@ -216,6 +222,7 @@ async function processRemoveFromAllCampaignsChunk(
     resumed: 0,
     removed: typeof row.removed === 'number' ? row.removed : 0,
     skipped: typeof row.skipped === 'number' ? row.skipped : 0,
+    incomplete: 0,
     failed: 0,
     errors: Array.isArray(row.errors) ? (row.errors as Array<Record<string, unknown>>) : [],
   };
@@ -254,6 +261,7 @@ async function processEnrollmentActionListChunk(
         resumed: 0,
         removed: 0,
         skipped: 0,
+        incomplete: 0,
         failed: 0,
         errors: [],
       },
@@ -302,6 +310,7 @@ async function processRemoveActionListChunk(
         resumed: 0,
         removed: 0,
         skipped: 0,
+        incomplete: 0,
         failed: 0,
         errors: [],
       },
@@ -336,6 +345,7 @@ async function processAddToCampaignChunk(
     updated: typeof row.updated === 'number' ? row.updated : 0,
     enrolled: typeof row.enrolled === 'number' ? row.enrolled : 0,
     skipped: typeof row.skipped === 'number' ? row.skipped : 0,
+    incomplete: typeof row.incomplete === 'number' ? row.incomplete : 0,
     failed: typeof row.failed === 'number' ? row.failed : 0,
     paused: 0,
     resumed: 0,
@@ -363,6 +373,7 @@ async function processApiImportChunk(
     updated: typeof row.updated === 'number' ? row.updated : 0,
     enrolled: typeof row.enrolled === 'number' ? row.enrolled : 0,
     skipped: typeof row.skipped === 'number' ? row.skipped : 0,
+    incomplete: typeof row.incomplete === 'number' ? row.incomplete : 0,
     failed: typeof row.failed === 'number' ? row.failed : 0,
     paused: 0,
     resumed: 0,

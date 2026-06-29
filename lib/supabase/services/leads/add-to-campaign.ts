@@ -12,6 +12,7 @@ type RpcAddResult = {
   updated?: number;
   enrolled?: number;
   skipped?: number;
+  incomplete?: number;
   failed?: number;
   errors?: Array<{ globalLeadId?: string; message?: string }>;
 };
@@ -22,6 +23,7 @@ function mapRpcResult(data: RpcAddResult | null): AddGlobalLeadsToCampaignResult
     updated: data?.updated ?? 0,
     enrolled: data?.enrolled ?? 0,
     skipped: data?.skipped ?? 0,
+    incomplete: data?.incomplete ?? 0,
     failed: data?.failed ?? 0,
     errors: (data?.errors ?? []).map((error) => ({
       globalLeadId: error.globalLeadId ?? '',
@@ -43,6 +45,7 @@ export async function addGlobalLeadsToCampaign(
       updated: 0,
       enrolled: 0,
       skipped: 0,
+      incomplete: 0,
       failed: 0,
       errors: [],
     };

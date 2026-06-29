@@ -116,6 +116,7 @@ export function mapImportJobToAddResult(job: AccountImportJobSnapshot): {
   updated: number;
   enrolled: number;
   skipped: number;
+  incomplete: number;
   failed: number;
   errors: Array<{ globalLeadId: string; message: string }>;
 } {
@@ -126,6 +127,7 @@ export function mapImportJobToAddResult(job: AccountImportJobSnapshot): {
     updated: typeof result.updated === 'number' ? result.updated : 0,
     enrolled: typeof result.enrolled === 'number' ? result.enrolled : 0,
     skipped: typeof result.skipped === 'number' ? result.skipped : 0,
+    incomplete: typeof result.incomplete === 'number' ? result.incomplete : 0,
     failed: typeof result.failed === 'number' ? result.failed : 0,
     errors: errors.map((entry) => {
       const row = entry as Record<string, unknown>;

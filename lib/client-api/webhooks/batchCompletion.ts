@@ -19,6 +19,8 @@ export type BatchCompletionCounts = {
   paused?: number;
   resumed?: number;
   skipped?: number;
+  /** Rows written but missing one or more required custom (personalization) fields. */
+  incomplete?: number;
   failed?: number;
 };
 
@@ -98,6 +100,7 @@ export function chunkStatsToCounts(
         updated: stats.updated ?? 0,
         enrolled: stats.enrolled ?? 0,
         skipped: stats.skipped ?? 0,
+        incomplete: stats.incomplete ?? 0,
         failed: stats.failed ?? 0,
       };
     case 'add_to_campaign':
@@ -106,6 +109,7 @@ export function chunkStatsToCounts(
         updated: stats.updated ?? 0,
         enrolled: stats.enrolled ?? 0,
         skipped: stats.skipped ?? 0,
+        incomplete: stats.incomplete ?? 0,
         failed: stats.failed ?? 0,
       };
     case 'remove_from_campaign':

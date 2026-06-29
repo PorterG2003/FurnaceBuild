@@ -72,6 +72,65 @@ test('processImportJobById completes api_lead_import job with leads and enrollme
   }
 });
 
+test('processImportJobById surfaces incomplete rows in the api_lead_import job result', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('import-incomplete') });
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Import Worker Incomplete',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leadSourceCustomFieldKeys: ['Industry'],
+      leads: [],
+    });
+
+    const completeEmail = `import-complete-${harness.namespace}@furnace.test`;
+    const incompleteEmail = `import-incomplete-${harness.namespace}@furnace.test`;
+    const { data: job, error: insertError } = await harness.supabase
+      .from('api_import_jobs')
+      .insert({
+        account_id: harness.env.accountId,
+        campaign_id: graph.campaignId,
+        status: 'queued',
+        progress: 0,
+        cursor: 0,
+        input: {
+          operation: 'api_lead_import',
+          leads: [
+            { email: completeEmail, custom_lead_data: { Industry: 'SaaS' } },
+            { email: incompleteEmail },
+          ],
+        },
+        result: {},
+        errors: [],
+      } as never)
+      .select('id')
+      .single();
+    assert.equal(insertError, null);
+
+    await processImportJobById(job!.id as string, { supabase: harness.supabase as any });
+
+    const { data: finished, error: loadError } = await harness.supabase
+      .from('api_import_jobs')
+      .select('status, result')
+      .eq('id', job!.id)
+      .single();
+    assert.equal(loadError, null);
+    assert.equal(finished!.status, 'completed');
+    assert.equal((finished!.result as { incomplete?: number }).incomplete, 1);
+
+    const { count } = await harness.supabase
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('campaign_id', graph.campaignId)
+      .in('email', [completeEmail, incompleteEmail])
+      .is('deleted_at', null);
+    assert.equal(count, 2);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test('processImportJobById completes add_to_campaign operation', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('import-add-campaign') });
   const email = `import-add-${harness.namespace}@furnace.test`;

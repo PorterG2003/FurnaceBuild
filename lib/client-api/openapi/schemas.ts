@@ -701,6 +701,10 @@ export function buildClientApiComponents() {
         type: 'object',
         properties: {
           imported: { type: 'integer' },
+          incomplete: {
+            type: 'integer',
+            description: 'Leads imported but missing one or more required custom (personalization) fields.',
+          },
           failed: { type: 'integer' },
           errors: {
             type: 'array',
@@ -714,7 +718,7 @@ export function buildClientApiComponents() {
             },
           },
         },
-        required: ['imported', 'failed', 'errors'],
+        required: ['imported', 'incomplete', 'failed', 'errors'],
       },
       ImportJob: {
         type: 'object',

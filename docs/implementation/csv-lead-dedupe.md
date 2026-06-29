@@ -22,6 +22,8 @@ If campaign dedupe is enabled, the user must select at least one campaign before
 
 Standard lead fields (`email`, `name`, company, URLs, etc.) are mapped via dropdowns; only `email` is required. Below the standard fields, the **Personalization fields** section lists the campaign's existing custom (personalization) keys — see below — each with its own column dropdown, auto-mapped where a CSV header matches. The **Custom Lead Fields** pill selector underneath is reserved for genuinely *new* custom columns (columns not already consumed by a standard or existing-key mapping).
 
+On a successful import, the wizard persists the resulting `customFieldKeys` and `mappedStandardFieldKeys` back onto the Lead Source node in `flow_data`. There is no separate Save action on the bucket modal; import success is the persistence point.
+
 ## Custom (personalization) fields
 
 Custom fields are the `{{custom.<key>}}` tokens a campaign personalizes on. The set of "required" keys for a campaign is derived from the Lead Source node's accumulated `customFieldKeys` (`flow_data`), read back at write time by `private_campaign_custom_field_keys`. Keys are matched after `btrim()`, so the mapping UI canonicalizes via `normalizeCustomFieldKey` (trim) and rejects template-breaking keys via `isValidCustomFieldKey` (non-empty, no `{`/`}`).
@@ -41,6 +43,8 @@ When a lead already exists in the campaign, `import_api_leads_to_campaign` (and 
 | Standard fields | Built-in lead columns; `email` required |
 | Personalization fields | Existing campaign custom keys, one dropdown each, auto-mapped on matching header |
 | Custom Lead Fields (pills) | Brand-new custom columns only (excludes columns already mapped above, compared via normalized key) |
+
+Forward-only caveat: older campaigns that already have `custom_lead_data` on lead rows but never saved those keys onto the Lead Source node will not show them in **Personalization fields** until the next successful import registers them in `flow_data`.
 
 ### Import paths
 

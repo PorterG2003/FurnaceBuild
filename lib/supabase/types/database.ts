@@ -843,6 +843,29 @@ export interface Database {
           created_at?: string;
         };
       };
+      user_onboarding_state: {
+        Row: {
+          user_id: string;
+          flow_id: string;
+          flow_version: number;
+          status: 'completed' | 'dismissed';
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          flow_id: string;
+          flow_version?: number;
+          status: 'completed' | 'dismissed';
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          flow_id?: string;
+          flow_version?: number;
+          status?: 'completed' | 'dismissed';
+          updated_at?: string;
+        };
+      };
       invitations: {
         Row: {
           id: string;

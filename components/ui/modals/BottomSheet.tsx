@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MobileHeaderBackButton } from '@/components/ui/layout/MobileHeaderBackButton';
 import { useVisualViewportKeyboardInset } from '@/hooks/useVisualViewportKeyboardInset';
+import { useRegisterBlockingOverlay } from '@/components/onboarding/overlayPresence';
 import {
   BottomSheetTakeoverContext,
   type BottomSheetTakeoverOptions,
@@ -84,6 +85,7 @@ export function BottomSheet({
 }: BottomSheetProps) {
   const onAfterCloseRef = useRef(onAfterClose);
   onAfterCloseRef.current = onAfterClose;
+  useRegisterBlockingOverlay(visible);
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [takeover, setTakeover] = useState<BottomSheetTakeoverOptions | null>(null);

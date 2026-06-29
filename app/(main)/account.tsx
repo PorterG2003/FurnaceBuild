@@ -27,6 +27,8 @@ import { BaseModal, ConfirmDeleteModal, ModalFooter } from '@/components/ui/moda
 import { HelpModal } from '@/components/ui/help';
 import { BottomSheet } from '@/components/ui/modals/BottomSheet';
 import { useAccount } from '@/contexts/AccountContext';
+import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
+import { TARGETS } from '@/lib/onboarding/types';
 import {
   deleteInvitation,
   inviteUserToAccount,
@@ -527,6 +529,7 @@ function AccountSmartleadSection({
 
 export default function AccountPage() {
   const { toast } = useToast();
+  const demoAccountRef = useOnboardingTarget(TARGETS.demoAccount);
   const { switch_account } = useLocalSearchParams<{ switch_account?: string }>();
   const {
     user: profile,
@@ -1129,15 +1132,17 @@ export default function AccountPage() {
 
   return (
     <PageLayout>
-      <PageHeader
-        title="Account"
-        subtitle={
-          membership?.account?.name
-            ? `Manage your profile and ${membership.account.name}`
-            : 'Manage your profile and team'
-        }
-        primaryAction={!isMobile ? signOutButton : undefined}
-      />
+      <View ref={demoAccountRef}>
+        <PageHeader
+          title="Account"
+          subtitle={
+            membership?.account?.name
+              ? `Manage your profile and ${membership.account.name}`
+              : 'Manage your profile and team'
+          }
+          primaryAction={!isMobile ? signOutButton : undefined}
+        />
+      </View>
 
       {loadError ? (
         <Alert variant="error" message={loadError} />

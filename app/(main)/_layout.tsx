@@ -4,6 +4,7 @@ import { Stack, usePathname, useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccount } from '@/contexts/AccountContext';
 import { NotificationToastSubscriber } from '@/components/notifications/NotificationToastSubscriber';
+import { OnboardingProvider } from '@/components/onboarding';
 import { AppBootScreen } from '@/components/ui/AppBootScreen';
 import { Button } from '@/components/ui/button';
 import { HELP_EMAIL } from '@/components/ui/help/HelpModal';
@@ -177,12 +178,14 @@ function MainAccessGate() {
       platformAdminAccess !== 'allowed' ? (
         <PendingTermsBanner pendingAmendment={pendingAmendment} />
       ) : null}
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: styles.stackContent,
-        }}
-      />
+      <OnboardingProvider enabled={!showLoadingOverlay}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: styles.stackContent,
+          }}
+        />
+      </OnboardingProvider>
       {showLoadingOverlay ? (
         <View pointerEvents="auto" style={StyleSheet.absoluteFillObject}>
           <AppBootScreen />

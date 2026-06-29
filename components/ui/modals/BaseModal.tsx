@@ -6,6 +6,7 @@ import { BottomSheet } from './BottomSheet';
 import { MobileHeaderBackButton } from '@/components/ui/layout/MobileHeaderBackButton';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import { useVisualViewportKeyboardInset } from '@/hooks/useVisualViewportKeyboardInset';
+import { useRegisterBlockingOverlay } from '@/components/onboarding/overlayPresence';
 
 const isWeb = typeof window !== 'undefined';
 
@@ -66,6 +67,7 @@ export function BaseModal({
 }: BaseModalProps) {
   const { width, height: screenHeight } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
+  useRegisterBlockingOverlay(visible);
   /** Explicit `height` opts into a stretched inner layout (legacy). `maxHeight` alone only caps total height. */
   const stretchContent = height != null;
   const dialogMaxHeight =

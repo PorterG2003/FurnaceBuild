@@ -14,12 +14,14 @@ export type CsvImportStats = {
   updated: number;
   enrolled: number;
   skipped: number;
+  /** Rows imported but missing one or more required custom (personalization) fields. */
+  incomplete: number;
   failed: number;
   errors: Array<{ index?: number; message: string }>;
 };
 
 function emptyStats(): CsvImportStats {
-  return { created: 0, updated: 0, enrolled: 0, skipped: 0, failed: 0, errors: [] };
+  return { created: 0, updated: 0, enrolled: 0, skipped: 0, incomplete: 0, failed: 0, errors: [] };
 }
 
 function mergeStats(existing: CsvImportStats, chunk: CsvImportStats): CsvImportStats {
@@ -28,6 +30,7 @@ function mergeStats(existing: CsvImportStats, chunk: CsvImportStats): CsvImportS
     updated: existing.updated + chunk.updated,
     enrolled: existing.enrolled + chunk.enrolled,
     skipped: existing.skipped + chunk.skipped,
+    incomplete: existing.incomplete + chunk.incomplete,
     failed: existing.failed + chunk.failed,
     errors: [...existing.errors, ...chunk.errors].slice(0, 100),
   };
@@ -49,6 +52,7 @@ function parseRpcStats(data: unknown): CsvImportStats {
     updated: typeof row.updated === 'number' ? row.updated : 0,
     enrolled: typeof row.enrolled === 'number' ? row.enrolled : 0,
     skipped: typeof row.skipped === 'number' ? row.skipped : 0,
+    incomplete: typeof row.incomplete === 'number' ? row.incomplete : 0,
     failed: typeof row.failed === 'number' ? row.failed : 0,
     errors,
   };
@@ -188,6 +192,7 @@ export function mapImportJobToCsvResult(job: AccountImportJobSnapshot): CsvImpor
     updated: typeof result.updated === 'number' ? result.updated : 0,
     enrolled: typeof result.enrolled === 'number' ? result.enrolled : 0,
     skipped: typeof result.skipped === 'number' ? result.skipped : 0,
+    incomplete: typeof result.incomplete === 'number' ? result.incomplete : 0,
     failed: typeof result.failed === 'number' ? result.failed : 0,
     errors: errors.map((entry, index) => {
       const row = entry as Record<string, unknown>;

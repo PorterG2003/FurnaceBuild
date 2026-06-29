@@ -131,6 +131,94 @@ test('addGlobalLeadsToCampaign RPC creates a lead row and active enrollment for 
   }
 });
 
+test('addGlobalLeadsToCampaign adds a lead missing a required custom field and counts it incomplete', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('add-incomplete') });
+  const sourceEmail = `source-incomplete-${harness.namespace}@furnace.test`;
+
+  try {
+    const sourceGraph = await harness.createCampaignGraph({
+      name: 'Add Source Incomplete',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'source',
+          email: sourceEmail,
+          enrollment: buildCampaignEnrollment({ state: 'active' }),
+        }),
+      ],
+    });
+
+    // Target campaign requires personalization keys the source lead does not have.
+    const targetGraph = await harness.createCampaignGraph({
+      name: 'Add Target Incomplete',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leadSourceCustomFieldKeys: ['Industry', 'Title'],
+      leads: [],
+    });
+
+    const globalLeadId = await loadLeadGlobalId(harness, sourceGraph.leadsByKey.get('source')!.leadId);
+
+    const summary = await callAddGlobalLeadsToCampaignRpc(harness, {
+      campaignId: targetGraph.campaignId,
+      globalLeadIds: [globalLeadId],
+    });
+
+    assert.equal(summary.created, 1);
+    assert.equal(summary.skipped, 0);
+    assert.equal(summary.incomplete, 1);
+    assert.equal(summary.failed, 0);
+    assert.ok(summary.enrolled >= 1);
+
+    const { data: targetLeads, error: targetLeadsError } = await harness.supabase
+      .from('leads')
+      .select('id')
+      .eq('campaign_id', targetGraph.campaignId)
+      .eq('global_lead_id', globalLeadId)
+      .is('deleted_at', null);
+    assert.equal(targetLeadsError, null);
+    assert.equal(targetLeads?.length, 1);
+
+    const enrollments = await loadEnrollmentsForLeadIds(
+      harness,
+      targetLeads!.map((row) => row.id as string),
+    );
+    assert.equal(enrollments.length, 1);
+    assert.equal(enrollments[0]?.state, 'active');
+    assert.ok(enrollments[0]?.next_run_at);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('addGlobalLeadsToCampaign still skips a person with no email in the account', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('add-no-email') });
+
+  try {
+    const targetGraph = await harness.createCampaignGraph({
+      name: 'Add Target No Email',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leadSourceCustomFieldKeys: ['Industry'],
+      leads: [],
+    });
+
+    // A global lead id that does not resolve to any lead row in the account.
+    const summary = await callAddGlobalLeadsToCampaignRpc(harness, {
+      campaignId: targetGraph.campaignId,
+      globalLeadIds: [hashGlobalLeadId(`ghost-${harness.namespace}@furnace.test`)],
+    });
+
+    assert.equal(summary.created, 0);
+    assert.equal(summary.updated, 0);
+    assert.equal(summary.skipped, 1);
+    assert.equal(summary.incomplete, 0);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test('addGlobalLeadsToCampaign RPC updates an existing target lead without duplicating rows or enrollments', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('add-existing') });
   const email = `existing-${harness.namespace}@furnace.test`;

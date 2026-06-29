@@ -62,9 +62,11 @@ Required `input.operation` values:
 - `pause_enrollments`
 - `resume_enrollments`
 
-Standard count keys in `result`: `created`, `updated`, `enrolled`, `removed`, `paused`, `resumed`, `skipped`, `failed`.
+Standard count keys in `result`: `created`, `updated`, `enrolled`, `removed`, `paused`, `resumed`, `skipped`, `incomplete`, `failed`.
 
 `errors[]` entries should include `global_lead_id` when known.
+
+**Bulk lead writes allow blank custom (personalization) fields — never silently drop a row for a missing field. Count it as `incomplete` and surface that count in the UI and API.** `skipped` is reserved for rows that cannot be written at all (e.g. empty email, no source person); a row imported with one or more blank required custom fields is counted in `incomplete`, not `skipped`.
 
 ## Client API checklist
 

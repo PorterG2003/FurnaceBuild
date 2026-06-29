@@ -27,6 +27,7 @@ import {
   runCsvDedupePipeline,
   type CsvDedupeResult,
 } from '@/lib/leads/csv-dedupe';
+import { buildLeadSourceFieldConfig } from '@/lib/leads/lead-source-field-config';
 import { previewCsvEmailsInCampaigns } from '@/lib/supabase/services/leads/csv-import-preview';
 import {
   createCsvLeadImportJob,
@@ -53,6 +54,7 @@ interface LeadSourceNodeModalProps {
     bucketId?: string;
     customFieldKeys?: string[];
     mappedStandardFieldKeys?: string[];
+    keepModalOpen?: boolean;
   }) => void;
   initialData?: {
     source?: string;
@@ -651,30 +653,6 @@ function LeadSourceNodeModal({
     }
   };
 
-  const handleSave = () => {
-    const customFieldKeys = Array.from(
-      new Set(
-        [
-          ...(initialData?.customFieldKeys ?? []),
-          ...customFieldColumns,
-        ]
-          .map((key) => normalizeCustomFieldKey(key))
-          .filter((key) => key.length > 0),
-      ),
-    );
-    const mappedStandardFieldKeys =
-      csvColumns.length > 0
-        ? (Object.entries(fieldMappings).filter(([, col]) => col?.trim()).map(([key]) => key) as string[])
-        : (initialData?.mappedStandardFieldKeys ?? undefined);
-
-    onSave({
-      bucketId: initialData?.bucketId,
-      customFieldKeys,
-      mappedStandardFieldKeys,
-    });
-    onClose();
-  };
-
   const resetCsvFlow = () => {
     setCsvStep(0);
     setCsvFileName(null);
@@ -969,6 +947,13 @@ function LeadSourceNodeModal({
       customFieldColumns,
       customFieldMappings,
     );
+    const persistedFieldConfig = buildLeadSourceFieldConfig({
+      existingCustomFieldKeys: initialData?.customFieldKeys,
+      existingMappedStandardFieldKeys: initialData?.mappedStandardFieldKeys,
+      newCustomFieldColumns: customFieldColumns,
+      fieldMappings,
+      hasActiveCsvMapping: csvColumns.length > 0,
+    });
 
     if (leadPayloads.length === 0) {
       Alert.alert('No leads to import', 'We could not find any rows with valid emails after applying your filters.');
@@ -1061,6 +1046,11 @@ function LeadSourceNodeModal({
         return;
       }
 
+      onSave({
+        bucketId: initialData?.bucketId,
+        ...persistedFieldConfig,
+        keepModalOpen: true,
+      });
       Alert.alert('Import complete', buildImportCompleteMessage(importedStats));
 
       await loadBucketData();
@@ -1563,34 +1553,13 @@ function LeadSourceNodeModal({
     );
   };
 
-  const footer = (
-    <ModalFooter>
-      <Button variant="secondary" onPress={onClose}>
-        Cancel
-      </Button>
-      <Button onPress={handleSave}>
-        Save
-      </Button>
-    </ModalFooter>
-  );
-
-  const footerMobile = (
-    <ModalFooter>
-      <Button onPress={handleSave}>
-        Save
-      </Button>
-    </ModalFooter>
-  );
-
   return (
     <>
       <BaseModal
         visible={visible}
         onClose={onClose}
-        title="Configure Lead Source Node"
-        description="Import leads from CSV and review bucket data"
-        footer={footer}
-        footerMobile={footerMobile}
+        title="Lead bucket"
+        description="Review imported leads or import more from CSV"
         maxWidth="full"
         height={Math.round(windowHeight * 0.9)}
       >

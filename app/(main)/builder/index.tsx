@@ -534,6 +534,7 @@ export default function BuilderPage() {
 
   const handleSaveNode = (updatedData: any) => {
     if (!editingNode) return;
+    const { keepModalOpen, ...persistedData } = updatedData ?? {};
 
     // Update the node data in React Flow
     if ((window as any).__reactFlowSetNodes) {
@@ -541,10 +542,22 @@ export default function BuilderPage() {
       setNodes((nds: any[]) => 
         nds.map((node: any) => 
           node.id === editingNode.id
-            ? { ...node, data: { ...node.data, ...updatedData } }
+            ? { ...node, data: { ...node.data, ...persistedData } }
             : node
         )
       );
+    }
+
+    if (keepModalOpen) {
+      setEditingNode((prev) =>
+        prev
+          ? {
+              ...prev,
+              data: { ...prev.data, ...persistedData },
+            }
+          : prev,
+      );
+      return;
     }
 
     setEditingNode(null);

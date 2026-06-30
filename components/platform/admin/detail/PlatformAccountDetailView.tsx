@@ -40,6 +40,7 @@ export type PlatformAccountDetailViewProps = {
   handleCopyAmendmentLink: () => Promise<void>;
   handleCancelAmendment: (amendmentId: string) => Promise<void>;
   handleCreateAdjustment: () => Promise<void>;
+  handleSetOnboardingSegment: (segment: 'self_serve' | 'dfy' | null) => Promise<void>;
   adjustmentYear: string;
   setAdjustmentYear: (value: string) => void;
   adjustmentMonth: string;
@@ -66,6 +67,7 @@ export function PlatformAccountDetailView({
   handleCopyAmendmentLink,
   handleCancelAmendment,
   handleCreateAdjustment,
+  handleSetOnboardingSegment,
   adjustmentYear,
   setAdjustmentYear,
   adjustmentMonth,
@@ -76,6 +78,20 @@ export function PlatformAccountDetailView({
   setAdjustmentReason,
 }: PlatformAccountDetailViewProps) {
   const router = useRouter();
+
+  const agreementType =
+    (detail.billing as { agreement_type?: AgreementType | null } | null)?.agreement_type ?? null;
+  const derivedSegment: 'self_serve' | 'dfy' =
+    agreementType === 'managed_services_agreement' ? 'dfy' : 'self_serve';
+  const segmentOverride = account.onboarding_segment ?? null;
+  const effectiveSegment = segmentOverride ?? derivedSegment;
+  const segmentLabel = (segment: 'self_serve' | 'dfy') =>
+    segment === 'dfy' ? 'Done-for-you' : 'Self-serve';
+  const segmentOptions = [
+    { value: null, label: 'Automatic' },
+    { value: 'self_serve', label: 'Self-serve' },
+    { value: 'dfy', label: 'Done-for-you' },
+  ] as const;
 
   return (
     <>
@@ -131,6 +147,32 @@ export function PlatformAccountDetailView({
             </Text>
           ) : null}
         </View>
+      </View>
+
+      <View className="rounded-2xl border border-[#2A2A2A] bg-[#181818] p-5 gap-3">
+        <Text className="text-white font-instrument-semibold text-lg">Onboarding segment</Text>
+        <Text className="text-gray-400 font-instrument text-sm">
+          Controls onboarding copy/framing only — same flows for everyone. Defaults to{' '}
+          <Text className="text-gray-200">{segmentLabel(derivedSegment)}</Text> based on the
+          agreement type; override it here if the framing should differ.
+        </Text>
+        <View className="flex-row flex-wrap gap-2">
+          {segmentOptions.map((option) => (
+            <Button
+              key={option.label}
+              size="sm"
+              variant={segmentOverride === option.value ? 'default' : 'secondary'}
+              disabled={savingAction}
+              onPress={() => void handleSetOnboardingSegment(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </View>
+        <Text className="text-gray-500 font-instrument text-xs">
+          Effective: {segmentLabel(effectiveSegment)}
+          {segmentOverride == null ? ' (derived from agreement)' : ' (manual override)'}
+        </Text>
       </View>
 
       {draftAmendment ? (

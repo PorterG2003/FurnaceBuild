@@ -10,20 +10,20 @@ import {
 import type { OnboardingFlow } from './types';
 
 const flow: OnboardingFlow = {
-  id: 'scaffold-demo',
+  id: 'welcome',
   version: 1,
   steps: [
     { kind: 'announcement', render: () => null },
     {
       kind: 'spotlight',
-      targetId: 'demoNav',
+      targetId: 'navItems',
       title: 'a',
       body: 'b',
       advance: 'manual',
     },
     {
       kind: 'spotlight',
-      targetId: 'demoSettings',
+      targetId: 'accountTeam',
       title: 'c',
       body: 'd',
       advance: 'onTargetPress',
@@ -31,7 +31,7 @@ const flow: OnboardingFlow = {
   ],
 };
 
-const emptyFlow: OnboardingFlow = { id: 'scaffold-demo', version: 1, steps: [] };
+const emptyFlow: OnboardingFlow = { id: 'welcome', version: 1, steps: [] };
 
 function start(): EngineState {
   return reduce(INITIAL_STATE, { type: 'START', flow });
@@ -98,6 +98,17 @@ test('DISMISS ends the flow as dismissed', () => {
   const state = reduce(start(), { type: 'DISMISS' });
   assert.equal(state.status, 'dismissed');
   assert.equal(getCurrentStep(state), null);
+});
+
+test('ABORT ends the flow as aborted (distinct from dismissed)', () => {
+  const state = reduce(start(), { type: 'ABORT' });
+  assert.equal(state.status, 'aborted');
+  assert.equal(getCurrentStep(state), null);
+});
+
+test('ABORT is inert once the flow is finished', () => {
+  const completed = reduce(start(), { type: 'FINISH' });
+  assert.deepEqual(reduce(completed, { type: 'ABORT' }), completed);
 });
 
 test('actions are inert once the flow is finished', () => {

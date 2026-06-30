@@ -11,6 +11,9 @@ import React, {
 import { View } from 'react-native';
 import { usePathname, useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAccount } from '@/contexts/AccountContext';
+import { getAccountMembershipRole } from '@/lib/account/teamManagementPermissions';
+import { useToast } from '@/components/ui/feedback';
 import {
   INITIAL_STATE,
   getCurrentStep,
@@ -19,9 +22,12 @@ import {
   type EngineState,
 } from '@/lib/onboarding/engine';
 import { ALL_FLOWS, getFlow } from '@/lib/onboarding/flows';
-import type { FlowId, TargetId } from '@/lib/onboarding/types';
+import { resolveFlow } from '@/lib/onboarding/resolveFlow';
+import { canRequestFlow } from '@/lib/onboarding/triggerGuards';
+import type { FlowId, Role, Segment, TargetId } from '@/lib/onboarding/types';
 import {
   fetchOnboardingState,
+  markFlowAborted,
   markFlowComplete,
   markFlowDismissed,
   resetFlowState,
@@ -37,36 +43,97 @@ import {
 
 const AUTO_START_DELAY_MS = 900;
 
+export interface OnboardingAnalyticsEvent {
+  flowId: string;
+  step: number;
+  segment: Segment;
+  role: Role;
+  action: string;
+}
+
+export interface OnboardingAnalytics {
+  onEvent: (event: OnboardingAnalyticsEvent) => void;
+}
+
 interface OnboardingProviderProps {
   /** True only when the main shell is interactive (not booting/blocked). */
   enabled: boolean;
+  /** Optional analytics sink. Defaults to a no-op (dev logs in __DEV__). */
+  analytics?: OnboardingAnalytics;
   children: ReactNode;
 }
 
-export function OnboardingProvider({ enabled, children }: OnboardingProviderProps) {
+export function OnboardingProvider({ enabled, analytics, children }: OnboardingProviderProps) {
   const { user } = useAuth();
+  const { account, billing, memberships } = useAccount();
   const router = useRouter();
   const pathname = usePathname();
   const reducedMotion = useReducedMotion();
   const blockingOverlayPresent = useBlockingOverlayPresent();
+  const { toast } = useToast();
 
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE);
+  const [stateLoaded, setStateLoaded] = useState(false);
+
+  // --- Segment + role ------------------------------------------------------
+  // Segment is owned by us: an explicit account override wins, otherwise it is
+  // derived from the billing agreement type. Role drives step-level gating.
+  const segment = useMemo<Segment>(() => {
+    if (account?.onboarding_segment === 'dfy' || account?.onboarding_segment === 'self_serve') {
+      return account.onboarding_segment;
+    }
+    return billing?.agreement_type === 'managed_services_agreement' ? 'dfy' : 'self_serve';
+  }, [account?.onboarding_segment, billing?.agreement_type]);
+
+  const role = useMemo<Role>(() => {
+    const membership = memberships.find((m) => m.account.id === account?.id)?.membership ?? null;
+    return getAccountMembershipRole(membership);
+  }, [memberships, account?.id]);
+
+  // --- Latest-value refs (read inside callbacks/timers) --------------------
   const stateRef = useRef<EngineState>(state);
   stateRef.current = state;
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  const blockingOverlayRef = useRef(blockingOverlayPresent);
+  blockingOverlayRef.current = blockingOverlayPresent;
+  const stateLoadedRef = useRef(stateLoaded);
+  stateLoadedRef.current = stateLoaded;
+  const userRef = useRef(user);
+  userRef.current = user;
+  const segmentRef = useRef(segment);
+  segmentRef.current = segment;
+  const roleRef = useRef(role);
+  roleRef.current = role;
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   const targetsRef = useRef(new Map<TargetId, RefObject<View | null>>());
   const seenRef = useRef<Set<string>>(new Set());
   const autoStartedRef = useRef<Set<string>>(new Set());
-  const [stateLoaded, setStateLoaded] = useState(false);
+  // Single-flight: at most one flow may be active OR pending-to-start.
+  const pendingFlowRef = useRef<FlowId | null>(null);
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const emit = useCallback((flowId: string, stepIndex: number, action: string) => {
-    if (__DEV__) {
-      // No-op analytics seam; replace with real telemetry later.
-      console.log('[onboarding]', { flowId, stepIndex, action });
-    }
-  }, []);
+  const emit = useCallback(
+    (flowId: string, stepIndex: number, action: string) => {
+      analytics?.onEvent({
+        flowId,
+        step: stepIndex,
+        segment: segmentRef.current,
+        role: roleRef.current,
+        action,
+      });
+      if (__DEV__) {
+        console.log('[onboarding]', { flowId, stepIndex, action });
+      }
+    },
+    [analytics],
+  );
 
-  // Load per-user completion state once.
+  // Load per-user completion state once. Version-aware: a previously-seen flow
+  // becomes eligible again if it opts into reshowOnVersionBump and its stored
+  // version is behind the registry.
   useEffect(() => {
     if (!user) {
       seenRef.current = new Set();
@@ -76,7 +143,13 @@ export function OnboardingProvider({ enabled, children }: OnboardingProviderProp
     let cancelled = false;
     void fetchOnboardingState(user.id).then((rows) => {
       if (cancelled) return;
-      seenRef.current = new Set(rows.map((r) => r.flow_id));
+      const seen = new Set<string>();
+      for (const row of rows) {
+        const def = getFlow(row.flow_id as FlowId);
+        if (def?.reshowOnVersionBump && row.flow_version < def.version) continue;
+        seen.add(row.flow_id);
+      }
+      seenRef.current = seen;
       setStateLoaded(true);
     });
     return () => {
@@ -88,13 +161,53 @@ export function OnboardingProvider({ enabled, children }: OnboardingProviderProp
 
   const startFlow = useCallback(
     (id: FlowId) => {
-      const flow = getFlow(id);
-      if (!flow) return;
+      const def = getFlow(id);
+      if (!def) return;
+      const resolved = resolveFlow(def, { segment: segmentRef.current, role: roleRef.current });
       emit(id, 0, 'start');
-      dispatch({ type: 'START', flow });
+      dispatch({ type: 'START', flow: resolved });
     },
     [emit],
   );
+
+  const clearPending = useCallback(() => {
+    if (pendingTimerRef.current) {
+      clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+    pendingFlowRef.current = null;
+  }, []);
+
+  const requestFlow = useCallback(
+    (id: FlowId) => {
+      const eligible = canRequestFlow({
+        enabled: enabledRef.current,
+        stateLoaded: stateLoadedRef.current,
+        hasUser: userRef.current != null,
+        flowExists: getFlow(id) != null,
+        alreadySeen: seenRef.current.has(id),
+        flowActive: stateRef.current.status === 'active',
+        flowPending: pendingFlowRef.current != null,
+        blockingOverlayPresent: blockingOverlayRef.current,
+      });
+      if (!eligible) return;
+
+      pendingFlowRef.current = id;
+      pendingTimerRef.current = setTimeout(() => {
+        pendingTimerRef.current = null;
+        pendingFlowRef.current = null;
+        if (stateRef.current.status === 'active') return;
+        if (seenRef.current.has(id)) return;
+        if (blockingOverlayRef.current) return;
+        if (!enabledRef.current) return;
+        startFlow(id);
+      }, AUTO_START_DELAY_MS);
+    },
+    [startFlow],
+  );
+
+  // Clear any pending start timer on unmount.
+  useEffect(() => clearPending, [clearPending]);
 
   const next = useCallback(() => {
     const flow = stateRef.current.flow;
@@ -116,6 +229,10 @@ export function OnboardingProvider({ enabled, children }: OnboardingProviderProp
     dispatch({ type: 'DISMISS' });
   }, []);
 
+  const abortFlow = useCallback(() => {
+    dispatch({ type: 'ABORT' });
+  }, []);
+
   const notifyTargetPress = useCallback((id: TargetId) => {
     const step = getCurrentStep(stateRef.current);
     if (step?.kind === 'spotlight' && step.targetId === id) {
@@ -123,14 +240,21 @@ export function OnboardingProvider({ enabled, children }: OnboardingProviderProp
     }
   }, []);
 
-  const resetFlow = useCallback(
-    async (id: FlowId) => {
-      seenRef.current.delete(id);
-      autoStartedRef.current.delete(id);
-      if (user) await resetFlowState(user.id, id);
-    },
-    [user],
-  );
+  const resetFlow = useCallback(async (id: FlowId) => {
+    seenRef.current.delete(id);
+    autoStartedRef.current.delete(id);
+    if (userRef.current) await resetFlowState(userRef.current.id, id);
+  }, []);
+
+  const resetAllFlows = useCallback(async () => {
+    const ids = Array.from(seenRef.current);
+    seenRef.current = new Set();
+    autoStartedRef.current = new Set();
+    const currentUser = userRef.current;
+    if (currentUser) {
+      await Promise.all(ids.map((id) => resetFlowState(currentUser.id, id)));
+    }
+  }, []);
 
   // --- Target registry -----------------------------------------------------
 
@@ -170,22 +294,31 @@ export function OnboardingProvider({ enabled, children }: OnboardingProviderProp
     return ref?.current ?? null;
   }, []);
 
-  // --- Persistence + reset on finish/dismiss -------------------------------
+  // --- Persistence + reset on finish/dismiss/abort -------------------------
 
   useEffect(() => {
     if (!state.flow) return;
-    if (state.status !== 'completed' && state.status !== 'dismissed') return;
+    const { status } = state;
+    if (status !== 'completed' && status !== 'dismissed' && status !== 'aborted') return;
 
     const { id: flowId, version } = state.flow;
     seenRef.current.add(flowId);
-    emit(flowId, state.stepIndex, state.status);
+    emit(flowId, state.stepIndex, status);
 
     if (user) {
-      if (state.status === 'completed') {
+      if (status === 'completed') {
         void markFlowComplete(user.id, flowId, version);
-      } else {
+      } else if (status === 'dismissed') {
         void markFlowDismissed(user.id, flowId, version);
+      } else {
+        void markFlowAborted(user.id, flowId, version);
       }
+    }
+
+    // A failed spotlight should never be a confusing dead end: point the user
+    // at the replay affordance rather than just vanishing.
+    if (status === 'aborted') {
+      toastRef.current.info('You can start the product tour anytime from Help.');
     }
 
     // Return the engine to idle so a future flow can start.
@@ -201,7 +334,7 @@ export function OnboardingProvider({ enabled, children }: OnboardingProviderProp
     router.push(step.route as Href);
   }, [state, pathname, router]);
 
-  // --- Auto-start from DB state -------------------------------------------
+  // --- Auto-start (the welcome flow opts in via autoStart) -----------------
 
   useEffect(() => {
     if (!enabled || !stateLoaded || !user) return;
@@ -216,21 +349,17 @@ export function OnboardingProvider({ enabled, children }: OnboardingProviderProp
     );
     if (!candidate) return;
 
-    const timer = setTimeout(() => {
-      if (stateRef.current.status === 'active') return;
-      if (seenRef.current.has(candidate.id)) return;
-      autoStartedRef.current.add(candidate.id);
-      startFlow(candidate.id);
-    }, AUTO_START_DELAY_MS);
-
-    return () => clearTimeout(timer);
-  }, [enabled, stateLoaded, user, state.status, blockingOverlayPresent, startFlow]);
+    autoStartedRef.current.add(candidate.id);
+    requestFlow(candidate.id);
+  }, [enabled, stateLoaded, user, state.status, blockingOverlayPresent, requestFlow]);
 
   const value = useMemo<OnboardingContextValue>(
     () => ({
       startFlow,
+      requestFlow,
       dismissFlow,
       resetFlow,
+      resetAllFlows,
       next,
       back,
       notifyTargetPress,
@@ -240,13 +369,16 @@ export function OnboardingProvider({ enabled, children }: OnboardingProviderProp
       reducedMotion,
       blockingOverlayPresent,
       skipStep,
+      abortFlow,
       measureTarget,
       getTargetNode,
     }),
     [
       startFlow,
+      requestFlow,
       dismissFlow,
       resetFlow,
+      resetAllFlows,
       next,
       back,
       notifyTargetPress,
@@ -255,6 +387,7 @@ export function OnboardingProvider({ enabled, children }: OnboardingProviderProp
       reducedMotion,
       blockingOverlayPresent,
       skipStep,
+      abortFlow,
       measureTarget,
       getTargetNode,
     ],

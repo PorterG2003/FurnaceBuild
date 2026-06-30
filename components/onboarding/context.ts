@@ -13,9 +13,17 @@ export interface TargetRect {
 export interface OnboardingContextValue {
   // Public API
   startFlow: (id: FlowId) => void;
+  /**
+   * Screen-owned trigger entrypoint: asks the provider to start a flow if it is
+   * unseen and nothing else is active/pending (single-flight). Used by
+   * `useOnboardingTrigger`.
+   */
+  requestFlow: (id: FlowId) => void;
   dismissFlow: () => void;
-  /** Clears persisted state for a flow (seam for a future "Replay tour"). */
+  /** Clears persisted state for a flow so it can run again ("Replay tour"). */
   resetFlow: (id: FlowId) => Promise<void>;
+  /** Clears persisted state for every seen flow (e.g. a "Replay tours" action). */
+  resetAllFlows: () => Promise<void>;
   next: () => void;
   back: () => void;
   notifyTargetPress: (id: TargetId) => void;
@@ -29,6 +37,8 @@ export interface OnboardingContextValue {
 
   // Internal helpers used by the overlay primitives
   skipStep: () => void;
+  /** Ends the active flow because a step's target never appeared. */
+  abortFlow: () => void;
   measureTarget: (id: TargetId) => Promise<TargetRect | null>;
   getTargetNode: (id: TargetId) => unknown | null;
 }

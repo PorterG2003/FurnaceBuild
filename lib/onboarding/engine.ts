@@ -6,7 +6,7 @@ import type { OnboardingFlow, OnboardingStep } from './types';
  * This keeps the advance logic trivially unit-testable.
  */
 
-export type EngineStatus = 'idle' | 'active' | 'completed' | 'dismissed';
+export type EngineStatus = 'idle' | 'active' | 'completed' | 'dismissed' | 'aborted';
 
 export interface EngineState {
   flow: OnboardingFlow | null;
@@ -21,6 +21,7 @@ export type EngineAction =
   | { type: 'TARGET_PRESS' }
   | { type: 'SKIP_STEP' }
   | { type: 'DISMISS' }
+  | { type: 'ABORT' }
   | { type: 'FINISH' }
   | { type: 'RESET' };
 
@@ -82,6 +83,12 @@ export function reduce(state: EngineState, action: EngineAction): EngineState {
     case 'DISMISS': {
       if (state.status !== 'active') return state;
       return { ...state, status: 'dismissed' };
+    }
+    case 'ABORT': {
+      // Ended because a step's target never appeared. Distinct from a user
+      // dismissal so the provider can persist it as its own status.
+      if (state.status !== 'active') return state;
+      return { ...state, status: 'aborted' };
     }
     case 'FINISH': {
       if (state.status !== 'active') return state;

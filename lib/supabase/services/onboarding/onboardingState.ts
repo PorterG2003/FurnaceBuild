@@ -9,7 +9,7 @@ import type { UserOnboardingState } from '@/lib/supabase/types';
  * signup). Callers fire-and-forget; we log and swallow errors.
  */
 
-export type OnboardingStatus = 'completed' | 'dismissed';
+export type OnboardingStatus = 'completed' | 'dismissed' | 'aborted';
 
 export async function fetchOnboardingState(
   userId: string,
@@ -63,6 +63,20 @@ export function markFlowDismissed(
   flowVersion: number,
 ): Promise<void> {
   return writeStatus(userId, flowId, flowVersion, 'dismissed');
+}
+
+/**
+ * Marks a flow `aborted` — it ended because a step's target never appeared, not
+ * because the user finished or skipped it. Persisted (rather than retried
+ * forever) to avoid an every-visit loop on a permanently-missing anchor; stays
+ * distinct from completed/dismissed so broken anchors are visible.
+ */
+export function markFlowAborted(
+  userId: string,
+  flowId: string,
+  flowVersion: number,
+): Promise<void> {
+  return writeStatus(userId, flowId, flowVersion, 'aborted');
 }
 
 /**

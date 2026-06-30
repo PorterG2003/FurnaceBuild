@@ -72,7 +72,7 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
     measureTarget,
     getTargetNode,
     notifyTargetPress,
-    skipStep,
+    abortFlow,
     next,
     back,
     dismissFlow,
@@ -88,16 +88,32 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
   // press the highlighted element). The mobile fallback always shows Next.
   const showNext = !(useCutout && advance === 'onTargetPress');
 
-  // Measure target with retry; skip the step if it never appears (e.g. wrong
-  // route, or a desktop-only target on mobile).
+  // Measure target with retry. If it never appears (e.g. a permanently-missing
+  // or misconfigured anchor), abort the flow rather than silently skipping to
+  // completion — the provider persists 'aborted' and shows a replay hint.
   useEffect(() => {
     let active = true;
     let attempts = 0;
+    let scrolled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setRect(null);
 
+    const scrollIntoViewOnce = () => {
+      if (scrolled || Platform.OS !== 'web') return;
+      const node = getTargetNode(step.targetId) as
+        | { scrollIntoView?: (opts?: ScrollIntoViewOptions) => void }
+        | null;
+      if (node?.scrollIntoView) {
+        node.scrollIntoView({ block: 'center', inline: 'center' });
+        scrolled = true;
+      }
+    };
+
     const tryMeasure = () => {
       if (!active) return;
+      // Bring an off-screen anchor into view before measuring so the cutout is
+      // never rendered off-screen.
+      scrollIntoViewOnce();
       void measureTarget(step.targetId).then((r) => {
         if (!active) return;
         if (r) {
@@ -106,7 +122,7 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
         }
         attempts += 1;
         if (attempts >= MEASURE_MAX_ATTEMPTS) {
-          skipStep();
+          abortFlow();
           return;
         }
         timer = setTimeout(tryMeasure, MEASURE_RETRY_MS);
@@ -118,7 +134,7 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [step.targetId, step.route, measureTarget, skipStep]);
+  }, [step.targetId, step.route, measureTarget, getTargetNode, abortFlow]);
 
   // Re-measure on resize (web).
   useEffect(() => {
@@ -185,21 +201,23 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
   }
 
   // --- Web desktop: dim + rounded cutout via box-shadow --------------------
+  // Render nothing (no dim, no click-blocker) until the target is measured, so
+  // a still-loading or missing anchor never produces a flash or blocks clicks.
+  if (!rect) return null;
+
   const { createPortal } = require('react-dom');
 
   const holeInteractive = advance === 'onTargetPress';
   const transition = reducedMotion ? 'none' : 'top 180ms ease, left 180ms ease, width 180ms ease, height 180ms ease';
 
-  const hole = rect
-    ? {
-        top: rect.y - CUTOUT_PADDING,
-        left: rect.x - CUTOUT_PADDING,
-        width: rect.width + CUTOUT_PADDING * 2,
-        height: rect.height + CUTOUT_PADDING * 2,
-      }
-    : null;
+  const hole = {
+    top: rect.y - CUTOUT_PADDING,
+    left: rect.x - CUTOUT_PADDING,
+    width: rect.width + CUTOUT_PADDING * 2,
+    height: rect.height + CUTOUT_PADDING * 2,
+  };
 
-  const calloutPos = rect ? positionCallout(rect, step.placement, vw, vh) : null;
+  const calloutPos = positionCallout(rect, step.placement, vw, vh);
 
   const content = (
     // The container is click-through (pointerEvents none). Only the blocker
@@ -207,34 +225,23 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
     // genuinely interactive and clicks reach the real element beneath it.
     <div style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z, pointerEvents: 'none' }}>
       {/* Dim layer with a rounded hole. pointerEvents none so it never blocks. */}
-      {hole ? (
-        <div
-          style={{
-            position: 'fixed',
-            top: hole.top,
-            left: hole.left,
-            width: hole.width,
-            height: hole.height,
-            borderRadius: 12,
-            boxShadow: '0 0 0 9999px rgba(0,0,0,0.6)',
-            pointerEvents: 'none',
-            transition,
-          }}
-        />
-      ) : (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.6)',
-            pointerEvents: 'none',
-          }}
-        />
-      )}
+      <div
+        style={{
+          position: 'fixed',
+          top: hole.top,
+          left: hole.left,
+          width: hole.width,
+          height: hole.height,
+          borderRadius: 12,
+          boxShadow: '0 0 0 9999px rgba(0,0,0,0.6)',
+          pointerEvents: 'none',
+          transition,
+        }}
+      />
 
       {/* Click blockers (pointerEvents auto). For onTargetPress, leave the hole
           open so the real element receives the click; otherwise cover everything. */}
-      {hole && holeInteractive ? (
+      {holeInteractive ? (
         <>
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: Math.max(0, hole.top), pointerEvents: 'auto' }} />
           <div style={{ position: 'fixed', top: hole.top + hole.height, left: 0, right: 0, bottom: 0, pointerEvents: 'auto' }} />

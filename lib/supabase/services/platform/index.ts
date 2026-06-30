@@ -6,3 +6,4 @@ export * from './account-management';
 export * from './terms';
 export * from './billing';
 export * from './amendments';
+export * from './onboarding-segment';

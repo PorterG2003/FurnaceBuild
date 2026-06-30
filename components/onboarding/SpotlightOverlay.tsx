@@ -202,7 +202,10 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
   const calloutPos = rect ? positionCallout(rect, step.placement, vw, vh) : null;
 
   const content = (
-    <div style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z }}>
+    // The container is click-through (pointerEvents none). Only the blocker
+    // panels and the callout re-enable pointer events, so the cutout hole stays
+    // genuinely interactive and clicks reach the real element beneath it.
+    <div style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z, pointerEvents: 'none' }}>
       {/* Dim layer with a rounded hole. pointerEvents none so it never blocks. */}
       {hole ? (
         <div
@@ -229,22 +232,30 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
         />
       )}
 
-      {/* Click blockers. For onTargetPress, leave the hole open so the real
-          element receives the click; otherwise cover everything. */}
+      {/* Click blockers (pointerEvents auto). For onTargetPress, leave the hole
+          open so the real element receives the click; otherwise cover everything. */}
       {hole && holeInteractive ? (
         <>
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: Math.max(0, hole.top) }} />
-          <div style={{ position: 'fixed', top: hole.top + hole.height, left: 0, right: 0, bottom: 0 }} />
-          <div style={{ position: 'fixed', top: hole.top, left: 0, width: Math.max(0, hole.left), height: hole.height }} />
-          <div style={{ position: 'fixed', top: hole.top, left: hole.left + hole.width, right: 0, height: hole.height }} />
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: Math.max(0, hole.top), pointerEvents: 'auto' }} />
+          <div style={{ position: 'fixed', top: hole.top + hole.height, left: 0, right: 0, bottom: 0, pointerEvents: 'auto' }} />
+          <div style={{ position: 'fixed', top: hole.top, left: 0, width: Math.max(0, hole.left), height: hole.height, pointerEvents: 'auto' }} />
+          <div style={{ position: 'fixed', top: hole.top, left: hole.left + hole.width, right: 0, height: hole.height, pointerEvents: 'auto' }} />
         </>
       ) : (
-        <div style={{ position: 'fixed', inset: 0 }} />
+        <div style={{ position: 'fixed', inset: 0, pointerEvents: 'auto' }} />
       )}
 
       {/* Callout */}
       {calloutPos ? (
-        <div style={{ position: 'fixed', top: calloutPos.top, left: calloutPos.left, width: CALLOUT_WIDTH }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: calloutPos.top,
+            left: calloutPos.left,
+            width: CALLOUT_WIDTH,
+            pointerEvents: 'auto',
+          }}
+        >
           {calloutBody}
         </div>
       ) : null}

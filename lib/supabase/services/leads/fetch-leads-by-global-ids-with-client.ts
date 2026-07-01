@@ -27,6 +27,7 @@ export type LeadRowByGlobalId = {
   website: string | null;
   linkedin_url: string | null;
   phone_number: string | null;
+  mobile_phone_number: string | null;
   custom_lead_data: Record<string, string | number | null> | null;
   global_lead_id: string | null;
   created_at: string;
@@ -44,7 +45,7 @@ export async function fetchLeadsByGlobalLeadIdsWithClient(
       const { data, error } = await db
         .from('leads')
         .select(
-          'id, campaign_id, email, name, first_name, last_name, company_name, website, linkedin_url, phone_number, custom_lead_data, global_lead_id, created_at',
+          'id, campaign_id, email, name, first_name, last_name, company_name, website, linkedin_url, phone_number, mobile_phone_number, custom_lead_data, global_lead_id, created_at',
         )
         .eq('account_id', accountId)
         .is('deleted_at', null)

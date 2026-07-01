@@ -404,9 +404,9 @@ const CREATIVE_CLIP_PADDING_Y = 12;
 const MIN_CREATIVE_BOX_WIDTH = 120;
 const MIN_CREATIVE_BOX_HEIGHT = 48;
 const MIN_CREATIVE_BOX_AREA = 8_000;
-const MAX_CREATIVE_BOX_WIDTH_RATIO = 0.88;
+const MAX_CREATIVE_BOX_WIDTH_RATIO = 0.72;
 const MAX_CREATIVE_BOX_HEIGHT_RATIO = 0.92;
-const MAX_CREATIVE_BOX_AREA_RATIO = 0.38;
+const MAX_CREATIVE_BOX_AREA_RATIO = 0.25;
 const MIN_CREATIVE_TEXT_LENGTH = 18;
 const MIN_MEDIA_CREATIVE_BOX_HEIGHT = 72;
 const MAX_MEDIA_CREATIVE_ASPECT_RATIO = 6.5;
@@ -424,11 +424,15 @@ const CREATIVE_PREVIEW_ROOT_SELECTORS = [
   CREATIVE_IFRAME,
   SYNDICATED_IMG,
   MAIN_REGION_MEDIA,
+  'main [class*="creative"]',
+  'main [class*="preview"]',
 ] as const;
 const CREATIVE_PREVIEW_SURFACE_SCROLL_SELECTORS = [
   CREATIVE_IFRAME,
   'html-renderer',
   '[class*="creative-container"]',
+  'main img, main picture, main iframe',
+  'main [class*="creative"], main [class*="preview"]',
 ] as const;
 
 type ClipBox = {
@@ -493,6 +497,7 @@ type CreativePreviewFallbackTarget =
   | 'html_container'
   | 'syndicated_img'
   | 'layout_metadata'
+  | 'layout_metadata_below'
   | 'layout_center';
 
 type CreativePreviewCollectionResult = {
@@ -977,12 +982,55 @@ export function layoutClipFromMetadataAnchor(
   return { x, y, width, height };
 }
 
-export function layoutClipCenterPanel(viewport: { width: number; height: number }): ClipBox {
-  const x = Math.floor(viewport.width * 0.18);
-  const y = Math.floor(viewport.height * 0.3);
-  const width = Math.floor(viewport.width * 0.64);
-  const height = Math.floor(viewport.height * 0.48);
+/**
+ * Google now places ad creative content BELOW the metadata labels ("Last shown:", "Format:").
+ * Clip the region from just below the metadata anchor down to the bottom boundary.
+ */
+export function layoutClipBelowMetadataAnchor(
+  anchorY: number,
+  anchorHeight: number,
+  viewport: { width: number; height: number },
+  bottomBoundaryY?: number,
+): ClipBox | null {
+  const x = Math.max(0, Math.floor(viewport.width * 0.22));
+  const width = Math.min(Math.floor(viewport.width * 0.56), viewport.width - x);
+  const y = Math.floor(anchorY + anchorHeight + 24);
+  const maxY = bottomBoundaryY != null
+    ? Math.min(Math.floor(bottomBoundaryY - 12), Math.floor(viewport.height * 0.92))
+    : Math.min(y + Math.floor(viewport.height * 0.42), Math.floor(viewport.height * 0.88));
+  const height = maxY - y;
+  if (y >= maxY) return null;
+  if (width < MIN_CREATIVE_BOX_WIDTH || height < MIN_CREATIVE_BOX_HEIGHT) return null;
+  if (width * height < MIN_CREATIVE_BOX_AREA) return null;
   return { x, y, width, height };
+}
+
+export function layoutClipCenterPanel(viewport: { width: number; height: number }): ClipBox {
+  const x = Math.floor(viewport.width * 0.22);
+  const y = Math.floor(viewport.height * 0.42);
+  const width = Math.floor(viewport.width * 0.56);
+  const height = Math.floor(viewport.height * 0.40);
+  return { x, y, width, height };
+}
+
+const CREATIVE_BOTTOM_BOUNDARY_LABELS = [
+  'See more ads by this advertiser',
+  'See more ads',
+] as const;
+
+async function findCreativeBottomBoundaryY(page: Page): Promise<number | undefined> {
+  for (const label of CREATIVE_BOTTOM_BOUNDARY_LABELS) {
+    try {
+      const el = page.getByText(label, { exact: false }).first();
+      if ((await el.count()) < 1) continue;
+      if (!(await el.isVisible().catch(() => false))) continue;
+      const box = await el.boundingBox();
+      if (box && box.y > 400) return box.y;
+    } catch {
+      // continue
+    }
+  }
+  return undefined;
 }
 
 async function screenshotCreativePreviewLayoutFallback(
@@ -990,6 +1038,8 @@ async function screenshotCreativePreviewLayoutFallback(
   viewport: { width: number; height: number },
   logContext: CreativePreviewLogContext = {},
 ): Promise<Buffer | null> {
+  const bottomY = await findCreativeBottomBoundaryY(page);
+
   for (const label of ['Last shown:', 'Format:', 'First shown:'] as const) {
     const anchor = page.getByText(label, { exact: false }).first();
     try {
@@ -997,10 +1047,16 @@ async function screenshotCreativePreviewLayoutFallback(
       if (!(await anchor.isVisible().catch(() => false))) continue;
       const box = await anchor.boundingBox();
       if (!box || box.y < 180) continue;
-      const clip = layoutClipFromMetadataAnchor(box.y, viewport);
-      if (!clip) continue;
-      const preview = await screenshotFromClipBox(page, clip, logContext, 'layout', 'layout_metadata');
-      if (preview) return preview;
+      const belowClip = layoutClipBelowMetadataAnchor(box.y, box.height, viewport, bottomY);
+      if (belowClip) {
+        const belowPreview = await screenshotFromClipBox(page, belowClip, logContext, 'layout', 'layout_metadata_below');
+        if (belowPreview) return belowPreview;
+      }
+      const aboveClip = layoutClipFromMetadataAnchor(box.y, viewport);
+      if (aboveClip) {
+        const abovePreview = await screenshotFromClipBox(page, aboveClip, logContext, 'layout', 'layout_metadata');
+        if (abovePreview) return abovePreview;
+      }
     } catch {
       // Try the next metadata anchor label.
     }

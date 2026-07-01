@@ -99,13 +99,13 @@ export function AccountWebhooksSection({
   const status = webhookStatusLabel(account, displayCount);
 
   const previewLabels = useMemo(() => {
-    if (eventsSummary.kind === 'all') return [] as string[];
+    if (eventsSummary.kind === 'none' || eventsSummary.kind === 'all') return [] as string[];
     if (eventsSummary.kind === 'groups') return eventsSummary.labels.slice(0, 3);
     return eventsSummary.events.slice(0, 3);
   }, [eventsSummary]);
 
   const extraLabelCount = useMemo(() => {
-    if (eventsSummary.kind === 'all') return 0;
+    if (eventsSummary.kind === 'none' || eventsSummary.kind === 'all') return 0;
     if (eventsSummary.kind === 'groups') return Math.max(0, eventsSummary.labels.length - 3);
     return Math.max(0, eventsSummary.events.length - 3);
   }, [eventsSummary]);
@@ -187,7 +187,9 @@ export function AccountWebhooksSection({
         </View>
         <View>
           <Text className="text-xs text-gray-500 font-instrument mb-1">Events</Text>
-          {eventsSummary.kind === 'all' ? (
+          {eventsSummary.kind === 'none' ? (
+            <Text className="text-sm text-gray-400 font-instrument">No events selected</Text>
+          ) : eventsSummary.kind === 'all' ? (
             <Text className="text-sm text-gray-400 font-instrument">All events</Text>
           ) : (
             <View className="flex-row flex-wrap gap-1.5">

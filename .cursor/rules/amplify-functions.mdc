@@ -1,0 +1,49 @@
+---
+description: Amplify Gen 2 Lambda functions — deps, bundling, and CI preBuild (no manual amplify.yml install lines)
+globs: ['amplify/functions/**', 'amplify/backend.ts', 'amplify.yml', 'scripts/*amplify*']
+alwaysApply: false
+---
+
+# Amplify Lambda functions
+
+## Do not edit amplify.yml for function installs
+
+Function deps are installed automatically by `scripts/install-amplify-function-deps.mjs` on CI (and via `npm run install:amplify-function-deps` locally). **Never** add `cd amplify/functions/<name> && npm install` lines to `amplify.yml`.
+
+## Adding a new Lambda
+
+1. `amplify/functions/<name>/resource.ts` + import in `amplify/backend.ts`
+2. Add `package.json` in the function dir **if** the handler imports npm packages or `@furnace/*` `file:` deps
+3. If only relative `lib/` imports and no npm packages → no `package.json` needed (e.g. `googlePlaces`)
+
+Example minimal `package.json`:
+
+```json
+{
+  "name": "my-function",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.99.1"
+  }
+}
+```
+
+## Registry-server bundling rule
+
+If a function depends on `@furnace/registry-server` (`file:../../../lib/foundry/registry-server`), it **must** also list `@compwright/namecase` in that function's `package.json`. Root `package.json` must include `@compwright/namecase` too (esbuild resolves it from repo root).
+
+## Local checks
+
+```bash
+npm run verify:amplify-yml-installs   # bundling rules only; fast, no install
+npm run install:amplify-function-deps # after root npm ci
+```
+
+## launchSmartleadMigration
+
+Skipped when `AMPLIFY_ENABLE_SMARTLEAD_MIGRATION` is `false` or `0` (handled by the install script).
+
+## ECS workers
+
+For send/scheduler/inbox-checker deploys, see `deployment-workers.mdc` — separate from Amplify Hosting backend.

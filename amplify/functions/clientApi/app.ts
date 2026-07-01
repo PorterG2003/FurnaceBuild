@@ -41,6 +41,8 @@ import {
   stableGlobalLeadIdsKey,
 } from '../../../lib/client-api/webhooks/batchCompletion.js';
 import { insertBatchCompletionWebhookEvent } from '../../../lib/client-api/webhooks/emitBatchCompletion.js';
+import { enqueueWebhookEventById, reconcileStaleWebhookEnqueues } from '../../../lib/client-api/webhooks/enqueueWebhookEvent.js';
+import { persistWebhookEvent } from '../../../lib/client-api/webhooks/persistWebhookEvent.js';
 import {
   BULK_ASYNC_LIMIT,
   BULK_SYNC_LIMIT,
@@ -166,29 +168,8 @@ async function emitWebhookEvent(
     dedupeKey: string;
   }
 ) {
-  const { data, error } = await supabase
-    .from('webhook_events')
-    .insert({
-      account_id: input.accountId,
-      campaign_id: input.campaignId ?? null,
-      event_type: input.eventType,
-      payload: input.payload,
-      dedupe_key: input.dedupeKey,
-    } as never)
-    .select('id')
-    .single();
-  if (error) {
-    throw new Error(`Failed to persist webhook event: ${error.message}`);
-  }
-  const queueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
-  if (!queueUrl) {
-    return data.id;
-  }
-  await sqs.send(new SendMessageCommand({
-    QueueUrl: queueUrl,
-    MessageBody: JSON.stringify({ eventId: data.id }),
-  }));
-  return data.id;
+  const id = await persistWebhookEvent(supabase, input);
+  return id;
 }
 
 function parseJsonBody<T>(raw: string): T {
@@ -796,13 +777,6 @@ app.post('/v1/campaigns/:id/pause', async (c) => {
   assertCampaignMutable(campaign);
   const { error } = await supabase.rpc('pause_campaign_and_defer_jobs', { p_campaign_id: campaign.id });
   if (error) throw new Error(`Failed to pause campaign: ${error.message}`);
-  await emitWebhookEvent(supabase, {
-    accountId: auth.accountId,
-    campaignId: campaign.id,
-    eventType: 'campaign.paused',
-    payload: { campaign_id: campaign.id },
-    dedupeKey: `campaign.paused:${campaign.id}:${Date.now()}`,
-  });
   return jsonResponse(c, { data: { id: campaign.id, status: 'paused' } }, 200, c.get('rateLimitHeaders'));
 });
 
@@ -813,13 +787,6 @@ app.post('/v1/campaigns/:id/stop', async (c) => {
   assertCampaignMutable(campaign);
   const { error } = await supabase.rpc('stop_campaign_and_stop_enrollments', { p_campaign_id: campaign.id });
   if (error) throw new Error(`Failed to stop campaign: ${error.message}`);
-  await emitWebhookEvent(supabase, {
-    accountId: auth.accountId,
-    campaignId: campaign.id,
-    eventType: 'campaign.stopped',
-    payload: { campaign_id: campaign.id },
-    dedupeKey: `campaign.stopped:${campaign.id}:${Date.now()}`,
-  });
   return jsonResponse(c, { data: { id: campaign.id, status: 'stopped' } }, 200, c.get('rateLimitHeaders'));
 });
 
@@ -836,13 +803,6 @@ app.post('/v1/campaigns/:id/resume', async (c) => {
     p_pause_reason: 'Campaign paused',
   });
   if (error) throw new Error(`Failed to resume campaign: ${error.message}`);
-  await emitWebhookEvent(supabase, {
-    accountId: auth.accountId,
-    campaignId: campaign.id,
-    eventType: 'campaign.resumed',
-    payload: { campaign_id: campaign.id },
-    dedupeKey: `campaign.resumed:${campaign.id}:${Date.now()}`,
-  });
   return jsonResponse(c, { data: { id: campaign.id, status: 'running' } }, 200, c.get('rateLimitHeaders'));
 });
 
@@ -866,7 +826,7 @@ app.post('/v1/campaigns/:id/enrollments/pause', async (c) => {
   if (error) throw new Error(`Failed to pause enrollments: ${error.message}`);
   const result = (data ?? {}) as Record<string, unknown>;
   const scopeKey = stableGlobalLeadIdsKey(globalLeadIds);
-  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+  await insertBatchCompletionWebhookEvent(supabase, {
     accountId: auth.accountId,
     campaignId: campaign.id,
     operation: 'pause_enrollments',
@@ -880,13 +840,6 @@ app.post('/v1/campaigns/:id/enrollments/pause', async (c) => {
     globalLeadIds,
     syncScopeKey: `${campaign.id}:${scopeKey}`,
   });
-  const queueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
-  if (queueUrl) {
-    await sqs.send(new SendMessageCommand({
-      QueueUrl: queueUrl,
-      MessageBody: JSON.stringify({ eventId }),
-    }));
-  }
   return jsonResponse(c, { data: result }, 200, c.get('rateLimitHeaders'));
 });
 
@@ -913,7 +866,7 @@ app.post('/v1/campaigns/:id/enrollments/resume', async (c) => {
   if (error) throw new Error(`Failed to resume enrollments: ${error.message}`);
   const result = (data ?? {}) as Record<string, unknown>;
   const scopeKey = stableGlobalLeadIdsKey(globalLeadIds);
-  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+  await insertBatchCompletionWebhookEvent(supabase, {
     accountId: auth.accountId,
     campaignId: campaign.id,
     operation: 'resume_enrollments',
@@ -927,13 +880,6 @@ app.post('/v1/campaigns/:id/enrollments/resume', async (c) => {
     globalLeadIds,
     syncScopeKey: `${campaign.id}:${scopeKey}`,
   });
-  const queueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
-  if (queueUrl) {
-    await sqs.send(new SendMessageCommand({
-      QueueUrl: queueUrl,
-      MessageBody: JSON.stringify({ eventId }),
-    }));
-  }
   return jsonResponse(c, { data: result }, 200, c.get('rateLimitHeaders'));
 });
 
@@ -1005,6 +951,9 @@ async function upsertCampaignLead(params: {
     website: typeof lead.website === 'string' ? lead.website.trim() || null : null,
     linkedin_url: typeof lead.linkedin_url === 'string' ? lead.linkedin_url.trim() || null : null,
     company_linkedin_url: typeof lead.company_linkedin_url === 'string' ? lead.company_linkedin_url.trim() || null : null,
+    phone_number: typeof lead.phone_number === 'string' ? lead.phone_number.trim() || null : null,
+    mobile_phone_number:
+      typeof lead.mobile_phone_number === 'string' ? lead.mobile_phone_number.trim() || null : null,
     custom_lead_data: bodyCustomLeadData as Json,
     source: 'api',
     updated_at: nowIso(),
@@ -1045,7 +994,7 @@ app.get('/v1/campaigns/:id/leads', async (c) => {
   const sortRaw = c.req.query('sort')?.trim().toLowerCase() || 'created_at';
   const allowedSort = new Set([
     'email', 'name', 'first_name', 'last_name', 'company_name', 'website',
-    'linkedin_url', 'company_linkedin_url', 'source', 'created_at',
+    'linkedin_url', 'company_linkedin_url', 'phone_number', 'mobile_phone_number', 'source', 'created_at',
   ]);
   const sort = allowedSort.has(sortRaw) ? sortRaw : 'created_at';
   const ascending = c.req.query('sort_dir')?.trim().toLowerCase() === 'asc';
@@ -1059,7 +1008,7 @@ app.get('/v1/campaigns/:id/leads', async (c) => {
   if (search) {
     const pattern = `%${search}%`;
     query = query.or(
-      `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern}`,
+      `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern},phone_number.ilike.${pattern},mobile_phone_number.ilike.${pattern}`,
     );
   }
   const { data, error, count } = await query
@@ -1134,7 +1083,17 @@ app.patch('/v1/campaigns/:id/leads/:leadId', async (c) => {
   const lead = await loadLeadOrThrow(supabase, auth.accountId, campaign.id, c.req.param('leadId'));
   const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
   const patch: Record<string, unknown> = {};
-  for (const key of ['name', 'first_name', 'last_name', 'company_name', 'website', 'linkedin_url', 'company_linkedin_url']) {
+  for (const key of [
+    'name',
+    'first_name',
+    'last_name',
+    'company_name',
+    'website',
+    'linkedin_url',
+    'company_linkedin_url',
+    'phone_number',
+    'mobile_phone_number',
+  ]) {
     if (key in body) {
       patch[key] = typeof body[key] === 'string' ? (body[key] as string).trim() || null : body[key];
     }
@@ -1224,7 +1183,7 @@ app.post('/v1/campaigns/:id/leads/bulk', async (c) => {
   }
 
   if (imported > 0 || failed > 0) {
-    const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+    await insertBatchCompletionWebhookEvent(supabase, {
       accountId: auth.accountId,
       campaignId: campaign.id,
       operation: 'api_lead_import',
@@ -1240,13 +1199,6 @@ app.post('/v1/campaigns/:id/leads/bulk', async (c) => {
       },
       syncScopeKey: hashRequestBody(rawBody),
     });
-    const queueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
-    if (queueUrl) {
-      await sqs.send(new SendMessageCommand({
-        QueueUrl: queueUrl,
-        MessageBody: JSON.stringify({ eventId }),
-      }));
-    }
   }
 
   const payload = { imported, incomplete, failed, errors };
@@ -1342,7 +1294,7 @@ app.post('/v1/campaigns/:id/leads:add', async (c) => {
   });
   if (error) throw new Error(`Failed to add leads to campaign: ${error.message}`);
   const result = (data ?? {}) as Record<string, unknown>;
-  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+  await insertBatchCompletionWebhookEvent(supabase, {
     accountId: auth.accountId,
     campaignId: campaign.id,
     operation: 'add_to_campaign',
@@ -1359,13 +1311,6 @@ app.post('/v1/campaigns/:id/leads:add', async (c) => {
     globalLeadIds,
     syncScopeKey: `${campaign.id}:${stableGlobalLeadIdsKey(globalLeadIds)}`,
   });
-  const webhookQueueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
-  if (webhookQueueUrl) {
-    await sqs.send(new SendMessageCommand({
-      QueueUrl: webhookQueueUrl,
-      MessageBody: JSON.stringify({ eventId }),
-    }));
-  }
   return jsonResponse(c, { data: result }, 200, c.get('rateLimitHeaders'));
 });
 
@@ -1389,7 +1334,7 @@ app.post('/v1/campaigns/:id/leads:remove', async (c) => {
   });
   if (error) throw new Error(`Failed to remove leads from campaign: ${error.message}`);
   const result = (data ?? {}) as Record<string, unknown>;
-  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+  await insertBatchCompletionWebhookEvent(supabase, {
     accountId: auth.accountId,
     campaignId: campaign.id,
     operation: 'remove_from_campaign',
@@ -1403,13 +1348,6 @@ app.post('/v1/campaigns/:id/leads:remove', async (c) => {
     globalLeadIds,
     syncScopeKey: `${campaign.id}:${stableGlobalLeadIdsKey(globalLeadIds)}`,
   });
-  const webhookQueueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
-  if (webhookQueueUrl) {
-    await sqs.send(new SendMessageCommand({
-      QueueUrl: webhookQueueUrl,
-      MessageBody: JSON.stringify({ eventId }),
-    }));
-  }
   return jsonResponse(c, { data: result }, 200, c.get('rateLimitHeaders'));
 });
 
@@ -1430,7 +1368,7 @@ app.post('/v1/leads:remove-from-all-campaigns', async (c) => {
   });
   if (error) throw new Error(`Failed to remove leads from all campaigns: ${error.message}`);
   const result = (data ?? {}) as Record<string, unknown>;
-  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+  await insertBatchCompletionWebhookEvent(supabase, {
     accountId: auth.accountId,
     campaignId: null,
     operation: 'remove_from_all_campaigns',
@@ -1444,13 +1382,6 @@ app.post('/v1/leads:remove-from-all-campaigns', async (c) => {
     globalLeadIds,
     syncScopeKey: stableGlobalLeadIdsKey(globalLeadIds),
   });
-  const webhookQueueUrl = process.env.CLIENT_API_WEBHOOK_QUEUE_URL?.trim();
-  if (webhookQueueUrl) {
-    await sqs.send(new SendMessageCommand({
-      QueueUrl: webhookQueueUrl,
-      MessageBody: JSON.stringify({ eventId }),
-    }));
-  }
   return jsonResponse(c, { data: result }, 200, c.get('rateLimitHeaders'));
 });
 
@@ -2488,6 +2419,34 @@ app.get('/v1/campaigns/:id/stats', async (c) => {
     200,
     c.get('rateLimitHeaders')
   );
+});
+
+async function internalWebhookEnqueueAuth(c: Context, next: Next) {
+  const secret = process.env.WEBHOOK_ENQUEUE_SECRET?.trim();
+  const header = c.req.header('X-Furnace-Internal-Secret')?.trim();
+  if (!secret || !header || header !== secret) {
+    unauthorized('invalid_internal_secret', 'Invalid internal webhook enqueue secret');
+  }
+  await next();
+}
+
+app.post('/internal/webhook/enqueue', internalWebhookEnqueueAuth, async (c) => {
+  const supabase = createServiceRoleClient();
+  const body = parseJsonBody<{ eventId?: string }>(await c.req.text());
+  const eventId = body.eventId?.trim();
+  if (!eventId) {
+    invalidRequest('missing_event_id', 'eventId is required');
+  }
+  const result = await enqueueWebhookEventById(supabase, eventId);
+  return jsonResponse(c, { data: { status: result.status } }, 200);
+});
+
+app.post('/internal/webhook/reconcile', internalWebhookEnqueueAuth, async (c) => {
+  const supabase = createServiceRoleClient();
+  const enqueued = await reconcileStaleWebhookEnqueues(supabase, {
+    enqueue: (eventId) => enqueueWebhookEventById(supabase, eventId),
+  });
+  return jsonResponse(c, { data: { enqueued_count: enqueued.length, event_ids: enqueued } }, 200);
 });
 
 app.use('/internal/*', internalJwtAuth);

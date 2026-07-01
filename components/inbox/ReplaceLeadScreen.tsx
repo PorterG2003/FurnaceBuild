@@ -64,6 +64,7 @@ interface StandardFieldsState {
   firstName: string;
   lastName: string;
   phoneNumber: string;
+  mobilePhoneNumber: string;
   companyName: string;
   website: string;
   linkedinUrl: string;
@@ -76,6 +77,7 @@ const EMPTY_STANDARD_FIELDS: StandardFieldsState = {
   firstName: '',
   lastName: '',
   phoneNumber: '',
+  mobilePhoneNumber: '',
   companyName: '',
   website: '',
   linkedinUrl: '',
@@ -118,6 +120,7 @@ function seedReplacementFields(lead: Lead | null, prefill: ReplaceLeadPrefill | 
     firstName: '',
     lastName: '',
     phoneNumber: '',
+    mobilePhoneNumber: '',
     linkedinUrl: '',
     companyName: lead?.company_name ?? '',
     website: lead?.website ?? '',
@@ -236,6 +239,7 @@ export function ReplaceLeadScreen({
         newFirstName: normalizeNullable(fields.firstName),
         newLastName: normalizeNullable(fields.lastName),
         newPhoneNumber: normalizeNullable(fields.phoneNumber),
+        newMobilePhoneNumber: normalizeNullable(fields.mobilePhoneNumber),
         reason,
         reasonNote: reasonNote.trim() || null,
         sourceMessageId: sourceMessageId ?? null,
@@ -297,6 +301,7 @@ export function ReplaceLeadScreen({
       )}
 
       <View className="gap-3">
+        <Text className="text-xs font-instrument-semibold uppercase tracking-wide text-gray-500">Lead</Text>
         <ComparisonRow
           label="Email"
           isNarrow={isNarrow}
@@ -334,14 +339,27 @@ export function ReplaceLeadScreen({
           placeholder="Johnson"
         />
         <ComparisonRow
-          label="Phone"
+          label="Mobile"
           isNarrow={isNarrow}
-          oldValue={oldLead.phone_number}
-          newValue={fields.phoneNumber}
-          onNewValueChange={(value) => setField('phoneNumber', value)}
-          placeholder="+1 555 123 4567"
+          oldValue={oldLead.mobile_phone_number}
+          newValue={fields.mobilePhoneNumber}
+          onNewValueChange={(value) => setField('mobilePhoneNumber', value)}
+          placeholder="+1 555 987 6543"
           keyboardType="phone-pad"
         />
+        <ComparisonRow
+          label="LinkedIn"
+          isNarrow={isNarrow}
+          oldValue={oldLead.linkedin_url}
+          newValue={fields.linkedinUrl}
+          onNewValueChange={(value) => setField('linkedinUrl', value)}
+          placeholder="https://linkedin.com/in/..."
+          autoCapitalize="none"
+        />
+      </View>
+
+      <View className="gap-3 border-t border-[#2A2A2A] pt-4">
+        <Text className="text-xs font-instrument-semibold uppercase tracking-wide text-gray-500">Company</Text>
         <ComparisonRow
           label="Company"
           isNarrow={isNarrow}
@@ -351,21 +369,21 @@ export function ReplaceLeadScreen({
           placeholder="Acme Inc."
         />
         <ComparisonRow
+          label="Company phone"
+          isNarrow={isNarrow}
+          oldValue={oldLead.phone_number}
+          newValue={fields.phoneNumber}
+          onNewValueChange={(value) => setField('phoneNumber', value)}
+          placeholder="+1 555 123 4567"
+          keyboardType="phone-pad"
+        />
+        <ComparisonRow
           label="Website"
           isNarrow={isNarrow}
           oldValue={oldLead.website}
           newValue={fields.website}
           onNewValueChange={(value) => setField('website', value)}
           placeholder="https://acme.com"
-          autoCapitalize="none"
-        />
-        <ComparisonRow
-          label="LinkedIn"
-          isNarrow={isNarrow}
-          oldValue={oldLead.linkedin_url}
-          newValue={fields.linkedinUrl}
-          onNewValueChange={(value) => setField('linkedinUrl', value)}
-          placeholder="https://linkedin.com/in/..."
           autoCapitalize="none"
         />
         <ComparisonRow
@@ -381,8 +399,8 @@ export function ReplaceLeadScreen({
 
       {customEntries.length > 0 && (
         <View className="gap-3 border-t border-[#2A2A2A] pt-4">
-          <Text className="text-xs font-instrument-medium text-gray-300 uppercase tracking-wide">
-            Custom fields
+          <Text className="text-xs font-instrument-semibold uppercase tracking-wide text-gray-500">
+            Custom
           </Text>
           <View className="gap-3">
             {customEntries.map(([key, value]) => (
@@ -430,7 +448,7 @@ export function ReplaceLeadScreen({
             className="text-white font-instrument text-sm px-3 py-3 rounded-xl border border-[#3A3A3A] bg-[#111111] min-h-[96px]"
             style={[
               { minHeight: 96 },
-              Platform.OS === 'web' ? { scrollMarginBottom: 24 } : null,
+              Platform.OS === 'web' ? ({ scrollMarginBottom: 24 } as unknown as object) : undefined,
             ]}
           />
         </View>
@@ -530,7 +548,7 @@ function ComparisonRow({
   const inputClassName =
     'text-white font-instrument text-sm px-3 py-2.5 rounded-xl border border-[#3A3A3A] bg-[#111111]';
   const inputScrollMarginWeb =
-    Platform.OS === 'web' ? ({ scrollMarginBottom: 24 } as const) : undefined;
+    Platform.OS === 'web' ? ({ scrollMarginBottom: 24 } as unknown as object) : undefined;
   const showDiffHint =
     highlightDifferent &&
     newValue.trim() !== '' &&
@@ -603,6 +621,8 @@ function ComparisonRow({
 }
 
 interface ProfilePatch {
+  companyPhoneNumber?: string | null;
+  mobilePhoneNumber?: string | null;
   companyName?: string | null;
   website?: string | null;
   linkedinUrl?: string | null;
@@ -617,6 +637,12 @@ function buildProfilePatch(
   customEntries: Array<[string, unknown]>
 ): ProfilePatch | null {
   const patch: ProfilePatch = {};
+
+  const newCompanyPhone = normalizeNullable(fields.phoneNumber);
+  if (newCompanyPhone !== (oldLead.phone_number ?? null)) patch.companyPhoneNumber = newCompanyPhone;
+
+  const newMobilePhone = normalizeNullable(fields.mobilePhoneNumber);
+  if (newMobilePhone !== (oldLead.mobile_phone_number ?? null)) patch.mobilePhoneNumber = newMobilePhone;
 
   const newCompany = normalizeNullable(fields.companyName);
   if (newCompany !== (oldLead.company_name ?? null)) patch.companyName = newCompany;

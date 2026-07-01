@@ -10,6 +10,7 @@ import {
   type BatchWebhookSource,
   type ImportJobOperation,
 } from './batchCompletion.js';
+import { persistWebhookEvent } from './persistWebhookEvent.js';
 
 type Supabase = SupabaseClient<Database>;
 
@@ -38,17 +39,15 @@ export async function insertBatchCompletionWebhookEvent(
     globalLeadIds: params.globalLeadIds,
   });
   const dedupeKey = batchCompletionDedupeKey(eventType, params.jobId, params.syncScopeKey);
-  const { data, error } = await supabase
-    .from('webhook_events')
-    .insert({
-      account_id: params.accountId,
-      campaign_id: params.campaignId,
-      event_type: eventType,
-      payload: payload as never,
-      dedupe_key: dedupeKey,
-    } as never)
-    .select('id')
-    .single();
-  if (error) throw new Error(`Failed to persist batch webhook event: ${error.message}`);
-  return data.id as string;
+  const id = await persistWebhookEvent(supabase, {
+    accountId: params.accountId,
+    campaignId: params.campaignId,
+    eventType,
+    payload,
+    dedupeKey,
+  });
+  if (!id) {
+    throw new Error(`Failed to persist batch webhook event for ${eventType}`);
+  }
+  return id;
 }

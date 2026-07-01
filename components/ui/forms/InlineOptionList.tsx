@@ -1,35 +1,8 @@
-import { Platform, Pressable, ScrollView, Text, View, type ReactNode } from 'react-native';
+import { Pressable, ScrollView, Text, View, type ReactNode } from 'react-native';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { FormFieldLabel } from './FormFieldHelp';
 import { FORM_FIELD_VARIANTS, type FormFieldVariant } from './formFieldStyles';
-
-const noSelectStyle = Platform.OS === 'web' ? ({ userSelect: 'none' } as const) : undefined;
-
-const ROW_SIZING = {
-  rowGap: 10,
-  rowPaddingY: 10,
-  rowPaddingX: 12,
-  rowRadius: 12,
-  rowMarginBottom: 6,
-  checkboxSize: 18,
-  checkboxRadius: 4,
-  rowTextClassName: 'text-sm',
-} as const;
-
-function rowStyle(isSelected: boolean) {
-  return {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: ROW_SIZING.rowGap,
-    paddingVertical: ROW_SIZING.rowPaddingY,
-    paddingHorizontal: ROW_SIZING.rowPaddingX,
-    borderRadius: ROW_SIZING.rowRadius,
-    marginBottom: ROW_SIZING.rowMarginBottom,
-    borderWidth: 1,
-    backgroundColor: isSelected ? 'rgba(243, 68, 13, 0.14)' : '#121212',
-    borderColor: isSelected ? 'rgba(243, 68, 13, 0.4)' : '#2A2A2A',
-    ...noSelectStyle,
-  };
-}
+import { INLINE_OPTION_LIST_ROW_SIZING, inlineOptionListRowStyle } from './inlineOptionListStyles';
 
 type InlineOptionListBaseProps<T> = {
   items: T[];
@@ -100,50 +73,37 @@ export function InlineOptionList<T>({
         const selected = isSelected(id);
         const secondaryLabel = getItemSecondaryLabel?.(item);
         return (
-          <View key={id} style={rowStyle(selected)}>
+          <View key={id} style={inlineOptionListRowStyle(selected)}>
+            {selectionMode === 'multi' ? (
+              <Checkbox
+                checked={selected}
+                onPress={() => handlePress(id)}
+                disabled={disabled}
+                size={18}
+                circleSize={28}
+              />
+            ) : null}
             <Pressable
               onPress={() => handlePress(id)}
               disabled={disabled}
-              style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: ROW_SIZING.rowGap }}
+              style={{ flex: 1, minWidth: 0 }}
             >
-              {selectionMode === 'multi' ? (
-                <View
-                  style={{
-                    width: ROW_SIZING.checkboxSize,
-                    height: ROW_SIZING.checkboxSize,
-                    borderRadius: ROW_SIZING.checkboxRadius,
-                    borderWidth: 1,
-                    borderColor: selected ? '#F3440D' : '#4B5563',
-                    backgroundColor: selected ? 'rgba(243, 68, 13, 0.3)' : 'transparent',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {selected ? (
-                    <Text selectable={false} className="text-orange-500 text-xs font-bold">
-                      ✓
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-              <View style={{ flex: 1, minWidth: 0 }}>
+              <Text
+                selectable={false}
+                className={`text-white font-instrument-medium ${INLINE_OPTION_LIST_ROW_SIZING.rowTextClassName}`}
+                numberOfLines={2}
+              >
+                {getItemLabel(item)}
+              </Text>
+              {secondaryLabel ? (
                 <Text
                   selectable={false}
-                  className={`text-white font-instrument-medium ${ROW_SIZING.rowTextClassName}`}
+                  className="text-gray-400 font-instrument mt-0.5 text-[11px]"
                   numberOfLines={2}
                 >
-                  {getItemLabel(item)}
+                  {secondaryLabel}
                 </Text>
-                {secondaryLabel ? (
-                  <Text
-                    selectable={false}
-                    className="text-gray-400 font-instrument mt-0.5 text-[11px]"
-                    numberOfLines={2}
-                  >
-                    {secondaryLabel}
-                  </Text>
-                ) : null}
-              </View>
+              ) : null}
             </Pressable>
             {renderRowAccessory ? (
               <View style={{ flexShrink: 0 }}>{renderRowAccessory(item)}</View>

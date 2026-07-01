@@ -22,6 +22,14 @@ export type ApiIdempotencyKey = Database['public']['Tables']['api_idempotency_ke
 export type ApiRateLimitBucket = Database['public']['Tables']['api_rate_limit_buckets']['Row'];
 export type ApiImportJob = Database['public']['Tables']['api_import_jobs']['Row'];
 
+export type CreditLedgerEntry = Database['public']['Tables']['credit_ledger']['Row'];
+export type CreditLedgerEntryInsert = Database['public']['Tables']['credit_ledger']['Insert'];
+export type CreditEntitlement = Database['public']['Tables']['credit_entitlements']['Row'];
+export type CreditEntitlementInsert = Database['public']['Tables']['credit_entitlements']['Insert'];
+
+export type ApolloEnrichmentSession = Database['public']['Tables']['apollo_enrichment_sessions']['Row'];
+export type ApolloEnrichmentSessionInsert = Database['public']['Tables']['apollo_enrichment_sessions']['Insert'];
+
 // Export commonly used types
 export type Campaign = Database['public']['Tables']['campaigns']['Row'];
 export type CampaignInsert = Database['public']['Tables']['campaigns']['Insert'];

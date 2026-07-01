@@ -34,13 +34,21 @@ export async function processWebhookEventById(eventId: string): Promise<void> {
     : Array.isArray(account?.webhook_enabled_events)
       ? account?.webhook_enabled_events
       : [];
-  if (enabledEvents.length > 0 && !enabledEvents.includes(evt.event_type)) {
+  if (enabledEvents.length === 0 || !enabledEvents.includes(evt.event_type)) {
     return;
   }
   const secret = (campaign?.webhook_signing_secret_override || account?.webhook_signing_secret || '').trim();
   const payload = evt.payload && typeof evt.payload === 'object'
     ? (evt.payload as Record<string, unknown>)
     : {};
+
+  const { data: existingDelivery } = await supabase
+    .from('webhook_deliveries')
+    .select('id')
+    .eq('webhook_event_id', evt.id)
+    .eq('status', 'delivered')
+    .maybeSingle();
+  if (existingDelivery) return;
 
   const { data: delivery, error: deliveryError } = await supabase
     .from('webhook_deliveries')

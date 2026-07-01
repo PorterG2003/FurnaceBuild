@@ -1,6 +1,6 @@
 export const CLIENT_API_OPENAPI_VERSION = '3.1.0';
 export const CLIENT_API_TITLE = 'Furnace Client API';
-export const CLIENT_API_VERSION = '1.2.0';
+export const CLIENT_API_VERSION = '1.3.0';
 
 export const RATE_LIMIT_REQUESTS_PER_MINUTE = 200;
 export const DEFAULT_PAGE_SIZE = 20;

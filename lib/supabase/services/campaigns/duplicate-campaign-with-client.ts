@@ -24,6 +24,7 @@ type SourceLeadRow = {
   linkedin_url: string | null;
   company_linkedin_url: string | null;
   phone_number: string | null;
+  mobile_phone_number: string | null;
   source: string | null;
   custom_lead_data: LeadInsert['custom_lead_data'];
   global_lead_id: string | null;
@@ -63,7 +64,7 @@ async function createCampaignWithClient(db: DbClient, campaign: CampaignInsert):
       ...campaign,
       created_at: now,
       updated_at: now,
-    })
+    } as never)
     .select()
     .single();
 
@@ -93,7 +94,7 @@ async function updateCampaignSettingsWithClient(
       webhook_enabled_events_override: sourceCampaign.webhook_enabled_events_override,
       locked: false,
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq('id', campaignId)
     .is('deleted_at', null);
 
@@ -111,7 +112,7 @@ async function updateCampaignFlowDataWithClient(
     p_campaign_id: campaignId,
     p_flow_data: flowData,
     p_change_source: 'duplicate_campaign',
-  });
+  } as never);
 
   if (!error) {
     return;
@@ -126,7 +127,7 @@ async function updateCampaignFlowDataWithClient(
     .update({
       flow_data: flowData,
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq('id', campaignId)
     .is('deleted_at', null);
 
@@ -146,7 +147,7 @@ async function getCampaignMailboxIdsWithClient(db: DbClient, campaignId: string)
     throw new Error(`Failed to fetch campaign mailbox assignments: ${error.message}`);
   }
 
-  return (data ?? []).map((row) => row.mailbox_id).filter(Boolean);
+  return ((data ?? []) as Array<{ mailbox_id: string | null }>).map((row) => row.mailbox_id).filter(Boolean) as string[];
 }
 
 async function copyCampaignMailboxAssignmentsWithClient(
@@ -164,7 +165,7 @@ async function copyCampaignMailboxAssignmentsWithClient(
       campaign_id: targetCampaignId,
       mailbox_id: mailboxId,
       account_id: targetAccountId,
-    })),
+    })) as never,
   );
 
   if (error) {
@@ -187,7 +188,9 @@ async function copyCampaignTagsWithClient(
     throw new Error(`Failed to fetch campaign tag assignments: ${error.message}`);
   }
 
-  const tagIds = [...new Set((data ?? []).map((row) => row.tag_id).filter(Boolean))];
+  const tagIds = [
+    ...new Set(((data ?? []) as Array<{ tag_id: string | null }>).map((row) => row.tag_id).filter(Boolean)),
+  ] as string[];
   if (tagIds.length === 0) {
     return;
   }
@@ -197,7 +200,7 @@ async function copyCampaignTagsWithClient(
       campaign_id: targetCampaignId,
       tag_id: tagId,
       account_id: targetAccountId,
-    })),
+    })) as never,
   );
 
   if (insertError) {
@@ -214,7 +217,7 @@ async function copyCampaignLeadsWithClient(
   const { data, error } = await db
     .from('leads')
     .select(
-      'email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, global_lead_id, mailbox_id',
+      'email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, mobile_phone_number, source, custom_lead_data, global_lead_id, mailbox_id',
     )
     .eq('campaign_id', sourceCampaignId)
     .is('deleted_at', null)
@@ -247,6 +250,7 @@ async function copyCampaignLeadsWithClient(
     linkedin_url: lead.linkedin_url,
     company_linkedin_url: lead.company_linkedin_url,
     phone_number: lead.phone_number,
+    mobile_phone_number: lead.mobile_phone_number,
     source: lead.source,
     custom_lead_data: lead.custom_lead_data ?? null,
     global_lead_id: lead.global_lead_id,
@@ -255,7 +259,7 @@ async function copyCampaignLeadsWithClient(
   }));
 
   for (const batch of chunk(inserts, LEAD_COPY_CHUNK_SIZE)) {
-    const { error: insertError } = await db.from('leads').insert(batch);
+    const { error: insertError } = await db.from('leads').insert(batch as never);
     if (insertError) {
       throw new Error(`Failed to copy campaign leads: ${insertError.message}`);
     }

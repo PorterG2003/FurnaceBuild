@@ -18,6 +18,8 @@ interface DetailPageHeaderProps {
   title: string;
   /** Mobile only: optional subtitle (e.g. email) shown below the title */
   subtitle?: string | null;
+  /** Mobile only: inline accessory beside the title (e.g. credit pill) */
+  titleAddon?: ReactNode;
   actions?: ReactNode;
   /** Mobile only: rendered on the right of the first row (e.g. three-dots actions button) */
   mobileRightAction?: ReactNode;
@@ -32,6 +34,7 @@ export function DetailPageHeader({
   backHref,
   title,
   subtitle,
+  titleAddon,
   actions,
   mobileRightAction,
   onBack,
@@ -53,12 +56,17 @@ export function DetailPageHeader({
           <View style={{ gap: 0 }}>
             {onTitlePress ? (
               <Pressable onPress={onTitlePress} accessibilityLabel="View lead profile">
-                <Text
-                  className="text-white font-instrument-semibold text-2xl"
-                  numberOfLines={2}
-                >
-                  {title}
-                </Text>
+                <View className="flex-row items-center gap-2 flex-wrap">
+                  <Text
+                    className="text-white font-instrument-semibold text-2xl shrink-0 leading-8"
+                    numberOfLines={2}
+                  >
+                    {title}
+                  </Text>
+                  {titleAddon ? (
+                    <View className="shrink-0 justify-center self-center">{titleAddon}</View>
+                  ) : null}
+                </View>
                 {subtitle ? (
                   <Text
                     className="text-gray-500 font-instrument text-sm"
@@ -71,12 +79,17 @@ export function DetailPageHeader({
               </Pressable>
             ) : (
               <>
-                <Text
-                  className="text-white font-instrument-semibold text-2xl"
-                  numberOfLines={2}
-                >
-                  {title}
-                </Text>
+                <View className="flex-row items-center gap-2 flex-wrap">
+                  <Text
+                    className="text-white font-instrument-semibold text-2xl shrink-0 leading-8"
+                    numberOfLines={2}
+                  >
+                    {title}
+                  </Text>
+                  {titleAddon ? (
+                    <View className="shrink-0 justify-center self-center">{titleAddon}</View>
+                  ) : null}
+                </View>
                 {subtitle ? (
                   <Text
                     className="text-gray-500 font-instrument text-sm"

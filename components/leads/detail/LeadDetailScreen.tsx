@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, useWindowDimensions, Animated } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { DetailPageShell, DETAIL_CONTENT_MAX_WIDTH, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Alert, EmptyState, usePageSkeleton, useToast } from '@/components/ui/feedback';
@@ -17,6 +17,9 @@ import { LeadActivitySection } from './LeadActivitySection';
 import { LeadDetailSummary } from './LeadDetailSummary';
 import { LeadDetailMobileView } from './mobile/LeadDetailMobileView';
 import { useLeadDetailMobileNavigation } from './mobile/useLeadDetailMobileNavigation';
+import { EnrichLeadPanel } from './EnrichLeadPanel';
+
+const ENRICH_PANEL_WIDTH = 480;
 
 const DETAIL_TABS: Tab[] = [
   { id: 'overview', label: 'Overview' },
@@ -54,6 +57,9 @@ export function LeadDetailScreen() {
   const [detail, setDetail] = useState<AccountLeadDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [enrichVisible, setEnrichVisible] = useState(false);
+  const [enrichStatusRefreshKey, setEnrichStatusRefreshKey] = useState(0);
+  const slideAnim = useRef(new Animated.Value(1)).current;
 
   const loadDetail = useCallback(async () => {
     if (isAccountBootstrapping) {
@@ -159,6 +165,33 @@ export function LeadDetailScreen() {
     void loadDetail();
   }, [loadDetail, toast]);
 
+  const closeEnrichPanel = useCallback(() => {
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      setEnrichVisible(false);
+      setEnrichStatusRefreshKey((key) => key + 1);
+    });
+  }, [slideAnim]);
+
+  const openEnrichPanel = useCallback(() => {
+    setEnrichVisible(true);
+    slideAnim.setValue(1);
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 65,
+      friction: 11,
+    }).start();
+  }, [slideAnim]);
+
+  const handleEnrichApplied = useCallback(() => {
+    handleSaved();
+    closeEnrichPanel();
+  }, [closeEnrichPanel, handleSaved]);
+
   const contentWidthStyle = isMobile
     ? undefined
     : { maxWidth: DETAIL_CONTENT_MAX_WIDTH, width: '100%' as const, alignSelf: 'center' as const };
@@ -190,6 +223,19 @@ export function LeadDetailScreen() {
       title={shellTitle}
       subtitle={shellSubtitle}
       contentPadding={16}
+      desktopSidePanel={
+        !isMobile && enrichVisible && detail && accountId ? (
+          <EnrichLeadPanel
+            visible={enrichVisible}
+            onClose={closeEnrichPanel}
+            accountId={accountId}
+            detail={detail}
+            onApplied={handleEnrichApplied}
+            slideAnim={slideAnim}
+            panelWidth={ENRICH_PANEL_WIDTH}
+          />
+        ) : undefined
+      }
     >
       <View style={contentWidthStyle} className="gap-6 w-full">
         {showPlaceholder ? <LeadDetailSkeleton isMobile={isMobile} /> : null}
@@ -204,7 +250,7 @@ export function LeadDetailScreen() {
         ) : null}
 
         {!showPlaceholder && !error && detail && accountId ? (
-          <View className={`gap-4 ${isMobile ? '' : 'pt-1'}`}>
+          <View className={`gap-4 ${isMobile ? '' : 'pt-1 flex-1 min-h-0'}`}>
             {isMobile ? (
               <LeadDetailMobileView
                 detail={detail}
@@ -216,7 +262,7 @@ export function LeadDetailScreen() {
                 onMembershipChanged={loadDetail}
               />
             ) : (
-              <>
+              <View className="gap-4 pt-1">
                 <LeadDetailSummary detail={detail} />
 
                 <Tabs
@@ -228,7 +274,13 @@ export function LeadDetailScreen() {
                 />
 
                 {activeTab === 'overview' ? (
-                  <LeadProfileSection accountId={accountId} detail={detail} onSaved={handleSaved} />
+                  <LeadProfileSection
+                    accountId={accountId}
+                    detail={detail}
+                    onSaved={handleSaved}
+                    onOpenEnrich={openEnrichPanel}
+                    enrichmentStatusRefreshKey={enrichStatusRefreshKey}
+                  />
                 ) : null}
 
                 {activeTab === 'campaigns' ? (
@@ -247,7 +299,7 @@ export function LeadDetailScreen() {
                 {activeTab === 'activity' ? (
                   <LeadActivitySection detail={detail} defaultCampaignId={campaignId} />
                 ) : null}
-              </>
+              </View>
             )}
           </View>
         ) : null}

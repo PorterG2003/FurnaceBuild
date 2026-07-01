@@ -6,6 +6,7 @@ export default function LeadsLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="lists/index" />
       <Stack.Screen name="lists/[listId]" />
+      <Stack.Screen name="enrich" />
       <Stack.Screen name="[globalLeadId]" />
     </Stack>
   );

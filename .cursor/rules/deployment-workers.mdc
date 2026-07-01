@@ -13,6 +13,7 @@ When giving deployment or runbook steps, **use the project’s scripts and `npm 
 - **Infra and scripts**: `infra/workers/` (CDK stack, `scripts/`, `package.json`).
 - **Workers**: `workers/send-worker/`, `workers/scheduler-worker/`, `workers/inbox-checker-worker/`.
 - **Migrations**: `supabase/migrations/`. Applied via `infra/workers` apply script or `supabase db push` from **project root** if that’s how the project is run.
+- **Amplify Lambdas** (Function URLs, Gen 2 backend): see `amplify-functions.mdc` — not ECS workers.
 
 ## infra/workers package.json — what to run
 

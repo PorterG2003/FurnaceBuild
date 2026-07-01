@@ -58,6 +58,7 @@ export interface CampaignLeadTableRow {
   linkedin_url?: string | null;
   company_linkedin_url?: string | null;
   phone_number?: string | null;
+  mobile_phone_number?: string | null;
   source?: string | null;
   custom_lead_data?: Record<string, unknown> | null;
   global_lead_id?: string | null;
@@ -97,7 +98,7 @@ export interface CampaignLeadTableResult {
 }
 
 const CAMPAIGN_LEAD_TABLE_SELECT =
-  'id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, source, custom_lead_data, global_lead_id, created_at';
+  'id, email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, mobile_phone_number, source, custom_lead_data, global_lead_id, created_at';
 
 const CAMPAIGN_LEAD_TABLE_SORT_COLUMNS = new Set([
   'email',
@@ -109,6 +110,7 @@ const CAMPAIGN_LEAD_TABLE_SORT_COLUMNS = new Set([
   'linkedin_url',
   'company_linkedin_url',
   'phone_number',
+  'mobile_phone_number',
   'source',
   'created_at',
 ]);
@@ -125,6 +127,7 @@ type CampaignLeadBaseRow = Pick<
   | 'linkedin_url'
   | 'company_linkedin_url'
   | 'phone_number'
+  | 'mobile_phone_number'
   | 'source'
   | 'custom_lead_data'
   | 'global_lead_id'
@@ -138,6 +141,7 @@ export interface ReplaceLeadWithNewContactInput {
   newFirstName?: string | null;
   newLastName?: string | null;
   newPhoneNumber?: string | null;
+  newMobilePhoneNumber?: string | null;
   reason?: ReplacementReason;
   reasonNote?: string | null;
   sourceMessageId?: string | null;
@@ -152,6 +156,8 @@ export interface ReplaceLeadWithNewContactResult {
 
 export interface UpdateLeadProfileFieldsInput {
   leadId: string;
+  companyPhoneNumber?: string | null;
+  mobilePhoneNumber?: string | null;
   companyName?: string | null;
   website?: string | null;
   linkedinUrl?: string | null;
@@ -240,7 +246,7 @@ function buildCampaignLeadTableQuery(
   if (searchTerm) {
     const pattern = `%${searchTerm}%`;
     leadsQuery = leadsQuery.or(
-      `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern},phone_number.ilike.${pattern},website.ilike.${pattern},linkedin_url.ilike.${pattern}`,
+      `email.ilike.${pattern},name.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern},phone_number.ilike.${pattern},mobile_phone_number.ilike.${pattern},website.ilike.${pattern},linkedin_url.ilike.${pattern}`,
     );
   }
 
@@ -561,6 +567,7 @@ async function fetchCampaignLeadsTablePageRpc(
     linkedin_url: r.linkedin_url,
     company_linkedin_url: r.company_linkedin_url,
     phone_number: r.phone_number,
+    mobile_phone_number: r.mobile_phone_number,
     source: r.source,
     custom_lead_data: r.custom_lead_data as Record<string, unknown> | null,
     created_at: r.created_at,
@@ -1150,6 +1157,7 @@ export async function replaceLeadWithNewContact(
     p_new_first_name: input.newFirstName?.trim() || null,
     p_new_last_name: input.newLastName?.trim() || null,
     p_new_phone_number: input.newPhoneNumber?.trim() || null,
+    p_new_mobile_phone_number: input.newMobilePhoneNumber?.trim() || null,
     p_reason: input.reason ?? 'manual_referral',
     p_reason_note: input.reasonNote?.trim() || null,
     p_source_message_id: input.sourceMessageId ?? null,
@@ -1188,6 +1196,8 @@ export async function replaceLeadWithNewContact(
  */
 export async function updateLeadProfileFields(input: UpdateLeadProfileFieldsInput): Promise<void> {
   const patch: LeadUpdate = {};
+  if (input.companyPhoneNumber !== undefined) patch.phone_number = input.companyPhoneNumber;
+  if (input.mobilePhoneNumber !== undefined) patch.mobile_phone_number = input.mobilePhoneNumber;
   if (input.companyName !== undefined) patch.company_name = input.companyName;
   if (input.website !== undefined) patch.website = input.website;
   if (input.linkedinUrl !== undefined) patch.linkedin_url = input.linkedinUrl;

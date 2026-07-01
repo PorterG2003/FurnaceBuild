@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ReplaceLeadScreen } from '@/components/inbox/ReplaceLeadScreen';
 import { Alert } from '@/components/ui/feedback';
-import { DetailPageHeader, PageLayout } from '@/components/ui/layout';
+import { DetailPageHeader, MobileFormPageLayout } from '@/components/ui/layout';
 import { useAccount } from '@/contexts/AccountContext';
 import {
   buildInboxInternalThreadHref,
@@ -21,7 +20,6 @@ import type { Lead, EmailThread } from '@/lib/supabase/types';
 
 export default function ReplaceLeadPage() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const session = useInboxThreadActionSession();
   const { thread: threadParamRaw } = useLocalSearchParams<{ thread?: string | string[] }>();
   const threadId = normalizeRouteParam(threadParamRaw) ?? null;
@@ -115,8 +113,8 @@ export default function ReplaceLeadPage() {
   }, [accountId, returnToInbox, threadId]);
 
   return (
-    <PageLayout scrollable={false} mobileLayout="fixed" hideMobileBottomNav>
-      <View className="flex-1 bg-[#121212] min-h-0 px-4">
+    <MobileFormPageLayout
+      header={
         <DetailPageHeader
           breadcrumbItems={[{ label: 'Inbox', href: '/inbox' }, { label: 'Replace lead' }]}
           backHref="/inbox"
@@ -124,42 +122,32 @@ export default function ReplaceLeadPage() {
           subtitle={lead?.email ?? thread?.subject ?? null}
           onBack={returnToInbox}
         />
+      }
+    >
+      <Text className="text-sm font-instrument text-gray-400 mb-4">
+        Create a new lead for the new contact and move the active campaign ownership there.
+      </Text>
 
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{
-            paddingTop: 8,
-            paddingBottom: Math.max(insets.bottom, 16) + 16,
+      {loading ? (
+        <View className="flex-1 items-center justify-center py-10">
+          <ActivityIndicator color="#fff" />
+        </View>
+      ) : error ? (
+        <Alert variant="error" message={error} />
+      ) : (
+        <ReplaceLeadScreen
+          oldLead={lead}
+          prefill={replaceLeadPrefill}
+          sourceMessageId={sourceMessageId}
+          onReplaced={(_result, completion) => {
+            void session.completeDeferredActionOnServer('replace_lead', completion).then(() => {
+              returnToInbox();
+            });
           }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <Text className="text-sm font-instrument text-gray-400 mb-4">
-            Create a new lead for the new contact and move the active campaign ownership there.
-          </Text>
-
-          {loading ? (
-            <View className="flex-1 items-center justify-center py-10">
-              <ActivityIndicator color="#fff" />
-            </View>
-          ) : error ? (
-            <Alert variant="error" message={error} />
-          ) : (
-            <ReplaceLeadScreen
-              oldLead={lead}
-              prefill={replaceLeadPrefill}
-              sourceMessageId={sourceMessageId}
-              onReplaced={(_result, completion) => {
-                void session.completeDeferredActionOnServer('replace_lead', completion).then(() => {
-                  returnToInbox();
-                });
-              }}
-              onCancel={returnToInbox}
-              layout="page"
-            />
-          )}
-        </ScrollView>
-      </View>
-    </PageLayout>
+          onCancel={returnToInbox}
+          layout="page"
+        />
+      )}
+    </MobileFormPageLayout>
   );
 }

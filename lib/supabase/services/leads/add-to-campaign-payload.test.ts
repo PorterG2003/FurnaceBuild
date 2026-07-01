@@ -14,6 +14,7 @@ function buildRow(overrides: Partial<LeadRowByGlobalId> & { id: string; global_l
     website: null,
     linkedin_url: null,
     phone_number: null,
+    mobile_phone_number: null,
     custom_lead_data: null,
     created_at: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -59,7 +60,7 @@ test('buildAddToCampaignPayloads picks the newest non-target membership for fiel
   }
 });
 
-test('buildAddToCampaignPayloads skips when required custom fields are missing', () => {
+test('buildAddToCampaignPayloads marks rows incomplete when required custom fields are missing', () => {
   const globalLeadId = 'global-2';
   const results = buildAddToCampaignPayloads({
     flowData: { nodes: [{ type: 'leadSource', data: { customFieldKeys: ['tier'] } }] },
@@ -74,9 +75,9 @@ test('buildAddToCampaignPayloads skips when required custom fields are missing',
     ],
   });
 
-  assert.equal(results[0]?.kind, 'skipped');
-  if (results[0]?.kind === 'skipped') {
-    assert.match(results[0].reason, /tier/);
+  assert.equal(results[0]?.kind, 'ready');
+  if (results[0]?.kind === 'ready') {
+    assert.equal(results[0].incomplete, true);
   }
 });
 
@@ -90,6 +91,7 @@ test('mergeLeadUpdatePatch fills only empty standard fields and merges custom_le
       website: null,
       linkedin_url: null,
       phone_number: null,
+      mobile_phone_number: null,
       custom_lead_data: { tier: 'gold' },
     },
     {
@@ -100,7 +102,8 @@ test('mergeLeadUpdatePatch fills only empty standard fields and merges custom_le
       company_name: 'Acme',
       website: 'https://acme.test',
       linkedin_url: null,
-      phone_number: null,
+      phone_number: '+15551234567',
+      mobile_phone_number: '+15557654321',
       global_lead_id: 'global-1',
       source: 'Leads workbench',
       custom_lead_data: { region: 'west' },
@@ -110,5 +113,7 @@ test('mergeLeadUpdatePatch fills only empty standard fields and merges custom_le
   assert.equal(patch.name, undefined);
   assert.equal(patch.first_name, 'Pat');
   assert.equal(patch.company_name, 'Acme');
+  assert.equal(patch.phone_number, '+15551234567');
+  assert.equal(patch.mobile_phone_number, '+15557654321');
   assert.deepEqual(patch.custom_lead_data, { tier: 'gold', region: 'west' });
 });

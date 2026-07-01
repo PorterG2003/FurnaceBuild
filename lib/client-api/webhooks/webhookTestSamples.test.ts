@@ -49,10 +49,18 @@ test('isAllowedWebhookEventType rejects unknown values', () => {
   assert.equal(isAllowedWebhookEventType('webhook.test'), false);
 });
 
-test('curatedWebhookTestEventOptions prioritizes common events and enabled groups', () => {
-  const options = curatedWebhookTestEventOptions(['email_activity']);
+test('curatedWebhookTestEventOptions prioritizes common events and enabled types', () => {
+  const options = curatedWebhookTestEventOptions(['email.sent', 'reply.categorized']);
   const values = options.map((option) => option.value);
   assert.ok(values.includes('email.sent'));
-  assert.ok(values.includes('reply.received'));
+  assert.ok(values.includes('reply.categorized'));
   assert.equal(values.filter((value) => value === 'email.sent').length, 1);
+});
+
+test('buildWebhookTestPayload includes reply.categorized fields', () => {
+  const payload = buildWebhookTestPayload('reply.categorized', ctx);
+  assert.equal(payload.test, true);
+  assert.equal(typeof payload.thread_id, 'string');
+  assert.equal(typeof payload.category, 'string');
+  assert.ok('previous_category' in payload);
 });

@@ -599,6 +599,7 @@ export interface Database {
           linkedin_url: string | null;
           company_linkedin_url: string | null;
           phone_number: string | null;
+          mobile_phone_number: string | null;
           source: string | null;
           custom_lead_data: Json | null;
           global_lead_id: string | null;
@@ -622,6 +623,7 @@ export interface Database {
           linkedin_url?: string | null;
           company_linkedin_url?: string | null;
           phone_number?: string | null;
+          mobile_phone_number?: string | null;
           source?: string | null;
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
@@ -645,6 +647,7 @@ export interface Database {
           linkedin_url?: string | null;
           company_linkedin_url?: string | null;
           phone_number?: string | null;
+          mobile_phone_number?: string | null;
           source?: string | null;
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
@@ -2078,6 +2081,7 @@ export interface Database {
           dedupe_key: string | null;
           occurred_at: string;
           created_at: string;
+          sqs_enqueued_at: string | null;
         };
         Insert: {
           id?: string;
@@ -2088,6 +2092,7 @@ export interface Database {
           dedupe_key?: string | null;
           occurred_at?: string;
           created_at?: string;
+          sqs_enqueued_at?: string | null;
         };
         Update: {
           id?: string;
@@ -2098,6 +2103,7 @@ export interface Database {
           dedupe_key?: string | null;
           occurred_at?: string;
           created_at?: string;
+          sqs_enqueued_at?: string | null;
         };
       };
       notification_preferences: {
@@ -2257,11 +2263,166 @@ export interface Database {
           created_at?: string;
         };
       };
+      apollo_enrichment_sessions: {
+        Row: {
+          id: string;
+          account_id: string;
+          global_lead_id: string;
+          created_by: string | null;
+          status: string;
+          sync_suggestion: Json | null;
+          phone_numbers: Json | null;
+          expires_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          global_lead_id: string;
+          created_by?: string | null;
+          status: string;
+          sync_suggestion?: Json | null;
+          phone_numbers?: Json | null;
+          expires_at: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          global_lead_id?: string;
+          created_by?: string | null;
+          status?: string;
+          sync_suggestion?: Json | null;
+          phone_numbers?: Json | null;
+          expires_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      credit_ledger: {
+        Row: {
+          id: string;
+          account_id: string;
+          meter: string;
+          delta: number;
+          reason: string | null;
+          ref_type: string | null;
+          ref_id: string | null;
+          created_by: string | null;
+          metadata: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          account_id: string;
+          meter: string;
+          delta: number;
+          reason?: string | null;
+          ref_type?: string | null;
+          ref_id?: string | null;
+          created_by?: string | null;
+          metadata?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          account_id?: string;
+          meter?: string;
+          delta?: number;
+          reason?: string | null;
+          ref_type?: string | null;
+          ref_id?: string | null;
+          created_by?: string | null;
+          metadata?: Json | null;
+          created_at?: string;
+        };
+      };
+      credit_entitlements: {
+        Row: {
+          id: string;
+          meter: string;
+          account_id: string | null;
+          monthly_grant: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          meter: string;
+          account_id?: string | null;
+          monthly_grant: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          meter?: string;
+          account_id?: string | null;
+          monthly_grant?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
+      get_credit_balance: {
+        Args: {
+          p_account_id: string;
+          p_meter: string;
+        };
+        Returns: {
+          used: number;
+          remaining: number;
+          credit_limit: number;
+        }[];
+      };
+      consume_credit: {
+        Args: {
+          p_account_id: string;
+          p_meter: string;
+          p_amount?: number;
+          p_reason?: string | null;
+          p_ref_type?: string | null;
+          p_ref_id?: string | null;
+          p_created_by?: string | null;
+          p_metadata?: Json | null;
+        };
+        Returns: {
+          used: number;
+          remaining: number;
+          credit_limit: number;
+        }[];
+      };
+      grant_credit: {
+        Args: {
+          p_account_id: string;
+          p_meter: string;
+          p_amount: number;
+          p_reason?: string | null;
+          p_ref_type?: string | null;
+          p_ref_id?: string | null;
+          p_created_by?: string | null;
+          p_metadata?: Json | null;
+        };
+        Returns: {
+          used: number;
+          remaining: number;
+          credit_limit: number;
+        }[];
+      };
+      update_account_person_profile: {
+        Args: {
+          p_account_id: string;
+          p_global_lead_id: string;
+          p_updates: Json;
+        };
+        Returns: undefined;
+      };
       create_smartlead_migration_run: {
         Args: {
           p_account_id: string;
@@ -2320,6 +2481,7 @@ export interface Database {
           p_new_first_name?: string | null;
           p_new_last_name?: string | null;
           p_new_phone_number?: string | null;
+          p_new_mobile_phone_number?: string | null;
           p_reason?: Database['public']['Enums']['replacement_reason_enum'];
           p_reason_note?: string | null;
           p_source_message_id?: string | null;
@@ -2436,6 +2598,7 @@ export interface Database {
           linkedin_url: string | null;
           company_linkedin_url: string | null;
           phone_number: string | null;
+          mobile_phone_number: string | null;
           source: string | null;
           custom_lead_data: Json | null;
           created_at: string;

@@ -102,6 +102,7 @@ export function buildAddToCampaignPayloads(params: {
         website: source.website,
         linkedin_url: source.linkedin_url,
         phone_number: source.phone_number,
+        mobile_phone_number: source.mobile_phone_number,
         global_lead_id: globalLeadId,
         source: 'Leads workbench',
         custom_lead_data: Object.keys(customLeadData).length > 0 ? (customLeadData as Json) : null,
@@ -119,6 +120,7 @@ export function mergeLeadUpdatePatch(
     website: string | null;
     linkedin_url: string | null;
     phone_number: string | null;
+    mobile_phone_number: string | null;
     custom_lead_data: Json | null;
   },
   incoming: Omit<LeadInsert, 'campaign_id' | 'bucket_id' | 'account_id'>,
@@ -131,6 +133,9 @@ export function mergeLeadUpdatePatch(
   if (!existing.website && incoming.website) patch.website = incoming.website;
   if (!existing.linkedin_url && incoming.linkedin_url) patch.linkedin_url = incoming.linkedin_url;
   if (!existing.phone_number && incoming.phone_number) patch.phone_number = incoming.phone_number;
+  if (!existing.mobile_phone_number && incoming.mobile_phone_number) {
+    patch.mobile_phone_number = incoming.mobile_phone_number;
+  }
 
   const existingCustom =
     existing.custom_lead_data && typeof existing.custom_lead_data === 'object' && !Array.isArray(existing.custom_lead_data)

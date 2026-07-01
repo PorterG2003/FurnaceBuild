@@ -50,6 +50,7 @@ type TargetLeadRow = {
   website: string | null;
   linkedin_url: string | null;
   phone_number: string | null;
+  mobile_phone_number: string | null;
   custom_lead_data: LeadInsert['custom_lead_data'];
 };
 
@@ -69,7 +70,7 @@ async function fetchTargetCampaignLeads(
     const { data, error } = await db
       .from('leads')
       .select(
-        'id, email, global_lead_id, name, first_name, last_name, company_name, website, linkedin_url, phone_number, custom_lead_data',
+        'id, email, global_lead_id, name, first_name, last_name, company_name, website, linkedin_url, phone_number, mobile_phone_number, custom_lead_data',
       )
       .eq('account_id', accountId)
       .eq('campaign_id', campaignId)
@@ -154,7 +155,13 @@ function buildUpsertRow(
   bucketId: string,
   accountId: string,
 ): { row: Record<string, unknown>; changed: boolean } {
-  const patch = mergeLeadUpdatePatch(existing, incoming);
+  const patch = mergeLeadUpdatePatch(
+    {
+      ...existing,
+      custom_lead_data: existing.custom_lead_data ?? null,
+    },
+    incoming,
+  );
   const changed = Object.keys(patch).length > 1;
   return {
     changed,
@@ -172,6 +179,8 @@ function buildUpsertRow(
       website: (patch.website as string | null | undefined) ?? existing.website,
       linkedin_url: (patch.linkedin_url as string | null | undefined) ?? existing.linkedin_url,
       phone_number: (patch.phone_number as string | null | undefined) ?? existing.phone_number,
+      mobile_phone_number:
+        (patch.mobile_phone_number as string | null | undefined) ?? existing.mobile_phone_number,
       custom_lead_data: (patch.custom_lead_data as LeadInsert['custom_lead_data']) ?? existing.custom_lead_data,
       updated_at: patch.updated_at,
     },
@@ -182,7 +191,7 @@ function toTargetLeadRow(
   row: {
     id: string;
     global_lead_id: string | null;
-    email: string | null;
+    email?: string | null;
     name?: string | null;
     first_name?: string | null;
     last_name?: string | null;
@@ -190,6 +199,7 @@ function toTargetLeadRow(
     website?: string | null;
     linkedin_url?: string | null;
     phone_number?: string | null;
+    mobile_phone_number?: string | null;
     custom_lead_data?: LeadInsert['custom_lead_data'];
   },
   fallback: ReadyPayload,
@@ -205,6 +215,7 @@ function toTargetLeadRow(
     website: row.website ?? fallback.insertPayload.website ?? null,
     linkedin_url: row.linkedin_url ?? fallback.insertPayload.linkedin_url ?? null,
     phone_number: row.phone_number ?? fallback.insertPayload.phone_number ?? null,
+    mobile_phone_number: row.mobile_phone_number ?? fallback.insertPayload.mobile_phone_number ?? null,
     custom_lead_data: row.custom_lead_data ?? fallback.insertPayload.custom_lead_data ?? null,
   };
 }

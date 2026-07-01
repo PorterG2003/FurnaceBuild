@@ -7,7 +7,7 @@ const columns: LeadsColumnDef[] = [
   {
     id: 'person-email',
     sourceType: 'person',
-    sourceLabel: 'Lead info',
+    sourceLabel: 'Lead',
     fieldKey: 'email',
     label: 'Email',
     visible: true,

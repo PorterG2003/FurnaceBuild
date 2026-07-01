@@ -1,0 +1,22 @@
+---
+description: Generic account credit system — how to meter per-account monthly usage
+globs: ['lib/credits/**', 'amplify/functions/apolloEnrich/**', 'lib/test/credits/**', 'supabase/migrations/**']
+alwaysApply: false
+---
+
+# Account credits
+
+- Read `docs/engineering/credits.md` before adding or changing any metered/usage-limited feature.
+- Meter usage through the generic credit system; do **not** build a bespoke counter, per-feature
+  usage table, or ad-hoc limiter.
+- To add a meter: add a key to `CREDIT_METERS` in `lib/credits/meters.ts`, seed a global default in a
+  migration (`credit_entitlements`, `account_id IS NULL`), and call `consume_credit(account, meter, ...)`
+  from a service-role/server path. No new tables.
+- Balances are derived from the signed-delta `credit_ledger` (consume `−`, refund/bonus `+`,
+  audit-only `0`); never store a separate `used`/`remaining` counter.
+- Charge only on success. Use `consume_credit(..., p_amount = 0, ...)` to audit non-charging outcomes,
+  and catch `INSUFFICIENT_CREDITS` (errcode `P0001`).
+- Keep writes server-side: `consume_credit`/`grant_credit` are service-role only; clients get
+  `SELECT`-only RLS and read balances via `getCreditBalance` (`lib/credits/balance.ts`).
+- Periods are MST calendar months with a hard reset; don't add cron/reset jobs.
+- Add or update RPC outcome tests under `lib/test/credits/` when credit behavior changes.

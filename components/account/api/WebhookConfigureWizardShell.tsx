@@ -31,8 +31,8 @@ export interface WebhookConfigureWizardShellProps {
     | 'onWebhookUrlChange'
     | 'webhookSecret'
     | 'onWebhookSecretChange'
-    | 'enabledGroupIds'
-    | 'onEnabledGroupIdsChange'
+    | 'enabledEventTypes'
+    | 'onEnabledEventTypesChange'
     | 'disabled'
   >;
   setupFooter?: ReactNode | ((values: WebhookFormValues) => ReactNode);
@@ -60,7 +60,7 @@ export function WebhookConfigureWizardShell({
   const currentValues: WebhookFormValues = {
     webhookUrl: wizard.webhookUrl,
     webhookSecret: wizard.webhookSecret,
-    enabledGroupIds: wizard.enabledGroupIds,
+    enabledEventTypes: wizard.enabledEventTypes,
   };
 
   const handleDone = async () => {
@@ -170,8 +170,8 @@ export function WebhookConfigureWizardShell({
             onWebhookUrlChange={wizard.setWebhookUrl}
             webhookSecret={wizard.webhookSecret}
             onWebhookSecretChange={wizard.setWebhookSecret}
-            enabledGroupIds={wizard.enabledGroupIds}
-            onEnabledGroupIdsChange={wizard.setEnabledGroupIds}
+            enabledEventTypes={wizard.enabledEventTypes}
+            onEnabledEventTypesChange={wizard.setEnabledEventTypes}
             disabled={wizard.isSubmitting}
             setupFooter={
               typeof setupFooter === 'function' ? setupFooter(currentValues) : setupFooter
@@ -183,7 +183,7 @@ export function WebhookConfigureWizardShell({
             campaignId={campaignId}
             webhookUrl={wizard.webhookUrl}
             signingSecret={wizard.webhookSecret}
-            enabledGroupIds={wizard.enabledGroupIds}
+            enabledEventTypes={wizard.enabledEventTypes}
             disabled={wizard.isSubmitting}
           />
         )}

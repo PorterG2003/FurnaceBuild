@@ -97,3 +97,19 @@ export function enrichMatchInfo(
 export function enrichRetryInfo(creditsRemaining: number): string {
   return creditLine(creditsRemaining, { forReEnrich: true });
 }
+
+export function enrichErrorInfo(
+  message: string,
+  creditsRemaining: number,
+  code?: string,
+): string {
+  if (code === 'NO_CREDITS') return message;
+  if (code === 'APOLLO_UPSTREAM') {
+    if (creditsRemaining > 0) {
+      return `${message} You still have ${creditsRemaining} enrichment credits this month.`;
+    }
+    return message;
+  }
+  const retry = enrichRetryInfo(creditsRemaining);
+  return retry ? `${message} ${retry}` : message;
+}

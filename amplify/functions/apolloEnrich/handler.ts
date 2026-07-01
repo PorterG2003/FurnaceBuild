@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { enrichPerson } from '../../../lib/apollo/apolloClient';
+import { ApolloError, enrichPerson } from '../../../lib/apollo/apolloClient';
 import { mapApolloToProfile, type ApolloProfileSuggestion } from '../../../lib/apollo/mapApolloToProfile';
 import {
   APOLLO_ENRICHMENT_SESSION_EXPIRY_MINUTES,
@@ -377,7 +377,18 @@ async function handleEnrich(
       p_created_by: user.id,
       p_metadata: { session_id: sessionId },
     });
-    return response(502, { ok: false, error: 'Contact lookup failed', code: 'APOLLO_UPSTREAM' });
+    const apolloStatus = err instanceof ApolloError ? err.status : undefined;
+    const errorMessage =
+      apolloStatus === 401
+        ? 'Enrichment service authentication failed. Contact support.'
+        : 'Contact lookup failed';
+    return response(502, {
+      ok: false,
+      error: errorMessage,
+      code: 'APOLLO_UPSTREAM',
+      creditsRemaining: balanceBefore.remaining,
+      creditLimit: balanceBefore.credit_limit,
+    });
   }
 
   if (!person) {

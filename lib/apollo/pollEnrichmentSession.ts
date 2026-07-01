@@ -91,6 +91,8 @@ export interface PollEnrichmentSessionOptions {
   signal?: AbortSignal;
 }
 
+const DEFAULT_POLL_INTERVAL_MS = 5000;
+
 /**
  * Poll a session until it leaves pending_phone or the caller aborts.
  * Returns the latest session row on each tick via onUpdate.
@@ -100,7 +102,7 @@ export async function pollEnrichmentSession(
   onUpdate: (session: ApolloEnrichmentSessionRow) => void,
   options: PollEnrichmentSessionOptions = {},
 ): Promise<ApolloEnrichmentSessionRow> {
-  const intervalMs = options.intervalMs ?? 2000;
+  const intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 
   const pollOnce = async (): Promise<ApolloEnrichmentSessionRow> => {
     const session = await getEnrichmentSession(sessionId);

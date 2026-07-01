@@ -2383,6 +2383,14 @@ export interface Database {
           credit_limit: number;
         }[];
       };
+      update_account_person_profile: {
+        Args: {
+          p_account_id: string;
+          p_global_lead_id: string;
+          p_updates: Json;
+        };
+        Returns: undefined;
+      };
       create_smartlead_migration_run: {
         Args: {
           p_account_id: string;

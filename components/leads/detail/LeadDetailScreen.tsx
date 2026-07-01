@@ -187,10 +187,6 @@ export function LeadDetailScreen() {
     }).start();
   }, [slideAnim]);
 
-  const handleEnrichCreditsChange = useCallback(() => {
-    setEnrichStatusRefreshKey((key) => key + 1);
-  }, []);
-
   const handleEnrichApplied = useCallback(() => {
     handleSaved();
     closeEnrichPanel();
@@ -235,7 +231,6 @@ export function LeadDetailScreen() {
             accountId={accountId}
             detail={detail}
             onApplied={handleEnrichApplied}
-            onCreditsChange={handleEnrichCreditsChange}
             slideAnim={slideAnim}
             panelWidth={ENRICH_PANEL_WIDTH}
           />

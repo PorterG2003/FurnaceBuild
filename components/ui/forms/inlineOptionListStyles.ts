@@ -27,6 +27,19 @@ export function inlineOptionListCompactCardStyle() {
   };
 }
 
+export function webhookEventsGroupedCardStyle() {
+  return {
+    borderRadius: INLINE_OPTION_LIST_ROW_SIZING.rowRadius,
+    marginBottom: 6,
+    borderWidth: 1,
+    backgroundColor: '#121212',
+    borderColor: '#2A2A2A',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    ...inlineOptionListNoSelectStyle,
+  };
+}
+
 export function inlineOptionListCardStyle() {
   return inlineOptionListCompactCardStyle();
 }

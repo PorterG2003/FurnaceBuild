@@ -12,6 +12,7 @@ export type WebhookEventGroup = {
 export type WebhookGroupSelectionState = 'all' | 'some' | 'none';
 
 export type WebhookEventsSummary =
+  | { kind: 'none' }
   | { kind: 'all' }
   | { kind: 'groups'; labels: string[] }
   | { kind: 'events'; events: string[] };
@@ -107,17 +108,13 @@ export function expandStoredWebhookEvents(stored: unknown): WebhookEventType[] {
 }
 
 export function expandWebhookSelectionForDisplay(stored: unknown): WebhookEventType[] {
-  const events = expandStoredWebhookEvents(stored);
-  if (events.length === 0) return [...ALL_WEBHOOK_EVENT_TYPES];
-  return events;
+  return expandStoredWebhookEvents(stored);
 }
 
 export function normalizeWebhookSelectionForStorage(selected: readonly WebhookEventType[]): WebhookEventType[] {
   const unique = [...new Set(selected)].filter((event) =>
     ALL_WEBHOOK_EVENT_TYPES.includes(event),
   );
-  if (unique.length === 0) return [];
-  if (unique.length === ALL_WEBHOOK_EVENT_TYPES.length) return [];
   return [...unique].sort();
 }
 
@@ -167,7 +164,11 @@ export function mergeGroupSelectionWithStoredEvents(
 
 export function formatWebhookEventsSummary(stored: unknown): WebhookEventsSummary {
   const events = expandStoredWebhookEvents(stored);
-  if (events.length === 0) return { kind: 'all' };
+  if (events.length === 0) return { kind: 'none' };
+  if (events.length === ALL_WEBHOOK_EVENT_TYPES.length) {
+    const allSelected = ALL_WEBHOOK_EVENT_TYPES.every((event) => events.includes(event));
+    if (allSelected) return { kind: 'all' };
+  }
 
   const eventSet = new Set(events);
   const fullGroupLabels: string[] = [];

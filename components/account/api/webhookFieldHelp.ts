@@ -5,7 +5,7 @@ export const ACCOUNT_WEBHOOK_FIELD_HELP = {
   signingSecret:
     'Optional. Signs each payload in the X-Furnace-Signature header (HMAC-SHA256). Most no-code tools can ignore this.',
   enabledEvents:
-    'Event types Furnace will deliver to your endpoint. If none are selected, all event types are sent. Select only the types you want to receive.',
+    'Event types Furnace will deliver to your endpoint. Select the types you want to receive. None selected means no events are sent until you choose at least one.',
 } as const;
 
 /** Tooltip copy for campaign webhook overrides (`CampaignWebhookOverrideModal`). */

@@ -6,7 +6,7 @@ import { FormFieldLabel } from '@/components/ui/forms/FormFieldHelp';
 import { FORM_FIELD_VARIANTS, type FormFieldVariant } from '@/components/ui/forms/formFieldStyles';
 import {
   INLINE_OPTION_LIST_ROW_SIZING,
-  inlineOptionListCardStyle,
+  webhookEventsGroupedCardStyle,
 } from '@/components/ui/forms/inlineOptionListStyles';
 import {
   groupSelectionState,
@@ -88,7 +88,7 @@ export function WebhookEventsGroupedSelect({
           const selectGroup = () => toggleGroup(group.id, !groupChecked && !groupIndeterminate);
 
           return (
-            <View key={group.id} style={inlineOptionListCardStyle()}>
+            <View key={group.id} style={webhookEventsGroupedCardStyle()}>
               <View
                 style={{
                   flexDirection: 'row',
@@ -145,9 +145,9 @@ export function WebhookEventsGroupedSelect({
               {open ? (
                 <View
                   style={{
-                    marginTop: 6,
+                    marginTop: 8,
                     paddingLeft: CHECKBOX_CIRCLE_SIZE + INLINE_OPTION_LIST_ROW_SIZING.rowGap,
-                    gap: 0,
+                    gap: 2,
                   }}
                 >
                   {group.events.map((event) => {

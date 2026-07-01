@@ -28,6 +28,7 @@ import {
   getCampaignMailboxes,
   getCampaignStatsByDay,
   getCampaignStatsForCampaigns,
+  getCampaignLeadProgressBuckets,
   getCampaignVariantStats,
   type CampaignStatsByDay,
   type CampaignStats,
@@ -37,7 +38,6 @@ import {
   fetchAllCampaignLeadIds,
   getCampaignLeadTablePage,
   getCampaignLeadTableExportRows,
-  getLeadCount,
   deleteLeadsBestEffort,
 } from '@/lib/supabase/services/leads';
 import { supabase } from '@/lib/supabase/client';
@@ -145,7 +145,6 @@ export default function CampaignPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mailboxCount, setMailboxCount] = useState(0);
   const [leadCount, setLeadCount] = useState(0);
-  const [enrollmentCount, setEnrollmentCount] = useState(0);
   const [leadsNotStarted, setLeadsNotStarted] = useState(0);
   const [leadsInProgress, setLeadsInProgress] = useState(0);
   const [leadsCompleted, setLeadsCompleted] = useState(0);
@@ -265,46 +264,22 @@ export default function CampaignPage() {
       setCampaignStats(statsResult);
       setMailboxCount(mailboxes?.length ?? 0);
 
-      // Enrollments: paginate to get all (PostgREST default max is 1000 rows per request)
-      const PAGE_SIZE = 1000;
-      let enrollments: any[] = [];
-      let enrollmentsError: Error | null = null;
-      for (let offset = 0; ; offset += PAGE_SIZE) {
-        const { data: page, error } = await supabase
-          .from('enrollments')
-          .select('state, lead_id, current_node_id, stopped_reason, stopped_error_message')
-          .eq('campaign_id', id)
-          .is('deleted_at', null)
-          .range(offset, offset + PAGE_SIZE - 1);
-        if (error) {
-          enrollmentsError = error;
-          break;
-        }
-        enrollments = enrollments.concat(page ?? []);
-        if (!page || page.length < PAGE_SIZE) break;
-      }
-
-      const enrollmentCount = !enrollmentsError ? enrollments.length : 0;
-      setEnrollmentCount(enrollmentCount);
-
-      if (!enrollmentsError && enrollments.length) {
-        const completed = enrollments.filter((e: any) => e.state === 'completed').length;
-        const inProgress = enrollments.filter((e: any) => e.state === 'active').length;
-        const stopped = enrollments.filter((e: any) => e.state === 'stopped').length;
-        const paused = enrollments.filter((e: any) => e.state === 'paused').length;
-        setLeadsCompleted(completed);
-        setLeadsInProgress(inProgress);
-        setLeadsStopped(stopped);
-        setLeadsPaused(paused);
-      }
-
       try {
-        const totalLeads = await getLeadCount({ campaignId: id });
-        setLeadCount(totalLeads);
-        setLeadsNotStarted(Math.max(0, totalLeads - enrollmentCount));
-      } catch {
+        const progressBuckets = await getCampaignLeadProgressBuckets(id);
+        setLeadCount(progressBuckets.totalLeads);
+        setLeadsNotStarted(progressBuckets.notStarted);
+        setLeadsInProgress(progressBuckets.inProgress);
+        setLeadsPaused(progressBuckets.paused);
+        setLeadsCompleted(progressBuckets.completed);
+        setLeadsStopped(progressBuckets.stopped);
+      } catch (progressError) {
+        console.error('Error loading campaign lead progress:', progressError);
         setLeadCount(0);
         setLeadsNotStarted(0);
+        setLeadsInProgress(0);
+        setLeadsPaused(0);
+        setLeadsCompleted(0);
+        setLeadsStopped(0);
       }
     } catch (err) {
       console.error('Error loading campaign:', err);

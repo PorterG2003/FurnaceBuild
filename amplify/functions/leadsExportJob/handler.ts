@@ -27,6 +27,8 @@ import { formatLeadsExportFilename } from '../../../lib/leads/export/formatLeads
 import { shouldContinueSavedListExportPagination } from '../../../lib/leads/export/pagination.js';
 import { createServiceRoleClient } from '../../../lib/client-api/service-role.js';
 import type { Json } from '../../../lib/supabase/types/database.js';
+import { getEnrollmentProgressState } from '../../../lib/campaigns/enrollment-progress-state.js';
+import { fetchContactedLeadIdsForAccountLeadsWithClient } from '../../../lib/supabase/services/leads/fetch-contacted-leads-with-client.js';
 import { fetchLeadsByGlobalLeadIdsWithClient } from '../../../lib/supabase/services/leads/fetch-leads-by-global-ids-with-client.js';
 
 const EXPORT_PAGE_SIZE = 1000;
@@ -399,16 +401,24 @@ async function fetchWorkbenchPeopleForExport(
         ])
       : [[], []];
 
-  const enrollmentStateByLeadId = new Map<string, MockMembership['enrollmentState']>();
+  const enrollmentStateByLeadId = new Map<
+    string,
+    'active' | 'paused' | 'completed' | 'stopped' | null
+  >();
   for (const enrollment of enrollments) {
     if (!enrollment.lead_id) continue;
     const state = enrollment.state;
     const normalized =
       state === 'active' || state === 'paused' || state === 'completed' || state === 'stopped'
         ? state
-        : 'not_started';
+        : null;
     enrollmentStateByLeadId.set(enrollment.lead_id, normalized);
   }
+
+  const contactedLeadIds =
+    includeReplyActivity && leadIds.length > 0
+      ? await fetchContactedLeadIdsForAccountLeadsWithClient(db, accountId, leadIds)
+      : new Set<string>();
 
   const threadByLeadId = includeReplyActivity ? buildThreadMap(threads) : new Map();
   const peopleByGlobalId = new Map<string, MockPerson>();
@@ -423,7 +433,10 @@ async function fetchWorkbenchPeopleForExport(
       campaignId: lead.campaign_id,
       companyName: lead.company_name,
       title: null,
-      enrollmentState: enrollmentStateByLeadId.get(lead.id) ?? 'not_started',
+      enrollmentState: getEnrollmentProgressState(
+        enrollmentStateByLeadId.get(lead.id) ?? null,
+        contactedLeadIds.has(lead.id),
+      ),
       replyCategory: thread?.replyCategory ?? null,
       createdAt: lead.created_at,
       lastActivityAt: thread?.latestActivityAt ?? lead.created_at,

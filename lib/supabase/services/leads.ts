@@ -1,5 +1,11 @@
 import { supabase } from '../client';
 import {
+  getEnrollmentProgressState,
+  type EnrollmentProgressState,
+} from '@/lib/campaigns/enrollment-progress-state';
+import { getCampaignContactedLeadIds } from './campaigns/campaign-lead-progress';
+import { fetchContactedLeadIdsForLeads } from './leads/contacted-leads';
+import {
   applyLeadReplacementSummary,
   buildLeadReplacementSummariesByLeadIds,
   type LeadReplacementRole,
@@ -63,6 +69,7 @@ export interface CampaignLeadTableRow {
   custom_lead_data?: Record<string, unknown> | null;
   global_lead_id?: string | null;
   enrollment_state: 'active' | 'completed' | 'stopped' | 'paused' | null;
+  enrollment_progress_state: EnrollmentProgressState;
   enrollment_current_node_id: string | null;
   enrollment_stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
   enrollment_stopped_error_message: string | null;
@@ -354,12 +361,8 @@ async function resolveCampaignLeadScopeIds(
   let campaignLeadIds: string[] | null = null;
 
   if (hasEnrollmentFilter) {
-    const includeNotStarted = query!.enrollmentStates!.includes('not_started');
-    const matchedEnrollmentStates = new Set(
-      query!.enrollmentStates!.filter(
-      (state): state is NonNullable<CampaignLeadTableRow['enrollment_state']> => state !== 'not_started',
-      ),
-    );
+    const selectedFilters = new Set(query!.enrollmentStates!);
+    const contactedLeadIds = await getCampaignContactedLeadIds(campaignId);
 
     const enrollments: { lead_id: string | null; state: string | null }[] = [];
     for (let from = 0; ; from += SUPABASE_PAGE_RANGE_SIZE) {
@@ -380,23 +383,23 @@ async function resolveCampaignLeadScopeIds(
       if (chunk.length < SUPABASE_PAGE_RANGE_SIZE) break;
     }
 
-    const enrolledLeadIds = new Set<string>();
-    const matchedLeadIds = new Set<string>();
-
+    const enrollmentByLeadId = new Map<string, { state: string | null }>();
     for (const enrollment of enrollments) {
       if (!enrollment.lead_id) continue;
-      enrolledLeadIds.add(enrollment.lead_id);
-      if (matchedEnrollmentStates.has(enrollment.state as NonNullable<CampaignLeadTableRow['enrollment_state']>)) {
-        matchedLeadIds.add(enrollment.lead_id);
-      }
+      enrollmentByLeadId.set(enrollment.lead_id, { state: enrollment.state });
     }
 
-    if (includeNotStarted) {
-      campaignLeadIds ??= await fetchCampaignLeadIds(campaignId);
-      for (const leadId of campaignLeadIds) {
-        if (!enrolledLeadIds.has(leadId)) {
-          matchedLeadIds.add(leadId);
-        }
+    campaignLeadIds ??= await fetchCampaignLeadIds(campaignId);
+    const matchedLeadIds = new Set<string>();
+
+    for (const leadId of campaignLeadIds) {
+      const enrollment = enrollmentByLeadId.get(leadId);
+      const progressState = getEnrollmentProgressState(
+        (enrollment?.state as CampaignLeadTableRow['enrollment_state']) ?? null,
+        contactedLeadIds.has(leadId),
+      );
+      if (selectedFilters.has(progressState)) {
+        matchedLeadIds.add(leadId);
       }
     }
 
@@ -512,12 +515,18 @@ function mapCampaignLeadTableRows(
   >,
   replyCategoryByLeadId: Map<string, CampaignLeadTableRow['reply_category']>,
   replacementSummaryByLeadId: Record<string, LeadReplacementSummary>,
+  contactedLeadIds: Set<string>,
 ): CampaignLeadTableRow[] {
   return leadRows.map((lead) => {
     const enrollment = enrollmentByLeadId.get(lead.id);
+    const enrollmentProgressState = getEnrollmentProgressState(
+      enrollment?.state ?? null,
+      contactedLeadIds.has(lead.id),
+    );
     return {
       ...lead,
       enrollment_state: enrollment?.state ?? null,
+      enrollment_progress_state: enrollmentProgressState,
       enrollment_current_node_id: enrollment?.current_node_id ?? null,
       enrollment_stopped_reason: enrollment?.stopped_reason ?? null,
       enrollment_stopped_error_message: enrollment?.stopped_error_message ?? null,
@@ -679,6 +688,7 @@ export async function getCampaignLeadTablePage(
     campaignId,
     leadIds,
   );
+  const contactedLeadIds = await fetchContactedLeadIdsForLeads(campaignId, leadIds);
   const replyCategoryByLeadId = await fetchCampaignLeadReplyCategoryMap(campaignId, leadIds);
   const replacementSummaryByLeadId = await getLeadReplacementSummariesByLeadIds(leadIds);
 
@@ -688,6 +698,7 @@ export async function getCampaignLeadTablePage(
       enrollmentByLeadId,
       replyCategoryByLeadId,
       replacementSummaryByLeadId,
+      contactedLeadIds,
     ),
     totalCount,
   };
@@ -782,6 +793,7 @@ export async function getCampaignLeadTableExportRows(
       if (leadRows.length === 0) break;
       const leadIds = leadRows.map((lead) => lead.id);
       const enrollmentByLeadId = await fetchCampaignLeadEnrollmentMap(campaignId, leadIds);
+      const contactedLeadIds = await fetchContactedLeadIdsForLeads(campaignId, leadIds);
       const replyCategoryByLeadId = await fetchCampaignLeadReplyCategoryMap(campaignId, leadIds);
       const replacementSummaryByLeadId = await getLeadReplacementSummariesByLeadIds(leadIds);
       rows.push(
@@ -790,6 +802,7 @@ export async function getCampaignLeadTableExportRows(
           enrollmentByLeadId,
           replyCategoryByLeadId,
           replacementSummaryByLeadId,
+          contactedLeadIds,
         )
       );
       if (leadRows.length < pageSize) break;
@@ -815,6 +828,7 @@ export async function getCampaignLeadTableExportRows(
       campaignId,
       leadIds,
     );
+    const contactedLeadIds = await fetchContactedLeadIdsForLeads(campaignId, leadIds);
     const replyCategoryByLeadId = await fetchCampaignLeadReplyCategoryMap(campaignId, leadIds);
     const replacementSummaryByLeadId = await getLeadReplacementSummariesByLeadIds(leadIds);
     rows.push(
@@ -823,6 +837,7 @@ export async function getCampaignLeadTableExportRows(
         enrollmentByLeadId,
         replyCategoryByLeadId,
         replacementSummaryByLeadId,
+        contactedLeadIds,
       )
     );
 

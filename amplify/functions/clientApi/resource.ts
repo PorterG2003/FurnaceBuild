@@ -9,6 +9,7 @@ import { defineFunction, secret } from '@aws-amplify/backend';
  * - CLIENT_API_BASE_URL: injected in amplify/backend.ts for absolute docs/spec links
  * - CLIENT_API_DOCS_ORIGIN: optional branded origin override for docs
  * - CLIENT_API_WEBHOOK_QUEUE_URL / CLIENT_API_IMPORT_QUEUE_URL: optional embedded queue URLs
+ * - WEBHOOK_ENQUEUE_SECRET: Amplify secret (internal webhook enqueue/reconcile auth)
  */
 export const clientApi = defineFunction({
   name: 'clientApi',
@@ -17,5 +18,6 @@ export const clientApi = defineFunction({
   timeoutSeconds: 60,
   environment: {
     SUPABASE_SECRET_KEY: secret('SUPABASE_SECRET_KEY'),
+    WEBHOOK_ENQUEUE_SECRET: secret('WEBHOOK_ENQUEUE_SECRET'),
   },
 });

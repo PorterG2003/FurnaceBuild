@@ -1366,7 +1366,6 @@ new cdk.CfnOutput(backend.stack, 'ClientApiImportQueueUrlExport', {
 
 clientApiLambda.addEnvironment('CLIENT_API_WEBHOOK_QUEUE_URL', webhookQueue.queueUrl);
 clientApiLambda.addEnvironment('CLIENT_API_IMPORT_QUEUE_URL', importQueue.queueUrl);
-clientApiLambda.addEnvironment('WEBHOOK_ENQUEUE_SECRET', process.env.WEBHOOK_ENQUEUE_SECRET ?? '');
 webhookQueue.grantSendMessages(clientApiLambda);
 importQueue.grantSendMessages(clientApiLambda);
 

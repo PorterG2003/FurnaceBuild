@@ -13,6 +13,7 @@
     "validate": "bash scripts/validate-expo-build.sh",
     "validate:build": "bash scripts/validate-expo-build.sh",
     "verify:amplify-yml-installs": "node scripts/verify-amplify-yml-installs.mjs",
+    "install:amplify-function-deps": "node scripts/install-amplify-function-deps.mjs",
     "verify:email-parsing": "tsx scripts/verify-email-parsing.ts",
     "audit:inboxalways-headers": "NODE_PATH=workers/inbox-checker-worker/node_modules:lib/mailbox/node_modules tsx scripts/audit-inboxalways-reply-headers.ts",
     "audit:june-training-replies": "NODE_PATH=workers/inbox-checker-worker/node_modules:lib/mailbox/node_modules tsx scripts/audit-june-training-replies.ts",

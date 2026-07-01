@@ -596,6 +596,7 @@ export interface Database {
           linkedin_url: string | null;
           company_linkedin_url: string | null;
           phone_number: string | null;
+          mobile_phone_number: string | null;
           source: string | null;
           custom_lead_data: Json | null;
           global_lead_id: string | null;
@@ -619,6 +620,7 @@ export interface Database {
           linkedin_url?: string | null;
           company_linkedin_url?: string | null;
           phone_number?: string | null;
+          mobile_phone_number?: string | null;
           source?: string | null;
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
@@ -642,6 +644,7 @@ export interface Database {
           linkedin_url?: string | null;
           company_linkedin_url?: string | null;
           phone_number?: string | null;
+          mobile_phone_number?: string | null;
           source?: string | null;
           custom_lead_data?: Json | null;
           global_lead_id?: string | null;
@@ -2449,6 +2452,7 @@ export interface Database {
           p_new_first_name?: string | null;
           p_new_last_name?: string | null;
           p_new_phone_number?: string | null;
+          p_new_mobile_phone_number?: string | null;
           p_reason?: Database['public']['Enums']['replacement_reason_enum'];
           p_reason_note?: string | null;
           p_source_message_id?: string | null;
@@ -2565,6 +2569,7 @@ export interface Database {
           linkedin_url: string | null;
           company_linkedin_url: string | null;
           phone_number: string | null;
+          mobile_phone_number: string | null;
           source: string | null;
           custom_lead_data: Json | null;
           created_at: string;

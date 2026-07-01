@@ -3,7 +3,7 @@ import type { LeadsColumnCatalogField, LeadsColumnGroupDefinition, LeadsColumnSo
 export const LEADS_COLUMN_GROUPS: LeadsColumnGroupDefinition[] = [
   {
     id: 'person',
-    label: 'Lead info',
+    label: 'Lead',
     fields: [
       { fieldKey: 'email', label: 'Email', sourceType: 'person' },
       { fieldKey: 'display_name', label: 'Display name', sourceType: 'person' },
@@ -30,14 +30,15 @@ export const LEADS_COLUMN_GROUPS: LeadsColumnGroupDefinition[] = [
     requiresCampaign: true,
     fields: [
       { fieldKey: 'company_name', label: 'Company', sourceType: 'membership' },
+      { fieldKey: 'phone', label: 'Company phone', sourceType: 'membership' },
+      { fieldKey: 'website', label: 'Website', sourceType: 'membership' },
+      { fieldKey: 'mobile_phone', label: 'Mobile', sourceType: 'membership' },
+      { fieldKey: 'linkedin_url', label: 'LinkedIn', sourceType: 'membership' },
       { fieldKey: 'title', label: 'Title', sourceType: 'membership' },
       { fieldKey: 'enrollment_state', label: 'Enrollment', sourceType: 'membership' },
       { fieldKey: 'reply_category', label: 'Reply category', sourceType: 'membership' },
       { fieldKey: 'created_at', label: 'Added at', sourceType: 'membership' },
       { fieldKey: 'last_activity', label: 'Last activity', sourceType: 'membership' },
-      { fieldKey: 'phone', label: 'Phone', sourceType: 'membership' },
-      { fieldKey: 'website', label: 'Website', sourceType: 'membership' },
-      { fieldKey: 'linkedin_url', label: 'LinkedIn', sourceType: 'membership' },
     ],
   },
 ];

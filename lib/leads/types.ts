@@ -33,5 +33,6 @@ export interface AccountPersonProfileUpdate {
   linkedin_url?: string | null;
   company_linkedin_url?: string | null;
   phone_number?: string | null;
+  mobile_phone_number?: string | null;
   custom_lead_data?: Record<string, unknown> | null;
 }

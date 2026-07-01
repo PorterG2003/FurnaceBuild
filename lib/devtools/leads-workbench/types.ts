@@ -19,6 +19,7 @@ export interface MockMembership {
   lastActivityAt: string;
   hasReply: boolean;
   phone: string | null;
+  mobilePhone: string | null;
   website: string | null;
   linkedinUrl: string | null;
   customLeadData: Record<string, string | number | null>;

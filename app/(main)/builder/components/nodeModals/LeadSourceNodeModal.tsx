@@ -81,6 +81,8 @@ const STANDARD_BUCKET_FIELD_ORDER = [
   'first_name',
   'last_name',
   'company_name',
+  'phone_number',
+  'mobile_phone_number',
   'website',
   'linkedin_url',
   'company_linkedin_url',
@@ -99,6 +101,8 @@ function leadToBucketRecord(lead: Lead): Record<string, string> {
   if (lead.first_name) record.first_name = lead.first_name;
   if (lead.last_name) record.last_name = lead.last_name;
   if (lead.company_name) record.company_name = lead.company_name;
+  if (lead.phone_number) record.phone_number = lead.phone_number;
+  if (lead.mobile_phone_number) record.mobile_phone_number = lead.mobile_phone_number;
   if (lead.website) record.website = lead.website;
   if (lead.linkedin_url) record.linkedin_url = lead.linkedin_url;
   if (lead.company_linkedin_url) record.company_linkedin_url = lead.company_linkedin_url;
@@ -194,6 +198,8 @@ const mappingFields = [
   { id: 'first_name', label: 'First Name', required: false },
   { id: 'last_name', label: 'Last Name', required: false },
   { id: 'company_name', label: 'Company Name', required: false },
+  { id: 'phone_number', label: 'Company Phone', required: false },
+  { id: 'mobile_phone_number', label: 'Mobile Phone', required: false },
   { id: 'website', label: 'Website', required: false },
   { id: 'linkedin_url', label: 'LinkedIn URL', required: false },
   { id: 'company_linkedin_url', label: 'Company LinkedIn URL', required: false },
@@ -207,6 +213,8 @@ const fieldSynonyms: Record<FieldKey, string[]> = {
   first_name: ['first name', 'firstname', 'given name', 'first_name'],
   last_name: ['last name', 'lastname', 'surname', 'last_name'],
   company_name: ['company', 'company name', 'organisation', 'organization', 'business'],
+  phone_number: ['company phone', 'phone', 'work phone', 'business phone', 'office phone', 'phone number'],
+  mobile_phone_number: ['mobile', 'mobile phone', 'cell', 'cell phone', 'personal phone', 'mobile number'],
   website: ['website', 'site', 'url', 'homepage', 'web site'],
   linkedin_url: ['linkedin', 'linkedin url', 'linkedin profile', 'profile url'],
   company_linkedin_url: ['company linkedin', 'company linkedin url', 'linkedin company', 'company profile', 'company profile url'],

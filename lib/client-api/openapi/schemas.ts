@@ -618,6 +618,8 @@ export function buildClientApiComponents() {
           website: { type: 'string', nullable: true },
           linkedin_url: { type: 'string', nullable: true },
           company_linkedin_url: { type: 'string', nullable: true },
+          phone_number: { type: 'string', nullable: true },
+          mobile_phone_number: { type: 'string', nullable: true },
           custom_lead_data: { type: 'object', additionalProperties: true },
           source: { type: 'string', examples: ['api'] },
           created_at: { type: 'string', format: 'date-time' },
@@ -639,6 +641,8 @@ export function buildClientApiComponents() {
           website: { type: 'string' },
           linkedin_url: { type: 'string' },
           company_linkedin_url: { type: 'string' },
+          phone_number: { type: 'string' },
+          mobile_phone_number: { type: 'string' },
           custom_lead_data: {
             type: 'object',
             additionalProperties: true,
@@ -658,6 +662,8 @@ export function buildClientApiComponents() {
           website: { type: 'string', nullable: true },
           linkedin_url: { type: 'string', nullable: true },
           company_linkedin_url: { type: 'string', nullable: true },
+          phone_number: { type: 'string', nullable: true },
+          mobile_phone_number: { type: 'string', nullable: true },
           custom_lead_data: {
             type: 'object',
             additionalProperties: true,

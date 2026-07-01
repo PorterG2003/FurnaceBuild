@@ -19,6 +19,7 @@ export type WorkbenchPersonLike = {
     lastActivityAt: string;
     hasReply: boolean;
     phone: string | null;
+    mobilePhone: string | null;
     website: string | null;
     linkedinUrl: string | null;
     customLeadData: Record<string, string | number | null>;
@@ -105,6 +106,8 @@ export function resolveWorkbenchCellValue(
         return membership.lastActivityAt;
       case 'phone':
         return membership.phone;
+      case 'mobile_phone':
+        return membership.mobilePhone;
       case 'website':
         return membership.website;
       case 'linkedin_url':

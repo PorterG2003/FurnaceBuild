@@ -2,14 +2,17 @@ import { formatRelativeTime } from '@/lib/formatRelativeTime';
 
 export const ENRICH_COPY = {
   title: 'Enrich lead',
-  sectionTitle: 'Contact enrichment',
-  loading: 'Looking up contact…',
+  sectionTitle: 'Lead enrichment',
+  loading: 'Looking up lead…',
   loadingInitial: 'Loading…',
   enrichButton: 'Enrich',
   reviewButton: 'Review',
   reEnrichButton: 'Re-enrich',
   retryButton: 'Retry',
-  phoneHintInitial: 'Work line · mobile loading',
+  companyPhoneLabel: 'Company phone',
+  mobileLabel: 'Mobile',
+  mobileLoading: 'Looking up mobile number…',
+  mobileNotFound: 'No mobile number was found.',
   wasEmpty: 'was empty',
 } as const;
 
@@ -23,19 +26,13 @@ function creditLine(creditsRemaining: number, { forReEnrich = false }: { forReEn
   return 'Uses 1 credit when a match is found.';
 }
 
-function phoneSuffix(phonePending: boolean, phoneTimeout: boolean): string {
-  if (phonePending) return 'Mobile number still loading.';
-  if (phoneTimeout) return 'No mobile number was found.';
-  return '';
-}
-
 function joinParts(parts: Array<string | null | undefined>): string {
   return parts.filter((part) => part && part.trim() !== '').join(' ');
 }
 
 export function enrichIdleInfo(creditsRemaining: number): string {
   return joinParts([
-    'Look up phone, title, and company details for this contact.',
+    'Look up lead, company, and personalization details for this person.',
     creditLine(creditsRemaining),
   ]);
 }
@@ -47,7 +44,7 @@ export function enrichNoMatchInfo(
   const { isCached = false, enrichedAt } = options;
   return joinParts([
     isCached && enrichedAt ? savedPrefix(enrichedAt) : null,
-    'No match found for this contact.',
+    'No match found for this lead.',
     isCached ? 'No credit was used.' : 'No credit was used for this lookup.',
     creditLine(creditsRemaining, { forReEnrich: true }),
   ]);
@@ -58,18 +55,15 @@ export function enrichNothingToApplyInfo(
   options: {
     isCached?: boolean;
     enrichedAt?: string;
-    phonePending?: boolean;
-    phoneTimeout?: boolean;
   } = {},
 ): string {
-  const { isCached = false, enrichedAt, phonePending = false, phoneTimeout = false } = options;
+  const { isCached = false, enrichedAt } = options;
   return joinParts([
     isCached && enrichedAt ? savedPrefix(enrichedAt) : null,
     isCached
       ? 'Saved enrichment results already match this profile.'
-      : 'No new information was found for this contact.',
+      : 'No new information was found for this lead.',
     isCached ? 'Reviewing saved results does not use a credit.' : null,
-    phoneSuffix(phonePending, phoneTimeout),
     creditLine(creditsRemaining, { forReEnrich: true }),
   ]);
 }
@@ -79,17 +73,14 @@ export function enrichMatchInfo(
   options: {
     isCached?: boolean;
     enrichedAt?: string;
-    phonePending?: boolean;
-    phoneTimeout?: boolean;
   } = {},
 ): string {
-  const { isCached = false, enrichedAt, phonePending = false, phoneTimeout = false } = options;
+  const { isCached = false, enrichedAt } = options;
   return joinParts([
     isCached && enrichedAt ? savedPrefix(enrichedAt) : null,
     isCached
       ? 'Review suggested updates and choose which fields to apply. Reviewing saved results does not use a credit.'
       : 'Review suggested updates and choose which fields to apply.',
-    phoneSuffix(phonePending, phoneTimeout),
     creditLine(creditsRemaining, { forReEnrich: true }),
   ]);
 }

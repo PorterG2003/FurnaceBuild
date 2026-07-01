@@ -504,6 +504,7 @@ export async function getAccountLeadWorkbenchDataset(
       lastActivityAt: thread?.latestActivityAt ?? lead.created_at,
       hasReply: thread?.hasReply ?? false,
       phone: lead.phone_number,
+      mobilePhone: lead.mobile_phone_number,
       website: lead.website,
       linkedinUrl: lead.linkedin_url,
       customLeadData: (lead.custom_lead_data ?? {}) as Record<string, string | number | null>,

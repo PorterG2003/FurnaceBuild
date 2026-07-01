@@ -10,6 +10,8 @@ export const CSV_STANDARD_FIELD_KEYS = [
   'website',
   'linkedin_url',
   'company_linkedin_url',
+  'phone_number',
+  'mobile_phone_number',
 ] as const;
 
 export type CsvStandardFieldKey = (typeof CSV_STANDARD_FIELD_KEYS)[number];
@@ -26,6 +28,8 @@ export type CsvImportLeadPayload = {
   website?: string | null;
   linkedin_url?: string | null;
   company_linkedin_url?: string | null;
+  phone_number?: string | null;
+  mobile_phone_number?: string | null;
   custom_lead_data?: Record<string, string> | null;
 };
 
@@ -157,6 +161,8 @@ export function mapCsvRowToLeadPayload(
   const website = valueForColumn(fieldMappings.website);
   const linkedinUrl = valueForColumn(fieldMappings.linkedin_url);
   const companyLinkedinUrl = valueForColumn(fieldMappings.company_linkedin_url);
+  const companyPhone = valueForColumn(fieldMappings.phone_number);
+  const mobilePhone = valueForColumn(fieldMappings.mobile_phone_number);
 
   const derivedName =
     combinedName || [firstName, lastName].filter(Boolean).join(' ').trim() || null;
@@ -201,6 +207,8 @@ export function mapCsvRowToLeadPayload(
     website,
     linkedin_url: linkedinUrl,
     company_linkedin_url: companyLinkedinUrl,
+    phone_number: companyPhone,
+    mobile_phone_number: mobilePhone,
   };
 
   if (Object.keys(customData).length > 0) {
@@ -349,5 +357,7 @@ export function createEmptyCsvFieldMappings(): CsvFieldMappings {
     website: '',
     linkedin_url: '',
     company_linkedin_url: '',
+    phone_number: '',
+    mobile_phone_number: '',
   };
 }

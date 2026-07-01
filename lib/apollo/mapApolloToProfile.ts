@@ -10,6 +10,7 @@ export interface ApolloProfileSuggestion {
   first_name: string | null;
   last_name: string | null;
   phone_number: string | null;
+  mobile_phone_number: string | null;
   linkedin_url: string | null;
   company_name: string | null;
   website: string | null;
@@ -66,6 +67,7 @@ export function mapApolloToProfile(person: ApolloPerson): ApolloProfileSuggestio
     first_name: clean(person.first_name),
     last_name: clean(person.last_name),
     phone_number: pickPhone(person),
+    mobile_phone_number: null,
     linkedin_url: clean(person.linkedin_url),
     company_name: clean(person.organization?.name),
     website: pickWebsite(person),

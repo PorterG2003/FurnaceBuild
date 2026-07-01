@@ -45,6 +45,7 @@ function pickProfileFields(detail: AccountLeadDetail) {
     website: newest?.website ?? '',
     linkedin_url: newest?.linkedinUrl ?? '',
     phone_number: newest?.phone ?? '',
+    mobile_phone_number: newest?.mobilePhone ?? '',
   };
 }
 
@@ -151,6 +152,7 @@ export function LeadProfileSection({
   const [website, setWebsite] = useState(initial.website);
   const [linkedinUrl, setLinkedinUrl] = useState(initial.linkedin_url);
   const [phoneNumber, setPhoneNumber] = useState(initial.phone_number);
+  const [mobilePhoneNumber, setMobilePhoneNumber] = useState(initial.mobile_phone_number);
   const [customFields, setCustomFields] = useState<Record<string, string>>(initialCustom);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +165,7 @@ export function LeadProfileSection({
     setWebsite(initial.website);
     setLinkedinUrl(initial.linkedin_url);
     setPhoneNumber(initial.phone_number);
+    setMobilePhoneNumber(initial.mobile_phone_number);
     setCustomFields(initialCustom);
   }, [initial, initialCustom]);
 
@@ -176,6 +179,7 @@ export function LeadProfileSection({
     setWebsite(initial.website);
     setLinkedinUrl(initial.linkedin_url);
     setPhoneNumber(initial.phone_number);
+    setMobilePhoneNumber(initial.mobile_phone_number);
     setCustomFields(initialCustom);
     setError(null);
   }, [initial, initialCustom]);
@@ -197,6 +201,7 @@ export function LeadProfileSection({
       website: website.trim() || null,
       linkedin_url: linkedinUrl.trim() || null,
       phone_number: phoneNumber.trim() || null,
+      mobile_phone_number: mobilePhoneNumber.trim() || null,
       custom_lead_data: Object.keys(customFields).length
         ? Object.fromEntries(
             Object.entries(customFields).map(([key, value]) => [key, value.trim() || null]),
@@ -223,6 +228,7 @@ export function LeadProfileSection({
     lastName,
     linkedinUrl,
     name,
+    mobilePhoneNumber,
     onSaved,
     phoneNumber,
     website,
@@ -242,7 +248,7 @@ export function LeadProfileSection({
   return (
     <LeadDetailSection
       title="Profile"
-      description={isMobileDrill ? undefined : 'Contact details shared across every campaign this person belongs to.'}
+      description={isMobileDrill ? undefined : 'Lead and company details shared across every campaign this person belongs to.'}
       footer={footer}
     >
       {hasMultipleMemberships ? (
@@ -299,11 +305,11 @@ export function LeadProfileSection({
         </Button>
       </View>
 
-      <LeadDetailSubsection title="Identity">
+      <LeadDetailSubsection title="Lead">
         <FormTextField label="Email" value={detail.person.email} editable={false} />
         {!isMobileDrill ? (
           <Text className="text-xs text-gray-500 font-instrument -mt-2 leading-4">
-            Email is the lead identity. Use Replace Lead in inbox to change the contact email.
+            Email identifies this lead. Use Replace Lead in inbox to change it.
           </Text>
         ) : null}
         <FormTextField label="Display name" value={name} onChangeText={setName} />
@@ -315,21 +321,30 @@ export function LeadProfileSection({
             <FormTextField label="Last name" value={lastName} onChangeText={setLastName} />
           </View>
         </View>
+        <FormTextField
+          label={ENRICH_COPY.mobileLabel}
+          value={mobilePhoneNumber}
+          onChangeText={setMobilePhoneNumber}
+        />
+        <FormTextField label="LinkedIn URL" value={linkedinUrl} onChangeText={setLinkedinUrl} autoCapitalize="none" />
       </LeadDetailSubsection>
 
       {!isMobileDrill ? <LeadDetailDivider /> : null}
 
-      <LeadDetailSubsection title="Company & contact">
+      <LeadDetailSubsection title="Company">
         <FormTextField label="Company" value={companyName} onChangeText={setCompanyName} />
-        <FormTextField label="Phone" value={phoneNumber} onChangeText={setPhoneNumber} />
+        <FormTextField
+          label={ENRICH_COPY.companyPhoneLabel}
+          value={phoneNumber}
+          onChangeText={setPhoneNumber}
+        />
         <FormTextField label="Website" value={website} onChangeText={setWebsite} autoCapitalize="none" />
-        <FormTextField label="LinkedIn URL" value={linkedinUrl} onChangeText={setLinkedinUrl} autoCapitalize="none" />
       </LeadDetailSubsection>
 
       {Object.keys(customFields).length > 0 ? (
         <>
           {!isMobileDrill ? <LeadDetailDivider /> : null}
-          <LeadDetailSubsection title="Custom fields">
+          <LeadDetailSubsection title="Custom">
             {Object.entries(customFields).map(([key, value]) => (
               <FormTextField
                 key={key}

@@ -24,6 +24,7 @@ test('mapApolloToProfile maps person + organization fields', () => {
   assert.equal(result.last_name, 'Doe');
   assert.equal(result.title, 'VP Sales');
   assert.equal(result.phone_number, '+15551234567');
+  assert.equal(result.mobile_phone_number, null);
   assert.equal(result.linkedin_url, 'https://linkedin.com/in/janedoe');
   assert.equal(result.company_name, 'Acme Inc');
   assert.equal(result.website, 'https://acme.com');
@@ -46,6 +47,7 @@ test('mapApolloToProfile returns nulls for missing data', () => {
   assert.equal(result.name, 'Solo');
   assert.equal(result.last_name, null);
   assert.equal(result.phone_number, null);
+  assert.equal(result.mobile_phone_number, null);
   assert.equal(result.company_name, null);
   assert.equal(result.website, null);
   assert.equal(result.title, null);

@@ -22,11 +22,14 @@ const STANDARD_LEAD_FIELDS = new Set([
   'linkedin_url',
   'company_linkedin_url',
   'phone_number',
+  'mobile_phone_number',
   'source',
 ]);
 
 function formatLeadHeaderLabel(fieldKey: string): string {
   if (!STANDARD_LEAD_FIELDS.has(fieldKey)) return fieldKey;
+  if (fieldKey === 'phone_number') return 'Company Phone';
+  if (fieldKey === 'mobile_phone_number') return 'Mobile';
   return fieldKey
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
@@ -77,6 +80,7 @@ const SERVER_SORTABLE_FIELDS = new Set([
   'linkedin_url',
   'company_linkedin_url',
   'phone_number',
+  'mobile_phone_number',
   'source',
 ]);
 
@@ -117,6 +121,7 @@ export function LeadsTable({
       if (lead.linkedin_url) record.linkedin_url = lead.linkedin_url;
       if (lead.company_linkedin_url) record.company_linkedin_url = lead.company_linkedin_url;
       if (lead.phone_number) record.phone_number = lead.phone_number;
+      if (lead.mobile_phone_number) record.mobile_phone_number = lead.mobile_phone_number;
       if (lead.source) record.source = lead.source;
       if (lead.custom_lead_data && typeof lead.custom_lead_data === 'object') {
         Object.entries(lead.custom_lead_data).forEach(([key, value]) => {

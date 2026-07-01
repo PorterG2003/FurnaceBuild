@@ -61,7 +61,7 @@ test('parseColumnLayout enforces max column count', () => {
   const many = Array.from({ length: MAX_COLUMN_LAYOUT_COLUMNS + 5 }, (_, index) => ({
     id: `person-field-${index}`,
     sourceType: 'person' as const,
-    sourceLabel: 'Lead info',
+    sourceLabel: 'Lead',
     fieldKey: 'email',
     label: `Email ${index}`,
     visible: true,
@@ -105,7 +105,7 @@ test('isColumnAlreadyAdded dedupes cross-group candidates independently', () => 
     {
       id: 'person-email',
       sourceType: 'person',
-      sourceLabel: 'Lead info',
+      sourceLabel: 'Lead',
       fieldKey: 'email',
       label: 'Email',
       visible: true,

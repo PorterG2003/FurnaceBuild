@@ -50,11 +50,11 @@ const FIELD_CONFIG: FieldConfig[] = [
   { key: 'name', label: 'Name' },
   { key: 'first_name', label: 'First name' },
   { key: 'last_name', label: 'Last name' },
-  { key: 'title', label: 'Title', isCustom: true },
-  { key: 'phone_number', label: 'Phone' },
   { key: 'linkedin_url', label: 'LinkedIn', autoCapitalize: 'none' },
   { key: 'company_name', label: 'Company' },
+  { key: 'phone_number', label: ENRICH_COPY.companyPhoneLabel },
   { key: 'website', label: 'Website', autoCapitalize: 'none' },
+  { key: 'title', label: 'Title', isCustom: true },
 ];
 
 interface RowState {
@@ -95,10 +95,18 @@ function mergeCustomFields(detail: AccountLeadDetail): Record<string, string> {
   return merged;
 }
 
+function getNewestMembership(detail: AccountLeadDetail) {
+  let newest = detail.person.memberships[0] ?? null;
+  for (const membership of detail.person.memberships) {
+    if (!newest || membership.createdAt.localeCompare(newest.createdAt) > 0) {
+      newest = membership;
+    }
+  }
+  return newest;
+}
+
 function pickCurrent(detail: AccountLeadDetail): Record<FieldKey, string> {
-  const newest = [...detail.person.memberships].sort((a, b) =>
-    b.createdAt.localeCompare(a.createdAt),
-  )[0];
+  const newest = getNewestMembership(detail);
   const custom = mergeCustomFields(detail);
   return {
     name: detail.person.displayName ?? '',
@@ -110,6 +118,18 @@ function pickCurrent(detail: AccountLeadDetail): Record<FieldKey, string> {
     company_name: newest?.companyName ?? '',
     website: newest?.website ?? '',
   };
+}
+
+function pickCurrentMobilePhone(detail: AccountLeadDetail): string {
+  const newest = getNewestMembership(detail);
+  return newest?.mobilePhone ?? '';
+}
+
+function buildRowState(suggestedValue: string | null | undefined, currentValue: string): RowState | null {
+  const nextValue = (suggestedValue ?? '').trim();
+  if (!nextValue) return null;
+  if (currentValue && currentValue.toLowerCase() === nextValue.toLowerCase()) return null;
+  return { value: nextValue, checked: currentValue === '' };
 }
 
 function seedRowsFromSuggestion(
@@ -129,10 +149,9 @@ function seedRowsFromSuggestion(
 
 function suggestionFromSession(session: ApolloEnrichmentSessionRow): ApolloProfileSuggestion | null {
   if (!session.sync_suggestion) return null;
-  const mobilePhone = pickPhoneFromNumbers(session.phone_numbers);
   return {
     ...session.sync_suggestion,
-    phone_number: mobilePhone ?? session.sync_suggestion.phone_number,
+    mobile_phone_number: pickPhoneFromNumbers(session.phone_numbers),
   };
 }
 
@@ -180,10 +199,12 @@ export function EnrichLeadScreen({
   const { toast } = useToast();
   const globalLeadId = detail.person.globalLeadId;
   const current = useMemo(() => pickCurrent(detail), [detail]);
+  const currentMobilePhone = useMemo(() => pickCurrentMobilePhone(detail), [detail]);
   const existingCustom = useMemo(() => mergeCustomFields(detail), [detail]);
 
   const [state, setState] = useState<ScreenState>({ kind: 'loading', mode: 'initial' });
   const [rows, setRows] = useState<Partial<Record<FieldKey, RowState>>>({});
+  const [mobileRow, setMobileRow] = useState<RowState | null>(null);
   const [saving, setSaving] = useState(false);
   const pollAbortRef = useRef<AbortController | null>(null);
   const lastNotifiedCreditsRef = useRef<string | null>(null);
@@ -198,6 +219,7 @@ export function EnrichLeadScreen({
       options: { isCached: boolean; enrichedAt?: string } = { isCached: false },
     ) => {
       setRows(seedRowsFromSuggestion(suggestion, current));
+      setMobileRow(buildRowState(suggestion.mobile_phone_number, currentMobilePhone));
       setState({
         kind: 'match',
         sessionId,
@@ -210,7 +232,7 @@ export function EnrichLeadScreen({
         enrichedAt: options.enrichedAt,
       });
     },
-    [current],
+    [current, currentMobilePhone],
   );
 
   const startPhonePolling = useCallback(
@@ -227,7 +249,7 @@ export function EnrichLeadScreen({
           const mobilePhone = pickPhoneFromNumbers(session.phone_numbers);
           const mergedSuggestion: ApolloProfileSuggestion = {
             ...session.sync_suggestion,
-            phone_number: mobilePhone ?? session.sync_suggestion.phone_number,
+            mobile_phone_number: mobilePhone,
           };
 
           setState((prev) => {
@@ -242,22 +264,11 @@ export function EnrichLeadScreen({
           });
 
           if (mobilePhone) {
-            setRows((prev) => {
-              const phoneRow = prev.phone_number;
-              if (!phoneRow) {
-                const currentValue = (current.phone_number ?? '').trim();
-                return {
-                  ...prev,
-                  phone_number: {
-                    value: mobilePhone,
-                    checked: currentValue === '',
-                  },
-                };
+            setMobileRow((prev) => {
+              if (!prev) {
+                return buildRowState(mobilePhone, currentMobilePhone);
               }
-              return {
-                ...prev,
-                phone_number: { ...phoneRow, value: mobilePhone },
-              };
+              return { ...prev, value: mobilePhone };
             });
           }
         },
@@ -266,7 +277,7 @@ export function EnrichLeadScreen({
         // Aborted or transient — non-fatal while panel is open.
       });
     },
-    [current.phone_number],
+    [currentMobilePhone],
   );
 
   const loadInitialState = useCallback(async (loadId: number) => {
@@ -347,7 +358,8 @@ export function EnrichLeadScreen({
       const session = await getEnrichmentSession(result.sessionId);
       const balance = await getCreditBalance(accountId, CREDIT_METERS.apolloEnrichment);
       const credits = { creditsRemaining: balance.remaining, creditLimit: balance.limit };
-      if (!session?.sync_suggestion) {
+      const suggestion = session ? suggestionFromSession(session) : null;
+      if (!suggestion) {
         setState({
           kind: 'error',
           message: 'Enrichment is in progress but results are not ready yet.',
@@ -358,7 +370,7 @@ export function EnrichLeadScreen({
       }
       applyMatchState(
         result.sessionId,
-        session.sync_suggestion,
+        suggestion,
         credits,
         true,
         { isCached: false },
@@ -367,19 +379,24 @@ export function EnrichLeadScreen({
       return;
     }
 
-    const credits: CreditInfo = {
-      creditsRemaining: result.creditsRemaining,
-      creditLimit: result.creditLimit,
-    };
-
-    if (!result.match) {
+    if ('match' in result && !result.match) {
       setState({
         kind: 'no_match',
-        ...credits,
+        creditsRemaining: result.creditsRemaining,
+        creditLimit: result.creditLimit,
         isCached: false,
       });
       return;
     }
+
+    if (!('match' in result) || !result.match) {
+      return;
+    }
+
+    const credits: CreditInfo = {
+      creditsRemaining: result.creditsRemaining,
+      creditLimit: result.creditLimit,
+    };
 
     applyMatchState(
       result.sessionId,
@@ -421,8 +438,9 @@ export function EnrichLeadScreen({
   );
 
   const selectedCount = useMemo(
-    () => activeFields.filter((field) => rows[field.key]?.checked).length,
-    [activeFields, rows],
+    () =>
+      activeFields.filter((field) => rows[field.key]?.checked).length + (mobileRow?.checked ? 1 : 0),
+    [activeFields, mobileRow?.checked, rows],
   );
 
   const handleApply = useCallback(async () => {
@@ -444,6 +462,10 @@ export function EnrichLeadScreen({
       updates.custom_lead_data = { ...existingCustom, title: customTitle };
     }
 
+    if (mobileRow?.checked) {
+      updates.mobile_phone_number = mobileRow.value.trim() || null;
+    }
+
     if (Object.keys(updates).length === 0) {
       toast.error('Select at least one field to apply.');
       return;
@@ -461,7 +483,7 @@ export function EnrichLeadScreen({
     } finally {
       setSaving(false);
     }
-  }, [accountId, activeFields, existingCustom, globalLeadId, onApplied, rows, toast]);
+  }, [accountId, activeFields, existingCustom, globalLeadId, mobileRow, onApplied, rows, toast]);
 
   if (state.kind === 'loading') {
     return (
@@ -527,8 +549,9 @@ export function EnrichLeadScreen({
 
   const showPhonePending = state.phonePending;
   const showPhoneTimeout = state.phoneFetchTimedOut && !showPhonePending;
+  const showMobileBox = showPhonePending || showPhoneTimeout || mobileRow !== null;
   const reEnrichDisabled = state.creditsRemaining <= 0;
-  const nothingToApply = activeFields.length === 0 && !showPhonePending;
+  const nothingToApply = activeFields.length === 0 && !showMobileBox;
 
   if (nothingToApply) {
     return (
@@ -538,10 +561,19 @@ export function EnrichLeadScreen({
           message={enrichNothingToApplyInfo(state.creditsRemaining, {
             isCached: state.isCached,
             enrichedAt: state.enrichedAt,
-            phonePending: showPhonePending,
-            phoneTimeout: showPhoneTimeout,
           })}
         />
+        {showMobileBox ? (
+          <EnrichMobileNumberBox
+            isPage={isPage}
+            currentValue={currentMobilePhone}
+            row={mobileRow}
+            pending={showPhonePending}
+            timedOut={showPhoneTimeout}
+            onToggle={() => setMobileRow((prev) => (prev ? { ...prev, checked: !prev.checked } : prev))}
+            onChangeValue={(next) => setMobileRow((prev) => (prev ? { ...prev, value: next } : prev))}
+          />
+        ) : null}
         <EnrichPaidAction
           isPage={isPage}
           label={ENRICH_COPY.reEnrichButton}
@@ -559,8 +591,6 @@ export function EnrichLeadScreen({
         message={enrichMatchInfo(state.creditsRemaining, {
           isCached: state.isCached,
           enrichedAt: state.enrichedAt,
-          phonePending: showPhonePending,
-          phoneTimeout: showPhoneTimeout,
         })}
       />
 
@@ -590,15 +620,10 @@ export function EnrichLeadScreen({
           {activeFields.map((field) => {
             const row = rows[field.key]!;
             const currentValue = (current[field.key] ?? '').trim();
-            const phoneHint =
-              field.key === 'phone_number' && showPhonePending && row.value
-                ? ENRICH_COPY.phoneHintInitial
-                : undefined;
             return (
               <EnrichRow
                 key={field.key}
                 label={field.label}
-                hint={phoneHint}
                 isPage={isPage}
                 currentValue={currentValue}
                 checked={row.checked}
@@ -619,6 +644,17 @@ export function EnrichLeadScreen({
               />
             );
           })}
+          {showMobileBox ? (
+            <EnrichMobileNumberBox
+              isPage={isPage}
+              currentValue={currentMobilePhone}
+              row={mobileRow}
+              pending={showPhonePending}
+              timedOut={showPhoneTimeout}
+              onToggle={() => setMobileRow((prev) => (prev ? { ...prev, checked: !prev.checked } : prev))}
+              onChangeValue={(next) => setMobileRow((prev) => (prev ? { ...prev, value: next } : prev))}
+            />
+          ) : null}
       </View>
 
       <EnrichActionFooter
@@ -719,6 +755,52 @@ function EnrichActionFooter({
   );
 }
 
+function EnrichMobileNumberBox({
+  isPage,
+  currentValue,
+  row,
+  pending,
+  timedOut,
+  onToggle,
+  onChangeValue,
+}: {
+  isPage: boolean;
+  currentValue: string;
+  row: RowState | null;
+  pending: boolean;
+  timedOut: boolean;
+  onToggle: () => void;
+  onChangeValue: (next: string) => void;
+}) {
+  if (row) {
+    return (
+      <EnrichRow
+        label={ENRICH_COPY.mobileLabel}
+        isPage={isPage}
+        currentValue={currentValue}
+        checked={row.checked}
+        value={row.value}
+        onToggle={onToggle}
+        onChangeValue={onChangeValue}
+      />
+    );
+  }
+
+  return (
+    <View className="rounded-xl border border-[#2A2A2A] bg-[#171717] p-3 gap-3">
+      <Text className="text-xs font-instrument-medium text-gray-300">{ENRICH_COPY.mobileLabel}</Text>
+      {pending ? (
+        <View className="flex-row items-center gap-2">
+          <ActivityIndicator color="#9CA3AF" size="small" />
+          <Text className="text-sm font-instrument text-gray-400">{ENRICH_COPY.mobileLoading}</Text>
+        </View>
+      ) : timedOut ? (
+        <Text className="text-sm font-instrument text-gray-400">{ENRICH_COPY.mobileNotFound}</Text>
+      ) : null}
+    </View>
+  );
+}
+
 function EnrichRow({
   label,
   hint,
@@ -743,7 +825,7 @@ function EnrichRow({
   const inputClassName =
     'text-white font-instrument text-sm px-3 py-2.5 rounded-xl border border-[#3A3A3A] bg-[#111111]';
   const inputScrollMarginWeb =
-    Platform.OS === 'web' ? ({ scrollMarginBottom: 24 } as const) : undefined;
+    Platform.OS === 'web' ? ({ scrollMarginBottom: 24 } as unknown as object) : undefined;
   const currentDisplay = currentValue !== '' ? currentValue : '—';
   const hasCurrentValue = currentValue !== '';
 
@@ -775,7 +857,7 @@ function EnrichRow({
           autoCapitalize={autoCapitalize}
           editable={checked}
           className={inputClassName}
-          style={[inputScrollMarginWeb, !checked ? { opacity: 0.45 } : null]}
+          style={[inputScrollMarginWeb, !checked ? { opacity: 0.45 } : undefined]}
         />
       </View>
     );
@@ -808,7 +890,7 @@ function EnrichRow({
             autoCapitalize={autoCapitalize}
             editable={checked}
             className={inputClassName}
-            style={[inputScrollMarginWeb, !checked ? { opacity: 0.45 } : null]}
+            style={[inputScrollMarginWeb, !checked ? { opacity: 0.45 } : undefined]}
           />
         </View>
       </View>

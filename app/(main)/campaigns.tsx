@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, TextInput, Pressable, Platform, useWindowDimensions } from 'react-native';
 import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { Card } from '@/components/ui/Card';
@@ -36,11 +36,23 @@ import {
   FunnelIcon,
   MagnifyingGlassIcon,
   ArrowTopRightOnSquareIcon,
+  PauseIcon,
+  PlayIcon,
+  StopIcon,
 } from 'react-native-heroicons/outline';
 import { ProgressDial } from '@/components/ui/progress-dial';
 import { isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { CampaignStatusPill, SmartleadBadge, CampaignListFiltersModal, RenameCampaignModal } from '@/components/campaigns';
+import {
+  CampaignStatusPill,
+  CampaignStopConfirmModal,
+  SmartleadBadge,
+  CampaignListFiltersModal,
+  RenameCampaignModal,
+  getCampaignStatusDialColor,
+  type CampaignStatusMenuStatus,
+} from '@/components/campaigns';
+import { useCampaignStatusActions } from '@/lib/campaigns/useCampaignStatusActions';
 import { IconButton } from '@/components/ui/icon-button';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 import { RowOverflowMenu } from '@/components/ui/RowOverflowMenu';
@@ -321,14 +333,41 @@ interface CampaignCardProps {
   onDuplicate: (campaign: CampaignListSummary) => void;
   onRename: (campaign: CampaignListSummary) => void;
   onManageTags: (campaignId: string) => void;
+  onStatusChanged: (silent?: boolean) => void | Promise<void>;
   isDeleting: boolean;
 }
 
-function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManageTags, isDeleting }: CampaignCardProps) {
+function toStatusMenuStatus(status: string): CampaignStatusMenuStatus {
+  if (status === 'running' || status === 'paused' || status === 'stopped' || status === 'draft') {
+    return status;
+  }
+  return 'draft';
+}
+
+function CampaignCard({
+  campaign,
+  tags,
+  onDelete,
+  onDuplicate,
+  onRename,
+  onManageTags,
+  onStatusChanged,
+  isDeleting,
+}: CampaignCardProps) {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showStopModal, setShowStopModal] = useState(false);
   const [showSmartleadModal, setShowSmartleadModal] = useState(false);
+  const {
+    isPausing,
+    isStarting,
+    isStopping,
+    handlePause,
+    handleResume,
+    handleStop,
+  } = useCampaignStatusActions(campaign.id, onStatusChanged);
+  const statusBusy = isPausing || isStarting || isStopping;
   const isMobileLayout = screenWidth < LAYOUT_BREAKPOINT;
   const isDraft = campaign.status === 'draft';
   const draftHasFlow = campaign.hasFlow;
@@ -347,6 +386,7 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManag
   const reachedCount = Math.max(contactedCount, terminalCount);
   const completionValue = reachedCount + terminalCount;
   const completionTotal = enrollmentCount > 0 ? enrollmentCount * 2 : 1;
+  const dialColor = getCampaignStatusDialColor(toStatusMenuStatus(campaign.status));
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -395,6 +435,40 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManag
         icon: RocketLaunchIcon,
       });
     }
+    if (!isSmartlead && campaign.status === 'running') {
+      items.push(
+        {
+          key: 'pause',
+          label: isPausing ? 'Pausing...' : 'Pause campaign',
+          onPress: handlePause,
+          icon: PauseIcon,
+        },
+        {
+          key: 'stop',
+          label: isStopping ? 'Stopping...' : 'Stop campaign',
+          onPress: () => setShowStopModal(true),
+          icon: StopIcon,
+          tone: 'destructive' as const,
+        },
+      );
+    }
+    if (!isSmartlead && campaign.status === 'paused') {
+      items.push(
+        {
+          key: 'resume',
+          label: isStarting ? 'Resuming...' : 'Resume campaign',
+          onPress: handleResume,
+          icon: PlayIcon,
+        },
+        {
+          key: 'stop',
+          label: isStopping ? 'Stopping...' : 'Stop campaign',
+          onPress: () => setShowStopModal(true),
+          icon: StopIcon,
+          tone: 'destructive' as const,
+        },
+      );
+    }
     items.push(
       {
         key: 'manage-tags',
@@ -429,11 +503,48 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManag
       },
     );
     return items;
-  }, [campaign, handleContinueSetup, handleDuplicate, handleEditFlow, isDraft, onManageTags, onRename]);
+  }, [
+    campaign,
+    handleContinueSetup,
+    handleDuplicate,
+    handleEditFlow,
+    handlePause,
+    handleResume,
+    isDraft,
+    isPausing,
+    isSmartlead,
+    isStarting,
+    isStopping,
+    onManageTags,
+    onRename,
+  ]);
 
   const visibleOverflowItems = isSmartlead
     ? overflowItems.filter((item) => item.key !== 'mission-control')
     : overflowItems;
+  const overflowDisabled = isDeleting || statusBusy;
+
+  const handleConfirmStop = async () => {
+    await handleStop();
+    setShowStopModal(false);
+  };
+
+  const handlePauseInstead = async () => {
+    await handlePause();
+    setShowStopModal(false);
+  };
+
+  const stopConfirmModal = (
+    <CampaignStopConfirmModal
+      visible={showStopModal}
+      onClose={() => setShowStopModal(false)}
+      onConfirmStop={handleConfirmStop}
+      onPauseInstead={campaign.status === 'running' ? handlePauseInstead : undefined}
+      campaignName={campaign.name}
+      isLoading={isStopping}
+      isPausing={isPausing}
+    />
+  );
 
   const repliedPct = sentCount > 0 ? Math.round((repliedCount / sentCount) * 100) : 0;
   const positivePct = repliedCount > 0 ? Math.round((positiveReplyCount / repliedCount) * 100) : 0;
@@ -487,7 +598,7 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManag
           value={completionValue}
           total={completionTotal}
           showAsPercentage
-          color="#10b981"
+          color={dialColor}
           size={56}
         />
       </View>
@@ -532,7 +643,7 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManag
           <View className="opacity-50">
             <RowOverflowMenu
               items={visibleOverflowItems}
-              disabled={isDeleting}
+              disabled={overflowDisabled}
               menuMinWidth={184}
               triggerIcon={EllipsisHorizontalIcon}
               triggerAccessibilityLabel="Campaign actions"
@@ -544,7 +655,7 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManag
       ) : (
         <RowOverflowMenu
           items={visibleOverflowItems}
-          disabled={isDeleting}
+          disabled={overflowDisabled}
           menuMinWidth={184}
           triggerIcon={EllipsisHorizontalIcon}
           triggerAccessibilityLabel="Campaign actions"
@@ -579,7 +690,7 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManag
                   value={completionValue}
                   total={completionTotal}
                   showAsPercentage
-                  color="#10b981"
+                  color={dialColor}
                   size={48}
                 />
               </View>
@@ -609,7 +720,7 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManag
               <View className="shrink-0 ml-1">
                 <RowOverflowMenu
                   items={visibleOverflowItems}
-                  disabled={isDeleting}
+                  disabled={overflowDisabled}
                   menuMinWidth={184}
                   triggerIcon={EllipsisHorizontalIcon}
                   triggerAccessibilityLabel="Campaign actions"
@@ -648,6 +759,7 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManag
               </View>
             </View>
         </Card>
+        {stopConfirmModal}
         {smartleadModal}
       </>
     );
@@ -676,6 +788,7 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManag
         isLoading={isDeleting}
         requireConfirmation={false}
       />
+      {stopConfirmModal}
       {smartleadModal}
     </>
   );
@@ -720,10 +833,10 @@ export default function CampaignsPage() {
     [campaigns, searchQuery, appliedFilters, campaignTagsMap],
   );
 
-  const loadCampaigns = async () => {
+  const loadCampaigns = useCallback(async (silent = false) => {
     if (!account?.id) return;
 
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     setError('');
     try {
       const data = await getCampaignsListSummary(account.id);
@@ -732,13 +845,13 @@ export default function CampaignsPage() {
       setError(err.message || 'Failed to load campaigns');
       console.error('Error loading campaigns:', err);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
-  };
+  }, [account?.id]);
 
   useEffect(() => {
     loadCampaigns();
-  }, [account?.id]);
+  }, [loadCampaigns]);
 
   const handleCreateCampaign = async (name: string) => {
     if (!user?.id) {
@@ -928,6 +1041,7 @@ export default function CampaignsPage() {
                 onDuplicate={setDuplicateSourceCampaign}
                 onRename={setRenameCampaign}
                 onManageTags={setManagingTagsCampaignId}
+                onStatusChanged={loadCampaigns}
                 isDeleting={deletingId === campaign.id || (isDuplicating && duplicateSourceCampaign?.id === campaign.id)}
               />
             ))

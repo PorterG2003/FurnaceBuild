@@ -5,7 +5,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   draft: { bg: '#374151', text: '#9CA3AF' },
   running: { bg: '#065F46', text: '#10B981' },
   paused: { bg: '#78350F', text: '#F59E0B' },
-  stopped: { bg: '#44403C', text: '#A8A29E' },
+  stopped: { bg: '#8B2E1F', text: '#EF5540' },
 };
 
 const STATUS_LABELS: Record<string, string> = {

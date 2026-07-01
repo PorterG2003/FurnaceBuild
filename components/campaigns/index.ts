@@ -1,6 +1,6 @@
 export { SmartleadBadge, SMARTLEAD_IMPORT_TOOLTIP } from './SmartleadBadge';
 export { CampaignStatusPill } from './CampaignStatusPill';
-export { CampaignStatusMenu, MissionControlStatusMenu, CampaignStatusSheetTriggerRow, STATUS_TRIGGER_THEME } from './CampaignStatusMenu';
+export { CampaignStatusMenu, MissionControlStatusMenu, CampaignStatusSheetTriggerRow, STATUS_TRIGGER_THEME, getCampaignStatusDialColor } from './CampaignStatusMenu';
 export type { CampaignStatusMenuProps, CampaignStatusMenuStatus, MissionControlStatusMenuProps } from './CampaignStatusMenu';
 export { CampaignStatusActionsSheet } from './CampaignStatusActionsSheet';
 export type { CampaignStatusActionsSheetProps } from './CampaignStatusActionsSheet';

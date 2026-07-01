@@ -33,3 +33,5 @@ export {
   type CampaignListFilters,
 } from './CampaignListFilterBar';
 export { CampaignListFiltersModal } from './CampaignListFiltersModal';
+export { RenameCampaignModal } from './RenameCampaignModal';
+export type { RenameCampaignModalProps } from './RenameCampaignModal';

@@ -12,6 +12,7 @@ import {
   ScheduleTab,
   CampaignStatusMenu,
   CampaignStatusActionsSheet,
+  RenameCampaignModal,
   type CampaignStatusMenuStatus,
   countActiveCampaignLeadFilters,
   type CampaignLeadFilters,
@@ -54,6 +55,7 @@ import {
   FunnelIcon,
   PaperAirplaneIcon,
   PencilSquareIcon,
+  PencilIcon,
   RectangleStackIcon,
   RocketLaunchIcon,
 } from 'react-native-heroicons/outline';
@@ -172,6 +174,7 @@ export default function CampaignPage() {
   const [variantStats, setVariantStats] = useState<CampaignVariantStatRow[]>([]);
   const [variantStatsLoading, setVariantStatsLoading] = useState(false);
   const [showSmartleadRestrictedModal, setShowSmartleadRestrictedModal] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
   const [showCampaignActionsSheet, setShowCampaignActionsSheet] = useState(false);
   const [showStatusActionsSheet, setShowStatusActionsSheet] = useState(false);
   const pendingOpenStatusActionsRef = useRef(false);
@@ -653,6 +656,13 @@ export default function CampaignPage() {
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </Text>
         </View>
+      </Button>
+      <Button
+        variant="secondary"
+        size="sm"
+        onPress={() => setShowRenameModal(true)}
+      >
+        Rename
       </Button>
       {isSmartlead ? (
         <Tooltip content={<Text className="text-gray-300 font-instrument text-xs">Only the stats dashboard is available for Smartlead campaigns.</Text>}>
@@ -1338,6 +1348,12 @@ export default function CampaignPage() {
         campaignId={id ?? null}
         isOnStatsPage={true}
       />
+      <RenameCampaignModal
+        visible={showRenameModal}
+        campaign={campaign ? { id: campaign.id, name: campaign.name } : null}
+        onClose={() => setShowRenameModal(false)}
+        onRenamed={setCampaign}
+      />
       <BottomSheet
         visible={showCampaignActionsSheet}
         onClose={() => setShowCampaignActionsSheet(false)}
@@ -1365,6 +1381,24 @@ export default function CampaignPage() {
           <Text className="text-white font-instrument-medium text-base">
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </Text>
+        </Pressable>
+        {/* Rename */}
+        <Pressable
+          onPress={() => {
+            setShowRenameModal(true);
+            setShowCampaignActionsSheet(false);
+          }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            paddingVertical: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: '#2A2A2A',
+          }}
+        >
+          <PencilIcon size={20} color="#9CA3AF" />
+          <Text className="text-white font-instrument-medium text-base">Rename</Text>
         </Pressable>
         {/* Mission Control */}
         {isSmartlead ? (

@@ -24,6 +24,7 @@ import {
   PlusIcon,
   TrashIcon,
   PencilIcon,
+  PencilSquareIcon,
   EllipsisHorizontalIcon,
   PaperAirplaneIcon,
   ArrowUturnLeftIcon,
@@ -39,7 +40,7 @@ import {
 import { ProgressDial } from '@/components/ui/progress-dial';
 import { isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { Tooltip } from '@/components/ui/Tooltip';
-import { CampaignStatusPill, SmartleadBadge, CampaignListFiltersModal } from '@/components/campaigns';
+import { CampaignStatusPill, SmartleadBadge, CampaignListFiltersModal, RenameCampaignModal } from '@/components/campaigns';
 import { IconButton } from '@/components/ui/icon-button';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 import { RowOverflowMenu } from '@/components/ui/RowOverflowMenu';
@@ -318,11 +319,12 @@ interface CampaignCardProps {
   tags: CampaignTag[];
   onDelete: (id: string) => Promise<void>;
   onDuplicate: (campaign: CampaignListSummary) => void;
+  onRename: (campaign: CampaignListSummary) => void;
   onManageTags: (campaignId: string) => void;
   isDeleting: boolean;
 }
 
-function CampaignCard({ campaign, tags, onDelete, onDuplicate, onManageTags, isDeleting }: CampaignCardProps) {
+function CampaignCard({ campaign, tags, onDelete, onDuplicate, onRename, onManageTags, isDeleting }: CampaignCardProps) {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -401,6 +403,12 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onManageTags, isD
         icon: TagIcon,
       },
       {
+        key: 'rename',
+        label: 'Rename',
+        onPress: () => onRename(campaign),
+        icon: PencilSquareIcon,
+      },
+      {
         key: 'edit-flow',
         label: 'Edit flow',
         onPress: handleEditFlow,
@@ -421,7 +429,7 @@ function CampaignCard({ campaign, tags, onDelete, onDuplicate, onManageTags, isD
       },
     );
     return items;
-  }, [campaign, handleContinueSetup, handleDuplicate, handleEditFlow, isDraft, onManageTags]);
+  }, [campaign, handleContinueSetup, handleDuplicate, handleEditFlow, isDraft, onManageTags, onRename]);
 
   const visibleOverflowItems = isSmartlead
     ? overflowItems.filter((item) => item.key !== 'mission-control')
@@ -686,6 +694,7 @@ export default function CampaignsPage() {
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [duplicateSourceCampaign, setDuplicateSourceCampaign] = useState<CampaignListSummary | null>(null);
+  const [renameCampaign, setRenameCampaign] = useState<CampaignListSummary | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [appliedFilters, setAppliedFilters] = useState<CampaignListFilters>(EMPTY_CAMPAIGN_LIST_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -917,6 +926,7 @@ export default function CampaignsPage() {
                 tags={campaignTagsMap[campaign.id] ?? []}
                 onDelete={handleDeleteCampaign}
                 onDuplicate={setDuplicateSourceCampaign}
+                onRename={setRenameCampaign}
                 onManageTags={setManagingTagsCampaignId}
                 isDeleting={deletingId === campaign.id || (isDuplicating && duplicateSourceCampaign?.id === campaign.id)}
               />
@@ -966,6 +976,16 @@ export default function CampaignsPage() {
         }}
         onDuplicate={handleDuplicateCampaign}
         isLoading={isDuplicating}
+      />
+      <RenameCampaignModal
+        visible={renameCampaign !== null}
+        campaign={renameCampaign}
+        onClose={() => setRenameCampaign(null)}
+        onRenamed={(updated) => {
+          setCampaigns((prev) =>
+            prev.map((c) => (c.id === updated.id ? { ...c, name: updated.name } : c)),
+          );
+        }}
       />
     </PageLayout>
   );

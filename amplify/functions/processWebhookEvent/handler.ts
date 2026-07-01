@@ -34,7 +34,7 @@ export async function processWebhookEventById(eventId: string): Promise<void> {
     : Array.isArray(account?.webhook_enabled_events)
       ? account?.webhook_enabled_events
       : [];
-  if (enabledEvents.length > 0 && !enabledEvents.includes(evt.event_type)) {
+  if (enabledEvents.length === 0 || !enabledEvents.includes(evt.event_type)) {
     return;
   }
   const secret = (campaign?.webhook_signing_secret_override || account?.webhook_signing_secret || '').trim();

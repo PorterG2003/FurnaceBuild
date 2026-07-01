@@ -43,13 +43,14 @@ test('mergeGroupSelectionWithStoredEvents keeps legacy stored events', () => {
   assert.ok(merged.includes('lead.created'));
 });
 
-test('expandWebhookSelectionForDisplay treats empty storage as all events', () => {
-  const expanded = expandWebhookSelectionForDisplay([]);
-  assert.deepEqual([...expanded].sort(), [...ALL_WEBHOOK_EVENT_TYPES].sort());
+test('expandWebhookSelectionForDisplay keeps empty storage as none selected', () => {
+  assert.deepEqual(expandWebhookSelectionForDisplay([]), []);
 });
 
-test('normalizeWebhookSelectionForStorage collapses full selection to empty', () => {
-  assert.deepEqual(normalizeWebhookSelectionForStorage(ALL_WEBHOOK_EVENT_TYPES), []);
+test('normalizeWebhookSelectionForStorage keeps full selection explicit', () => {
+  assert.deepEqual(normalizeWebhookSelectionForStorage(ALL_WEBHOOK_EVENT_TYPES), [
+    ...ALL_WEBHOOK_EVENT_TYPES,
+  ].sort());
 });
 
 test('normalizeWebhookSelectionForStorage keeps partial selections sorted', () => {
@@ -76,6 +77,10 @@ test('toggleGroupEvents selects and clears group members', () => {
   assert.equal(cleared.includes('email.sent'), false);
   assert.equal(cleared.includes('reply.categorized'), false);
   assert.ok(cleared.includes('lead.created'));
+});
+
+test('formatWebhookEventsSummary shows none when storage is empty', () => {
+  assert.deepEqual(formatWebhookEventsSummary([]), { kind: 'none' });
 });
 
 test('formatWebhookEventsSummary shows partial group counts', () => {

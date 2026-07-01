@@ -29,7 +29,7 @@ Detection (app persistWebhookEvent OR DB triggers on column changes)
 
 **Enqueue idempotency:** `webhook_events.sqs_enqueued_at` is set atomically before SQS send. A reconciliation sweep (`POST /internal/webhook/reconcile`, same `X-Furnace-Internal-Secret` auth) retries rows stuck with `sqs_enqueued_at IS NULL`.
 
-**Granular event selection:** Account and campaign webhook settings store a flat `webhook_enabled_events` array. Empty array means all events. The app UI uses per-event checkboxes grouped by category.
+**Granular event selection:** Account and campaign webhook settings store a flat `webhook_enabled_events` array. Empty array means no events are delivered until at least one type is selected. The app UI uses per-event checkboxes grouped by category.
 
 ### Adding a new DB-triggered event
 

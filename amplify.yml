@@ -4,43 +4,9 @@ backend:
   phases:
     preBuild:
       commands:
-        - npm ci
         - node scripts/verify-amplify-yml-installs.mjs
-        - echo "=== Starting function dependency installation ==="
-        - cd amplify/functions/testMailboxConnection && npm install && cd - || (echo "Failed to install testMailboxConnection dependencies" && exit 1)
-        - cd amplify/functions/enrollmentMetric && npm install && cd - || (echo "Failed to install enrollmentMetric dependencies" && exit 1)
-        - cd amplify/functions/fetchEmailAttachment && npm install && cd - || (echo "Failed to install fetchEmailAttachment dependencies" && exit 1)
-        - cd amplify/functions/foundryRegistryApi && npm install && cd - || (echo "Failed to install foundryRegistryApi dependencies" && exit 1)
-        - cd amplify/functions/foundryNormalizeJob && npm install && cd - || (echo "Failed to install foundryNormalizeJob dependencies" && exit 1)
-        - cd amplify/functions/foundryAutolinkJob && npm install && cd - || (echo "Failed to install foundryAutolinkJob dependencies" && exit 1)
-        - cd amplify/functions/foundryContactEnrichmentJob && npm install && cd - || (echo "Failed to install foundryContactEnrichmentJob dependencies" && exit 1)
-        - cd amplify/functions/foundryStateMatchingJob && npm install && cd - || (echo "Failed to install foundryStateMatchingJob dependencies" && exit 1)
-        - cd amplify/functions/foundryWebsiteVerificationJob && npm install && cd - || (echo "Failed to install foundryWebsiteVerificationJob dependencies" && exit 1)
-        - cd amplify/functions/foundryGoogleAdsVerificationJob && npm install && cd - || (echo "Failed to install foundryGoogleAdsVerificationJob dependencies" && exit 1)
-        - cd amplify/functions/foundryCsvBuilderExportJob && npm install && cd - || (echo "Failed to install foundryCsvBuilderExportJob dependencies" && exit 1)
-        - cd amplify/functions/leadsExportJob && npm install && cd - || (echo "Failed to install leadsExportJob dependencies" && exit 1)
-        - cd amplify/functions/googlePlaces && npm install && cd - || (echo "Failed to install googlePlaces dependencies" && exit 1)
-        - cd amplify/functions/processNotificationEvent && npm install && cd - || (echo "Failed to install processNotificationEvent dependencies" && exit 1)
-        - cd amplify/functions/classifyReply && npm install && cd - || (echo "Failed to install classifyReply dependencies" && exit 1)
-        - cd amplify/functions/fluxCompetitorAuditStart && npm install && cd - || (echo "Failed to install fluxCompetitorAuditStart dependencies" && exit 1)
-        - cd amplify/functions/fluxCompetitorAuditJob && npm install && cd - || (echo "Failed to install fluxCompetitorAuditJob dependencies" && exit 1)
-        - cd amplify/functions/fluxGenerate && npm install && cd - || (echo "Failed to install fluxGenerate dependencies" && exit 1)
-        - cd amplify/functions/fluxEditorChat && npm install && cd - || (echo "Failed to install fluxEditorChat dependencies" && exit 1)
-        - cd amplify/functions/processWebhookEvent && npm install && cd - || (echo "Failed to install processWebhookEvent dependencies" && exit 1)
-        - cd amplify/functions/sendTransactionalEmail && npm install && cd - || (echo "Failed to install sendTransactionalEmail dependencies" && exit 1)
-        - cd amplify/functions/platformCommerce && npm install && cd - || (echo "Failed to install platformCommerce dependencies" && exit 1)
-        - cd amplify/functions/stripeWebhook && npm install && cd - || (echo "Failed to install stripeWebhook dependencies" && exit 1)
-        - cd amplify/functions/clientApi && npm install && cd - || (echo "Failed to install clientApi dependencies" && exit 1)
-        - cd amplify/functions/clientApiBulkImport && npm install && cd - || (echo "Failed to install clientApiBulkImport dependencies" && exit 1)
-        - cd amplify/functions/categorizerPreview && npm install && cd - || (echo "Failed to install categorizerPreview dependencies" && exit 1)
-        - cd amplify/functions/sendFluxQuizSubmission && npm install && cd - || (echo "Failed to install sendFluxQuizSubmission dependencies" && exit 1)
-        - |
-          FLAG="$(echo "${AMPLIFY_ENABLE_SMARTLEAD_MIGRATION:-}" | tr '[:upper:]' '[:lower:]')"
-          if [ "$FLAG" != "false" ] && [ "$FLAG" != "0" ]; then
-            cd amplify/functions/launchSmartleadMigration && npm install && cd - || (echo "Failed to install launchSmartleadMigration dependencies" && exit 1)
-          else
-            echo "Skipping launchSmartleadMigration npm install (AMPLIFY_ENABLE_SMARTLEAD_MIGRATION disabled)"
-          fi
+        - npm ci
+        - node scripts/install-amplify-function-deps.mjs
         - echo "=== Function dependencies installed successfully ==="
         - |
           PROD_BRANCH="${PROD_BRANCH:-main}"

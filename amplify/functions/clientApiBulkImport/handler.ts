@@ -77,15 +77,6 @@ function requireCampaignId(job: ImportJobRow, operation: string): string {
   return job.campaign_id;
 }
 
-async function enqueueWebhookEvent(eventId: string): Promise<void> {
-  const queueUrl = process.env.WEBHOOK_QUEUE_URL?.trim();
-  if (!queueUrl) return;
-  await sqs.send(new SendMessageCommand({
-    QueueUrl: queueUrl,
-    MessageBody: JSON.stringify({ eventId }),
-  }));
-}
-
 async function emitJobBatchCompletionWebhook(
   supabase: ReturnType<typeof createServiceRoleClient>,
   job: ImportJobRow,
@@ -96,7 +87,7 @@ async function emitJobBatchCompletionWebhook(
   const globalLeadIds = Array.isArray(input.global_lead_ids)
     ? input.global_lead_ids.filter((id): id is string => typeof id === 'string')
     : [];
-  const eventId = await insertBatchCompletionWebhookEvent(supabase, {
+  await insertBatchCompletionWebhookEvent(supabase, {
     accountId: job.account_id,
     campaignId: job.campaign_id,
     operation,
@@ -110,7 +101,6 @@ async function emitJobBatchCompletionWebhook(
     })),
     globalLeadIds: globalLeadIds.length > 0 ? globalLeadIds : undefined,
   });
-  await enqueueWebhookEvent(eventId);
 }
 
 async function requeueJob(jobId: string): Promise<void> {

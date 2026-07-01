@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { isValidHttpsWebhookUrl } from '@/lib/client-api/client';
+import type { WebhookEventType } from '@/lib/client-api/webhooks/eventGroups';
 import {
   WEBHOOK_WIZARD_CLOSE_RESET_DELAY_MS,
   type WebhookWizardStep,
@@ -8,7 +9,7 @@ import {
 export type WebhookFormValues = {
   webhookUrl: string;
   webhookSecret: string;
-  enabledGroupIds: string[];
+  enabledEventTypes: WebhookEventType[];
 };
 
 export function useWebhookConfigureWizard({
@@ -21,21 +22,23 @@ export function useWebhookConfigureWizard({
   const [step, setStep] = useState<WebhookWizardStep>(0);
   const [webhookUrl, setWebhookUrl] = useState(initialValues.webhookUrl);
   const [webhookSecret, setWebhookSecret] = useState(initialValues.webhookSecret);
-  const [enabledGroupIds, setEnabledGroupIds] = useState<string[]>(initialValues.enabledGroupIds);
+  const [enabledEventTypes, setEnabledEventTypes] = useState<WebhookEventType[]>(
+    initialValues.enabledEventTypes,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setWebhookUrl(initialValues.webhookUrl);
       setWebhookSecret(initialValues.webhookSecret);
-      setEnabledGroupIds(initialValues.enabledGroupIds);
+      setEnabledEventTypes(initialValues.enabledEventTypes);
       setStep(0);
     }
   }, [
     visible,
     initialValues.webhookUrl,
     initialValues.webhookSecret,
-    initialValues.enabledGroupIds,
+    initialValues.enabledEventTypes,
   ]);
 
   useEffect(() => {
@@ -58,8 +61,8 @@ export function useWebhookConfigureWizard({
     setWebhookUrl,
     webhookSecret,
     setWebhookSecret,
-    enabledGroupIds,
-    setEnabledGroupIds,
+    enabledEventTypes,
+    setEnabledEventTypes,
     isSubmitting,
     setIsSubmitting,
     validateSetup,

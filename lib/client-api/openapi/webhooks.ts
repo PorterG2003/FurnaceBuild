@@ -25,7 +25,10 @@ const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
   'campaign.resumed': 'The campaign was resumed.',
   'campaign.stopped': 'The campaign was stopped.',
   'email.sent': 'An outbound campaign email was sent.',
-  'reply.received': 'An inbound reply was received on a campaign thread.',
+  'reply.received':
+    'An inbound reply was received on a campaign thread (before categorization completes).',
+  'reply.categorized':
+    'A thread reply category was assigned, changed, or cleared (manual, AI, system, or OOO).',
   'bounce.detected': 'A hard or soft bounce was detected for a sent message.',
 };
 
@@ -79,7 +82,7 @@ export function buildWebhooksOverviewMarkdown(): string {
     '## Quick start',
     '',
     '1. Open **Account Settings → Webhooks** (or a campaign override in Mission Control).',
-    '2. **Configure** — paste an HTTPS URL, optionally set a signing secret, and select event groups. Leave events empty to receive **all** event types.',
+    '2. **Configure** — paste an HTTPS URL, optionally set a signing secret, and select individual events (expand groups to pick specific types). Leave events empty to receive **all** event types.',
     '3. Click **Next** to open the **Test** step. Use **View sample** to inspect JSON for each event type, then **Send test webhook** to POST a sample to your URL.',
     '4. Click **Done** to save. Deliveries start immediately when matching events occur.',
     '',
@@ -160,6 +163,7 @@ export function buildWebhooksOverviewMarkdown(): string {
     '| `DELETE …/leads/{leadId}` | `lead.deleted` |',
     '| Campaign pause/stop/resume | `campaign.paused` / `campaign.stopped` / `campaign.resumed` |',
     '| Worker: email sent, reply, bounce | `email.sent` / `reply.received` / `bounce.detected` |',
+    '| Thread category assign/change/clear | `reply.categorized` |',
     '',
     '### Batch tier',
     '',

@@ -42,6 +42,14 @@ export async function processWebhookEventById(eventId: string): Promise<void> {
     ? (evt.payload as Record<string, unknown>)
     : {};
 
+  const { data: existingDelivery } = await supabase
+    .from('webhook_deliveries')
+    .select('id')
+    .eq('webhook_event_id', evt.id)
+    .eq('status', 'delivered')
+    .maybeSingle();
+  if (existingDelivery) return;
+
   const { data: delivery, error: deliveryError } = await supabase
     .from('webhook_deliveries')
     .insert({

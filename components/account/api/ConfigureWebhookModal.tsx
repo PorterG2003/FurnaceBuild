@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Account } from '@/lib/supabase/types';
 import { updateAccountWebhookSettings } from '@/lib/supabase/services/accounts';
-import { parseWebhookGroupIds, webhookEventsFromGroupIds } from './constants';
+import { parseWebhookEnabledEvents, webhookEventsForStorage } from './constants';
 import { WebhookConfigureWizardShell } from './WebhookConfigureWizardShell';
 import { ACCOUNT_WEBHOOK_FIELD_HELP } from './webhookFieldHelp';
 import type { WebhookFormValues } from './useWebhookConfigureWizard';
@@ -23,7 +23,7 @@ export function ConfigureWebhookModal({
     (): WebhookFormValues => ({
       webhookUrl: account.webhook_url ?? '',
       webhookSecret: account.webhook_signing_secret ?? '',
-      enabledGroupIds: parseWebhookGroupIds(account.webhook_enabled_events),
+      enabledEventTypes: parseWebhookEnabledEvents(account.webhook_enabled_events),
     }),
     [
       account.webhook_url,
@@ -36,7 +36,7 @@ export function ConfigureWebhookModal({
     await updateAccountWebhookSettings(account.id, {
       webhook_url: values.webhookUrl.trim() || null,
       webhook_signing_secret: values.webhookSecret.trim() || null,
-      webhook_enabled_events: webhookEventsFromGroupIds(values.enabledGroupIds),
+      webhook_enabled_events: webhookEventsForStorage(values.enabledEventTypes),
     });
   };
 

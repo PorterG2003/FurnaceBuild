@@ -76,7 +76,7 @@ When exposing a bulk feature externally:
 2. Add outcome test under [`lib/test/client-api/`](../../lib/test/client-api/)
 3. Respect rate limits and `MAX_ASYNC_JOBS_PER_ACCOUNT`
 4. Document poll vs webhook in OpenAPI description
-5. Wire batch completion via [`lib/client-api/webhooks/emitBatchCompletion.ts`](../../lib/client-api/webhooks/emitBatchCompletion.ts)
+5. Wire batch completion via [`lib/client-api/webhooks/emitBatchCompletion.ts`](../../lib/client-api/webhooks/emitBatchCompletion.ts) (INSERT-only; enqueue is DB-triggered)
 
 ## UI checklist
 

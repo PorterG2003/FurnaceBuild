@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Text } from 'react-native';
 import {
-  parseWebhookGroupIds,
-  webhookEventsFromGroupIds,
+  parseWebhookEnabledEvents,
+  webhookEventsForStorage,
 } from '@/components/account/api/constants';
 import { WebhookConfigureWizardShell } from '@/components/account/api/WebhookConfigureWizardShell';
 import { CAMPAIGN_WEBHOOK_FIELD_HELP } from '@/components/account/api/webhookFieldHelp';
@@ -25,13 +25,13 @@ export function CampaignWebhookOverrideModal({
 }: CampaignWebhookOverrideModalProps) {
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
-  const [enabledGroupIds, setEnabledGroupIds] = useState<string[]>([]);
+  const [enabledEventTypes, setEnabledEventTypes] = useState<WebhookFormValues['enabledEventTypes']>([]);
 
   useEffect(() => {
     if (visible && campaign) {
       setWebhookUrl(campaign.webhook_url_override ?? '');
       setWebhookSecret(campaign.webhook_signing_secret_override ?? '');
-      setEnabledGroupIds(parseWebhookGroupIds(campaign.webhook_enabled_events_override));
+      setEnabledEventTypes(parseWebhookEnabledEvents(campaign.webhook_enabled_events_override));
     }
   }, [visible, campaign]);
 
@@ -39,21 +39,19 @@ export function CampaignWebhookOverrideModal({
     (): WebhookFormValues => ({
       webhookUrl,
       webhookSecret,
-      enabledGroupIds,
+      enabledEventTypes,
     }),
-    [webhookUrl, webhookSecret, enabledGroupIds],
+    [webhookUrl, webhookSecret, enabledEventTypes],
   );
 
   if (!campaign) return null;
 
   const handlePersist = async (values: WebhookFormValues) => {
+    const stored = webhookEventsForStorage(values.enabledEventTypes);
     await updateCampaign(campaign.id, {
       webhook_url_override: values.webhookUrl.trim() || null,
       webhook_signing_secret_override: values.webhookSecret.trim() || null,
-      webhook_enabled_events_override:
-        values.enabledGroupIds.length > 0
-          ? webhookEventsFromGroupIds(values.enabledGroupIds)
-          : null,
+      webhook_enabled_events_override: stored.length > 0 ? stored : null,
     });
   };
 

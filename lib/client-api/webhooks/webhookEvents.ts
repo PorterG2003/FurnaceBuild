@@ -14,7 +14,12 @@ export const DEFAULT_ALLOWED_WEBHOOK_EVENTS = [
   'campaign.stopped',
   'email.sent',
   'reply.received',
+  'reply.categorized',
   'bounce.detected',
 ] as const;
 
 export type WebhookEventType = (typeof DEFAULT_ALLOWED_WEBHOOK_EVENTS)[number];
+
+export function isWebhookEventType(value: string): value is WebhookEventType {
+  return (DEFAULT_ALLOWED_WEBHOOK_EVENTS as readonly string[]).includes(value);
+}

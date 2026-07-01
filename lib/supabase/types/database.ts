@@ -2055,6 +2055,7 @@ export interface Database {
           dedupe_key: string | null;
           occurred_at: string;
           created_at: string;
+          sqs_enqueued_at: string | null;
         };
         Insert: {
           id?: string;
@@ -2065,6 +2066,7 @@ export interface Database {
           dedupe_key?: string | null;
           occurred_at?: string;
           created_at?: string;
+          sqs_enqueued_at?: string | null;
         };
         Update: {
           id?: string;
@@ -2075,6 +2077,7 @@ export interface Database {
           dedupe_key?: string | null;
           occurred_at?: string;
           created_at?: string;
+          sqs_enqueued_at?: string | null;
         };
       };
       notification_preferences: {

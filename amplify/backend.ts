@@ -1366,6 +1366,7 @@ new cdk.CfnOutput(backend.stack, 'ClientApiImportQueueUrlExport', {
 
 clientApiLambda.addEnvironment('CLIENT_API_WEBHOOK_QUEUE_URL', webhookQueue.queueUrl);
 clientApiLambda.addEnvironment('CLIENT_API_IMPORT_QUEUE_URL', importQueue.queueUrl);
+clientApiLambda.addEnvironment('WEBHOOK_ENQUEUE_SECRET', process.env.WEBHOOK_ENQUEUE_SECRET ?? '');
 webhookQueue.grantSendMessages(clientApiLambda);
 importQueue.grantSendMessages(clientApiLambda);
 
@@ -1384,10 +1385,8 @@ const clientApiBulkImportLambda = backend.clientApiBulkImport.resources.lambda a
 const leadsExportJobLambda = backend.leadsExportJob.resources.lambda as lambda.Function;
 const clientApiStack = clientApiLambda.stack;
 clientApiBulkImportLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
-clientApiBulkImportLambda.addEnvironment('WEBHOOK_QUEUE_URL', webhookQueue.queueUrl);
 leadsExportJobLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 importQueue.grantConsumeMessages(clientApiBulkImportLambda);
-webhookQueue.grantSendMessages(clientApiBulkImportLambda);
 clientApiBulkImportLambda.addEventSource(
   new lambdaEventSources.SqsEventSource(importQueue, {
     batchSize: 1,
@@ -1497,6 +1496,7 @@ const clientApiOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
     headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList(
       'Content-Type',
       'Idempotency-Key',
+      'X-Furnace-Internal-Secret',
     ),
     queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.all(),
     cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),

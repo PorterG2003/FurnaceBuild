@@ -3,6 +3,8 @@
 **Status**: In implementation
 **Replaces**: AI Categorizer placeholder (`workers/scheduler-worker/src/node-handlers/ai-categorizer-handler.ts`)
 
+**Webhooks:** When a thread category changes (AI, manual inbox, Client API, or OOO path), Postgres emits `reply.categorized` via DB trigger — no app-layer webhook emitter required.
+
 ## Summary
 
 The "AI Categorizer" placeholder becomes the **Categorizer** node:

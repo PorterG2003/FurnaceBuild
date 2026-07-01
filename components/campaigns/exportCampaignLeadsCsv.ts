@@ -13,7 +13,7 @@ const CAMPAIGN_LEAD_CSV_BASE_COLUMNS = [
   'mobile_phone_number',
   'source',
   'reply_category',
-  'enrollment_state',
+  'enrollment_progress_state',
   'enrollment_current_node_id',
   'enrollment_stopped_reason',
   'enrollment_stopped_error_message',

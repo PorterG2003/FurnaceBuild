@@ -44,12 +44,17 @@ export const STATUS_TRIGGER_THEME: Record<
     label: 'Paused',
   },
   stopped: {
-    backgroundColor: '#44403C40',
-    borderColor: '#78716C35',
-    textColor: '#A8A29E',
+    backgroundColor: '#8B2E1F25',
+    borderColor: '#EF554035',
+    textColor: '#EF5540',
     label: 'Stopped',
   },
 };
+
+export function getCampaignStatusDialColor(status: CampaignStatusMenuStatus): string {
+  if (status === 'stopped') return '#E04A35';
+  return STATUS_TRIGGER_THEME[status].textColor;
+}
 
 interface MenuItem {
   key: string;

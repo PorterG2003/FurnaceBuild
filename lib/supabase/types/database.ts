@@ -2540,6 +2540,32 @@ export interface Database {
           contacted_count: number;
         }[];
       };
+      get_campaign_contacted_lead_ids: {
+        Args: {
+          p_campaign_id: string;
+        };
+        Returns: string[];
+      };
+      get_campaign_lead_progress_buckets: {
+        Args: {
+          p_campaign_id: string;
+        };
+        Returns: {
+          total_leads: number;
+          not_started: number;
+          in_progress: number;
+          paused: number;
+          completed: number;
+          stopped: number;
+        }[];
+      };
+      enrollment_progress_state: {
+        Args: {
+          p_enrollment_state: string | null;
+          p_enrollment_id: string | null;
+        };
+        Returns: string;
+      };
       claim_smartlead_migration_run: {
         Args: {
           p_run_id: string;

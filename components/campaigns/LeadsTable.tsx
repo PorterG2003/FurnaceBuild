@@ -170,7 +170,7 @@ export function LeadsTable({
     stoppedReason: EnrollmentStoppedReason | null = null,
     stoppedErrorMessage: string | null = null
   ) => {
-    if (!state) {
+    if (!state || state === 'not_started') {
       return (
         <View className="self-start px-3 py-1.5 rounded-md" style={{ backgroundColor: '#6b728020' }}>
           <Text className="text-xs font-instrument-semibold text-gray-500">Not Started</Text>
@@ -308,7 +308,7 @@ export function LeadsTable({
       flex: 0,
       render: (item) =>
         getStateBadge(
-          item.__lead.enrollment_state,
+          item.__lead.enrollment_progress_state,
           item.__lead.enrollment_stopped_reason,
           item.__lead.enrollment_stopped_error_message
         ),

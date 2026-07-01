@@ -30,16 +30,30 @@ export async function resolveGlobalLeadId(
   return null;
 }
 
-export function buildLeadDetailPath(params: OpenLeadDetailParams & { globalLeadId: string }): string {
-  const query = new URLSearchParams();
+function appendLeadDetailQuery(query: URLSearchParams, params: OpenLeadDetailParams): void {
   if (params.campaignId) query.set('campaignId', params.campaignId);
   if (params.from) query.set('from', params.from);
   if (params.listId) query.set('listId', params.listId);
   if (params.listName) query.set('listName', params.listName);
   if (params.campaignName) query.set('campaignName', params.campaignName);
   if (params.threadId) query.set('threadId', params.threadId);
+}
+
+export function buildLeadDetailPath(params: OpenLeadDetailParams & { globalLeadId: string }): string {
+  const query = new URLSearchParams();
+  appendLeadDetailQuery(query, params);
   const qs = query.toString();
   return `/leads/${params.globalLeadId}${qs ? `?${qs}` : ''}`;
+}
+
+export function buildEnrichLeadPath(
+  globalLeadId: string,
+  options: OpenLeadDetailParams = {},
+): string {
+  const query = new URLSearchParams();
+  query.set('globalLeadId', globalLeadId);
+  appendLeadDetailQuery(query, options);
+  return `/leads/enrich?${query.toString()}`;
 }
 
 export async function openLeadDetail(router: RouterLike, params: OpenLeadDetailParams): Promise<void> {

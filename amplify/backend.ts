@@ -38,6 +38,7 @@ import { leadsExportJob } from './functions/leadsExportJob/resource';
 import { fluxGenerate } from './functions/fluxGenerate/resource';
 import { fluxEditorChat } from './functions/fluxEditorChat/resource';
 import { googlePlaces } from './functions/googlePlaces/resource';
+import { apolloEnrich } from './functions/apolloEnrich/resource';
 import { fluxCompetitorAuditJob } from './functions/fluxCompetitorAuditJob/resource';
 import { fluxCompetitorAuditStart } from './functions/fluxCompetitorAuditStart/resource';
 import { categorizerPreview } from './functions/categorizerPreview/resource';
@@ -83,6 +84,7 @@ const backend = defineBackend({
   fluxGenerate,
   fluxEditorChat,
   googlePlaces,
+  apolloEnrich,
   fluxCompetitorAuditJob,
   fluxCompetitorAuditStart,
   categorizerPreview,
@@ -1688,6 +1690,35 @@ const allowPublicGooglePlacesInvoke = new lambda.CfnPermission(
 );
 allowPublicGooglePlacesInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
 
+// Apollo.io person enrichment proxy — Function URL + Supabase JWT + credit metering
+const apolloEnrichLambda = backend.apolloEnrich.resources.lambda as lambda.Function;
+apolloEnrichLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+const apolloEnrichUrl = apolloEnrichLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.POST],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  },
+});
+new lambda.CfnPermission(apolloEnrichLambda.stack, 'AllowPublicApolloEnrichUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: apolloEnrichLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+// Second permission on parent stack avoids nested-stack circular dependency on first deploy.
+const allowPublicApolloEnrichInvoke = new lambda.CfnPermission(
+  backend.stack,
+  'AllowPublicApolloEnrichInvokeViaUrl',
+  {
+    action: 'lambda:InvokeFunction',
+    functionName: apolloEnrichLambda.functionArn,
+    principal: '*',
+  },
+);
+allowPublicApolloEnrichInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
 const fluxCompetitorAuditStartLambda = backend.fluxCompetitorAuditStart.resources.lambda as lambda.Function;
 fluxCompetitorAuditStartLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 fluxCompetitorAuditStartLambda.addEnvironment(
@@ -1888,6 +1919,7 @@ const customOutputs: Record<string, string> = {
   fluxGenerateUrl: fluxGenerateUrl.url,
   fluxEditorChatUrl: fluxEditorChatUrl.url,
   googlePlacesUrl: googlePlacesUrl.url,
+  apolloEnrichUrl: apolloEnrichUrl.url,
   fluxCompetitorAuditStartUrl: fluxCompetitorAuditStartUrl.url,
   categorizerPreviewUrl: categorizerPreviewUrl.url,
 };

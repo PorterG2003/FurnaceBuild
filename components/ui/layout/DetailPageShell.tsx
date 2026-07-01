@@ -14,6 +14,8 @@ interface DetailPageShellProps {
   mobileToolbar?: ReactNode;
   contentPadding?: number;
   onBack?: () => void;
+  /** Desktop only: docked side panel outside the scroll area (e.g. enrich, composer). */
+  desktopSidePanel?: ReactNode;
   children: ReactNode;
 }
 
@@ -27,6 +29,7 @@ export function DetailPageShell({
   mobileToolbar,
   contentPadding = 24,
   onBack,
+  desktopSidePanel,
   children,
 }: DetailPageShellProps) {
   const { width } = useWindowDimensions();
@@ -48,6 +51,21 @@ export function DetailPageShell({
           {mobileToolbar != null ? <View className="mb-6">{mobileToolbar}</View> : null}
           {children}
         </>
+      ) : desktopSidePanel != null ? (
+        <View className="flex-1 flex-row min-h-0">
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 24,
+            }}
+            showsVerticalScrollIndicator={false}
+          >
+            {children}
+          </ScrollView>
+          {desktopSidePanel}
+        </View>
       ) : (
         <View style={{ flex: 1, paddingHorizontal: 24 }}>
           <ScrollView

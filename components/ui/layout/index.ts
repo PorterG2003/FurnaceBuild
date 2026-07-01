@@ -9,6 +9,7 @@ export { BottomNavBar, BOTTOM_NAV_SCROLL_PADDING } from './BottomNavBar';
 export { Breadcrumb } from './Breadcrumb';
 export { DetailPageHeader, type BreadcrumbItem } from './DetailPageHeader';
 export { DetailPageShell } from './DetailPageShell';
+export { MobileFormPageLayout, type MobileFormPageLayoutProps } from './MobileFormPageLayout';
 export { MobileHeaderBackButton, type MobileHeaderBackButtonProps } from './MobileHeaderBackButton';
 export { BalancedTwoColumnLayout, type BalancedSection } from './BalancedTwoColumnLayout';
 export { MeasuredSection } from './MeasuredSection';

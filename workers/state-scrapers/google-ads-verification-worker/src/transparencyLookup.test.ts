@@ -5,6 +5,7 @@ import {
   isAcceptableCreativePreviewCandidate,
   layoutClipCenterPanel,
   layoutClipFromMetadataAnchor,
+  layoutClipBelowMetadataAnchor,
   pickBestCreativePreviewCandidate,
   selectCreativeHrefsForSampling,
   type CreativePreviewCandidate,
@@ -258,6 +259,21 @@ test('layoutClipCenterPanel stays within the default viewport', () => {
   assert.ok(clip.x + clip.width <= VIEWPORT.width);
   assert.ok(clip.y + clip.height <= VIEWPORT.height);
   assert.ok(clip.width * clip.height >= 8_000);
+  assert.ok(clip.y >= Math.floor(VIEWPORT.height * 0.35), 'center panel starts below the header area');
+});
+
+test('layoutClipBelowMetadataAnchor clips below the metadata anchor', () => {
+  const clip = layoutClipBelowMetadataAnchor(340, 20, VIEWPORT);
+  assert.ok(clip);
+  assert.ok(clip!.y > 340, 'clip starts below the anchor');
+  assert.ok(clip!.height >= 48);
+  assert.ok(clip!.y + clip!.height <= VIEWPORT.height);
+  assert.ok(clip!.width * clip!.height >= 8_000);
+});
+
+test('layoutClipBelowMetadataAnchor returns null when anchor is near bottom', () => {
+  const clip = layoutClipBelowMetadataAnchor(900, 20, VIEWPORT);
+  assert.equal(clip, null);
 });
 
 test('selectCreativeHrefsForSampling keeps one advertiser cluster per domain', () => {

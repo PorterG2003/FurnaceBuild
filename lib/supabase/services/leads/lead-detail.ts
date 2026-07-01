@@ -1,6 +1,5 @@
 import { supabase } from '../../client';
 import type { AccountLeadDetail, AccountPersonProfileUpdate, LeadDetailThread } from '@/lib/leads/types';
-import type { LeadUpdate } from '@/lib/supabase/types';
 import {
   buildMockPersonFromSummary,
   getAccountLeadCampaigns,
@@ -118,50 +117,21 @@ export async function getAccountLeadDetail(
   };
 }
 
-async function updateAccountLeadPeopleProfile(
-  accountId: string,
-  globalLeadId: string,
-  updates: AccountPersonProfileUpdate,
-): Promise<void> {
-  const displayName = updates.name?.trim() ? updates.name.trim() : null;
-  const { error } = await supabase
-    .from('account_lead_people')
-    .update({
-      display_name: displayName,
-      first_name: updates.first_name ?? null,
-      last_name: updates.last_name ?? null,
-      company_list: updates.company_name?.trim() ? updates.company_name.trim() : null,
-      search_text: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('account_id', accountId)
-    .eq('global_lead_id', globalLeadId);
-
-  if (error) {
-    throw new Error(`Failed to update account lead person: ${error.message}`);
+function profileUpdatePayload(updates: AccountPersonProfileUpdate): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined) {
+      payload[key] = value;
+    }
   }
+  return payload;
+}
 
-  const summary = await getAccountLeadPersonSummaryFromRollup(accountId, globalLeadId);
-  if (!summary) return;
-
-  const searchText = [
-    summary.email,
-    summary.displayName,
-    summary.companyList,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  const { error: searchError } = await supabase
-    .from('account_lead_people')
-    .update({ search_text: searchText })
-    .eq('account_id', accountId)
-    .eq('global_lead_id', globalLeadId);
-
-  if (searchError) {
-    throw new Error(`Failed to update account lead search text: ${searchError.message}`);
+function formatProfileUpdateError(message: string): string {
+  if (message.includes('Failed to fetch')) {
+    return 'Network error while saving. Check your connection and try again.';
   }
+  return message;
 }
 
 export async function updateAccountPersonProfile(
@@ -169,35 +139,18 @@ export async function updateAccountPersonProfile(
   globalLeadId: string,
   updates: AccountPersonProfileUpdate,
 ): Promise<void> {
-  const patch: LeadUpdate = {
-    ...updates,
-    updated_at: new Date().toISOString(),
-  };
-
-  const { data: activeRows, error: activeError } = await supabase
-    .from('leads')
-    .update(patch)
-    .eq('account_id', accountId)
-    .eq('global_lead_id', globalLeadId)
-    .is('deleted_at', null)
-    .select('id');
-
-  if (activeError) {
-    throw new Error(`Failed to update lead profile: ${activeError.message}`);
-  }
-
-  if ((activeRows ?? []).length > 0) {
+  const payload = profileUpdatePayload(updates);
+  if (Object.keys(payload).length === 0) {
     return;
   }
 
-  const leadIds = await fetchLeadIdsByGlobalLeadIdsIncludingDeleted(accountId, [globalLeadId]);
-  const mostRecentLeadId = leadIds[0];
-  if (mostRecentLeadId) {
-    const { error: deletedLeadError } = await supabase.from('leads').update(patch).eq('id', mostRecentLeadId);
-    if (deletedLeadError) {
-      throw new Error(`Failed to update lead profile: ${deletedLeadError.message}`);
-    }
-  }
+  const { error } = await supabase.rpc('update_account_person_profile', {
+    p_account_id: accountId,
+    p_global_lead_id: globalLeadId,
+    p_updates: payload,
+  });
 
-  await updateAccountLeadPeopleProfile(accountId, globalLeadId, updates);
+  if (error) {
+    throw new Error(`Failed to update lead profile: ${formatProfileUpdateError(error.message)}`);
+  }
 }

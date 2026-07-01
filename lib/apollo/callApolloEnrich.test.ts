@@ -90,6 +90,32 @@ test('callApolloEnrich returns a no-match result without a suggestion', async ()
   }
 });
 
+test('callApolloEnrich surfaces Apollo upstream errors with credits', async () => {
+  const fetchImpl = (async () =>
+    jsonResponse(
+      {
+        ok: false,
+        error: 'Contact lookup failed',
+        code: 'APOLLO_UPSTREAM',
+        creditsRemaining: 100,
+        creditLimit: 100,
+      },
+      502,
+    )) as unknown as typeof fetch;
+
+  const result = await callApolloEnrich(
+    { accountId: 'acc-1', globalLeadId: 'lead-1' },
+    baseDeps(fetchImpl),
+  );
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, 'APOLLO_UPSTREAM');
+    assert.equal(result.status, 502);
+    assert.equal(result.creditsRemaining, 100);
+    assert.equal(result.creditLimit, 100);
+  }
+});
+
 test('callApolloEnrich surfaces server errors with code + credits', async () => {
   const fetchImpl = (async () =>
     jsonResponse(

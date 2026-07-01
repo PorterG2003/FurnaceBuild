@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Alert, useToast } from '@/components/ui/feedback';
 import type { AccountLeadDetail, AccountPersonProfileUpdate } from '@/lib/leads/types';
+import { getAccessToken } from '@/lib/services/auth-token';
 import { updateAccountPersonProfile } from '@/lib/supabase/services/leads/lead-detail';
 import { callApolloEnrich } from '@/lib/apollo/callApolloEnrich';
 import type { ApolloProfileSuggestion } from '@/lib/apollo/mapApolloToProfile';
@@ -23,6 +24,7 @@ import {
   enrichMatchInfo,
   enrichNoMatchInfo,
   enrichNothingToApplyInfo,
+  enrichErrorInfo,
   enrichRetryInfo,
 } from './enrichCopy';
 import { EnrichActionGroup } from './EnrichLeadMeta';
@@ -137,7 +139,7 @@ function suggestionFromSession(session: ApolloEnrichmentSessionRow): ApolloProfi
 type ScreenState =
   | { kind: 'loading'; mode: 'initial' | 'enriching' }
   | { kind: 'idle'; creditsRemaining: number; creditLimit: number }
-  | { kind: 'error'; message: string; creditsRemaining: number; creditLimit: number }
+  | { kind: 'error'; message: string; code?: string; creditsRemaining: number; creditLimit: number }
   | {
       kind: 'no_match';
       creditsRemaining: number;
@@ -184,6 +186,8 @@ export function EnrichLeadScreen({
   const [rows, setRows] = useState<Partial<Record<FieldKey, RowState>>>({});
   const [saving, setSaving] = useState(false);
   const pollAbortRef = useRef<AbortController | null>(null);
+  const lastNotifiedCreditsRef = useRef<string | null>(null);
+  const initialLoadIdRef = useRef(0);
 
   const applyMatchState = useCallback(
     (
@@ -265,8 +269,25 @@ export function EnrichLeadScreen({
     [current.phone_number],
   );
 
-  const applyStoredSession = useCallback(
-    (session: ApolloEnrichmentSessionRow, credits: CreditInfo) => {
+  const loadInitialState = useCallback(async (loadId: number) => {
+    setState({ kind: 'loading', mode: 'initial' });
+    try {
+      const [session, balance] = await Promise.all([
+        getLatestEnrichmentSession(accountId, globalLeadId),
+        getCreditBalance(accountId, CREDIT_METERS.apolloEnrichment),
+      ]);
+      if (loadId !== initialLoadIdRef.current) return;
+
+      const credits: CreditInfo = {
+        creditsRemaining: balance.remaining,
+        creditLimit: balance.limit,
+      };
+
+      if (!session) {
+        setState({ kind: 'idle', ...credits });
+        return;
+      }
+
       if (session.status === 'no_match') {
         setState({
           kind: 'no_match',
@@ -280,11 +301,7 @@ export function EnrichLeadScreen({
 
       const suggestion = suggestionFromSession(session);
       if (!suggestion) {
-        setState({
-          kind: 'idle',
-          creditsRemaining: credits.creditsRemaining,
-          creditLimit: credits.creditLimit,
-        });
+        setState({ kind: 'idle', ...credits });
         return;
       }
 
@@ -296,29 +313,8 @@ export function EnrichLeadScreen({
       if (phonePending) {
         startPhonePolling(session.id);
       }
-    },
-    [applyMatchState, startPhonePolling],
-  );
-
-  const loadInitialState = useCallback(async () => {
-    setState({ kind: 'loading', mode: 'initial' });
-    try {
-      const [session, balance] = await Promise.all([
-        getLatestEnrichmentSession(accountId, globalLeadId),
-        getCreditBalance(accountId, CREDIT_METERS.apolloEnrichment),
-      ]);
-      const credits: CreditInfo = {
-        creditsRemaining: balance.remaining,
-        creditLimit: balance.limit,
-      };
-
-      if (!session) {
-        setState({ kind: 'idle', ...credits });
-        return;
-      }
-
-      applyStoredSession(session, credits);
     } catch (err) {
+      if (loadId !== initialLoadIdRef.current) return;
       setState({
         kind: 'error',
         message: err instanceof Error ? err.message : 'Failed to load enrichment',
@@ -326,9 +322,13 @@ export function EnrichLeadScreen({
         creditLimit: 0,
       });
     }
-  }, [accountId, applyStoredSession, globalLeadId]);
+  }, [accountId, applyMatchState, globalLeadId, startPhonePolling]);
 
   const runEnrich = useCallback(async () => {
+    const priorCredits =
+      state.kind !== 'loading'
+        ? { creditsRemaining: state.creditsRemaining, creditLimit: state.creditLimit }
+        : null;
     setState({ kind: 'loading', mode: 'enriching' });
     const result = await callApolloEnrich({ accountId, globalLeadId });
 
@@ -336,8 +336,9 @@ export function EnrichLeadScreen({
       setState({
         kind: 'error',
         message: result.message,
-        creditsRemaining: result.creditsRemaining ?? 0,
-        creditLimit: result.creditLimit ?? 0,
+        code: result.code,
+        creditsRemaining: result.creditsRemaining ?? priorCredits?.creditsRemaining ?? 0,
+        creditLimit: result.creditLimit ?? priorCredits?.creditLimit ?? 0,
       });
       return;
     }
@@ -390,15 +391,22 @@ export function EnrichLeadScreen({
     if (result.phonePending && result.sessionId) {
       startPhonePolling(result.sessionId);
     }
-  }, [accountId, applyMatchState, globalLeadId, startPhonePolling]);
+  }, [accountId, applyMatchState, globalLeadId, startPhonePolling, state]);
 
   useEffect(() => {
-    void loadInitialState();
-  }, [loadInitialState]);
+    const loadId = ++initialLoadIdRef.current;
+    pollAbortRef.current?.abort();
+    lastNotifiedCreditsRef.current = null;
+    void loadInitialState(loadId);
+  }, [accountId, globalLeadId, loadInitialState]);
 
   useEffect(() => {
     const balance = creditBalanceFromState(state);
-    if (balance) onCreditsChange?.(balance);
+    if (!balance || !onCreditsChange) return;
+    const key = `${balance.remaining}:${balance.limit}`;
+    if (lastNotifiedCreditsRef.current === key) return;
+    lastNotifiedCreditsRef.current = key;
+    onCreditsChange(balance);
   }, [onCreditsChange, state]);
 
   useEffect(() => {
@@ -443,6 +451,8 @@ export function EnrichLeadScreen({
 
     try {
       setSaving(true);
+      pollAbortRef.current?.abort();
+      await getAccessToken();
       await updateAccountPersonProfile(accountId, globalLeadId, updates);
       toast.success('Lead enriched');
       onApplied();
@@ -483,7 +493,7 @@ export function EnrichLeadScreen({
       <View className="gap-4 py-2">
         <Alert
           variant="error"
-          message={`${state.message} ${enrichRetryInfo(state.creditsRemaining)}`}
+          message={enrichErrorInfo(state.message, state.creditsRemaining, state.code)}
         />
         <EnrichPaidAction
           isPage={isPage}

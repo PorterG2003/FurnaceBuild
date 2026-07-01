@@ -1,10 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, ScrollView, Text, Animated, KeyboardAvoidingView, Platform } from 'react-native';
 import { XMarkIcon } from 'react-native-heroicons/outline';
 import { IconButton } from '@/components/ui/icon-button';
 import type { AccountLeadDetail } from '@/lib/leads/types';
-import { getCreditBalance, type CreditBalance } from '@/lib/credits/balance';
-import { CREDIT_METERS } from '@/lib/credits/meters';
+import type { CreditBalance } from '@/lib/credits/balance';
 import { EnrichLeadScreen } from './EnrichLeadScreen';
 import { ENRICH_COPY } from './enrichCopy';
 import { EnrichCreditBalancePill } from './EnrichLeadMeta';
@@ -32,18 +31,13 @@ export function EnrichLeadPanel({
 }: EnrichLeadPanelProps) {
   const [creditBalance, setCreditBalance] = useState<CreditBalance | null>(null);
 
-  useEffect(() => {
-    if (!visible || !accountId) return;
-    let cancelled = false;
-    void getCreditBalance(accountId, CREDIT_METERS.apolloEnrichment)
-      .then((balance) => {
-        if (!cancelled) setCreditBalance(balance);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [accountId, visible]);
+  const handleCreditsChange = useCallback(
+    (balance: CreditBalance) => {
+      setCreditBalance(balance);
+      onCreditsChange?.(balance);
+    },
+    [onCreditsChange],
+  );
 
   if (!visible) return null;
 
@@ -110,10 +104,7 @@ export function EnrichLeadPanel({
                   onClose();
                 }}
                 onCancel={onClose}
-                onCreditsChange={(balance) => {
-                  setCreditBalance(balance);
-                  onCreditsChange?.(balance);
-                }}
+                onCreditsChange={handleCreditsChange}
               />
             </ScrollView>
           </View>

@@ -961,7 +961,7 @@ export function buildClientApiPaths() {
         operationId: 'updateThread',
         tags: ['Inbox'],
         summary: 'Update thread',
-        description: 'Updates thread category, conversation status, and/or read state.',
+        description: 'Updates thread category, conversation status, and/or read state. Category changes emit a `reply.categorized` webhook when configured.',
         parameters: [parameterRef('ThreadId')],
         requestBody: jsonRequestBody('ThreadUpdate', {
           category: 'Interested',

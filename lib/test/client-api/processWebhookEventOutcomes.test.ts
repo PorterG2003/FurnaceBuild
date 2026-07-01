@@ -209,3 +209,96 @@ test('processWebhookEvent delivers batch completion events when enabled', async 
     await harness.cleanup();
   }
 });
+
+test('processWebhookEvent skips reply.categorized when not enabled', async (t) => {
+  const restoreFetch = installWebhookDeliveryFetchMock(200);
+  t.after(restoreFetch);
+
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('webhook-deliver-categorized-skip'),
+  });
+
+  try {
+    const { error: accountError } = await harness.supabase
+      .from('accounts')
+      .update({
+        webhook_url: 'https://webhook-delivery.test/categorized-skip',
+        webhook_signing_secret: 'whsec_test',
+        webhook_enabled_events: ['email.sent'],
+      } as never)
+      .eq('id', harness.accountId);
+    assert.equal(accountError, null);
+
+    const { data: event, error: eventError } = await harness.supabase
+      .from('webhook_events')
+      .insert({
+        account_id: harness.accountId,
+        campaign_id: null,
+        event_type: 'reply.categorized',
+        payload: { thread_id: 'thread-1', category: 'Interested' },
+        dedupe_key: `${harness.namespace}-categorized-skip`,
+      } as never)
+      .select('id')
+      .single();
+    assert.equal(eventError, null);
+    harness.trackedWebhookEventIds.add(event!.id as string);
+
+    await processWebhookEventById(event!.id as string);
+
+    const { data: delivery } = await harness.supabase
+      .from('webhook_deliveries')
+      .select('id')
+      .eq('webhook_event_id', event!.id);
+    assert.equal(delivery?.length ?? 0, 0);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('processWebhookEvent does not duplicate delivered customer POSTs', async (t) => {
+  let postCount = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://webhook-delivery.test/')) {
+      postCount += 1;
+      return new Response('ok', { status: 200 });
+    }
+    return originalFetch(input, init);
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('webhook-deliver-dedupe'),
+  });
+
+  try {
+    const eventId = await seedWebhookEvent(
+      harness,
+      {
+        endpointUrl: 'https://webhook-delivery.test/dedupe',
+        enabledEvents: ['lead.created'],
+      },
+      'dedupe',
+    );
+
+    await processWebhookEventById(eventId);
+    await processWebhookEventById(eventId);
+
+    assert.equal(postCount, 1);
+
+    const { data: deliveries } = await harness.supabase
+      .from('webhook_deliveries')
+      .select('id, status')
+      .eq('webhook_event_id', eventId);
+    assert.equal(deliveries?.length ?? 0, 1);
+    assert.equal(deliveries?.[0]?.status, 'delivered');
+    if (deliveries?.[0]?.id) {
+      harness.trackedWebhookDeliveryIds.add(deliveries[0].id as string);
+    }
+  } finally {
+    await harness.cleanup();
+  }
+});

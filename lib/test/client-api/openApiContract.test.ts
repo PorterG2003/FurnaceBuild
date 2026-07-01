@@ -159,6 +159,7 @@ test('client api guide documentation pages include webhook examples', () => {
   const changelog = spec.paths['/documentation/changelog']?.get?.description ?? '';
   assert.match(changelog, /Breaking changes increment the major version/);
   assert.match(changelog, /## 1\.2\.0/);
+  assert.match(changelog, /## 1\.3\.0/);
 
   const webhooksOverview = spec.paths['/documentation/webhooks']?.get?.description ?? '';
   assert.match(webhooksOverview, /Quick start/);
@@ -168,6 +169,7 @@ test('client api guide documentation pages include webhook examples', () => {
   assert.match(emailActivity, /Documentation only — this path is not callable/);
   assert.match(emailActivity, /`email.sent`/);
   assert.match(emailActivity, /`reply.received`/);
+  assert.match(emailActivity, /`reply.categorized`/);
   assert.match(emailActivity, /`bounce.detected`/);
 
   const liveEmailSentExample = buildWebhookSamplePreview(

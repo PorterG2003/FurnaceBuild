@@ -1,5 +1,9 @@
 import { buildBatchCompletionPayload } from './batchCompletion.js';
-import { WEBHOOK_EVENT_GROUPS } from './eventGroups.js';
+import {
+  WEBHOOK_EVENT_GROUPS,
+  WEBHOOK_EVENT_LABELS,
+  expandWebhookSelectionForDisplay,
+} from './eventGroups.js';
 import {
   DEFAULT_ALLOWED_WEBHOOK_EVENTS,
   type WebhookEventType,
@@ -177,6 +181,19 @@ export function buildWebhookTestPayload(
         subject: 'Re: Example outbound subject (test)',
         received_at: sampleTimestamp(),
       }, includeTestFlag);
+    case 'reply.categorized':
+      return maybeWithTestFlag({
+        thread_id: TEST_THREAD_ID,
+        email_message_id: TEST_EMAIL_MESSAGE_ID,
+        campaign_id: cid,
+        lead_id: TEST_LEAD_ID,
+        enrollment_id: TEST_ENROLLMENT_ID,
+        category: 'Interested',
+        previous_category: null,
+        category_source: 'ai',
+        from_email: 'lead@example.com',
+        subject: 'Re: Example outbound subject (test)',
+      }, includeTestFlag);
     case 'bounce.detected':
       return maybeWithTestFlag({
         campaign_id: cid,
@@ -206,16 +223,14 @@ export const WEBHOOK_TEST_EVENT_OPTIONS: WebhookTestEventOption[] = WEBHOOK_EVEN
   (group) =>
     group.events.map((event) => ({
       value: event,
-      label: event,
+      label: WEBHOOK_EVENT_LABELS[event],
       groupLabel: group.label,
     })),
 );
 
-export function defaultWebhookTestEventType(enabledGroupIds: string[]): WebhookEventType {
-  for (const group of WEBHOOK_EVENT_GROUPS) {
-    if (enabledGroupIds.includes(group.id) && group.events.length > 0) {
-      return group.events[0];
-    }
+export function defaultWebhookTestEventType(enabledEventTypes: readonly WebhookEventType[]): WebhookEventType {
+  if (enabledEventTypes.length > 0) {
+    return enabledEventTypes[0];
   }
   return 'email.sent';
 }
@@ -232,21 +247,27 @@ export const WEBHOOK_TEST_GROUP_OPTIONS = WEBHOOK_EVENT_GROUPS.map((group) => ({
   defaultEventType: group.events[0],
 }));
 
-const CURATED_TEST_EVENT_PRIORITY: WebhookEventType[] = ['email.sent', 'reply.received'];
+const CURATED_TEST_EVENT_PRIORITY: WebhookEventType[] = ['email.sent', 'reply.received', 'reply.categorized'];
 
-export function curatedWebhookTestEventOptions(enabledGroupIds: string[]): WebhookTestEventOption[] {
+export function curatedWebhookTestEventOptions(
+  enabledEventTypes: readonly WebhookEventType[],
+): WebhookTestEventOption[] {
   const seen = new Set<WebhookEventType>();
   const result: WebhookTestEventOption[] = [];
+  const allowed = expandWebhookSelectionForDisplay(
+    enabledEventTypes.length > 0 ? [...enabledEventTypes] : [],
+  );
+  const allowedSet = new Set(allowed);
 
   const addEvent = (event: WebhookEventType) => {
-    if (seen.has(event)) return;
+    if (!allowedSet.has(event) || seen.has(event)) return;
     seen.add(event);
     const group = WEBHOOK_EVENT_GROUPS.find((entry) =>
       (entry.events as readonly WebhookEventType[]).includes(event),
     );
     result.push({
       value: event,
-      label: event,
+      label: WEBHOOK_EVENT_LABELS[event],
       groupLabel: group?.label ?? '',
     });
   };
@@ -255,13 +276,8 @@ export function curatedWebhookTestEventOptions(enabledGroupIds: string[]): Webho
     addEvent(event);
   }
 
-  const groupIds =
-    enabledGroupIds.length > 0 ? enabledGroupIds : WEBHOOK_EVENT_GROUPS.map((group) => group.id);
-  for (const groupId of groupIds) {
-    const group = WEBHOOK_EVENT_GROUPS.find((entry) => entry.id === groupId);
-    if (group?.events[0]) {
-      addEvent(group.events[0]);
-    }
+  for (const event of allowed) {
+    addEvent(event);
   }
 
   return result;

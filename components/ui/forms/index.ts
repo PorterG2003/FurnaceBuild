@@ -16,6 +16,11 @@ export { SearchAndSelectMulti } from './SearchAndSelectMulti';
 export type { SearchAndSelectMultiProps } from './SearchAndSelectMulti';
 export { InlineOptionList } from './InlineOptionList';
 export type { InlineOptionListProps } from './InlineOptionList';
+export {
+  INLINE_OPTION_LIST_ROW_SIZING,
+  inlineOptionListCardStyle,
+  inlineOptionListRowStyle,
+} from './inlineOptionListStyles';
 export { JsonReadOnlyViewer } from './JsonReadOnlyViewer';
 export type { JsonReadOnlyViewerProps } from './JsonReadOnlyViewer';
 

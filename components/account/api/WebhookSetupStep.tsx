@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
+import type { WebhookEventType } from '@/lib/client-api/webhooks/eventGroups';
 import { FormTextField } from '@/components/ui/forms';
-import { WebhookEventsMultiSelect } from './WebhookEventsMultiSelect';
+import { WebhookEventsGroupedSelect } from './WebhookEventsGroupedSelect';
 
 export interface WebhookSetupStepProps {
   endpointLabel: string;
@@ -16,8 +17,8 @@ export interface WebhookSetupStepProps {
   onWebhookUrlChange: (value: string) => void;
   webhookSecret: string;
   onWebhookSecretChange: (value: string) => void;
-  enabledGroupIds: string[];
-  onEnabledGroupIdsChange: (groupIds: string[]) => void;
+  enabledEventTypes: WebhookEventType[];
+  onEnabledEventTypesChange: (eventTypes: WebhookEventType[]) => void;
   disabled?: boolean;
   setupFooter?: ReactNode;
 }
@@ -35,8 +36,8 @@ export function WebhookSetupStep({
   onWebhookUrlChange,
   webhookSecret,
   onWebhookSecretChange,
-  enabledGroupIds,
-  onEnabledGroupIdsChange,
+  enabledEventTypes,
+  onEnabledEventTypesChange,
   disabled = false,
   setupFooter,
 }: WebhookSetupStepProps) {
@@ -65,11 +66,11 @@ export function WebhookSetupStep({
         variant="solid"
       />
 
-      <WebhookEventsMultiSelect
+      <WebhookEventsGroupedSelect
         label={eventsLabel}
         labelHelp={eventsHelp}
-        value={enabledGroupIds}
-        onChange={onEnabledGroupIdsChange}
+        value={enabledEventTypes}
+        onChange={onEnabledEventTypesChange}
         disabled={disabled}
         variant="solid"
       />

@@ -9,6 +9,7 @@ Set these before deploying the Amplify backend for the branch/environment that s
 - `CLIENT_API_DOMAIN_NAME`: public hostname for the API, for example `api-dev.getfurnace.io`
 - `CLIENT_API_CERTIFICATE_ARN`: ACM certificate ARN in `us-east-1` for the hostname above
 - `CLIENT_API_WAF_WEB_ACL_ARN`: optional CloudFront Web ACL ARN
+- `WEBHOOK_ENQUEUE_SECRET`: shared secret for `POST /internal/webhook/enqueue` and `/internal/webhook/reconcile` (must match `furnace_internal_config.webhook_enqueue_secret` in Supabase)
 
 If `CLIENT_API_DOMAIN_NAME` and `CLIENT_API_CERTIFICATE_ARN` are omitted, the stack still provisions CloudFront and falls back to the CloudFront distribution hostname.
 
@@ -28,6 +29,9 @@ The import queue handles all `api_import_jobs` operation types (`api_lead_import
 
 ## Deploy order
 
+0. Apply Supabase migration `20260702120000_webhook_infrastructure.sql` (`npm run apply:migrations` from `infra/workers`). Seed `furnace_internal_config` keys:
+   - `webhook_enqueue_url` — full URL to `POST /internal/webhook/enqueue` on the Client API host
+   - `webhook_enqueue_secret` — same value as `WEBHOOK_ENQUEUE_SECRET` on the `clientApi` Lambda
 1. Deploy the Amplify backend so the `clientApi` Lambda, CloudFront distribution, and queue exports exist.
 2. From `infra/workers`, run `npm run diff:dev` and `npm run deploy:dev` so ECS workers pick up the webhook queue import and env vars.
 3. From `infra/workers`, rebuild and restart workers if the worker code changed:

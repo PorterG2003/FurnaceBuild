@@ -24,6 +24,7 @@ See [supabase/migrations/20260214100001_add_category_to_email_threads.sql](../..
 ## Service
 
 - `updateThreadCategory(threadId, category)` — sets category and category_source='user'
+- Category changes emit a `reply.categorized` webhook via DB trigger on `email_threads.category` (see [CLIENT_API_WEBHOOKS.md](../../../infrastructure/CLIENT_API_WEBHOOKS.md))
 - `getThreadsByAccount` accepts `category` filter
 
 ---

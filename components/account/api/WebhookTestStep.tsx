@@ -16,7 +16,7 @@ export interface WebhookTestStepProps {
   campaignId?: string | null;
   webhookUrl: string;
   signingSecret: string;
-  enabledGroupIds: string[];
+  enabledEventTypes: WebhookEventType[];
   disabled?: boolean;
 }
 
@@ -34,7 +34,7 @@ export function WebhookTestStep({
   campaignId,
   webhookUrl,
   signingSecret,
-  enabledGroupIds,
+  enabledEventTypes,
   disabled = false,
 }: WebhookTestStepProps) {
   const { toast } = useToast();
@@ -47,11 +47,11 @@ export function WebhookTestStep({
     response_body: string;
   } | null>(null);
 
-  const testEventOptions = curatedWebhookTestEventOptions(enabledGroupIds);
+  const testEventOptions = curatedWebhookTestEventOptions(enabledEventTypes);
 
   useEffect(() => {
-    setTestEventType(defaultWebhookTestEventType(enabledGroupIds));
-  }, [enabledGroupIds]);
+    setTestEventType(defaultWebhookTestEventType(enabledEventTypes));
+  }, [enabledEventTypes]);
 
   useEffect(() => {
     if (!testEventOptions.some((option) => option.value === testEventType)) {

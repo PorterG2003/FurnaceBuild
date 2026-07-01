@@ -1,4 +1,6 @@
 import { supabase } from '../../client';
+import { getEnrollmentProgressState } from '@/lib/campaigns/enrollment-progress-state';
+import { fetchContactedLeadIdsForAccountLeads } from './contacted-leads';
 import { getCampaignIdsForTags } from '../campaign-tags';
 import { getCampaignsListSummary } from '../campaigns/campaign-list-summary';
 import {
@@ -481,9 +483,13 @@ export async function getAccountLeadWorkbenchDataset(
     const normalized =
       state === 'active' || state === 'paused' || state === 'completed' || state === 'stopped'
         ? state
-        : 'not_started';
+        : null;
     enrollmentStateByLeadId.set(enrollment.lead_id, normalized);
   }
+
+  const contactedLeadIds = includeReplyActivity
+    ? await fetchContactedLeadIdsForAccountLeads(accountId, leadIds)
+    : new Set<string>();
 
   const threadByLeadId = includeReplyActivity ? buildThreadMap(threads) : new Map();
   const peopleByGlobalId = new Map<string, MockPerson>();
@@ -498,7 +504,10 @@ export async function getAccountLeadWorkbenchDataset(
       campaignId: lead.campaign_id,
       companyName: lead.company_name,
       title: null,
-      enrollmentState: enrollmentStateByLeadId.get(lead.id) ?? 'not_started',
+      enrollmentState: getEnrollmentProgressState(
+        enrollmentStateByLeadId.get(lead.id) ?? null,
+        contactedLeadIds.has(lead.id),
+      ),
       replyCategory: thread?.replyCategory ?? null,
       createdAt: lead.created_at,
       lastActivityAt: thread?.latestActivityAt ?? lead.created_at,

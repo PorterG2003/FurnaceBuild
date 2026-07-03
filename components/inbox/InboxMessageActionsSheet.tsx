@@ -6,6 +6,8 @@ import {
   InformationCircleIcon,
 } from 'react-native-heroicons/outline';
 import { BottomSheet } from '@/components/ui/modals';
+import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
+import { TARGETS } from '@/lib/onboarding/types';
 import { buildInboxThreadToolbarActions } from '@/lib/inbox';
 import type { EmailThread } from '@/lib/supabase/types';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
@@ -56,6 +58,7 @@ export function InboxMessageActionsSheet({
   onSetCategory,
   onAfterClose,
 }: InboxMessageActionsSheetProps) {
+  const sheetActionsRef = useOnboardingTarget(TARGETS.inboxSheetActions);
   const tagCount = selectedThreadId ? (threadTagsMap[selectedThreadId] ?? []).length : 0;
   const hasInfo = !!campaignName || !!replacementSummary;
   const toolbarActions = useMemo(
@@ -92,7 +95,7 @@ export function InboxMessageActionsSheet({
   return (
     <BottomSheet visible={visible} onClose={onClose} onAfterClose={onAfterClose}>
       {accountId && selectedThreadId && selectedThread && (
-        <>
+        <View ref={sheetActionsRef} collapsable={false}>
           {hasInfo && (
             <Pressable
               onPress={() => {
@@ -178,7 +181,7 @@ export function InboxMessageActionsSheet({
               );
             })}
           </View>
-        </>
+        </View>
       )}
     </BottomSheet>
   );

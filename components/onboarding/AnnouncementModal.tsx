@@ -4,6 +4,7 @@ import { BaseModal } from '@/components/ui/modals/BaseModal';
 import type { AnnouncementStep } from '@/lib/onboarding/types';
 import type { Progress } from '@/lib/onboarding/engine';
 import { StepControls } from './StepControls';
+import { AnnouncementHero } from './art/AnnouncementHero';
 
 interface AnnouncementModalProps {
   step: AnnouncementStep;
@@ -12,12 +13,15 @@ interface AnnouncementModalProps {
   canGoBack: boolean;
   onNext: () => void;
   onBack: () => void;
-  onSkip: () => void;
+  reducedMotion: boolean;
+  /** When set (non-mandatory flow), StepControls shows a Skip link. */
+  onSkip?: () => void;
 }
 
 /**
- * Large modal for announcement steps. Wraps the shared BaseModal and renders
- * the step's (lazy-loaded) demo node inside a Suspense boundary.
+ * Large modal for announcement steps. The copy lives *inside* the visual
+ * (`AnnouncementHero`) rather than in the modal header, and the dead X is
+ * suppressed — the only exits are Skip (non-mandatory) or finishing the flow.
  */
 export function AnnouncementModal({
   step,
@@ -26,15 +30,18 @@ export function AnnouncementModal({
   canGoBack,
   onNext,
   onBack,
+  reducedMotion,
   onSkip,
 }: AnnouncementModalProps) {
   return (
     <BaseModal
       visible
-      onClose={onSkip}
-      title={step.title ?? ''}
-      description={step.description}
-      maxWidth={step.maxWidth ?? '5xl'}
+      onClose={() => {}}
+      onBack={canGoBack ? onBack : undefined}
+      hideCloseButton
+      noPadding
+      title=""
+      maxWidth={step.maxWidth ?? '4xl'}
       footer={
         <StepControls
           progress={progress}
@@ -43,6 +50,7 @@ export function AnnouncementModal({
           isLastStep={isLastStep}
           onBack={onBack}
           onNext={onNext}
+          reducedMotion={reducedMotion}
           onSkip={onSkip}
         />
       }
@@ -54,7 +62,7 @@ export function AnnouncementModal({
           </View>
         }
       >
-        {step.render()}
+        <AnnouncementHero>{step.render()}</AnnouncementHero>
       </Suspense>
     </BaseModal>
   );

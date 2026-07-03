@@ -1,7 +1,7 @@
 import { createContext, useContext, type RefObject } from 'react';
 import type { View } from 'react-native';
 import type { Progress } from '@/lib/onboarding/engine';
-import type { FlowId, OnboardingStep, TargetId } from '@/lib/onboarding/types';
+import type { FlowId, OnboardingStep, Segment, TargetId } from '@/lib/onboarding/types';
 
 export interface TargetRect {
   x: number;
@@ -14,11 +14,10 @@ export interface OnboardingContextValue {
   // Public API
   startFlow: (id: FlowId) => void;
   /**
-   * Screen-owned trigger entrypoint: asks the provider to start a flow if it is
-   * unseen and nothing else is active/pending (single-flight). Used by
-   * `useOnboardingTrigger`.
+   * Screen-owned trigger entrypoint: registers whether a flow is ready to start.
+   * The provider scheduler picks the first unseen eligible flow when idle.
    */
-  requestFlow: (id: FlowId) => void;
+  registerFlowIntent: (id: FlowId, ready: boolean) => void;
   dismissFlow: () => void;
   /** Clears persisted state for a flow so it can run again ("Replay tour"). */
   resetFlow: (id: FlowId) => Promise<void>;
@@ -27,6 +26,11 @@ export interface OnboardingContextValue {
   next: () => void;
   back: () => void;
   notifyTargetPress: (id: TargetId) => void;
+  /** Advances the current step when its `advance` mode is `onRequirementMet`. */
+  notifyStepRequirementMet: () => void;
+  /** When true, the current manual step's Next button is disabled. */
+  advanceGateBlocked: boolean;
+  setAdvanceGateBlocked: (blocked: boolean) => void;
   registerTarget: (id: TargetId, ref: RefObject<View | null>) => () => void;
 
   // State for the overlay
@@ -34,6 +38,14 @@ export interface OnboardingContextValue {
   progress: Progress | null;
   reducedMotion: boolean;
   blockingOverlayPresent: boolean;
+  /** Audience segment, for segment-aware announcement art (e.g. the welcome hero). */
+  segment: Segment;
+  /**
+   * True when the active flow cannot be skipped/dismissed by the user (a
+   * `mandatory` flow whose `mandatoryUnlessSeen` sibling has not been seen). The
+   * overlays hide the Skip link and block backdrop/hardware-back dismissal.
+   */
+  currentFlowMandatory: boolean;
 
   // Internal helpers used by the overlay primitives
   skipStep: () => void;

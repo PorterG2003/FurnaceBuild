@@ -9,6 +9,8 @@ import { MessageListSkeleton } from './MessageListSkeleton';
 import { InboxThreadList } from './InboxThreadList';
 import { InboxMessageList } from './InboxMessageList';
 import { InboxComposerPanel } from './InboxComposerPanel';
+import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
+import { TARGETS } from '@/lib/onboarding/types';
 import { THREAD_CATEGORIES } from './inboxConstants';
 import type { PendingReplyInfo, ThreadStatusCalloutProps } from './InboxMessageList';
 import type { InboxComposerFormProps } from './InboxComposerForm';
@@ -163,6 +165,7 @@ export function InboxDesktopLayout({
 
   const { slideAnim, replyPanelWidth } = layout;
   const { composerMode, closeComposerPanel, composerFormProps } = composerPanel;
+  const messagePaneRef = useOnboardingTarget(TARGETS.inboxMessagePane);
   return (
     <View className="flex-1 flex-row bg-[#121212]">
       <View style={{ flex: 1, minWidth: 0, minHeight: 0 }} className="flex-row">
@@ -205,7 +208,7 @@ export function InboxDesktopLayout({
           />
         </Animated.View>
 
-        <View className="flex-1 min-h-0">
+        <View ref={messagePaneRef} collapsable={false} className="flex-1 min-h-0">
           {showMessagePaneSkeleton ? (
             <>
               <MessagePanelHeaderSkeleton />

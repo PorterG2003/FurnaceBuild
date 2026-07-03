@@ -62,6 +62,8 @@ import {
 } from '@/lib/supabase/services/leads/export-jobs';
 import { pollImportJobUntilDone } from '@/lib/leads/workbench/bulk/pollImportJobUntilDone';
 import type { AccountLeadExplorerQuery } from '@/lib/supabase/services/leads/account-leads';
+import { useOnboardingTarget, useOnboardingTrigger } from '@/components/onboarding';
+import { TARGETS } from '@/lib/onboarding/types';
 
 const MOBILE_EXPLORER_PAGE_SIZE = 20;
 const DESKTOP_EXPLORER_PAGE_SIZE = 25;
@@ -95,6 +97,10 @@ export default function LeadsIndexPage() {
     scopeLabel: string;
   } | null>(null);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const leadsExportRef = useOnboardingTarget(TARGETS.leadsExport);
+  const leadsFiltersRef = useOnboardingTarget(TARGETS.leadsFilters);
+  const leadsTableRef = useOnboardingTarget(TARGETS.leadsTable);
+  const leadsActionsRef = useOnboardingTarget(TARGETS.leadsActions);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [campaigns, setCampaigns] = useState<Awaited<ReturnType<typeof getAccountLeadCampaigns>>>([]);
   const [accountCampaignTags, setAccountCampaignTags] = useState<CampaignTag[]>([]);
@@ -108,6 +114,11 @@ export default function LeadsIndexPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const { showPlaceholder } = usePageSkeleton(isAccountBootstrapping || (loading && !hasLoadedOnce));
+
+  // Desktop-only power tour; fires once the account actually has leads to act on.
+  useOnboardingTrigger('leads', {
+    when: !isMobile && !isAccountBootstrapping && hasLoadedOnce && totalCount > 0,
+  });
 
   const explorerList = useMemo<LeadsListDefinition>(
     () => ({
@@ -505,27 +516,33 @@ export default function LeadsIndexPage() {
   }, [accountId, exportModalVisible, explorerQuery, exporting, selectedCount, selectedGlobalLeadIds, toast, totalCount]);
 
   const headerActions = isMobile ? (
-    <MobileHeaderButton
-      variant="actions"
-      onPress={() => setMobileActionsOpen(true)}
-      accessibilityLabel="Leads actions"
-    />
+    <View>
+      <MobileHeaderButton
+        variant="actions"
+        onPress={() => setMobileActionsOpen(true)}
+        accessibilityLabel="Leads actions"
+      />
+    </View>
   ) : (
     <View className="flex-row gap-2">
       <Button variant="secondary" size="sm" onPress={() => router.push('/leads/lists')}>
         Saved lists
       </Button>
-      <Button
-        variant="secondary"
-        size="sm"
-        onPress={() => void handleExport()}
-        disabled={exporting || loading || (selectedCount === 0 && totalCount === 0)}
-      >
-        {exporting ? 'Exporting…' : selectedCount > 0 ? 'Export selected' : 'Export'}
-      </Button>
-      <Button variant="secondary" size="sm" onPress={openImportCsv}>
-        Import CSV
-      </Button>
+      <View ref={leadsExportRef} collapsable={false}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onPress={() => void handleExport()}
+          disabled={exporting || loading || (selectedCount === 0 && totalCount === 0)}
+        >
+          {exporting ? 'Exporting…' : selectedCount > 0 ? 'Export selected' : 'Export'}
+        </Button>
+      </View>
+      <View>
+        <Button variant="secondary" size="sm" onPress={openImportCsv}>
+          Import CSV
+        </Button>
+      </View>
     </View>
   );
 
@@ -550,7 +567,7 @@ export default function LeadsIndexPage() {
           <LeadsExplorerSkeleton isMobile={isMobile} />
         ) : (
           <>
-            <View className="flex-row items-center" style={{ minWidth: 0, gap: 10 }}>
+            <View ref={leadsFiltersRef} collapsable={false} className="flex-row items-center" style={{ minWidth: 0, gap: 10 }}>
               <View
                 className="flex-1 flex-row items-center rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-3 py-2.5"
                 style={{ borderWidth: 1, minWidth: 0 }}
@@ -586,19 +603,22 @@ export default function LeadsIndexPage() {
             </View>
 
             {!isMobile ? (
-              <LeadsActionBar
-                scopeLabel={explorerScopeLabel}
-                groups={explorerActionGroups}
-                onClearSelection={selectedKeys.size > 0 ? () => setSelectedKeys(new Set()) : undefined}
-                actionsAccessibilityLabel={
-                  selectedKeys.size > 0
-                    ? `Actions for ${selectedKeys.size} selected leads`
-                    : 'Actions for filtered view'
-                }
-              />
+              <View ref={leadsActionsRef} collapsable={false}>
+                <LeadsActionBar
+                  scopeLabel={explorerScopeLabel}
+                  groups={explorerActionGroups}
+                  onClearSelection={selectedKeys.size > 0 ? () => setSelectedKeys(new Set()) : undefined}
+                  actionsAccessibilityLabel={
+                    selectedKeys.size > 0
+                      ? `Actions for ${selectedKeys.size} selected leads`
+                      : 'Actions for filtered view'
+                  }
+                />
+              </View>
             ) : null}
 
-            <LeadsWorkbenchTable
+            <View ref={leadsTableRef} collapsable={false}>
+              <LeadsWorkbenchTable
               rows={rows}
               columns={EXPLORER_COLUMNS}
               selectedKeys={selectedKeys}
@@ -624,6 +644,7 @@ export default function LeadsIndexPage() {
               loading={loading}
               loadingMode={hasLoadedOnce ? 'refresh' : 'initial'}
             />
+            </View>
           </>
         )}
       </View>

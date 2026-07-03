@@ -1,5 +1,10 @@
-import { Pressable, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, Text, View, type LayoutChangeEvent } from 'react-native';
 import type { Progress } from '@/lib/onboarding/engine';
+import { StepDwellDial } from './StepDwellDial';
+
+/** Tailwind `rounded-lg` = 0.5rem. Used so the dwell ring hugs the Next button. */
+const NEXT_BORDER_RADIUS = 8;
 
 interface StepControlsProps {
   progress: Progress | null;
@@ -10,12 +15,24 @@ interface StepControlsProps {
   isLastStep: boolean;
   onBack: () => void;
   onNext: () => void;
-  onSkip: () => void;
+  /** When true, Next/Done is visible but not pressable. */
+  nextDisabled?: boolean;
+  /**
+   * Minimum read time before Next unlocks (ms). Renders the progress ring on the
+   * Next button; ignored when `showNext` is false.
+   */
+  dwellMs?: number;
+  reducedMotion?: boolean;
+  /**
+   * When set (non-mandatory flows), shows a small "Skip tour" link that ends the
+   * flow. Omitted entirely for mandatory flows.
+   */
+  onSkip?: () => void;
 }
 
 /**
- * Shared footer chrome for every onboarding step: a progress dots row plus
- * Skip / Back / Next (or Done) controls. Kept presentation-only.
+ * Shared footer chrome for every onboarding step: progress dots, an optional
+ * Skip link, and Back / Next (or Done) with an optional dwell ring.
  */
 export function StepControls({
   progress,
@@ -24,38 +41,54 @@ export function StepControls({
   isLastStep,
   onBack,
   onNext,
+  nextDisabled = false,
+  dwellMs = 0,
+  reducedMotion = false,
   onSkip,
 }: StepControlsProps) {
+  const dwellActive = showNext && dwellMs > 0;
+  const [dwellComplete, setDwellComplete] = useState(!dwellActive);
+  const [buttonSize, setButtonSize] = useState<{ width: number; height: number } | null>(null);
+
+  const onButtonLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setButtonSize((prev) =>
+      prev && prev.width === width && prev.height === height ? prev : { width, height },
+    );
+  };
+
+  const gated = nextDisabled || (dwellActive && !dwellComplete);
+  const showDial = dwellActive && !dwellComplete && buttonSize != null;
+
   return (
     <View className="flex-row items-center justify-between mt-5">
-      <View className="flex-row items-center gap-3">
+      <View className="items-start gap-2">
         {progress && progress.total > 1 ? (
           <View className="flex-row items-center gap-1.5">
             {Array.from({ length: progress.total }).map((_, i) => (
               <View
                 key={i}
                 className={`h-1.5 rounded-full ${
-                  i === progress.index
-                    ? 'w-4 bg-brand-orange'
-                    : 'w-1.5 bg-[#3A3A3A]'
+                  i === progress.index ? 'w-4 bg-brand-orange' : 'w-1.5 bg-[#3A3A3A]'
                 }`}
               />
             ))}
           </View>
-        ) : (
-          <View />
-        )}
+        ) : null}
+        {onSkip ? (
+          <Pressable
+            onPress={onSkip}
+            accessibilityRole="button"
+            accessibilityLabel="Skip tour"
+            hitSlop={8}
+            className="active:opacity-70"
+          >
+            <Text className="text-gray-500 font-instrument text-xs">Skip tour</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View className="flex-row items-center gap-2">
-        <Pressable
-          onPress={onSkip}
-          accessibilityRole="button"
-          accessibilityLabel="Skip"
-          className="px-3 py-2 rounded-lg active:opacity-70"
-        >
-          <Text className="text-gray-400 font-instrument text-sm">Skip</Text>
-        </Pressable>
         {canGoBack ? (
           <Pressable
             onPress={onBack}
@@ -67,16 +100,36 @@ export function StepControls({
           </Pressable>
         ) : null}
         {showNext ? (
-          <Pressable
-            onPress={onNext}
-            accessibilityRole="button"
-            accessibilityLabel={isLastStep ? 'Done' : 'Next'}
-            className="px-4 py-2 rounded-lg bg-brand-orange active:opacity-80"
-          >
-            <Text className="text-white font-instrument-semibold text-sm">
-              {isLastStep ? 'Done' : 'Next'}
-            </Text>
-          </Pressable>
+          <View onLayout={onButtonLayout} style={{ position: 'relative' }}>
+            <Pressable
+              onPress={onNext}
+              disabled={gated}
+              accessibilityRole="button"
+              accessibilityLabel={
+                gated && dwellActive ? 'Next (unlocks in a moment)' : isLastStep ? 'Done' : 'Next'
+              }
+              accessibilityState={{ disabled: gated }}
+              className={`px-4 py-2 rounded-lg active:opacity-80 ${
+                gated ? 'bg-brand-orange/40' : 'bg-brand-orange'
+              }`}
+            >
+              <Text
+                className={`font-instrument-semibold text-sm ${gated ? 'text-white/60' : 'text-white'}`}
+              >
+                {isLastStep ? 'Done' : 'Next'}
+              </Text>
+            </Pressable>
+            {showDial ? (
+              <StepDwellDial
+                width={buttonSize.width}
+                height={buttonSize.height}
+                borderRadius={NEXT_BORDER_RADIUS}
+                durationMs={dwellMs}
+                reducedMotion={reducedMotion}
+                onComplete={() => setDwellComplete(true)}
+              />
+            ) : null}
+          </View>
         ) : null}
       </View>
     </View>

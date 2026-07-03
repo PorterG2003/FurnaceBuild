@@ -38,9 +38,10 @@ export const templateFlow: OnboardingFlowDef = {
         dfy: 'Here is where to find your replies and results. You can skip anytime.',
       },
       maxWidth: '5xl',
-      // Replace with a lazily-imported illustration component:
-      //   const Art = lazy(() => import('@/components/onboarding/demo/WelcomeArt'));
-      //   render: () => createElement(Art),
+      // Announcement steps compose their hero inside `AnnouncementModal`
+      // (`AnnouncementHero`). For a bespoke illustration, build a component on
+      // `components/onboarding/art/AnnouncementArtCard.tsx` (see `WelcomeArt.tsx`)
+      // and return it here.
       render: () => createElement('view'),
     },
     {

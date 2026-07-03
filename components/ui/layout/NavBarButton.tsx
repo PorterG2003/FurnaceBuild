@@ -1,3 +1,4 @@
+import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 type NavBarButtonProps = {
@@ -9,20 +10,25 @@ type NavBarButtonProps = {
   variant?: 'default' | 'primary';
 };
 
-export function NavBarButton({
-  icon: Icon,
-  label,
-  onPress,
-  isExpanded,
-  active = false,
-  variant = 'default',
-}: NavBarButtonProps) {
+export const NavBarButton = React.forwardRef<View, NavBarButtonProps>(function NavBarButton(
+  {
+    icon: Icon,
+    label,
+    onPress,
+    isExpanded,
+    active = false,
+    variant = 'default',
+  },
+  ref,
+) {
   const isPrimary = variant === 'primary';
 
   return (
     <Pressable
+      ref={ref}
       onPress={onPress}
-      className={`py-2 mb-2 rounded-lg border ${
+      collapsable={false}
+      className={`py-2 rounded-lg border ${
         isExpanded ? 'px-2' : 'px-0'
       } ${
         isPrimary
@@ -51,4 +57,4 @@ export function NavBarButton({
       </View>
     </Pressable>
   );
-}
+});

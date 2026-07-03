@@ -23,6 +23,10 @@ import {
   subscribeWebPush,
   getWebPushVapidPublicKey,
 } from '@/lib/notifications/webPushClient';
+import { useOnboardingOptional } from '@/components/onboarding/context';
+import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
+import { TARGETS } from '@/lib/onboarding/types';
+import { accountNotificationsOnboardingComplete } from '@/lib/notifications/accountNotificationsOnboarding';
 
 type PrefChannel = 'in_app' | 'web_push';
 
@@ -76,6 +80,8 @@ export function AccountNotificationsSection({
   initialSubCount?: number;
 }) {
   const router = useRouter();
+  const accountNotificationsRef = useOnboardingTarget(TARGETS.accountNotifications);
+  const onboarding = useOnboardingOptional();
   const { width } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
   const { toast } = useToast();
@@ -128,6 +134,29 @@ export function AccountNotificationsSection({
     setOptimisticByEvent({});
     saveGenerationRef.current = {};
   }, [accountId]);
+
+  const onboardingNotificationsStepActive =
+    onboarding?.currentStep?.kind === 'spotlight' &&
+    onboarding.currentStep.targetId === TARGETS.accountNotifications;
+
+  useEffect(() => {
+    if (!onboarding?.setAdvanceGateBlocked) return;
+    if (!onboardingNotificationsStepActive) return;
+    if (loading) {
+      onboarding.setAdvanceGateBlocked(true);
+      return;
+    }
+    onboarding.setAdvanceGateBlocked(
+      !accountNotificationsOnboardingComplete(prefs, subCount, optimisticByEvent),
+    );
+  }, [
+    onboardingNotificationsStepActive,
+    loading,
+    prefs,
+    subCount,
+    optimisticByEvent,
+    onboarding,
+  ]);
 
   const clearOptimisticChannel = useCallback((eventType: string, channel: PrefChannel) => {
     setOptimisticByEvent((prev) => {
@@ -212,7 +241,7 @@ export function AccountNotificationsSection({
   const headerRowMb = isMobile ? 'mb-3' : 'mb-4';
 
   return (
-    <Card variant={cardVariant} className={cardClassName ?? ''}>
+    <Card ref={accountNotificationsRef} variant={cardVariant} className={cardClassName ?? ''}>
       <View
         className={`flex-row items-center justify-between gap-3 border-b border-[#2A2A2A] pb-2 ${headerRowMb}`}
       >

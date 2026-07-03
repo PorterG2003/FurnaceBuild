@@ -32,7 +32,7 @@ const def: OnboardingFlowDef = {
     },
     {
       kind: 'spotlight',
-      targetId: 'notificationsBell',
+      targetId: 'accountNotifications',
       title: { default: 'Notifications', dfy: 'Replies' },
       body: 'Stay on top of replies',
     },

@@ -41,12 +41,14 @@ test('START activates the flow at step 0', () => {
   const state = start();
   assert.equal(state.status, 'active');
   assert.equal(state.stepIndex, 0);
+  assert.equal(state.ended, null);
   assert.equal(getCurrentStep(state)?.kind, 'announcement');
 });
 
 test('START on an empty flow completes immediately', () => {
   const state = reduce(INITIAL_STATE, { type: 'START', flow: emptyFlow });
-  assert.equal(state.status, 'completed');
+  assert.equal(state.status, 'idle');
+  assert.equal(state.ended?.outcome, 'completed');
   assert.equal(getCurrentStep(state), null);
 });
 
@@ -57,7 +59,9 @@ test('NEXT advances through steps and completes at the end', () => {
   state = reduce(state, { type: 'NEXT' });
   assert.equal(state.stepIndex, 2);
   state = reduce(state, { type: 'NEXT' });
-  assert.equal(state.status, 'completed');
+  assert.equal(state.status, 'idle');
+  assert.equal(state.ended?.outcome, 'completed');
+  assert.equal(state.ended?.stepIndex, 2);
 });
 
 test('BACK is clamped at the first step', () => {
@@ -82,7 +86,36 @@ test('TARGET_PRESS advances only onTargetPress steps', () => {
   state = reduce(state, { type: 'NEXT' });
   assert.equal(state.stepIndex, 2);
   state = reduce(state, { type: 'TARGET_PRESS' });
-  assert.equal(state.status, 'completed');
+  assert.equal(state.status, 'idle');
+  assert.equal(state.ended?.outcome, 'completed');
+});
+
+test('REQUIREMENT_MET advances only onRequirementMet steps', () => {
+  const reqFlow: OnboardingFlow = {
+    id: 'account',
+    version: 1,
+    steps: [
+      {
+        kind: 'spotlight',
+        targetId: 'accountNotifications',
+        title: 't',
+        body: 'b',
+        advance: 'onRequirementMet',
+      },
+      {
+        kind: 'spotlight',
+        targetId: 'accountProfile',
+        title: 't2',
+        body: 'b2',
+        advance: 'manual',
+      },
+    ],
+  };
+  let state = reduce(INITIAL_STATE, { type: 'START', flow: reqFlow });
+  state = reduce(state, { type: 'REQUIREMENT_MET' });
+  assert.equal(state.stepIndex, 1);
+  state = reduce(state, { type: 'REQUIREMENT_MET' });
+  assert.equal(state.stepIndex, 1);
 });
 
 test('SKIP_STEP advances regardless of advance mode', () => {
@@ -91,18 +124,21 @@ test('SKIP_STEP advances regardless of advance mode', () => {
   state = reduce(state, { type: 'NEXT' });
   assert.equal(state.stepIndex, 2);
   state = reduce(state, { type: 'SKIP_STEP' });
-  assert.equal(state.status, 'completed');
+  assert.equal(state.status, 'idle');
+  assert.equal(state.ended?.outcome, 'completed');
 });
 
 test('DISMISS ends the flow as dismissed', () => {
   const state = reduce(start(), { type: 'DISMISS' });
-  assert.equal(state.status, 'dismissed');
+  assert.equal(state.status, 'idle');
+  assert.equal(state.ended?.outcome, 'dismissed');
   assert.equal(getCurrentStep(state), null);
 });
 
 test('ABORT ends the flow as aborted (distinct from dismissed)', () => {
   const state = reduce(start(), { type: 'ABORT' });
-  assert.equal(state.status, 'aborted');
+  assert.equal(state.status, 'idle');
+  assert.equal(state.ended?.outcome, 'aborted');
   assert.equal(getCurrentStep(state), null);
 });
 
@@ -113,7 +149,8 @@ test('ABORT is inert once the flow is finished', () => {
 
 test('actions are inert once the flow is finished', () => {
   const completed = reduce(start(), { type: 'FINISH' });
-  assert.equal(completed.status, 'completed');
+  assert.equal(completed.status, 'idle');
+  assert.equal(completed.ended?.outcome, 'completed');
   assert.deepEqual(reduce(completed, { type: 'NEXT' }), completed);
   assert.deepEqual(reduce(completed, { type: 'BACK' }), completed);
   assert.deepEqual(reduce(completed, { type: 'DISMISS' }), completed);
@@ -125,8 +162,11 @@ test('getProgress reports index and total while active', () => {
   assert.equal(getProgress(INITIAL_STATE), null);
 });
 
-test('RESET returns to the idle initial state', () => {
+test('CLEAR_ENDED clears ended metadata while staying idle', () => {
   const completed = reduce(start(), { type: 'FINISH' });
-  assert.equal(completed.status, 'completed');
-  assert.deepEqual(reduce(completed, { type: 'RESET' }), INITIAL_STATE);
+  assert.equal(completed.ended?.outcome, 'completed');
+  const cleared = reduce(completed, { type: 'CLEAR_ENDED' });
+  assert.equal(cleared.status, 'idle');
+  assert.equal(cleared.ended, null);
+  assert.deepEqual(cleared, INITIAL_STATE);
 });

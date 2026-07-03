@@ -627,12 +627,14 @@ export default function BuilderPage() {
                 </View>
               )}
               {campaignId && (
-                <Pressable
-                  onPress={() => router.push({ pathname: '/campaigns/[id]/mission-control', params: { id: campaignId } })}
-                  className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-                >
-                  <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
-                </Pressable>
+                <View>
+                  <Pressable
+                    onPress={() => router.push({ pathname: '/campaigns/[id]/mission-control', params: { id: campaignId } })}
+                    className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+                  >
+                    <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
+                  </Pressable>
+                </View>
               )}
             </View>
           </View>

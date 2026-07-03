@@ -2,19 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Modal,
   Platform,
-  Pressable,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 import type { SpotlightStep } from '@/lib/onboarding/types';
+import { isNavOnboardingTarget } from '@/lib/onboarding/useNavOnboardingTargets';
 import { useOnboarding } from './context';
 import type { TargetRect } from './context';
 import { StepControls } from './StepControls';
 
 const CUTOUT_PADDING = 8;
-const CALLOUT_WIDTH = 340;
+const CALLOUT_WIDTH = 380;
 const CALLOUT_GAP = 14;
 const EDGE_PAD = 12;
 const ESTIMATED_CALLOUT_HEIGHT = 210;
@@ -65,9 +65,11 @@ interface SpotlightOverlayProps {
   step: SpotlightStep;
   isLastStep: boolean;
   canGoBack: boolean;
+  /** When set (non-mandatory flow), StepControls shows a Skip link. */
+  onSkip?: () => void;
 }
 
-export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverlayProps) {
+export function SpotlightOverlay({ step, isLastStep, canGoBack, onSkip }: SpotlightOverlayProps) {
   const {
     measureTarget,
     getTargetNode,
@@ -75,18 +77,25 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
     abortFlow,
     next,
     back,
-    dismissFlow,
     progress,
+    advanceGateBlocked,
     reducedMotion,
   } = useOnboarding();
   const { width: vw, height: vh } = useWindowDimensions();
-  const useCutout = Platform.OS === 'web' && vw >= LAYOUT_BREAKPOINT;
+  // Real cutout on all web (including the PWA on phones); native keeps the
+  // dimmed bottom-card fallback. On narrow web the callout docks to the bottom.
+  const useCutout = Platform.OS === 'web';
+  const isNarrow = vw < LAYOUT_BREAKPOINT;
+  const narrowCallout = useCutout && isNarrow;
 
   const [rect, setRect] = useState<TargetRect | null>(null);
   const advance = step.advance ?? 'manual';
-  // On the cutout path, an onTargetPress step has no Next button (the user must
-  // press the highlighted element). The mobile fallback always shows Next.
-  const showNext = !(useCutout && advance === 'onTargetPress');
+  const requiresInteraction = advance === 'onTargetPress' || advance === 'onRequirementMet';
+  const showNext =
+    advance === 'manual' || (advance === 'onTargetPress' && !useCutout);
+  const nextDisabled = advance === 'manual' && advanceGateBlocked;
+  const holeInteractive =
+    requiresInteraction || (advance === 'manual' && advanceGateBlocked);
 
   // Measure target with retry. If it never appears (e.g. a permanently-missing
   // or misconfigured anchor), abort the flow rather than silently skipping to
@@ -146,6 +155,19 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
     return () => window.removeEventListener('resize', onResize);
   }, [step.targetId, measureTarget]);
 
+  // Nav items animate width when the sidebar expands for onboarding — re-measure
+  // after the expand transition so the cutout hugs the button, not collapsed chrome.
+  useEffect(() => {
+    if (!isNavOnboardingTarget(step.targetId)) return;
+    const delays = [50, 150, 320, 500];
+    const timers = delays.map((ms) =>
+      setTimeout(() => {
+        void measureTarget(step.targetId).then((r) => r && setRect(r));
+      }, ms),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [step.targetId, measureTarget]);
+
   // Lock background scroll on web while the spotlight is active.
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
@@ -173,18 +195,22 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
   const calloutBody = (
     <View
       className="rounded-2xl border border-[#2A2A2A] bg-[#1A1A1A] p-5"
-      style={{ width: useCutout ? CALLOUT_WIDTH : undefined }}
+      style={{ width: useCutout && !narrowCallout ? CALLOUT_WIDTH : undefined }}
     >
       <Text className="text-white font-instrument-semibold text-lg mb-1.5">{step.title}</Text>
       <Text className="text-gray-300 font-instrument text-sm">{step.body}</Text>
       <StepControls
+        key={progress ? progress.index : step.targetId}
         progress={progress}
         canGoBack={canGoBack}
         showNext={showNext}
         isLastStep={isLastStep}
         onBack={back}
         onNext={next}
-        onSkip={dismissFlow}
+        nextDisabled={nextDisabled}
+        dwellMs={step.dwellMs}
+        reducedMotion={reducedMotion}
+        onSkip={onSkip}
       />
     </View>
   );
@@ -192,9 +218,16 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
   // --- Mobile / native fallback: bottom callout card, no cutout ------------
   if (!useCutout) {
     return (
-      <Modal visible transparent animationType="fade" onRequestClose={dismissFlow}>
-        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' }}>
-          <View style={{ padding: 16 }}>{calloutBody}</View>
+      <Modal visible transparent animationType="fade" onRequestClose={() => {}}>
+        <View
+          style={{
+            flex: 1,
+            justifyContent: 'flex-end',
+            backgroundColor: holeInteractive ? 'transparent' : 'rgba(0,0,0,0.55)',
+          }}
+          pointerEvents={holeInteractive ? 'box-none' : 'auto'}
+        >
+          <View style={{ padding: 16, pointerEvents: 'auto' }}>{calloutBody}</View>
         </View>
       </Modal>
     );
@@ -207,7 +240,6 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
 
   const { createPortal } = require('react-dom');
 
-  const holeInteractive = advance === 'onTargetPress';
   const transition = reducedMotion ? 'none' : 'top 180ms ease, left 180ms ease, width 180ms ease, height 180ms ease';
 
   const hole = {
@@ -218,6 +250,9 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
   };
 
   const calloutPos = positionCallout(rect, step.placement, vw, vh);
+  // On narrow web the callout spans the width and docks to whichever edge keeps
+  // it clear of the highlighted element (e.g. never covering a bottom-nav item).
+  const dockToTop = narrowCallout && rect.y + rect.height / 2 > vh / 2;
 
   const content = (
     // The container is click-through (pointerEvents none). Only the blocker
@@ -252,20 +287,30 @@ export function SpotlightOverlay({ step, isLastStep, canGoBack }: SpotlightOverl
         <div style={{ position: 'fixed', inset: 0, pointerEvents: 'auto' }} />
       )}
 
-      {/* Callout */}
-      {calloutPos ? (
-        <div
-          style={{
-            position: 'fixed',
-            top: calloutPos.top,
-            left: calloutPos.left,
-            width: CALLOUT_WIDTH,
-            pointerEvents: 'auto',
-          }}
-        >
-          {calloutBody}
-        </div>
-      ) : null}
+      {/* Callout — bottom-docked on narrow web, anchored to the target on desktop. */}
+      <div
+        style={
+          narrowCallout
+            ? {
+                position: 'fixed',
+                left: EDGE_PAD,
+                right: EDGE_PAD,
+                ...(dockToTop
+                  ? { top: `calc(${EDGE_PAD}px + env(safe-area-inset-top, 0px))` }
+                  : { bottom: `calc(${EDGE_PAD}px + env(safe-area-inset-bottom, 0px))` }),
+                pointerEvents: 'auto',
+              }
+            : {
+                position: 'fixed',
+                top: calloutPos.top,
+                left: calloutPos.left,
+                width: CALLOUT_WIDTH,
+                pointerEvents: 'auto',
+              }
+        }
+      >
+        {calloutBody}
+      </div>
     </div>
   );
 

@@ -1,9 +1,12 @@
 import { Linking, Pressable, Text, View } from 'react-native';
 import {
+  ArrowPathIcon,
   CalendarDaysIcon,
   EnvelopeIcon,
 } from 'react-native-heroicons/outline';
 import { BaseModal } from '@/components/ui/modals/BaseModal';
+import { useOnboardingOptional } from '@/components/onboarding/context';
+import { useToast } from '@/components/ui/feedback';
 
 export const HELP_EMAIL = 'porter@getfurnace.io';
 export const HELP_EMAIL_URL = 'mailto:porter@getfurnace.io';
@@ -16,6 +19,17 @@ export function HelpModal({
   visible: boolean;
   onClose: () => void;
 }) {
+  const onboarding = useOnboardingOptional();
+  const { toast } = useToast();
+
+  const handleReplayTours = () => {
+    if (!onboarding) return;
+    void onboarding.resetAllFlows().then(() => {
+      toast.success('Product tours reset. Welcome will start on your next visit.');
+      onClose();
+    });
+  };
+
   return (
     <BaseModal
       visible={visible}
@@ -24,7 +38,7 @@ export function HelpModal({
       description="We're happy to help."
       maxWidth="md"
     >
-      <View className="flex-row gap-3">
+      <View className="flex-row gap-3 mb-3">
         <HelpOptionTile
           icon={EnvelopeIcon}
           label="Email"
@@ -42,6 +56,24 @@ export function HelpModal({
           }}
         />
       </View>
+      {onboarding ? (
+        <Pressable
+          onPress={handleReplayTours}
+          className="flex-row items-center gap-3 rounded-xl border border-[#2A2A2A] bg-[#181818] px-4 py-3 active:opacity-80"
+          accessibilityRole="button"
+          accessibilityLabel="Replay product tours"
+        >
+          <View className="rounded-lg bg-brand-orange/20 p-2">
+            <ArrowPathIcon size={22} color="#f85102" />
+          </View>
+          <View className="flex-1">
+            <Text className="text-white font-instrument-semibold text-sm">Replay product tours</Text>
+            <Text className="text-gray-400 font-instrument text-xs">
+              Reset all onboarding tours and see them again from the start.
+            </Text>
+          </View>
+        </Pressable>
+      ) : null}
     </BaseModal>
   );
 }

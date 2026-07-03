@@ -2,6 +2,8 @@ import React, { type RefObject } from 'react';
 import { View, Text, TextInput, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { MagnifyingGlassIcon, FunnelIcon } from 'react-native-heroicons/outline';
 import { Alert, EmptyState } from '@/components/ui/feedback';
+import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
+import { TARGETS } from '@/lib/onboarding/types';
 import { ThreadItem } from './ThreadItem';
 import { ThreadListSkeleton } from './MessageListSkeleton';
 import { resolveThreadCardTitle } from '@/lib/inbox';
@@ -69,6 +71,8 @@ export function InboxThreadList({
   onRetryLoadThreads,
   scrollPaddingBottom,
 }: InboxThreadListProps) {
+  const categoriesRef = useOnboardingTarget(TARGETS.inboxCategories);
+  const threadListRef = useOnboardingTarget(TARGETS.inboxThreadList);
   const showListContent =
     keepPreviousThreadList || (!threadsLoading && threads.length > 0);
   const showEmptyInbox =
@@ -85,7 +89,7 @@ export function InboxThreadList({
     hasActiveFilters;
 
   return (
-    <>
+    <View ref={threadListRef} collapsable={false} className="flex-1">
       <View className="px-4 py-4">
         <View className="flex-row items-center" style={{ minWidth: 0, gap: 10 }}>
           <View
@@ -102,7 +106,14 @@ export function InboxThreadList({
               style={{ minHeight: 24 }}
             />
           </View>
-          <View ref={filterButtonRef} collapsable={false} style={{ flexShrink: 0 }}>
+          <View
+            ref={(node) => {
+              filterButtonRef.current = node;
+              categoriesRef.current = node;
+            }}
+            collapsable={false}
+            style={{ flexShrink: 0 }}
+          >
             <Pressable
               onPress={onFilterPress}
               className="rounded-xl border items-center justify-center"
@@ -192,6 +203,6 @@ export function InboxThreadList({
       ) : (
         <ThreadListSkeleton />
       )}
-    </>
+    </View>
   );
 }

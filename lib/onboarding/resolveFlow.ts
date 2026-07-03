@@ -36,6 +36,7 @@ function resolveSpotlight(step: SpotlightStepDef, segment: Segment): SpotlightSt
     body: resolveCopy(step.body, segment),
     placement: step.placement,
     advance: step.advance,
+    dwellMs: step.dwellMs,
   };
 }
 
@@ -66,5 +67,11 @@ export function resolveFlow(def: OnboardingFlowDef, ctx: ResolveContext): Onboar
         : resolveSpotlight(step, ctx.segment),
     );
 
-  return { id: def.id, version: def.version, steps };
+  return {
+    id: def.id,
+    version: def.version,
+    mandatory: def.mandatory,
+    mandatoryUnlessSeen: def.mandatoryUnlessSeen,
+    steps,
+  };
 }

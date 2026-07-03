@@ -6,12 +6,22 @@ import type { OnboardingFlow, OnboardingStep } from './types';
  * This keeps the advance logic trivially unit-testable.
  */
 
-export type EngineStatus = 'idle' | 'active' | 'completed' | 'dismissed' | 'aborted';
+export type EngineStatus = 'idle' | 'active';
+
+export type FlowOutcome = 'completed' | 'dismissed' | 'aborted';
+
+export interface EndedFlow {
+  flow: OnboardingFlow;
+  stepIndex: number;
+  outcome: FlowOutcome;
+}
 
 export interface EngineState {
   flow: OnboardingFlow | null;
   stepIndex: number;
   status: EngineStatus;
+  /** Transient metadata for persistence; cleared via CLEAR_ENDED after the provider handles it. */
+  ended: EndedFlow | null;
 }
 
 export type EngineAction =
@@ -19,16 +29,18 @@ export type EngineAction =
   | { type: 'NEXT' }
   | { type: 'BACK' }
   | { type: 'TARGET_PRESS' }
+  | { type: 'REQUIREMENT_MET' }
   | { type: 'SKIP_STEP' }
   | { type: 'DISMISS' }
   | { type: 'ABORT' }
   | { type: 'FINISH' }
-  | { type: 'RESET' };
+  | { type: 'CLEAR_ENDED' };
 
 export const INITIAL_STATE: EngineState = {
   flow: null,
   stepIndex: 0,
   status: 'idle',
+  ended: null,
 };
 
 export function getCurrentStep(state: EngineState): OnboardingStep | null {
@@ -46,11 +58,21 @@ export function getProgress(state: EngineState): Progress | null {
   return { index: state.stepIndex, total: state.flow.steps.length };
 }
 
+function endFlow(state: EngineState, outcome: FlowOutcome): EngineState {
+  if (!state.flow || state.status !== 'active') return state;
+  return {
+    flow: null,
+    stepIndex: 0,
+    status: 'idle',
+    ended: { flow: state.flow, stepIndex: state.stepIndex, outcome },
+  };
+}
+
 function advance(state: EngineState): EngineState {
   if (!state.flow) return state;
   const next = state.stepIndex + 1;
   if (next >= state.flow.steps.length) {
-    return { ...state, status: 'completed' };
+    return endFlow(state, 'completed');
   }
   return { ...state, stepIndex: next };
 }
@@ -59,9 +81,14 @@ export function reduce(state: EngineState, action: EngineAction): EngineState {
   switch (action.type) {
     case 'START': {
       if (action.flow.steps.length === 0) {
-        return { flow: action.flow, stepIndex: 0, status: 'completed' };
+        return {
+          flow: null,
+          stepIndex: 0,
+          status: 'idle',
+          ended: { flow: action.flow, stepIndex: 0, outcome: 'completed' },
+        };
       }
-      return { flow: action.flow, stepIndex: 0, status: 'active' };
+      return { flow: action.flow, stepIndex: 0, status: 'active', ended: null };
     }
     case 'NEXT':
     case 'SKIP_STEP': {
@@ -76,26 +103,32 @@ export function reduce(state: EngineState, action: EngineAction): EngineState {
       }
       return state;
     }
+    case 'REQUIREMENT_MET': {
+      if (state.status !== 'active') return state;
+      const step = getCurrentStep(state);
+      if (step && step.kind === 'spotlight' && step.advance === 'onRequirementMet') {
+        return advance(state);
+      }
+      return state;
+    }
     case 'BACK': {
       if (state.status !== 'active') return state;
       return { ...state, stepIndex: Math.max(0, state.stepIndex - 1) };
     }
     case 'DISMISS': {
-      if (state.status !== 'active') return state;
-      return { ...state, status: 'dismissed' };
+      return endFlow(state, 'dismissed');
     }
     case 'ABORT': {
       // Ended because a step's target never appeared. Distinct from a user
       // dismissal so the provider can persist it as its own status.
-      if (state.status !== 'active') return state;
-      return { ...state, status: 'aborted' };
+      return endFlow(state, 'aborted');
     }
     case 'FINISH': {
-      if (state.status !== 'active') return state;
-      return { ...state, status: 'completed' };
+      return endFlow(state, 'completed');
     }
-    case 'RESET': {
-      return INITIAL_STATE;
+    case 'CLEAR_ENDED': {
+      if (!state.ended) return state;
+      return { ...state, ended: null };
     }
     default: {
       // Exhaustiveness guard.

@@ -6,7 +6,7 @@ import { useOnboardingOptional } from './context';
 /**
  * Marks a View as a spotlight anchor. Spread the returned ref onto any `View`:
  *
- *   const ref = useOnboardingTarget(TARGETS.demoNav);
+ *   const ref = useOnboardingTarget(TARGETS.navItems);
  *   <View ref={ref}>...</View>
  *
  * Safe to call outside an OnboardingProvider (no-op), so shared components can

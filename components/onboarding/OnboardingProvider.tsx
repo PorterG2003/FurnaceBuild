@@ -8,7 +8,7 @@ import React, {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { usePathname, useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccount } from '@/contexts/AccountContext';
@@ -21,15 +21,16 @@ import {
   reduce,
   type EngineState,
 } from '@/lib/onboarding/engine';
-import { ALL_FLOWS, getFlow } from '@/lib/onboarding/flows';
+import { getAllFlows, getFlow } from '@/lib/onboarding/flows';
 import { resolveFlow } from '@/lib/onboarding/resolveFlow';
-import { canRequestFlow } from '@/lib/onboarding/triggerGuards';
-import type { FlowId, Role, Segment, TargetId } from '@/lib/onboarding/types';
+import { canStartFlow, pickNextFlow } from '@/lib/onboarding/scheduler';
+import { TARGETS, type FlowId, type Role, type Segment, type TargetId } from '@/lib/onboarding/types';
 import {
   fetchOnboardingState,
   markFlowAborted,
   markFlowComplete,
   markFlowDismissed,
+  resetAllFlowState,
   resetFlowState,
 } from '@/lib/supabase/services/onboarding/onboardingState';
 import { useReducedMotion } from './useReducedMotion';
@@ -41,7 +42,7 @@ import {
   type TargetRect,
 } from './context';
 
-const AUTO_START_DELAY_MS = 900;
+const SETTLE_DELAY_MS = 900;
 
 export interface OnboardingAnalyticsEvent {
   flowId: string;
@@ -74,10 +75,10 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
 
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE);
   const [stateLoaded, setStateLoaded] = useState(false);
+  const [registrationEpoch, setRegistrationEpoch] = useState(0);
+  const [advanceGateBlocked, setAdvanceGateBlocked] = useState(false);
 
   // --- Segment + role ------------------------------------------------------
-  // Segment is owned by us: an explicit account override wins, otherwise it is
-  // derived from the billing agreement type. Role drives step-level gating.
   const segment = useMemo<Segment>(() => {
     if (account?.onboarding_segment === 'dfy' || account?.onboarding_segment === 'self_serve') {
       return account.onboarding_segment;
@@ -107,13 +108,14 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
   roleRef.current = role;
   const toastRef = useRef(toast);
   toastRef.current = toast;
+  const advanceGateBlockedRef = useRef(advanceGateBlocked);
+  advanceGateBlockedRef.current = advanceGateBlocked;
 
   const targetsRef = useRef(new Map<TargetId, RefObject<View | null>>());
   const seenRef = useRef<Set<string>>(new Set());
-  const autoStartedRef = useRef<Set<string>>(new Set());
-  // Single-flight: at most one flow may be active OR pending-to-start.
-  const pendingFlowRef = useRef<FlowId | null>(null);
-  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const registrationsRef = useRef(new Set<FlowId>());
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduledCandidateRef = useRef<FlowId | null>(null);
 
   const emit = useCallback(
     (flowId: string, stepIndex: number, action: string) => {
@@ -145,7 +147,7 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
       if (cancelled) return;
       const seen = new Set<string>();
       for (const row of rows) {
-        const def = getFlow(row.flow_id as FlowId);
+        const def = getFlow(row.flow_id as FlowId, segmentRef.current);
         if (def?.reshowOnVersionBump && row.flow_version < def.version) continue;
         seen.add(row.flow_id);
       }
@@ -157,11 +159,15 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     };
   }, [user?.id]);
 
+  const bumpRegistrationEpoch = useCallback(() => {
+    setRegistrationEpoch((epoch) => epoch + 1);
+  }, []);
+
   // --- Actions -------------------------------------------------------------
 
   const startFlow = useCallback(
     (id: FlowId) => {
-      const def = getFlow(id);
+      const def = getFlow(id, segmentRef.current);
       if (!def) return;
       const resolved = resolveFlow(def, { segment: segmentRef.current, role: roleRef.current });
       emit(id, 0, 'start');
@@ -170,46 +176,25 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     [emit],
   );
 
-  const clearPending = useCallback(() => {
-    if (pendingTimerRef.current) {
-      clearTimeout(pendingTimerRef.current);
-      pendingTimerRef.current = null;
-    }
-    pendingFlowRef.current = null;
-  }, []);
-
-  const requestFlow = useCallback(
-    (id: FlowId) => {
-      const eligible = canRequestFlow({
-        enabled: enabledRef.current,
-        stateLoaded: stateLoadedRef.current,
-        hasUser: userRef.current != null,
-        flowExists: getFlow(id) != null,
-        alreadySeen: seenRef.current.has(id),
-        flowActive: stateRef.current.status === 'active',
-        flowPending: pendingFlowRef.current != null,
-        blockingOverlayPresent: blockingOverlayRef.current,
-      });
-      if (!eligible) return;
-
-      pendingFlowRef.current = id;
-      pendingTimerRef.current = setTimeout(() => {
-        pendingTimerRef.current = null;
-        pendingFlowRef.current = null;
-        if (stateRef.current.status === 'active') return;
-        if (seenRef.current.has(id)) return;
-        if (blockingOverlayRef.current) return;
-        if (!enabledRef.current) return;
-        startFlow(id);
-      }, AUTO_START_DELAY_MS);
+  const registerFlowIntent = useCallback(
+    (id: FlowId, ready: boolean) => {
+      const had = registrationsRef.current.has(id);
+      if (ready) {
+        registrationsRef.current.add(id);
+      } else {
+        registrationsRef.current.delete(id);
+      }
+      if (had !== registrationsRef.current.has(id)) {
+        bumpRegistrationEpoch();
+      }
     },
-    [startFlow],
+    [bumpRegistrationEpoch],
   );
 
-  // Clear any pending start timer on unmount.
-  useEffect(() => clearPending, [clearPending]);
-
   const next = useCallback(() => {
+    // Defense in depth: the Pressable is already disabled while gated, but
+    // guard the dispatch itself so no path (keyboard, race) can advance early.
+    if (advanceGateBlockedRef.current) return;
     const flow = stateRef.current.flow;
     if (flow) emit(flow.id, stateRef.current.stepIndex, 'next');
     dispatch({ type: 'NEXT' });
@@ -240,21 +225,30 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     }
   }, []);
 
-  const resetFlow = useCallback(async (id: FlowId) => {
-    seenRef.current.delete(id);
-    autoStartedRef.current.delete(id);
-    if (userRef.current) await resetFlowState(userRef.current.id, id);
-  }, []);
-
-  const resetAllFlows = useCallback(async () => {
-    const ids = Array.from(seenRef.current);
-    seenRef.current = new Set();
-    autoStartedRef.current = new Set();
-    const currentUser = userRef.current;
-    if (currentUser) {
-      await Promise.all(ids.map((id) => resetFlowState(currentUser.id, id)));
+  const notifyStepRequirementMet = useCallback(() => {
+    const step = getCurrentStep(stateRef.current);
+    if (step?.kind === 'spotlight' && step.advance === 'onRequirementMet') {
+      dispatch({ type: 'REQUIREMENT_MET' });
     }
   }, []);
+
+  const resetFlow = useCallback(
+    async (id: FlowId) => {
+      seenRef.current.delete(id);
+      if (userRef.current) await resetFlowState(userRef.current.id, id);
+      bumpRegistrationEpoch();
+    },
+    [bumpRegistrationEpoch],
+  );
+
+  const resetAllFlows = useCallback(async () => {
+    seenRef.current = new Set();
+    const currentUser = userRef.current;
+    if (currentUser) {
+      await resetAllFlowState(currentUser.id);
+    }
+    bumpRegistrationEpoch();
+  }, [bumpRegistrationEpoch]);
 
   // --- Target registry -----------------------------------------------------
 
@@ -274,6 +268,21 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     const ref = targetsRef.current.get(id);
     const node = ref?.current;
     if (!node) return Promise.resolve(null);
+
+    if (Platform.OS === 'web') {
+      const el = node as unknown as HTMLElement;
+      const rect = el.getBoundingClientRect?.();
+      if (rect && rect.width > 0 && rect.height > 0) {
+        return Promise.resolve({
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height,
+        });
+      }
+      return Promise.resolve(null);
+    }
+
     return new Promise((resolve) => {
       try {
         node.measureInWindow((x, y, width, height) => {
@@ -294,36 +303,132 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     return ref?.current ?? null;
   }, []);
 
-  // --- Persistence + reset on finish/dismiss/abort -------------------------
+  // --- Persistence on terminal outcomes ------------------------------------
 
   useEffect(() => {
-    if (!state.flow) return;
-    const { status } = state;
-    if (status !== 'completed' && status !== 'dismissed' && status !== 'aborted') return;
+    if (!state.ended) return;
 
-    const { id: flowId, version } = state.flow;
-    seenRef.current.add(flowId);
-    emit(flowId, state.stepIndex, status);
+    const { flow, stepIndex, outcome } = state.ended;
+    seenRef.current.add(flow.id);
+    emit(flow.id, stepIndex, outcome);
 
     if (user) {
-      if (status === 'completed') {
-        void markFlowComplete(user.id, flowId, version);
-      } else if (status === 'dismissed') {
-        void markFlowDismissed(user.id, flowId, version);
+      if (outcome === 'completed') {
+        void markFlowComplete(user.id, flow.id, flow.version);
+      } else if (outcome === 'dismissed') {
+        void markFlowDismissed(user.id, flow.id, flow.version);
       } else {
-        void markFlowAborted(user.id, flowId, version);
+        void markFlowAborted(user.id, flow.id, flow.version);
       }
     }
 
-    // A failed spotlight should never be a confusing dead end: point the user
-    // at the replay affordance rather than just vanishing.
-    if (status === 'aborted') {
+    // Fail-safe: a mandatory tour ends 'aborted' when an anchor can't be
+    // resolved (see SpotlightOverlay). It's already marked seen above, so it
+    // won't re-trap on the next visit; suppress the "start it from Help" hint
+    // since there's no Help entry for a mandatory flow.
+    const endedEffectiveMandatory =
+      !!flow.mandatory &&
+      !(flow.mandatoryUnlessSeen && seenRef.current.has(flow.mandatoryUnlessSeen));
+    if (outcome === 'aborted' && !endedEffectiveMandatory) {
       toastRef.current.info('You can start the product tour anytime from Help.');
     }
 
-    // Return the engine to idle so a future flow can start.
-    dispatch({ type: 'RESET' });
-  }, [state.status, state.flow, state.stepIndex, user, emit]);
+    dispatch({ type: 'CLEAR_ENDED' });
+  }, [state.ended, user, emit]);
+
+  // --- Scheduler: single settle timer picks the next eligible flow -----------
+
+  useEffect(() => {
+    const cancelSettleTimer = () => {
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
+      }
+      scheduledCandidateRef.current = null;
+    };
+
+    const runScheduler = () => {
+      cancelSettleTimer();
+
+      const current = stateRef.current;
+      if (current.status !== 'idle' || current.ended) return;
+
+      const candidate = pickNextFlow({
+        flows: getAllFlows(segmentRef.current),
+        seen: seenRef.current,
+        readyRegistrations: registrationsRef.current,
+      });
+      if (!candidate) return;
+
+      const eligible = canStartFlow({
+        enabled: enabledRef.current,
+        stateLoaded: stateLoadedRef.current,
+        hasUser: userRef.current != null,
+        flowExists: getFlow(candidate, segmentRef.current) != null,
+        alreadySeen: seenRef.current.has(candidate),
+        engineIdle: stateRef.current.status === 'idle' && !stateRef.current.ended,
+        blockingOverlayPresent: blockingOverlayRef.current,
+      });
+      if (!eligible) return;
+
+      scheduledCandidateRef.current = candidate;
+      settleTimerRef.current = setTimeout(() => {
+        settleTimerRef.current = null;
+        const id = scheduledCandidateRef.current;
+        scheduledCandidateRef.current = null;
+        if (!id) return;
+
+        const latest = stateRef.current;
+        if (latest.status !== 'idle' || latest.ended) {
+          runScheduler();
+          return;
+        }
+        if (seenRef.current.has(id)) {
+          runScheduler();
+          return;
+        }
+        if (blockingOverlayRef.current || !enabledRef.current || !stateLoadedRef.current) {
+          runScheduler();
+          return;
+        }
+        if (!getFlow(id, segmentRef.current)) return;
+
+        const repick = pickNextFlow({
+          flows: getAllFlows(segmentRef.current),
+          seen: seenRef.current,
+          readyRegistrations: registrationsRef.current,
+        });
+        if (repick !== id) {
+          runScheduler();
+          return;
+        }
+
+        startFlow(id);
+      }, SETTLE_DELAY_MS);
+    };
+
+    runScheduler();
+    return cancelSettleTimer;
+  }, [
+    state.status,
+    state.ended,
+    registrationEpoch,
+    enabled,
+    stateLoaded,
+    blockingOverlayPresent,
+    user,
+    segment,
+    startFlow,
+  ]);
+
+  // Steps that require an external condition before Next may be pressed
+  // default to blocked on entry, closing the one-frame window where Next
+  // would otherwise be clickable before the owning screen re-asserts the gate.
+  useEffect(() => {
+    const step = getCurrentStep(state);
+    const requiresGate = step?.kind === 'spotlight' && step.targetId === TARGETS.accountNotifications;
+    setAdvanceGateBlocked(requiresGate);
+  }, [state.flow?.id, state.stepIndex, state.status]);
 
   // --- Cross-route navigation ---------------------------------------------
 
@@ -334,40 +439,33 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     router.push(step.route as Href);
   }, [state, pathname, router]);
 
-  // --- Auto-start (the welcome flow opts in via autoStart) -----------------
-
-  useEffect(() => {
-    if (!enabled || !stateLoaded || !user) return;
-    if (state.status === 'active') return;
-    if (blockingOverlayPresent) return;
-
-    const candidate = ALL_FLOWS.find(
-      (f) =>
-        f.autoStart &&
-        !seenRef.current.has(f.id) &&
-        !autoStartedRef.current.has(f.id),
-    );
-    if (!candidate) return;
-
-    autoStartedRef.current.add(candidate.id);
-    requestFlow(candidate.id);
-  }, [enabled, stateLoaded, user, state.status, blockingOverlayPresent, requestFlow]);
+  // Effective-mandatory for the active flow: `mandatory` unless its named
+  // sibling has already been seen (so the first inbox tour a user completes is
+  // locked, and the other platform's replay stays optional).
+  const currentFlowMandatory =
+    !!state.flow?.mandatory &&
+    !(state.flow.mandatoryUnlessSeen && seenRef.current.has(state.flow.mandatoryUnlessSeen));
 
   const value = useMemo<OnboardingContextValue>(
     () => ({
       startFlow,
-      requestFlow,
+      registerFlowIntent,
       dismissFlow,
       resetFlow,
       resetAllFlows,
       next,
       back,
       notifyTargetPress,
+      notifyStepRequirementMet,
+      advanceGateBlocked,
+      setAdvanceGateBlocked,
       registerTarget,
       currentStep: getCurrentStep(state),
       progress: getProgress(state),
       reducedMotion,
       blockingOverlayPresent,
+      currentFlowMandatory,
+      segment,
       skipStep,
       abortFlow,
       measureTarget,
@@ -375,17 +473,22 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     }),
     [
       startFlow,
-      requestFlow,
+      registerFlowIntent,
       dismissFlow,
       resetFlow,
       resetAllFlows,
       next,
       back,
       notifyTargetPress,
+      notifyStepRequirementMet,
+      advanceGateBlocked,
+      setAdvanceGateBlocked,
       registerTarget,
       state,
       reducedMotion,
       blockingOverlayPresent,
+      currentFlowMandatory,
+      segment,
       skipStep,
       abortFlow,
       measureTarget,

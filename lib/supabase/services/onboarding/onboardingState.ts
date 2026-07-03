@@ -95,3 +95,12 @@ export async function resetFlowState(userId: string, flowId: string): Promise<vo
     console.warn(`[onboarding] failed to reset ${flowId}`, error.message);
   }
 }
+
+/** Clears all persisted onboarding state for a user (replay all tours). */
+export async function resetAllFlowState(userId: string): Promise<void> {
+  const { error } = await supabase.from('user_onboarding_state').delete().eq('user_id', userId);
+
+  if (error) {
+    console.warn('[onboarding] failed to reset all flows', error.message);
+  }
+}

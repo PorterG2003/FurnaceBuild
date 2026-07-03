@@ -28,6 +28,7 @@ import { HelpModal } from '@/components/ui/help';
 import { BottomSheet } from '@/components/ui/modals/BottomSheet';
 import { useAccount } from '@/contexts/AccountContext';
 import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
+import { useOnboardingTrigger } from '@/components/onboarding/useOnboardingTrigger';
 import { TARGETS } from '@/lib/onboarding/types';
 import {
   deleteInvitation,
@@ -100,8 +101,9 @@ function AccountProfileSection({
   savingProfile: boolean;
   onSaveProfile: () => void;
 }) {
+  const profileSectionRef = useOnboardingTarget(TARGETS.accountProfile);
   return (
-    <Card variant={cardVariant} className={cardClassName}>
+    <Card ref={profileSectionRef} variant={cardVariant} className={cardClassName}>
       <Text className={titleClassName}>Your Profile</Text>
       <View className="mb-4">
         <Text className="text-xs text-gray-400 font-instrument-medium mb-2">Name</Text>
@@ -232,6 +234,7 @@ function AccountTeamMembersSection({
   onRevokeInvitation: (id: string) => void;
   revokingInvitationId: string | null;
 }) {
+  const teamSectionRef = useOnboardingTarget(TARGETS.accountTeam);
   const currentMembersBlock = (
     <>
       {teamMembers.length > 0 ? (
@@ -393,7 +396,7 @@ function AccountTeamMembersSection({
   );
 
   return (
-    <Card variant={cardVariant} className={cardClassName ?? ''}>
+    <Card ref={teamSectionRef} variant={cardVariant} className={cardClassName ?? ''}>
       <Text className={titleClassName}>Team Members</Text>
       {canManageTeam && (
         <View className="mb-4 pb-4 border-b border-[#2A2A2A]">
@@ -529,7 +532,8 @@ function AccountSmartleadSection({
 
 export default function AccountPage() {
   const { toast } = useToast();
-  const demoAccountRef = useOnboardingTarget(TARGETS.demoAccount);
+  const accountIntegrationsRef = useOnboardingTarget(TARGETS.accountIntegrations);
+  const accountWebhooksRef = useOnboardingTarget(TARGETS.accountWebhooks);
   const { switch_account } = useLocalSearchParams<{ switch_account?: string }>();
   const {
     user: profile,
@@ -580,6 +584,8 @@ export default function AccountPage() {
 
   const awaitingLayout = !isMobile && !layoutStable;
   const showSkeleton = useSmoothLoading(pageLoading || awaitingLayout);
+
+  useOnboardingTrigger('account', { when: !pageLoading && !awaitingLayout });
 
   const switchHandledRef = useRef(false);
   useEffect(() => {
@@ -986,14 +992,15 @@ export default function AccountPage() {
         id: 'api-keys',
         groupLabel: 'Integrations',
         content: canManageTeam ? (
-          <AccountApiKeysSection
-            account={membership.account}
-            cardVariant={sectionCardVariant}
-            cardClassName={sectionCardClassName}
-            titleClassName={sectionTitleClass}
-            headerTitleClassName={sectionNotificationsTitleClass}
-            initialKeys={settings.data?.apiKeys}
-          />
+            <AccountApiKeysSection
+              anchorRef={accountIntegrationsRef}
+              account={membership.account}
+              cardVariant={sectionCardVariant}
+              cardClassName={sectionCardClassName}
+              titleClassName={sectionTitleClass}
+              headerTitleClassName={sectionNotificationsTitleClass}
+              initialKeys={settings.data?.apiKeys}
+            />
         ) : (
           <Card variant={sectionCardVariant} className={sectionCardClassName ?? ''}>
             <Text className={sectionTitleClass}>API Keys</Text>
@@ -1008,6 +1015,7 @@ export default function AccountPage() {
         groupLabel: 'Integrations',
         content: canManageTeam ? (
           <AccountWebhooksSection
+            anchorRef={accountWebhooksRef}
             account={membership.account}
             cardVariant={sectionCardVariant}
             cardClassName={sectionCardClassName}
@@ -1132,17 +1140,15 @@ export default function AccountPage() {
 
   return (
     <PageLayout>
-      <View ref={demoAccountRef}>
-        <PageHeader
-          title="Account"
-          subtitle={
-            membership?.account?.name
-              ? `Manage your profile and ${membership.account.name}`
-              : 'Manage your profile and team'
-          }
-          primaryAction={!isMobile ? signOutButton : undefined}
-        />
-      </View>
+      <PageHeader
+        title="Account"
+        subtitle={
+          membership?.account?.name
+            ? `Manage your profile and ${membership.account.name}`
+            : 'Manage your profile and team'
+        }
+        primaryAction={!isMobile ? signOutButton : undefined}
+      />
 
       {loadError ? (
         <Alert variant="error" message={loadError} />

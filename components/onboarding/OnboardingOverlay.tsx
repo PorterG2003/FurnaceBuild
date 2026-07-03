@@ -7,13 +7,23 @@ import { SpotlightOverlay } from './SpotlightOverlay';
  * adding a new kind is a compile-time error here.
  */
 export function OnboardingOverlay() {
-  const { currentStep, progress, blockingOverlayPresent, next, back, dismissFlow } =
-    useOnboarding();
+  const {
+    currentStep,
+    progress,
+    blockingOverlayPresent,
+    currentFlowMandatory,
+    reducedMotion,
+    next,
+    back,
+    dismissFlow,
+  } = useOnboarding();
 
   if (!currentStep) return null;
 
   const isLastStep = progress ? progress.index === progress.total - 1 : false;
   const canGoBack = progress ? progress.index > 0 : false;
+  // Non-mandatory flows can be skipped; mandatory ones have no skip affordance.
+  const onSkip = currentFlowMandatory ? undefined : dismissFlow;
 
   switch (currentStep.kind) {
     case 'announcement':
@@ -25,7 +35,8 @@ export function OnboardingOverlay() {
           canGoBack={canGoBack}
           onNext={next}
           onBack={back}
-          onSkip={dismissFlow}
+          reducedMotion={reducedMotion}
+          onSkip={onSkip}
         />
       );
     case 'spotlight':
@@ -38,6 +49,7 @@ export function OnboardingOverlay() {
           step={currentStep}
           isLastStep={isLastStep}
           canGoBack={canGoBack}
+          onSkip={onSkip}
         />
       );
     default: {

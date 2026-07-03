@@ -33,6 +33,10 @@ interface BaseModalProps {
   overlayZIndex?: number;
   /** With maxHeight: shrink to content and scroll when needed instead of pinning dialog to maxHeight. */
   fitContent?: boolean;
+  /** Hide the top-right X (e.g. onboarding, where the flow controls its own exit). */
+  hideCloseButton?: boolean;
+  /** Remove the p-6 content padding on desktop (e.g. announcement modals where the visual is edge-to-edge). */
+  noPadding?: boolean;
 }
 
 const maxWidthClasses = {
@@ -64,6 +68,8 @@ export function BaseModal({
   compact = false,
   overlayZIndex,
   fitContent = false,
+  hideCloseButton = false,
+  noPadding = false,
 }: BaseModalProps) {
   const { width, height: screenHeight } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
@@ -89,6 +95,8 @@ export function BaseModal({
     fitContent && dialogMaxHeight != null ? Math.max(160, dialogMaxHeight - 200) : undefined;
   const dialogRef = useRef<View>(null);
   const webKeyboardInset = useVisualViewportKeyboardInset();
+  /** Skip the header chrome entirely when there's nothing to show in it. */
+  const showHeader = !!title || !!description || !!onBack || !hideCloseButton;
   const handleDismiss = useCallback(() => {
     if (onBack) {
       onBack();
@@ -111,14 +119,17 @@ export function BaseModal({
     return (
       <BottomSheet visible={visible} onClose={handleDismiss} overlayZIndex={overlayZIndex}>
         <View style={{ flex: 1, minHeight: 0 }}>
+          {showHeader ? (
           <View className="border-b border-[#2A2A2A] pb-4 mb-4 flex-shrink-0">
             {onBack ? (
               <MobileHeaderBackButton onPress={onBack} className="mb-2" />
             ) : null}
             <View className="min-w-0">
-              <Text className="text-xl font-instrument-semibold text-white" numberOfLines={2}>
-                {title}
-              </Text>
+              {title ? (
+                <Text className="text-xl font-instrument-semibold text-white" numberOfLines={2}>
+                  {title}
+                </Text>
+              ) : null}
               {description ? (
                 <View className="flex-row items-start gap-1.5 mt-1">
                   <Text className="text-gray-400 font-instrument text-sm flex-1" numberOfLines={3}>
@@ -134,6 +145,7 @@ export function BaseModal({
               ) : null}
             </View>
           </View>
+          ) : null}
           {!compact && (
             <ScrollView
               style={{ flex: 1, minHeight: 0 }}
@@ -200,6 +212,7 @@ export function BaseModal({
               ]}
             >
             {/* Header */}
+            {showHeader ? (
             <View
               className="flex-row items-start justify-between p-6 border-b border-[#2A2A2A]"
               style={fillMaxHeightColumn ? { flexShrink: 0 } : undefined}
@@ -208,9 +221,11 @@ export function BaseModal({
                 {onBack ? (
                   <MobileHeaderBackButton onPress={onBack} className="mb-2 -ml-1" />
                 ) : null}
-                <Text className="text-2xl font-instrument-semibold mb-2 text-white">
-                  {title}
-                </Text>
+                {title ? (
+                  <Text className="text-2xl font-instrument-semibold mb-2 text-white">
+                    {title}
+                  </Text>
+                ) : null}
                 {description ? (
                   <View className="flex-row items-start gap-1.5">
                     <Text className="text-gray-400 font-instrument text-sm flex-1">
@@ -225,18 +240,21 @@ export function BaseModal({
                   </View>
                 ) : null}
               </View>
-              <Pressable
-                onPress={handleDismiss}
-                className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-              >
-                <XMarkIcon size={20} color="#9CA3AF" />
-              </Pressable>
+              {hideCloseButton ? null : (
+                <Pressable
+                  onPress={handleDismiss}
+                  className="p-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
+                >
+                  <XMarkIcon size={20} color="#9CA3AF" />
+                </Pressable>
+              )}
             </View>
+            ) : null}
 
             {/* Content - omitted when compact (title + description + footer only) */}
             {!compact && (
               <View
-                className="p-6"
+                className={noPadding ? '' : 'p-6'}
                 style={
                   stretchContent && dialogMaxHeight != null
                     ? { flexGrow: 1, flexShrink: 1, minHeight: 0 }

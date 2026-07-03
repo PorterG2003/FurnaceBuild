@@ -54,6 +54,9 @@ import { useInboxComposer } from '@/hooks/useInboxComposer';
 import { useInboxFilterUI } from '@/hooks/useInboxFilterUI';
 import { useInboxThreadActions } from '@/hooks/useInboxThreadActions';
 import { useInboxInteractionSession } from '@/contexts/InboxInteractionContext';
+import { useOnboardingTrigger } from '@/components/onboarding/useOnboardingTrigger';
+import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
+import { TARGETS } from '@/lib/onboarding/types';
 import outputs from '@/amplify_outputs.json';
 
 const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
@@ -124,6 +127,8 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     loadedThreadIdsRef,
     loadedForAccountIdRef,
   });
+
+  const inboxMessagePaneRef = useOnboardingTarget(TARGETS.inboxMessagePane);
 
   const trustLoadedThreadList = canUseInternalInboxRouteAccess({
     routeThreadId,
@@ -201,6 +206,30 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     loadBlockList,
     clearAllFilters,
   } = inboxData;
+
+  // Snapshot whether replies already existed when the inbox first settled this
+  // visit. The mandatory Master Inbox deep-dive fires on a visit that *opens*
+  // with replies present — never when one streams in mid-session — so a live
+  // insert during the current mount does not trigger it. The tour then naturally
+  // waits until after the first reply exists, and never collides with `welcome`
+  // (which runs at signup, before any reply).
+  const hadRepliesOnEntryRef = useRef<boolean | null>(null);
+  const [hadRepliesOnEntry, setHadRepliesOnEntry] = useState(false);
+  useEffect(() => {
+    if (hadRepliesOnEntryRef.current !== null) return;
+    if (!initialThreadsLoadSettled) return;
+    const had = threads.length > 0;
+    hadRepliesOnEntryRef.current = had;
+    setHadRepliesOnEntry(had);
+  }, [initialThreadsLoadSettled, threads.length]);
+
+  const inboxTourReady =
+    initialized && !accountLoading && routeAccess.status === 'ready' && hadRepliesOnEntry;
+
+  // Platform-specific: only the first one a user completes is mandatory (the
+  // registry sets `mandatoryUnlessSeen` on each so the other becomes optional).
+  useOnboardingTrigger('inbox', { when: !isMobile && inboxTourReady });
+  useOnboardingTrigger('inbox-mobile', { when: isMobile && inboxTourReady });
 
   const loadingPolicy = useInboxLoadingPolicy({
     accountId,
@@ -1291,7 +1320,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     >
       {isMobile ? (
         !selectedThreadId && !loadingPolicy.showMessagePaneSkeleton ? (
-          <View className="flex-1">
+          <View ref={inboxMessagePaneRef} collapsable={false} className="flex-1">
             <InboxThreadList
               {...threadListProps}
               selectedThreadId={null}
@@ -1299,7 +1328,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
             />
           </View>
         ) : (
-          <View className="flex-1 bg-[#121212] min-h-0">
+          <View ref={inboxMessagePaneRef} collapsable={false} className="flex-1 bg-[#121212] min-h-0">
             <InboxMobileMessageView
               messagePane={messageViewProps}
               mobile={{

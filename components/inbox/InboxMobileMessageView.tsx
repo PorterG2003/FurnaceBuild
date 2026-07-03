@@ -1,6 +1,9 @@
 import React, { type RefObject } from 'react';
+import { View } from 'react-native';
 import { DetailPageHeader } from '@/components/ui/layout';
 import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
+import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
+import { TARGETS } from '@/lib/onboarding/types';
 import { MessageListSkeleton, type MessageListSkeletonProps } from './MessageListSkeleton';
 import { InboxMessageList } from './InboxMessageList';
 import { THREAD_CATEGORIES } from './inboxConstants';
@@ -100,6 +103,9 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
 
   const { mobileMessageViewTitle, onBack, onOpenMessageActions } = mobile;
 
+  const leadDetailRef = useOnboardingTarget(TARGETS.inboxLeadDetail);
+  const mobileActionsRef = useOnboardingTarget(TARGETS.inboxMobileActions);
+
   const mobileMessageListSkeletonProps = { variant: 'mobile' as const } satisfies MessageListSkeletonProps;
 
   const header = (
@@ -110,13 +116,16 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
       subtitle={selectedThreadProspectEmails[0] ?? selectedThreadRecipientEmail ?? null}
       onBack={onBack}
       onTitlePress={onOpenLeadDetail}
+      titleRef={leadDetailRef}
       mobileRightAction={
         selectedThread ? (
-          <MobileHeaderButton
-            variant="actions"
-            onPress={onOpenMessageActions}
-            accessibilityLabel="Message actions"
-          />
+          <View ref={mobileActionsRef} collapsable={false}>
+            <MobileHeaderButton
+              variant="actions"
+              onPress={onOpenMessageActions}
+              accessibilityLabel="Message actions"
+            />
+          </View>
         ) : undefined
       }
     />

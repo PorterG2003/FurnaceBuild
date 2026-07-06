@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { buildAutoReplyInfoMessage } from './smartHandling';
 import { resolveThreadStatusCallout } from './threadStatusCallout';
+
+const DATED_AUTO_REPLY_MESSAGE = buildAutoReplyInfoMessage({ returnDate: '2026-07-01' });
+const UNDATED_AUTO_REPLY_MESSAGE = buildAutoReplyInfoMessage({ returnDate: null });
 
 test('pending manual classification merges pipeline categorizing hint into one loading callout', () => {
   const result = resolveThreadStatusCallout({
@@ -93,7 +97,7 @@ test('complete manual OOO classification uses OOO-specific pipeline secondary co
     kind: 'manual_actions',
     mode: 'manual',
     tone: 'info',
-    title: 'Suggested next step',
+    title: 'Out of office',
     message: 'Lead may be out of office until 2026-06-28.',
     secondaryMessage: null,
     loading: false,
@@ -264,6 +268,162 @@ test('returns null when neither smart handling nor pipeline state is eligible', 
     handlingMetadata: null,
     pipelineState: null,
     dismissedForCurrentView: false,
+  });
+
+  assert.equal(result, null);
+});
+
+test('closed system-detected Auto Reply shows informational callout without actions', () => {
+  const result = resolveThreadStatusCallout({
+    conversationStatus: 'closed',
+    classificationStatus: 'complete',
+    category: 'Auto Reply',
+    categorySource: 'system',
+    handlingMetadata: {
+      mode: 'ai',
+      category: 'Auto Reply',
+      return_date: '2026-07-01',
+      primary_message: DATED_AUTO_REPLY_MESSAGE,
+    },
+    pipelineState: null,
+    dismissedForCurrentView: false,
+  });
+
+  assert.deepEqual(result, {
+    kind: 'ai_info',
+    mode: 'ai',
+    tone: 'ai',
+    title: 'Automatic response',
+    message: DATED_AUTO_REPLY_MESSAGE,
+    secondaryMessage: null,
+    loading: false,
+    dismissible: true,
+  });
+});
+
+test('closed system-detected Auto Reply ignores legacy manual OOO actions', () => {
+  const result = resolveThreadStatusCallout({
+    conversationStatus: 'closed',
+    classificationStatus: 'complete',
+    category: 'Auto Reply',
+    categorySource: 'system',
+    handlingMetadata: {
+      mode: 'manual',
+      category: 'Auto Reply',
+      return_date: '2026-06-28',
+      primary_message: 'Lead may be out of office until 2026-06-28.',
+      primary: { action: 'mark_ooo_dated', label: 'Mark OOO until 2026-06-28' },
+      alternatives: [
+        { action: 'mark_ooo_instant', label: 'Mark OOO + resume instantly' },
+        { action: 'mark_ooo_custom', label: 'Choose return date' },
+      ],
+    },
+    pipelineState: null,
+    dismissedForCurrentView: false,
+  });
+
+  assert.deepEqual(result, {
+    kind: 'ai_info',
+    mode: 'ai',
+    tone: 'ai',
+    title: 'Automatic response',
+    message: 'Lead may be out of office until 2026-06-28.',
+    secondaryMessage: null,
+    loading: false,
+    dismissible: true,
+  });
+});
+
+test('closed Auto Reply with AI metadata shows informational callout without actions', () => {
+  const result = resolveThreadStatusCallout({
+    conversationStatus: 'closed',
+    classificationStatus: 'complete',
+    category: 'Auto Reply',
+    categorySource: 'ai',
+    handlingMetadata: {
+      mode: 'ai',
+      category: 'Auto Reply',
+      return_date: '2026-07-01',
+      primary_message: DATED_AUTO_REPLY_MESSAGE,
+    },
+    pipelineState: null,
+    dismissedForCurrentView: false,
+  });
+
+  assert.deepEqual(result, {
+    kind: 'ai_info',
+    mode: 'ai',
+    tone: 'ai',
+    title: 'Automatic response',
+    message: DATED_AUTO_REPLY_MESSAGE,
+    secondaryMessage: null,
+    loading: false,
+    dismissible: true,
+  });
+});
+
+test('closed Auto Reply without metadata shows checking fallback', () => {
+  const result = resolveThreadStatusCallout({
+    conversationStatus: 'closed',
+    classificationStatus: 'complete',
+    category: 'Auto Reply',
+    categorySource: 'system',
+    handlingMetadata: null,
+    pipelineState: null,
+    dismissedForCurrentView: false,
+  });
+
+  assert.deepEqual(result, {
+    kind: 'loading',
+    mode: 'manual',
+    tone: 'info',
+    title: 'Automatic response',
+    message: 'An automatic reply was detected. Checking when the lead returns…',
+    secondaryMessage: null,
+    loading: true,
+    dismissible: true,
+  });
+});
+
+test('open Auto Reply manual OOO regression still shows Out of office title', () => {
+  const result = resolveThreadStatusCallout({
+    conversationStatus: 'open',
+    classificationStatus: 'complete',
+    category: 'Auto Reply',
+    categorySource: null,
+    handlingMetadata: {
+      mode: 'manual',
+      category: 'Auto Reply',
+      return_date: null,
+      primary_message: 'Lead may be out of office. Choose when to resume outreach.',
+      primary: { action: 'mark_ooo_month', label: 'Mark OOO + resume in 1 month' },
+      alternatives: [
+        { action: 'mark_ooo_instant', label: 'Mark OOO + resume instantly' },
+        { action: 'mark_ooo_custom', label: 'Choose return date' },
+      ],
+    },
+    pipelineState: null,
+    dismissedForCurrentView: false,
+  });
+
+  assert.equal(result?.title, 'Out of office');
+  assert.equal(result?.kind, 'manual_actions');
+  assert.equal(result?.secondaryMessage, null);
+});
+
+test('dismissed closed Auto Reply callout returns null without active pipeline', () => {
+  const result = resolveThreadStatusCallout({
+    conversationStatus: 'closed',
+    classificationStatus: 'complete',
+    category: 'Auto Reply',
+    categorySource: 'ai',
+    handlingMetadata: {
+      mode: 'ai',
+      category: 'Auto Reply',
+      primary_message: UNDATED_AUTO_REPLY_MESSAGE,
+    },
+    pipelineState: null,
+    dismissedForCurrentView: true,
   });
 
   assert.equal(result, null);

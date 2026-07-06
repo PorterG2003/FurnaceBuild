@@ -10,7 +10,13 @@ import {
   type SuggestedReferralReason,
 } from '../../../lib/inbox/referralContactExtraction';
 import { parseOutOfOfficeReturnDate } from '../../../lib/inbox/parseOutOfOfficeReturnDate';
-import { buildOooSmartHandlingOptions, buildNeutralSmartHandlingOptions, buildNotInterestedSmartHandlingOptions } from '../../../lib/inbox/smartHandling';
+import {
+  buildAutoReplyInfoMessage,
+  buildSystemDetectedAutoReplyMetadata,
+  buildOooSmartHandlingOptions,
+  buildNeutralSmartHandlingOptions,
+  buildNotInterestedSmartHandlingOptions,
+} from '../../../lib/inbox/smartHandling';
 import { resolveSuggestionVersion } from '../../../lib/inbox/smartHandlingVersion';
 
 type ThreadRow = {
@@ -219,11 +225,34 @@ function buildManualMetadata(params: {
   };
 }
 
-function buildAiMetadata(category: CategorizerCategory) {
+function buildAiMetadata(params: {
+  category: CategorizerCategory;
+  returnDate: string | null;
+  categorySource?: string | null;
+}) {
+  const { category, returnDate, categorySource } = params;
+
+  if (category === 'Auto Reply') {
+    return {
+      mode: 'ai',
+      suggestion_version: resolveSuggestionVersion('ai'),
+      category,
+      return_date: returnDate,
+      primary_message: buildAutoReplyInfoMessage({ returnDate, categorySource }),
+      primary: null,
+      alternatives: [],
+      follow_ups: [],
+      suggested_reply: null,
+      suggested_referral: null,
+      header_mismatch: false,
+    };
+  }
+
   return {
     mode: 'ai',
     suggestion_version: resolveSuggestionVersion('ai'),
     category,
+    return_date: null,
     primary_message: `AI categorized this reply as ${category}.`,
     primary: null,
     alternatives: [],
@@ -323,17 +352,23 @@ export async function processClassifyReplyPayload(
     returnDate = result.classification.returnDate;
   }
 
-  const handlingMetadata = payload.hasCategorizer && payload.useAi
-    ? buildAiMetadata(category)
-    : buildManualMetadata({
-        category,
-        returnDate,
-        fromEmail: message.from_email,
-        fromName: message.from_name,
-        leadEmail,
-        subject: message.subject,
-        bodyText: message.body_text,
-      });
+  const handlingMetadata = systemStampedAutoReply
+    ? buildSystemDetectedAutoReplyMetadata(returnDate)
+    : payload.hasCategorizer && payload.useAi
+      ? buildAiMetadata({
+          category,
+          returnDate,
+          categorySource: 'ai',
+        })
+      : buildManualMetadata({
+          category,
+          returnDate,
+          fromEmail: message.from_email,
+          fromName: message.from_name,
+          leadEmail,
+          subject: message.subject,
+          bodyText: message.body_text,
+        });
 
   const updatePatch: Record<string, unknown> = {
     handling_metadata: handlingMetadata,

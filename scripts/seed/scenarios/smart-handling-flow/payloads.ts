@@ -1,7 +1,9 @@
 import {
+  buildAutoReplyInfoMessage,
   buildNeutralSmartHandlingOptions,
   buildNotInterestedSmartHandlingOptions,
   buildOooSmartHandlingOptions,
+  buildSystemDetectedAutoReplyMetadata,
   type SmartHandlingMetadata,
 } from '@/lib/inbox/smartHandling';
 import { resolveSuggestionVersion } from '@/lib/inbox/smartHandlingVersion';
@@ -76,6 +78,21 @@ export function buildSeedOooNoDateMetadata(): SmartHandlingMetadata {
     mode: 'manual',
     category: 'Auto Reply',
     ...oooOptions,
+  });
+}
+
+export function buildSeedOooSystemMetadata(returnDate: string | null = null): SmartHandlingMetadata {
+  return withDefaults(buildSystemDetectedAutoReplyMetadata(returnDate));
+}
+
+export function buildSeedOooAiMetadata(returnDate: string | null = null): SmartHandlingMetadata {
+  return withDefaults({
+    mode: 'ai',
+    category: 'Auto Reply',
+    return_date: returnDate,
+    primary_message: buildAutoReplyInfoMessage({ returnDate, categorySource: 'ai' }),
+    primary: null,
+    alternatives: [],
   });
 }
 

@@ -245,7 +245,7 @@ export function MessagePanelHeader({
                       getItemLabel={(i) => ({
                         primary: i.name,
                         // Auto Reply releases a held outbound sequence in categorizer flows.
-                        secondary: i.id === 'Auto Reply' ? 'Not a real reply — sequence continues' : undefined,
+                        secondary: i.id === 'Auto Reply' ? 'Automatic response — sequence continues' : undefined,
                       })}
                       getItemColor={(item) => getCategoryColor(item.id || null)}
                       itemColorVariant="tint"

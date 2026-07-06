@@ -70,6 +70,7 @@ function parseActionList(value: unknown): SmartHandlingActionOption[] {
 }
 
 import { isNotInterestedOptOutRequest } from './notInterestedOptOutDetection';
+import { resolveSuggestionVersion } from './smartHandlingVersion';
 
 const OOO_INSTANT_ALTERNATIVE: SmartHandlingActionOption = {
   action: 'mark_ooo_instant',
@@ -80,6 +81,48 @@ const OOO_CUSTOM_ALTERNATIVE: SmartHandlingActionOption = {
   action: 'mark_ooo_custom',
   label: 'Choose return date',
 };
+
+export function formatAutoReplyReturnDate(iso: string): string {
+  const match = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return iso;
+
+  const parsed = new Date(`${match[0]}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return iso;
+
+  return parsed.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+export function buildAutoReplyInfoMessage(params: {
+  returnDate: string | null;
+  categorySource?: string | null;
+}): string {
+  if (params.returnDate) {
+    const formattedDate = formatAutoReplyReturnDate(params.returnDate);
+    return `This reply was detected as an automatic out-of-office response. The lead will be resumed on ${formattedDate}, then the sequence will continue as normal.`;
+  }
+  return 'This reply was detected as an automatic response. The lead has been resumed and the sequence will continue as normal.';
+}
+
+export function buildSystemDetectedAutoReplyMetadata(returnDate: string | null): SmartHandlingMetadata {
+  return {
+    mode: 'ai',
+    suggestion_version: resolveSuggestionVersion('ai'),
+    category: 'Auto Reply',
+    return_date: returnDate,
+    primary_message: buildAutoReplyInfoMessage({ returnDate, categorySource: 'system' }),
+    primary: null,
+    alternatives: [],
+    follow_ups: [],
+    suggested_reply: null,
+    suggested_referral: null,
+    header_mismatch: false,
+  };
+}
 
 export function buildOooSmartHandlingOptions(returnDate: string | null): {
   return_date: string | null;

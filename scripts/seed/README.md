@@ -226,16 +226,12 @@ Creates a deterministic inbox QA slice specifically for the Master Inbox Smart H
 
 - one **manual** campaign (`use_ai = false`) plus one **AI** campaign (`use_ai = true`)
 - one visible thread per Smart Handling profile, including:
-  - `[SH INTERESTED]`
-  - `[SH NEUTRAL]`
-  - `[SH NOT INTERESTED]`
-  - `[SH OOO DATED]`
-  - `[SH OOO NO DATE]`
-  - `[SH WRONG CONTACT]`
-  - `[SH AI INTERESTED]`
-  - `[SH PENDING]`
-  - `[SH CLOSED]`
-- realistic sent/replied message history for every thread
+  - `[SH INTERESTED]`, `[SH NEUTRAL]`, `[SH NOT INTERESTED]`, `[SH WRONG CONTACT]`
+  - `[SH OOO MANUAL DATED]`, `[SH OOO MANUAL NO DATE]` — headerless OOO on manual categorizer (Mark OOO buttons)
+  - `[SH OOO SYSTEM]`, `[SH OOO SYSTEM DATED]` — header-detected autoresponder (informational callout, closed thread)
+  - `[SH AI INTERESTED]`, `[SH OOO AI]` — AI categorizer campaign (headerless OOO classified by AI)
+  - `[SH PENDING]`, `[SH CLOSED]` — static edge states
+- realistic sent/replied message history for every thread (autoresponder cases include `Auto-Submitted` headers)
 - durable `email_threads` state for:
   - `conversation_status`
   - `classification_status`

@@ -14,6 +14,8 @@ import {
   buildSeedNotInterestedMetadata,
   buildSeedOooDatedMetadata,
   buildSeedOooNoDateMetadata,
+  buildSeedOooSystemMetadata,
+  buildSeedOooAiMetadata,
   buildSeedWrongContactMetadata,
 } from './payloads';
 import { ThreadManager } from '../../../../workers/inbox-checker-worker/src/thread-manager';
@@ -42,10 +44,15 @@ type SeedCaseKey =
   | 'not_interested'
   | 'ooo_dated'
   | 'ooo_no_date'
+  | 'ooo_system'
+  | 'ooo_system_dated'
+  | 'ooo_ai'
   | 'wrong_contact'
   | 'ai_interested'
   | 'pending'
   | 'closed';
+
+type LiveReplyStyle = 'normal' | 'autoresponder' | 'headerless-ooo';
 
 type LiveClassification = {
   category: 'Interested' | 'Neutral' | 'Not Interested' | 'Auto Reply';
@@ -60,6 +67,8 @@ type SeedCaseSpec = {
   leadLastName: string;
   company: string;
   liveCapable: boolean;
+  /** Controls inbound message headers in live mode and deterministic message rows. */
+  liveReplyStyle: LiveReplyStyle;
 };
 
 type SeedCaseState = SeedCaseSpec & {
@@ -89,6 +98,10 @@ type CampaignState = {
   cases: SeedCaseState[];
 };
 
+const AUTORESPONDER_HEADERS: Record<string, string> = {
+  'auto-submitted': 'auto-replied',
+};
+
 const CASES: SeedCaseSpec[] = [
   {
     key: 'interested',
@@ -98,6 +111,7 @@ const CASES: SeedCaseSpec[] = [
     leadLastName: 'Holloway',
     company: 'Brightline Manufacturing',
     liveCapable: true,
+    liveReplyStyle: 'normal',
   },
   {
     key: 'neutral',
@@ -107,6 +121,7 @@ const CASES: SeedCaseSpec[] = [
     leadLastName: 'Trent',
     company: 'Coldwater Logistics',
     liveCapable: true,
+    liveReplyStyle: 'normal',
   },
   {
     key: 'not_interested',
@@ -116,24 +131,47 @@ const CASES: SeedCaseSpec[] = [
     leadLastName: 'Whitfield',
     company: 'Ironvale Supply',
     liveCapable: true,
+    liveReplyStyle: 'normal',
   },
   {
     key: 'ooo_dated',
-    subjectTag: '[SH OOO DATED]',
+    subjectTag: '[SH OOO MANUAL DATED]',
     campaignKind: 'manual',
     leadFirstName: 'Priya',
     leadLastName: 'Raman',
     company: 'Meridian Freight',
     liveCapable: true,
+    liveReplyStyle: 'headerless-ooo',
   },
   {
     key: 'ooo_no_date',
-    subjectTag: '[SH OOO NO DATE]',
+    subjectTag: '[SH OOO MANUAL NO DATE]',
     campaignKind: 'manual',
     leadFirstName: 'Tomas',
     leadLastName: 'Eriksen',
     company: 'Northgate Partners',
     liveCapable: true,
+    liveReplyStyle: 'headerless-ooo',
+  },
+  {
+    key: 'ooo_system',
+    subjectTag: '[SH OOO SYSTEM]',
+    campaignKind: 'manual',
+    leadFirstName: 'Renee',
+    leadLastName: 'Kaplan',
+    company: 'Summit Ridge Logistics',
+    liveCapable: true,
+    liveReplyStyle: 'autoresponder',
+  },
+  {
+    key: 'ooo_system_dated',
+    subjectTag: '[SH OOO SYSTEM DATED]',
+    campaignKind: 'manual',
+    leadFirstName: 'Claire',
+    leadLastName: 'Nguyen',
+    company: 'Atlas Cold Chain',
+    liveCapable: true,
+    liveReplyStyle: 'autoresponder',
   },
   {
     key: 'wrong_contact',
@@ -143,6 +181,7 @@ const CASES: SeedCaseSpec[] = [
     leadLastName: 'Vasquez',
     company: 'Stonebridge Analytics',
     liveCapable: true,
+    liveReplyStyle: 'normal',
   },
   {
     key: 'pending',
@@ -152,6 +191,7 @@ const CASES: SeedCaseSpec[] = [
     leadLastName: 'Mercer',
     company: 'Westward Components',
     liveCapable: false,
+    liveReplyStyle: 'normal',
   },
   {
     key: 'closed',
@@ -161,6 +201,7 @@ const CASES: SeedCaseSpec[] = [
     leadLastName: 'Collins',
     company: 'Harborline Systems',
     liveCapable: false,
+    liveReplyStyle: 'normal',
   },
   {
     key: 'ai_interested',
@@ -170,6 +211,17 @@ const CASES: SeedCaseSpec[] = [
     leadLastName: 'Frost',
     company: 'Northstar Medical',
     liveCapable: true,
+    liveReplyStyle: 'normal',
+  },
+  {
+    key: 'ooo_ai',
+    subjectTag: '[SH OOO AI]',
+    campaignKind: 'ai',
+    leadFirstName: 'Morgan',
+    leadLastName: 'Keats',
+    company: 'Lumen Diagnostics',
+    liveCapable: true,
+    liveReplyStyle: 'headerless-ooo',
   },
 ];
 
@@ -345,6 +397,15 @@ function buildLeadEmail(campaignId: string, seedCase: SeedCaseSpec): string {
 
 function buildWrongContactEmail(campaignId: string): string {
   return `smart-handling-referral-${campaignId.slice(0, 8)}@furnace.test`;
+}
+
+function buildInboundHeaders(
+  liveReplyStyle: LiveReplyStyle,
+): Record<string, string | string[] | undefined> {
+  if (liveReplyStyle === 'autoresponder') {
+    return { ...AUTORESPONDER_HEADERS };
+  }
+  return {};
 }
 
 function getCampaignConfig(kind: CampaignKind): { campaignId: string; name: string; useAi: boolean } {
@@ -664,6 +725,27 @@ function getDeterministicSeedPayload(
         fromEmail: seedCase.leadEmail,
         bodyText: 'I am currently out of office with no access to email.',
       };
+    case 'ooo_system':
+      return {
+        conversationStatus: 'closed',
+        classificationStatus: 'complete',
+        category: 'Auto Reply',
+        categorySource: 'system',
+        handlingMetadata: buildSeedOooSystemMetadata(null) as Record<string, unknown>,
+        fromEmail: seedCase.leadEmail,
+        bodyText:
+          'I am currently out of the office with no access to email. For urgent matters please contact our main line.',
+      };
+    case 'ooo_system_dated':
+      return {
+        conversationStatus: 'closed',
+        classificationStatus: 'complete',
+        category: 'Auto Reply',
+        categorySource: 'system',
+        handlingMetadata: buildSeedOooSystemMetadata(store.returnDateIso) as Record<string, unknown>,
+        fromEmail: seedCase.leadEmail,
+        bodyText: `I am out of the office until ${store.returnDateHuman} with limited access to email.`,
+      };
     case 'wrong_contact': {
       const referralEmail = buildWrongContactEmail(store.campaigns.manual.campaignId);
       return {
@@ -706,6 +788,16 @@ function getDeterministicSeedPayload(
         fromEmail: seedCase.leadEmail,
         bodyText: 'This is relevant - please send pricing details.',
       };
+    case 'ooo_ai':
+      return {
+        conversationStatus: 'open',
+        classificationStatus: 'complete',
+        category: 'Auto Reply',
+        categorySource: 'ai',
+        handlingMetadata: buildSeedOooAiMetadata(store.returnDateIso) as Record<string, unknown>,
+        fromEmail: seedCase.leadEmail,
+        bodyText: `Thank you for your email. I am out of the office until ${store.returnDateHuman} with limited access to email.`,
+      };
   }
 }
 
@@ -721,6 +813,12 @@ function getLiveClassification(seedCase: SeedCaseState): LiveClassification {
       return { category: 'Auto Reply', returnDate: store.returnDateIso };
     case 'ooo_no_date':
       return { category: 'Auto Reply', returnDate: null };
+    case 'ooo_system':
+      return { category: 'Auto Reply', returnDate: null };
+    case 'ooo_system_dated':
+      return { category: 'Auto Reply', returnDate: store.returnDateIso };
+    case 'ooo_ai':
+      return { category: 'Auto Reply', returnDate: store.returnDateIso };
     case 'wrong_contact':
       return { category: 'Interested', returnDate: null };
     case 'ai_interested':
@@ -759,6 +857,22 @@ function buildLiveReply(seedCase: SeedCaseState): { fromEmail: string; bodyText:
         fromEmail: seedCase.leadEmail,
         bodyText: 'I am currently out of the office with no access to email. I will respond once I return.',
       };
+    case 'ooo_system':
+      return {
+        fromEmail: seedCase.leadEmail,
+        bodyText:
+          'I am currently out of the office with no access to email. For urgent matters please contact our main line.',
+      };
+    case 'ooo_system_dated':
+      return {
+        fromEmail: seedCase.leadEmail,
+        bodyText: `Thank you for your email. I am out of the office until ${store.returnDateHuman} with limited access to email.`,
+      };
+    case 'ooo_ai':
+      return {
+        fromEmail: seedCase.leadEmail,
+        bodyText: `Thank you for your email. I am out of the office until ${store.returnDateHuman} with limited access to email.`,
+      };
     case 'wrong_contact': {
       const fromEmail = buildWrongContactEmail(store.campaigns.manual.campaignId);
       return {
@@ -784,6 +898,7 @@ function buildProcessedReplyMessage(params: {
   bodyText: string;
   inReplyTo: string;
   receivedAt: string;
+  headers?: Record<string, string | string[] | undefined>;
 }): ProcessedMessage {
   return {
     uid: Math.floor(Math.random() * 1_000_000),
@@ -796,7 +911,7 @@ function buildProcessedReplyMessage(params: {
     bodyText: params.bodyText,
     bodyHtml: `<p>${params.bodyText}</p>`,
     date: new Date(params.receivedAt),
-    headers: {},
+    headers: params.headers ?? {},
     attachments: [],
   };
 }
@@ -829,6 +944,10 @@ async function withMockedCategorizerFetch(
   run: () => Promise<void>,
 ): Promise<void> {
   const originalFetch = global.fetch;
+  const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+  if (!process.env.OPENROUTER_API_KEY?.trim()) {
+    process.env.OPENROUTER_API_KEY = 'seed-smart-handling-mock-key';
+  }
   global.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -856,6 +975,11 @@ async function withMockedCategorizerFetch(
     await run();
   } finally {
     global.fetch = originalFetch;
+    if (originalOpenRouterKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+    }
   }
 }
 
@@ -901,6 +1025,7 @@ async function findLatestReceivedMessageId(ctx: SeedContext, threadId: string): 
 
 async function seedDeterministicThread(ctx: SeedContext, seedCase: SeedCaseState) {
   const payload = getDeterministicSeedPayload(seedCase);
+  const inboundHeaders = buildInboundHeaders(seedCase.liveReplyStyle);
   const now = new Date().toISOString();
   const { data: thread, error: threadError } = await ctx.supabase
     .from('email_threads')
@@ -978,7 +1103,7 @@ async function seedDeterministicThread(ctx: SeedContext, seedCase: SeedCaseState
       message_references: seedCase.sentProviderMessageId,
       received_at: seedCase.replyAt,
       read_at: seedCase.key === 'closed' ? seedCase.replyAt : null,
-      headers: {},
+      headers: inboundHeaders,
       attachments: [],
       created_at: seedCase.replyAt,
       updated_at: seedCase.replyAt,
@@ -1002,6 +1127,7 @@ async function seedLiveReply(ctx: SeedContext, seedCase: SeedCaseState) {
     bodyText: liveReply.bodyText,
     inReplyTo: seedCase.sentProviderMessageId,
     receivedAt: seedCase.replyAt,
+    headers: buildInboundHeaders(seedCase.liveReplyStyle),
   });
 
   const handled = await threadManager.handleReply(mailbox, processedMessage);
@@ -1011,6 +1137,12 @@ async function seedLiveReply(ctx: SeedContext, seedCase: SeedCaseState) {
 
   const thread = await findThreadBySentJob(ctx, seedCase.sentJobId);
   seedCase.threadId = thread.id;
+
+  await ctx.supabase
+    .from('email_threads')
+    .update({ subject: caseSubject(seedCase) })
+    .eq('id', seedCase.threadId);
+
   const emailMessageId = await findLatestReceivedMessageId(ctx, thread.id);
   const classification = getLiveClassification(seedCase);
 
@@ -1096,6 +1228,7 @@ export const smartHandlingFlowBaseGraphModule: SeedModule = {
       const replyAt = new Date(Date.parse(sentAt) + 25 * 60 * 1000).toISOString();
       const messageData = {
         node_config: {},
+        subject: caseSubject(spec),
         lead_data: {
           email: leadEmail,
           name: leadName,
@@ -1214,6 +1347,46 @@ export const smartHandlingFlowBaseGraphModule: SeedModule = {
   },
 };
 
+async function logSmartHandlingInboxInstructions(ctx: SeedContext) {
+  const { data: account } = await ctx.supabase
+    .from('accounts')
+    .select('name')
+    .eq('id', store.accountId)
+    .maybeSingle();
+  const { data: owner } = await ctx.supabase
+    .from('users')
+    .select('email')
+    .eq('id', store.ownerUserId)
+    .maybeSingle();
+
+  const accountLabel = account?.name ?? store.accountId;
+  ctx.log('');
+  ctx.log('--- Smart Handling inbox QA ---');
+  ctx.log(`Account: ${accountLabel} (${store.accountId})`);
+  ctx.log(`Owner login: ${owner?.email ?? store.ownerUserId}`);
+  ctx.log('Open Master Inbox on that account (switch workspace if needed).');
+  ctx.log('Search [SH to list all cases. Clear inbox filters if the list looks empty.');
+  ctx.log('');
+  ctx.log('Manual categorizer (Mark OOO buttons, open thread, no category badge):');
+  ctx.log('  [SH OOO MANUAL DATED]  — headerless OOO with return date in body');
+  ctx.log('  [SH OOO MANUAL NO DATE] — headerless OOO without return date');
+  ctx.log('');
+  ctx.log('System-detected autoresponder (informational, closed, Auto Reply badge):');
+  ctx.log('  [SH OOO SYSTEM]        — Auto-Submitted headers, no return date');
+  ctx.log('  [SH OOO SYSTEM DATED]  — Auto-Submitted headers + return date in body');
+  ctx.log('');
+  ctx.log('AI categorizer campaign:');
+  ctx.log('  [SH AI INTERESTED]     — AI classified interested reply');
+  ctx.log('  [SH OOO AI]            — headerless OOO classified by AI (open thread)');
+  ctx.log('');
+  ctx.log('Other manual cases: [SH INTERESTED], [SH NEUTRAL], [SH NOT INTERESTED], [SH WRONG CONTACT]');
+  ctx.log('Static-only cases: [SH PENDING], [SH CLOSED]');
+  ctx.log('');
+  ctx.log(`Mode: ${store.liveMode ? 'live (ThreadManager + classifyReply for capable cases)' : 'deterministic snapshots'}`);
+  ctx.log('Set SEED_SMART_HANDLING_LIVE=1 to exercise real inbox-checker + classify code paths.');
+  ctx.log('-------------------------------');
+}
+
 export const smartHandlingFlowThreadsModule: SeedModule = {
   id: 'smartHandlingFlow_threads',
   description: 'Insert deterministic inbox threads that render Smart Handling states immediately',
@@ -1250,6 +1423,7 @@ export const smartHandlingFlowLiveRepliesModule: SeedModule = {
 
     if (!store.liveMode) {
       ctx.log('smart-handling-flow live mode disabled; deterministic Smart Handling dataset is ready');
+      await logSmartHandlingInboxInstructions(ctx);
       return;
     }
 
@@ -1261,5 +1435,6 @@ export const smartHandlingFlowLiveRepliesModule: SeedModule = {
     }
 
     ctx.log(`smart-handling-flow live replies processed count=${liveCases.length}`);
+    await logSmartHandlingInboxInstructions(ctx);
   },
 };

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildOooSmartHandlingOptions, buildNeutralSmartHandlingOptions, buildNotInterestedSmartHandlingOptions, getSmartHandlingReplySeed, parseSmartHandlingMetadata } from './smartHandling';
+import { buildAutoReplyInfoMessage, buildSystemDetectedAutoReplyMetadata, buildOooSmartHandlingOptions, buildNeutralSmartHandlingOptions, buildNotInterestedSmartHandlingOptions, formatAutoReplyReturnDate, getSmartHandlingReplySeed, parseSmartHandlingMetadata } from './smartHandling';
 import { isNotInterestedOptOutRequest } from './notInterestedOptOutDetection';
 import { shouldAutoCloseConversationForAction, getSmartHandlingActionSuccessMessage, SMART_HANDLING_DISMISS_SUCCESS_MESSAGE } from './smartHandlingActions';
 import { resolveSuggestionVersion } from './smartHandlingVersion';
@@ -65,6 +65,45 @@ test('parseSmartHandlingMetadata normalizes valid action payloads', () => {
 test('parseSmartHandlingMetadata returns null for non-object payloads', () => {
   assert.equal(parseSmartHandlingMetadata('bad-payload' as never), null);
   assert.equal(parseSmartHandlingMetadata(null), null);
+});
+
+test('formatAutoReplyReturnDate formats ISO dates for display', () => {
+  assert.equal(formatAutoReplyReturnDate('2026-07-01'), 'July 1, 2026');
+  assert.equal(formatAutoReplyReturnDate('not-a-date'), 'not-a-date');
+});
+
+test('buildAutoReplyInfoMessage includes return date when known', () => {
+  assert.equal(
+    buildAutoReplyInfoMessage({ returnDate: '2026-07-01' }),
+    'This reply was detected as an automatic out-of-office response. The lead will be resumed on July 1, 2026, then the sequence will continue as normal.',
+  );
+});
+
+test('buildAutoReplyInfoMessage uses resumed-and-continues fallback when return date is unknown', () => {
+  assert.equal(
+    buildAutoReplyInfoMessage({ returnDate: null }),
+    'This reply was detected as an automatic response. The lead has been resumed and the sequence will continue as normal.',
+  );
+});
+
+test('buildSystemDetectedAutoReplyMetadata is informational only', () => {
+  const dated = buildSystemDetectedAutoReplyMetadata('2026-07-01');
+  assert.equal(dated.mode, 'ai');
+  assert.equal(dated.category, 'Auto Reply');
+  assert.equal(dated.return_date, '2026-07-01');
+  assert.equal(
+    dated.primary_message,
+    'This reply was detected as an automatic out-of-office response. The lead will be resumed on July 1, 2026, then the sequence will continue as normal.',
+  );
+  assert.equal(dated.primary, null);
+  assert.deepEqual(dated.alternatives, []);
+
+  const undated = buildSystemDetectedAutoReplyMetadata(null);
+  assert.equal(
+    undated.primary_message,
+    'This reply was detected as an automatic response. The lead has been resumed and the sequence will continue as normal.',
+  );
+  assert.equal(undated.primary, null);
 });
 
 test('buildOooSmartHandlingOptions uses dated primary with instant and custom alternatives', () => {

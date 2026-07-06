@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useMemo } from 'react';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { BuildingLibraryIcon, ChevronRightIcon } from 'react-native-heroicons/outline';
 import { ManageBlockListModal } from '@/components/inbox';
 import { canManageAccountTeam, getAccountMembershipRole } from '@/lib/account/teamManagementPermissions';
 import {
@@ -23,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, useSmoothLoading, useToast } from '@/components/ui/feedback';
 import { AccountSettingsSkeleton } from '@/components/skeletons';
 import { useAccountSettingsData } from '@/hooks/useAccountSettingsData';
+import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
 import { BaseModal, ConfirmDeleteModal, ModalFooter } from '@/components/ui/modals';
 import { HelpModal } from '@/components/ui/help';
 import { BottomSheet } from '@/components/ui/modals/BottomSheet';
@@ -531,7 +533,9 @@ function AccountSmartleadSection({
 }
 
 export default function AccountPage() {
+  const router = useRouter();
   const { toast } = useToast();
+  const platformAdminAccess = usePlatformAdminAccess();
   const accountIntegrationsRef = useOnboardingTarget(TARGETS.accountIntegrations);
   const accountWebhooksRef = useOnboardingTarget(TARGETS.accountWebhooks);
   const { switch_account } = useLocalSearchParams<{ switch_account?: string }>();
@@ -1093,9 +1097,35 @@ export default function AccountPage() {
         ),
       });
     }
+    if (isMobile && platformAdminAccess === 'allowed') {
+      base.push({
+        id: 'admin-tools',
+        groupLabel: 'Admin',
+        content: (
+          <Card
+            variant={sectionCardVariant}
+            onPress={() => router.push('/admin')}
+            className={sectionCardClassName}
+          >
+            <View className="flex-row items-center gap-3">
+              <BuildingLibraryIcon size={22} color="#f85102" />
+              <View className="flex-1">
+                <Text className="text-white font-instrument-semibold text-base">Admin Tools</Text>
+                <Text className="text-sm text-gray-400 font-instrument mt-1">
+                  Manage accounts, invites, and platform terms.
+                </Text>
+              </View>
+              <ChevronRightIcon size={18} color="#6b7280" />
+            </View>
+          </Card>
+        ),
+      });
+    }
     return base;
   }, [
     isMobile,
+    platformAdminAccess,
+    router,
     sectionCardVariant,
     sectionCardClassName,
     sectionTitleClass,

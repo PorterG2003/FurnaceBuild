@@ -14,10 +14,8 @@ import {
   InboxIcon,
   EnvelopeIcon,
   UserGroupIcon,
-  BuildingLibraryIcon,
 } from 'react-native-heroicons/outline';
 import { isInboxPath } from '@/lib/inbox/inboxRoutes';
-import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
 import { useNavOnboardingTargets, navTargetRefForPath } from '@/lib/onboarding/useNavOnboardingTargets';
 
 const baseNavItems = [
@@ -141,10 +139,7 @@ function NativeIndicator({ activeIndex }: { activeIndex: number }) {
 export function BottomNavBar() {
   const router = useRouter();
   const pathname = usePathname();
-  const platformAdminAccess = usePlatformAdminAccess();
-  const navItems = platformAdminAccess === 'allowed'
-    ? [...baseNavItems.slice(0, 5), { path: '/admin', icon: BuildingLibraryIcon }, ...baseNavItems.slice(5)]
-    : baseNavItems;
+  const navItems = baseNavItems;
   const activeIndex = getActiveIndex(pathname, navItems);
   const navTargets = useNavOnboardingTargets();
 

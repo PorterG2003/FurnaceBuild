@@ -22,18 +22,21 @@ COMMENT ON COLUMN public.user_onboarding_state.flow_version IS
 
 ALTER TABLE public.user_onboarding_state ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "user_onboarding_state_select_own" ON public.user_onboarding_state;
 CREATE POLICY "user_onboarding_state_select_own"
   ON public.user_onboarding_state
   FOR SELECT
   TO authenticated
   USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "user_onboarding_state_insert_own" ON public.user_onboarding_state;
 CREATE POLICY "user_onboarding_state_insert_own"
   ON public.user_onboarding_state
   FOR INSERT
   TO authenticated
   WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "user_onboarding_state_update_own" ON public.user_onboarding_state;
 CREATE POLICY "user_onboarding_state_update_own"
   ON public.user_onboarding_state
   FOR UPDATE
@@ -41,6 +44,7 @@ CREATE POLICY "user_onboarding_state_update_own"
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "user_onboarding_state_delete_own" ON public.user_onboarding_state;
 CREATE POLICY "user_onboarding_state_delete_own"
   ON public.user_onboarding_state
   FOR DELETE

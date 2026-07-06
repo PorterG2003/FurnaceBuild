@@ -16,6 +16,7 @@ import {
   BuildingLibraryIcon,
 } from 'react-native-heroicons/outline';
 import { useAccount } from '@/contexts/AccountContext';
+import { useOpenConversationCounts } from '@/contexts/OpenConversationCountsContext';
 import { isInboxPath } from '@/lib/inbox/inboxRoutes';
 import { WorkspaceSwitcherPopover } from '@/components/ui/WorkspaceSwitcherPopover';
 import { HelpModal } from '@/components/ui/help';
@@ -72,6 +73,7 @@ const SWITCHER_CLOSE_VIEWPORT_WIDTH = 900;
 export function NavBar() {
   const { width: viewportWidth } = useWindowDimensions();
   const { account, memberships, setCurrentAccountId, user } = useAccount();
+  const { currentCount: openConversationCount } = useOpenConversationCounts();
   const platformAdminAccess = usePlatformAdminAccess();
   const handleSignOut = () => signOut();
   const router = useRouter();
@@ -271,6 +273,8 @@ export function NavBar() {
               onPress={() => router.push(item.path)}
               isExpanded={isExpanded}
               active={isActive(item.path)}
+              badgeCount={item.path === '/inbox' ? openConversationCount : undefined}
+              badgeLayout={item.path === '/inbox' ? (isExpanded ? 'trailing' : 'overlay') : undefined}
             />
           ))}
         </View>

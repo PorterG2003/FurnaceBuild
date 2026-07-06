@@ -6,17 +6,24 @@ import {
   OPEN_CONVERSATION_GLOW,
 } from './inboxConstants';
 
-const DOT_SIZE = 6;
-const GLOW_SIZE = 20;
+const SIZES = {
+  default: { dot: 6, glow: 20 },
+  compact: { dot: 6, glow: 14 },
+} as const;
 
-export function OpenConversationIndicator() {
+type OpenConversationIndicatorProps = {
+  size?: keyof typeof SIZES;
+};
+
+export function OpenConversationIndicator({ size = 'default' }: OpenConversationIndicatorProps) {
   const glowId = useId().replace(/:/g, '');
+  const { dot: dotSize, glow: glowSize } = SIZES[size];
 
   return (
     <View
       style={{
-        width: GLOW_SIZE,
-        height: GLOW_SIZE,
+        width: glowSize,
+        height: glowSize,
         alignItems: 'center',
         justifyContent: 'center',
       }}
@@ -24,10 +31,10 @@ export function OpenConversationIndicator() {
       <Svg
         style={{
           position: 'absolute',
-          width: GLOW_SIZE,
-          height: GLOW_SIZE,
+          width: glowSize,
+          height: glowSize,
         }}
-        viewBox={`0 0 ${GLOW_SIZE} ${GLOW_SIZE}`}
+        viewBox={`0 0 ${glowSize} ${glowSize}`}
       >
         <Defs>
           <RadialGradient id={glowId} cx="50%" cy="50%" r="50%">
@@ -39,17 +46,17 @@ export function OpenConversationIndicator() {
           </RadialGradient>
         </Defs>
         <Circle
-          cx={GLOW_SIZE / 2}
-          cy={GLOW_SIZE / 2}
-          r={GLOW_SIZE / 2}
+          cx={glowSize / 2}
+          cy={glowSize / 2}
+          r={glowSize / 2}
           fill={`url(#${glowId})`}
         />
       </Svg>
       <View
         className="rounded-full"
         style={{
-          width: DOT_SIZE,
-          height: DOT_SIZE,
+          width: dotSize,
+          height: dotSize,
           backgroundColor: OPEN_CONVERSATION_COLOR,
           ...(Platform.OS === 'web'
             ? { boxShadow: '0 0 8px 1px rgba(243, 68, 13, 0.65)' }
@@ -57,7 +64,7 @@ export function OpenConversationIndicator() {
                 shadowColor: OPEN_CONVERSATION_COLOR,
                 shadowOffset: { width: 0, height: 0 },
                 shadowOpacity: 1,
-                shadowRadius: 4,
+                shadowRadius: size === 'compact' ? 3 : 4,
                 elevation: 4,
               }),
         }}

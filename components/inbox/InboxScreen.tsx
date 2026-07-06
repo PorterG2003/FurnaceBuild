@@ -5,8 +5,9 @@ import {
   Platform,
   useWindowDimensions,
 } from 'react-native';
-import { useRouter, useLocalSearchParams, type Href } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect, type Href } from 'expo-router';
 import { useAccount } from '@/contexts/AccountContext';
+import { useOpenConversationCounts } from '@/contexts/OpenConversationCountsContext';
 import { useToast } from '@/components/ui/feedback';
 import { PageLayout, LAYOUT_BREAKPOINT, BOTTOM_NAV_SCROLL_PADDING } from '@/components/ui/layout';
 import { openLeadDetail } from '@/lib/leads/navigation';
@@ -85,6 +86,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     thread?: string | string[];
   }>();
   const { account, memberships, setCurrentAccountId, initialized, loading: accountLoading } = useAccount();
+  const { adjustCount, refresh: refreshOpenConversationCounts } = useOpenConversationCounts();
   const { toast } = useToast();
   const accountId = account?.id ?? null;
   const membershipAccountIds = useMemo(
@@ -107,6 +109,12 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       routeThreadId ? `/inbox/${encodeURIComponent(routeThreadId)}` : '/inbox'
     );
   }, [routeThreadId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshOpenConversationCounts();
+    }, [refreshOpenConversationCounts]),
+  );
 
   useEffect(() => {
     if (routeThreadId != null || legacyRedirectDoneRef.current) return;
@@ -714,6 +722,9 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         changes: [{ field: 'conversation_status', from: selectedThread?.conversation_status ?? null, to: 'closed' }],
       });
       await closeConversation(selectedThreadId, source);
+      if (accountId && selectedThread?.conversation_status === 'open') {
+        adjustCount(accountId, -1);
+      }
       setThreads((prev) =>
         prev.map((thread) =>
           thread.id === selectedThreadId
@@ -726,7 +737,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         ),
       );
     },
-    [interactionSession, selectedThread?.conversation_status, selectedThreadId, setThreads, smartHandlingMetadata]
+    [accountId, adjustCount, interactionSession, selectedThread?.conversation_status, selectedThreadId, setThreads, smartHandlingMetadata]
   );
 
   const openSelectedConversation = useCallback(
@@ -738,6 +749,9 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         changes: [{ field: 'conversation_status', from: selectedThread?.conversation_status ?? null, to: 'open' }],
       });
       await reopenConversation(selectedThreadId, source);
+      if (accountId && selectedThread?.conversation_status === 'closed') {
+        adjustCount(accountId, 1);
+      }
       setThreads((prev) =>
         prev.map((thread) =>
           thread.id === selectedThreadId
@@ -750,7 +764,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         ),
       );
     },
-    [interactionSession, selectedThread?.conversation_status, selectedThreadId, setThreads]
+    [accountId, adjustCount, interactionSession, selectedThread?.conversation_status, selectedThreadId, setThreads]
   );
 
   const scrollMessagesToEnd = useCallback((reason: string, nextHeight?: number) => {

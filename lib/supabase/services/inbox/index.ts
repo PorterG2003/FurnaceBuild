@@ -1,4 +1,8 @@
 export {
+  getOpenConversationCount,
+  getOpenConversationCountsByAccountIds,
+} from './openConversationCounts';
+export {
   getThreadsByAccount,
   getThreadUnreadCounts,
   getThreadSnippets,

@@ -7,9 +7,11 @@ import {
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
-import { ChevronDownIcon, MagnifyingGlassIcon, CheckIcon } from 'react-native-heroicons/outline';
+import { ChevronDownIcon, MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import type { RefObject } from 'react';
 import type { AccountMembership } from '@/lib/supabase/services/accounts';
+import { useOpenConversationCounts } from '@/contexts/OpenConversationCountsContext';
+import { CountBadge } from '@/components/ui/CountBadge';
 
 const LIST_MAX_HEIGHT = 280;
 /** Reserve space for nav chrome above/below the panel (logo, nav items, trigger, Settings, Sign out). */
@@ -41,6 +43,7 @@ export function WorkspaceSwitcherContent({
   searchInputRef,
 }: WorkspaceSwitcherContentProps) {
   const [search, setSearch] = useState('');
+  const { countsByAccountId } = useOpenConversationCounts();
   const filteredMemberships = useMemo(() => {
     if (!search.trim()) return memberships;
     const q = search.trim().toLowerCase();
@@ -138,7 +141,15 @@ export function WorkspaceSwitcherContent({
                   {roleLabel(currentEntry.membership.role)}
                 </Text>
               </View>
-              <CheckIcon size={18} color="#f85102" style={{ marginLeft: 8 }} />
+              {(countsByAccountId[currentEntry.account.id] ?? 0) > 0 ? (
+                <View style={{ marginLeft: 8, flexShrink: 0 }}>
+                  <CountBadge
+                    count={countsByAccountId[currentEntry.account.id] ?? 0}
+                    size="nav"
+                    variant="solid"
+                  />
+                </View>
+              ) : null}
             </View>
           </View>
         )}
@@ -188,6 +199,11 @@ export function WorkspaceSwitcherContent({
                     {roleLabel(m.membership.role)}
                   </Text>
                 </View>
+                {(countsByAccountId[m.account.id] ?? 0) > 0 ? (
+                  <View style={{ marginLeft: 8, flexShrink: 0 }}>
+                    <CountBadge count={countsByAccountId[m.account.id] ?? 0} size="nav" variant="solid" />
+                  </View>
+                ) : null}
               </Pressable>
             ))
           )}

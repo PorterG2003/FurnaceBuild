@@ -16,6 +16,8 @@ import {
   UserGroupIcon,
 } from 'react-native-heroicons/outline';
 import { isInboxPath } from '@/lib/inbox/inboxRoutes';
+import { useOpenConversationCounts } from '@/contexts/OpenConversationCountsContext';
+import { IconBadgeAnchor } from '@/components/ui/CountBadge';
 import { useNavOnboardingTargets, navTargetRefForPath } from '@/lib/onboarding/useNavOnboardingTargets';
 
 const baseNavItems = [
@@ -139,6 +141,7 @@ function NativeIndicator({ activeIndex }: { activeIndex: number }) {
 export function BottomNavBar() {
   const router = useRouter();
   const pathname = usePathname();
+  const { currentCount: openConversationCount } = useOpenConversationCounts();
   const navItems = baseNavItems;
   const activeIndex = getActiveIndex(pathname, navItems);
   const navTargets = useNavOnboardingTargets();
@@ -190,10 +193,24 @@ export function BottomNavBar() {
               className="items-center justify-center"
               style={{ width: ICON_CELL_SIZE, height: ICON_CELL_SIZE }}
             >
-              <Icon
-                size={ICON_SIZE}
-                color={active ? '#f85102' : '#9CA3AF'}
-              />
+              {item.path === '/inbox' ? (
+                <IconBadgeAnchor
+                  count={openConversationCount}
+                  iconSize={ICON_SIZE}
+                  ringColor="#1A1A1A"
+                  offsetFactor={0.5}
+                >
+                  <Icon
+                    size={ICON_SIZE}
+                    color={active ? '#f85102' : '#9CA3AF'}
+                  />
+                </IconBadgeAnchor>
+              ) : (
+                <Icon
+                  size={ICON_SIZE}
+                  color={active ? '#f85102' : '#9CA3AF'}
+                />
+              )}
             </Pressable>
           );
         })}

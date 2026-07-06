@@ -6,7 +6,7 @@ import {
 } from 'react-native-heroicons/outline';
 import { BaseModal } from '@/components/ui/modals/BaseModal';
 import { useOnboardingOptional } from '@/components/onboarding/context';
-import { useToast } from '@/components/ui/feedback';
+import { useToast } from '@/components/ui/feedback/Toast';
 
 export const HELP_EMAIL = 'porter@getfurnace.io';
 export const HELP_EMAIL_URL = 'mailto:porter@getfurnace.io';

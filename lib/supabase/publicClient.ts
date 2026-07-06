@@ -4,6 +4,11 @@ import { supabasePublishableKey, supabaseUrl } from './config';
 
 let cachedPublicSupabase: SupabaseClient | null = null;
 
+function getPublicAuthStorageKey(): string {
+  const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
+  return `sb-${projectRef}-public-auth-token`;
+}
+
 /**
  * Public-only Supabase client for routes that must behave the same regardless of login state.
  * This client never persists or reuses the browser's authenticated session.
@@ -12,6 +17,7 @@ export function getPublicSupabaseClient(): SupabaseClient {
   if (!cachedPublicSupabase) {
     cachedPublicSupabase = createClient(supabaseUrl, supabasePublishableKey, {
       auth: {
+        storageKey: getPublicAuthStorageKey(),
         autoRefreshToken: false,
         persistSession: false,
         detectSessionInUrl: false,

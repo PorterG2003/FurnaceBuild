@@ -24,3 +24,5 @@ export function CsvImportPreviewHero({
     </View>
   );
 }
+
+export default CsvImportPreviewHero;

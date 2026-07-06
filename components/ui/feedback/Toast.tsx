@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { View, Text, Animated, Easing, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
+import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
 
 export type ToastVariant = 'error' | 'success' | 'warning' | 'info' | 'notification';
 

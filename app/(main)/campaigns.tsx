@@ -946,9 +946,13 @@ export default function CampaignsPage() {
   );
 
   const headerActions = isMobile ? (
-    <View className="flex-row items-center gap-2">{newCampaignButtonMobile}</View>
+    <View className="flex-row items-center gap-2">
+      {newCampaignButtonMobile}
+    </View>
   ) : (
-    <View className="flex-row items-center gap-2">{newCampaignButton}</View>
+    <View className="flex-row items-center gap-2">
+      {newCampaignButton}
+    </View>
   );
 
   return (
@@ -973,6 +977,7 @@ export default function CampaignsPage() {
         <CampaignListSkeleton />
       ) : campaigns.length === 0 ? (
         /* Empty State */
+        <View>
         <EmptyState
           title="No campaigns yet"
           description="Create your first campaign to get started with marketing automation"
@@ -988,6 +993,7 @@ export default function CampaignsPage() {
             </Pressable>
           }
         />
+        </View>
       ) : (
         /* Campaigns List */
         <View>
@@ -1032,7 +1038,7 @@ export default function CampaignsPage() {
               description="Try adjusting your search or filters."
             />
           ) : (
-            filteredCampaigns.map((campaign) => (
+            filteredCampaigns.map((campaign, index) => (
               <CampaignCard
                 key={campaign.id}
                 campaign={campaign}

@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import type { ComponentType, Ref } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { ChevronDownIcon } from 'react-native-heroicons/outline';
 import {
@@ -17,6 +17,7 @@ export interface MessageToolbarActionButtonProps {
   trailingChevron?: boolean;
   compactLabelColor?: string;
   maxWidth?: number;
+  targetRef?: Ref<View>;
 }
 export function MessageToolbarActionButton({
   label,
@@ -27,6 +28,7 @@ export function MessageToolbarActionButton({
   trailingChevron = false,
   compactLabelColor,
   maxWidth,
+  targetRef,
 }: MessageToolbarActionButtonProps) {
   const styles = getMessageToolbarToneColors(tone);
   const textColor = compactLabelColor ?? styles.textColor;
@@ -50,6 +52,7 @@ export function MessageToolbarActionButton({
 
   return (
     <Pressable
+      ref={targetRef}
       onPress={onPress}
       className="flex-row items-center gap-1.5 rounded-lg px-2.5 py-1.5 min-h-[32px] shrink-0"
       style={sharedStyle}

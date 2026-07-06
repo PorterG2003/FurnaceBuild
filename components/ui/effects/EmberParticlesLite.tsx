@@ -14,6 +14,24 @@ type Props = {
   maxOpacity?: number;
   /** Number of floating ember particles. Default matches historical `density="low"` (~22). */
   count?: number;
+  /**
+   * Upper bound on individual particle diameter (px). Min size is always ~3px.
+   * Default 12. Lower values produce finer, subtler sparks.
+   */
+  maxSize?: number;
+  /**
+   * Multiplier applied to each particle's rise duration. Values > 1 slow down,
+   * < 1 speed up. Default 1. Use ~2 for a compact modal to keep particles
+   * drifting gently rather than visibly cycling.
+   */
+  speedScale?: number;
+  /**
+   * Override the rise travel distance (px). Defaults to `windowHeight * 1.15`
+   * (appropriate for full-page heroes). For compact containers like modals, pass
+   * the container height so particles fill the visible area for their entire
+   * cycle instead of spending most of it above the clipped boundary.
+   */
+  containerHeight?: number;
 };
 
 export const EMBER_PARTICLES_LITE_DEFAULT_COUNT = 22;
@@ -47,15 +65,24 @@ type EmberSpec = {
   waveAnchor: number;
 };
 
-function buildEmberSpecs(count: number, maxOpacity: number): EmberSpec[] {
+function buildEmberSpecs(
+  count: number,
+  maxOpacity: number,
+  maxSize: number,
+  speedScale: number,
+): EmberSpec[] {
+  const sizeRange = Math.max(0, maxSize - 3);
   const specs: EmberSpec[] = [];
+  // Stratified horizontal placement: divide the usable width into equal slots
+  // and place one particle per slot with jitter. Prevents random clustering.
+  const slotWidth = 88 / count;
   for (let i = 0; i < count; i += 1) {
     const warm = Math.random() > 0.45;
     specs.push({
       id: i,
-      leftPct: 4 + Math.random() * 88,
-      size: 3 + Math.random() * 9,
-      durationMs: 9000 + Math.random() * 14000,
+      leftPct: 4 + i * slotWidth + Math.random() * slotWidth,
+      size: 3 + Math.random() * sizeRange,
+      durationMs: (9000 + Math.random() * 14000) * speedScale,
       opacity: maxOpacity * (0.45 + Math.random() * 0.55),
       r: warm ? 255 : 240 + Math.random() * 15,
       g: warm ? 70 + Math.random() * 100 : 40 + Math.random() * 40,
@@ -171,14 +198,20 @@ export function EmberParticlesLite({
   density = 'low',
   maxOpacity = 0.06,
   count = EMBER_PARTICLES_LITE_DEFAULT_COUNT,
+  maxSize = 12,
+  speedScale = 1,
+  containerHeight,
 }: Props) {
   const { height: windowHeight } = useWindowDimensions();
-  const travel = Math.max(420, windowHeight * 1.15);
+  // When containerHeight is provided particles travel exactly that distance, so
+  // every phase value 0→1 is visible inside the clipped container. Without it
+  // we fall back to the window-height heuristic for full-bleed heroes.
+  const travel = containerHeight != null ? containerHeight : Math.max(420, windowHeight * 1.15);
   const clockMs = useSharedValue(0);
 
   const specsRef = useRef<EmberSpec[] | null>(null);
   if (specsRef.current == null) {
-    specsRef.current = buildEmberSpecs(count, maxOpacity);
+    specsRef.current = buildEmberSpecs(count, maxOpacity, maxSize, speedScale);
   }
 
   useEffect(() => {

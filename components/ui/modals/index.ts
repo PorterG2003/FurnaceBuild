@@ -1,6 +1,7 @@
 export { BaseModal } from './BaseModal';
 export {
   BottomSheet,
+  BOTTOM_SHEET_HORIZONTAL_PADDING,
   BOTTOM_SHEET_MAX_VIEWPORT_RATIO,
   getBottomSheetBodyScrollMaxHeight,
   getBottomSheetExpandedBodyHeight,

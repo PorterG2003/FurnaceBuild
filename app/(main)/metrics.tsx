@@ -29,7 +29,6 @@ import {
   ClockIcon,
   FunnelIcon,
 } from 'react-native-heroicons/outline';
-
 function formatInt(n: number): string {
   return new Intl.NumberFormat('en-US').format(n);
 }
@@ -140,21 +139,23 @@ export default function AccountMetricsPage() {
   const hasActiveFilters = selectedCampaignIds.length > 0;
 
   const headerActions = isMobile ? (
-    <Pressable
-      onPress={() => setFiltersSheetOpen(true)}
-      accessibilityRole="button"
-      accessibilityLabel="Filters"
-      className="rounded-xl items-center justify-center"
-      style={{
-        width: 44,
-        height: 44,
-        backgroundColor: '#1A1A1A',
-        borderColor: '#2A2A2A',
-        borderWidth: 1,
-      }}
-    >
-      <FunnelIcon size={18} color={hasActiveFilters ? '#F3440D' : '#9CA3AF'} />
-    </Pressable>
+    <View>
+      <Pressable
+        onPress={() => setFiltersSheetOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Filters"
+        className="rounded-xl items-center justify-center"
+        style={{
+          width: 44,
+          height: 44,
+          backgroundColor: '#1A1A1A',
+          borderColor: '#2A2A2A',
+          borderWidth: 1,
+        }}
+      >
+        <FunnelIcon size={18} color={hasActiveFilters ? '#F3440D' : '#9CA3AF'} />
+      </Pressable>
+    </View>
   ) : (
     <View className="min-w-0 max-w-[min(100%,920px)] shrink">
       <AccountMetricsToolbar {...metricsToolbarProps} />

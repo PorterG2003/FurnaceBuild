@@ -551,10 +551,12 @@ export default function SendersPage() {
         primaryAction={isMobile ? undefined : desktopHeaderActions}
       />
       {isMobile ? (
-        <Alert
-          variant="info"
-          message="To connect new mailboxes or upload a CSV, use Furnace on a desktop browser."
-        />
+        <View>
+          <Alert
+            variant="info"
+            message="To connect new mailboxes or upload a CSV, use Furnace on a desktop browser."
+          />
+        </View>
       ) : null}
 
       <View className="mb-4 flex-row items-center" style={{ minWidth: 0, gap: 10 }}>
@@ -592,32 +594,34 @@ export default function SendersPage() {
         </View>
       </View>
 
-      <MailboxesTable
-        isLoading={isLoading}
-        showSkeleton={showSkeleton}
-        isMobile={isMobile}
-        allowAddMailboxes={!isMobile}
-        mailboxes={filteredMailboxes}
-        totalMailboxes={mailboxes.length}
-        hasActiveFilters={activeFilterCount > 0 || searchQuery.trim().length > 0}
-        mailboxTagsMap={mailboxTagsMap}
-        selectedMailboxes={selectedMailboxes}
-        onSelectionChange={setSelectedMailboxes}
-        onTestMailbox={handleTestMailbox}
-        onManageTags={(mailbox) => setManagingTagsMailboxId(mailbox.id)}
-        onEditMailbox={handleEditMailbox}
-        onDeleteClick={handleDeleteClick}
-        testingMailboxId={testingMailboxId}
-        onBulkDelete={handleBulkDelete}
-        onBulkEdit={handleBulkEdit}
-        onBulkTestSelected={openRetestModalForIds}
-        onClearSelection={() => setSelectedMailboxes(new Set())}
-        onConnectMailbox={openConnectModal}
-        onUploadCSV={openUploadCSVModal}
-        onActionsSheetMailboxChange={handleActionsSheetMailboxChange}
-        testResult={testResult}
-        testResultMailboxEmail={testResultMailboxEmail}
-      />
+      <View>
+        <MailboxesTable
+          isLoading={isLoading}
+          showSkeleton={showSkeleton}
+          isMobile={isMobile}
+          allowAddMailboxes={!isMobile}
+          mailboxes={filteredMailboxes}
+          totalMailboxes={mailboxes.length}
+          hasActiveFilters={activeFilterCount > 0 || searchQuery.trim().length > 0}
+          mailboxTagsMap={mailboxTagsMap}
+          selectedMailboxes={selectedMailboxes}
+          onSelectionChange={setSelectedMailboxes}
+          onTestMailbox={handleTestMailbox}
+          onManageTags={(mailbox) => setManagingTagsMailboxId(mailbox.id)}
+          onEditMailbox={handleEditMailbox}
+          onDeleteClick={handleDeleteClick}
+          testingMailboxId={testingMailboxId}
+          onBulkDelete={handleBulkDelete}
+          onBulkEdit={handleBulkEdit}
+          onBulkTestSelected={openRetestModalForIds}
+          onClearSelection={() => setSelectedMailboxes(new Set())}
+          onConnectMailbox={openConnectModal}
+          onUploadCSV={openUploadCSVModal}
+          onActionsSheetMailboxChange={handleActionsSheetMailboxChange}
+          testResult={testResult}
+          testResultMailboxEmail={testResultMailboxEmail}
+        />
+      </View>
 
       {accountId && managingTagsMailboxId ? (
         <MailboxTagsManager

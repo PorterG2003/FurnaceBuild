@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react';
+import React, { type ReactNode, type RefObject } from 'react';
 import { View, Text, Pressable, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Breadcrumb } from './Breadcrumb';
@@ -27,6 +27,8 @@ interface DetailPageHeaderProps {
   onBack?: () => void;
   /** Mobile only: when set, title/subtitle become pressable (e.g. open lead detail). */
   onTitlePress?: () => void;
+  /** Mobile only: ref on the pressable title block (e.g. onboarding anchor). */
+  titleRef?: RefObject<View | null>;
 }
 
 export function DetailPageHeader({
@@ -39,6 +41,7 @@ export function DetailPageHeader({
   mobileRightAction,
   onBack,
   onTitlePress,
+  titleRef,
 }: DetailPageHeaderProps) {
   const { width } = useWindowDimensions();
   const router = useRouter();
@@ -55,7 +58,7 @@ export function DetailPageHeader({
           <MobileHeaderBackButton onPress={handleBack} />
           <View style={{ gap: 0 }}>
             {onTitlePress ? (
-              <Pressable onPress={onTitlePress} accessibilityLabel="View lead profile">
+              <Pressable ref={titleRef} collapsable={false} onPress={onTitlePress} accessibilityLabel="View lead profile">
                 <View className="flex-row items-center gap-2 flex-wrap">
                   <Text
                     className="text-white font-instrument-semibold text-2xl shrink-0 leading-8"

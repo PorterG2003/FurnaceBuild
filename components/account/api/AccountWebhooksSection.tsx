@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 import { Text, View, useWindowDimensions } from 'react-native';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,8 @@ interface AccountWebhooksSectionProps {
   headerTitleClassName?: string;
   onAccountUpdated?: () => Promise<void>;
   initialFailedDeliveryCount?: number;
+  /** Spotlight anchor — attach to the card root, not a wrapper (avoids measuring card margin). */
+  anchorRef?: RefObject<View | null>;
 }
 
 function truncateUrl(url: string, maxLen = 48): string {
@@ -69,6 +71,7 @@ export function AccountWebhooksSection({
   headerTitleClassName,
   onAccountUpdated,
   initialFailedDeliveryCount,
+  anchorRef,
 }: AccountWebhooksSectionProps) {
   const { toast } = useToast();
   const { width } = useWindowDimensions();
@@ -143,7 +146,7 @@ export function AccountWebhooksSection({
   const extraEventCount = extraLabelCount;
 
   return (
-    <Card variant={cardVariant} className={cardClassName ?? ''}>
+    <Card ref={anchorRef} variant={cardVariant} className={cardClassName ?? ''}>
       <View
         className={`flex-row items-center justify-between gap-3 border-b border-[#2A2A2A] pb-2 ${headerRowMb}`}
       >

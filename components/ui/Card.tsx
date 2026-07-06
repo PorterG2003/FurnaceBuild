@@ -17,7 +17,10 @@ interface CardProps {
  * List-item card with styled (desktop) vs inline (mobile) variant so one implementation works for both.
  * Use in list contexts (e.g. campaign list). On mobile renders without bg/border to avoid two of everything.
  */
-export function Card({ children, variant, onPress, className = '' }: CardProps) {
+export const Card = React.forwardRef<View, CardProps>(function Card(
+  { children, variant, onPress, className = '' },
+  ref,
+) {
   const { width } = useWindowDimensions();
   const resolvedVariant = variant ?? (width < LAYOUT_BREAKPOINT ? 'inline' : 'card');
 
@@ -27,10 +30,14 @@ export function Card({ children, variant, onPress, className = '' }: CardProps) 
     : '';
   const combinedClass = `${baseClass} ${className}`.trim();
 
-  const content = <View className={combinedClass}>{children}</View>;
+  const content = (
+    <View ref={ref} collapsable={false} className={combinedClass}>
+      {children}
+    </View>
+  );
 
   if (onPress) {
     return <Pressable onPress={onPress}>{content}</Pressable>;
   }
   return content;
-}
+});

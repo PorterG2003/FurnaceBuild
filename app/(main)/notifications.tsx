@@ -18,7 +18,6 @@ import type {
   AppNotification,
   NotificationListFilter,
 } from '@/lib/supabase/services/notifications';
-
 const DESKTOP_CONTENT_MAX_WIDTH = 720;
 
 const breadcrumbItems = [{ label: 'Settings', href: '/account' }, { label: 'Notifications' }];

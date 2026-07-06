@@ -58,6 +58,7 @@ export interface Database {
           webhook_url: string | null;
           webhook_signing_secret: string | null;
           webhook_enabled_events: Json;
+          onboarding_segment: 'self_serve' | 'dfy' | null;
           created_at: string;
           updated_at: string;
         };
@@ -69,6 +70,7 @@ export interface Database {
           webhook_url?: string | null;
           webhook_signing_secret?: string | null;
           webhook_enabled_events?: Json;
+          onboarding_segment?: 'self_serve' | 'dfy' | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -80,6 +82,7 @@ export interface Database {
           webhook_url?: string | null;
           webhook_signing_secret?: string | null;
           webhook_enabled_events?: Json;
+          onboarding_segment?: 'self_serve' | 'dfy' | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -844,6 +847,29 @@ export interface Database {
           user_id?: string;
           flag_key?: string;
           created_at?: string;
+        };
+      };
+      user_onboarding_state: {
+        Row: {
+          user_id: string;
+          flow_id: string;
+          flow_version: number;
+          status: 'completed' | 'dismissed' | 'aborted';
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          flow_id: string;
+          flow_version?: number;
+          status: 'completed' | 'dismissed' | 'aborted';
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          flow_id?: string;
+          flow_version?: number;
+          status?: 'completed' | 'dismissed' | 'aborted';
+          updated_at?: string;
         };
       };
       invitations: {

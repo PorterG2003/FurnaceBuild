@@ -59,6 +59,29 @@ This is the default `npm run seed` scenario. It is intentionally broad enough fo
 npx tsx scripts/seed/index.ts --scenario=dev-default --dry-run
 ```
 
+### `demo-hub` scenario
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `SEED_ACCOUNT_ID` | Yes | Existing account UUID (`accounts.id`) for the Porter Gardiner demo workspace |
+| `SEED_OWNER_USER_ID` | Yes | Existing user UUID (`users.id`) for `campaigns.owner_id` and `mailboxes.user_id` |
+| `SEED_PREVIEW_ORIGIN` | No | Base origin for printed deep links, e.g. `http://localhost:8081` |
+
+Creates an onboarding/demo account slice for **Acme Example Co.** (Porter Gardiner):
+
+- 4 campaigns (running / paused / stopped / draft),
+- **~3,000** leads and **~40** inbox threads,
+- **30** `@demo.furnace.test` mailboxes,
+- campaign stats with realistic reply rates (~3% replied, ~30% of replies positive).
+
+See [`DEMO.md`](./DEMO.md) for the record/reset loop.
+
+```bash
+npm run seed:demo -- --dry-run
+npm run seed:demo
+SEED_RESET_CONFIRM=1 npm run seed:reset -- --scope=demo-hub
+```
+
 ### `campaign-smoke` scenario
 
 | Variable | Required | Description |
@@ -287,7 +310,7 @@ Use the dedicated reset command when you want to remove seeded dev data without 
 
 ```bash
 npm run seed:reset -- --dry-run
-npm run seed:reset -- --scope=dev-default --dry-run
+npm run seed:reset -- --scope=demo-hub --dry-run
 npm run seed:reset -- --scope=campaign-smoke --dry-run
 npm run seed:reset -- --scope=ooo-mixed-inbox --dry-run
 npm run seed:reset -- --scope=smart-handling-flow --dry-run
@@ -303,7 +326,7 @@ Optional:
 - `SEED_CAMPAIGN_ID` for the `campaign-smoke` slice
 - `SEED_OOO_CAMPAIGN_ID` for the `ooo-mixed-inbox` slice
 - `SEED_SMART_HANDLING_MANUAL_CAMPAIGN_ID` / `SEED_SMART_HANDLING_AI_CAMPAIGN_ID` for the `smart-handling-flow` slice
-- `--scope=dev-default|campaign-smoke|ooo-mixed-inbox|smart-handling-flow|all`
+- `--scope=dev-default|demo-hub|campaign-smoke|ooo-mixed-inbox|smart-handling-flow|all`
 
 Reset is intentionally conservative:
 
@@ -312,6 +335,7 @@ Reset is intentionally conservative:
 - if `--scope=ooo-mixed-inbox` is provided, it targets that dedicated OOO campaign id
 - if `--scope=smart-handling-flow` is provided, it targets the dedicated Smart Handling manual + AI campaign ids
 - if `--scope=dev-default` is provided, it resets the 5 built-in production-like seed campaigns and their shared seed mailboxes
+- if `--scope=demo-hub` is provided, it resets the 4 demo-hub campaigns and their shared `@demo.furnace.test` mailboxes
 - if `--scope=all` is provided, it resets all known built-in scenario slices
 
 Delete order is FK-aware:

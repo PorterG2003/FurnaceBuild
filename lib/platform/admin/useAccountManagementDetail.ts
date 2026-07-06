@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useToast } from '@/components/ui/feedback';
 import { useAccount } from '@/contexts/AccountContext';
 import {
+  adminSetAccountOnboardingSegment,
   cancelPlatformAccountAmendment,
   createBillingAdjustment,
   getPlatformAccountAmendmentInfo,
@@ -13,6 +14,7 @@ import {
   restorePlatformInvitationRevision,
   revokePlatformInvitation,
   unpublishPlatformInvitation,
+  type OnboardingSegment,
   type PlatformAccountAmendment,
   type PlatformAccountAmendmentInfo,
   type PlatformAccountManagementDetail,
@@ -79,6 +81,7 @@ export type AccountDetailRecord = {
   owner_user_id?: string | null;
   owner_name?: string | null;
   owner_email?: string | null;
+  onboarding_segment?: 'self_serve' | 'dfy' | null;
   created_at: string;
   updated_at: string;
 };
@@ -445,6 +448,24 @@ export function useAccountManagementDetail({
     }
   };
 
+  const handleSetOnboardingSegment = async (segment: OnboardingSegment | null) => {
+    if (!account?.id) return;
+    setSavingAction(true);
+    try {
+      await adminSetAccountOnboardingSegment(account.id, segment);
+      toast.success(
+        segment === null
+          ? 'Onboarding segment reset to automatic.'
+          : `Onboarding segment set to ${segment === 'dfy' ? 'done-for-you' : 'self-serve'}.`,
+      );
+      await loadDetail();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update onboarding segment.');
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
   const handleCreateAdjustment = async () => {
     if (!account?.id) return;
     const discountCents = Math.round(Number(adjustmentDiscount || 0) * 100);
@@ -520,6 +541,7 @@ export function useAccountManagementDetail({
     handleCopyAmendmentLink,
     handleCancelAmendment,
     handleCreateAdjustment,
+    handleSetOnboardingSegment,
     adjustmentYear,
     setAdjustmentYear,
     adjustmentMonth,

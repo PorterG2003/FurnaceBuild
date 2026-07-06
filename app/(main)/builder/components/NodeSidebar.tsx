@@ -26,7 +26,7 @@ let persistedExpandedState = false; // Start collapsed by default
 
 function NodeSidebar({ onAddNode }: NodeSidebarProps) {
   const [isExpanded, setIsExpanded] = useState(persistedExpandedState);
-  
+
   // Animated width values: collapsed = 56px (same as NavBar), expanded = 280px
   const width = useSharedValue(persistedExpandedState ? 280 : 56);
   const contentOpacity = useSharedValue(persistedExpandedState ? 1 : 0);

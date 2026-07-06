@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { View, Text, Pressable, type LayoutChangeEvent } from 'react-native';
 import { SmartleadBadge } from '@/components/campaigns';
 import { Select } from '@/components/ui/forms';
+import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
+import { TARGETS } from '@/lib/onboarding/types';
 import type { InboxThreadToolbarAction } from '@/lib/inbox';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
@@ -55,6 +57,9 @@ export function MessagePanelHeader({
   onOpenLeadDetail?: () => void;
 }) {
   const _blockedEmails = blockedEmails ?? EMPTY_BLOCKED_EMAILS;
+  const leadDetailRef = useOnboardingTarget(TARGETS.inboxLeadDetail);
+  const threadActionsRef = useOnboardingTarget(TARGETS.inboxThreadActions);
+  const categoryActionRef = useOnboardingTarget(TARGETS.inboxActionCategory);
   const [rightClusterWidth, setRightClusterWidth] = useState(0);
   const isSmartleadSource = !!sourceLabel && (sourceLabel === 'Smartlead' || sourceLabel.startsWith('Imported from Smartlead'));
   const resolvedCategoryOptions = categoryOptions ?? DEFAULT_CATEGORY_OPTIONS;
@@ -138,6 +143,8 @@ export function MessagePanelHeader({
       <View className="flex-row items-start gap-3">
         {/* Left: prospect name + email (optional) */}
         <View
+          ref={leadDetailRef}
+          collapsable={false}
           className="min-w-0"
           style={{
             flexBasis: showToolbar ? TITLE_BLOCK_MAX_WIDTH : 0,
@@ -164,6 +171,8 @@ export function MessagePanelHeader({
         {/* Right: toolbar — campaign chip, Block List, tags, category */}
         {showToolbar ? (
           <View
+            ref={threadActionsRef}
+            collapsable={false}
             className="flex-1 min-w-0 flex-row items-center justify-end gap-2"
             style={{ flexBasis: 0 }}
             onLayout={handleRightClusterLayout}
@@ -225,7 +234,11 @@ export function MessagePanelHeader({
               }
               suffix={
                 onSetCategory && resolvedCategoryOptions.length > 0 ? (
-                  <View style={{ width: CATEGORY_CONTROL_WIDTH }}>
+                  <View
+                    ref={categoryActionRef}
+                    collapsable={false}
+                    style={{ width: CATEGORY_CONTROL_WIDTH }}
+                  >
                     <Select<{ id: string; name: string }>
                       items={categoryItems}
                       getItemId={(i) => i.id}

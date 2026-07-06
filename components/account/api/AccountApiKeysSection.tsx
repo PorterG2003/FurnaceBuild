@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { Platform, Text, View, useWindowDimensions } from 'react-native';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,8 @@ interface AccountApiKeysSectionProps {
   titleClassName: string;
   headerTitleClassName?: string;
   initialKeys?: AccountApiKey[];
+  /** Spotlight anchor — attach to the card root, not a wrapper (avoids measuring card margin). */
+  anchorRef?: RefObject<View | null>;
 }
 
 export function AccountApiKeysSection({
@@ -38,6 +40,7 @@ export function AccountApiKeysSection({
   titleClassName,
   headerTitleClassName,
   initialKeys,
+  anchorRef,
 }: AccountApiKeysSectionProps) {
   const { toast } = useToast();
   const { width } = useWindowDimensions();
@@ -98,7 +101,7 @@ export function AccountApiKeysSection({
   };
 
   return (
-    <Card variant={cardVariant} className={cardClassName ?? ''}>
+    <Card ref={anchorRef} variant={cardVariant} className={cardClassName ?? ''}>
       <View
         className={`flex-row items-center justify-between gap-3 border-b border-[#2A2A2A] pb-2 ${headerRowMb}`}
       >

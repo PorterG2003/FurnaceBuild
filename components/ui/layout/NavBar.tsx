@@ -21,6 +21,12 @@ import { WorkspaceSwitcherPopover } from '@/components/ui/WorkspaceSwitcherPopov
 import { HelpModal } from '@/components/ui/help';
 import { NavBarButton } from './NavBarButton';
 import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
+import { useOnboardingOptional } from '@/components/onboarding/context';
+import {
+  isNavOnboardingTarget,
+  navTargetRefForPath,
+  useNavOnboardingTargets,
+} from '@/lib/onboarding/useNavOnboardingTargets';
 const furnaceLogoFull = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg height="100%" stroke-miterlimit="10" style="fill-rule:nonzero;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;" version="1.1" viewBox="0 0 1584 396" width="100%" xml:space="preserve" xmlns="http://www.w3.org/2000/svg">
@@ -162,6 +168,18 @@ export function NavBar() {
 
   const navRef = useRef<View>(null);
   const switcherContainerRef = useRef<View>(null);
+  const navTargets = useNavOnboardingTargets();
+  const onboarding = useOnboardingOptional();
+  const currentOnboardingStep = onboarding?.currentStep;
+  const navSpotlightTargetId =
+    currentOnboardingStep?.kind === 'spotlight' ? currentOnboardingStep.targetId : undefined;
+  const navSpotlightActive = navSpotlightTargetId != null && isNavOnboardingTarget(navSpotlightTargetId);
+
+  useEffect(() => {
+    if (!navSpotlightActive) return;
+    persistedExpandedState = true;
+    setIsExpanded(true);
+  }, [navSpotlightActive, navSpotlightTargetId]);
 
   // Close workspace switcher when clicking outside the switcher (or outside nav if ref not set). When click is outside nav, also collapse the nav.
   useEffect(() => {
@@ -176,7 +194,7 @@ export function NavBar() {
       const outsideSwitcher = switcherEl ? !contains(switcherEl, target) : !contains(navEl, target);
       if (outsideSwitcher) {
         setWorkspaceSwitcherOpen(false);
-        if (navEl && !contains(navEl, target)) {
+        if (!navSpotlightActive && navEl && !contains(navEl, target)) {
           persistedExpandedState = false;
           setIsExpanded(false);
         }
@@ -184,7 +202,7 @@ export function NavBar() {
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [workspaceSwitcherOpen]);
+  }, [workspaceSwitcherOpen, navSpotlightActive]);
 
   const mouseProps = Platform.OS === 'web' ? {
     onMouseEnter: () => {
@@ -192,6 +210,7 @@ export function NavBar() {
       setIsExpanded(true);
     },
     onMouseLeave: (e: any) => {
+      if (navSpotlightActive) return;
       if (workspaceSwitcherOpen) return;
       const ne = e?.nativeEvent;
       const clientX = ne?.clientX ?? 0;
@@ -242,10 +261,11 @@ export function NavBar() {
         </View>
 
         {/* Navigation Links */}
-        <View>
+        <View className="gap-2">
           {navItems.map((item) => (
             <NavBarButton
               key={item.path}
+              ref={navTargetRefForPath(item.path, navTargets)}
               icon={item.icon}
               label={item.label}
               onPress={() => router.push(item.path)}
@@ -258,6 +278,7 @@ export function NavBar() {
         {/* Spacer to push help + account section to bottom */}
         <View className="flex-1" />
 
+        <View className="gap-2">
         <NavBarButton
           icon={LifebuoyIcon}
           label="Need help?"
@@ -267,8 +288,8 @@ export function NavBar() {
 
         {/* Account Section */}
         {user && (
-          <View>
-            <View className="h-px bg-[#2A2A2A] mb-4" />
+          <View className="gap-2">
+            <View className="h-px bg-[#2A2A2A]" />
 
             {/* Current workspace name + switcher (when multiple accounts) */}
             {account && (
@@ -303,6 +324,7 @@ export function NavBar() {
             )}
 
             <NavBarButton
+              ref={navTargets.settings}
               icon={Cog6ToothIcon}
               label="Settings"
               onPress={() => router.push('/account')}
@@ -319,6 +341,7 @@ export function NavBar() {
             />
           </View>
         )}
+        </View>
       </View>
 
       <HelpModal visible={helpOpen} onClose={() => setHelpOpen(false)} />

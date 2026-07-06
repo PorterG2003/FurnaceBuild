@@ -18,6 +18,7 @@ import {
 } from 'react-native-heroicons/outline';
 import { isInboxPath } from '@/lib/inbox/inboxRoutes';
 import { usePlatformAdminAccess } from '@/hooks/usePlatformAdminAccess';
+import { useNavOnboardingTargets, navTargetRefForPath } from '@/lib/onboarding/useNavOnboardingTargets';
 
 const baseNavItems = [
   { path: '/campaigns', icon: MegaphoneIcon },
@@ -145,6 +146,7 @@ export function BottomNavBar() {
     ? [...baseNavItems.slice(0, 5), { path: '/admin', icon: BuildingLibraryIcon }, ...baseNavItems.slice(5)]
     : baseNavItems;
   const activeIndex = getActiveIndex(pathname, navItems);
+  const navTargets = useNavOnboardingTargets();
 
   const shadowStyle =
     Platform.OS === 'web'
@@ -183,9 +185,12 @@ export function BottomNavBar() {
         {navItems.map((item, index) => {
           const active = index === activeIndex;
           const Icon = item.icon;
+          const itemRef = navTargetRefForPath(item.path, navTargets);
           return (
             <Pressable
               key={item.path}
+              ref={itemRef}
+              collapsable={false}
               onPress={() => router.push(item.path)}
               className="items-center justify-center"
               style={{ width: ICON_CELL_SIZE, height: ICON_CELL_SIZE }}

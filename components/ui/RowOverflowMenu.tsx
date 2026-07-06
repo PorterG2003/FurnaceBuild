@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import {
   Modal,
   Platform,
@@ -34,6 +34,7 @@ export interface RowOverflowMenuItem {
   label: string;
   onPress: () => void;
   icon: MenuIcon;
+  targetRef?: Ref<View>;
   accessibilityLabel?: string;
   tone?: 'default' | 'destructive';
   iconColor?: string;
@@ -54,6 +55,12 @@ export interface RowOverflowMenuProps {
   triggerClassName?: string;
   /** `mobile-actions` matches inbox `MobileHeaderButton` three-dots styling. */
   triggerVariant?: 'overflow' | 'mobile-actions';
+  /**
+   * When true, the menu is held open and outside-press dismissal is suppressed.
+   * Used by the inbox onboarding tour to walk the collapsed actions inside the
+   * menu without it closing when the user clicks the tour callout.
+   */
+  forceOpen?: boolean;
 }
 
 export function RowOverflowMenu({
@@ -68,6 +75,7 @@ export function RowOverflowMenu({
   triggerContainerStyle,
   triggerClassName,
   triggerVariant = 'overflow',
+  forceOpen = false,
 }: RowOverflowMenuProps) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isMobile = screenWidth < LAYOUT_BREAKPOINT;
@@ -103,7 +111,20 @@ export function RowOverflowMenu({
     });
   }, [disabled, isMobile]);
 
+  // Onboarding-driven pin: hold the menu open while `forceOpen`, and close it
+  // again when the tour releases it. Normal usage (forceOpen stays false) is
+  // unaffected because this only runs when forceOpen/openMenu change.
   useEffect(() => {
+    if (forceOpen) {
+      openMenu();
+    } else {
+      setSheetOpen(false);
+      setAnchorLayout(null);
+    }
+  }, [forceOpen, openMenu]);
+
+  useEffect(() => {
+    if (forceOpen) return;
     if (!anchorLayout || isMobile || Platform.OS !== 'web') return;
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null;
@@ -116,7 +137,7 @@ export function RowOverflowMenu({
     };
     document.addEventListener('pointerdown', onPointerDown, true);
     return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [anchorLayout, isMobile]);
+  }, [anchorLayout, isMobile, forceOpen]);
 
   const desktopPosition = useMemo(() => {
     if (!anchorLayout) return null;
@@ -151,6 +172,7 @@ export function RowOverflowMenu({
       const Icon = item.icon;
       return (
         <Pressable
+          ref={item.targetRef}
           key={item.key}
           onPress={() => {
             closeAll();
@@ -221,11 +243,13 @@ export function RowOverflowMenu({
           transparent
           visible={desktopPosition != null}
           animationType="fade"
-          onRequestClose={() => setAnchorLayout(null)}
+          onRequestClose={() => {
+            if (!forceOpen) setAnchorLayout(null);
+          }}
         >
           {desktopPosition ? (
             <View style={styles.modalRoot} pointerEvents="box-none">
-              {Platform.OS !== 'web' ? (
+              {Platform.OS !== 'web' && !forceOpen ? (
                 <Pressable
                   style={styles.nativeDismiss}
                   onPress={() => setAnchorLayout(null)}

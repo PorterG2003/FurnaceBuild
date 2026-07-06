@@ -1,6 +1,9 @@
 import { createContext, useContext, type RefObject } from 'react';
 import type { View } from 'react-native';
+import type { InboxThreadToolbarActionKey } from '@/lib/inbox';
 import type { Progress } from '@/lib/onboarding/engine';
+import type { OnboardingHostId } from '@/lib/onboarding/onboardingHosts';
+import type { TargetSurface } from '@/lib/onboarding/targetRegistry';
 import type { FlowId, OnboardingStep, Segment, TargetId } from '@/lib/onboarding/types';
 
 export interface TargetRect {
@@ -18,6 +21,10 @@ export interface OnboardingContextValue {
    * The provider scheduler picks the first unseen eligible flow when idle.
    */
   registerFlowIntent: (id: FlowId, ready: boolean) => void;
+  /** True once persisted seen-state has loaded for the current user. */
+  seenStateLoaded: boolean;
+  /** Read whether a flow has already been seen for the current user. */
+  hasSeenFlow: (id: FlowId) => boolean;
   dismissFlow: () => void;
   /** Clears persisted state for a flow so it can run again ("Replay tour"). */
   resetFlow: (id: FlowId) => Promise<void>;
@@ -28,10 +35,22 @@ export interface OnboardingContextValue {
   notifyTargetPress: (id: TargetId) => void;
   /** Advances the current step when its `advance` mode is `onRequirementMet`. */
   notifyStepRequirementMet: () => void;
-  /** When true, the current manual step's Next button is disabled. */
-  advanceGateBlocked: boolean;
-  setAdvanceGateBlocked: (blocked: boolean) => void;
-  registerTarget: (id: TargetId, ref: RefObject<View | null>) => () => void;
+  /** When true, the current manual step's Next button is blocked by app state. */
+  currentStepNextBlocked: boolean;
+  setCurrentStepNextBlocked: (blocked: boolean) => void;
+  /** `surface` scopes the ref so the same TargetId can coexist on the global
+   * viewport and inside a modal host without one registration overwriting the
+   * other. Defaults to `'global'`. */
+  registerTarget: (id: TargetId, ref: RefObject<View | null>, surface?: TargetSurface) => () => void;
+  /**
+   * The inbox thread toolbar reports which actions are currently collapsed into
+   * the "More actions" overflow menu (ordered), or null when no toolbar is
+   * mounted. Read at flow start so the inbox action tours can resolve
+   * inline-vs-in-menu steps up front instead of skipping at render time.
+   */
+  setInboxToolbarOverflow: (keys: readonly InboxThreadToolbarActionKey[] | null) => void;
+  /** True once the inbox toolbar has reported an overflow split for this thread. */
+  inboxToolbarOverflowReported: boolean;
 
   // State for the overlay
   currentStep: OnboardingStep | null;
@@ -51,8 +70,10 @@ export interface OnboardingContextValue {
   skipStep: () => void;
   /** Ends the active flow because a step's target never appeared. */
   abortFlow: () => void;
-  measureTarget: (id: TargetId) => Promise<TargetRect | null>;
-  getTargetNode: (id: TargetId) => unknown | null;
+  /** `surface` defaults to the active step's `hostId` (or `'global'`) so
+   * callers measuring the current step's own target never need to pass it. */
+  measureTarget: (id: TargetId, surface?: TargetSurface) => Promise<TargetRect | null>;
+  getTargetNode: (id: TargetId, surface?: TargetSurface) => unknown | null;
 }
 
 export const OnboardingContext = createContext<OnboardingContextValue | null>(null);
@@ -68,4 +89,17 @@ export function useOnboarding(): OnboardingContextValue {
 /** Returns null outside a provider — safe for shared components to adopt. */
 export function useOnboardingOptional(): OnboardingContextValue | null {
   return useContext(OnboardingContext);
+}
+
+/**
+ * Shared selector: true when the active onboarding step declares `hostId`.
+ * Single source of truth for both the `OnboardingHost` render gate and the
+ * screen-level lifecycle (pin + non-blocking) wiring, so the "current step
+ * belongs to this host" check is never duplicated or drifts.
+ */
+export function useOnboardingHostActive(hostId: OnboardingHostId): boolean {
+  const ctx = useOnboardingOptional();
+  const step = ctx?.currentStep;
+  if (!step || step.kind !== 'spotlight') return false;
+  return step.hostId === hostId;
 }

@@ -59,6 +59,7 @@ export function MessagePanelHeader({
   const _blockedEmails = blockedEmails ?? EMPTY_BLOCKED_EMAILS;
   const leadDetailRef = useOnboardingTarget(TARGETS.inboxLeadDetail);
   const threadActionsRef = useOnboardingTarget(TARGETS.inboxThreadActions);
+  const categoryActionRef = useOnboardingTarget(TARGETS.inboxActionCategory);
   const [rightClusterWidth, setRightClusterWidth] = useState(0);
   const isSmartleadSource = !!sourceLabel && (sourceLabel === 'Smartlead' || sourceLabel.startsWith('Imported from Smartlead'));
   const resolvedCategoryOptions = categoryOptions ?? DEFAULT_CATEGORY_OPTIONS;
@@ -233,7 +234,11 @@ export function MessagePanelHeader({
               }
               suffix={
                 onSetCategory && resolvedCategoryOptions.length > 0 ? (
-                  <View style={{ width: CATEGORY_CONTROL_WIDTH }}>
+                  <View
+                    ref={categoryActionRef}
+                    collapsable={false}
+                    style={{ width: CATEGORY_CONTROL_WIDTH }}
+                  >
                     <Select<{ id: string; name: string }>
                       items={categoryItems}
                       getItemId={(i) => i.id}

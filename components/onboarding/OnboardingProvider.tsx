@@ -22,9 +22,12 @@ import {
   type EngineState,
 } from '@/lib/onboarding/engine';
 import { getAllFlows, getFlow } from '@/lib/onboarding/flows';
+import { buildInboxToolbarFlow, isInboxToolbarFlowId } from '@/lib/onboarding/flows/inbox-toolbar';
 import { resolveFlow } from '@/lib/onboarding/resolveFlow';
 import { canStartFlow, pickNextFlow } from '@/lib/onboarding/scheduler';
-import { TARGETS, type FlowId, type Role, type Segment, type TargetId } from '@/lib/onboarding/types';
+import { resolveTargetSurface, targetKey, type TargetSurface } from '@/lib/onboarding/targetRegistry';
+import { type FlowId, type Role, type Segment, type TargetId } from '@/lib/onboarding/types';
+import type { InboxThreadToolbarActionKey } from '@/lib/inbox';
 import {
   fetchOnboardingState,
   markFlowAborted,
@@ -43,6 +46,29 @@ import {
 } from './context';
 
 const SETTLE_DELAY_MS = 900;
+
+function getWebViewportSize() {
+  if (typeof window === 'undefined') return null;
+  const visualViewport = window.visualViewport;
+  if (visualViewport?.width && visualViewport.height) {
+    return { width: visualViewport.width, height: visualViewport.height };
+  }
+  return { width: window.innerWidth, height: window.innerHeight };
+}
+
+function normalizeWebRect(rect: DOMRect, viewport: { width: number; height: number }): TargetRect | null {
+  const left = Math.max(0, rect.left);
+  const top = Math.max(0, rect.top);
+  const right = Math.min(viewport.width, rect.right);
+  const bottom = Math.min(viewport.height, rect.bottom);
+  if (right <= left || bottom <= top) return null;
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
 
 export interface OnboardingAnalyticsEvent {
   flowId: string;
@@ -76,7 +102,10 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
   const [state, dispatch] = useReducer(reduce, INITIAL_STATE);
   const [stateLoaded, setStateLoaded] = useState(false);
   const [registrationEpoch, setRegistrationEpoch] = useState(0);
-  const [advanceGateBlocked, setAdvanceGateBlocked] = useState(false);
+  const [currentStepNextBlocked, setCurrentStepNextBlocked] = useState(false);
+  const [inboxToolbarOverflow, setInboxToolbarOverflowState] = useState<
+    readonly InboxThreadToolbarActionKey[] | null
+  >(null);
 
   // --- Segment + role ------------------------------------------------------
   const segment = useMemo<Segment>(() => {
@@ -108,10 +137,12 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
   roleRef.current = role;
   const toastRef = useRef(toast);
   toastRef.current = toast;
-  const advanceGateBlockedRef = useRef(advanceGateBlocked);
-  advanceGateBlockedRef.current = advanceGateBlocked;
+  const currentStepNextBlockedRef = useRef(currentStepNextBlocked);
+  currentStepNextBlockedRef.current = currentStepNextBlocked;
+  const inboxToolbarOverflowRef = useRef(inboxToolbarOverflow);
+  inboxToolbarOverflowRef.current = inboxToolbarOverflow;
 
-  const targetsRef = useRef(new Map<TargetId, RefObject<View | null>>());
+  const targetsRef = useRef(new Map<string, RefObject<View | null>>());
   const seenRef = useRef<Set<string>>(new Set());
   const registrationsRef = useRef(new Set<FlowId>());
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -163,13 +194,31 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     setRegistrationEpoch((epoch) => epoch + 1);
   }, []);
 
+  const setInboxToolbarOverflow = useCallback(
+    (keys: readonly InboxThreadToolbarActionKey[] | null) => {
+      setInboxToolbarOverflowState((prev) => {
+        if (prev === keys) return prev;
+        if (prev == null || keys == null) return keys == null ? null : [...keys];
+        if (prev.length === keys.length && prev.every((k, i) => k === keys[i])) return prev;
+        return [...keys];
+      });
+    },
+    [],
+  );
+
   // --- Actions -------------------------------------------------------------
 
   const startFlow = useCallback(
     (id: FlowId) => {
       const def = getFlow(id, segmentRef.current);
       if (!def) return;
-      const resolved = resolveFlow(def, { segment: segmentRef.current, role: roleRef.current });
+      // Inbox toolbar tours resolve their inline-vs-overflow steps up front from
+      // the layout split the toolbar already computed, so the engine never has
+      // to skip steps at render time.
+      const layoutDef = isInboxToolbarFlowId(id)
+        ? buildInboxToolbarFlow(def, inboxToolbarOverflowRef.current)
+        : def;
+      const resolved = resolveFlow(layoutDef, { segment: segmentRef.current, role: roleRef.current });
       emit(id, 0, 'start');
       dispatch({ type: 'START', flow: resolved });
     },
@@ -194,7 +243,13 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
   const next = useCallback(() => {
     // Defense in depth: the Pressable is already disabled while gated, but
     // guard the dispatch itself so no path (keyboard, race) can advance early.
-    if (advanceGateBlockedRef.current) return;
+    const step = getCurrentStep(stateRef.current);
+    const blockedBySignal =
+      step?.kind === 'spotlight' &&
+      step.advance === 'manual' &&
+      step.nextGate?.waitForSignal &&
+      currentStepNextBlockedRef.current;
+    if (blockedBySignal) return;
     const flow = stateRef.current.flow;
     if (flow) emit(flow.id, stateRef.current.stepIndex, 'next');
     dispatch({ type: 'NEXT' });
@@ -250,35 +305,35 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     bumpRegistrationEpoch();
   }, [bumpRegistrationEpoch]);
 
+  const hasSeenFlow = useCallback((id: FlowId) => seenRef.current.has(id), []);
+
   // --- Target registry -----------------------------------------------------
 
   const registerTarget = useCallback(
-    (id: TargetId, ref: RefObject<View | null>) => {
-      targetsRef.current.set(id, ref);
+    (id: TargetId, ref: RefObject<View | null>, surface: TargetSurface = 'global') => {
+      const key = targetKey(id, surface);
+      targetsRef.current.set(key, ref);
       return () => {
-        if (targetsRef.current.get(id) === ref) {
-          targetsRef.current.delete(id);
+        if (targetsRef.current.get(key) === ref) {
+          targetsRef.current.delete(key);
         }
       };
     },
     [],
   );
 
-  const measureTarget = useCallback((id: TargetId): Promise<TargetRect | null> => {
-    const ref = targetsRef.current.get(id);
+  const measureTarget = useCallback((id: TargetId, surface?: TargetSurface): Promise<TargetRect | null> => {
+    const resolvedSurface = resolveTargetSurface(surface, getCurrentStep(stateRef.current));
+    const ref = targetsRef.current.get(targetKey(id, resolvedSurface));
     const node = ref?.current;
     if (!node) return Promise.resolve(null);
 
     if (Platform.OS === 'web') {
       const el = node as unknown as HTMLElement;
       const rect = el.getBoundingClientRect?.();
-      if (rect && rect.width > 0 && rect.height > 0) {
-        return Promise.resolve({
-          x: rect.left,
-          y: rect.top,
-          width: rect.width,
-          height: rect.height,
-        });
+      const viewport = getWebViewportSize();
+      if (rect && viewport && rect.width > 0 && rect.height > 0) {
+        return Promise.resolve(normalizeWebRect(rect, viewport));
       }
       return Promise.resolve(null);
     }
@@ -298,8 +353,9 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     });
   }, []);
 
-  const getTargetNode = useCallback((id: TargetId): unknown | null => {
-    const ref = targetsRef.current.get(id);
+  const getTargetNode = useCallback((id: TargetId, surface?: TargetSurface): unknown | null => {
+    const resolvedSurface = resolveTargetSurface(surface, getCurrentStep(stateRef.current));
+    const ref = targetsRef.current.get(targetKey(id, resolvedSurface));
     return ref?.current ?? null;
   }, []);
 
@@ -421,13 +477,14 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     startFlow,
   ]);
 
-  // Steps that require an external condition before Next may be pressed
-  // default to blocked on entry, closing the one-frame window where Next
-  // would otherwise be clickable before the owning screen re-asserts the gate.
+  // Steps that wait on a screen-owned signal default to blocked on entry,
+  // closing the one-frame window where Next would otherwise be clickable
+  // before the owning screen re-asserts the requirement.
   useEffect(() => {
     const step = getCurrentStep(state);
-    const requiresGate = step?.kind === 'spotlight' && step.targetId === TARGETS.accountNotifications;
-    setAdvanceGateBlocked(requiresGate);
+    const requiresSignal =
+      step?.kind === 'spotlight' && step.advance === 'manual' && !!step.nextGate?.waitForSignal;
+    setCurrentStepNextBlocked(requiresSignal);
   }, [state.flow?.id, state.stepIndex, state.status]);
 
   // --- Cross-route navigation ---------------------------------------------
@@ -445,11 +502,14 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
   const currentFlowMandatory =
     !!state.flow?.mandatory &&
     !(state.flow.mandatoryUnlessSeen && seenRef.current.has(state.flow.mandatoryUnlessSeen));
+  const currentStep = getCurrentStep(state);
 
   const value = useMemo<OnboardingContextValue>(
     () => ({
       startFlow,
       registerFlowIntent,
+      seenStateLoaded: stateLoaded,
+      hasSeenFlow,
       dismissFlow,
       resetFlow,
       resetAllFlows,
@@ -457,10 +517,12 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
       back,
       notifyTargetPress,
       notifyStepRequirementMet,
-      advanceGateBlocked,
-      setAdvanceGateBlocked,
+      currentStepNextBlocked,
+      setCurrentStepNextBlocked,
       registerTarget,
-      currentStep: getCurrentStep(state),
+      setInboxToolbarOverflow,
+      inboxToolbarOverflowReported: inboxToolbarOverflow != null,
+      currentStep,
       progress: getProgress(state),
       reducedMotion,
       blockingOverlayPresent,
@@ -474,6 +536,8 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
     [
       startFlow,
       registerFlowIntent,
+      stateLoaded,
+      hasSeenFlow,
       dismissFlow,
       resetFlow,
       resetAllFlows,
@@ -481,9 +545,12 @@ export function OnboardingProvider({ enabled, analytics, children }: OnboardingP
       back,
       notifyTargetPress,
       notifyStepRequirementMet,
-      advanceGateBlocked,
-      setAdvanceGateBlocked,
+      currentStepNextBlocked,
+      setCurrentStepNextBlocked,
       registerTarget,
+      setInboxToolbarOverflow,
+      inboxToolbarOverflow,
+      currentStep,
       state,
       reducedMotion,
       blockingOverlayPresent,

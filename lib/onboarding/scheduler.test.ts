@@ -17,7 +17,6 @@ const flows: OnboardingFlowDef[] = [
   { id: 'welcome', version: 1, autoStart: true, steps: [] },
   { id: 'inbox', version: 1, steps: [] },
   { id: 'inbox-mobile', version: 1, steps: [] },
-  { id: 'leads', version: 1, steps: [] },
   { id: 'account', version: 1, steps: [] },
 ];
 
@@ -66,9 +65,9 @@ test('pickNextFlow returns the first ready flow in registry order', () => {
   const id = pickNextFlow({
     flows,
     seen: new Set(['welcome', 'inbox']),
-    readyRegistrations: new Set<FlowId>(['leads', 'account']),
+    readyRegistrations: new Set<FlowId>(['inbox-mobile', 'account']),
   });
-  assert.equal(id, 'leads');
+  assert.equal(id, 'inbox-mobile');
 });
 
 test('pickNextFlow ignores unregistered non-autoStart flows', () => {

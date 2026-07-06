@@ -9,21 +9,22 @@ test('getFlow returns the same def for both segments when the registry entry is 
   assert.equal(selfServe, dfy);
 });
 
-test('the leads power tour is self-serve only (DFY never sees it)', () => {
-  assert.ok(getFlow('leads', 'self_serve'), 'leads should exist for self_serve');
-  assert.equal(getFlow('leads', 'dfy'), undefined, 'leads should not exist for dfy');
-});
+test('getAllFlows returns the same live flow ids for both segments', () => {
+  const expected = [
+    'welcome',
+    'inbox',
+    'inbox-mobile',
+    'inbox-followup',
+    'inbox-followup-mobile',
+    'account',
+  ];
 
-test('getAllFlows excludes the self-serve-only leads tour for dfy but includes it for self_serve', () => {
-  const dfyFlows = getAllFlows('dfy').map((f) => f.id);
-  const selfServeFlows = getAllFlows('self_serve').map((f) => f.id);
-
-  assert.ok(!dfyFlows.includes('leads'), 'dfy flows should not include leads');
-  assert.ok(selfServeFlows.includes('leads'), 'self_serve flows should include leads');
+  assert.deepEqual(getAllFlows('self_serve').map((flow) => flow.id), expected);
+  assert.deepEqual(getAllFlows('dfy').map((flow) => flow.id), expected);
 });
 
 test('both platform-specific inbox tours are registered and shared across segments', () => {
-  for (const id of ['inbox', 'inbox-mobile'] as const) {
+  for (const id of ['inbox', 'inbox-mobile', 'inbox-followup', 'inbox-followup-mobile'] as const) {
     const selfServe = getFlow(id, 'self_serve');
     const dfy = getFlow(id, 'dfy');
     assert.ok(selfServe, `${id} should exist for self_serve`);
@@ -31,11 +32,30 @@ test('both platform-specific inbox tours are registered and shared across segmen
   }
 });
 
-test('the inbox tours are mutually mandatory-unless-seen so only the first completed one is locked', () => {
+test('the inbox basics tours are mutually mandatory-unless-seen so only the first completed one is locked', () => {
   const desktop = getFlow('inbox', 'self_serve');
   const mobile = getFlow('inbox-mobile', 'self_serve');
   assert.ok(desktop?.mandatory);
   assert.ok(mobile?.mandatory);
   assert.equal(desktop?.mandatoryUnlessSeen, 'inbox-mobile');
   assert.equal(mobile?.mandatoryUnlessSeen, 'inbox');
+});
+
+test('the inbox follow-up topic flows stay optional', () => {
+  for (const id of ['inbox-followup', 'inbox-followup-mobile'] as const) {
+    const flow = getFlow(id, 'self_serve');
+    assert.equal(flow?.mandatory, undefined, `${id} should be optional`);
+    assert.equal(flow?.mandatoryUnlessSeen, undefined, `${id} should not use mandatoryUnlessSeen`);
+  }
+});
+
+test('inbox flows stay grouped in topic order ahead of later product tours', () => {
+  const selfServeFlows = getAllFlows('self_serve').map((flow) => flow.id);
+  const inboxFlows = selfServeFlows.filter((id) => id.startsWith('inbox'));
+  assert.deepEqual(inboxFlows, [
+    'inbox',
+    'inbox-mobile',
+    'inbox-followup',
+    'inbox-followup-mobile',
+  ]);
 });

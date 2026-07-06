@@ -6,6 +6,16 @@ import { StepDwellDial } from './StepDwellDial';
 /** Tailwind `rounded-lg` = 0.5rem. Used so the dwell ring hugs the Next button. */
 const NEXT_BORDER_RADIUS = 8;
 
+interface StepControlsNextGate {
+  /** When true, Next/Done is visible but not pressable. */
+  blocked?: boolean;
+  /**
+   * Minimum read time before Next unlocks (ms). Renders the progress ring on the
+   * Next button.
+   */
+  dwellMs?: number;
+}
+
 interface StepControlsProps {
   progress: Progress | null;
   /** Show the Back button (hidden on the first step). */
@@ -15,13 +25,8 @@ interface StepControlsProps {
   isLastStep: boolean;
   onBack: () => void;
   onNext: () => void;
-  /** When true, Next/Done is visible but not pressable. */
-  nextDisabled?: boolean;
-  /**
-   * Minimum read time before Next unlocks (ms). Renders the progress ring on the
-   * Next button; ignored when `showNext` is false.
-   */
-  dwellMs?: number;
+  /** Optional gates controlling when Next/Done unlocks. */
+  nextGate?: StepControlsNextGate;
   reducedMotion?: boolean;
   /**
    * When set (non-mandatory flows), shows a small "Skip tour" link that ends the
@@ -41,11 +46,12 @@ export function StepControls({
   isLastStep,
   onBack,
   onNext,
-  nextDisabled = false,
-  dwellMs = 0,
+  nextGate,
   reducedMotion = false,
   onSkip,
 }: StepControlsProps) {
+  const blocked = nextGate?.blocked ?? false;
+  const dwellMs = nextGate?.dwellMs ?? 0;
   const dwellActive = showNext && dwellMs > 0;
   const [dwellComplete, setDwellComplete] = useState(!dwellActive);
   const [buttonSize, setButtonSize] = useState<{ width: number; height: number } | null>(null);
@@ -57,7 +63,7 @@ export function StepControls({
     );
   };
 
-  const gated = nextDisabled || (dwellActive && !dwellComplete);
+  const gated = blocked || (dwellActive && !dwellComplete);
   const showDial = dwellActive && !dwellComplete && buttonSize != null;
 
   return (
@@ -106,7 +112,13 @@ export function StepControls({
               disabled={gated}
               accessibilityRole="button"
               accessibilityLabel={
-                gated && dwellActive ? 'Next (unlocks in a moment)' : isLastStep ? 'Done' : 'Next'
+                gated && dwellActive
+                  ? 'Next (unlocks in a moment)'
+                  : gated
+                    ? 'Next (complete this step first)'
+                    : isLastStep
+                      ? 'Done'
+                      : 'Next'
               }
               accessibilityState={{ disabled: gated }}
               className={`px-4 py-2 rounded-lg active:opacity-80 ${

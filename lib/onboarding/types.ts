@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import type { InboxThreadToolbarActionKey } from '@/lib/inbox';
+import type { OnboardingHostId } from './onboardingHosts';
 
 /**
  * Single source of truth for spotlight anchor ids. Components opt in via
@@ -21,17 +23,25 @@ export const TARGETS = {
   navItems: 'navItems',
   // Master Inbox deep-dive tour (desktop + mobile).
   inboxThreadList: 'inboxThreadList',
+  inboxOpenThread: 'inboxOpenThread',
+  inboxOpenIndicator: 'inboxOpenIndicator',
   inboxCategories: 'inboxCategories',
   inboxMessagePane: 'inboxMessagePane',
   inboxLeadDetail: 'inboxLeadDetail',
   inboxThreadActions: 'inboxThreadActions',
   inboxMobileActions: 'inboxMobileActions',
   inboxSheetActions: 'inboxSheetActions',
-  // Leads power tour (desktop, self-serve).
-  leadsFilters: 'leadsFilters',
-  leadsTable: 'leadsTable',
-  leadsActions: 'leadsActions',
-  leadsExport: 'leadsExport',
+  inboxActionClose: 'inboxActionClose',
+  inboxActionBlock: 'inboxActionBlock',
+  inboxActionOutOfOffice: 'inboxActionOutOfOffice',
+  inboxActionReplace: 'inboxActionReplace',
+  inboxActionTags: 'inboxActionTags',
+  inboxActionCategory: 'inboxActionCategory',
+  inboxActionCloseOverflowTrigger: 'inboxActionCloseOverflowTrigger',
+  inboxActionBlockOverflowTrigger: 'inboxActionBlockOverflowTrigger',
+  inboxActionOutOfOfficeOverflowTrigger: 'inboxActionOutOfOfficeOverflowTrigger',
+  inboxActionReplaceOverflowTrigger: 'inboxActionReplaceOverflowTrigger',
+  inboxActionTagsOverflowTrigger: 'inboxActionTagsOverflowTrigger',
   // Account tour.
   accountProfile: 'accountProfile',
   accountNotifications: 'accountNotifications',
@@ -47,15 +57,19 @@ export type TargetId = (typeof TARGETS)[keyof typeof TARGETS];
  * user_onboarding_state.flow_id (old, removed ids may still exist in the DB;
  * `getFlow` returns undefined for them and they are ignored).
  *
- * The Master Inbox tour is split by platform (`inbox` desktop, `inbox-mobile`)
- * because the anchors differ; only the first one a user completes is mandatory
- * (see `mandatoryUnlessSeen`).
+ * Inbox onboarding is split by platform, with two layers per platform: a
+ * mandatory basics tour (`inbox` desktop, `inbox-mobile`) that stays mandatory
+ * unless its sibling platform tour was already seen, and a single optional
+ * follow-up tour (`inbox-followup` desktop, `inbox-followup-mobile`) that walks
+ * every thread-level action. The follow-up gets its own platform-specific id
+ * because the anchors differ between desktop and mobile.
  */
 export type FlowId =
   | 'welcome'
   | 'inbox'
   | 'inbox-mobile'
-  | 'leads'
+  | 'inbox-followup'
+  | 'inbox-followup-mobile'
   | 'account';
 
 /**
@@ -87,6 +101,23 @@ export type SpotlightPlacement = 'top' | 'bottom' | 'left' | 'right';
  */
 export type StepAdvance = 'manual' | 'onTargetPress' | 'onRequirementMet';
 
+/**
+ * Optional gates that control when a manual spotlight step's Next button
+ * becomes pressable. All configured gates must clear before Next unlocks.
+ */
+export interface StepNextGate {
+  /**
+   * Minimum read time before Next unlocks (ms). Renders the progress ring on the
+   * Next button so users are nudged to actually read the step.
+   */
+  dwellMs?: number;
+  /**
+   * When true, Next starts blocked until the owning screen calls
+   * `setCurrentStepNextBlocked(false)` with the required app state in place.
+   */
+  waitForSignal?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Authoring types ("defs"): what flow authors write. Copy may be segment-aware,
 // steps may declare `requiresRole`. These are converted to the resolved types
@@ -98,18 +129,38 @@ export interface SpotlightStepDef {
   targetId: TargetId;
   /** Optional route the target lives on; the provider navigates here first. */
   route?: string;
+  /**
+   * When set, this step's target lives inside the named modal host: the
+   * host's own `OnboardingHost` wrapper renders the cutout and the global
+   * viewport overlay stays suppressed. Omit for anything on the plain screen
+   * surface — never infer this from `targetId` alone, since the same
+   * semantic target can live in a modal for one flow/platform and on-screen
+   * for another.
+   */
+  hostId?: OnboardingHostId;
   title: SegmentCopy;
   body: SegmentCopy;
   placement?: SpotlightPlacement;
   advance?: StepAdvance;
+  /** Optional gates for manual Next/Done. Ignored when `advance` hides Next. */
+  nextGate?: StepNextGate;
+  /** When true, a missing target skips just this step instead of aborting the full flow. */
+  skipIfTargetMissing?: boolean;
   /**
-   * Minimum dwell before Next unlocks (ms). Drives the visual countdown ring on
-   * the Next button so users are nudged to actually read the step. Ignored for
-   * non-manual advance modes. Presentation-only; the engine stays pure.
+   * When false, the spotlight measurer will not scroll the target into view
+   * before measuring. Defaults to true. Use for anchors inside scrollable
+   * regions where scrolling would disrupt the user's context (e.g. inbox thread
+   * list content).
    */
-  dwellMs?: number;
+  scrollIntoView?: boolean;
   /** When set, the step only renders for these roles (others are filtered out). */
   requiresRole?: Role[];
+  /**
+   * Authoring-only (inbox toolbar tours): the toolbar action this step
+   * demonstrates. Used at resolve time to decide inline vs in-menu ordering.
+   * Never reaches the resolved `SpotlightStep`.
+   */
+  toolbarActionKey?: InboxThreadToolbarActionKey;
 }
 
 export interface AnnouncementStepDef {
@@ -172,11 +223,14 @@ export interface SpotlightStep {
   kind: 'spotlight';
   targetId: TargetId;
   route?: string;
+  hostId?: OnboardingHostId;
   title: string;
   body: string;
   placement?: SpotlightPlacement;
   advance?: StepAdvance;
-  dwellMs?: number;
+  nextGate?: StepNextGate;
+  skipIfTargetMissing?: boolean;
+  scrollIntoView?: boolean;
 }
 
 export interface AnnouncementStep {

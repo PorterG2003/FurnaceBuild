@@ -32,11 +32,14 @@ function resolveSpotlight(step: SpotlightStepDef, segment: Segment): SpotlightSt
     kind: 'spotlight',
     targetId: step.targetId,
     route: step.route,
+    hostId: step.hostId,
     title: resolveCopy(step.title, segment),
     body: resolveCopy(step.body, segment),
     placement: step.placement,
     advance: step.advance,
-    dwellMs: step.dwellMs,
+    nextGate: step.nextGate,
+    skipIfTargetMissing: step.skipIfTargetMissing,
+    scrollIntoView: step.scrollIntoView,
   };
 }
 

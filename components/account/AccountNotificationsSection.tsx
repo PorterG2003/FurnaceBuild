@@ -140,14 +140,10 @@ export function AccountNotificationsSection({
     onboarding.currentStep.targetId === TARGETS.accountNotifications;
 
   useEffect(() => {
-    if (!onboarding?.setAdvanceGateBlocked) return;
+    if (!onboarding?.setCurrentStepNextBlocked) return;
     if (!onboardingNotificationsStepActive) return;
-    if (loading) {
-      onboarding.setAdvanceGateBlocked(true);
-      return;
-    }
-    onboarding.setAdvanceGateBlocked(
-      !accountNotificationsOnboardingComplete(prefs, subCount, optimisticByEvent),
+    onboarding.setCurrentStepNextBlocked(
+      loading || !accountNotificationsOnboardingComplete(prefs, subCount, optimisticByEvent),
     );
   }, [
     onboardingNotificationsStepActive,

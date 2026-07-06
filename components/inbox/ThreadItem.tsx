@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import { View, Pressable, Text } from 'react-native';
 import { SmartleadBadge } from '@/components/campaigns';
 import type { EmailThread } from '@/lib/supabase/types';
@@ -19,6 +20,8 @@ export function ThreadItem({
   sourceLabel = null,
   preview = null,
   tags = [],
+  onboardingRef,
+  openIndicatorRef,
 }: {
   thread: EmailThread;
   isSelected: boolean;
@@ -30,12 +33,16 @@ export function ThreadItem({
   sourceLabel?: string | null;
   preview?: string | null;
   tags?: ThreadTag[];
+  onboardingRef?: RefObject<View | null>;
+  openIndicatorRef?: RefObject<View | null>;
 }) {
   const hasCategory = !!thread.category;
   const isSmartleadSource = sourceLabel === 'Smartlead';
   const isOpenConversation = thread.conversation_status === 'open';
   return (
     <Pressable
+      ref={onboardingRef}
+      collapsable={false}
       onPress={onSelect}
       className="mx-3 mb-1.5 rounded-xl px-3 py-2.5"
       style={[
@@ -74,7 +81,11 @@ export function ThreadItem({
 
       {/* Bold title: lead name or email fallback */}
       <View className="mb-1 flex-row items-center gap-2">
-        {isOpenConversation ? <OpenConversationIndicator /> : null}
+        {isOpenConversation ? (
+          <View ref={openIndicatorRef} collapsable={false}>
+            <OpenConversationIndicator />
+          </View>
+        ) : null}
         <Text
           className={`flex-1 text-base ${isUnread ? 'font-instrument-bold text-white' : 'font-instrument-semibold text-white'}`}
           numberOfLines={1}

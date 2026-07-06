@@ -26,6 +26,9 @@ const isWeb = Platform.OS === 'web';
 /** Max sheet height as a fraction of screen height (content can scroll inside below this cap). */
 export const BOTTOM_SHEET_MAX_VIEWPORT_RATIO = 0.92;
 
+/** Horizontal padding inside the sheet chrome; keep in sync with `sheetStyle`. */
+export const BOTTOM_SHEET_HORIZONTAL_PADDING = 16;
+
 /**
  * Vertical space available for scrollable sheet content (below drag handle, inside sheet padding).
  * Keep in sync with `sheetStyle` padding and `dragHandleStyle` margins in this file.
@@ -61,6 +64,25 @@ export interface BottomSheetProps {
   /** With `expandBodyToMax`, body height = max body × this fraction (clamped 0.35–1). Default 1. */
   expandBodyHeightFraction?: number;
   overlayZIndex?: number;
+  /**
+   * When true, backdrop taps and the hardware back button do not dismiss the
+   * sheet (an open takeover still dismisses first). Used to pin the sheet open,
+   * e.g. while an onboarding step is highlighting content inside it.
+   */
+  dismissLocked?: boolean;
+  /**
+   * Whether the sheet counts as a blocking overlay for onboarding while visible
+   * (default true). Pass `false` only while the sheet is hosting an onboarding
+   * step of its own, so it stops suppressing that flow. Unrelated modals keep
+   * the default so they continue to pause onboarding.
+   */
+  registerAsBlocking?: boolean;
+  /**
+   * Optional wrapper around the full sheet interior (drag handle + body host).
+   * Use to mount overlays (e.g. onboarding spotlight) that must cover the entire
+   * visible sheet, not just scrollable children.
+   */
+  wrapSheetInterior?: (interior: ReactNode) => ReactNode;
 }
 
 const BACKDROP_OPACITY = 0.5;
@@ -82,10 +104,13 @@ export function BottomSheet({
   expandBodyToMax = false,
   expandBodyHeightFraction = 1,
   overlayZIndex,
+  dismissLocked = false,
+  registerAsBlocking = true,
+  wrapSheetInterior,
 }: BottomSheetProps) {
   const onAfterCloseRef = useRef(onAfterClose);
   onAfterCloseRef.current = onAfterClose;
-  useRegisterBlockingOverlay(visible);
+  useRegisterBlockingOverlay(visible && registerAsBlocking);
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [takeover, setTakeover] = useState<BottomSheetTakeoverOptions | null>(null);
@@ -247,11 +272,16 @@ export function BottomSheet({
     ]
   );
 
+  const dismissLockedRef = useRef(dismissLocked);
+  dismissLockedRef.current = dismissLocked;
+
   const handleBackdropOrHardwareBack = useCallback(() => {
     if (takeoverRef.current != null) {
       dismissTakeover();
       return;
     }
+    // Pinned open (e.g. hosting an onboarding step): ignore backdrop/back.
+    if (dismissLockedRef.current) return;
     onClose();
   }, [dismissTakeover, onClose]);
 
@@ -413,7 +443,7 @@ export function BottomSheet({
     borderTopWidth: 1,
     borderColor: '#2A2A2A',
     paddingTop: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: BOTTOM_SHEET_HORIZONTAL_PADDING,
     paddingBottom: Math.max(insets.bottom, 16),
     minHeight: 120,
     maxHeight: sheetMaxHeight,
@@ -436,7 +466,7 @@ export function BottomSheet({
     marginBottom: 16,
   };
 
-  const sheetBody = (
+  const sheetInterior = (
     <>
       <View style={dragHandleStyle} />
       <BottomSheetTakeoverContext.Provider value={takeoverContextValue}>
@@ -494,6 +524,8 @@ export function BottomSheet({
       </BottomSheetTakeoverContext.Provider>
     </>
   );
+
+  const sheetBody = wrapSheetInterior ? wrapSheetInterior(sheetInterior) : sheetInterior;
 
   // On web: two Modals — backdrop fades in place, sheet slides up (close uses our Animated)
   if (isWeb) {

@@ -2,25 +2,25 @@ import type { FlowId, FlowRegistryEntry, OnboardingFlowDef, Segment } from '../t
 import { welcomeFlow } from './welcome';
 import { inboxFlow } from './inbox';
 import { inboxMobileFlow } from './inbox-mobile';
-import { leadsFlow } from './leads';
+import { inboxFollowupFlow } from './inbox-followup';
+import { inboxFollowupMobileFlow } from './inbox-followup-mobile';
 import { accountFlow } from './account';
 
 /**
  * Live onboarding flows, in scheduler-priority order.
  *
  * - `welcome` — auto-starts at signup; the six-item nav walk.
- * - `inbox` / `inbox-mobile` — the mandatory Master Inbox deep-dive, split by
- *   platform because the anchors differ. Both show, but only the first one a
- *   user completes is locked (`mandatoryUnlessSeen`).
- * - `leads` — desktop, self-serve power tour (segment map: DFY never sees it,
- *   since Furnace manages their lead data).
+ * - `inbox` / `inbox-mobile` — short mandatory inbox basics, split by platform.
+ * - `inbox-followup*` — optional inbox follow-up actions, registered after the
+ *   basics tour so the next unseen lesson wins.
  * - `account` — reply-alerts + team/API setup.
  */
 export const FLOWS: Partial<Record<FlowId, FlowRegistryEntry>> = {
   welcome: welcomeFlow,
   inbox: inboxFlow,
   'inbox-mobile': inboxMobileFlow,
-  leads: { self_serve: leadsFlow },
+  'inbox-followup': inboxFollowupFlow,
+  'inbox-followup-mobile': inboxFollowupMobileFlow,
   account: accountFlow,
 };
 

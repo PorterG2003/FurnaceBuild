@@ -1,4 +1,4 @@
-import React, { type RefObject } from 'react';
+import React, { useMemo, type RefObject } from 'react';
 import { View, Text, TextInput, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { MagnifyingGlassIcon, FunnelIcon } from 'react-native-heroicons/outline';
 import { Alert, EmptyState } from '@/components/ui/feedback';
@@ -73,6 +73,8 @@ export function InboxThreadList({
 }: InboxThreadListProps) {
   const categoriesRef = useOnboardingTarget(TARGETS.inboxCategories);
   const threadListRef = useOnboardingTarget(TARGETS.inboxThreadList);
+  const openThreadRef = useOnboardingTarget(TARGETS.inboxOpenThread);
+  const openIndicatorRef = useOnboardingTarget(TARGETS.inboxOpenIndicator);
   const showListContent =
     keepPreviousThreadList || (!threadsLoading && threads.length > 0);
   const showEmptyInbox =
@@ -87,9 +89,13 @@ export function InboxThreadList({
     displayThreads.length === 0 &&
     !threadsError &&
     hasActiveFilters;
+  const spotlightThreadId = useMemo(() => {
+    const openThread = displayThreads.find((thread) => thread.conversation_status === 'open');
+    return openThread?.id ?? null;
+  }, [displayThreads]);
 
   return (
-    <View ref={threadListRef} collapsable={false} className="flex-1">
+    <View className="flex-1">
       <View className="px-4 py-4">
         <View className="flex-row items-center" style={{ minWidth: 0, gap: 10 }}>
           <View
@@ -164,39 +170,43 @@ export function InboxThreadList({
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         >
-          {displayThreads.map((thread) => (
-            <ThreadItem
-              key={thread.id}
-              thread={thread}
-              isSelected={selectedThreadId === thread.id}
-              onSelect={() => onSelectThread(thread.id)}
-              isUnread={'unread_count' in thread ? (thread as { unread_count: number }).unread_count > 0 : false}
-              cardTitle={resolveThreadCardTitle({
-                thread,
-                leadDisplayName: thread.lead_id ? leadDisplayNamesMap[thread.lead_id] : null,
-                leadEmail: thread.lead_id ? leadEmailById[thread.lead_id] : null,
-                mailboxEmail: thread.mailbox_id ? mailboxEmailById[thread.mailbox_id] : null,
-                subject: thread.subject,
-                fallbackTitle: '(No subject)',
-              })}
-              campaignName={thread.campaign_id ? campaigns.find((c) => c.id === thread.campaign_id)?.name ?? null : null}
-              sourceLabel={thread.smartlead_lead_id != null ? 'Smartlead' : null}
-              preview={threadSnippetsMap[thread.id] ?? null}
-              tags={threadTagsMap[thread.id] ?? []}
-            />
-          ))}
-          {hasMoreThreads && (
-            <Pressable
-              onPress={loadMoreThreads}
-              disabled={loadingMoreThreads}
-              className="mx-3 mt-1.5 mb-3 py-2.5 rounded-xl items-center"
-              style={{ backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A' }}
-            >
-              <Text className="text-orange-500 font-instrument text-sm">
-                {loadingMoreThreads ? 'Loading…' : 'Load more'}
-              </Text>
-            </Pressable>
-          )}
+          <View ref={threadListRef} collapsable={false}>
+            {displayThreads.map((thread) => (
+              <ThreadItem
+                key={thread.id}
+                thread={thread}
+                isSelected={selectedThreadId === thread.id}
+                onSelect={() => onSelectThread(thread.id)}
+                onboardingRef={spotlightThreadId === thread.id ? openThreadRef : undefined}
+                openIndicatorRef={spotlightThreadId === thread.id ? openIndicatorRef : undefined}
+                isUnread={'unread_count' in thread ? (thread as { unread_count: number }).unread_count > 0 : false}
+                cardTitle={resolveThreadCardTitle({
+                  thread,
+                  leadDisplayName: thread.lead_id ? leadDisplayNamesMap[thread.lead_id] : null,
+                  leadEmail: thread.lead_id ? leadEmailById[thread.lead_id] : null,
+                  mailboxEmail: thread.mailbox_id ? mailboxEmailById[thread.mailbox_id] : null,
+                  subject: thread.subject,
+                  fallbackTitle: '(No subject)',
+                })}
+                campaignName={thread.campaign_id ? campaigns.find((c) => c.id === thread.campaign_id)?.name ?? null : null}
+                sourceLabel={thread.smartlead_lead_id != null ? 'Smartlead' : null}
+                preview={threadSnippetsMap[thread.id] ?? null}
+                tags={threadTagsMap[thread.id] ?? []}
+              />
+            ))}
+            {hasMoreThreads && (
+              <Pressable
+                onPress={loadMoreThreads}
+                disabled={loadingMoreThreads}
+                className="mx-3 mt-1.5 mb-3 py-2.5 rounded-xl items-center"
+                style={{ backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A' }}
+              >
+                <Text className="text-orange-500 font-instrument text-sm">
+                  {loadingMoreThreads ? 'Loading…' : 'Load more'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
         </ScrollView>
       ) : showThreadListSkeleton && !keepPreviousThreadList ? (
         <ThreadListSkeleton />

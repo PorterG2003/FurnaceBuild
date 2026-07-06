@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { OnboardingHostId } from '@/lib/onboarding/onboardingHosts';
 
 /**
  * Tiny global registry tracking how many blocking overlays (modals, bottom
@@ -7,6 +8,12 @@ import { useEffect, useState } from 'react';
  *
  * Blocking surfaces register themselves while visible via
  * `useRegisterBlockingOverlay(visible)`.
+ *
+ * Separately, modal surfaces that can *host* an onboarding spotlight inside
+ * themselves register via `useRegisterOnboardingHost(hostId, active)`. Host
+ * registration is deliberately kept out of the blocking count: a host surface
+ * highlights onboarding rather than fighting it, so it must not suppress the
+ * flow the way an unrelated modal does.
  */
 
 let count = 0;
@@ -53,4 +60,61 @@ export function useBlockingOverlayPresent(): boolean {
     };
   }, []);
   return present;
+}
+
+// --- Onboarding host registry --------------------------------------------
+// Which modal hosts (by id) are currently mounted+active. Separate from the
+// blocking count so a host never suppresses the flow it is meant to display.
+
+const hostCounts = new Map<OnboardingHostId, number>();
+const hostListeners = new Set<() => void>();
+
+function emitHosts() {
+  for (const listener of hostListeners) listener();
+}
+
+/** Registers `hostId` as mounted while it holds; returns a release fn. */
+export function pushOnboardingHost(hostId: OnboardingHostId): () => void {
+  hostCounts.set(hostId, (hostCounts.get(hostId) ?? 0) + 1);
+  emitHosts();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = (hostCounts.get(hostId) ?? 0) - 1;
+    if (next <= 0) hostCounts.delete(hostId);
+    else hostCounts.set(hostId, next);
+    emitHosts();
+  };
+}
+
+/** True while at least one instance of `hostId` is mounted. */
+export function isOnboardingHostMounted(hostId: OnboardingHostId): boolean {
+  return (hostCounts.get(hostId) ?? 0) > 0;
+}
+
+/** Register a modal host while `active` is true (does not block onboarding). */
+export function useRegisterOnboardingHost(
+  hostId: OnboardingHostId | null | undefined,
+  active: boolean,
+): void {
+  useEffect(() => {
+    if (!hostId || !active) return;
+    const release = pushOnboardingHost(hostId);
+    return release;
+  }, [hostId, active]);
+}
+
+/** Subscribe to whether `hostId` is currently mounted. */
+export function useIsOnboardingHostMounted(hostId: OnboardingHostId): boolean {
+  const [mounted, setMounted] = useState(() => isOnboardingHostMounted(hostId));
+  useEffect(() => {
+    const listener = () => setMounted(isOnboardingHostMounted(hostId));
+    hostListeners.add(listener);
+    listener();
+    return () => {
+      hostListeners.delete(listener);
+    };
+  }, [hostId]);
+  return mounted;
 }

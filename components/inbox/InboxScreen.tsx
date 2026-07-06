@@ -54,12 +54,24 @@ import { useInboxComposer } from '@/hooks/useInboxComposer';
 import { useInboxFilterUI } from '@/hooks/useInboxFilterUI';
 import { useInboxThreadActions } from '@/hooks/useInboxThreadActions';
 import { useInboxInteractionSession } from '@/contexts/InboxInteractionContext';
+import { useOnboardingOptional } from '@/components/onboarding/context';
+import { useOnboardingHostLifecycle } from '@/components/onboarding';
 import { useOnboardingTrigger } from '@/components/onboarding/useOnboardingTrigger';
 import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
-import { TARGETS } from '@/lib/onboarding/types';
+import { TARGETS, type FlowId } from '@/lib/onboarding/types';
 import outputs from '@/amplify_outputs.json';
 
 const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom?.fetchEmailAttachmentUrl;
+
+const DESKTOP_INBOX_TOPIC_FLOW_IDS = [
+  'inbox',
+  'inbox-followup',
+] as const satisfies readonly FlowId[];
+
+const MOBILE_INBOX_TOPIC_FLOW_IDS = [
+  'inbox-mobile',
+  'inbox-followup-mobile',
+] as const satisfies readonly FlowId[];
 
 export interface InboxScreenProps {
   routeThreadId: string | null;
@@ -67,6 +79,7 @@ export interface InboxScreenProps {
 
 export function InboxScreen({ routeThreadId }: InboxScreenProps) {
   const interactionSession = useInboxInteractionSession();
+  const onboarding = useOnboardingOptional();
   const router = useRouter();
   const searchParams = useLocalSearchParams<{
     thread?: string | string[];
@@ -128,7 +141,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     loadedForAccountIdRef,
   });
 
-  const inboxMessagePaneRef = useOnboardingTarget(TARGETS.inboxMessagePane);
+  const inboxMessagePaneRef = useOnboardingTarget(TARGETS.inboxMessagePane, isMobile);
 
   const trustLoadedThreadList = canUseInternalInboxRouteAccess({
     routeThreadId,
@@ -207,29 +220,25 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     clearAllFilters,
   } = inboxData;
 
-  // Snapshot whether replies already existed when the inbox first settled this
-  // visit. The mandatory Master Inbox deep-dive fires on a visit that *opens*
-  // with replies present — never when one streams in mid-session — so a live
-  // insert during the current mount does not trigger it. The tour then naturally
-  // waits until after the first reply exists, and never collides with `welcome`
-  // (which runs at signup, before any reply).
-  const hadRepliesOnEntryRef = useRef<boolean | null>(null);
-  const [hadRepliesOnEntry, setHadRepliesOnEntry] = useState(false);
+  // Snapshot whether an open conversation already existed when the inbox first
+  // settled this visit. The triage tour is intentionally about the open queue,
+  // so it only fires on a visit that *opens* with something already needing
+  // attention — never when one streams in mid-session.
+  const hadOpenConversationOnEntryRef = useRef<boolean | null>(null);
+  const [hadOpenConversationOnEntry, setHadOpenConversationOnEntry] = useState(false);
   useEffect(() => {
-    if (hadRepliesOnEntryRef.current !== null) return;
+    if (hadOpenConversationOnEntryRef.current !== null) return;
     if (!initialThreadsLoadSettled) return;
-    const had = threads.length > 0;
-    hadRepliesOnEntryRef.current = had;
-    setHadRepliesOnEntry(had);
-  }, [initialThreadsLoadSettled, threads.length]);
+    const hadOpen = threads.some((thread) => thread.conversation_status === 'open');
+    hadOpenConversationOnEntryRef.current = hadOpen;
+    setHadOpenConversationOnEntry(hadOpen);
+  }, [initialThreadsLoadSettled, threads]);
 
   const inboxTourReady =
-    initialized && !accountLoading && routeAccess.status === 'ready' && hadRepliesOnEntry;
-
-  // Platform-specific: only the first one a user completes is mandatory (the
-  // registry sets `mandatoryUnlessSeen` on each so the other becomes optional).
-  useOnboardingTrigger('inbox', { when: !isMobile && inboxTourReady });
-  useOnboardingTrigger('inbox-mobile', { when: isMobile && inboxTourReady });
+    initialized &&
+    !accountLoading &&
+    (routeAccess.status === 'ready' || routeAccess.status === 'list_only') &&
+    hadOpenConversationOnEntry;
 
   const loadingPolicy = useInboxLoadingPolicy({
     accountId,
@@ -245,6 +254,59 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     messagesLoadedForThreadId,
     hasActiveFilters,
     refreshing,
+  });
+
+  const inboxBasicsReady =
+    inboxTourReady &&
+    (!isMobile || (!selectedThreadId && !loadingPolicy.showMessagePaneSkeleton));
+  const selectedThreadLeadHeaderReady =
+    !selectedThread?.lead_id || leadByIdMap[selectedThread.lead_id] != null;
+  const inboxDetailTopicReady =
+    inboxTourReady &&
+    selectedThread?.conversation_status === 'open' &&
+    loadingPolicy.messagePaneContentReady &&
+    selectedThreadLeadHeaderReady;
+
+  const nextEligibleInboxTopicFlowId = useMemo<FlowId | null>(() => {
+    if (!onboarding?.seenStateLoaded) return null;
+    const flowIds = isMobile ? MOBILE_INBOX_TOPIC_FLOW_IDS : DESKTOP_INBOX_TOPIC_FLOW_IDS;
+    const readinessByFlow = isMobile
+      ? {
+          'inbox-mobile': inboxBasicsReady,
+          'inbox-followup-mobile': inboxDetailTopicReady,
+        }
+      : {
+          inbox: inboxBasicsReady,
+          'inbox-followup': inboxDetailTopicReady,
+        };
+
+    for (const flowId of flowIds) {
+      if (onboarding.hasSeenFlow(flowId)) continue;
+      if (readinessByFlow[flowId]) return flowId;
+    }
+
+    return null;
+  }, [inboxBasicsReady, inboxDetailTopicReady, isMobile, onboarding]);
+
+  const activeInboxTopicFlowId = nextEligibleInboxTopicFlowId;
+
+  // The desktop toolbar tours resolve their steps from the toolbar's overflow
+  // split, so they must not start until the toolbar has reported one.
+  const inboxToolbarOverflowReported = !!onboarding?.inboxToolbarOverflowReported;
+
+  // Only register the first eligible unseen inbox topic for this focused visit.
+  useOnboardingTrigger('inbox', { when: activeInboxTopicFlowId === 'inbox' && inboxBasicsReady });
+  useOnboardingTrigger('inbox-mobile', {
+    when: activeInboxTopicFlowId === 'inbox-mobile' && inboxBasicsReady,
+  });
+  useOnboardingTrigger('inbox-followup', {
+    when:
+      activeInboxTopicFlowId === 'inbox-followup' &&
+      inboxDetailTopicReady &&
+      inboxToolbarOverflowReported,
+  });
+  useOnboardingTrigger('inbox-followup-mobile', {
+    when: activeInboxTopicFlowId === 'inbox-followup-mobile' && inboxDetailTopicReady,
   });
 
   const loadedAccountSyncRef = useRef<string | null>(accountId);
@@ -316,6 +378,20 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
   const [blockModalVisible, setBlockModalVisible] = useState(false);
   const [tagsPanelVisible, setTagsPanelVisible] = useState(false);
   const [showMessageActionsSheet, setShowMessageActionsSheet] = useState(false);
+  // Coordinates the message-actions sheet with the inbox-followup-mobile tour:
+  // auto-opens the sheet on its steps, advances the "open actions" step once it
+  // opens, and closes it when the sheet steps finish. `hostId` on the active
+  // step is the primary gate (desktop's inbox-followup never declares it); the
+  // `isMobile` guard is a secondary safety net so this screen never opens the
+  // mobile sheet even if some future flow mistakenly reuses the host id.
+  useOnboardingHostLifecycle({
+    hostId: 'inboxMessageActions',
+    enabled: isMobile,
+    isOpen: showMessageActionsSheet,
+    open: () => setShowMessageActionsSheet(true),
+    close: () => setShowMessageActionsSheet(false),
+    openTriggerTargetId: TARGETS.inboxMobileActions,
+  });
   const [infoSheetVisible, setInfoSheetVisible] = useState(false);
   const [smartHandlingDismissedForCurrentView, setSmartHandlingDismissedForCurrentView] = useState(false);
   const [blockedRecipientConfirm, setBlockedRecipientConfirm] = useState<{

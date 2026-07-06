@@ -1,6 +1,5 @@
 import { createElement } from 'react';
 import { TARGETS, type OnboardingFlowDef } from '../types';
-import { WelcomeHero } from '@/components/onboarding/art/WelcomeHero';
 
 export const welcomeFlow: OnboardingFlowDef = {
   id: 'welcome',
@@ -10,7 +9,10 @@ export const welcomeFlow: OnboardingFlowDef = {
   steps: [
     {
       kind: 'announcement',
-      render: () => createElement(WelcomeHero),
+      // Lazy-required (per the authoring convention for `render`) so
+      // importing the flow registry never pulls in the illustration's
+      // react-native/SVG chain until this step actually renders.
+      render: () => createElement(require('@/components/onboarding/art/WelcomeHero').WelcomeHero),
     },
     {
       kind: 'spotlight',

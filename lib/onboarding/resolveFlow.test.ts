@@ -73,6 +73,81 @@ test('resolveFlow falls back to default copy when the segment is missing', () =>
   }
 });
 
+test('resolveFlow preserves spotlight next gates and skip behavior', () => {
+  const conditional: OnboardingFlowDef = {
+    id: 'account',
+    version: 1,
+    steps: [
+      {
+        kind: 'spotlight',
+        targetId: 'accountNotifications',
+        title: 'Notifications',
+        body: 'b',
+        nextGate: {
+          dwellMs: 1500,
+          waitForSignal: true,
+        },
+        skipIfTargetMissing: true,
+      },
+    ],
+  };
+  const flow = resolveFlow(conditional, { segment: 'self_serve', role: 'member' });
+  const spotlight = flow.steps[0];
+  assert.equal(spotlight?.kind, 'spotlight');
+  if (spotlight?.kind === 'spotlight') {
+    assert.deepEqual(spotlight.nextGate, { dwellMs: 1500, waitForSignal: true });
+    assert.equal(spotlight.skipIfTargetMissing, true);
+  }
+});
+
+test('resolveFlow carries hostId through unchanged', () => {
+  const withHost: OnboardingFlowDef = {
+    id: 'account',
+    version: 1,
+    steps: [
+      {
+        kind: 'spotlight',
+        targetId: 'accountNotifications',
+        hostId: 'inboxMessageActions',
+        title: 't',
+        body: 'b',
+      },
+      {
+        kind: 'spotlight',
+        targetId: 'accountTeam',
+        title: 't',
+        body: 'b',
+      },
+    ],
+  };
+  const flow = resolveFlow(withHost, { segment: 'self_serve', role: 'member' });
+  const [hosted, screenLevel] = flow.steps;
+  assert.equal(hosted?.kind === 'spotlight' ? hosted.hostId : undefined, 'inboxMessageActions');
+  assert.equal(screenLevel?.kind === 'spotlight' ? screenLevel.hostId : undefined, undefined);
+});
+
+test('resolveFlow carries scrollIntoView through unchanged', () => {
+  const withScroll: OnboardingFlowDef = {
+    id: 'inbox',
+    version: 1,
+    steps: [
+      {
+        kind: 'spotlight',
+        targetId: 'inboxThreadList',
+        title: 't',
+        body: 'b',
+        scrollIntoView: false,
+      },
+    ],
+  };
+  const flow = resolveFlow(withScroll, { segment: 'self_serve', role: 'member' });
+  const spotlight = flow.steps[0];
+  assert.equal(spotlight?.kind, 'spotlight');
+  if (spotlight?.kind === 'spotlight') {
+    assert.equal(spotlight.scrollIntoView, false);
+  }
+});
+
 test('resolveFlow yields an empty (trivially complete) flow when all steps filter out', () => {
   const ownerOnly: OnboardingFlowDef = {
     id: 'account',

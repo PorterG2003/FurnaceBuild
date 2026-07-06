@@ -1,3 +1,4 @@
+import { resolveSpotlightSurface } from '@/lib/onboarding/onboardingHosts';
 import { useOnboarding } from './context';
 import { AnnouncementModal } from './AnnouncementModal';
 import { SpotlightOverlay } from './SpotlightOverlay';
@@ -39,19 +40,25 @@ export function OnboardingOverlay() {
           onSkip={onSkip}
         />
       );
-    case 'spotlight':
-      // Pause (don't render) while an external modal/sheet is open so we never
-      // fight another overlay. The announcement case is itself a modal, so it
-      // is intentionally exempt from this gate.
-      if (blockingOverlayPresent) return null;
+    case 'spotlight': {
+      // Route the step to a render surface:
+      // - `global`: the app-root viewport overlay (this component).
+      // - `host`:   an in-modal `OnboardingHost` renders it; skip here.
+      // - `null`:   an unrelated blocking modal is open, or not a spotlight; pause.
+      // The announcement case is itself a modal, so it is exempt from this gate.
+      const surface = resolveSpotlightSurface(currentStep, blockingOverlayPresent);
+      if (surface !== 'global') return null;
       return (
         <SpotlightOverlay
+          key={progress ? `${progress.index}:${currentStep.targetId}` : currentStep.targetId}
           step={currentStep}
           isLastStep={isLastStep}
           canGoBack={canGoBack}
           onSkip={onSkip}
+          scope="viewport"
         />
       );
+    }
     default: {
       const _never: never = currentStep;
       return _never ?? null;

@@ -27,6 +27,9 @@ export const accountFlow: OnboardingFlowDef = {
       },
       placement: 'bottom',
       advance: 'manual',
+      nextGate: {
+        waitForSignal: true,
+      },
     },
     {
       kind: 'spotlight',

@@ -88,11 +88,13 @@ export function BaseModal({
       : dialogMaxHeight != null
         ? { maxHeight: dialogMaxHeight }
         : {};
-  /** Desktop modal: maxHeight without height or fitContent — pin dialog height and flex the body. */
+  /** Desktop: maxHeight without fitContent — pin dialog height and flex the body. */
   const fillMaxHeightColumn =
     maxHeight != null && !stretchContent && !compact && !fitContent && dialogMaxHeight != null;
-  const fitContentScrollMaxHeight =
-    fitContent && dialogMaxHeight != null ? Math.max(160, dialogMaxHeight - 200) : undefined;
+  /** Desktop: fitContent + maxHeight — shrink to content, cap at maxHeight, scroll body, pin footer. */
+  const fitContentColumn =
+    fitContent && maxHeight != null && !stretchContent && !compact && dialogMaxHeight != null;
+  const useFlexColumnLayout = fillMaxHeightColumn || fitContentColumn;
   const dialogRef = useRef<View>(null);
   const webKeyboardInset = useVisualViewportKeyboardInset();
   /** Skip the header chrome entirely when there's nothing to show in it. */
@@ -202,11 +204,11 @@ export function BaseModal({
               className={`bg-[#1A1A1A] rounded-2xl border border-[#2A2A2A] w-full ${maxWidthClasses[maxWidth]}`}
               style={[
                 containerStyle,
-                fillMaxHeightColumn
+                useFlexColumnLayout
                   ? {
-                      height: dialogMaxHeight,
                       flexDirection: 'column',
                       overflow: 'hidden',
+                      ...(fillMaxHeightColumn ? { height: dialogMaxHeight } : null),
                     }
                   : null,
               ]}
@@ -215,7 +217,7 @@ export function BaseModal({
             {showHeader ? (
             <View
               className="flex-row items-start justify-between p-6 border-b border-[#2A2A2A]"
-              style={fillMaxHeightColumn ? { flexShrink: 0 } : undefined}
+              style={useFlexColumnLayout ? { flexShrink: 0 } : undefined}
             >
               <View className="flex-1 mr-4">
                 {onBack ? (
@@ -258,14 +260,18 @@ export function BaseModal({
                 style={
                   stretchContent && dialogMaxHeight != null
                     ? { flexGrow: 1, flexShrink: 1, minHeight: 0 }
-                    : fillMaxHeightColumn
-                      ? { flexGrow: 1, flexShrink: 1, minHeight: 0 }
+                    : useFlexColumnLayout
+                      ? {
+                          flexShrink: 1,
+                          minHeight: 0,
+                          flexGrow: fillMaxHeightColumn ? 1 : 0,
+                        }
                       : undefined
                 }
               >
                 {maxHeight != null && !stretchContent ? (
                   <ScrollView
-                    style={fillMaxHeightColumn ? { flex: 1 } : fitContentScrollMaxHeight != null ? { maxHeight: fitContentScrollMaxHeight } : undefined}
+                    style={useFlexColumnLayout ? { flex: 1 } : undefined}
                     contentContainerStyle={{
                       paddingBottom: footer ? 12 : 0,
                       flexGrow: fillMaxHeightColumn ? 1 : 0,
@@ -297,7 +303,7 @@ export function BaseModal({
             {footer && (
               <View
                 className={`px-6 pb-6 pt-6 ${!compact ? 'border-t border-[#2A2A2A]' : ''}`}
-                style={fillMaxHeightColumn ? { flexShrink: 0 } : undefined}
+                style={useFlexColumnLayout ? { flexShrink: 0 } : undefined}
               >
                 {footer}
               </View>

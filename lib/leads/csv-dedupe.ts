@@ -1,5 +1,7 @@
-import { isEmailBlockedByEntries } from '@/lib/leads/block-list-match';
-import type { BlockListEntry } from '@/lib/supabase/types';
+import { isEmailBlockedByEntries } from './block-list-match.js';
+import type { Database } from '../supabase/types/database.js';
+
+type BlockListEntry = Database['public']['Tables']['block_list']['Row'];
 
 export const CSV_STANDARD_FIELD_KEYS = [
   'email',

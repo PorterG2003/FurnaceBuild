@@ -4,6 +4,7 @@ import {
   IMPORT_JOB_OPERATIONS,
   MAX_ASYNC_JOBS_PER_ACCOUNT,
 } from './constants.js';
+import { modelLink } from './docLinks.js';
 import { buildGuidePaths } from './guidePaths.js';
 import { parameterRef, responseRef, schemaRef } from './schemas.js';
 
@@ -149,6 +150,44 @@ export function buildClientApiPaths() {
             total_count: 1,
           }),
           ...authenticatedErrors(),
+        },
+      },
+      post: {
+        operationId: 'createCampaign',
+        tags: ['Campaigns'],
+        summary: 'Create draft campaign',
+        description:
+          `Creates a draft native campaign. Optional \`flow\` is normalized and validated on write. See Models → ${modelLink('CampaignFlow')} and Guide → Building campaigns.`,
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: schemaRef('CampaignCreate'),
+              example: {
+                name: 'Q2 Pipeline',
+                sending_interval_seconds: 1800,
+                mailbox_ids: ['c23da7b6-df4e-4d2f-b100-4bb07b7d38d7'],
+                flow: {
+                  nodes: [
+                    {
+                      id: 'leadSource-1',
+                      type: 'leadSource',
+                      position: { x: 0, y: 0 },
+                      data: {
+                        label: 'Lead Bucket',
+                        customFieldKeys: ['company'],
+                      },
+                    },
+                  ],
+                  edges: [],
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: jsonResponse('CampaignCreateResponse', 'Draft campaign created.'),
+          ...authenticatedErrors('ValidationError'),
         },
       },
     },
@@ -322,12 +361,40 @@ export function buildClientApiPaths() {
         },
       },
     },
+    '/v1/campaigns/{id}/status': {
+      patch: {
+        operationId: 'updateCampaignStatus',
+        tags: ['Campaigns'],
+        summary: 'Update live campaign status',
+        description:
+          'Changes status for a live campaign (`running`, `paused`, or `stopped`). Draft campaigns must use `POST /launch` instead. Emits campaign status webhooks.',
+        parameters: [parameterRef('CampaignId')],
+        requestBody: jsonRequestBody('CampaignStatusUpdate'),
+        responses: {
+          200: jsonResponse('CampaignStatusResponse', 'Campaign status updated.'),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/flow-templates': {
+      get: {
+        operationId: 'listFlowTemplates',
+        tags: ['Flow'],
+        summary: 'List flow templates',
+        description: 'Returns starter flow graphs for common campaign patterns.',
+        responses: {
+          200: jsonResponse('FlowTemplatesResponse', 'Flow templates.'),
+          ...authenticatedErrors(),
+        },
+      },
+    },
     '/v1/campaigns/{id}/pause': {
       post: {
         operationId: 'pauseCampaign',
         tags: ['Campaigns'],
-        summary: 'Pause campaign',
-        description: 'Pauses a running campaign and emits the `campaign.paused` webhook event.',
+        summary: 'Pause campaign (deprecated)',
+        deprecated: true,
+        description: 'Deprecated alias for `PATCH /v1/campaigns/{id}/status` with `{ "status": "paused" }`.',
         parameters: [parameterRef('CampaignId')],
         responses: {
           200: jsonResponse('CampaignStatusResponse', 'Campaign paused.', {
@@ -341,8 +408,9 @@ export function buildClientApiPaths() {
       post: {
         operationId: 'stopCampaign',
         tags: ['Campaigns'],
-        summary: 'Stop campaign',
-        description: 'Stops a campaign, stops active enrollments, and emits the `campaign.stopped` webhook event.',
+        summary: 'Stop campaign (deprecated)',
+        deprecated: true,
+        description: 'Deprecated alias for `PATCH /v1/campaigns/{id}/status` with `{ "status": "stopped" }`.',
         parameters: [parameterRef('CampaignId')],
         responses: {
           200: jsonResponse('CampaignStatusResponse', 'Campaign stopped.', {
@@ -356,11 +424,37 @@ export function buildClientApiPaths() {
       post: {
         operationId: 'resumeCampaign',
         tags: ['Campaigns'],
-        summary: 'Resume campaign',
-        description: 'Resumes a paused campaign and emits the `campaign.resumed` webhook event. Furnace rejects resume requests unless the current campaign status is `paused`.',
+        summary: 'Resume campaign (deprecated)',
+        deprecated: true,
+        description: 'Deprecated alias for `PATCH /v1/campaigns/{id}/status` with `{ "status": "running" }`.',
         parameters: [parameterRef('CampaignId')],
         responses: {
           200: jsonResponse('CampaignStatusResponse', 'Campaign resumed.', {
+            data: { id: '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb', status: 'running' },
+          }),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/campaigns/{id}/launch': {
+      post: {
+        operationId: 'launchCampaign',
+        tags: ['Campaigns'],
+        summary: 'Launch draft campaign',
+        description:
+          'Launches a draft campaign after verifying that it has a name, flow, and at least one mailbox. Furnace backfills enrollments before switching the campaign to `running`.',
+        parameters: [parameterRef('CampaignId')],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { type: 'object', additionalProperties: false },
+              example: {},
+            },
+          },
+        },
+        responses: {
+          200: jsonResponse('LaunchResponseEnvelope', 'Campaign launched.', {
             data: { id: '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb', status: 'running' },
           }),
           ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
@@ -404,27 +498,80 @@ export function buildClientApiPaths() {
     '/v1/campaigns/{id}/flow': {
       get: {
         operationId: 'getCampaignFlow',
-        tags: ['Campaigns'],
+        tags: ['Flow'],
         summary: 'Get campaign flow',
-        description: 'Returns the campaign flow graph. If a campaign has no saved flow, Furnace returns an empty `{ nodes: [], edges: [] }` payload.',
+        description:
+          `Returns the normalized campaign flow graph. If a campaign has no saved flow, Furnace returns an empty \`{ nodes: [], edges: [] }\` payload. See Models → ${modelLink('CampaignFlow')} and Guide → Building campaigns.`,
         parameters: [parameterRef('CampaignId')],
         responses: {
-          200: jsonResponse('CampaignFlowResponse', 'Campaign flow.', {
-            data: {
-              nodes: [
-                {
-                  id: 'lead-source-1',
-                  type: 'leadSource',
-                  data: {
-                    customFieldKeys: ['company', 'source'],
-                    mappedStandardFieldKeys: ['email', 'first_name', 'last_name'],
-                  },
-                },
-              ],
-              edges: [],
-            },
-          }),
+          200: jsonResponse('CampaignFlowResponse', 'Campaign flow.'),
           ...authenticatedErrors('NotFoundError'),
+        },
+      },
+      put: {
+        operationId: 'updateCampaignFlow',
+        tags: ['Flow'],
+        summary: 'Update campaign flow (deprecated alias)',
+        deprecated: true,
+        description:
+          'Deprecated alias of `POST /v1/campaigns/{id}/flow`. Prefer POST with optional `If-Match`.',
+        parameters: [parameterRef('CampaignId')],
+        requestBody: jsonRequestBody('FlowUpdate'),
+        responses: {
+          200: jsonResponse('FlowSaveResponse', 'Updated normalized flow.'),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+      post: {
+        operationId: 'saveCampaignFlow',
+        tags: ['Flow'],
+        summary: 'Save campaign flow',
+        description:
+          `Writes the canonical flow payload. Returns \`flow\`, \`flow_revision\`, and \`field_sync\`. Use \`?dry_run=true\` to validate without persisting. Optional \`If-Match\` header for optimistic concurrency. Request body: Models → ${modelLink('FlowUpdate')}.`,
+        parameters: [
+          parameterRef('CampaignId'),
+          {
+            name: 'dry_run',
+            in: 'query',
+            required: false,
+            schema: { type: 'boolean' },
+            description: 'When true, validate without persisting.',
+          },
+        ],
+        requestBody: jsonRequestBody('FlowUpdate'),
+        responses: {
+          200: jsonResponse('FlowSaveResponse', 'Saved normalized flow.'),
+          412: jsonResponse('FlowRevisionConflictError', 'Stale If-Match revision.'),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/campaigns/{id}/flow/nodes/{nodeId}': {
+      patch: {
+        operationId: 'patchCampaignFlowNode',
+        tags: ['Flow'],
+        summary: 'Patch flow node content',
+        description: 'Live content-only patch for supported node types (email, waitTime, dataSender).',
+        parameters: [parameterRef('CampaignId'), parameterRef('FlowNodeId')],
+        requestBody: jsonRequestBody('FlowNodePatch'),
+        responses: {
+          200: jsonResponse('FlowSaveResponse', 'Updated node content.'),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
+        },
+      },
+    },
+    '/v1/campaigns/{id}/flow:validate': {
+      post: {
+        operationId: 'validateCampaignFlow',
+        tags: ['Flow'],
+        summary: 'Validate campaign flow',
+        description:
+          `Dry-runs flow normalization, validation, and lifecycle gating without writing changes. See Models → ${modelLink('FlowValidateResult')} and Guide → Building campaigns.`,
+        parameters: [parameterRef('CampaignId')],
+        requestBody: jsonRequestBody('FlowUpdate'),
+        responses: {
+          200: jsonResponse('FlowValidateResponse', 'Flow validation result.'),
+          ...authenticatedErrors('ForbiddenError', 'NotFoundError'),
         },
       },
     },

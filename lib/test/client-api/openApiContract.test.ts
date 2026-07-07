@@ -28,23 +28,32 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   assert.match(spec.info.description, /X-RateLimit-Limit/);
   assert.match(spec.info.description, /Idempotency-Key/);
   assert.match(spec.info.description, /Smartlead campaigns are read-only/);
+  assert.match(spec.info.description, /Guide → Building campaigns/);
+  assert.match(spec.info.description, /Models → CampaignFlow/);
+  assert.match(spec.info.description, /flow_locked/);
   assert.match(spec.info.description, /Guide → Changelog/);
   assert.match(spec.info.description, /Guide → Webhooks/);
 
+  assert.ok(spec.tags.some((tag) => tag.name === 'Building campaigns'));
   assert.ok(spec.tags.some((tag) => tag.name === 'Changelog'));
   assert.ok(spec.tags.some((tag) => tag.name === 'Webhooks'));
   assert.ok(spec.tags.some((tag) => tag.name === 'Campaigns'));
+  assert.ok(spec.tags.some((tag) => tag.name === 'Flow'));
   assert.ok(spec.tags.some((tag) => tag.name === 'Inbox'));
   assert.match(spec.info.description, /Inbox message jobs/);
 
   const guideGroup = spec['x-tagGroups'].find((group) => group.name === 'Guide');
   const apiGroup = spec['x-tagGroups'].find((group) => group.name === 'API');
   assert.ok(guideGroup);
-  assert.deepEqual(guideGroup?.tags, ['Changelog', 'Webhooks']);
+  assert.deepEqual(guideGroup?.tags, ['Building campaigns', 'Changelog', 'Webhooks']);
   assert.ok(apiGroup?.tags.includes('Campaigns'));
+  assert.ok(apiGroup?.tags.includes('Flow'));
   assert.ok(apiGroup?.tags.includes('Meta'));
 
   assert.ok('LeadCreate' in spec.components.schemas);
+  assert.ok('CampaignCreate' in spec.components.schemas);
+  assert.ok('FlowUpdate' in spec.components.schemas);
+  assert.ok('FlowValidateResponse' in spec.components.schemas);
   assert.ok('ThreadUpdate' in spec.components.schemas);
   assert.ok('MessageJob' in spec.components.schemas);
   assert.ok('ForwardRequest' in spec.components.schemas);
@@ -68,6 +77,7 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   assert.ok(DEFAULT_ALLOWED_WEBHOOK_EVENTS.includes('lead.added_to_campaign.completed'));
 
   const expectedOperations: Record<string, string[]> = {
+    '/documentation/building-campaigns': ['get'],
     '/documentation/changelog': ['get'],
     '/documentation/webhooks': ['get'],
     '/documentation/webhooks/lead-added-updated': ['get'],
@@ -78,16 +88,21 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
     '/health': ['get'],
     '/openapi.json': ['get'],
     '/docs': ['get'],
-    '/v1/campaigns': ['get'],
+    '/v1/campaigns': ['get', 'post'],
     '/v1/campaign-tags': ['get', 'post'],
     '/v1/campaign-tags/{id}': ['patch', 'delete'],
     '/v1/campaigns/{id}': ['get', 'patch', 'delete'],
     '/v1/campaigns/{id}/pause': ['post'],
+    '/v1/campaigns/{id}/status': ['patch'],
     '/v1/campaigns/{id}/stop': ['post'],
     '/v1/campaigns/{id}/resume': ['post'],
+    '/v1/campaigns/{id}/launch': ['post'],
     '/v1/campaigns/{id}/enrollments/pause': ['post'],
     '/v1/campaigns/{id}/enrollments/resume': ['post'],
-    '/v1/campaigns/{id}/flow': ['get'],
+    '/v1/campaigns/{id}/flow': ['get', 'put', 'post'],
+    '/v1/campaigns/{id}/flow/nodes/{nodeId}': ['patch'],
+    '/v1/flow-templates': ['get'],
+    '/v1/campaigns/{id}/flow:validate': ['post'],
     '/v1/campaigns/{id}/lead-fields': ['get', 'post'],
     '/v1/campaigns/{id}/leads': ['get', 'post'],
     '/v1/campaigns/{id}/leads/{leadId}': ['get', 'patch', 'delete'],
@@ -141,6 +156,7 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
         || path === '/v1/campaigns/{id}/pause'
         || path === '/v1/campaigns/{id}/stop'
         || path === '/v1/campaigns/{id}/resume'
+        || path === '/v1/campaigns/{id}/launch'
         || path === '/v1/message-jobs/{id}/cancel'
         || path === '/v1/message-jobs/{id}/send-now'
         || (path === '/v1/threads/{id}/out-of-office' && method === 'delete');
@@ -154,12 +170,48 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
 test('client api guide documentation pages include webhook examples', () => {
   const spec = buildClientApiOpenApiSpec('https://api.example.com') as {
     paths: Record<string, { get?: { description?: string } }>;
+    components: { schemas: Record<string, { description?: string }> };
   };
 
   const changelog = spec.paths['/documentation/changelog']?.get?.description ?? '';
   assert.match(changelog, /Breaking changes increment the major version/);
   assert.match(changelog, /## 1\.2\.0/);
   assert.match(changelog, /## 1\.3\.0/);
+  assert.match(changelog, /## 1\.4\.1/);
+  assert.match(changelog, /## 1\.4\.0/);
+  assert.match(changelog, /flow_data/);
+
+  const buildingCampaigns = spec.paths['/documentation/building-campaigns']?.get?.description ?? '';
+  assert.match(buildingCampaigns, /What is a campaign/i);
+  assert.match(buildingCampaigns, /field_sync/);
+  assert.match(buildingCampaigns, /If-Match/);
+  assert.match(buildingCampaigns, /POST \/v1\/campaigns\/\{id\}\/flow/);
+  assert.match(buildingCampaigns, /Draft vs live lock/i);
+  assert.match(buildingCampaigns, /Example flow: email -> wait -> email/);
+  assert.match(buildingCampaigns, /End-to-end walkthrough/);
+  assert.match(buildingCampaigns, /flow_locked/);
+  assert.match(buildingCampaigns, /node_added/);
+  assert.match(buildingCampaigns, /Models → \[CampaignFlow\]/);
+  assert.match(buildingCampaigns, /FlowValidationIssue/);
+
+  const campaignFlow = spec.components.schemas.CampaignFlow?.description ?? '';
+  assert.match(campaignFlow, /Merge variables/);
+  assert.match(campaignFlow, /Validation rules/);
+
+  const flowValidationIssue = spec.components.schemas.FlowValidationIssue?.description ?? '';
+  assert.match(flowValidationIssue, /Error-code catalog/);
+  assert.match(flowValidationIssue, /invalid_variant_id/);
+
+  assert.ok(!('/documentation/campaign-flow-reference' in spec.paths));
+
+  const nonChangelogSpec = JSON.stringify({
+    paths: Object.fromEntries(
+      Object.entries(spec.paths).filter(([path]) => path !== '/documentation/changelog'),
+    ),
+    components: spec.components,
+  });
+  assert.doesNotMatch(nonChangelogSpec, /campaign-flow-reference/);
+  assert.doesNotMatch(nonChangelogSpec, /Campaign flow reference/);
 
   const webhooksOverview = spec.paths['/documentation/webhooks']?.get?.description ?? '';
   assert.match(webhooksOverview, /Quick start/);

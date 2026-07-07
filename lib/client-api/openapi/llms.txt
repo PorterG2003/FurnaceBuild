@@ -1,0 +1,29 @@
+# Furnace Client API — LLM index (v1.4.1)
+
+## Guides
+- Building campaigns: /documentation/building-campaigns
+- Changelog: /documentation/changelog
+- Webhooks: /documentation/webhooks
+
+## Flow object (Models)
+- CampaignFlow — graph structure, merge variables, validation rules
+- FlowUpdate — save payload + normalization rules
+- FlowValidationIssue — validation error-code catalog
+- FlowValidateResult — dry-run validate response shape
+- FlowNode, FlowEdge, EmailVariant, LeadSourceNodeData, EmailNodeData, WaitTimeNodeData, AICategorizerNodeData, DataSenderNodeData
+
+## Campaign checklist
+1. GET /v1/mailboxes
+2. POST /v1/campaigns
+3. POST /v1/campaigns/{id}/flow (+ optional If-Match)
+4. POST /v1/campaigns/{id}/leads
+5. GET /v1/campaigns/{id}?include=launch_state,lead_field_state
+6. POST /v1/campaigns/{id}/launch
+
+## Key v1.4 behaviors
+- POST /flow is the hero save; PUT /flow is a deprecated alias
+- flow_revision + If-Match prevent lost updates (412 flow_revision_conflict)
+- field_sync auto-declares merge-variable fields from copy
+- PATCH /status for live pause/resume/stop; POST /launch is draft-only
+- GET /v1/campaigns list omits flow_data — use GET /v1/campaigns/{id} for full flow
+- GET /v1/flow-templates for starter graphs

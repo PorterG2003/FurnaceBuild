@@ -9,6 +9,7 @@ import {
   ClientApiError,
   forbidden,
   invalidRequest,
+  invalidRequestWithDetails,
   notFound,
   rateLimited,
   unauthorized,
@@ -80,6 +81,27 @@ import {
 } from '../../../lib/client-api/inbox/threads.js';
 import { buildInteractionIntent } from '../../../lib/inbox/buildInteractionIntent.js';
 import { parseSmartHandlingMetadata } from '../../../lib/inbox/smartHandling.js';
+import {
+  attachFlowRevision,
+  buildLaunchState,
+  buildLeadFieldState,
+  toCampaignListItem,
+} from '../../../lib/client-api/campaign-document.js';
+import {
+  buildFlowDryRunResponse,
+  buildFlowSaveResponse,
+  prepareCampaignFlowForApi,
+} from '../../../lib/client-api/campaign-flow.js';
+import { FLOW_TEMPLATES } from '../../../lib/campaigns/flow/templates.js';
+import { isLiveContentPatchAllowed } from '../../../lib/campaigns/flow/registry.js';
+import {
+  computeFlowRevision,
+  normalizeFlowData,
+  type CampaignFlowData,
+  type CampaignFlowNode,
+  type CampaignStatus,
+} from '../../../lib/campaigns/flow/index.js';
+import { updateCampaignFlowDataWithClient } from '../../../lib/supabase/services/campaigns/update-campaign-flow-with-client.js';
 import type { Database, Json } from '../../../lib/supabase/types/database.js';
 
 type Variables = {
@@ -325,6 +347,164 @@ async function replaceCampaignMailboxes(
   }
 }
 
+function normalizeCampaignFlowPayload(flowData: unknown): CampaignFlowData {
+  return normalizeFlowData(flowData ?? { nodes: [], edges: [] });
+}
+
+async function saveCampaignFlow(
+  supabase: Supabase,
+  campaign: Database['public']['Tables']['campaigns']['Row'],
+  accountId: string,
+  incomingFlow: unknown,
+  options: {
+    ifMatch?: string | null;
+    phase?: 'draft' | 'launch';
+  } = {},
+) {
+  const prepared = await prepareCampaignFlowForApi({
+    incomingFlow,
+    existingFlow: campaign.flow_data,
+    campaignStatus: campaign.status as CampaignStatus | null,
+    phase: options.phase ?? 'draft',
+    ifMatch: options.ifMatch,
+  });
+  await updateCampaignFlowDataWithClient(supabase, {
+    campaignId: campaign.id,
+    accountId,
+    flowData: prepared.flow as unknown as Json,
+    changeSource: 'client_api',
+  });
+  return prepared;
+}
+
+async function applyCampaignStatusChange(
+  supabase: Supabase,
+  campaign: Database['public']['Tables']['campaigns']['Row'],
+  requestedStatus: CampaignStatus,
+): Promise<{ id: string; status: CampaignStatus; noop?: boolean }> {
+  const current = campaign.status as CampaignStatus;
+  if (current === 'draft') {
+    invalidRequest('campaign_use_launch', 'Use POST /launch to start a draft campaign');
+  }
+  if (current === requestedStatus) {
+    return { id: campaign.id, status: current, noop: true };
+  }
+  if (requestedStatus === 'running' && current === 'stopped') {
+    invalidRequest('invalid_status_transition', 'Stopped campaigns cannot be resumed to running');
+  }
+  if (requestedStatus === 'running' && current === 'paused') {
+    const { error } = await supabase.rpc('resume_campaign_and_reschedule_jobs', {
+      p_campaign_id: campaign.id,
+      p_pause_reason: 'Campaign paused',
+    });
+    if (error) throw new Error(`Failed to resume campaign: ${error.message}`);
+    return { id: campaign.id, status: 'running' };
+  }
+  if (requestedStatus === 'paused' && current === 'running') {
+    const { error } = await supabase.rpc('pause_campaign_and_defer_jobs', { p_campaign_id: campaign.id });
+    if (error) throw new Error(`Failed to pause campaign: ${error.message}`);
+    return { id: campaign.id, status: 'paused' };
+  }
+  if (requestedStatus === 'stopped' && (current === 'running' || current === 'paused')) {
+    const { error } = await supabase.rpc('stop_campaign_and_stop_enrollments', { p_campaign_id: campaign.id });
+    if (error) throw new Error(`Failed to stop campaign: ${error.message}`);
+    return { id: campaign.id, status: 'stopped' };
+  }
+  if (requestedStatus === 'running' && current !== 'paused') {
+    invalidRequest('campaign_not_paused', 'Only paused campaigns can be resumed');
+  }
+  invalidRequest('invalid_status_transition', `Cannot transition campaign from ${current} to ${requestedStatus}`);
+}
+
+function parseIncludeQuery(value: string | undefined): Set<string> {
+  if (!value?.trim()) return new Set();
+  return new Set(value.split(',').map((part) => part.trim()).filter(Boolean));
+}
+
+async function buildCampaignDetailResponse(
+  supabase: Supabase,
+  campaign: Database['public']['Tables']['campaigns']['Row'],
+  include: Set<string>,
+) {
+  const flow = normalizeCampaignFlowPayload(campaign.flow_data);
+  const tagsMap = await getTagsForCampaignIds(supabase, [campaign.id]);
+  const base = await attachFlowRevision(attachTagsToCampaignRow(campaign, tagsMap), flow);
+  const data: Record<string, unknown> = { ...base };
+
+  if (include.has('launch_state')) {
+    const [mailboxes, leadsResult] = await Promise.all([
+      listCampaignMailboxes(supabase, campaign.id),
+      supabase
+        .from('leads')
+        .select('id')
+        .eq('campaign_id', campaign.id)
+        .is('deleted_at', null),
+    ]);
+    if (leadsResult.error) {
+      throw new Error(`Failed to load leads for launch_state: ${leadsResult.error.message}`);
+    }
+    data.launch_state = buildLaunchState(campaign, {
+      mailboxCount: mailboxes.length,
+      leadCount: (leadsResult.data ?? []).length,
+    });
+  }
+
+  if (include.has('lead_field_state')) {
+    const { data: leads, error } = await supabase
+      .from('leads')
+      .select('custom_lead_data')
+      .eq('campaign_id', campaign.id)
+      .is('deleted_at', null);
+    if (error) {
+      throw new Error(`Failed to load leads for lead_field_state: ${error.message}`);
+    }
+    data.lead_field_state = buildLeadFieldState(campaign.flow_data, leads ?? []);
+  }
+
+  return data;
+}
+
+async function loadAccountOwnerUserIdOrThrow(supabase: Supabase, accountId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('account_users')
+    .select('user_id, is_owner, created_at')
+    .eq('account_id', accountId)
+    .order('is_owner', { ascending: false })
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Failed to resolve account owner: ${error.message}`);
+  }
+  if (!data?.user_id) {
+    throw new Error(`No account member found for account ${accountId}`);
+  }
+  return data.user_id;
+}
+
+async function validateMailboxIdsForAccount(
+  supabase: Supabase,
+  accountId: string,
+  mailboxIds: string[],
+): Promise<string[]> {
+  const uniqueIds = [...new Set(mailboxIds.filter((value): value is string => typeof value === 'string' && value.length > 0))];
+  if (uniqueIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('mailboxes')
+    .select('id')
+    .eq('account_id', accountId)
+    .in('id', uniqueIds)
+    .is('deleted_at', null);
+  if (error) {
+    throw new Error(`Failed to validate mailbox ids: ${error.message}`);
+  }
+  if ((data ?? []).length !== uniqueIds.length) {
+    invalidRequest('invalid_mailbox_ids', 'One or more mailbox ids are invalid for this account');
+  }
+  return uniqueIds;
+}
+
+
 async function getRateLimitedHeadersOrThrow(supabase: Supabase, accountId: string): Promise<Record<string, string>> {
   const windowStart = currentWindowStart();
   const resetEpochSeconds = nextWindowResetEpochSeconds();
@@ -359,6 +539,12 @@ async function getRateLimitedHeadersOrThrow(supabase: Supabase, accountId: strin
       request_count: 1,
     } as never);
     if (error) {
+      const isDuplicate =
+        error.code === '23505'
+        || error.message.includes('api_rate_limit_buckets_window_unique');
+      if (isDuplicate) {
+        return getRateLimitedHeadersOrThrow(supabase, accountId);
+      }
       throw new Error(`Failed to create API rate limit bucket: ${error.message}`);
     }
   }
@@ -622,8 +808,72 @@ app.get('/v1/campaigns', async (c) => {
     supabase,
     rows.map((row) => row.id),
   );
-  const enriched = rows.map((row) => attachTagsToCampaignRow(row, tagsMap));
+  const enriched = rows.map((row) => attachTagsToCampaignRow(row, tagsMap)).map((row) => toCampaignListItem(row));
   return jsonResponse(c, buildListPayload(enriched, limit, offset, count ?? 0), 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/campaigns', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
+  const name = typeof body.name === 'string' && body.name.trim().length > 0
+    ? body.name.trim()
+    : 'Untitled Campaign';
+  const mailboxIds = await validateMailboxIdsForAccount(
+    supabase,
+    auth.accountId,
+    Array.isArray(body.mailbox_ids) ? body.mailbox_ids : [],
+  );
+  const tagIds = Array.isArray(body.tag_ids)
+    ? body.tag_ids.filter((value): value is string => typeof value === 'string' && value.length > 0)
+    : [];
+  const normalizedFlow = body.flow === undefined
+    ? null
+    : (await prepareCampaignFlowForApi({
+      incomingFlow: body.flow,
+      existingFlow: { nodes: [], edges: [] },
+      campaignStatus: 'draft',
+      phase: 'draft',
+    })).flow;
+  const ownerId = await loadAccountOwnerUserIdOrThrow(supabase, auth.accountId);
+  const { data: created, error } = await supabase
+    .from('campaigns')
+    .insert({
+      account_id: auth.accountId,
+      owner_id: ownerId,
+      organization_id: null,
+      name,
+      status: 'draft',
+      source: 'manual',
+      schedule: body.schedule ?? null,
+      sending_interval_seconds:
+        typeof body.sending_interval_seconds === 'number' && Number.isFinite(body.sending_interval_seconds)
+          ? body.sending_interval_seconds
+          : 300,
+    } as never)
+    .select('*')
+    .single();
+  if (error || !created) {
+    throw new Error(`Failed to create campaign: ${error?.message}`);
+  }
+  if (normalizedFlow) {
+    await updateCampaignFlowDataWithClient(supabase, {
+      campaignId: created.id,
+      accountId: auth.accountId,
+      flowData: normalizedFlow as unknown as Json,
+      changeSource: 'client_api',
+    });
+  }
+  if (mailboxIds.length > 0) {
+    await replaceCampaignMailboxes(supabase, created, mailboxIds);
+  }
+  if (tagIds.length > 0) {
+    await applyCampaignTagPatch(supabase, auth.accountId, created.id, { tag_ids: tagIds });
+  }
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, created.id);
+  const tagsMap = await getTagsForCampaignIds(supabase, [campaign.id]);
+  const data = await attachFlowRevision(attachTagsToCampaignRow(campaign, tagsMap));
+  return jsonResponse(c, { data }, 201, c.get('rateLimitHeaders'));
 });
 
 app.get('/v1/campaign-tags', async (c) => {
@@ -693,15 +943,205 @@ app.delete('/v1/campaign-tags/:id', async (c) => {
 
 app.get('/v1/campaigns/:id', async (c) => {
   const supabase = createServiceRoleClient();
-  const campaign = await loadCampaignOrThrow(supabase, c.get('apiKey').accountId, c.req.param('id'));
-  const tagsMap = await getTagsForCampaignIds(supabase, [campaign.id]);
-  return jsonResponse(c, { data: attachTagsToCampaignRow(campaign, tagsMap) }, 200, c.get('rateLimitHeaders'));
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  const include = parseIncludeQuery(c.req.query('include'));
+  const data = await buildCampaignDetailResponse(supabase, campaign, include);
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.get('/v1/flow-templates', async (c) => {
+  return jsonResponse(
+    c,
+    {
+      data: FLOW_TEMPLATES.map((template) => ({
+        id: template.id,
+        name: template.name,
+        description: template.description,
+        flow: template.flow,
+      })),
+    },
+    200,
+    c.get('rateLimitHeaders'),
+  );
 });
 
 app.get('/v1/campaigns/:id/flow', async (c) => {
   const supabase = createServiceRoleClient();
   const campaign = await loadCampaignOrThrow(supabase, c.get('apiKey').accountId, c.req.param('id'));
-  return jsonResponse(c, { data: campaign.flow_data ?? { nodes: [], edges: [] } }, 200, c.get('rateLimitHeaders'));
+  const flow = normalizeCampaignFlowPayload(campaign.flow_data);
+  return jsonResponse(
+    c,
+    {
+      data: {
+        ...flow,
+        flow_revision: await computeFlowRevision(flow),
+      },
+    },
+    200,
+    c.get('rateLimitHeaders'),
+  );
+});
+
+async function handleCampaignFlowWrite(c: Context, method: 'POST' | 'PUT') {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaignId = c.req.param('id');
+  if (!campaignId) {
+    invalidRequest('validation_error', 'Campaign id is required');
+  }
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, campaignId);
+  assertCampaignMutable(campaign);
+  const dryRun = c.req.query('dry_run') === 'true';
+  const ifMatch = c.req.header('If-Match') ?? c.req.header('if-match');
+  const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
+
+  const prepared = await prepareCampaignFlowForApi({
+    incomingFlow: body,
+    existingFlow: campaign.flow_data,
+    campaignStatus: campaign.status as CampaignStatus | null,
+    phase: 'draft',
+    ifMatch,
+  });
+
+  if (dryRun) {
+    return jsonResponse(c, { data: buildFlowDryRunResponse(prepared) }, 200, c.get('rateLimitHeaders'));
+  }
+
+  await updateCampaignFlowDataWithClient(supabase, {
+    campaignId: campaign.id,
+    accountId: auth.accountId,
+    flowData: prepared.flow as unknown as Json,
+    changeSource: 'client_api',
+  });
+
+  return jsonResponse(c, { data: buildFlowSaveResponse(prepared) }, method === 'POST' ? 200 : 200, c.get('rateLimitHeaders'));
+}
+
+app.post('/v1/campaigns/:id/flow', async (c) => handleCampaignFlowWrite(c, 'POST'));
+
+app.put('/v1/campaigns/:id/flow', async (c) => handleCampaignFlowWrite(c, 'PUT'));
+
+app.post('/v1/campaigns/:id/flow:validate', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  assertCampaignMutable(campaign);
+  const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
+  const prepared = await prepareCampaignFlowForApi({
+    incomingFlow: body,
+    existingFlow: campaign.flow_data,
+    campaignStatus: campaign.status as CampaignStatus | null,
+    phase: 'draft',
+  });
+  return jsonResponse(c, { data: buildFlowDryRunResponse(prepared) }, 200, c.get('rateLimitHeaders'));
+});
+
+app.patch('/v1/campaigns/:id/flow/nodes/:nodeId', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  assertCampaignMutable(campaign);
+  const nodeId = c.req.param('nodeId');
+  const patchBody = parseJsonBody<{ data?: Record<string, unknown> }>(await c.req.text());
+  if (!patchBody.data || typeof patchBody.data !== 'object') {
+    invalidRequest('validation_error', 'data object is required');
+  }
+
+  const existingFlow = normalizeCampaignFlowPayload(campaign.flow_data);
+  const nodeIndex = existingFlow.nodes.findIndex((node) => node.id === nodeId);
+  if (nodeIndex === -1) {
+    notFound('node_not_found', 'Flow node not found');
+  }
+  const node = existingFlow.nodes[nodeIndex]!;
+  if (!isLiveContentPatchAllowed(node.type)) {
+    forbidden('flow_locked', 'This node type cannot be patched on a live campaign');
+  }
+
+  const nextFlow: CampaignFlowData = {
+    ...existingFlow,
+    nodes: existingFlow.nodes.map((current, index) => {
+      if (index !== nodeIndex) return current;
+      return {
+        ...current,
+        data: {
+          ...current.data,
+          ...patchBody.data,
+        },
+      } as CampaignFlowNode;
+    }),
+  };
+
+  const prepared = await saveCampaignFlow(supabase, campaign, auth.accountId, nextFlow, {
+    phase: 'draft',
+  });
+  return jsonResponse(c, { data: buildFlowSaveResponse(prepared) }, 200, c.get('rateLimitHeaders'));
+});
+
+app.patch('/v1/campaigns/:id/status', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  assertCampaignMutable(campaign);
+  const body = parseJsonBody<{ status?: string }>(await c.req.text());
+  const requested = body.status;
+  if (requested !== 'running' && requested !== 'paused' && requested !== 'stopped') {
+    invalidRequest('validation_error', 'status must be running, paused, or stopped', 'status');
+  }
+  const result = await applyCampaignStatusChange(supabase, campaign, requested as CampaignStatus);
+  return jsonResponse(c, { data: { id: result.id, status: result.status } }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/campaigns/:id/launch', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
+  assertCampaignMutable(campaign);
+  if (campaign.status !== 'draft') {
+    invalidRequest('campaign_not_draft', 'Only draft campaigns can be launched');
+  }
+
+  const mailboxes = await listCampaignMailboxes(supabase, campaign.id);
+  const { data: leads, error: leadsError } = await supabase
+    .from('leads')
+    .select('id')
+    .eq('campaign_id', campaign.id)
+    .is('deleted_at', null);
+  if (leadsError) {
+    throw new Error(`Failed to load leads for launch: ${leadsError.message}`);
+  }
+
+  const launchState = buildLaunchState(campaign, {
+    mailboxCount: mailboxes.length,
+    leadCount: (leads ?? []).length,
+  });
+  if (!launchState.ready) {
+    invalidRequestWithDetails(
+      'launch_not_ready',
+      'Campaign is not ready to launch',
+      launchState.blocking_issues,
+    );
+  }
+
+  const leadIds = (leads ?? []).map((lead) => lead.id).filter(Boolean);
+  await ensureCampaignEnrollmentsForLeadIds(supabase, campaign, leadIds);
+  const { error } = await supabase
+    .from('campaigns')
+    .update({
+      status: 'running',
+      updated_at: nowIso(),
+    } as never)
+    .eq('id', campaign.id)
+    .eq('account_id', auth.accountId);
+  if (error) {
+    throw new Error(`Failed to launch campaign: ${error.message}`);
+  }
+  return jsonResponse(
+    c,
+    { data: { id: campaign.id, status: 'running', enrolled: leadIds.length } },
+    200,
+    c.get('rateLimitHeaders'),
+  );
 });
 
 app.patch('/v1/campaigns/:id', async (c) => {
@@ -775,9 +1215,8 @@ app.post('/v1/campaigns/:id/pause', async (c) => {
   const auth = c.get('apiKey');
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   assertCampaignMutable(campaign);
-  const { error } = await supabase.rpc('pause_campaign_and_defer_jobs', { p_campaign_id: campaign.id });
-  if (error) throw new Error(`Failed to pause campaign: ${error.message}`);
-  return jsonResponse(c, { data: { id: campaign.id, status: 'paused' } }, 200, c.get('rateLimitHeaders'));
+  const result = await applyCampaignStatusChange(supabase, campaign, 'paused');
+  return jsonResponse(c, { data: { id: result.id, status: result.status } }, 200, c.get('rateLimitHeaders'));
 });
 
 app.post('/v1/campaigns/:id/stop', async (c) => {
@@ -785,9 +1224,8 @@ app.post('/v1/campaigns/:id/stop', async (c) => {
   const auth = c.get('apiKey');
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   assertCampaignMutable(campaign);
-  const { error } = await supabase.rpc('stop_campaign_and_stop_enrollments', { p_campaign_id: campaign.id });
-  if (error) throw new Error(`Failed to stop campaign: ${error.message}`);
-  return jsonResponse(c, { data: { id: campaign.id, status: 'stopped' } }, 200, c.get('rateLimitHeaders'));
+  const result = await applyCampaignStatusChange(supabase, campaign, 'stopped');
+  return jsonResponse(c, { data: { id: result.id, status: result.status } }, 200, c.get('rateLimitHeaders'));
 });
 
 app.post('/v1/campaigns/:id/resume', async (c) => {
@@ -795,15 +1233,8 @@ app.post('/v1/campaigns/:id/resume', async (c) => {
   const auth = c.get('apiKey');
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   assertCampaignMutable(campaign);
-  if (campaign.status !== 'paused') {
-    invalidRequest('campaign_not_paused', 'Only paused campaigns can be resumed');
-  }
-  const { error } = await supabase.rpc('resume_campaign_and_reschedule_jobs', {
-    p_campaign_id: campaign.id,
-    p_pause_reason: 'Campaign paused',
-  });
-  if (error) throw new Error(`Failed to resume campaign: ${error.message}`);
-  return jsonResponse(c, { data: { id: campaign.id, status: 'running' } }, 200, c.get('rateLimitHeaders'));
+  const result = await applyCampaignStatusChange(supabase, campaign, 'running');
+  return jsonResponse(c, { data: { id: result.id, status: result.status } }, 200, c.get('rateLimitHeaders'));
 });
 
 app.post('/v1/campaigns/:id/enrollments/pause', async (c) => {
@@ -908,12 +1339,12 @@ app.post('/v1/campaigns/:id/lead-fields', async (c) => {
   const key = body.key?.trim();
   if (!key) invalidRequest('missing_field_key', 'Lead field key is required', 'key');
   const nextFlowData = appendCampaignCustomFieldKey(campaign.flow_data, key);
-  const { error } = await supabase.rpc('update_campaign_flow_data', {
-    p_campaign_id: campaign.id,
-    p_flow_data: nextFlowData,
-    p_change_source: 'client_api',
+  await updateCampaignFlowDataWithClient(supabase, {
+    campaignId: campaign.id,
+    accountId: auth.accountId,
+    flowData: nextFlowData,
+    changeSource: 'client_api',
   });
-  if (error) throw new Error(`Failed to append lead field: ${error.message}`);
   return jsonResponse(c, { data: { key } }, 200, c.get('rateLimitHeaders'));
 });
 

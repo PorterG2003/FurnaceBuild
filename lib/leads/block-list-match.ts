@@ -1,4 +1,6 @@
-import type { BlockListEntry } from '@/lib/supabase/types';
+import type { Database } from '../supabase/types/database.js';
+
+type BlockListEntry = Database['public']['Tables']['block_list']['Row'];
 
 function getDomainFromEmail(email: string): string | null {
   const trimmed = email.trim().toLowerCase();

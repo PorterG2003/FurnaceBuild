@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Campaign, CampaignInsert, LeadInsert } from '../../types';
 import type { Database } from '../../types/database';
+import { updateCampaignFlowDataWithClient } from './update-campaign-flow-with-client';
 
 type DbClient = SupabaseClient<Database>;
 
@@ -100,39 +101,6 @@ async function updateCampaignSettingsWithClient(
 
   if (error) {
     throw new Error(`Failed to update campaign settings: ${error.message}`);
-  }
-}
-
-async function updateCampaignFlowDataWithClient(
-  db: DbClient,
-  campaignId: string,
-  flowData: Campaign['flow_data'],
-): Promise<void> {
-  const { error } = await db.rpc('update_campaign_flow_data', {
-    p_campaign_id: campaignId,
-    p_flow_data: flowData,
-    p_change_source: 'duplicate_campaign',
-  } as never);
-
-  if (!error) {
-    return;
-  }
-
-  if (error.message !== 'Authentication required') {
-    throw new Error(`Failed to update campaign flow: ${error.message}`);
-  }
-
-  const { error: updateError } = await db
-    .from('campaigns')
-    .update({
-      flow_data: flowData,
-      updated_at: new Date().toISOString(),
-    } as never)
-    .eq('id', campaignId)
-    .is('deleted_at', null);
-
-  if (updateError) {
-    throw new Error(`Failed to update campaign flow: ${updateError.message}`);
   }
 }
 
@@ -299,7 +267,12 @@ export async function duplicateCampaignWithClient(
     await updateCampaignSettingsWithClient(db, duplicatedCampaign.id, sourceCampaign);
 
     if (sourceCampaign.flow_data) {
-      await updateCampaignFlowDataWithClient(db, duplicatedCampaign.id, sourceCampaign.flow_data);
+      await updateCampaignFlowDataWithClient(db, {
+        campaignId: duplicatedCampaign.id,
+        accountId: targetAccountId,
+        flowData: sourceCampaign.flow_data,
+        changeSource: 'duplicate_campaign',
+      });
     }
 
     copiedMailboxIds = await getCampaignMailboxIdsWithClient(db, sourceCampaign.id);

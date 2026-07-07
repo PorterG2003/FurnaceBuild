@@ -11,6 +11,6 @@ When adding a release entry, edit `buildChangelogMarkdown()` in the TypeScript m
 1. Update `buildChangelogMarkdown()` in `lib/client-api/openapi/changelog.ts`
 2. Bump `CLIENT_API_VERSION` in `lib/client-api/openapi/constants.ts` when the contract changes
 3. Run `npm run test:client-api`
-4. After deploy, verify `/docs` shows **Guide** and **API** sections in one sidebar
+4. After deploy, verify `/docs` shows **Guide** (Building campaigns, Changelog, Webhooks) and **API** sections in one sidebar; field-level flow docs live under **Models**
 
 See also [CLIENT_API_DEV_RUNBOOK.md](./CLIENT_API_DEV_RUNBOOK.md).

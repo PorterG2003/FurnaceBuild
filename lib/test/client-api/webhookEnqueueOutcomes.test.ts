@@ -57,7 +57,6 @@ test('reconcileStaleWebhookEnqueues picks up unenqueued rows', async (t) => {
   try {
     if (!(await ensureWebhookInfrastructureSchema(harness, t))) return;
 
-    const staleCreatedAt = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: event, error } = await harness.supabase
       .from('webhook_events')
       .insert({
@@ -66,12 +65,25 @@ test('reconcileStaleWebhookEnqueues picks up unenqueued rows', async (t) => {
         event_type: 'lead.updated',
         payload: { email: `reconcile-${harness.namespace}@example.com` },
         dedupe_key: `${harness.namespace}-reconcile`,
-        created_at: staleCreatedAt,
       } as never)
       .select('id')
       .single();
     assert.equal(error, null);
     harness.trackedWebhookEventIds.add(event!.id as string);
+
+    const { error: ageError } = await harness.supabase
+      .from('webhook_events')
+      .update({ created_at: '2000-01-01T00:00:00.000Z' } as never)
+      .eq('id', event!.id);
+    assert.equal(ageError, null);
+
+    const { error: clearStaleError } = await harness.supabase
+      .from('webhook_events')
+      .update({ sqs_enqueued_at: new Date().toISOString() } as never)
+      .eq('account_id', harness.accountId)
+      .is('sqs_enqueued_at', null)
+      .neq('id', event!.id);
+    assert.equal(clearStaleError, null);
 
     const enqueued = await reconcileStaleWebhookEnqueues(harness.supabase, {
       staleAfterMs: 60_000,

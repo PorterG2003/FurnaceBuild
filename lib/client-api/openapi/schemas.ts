@@ -8,6 +8,22 @@ import {
   MAX_PAGE_SIZE,
   RATE_LIMIT_REQUESTS_PER_MINUTE,
 } from './constants.js';
+import {
+  CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER,
+  CAMPAIGN_FLOW_EXAMPLE_DATASENDER,
+  CAMPAIGN_FLOW_EXAMPLE_LINEAR,
+} from '../../campaigns/flow/index.js';
+import {
+  buildCampaignFlowDescription,
+  buildEmailNodeDataDescription,
+  buildEmailVariantDescription,
+  buildFlowUpdateDescription,
+  buildFlowValidateResultDescription,
+  buildFlowValidationIssueDescription,
+  buildLeadSourceNodeDataDescription,
+  buildWaitTimeNodeDataDescription,
+} from './flowSchemaDescriptions.js';
+import { modelLink } from './docLinks.js';
 
 export function schemaRef(name: string) {
   return { $ref: `#/components/schemas/${name}` };
@@ -67,6 +83,13 @@ export function buildClientApiComponents() {
         required: true,
         description: 'Lead id.',
         schema: { type: 'string', format: 'uuid' },
+      },
+      FlowNodeId: {
+        name: 'nodeId',
+        in: 'path',
+        required: true,
+        description: 'Flow node id.',
+        schema: { type: 'string' },
       },
       JobId: {
         name: 'id',
@@ -365,10 +388,16 @@ export function buildClientApiComponents() {
             example: {
               error: {
                 type: 'invalid_request_error',
-                code: 'missing_email',
-                message: 'Lead email is required',
-                param: 'email',
+                code: 'invalid_flow',
+                message: 'Flow validation failed',
               },
+              details: [
+                {
+                  path: 'nodes[1].data.variants[0].id',
+                  code: 'invalid_variant_id',
+                  message: 'Email variants must have a stable UUID id.',
+                },
+              ],
             },
           },
         },
@@ -412,6 +441,10 @@ export function buildClientApiComponents() {
               param: { type: 'string' },
             },
             required: ['type', 'code', 'message'],
+          },
+          details: {
+            type: 'array',
+            items: schemaRef('FlowValidationIssue'),
           },
         },
         required: ['error'],
@@ -504,29 +537,423 @@ export function buildClientApiComponents() {
       },
       CampaignFlow: {
         type: 'object',
-        description: 'Flow graph definition for the campaign.',
+        description: buildCampaignFlowDescription(),
         properties: {
           nodes: {
             type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                id: { type: 'string' },
-                type: { type: 'string', nullable: true },
-                data: { type: 'object', additionalProperties: true, nullable: true },
-              },
-              additionalProperties: true,
-            },
+            items: schemaRef('FlowNode'),
           },
           edges: {
             type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: true,
-            },
+            items: schemaRef('FlowEdge'),
+          },
+        },
+        required: ['nodes', 'edges'],
+        additionalProperties: false,
+        example: CAMPAIGN_FLOW_EXAMPLE_LINEAR,
+        examples: {
+          linear: {
+            summary: 'Email → wait → email',
+            value: CAMPAIGN_FLOW_EXAMPLE_LINEAR,
+          },
+          categorizer: {
+            summary: 'Categorizer branch',
+            value: CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER,
+          },
+          dataSender: {
+            summary: 'Data sender webhook',
+            value: CAMPAIGN_FLOW_EXAMPLE_DATASENDER,
+          },
+        },
+      },
+      FlowPosition: {
+        type: 'object',
+        description: 'Builder canvas coordinates. Cosmetic; safe to change on live campaigns.',
+        properties: {
+          x: { type: 'number', description: 'Horizontal position in the flow editor.', example: 220 },
+          y: { type: 'number', description: 'Vertical position in the flow editor.', example: 0 },
+        },
+        required: ['x', 'y'],
+        additionalProperties: false,
+      },
+      EmailVariant: {
+        type: 'object',
+        description: buildEmailVariantDescription(),
+        properties: {
+          id: {
+            type: 'string',
+            format: 'uuid',
+            description: 'Stable variant UUID. Generate once before first save.',
+            example: '11111111-1111-4111-8111-111111111111',
+          },
+          label: { type: 'string', description: 'Display label (A, B, …). Re-derived on save.', example: 'A' },
+          subject: {
+            type: 'string',
+            description: 'Email subject. Supports merge variables like {{first_name}}.',
+            example: 'Quick question for {{first_name}}',
+          },
+          template: {
+            type: 'string',
+            description: 'Primary email body (plain or rich text). Supports merge variables.',
+            example: 'Hi {{first_name}} - reaching out about {{custom.company}}.',
+          },
+          body_html: {
+            type: 'string',
+            nullable: true,
+            description: 'HTML body when editor_mode is html.',
+          },
+          body_text: {
+            type: 'string',
+            nullable: true,
+            description: 'Plain-text fallback body.',
+          },
+          editor_mode: {
+            type: 'string',
+            enum: ['richText', 'html'],
+            nullable: true,
+            description: 'Editor mode. Canonicalized on save.',
+            example: 'richText',
+          },
+          isActive: {
+            type: 'boolean',
+            description: 'When false, variant is skipped in round-robin. At least one variant per email node must be active.',
+            example: true,
+          },
+          order: {
+            type: 'integer',
+            description: 'Round-robin sort order. Re-derived on save.',
+            example: 0,
+          },
+        },
+        required: ['id', 'label', 'subject', 'template', 'isActive', 'order'],
+        additionalProperties: false,
+      },
+      FlowNode: {
+        type: 'object',
+        description:
+          `One node in the campaign flow graph. The data shape depends on type — see ${modelLink('LeadSourceNodeData')}, ${modelLink('EmailNodeData')}, ${modelLink('WaitTimeNodeData')}, ${modelLink('AICategorizerNodeData')}, and ${modelLink('DataSenderNodeData')}.`,
+        properties: {
+          id: {
+            type: 'string',
+            description: 'Stable flow node id referenced by edges and runtime node sync. Keep stable across edits.',
+            example: 'email-1',
+          },
+          type: {
+            type: 'string',
+            enum: ['leadSource', 'email', 'waitTime', 'aiCategorizer', 'dataSender'],
+            description: 'Node kind. Exactly one leadSource per flow; at most one aiCategorizer.',
+            example: 'email',
+          },
+          position: schemaRef('FlowPosition'),
+          data: {
+            description: 'Type-specific node configuration.',
+            oneOf: [
+              schemaRef('LeadSourceNodeData'),
+              schemaRef('EmailNodeData'),
+              schemaRef('WaitTimeNodeData'),
+              schemaRef('AICategorizerNodeData'),
+              schemaRef('DataSenderNodeData'),
+            ],
+          },
+          deletable: {
+            type: 'boolean',
+            nullable: true,
+            description: 'When false, node cannot be deleted in the builder. Lead source is always non-deletable.',
+            example: true,
+          },
+        },
+        required: ['id', 'type', 'position', 'data'],
+        additionalProperties: true,
+      },
+      FlowEdge: {
+        type: 'object',
+        description:
+          'Directed connection between two nodes. Categorizer outgoing edges must set sourceHandle to interested, neutral, or not-interested.',
+        properties: {
+          id: { type: 'string', description: 'Stable edge identifier.', example: 'e1' },
+          source: { type: 'string', description: 'Source node id.', example: 'leadSource-1' },
+          target: { type: 'string', description: 'Target node id.', example: 'email-1' },
+          sourceHandle: {
+            type: 'string',
+            nullable: true,
+            description: 'Required on aiCategorizer branch edges: interested, neutral, or not-interested.',
+            example: 'interested',
+          },
+          targetHandle: {
+            type: 'string',
+            nullable: true,
+            description: 'Reserved for future use.',
+          },
+          type: {
+            type: 'string',
+            nullable: true,
+            description: 'Builder edge type. Stripped on save when set to deletable.',
+          },
+        },
+        required: ['id', 'source', 'target'],
+        additionalProperties: true,
+      },
+      LeadSourceNodeData: {
+        type: 'object',
+        description: buildLeadSourceNodeDataDescription(),
+        properties: {
+          label: { type: 'string', description: 'Display label.', example: 'Lead Bucket' },
+          source: { type: 'string', nullable: true, description: 'Legacy source label.' },
+          bucketId: { type: 'string', nullable: true, description: 'Optional lead bucket reference.' },
+          customFieldKeys: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Custom personalization keys. Enables {{custom.<key>}} merge tokens and requires matching keys in lead custom_lead_data on import.',
+            example: ['company', 'title'],
+          },
+          mappedStandardFieldKeys: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Standard lead fields available as merge variables. When omitted, all standard fields are allowed.',
+            example: ['email', 'first_name', 'last_name'],
+          },
+          isRequired: {
+            type: 'boolean',
+            nullable: true,
+            description: 'When true, leads missing required custom fields count as incomplete on import.',
+            example: true,
           },
         },
         additionalProperties: true,
+      },
+      EmailNodeData: {
+        type: 'object',
+        description: buildEmailNodeDataDescription(),
+        properties: {
+          label: { type: 'string', description: 'Display label.', example: 'Intro Email' },
+          mailboxId: {
+            type: 'string',
+            format: 'uuid',
+            nullable: true,
+            description: 'Sending mailbox. Falls back to campaign mailbox rotation when unset.',
+          },
+          send_mode: {
+            type: 'string',
+            enum: ['new', 'reply'],
+            nullable: true,
+            description: 'new for sequence emails; reply for in-thread follow-ups after categorizer.',
+            example: 'new',
+          },
+          variants: {
+            type: 'array',
+            items: schemaRef('EmailVariant'),
+            description: '1–20 variants. At least one must be active.',
+            minItems: 1,
+            maxItems: 20,
+          },
+        },
+        required: ['variants'],
+        additionalProperties: true,
+      },
+      WaitTimeNodeData: {
+        type: 'object',
+        description: buildWaitTimeNodeDataDescription(),
+        properties: {
+          label: { type: 'string', description: 'Display label.', example: 'Wait 1 day' },
+          duration: {
+            type: 'string',
+            nullable: true,
+            description: 'Display duration value. Furnace derives this from wait_duration_seconds on save.',
+            example: '1',
+          },
+          unit: {
+            type: 'string',
+            enum: ['minutes', 'hours', 'days'],
+            nullable: true,
+            description: 'Display unit. Furnace derives this from wait_duration_seconds on save.',
+            example: 'days',
+          },
+          wait_duration_seconds: {
+            type: 'integer',
+            description: 'Positive delay in seconds. Required for runtime scheduling.',
+            example: 86400,
+          },
+        },
+        required: ['wait_duration_seconds'],
+        additionalProperties: true,
+      },
+      AICategorizerNodeData: {
+        type: 'object',
+        description:
+          'Reply classifier node. At most one per flow. Outgoing edges must use sourceHandle interested, neutral, or not-interested.',
+        properties: {
+          label: { type: 'string', description: 'Display label.', example: 'Categorizer' },
+          use_ai: {
+            type: 'boolean',
+            description: 'When true, uses AI to classify replies.',
+            example: true,
+          },
+        },
+        additionalProperties: true,
+      },
+      DataSenderNodeData: {
+        type: 'object',
+        description: `Webhook node that POSTs lead data to an external URL when a lead reaches this step. Supports merge variables in \`payload\`. See ${modelLink('CampaignFlow')} examples for a full dataSender flow.`,
+        properties: {
+          label: { type: 'string', description: 'Display label.', example: 'Notify CRM' },
+          endpoint: {
+            type: 'string',
+            nullable: true,
+            description: 'Alias for endpoint_url.',
+          },
+          endpoint_url: {
+            type: 'string',
+            format: 'uri',
+            nullable: true,
+            description: 'HTTPS webhook URL.',
+            example: 'https://hooks.example.com/lead-contacted',
+          },
+          payload: {
+            type: 'string',
+            nullable: true,
+            description: 'JSON string body. Supports merge variables.',
+            example: '{"email":"{{email}}","company":"{{custom.company}}"}',
+          },
+          payload_template: {
+            type: 'object',
+            additionalProperties: true,
+            description: 'Object form of payload. Serialized to payload on save when payload string is empty.',
+          },
+          on_failure: {
+            type: 'string',
+            enum: ['continue', 'stop'],
+            nullable: true,
+            description: 'Whether enrollment continues after a failed POST.',
+            example: 'continue',
+          },
+        },
+        additionalProperties: true,
+      },
+      CampaignCreate: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          schedule: { type: 'object', additionalProperties: true },
+          sending_interval_seconds: { type: 'number' },
+          mailbox_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+          },
+          tag_ids: {
+            type: 'array',
+            items: { type: 'string', format: 'uuid' },
+          },
+          flow: schemaRef('CampaignFlow'),
+        },
+        additionalProperties: false,
+      },
+      FlowUpdate: {
+        description: buildFlowUpdateDescription(),
+        allOf: [schemaRef('CampaignFlow')],
+        example: CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER,
+      },
+      FlowValidationIssue: {
+        type: 'object',
+        description: buildFlowValidationIssueDescription(),
+        properties: {
+          path: { type: 'string' },
+          code: { type: 'string' },
+          message: { type: 'string' },
+        },
+        required: ['path', 'code', 'message'],
+        additionalProperties: false,
+      },
+      FlowValidateResult: {
+        type: 'object',
+        description: buildFlowValidateResultDescription(),
+        properties: {
+          normalized_flow: schemaRef('CampaignFlow'),
+          allowed: {
+            type: 'boolean',
+            description: 'Whether the campaign status permits this change (false when structural edit on live campaign).',
+            example: true,
+          },
+          change_kind: {
+            type: 'string',
+            enum: ['none', 'content', 'structural'],
+            description: 'Classification of the diff against the stored flow.',
+            example: 'content',
+          },
+          change_reasons: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Machine-readable change reasons: node_added, node_removed, node_type_changed, edge_added_or_rewired, edge_removed_or_rewired, variant_removed_or_replaced, content_changed.',
+            example: ['content_changed'],
+          },
+          lifecycle: {
+            type: 'object',
+            description: 'Lifecycle gate result. When blocked, code is flow_locked.',
+            properties: {
+              allowed: { type: 'boolean', example: true },
+              code: { type: 'string', nullable: true, example: 'flow_locked' },
+              message: { type: 'string', nullable: true },
+            },
+            required: ['allowed'],
+            additionalProperties: false,
+          },
+          issues: {
+            type: 'array',
+            items: schemaRef('FlowValidationIssue'),
+            description: 'Validation problems. Empty when the flow is valid.',
+          },
+        },
+        required: ['normalized_flow', 'allowed', 'change_kind', 'change_reasons', 'lifecycle', 'issues'],
+        additionalProperties: false,
+      },
+      LaunchResponse: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          status: { type: 'string', enum: ['running'] },
+          enrolled: { type: 'integer', description: 'Number of leads enrolled at launch.' },
+        },
+        required: ['id', 'status'],
+        additionalProperties: false,
+      },
+      CampaignStatusUpdate: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['running', 'paused', 'stopped'] },
+        },
+        required: ['status'],
+        additionalProperties: false,
+      },
+      FieldSync: {
+        type: 'object',
+        properties: {
+          declared_custom_added: { type: 'array', items: { type: 'string' } },
+          declared_standard_added: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['declared_custom_added', 'declared_standard_added'],
+        additionalProperties: false,
+      },
+      FlowSaveResult: {
+        type: 'object',
+        properties: {
+          flow: schemaRef('CampaignFlow'),
+          flow_revision: { type: 'string', description: 'SHA-256 of canonical normalized flow.' },
+          field_sync: schemaRef('FieldSync'),
+          change_kind: { type: 'string', enum: ['none', 'content', 'structural'] },
+          change_reasons: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['flow', 'flow_revision', 'field_sync'],
+        additionalProperties: false,
+      },
+      FlowNodePatch: {
+        type: 'object',
+        properties: {
+          data: { type: 'object', additionalProperties: true },
+        },
+        required: ['data'],
+        additionalProperties: false,
       },
       CampaignUpdate: {
         type: 'object',
@@ -1126,6 +1553,13 @@ export function buildClientApiComponents() {
         },
         required: ['data'],
       },
+      CampaignCreateResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('Campaign'),
+        },
+        required: ['data'],
+      },
       CampaignFlowResponse: {
         type: 'object',
         properties: {
@@ -1133,10 +1567,58 @@ export function buildClientApiComponents() {
         },
         required: ['data'],
       },
+      FlowSaveResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('FlowSaveResult'),
+        },
+        required: ['data'],
+      },
+      FlowRevisionConflictError: {
+        type: 'object',
+        properties: {
+          error: schemaRef('ApiError'),
+          current_flow_revision: { type: 'string' },
+        },
+        required: ['error', 'current_flow_revision'],
+      },
+      FlowTemplatesResponse: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                name: { type: 'string' },
+                description: { type: 'string' },
+                flow: schemaRef('CampaignFlow'),
+              },
+              required: ['id', 'name', 'description', 'flow'],
+            },
+          },
+        },
+        required: ['data'],
+      },
+      FlowValidateResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('FlowValidateResult'),
+        },
+        required: ['data'],
+      },
       CampaignStatusResponse: {
         type: 'object',
         properties: {
           data: schemaRef('CampaignStatusResult'),
+        },
+        required: ['data'],
+      },
+      LaunchResponseEnvelope: {
+        type: 'object',
+        properties: {
+          data: schemaRef('LaunchResponse'),
         },
         required: ['data'],
       },

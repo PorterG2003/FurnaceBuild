@@ -28,7 +28,8 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     const ext = path.extname(moduleName);
     if (ext === ".js") {
       const dir = path.dirname(origin);
-      const base = path.join(dir, path.basename(moduleName, ".js"));
+      const withoutExt = moduleName.slice(0, -3);
+      const base = path.resolve(dir, withoutExt);
       const tsPath = base + ".ts";
       const tsxPath = base + ".tsx";
       if (fs.existsSync(tsPath)) return { type: "sourceFile", filePath: tsPath };

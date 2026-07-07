@@ -1,4 +1,5 @@
 import { buildChangelogMarkdown } from './changelog.js';
+import { buildBuildingCampaignsMarkdown } from './buildingCampaigns.js';
 import {
   buildWebhookEventGroupMarkdown,
   buildWebhooksOverviewMarkdown,
@@ -59,6 +60,12 @@ export function buildGuidePaths() {
   );
 
   return {
+    '/documentation/building-campaigns': guideGetOperation({
+      tags: ['Building campaigns'],
+      summary: 'Building campaigns',
+      operationId: 'getDocumentationBuildingCampaigns',
+      description: buildBuildingCampaignsMarkdown(),
+    }),
     '/documentation/changelog': guideGetOperation({
       tags: ['Changelog'],
       summary: 'Changelog',

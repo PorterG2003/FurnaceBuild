@@ -5,6 +5,7 @@ import {
   ClientApiDbHarness,
   createClientApiTestNamespace,
 } from '../lib/test/client-api/harness.js';
+import { linearFlowForApi } from '../lib/test/client-api/flowApiHelpers.js';
 
 type JsonObject = Record<string, unknown>;
 
@@ -115,6 +116,68 @@ async function main() {
     assert.ok(openapi.body['x-tagGroups'].some((group) => group.name === 'Guide'));
     console.log('[live-client-api] openapi guide paths check passed');
 
+    const apiKey = await harness.createApiKey('live-smoke');
+    console.log(`[live-client-api] created API key ${apiKey.id}`);
+
+    const draftGraph = await harness.campaignHarness.createCampaignGraph({
+      name: 'Client API Live Flow Smoke',
+      status: 'draft',
+      flowKind: 'emailOnly',
+      leads: [],
+    });
+    console.log(`[live-client-api] seeded draft campaign ${draftGraph.campaignId}`);
+
+    const flowDryRun = await requestJson<{ data: { allowed: boolean } }>(
+      `${baseUrl}/v1/campaigns/${draftGraph.campaignId}/flow?dry_run=true`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey.secret}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(linearFlowForApi()),
+      },
+    );
+    if (flowDryRun.status !== 200) {
+      throw new Error(
+        `Flow dry run failed with ${flowDryRun.status}: ${JSON.stringify(flowDryRun.body)}`,
+      );
+    }
+    assert.equal(flowDryRun.body.data.allowed, true);
+    console.log('[live-client-api] flow dry run passed');
+
+    const flowRevision = await requestJson<{ data: { flow_revision: string } }>(
+      `${baseUrl}/v1/campaigns/${draftGraph.campaignId}/flow`,
+      {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${apiKey.secret}` },
+      },
+    );
+    assert.equal(flowRevision.status, 200);
+    const revision = flowRevision.body.data.flow_revision;
+    assert.equal(typeof revision, 'string');
+    console.log('[live-client-api] flow revision read passed');
+
+    const flowSave = await requestJson<{ data: { flow_revision: string } }>(
+      `${baseUrl}/v1/campaigns/${draftGraph.campaignId}/flow`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey.secret}`,
+          'Content-Type': 'application/json',
+          'If-Match': revision,
+        },
+        body: JSON.stringify(linearFlowForApi()),
+      },
+    );
+    if (flowSave.status !== 200) {
+      throw new Error(
+        `Flow save failed with ${flowSave.status}: ${JSON.stringify(flowSave.body)}`,
+      );
+    }
+    assert.notEqual(flowSave.body.data.flow_revision, revision);
+    console.log('[live-client-api] flow save with If-Match passed');
+
     const graph = await harness.campaignHarness.createCampaignGraph({
       name: 'Client API Live Smoke',
       status: 'running',
@@ -123,8 +186,6 @@ async function main() {
     });
     console.log(`[live-client-api] seeded campaign ${graph.campaignId}`);
 
-    const apiKey = await harness.createApiKey('live-smoke');
-    console.log(`[live-client-api] created API key ${apiKey.id}`);
 
     const signingSecret = `whsec_${crypto.randomUUID().replace(/-/g, '')}`;
     const { error: webhookConfigError } = await harness.supabase

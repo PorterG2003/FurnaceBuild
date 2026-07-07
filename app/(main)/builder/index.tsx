@@ -2,7 +2,7 @@ import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
 import { View, Platform, Text, Pressable } from 'react-native';
 import { ConfirmModal } from '@/components/ui/modals';
 import { useToast } from '@/components/ui/feedback';
-import { Breadcrumb } from '@/components/ui/layout';
+import { Breadcrumb, PageLayout } from '@/components/ui/layout';
 import { NavBar } from '@/components/ui/layout/NavBar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { getCampaignById, updateCampaignFlowData } from '@/lib/supabase/services/campaigns';
@@ -10,6 +10,16 @@ import type { Campaign } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
 import { isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
+import {
+  computeFlowRevision,
+  FlowEditForbiddenError,
+  FlowPrepareValidationError,
+  FlowRevisionConflictError,
+  normalizeFlowData,
+  prepareFlowSave,
+  type CampaignFlowData,
+} from '@/lib/campaigns/flow';
+import { FlowConflictModal } from './components/FlowConflictModal';
 import { nodeTypes } from './nodes/nodeTypes';
 import { edgeTypes } from './edges/edgeTypes';
 import { NodeSidebar } from './components/NodeSidebar';
@@ -21,7 +31,6 @@ import {
   createAICategorizerNode,
   createDataSenderNode,
 } from './nodes/factories';
-import { backfillCategorizerEdgeHandles } from '@/lib/categorizer';
 import {
   FlowCanvas,
   isReactFlowWebAvailable,
@@ -31,44 +40,14 @@ import {
   useEdgesState,
 } from '@/lib/flow';
 
-type FlowNodeRecord = Record<string, any>;
-type FlowEdgeRecord = Record<string, any>;
-
-function sanitizeFlowNode(node: FlowNodeRecord): FlowNodeRecord {
-  const {
-    selected: _selected,
-    dragging: _dragging,
-    measured: _measured,
-    positionAbsolute: _positionAbsolute,
-    resizing: _resizing,
-    ...rest
-  } = node;
-
-  return {
-    ...rest,
-    deletable: node.type === 'leadSource' || node.data?.isRequired ? false : rest.deletable,
-  };
-}
-
-function sanitizeFlowEdge(edge: FlowEdgeRecord): FlowEdgeRecord {
-  const { selected: _selected, type, ...rest } = edge;
-  if (type === 'deletable') {
-    return rest;
-  }
-  return type !== undefined ? { ...rest, type } : rest;
-}
-
 function sanitizeFlowData(
-  nodes: FlowNodeRecord[] | null | undefined,
-  edges: FlowEdgeRecord[] | null | undefined,
-): { nodes: FlowNodeRecord[]; edges: FlowEdgeRecord[] } {
-  const sanitizedNodes = Array.isArray(nodes) ? nodes.map((node) => sanitizeFlowNode(node)) : [];
-
-  const sanitizedEdges = Array.isArray(edges)
-    ? backfillCategorizerEdgeHandles(edges.map((edge) => sanitizeFlowEdge(edge)), sanitizedNodes)
-    : [];
-
-  return { nodes: sanitizedNodes, edges: sanitizedEdges };
+  nodes: Record<string, any>[] | null | undefined,
+  edges: Record<string, any>[] | null | undefined,
+) {
+  return normalizeFlowData({
+    nodes: Array.isArray(nodes) ? nodes : [],
+    edges: Array.isArray(edges) ? edges : [],
+  });
 }
 
 /** Label for the flow editor / builder page in breadcrumbs and UI. Change here to rename globally. */
@@ -105,6 +84,9 @@ const nodeFactories: Record<string, (position: { x: number; y: number }) => any>
   dataSender: createDataSenderNode,
 };
 
+const EMPTY_INITIAL_NODES: any[] = [];
+const EMPTY_INITIAL_EDGES: any[] = [];
+
 interface FlowEditorProps {
   onEditNode: (nodeId: string, nodeType: string) => void;
   initialNodes?: any[];
@@ -115,13 +97,14 @@ interface FlowEditorProps {
 
 function FlowEditor({
   onEditNode,
-  initialNodes = [],
-  initialEdges = [],
+  initialNodes = EMPTY_INITIAL_NODES,
+  initialEdges = EMPTY_INITIAL_EDGES,
   onFlowChange,
   campaignStatus,
 }: FlowEditorProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState!(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState!(initialEdges);
+  const topologyLocked = !!campaignStatus && campaignStatus !== 'draft';
   
   // Track if initial load is complete to avoid saving during initialization
   const isInitialLoadRef = useRef(true);
@@ -129,22 +112,28 @@ function FlowEditor({
   
   // Load initial data when props change (only once)
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     if (!hasInitializedRef.current && (initialNodes.length > 0 || initialEdges.length > 0)) {
       setNodes(initialNodes);
       setEdges(initialEdges);
       hasInitializedRef.current = true;
       isInitialLoadRef.current = true;
       // Reset flag after a brief delay to allow React Flow to initialize
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         isInitialLoadRef.current = false;
       }, 500);
     } else if (!hasInitializedRef.current) {
       // Even if empty, mark as initialized
       hasInitializedRef.current = true;
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         isInitialLoadRef.current = false;
       }, 500);
     }
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, [initialNodes, initialEdges, setNodes, setEdges]);
   
   // Notify parent of changes (for saving)
@@ -173,7 +162,7 @@ function FlowEditor({
         return [...nds, leadBucketNode];
       });
     }
-  }, [setNodes]); // Only run once on mount
+  }, [nodes, setNodes]);
 
   // Pending delete confirmation state
   const [pendingDelete, setPendingDelete] = useState<{
@@ -210,14 +199,20 @@ function FlowEditor({
   }, [onEdgesChange]);
 
   const onConnect = useCallback(
-    (params: any) => setEdges((eds: any) => addEdge(params, eds)),
-    [setEdges]
+    (params: any) => {
+      if (topologyLocked) return;
+      setEdges((eds: any) => addEdge(params, eds));
+    },
+    [setEdges, topologyLocked]
   );
 
   // Expose addNode function to parent via callback
   useEffect(() => {
     // Store the addNode function that can be called from sidebar
     (window as any).__reactFlowAddNode = (nodeType: string) => {
+      if (topologyLocked) {
+        return;
+      }
       // Prevent adding Lead Bucket nodes (they're automatic)
       if (nodeType === 'leadSource') {
         return;
@@ -272,6 +267,9 @@ function FlowEditor({
     };
 
     (window as any).__reactFlowDeleteNode = (nodeId: string) => {
+      if (topologyLocked) {
+        return;
+      }
       const currentNodes: any[] = (window as any).__reactFlowGetNodes?.() ?? [];
       const node = currentNodes.find((n: any) => n.id === nodeId);
       if (!node || node.type === 'leadSource' || node.data?.isRequired) return;
@@ -281,9 +279,12 @@ function FlowEditor({
     };
 
     (window as any).__reactFlowDeleteEdge = (edgeId: string) => {
+      if (topologyLocked) {
+        return;
+      }
       onEdgesChange([{ type: 'remove', id: edgeId }]);
     };
-  }, [campaignStatus, onEditNode, onEdgesChange, setNodes]);
+  }, [campaignStatus, onEditNode, onEdgesChange, setNodes, topologyLocked]);
 
   // Expose setNodes and getNodes for updating node data
   useEffect(() => {
@@ -377,8 +378,15 @@ export default function BuilderPage() {
   const [editingNode, setEditingNode] = useState<{ id: string; type: string; data: any } | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [initialFlowData, setInitialFlowData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
+  const [flowConflict, setFlowConflict] = useState<{
+    localFlow: CampaignFlowData;
+    serverFlow: CampaignFlowData;
+    serverRevision: string;
+  } | null>(null);
   const hasLoadedFlowRef = useRef(false);
   const lastSavedFlowRef = useRef<string | null>(null);
+  const flowRevisionRef = useRef<string | null>(null);
+  const pendingSaveRef = useRef<{ nodes: any[]; edges: any[] } | null>(null);
 
   useEffect(() => {
     if (!campaignId) {
@@ -414,6 +422,7 @@ export default function BuilderPage() {
               );
               setInitialFlowData(sanitizedFlowData);
               lastSavedFlowRef.current = JSON.stringify(sanitizedFlowData);
+              flowRevisionRef.current = await computeFlowRevision(sanitizedFlowData);
               hasLoadedFlowRef.current = true;
             }
           } catch (error) {
@@ -422,6 +431,7 @@ export default function BuilderPage() {
             const emptyFlow = { nodes: [], edges: [] };
             setInitialFlowData(emptyFlow);
             lastSavedFlowRef.current = JSON.stringify(emptyFlow);
+            flowRevisionRef.current = await computeFlowRevision(emptyFlow);
             hasLoadedFlowRef.current = true;
           }
         } else if (!data?.flow_data && !hasLoadedFlowRef.current) {
@@ -429,6 +439,7 @@ export default function BuilderPage() {
           const emptyFlow = { nodes: [], edges: [] };
           setInitialFlowData(emptyFlow);
           lastSavedFlowRef.current = JSON.stringify(emptyFlow);
+          flowRevisionRef.current = await computeFlowRevision(emptyFlow);
           hasLoadedFlowRef.current = true;
         }
       } catch (error) {
@@ -440,37 +451,89 @@ export default function BuilderPage() {
     };
 
     loadCampaign();
+  }, [campaignId, router]);
+
+  const topologyLocked = !!campaign?.status && campaign.status !== 'draft';
+
+  const persistPreparedFlow = useCallback(async (preparedFlow: CampaignFlowData) => {
+    if (!campaignId) return;
+    await updateCampaignFlowData(campaignId, preparedFlow as any, 'builder');
+    lastSavedFlowRef.current = JSON.stringify(preparedFlow);
+    flowRevisionRef.current = await computeFlowRevision(preparedFlow);
+    setCampaign((prev) => (prev ? { ...prev, flow_data: preparedFlow as any } : prev));
+    setSaveStatus('saved');
+    setTimeout(() => setSaveStatus('idle'), 2000);
   }, [campaignId]);
+
+  const attemptFlowSave = useCallback(async (nodes: any[], edges: any[], ifMatch?: string | null) => {
+    if (!campaignId) return;
+    const sanitizedFlowData = sanitizeFlowData(nodes, edges);
+    const serializedFlow = JSON.stringify(sanitizedFlowData);
+    if (serializedFlow === lastSavedFlowRef.current) {
+      return;
+    }
+
+    setSaveStatus('saving');
+    try {
+      const latestCampaign = await getCampaignById(campaignId);
+      if (!latestCampaign) {
+        throw new Error('Campaign not found');
+      }
+      const serverFlow = sanitizeFlowData(
+        (latestCampaign.flow_data as CampaignFlowData | null)?.nodes ?? [],
+        (latestCampaign.flow_data as CampaignFlowData | null)?.edges ?? [],
+      );
+      const serverRevision = await computeFlowRevision(serverFlow);
+      const matchRevision = ifMatch ?? flowRevisionRef.current;
+
+      let prepared;
+      try {
+        prepared = await prepareFlowSave({
+          incomingFlow: sanitizedFlowData,
+          existingFlow: serverFlow,
+          campaignStatus: latestCampaign.status,
+          phase: 'draft',
+          ifMatch: matchRevision,
+        });
+      } catch (error) {
+        if (error instanceof FlowRevisionConflictError) {
+          setFlowConflict({
+            localFlow: sanitizedFlowData,
+            serverFlow,
+            serverRevision,
+          });
+          pendingSaveRef.current = { nodes, edges };
+          setSaveStatus('idle');
+          return;
+        }
+        if (error instanceof FlowPrepareValidationError) {
+          toast.error(error.issues[0]?.message || error.message);
+        } else if (error instanceof FlowEditForbiddenError) {
+          toast.error(error.message);
+        } else {
+          console.error('Failed to save flow:', error);
+          toast.error(error instanceof Error ? error.message : 'Flow validation failed');
+        }
+        setSaveStatus('error');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+        return;
+      }
+
+      await persistPreparedFlow(prepared.flow);
+    } catch (error) {
+      console.error('Failed to save flow:', error);
+      toast.error(error instanceof Error ? error.message : 'Flow save failed');
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  }, [campaignId, persistPreparedFlow, toast]);
 
   // Debounced save function
   const saveFlowData = useMemo(
     () => debounce(async (nodes: any[], edges: any[]) => {
-      if (!campaignId) return;
-      const sanitizedFlowData = sanitizeFlowData(nodes, edges);
-      const serializedFlow = JSON.stringify(sanitizedFlowData);
-      if (serializedFlow === lastSavedFlowRef.current) {
-        return;
-      }
-
-      setSaveStatus('saving');
-      try {
-        await updateCampaignFlowData(campaignId, sanitizedFlowData as any, 'builder');
-        lastSavedFlowRef.current = serializedFlow;
-        setSaveStatus('saved');
-        // Reset to idle after 2 seconds
-        setTimeout(() => {
-          setSaveStatus('idle');
-        }, 2000);
-      } catch (error) {
-        console.error('Failed to save flow:', error);
-        setSaveStatus('error');
-        // Reset error status after 3 seconds
-        setTimeout(() => {
-          setSaveStatus('idle');
-        }, 3000);
-      }
-    }, 1000), // 1 second debounce
-    [campaignId]
+      await attemptFlowSave(nodes, edges);
+    }, 1000),
+    [attemptFlowSave]
   );
 
   // Handle flow changes
@@ -507,6 +570,10 @@ export default function BuilderPage() {
   }
 
   const handleAddNode = (nodeType: string) => {
+    if (topologyLocked) {
+      toast.error('Flow topology is locked after launch.');
+      return;
+    }
     if (nodeType === 'aiCategorizer') {
       const nodes: any[] = (window as any).__reactFlowGetNodes?.() ?? [];
       if (nodes.some((n: any) => n.type === 'aiCategorizer')) {
@@ -626,6 +693,11 @@ export default function BuilderPage() {
                   )}
                 </View>
               )}
+              {topologyLocked && (
+                <Text className="text-amber-300 font-instrument text-sm">
+                  Flow topology is locked after launch. You can still edit copy, variants, timing, and node configuration.
+                </Text>
+              )}
               {campaignId && (
                 <View>
                   <Pressable
@@ -692,7 +764,7 @@ export default function BuilderPage() {
       </View>
       
       {/* Node Sidebar - Right side */}
-      <NodeSidebar onAddNode={handleAddNode} />
+      <NodeSidebar onAddNode={handleAddNode} disabled={topologyLocked} />
 
       {/* Node Modal */}
       {editingNode && (() => {
@@ -747,6 +819,38 @@ export default function BuilderPage() {
         campaignId={campaignId ?? null}
         isOnStatsPage={false}
       />
+      {flowConflict && (
+        <FlowConflictModal
+          visible
+          localFlow={flowConflict.localFlow}
+          serverFlow={flowConflict.serverFlow}
+          onClose={() => {
+            setFlowConflict(null);
+            pendingSaveRef.current = null;
+          }}
+          onKeepLocal={async () => {
+            flowRevisionRef.current = flowConflict.serverRevision;
+            setFlowConflict(null);
+            const pending = pendingSaveRef.current;
+            pendingSaveRef.current = null;
+            if (pending) {
+              await attemptFlowSave(pending.nodes, pending.edges, flowConflict.serverRevision);
+            }
+          }}
+          onUseServer={async () => {
+            const serverFlow = flowConflict.serverFlow;
+            setFlowConflict(null);
+            pendingSaveRef.current = null;
+            setInitialFlowData({ nodes: serverFlow.nodes as any[], edges: serverFlow.edges as any[] });
+            lastSavedFlowRef.current = JSON.stringify(serverFlow);
+            flowRevisionRef.current = await computeFlowRevision(serverFlow);
+            setCampaign((prev) => (prev ? { ...prev, flow_data: serverFlow as any } : prev));
+            if (typeof window !== 'undefined' && (window as any).__reactFlowSetFlow) {
+              (window as any).__reactFlowSetFlow(serverFlow.nodes, serverFlow.edges);
+            }
+          }}
+        />
+      )}
     </View>
   );
 }

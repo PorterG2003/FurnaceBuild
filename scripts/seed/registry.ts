@@ -29,6 +29,7 @@ import { devDefaultScenarioModule } from './scenarios/dev-default';
 import { demoHubScenarioModule } from './scenarios/demo-hub';
 import { platformInvitePreviewSeedModule } from './scenarios/platform-invite-preview';
 import { campaignHtmlDemoSeedModule } from './scenarios/campaign-html-demo';
+import { clientApiCampaignWalkthroughModule } from './scenarios/client-api-campaign-walkthrough/index';
 import { bucketInsightsSmokeModule } from './scenarios/bucket-insights-smoke';
 
 export const allModules: Record<string, SeedModule> = {
@@ -57,6 +58,7 @@ export const allModules: Record<string, SeedModule> = {
   platformInvitePreview_seed: platformInvitePreviewSeedModule,
   campaignHtmlDemo_seed: campaignHtmlDemoSeedModule,
   bucketInsightsSmoke_seed: bucketInsightsSmokeModule,
+  clientApiWalkthrough_seed: clientApiCampaignWalkthroughModule,
 };
 
 /**
@@ -74,6 +76,7 @@ export const scenarioModuleIds: Record<string, string[]> = {
   'smart-handling-flow': ['smartHandlingFlow_liveReplies'],
   'platform-invite-preview': ['platformInvitePreview_seed'],
   'bucket-insights-smoke': ['bucketInsightsSmoke_seed'],
+  'client-api-campaign-walkthrough': ['clientApiWalkthrough_seed'],
 };
 
 function collectModuleIdsWithDeps(seedIds: string[]): Set<string> {

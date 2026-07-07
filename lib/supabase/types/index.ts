@@ -121,4 +121,4 @@ export type {
   FluxCampaignTemplateRow,
   FluxProspectRow,
   FluxProspectPageRow,
-} from '@/lib/flux/types';
+} from '../../flux/types.js';

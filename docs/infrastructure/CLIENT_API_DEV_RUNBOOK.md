@@ -41,7 +41,7 @@ The import queue handles all `api_import_jobs` operation types (`api_lead_import
    - `GET https://<client-api-domain-or-cloudfront>/health`
    - `GET https://<client-api-domain-or-cloudfront>/openapi.json`
    - `GET https://<client-api-domain-or-cloudfront>/openapi.json` — confirm guide paths (`/documentation/changelog`, `/documentation/webhooks/...`) and `x-tagGroups`
-   - `GET https://<client-api-domain-or-cloudfront>/docs` — confirm single sidebar with **Guide** (Changelog + Webhooks) and **API** sections
+   - `GET https://<client-api-domain-or-cloudfront>/docs` — confirm single sidebar with **Guide** (Building campaigns, Changelog, Webhooks) and **API** sections; flow field docs under **Models → CampaignFlow**
 
 ## Namecheap DNS
 

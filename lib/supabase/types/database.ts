@@ -2516,6 +2516,15 @@ export interface Database {
         };
         Returns: Database['public']['Tables']['campaigns']['Row'];
       };
+      update_campaign_flow_data_as_service: {
+        Args: {
+          p_campaign_id: string;
+          p_account_id: string;
+          p_flow_data: Json;
+          p_change_source?: string;
+        };
+        Returns: Database['public']['Tables']['campaigns']['Row'];
+      };
       create_inbox_reply_job: {
         Args: {
           p_account_id: string;

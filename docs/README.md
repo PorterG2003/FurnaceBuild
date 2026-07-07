@@ -34,4 +34,12 @@ Decision records documenting architectural choices and rationale.
 - **[engineering/bulk-operations-standards.md](./engineering/bulk-operations-standards.md)** - Bulk/async jobs, RPC conventions, webhooks, and testing checklist
 - **[engineering/stripe-platform-billing.md](./engineering/stripe-platform-billing.md)** - Stripe billing constraints, webhook activation rules, and testing checklist
 - **[engineering/test-convention.md](./engineering/test-convention.md)** - Domain-first outcome testing
-- **[infrastructure/CLIENT_API_WEBHOOKS.md](./infrastructure/CLIENT_API_WEBHOOKS.md)** - Client API atomic vs batch webhook reference
+
+### Client API (public REST docs)
+
+Live docs are served at `/docs` on the Client API host (Scalar UI). Source lives under `lib/client-api/openapi/`.
+
+- **[infrastructure/CLIENT_API_BUILDING_CAMPAIGNS.md](./infrastructure/CLIENT_API_BUILDING_CAMPAIGNS.md)** - Campaign lifecycle guide + flow Models schemas
+- **[infrastructure/CLIENT_API_CHANGELOG.md](./infrastructure/CLIENT_API_CHANGELOG.md)** - Version history pointer
+- **[infrastructure/CLIENT_API_WEBHOOKS.md](./infrastructure/CLIENT_API_WEBHOOKS.md)** - Webhook integration pointer
+- **[infrastructure/CLIENT_API_DEV_RUNBOOK.md](./infrastructure/CLIENT_API_DEV_RUNBOOK.md)** - Deploy and verify runbook

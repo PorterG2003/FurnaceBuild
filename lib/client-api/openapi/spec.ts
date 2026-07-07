@@ -16,6 +16,10 @@ import { buildClientApiComponents } from './schemas.js';
 
 const guideTags = [
   {
+    name: 'Building campaigns',
+    description: 'Create, validate, edit, and launch campaign flows through the Client API.',
+  },
+  {
     name: 'Changelog',
     description: 'Client API version history.',
   },
@@ -29,6 +33,10 @@ const apiTags = [
   {
     name: 'Campaigns',
     description: 'Read and mutate campaigns that belong to the authenticated account.',
+  },
+  {
+    name: 'Flow',
+    description: 'Read, validate, and update campaign flow graphs.',
   },
   {
     name: 'Leads',
@@ -80,7 +88,7 @@ function buildDescription() {
   return [
     'Account-scoped REST API for campaigns, leads, people, saved lists, inbox, mailboxes, mailbox tags, stats, and block list.',
     '',
-    'Open **Guide → Changelog** or **Guide → Webhooks** in the sidebar for version history and webhook integration docs.',
+    'Open **Guide → Building campaigns** for the campaign lifecycle and curl walkthrough. Field-level flow object docs live in **Models → CampaignFlow** (and related flow schemas). See **Guide → Changelog** / **Guide → Webhooks** for version history and webhook integration docs.',
     '',
     '## Authentication',
     `Send your account API key as \`Authorization: Bearer ${API_KEY_PREFIX}...\`. Keys are created in Furnace Account Settings. Revoked, expired, or unknown keys return \`401 authentication_error\`.`,
@@ -111,6 +119,8 @@ function buildDescription() {
     '',
     '## Business Rules',
     `- Smartlead campaigns are read-only through this API.`,
+    '- Campaign flow topology is fully editable only while a campaign is in `draft` status.',
+    '- Once a campaign is `running`, `paused`, or `stopped`, structural flow changes return `403 permission_error` with code `flow_locked`.',
     `- Sync bulk imports accept up to ${BULK_SYNC_LIMIT} leads per request.`,
     `- Async bulk imports accept up to ${BULK_ASYNC_LIMIT} leads per request and allow at most ${MAX_ASYNC_JOBS_PER_ACCOUNT} queued/running jobs per account.`,
     '- When a campaign defines custom lead fields, every key must be present in `custom_lead_data` on create and bulk import requests.',
@@ -134,7 +144,7 @@ export function buildClientApiOpenApiSpec(baseUrl: string) {
     servers: [{ url: baseUrl }],
     tags: tagDescriptions,
     'x-tagGroups': [
-      { name: 'Guide', tags: ['Changelog', 'Webhooks'] },
+      { name: 'Guide', tags: ['Building campaigns', 'Changelog', 'Webhooks'] },
       { name: 'API', tags: apiTagNames },
     ],
     components: buildClientApiComponents(),

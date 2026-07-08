@@ -738,34 +738,6 @@ app.get('/openapi.json', async (c) => {
   return jsonResponse(c, getOpenApiSpec(getBaseUrl(c)));
 });
 
-app.get('/docs', async (c) => {
-  const baseUrl = getBaseUrl(c);
-  const html = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Furnace Client API Docs</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
-    <script>
-      Scalar.createApiReference('#app', {
-        theme: 'purple',
-        defaultHttpClient: { targetKey: 'js', clientKey: 'fetch' },
-        searchHotKey: 'k',
-        showSidebar: true,
-        expanded: true,
-        defaultOpenFirstTag: false,
-        sources: [{ url: '${baseUrl}/openapi.json' }],
-      });
-    </script>
-  </body>
-</html>`;
-  return c.html(html);
-});
-
 app.use('/v1/*', authMiddleware);
 
 app.get('/v1/campaigns', async (c) => {

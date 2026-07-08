@@ -75,7 +75,7 @@ export function buildWebhookEventGroupMarkdown(groupId: string): string {
   ].join('\n');
 }
 
-export function buildWebhooksOverviewMarkdown(): string {
+export function buildWebhooksOverviewMarkdown(_linkMode: 'openapi' | 'docs' = 'openapi'): string {
   return [
     'Outbound webhooks notify your systems when Furnace events occur. Furnace POSTs JSON to your HTTPS endpoint; your endpoint must return any **2xx** response.',
     '',

@@ -1,8 +1,8 @@
 # Client API webhooks
 
-**Source of truth:** [`lib/client-api/openapi/webhooks.ts`](../../lib/client-api/openapi/webhooks.ts) and [`lib/client-api/openapi/guidePaths.ts`](../../lib/client-api/openapi/guidePaths.ts)
+**Source of truth:** [`lib/client-api/openapi/webhooks.ts`](../../lib/client-api/openapi/webhooks.ts)
 
-**Live docs:** open `/docs` on the deployed Client API host and expand **Guide → Webhooks** in the Scalar sidebar.
+**Live docs:** open `/docs/webhooks/` on the deployed Client API host.
 
 When updating webhook documentation, edit `buildWebhooksOverviewMarkdown()` and `buildWebhookEventGroupMarkdown()` in the TypeScript modules above. Example payloads are generated from [`lib/client-api/webhooks/webhookTestSamples.ts`](../../lib/client-api/webhooks/webhookTestSamples.ts) — do not duplicate JSON in markdown files.
 
@@ -10,7 +10,7 @@ When updating webhook documentation, edit `buildWebhooksOverviewMarkdown()` and 
 
 1. Update webhook markdown builders in `lib/client-api/openapi/webhooks.ts` (and sample builders in `webhookTestSamples.ts` if payload shapes change)
 2. Run `npm run test:client-api`
-3. After deploy, verify `/docs` shows **Guide** (Building campaigns, Changelog, Webhooks) and **API** sections in one sidebar
+3. After deploy, verify `/docs/webhooks/` and event group pages render correctly
 
 See also [bulk-operations-standards.md](../engineering/bulk-operations-standards.md) for internal bulk webhook rules and [CLIENT_API_DEV_RUNBOOK.md](./CLIENT_API_DEV_RUNBOOK.md).
 
@@ -38,8 +38,4 @@ Detection (app persistWebhookEvent OR DB triggers on column changes)
 3. SQL/outcome test: transition fires, non-transition skips, `SET LOCAL furnace.suppress_webhook_emission = 'true'` suppresses
 4. Remove duplicate app emits if any existed — enqueue is automatic via INSERT trigger
 
-### Adding a new app-layer event
-
-1. Same TS allowlist/docs updates
-2. Call `persistWebhookEvent()` at the business moment
-3. No enqueue code needed
+Same TS allowlist/docs updates apply for app-layer events, minus the trigger step.

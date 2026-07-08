@@ -420,6 +420,25 @@ export function buildClientApiComponents() {
       },
     },
     schemas: {
+      ApiError: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: [
+              'invalid_request_error',
+              'authentication_error',
+              'permission_error',
+              'rate_limit_error',
+              'api_error',
+            ],
+          },
+          code: { type: 'string' },
+          message: { type: 'string' },
+          param: { type: 'string' },
+        },
+        required: ['type', 'code', 'message'],
+      },
       Error: {
         type: 'object',
         properties: {
@@ -537,7 +556,7 @@ export function buildClientApiComponents() {
       },
       CampaignFlow: {
         type: 'object',
-        description: buildCampaignFlowDescription(),
+        description: buildCampaignFlowDescription('openapi'),
         properties: {
           nodes: {
             type: 'array',
@@ -578,7 +597,7 @@ export function buildClientApiComponents() {
       },
       EmailVariant: {
         type: 'object',
-        description: buildEmailVariantDescription(),
+        description: buildEmailVariantDescription('openapi'),
         properties: {
           id: {
             type: 'string',
@@ -631,7 +650,7 @@ export function buildClientApiComponents() {
       FlowNode: {
         type: 'object',
         description:
-          `One node in the campaign flow graph. The data shape depends on type — see ${modelLink('LeadSourceNodeData')}, ${modelLink('EmailNodeData')}, ${modelLink('WaitTimeNodeData')}, ${modelLink('AICategorizerNodeData')}, and ${modelLink('DataSenderNodeData')}.`,
+          `One node in the campaign flow graph. The data shape depends on type — see ${modelLink('LeadSourceNodeData', 'openapi')}, ${modelLink('EmailNodeData', 'openapi')}, ${modelLink('WaitTimeNodeData', 'openapi')}, ${modelLink('AICategorizerNodeData', 'openapi')}, and ${modelLink('DataSenderNodeData', 'openapi')}.`,
         properties: {
           id: {
             type: 'string',
@@ -695,7 +714,7 @@ export function buildClientApiComponents() {
       },
       LeadSourceNodeData: {
         type: 'object',
-        description: buildLeadSourceNodeDataDescription(),
+        description: buildLeadSourceNodeDataDescription('openapi'),
         properties: {
           label: { type: 'string', description: 'Display label.', example: 'Lead Bucket' },
           source: { type: 'string', nullable: true, description: 'Legacy source label.' },
@@ -725,7 +744,7 @@ export function buildClientApiComponents() {
       },
       EmailNodeData: {
         type: 'object',
-        description: buildEmailNodeDataDescription(),
+        description: buildEmailNodeDataDescription('openapi'),
         properties: {
           label: { type: 'string', description: 'Display label.', example: 'Intro Email' },
           mailboxId: {
@@ -795,7 +814,7 @@ export function buildClientApiComponents() {
       },
       DataSenderNodeData: {
         type: 'object',
-        description: `Webhook node that POSTs lead data to an external URL when a lead reaches this step. Supports merge variables in \`payload\`. See ${modelLink('CampaignFlow')} examples for a full dataSender flow.`,
+        description: `Webhook node that POSTs lead data to an external URL when a lead reaches this step. Supports merge variables in \`payload\`. See ${modelLink('CampaignFlow', 'openapi')} examples for a full dataSender flow.`,
         properties: {
           label: { type: 'string', description: 'Display label.', example: 'Notify CRM' },
           endpoint: {
@@ -850,13 +869,13 @@ export function buildClientApiComponents() {
         additionalProperties: false,
       },
       FlowUpdate: {
-        description: buildFlowUpdateDescription(),
+        description: buildFlowUpdateDescription('openapi'),
         allOf: [schemaRef('CampaignFlow')],
         example: CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER,
       },
       FlowValidationIssue: {
         type: 'object',
-        description: buildFlowValidationIssueDescription(),
+        description: buildFlowValidationIssueDescription('openapi'),
         properties: {
           path: { type: 'string' },
           code: { type: 'string' },
@@ -867,7 +886,7 @@ export function buildClientApiComponents() {
       },
       FlowValidateResult: {
         type: 'object',
-        description: buildFlowValidateResultDescription(),
+        description: buildFlowValidateResultDescription('openapi'),
         properties: {
           normalized_flow: schemaRef('CampaignFlow'),
           allowed: {
@@ -1978,10 +1997,6 @@ export function buildClientApiComponents() {
         type: 'object',
         description: 'The live OpenAPI document returned by `/openapi.json`.',
         additionalProperties: true,
-      },
-      DocsHtml: {
-        type: 'string',
-        description: 'Scalar HTML application.',
       },
       LimitsGuide: {
         type: 'object',

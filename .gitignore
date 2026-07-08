@@ -62,3 +62,10 @@ tmp/audit/
 
 # scripts
 scripts/lead-sourcing/
+
+# Client API docs — generated from TS builders at build time
+docs/client-api/src/content/docs/
+docs/client-api/public/openapi.json
+docs/client-api/dist/
+docs/client-api/node_modules/
+docs/client-api/.astro/

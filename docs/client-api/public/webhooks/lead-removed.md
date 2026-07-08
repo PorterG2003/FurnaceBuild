@@ -1,0 +1,74 @@
+Single-lead deletes and bulk removal from one or all campaigns.
+
+Examples use placeholder UUIDs. Live deliveries use real ids from your account.
+
+### `lead.deleted`
+
+A single lead was deleted via `DELETE /v1/campaigns/{id}/leads/{leadId}`.
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "lead.deleted",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com"
+  }
+}
+```
+
+### `lead.removed_from_campaign.completed`
+
+A sync bulk remove-from-campaign action finished (`POST …/leads:remove` or equivalent).
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "lead.removed_from_campaign.completed",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "remove_from_campaign",
+    "counts": {
+      "removed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  }
+}
+```
+
+### `lead.removed_from_all_campaigns.completed`
+
+A sync bulk remove-from-all-campaigns action finished (`POST …/leads:remove-from-all-campaigns`).
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "lead.removed_from_all_campaigns.completed",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": null,
+    "operation": "remove_from_all_campaigns",
+    "counts": {
+      "removed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  }
+}
+```

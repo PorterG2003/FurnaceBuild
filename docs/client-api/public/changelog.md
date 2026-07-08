@@ -1,0 +1,160 @@
+Version numbers match `info.version` on this API.
+
+Breaking changes increment the major version. Additive endpoints and fields increment minor. Patch is reserved for documentation-only or non-contract fixes.
+
+---
+
+## 1.4.3
+
+**Self-hosted docs rebuild (Fumadocs + OpenAPI reference + agent layer)**
+
+### Changed
+
+- Replaced Starlight/Scalar with a unified Fumadocs site at `/docs`
+- API reference at `/docs/reference/` uses fumadocs-openapi inside the Furnace docs shell (read-only, no try-it console)
+- Documentation and API Reference are separated in the header (Mintlify-style tabs)
+- Split building campaigns into quickstart, flow, launch, and flow-schemas guides
+- Auto-generated `llms.txt`, `llms-full.txt`, and per-page `.md` mirrors for agent access
+
+---
+
+## 1.4.2
+
+**Starlight documentation site**
+
+### Changed
+
+- Replaced Scalar at `/docs` with a Starlight static docs site (guides + OpenAPI reference via starlight-openapi)
+- Removed phantom `/documentation/*` OpenAPI paths; guides export from TS builders at build time
+- Building campaigns guide now documents `POST /flow` as the hero save (PUT remains a deprecated alias)
+
+---
+
+## 1.4.1
+
+**Documentation consolidation**
+
+### Changed
+
+- Removed the **Campaign flow reference** guide page — field-level flow object docs now live in **Models** (`CampaignFlow`, `FlowUpdate`, `FlowValidationIssue`, and related node schemas)
+- **Building campaigns** guide and flow API endpoint descriptions now link to Models schemas
+
+---
+
+## 1.4.0
+
+**Campaign build lifecycle & flow pipeline**
+
+### Added
+
+- **Building campaigns** guide in `/docs` (Guide → Building campaigns) with lifecycle rules, copy-pasteable flow JSON, and draft-vs-live locking behavior
+- **Campaign flow reference** guide (`/documentation/campaign-flow-reference`) — field-by-field flow object reference, merge variables, normalization rules, and full validation error-code catalog
+- `POST /v1/campaigns` — create a draft campaign with optional mailboxes, tags, schedule, and initial flow
+- `POST /v1/campaigns/{id}/flow` — hero flow save with `flow_revision`, `field_sync`, and optional `If-Match` concurrency
+- `POST /v1/campaigns/{id}/flow?dry_run=true` — dry-run alias for flow validation without persisting
+- `PUT /v1/campaigns/{id}/flow` — write the canonical campaign flow payload (deprecated alias of `POST`)
+- `POST /v1/campaigns/{id}/flow:validate` — dry-run normalization, validation, and lifecycle gating
+- `PATCH /v1/campaigns/{id}/status` — pause, resume, or stop live campaigns (`running` | `paused` | `stopped`)
+- `PATCH /v1/campaigns/{id}/flow/nodes/{nodeId}` — live content-only node patch
+- `GET /v1/flow-templates` — starter flow graphs
+- `GET /v1/campaigns/{id}?include=launch_state,lead_field_state` — checklist observability without extra validate calls
+- `POST /v1/campaigns/{id}/launch` — start a draft campaign after backfilling enrollments
+- `field_sync` on flow saves — auto-declares merge-variable fields from email copy
+
+### Changed
+
+- `GET /v1/campaigns` list responses omit `flow_data`; use `GET /v1/campaigns/{id}` for the full flow
+- Campaign detail responses include computed `flow_revision`
+- `POST /v1/campaigns/{id}/launch` returns `{ enrolled: N }` and uses shared launch validation
+- Live campaign flows are now topology-locked in both the API and the builder UI. Structural edits return `403 permission_error` with code `flow_locked`.
+- `POST /v1/campaigns/{id}/lead-fields` now writes flow data through the same service-role-safe persistence path as the new flow endpoints.
+- **Building campaigns** guide expanded with end-to-end curl walkthrough, `flow:validate` response examples, structural change reason codes, launch preconditions, and troubleshooting table
+- OpenAPI schemas for flow node types (`EmailVariant`, `LeadSourceNodeData`, `EmailNodeData`, `WaitTimeNodeData`, `AICategorizerNodeData`, `DataSenderNodeData`, `FlowNode`, `FlowEdge`, `FlowValidateResult`) now include per-field descriptions and examples
+
+---
+
+## 1.3.0
+
+**Webhooks — categorization and delivery infrastructure**
+
+### Added
+
+- Outbound webhook `reply.categorized` when a thread reply category is assigned, changed, or cleared
+- Granular per-event webhook subscription in Account Settings (expand event groups to pick individual types)
+
+### Changed
+
+- Campaign pause, resume, and stop from the Furnace app now emit `campaign.paused`, `campaign.resumed`, and `campaign.stopped` webhooks (previously Client API only)
+- `PATCH /v1/threads/{id}` category updates emit `reply.categorized`
+
+---
+
+## 1.2.0
+
+**Inbox expansion** — triage, outbound messaging, and ops endpoints for programmatic inbox use.
+
+### Added
+
+- **Webhooks** guide in `/docs` (Guide → Webhooks) with example payloads for every outbound event type
+- Consolidated `/docs` into a single Scalar document with Guide and API sidebar sections
+
+**Thread list & triage**
+
+- `GET /v1/threads` — new query params: `q`, `unread_only`, `conversation_status`, `category` (`no_category` for uncategorized), `tag_ids`, `date_from`, `date_to`, `has_reply_only` (default `true`)
+- `PATCH /v1/threads/{id}` — partial update: `category`, `conversation_status`, `read`
+
+**Outbound messaging**
+
+- `POST /v1/threads/{id}/forward` — queue forward job (`forward_message_id` required)
+- `GET /v1/message-jobs/{id}` — poll reply/forward job status
+- `POST /v1/message-jobs/{id}/cancel` — cancel queued/failed outbound job
+- `POST /v1/message-jobs/{id}/send-now` — expedite queued outbound job
+
+**Inbox ops**
+
+- `PUT /v1/threads/{id}/out-of-office` — set OOO (`resume_mode`: `scheduled` | `instant` | `none`)
+- `DELETE /v1/threads/{id}/out-of-office` — clear OOO
+- `POST /v1/threads/{id}/replace-lead` — replace thread lead; optional `forward_message_id`
+- `GET /v1/thread-tags` — list account thread tags
+- `POST /v1/threads/{id}/tags:add` / `tags:remove` — assign or remove tag on thread
+
+### Changed
+
+- `POST /v1/threads/{id}/reply` — optional `in_reply_to_message_id` (defaults to latest message)
+
+### Notes
+
+- Poll outbound sends with `/v1/message-jobs/{id}`, not `/v1/jobs/{id}` (import jobs only).
+- Tag create/edit/delete remains in the Furnace app; the API supports list + assign/remove only.
+
+---
+
+## 1.1.0
+
+**People, lists, jobs, and batch webhooks**
+
+### Added
+
+- `GET/PATCH /v1/people`, `GET/PATCH /v1/people/{globalLeadId}`
+- `GET/POST/PATCH/DELETE /v1/lead-lists`, list membership endpoints
+- `POST /v1/jobs`, `GET /v1/jobs/{id}` — async bulk operations
+- Campaign/mailbox tag CRUD and filtering
+- Sync bulk shortcuts: `leads:add`, `leads:remove`, `leads:remove-from-all-campaigns`, enrollment pause/resume
+- Batch completion webhooks (`*.completed`) for bulk and enrollment actions
+
+### Changed
+
+- Webhook allowlist: removed `enrollment.created` / `enrollment.updated`; added batch completion events
+
+---
+
+## 1.0.0
+
+**Initial Client API**
+
+### Added
+
+- Campaigns, leads, mailboxes, block list, campaign stats
+- Basic inbox: `GET /v1/threads`, `GET /v1/threads/{id}`, `GET /v1/threads/{id}/messages`, `POST /v1/threads/{id}/reply`
+- Atomic webhooks: `lead.*`, campaign lifecycle, `email.sent`, `reply.received`, `bounce.detected`
+- OpenAPI at `/openapi.json`, Scalar UI at `/docs`

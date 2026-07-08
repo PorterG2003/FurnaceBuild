@@ -2,7 +2,14 @@ import {
   CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER,
   CAMPAIGN_FLOW_EXAMPLE_LINEAR,
 } from '../../campaigns/flow/index.js';
-import { modelLink } from './docLinks.js';
+import type { DocLinkMode } from './docLinks.js';
+import { guideLink, modelLink } from './docLinks.js';
+import {
+  buildCampaignFlowDescription,
+  buildFlowMergeVariablesMarkdown,
+  buildFlowNormalizationMarkdown,
+} from './flowSchemaDescriptions.js';
+import { buildFlowValidationErrorCatalogMarkdown } from './flowValidationErrors.js';
 
 const EXAMPLE_CAMPAIGN_ID = '1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb';
 const EXAMPLE_MAILBOX_ID = 'c23da7b6-df4e-4d2f-b100-4bb07b7d38d7';
@@ -12,19 +19,19 @@ function jsonExample(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-const FLOW_MODELS_LINK = `Models → ${modelLink('CampaignFlow')}`;
-
-export function buildBuildingCampaignsMarkdown(): string {
+function campaignOverviewIntro(linkMode: DocLinkMode): string {
   return [
-    '## What is a campaign?',
-    '',
     'A Furnace campaign is an outbound sequence for a set of leads: a **flow graph** (emails, waits, categorizer branches, webhooks), one or more **mailboxes**, an optional **schedule**, and **leads** imported before launch.',
     '',
     'Lifecycle: **draft** → `POST /launch` → **running** → `PATCH /status` for pause/resume/stop. While live, you may edit copy and node configuration but not structural topology (add/remove nodes or edges).',
     '',
-    'Build campaigns through the API in four phases: create a **draft**, define the **flow**, upload **leads**, then **launch** the campaign.',
-    '',
-    `For the full flow object reference (every node type, field, merge variable, normalization rule, and validation code), open **${FLOW_MODELS_LINK}** and related schemas (${modelLink('FlowUpdate')}, ${modelLink('FlowValidationIssue')}).`,
+    `For field-level flow object docs see ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)} and the API reference models (${modelLink('CampaignFlow', linkMode)}, ${modelLink('FlowUpdate', linkMode)}).`,
+  ].join('\n');
+}
+
+export function buildCampaignQuickstartMarkdown(linkMode: DocLinkMode = 'openapi'): string {
+  return [
+    campaignOverviewIntro(linkMode),
     '',
     '## TL;DR — checklist',
     '',
@@ -37,6 +44,35 @@ export function buildBuildingCampaignsMarkdown(): string {
     '',
     'After launch, use `PATCH /v1/campaigns/{id}/status` (not `/launch`) for pause/resume/stop.',
     '',
+    '## Four phases',
+    '',
+    '```mermaid',
+    'flowchart LR',
+    '  createDraft["POST /v1/campaigns"] --> saveFlow["POST .../flow"]',
+    '  saveFlow --> uploadLeads["POST .../leads"]',
+    '  uploadLeads --> launch["POST .../launch"]',
+    '  launch --> live["status: running"]',
+    '  live --> contentEdits["PATCH .../flow/nodes content edits OK"]',
+    '  live --> blocked["structural edits → flow_locked"]',
+    '```',
+    '',
+    '| Phase | Endpoint | What happens |',
+    '| --- | --- | --- |',
+    '| 1. Create draft | `POST /v1/campaigns` | New campaign with `status: draft`. Optional initial flow, mailboxes, tags, schedule. |',
+    '| 2. Save flow | `POST /v1/campaigns/{id}/flow` | Furnace normalizes, validates, and persists the graph. |',
+    '| 3. Upload leads | `POST /v1/campaigns/{id}/leads` or `.../leads/bulk` | Upsert leads; custom fields from the flow are required in `custom_lead_data`. |',
+    '| 4. Launch | `POST /v1/campaigns/{id}/launch` | Backfills enrollments, switches to `running`. |',
+    '',
+    'Next: ' +
+      guideLink('Campaign flow', '/guides/campaign-flow/', linkMode) +
+      ' (field_sync, If-Match) → ' +
+      guideLink('Campaign launch', '/guides/campaign-launch/', linkMode) +
+      ' (lifecycle and walkthrough).',
+  ].join('\n');
+}
+
+export function buildCampaignFlowMarkdown(linkMode: DocLinkMode = 'openapi'): string {
+  return [
     '## field_sync',
     '',
     'When copy references merge variables, Furnace auto-declares fields on the lead source before validate/save. Every flow save response includes:',
@@ -53,27 +89,36 @@ export function buildBuildingCampaignsMarkdown(): string {
     '2. `POST /v1/campaigns/{id}/flow` with header `If-Match: <flow_revision>`',
     '3. On `412 flow_revision_conflict`, read `current_flow_revision` from the error body, refresh your base flow, merge manually, retry',
     '',
-    '## TL;DR — four phases',
+    '## Dry-run validation',
     '',
-    '```mermaid',
-    'flowchart LR',
-    '  createDraft["POST /v1/campaigns"] --> saveFlow["POST .../flow"]',
-    '  saveFlow --> uploadLeads["POST .../leads"]',
-    '  uploadLeads --> launch["POST .../launch"]',
-    '  launch --> live["status: running"]',
-    '  live --> contentEdits["PUT .../flow content edits OK"]',
-    '  live --> blocked["structural edits → flow_locked"]',
+    'Dry-run any flow payload with `POST /v1/campaigns/{id}/flow:validate` before writing. See ' +
+      modelLink('FlowValidateResult', linkMode) +
+      ' and ' +
+      guideLink('Flow schemas', '/guides/flow-schemas/', linkMode) +
+      ' for validation codes.',
+    '',
+    '## Example flows',
+    '',
+    '### Linear: email → wait → email',
+    '',
+    '```json',
+    jsonExample(CAMPAIGN_FLOW_EXAMPLE_LINEAR),
     '```',
     '',
-    '| Phase | Endpoint | What happens |',
-    '| --- | --- | --- |',
-    '| 1. Create draft | `POST /v1/campaigns` | New campaign with `status: draft`. Optional initial flow, mailboxes, tags, schedule. |',
-    '| 2. Save flow | `PUT /v1/campaigns/{id}/flow` | Furnace normalizes, validates, and persists the graph. |',
-    '| 3. Upload leads | `POST /v1/campaigns/{id}/leads` or `.../leads/bulk` | Upsert leads; custom fields from the flow are required in `custom_lead_data`. |',
-    '| 4. Launch | `POST /v1/campaigns/{id}/launch` | Backfills enrollments, switches to `running`. |',
+    '### Categorizer branch',
     '',
-    'Dry-run any flow payload with `POST /v1/campaigns/{id}/flow:validate` before writing.',
+    '```json',
+    jsonExample(CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER),
+    '```',
     '',
+    '## Lead imports depend on flow fields',
+    '',
+    'When the `leadSource` node declares `customFieldKeys`, every lead create or bulk-import payload must include those keys inside `custom_lead_data`. Use `GET /v1/campaigns/{id}/lead-fields` to inspect the current requirements.',
+  ].join('\n');
+}
+
+export function buildCampaignLaunchMarkdown(linkMode: DocLinkMode = 'openapi'): string {
+  return [
     '## End-to-end walkthrough',
     '',
     'Replace `{base_url}` and `{api_key}` with your Client API base URL and account API key (`Authorization: Bearer f_...`).',
@@ -94,41 +139,16 @@ export function buildBuildingCampaignsMarkdown(): string {
     '\'',
     '```',
     '',
-    'Response (`201`):',
-    '',
-    '```json',
-    jsonExample({
-      data: {
-        id: EXAMPLE_CAMPAIGN_ID,
-        name: 'Q2 Outbound',
-        status: 'draft',
-        source: 'manual',
-        flow_data: { nodes: [], edges: [] },
-        created_at: '2026-07-06T18:00:00.000Z',
-      },
-    }),
-    '```',
-    '',
     '### 2. Save the flow',
     '',
     '```bash',
-    `curl -sS -X PUT '{base_url}/v1/campaigns/${EXAMPLE_CAMPAIGN_ID}/flow' \\`,
+    `curl -sS -X POST '{base_url}/v1/campaigns/${EXAMPLE_CAMPAIGN_ID}/flow' \\`,
     `  -H 'Authorization: Bearer {api_key}' \\`,
     `  -H 'Content-Type: application/json' \\`,
     '  -d \'',
     jsonExample(CAMPAIGN_FLOW_EXAMPLE_LINEAR),
     '\'',
     '```',
-    '',
-    'Response (`200`):',
-    '',
-    '```json',
-    jsonExample({
-      data: CAMPAIGN_FLOW_EXAMPLE_LINEAR,
-    }),
-    '```',
-    '',
-    'Furnace returns the **normalized** flow — variant labels may be re-lettered (`A`, `B`, …) and wait nodes may have `wait_duration_seconds` derived from `duration` + `unit`.',
     '',
     '### 3. Upload a lead',
     '',
@@ -146,64 +166,13 @@ export function buildBuildingCampaignsMarkdown(): string {
     '\'',
     '```',
     '',
-    'Response (`201`):',
-    '',
-    '```json',
-    jsonExample({
-      data: {
-        id: 'b2c3d4e5-f6a7-4890-b123-456789abcdef',
-        campaign_id: EXAMPLE_CAMPAIGN_ID,
-        email: 'alex@acme.com',
-        first_name: 'Alex',
-        custom_lead_data: { company: 'Acme Corp' },
-        created: true,
-      },
-    }),
-    '```',
-    '',
-    '### 4. Validate before launch (optional)',
-    '',
-    '```bash',
-    `curl -sS -X POST '{base_url}/v1/campaigns/${EXAMPLE_CAMPAIGN_ID}/flow:validate' \\`,
-    `  -H 'Authorization: Bearer {api_key}' \\`,
-    `  -H 'Content-Type: application/json' \\`,
-    '  -d \'',
-    jsonExample(CAMPAIGN_FLOW_EXAMPLE_LINEAR),
-    '\'',
-    '```',
-    '',
-    'Response (`200`):',
-    '',
-    '```json',
-    jsonExample({
-      data: {
-        normalized_flow: CAMPAIGN_FLOW_EXAMPLE_LINEAR,
-        allowed: true,
-        change_kind: 'none',
-        change_reasons: [],
-        lifecycle: { allowed: true },
-        issues: [],
-      },
-    }),
-    '```',
-    '',
-    '### 5. Launch',
-    '',
-    'Launch requires: campaign **name**, a saved **flow**, and at least one **mailbox** assigned.',
+    '### 4. Launch',
     '',
     '```bash',
     `curl -sS -X POST '{base_url}/v1/campaigns/${EXAMPLE_CAMPAIGN_ID}/launch' \\`,
     `  -H 'Authorization: Bearer {api_key}' \\`,
     `  -H 'Content-Type: application/json' \\`,
     '  -d \'{}\'',
-    '```',
-    '',
-    'Response (`200`):',
-    '',
-    '```json',
-    jsonExample({
-      data: { id: EXAMPLE_CAMPAIGN_ID, status: 'running' },
-    }),
     '```',
     '',
     '## Lifecycle',
@@ -226,56 +195,58 @@ export function buildBuildingCampaignsMarkdown(): string {
     '| Add variant / toggle active | Allowed | Allowed |',
     '| Edit wait duration / categorizer config / node position | Allowed | Allowed |',
     '',
-    'Structural changes are detected by comparing the stored flow to your payload. When blocked, `change_kind` is `structural` and `change_reasons` includes one or more of:',
+    'Structural changes are detected by comparing the stored flow to your payload. When blocked, `change_kind` is `structural` and `change_reasons` includes one or more of: `node_added`, `node_removed`, `node_type_changed`, `edge_added_or_rewired`, `edge_removed_or_rewired`, `variant_removed_or_replaced`.',
     '',
-    '- `node_added`',
-    '- `node_removed`',
-    '- `node_type_changed`',
-    '- `edge_added_or_rewired`',
-    '- `edge_removed_or_rewired`',
-    '- `variant_removed_or_replaced`',
-    '',
-    'Blocked response (`403`):',
-    '',
-    '```json',
-    jsonExample({
-      error: {
-        type: 'permission_error',
-        code: 'flow_locked',
-        message:
-          'This campaign is no longer a draft, so structural flow changes are locked. You can still edit copy, variants, timing, and node configuration.',
-      },
-    }),
-    '```',
-    '',
-    `Validation failures (\`400\`) return \`invalid_flow\` with a \`details[]\` array of \`{ path, code, message }\` objects. See **Models → ${modelLink('FlowValidationIssue')}** for the full error-code catalog.`,
-    '',
-    '## Example flow: email -> wait -> email',
-    '',
-    '```json',
-    jsonExample(CAMPAIGN_FLOW_EXAMPLE_LINEAR),
-    '```',
-    '',
-    '## Example flow: categorizer branch',
-    '',
-    '```json',
-    jsonExample(CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER),
-    '```',
-    '',
-    '## Lead imports depend on flow fields',
-    '',
-    'When the `leadSource` node declares `customFieldKeys`, every lead create or bulk-import payload must include those keys inside `custom_lead_data`. Use `GET /v1/campaigns/{id}/lead-fields` to inspect the current requirements.',
+    `Validation failures (\`400\`) return \`invalid_flow\` with a \`details[]\` array. See ${modelLink('FlowValidationIssue', linkMode)} and ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)} for the full error-code catalog.`,
     '',
     '## Troubleshooting',
     '',
     '| Symptom | Likely cause | Fix |',
     '| --- | --- | --- |',
-    `| \`400 invalid_flow\` with \`details[]\` | Validation failed before write | Read \`details[].path\` and \`details[].code\`; see ${modelLink('FlowValidationIssue')} |`,
-    '| `403 flow_locked` on `PUT .../flow` | Structural edit on a live campaign | Only change copy/config, or duplicate the campaign as a new draft |',
+    `| \`400 invalid_flow\` with \`details[]\` | Validation failed before write | Read \`details[].path\` and \`details[].code\`; see ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)} |`,
+    '| `403 flow_locked` on `POST .../flow` | Structural edit on a live campaign | Only change copy/config, or duplicate the campaign as a new draft |',
     '| `400` on launch | Missing name, empty flow, or no mailbox | Set name, save flow, assign `mailbox_ids` on create or `PATCH /v1/campaigns/{id}` |',
     '| Lead import missing custom field | `customFieldKeys` on lead source not satisfied | Include every key in `custom_lead_data`; check `GET .../lead-fields` |',
-    '| `unknown_merge_variable` in validate | Token used in email copy but not declared on lead source | Add key to `customFieldKeys` or `mappedStandardFieldKeys` |',
-    '| `unreachable_node` | Orphan node not connected from lead source | Add edges so every node is reachable from `leadSource` |',
-    '| `cycle_detected` | Edge creates a loop | Remove the cycle; flows must be DAGs |',
   ].join('\n');
 }
+
+export function buildFlowSchemasMarkdown(linkMode: DocLinkMode = 'openapi'): string {
+  return [
+    buildCampaignFlowDescription(linkMode),
+    '',
+    '## Normalization on save',
+    '',
+    buildFlowNormalizationMarkdown(),
+    '',
+    '## Merge variables',
+    '',
+    buildFlowMergeVariablesMarkdown(linkMode),
+    '',
+    '## Validation error codes',
+    '',
+    buildFlowValidationErrorCatalogMarkdown(),
+    '',
+    'Related guides: ' +
+      guideLink('Campaign flow', '/guides/campaign-flow/', linkMode) +
+      ', ' +
+      guideLink('Campaign launch', '/guides/campaign-launch/', linkMode) +
+      '.',
+  ].join('\n');
+}
+
+/** @deprecated Use split guide builders instead. Kept for transitional tests. */
+export function buildBuildingCampaignsMarkdown(linkMode: DocLinkMode = 'openapi'): string {
+  return [
+    buildCampaignQuickstartMarkdown(linkMode),
+    '',
+    buildCampaignFlowMarkdown(linkMode),
+    '',
+    buildCampaignLaunchMarkdown(linkMode),
+  ].join('\n\n');
+}
+
+export {
+  EXAMPLE_CAMPAIGN_ID,
+  EXAMPLE_MAILBOX_ID,
+  EXAMPLE_TAG_ID,
+};

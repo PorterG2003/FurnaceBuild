@@ -107,14 +107,44 @@ async function main() {
     const openapi = await requestJson<{
       info: { title: string; version: string };
       paths: Record<string, unknown>;
-      'x-tagGroups': Array<{ name: string; tags: string[] }>;
     }>(`${baseUrl}/openapi.json`);
     assert.equal(openapi.status, 200);
     assert.equal(openapi.body.info.title, 'Furnace Client API');
-    assert.ok('/documentation/changelog' in openapi.body.paths);
-    assert.ok('/documentation/webhooks/email-activity' in openapi.body.paths);
-    assert.ok(openapi.body['x-tagGroups'].some((group) => group.name === 'Guide'));
-    console.log('[live-client-api] openapi guide paths check passed');
+    assert.ok(!('/documentation/changelog' in openapi.body.paths));
+    assert.ok('/v1/campaigns' in openapi.body.paths);
+    console.log('[live-client-api] openapi contract check passed');
+
+    const docsHome = await fetch(`${baseUrl}/docs/`);
+    const docsHtml = await docsHome.text();
+    assert.equal(docsHome.status, 200);
+    assert.match(docsHtml, /Client API/i);
+    assert.doesNotMatch(docsHtml, /github\.com\/getfurnace\/furnace/i);
+    console.log('[live-client-api] docs site check passed');
+
+    const quickstartDoc = await fetch(`${baseUrl}/docs/guides/campaign-quickstart/`);
+    const quickstartHtml = await quickstartDoc.text();
+    assert.equal(quickstartDoc.status, 200);
+    assert.match(quickstartHtml, /POST \/v1\/campaigns\/\{id\}\/flow/);
+    console.log('[live-client-api] campaign quickstart guide check passed');
+
+    const referenceDoc = await fetch(`${baseUrl}/docs/reference/`);
+    const referenceHtml = await referenceDoc.text();
+    assert.equal(referenceDoc.status, 200);
+    assert.match(referenceHtml, /scalar|openapi|Furnace Client API/i);
+    console.log('[live-client-api] api reference check passed');
+
+    const llmsTxt = await fetch(`${baseUrl}/llms.txt`);
+    const llmsBody = await llmsTxt.text();
+    assert.equal(llmsTxt.status, 200);
+    assert.match(llmsBody, /LLM index/i);
+    assert.match(llmsBody, /campaign-quickstart/);
+    console.log('[live-client-api] llms.txt check passed');
+
+    const mdMirror = await fetch(`${baseUrl}/docs/guides/campaign-quickstart.md`);
+    const mdBody = await mdMirror.text();
+    assert.equal(mdMirror.status, 200);
+    assert.match(mdBody, /TL;DR — checklist/);
+    console.log('[live-client-api] markdown mirror check passed');
 
     const apiKey = await harness.createApiKey('live-smoke');
     console.log(`[live-client-api] created API key ${apiKey.id}`);

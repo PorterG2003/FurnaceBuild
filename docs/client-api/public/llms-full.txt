@@ -1,0 +1,1485 @@
+# Furnace Client API — full docs corpus (v1.4.3)
+
+Plain markdown export for agents. HTML docs live under /docs/.
+
+---
+
+# Introduction
+
+<div className="doc-hero not-prose">
+
+<p className="doc-hero__tagline">
+Account-scoped REST API for campaigns, leads, people, saved lists, inbox, mailboxes, and more.
+</p>
+
+<div className="doc-hero__actions">
+<a className="primary" href="/docs/guides/campaign-quickstart/">Campaign quickstart</a>
+<a className="secondary" href="/docs/reference/">API Reference</a>
+</div>
+
+</div>
+
+New to the API? Start with [Campaign quickstart](/docs/guides/campaign-quickstart/). Flow schemas such as [CampaignFlow](/docs/reference/schemas/CampaignFlow/) and [FlowUpdate](/docs/reference/schemas/FlowUpdate/) are in the [API Reference](/docs/reference/).
+
+<CardGroup cols={2}>
+
+<Card title="Authentication" icon="gear">
+
+Send your account API key as `Authorization: Bearer f_...`. Keys are created in Furnace Account Settings. Revoked, expired, or unknown keys return `401 authentication_error`.
+
+</Card>
+
+<Card title="Rate limits" icon="plug">
+
+Responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`. Furnace allows 200 requests per account per minute.
+
+</Card>
+
+<Card title="Pagination" icon="book">
+
+List endpoints return `{ data, limit, offset, total_count }`. Default page size is 20; maximum is 100.
+
+</Card>
+
+<Card title="Errors" icon="terminal">
+
+Errors use `{ error: { type, code, message, param? } }`. See the table below for HTTP status codes and typical causes.
+
+</Card>
+
+</CardGroup>
+
+## Account scope
+Every `/v1/*` resource is limited to the account that owns the API key. Requests never cross account boundaries.
+
+## Idempotency
+Use the `Idempotency-Key` header on `POST /v1/campaigns/{id}/leads` and `POST /v1/campaigns/{id}/leads/bulk` to safely retry imports. Furnace replays the cached response for matching account, route, key, and request-body hash for 24 hours.
+
+## Error reference
+
+| HTTP | type | Typical causes |
+| --- | --- | --- |
+| 400 | `invalid_request_error` | Invalid JSON, missing parameters, bad status transitions, missing custom fields |
+| 401 | `authentication_error` | Missing, invalid, revoked, or expired API key |
+| 403 | `permission_error` | Smartlead campaign mutation, deleted campaign, admin-only operation |
+| 404 | `invalid_request_error` | Campaign, lead, mailbox, thread, message job, or import job not found in this account |
+| 429 | `rate_limit_error` | Too many requests or too many concurrent async import jobs |
+| 500 | `api_error` | Unhandled server-side error |
+
+## Business rules
+- Smartlead campaigns are read-only through this API.
+- Campaign flow topology is fully editable only while a campaign is in `draft` status.
+- Once a campaign is `running`, `paused`, or `stopped`, structural flow changes return `403 permission_error` with code `flow_locked`.
+- Sync bulk imports accept up to 100 leads per request.
+- Async bulk imports accept up to 1000 leads per request and allow at most 3 queued/running jobs per account.
+- When a campaign defines custom lead fields, every key must be present in `custom_lead_data` on create and bulk import requests.
+
+## Inbox message jobs
+- Reply and forward endpoints return `202` with a `message_job` id.
+- Poll outbound send status with `GET /v1/message-jobs/{id}`. Do not use `GET /v1/jobs/{id}` — that endpoint is for async import jobs only.
+- Cancel or expedite queued sends with `POST /v1/message-jobs/{id}/cancel` and `POST /v1/message-jobs/{id}/send-now`.
+- Update thread triage state with `PATCH /v1/threads/{id}` (`category`, `conversation_status`, `read`).
+
+
+---
+
+# Campaign quickstart
+
+A Furnace campaign is an outbound sequence for a set of leads: a **flow graph** (emails, waits, categorizer branches, webhooks), one or more **mailboxes**, an optional **schedule**, and **leads** imported before launch.
+
+Lifecycle: **draft** → `POST /launch` → **running** → `PATCH /status` for pause/resume/stop. While live, you may edit copy and node configuration but not structural topology (add/remove nodes or edges).
+
+For field-level flow object docs see [Flow schemas](/docs/guides/flow-schemas/) and the API reference models ([CampaignFlow](/docs/reference/schemas/CampaignFlow/), [FlowUpdate](/docs/reference/schemas/FlowUpdate/)).
+
+## TL;DR — checklist
+
+1. `GET /v1/mailboxes` — pick real mailbox UUIDs (no default mailbox alias)
+2. `POST /v1/campaigns` — create draft; optional `flow`, `mailbox_ids`, `schedule`
+3. `POST /v1/campaigns/{id}/flow` — save flow; check `field_sync` in the response
+4. `POST /v1/campaigns/{id}/leads` — import leads
+5. `GET /v1/campaigns/{id}?include=launch_state,lead_field_state` — verify readiness
+6. `POST /v1/campaigns/{id}/launch` — enroll all leads and start
+
+After launch, use `PATCH /v1/campaigns/{id}/status` (not `/launch`) for pause/resume/stop.
+
+## Four phases
+
+```mermaid
+flowchart LR
+  createDraft["POST /v1/campaigns"] --> saveFlow["POST .../flow"]
+  saveFlow --> uploadLeads["POST .../leads"]
+  uploadLeads --> launch["POST .../launch"]
+  launch --> live["status: running"]
+  live --> contentEdits["PATCH .../flow/nodes content edits OK"]
+  live --> blocked["structural edits → flow_locked"]
+```
+
+| Phase | Endpoint | What happens |
+| --- | --- | --- |
+| 1. Create draft | `POST /v1/campaigns` | New campaign with `status: draft`. Optional initial flow, mailboxes, tags, schedule. |
+| 2. Save flow | `POST /v1/campaigns/{id}/flow` | Furnace normalizes, validates, and persists the graph. |
+| 3. Upload leads | `POST /v1/campaigns/{id}/leads` or `.../leads/bulk` | Upsert leads; custom fields from the flow are required in `custom_lead_data`. |
+| 4. Launch | `POST /v1/campaigns/{id}/launch` | Backfills enrollments, switches to `running`. |
+
+Next: [Campaign flow](/docs/guides/campaign-flow/) (field_sync, If-Match) → [Campaign launch](/docs/guides/campaign-launch/) (lifecycle and walkthrough).
+
+
+---
+
+# Campaign flow
+
+## field_sync
+
+When copy references merge variables, Furnace auto-declares fields on the lead source before validate/save. Every flow save response includes:
+
+```json
+{ "field_sync": { "declared_custom_added": ["company"], "declared_standard_added": [] } }
+```
+
+The response `flow` is truth — persisted `customFieldKeys` may differ from your request body.
+
+## If-Match / conflict recovery
+
+1. `GET /v1/campaigns/{id}/flow` (or campaign detail) → read `flow_revision`
+2. `POST /v1/campaigns/{id}/flow` with header `If-Match: <flow_revision>`
+3. On `412 flow_revision_conflict`, read `current_flow_revision` from the error body, refresh your base flow, merge manually, retry
+
+## Dry-run validation
+
+Dry-run any flow payload with `POST /v1/campaigns/{id}/flow:validate` before writing. See [FlowValidateResult](/docs/reference/schemas/FlowValidateResult/) and [Flow schemas](/docs/guides/flow-schemas/) for validation codes.
+
+## Example flows
+
+### Linear: email → wait → email
+
+```json
+{
+  "nodes": [
+    {
+      "id": "leadSource-1",
+      "type": "leadSource",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Lead Bucket",
+        "customFieldKeys": [
+          "company"
+        ],
+        "mappedStandardFieldKeys": [
+          "email",
+          "first_name",
+          "last_name"
+        ],
+        "isRequired": true
+      },
+      "deletable": false
+    },
+    {
+      "id": "email-1",
+      "type": "email",
+      "position": {
+        "x": 220,
+        "y": 0
+      },
+      "data": {
+        "label": "Intro Email",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "label": "A",
+            "subject": "Quick question for {{first_name}}",
+            "template": "Hi {{first_name}} - reaching out about {{custom.company}}.",
+            "isActive": true,
+            "order": 0
+          },
+          {
+            "id": "11111111-1111-4111-8111-111111111112",
+            "label": "B",
+            "subject": "Following up for {{first_name}}",
+            "template": "Hi {{first_name}} - wanted to share a quick idea for {{custom.company}}.",
+            "isActive": true,
+            "order": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "waitTime-1",
+      "type": "waitTime",
+      "position": {
+        "x": 460,
+        "y": 0
+      },
+      "data": {
+        "label": "Wait 1 day",
+        "duration": "1",
+        "unit": "days",
+        "wait_duration_seconds": 86400
+      }
+    },
+    {
+      "id": "email-2",
+      "type": "email",
+      "position": {
+        "x": 700,
+        "y": 0
+      },
+      "data": {
+        "label": "Follow-up",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "22222222-2222-4222-8222-222222222221",
+            "label": "A",
+            "subject": "Bumping this for {{first_name}}",
+            "template": "Hi {{first_name}} - circling back in case this is relevant for {{custom.company}}.",
+            "isActive": true,
+            "order": 0
+          },
+          {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "label": "B",
+            "subject": "Any thoughts, {{first_name}}?",
+            "template": "Hi {{first_name}} - should I close the loop or send more detail?",
+            "isActive": true,
+            "order": 1
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "leadSource-1",
+      "target": "email-1"
+    },
+    {
+      "id": "e2",
+      "source": "email-1",
+      "target": "waitTime-1"
+    },
+    {
+      "id": "e3",
+      "source": "waitTime-1",
+      "target": "email-2"
+    }
+  ]
+}
+```
+
+### Categorizer branch
+
+```json
+{
+  "nodes": [
+    {
+      "id": "leadSource-1",
+      "type": "leadSource",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Lead Bucket",
+        "customFieldKeys": [
+          "company"
+        ],
+        "mappedStandardFieldKeys": [
+          "email",
+          "first_name",
+          "last_name"
+        ],
+        "isRequired": true
+      },
+      "deletable": false
+    },
+    {
+      "id": "email-1",
+      "type": "email",
+      "position": {
+        "x": 220,
+        "y": 0
+      },
+      "data": {
+        "label": "Intro Email",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "label": "A",
+            "subject": "Quick question for {{first_name}}",
+            "template": "Hi {{first_name}} - reaching out about {{custom.company}}.",
+            "isActive": true,
+            "order": 0
+          },
+          {
+            "id": "11111111-1111-4111-8111-111111111112",
+            "label": "B",
+            "subject": "Following up for {{first_name}}",
+            "template": "Hi {{first_name}} - wanted to share a quick idea for {{custom.company}}.",
+            "isActive": true,
+            "order": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "waitTime-1",
+      "type": "waitTime",
+      "position": {
+        "x": 460,
+        "y": 0
+      },
+      "data": {
+        "label": "Wait 1 day",
+        "duration": "1",
+        "unit": "days",
+        "wait_duration_seconds": 86400
+      }
+    },
+    {
+      "id": "email-2",
+      "type": "email",
+      "position": {
+        "x": 700,
+        "y": 0
+      },
+      "data": {
+        "label": "Reply Trigger",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "22222222-2222-4222-8222-222222222221",
+            "label": "A",
+            "subject": "Checking back in, {{first_name}}",
+            "template": "Hi {{first_name}} - just checking whether this is relevant for {{custom.company}}.",
+            "isActive": true,
+            "order": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "aiCategorizer-1",
+      "type": "aiCategorizer",
+      "position": {
+        "x": 940,
+        "y": 0
+      },
+      "data": {
+        "label": "Categorizer",
+        "use_ai": true
+      }
+    },
+    {
+      "id": "email-3",
+      "type": "email",
+      "position": {
+        "x": 1180,
+        "y": -120
+      },
+      "data": {
+        "label": "Interested Reply",
+        "send_mode": "reply",
+        "variants": [
+          {
+            "id": "33333333-3333-4333-8333-333333333333",
+            "label": "A",
+            "subject": "",
+            "template": "Thanks {{first_name}} - here are the details you asked for.",
+            "isActive": true,
+            "order": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "email-4",
+      "type": "email",
+      "position": {
+        "x": 1180,
+        "y": 120
+      },
+      "data": {
+        "label": "Breakup",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "label": "A",
+            "subject": "Closing the loop, {{first_name}}",
+            "template": "No worries {{first_name}} - I’ll close the loop on my side.",
+            "isActive": true,
+            "order": 0
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "leadSource-1",
+      "target": "email-1"
+    },
+    {
+      "id": "e2",
+      "source": "email-1",
+      "target": "waitTime-1"
+    },
+    {
+      "id": "e3",
+      "source": "waitTime-1",
+      "target": "email-2"
+    },
+    {
+      "id": "e4",
+      "source": "email-2",
+      "target": "aiCategorizer-1"
+    },
+    {
+      "id": "e5",
+      "source": "aiCategorizer-1",
+      "sourceHandle": "interested",
+      "target": "email-3"
+    },
+    {
+      "id": "e6",
+      "source": "aiCategorizer-1",
+      "sourceHandle": "not-interested",
+      "target": "email-4"
+    }
+  ]
+}
+```
+
+## Lead imports depend on flow fields
+
+When the `leadSource` node declares `customFieldKeys`, every lead create or bulk-import payload must include those keys inside `custom_lead_data`. Use `GET /v1/campaigns/{id}/lead-fields` to inspect the current requirements.
+
+
+---
+
+# Campaign launch
+
+## End-to-end walkthrough
+
+Replace `{base_url}` and `{api_key}` with your Client API base URL and account API key (`Authorization: Bearer f_...`).
+
+### 1. Create a draft campaign
+
+```bash
+curl -sS -X POST '{base_url}/v1/campaigns' \
+  -H 'Authorization: Bearer {api_key}' \
+  -H 'Content-Type: application/json' \
+  -d '
+{
+  "name": "Q2 Outbound",
+  "sending_interval_seconds": 1800,
+  "mailbox_ids": [
+    "c23da7b6-df4e-4d2f-b100-4bb07b7d38d7"
+  ],
+  "tag_ids": [
+    "a1b2c3d4-e5f6-4789-a012-3456789abcde"
+  ]
+}
+'
+```
+
+### 2. Save the flow
+
+```bash
+curl -sS -X POST '{base_url}/v1/campaigns/1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb/flow' \
+  -H 'Authorization: Bearer {api_key}' \
+  -H 'Content-Type: application/json' \
+  -d '
+{
+  "nodes": [
+    {
+      "id": "leadSource-1",
+      "type": "leadSource",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Lead Bucket",
+        "customFieldKeys": [
+          "company"
+        ],
+        "mappedStandardFieldKeys": [
+          "email",
+          "first_name",
+          "last_name"
+        ],
+        "isRequired": true
+      },
+      "deletable": false
+    },
+    {
+      "id": "email-1",
+      "type": "email",
+      "position": {
+        "x": 220,
+        "y": 0
+      },
+      "data": {
+        "label": "Intro Email",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "label": "A",
+            "subject": "Quick question for {{first_name}}",
+            "template": "Hi {{first_name}} - reaching out about {{custom.company}}.",
+            "isActive": true,
+            "order": 0
+          },
+          {
+            "id": "11111111-1111-4111-8111-111111111112",
+            "label": "B",
+            "subject": "Following up for {{first_name}}",
+            "template": "Hi {{first_name}} - wanted to share a quick idea for {{custom.company}}.",
+            "isActive": true,
+            "order": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "waitTime-1",
+      "type": "waitTime",
+      "position": {
+        "x": 460,
+        "y": 0
+      },
+      "data": {
+        "label": "Wait 1 day",
+        "duration": "1",
+        "unit": "days",
+        "wait_duration_seconds": 86400
+      }
+    },
+    {
+      "id": "email-2",
+      "type": "email",
+      "position": {
+        "x": 700,
+        "y": 0
+      },
+      "data": {
+        "label": "Follow-up",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "22222222-2222-4222-8222-222222222221",
+            "label": "A",
+            "subject": "Bumping this for {{first_name}}",
+            "template": "Hi {{first_name}} - circling back in case this is relevant for {{custom.company}}.",
+            "isActive": true,
+            "order": 0
+          },
+          {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "label": "B",
+            "subject": "Any thoughts, {{first_name}}?",
+            "template": "Hi {{first_name}} - should I close the loop or send more detail?",
+            "isActive": true,
+            "order": 1
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "leadSource-1",
+      "target": "email-1"
+    },
+    {
+      "id": "e2",
+      "source": "email-1",
+      "target": "waitTime-1"
+    },
+    {
+      "id": "e3",
+      "source": "waitTime-1",
+      "target": "email-2"
+    }
+  ]
+}
+'
+```
+
+### 3. Upload a lead
+
+```bash
+curl -sS -X POST '{base_url}/v1/campaigns/1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb/leads' \
+  -H 'Authorization: Bearer {api_key}' \
+  -H 'Content-Type: application/json' \
+  -d '
+{
+  "email": "alex@acme.com",
+  "first_name": "Alex",
+  "last_name": "Rivera",
+  "custom_lead_data": {
+    "company": "Acme Corp"
+  }
+}
+'
+```
+
+### 4. Launch
+
+```bash
+curl -sS -X POST '{base_url}/v1/campaigns/1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb/launch' \
+  -H 'Authorization: Bearer {api_key}' \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+## Lifecycle
+
+| Status | Flow topology | Copy / config edits |
+| --- | --- | --- |
+| `draft` | Fully editable (add/remove nodes, rewire edges, delete variants) | Allowed |
+| `running` | Locked — structural edits return `flow_locked` | Allowed (subject, body, wait duration, add variant, toggle active, positions) |
+| `paused` | Locked | Allowed |
+| `stopped` | Locked | Allowed |
+
+## Draft vs live lock
+
+| Change | Draft | Running / Paused / Stopped |
+| --- | --- | --- |
+| Add/remove node | Allowed | Blocked (`flow_locked`) |
+| Rewire / add / remove edge | Allowed | Blocked (`flow_locked`) |
+| Delete or replace variant id | Allowed | Blocked (`flow_locked`) |
+| Edit subject/body/html | Allowed | Allowed |
+| Add variant / toggle active | Allowed | Allowed |
+| Edit wait duration / categorizer config / node position | Allowed | Allowed |
+
+Structural changes are detected by comparing the stored flow to your payload. When blocked, `change_kind` is `structural` and `change_reasons` includes one or more of: `node_added`, `node_removed`, `node_type_changed`, `edge_added_or_rewired`, `edge_removed_or_rewired`, `variant_removed_or_replaced`.
+
+Validation failures (`400`) return `invalid_flow` with a `details[]` array. See [FlowValidationIssue](/docs/reference/schemas/FlowValidationIssue/) and [Flow schemas](/docs/guides/flow-schemas/) for the full error-code catalog.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `400 invalid_flow` with `details[]` | Validation failed before write | Read `details[].path` and `details[].code`; see [Flow schemas](/docs/guides/flow-schemas/) |
+| `403 flow_locked` on `POST .../flow` | Structural edit on a live campaign | Only change copy/config, or duplicate the campaign as a new draft |
+| `400` on launch | Missing name, empty flow, or no mailbox | Set name, save flow, assign `mailbox_ids` on create or `PATCH /v1/campaigns/{id}` |
+| Lead import missing custom field | `customFieldKeys` on lead source not satisfied | Include every key in `custom_lead_data`; check `GET .../lead-fields` |
+
+
+---
+
+# Flow schemas
+
+Directed acyclic graph (DAG) defining the campaign sequence. Consumed by flow save, validate, and optional `flow` on campaign create.
+
+**Structure:**
+
+- [FlowNode](/docs/reference/schemas/FlowNode/) — one step per node; `data` shape depends on `type`
+- [FlowEdge](/docs/reference/schemas/FlowEdge/) — directed connections between nodes
+
+**Node types:**
+
+- `leadSource` — [LeadSourceNodeData](/docs/reference/schemas/LeadSourceNodeData/) (exactly one per flow)
+- `email` — [EmailNodeData](/docs/reference/schemas/EmailNodeData/) with [EmailVariant](/docs/reference/schemas/EmailVariant/) variants
+- `waitTime` — [WaitTimeNodeData](/docs/reference/schemas/WaitTimeNodeData/)
+- `aiCategorizer` — [AICategorizerNodeData](/docs/reference/schemas/AICategorizerNodeData/) (at most one per flow)
+- `dataSender` — [DataSenderNodeData](/docs/reference/schemas/DataSenderNodeData/)
+
+**Validation rules:** exactly one `leadSource`; at most one `aiCategorizer`; max 100 nodes / 200 edges; no cycles; every node reachable from `leadSource`; unique node and edge ids.
+
+Full normalization, merge-variable rules, and error codes: [Flow schemas guide](/docs/guides/flow-schemas/).
+
+## Normalization on save
+
+Every flow save and validate runs normalization before validation:
+
+| What | Behavior |
+| --- | --- |
+| UI-only fields | Strips `selected`, `dragging`, `measured`, `positionAbsolute`, `resizing` from nodes; `selected` from edges. |
+| Lead source | Forces `deletable: false`. Trims and deduplicates `customFieldKeys`. |
+| Email variants | Assigns UUID `id` if missing; re-labels `A`/`B`/…; re-orders; canonicalizes HTML; migrates legacy single-variant shape. |
+| Wait nodes | Derives `wait_duration_seconds` from `duration` + `unit` when seconds absent; back-fills display `duration`/`unit` from seconds. |
+| Categorizer edges | Backfills `sourceHandle` on categorizer outgoing edges when missing. |
+| Data sender | Merges `endpoint`/`endpoint_url`; serializes `payload_template` to `payload` when needed. |
+
+API responses and `normalized_flow` in validate results always reflect the canonical stored shape.
+
+## Merge variables
+
+Use `{{token}}` syntax in email subjects, templates, `body_html`, and dataSender payloads.
+
+| Token pattern | Source | Example |
+| --- | --- | --- |
+| `{{email}}`, `{{first_name}}`, … | `mappedStandardFieldKeys` on lead source (all standard fields when unset) | `{{first_name}}` |
+| `{{custom.<key>}}` | `customFieldKeys` on lead source | `{{custom.company}}` |
+
+Rules:
+
+- Tokens must be well-formed `{{key}}` or `{{custom.key}}` — malformed syntax returns `malformed_merge_variable`.
+- Unknown tokens return `unknown_merge_variable`. Declare the key on the lead source first.
+- Custom field keys must not contain `{` or `}` characters.
+
+See [LeadSourceNodeData](/docs/reference/schemas/LeadSourceNodeData/) for field declarations and [EmailVariant](/docs/reference/schemas/EmailVariant/) for copy fields.
+
+## Validation error codes
+
+| Code | Cause | Fix |
+| --- | --- | --- |
+| `invalid_nodes` | `nodes` is not an array. | Send `{ nodes: [], edges: [] }` with `nodes` as an array. |
+| `invalid_edges` | `edges` is not an array. | Send `edges` as an array (empty array is valid). |
+| `too_many_nodes` | More than 100 nodes. | Split into multiple campaigns or simplify the graph. |
+| `too_many_edges` | More than 200 edges. | Reduce edge count. |
+| `missing_node_id` | A node has no `id`. | Assign a stable string id to every node. |
+| `duplicate_node_id` | Two nodes share the same `id`. | Use unique ids across all nodes. |
+| `invalid_node_type` | Unsupported `type` value. | Use `leadSource`, `email`, `waitTime`, `aiCategorizer`, or `dataSender`. |
+| `invalid_lead_source_count` | Not exactly one `leadSource` node. | Include exactly one `leadSource` node. |
+| `too_many_categorizers` | More than one `aiCategorizer` node. | Use at most one categorizer per flow. |
+| `invalid_custom_field_key` | Custom field key is empty or contains `{`/`}`. | Trim keys; avoid braces (they break `{{custom.<key>}}` tokens). |
+| `invalid_standard_field_key` | `mappedStandardFieldKeys` entry is not a known standard field. | Use keys like `email`, `first_name`, `last_name`, `company_name`, `website`, `linkedin_url`, `company_linkedin_url`, `source`. |
+| `missing_variants` | Email node has no variants. | Add at least one variant to every email node. |
+| `too_many_variants` | Email node has more than 20 variants. | Reduce variant count to 20 or fewer. |
+| `invalid_variant_id` | Variant `id` is missing or not a UUID. | Assign a stable UUID to each variant before first save; never change ids on live campaigns. |
+| `invalid_variant_subject` | Variant `subject` is not a string. | Set `subject` to a string (empty string is allowed for reply-mode emails). |
+| `invalid_variant_template` | Variant `template` is not a string. | Set `template` to a string body. |
+| `variant_content_too_large` | Subject or template exceeds 100,000 characters. | Shorten copy. |
+| `no_active_variants` | All variants have `isActive: false`. | Keep at least one active variant per email node. |
+| `invalid_send_mode` | `send_mode` is not `new` or `reply`. | Use `new` for sequence emails; `reply` for categorizer follow-ups in the same thread. |
+| `malformed_merge_variable` | Unclosed or invalid `{{...}}` syntax in copy. | Fix merge-token syntax; use `{{first_name}}` or `{{custom.company}}`. |
+| `unknown_merge_variable` | Merge variable not declared on the lead source. | Add the key to `customFieldKeys` or `mappedStandardFieldKeys`, or remove the token from copy. |
+| `invalid_wait_duration` | `wait_duration_seconds` is missing, zero, or not a positive number. | Set a positive integer in seconds (e.g. `86400` for one day). |
+| `missing_edge_id` | An edge has no `id`. | Assign a stable string id to every edge. |
+| `duplicate_edge_id` | Two edges share the same `id`. | Use unique edge ids. |
+| `unknown_edge_source` | Edge `source` does not match a node id. | Point `source` at an existing node `id`. |
+| `unknown_edge_target` | Edge `target` does not match a node id. | Point `target` at an existing node `id`. |
+| `self_referential_edge` | Edge source and target are the same node. | Remove self-loops. |
+| `invalid_categorizer_source_handle` | Categorizer edge missing or invalid `sourceHandle`. | Use `interested`, `neutral`, or `not-interested`. |
+| `duplicate_categorizer_branch` | Same categorizer branch handle used twice. | Wire each branch handle at most once per categorizer node. |
+| `unreachable_node` | Node is not reachable from the lead source. | Connect every node into the graph starting from `leadSource`. |
+| `cycle_detected` | Graph contains a cycle. | Remove loops; flows must be directed acyclic graphs. |
+
+Related guides: [Campaign flow](/docs/guides/campaign-flow/), [Campaign launch](/docs/guides/campaign-launch/).
+
+
+---
+
+# API Reference
+
+Interactive API reference grouped by tag.
+
+- OpenAPI JSON: /docs/openapi.json
+- Schema pages: /docs/reference/schemas/{Name}/
+
+
+---
+
+# Changelog
+
+Version numbers match `info.version` on this API.
+
+Breaking changes increment the major version. Additive endpoints and fields increment minor. Patch is reserved for documentation-only or non-contract fixes.
+
+---
+
+## 1.4.3
+
+**Self-hosted docs rebuild (Fumadocs + OpenAPI reference + agent layer)**
+
+### Changed
+
+- Replaced Starlight/Scalar with a unified Fumadocs site at `/docs`
+- API reference at `/docs/reference/` uses fumadocs-openapi inside the Furnace docs shell (read-only, no try-it console)
+- Documentation and API Reference are separated in the header (Mintlify-style tabs)
+- Split building campaigns into quickstart, flow, launch, and flow-schemas guides
+- Auto-generated `llms.txt`, `llms-full.txt`, and per-page `.md` mirrors for agent access
+
+---
+
+## 1.4.2
+
+**Starlight documentation site**
+
+### Changed
+
+- Replaced Scalar at `/docs` with a Starlight static docs site (guides + OpenAPI reference via starlight-openapi)
+- Removed phantom `/documentation/*` OpenAPI paths; guides export from TS builders at build time
+- Building campaigns guide now documents `POST /flow` as the hero save (PUT remains a deprecated alias)
+
+---
+
+## 1.4.1
+
+**Documentation consolidation**
+
+### Changed
+
+- Removed the **Campaign flow reference** guide page — field-level flow object docs now live in **Models** (`CampaignFlow`, `FlowUpdate`, `FlowValidationIssue`, and related node schemas)
+- **Building campaigns** guide and flow API endpoint descriptions now link to Models schemas
+
+---
+
+## 1.4.0
+
+**Campaign build lifecycle & flow pipeline**
+
+### Added
+
+- **Building campaigns** guide in `/docs` (Guide → Building campaigns) with lifecycle rules, copy-pasteable flow JSON, and draft-vs-live locking behavior
+- **Campaign flow reference** guide (`/documentation/campaign-flow-reference`) — field-by-field flow object reference, merge variables, normalization rules, and full validation error-code catalog
+- `POST /v1/campaigns` — create a draft campaign with optional mailboxes, tags, schedule, and initial flow
+- `POST /v1/campaigns/{id}/flow` — hero flow save with `flow_revision`, `field_sync`, and optional `If-Match` concurrency
+- `POST /v1/campaigns/{id}/flow?dry_run=true` — dry-run alias for flow validation without persisting
+- `PUT /v1/campaigns/{id}/flow` — write the canonical campaign flow payload (deprecated alias of `POST`)
+- `POST /v1/campaigns/{id}/flow:validate` — dry-run normalization, validation, and lifecycle gating
+- `PATCH /v1/campaigns/{id}/status` — pause, resume, or stop live campaigns (`running` | `paused` | `stopped`)
+- `PATCH /v1/campaigns/{id}/flow/nodes/{nodeId}` — live content-only node patch
+- `GET /v1/flow-templates` — starter flow graphs
+- `GET /v1/campaigns/{id}?include=launch_state,lead_field_state` — checklist observability without extra validate calls
+- `POST /v1/campaigns/{id}/launch` — start a draft campaign after backfilling enrollments
+- `field_sync` on flow saves — auto-declares merge-variable fields from email copy
+
+### Changed
+
+- `GET /v1/campaigns` list responses omit `flow_data`; use `GET /v1/campaigns/{id}` for the full flow
+- Campaign detail responses include computed `flow_revision`
+- `POST /v1/campaigns/{id}/launch` returns `{ enrolled: N }` and uses shared launch validation
+- Live campaign flows are now topology-locked in both the API and the builder UI. Structural edits return `403 permission_error` with code `flow_locked`.
+- `POST /v1/campaigns/{id}/lead-fields` now writes flow data through the same service-role-safe persistence path as the new flow endpoints.
+- **Building campaigns** guide expanded with end-to-end curl walkthrough, `flow:validate` response examples, structural change reason codes, launch preconditions, and troubleshooting table
+- OpenAPI schemas for flow node types (`EmailVariant`, `LeadSourceNodeData`, `EmailNodeData`, `WaitTimeNodeData`, `AICategorizerNodeData`, `DataSenderNodeData`, `FlowNode`, `FlowEdge`, `FlowValidateResult`) now include per-field descriptions and examples
+
+---
+
+## 1.3.0
+
+**Webhooks — categorization and delivery infrastructure**
+
+### Added
+
+- Outbound webhook `reply.categorized` when a thread reply category is assigned, changed, or cleared
+- Granular per-event webhook subscription in Account Settings (expand event groups to pick individual types)
+
+### Changed
+
+- Campaign pause, resume, and stop from the Furnace app now emit `campaign.paused`, `campaign.resumed`, and `campaign.stopped` webhooks (previously Client API only)
+- `PATCH /v1/threads/{id}` category updates emit `reply.categorized`
+
+---
+
+## 1.2.0
+
+**Inbox expansion** — triage, outbound messaging, and ops endpoints for programmatic inbox use.
+
+### Added
+
+- **Webhooks** guide in `/docs` (Guide → Webhooks) with example payloads for every outbound event type
+- Consolidated `/docs` into a single Scalar document with Guide and API sidebar sections
+
+**Thread list & triage**
+
+- `GET /v1/threads` — new query params: `q`, `unread_only`, `conversation_status`, `category` (`no_category` for uncategorized), `tag_ids`, `date_from`, `date_to`, `has_reply_only` (default `true`)
+- `PATCH /v1/threads/{id}` — partial update: `category`, `conversation_status`, `read`
+
+**Outbound messaging**
+
+- `POST /v1/threads/{id}/forward` — queue forward job (`forward_message_id` required)
+- `GET /v1/message-jobs/{id}` — poll reply/forward job status
+- `POST /v1/message-jobs/{id}/cancel` — cancel queued/failed outbound job
+- `POST /v1/message-jobs/{id}/send-now` — expedite queued outbound job
+
+**Inbox ops**
+
+- `PUT /v1/threads/{id}/out-of-office` — set OOO (`resume_mode`: `scheduled` | `instant` | `none`)
+- `DELETE /v1/threads/{id}/out-of-office` — clear OOO
+- `POST /v1/threads/{id}/replace-lead` — replace thread lead; optional `forward_message_id`
+- `GET /v1/thread-tags` — list account thread tags
+- `POST /v1/threads/{id}/tags:add` / `tags:remove` — assign or remove tag on thread
+
+### Changed
+
+- `POST /v1/threads/{id}/reply` — optional `in_reply_to_message_id` (defaults to latest message)
+
+### Notes
+
+- Poll outbound sends with `/v1/message-jobs/{id}`, not `/v1/jobs/{id}` (import jobs only).
+- Tag create/edit/delete remains in the Furnace app; the API supports list + assign/remove only.
+
+---
+
+## 1.1.0
+
+**People, lists, jobs, and batch webhooks**
+
+### Added
+
+- `GET/PATCH /v1/people`, `GET/PATCH /v1/people/{globalLeadId}`
+- `GET/POST/PATCH/DELETE /v1/lead-lists`, list membership endpoints
+- `POST /v1/jobs`, `GET /v1/jobs/{id}` — async bulk operations
+- Campaign/mailbox tag CRUD and filtering
+- Sync bulk shortcuts: `leads:add`, `leads:remove`, `leads:remove-from-all-campaigns`, enrollment pause/resume
+- Batch completion webhooks (`*.completed`) for bulk and enrollment actions
+
+### Changed
+
+- Webhook allowlist: removed `enrollment.created` / `enrollment.updated`; added batch completion events
+
+---
+
+## 1.0.0
+
+**Initial Client API**
+
+### Added
+
+- Campaigns, leads, mailboxes, block list, campaign stats
+- Basic inbox: `GET /v1/threads`, `GET /v1/threads/{id}`, `GET /v1/threads/{id}/messages`, `POST /v1/threads/{id}/reply`
+- Atomic webhooks: `lead.*`, campaign lifecycle, `email.sent`, `reply.received`, `bounce.detected`
+- OpenAPI at `/openapi.json`, Scalar UI at `/docs`
+
+
+---
+
+# Webhooks
+
+Outbound webhooks notify your systems when Furnace events occur. Furnace POSTs JSON to your HTTPS endpoint; your endpoint must return any **2xx** response.
+
+## Quick start
+
+1. Open **Account Settings → Webhooks** (or a campaign override in Mission Control).
+2. **Configure** — paste an HTTPS URL, optionally set a signing secret, and select individual events (expand groups to pick specific types). Only selected event types are delivered.
+3. Click **Next** to open the **Test** step. Use **View sample** to inspect JSON for each event type, then **Send test webhook** to POST a sample to your URL.
+4. Click **Done** to save. Deliveries start immediately when matching events occur.
+
+Campaign overrides replace the account URL (and optionally secret or enabled events) for that campaign only. Leave the override URL empty to inherit the account default.
+
+## Receiving webhooks
+
+Furnace sends:
+
+```http
+POST {your_url}
+Content-Type: application/json
+X-Furnace-Event: email.sent
+X-Furnace-Delivery: {delivery_id}
+X-Furnace-Signature: sha256=...   # when a signing secret is configured
+```
+
+Body envelope:
+
+```json
+{
+  "id": "event-uuid",
+  "type": "email.sent",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": { ... }
+}
+```
+
+- `id` — unique event id (stable across delivery retries for that event).
+- `type` — event constant (matches `X-Furnace-Event`).
+- `occurred_at` — ISO-8601 timestamp.
+- `data` — event-specific payload (see the event group pages in this **Webhooks** section).
+
+### Test webhooks
+
+When you use **Send test webhook** in Furnace, the payload uses real event types with `"test": true` inside `data`. The examples in this guide show the **live** shape (no `test` field).
+
+### Retries and failures
+
+Furnace retries failed deliveries up to **3** times. Your endpoint must return any **2xx** HTTP status. Non-2xx responses or network errors are recorded in Account Settings → **Failed deliveries**.
+
+Use `X-Furnace-Delivery` as a unique delivery id for idempotency on your side.
+
+## Verifying signatures
+
+When a signing secret is configured, Furnace sets `X-Furnace-Signature` to `sha256=` followed by the hex-encoded HMAC-SHA256 of the **raw JSON request body** (exact bytes POSTed).
+
+Node.js example:
+
+```javascript
+import crypto from 'node:crypto';
+
+function verifyFurnaceSignature(secret, rawBody, signatureHeader) {
+  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader));
+}
+```
+
+Most no-code tools (Zoho Flow, Zapier, Make) can ignore the signature and accept the POST directly.
+
+## Atomic vs batch
+
+```text
+IF async job OR more than one lead in one action
+  → Batch tier: exactly ONE completion webhook for that operation
+ELSE
+  → Atomic tier: lead.created / lead.updated / lead.deleted (etc.)
+```
+
+Per-row `lead.created` / `lead.updated` / `lead.deleted` events are **never** emitted during bulk processing.
+
+### Atomic tier
+
+| Action | Event |
+| --- | --- |
+| `POST /v1/campaigns/{id}/leads` (single) | `lead.created` / `lead.updated` |
+| `PATCH …/leads/{leadId}` | `lead.updated` |
+| `DELETE …/leads/{leadId}` | `lead.deleted` |
+| Campaign pause/stop/resume | `campaign.paused` / `campaign.stopped` / `campaign.resumed` |
+| Worker: email sent, reply, bounce | `email.sent` / `reply.received` / `bounce.detected` |
+| Thread category assign/change/clear | `reply.categorized` |
+
+### Batch tier
+
+| Operation | Completion event |
+| --- | --- |
+| `api_lead_import` | `lead.bulk_import.completed` |
+| `add_to_campaign` | `lead.added_to_campaign.completed` |
+| `remove_from_campaign` | `lead.removed_from_campaign.completed` |
+| `remove_from_all_campaigns` | `lead.removed_from_all_campaigns.completed` |
+| `pause_enrollments` | `enrollment.pause_completed` |
+| `resume_enrollments` | `enrollment.resume_completed` |
+
+Sync bulk shortcuts use the same completion events with `source: "sync"` and `job_id: null`. Batch completion `data` matches the `BatchCompletionWebhookPayload` schema in the **Schemas** section.
+
+`enrollment.created` and `enrollment.updated` are **not** emitted.
+
+## Campaign overrides
+
+When a webhook event includes a `campaign_id`, Furnace resolves delivery settings in this order:
+
+1. **URL** — campaign `webhook_url_override` if set, otherwise account `webhook_url`. If no URL is configured, the event is not delivered.
+2. **Signing secret** — campaign override if set, otherwise account secret.
+3. **Enabled events** — campaign `webhook_enabled_events_override` if set (array), otherwise account `webhook_enabled_events`. If the resolved list is **empty**, no events are delivered. If non-empty, only listed types are delivered.
+
+When the campaign override URL is empty, the account URL and account signing secret are used.
+
+## No-code tools (Zoho Flow, Zapier, Make)
+
+1. Create an incoming webhook trigger in your tool and copy its HTTPS URL.
+2. Paste the URL in Furnace **Account Settings → Webhooks** and enable **Email activity** (or other groups you need).
+3. On the **Test** step, send `email.sent` or `reply.received` and map fields from the sample JSON.
+4. No echo-token or custom verification handler is required.
+
+## Example payloads
+
+Open the event group pages in this **Webhooks** section for live JSON examples of every event type.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| --- | --- |
+| No webhooks received | URL empty, event type filtered out, or campaign override blocking delivery |
+| Test works, live events missing | Event group not enabled, or non-2xx response on live delivery |
+| Duplicate deliveries | Retries after timeout; dedupe on `X-Furnace-Delivery` |
+| Signature verification fails | Body parsed/re-serialized before verify; use raw body bytes |
+
+
+---
+
+# Lead added / updated
+
+Single-lead changes and bulk import or add-to-campaign completions.
+
+Examples use placeholder UUIDs. Live deliveries use real ids from your account.
+
+### `lead.created`
+
+A single lead was created via `POST /v1/campaigns/{id}/leads`.
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "lead.created",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com"
+  }
+}
+```
+
+### `lead.updated`
+
+A single lead was updated via `PATCH /v1/campaigns/{id}/leads/{leadId}`.
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "lead.updated",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com"
+  }
+}
+```
+
+### `lead.bulk_import.completed`
+
+An async or sync bulk import finished (`POST /v1/jobs`, `POST …/leads/bulk`, or async bulk endpoint).
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "lead.bulk_import.completed",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "job_id": "00000000-0000-4000-8000-000000000007",
+    "source": "async",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "api_lead_import",
+    "counts": {
+      "created": 2,
+      "updated": 1,
+      "enrolled": 3,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": []
+  }
+}
+```
+
+### `lead.added_to_campaign.completed`
+
+A sync bulk add-to-campaign action finished (`POST …/leads:add` or equivalent).
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "lead.added_to_campaign.completed",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "add_to_campaign",
+    "counts": {
+      "enrolled": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  }
+}
+```
+
+
+---
+
+# Lead removed
+
+Single-lead deletes and bulk removal from one or all campaigns.
+
+Examples use placeholder UUIDs. Live deliveries use real ids from your account.
+
+### `lead.deleted`
+
+A single lead was deleted via `DELETE /v1/campaigns/{id}/leads/{leadId}`.
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "lead.deleted",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "email": "lead@example.com"
+  }
+}
+```
+
+### `lead.removed_from_campaign.completed`
+
+A sync bulk remove-from-campaign action finished (`POST …/leads:remove` or equivalent).
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "lead.removed_from_campaign.completed",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "remove_from_campaign",
+    "counts": {
+      "removed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  }
+}
+```
+
+### `lead.removed_from_all_campaigns.completed`
+
+A sync bulk remove-from-all-campaigns action finished (`POST …/leads:remove-from-all-campaigns`).
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "lead.removed_from_all_campaigns.completed",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": null,
+    "operation": "remove_from_all_campaigns",
+    "counts": {
+      "removed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  }
+}
+```
+
+
+---
+
+# Enrollment pause / resume
+
+Manual enrollment holds and bulk pause/resume completions.
+
+Examples use placeholder UUIDs. Live deliveries use real ids from your account.
+
+### `enrollment.pause_completed`
+
+A sync bulk enrollment pause finished (`POST …/enrollments:pause` or equivalent).
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "enrollment.pause_completed",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "pause_enrollments",
+    "counts": {
+      "paused": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  }
+}
+```
+
+### `enrollment.resume_completed`
+
+A sync bulk enrollment resume finished (`POST …/enrollments:resume` or equivalent).
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "enrollment.resume_completed",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "job_id": null,
+    "source": "sync",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "operation": "resume_enrollments",
+    "counts": {
+      "resumed": 1,
+      "skipped": 0,
+      "failed": 0
+    },
+    "errors": [],
+    "global_lead_ids": [
+      "00000000-0000-4000-8000-000000000008"
+    ]
+  }
+}
+```
+
+
+---
+
+# Campaign status
+
+Campaign paused, resumed, or stopped.
+
+Examples use placeholder UUIDs. Live deliveries use real ids from your account.
+
+### `campaign.paused`
+
+The campaign was paused.
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "campaign.paused",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222"
+  }
+}
+```
+
+### `campaign.resumed`
+
+The campaign was resumed.
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "campaign.resumed",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222"
+  }
+}
+```
+
+### `campaign.stopped`
+
+The campaign was stopped.
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "campaign.stopped",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222"
+  }
+}
+```
+
+
+---
+
+# Email activity
+
+Sends, replies, categorization, and bounces.
+
+Examples use placeholder UUIDs. Live deliveries use real ids from your account.
+
+### `email.sent`
+
+An outbound campaign email was sent.
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "email.sent",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "message_job_id": "00000000-0000-4000-8000-000000000003",
+    "mailbox_id": "00000000-0000-4000-8000-000000000004",
+    "provider_message_id": "test-provider-message-id",
+    "sent_at": "2026-06-25T12:00:00.000Z",
+    "subject": "Example outbound subject (test)"
+  }
+}
+```
+
+### `reply.received`
+
+An inbound reply was received on a campaign thread (before categorization completes).
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "reply.received",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "thread_id": "00000000-0000-4000-8000-000000000005",
+    "email_message_id": "00000000-0000-4000-8000-000000000006",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "mailbox_id": "00000000-0000-4000-8000-000000000004",
+    "from_email": "lead@example.com",
+    "subject": "Re: Example outbound subject (test)",
+    "received_at": "2026-06-25T12:00:00.000Z"
+  }
+}
+```
+
+### `reply.categorized`
+
+A thread reply category was assigned, changed, or cleared (manual, AI, system, or OOO).
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "reply.categorized",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "thread_id": "00000000-0000-4000-8000-000000000005",
+    "email_message_id": "00000000-0000-4000-8000-000000000006",
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "category": "Interested",
+    "previous_category": null,
+    "category_source": "ai",
+    "from_email": "lead@example.com",
+    "subject": "Re: Example outbound subject (test)"
+  }
+}
+```
+
+### `bounce.detected`
+
+A hard or soft bounce was detected for a sent message.
+
+```json
+{
+  "id": "00000000-0000-4000-8000-0000000000aa",
+  "type": "bounce.detected",
+  "occurred_at": "2026-06-25T12:00:00.000Z",
+  "data": {
+    "campaign_id": "22222222-2222-4222-8222-222222222222",
+    "lead_id": "00000000-0000-4000-8000-000000000001",
+    "enrollment_id": "00000000-0000-4000-8000-000000000002",
+    "message_job_id": "00000000-0000-4000-8000-000000000003",
+    "mailbox_id": "00000000-0000-4000-8000-000000000004",
+    "severity": "hard",
+    "code": "550",
+    "bounce_message_id": "test-bounce-message-id",
+    "bounce_uid": 42,
+    "candidate_emails": [
+      "lead@example.com"
+    ],
+    "matched_job_count": 1
+  }
+}
+```
+
+

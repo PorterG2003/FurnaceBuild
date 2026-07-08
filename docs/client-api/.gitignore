@@ -1,0 +1,6 @@
+# Generated Client API docs content (do not edit by hand)
+content/docs/
+.source/
+out/
+.next/
+node_modules/

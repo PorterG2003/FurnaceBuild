@@ -1,5 +1,5 @@
-import { modelLink } from './docLinks.js';
-import { buildFlowValidationErrorCatalogMarkdown } from './flowValidationErrors.js';
+import type { DocLinkMode } from './docLinks.js';
+import { guideLink, modelLink } from './docLinks.js';
 
 export function buildFlowNormalizationMarkdown(): string {
   return [
@@ -18,7 +18,7 @@ export function buildFlowNormalizationMarkdown(): string {
   ].join('\n');
 }
 
-export function buildFlowMergeVariablesMarkdown(): string {
+export function buildFlowMergeVariablesMarkdown(linkMode: DocLinkMode = 'docs'): string {
   return [
     'Use `{{token}}` syntax in email subjects, templates, `body_html`, and dataSender payloads.',
     '',
@@ -33,155 +33,88 @@ export function buildFlowMergeVariablesMarkdown(): string {
     '- Unknown tokens return `unknown_merge_variable`. Declare the key on the lead source first.',
     '- Custom field keys must not contain `{` or `}` characters.',
     '',
-    `See ${modelLink('LeadSourceNodeData')} for field declarations and ${modelLink('EmailVariant')} for copy fields.`,
+    `See ${modelLink('LeadSourceNodeData', linkMode)} for field declarations and ${modelLink('EmailVariant', linkMode)} for copy fields.`,
   ].join('\n');
 }
 
-export function buildCampaignFlowDescription(): string {
+export function buildCampaignFlowDescription(linkMode: DocLinkMode = 'docs'): string {
   return [
     'Directed acyclic graph (DAG) defining the campaign sequence. Consumed by flow save, validate, and optional `flow` on campaign create.',
     '',
-    '```mermaid',
-    'flowchart LR',
-    '  leadSource --> email1[email]',
-    '  email1 --> wait[waitTime]',
-    '  wait --> email2[email]',
-    '  email2 --> cat[aiCategorizer]',
-    '  cat -->|"interested"| reply[email reply]',
-    '  cat -->|"not-interested"| breakup[email]',
-    '```',
+    '**Structure:**',
     '',
-    '**Structure**',
+    `- ${modelLink('FlowNode', linkMode)} — one step per node; \`data\` shape depends on \`type\``,
+    `- ${modelLink('FlowEdge', linkMode)} — directed connections between nodes`,
     '',
-    `- ${modelLink('FlowNode')} — one step per node; \`data\` shape depends on \`type\``,
-    `- ${modelLink('FlowEdge')} — directed connections between nodes`,
+    '**Node types:**',
     '',
-    '**Node types** (see `FlowNode.data`):',
+    `- \`leadSource\` — ${modelLink('LeadSourceNodeData', linkMode)} (exactly one per flow)`,
+    `- \`email\` — ${modelLink('EmailNodeData', linkMode)} with ${modelLink('EmailVariant', linkMode)} variants`,
+    `- \`waitTime\` — ${modelLink('WaitTimeNodeData', linkMode)}`,
+    `- \`aiCategorizer\` — ${modelLink('AICategorizerNodeData', linkMode)} (at most one per flow)`,
+    `- \`dataSender\` — ${modelLink('DataSenderNodeData', linkMode)}`,
     '',
-    `- \`leadSource\` — ${modelLink('LeadSourceNodeData')} (exactly one per flow)`,
-    `- \`email\` — ${modelLink('EmailNodeData')} with ${modelLink('EmailVariant')} variants`,
-    `- \`waitTime\` — ${modelLink('WaitTimeNodeData')}`,
-    `- \`aiCategorizer\` — ${modelLink('AICategorizerNodeData')} (at most one per flow)`,
-    `- \`dataSender\` — ${modelLink('DataSenderNodeData')}`,
+    '**Validation rules:** exactly one `leadSource`; at most one `aiCategorizer`; max 100 nodes / 200 edges; no cycles; every node reachable from `leadSource`; unique node and edge ids.',
     '',
-    '**Merge variables**',
-    '',
-    buildFlowMergeVariablesMarkdown(),
-    '',
-    '**Validation rules**',
-    '',
-    '- Exactly one `leadSource` node',
-    '- At most one `aiCategorizer` node',
-    '- Maximum 100 nodes, 200 edges',
-    '- No cycles — flows must be DAGs',
-    '- Every node reachable from `leadSource`',
-    '- Unique node and edge ids',
-    '',
-    `For normalization behavior see ${modelLink('FlowUpdate')}. For validation error codes see ${modelLink('FlowValidationIssue')}. For lifecycle rules see Guide → Building campaigns.`,
+    `Full normalization, merge-variable rules, and error codes: ${guideLink('Flow schemas guide', '/guides/flow-schemas/', linkMode)}.`,
   ].join('\n');
 }
 
-export function buildFlowUpdateDescription(): string {
+export function buildFlowUpdateDescription(linkMode: DocLinkMode = 'docs'): string {
   return [
-    'Canonical campaign flow payload for `POST /v1/campaigns/{id}/flow`, `PUT .../flow`, and `POST .../flow:validate`.',
+    'Canonical campaign flow payload for `POST /v1/campaigns/{id}/flow`, `PUT .../flow` (deprecated), and `POST .../flow:validate`.',
     '',
-    `Same shape as ${modelLink('CampaignFlow')}. See Guide → Building campaigns for lifecycle rules, curl examples, and draft-vs-live locking.`,
-    '',
-    '**Normalization on save**',
-    '',
-    buildFlowNormalizationMarkdown(),
+    `Same shape as ${modelLink('CampaignFlow', linkMode)}. See ${guideLink('Campaign flow', '/guides/campaign-flow/', linkMode)} and ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)}.`,
   ].join('\n');
 }
 
-export function buildFlowValidationIssueDescription(): string {
+export function buildFlowValidationIssueDescription(linkMode: DocLinkMode = 'docs'): string {
   return [
-    'One validation problem returned in `issues[]` from flow validate/save, or in `details[]` on `400 invalid_flow` errors.',
+    'One validation problem in `issues[]` from flow validate/save, or in `details[]` on `400 invalid_flow` errors.',
     '',
-    '**Error-code catalog**',
-    '',
-    buildFlowValidationErrorCatalogMarkdown(),
+    `See ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)} for the full error-code catalog.`,
   ].join('\n');
 }
 
-export function buildFlowValidateResultDescription(): string {
+export function buildFlowValidateResultDescription(linkMode: DocLinkMode = 'docs'): string {
   return [
     'Dry-run result from `POST /v1/campaigns/{id}/flow:validate`. Shows normalized flow, validation issues, change classification, and lifecycle gate outcome.',
     '',
-    '**Validation failure (`400`)** returns `invalid_flow` with a `details[]` array of issue objects (same shape as `issues[]` here):',
-    '',
-    '```json',
-    JSON.stringify(
-      {
-        error: {
-          type: 'invalid_request_error',
-          code: 'invalid_flow',
-          message: 'Flow validation failed',
-        },
-        details: [
-          {
-            path: 'nodes[1].data.variants[0].id',
-            code: 'invalid_variant_id',
-            message: 'Email variants must have a stable UUID id.',
-          },
-        ],
-      },
-      null,
-      2,
-    ),
-    '```',
-    '',
-    '**Lifecycle block (`403`)** when structural edits are blocked on live campaigns:',
-    '',
-    '```json',
-    JSON.stringify(
-      {
-        error: {
-          type: 'permission_error',
-          code: 'flow_locked',
-          message:
-            'This campaign is no longer a draft, so structural flow changes are locked. You can still edit copy, variants, timing, and node configuration.',
-        },
-      },
-      null,
-      2,
-    ),
-    '```',
-    '',
-    `See ${modelLink('FlowValidationIssue')} for the full error-code catalog.`,
+    `See ${modelLink('FlowValidationIssue', linkMode)} and ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)}.`,
   ].join('\n');
 }
 
 export const LEAD_SOURCE_STANDARD_FIELD_KEYS =
   '`email`, `name`, `first_name`, `last_name`, `company_name`, `website`, `linkedin_url`, `company_linkedin_url`, `source`';
 
-export function buildLeadSourceNodeDataDescription(): string {
+export function buildLeadSourceNodeDataDescription(linkMode: DocLinkMode = 'docs'): string {
   return [
-    'Configuration for the single required `leadSource` node. Declares which merge variables and custom lead fields the campaign requires.',
+    'Configuration for the single required `leadSource` node. Declares merge variables and custom lead fields.',
     '',
-    `Allowed standard keys for ${'`mappedStandardFieldKeys`'}: ${LEAD_SOURCE_STANDARD_FIELD_KEYS}. When omitted, all standard fields are allowed as merge variables.`,
+    `Allowed standard keys for mappedStandardFieldKeys: ${LEAD_SOURCE_STANDARD_FIELD_KEYS}.`,
+    '',
+    `Details: ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)}.`,
   ].join('\n');
 }
 
-export function buildEmailVariantDescription(): string {
+export function buildEmailVariantDescription(linkMode: DocLinkMode = 'docs'): string {
   return [
-    'One A/B variant of an email node. Variant ids must be stable UUIDs — they tie stats and message jobs to copy. Never remove or replace ids on live campaigns.',
+    'One A/B variant of an email node. Variant ids must be stable UUIDs. Supports merge variables in `subject`, `template`, and `body_html`.',
     '',
-    'Supports merge variables in `subject`, `template`, and `body_html`. Empty `subject` is allowed for reply-mode emails (`send_mode: reply`).',
+    `See ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)}.`,
   ].join('\n');
 }
 
-export function buildEmailNodeDataDescription(): string {
+export function buildEmailNodeDataDescription(linkMode: DocLinkMode = 'docs'): string {
   return [
     'Outbound email node with one or more A/B variants.',
     '',
-    `\`send_mode\`: \`new\` for sequence emails; \`reply\` for in-thread follow-ups after categorizer. See ${modelLink('EmailVariant')} for copy fields.`,
+    `\`send_mode\`: \`new\` for sequence emails; \`reply\` for in-thread follow-ups after categorizer. See ${modelLink('EmailVariant', linkMode)}.`,
   ].join('\n');
 }
 
 export function buildWaitTimeNodeDataDescription(): string {
   return [
     'Delay node. `wait_duration_seconds` is the runtime source of truth; `duration` and `unit` are display fields derived on save.',
-    '',
-    'You may send `duration` + `unit` instead of `wait_duration_seconds`; Furnace computes seconds on normalize. Example: `{ "duration": "1", "unit": "days" }` → `86400`.',
   ].join('\n');
 }

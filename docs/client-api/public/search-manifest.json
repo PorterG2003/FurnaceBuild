@@ -1,0 +1,1042 @@
+[
+  {
+    "title": "Introduction",
+    "url": "/docs/",
+    "description": "Authentication, rate limits, and core conventions."
+  },
+  {
+    "title": "Campaign quickstart",
+    "url": "/docs/guides/campaign-quickstart/",
+    "description": "Checklist and lifecycle overview for new integrations."
+  },
+  {
+    "title": "Campaign flow",
+    "url": "/docs/guides/campaign-flow/",
+    "description": "Save flow, field_sync, If-Match, and validation dry-runs."
+  },
+  {
+    "title": "Campaign launch",
+    "url": "/docs/guides/campaign-launch/",
+    "description": "Launch, status changes, and draft vs live locking."
+  },
+  {
+    "title": "Flow schemas",
+    "url": "/docs/guides/flow-schemas/",
+    "description": "CampaignFlow node types, merge variables, normalization, and validation codes."
+  },
+  {
+    "title": "Webhooks",
+    "url": "/docs/webhooks/",
+    "description": "Outbound webhook setup, verification, and payloads."
+  },
+  {
+    "title": "Changelog",
+    "url": "/docs/changelog/",
+    "description": "Client API version history."
+  },
+  {
+    "title": "API Reference",
+    "url": "/docs/reference/",
+    "description": "OpenAPI reference grouped by tag (read-only, Furnace-branded)."
+  },
+  {
+    "title": "Lead added / updated",
+    "url": "/docs/webhooks/lead-added-updated/",
+    "description": "Single-lead changes and bulk import or add-to-campaign completions."
+  },
+  {
+    "title": "Lead removed",
+    "url": "/docs/webhooks/lead-removed/",
+    "description": "Single-lead deletes and bulk removal from one or all campaigns."
+  },
+  {
+    "title": "Enrollment pause / resume",
+    "url": "/docs/webhooks/enrollment-pause-resume/",
+    "description": "Manual enrollment holds and bulk pause/resume completions."
+  },
+  {
+    "title": "Campaign status",
+    "url": "/docs/webhooks/campaign-status/",
+    "description": "Campaign paused, resumed, or stopped."
+  },
+  {
+    "title": "Email activity",
+    "url": "/docs/webhooks/email-activity/",
+    "description": "Sends, replies, categorization, and bounces."
+  },
+  {
+    "title": "AICategorizerNodeData",
+    "url": "/docs/reference/schemas/AICategorizerNodeData/",
+    "description": "Reply classifier node. At most one per flow. Outgoing edges must use sourceHandle interested, neutral, or not-interested."
+  },
+  {
+    "title": "ApiError",
+    "url": "/docs/reference/schemas/ApiError/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "AsyncBulkLeadsRequest",
+    "url": "/docs/reference/schemas/AsyncBulkLeadsRequest/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "BatchCompletionWebhookPayload",
+    "url": "/docs/reference/schemas/BatchCompletionWebhookPayload/",
+    "description": "Standard payload for async or sync bulk completion webhooks."
+  },
+  {
+    "title": "BlockListCreate",
+    "url": "/docs/reference/schemas/BlockListCreate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "BlockListEntry",
+    "url": "/docs/reference/schemas/BlockListEntry/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "BlockListListResponse",
+    "url": "/docs/reference/schemas/BlockListListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "BlockListResponse",
+    "url": "/docs/reference/schemas/BlockListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "BulkLeadsRequest",
+    "url": "/docs/reference/schemas/BulkLeadsRequest/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "BulkLeadsResult",
+    "url": "/docs/reference/schemas/BulkLeadsResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "BulkMembershipActionResponse",
+    "url": "/docs/reference/schemas/BulkMembershipActionResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "BulkMembershipActionResult",
+    "url": "/docs/reference/schemas/BulkMembershipActionResult/",
+    "description": "RPC result counts from sync membership operations."
+  },
+  {
+    "title": "Campaign",
+    "url": "/docs/reference/schemas/Campaign/",
+    "description": "Campaign row as returned by the Furnace backend."
+  },
+  {
+    "title": "CampaignCreate",
+    "url": "/docs/reference/schemas/CampaignCreate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignCreateResponse",
+    "url": "/docs/reference/schemas/CampaignCreateResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignFlow",
+    "url": "/docs/reference/schemas/CampaignFlow/",
+    "description": "Directed acyclic graph (DAG) defining the campaign sequence. Consumed by flow save, validate, and optional `flow` on campaign create."
+  },
+  {
+    "title": "CampaignFlowResponse",
+    "url": "/docs/reference/schemas/CampaignFlowResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignListResponse",
+    "url": "/docs/reference/schemas/CampaignListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignResponse",
+    "url": "/docs/reference/schemas/CampaignResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignStats",
+    "url": "/docs/reference/schemas/CampaignStats/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignStatsDaily",
+    "url": "/docs/reference/schemas/CampaignStatsDaily/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignStatsResponse",
+    "url": "/docs/reference/schemas/CampaignStatsResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignStatsTotals",
+    "url": "/docs/reference/schemas/CampaignStatsTotals/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignStatusResponse",
+    "url": "/docs/reference/schemas/CampaignStatusResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignStatusResult",
+    "url": "/docs/reference/schemas/CampaignStatusResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignStatusUpdate",
+    "url": "/docs/reference/schemas/CampaignStatusUpdate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignTag",
+    "url": "/docs/reference/schemas/CampaignTag/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignTagCreate",
+    "url": "/docs/reference/schemas/CampaignTagCreate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignTagListResponse",
+    "url": "/docs/reference/schemas/CampaignTagListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignTagResponse",
+    "url": "/docs/reference/schemas/CampaignTagResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignTagUpdate",
+    "url": "/docs/reference/schemas/CampaignTagUpdate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "CampaignUpdate",
+    "url": "/docs/reference/schemas/CampaignUpdate/",
+    "description": "Mutable campaign fields. Mailbox ids can replace the full set or be incrementally added and removed."
+  },
+  {
+    "title": "DataSenderNodeData",
+    "url": "/docs/reference/schemas/DataSenderNodeData/",
+    "description": "Webhook node that POSTs lead data to an external URL when a lead reaches this step. Supports merge variables in `payload`. See [CampaignFlow](/docs/reference/sc"
+  },
+  {
+    "title": "DeleteResponse",
+    "url": "/docs/reference/schemas/DeleteResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "DeleteResult",
+    "url": "/docs/reference/schemas/DeleteResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "EmailNodeData",
+    "url": "/docs/reference/schemas/EmailNodeData/",
+    "description": "Outbound email node with one or more A/B variants."
+  },
+  {
+    "title": "EmailVariant",
+    "url": "/docs/reference/schemas/EmailVariant/",
+    "description": "One A/B variant of an email node. Variant ids must be stable UUIDs. Supports merge variables in `subject`, `template`, and `body_html`."
+  },
+  {
+    "title": "EnrollmentActionResponse",
+    "url": "/docs/reference/schemas/EnrollmentActionResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "EnrollmentActionResult",
+    "url": "/docs/reference/schemas/EnrollmentActionResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "Error",
+    "url": "/docs/reference/schemas/Error/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "FieldSync",
+    "url": "/docs/reference/schemas/FieldSync/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "FlowEdge",
+    "url": "/docs/reference/schemas/FlowEdge/",
+    "description": "Directed connection between two nodes. Categorizer outgoing edges must set sourceHandle to interested, neutral, or not-interested."
+  },
+  {
+    "title": "FlowNode",
+    "url": "/docs/reference/schemas/FlowNode/",
+    "description": "One node in the campaign flow graph. The data shape depends on type — see [LeadSourceNodeData](/docs/reference/schemas/LeadSourceNodeData/), [EmailNodeData](/do"
+  },
+  {
+    "title": "FlowNodePatch",
+    "url": "/docs/reference/schemas/FlowNodePatch/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "FlowPosition",
+    "url": "/docs/reference/schemas/FlowPosition/",
+    "description": "Builder canvas coordinates. Cosmetic; safe to change on live campaigns."
+  },
+  {
+    "title": "FlowRevisionConflictError",
+    "url": "/docs/reference/schemas/FlowRevisionConflictError/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "FlowSaveResponse",
+    "url": "/docs/reference/schemas/FlowSaveResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "FlowSaveResult",
+    "url": "/docs/reference/schemas/FlowSaveResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "FlowTemplatesResponse",
+    "url": "/docs/reference/schemas/FlowTemplatesResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "FlowUpdate",
+    "url": "/docs/reference/schemas/FlowUpdate/",
+    "description": "Canonical campaign flow payload for `POST /v1/campaigns/{id}/flow`, `PUT .../flow` (deprecated), and `POST .../flow:validate`."
+  },
+  {
+    "title": "FlowValidateResponse",
+    "url": "/docs/reference/schemas/FlowValidateResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "FlowValidateResult",
+    "url": "/docs/reference/schemas/FlowValidateResult/",
+    "description": "Dry-run result from `POST /v1/campaigns/{id}/flow:validate`. Shows normalized flow, validation issues, change classification, and lifecycle gate outcome."
+  },
+  {
+    "title": "FlowValidationIssue",
+    "url": "/docs/reference/schemas/FlowValidationIssue/",
+    "description": "One validation problem in `issues[]` from flow validate/save, or in `details[]` on `400 invalid_flow` errors."
+  },
+  {
+    "title": "ForwardRequest",
+    "url": "/docs/reference/schemas/ForwardRequest/",
+    "description": "Create a forward job for a specific message in the thread."
+  },
+  {
+    "title": "GlobalLeadIdsRequest",
+    "url": "/docs/reference/schemas/GlobalLeadIdsRequest/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "HealthResponse",
+    "url": "/docs/reference/schemas/HealthResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ImportJob",
+    "url": "/docs/reference/schemas/ImportJob/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ImportJobCreate",
+    "url": "/docs/reference/schemas/ImportJobCreate/",
+    "description": "Create an async bulk job. Poll `GET /v1/jobs/{id}` for completion."
+  },
+  {
+    "title": "ImportJobResponse",
+    "url": "/docs/reference/schemas/ImportJobResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LaunchResponse",
+    "url": "/docs/reference/schemas/LaunchResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LaunchResponseEnvelope",
+    "url": "/docs/reference/schemas/LaunchResponseEnvelope/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "Lead",
+    "url": "/docs/reference/schemas/Lead/",
+    "description": "Lead row scoped to a campaign."
+  },
+  {
+    "title": "LeadCreate",
+    "url": "/docs/reference/schemas/LeadCreate/",
+    "description": "Create or upsert a lead. `email` is required. When the campaign defines custom lead fields, every key must be present in `custom_lead_data`."
+  },
+  {
+    "title": "LeadFieldCreate",
+    "url": "/docs/reference/schemas/LeadFieldCreate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadFieldResponse",
+    "url": "/docs/reference/schemas/LeadFieldResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadFieldResult",
+    "url": "/docs/reference/schemas/LeadFieldResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadFields",
+    "url": "/docs/reference/schemas/LeadFields/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadFieldsResponse",
+    "url": "/docs/reference/schemas/LeadFieldsResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadListMembersResult",
+    "url": "/docs/reference/schemas/LeadListMembersResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadListMembersResultResponse",
+    "url": "/docs/reference/schemas/LeadListMembersResultResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadListResponse",
+    "url": "/docs/reference/schemas/LeadListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadResponse",
+    "url": "/docs/reference/schemas/LeadResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadSavedList",
+    "url": "/docs/reference/schemas/LeadSavedList/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadSavedListArrayResponse",
+    "url": "/docs/reference/schemas/LeadSavedListArrayResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadSavedListCreate",
+    "url": "/docs/reference/schemas/LeadSavedListCreate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadSavedListResponse",
+    "url": "/docs/reference/schemas/LeadSavedListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadSavedListUpdate",
+    "url": "/docs/reference/schemas/LeadSavedListUpdate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadSourceNodeData",
+    "url": "/docs/reference/schemas/LeadSourceNodeData/",
+    "description": "Configuration for the single required `leadSource` node. Declares merge variables and custom lead fields."
+  },
+  {
+    "title": "LeadUpdate",
+    "url": "/docs/reference/schemas/LeadUpdate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LeadUpsertResult",
+    "url": "/docs/reference/schemas/LeadUpsertResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "LimitsGuide",
+    "url": "/docs/reference/schemas/LimitsGuide/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "Mailbox",
+    "url": "/docs/reference/schemas/Mailbox/",
+    "description": "Mailbox row with sensitive IMAP/SMTP passwords removed from the response."
+  },
+  {
+    "title": "MailboxListResponse",
+    "url": "/docs/reference/schemas/MailboxListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "MailboxResponse",
+    "url": "/docs/reference/schemas/MailboxResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "MailboxTag",
+    "url": "/docs/reference/schemas/MailboxTag/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "MailboxTagCreate",
+    "url": "/docs/reference/schemas/MailboxTagCreate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "MailboxTagListResponse",
+    "url": "/docs/reference/schemas/MailboxTagListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "MailboxTagResponse",
+    "url": "/docs/reference/schemas/MailboxTagResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "MailboxTagUpdate",
+    "url": "/docs/reference/schemas/MailboxTagUpdate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "MailboxUpdate",
+    "url": "/docs/reference/schemas/MailboxUpdate/",
+    "description": "Mutable mailbox fields currently support tag assignment only."
+  },
+  {
+    "title": "Message",
+    "url": "/docs/reference/schemas/Message/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "MessageJob",
+    "url": "/docs/reference/schemas/MessageJob/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "MessageJobResponse",
+    "url": "/docs/reference/schemas/MessageJobResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "MessageListResponse",
+    "url": "/docs/reference/schemas/MessageListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "OpenApiDocument",
+    "url": "/docs/reference/schemas/OpenApiDocument/",
+    "description": "The live OpenAPI document returned by `/openapi.json`."
+  },
+  {
+    "title": "OutOfOfficeResponse",
+    "url": "/docs/reference/schemas/OutOfOfficeResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "OutOfOfficeUpdate",
+    "url": "/docs/reference/schemas/OutOfOfficeUpdate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "PauseEnrollmentsRequest",
+    "url": "/docs/reference/schemas/PauseEnrollmentsRequest/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "Person",
+    "url": "/docs/reference/schemas/Person/",
+    "description": "Account-scoped person rollup row from the people explorer."
+  },
+  {
+    "title": "PersonDetailResponse",
+    "url": "/docs/reference/schemas/PersonDetailResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "PersonListResponse",
+    "url": "/docs/reference/schemas/PersonListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "PersonResponse",
+    "url": "/docs/reference/schemas/PersonResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "PersonUpdate",
+    "url": "/docs/reference/schemas/PersonUpdate/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ReplaceLeadRequest",
+    "url": "/docs/reference/schemas/ReplaceLeadRequest/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ReplaceLeadResponse",
+    "url": "/docs/reference/schemas/ReplaceLeadResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ReplaceLeadResult",
+    "url": "/docs/reference/schemas/ReplaceLeadResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ReplyJobResponse",
+    "url": "/docs/reference/schemas/ReplyJobResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ReplyJobResult",
+    "url": "/docs/reference/schemas/ReplyJobResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ReplyRequest",
+    "url": "/docs/reference/schemas/ReplyRequest/",
+    "description": "Create a reply job for a thread message. When omitted, subject and recipient fields fall back to the target message."
+  },
+  {
+    "title": "ResumeEnrollmentsRequest",
+    "url": "/docs/reference/schemas/ResumeEnrollmentsRequest/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "Thread",
+    "url": "/docs/reference/schemas/Thread/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ThreadListResponse",
+    "url": "/docs/reference/schemas/ThreadListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ThreadResponse",
+    "url": "/docs/reference/schemas/ThreadResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ThreadTag",
+    "url": "/docs/reference/schemas/ThreadTag/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ThreadTagAssignmentRequest",
+    "url": "/docs/reference/schemas/ThreadTagAssignmentRequest/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ThreadTagAssignmentResponse",
+    "url": "/docs/reference/schemas/ThreadTagAssignmentResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ThreadTagAssignmentResult",
+    "url": "/docs/reference/schemas/ThreadTagAssignmentResult/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ThreadTagListResponse",
+    "url": "/docs/reference/schemas/ThreadTagListResponse/",
+    "description": "OpenAPI schema"
+  },
+  {
+    "title": "ThreadUpdate",
+    "url": "/docs/reference/schemas/ThreadUpdate/",
+    "description": "Partial thread update. All fields are optional."
+  },
+  {
+    "title": "WaitTimeNodeData",
+    "url": "/docs/reference/schemas/WaitTimeNodeData/",
+    "description": "Delay node. `wait_duration_seconds` is the runtime source of truth; `duration` and `unit` are display fields derived on save."
+  },
+  {
+    "title": "Health check",
+    "url": "/docs/reference/meta/getHealth/",
+    "description": "Checks that the API runtime is alive and can reach the backing database."
+  },
+  {
+    "title": "OpenAPI document",
+    "url": "/docs/reference/meta/getOpenApiDocument/",
+    "description": "Returns the live OpenAPI contract served by Furnace."
+  },
+  {
+    "title": "List campaigns",
+    "url": "/docs/reference/campaigns/listCampaigns/",
+    "description": "Lists campaigns in the authenticated account. Results are paginated and can optionally include soft-deleted campaigns."
+  },
+  {
+    "title": "Create draft campaign",
+    "url": "/docs/reference/campaigns/createCampaign/",
+    "description": "Creates a draft native campaign. Optional `flow` is normalized and validated on write. See [CampaignFlow](/docs/reference/schemas/CampaignFlow/) and [Campaign q"
+  },
+  {
+    "title": "Get campaign",
+    "url": "/docs/reference/campaigns/getCampaign/",
+    "description": "Returns one campaign within the API key account scope."
+  },
+  {
+    "title": "Update campaign",
+    "url": "/docs/reference/campaigns/updateCampaign/",
+    "description": "Updates mutable campaign fields. Mailboxes can be replaced wholesale with `mailbox_ids`, or incrementally edited with `add_mailbox_ids` and `remove_mailbox_ids`"
+  },
+  {
+    "title": "Delete campaign",
+    "url": "/docs/reference/campaigns/deleteCampaign/",
+    "description": "Soft-deletes the campaign, stops enrollments, and tombstones campaign nodes. Smartlead campaigns remain read-only."
+  },
+  {
+    "title": "List campaign tags",
+    "url": "/docs/reference/campaigns/listCampaignTags/",
+    "description": "Lists account-scoped campaign tag definitions."
+  },
+  {
+    "title": "Create campaign tag",
+    "url": "/docs/reference/campaigns/createCampaignTag/",
+    "description": "POST /v1/campaign-tags"
+  },
+  {
+    "title": "Update campaign tag",
+    "url": "/docs/reference/campaigns/updateCampaignTag/",
+    "description": "PATCH /v1/campaign-tags/{id}"
+  },
+  {
+    "title": "Delete campaign tag",
+    "url": "/docs/reference/campaigns/deleteCampaignTag/",
+    "description": "DELETE /v1/campaign-tags/{id}"
+  },
+  {
+    "title": "List mailbox tags",
+    "url": "/docs/reference/mailboxes/listMailboxTags/",
+    "description": "Lists account-scoped mailbox tag definitions."
+  },
+  {
+    "title": "Create mailbox tag",
+    "url": "/docs/reference/mailboxes/createMailboxTag/",
+    "description": "POST /v1/mailbox-tags"
+  },
+  {
+    "title": "Update mailbox tag",
+    "url": "/docs/reference/mailboxes/updateMailboxTag/",
+    "description": "PATCH /v1/mailbox-tags/{id}"
+  },
+  {
+    "title": "Delete mailbox tag",
+    "url": "/docs/reference/mailboxes/deleteMailboxTag/",
+    "description": "DELETE /v1/mailbox-tags/{id}"
+  },
+  {
+    "title": "Update live campaign status",
+    "url": "/docs/reference/campaigns/updateCampaignStatus/",
+    "description": "Changes status for a live campaign (`running`, `paused`, or `stopped`). Draft campaigns must use `POST /launch` instead. Emits campaign status webhooks."
+  },
+  {
+    "title": "List flow templates",
+    "url": "/docs/reference/flow/listFlowTemplates/",
+    "description": "Returns starter flow graphs for common campaign patterns."
+  },
+  {
+    "title": "Pause campaign (deprecated)",
+    "url": "/docs/reference/campaigns/pauseCampaign/",
+    "description": "Deprecated alias for `PATCH /v1/campaigns/{id}/status` with `{ \"status\": \"paused\" }`."
+  },
+  {
+    "title": "Stop campaign (deprecated)",
+    "url": "/docs/reference/campaigns/stopCampaign/",
+    "description": "Deprecated alias for `PATCH /v1/campaigns/{id}/status` with `{ \"status\": \"stopped\" }`."
+  },
+  {
+    "title": "Resume campaign (deprecated)",
+    "url": "/docs/reference/campaigns/resumeCampaign/",
+    "description": "Deprecated alias for `PATCH /v1/campaigns/{id}/status` with `{ \"status\": \"running\" }`."
+  },
+  {
+    "title": "Launch draft campaign",
+    "url": "/docs/reference/campaigns/launchCampaign/",
+    "description": "Launches a draft campaign after verifying that it has a name, flow, and at least one mailbox. Furnace backfills enrollments before switching the campaign to `ru"
+  },
+  {
+    "title": "Pause enrollments",
+    "url": "/docs/reference/campaigns/pauseCampaignEnrollments/",
+    "description": "Manually pauses enrollments for the given global lead IDs in a native campaign and emits one `enrollment.pause_completed` batch webhook."
+  },
+  {
+    "title": "Resume enrollments",
+    "url": "/docs/reference/campaigns/resumeCampaignEnrollments/",
+    "description": "Resumes manually paused enrollments for the given global lead IDs. Requires campaign status `running`. Emits one `enrollment.resume_completed` batch webhook."
+  },
+  {
+    "title": "Get campaign flow",
+    "url": "/docs/reference/flow/getCampaignFlow/",
+    "description": "Returns the normalized campaign flow graph. If a campaign has no saved flow, Furnace returns an empty `{ nodes: [], edges: [] }` payload. See [CampaignFlow](/do"
+  },
+  {
+    "title": "Update campaign flow (deprecated alias)",
+    "url": "/docs/reference/flow/updateCampaignFlow/",
+    "description": "Deprecated alias of `POST /v1/campaigns/{id}/flow`. Prefer POST with optional `If-Match`."
+  },
+  {
+    "title": "Save campaign flow",
+    "url": "/docs/reference/flow/saveCampaignFlow/",
+    "description": "Writes the canonical flow payload. Returns `flow`, `flow_revision`, and `field_sync`. Use `?dry_run=true` to validate without persisting. Optional `If-Match` he"
+  },
+  {
+    "title": "Patch flow node content",
+    "url": "/docs/reference/flow/patchCampaignFlowNode/",
+    "description": "Live content-only patch for supported node types (email, waitTime, dataSender)."
+  },
+  {
+    "title": "Validate campaign flow",
+    "url": "/docs/reference/flow/validateCampaignFlow/",
+    "description": "Dry-runs flow normalization, validation, and lifecycle gating without writing changes. See [FlowValidateResult](/docs/reference/schemas/FlowValidateResult/) and"
+  },
+  {
+    "title": "Get lead fields",
+    "url": "/docs/reference/lead-fields/getCampaignLeadFields/",
+    "description": "Returns the mapped standard lead fields and required custom lead field keys extracted from lead source nodes in the campaign flow."
+  },
+  {
+    "title": "Append lead field",
+    "url": "/docs/reference/lead-fields/appendCampaignLeadField/",
+    "description": "Appends a custom lead field key to the campaign flow and preserves existing keys."
+  },
+  {
+    "title": "List campaign leads",
+    "url": "/docs/reference/leads/listCampaignLeads/",
+    "description": "Lists non-deleted leads for a campaign. Search matches email and name fields."
+  },
+  {
+    "title": "Create or upsert lead",
+    "url": "/docs/reference/leads/createOrUpsertLead/",
+    "description": "Creates a lead or updates the existing non-deleted lead with the same campaign/email pair. This endpoint supports idempotent retries via `Idempotency-Key` and e"
+  },
+  {
+    "title": "Get lead",
+    "url": "/docs/reference/leads/getLead/",
+    "description": "Returns one active lead in the campaign."
+  },
+  {
+    "title": "Update lead",
+    "url": "/docs/reference/leads/updateLead/",
+    "description": "Updates mutable lead fields and emits `lead.updated`."
+  },
+  {
+    "title": "Delete lead",
+    "url": "/docs/reference/leads/deleteLead/",
+    "description": "Soft-deletes the lead, stops its enrollments, cancels queued campaign message jobs, and emits `lead.deleted`."
+  },
+  {
+    "title": "Bulk sync leads",
+    "url": "/docs/reference/leads/bulkSyncLeads/",
+    "description": "Synchronously imports or upserts up to 100 leads in a single request. Per-row lead webhooks are suppressed; Furnace emits one `lead.bulk_import.completed` batch"
+  },
+  {
+    "title": "Queue async lead import",
+    "url": "/docs/reference/jobs/queueAsyncLeadImport/",
+    "description": "Queues an async import job for up to 1000 leads. Furnace allows at most 3 queued or running async jobs per account at a time. Per-row `lead.created` / `lead.upd"
+  },
+  {
+    "title": "Create async bulk job",
+    "url": "/docs/reference/jobs/createAsyncJob/",
+    "description": "Creates an async job for any supported bulk operation. Poll `GET /v1/jobs/{id}` for completion. Furnace allows at most 3 queued or running async jobs per accoun"
+  },
+  {
+    "title": "Sync add leads to campaign",
+    "url": "/docs/reference/leads/syncAddLeadsToCampaign/",
+    "description": "Adds up to 100 existing account people to a campaign by `global_lead_id`. Emits one `lead.added_to_campaign.completed` batch webhook."
+  },
+  {
+    "title": "Sync remove leads from campaign",
+    "url": "/docs/reference/leads/syncRemoveLeadsFromCampaign/",
+    "description": "Removes up to 100 leads from a campaign by `global_lead_id`. Emits one `lead.removed_from_campaign.completed` batch webhook."
+  },
+  {
+    "title": "Sync remove leads from all campaigns",
+    "url": "/docs/reference/leads/syncRemoveLeadsFromAllCampaigns/",
+    "description": "Removes up to 100 people from every campaign in the account. Emits one `lead.removed_from_all_campaigns.completed` batch webhook."
+  },
+  {
+    "title": "List account people",
+    "url": "/docs/reference/people/listPeople/",
+    "description": "Returns the account people explorer page with filters, sort, and pagination."
+  },
+  {
+    "title": "Get person",
+    "url": "/docs/reference/people/getPerson/",
+    "description": "Returns one account person and their campaign memberships."
+  },
+  {
+    "title": "Update person profile",
+    "url": "/docs/reference/people/updatePerson/",
+    "description": "Updates profile fields on all lead rows for the given global lead id."
+  },
+  {
+    "title": "List saved lead lists",
+    "url": "/docs/reference/lead-lists/listLeadLists/",
+    "description": "GET /v1/lead-lists"
+  },
+  {
+    "title": "Create saved lead list",
+    "url": "/docs/reference/lead-lists/createLeadList/",
+    "description": "POST /v1/lead-lists"
+  },
+  {
+    "title": "Get saved lead list",
+    "url": "/docs/reference/lead-lists/getLeadList/",
+    "description": "GET /v1/lead-lists/{id}"
+  },
+  {
+    "title": "Update saved lead list",
+    "url": "/docs/reference/lead-lists/updateLeadList/",
+    "description": "PATCH /v1/lead-lists/{id}"
+  },
+  {
+    "title": "Delete saved lead list",
+    "url": "/docs/reference/lead-lists/deleteLeadList/",
+    "description": "DELETE /v1/lead-lists/{id}"
+  },
+  {
+    "title": "List people in saved lead list",
+    "url": "/docs/reference/lead-lists/listLeadListPeople/",
+    "description": "GET /v1/lead-lists/{id}/people"
+  },
+  {
+    "title": "Add members to saved lead list",
+    "url": "/docs/reference/lead-lists/addLeadListMembers/",
+    "description": "POST /v1/lead-lists/{id}/members"
+  },
+  {
+    "title": "Remove members from saved lead list",
+    "url": "/docs/reference/lead-lists/removeLeadListMembers/",
+    "description": "DELETE /v1/lead-lists/{id}/members"
+  },
+  {
+    "title": "Get async import job",
+    "url": "/docs/reference/jobs/getAsyncImportJob/",
+    "description": "Returns one async lead import job for the authenticated account."
+  },
+  {
+    "title": "List mailboxes",
+    "url": "/docs/reference/mailboxes/listMailboxes/",
+    "description": "Lists active account mailboxes. Furnace strips `smtp_password` and `imap_password` before returning each mailbox. Results can be filtered by mailbox tags."
+  },
+  {
+    "title": "Update mailbox",
+    "url": "/docs/reference/mailboxes/updateMailbox/",
+    "description": "Updates mailbox tag assignments. Mailbox profile and credential fields remain read-only on the Client API."
+  },
+  {
+    "title": "Get mailbox",
+    "url": "/docs/reference/mailboxes/getMailbox/",
+    "description": "Returns one mailbox without secret password fields."
+  },
+  {
+    "title": "List inbox threads",
+    "url": "/docs/reference/inbox/listThreads/",
+    "description": "Lists inbox threads in the authenticated account. By default only threads with at least one inbound reply are returned."
+  },
+  {
+    "title": "Get thread",
+    "url": "/docs/reference/inbox/getThread/",
+    "description": "Returns one inbox thread."
+  },
+  {
+    "title": "Update thread",
+    "url": "/docs/reference/inbox/updateThread/",
+    "description": "Updates thread category, conversation status, and/or read state. Category changes emit a `reply.categorized` webhook when configured."
+  },
+  {
+    "title": "List thread messages",
+    "url": "/docs/reference/inbox/listThreadMessages/",
+    "description": "Lists messages in the thread ordered from oldest to newest."
+  },
+  {
+    "title": "Create reply job",
+    "url": "/docs/reference/inbox/createReplyJob/",
+    "description": "Creates an outbound inbox reply job. When `in_reply_to_message_id` is omitted, Furnace targets the latest message in the thread."
+  },
+  {
+    "title": "Create forward job",
+    "url": "/docs/reference/inbox/createForwardJob/",
+    "description": "Creates an outbound inbox forward job for a specific message in the thread."
+  },
+  {
+    "title": "Set out of office",
+    "url": "/docs/reference/inbox/setThreadOutOfOffice/",
+    "description": "Marks a thread out of office and optionally schedules campaign resume."
+  },
+  {
+    "title": "Clear out of office",
+    "url": "/docs/reference/inbox/clearThreadOutOfOffice/",
+    "description": "Clears out-of-office state for a thread."
+  },
+  {
+    "title": "Replace lead",
+    "url": "/docs/reference/inbox/replaceThreadLead/",
+    "description": "Replaces the thread lead with a new contact and optionally queues a forward job."
+  },
+  {
+    "title": "Add thread tag",
+    "url": "/docs/reference/inbox/addThreadTag/",
+    "description": "Assigns an existing account thread tag to the thread."
+  },
+  {
+    "title": "Remove thread tag",
+    "url": "/docs/reference/inbox/removeThreadTag/",
+    "description": "Removes a thread tag assignment from the thread."
+  },
+  {
+    "title": "List thread tags",
+    "url": "/docs/reference/inbox/listThreadTags/",
+    "description": "Lists account thread tags available for assignment."
+  },
+  {
+    "title": "Get message job",
+    "url": "/docs/reference/inbox/getMessageJob/",
+    "description": "Returns the status of an outbound inbox reply or forward job."
+  },
+  {
+    "title": "Cancel message job",
+    "url": "/docs/reference/inbox/cancelMessageJob/",
+    "description": "Cancels a queued or failed outbound inbox message job."
+  },
+  {
+    "title": "Send message job now",
+    "url": "/docs/reference/inbox/sendMessageJobNow/",
+    "description": "Requests immediate send for a queued outbound inbox message job."
+  },
+  {
+    "title": "List block list",
+    "url": "/docs/reference/block-list/listBlockListEntries/",
+    "description": "Lists block-list entries in the authenticated account."
+  },
+  {
+    "title": "Add block list entry",
+    "url": "/docs/reference/block-list/createBlockListEntry/",
+    "description": "Creates a block-list entry for an email address or domain. If an identical entry already exists, Furnace returns the existing row instead of creating a duplicat"
+  },
+  {
+    "title": "Delete block list entry",
+    "url": "/docs/reference/block-list/deleteBlockListEntry/",
+    "description": "Deletes a block-list entry in the authenticated account."
+  },
+  {
+    "title": "Campaign stats",
+    "url": "/docs/reference/stats/getCampaignStats/",
+    "description": "Returns daily and aggregate campaign stats. When `start_date` and `end_date` are omitted, Furnace defaults the range to campaign creation date through today."
+  }
+]

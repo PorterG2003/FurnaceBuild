@@ -1,0 +1,56 @@
+# Furnace Client API — LLM index (v1.4.3)
+
+## Docs site
+- Introduction: /docs/
+- Campaign quickstart: /docs/guides/campaign-quickstart/
+- Campaign flow: /docs/guides/campaign-flow/
+- Campaign launch: /docs/guides/campaign-launch/
+- Flow schemas: /docs/guides/flow-schemas/
+- Webhooks: /docs/webhooks/
+- Changelog: /docs/changelog/
+- API Reference: /docs/reference/
+- Lead added / updated: /docs/webhooks/lead-added-updated/
+- Lead removed: /docs/webhooks/lead-removed/
+- Enrollment pause / resume: /docs/webhooks/enrollment-pause-resume/
+- Campaign status: /docs/webhooks/campaign-status/
+- Email activity: /docs/webhooks/email-activity/
+
+## Machine-readable API
+- OpenAPI: https://api.getfurnace.io/openapi.json
+- Full docs corpus: https://api.getfurnace.io/llms-full.txt
+
+## OpenAPI tags
+- Campaigns: Read and mutate campaigns that belong to the authenticated account.
+- Flow: Read, validate, and update campaign flow graphs.
+- Leads: Manage campaign leads, including single-row upserts and bulk imports.
+- Lead fields: Inspect and extend required lead-field mappings derived from the campaign flow.
+- Jobs: Create and poll asynchronous bulk jobs (import, add/remove, pause/resume).
+- People: Account-scoped people explorer and profile updates.
+- Lead lists: Saved lead lists and list membership.
+- Mailboxes: Read account mailboxes, manage mailbox tags, and keep secret password fields out of responses.
+- Inbox: List and triage inbox threads, read messages, send replies and forwards, manage message jobs, out-of-office state, lead replacement, and thread tags.
+- Block list: List, add, and remove blocked email or domain values.
+- Stats: Read daily and aggregate campaign performance statistics.
+- Meta: Service metadata endpoints.
+
+## Flow object (API Reference)
+- CampaignFlow — /docs/reference/schemas/CampaignFlow/
+- FlowUpdate — /docs/reference/schemas/FlowUpdate/
+- FlowValidationIssue — /docs/reference/schemas/FlowValidationIssue/
+
+## Campaign checklist
+1. GET /v1/mailboxes
+2. POST /v1/campaigns
+3. POST /v1/campaigns/{id}/flow (+ optional If-Match)
+4. POST /v1/campaigns/{id}/leads
+5. GET /v1/campaigns/{id}?include=launch_state,lead_field_state
+6. POST /v1/campaigns/{id}/launch
+
+## Key v1.4 behaviors
+- POST /flow is the hero save; PUT /flow is a deprecated alias
+- flow_revision + If-Match prevent lost updates (412 flow_revision_conflict)
+- field_sync auto-declares merge-variable fields from copy
+- PATCH /status for live pause/resume/stop; POST /launch is draft-only
+- GET /v1/campaigns list omits flow_data — use GET /v1/campaigns/{id} for full flow
+- GET /v1/flow-templates for starter graphs
+

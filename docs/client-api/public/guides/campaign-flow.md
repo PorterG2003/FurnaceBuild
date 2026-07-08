@@ -1,0 +1,332 @@
+## field_sync
+
+When copy references merge variables, Furnace auto-declares fields on the lead source before validate/save. Every flow save response includes:
+
+```json
+{ "field_sync": { "declared_custom_added": ["company"], "declared_standard_added": [] } }
+```
+
+The response `flow` is truth — persisted `customFieldKeys` may differ from your request body.
+
+## If-Match / conflict recovery
+
+1. `GET /v1/campaigns/{id}/flow` (or campaign detail) → read `flow_revision`
+2. `POST /v1/campaigns/{id}/flow` with header `If-Match: <flow_revision>`
+3. On `412 flow_revision_conflict`, read `current_flow_revision` from the error body, refresh your base flow, merge manually, retry
+
+## Dry-run validation
+
+Dry-run any flow payload with `POST /v1/campaigns/{id}/flow:validate` before writing. See [FlowValidateResult](/docs/reference/schemas/FlowValidateResult/) and [Flow schemas](/docs/guides/flow-schemas/) for validation codes.
+
+## Example flows
+
+### Linear: email → wait → email
+
+```json
+{
+  "nodes": [
+    {
+      "id": "leadSource-1",
+      "type": "leadSource",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Lead Bucket",
+        "customFieldKeys": [
+          "company"
+        ],
+        "mappedStandardFieldKeys": [
+          "email",
+          "first_name",
+          "last_name"
+        ],
+        "isRequired": true
+      },
+      "deletable": false
+    },
+    {
+      "id": "email-1",
+      "type": "email",
+      "position": {
+        "x": 220,
+        "y": 0
+      },
+      "data": {
+        "label": "Intro Email",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "label": "A",
+            "subject": "Quick question for {{first_name}}",
+            "template": "Hi {{first_name}} - reaching out about {{custom.company}}.",
+            "isActive": true,
+            "order": 0
+          },
+          {
+            "id": "11111111-1111-4111-8111-111111111112",
+            "label": "B",
+            "subject": "Following up for {{first_name}}",
+            "template": "Hi {{first_name}} - wanted to share a quick idea for {{custom.company}}.",
+            "isActive": true,
+            "order": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "waitTime-1",
+      "type": "waitTime",
+      "position": {
+        "x": 460,
+        "y": 0
+      },
+      "data": {
+        "label": "Wait 1 day",
+        "duration": "1",
+        "unit": "days",
+        "wait_duration_seconds": 86400
+      }
+    },
+    {
+      "id": "email-2",
+      "type": "email",
+      "position": {
+        "x": 700,
+        "y": 0
+      },
+      "data": {
+        "label": "Follow-up",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "22222222-2222-4222-8222-222222222221",
+            "label": "A",
+            "subject": "Bumping this for {{first_name}}",
+            "template": "Hi {{first_name}} - circling back in case this is relevant for {{custom.company}}.",
+            "isActive": true,
+            "order": 0
+          },
+          {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "label": "B",
+            "subject": "Any thoughts, {{first_name}}?",
+            "template": "Hi {{first_name}} - should I close the loop or send more detail?",
+            "isActive": true,
+            "order": 1
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "leadSource-1",
+      "target": "email-1"
+    },
+    {
+      "id": "e2",
+      "source": "email-1",
+      "target": "waitTime-1"
+    },
+    {
+      "id": "e3",
+      "source": "waitTime-1",
+      "target": "email-2"
+    }
+  ]
+}
+```
+
+### Categorizer branch
+
+```json
+{
+  "nodes": [
+    {
+      "id": "leadSource-1",
+      "type": "leadSource",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Lead Bucket",
+        "customFieldKeys": [
+          "company"
+        ],
+        "mappedStandardFieldKeys": [
+          "email",
+          "first_name",
+          "last_name"
+        ],
+        "isRequired": true
+      },
+      "deletable": false
+    },
+    {
+      "id": "email-1",
+      "type": "email",
+      "position": {
+        "x": 220,
+        "y": 0
+      },
+      "data": {
+        "label": "Intro Email",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "label": "A",
+            "subject": "Quick question for {{first_name}}",
+            "template": "Hi {{first_name}} - reaching out about {{custom.company}}.",
+            "isActive": true,
+            "order": 0
+          },
+          {
+            "id": "11111111-1111-4111-8111-111111111112",
+            "label": "B",
+            "subject": "Following up for {{first_name}}",
+            "template": "Hi {{first_name}} - wanted to share a quick idea for {{custom.company}}.",
+            "isActive": true,
+            "order": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "waitTime-1",
+      "type": "waitTime",
+      "position": {
+        "x": 460,
+        "y": 0
+      },
+      "data": {
+        "label": "Wait 1 day",
+        "duration": "1",
+        "unit": "days",
+        "wait_duration_seconds": 86400
+      }
+    },
+    {
+      "id": "email-2",
+      "type": "email",
+      "position": {
+        "x": 700,
+        "y": 0
+      },
+      "data": {
+        "label": "Reply Trigger",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "22222222-2222-4222-8222-222222222221",
+            "label": "A",
+            "subject": "Checking back in, {{first_name}}",
+            "template": "Hi {{first_name}} - just checking whether this is relevant for {{custom.company}}.",
+            "isActive": true,
+            "order": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "aiCategorizer-1",
+      "type": "aiCategorizer",
+      "position": {
+        "x": 940,
+        "y": 0
+      },
+      "data": {
+        "label": "Categorizer",
+        "use_ai": true
+      }
+    },
+    {
+      "id": "email-3",
+      "type": "email",
+      "position": {
+        "x": 1180,
+        "y": -120
+      },
+      "data": {
+        "label": "Interested Reply",
+        "send_mode": "reply",
+        "variants": [
+          {
+            "id": "33333333-3333-4333-8333-333333333333",
+            "label": "A",
+            "subject": "",
+            "template": "Thanks {{first_name}} - here are the details you asked for.",
+            "isActive": true,
+            "order": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "email-4",
+      "type": "email",
+      "position": {
+        "x": 1180,
+        "y": 120
+      },
+      "data": {
+        "label": "Breakup",
+        "send_mode": "new",
+        "variants": [
+          {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "label": "A",
+            "subject": "Closing the loop, {{first_name}}",
+            "template": "No worries {{first_name}} - I’ll close the loop on my side.",
+            "isActive": true,
+            "order": 0
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "leadSource-1",
+      "target": "email-1"
+    },
+    {
+      "id": "e2",
+      "source": "email-1",
+      "target": "waitTime-1"
+    },
+    {
+      "id": "e3",
+      "source": "waitTime-1",
+      "target": "email-2"
+    },
+    {
+      "id": "e4",
+      "source": "email-2",
+      "target": "aiCategorizer-1"
+    },
+    {
+      "id": "e5",
+      "source": "aiCategorizer-1",
+      "sourceHandle": "interested",
+      "target": "email-3"
+    },
+    {
+      "id": "e6",
+      "source": "aiCategorizer-1",
+      "sourceHandle": "not-interested",
+      "target": "email-4"
+    }
+  ]
+}
+```
+
+## Lead imports depend on flow fields
+
+When the `leadSource` node declares `customFieldKeys`, every lead create or bulk-import payload must include those keys inside `custom_lead_data`. Use `GET /v1/campaigns/{id}/lead-fields` to inspect the current requirements.

@@ -306,8 +306,6 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
     [subject, template, selectedVariant?.body_html]
   );
 
-  const hasInvalidVars = unknownKeys.length > 0 || malformedVars.length > 0;
-
   const knownVariableKeys = useMemo(
     () => variableKeys.filter((k) => validKeys.has(k)),
     [variableKeys, validKeys]
@@ -708,10 +706,16 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
             </View>
 
             <View style={{ flex: 1, minWidth: 0 }} className="gap-4">
-            {hasInvalidVars && (
+            {unknownKeys.length > 0 && (
               <Alert
-                variant="error"
-                message={`Invalid variables: ${[...unknownKeys.map((k) => `{{${k}}}`), ...malformedVars].join(', ')}`}
+                variant="warning"
+                message={`Undeclared variables (will send blank): ${unknownKeys.map((k) => `{{${k}}}`).join(', ')}`}
+              />
+            )}
+            {malformedVars.length > 0 && (
+              <Alert
+                variant="warning"
+                message={`Malformed variables (will not merge): ${malformedVars.join(', ')}`}
               />
             )}
             {showMissingWarning && (

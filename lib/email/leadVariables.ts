@@ -6,6 +6,18 @@
 
 export type LeadVariable = { token: string; description: string };
 
+export const STANDARD_MERGE_FIELD_KEYS = [
+  'email',
+  'name',
+  'first_name',
+  'last_name',
+  'company_name',
+  'website',
+  'linkedin_url',
+  'company_linkedin_url',
+  'source',
+] as const;
+
 const STANDARD_LEAD_VARIABLES: { key: string; token: string; description: string }[] = [
   { key: 'email', token: '{{email}}', description: 'Lead email address' },
   { key: 'name', token: '{{name}}', description: 'Full name if available' },

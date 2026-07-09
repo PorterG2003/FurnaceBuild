@@ -82,15 +82,14 @@ test('prepareCampaignFlowForApi maps FlowEditForbiddenError to flow_locked', asy
   );
 });
 
-test('prepareCampaignFlowForApi maps FlowPrepareValidationError to invalid_flow with details', async () => {
-  await expectClientApiError(
-    () => prepareCampaignFlowForApi({
-      incomingFlow: { nodes: [], edges: [] },
-      existingFlow: { nodes: [], edges: [] },
-      campaignStatus: 'draft',
-    }),
-    { status: 400, code: 'invalid_flow' },
-  );
+test('prepareCampaignFlowForApi allows invalid flow data in draft with warnings', async () => {
+  const result = await prepareCampaignFlowForApi({
+    incomingFlow: { nodes: [], edges: [] },
+    existingFlow: { nodes: [], edges: [] },
+    campaignStatus: 'draft',
+  });
+  assert.ok(result.validation.warnings.length > 0);
+  assert.equal(result.validation.blockingIssues.length, 0);
 });
 
 test('buildFlowSaveResponse includes documented save keys', () => {

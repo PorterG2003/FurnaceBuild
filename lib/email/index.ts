@@ -30,7 +30,7 @@ export {
 
 export { mergeTemplate, extractVariableKeys, extractMalformedVariables, hasMissingValues, type LeadLike } from './mergeTemplate.js';
 export { processSpintax, type ProcessSpintaxOptions } from './processSpintax.js';
-export { getLeadVariables, type LeadVariable } from './leadVariables.js';
+export { getLeadVariables, STANDARD_MERGE_FIELD_KEYS, type LeadVariable } from './leadVariables.js';
 export { stripSignatureStyles } from './strip-signature-styles.js';
 export {
   canonicalizeEmailContentForSave,

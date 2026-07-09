@@ -14,6 +14,11 @@ export {
 } from './conflictSummary';
 export {
   assertFlowEditAllowed,
+  FLOW_STRUCTURE_LOCKED_LABEL,
+  FLOW_STRUCTURE_LOCKED_SIDEBAR_HINT,
+  FLOW_STRUCTURE_LOCKED_TOAST,
+  FLOW_STRUCTURE_LOCKED_TOOLTIP_BODY,
+  FLOW_STRUCTURE_LOCKED_TOOLTIP_TITLE,
   getFlowEditPolicy,
   isDraftCampaignStatus,
   isTopologyLockedForCampaignStatus,

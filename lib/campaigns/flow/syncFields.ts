@@ -79,9 +79,10 @@ export function syncFields(flowData: CampaignFlowData): {
   const existingCustom = Array.isArray(leadSource.data?.customFieldKeys)
     ? leadSource.data.customFieldKeys.filter((key): key is string => typeof key === 'string')
     : [];
-  const hasExplicitStandard = Array.isArray(leadSource.data?.mappedStandardFieldKeys);
+  const mappedStandardFieldKeys = leadSource.data?.mappedStandardFieldKeys;
+  const hasExplicitStandard = Array.isArray(mappedStandardFieldKeys);
   const existingStandard = hasExplicitStandard
-    ? leadSource.data!.mappedStandardFieldKeys!.filter((key): key is string => typeof key === 'string')
+    ? mappedStandardFieldKeys.filter((key): key is string => typeof key === 'string')
     : [];
 
   const customMerge = mergeUniqueKeys(existingCustom, discoveredCustom);

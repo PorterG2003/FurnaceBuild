@@ -6,6 +6,7 @@ import {
   classifyFlowChange,
   normalizeFlowData,
   validateFlowData,
+  validateForPhase,
 } from './index.js';
 
 function clone<T>(value: T): T {
@@ -64,6 +65,39 @@ test('normalizeFlowData canonicalizes wait nodes and categorizer edges', () => {
   assert.equal(normalized.edges[0]?.sourceHandle, 'not-interested');
 });
 
+test('normalizeFlowData preserves unset mappedStandardFieldKeys as undefined', () => {
+  const normalized = normalizeFlowData({
+    nodes: [
+      {
+        id: 'leadSource-1',
+        type: 'leadSource',
+        position: { x: 0, y: 0 },
+        data: {},
+      },
+    ],
+    edges: [],
+  });
+  const leadSource = normalized.nodes.find((node) => node.type === 'leadSource');
+  assert.equal(leadSource?.data.mappedStandardFieldKeys, undefined);
+  assert.ok(Array.isArray(leadSource?.data.customFieldKeys));
+});
+
+test('normalizeFlowData preserves an explicit mappedStandardFieldKeys array', () => {
+  const normalized = normalizeFlowData({
+    nodes: [
+      {
+        id: 'leadSource-1',
+        type: 'leadSource',
+        position: { x: 0, y: 0 },
+        data: { mappedStandardFieldKeys: ['email', 'first_name'] },
+      },
+    ],
+    edges: [],
+  });
+  const leadSource = normalized.nodes.find((node) => node.type === 'leadSource');
+  assert.deepEqual(leadSource?.data.mappedStandardFieldKeys, ['email', 'first_name']);
+});
+
 test('validateFlowData reports merge-variable and variant issues', () => {
   const invalidFlow = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
   const emailNode = invalidFlow.nodes.find((node) => node.id === 'email-1');
@@ -77,6 +111,24 @@ test('validateFlowData reports merge-variable and variant issues', () => {
   const result = validateFlowData(invalidFlow);
   assert.equal(result.issues.some((issue) => issue.code === 'invalid_variant_id'), true);
   assert.equal(result.issues.some((issue) => issue.code === 'unknown_merge_variable'), true);
+});
+
+test('validateForPhase treats all issues as draft warnings and launch blockers', () => {
+  const invalidFlow = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const emailNode = invalidFlow.nodes.find((node) => node.id === 'email-1');
+  assert.ok(emailNode && emailNode.type === 'email');
+  if (!emailNode || emailNode.type !== 'email') {
+    throw new Error('email node missing from example flow');
+  }
+  emailNode.data.variants[0]!.subject = 'Hello {{custom.missing}}';
+
+  const draft = validateForPhase(invalidFlow, 'draft');
+  assert.equal(draft.blockingIssues.length, 0);
+  assert.ok(draft.warnings.some((issue) => issue.code === 'unknown_merge_variable'));
+
+  const launch = validateForPhase(invalidFlow, 'launch');
+  assert.ok(launch.blockingIssues.some((issue) => issue.code === 'unknown_merge_variable'));
+  assert.equal(launch.warnings.length, 0);
 });
 
 test('classifyFlowChange distinguishes content and structural edits', () => {

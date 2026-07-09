@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Platform } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from 'react-native-reanimated';
 import { PlusIcon } from 'react-native-heroicons/outline';
+import { FLOW_STRUCTURE_LOCKED_SIDEBAR_HINT } from '@/lib/campaigns/flow';
 import { nodeTypeMetadata, nodeIcons } from '../nodes/nodeMetadata';
 
 interface NodeSidebarProps {
@@ -131,7 +132,7 @@ function NodeSidebar({ onAddNode, disabled = false }: NodeSidebarProps) {
               fontFamily: 'Instrument Sans, system-ui, sans-serif',
             }}
           >
-            {disabled ? 'Flow topology is locked after launch' : 'Click to add nodes'}
+            {disabled ? FLOW_STRUCTURE_LOCKED_SIDEBAR_HINT : 'Click to add nodes'}
           </Text>
         </View>
 

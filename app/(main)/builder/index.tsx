@@ -15,11 +15,13 @@ import {
   FlowEditForbiddenError,
   FlowPrepareValidationError,
   FlowRevisionConflictError,
+  FLOW_STRUCTURE_LOCKED_TOAST,
   normalizeFlowData,
   prepareFlowSave,
   type CampaignFlowData,
 } from '@/lib/campaigns/flow';
 import { FlowConflictModal } from './components/FlowConflictModal';
+import { FlowStructureLockedBadge } from './components/FlowStructureLockedBadge';
 import { nodeTypes } from './nodes/nodeTypes';
 import { edgeTypes } from './edges/edgeTypes';
 import { NodeSidebar } from './components/NodeSidebar';
@@ -291,6 +293,10 @@ function FlowEditor({
     (window as any).__reactFlowSetNodes = setNodes;
     (window as any).__reactFlowSetEdges = setEdges;
     (window as any).__reactFlowGetNodes = () => nodes;
+    (window as any).__reactFlowSetFlow = (nextNodes: any[], nextEdges: any[]) => {
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+    };
     (window as any).__reactFlowClearSelection = () => {
       setNodes((currentNodes: any[]) =>
         currentNodes.map((node: any) =>
@@ -302,6 +308,9 @@ function FlowEditor({
           edge.selected ? { ...edge, selected: false } : edge
         )
       );
+    };
+    return () => {
+      delete (window as any).__reactFlowSetFlow;
     };
   }, [setEdges, setNodes, nodes]);
 
@@ -387,6 +396,9 @@ export default function BuilderPage() {
   const lastSavedFlowRef = useRef<string | null>(null);
   const flowRevisionRef = useRef<string | null>(null);
   const pendingSaveRef = useRef<{ nodes: any[]; edges: any[] } | null>(null);
+  const lastSaveFailureRef = useRef<{ flowHash: string; message: string } | null>(null);
+  const isSavingRef = useRef(false);
+  const queuedSaveRef = useRef<{ nodes: any[]; edges: any[] } | null>(null);
 
   useEffect(() => {
     if (!campaignId) {
@@ -458,18 +470,53 @@ export default function BuilderPage() {
   const persistPreparedFlow = useCallback(async (preparedFlow: CampaignFlowData) => {
     if (!campaignId) return;
     await updateCampaignFlowData(campaignId, preparedFlow as any, 'builder');
-    lastSavedFlowRef.current = JSON.stringify(preparedFlow);
+    // Track the persisted flow in the same sanitized form a subsequent server fetch
+    // will produce, so the dirty-check and external-change comparison stay accurate.
+    const sanitizedPrepared = sanitizeFlowData(preparedFlow.nodes as any[], preparedFlow.edges as any[]);
+    lastSavedFlowRef.current = JSON.stringify(sanitizedPrepared);
     flowRevisionRef.current = await computeFlowRevision(preparedFlow);
+    lastSaveFailureRef.current = null;
     setCampaign((prev) => (prev ? { ...prev, flow_data: preparedFlow as any } : prev));
+
+    // Reflect syncFields field-key additions back into the live canvas so local state
+    // matches what was persisted (data-only merge; positions/selection/copy untouched).
+    const preparedLeadSource = preparedFlow.nodes.find((node) => node.type === 'leadSource');
+    const setNodes = (window as any).__reactFlowSetNodes;
+    if (preparedLeadSource && typeof setNodes === 'function') {
+      setNodes((currentNodes: any[]) =>
+        currentNodes.map((node: any) =>
+          node.type === 'leadSource'
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  customFieldKeys: preparedLeadSource.data?.customFieldKeys,
+                  mappedStandardFieldKeys: preparedLeadSource.data?.mappedStandardFieldKeys,
+                },
+              }
+            : node
+        )
+      );
+    }
+
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 2000);
   }, [campaignId]);
 
-  const attemptFlowSave = useCallback(async (nodes: any[], edges: any[], ifMatch?: string | null) => {
+  const showSaveFailureToast = useCallback((flowHash: string, message: string) => {
+    const previous = lastSaveFailureRef.current;
+    if (previous?.flowHash === flowHash && previous.message === message) {
+      return;
+    }
+    lastSaveFailureRef.current = { flowHash, message };
+    toast.error(message);
+  }, [toast]);
+
+  const attemptFlowSave = useCallback(async (nodes: any[], edges: any[], forceOverwrite = false) => {
     if (!campaignId) return;
     const sanitizedFlowData = sanitizeFlowData(nodes, edges);
     const serializedFlow = JSON.stringify(sanitizedFlowData);
-    if (serializedFlow === lastSavedFlowRef.current) {
+    if (!forceOverwrite && serializedFlow === lastSavedFlowRef.current) {
       return;
     }
 
@@ -483,8 +530,25 @@ export default function BuilderPage() {
         (latestCampaign.flow_data as CampaignFlowData | null)?.nodes ?? [],
         (latestCampaign.flow_data as CampaignFlowData | null)?.edges ?? [],
       );
+      const serverSerialized = JSON.stringify(serverFlow);
       const serverRevision = await computeFlowRevision(serverFlow);
-      const matchRevision = ifMatch ?? flowRevisionRef.current;
+
+      // Detect a genuine external edit: the server holds content that differs from
+      // what this tab last persisted. Same-tab saves always match lastSavedFlowRef,
+      // so they never trip this. `forceOverwrite` (Keep my version) bypasses the check.
+      const isFirstSave = lastSavedFlowRef.current === null;
+      const externallyChanged =
+        !forceOverwrite && !isFirstSave && serverSerialized !== lastSavedFlowRef.current;
+      if (externallyChanged) {
+        setFlowConflict({
+          localFlow: sanitizedFlowData,
+          serverFlow,
+          serverRevision,
+        });
+        pendingSaveRef.current = { nodes, edges };
+        setSaveStatus('idle');
+        return;
+      }
 
       let prepared;
       try {
@@ -493,7 +557,9 @@ export default function BuilderPage() {
           existingFlow: serverFlow,
           campaignStatus: latestCampaign.status,
           phase: 'draft',
-          ifMatch: matchRevision,
+          // Rebase on the exact revision we just fetched so the advisory revision
+          // gate is always satisfied for our own writes and never throws spuriously.
+          ifMatch: serverRevision,
         });
       } catch (error) {
         if (error instanceof FlowRevisionConflictError) {
@@ -507,12 +573,15 @@ export default function BuilderPage() {
           return;
         }
         if (error instanceof FlowPrepareValidationError) {
-          toast.error(error.issues[0]?.message || error.message);
+          showSaveFailureToast(serializedFlow, error.issues[0]?.message || error.message);
         } else if (error instanceof FlowEditForbiddenError) {
-          toast.error(error.message);
+          showSaveFailureToast(serializedFlow, error.message);
         } else {
           console.error('Failed to save flow:', error);
-          toast.error(error instanceof Error ? error.message : 'Flow validation failed');
+          showSaveFailureToast(
+            serializedFlow,
+            error instanceof Error ? error.message : 'Flow validation failed',
+          );
         }
         setSaveStatus('error');
         setTimeout(() => setSaveStatus('idle'), 3000);
@@ -522,24 +591,41 @@ export default function BuilderPage() {
       await persistPreparedFlow(prepared.flow);
     } catch (error) {
       console.error('Failed to save flow:', error);
-      toast.error(error instanceof Error ? error.message : 'Flow save failed');
+      showSaveFailureToast(
+        serializedFlow,
+        error instanceof Error ? error.message : 'Flow save failed',
+      );
       setSaveStatus('error');
       setTimeout(() => setSaveStatus('idle'), 3000);
     }
-  }, [campaignId, persistPreparedFlow, toast]);
+  }, [campaignId, persistPreparedFlow, showSaveFailureToast]);
 
-  // Debounced save function
-  const saveFlowData = useMemo(
-    () => debounce(async (nodes: any[], edges: any[]) => {
-      await attemptFlowSave(nodes, edges);
-    }, 1000),
-    [attemptFlowSave]
+  // Single-flight save loop: only one save runs at a time; edits during a save
+  // coalesce into one trailing save that reads the fresh post-save revision refs.
+  const drainSaves = useCallback(async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    try {
+      while (queuedSaveRef.current) {
+        const next = queuedSaveRef.current;
+        queuedSaveRef.current = null;
+        await attemptFlowSave(next.nodes, next.edges);
+      }
+    } finally {
+      isSavingRef.current = false;
+    }
+  }, [attemptFlowSave]);
+
+  const debouncedDrainSaves = useMemo(
+    () => debounce(() => { void drainSaves(); }, 1000),
+    [drainSaves]
   );
 
   // Handle flow changes
   const handleFlowChange = useCallback((nodes: any[], edges: any[]) => {
-    saveFlowData(nodes, edges);
-  }, [saveFlowData]);
+    queuedSaveRef.current = { nodes, edges };
+    debouncedDrainSaves();
+  }, [debouncedDrainSaves]);
 
   if (!campaignId) {
     return (
@@ -571,7 +657,7 @@ export default function BuilderPage() {
 
   const handleAddNode = (nodeType: string) => {
     if (topologyLocked) {
-      toast.error('Flow topology is locked after launch.');
+      toast.error(FLOW_STRUCTURE_LOCKED_TOAST);
       return;
     }
     if (nodeType === 'aiCategorizer') {
@@ -693,10 +779,8 @@ export default function BuilderPage() {
                   )}
                 </View>
               )}
-              {topologyLocked && (
-                <Text className="text-amber-300 font-instrument text-sm">
-                  Flow topology is locked after launch. You can still edit copy, variants, timing, and node configuration.
-                </Text>
+              {topologyLocked && campaign?.status && (
+                <FlowStructureLockedBadge status={campaign.status} />
               )}
               {campaignId && (
                 <View>
@@ -834,7 +918,7 @@ export default function BuilderPage() {
             const pending = pendingSaveRef.current;
             pendingSaveRef.current = null;
             if (pending) {
-              await attemptFlowSave(pending.nodes, pending.edges, flowConflict.serverRevision);
+              await attemptFlowSave(pending.nodes, pending.edges, true);
             }
           }}
           onUseServer={async () => {

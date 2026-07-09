@@ -270,11 +270,11 @@ export function buildBuildingCampaignsMarkdown(): string {
     '',
     '| Symptom | Likely cause | Fix |',
     '| --- | --- | --- |',
-    `| \`400 invalid_flow\` with \`details[]\` | Validation failed before write | Read \`details[].path\` and \`details[].code\`; see ${modelLink('FlowValidationIssue')} |`,
+    `| \`400 invalid_flow\` with \`details[]\` | Validation failed on launch-phase validate or non-draft write | Draft saves return warnings in \`validation.warnings\`; check \`launch_state.blocking_issues\` before launch |`,
     '| `403 flow_locked` on `PUT .../flow` | Structural edit on a live campaign | Only change copy/config, or duplicate the campaign as a new draft |',
     '| `400` on launch | Missing name, empty flow, or no mailbox | Set name, save flow, assign `mailbox_ids` on create or `PATCH /v1/campaigns/{id}` |',
     '| Lead import missing custom field | `customFieldKeys` on lead source not satisfied | Include every key in `custom_lead_data`; check `GET .../lead-fields` |',
-    '| `unknown_merge_variable` in validate | Token used in email copy but not declared on lead source | Add key to `customFieldKeys` or `mappedStandardFieldKeys` |',
+    '| `unknown_merge_variable` in launch readiness | Token used in email copy but not declared on lead source | Add key to `customFieldKeys` or `mappedStandardFieldKeys`, or remove token from copy |',
     '| `unreachable_node` | Orphan node not connected from lead source | Add edges so every node is reachable from `leadSource` |',
     '| `cycle_detected` | Edge creates a loop | Remove the cycle; flows must be DAGs |',
   ].join('\n');

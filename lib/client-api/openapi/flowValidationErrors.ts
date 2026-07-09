@@ -39,6 +39,9 @@ export function buildFlowValidationErrorCatalogMarkdown(): string {
     (entry) => `| \`${entry.code}\` | ${entry.cause} | ${entry.fix} |`,
   );
   return [
+    'During **draft** flow saves, every code below is returned in `validation.warnings` and the save still persists.',
+    'During **launch** (or validate with `phase: launch`), the same codes appear in `blocking_issues` and block go-live.',
+    '',
     '| Code | Cause | Fix |',
     '| --- | --- | --- |',
     ...rows,

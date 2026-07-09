@@ -1,4 +1,4 @@
-import { extractVariableKeys } from '../../email/index.js';
+import { extractVariableKeys, STANDARD_MERGE_FIELD_KEYS } from '../../email/index.js';
 import { normalizeCustomFieldKey } from '../../leads/csv-dedupe.js';
 import type { CampaignFlowData, CampaignFlowNode } from './types';
 
@@ -7,19 +7,7 @@ export type FieldSyncResult = {
   declared_standard_added: string[];
 };
 
-const STANDARD_FIELD_KEYS = new Set([
-  'email',
-  'first_name',
-  'last_name',
-  'company',
-  'title',
-  'phone',
-  'linkedin_url',
-  'website',
-  'city',
-  'state',
-  'country',
-]);
+const STANDARD_FIELD_KEYS = new Set<string>(STANDARD_MERGE_FIELD_KEYS);
 
 function collectCopyTexts(flowData: CampaignFlowData): string[] {
   const texts: string[] = [];
@@ -91,22 +79,28 @@ export function syncFields(flowData: CampaignFlowData): {
   const existingCustom = Array.isArray(leadSource.data?.customFieldKeys)
     ? leadSource.data.customFieldKeys.filter((key): key is string => typeof key === 'string')
     : [];
-  const existingStandard = Array.isArray(leadSource.data?.mappedStandardFieldKeys)
-    ? leadSource.data.mappedStandardFieldKeys.filter((key): key is string => typeof key === 'string')
-    : ['email', 'first_name', 'last_name'];
+  const hasExplicitStandard = Array.isArray(leadSource.data?.mappedStandardFieldKeys);
+  const existingStandard = hasExplicitStandard
+    ? leadSource.data!.mappedStandardFieldKeys!.filter((key): key is string => typeof key === 'string')
+    : [];
 
   const customMerge = mergeUniqueKeys(existingCustom, discoveredCustom);
-  const standardMerge = mergeUniqueKeys(existingStandard, discoveredStandard);
+  const standardMerge = hasExplicitStandard
+    ? mergeUniqueKeys(existingStandard, discoveredStandard)
+    : { merged: [], addedOnly: [] };
 
   const nodes = flowData.nodes.map((node, index) => {
     if (index !== leadSourceIndex) return node;
+    const data: Record<string, unknown> = {
+      ...node.data,
+      customFieldKeys: customMerge.merged,
+    };
+    if (hasExplicitStandard) {
+      data.mappedStandardFieldKeys = standardMerge.merged;
+    }
     return {
       ...node,
-      data: {
-        ...node.data,
-        customFieldKeys: customMerge.merged,
-        mappedStandardFieldKeys: standardMerge.merged,
-      },
+      data,
     } as CampaignFlowNode;
   });
 

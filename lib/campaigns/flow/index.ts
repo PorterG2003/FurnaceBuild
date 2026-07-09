@@ -41,6 +41,7 @@ export {
   assertFlowRevision,
   canonicalizeFlowForRevision,
   computeFlowRevision,
+  stableSerializeFlow,
 } from './revision';
 export {
   FLOW_NODE_REGISTRY,

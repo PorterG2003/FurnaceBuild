@@ -18,6 +18,7 @@ import {
   FLOW_STRUCTURE_LOCKED_TOAST,
   normalizeFlowData,
   prepareFlowSave,
+  stableSerializeFlow,
   type CampaignFlowData,
 } from '@/lib/campaigns/flow';
 import { FlowConflictModal } from './components/FlowConflictModal';
@@ -433,7 +434,7 @@ export default function BuilderPage() {
                 Array.isArray(flowData.edges) ? flowData.edges : []
               );
               setInitialFlowData(sanitizedFlowData);
-              lastSavedFlowRef.current = JSON.stringify(sanitizedFlowData);
+              lastSavedFlowRef.current = stableSerializeFlow(sanitizedFlowData);
               flowRevisionRef.current = await computeFlowRevision(sanitizedFlowData);
               hasLoadedFlowRef.current = true;
             }
@@ -442,7 +443,7 @@ export default function BuilderPage() {
             // Fallback to empty flow
             const emptyFlow = { nodes: [], edges: [] };
             setInitialFlowData(emptyFlow);
-            lastSavedFlowRef.current = JSON.stringify(emptyFlow);
+            lastSavedFlowRef.current = stableSerializeFlow(emptyFlow);
             flowRevisionRef.current = await computeFlowRevision(emptyFlow);
             hasLoadedFlowRef.current = true;
           }
@@ -450,7 +451,7 @@ export default function BuilderPage() {
           // No flow_data exists, start with empty
           const emptyFlow = { nodes: [], edges: [] };
           setInitialFlowData(emptyFlow);
-          lastSavedFlowRef.current = JSON.stringify(emptyFlow);
+          lastSavedFlowRef.current = stableSerializeFlow(emptyFlow);
           flowRevisionRef.current = await computeFlowRevision(emptyFlow);
           hasLoadedFlowRef.current = true;
         }
@@ -473,7 +474,7 @@ export default function BuilderPage() {
     // Track the persisted flow in the same sanitized form a subsequent server fetch
     // will produce, so the dirty-check and external-change comparison stay accurate.
     const sanitizedPrepared = sanitizeFlowData(preparedFlow.nodes as any[], preparedFlow.edges as any[]);
-    lastSavedFlowRef.current = JSON.stringify(sanitizedPrepared);
+    lastSavedFlowRef.current = stableSerializeFlow(sanitizedPrepared);
     flowRevisionRef.current = await computeFlowRevision(preparedFlow);
     lastSaveFailureRef.current = null;
     setCampaign((prev) => (prev ? { ...prev, flow_data: preparedFlow as any } : prev));
@@ -515,7 +516,7 @@ export default function BuilderPage() {
   const attemptFlowSave = useCallback(async (nodes: any[], edges: any[], forceOverwrite = false) => {
     if (!campaignId) return;
     const sanitizedFlowData = sanitizeFlowData(nodes, edges);
-    const serializedFlow = JSON.stringify(sanitizedFlowData);
+    const serializedFlow = stableSerializeFlow(sanitizedFlowData);
     if (!forceOverwrite && serializedFlow === lastSavedFlowRef.current) {
       return;
     }
@@ -530,15 +531,15 @@ export default function BuilderPage() {
         (latestCampaign.flow_data as CampaignFlowData | null)?.nodes ?? [],
         (latestCampaign.flow_data as CampaignFlowData | null)?.edges ?? [],
       );
-      const serverSerialized = JSON.stringify(serverFlow);
       const serverRevision = await computeFlowRevision(serverFlow);
 
-      // Detect a genuine external edit: the server holds content that differs from
-      // what this tab last persisted. Same-tab saves always match lastSavedFlowRef,
-      // so they never trip this. `forceOverwrite` (Keep my version) bypasses the check.
-      const isFirstSave = lastSavedFlowRef.current === null;
+      // Detect a genuine external edit by comparing canonical revision hashes: the
+      // server holds content that differs from what this tab last persisted. Hashes
+      // are key-order- and position-insensitive, so a Postgres jsonb round-trip never
+      // trips this. `forceOverwrite` (Keep my version) bypasses the check.
+      const isFirstSave = flowRevisionRef.current === null;
       const externallyChanged =
-        !forceOverwrite && !isFirstSave && serverSerialized !== lastSavedFlowRef.current;
+        !forceOverwrite && !isFirstSave && serverRevision !== flowRevisionRef.current;
       if (externallyChanged) {
         setFlowConflict({
           localFlow: sanitizedFlowData,
@@ -926,7 +927,7 @@ export default function BuilderPage() {
             setFlowConflict(null);
             pendingSaveRef.current = null;
             setInitialFlowData({ nodes: serverFlow.nodes as any[], edges: serverFlow.edges as any[] });
-            lastSavedFlowRef.current = JSON.stringify(serverFlow);
+            lastSavedFlowRef.current = stableSerializeFlow(serverFlow);
             flowRevisionRef.current = await computeFlowRevision(serverFlow);
             setCampaign((prev) => (prev ? { ...prev, flow_data: serverFlow as any } : prev));
             if (typeof window !== 'undefined' && (window as any).__reactFlowSetFlow) {

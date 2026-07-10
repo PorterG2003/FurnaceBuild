@@ -1,7 +1,19 @@
 import type { CampaignStatus, FlowChangeKind, FlowEditPolicy } from './types';
 
-const FLOW_LOCKED_MESSAGE =
-  'This campaign is no longer a draft, so structural flow changes are locked. You can still edit copy, variants, timing, and node configuration.';
+export const FLOW_STRUCTURE_LOCKED_LABEL = 'Structure locked';
+
+export const FLOW_STRUCTURE_LOCKED_SIDEBAR_HINT =
+  'Structure locked — edit settings inside nodes';
+
+export const FLOW_STRUCTURE_LOCKED_TOAST =
+  "Can't add or remove steps on a live campaign";
+
+export const FLOW_STRUCTURE_LOCKED_TOOLTIP_TITLE = 'Structure is locked';
+
+export const FLOW_STRUCTURE_LOCKED_TOOLTIP_BODY =
+  'You can edit email copy, wait times, variants, and node settings. To add or remove steps, duplicate this campaign as a draft.';
+
+const FLOW_LOCKED_MESSAGE = `${FLOW_STRUCTURE_LOCKED_TOOLTIP_TITLE}. ${FLOW_STRUCTURE_LOCKED_TOOLTIP_BODY}`;
 
 export function isDraftCampaignStatus(status: CampaignStatus | null | undefined): boolean {
   return status === 'draft';

@@ -3,7 +3,6 @@ import test from 'node:test';
 import { CAMPAIGN_FLOW_EXAMPLE_LINEAR } from './examples.js';
 import {
   FlowEditForbiddenError,
-  FlowPrepareValidationError,
   FlowRevisionConflictError,
   prepareFlowSave,
 } from './prepareFlowSave.js';
@@ -60,14 +59,14 @@ test('prepareFlowSave blocks structural edits on running campaigns', async () =>
   );
 });
 
-test('prepareFlowSave blocks invalid flow data', async () => {
+test('prepareFlowSave allows invalid flow data in draft with warnings', async () => {
   const invalid = { nodes: [], edges: [] };
-  await assert.rejects(
-    () => prepareFlowSave({
-      incomingFlow: invalid,
-      existingFlow: { nodes: [], edges: [] },
-      campaignStatus: 'draft',
-    }),
-    FlowPrepareValidationError,
-  );
+  const result = await prepareFlowSave({
+    incomingFlow: invalid,
+    existingFlow: { nodes: [], edges: [] },
+    campaignStatus: 'draft',
+  });
+
+  assert.ok(result.validation.warnings.length > 0);
+  assert.equal(result.validation.blockingIssues.length, 0);
 });

@@ -456,8 +456,6 @@ export type PhaseValidationResult = FlowValidationResult & {
   warnings: FlowValidationIssue[];
 };
 
-const WARNING_CODES_IN_DRAFT = new Set(['unreachable_node']);
-
 function pushLaunchIssue(issues: FlowValidationIssue[], code: string, message: string) {
   pushIssue(issues, 'nodes', code, message);
 }
@@ -488,12 +486,8 @@ export function validateForPhase(
   }
 
   const issues = [...base.issues, ...launchOnlyIssues];
-  const warnings = phase === 'draft'
-    ? issues.filter((issue) => WARNING_CODES_IN_DRAFT.has(issue.code))
-    : [];
-  const blockingIssues = phase === 'draft'
-    ? issues.filter((issue) => !WARNING_CODES_IN_DRAFT.has(issue.code))
-    : issues;
-
-  return { issues, blockingIssues, warnings };
+  if (phase === 'draft') {
+    return { issues, blockingIssues: [], warnings: issues };
+  }
+  return { issues, blockingIssues: issues, warnings: [] };
 }

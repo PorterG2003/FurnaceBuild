@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase/client';
+import { supabase } from '../../client';
 
 const FAILED_DELIVERY_SELECT =
   'id, event_type, endpoint_url, status, response_status, error, created_at';

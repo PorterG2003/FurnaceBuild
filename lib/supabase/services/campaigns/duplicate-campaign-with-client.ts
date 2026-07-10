@@ -269,7 +269,7 @@ export async function duplicateCampaignWithClient(
     if (sourceCampaign.flow_data) {
       await updateCampaignFlowDataWithClient(db, {
         campaignId: duplicatedCampaign.id,
-        accountId: targetAccountId,
+        accountId: options.accountId,
         flowData: sourceCampaign.flow_data,
         changeSource: 'duplicate_campaign',
       });

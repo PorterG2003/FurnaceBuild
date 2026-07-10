@@ -13,6 +13,7 @@ const CONTAINER_H = BTN + INSET * 2; // 22px
 interface FlowNodeActionsMenuProps {
   onEdit: () => void;
   onDelete?: () => void;
+  deleteMuted?: boolean;
 }
 
 const pillStyle: React.CSSProperties = {
@@ -68,16 +69,21 @@ function EditOnlyButton({ onEdit }: { onEdit: () => void }) {
   );
 }
 
-export function FlowNodeActionsMenu({ onEdit, onDelete }: FlowNodeActionsMenuProps) {
+export function FlowNodeActionsMenu({ onEdit, onDelete, deleteMuted = false }: FlowNodeActionsMenuProps) {
   // Edit-only nodes: static circle with pencil, no expand needed
   if (!onDelete) {
     return <EditOnlyButton onEdit={onEdit} />;
   }
 
-  return <ExpandingRail onEdit={onEdit} onDelete={onDelete} />;
+  return <ExpandingRail onEdit={onEdit} onDelete={onDelete} deleteMuted={deleteMuted} />;
 }
 
-function ExpandingRail({ onEdit, onDelete }: Required<FlowNodeActionsMenuProps>) {
+function ExpandingRail({
+  onEdit,
+  onDelete,
+  deleteMuted = false,
+}: Required<Pick<FlowNodeActionsMenuProps, 'onEdit' | 'onDelete'>> &
+  Pick<FlowNodeActionsMenuProps, 'deleteMuted'>) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isInteractive, setIsInteractive] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -174,14 +180,16 @@ function ExpandingRail({ onEdit, onDelete }: Required<FlowNodeActionsMenuProps>)
             onDelete();
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'rgba(248,113,113,0.18)';
+            (e.currentTarget as HTMLButtonElement).style.background = deleteMuted
+              ? 'rgba(255,255,255,0.12)'
+              : 'rgba(248,113,113,0.18)';
           }}
           onMouseLeave={(e) => {
             (e.currentTarget as HTMLButtonElement).style.background = 'none';
           }}
           title="Delete"
         >
-          <TrashIcon size={12} color="#F87171" />
+          <TrashIcon size={12} color={deleteMuted ? '#9CA3AF' : '#F87171'} />
         </button>
       </div>
     </div>

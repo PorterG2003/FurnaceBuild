@@ -15,6 +15,7 @@ interface BaseNodeProps {
   icon?: React.ReactNode;
   showActions?: boolean;
   canDelete?: boolean;
+  deleteMuted?: boolean;
   nodeLabel?: string;
 }
 
@@ -28,6 +29,7 @@ function BaseNode({
   icon,
   showActions = true,
   canDelete = true,
+  deleteMuted = false,
   nodeLabel,
 }: BaseNodeProps) {
   if (!Handle) return null;
@@ -79,7 +81,7 @@ function BaseNode({
           <FlowNodeActionsMenu
             onEdit={onEdit}
             onDelete={canDelete ? onDelete : undefined}
-            label={nodeLabel || label}
+            deleteMuted={deleteMuted}
           />
         </div>
       ) : null}

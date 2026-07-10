@@ -110,3 +110,37 @@ export function classifyFlowChange(
     reasons: [...reasons],
   };
 }
+
+export type FlowAppendDetection = {
+  extendedFlowNodeIds: string[];
+};
+
+function outgoingCountBySource(flowData: CampaignFlowData): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const edge of flowData.edges) {
+    counts.set(edge.source, (counts.get(edge.source) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** Nodes that gained their first outgoing edge (former leaves that were extended). */
+export function detectFlowAppend(
+  storedFlowData: CampaignFlowData,
+  incomingFlowData: CampaignFlowData,
+): FlowAppendDetection {
+  const storedOutgoing = outgoingCountBySource(storedFlowData);
+  const incomingOutgoing = outgoingCountBySource(incomingFlowData);
+  const storedNodeIds = new Set(storedFlowData.nodes.map((node) => node.id));
+  const extendedFlowNodeIds: string[] = [];
+
+  for (const [sourceId, nextCount] of incomingOutgoing.entries()) {
+    if (!storedNodeIds.has(sourceId)) continue;
+    const prevCount = storedOutgoing.get(sourceId) ?? 0;
+    if (prevCount === 0 && nextCount > 0) {
+      extendedFlowNodeIds.push(sourceId);
+    }
+  }
+
+  extendedFlowNodeIds.sort();
+  return { extendedFlowNodeIds };
+}

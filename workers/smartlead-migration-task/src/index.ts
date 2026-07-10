@@ -353,6 +353,7 @@ async function processCampaign(
   apiKey: string,
   ownerId: string,
   totalCampaigns: number,
+  seenMessageIds: Set<string>,
 ): Promise<CampaignMigrationResult> {
   await updateRun(db, run.id, {
     current_campaign_id: row.smartlead_campaign_id,
@@ -382,6 +383,7 @@ async function processCampaign(
     campaignIndex: row.order_index,
     campaignCount: totalCampaigns,
     db,
+    seenMessageIds,
     onProgress: (progress: MigrationProgress) => {
       void (async () => {
         const heartbeatAt = new Date().toISOString();
@@ -468,6 +470,8 @@ async function runTask(): Promise<void> {
       });
     }, HEARTBEAT_INTERVAL_MS);
 
+    const seenMessageIds = new Set<string>();
+
     while (true) {
       if (await hasCancelRequested(db, runId)) {
         cancelled = true;
@@ -486,6 +490,7 @@ async function runTask(): Promise<void> {
         smartleadApiKey,
         ownerId,
         run.selected_campaign_count,
+        seenMessageIds,
       );
 
       if (result.status === 'succeeded') {

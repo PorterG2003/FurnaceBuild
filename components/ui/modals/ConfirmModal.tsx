@@ -13,6 +13,9 @@ export interface ConfirmModalProps {
   cancelLabel?: string;
   /** When true, confirm button uses destructive (red) styling. */
   confirmVariant?: 'default' | 'destructive';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | 'full';
+  /** Mobile sheet: max lines for the description. Pass `null` for no limit. */
+  descriptionNumberOfLines?: number | null;
 }
 
 export function ConfirmModal({
@@ -24,6 +27,8 @@ export function ConfirmModal({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   confirmVariant = 'default',
+  maxWidth = 'sm',
+  descriptionNumberOfLines,
 }: ConfirmModalProps) {
   const confirmButton =
     confirmVariant === 'destructive' ? (
@@ -67,7 +72,8 @@ export function ConfirmModal({
       onClose={onClose}
       title={title}
       description={message}
-      maxWidth="sm"
+      maxWidth={maxWidth}
+      descriptionNumberOfLines={descriptionNumberOfLines}
       compact
       footer={footer}
       footerMobile={footer}

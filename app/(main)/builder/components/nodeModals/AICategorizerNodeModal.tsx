@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput } from 'react-native';
 import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/Toggle';
 import { Alert } from '@/components/ui/feedback/Alert';
 import { EyeIcon } from 'react-native-heroicons/outline';
+import { useConfirmClose } from '@/hooks/useConfirmClose';
 import { CategorizerPreviewModal } from './CategorizerPreviewModal';
 
 /**
@@ -33,12 +34,25 @@ export function AICategorizerNodeModal({
   const [label, setLabel] = useState(initialData?.label || 'Categorizer');
   const [useAi, setUseAi] = useState(initialData?.use_ai ?? false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const initialRef = useRef<{ label: string; useAi: boolean } | null>(null);
 
   useEffect(() => {
     if (!visible) return;
-    setLabel(initialData?.label || 'Categorizer');
-    setUseAi(initialData?.use_ai ?? false);
+    const initial = {
+      label: initialData?.label || 'Categorizer',
+      useAi: initialData?.use_ai ?? false,
+    };
+    initialRef.current = initial;
+    setLabel(initial.label);
+    setUseAi(initial.useAi);
   }, [visible, initialData]);
+
+  const isDirty =
+    initialRef.current === null
+      ? false
+      : label !== initialRef.current.label || useAi !== initialRef.current.useAi;
+
+  const handleClose = useConfirmClose(isDirty, onClose);
 
   const handleSave = () => {
     onSave({ label, use_ai: useAi });
@@ -47,7 +61,7 @@ export function AICategorizerNodeModal({
 
   const footer = (
     <ModalFooter>
-      <Button variant="secondary" onPress={onClose}>
+      <Button variant="secondary" onPress={handleClose}>
         Cancel
       </Button>
       <Button onPress={handleSave}>Save</Button>
@@ -64,7 +78,7 @@ export function AICategorizerNodeModal({
     <>
       <BaseModal
         visible={visible}
-        onClose={onClose}
+        onClose={handleClose}
         title="Configure Categorizer"
         description="Waits for a reply, categorizes it, and branches on Interested, Neutral, or Not Interested."
         footer={footer}

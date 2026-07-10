@@ -368,13 +368,13 @@ async function saveCampaignFlow(
     phase: options.phase ?? 'draft',
     ifMatch: options.ifMatch,
   });
-  await updateCampaignFlowDataWithClient(supabase, {
+  const saveResult = await updateCampaignFlowDataWithClient(supabase, {
     campaignId: campaign.id,
     accountId,
     flowData: prepared.flow as unknown as Json,
     changeSource: 'client_api',
   });
-  return prepared;
+  return { prepared, reactivated_count: saveResult.reactivated_count };
 }
 
 async function applyCampaignStatusChange(
@@ -1008,14 +1008,19 @@ async function handleCampaignFlowWrite(c: Context, method: 'POST' | 'PUT') {
     return jsonResponse(c, { data: buildFlowDryRunResponse(prepared) }, 200, c.get('rateLimitHeaders'));
   }
 
-  await updateCampaignFlowDataWithClient(supabase, {
+  const saveResult = await updateCampaignFlowDataWithClient(supabase, {
     campaignId: campaign.id,
     accountId: auth.accountId,
     flowData: prepared.flow as unknown as Json,
     changeSource: 'client_api',
   });
 
-  return jsonResponse(c, { data: buildFlowSaveResponse(prepared) }, method === 'POST' ? 200 : 200, c.get('rateLimitHeaders'));
+  return jsonResponse(
+    c,
+    { data: buildFlowSaveResponse(prepared, saveResult.reactivated_count) },
+    method === 'POST' ? 200 : 200,
+    c.get('rateLimitHeaders'),
+  );
 }
 
 app.post('/v1/campaigns/:id/flow', async (c) => handleCampaignFlowWrite(c, 'POST'));
@@ -1072,10 +1077,10 @@ app.patch('/v1/campaigns/:id/flow/nodes/:nodeId', async (c) => {
     }),
   };
 
-  const prepared = await saveCampaignFlow(supabase, campaign, auth.accountId, nextFlow, {
+  const { prepared, reactivated_count } = await saveCampaignFlow(supabase, campaign, auth.accountId, nextFlow, {
     phase: 'draft',
   });
-  return jsonResponse(c, { data: buildFlowSaveResponse(prepared) }, 200, c.get('rateLimitHeaders'));
+  return jsonResponse(c, { data: buildFlowSaveResponse(prepared, reactivated_count) }, 200, c.get('rateLimitHeaders'));
 });
 
 app.patch('/v1/campaigns/:id/status', async (c) => {

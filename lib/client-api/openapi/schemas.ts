@@ -943,8 +943,12 @@ export function buildClientApiComponents() {
           field_sync: schemaRef('FieldSync'),
           change_kind: { type: 'string', enum: ['none', 'content', 'structural'] },
           change_reasons: { type: 'array', items: { type: 'string' } },
+          reactivated_count: {
+            type: 'integer',
+            description: 'Completed enrollments reactivated at former leaf nodes after an append save.',
+          },
         },
-        required: ['flow', 'flow_revision', 'field_sync'],
+        required: ['flow', 'flow_revision', 'field_sync', 'reactivated_count'],
         additionalProperties: false,
       },
       FlowNodePatch: {

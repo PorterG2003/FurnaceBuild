@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/Toggle';
 import { Alert } from '@/components/ui/feedback/Alert';
 import { MergeTagVariablePicker } from '@/components/builder/MergeTagVariablePicker';
+import { useConfirmClose } from '@/hooks/useConfirmClose';
 import {
   EyeIcon,
   EyeSlashIcon,
@@ -228,6 +229,32 @@ export interface EmailNodeModalProps {
   };
 }
 
+type EmailNodeDraftSnapshot = {
+  label: string;
+  sendMode: 'new' | 'reply';
+  variants: EmailNodeVariant[];
+};
+
+function emailNodeDraftEquals(a: EmailNodeDraftSnapshot, b: EmailNodeDraftSnapshot): boolean {
+  if (a.label !== b.label || a.sendMode !== b.sendMode) return false;
+  const sortedA = sortVariantsForRoundRobin(a.variants);
+  const sortedB = sortVariantsForRoundRobin(b.variants);
+  if (sortedA.length !== sortedB.length) return false;
+  return sortedA.every((variant, index) => {
+    const other = sortedB[index];
+    return (
+      variant.id === other.id &&
+      variant.subject === other.subject &&
+      variant.template === other.template &&
+      (variant.body_html ?? '') === (other.body_html ?? '') &&
+      (variant.body_text ?? '') === (other.body_text ?? '') &&
+      (variant.editor_mode ?? 'richText') === (other.editor_mode ?? 'richText') &&
+      variant.isActive === other.isActive &&
+      variant.order === other.order
+    );
+  });
+}
+
 function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModalProps) {
   const isPostStart = initialData?.campaignStatus != null && initialData.campaignStatus !== 'draft';
 
@@ -246,6 +273,7 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
     template: string;
     editor_mode?: EmailEditorMode;
   } | null>(null);
+  const initialDraftRef = useRef<EmailNodeDraftSnapshot | null>(null);
 
   const selectedVariant = useMemo(
     () => variants.find((v) => v.id === selectedVariantId) ?? variants[0],
@@ -267,18 +295,52 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
 
   useEffect(() => {
     if (!visible || !initialData) return;
-    setLabel(initialData.label ?? 'Send Email');
-    setSendMode(initialData.send_mode === 'reply' ? 'reply' : 'new');
+    const nextLabel = initialData.label ?? 'Send Email';
+    const nextSendMode = initialData.send_mode === 'reply' ? 'reply' : 'new';
+    setLabel(nextLabel);
+    setSendMode(nextSendMode);
     const { variants: v, legacyFields } = normalizeLegacyEmailNodeData(
       initialData as Record<string, unknown>
     );
     const sorted = sortVariantsForRoundRobin(v);
+    initialDraftRef.current = {
+      label: nextLabel,
+      sendMode: nextSendMode,
+      variants: sorted.map((variant) => ({ ...variant })),
+    };
     setVariants(sorted);
     setSelectedVariantId(sorted[0]?.id ?? null);
     if (legacyFields.mailboxId != null) {
       /* mailbox kept in save payload via variants merge */
     }
   }, [visible, initialData]);
+
+  const getCurrentDraft = useCallback((): EmailNodeDraftSnapshot => {
+    const bodyHtml = bodyEditorRef.current?.getHTML?.();
+    const bodyText = bodyEditorRef.current?.getText?.();
+    const mergedVariants = variants.map((variant) => {
+      if (variant.id !== selectedVariantId) return variant;
+      if (selectedVariantMode === 'html') return variant;
+      return {
+        ...variant,
+        template: Platform.OS === 'web' ? (bodyText ?? variant.template) : variant.template,
+        body_html: bodyHtml ?? variant.body_html,
+        body_text: bodyText ?? variant.body_text,
+      };
+    });
+    return {
+      label,
+      sendMode,
+      variants: mergedVariants,
+    };
+  }, [label, sendMode, variants, selectedVariantId, selectedVariantMode]);
+
+  const isDirty =
+    initialDraftRef.current === null
+      ? false
+      : !emailNodeDraftEquals(getCurrentDraft(), initialDraftRef.current);
+
+  const handleClose = useConfirmClose(isDirty, onClose);
 
   const leadVariables = useMemo(
     () =>
@@ -494,7 +556,7 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
 
   const footer = (
     <ModalFooter>
-      <Button variant="secondary" onPress={onClose}>
+      <Button variant="secondary" onPress={handleClose}>
         Cancel
       </Button>
       <Button onPress={handleSave}>
@@ -513,7 +575,7 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
     <>
       <BaseModal
         visible={visible}
-        onClose={onClose}
+        onClose={handleClose}
         title="Configure Email Node"
         description="A/B variants rotate per send. Edit one variant at a time."
         footer={footer}

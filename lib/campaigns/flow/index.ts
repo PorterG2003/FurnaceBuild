@@ -3,7 +3,7 @@ export {
   CAMPAIGN_FLOW_EXAMPLE_DATASENDER,
   CAMPAIGN_FLOW_EXAMPLE_LINEAR,
 } from './examples';
-export { classifyFlowChange, type FlowChangeSummary } from './diff';
+export { classifyFlowChange, detectFlowAppend, type FlowAppendDetection, type FlowChangeSummary } from './diff';
 export {
   buildFlowConflictSummary,
   buildFlowPreviewSteps,
@@ -14,14 +14,37 @@ export {
 } from './conflictSummary';
 export {
   assertFlowEditAllowed,
+  FLOW_BADGE_SECONDARY_PAUSED,
+  FLOW_BADGE_SECONDARY_RUNNING,
+  FLOW_BADGE_SECONDARY_STOPPED,
+  FLOW_BADGE_TOOLTIP_RUNNING,
+  FLOW_CONNECT_TOOLTIP_RUNNING,
+  FLOW_LOCKED_RUNNING_STRUCTURAL,
+  FLOW_MODAL_DELETE_BODY_DRAFT,
+  FLOW_MODAL_DELETE_BODY_PAUSED,
+  FLOW_MODAL_DELETE_EDGE_BODY,
+  FLOW_MODAL_DELETE_EDGE_TITLE,
+  FLOW_MODAL_DELETE_TITLE,
+  FLOW_MODAL_PAUSE_BODY,
+  FLOW_MODAL_PAUSE_CONFIRM,
+  FLOW_MODAL_PAUSE_TITLE,
+  FLOW_MODAL_STOPPED_BODY,
+  FLOW_MODAL_STOPPED_CONFIRM,
+  FLOW_MODAL_STOPPED_TITLE,
   FLOW_STRUCTURE_LOCKED_LABEL,
-  FLOW_STRUCTURE_LOCKED_SIDEBAR_HINT,
-  FLOW_STRUCTURE_LOCKED_TOAST,
-  FLOW_STRUCTURE_LOCKED_TOOLTIP_BODY,
-  FLOW_STRUCTURE_LOCKED_TOOLTIP_TITLE,
+  FLOW_TOAST_APPEND_REACTIVATED_MANY,
+  FLOW_TOAST_APPEND_REACTIVATED_ONE,
+  FLOW_TOAST_STOPPED,
+  formatFlowAppendReactivatedToast,
+  formatFlowModalDeleteTitle,
+  getFlowBadgeConfig,
   getFlowEditPolicy,
+  isContentEditAllowed,
   isDraftCampaignStatus,
+  isFlowReadOnly,
+  isStructuralEditAllowed,
   isTopologyLockedForCampaignStatus,
+  type FlowBadgeConfig,
 } from './lifecycle';
 export {
   normalizeFlowData,

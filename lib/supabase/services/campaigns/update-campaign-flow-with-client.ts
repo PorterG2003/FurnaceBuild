@@ -1,8 +1,24 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Campaign } from '../../types';
 import type { Database } from '../../types/database';
+import type { CampaignFlowSaveResult } from './campaigns';
 
 type DbClient = SupabaseClient<Database>;
+
+function parseCampaignFlowSaveRpcResult(data: unknown): CampaignFlowSaveResult {
+  if (data && typeof data === 'object' && 'campaign' in data) {
+    const record = data as { campaign: Campaign; reactivated_count?: number };
+    return {
+      campaign: record.campaign,
+      reactivated_count: record.reactivated_count ?? 0,
+    };
+  }
+  const campaign = (Array.isArray(data) ? data[0] : data) as Campaign | null;
+  if (!campaign) {
+    throw new Error('Failed to update campaign flow: No data returned');
+  }
+  return { campaign, reactivated_count: 0 };
+}
 
 export async function updateCampaignFlowDataWithClient(
   db: DbClient,
@@ -12,7 +28,7 @@ export async function updateCampaignFlowDataWithClient(
     flowData: Campaign['flow_data'];
     changeSource?: string;
   },
-): Promise<Campaign> {
+): Promise<CampaignFlowSaveResult> {
   const { campaignId, accountId, flowData, changeSource = 'client_api' } = params;
   const { data, error } = await db.rpc('update_campaign_flow_data_as_service', {
     p_campaign_id: campaignId,
@@ -47,12 +63,11 @@ export async function updateCampaignFlowDataWithClient(
     if (!fallbackCampaign) {
       throw new Error('Failed to update campaign flow: No data returned');
     }
-    return fallbackCampaign as Campaign;
+    return { campaign: fallbackCampaign as Campaign, reactivated_count: 0 };
   }
 
-  const campaign = Array.isArray(data) ? data[0] : data;
-  if (!campaign) {
+  if (!data) {
     throw new Error('Failed to update campaign flow: No data returned');
   }
-  return campaign as Campaign;
+  return parseCampaignFlowSaveRpcResult(data);
 }

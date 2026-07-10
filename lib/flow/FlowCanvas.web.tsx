@@ -46,6 +46,7 @@ export function FlowCanvas({
   fitView,
   fitViewOptions,
   deleteKeyCode = null,
+  nodesConnectable = true,
   style,
   children,
 }: FlowCanvasProps) {
@@ -73,7 +74,7 @@ export function FlowCanvas({
         fitViewOptions={fitViewOptions}
         deleteKeyCode={deleteKeyCode}
         nodesDraggable={!readonly}
-        nodesConnectable={!readonly}
+        nodesConnectable={!readonly && nodesConnectable}
         elementsSelectable={!readonly}
         panOnDrag={!readonly}
         preventScrolling={!readonly}

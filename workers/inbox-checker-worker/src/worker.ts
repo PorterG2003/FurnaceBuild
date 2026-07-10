@@ -7,6 +7,7 @@ import {
 import pLimit from 'p-limit';
 import {
   applyMailboxImapFailureUpdate,
+  applyMailboxImapSuccessUpdate,
   classifyImapError,
 } from '@furnace/mailbox-lib';
 import { DatabaseClient } from './database.js';
@@ -224,10 +225,7 @@ export class InboxCheckerWorker {
       if (messages.length === 0) {
         await this.supabase
           .from('mailboxes')
-          .update({
-            last_synced_at: new Date().toISOString(),
-            imap_claimed_at: null,
-          })
+          .update(applyMailboxImapSuccessUpdate())
           .eq('id', mailbox.id);
         return;
       }
@@ -281,10 +279,7 @@ export class InboxCheckerWorker {
 
       await this.supabase
         .from('mailboxes')
-        .update({
-          last_synced_at: new Date().toISOString(),
-          imap_claimed_at: null,
-        })
+        .update(applyMailboxImapSuccessUpdate())
         .eq('id', mailbox.id);
 
       console.log(`[INBOX CHECKER] Mailbox ${mailbox.id} processed: ${replies} replies, ${bounces} bounces, ${unsubscribes} unsubscribes`);

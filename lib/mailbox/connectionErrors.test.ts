@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyMailboxImapFailureUpdate,
+  applyMailboxImapSuccessUpdate,
   applyMailboxSmtpFailureUpdate,
   classifyImapError,
   classifySmtpError,
@@ -49,6 +50,23 @@ test('classifyImapError treats ETIMEDOUT as transient', () => {
   assert.equal(result.kind, 'transient');
 });
 
+test('classifyImapError treats ImapFlow socket timeout as transient', () => {
+  const result = classifyImapError({
+    message: 'Socket timeout',
+    code: 'ETIMEOUT',
+  });
+
+  assert.equal(result.kind, 'transient');
+});
+
+test('classifyImapError treats TLS bad record mac as transient', () => {
+  const result = classifyImapError({
+    message: '4842488BAB7F0000:error:0A000119:SSL routines:ssl3_get_record:decryption failed or bad record mac',
+  });
+
+  assert.equal(result.kind, 'transient');
+});
+
 test('classifySmtpError treats EAUTH as permanent', () => {
   const result = classifySmtpError({
     message: 'Invalid login',
@@ -79,6 +97,15 @@ test('formatImapError includes response context in the message', () => {
   assert.equal(formatted.details?.responseStatus, 'NO');
   assert.equal(formatted.details?.executedCommand, 'LOGIN');
   assert.match(formatted.error, /Authentication failed/);
+});
+
+test('applyMailboxImapSuccessUpdate clears stale IMAP errors after a good check', () => {
+  const syncedAt = '2026-07-09T23:00:00.000Z';
+  assert.deepEqual(applyMailboxImapSuccessUpdate(syncedAt), {
+    last_synced_at: syncedAt,
+    imap_claimed_at: null,
+    error_message: null,
+  });
 });
 
 test('mailbox failure patch helpers only disable permanent failures', () => {

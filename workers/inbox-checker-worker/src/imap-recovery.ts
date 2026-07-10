@@ -3,6 +3,7 @@ import {
   applyMailboxImapFailureUpdate,
   buildImapFlowOptions,
   classifyImapError,
+  createImapFlowErrorGuard,
   inferImapInfraFailureCode,
   isSystemicInfraFailure,
   verifyImapInboxAccess,
@@ -39,11 +40,15 @@ export async function verifyMailboxImap(mailbox: Mailbox): Promise<void> {
       useSSL: mailbox.imap_use_ssl,
     }),
   );
+  const guard = createImapFlowErrorGuard(client);
 
   try {
     await client.connect();
+    guard.throwIfError();
     await verifyImapInboxAccess(client);
+    guard.throwIfError();
   } finally {
+    guard.dispose();
     try {
       await client.logout();
     } catch {

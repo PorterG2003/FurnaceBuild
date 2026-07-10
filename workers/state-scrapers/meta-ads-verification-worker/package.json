@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "local": "tsx src/local.ts",
-    "test": "node --import tsx --test src/**/*.test.ts"
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "validate-pagination": "tsx src/validatePagination.ts"
   },
   "dependencies": {
     "@furnace/registry-server": "file:../../../lib/foundry/registry-server",

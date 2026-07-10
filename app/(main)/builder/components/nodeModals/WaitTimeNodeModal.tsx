@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput } from 'react-native';
 import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
 import { SegmentControl } from '@/components/ui/segment-control';
+import { useConfirmClose } from '@/hooks/useConfirmClose';
 
 const UNIT_TO_SECONDS: Record<string, number> = {
   minutes: 60,
@@ -44,6 +45,31 @@ function WaitTimeNodeModal({
   const [unit, setUnit] = useState<'minutes' | 'hours' | 'days'>(
     initialData?.unit || 'hours'
   );
+  const initialRef = useRef<{ label: string; duration: string; unit: 'minutes' | 'hours' | 'days' } | null>(
+    null
+  );
+
+  useEffect(() => {
+    if (!visible) return;
+    const initial = {
+      label: initialData?.label || 'Wait Time',
+      duration: initialData?.duration || '',
+      unit: initialData?.unit || 'hours',
+    };
+    initialRef.current = initial;
+    setLabel(initial.label);
+    setDuration(initial.duration);
+    setUnit(initial.unit);
+  }, [visible, initialData]);
+
+  const isDirty =
+    initialRef.current === null
+      ? false
+      : label !== initialRef.current.label ||
+        duration !== initialRef.current.duration ||
+        unit !== initialRef.current.unit;
+
+  const handleClose = useConfirmClose(isDirty, onClose);
 
   const handleSave = () => {
     const wait_duration_seconds = toWaitDurationSeconds(duration, unit);
@@ -53,7 +79,7 @@ function WaitTimeNodeModal({
 
   const footer = (
     <ModalFooter>
-      <Button variant="secondary" onPress={onClose}>
+      <Button variant="secondary" onPress={handleClose}>
         Cancel
       </Button>
       <Button onPress={handleSave}>
@@ -73,7 +99,7 @@ function WaitTimeNodeModal({
   return (
     <BaseModal
       visible={visible}
-      onClose={onClose}
+      onClose={handleClose}
       title="Configure Wait Time Node"
       description="Configure the wait duration"
       footer={footer}

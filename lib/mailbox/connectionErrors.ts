@@ -39,7 +39,14 @@ const TRANSIENT_NETWORK_CODES = new Set([
   'ENETUNREACH',
   'EHOSTUNREACH',
   'ETIMEDOUT',
+  'ETIMEOUT',
 ]);
+
+const TRANSIENT_TLS_PATTERNS = [
+  /decryption failed or bad record mac/i,
+  /ssl routines:/i,
+  /socket timeout/i,
+];
 
 const PERMANENT_AUTH_PATTERNS = [
   /account disabled/i,
@@ -166,6 +173,10 @@ export function classifyImapError(
   }
 
   const combinedText = `${message} ${responseText}`.trim();
+  if (TRANSIENT_TLS_PATTERNS.some((pattern) => pattern.test(combinedText))) {
+    return { kind: 'transient', message };
+  }
+
   if (PERMANENT_AUTH_PATTERNS.some((pattern) => pattern.test(combinedText))) {
     return { kind: 'permanent', message };
   }
@@ -206,6 +217,16 @@ export function classifySmtpError(
   return { kind: 'unknown', message, responseCode };
 }
 
+export function applyMailboxImapSuccessUpdate(
+  syncedAt: string = new Date().toISOString(),
+): { last_synced_at: string; imap_claimed_at: null; error_message: null } {
+  return {
+    last_synced_at: syncedAt,
+    imap_claimed_at: null,
+    error_message: null,
+  };
+}
+
 export function applyMailboxImapFailureUpdate(
   kind: ConnectionFailureKind,
   message: string,
@@ -242,6 +263,7 @@ export default {
   formatImapError,
   classifyImapError,
   classifySmtpError,
+  applyMailboxImapSuccessUpdate,
   applyMailboxImapFailureUpdate,
   applyMailboxSmtpFailureUpdate,
 };

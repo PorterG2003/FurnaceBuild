@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TextInput, useWindowDimensions } from 'react-native';
 import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { FormFieldHelpIcon } from '@/components/ui/forms';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { getLeadVariables } from '@/lib/email/index';
 import { JsonPayloadEditor } from '@/components/builder/JsonPayloadEditor';
+import { useConfirmClose } from '@/hooks/useConfirmClose';
 
 interface DataSenderNodeModalProps {
   visible: boolean;
@@ -32,6 +33,26 @@ interface DataSenderNodeModalProps {
   };
 }
 
+const DEFAULT_PAYLOAD = `{
+  "email": "{{email}}",
+  "name": "{{name}}",
+  "custom": {
+    "company": "{{custom.company}}"
+  }
+}`;
+
+function payloadFromInitialData(
+  initialData?: DataSenderNodeModalProps['initialData']
+): string {
+  if (typeof initialData?.payload === 'string' && initialData.payload.trim()) {
+    return initialData.payload;
+  }
+  if (initialData?.payload_template) {
+    return JSON.stringify(initialData.payload_template, null, 2);
+  }
+  return DEFAULT_PAYLOAD;
+}
+
 function DataSenderNodeModal({
   visible,
   onClose,
@@ -43,24 +64,41 @@ function DataSenderNodeModal({
   const minPayloadHeight = isWide ? 280 : 220;
   const [label, setLabel] = useState(initialData?.label || 'Data Sender');
   const [endpoint, setEndpoint] = useState(initialData?.endpoint_url || initialData?.endpoint || '');
-  const [payload, setPayload] = useState(() => {
-    if (typeof initialData?.payload === 'string' && initialData.payload.trim()) {
-      return initialData.payload;
-    }
-    if (initialData?.payload_template) {
-      return JSON.stringify(initialData.payload_template, null, 2);
-    }
-    return `{
-  "email": "{{email}}",
-  "name": "{{name}}",
-  "custom": {
-    "company": "{{custom.company}}"
-  }
-}`;
-  });
+  const [payload, setPayload] = useState(() => payloadFromInitialData(initialData));
   const [onFailure, setOnFailure] = useState<'continue' | 'stop'>(
     initialData?.on_failure === 'stop' ? 'stop' : 'continue'
   );
+  const initialRef = useRef<{
+    label: string;
+    endpoint: string;
+    payload: string;
+    onFailure: 'continue' | 'stop';
+  } | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    const initial = {
+      label: initialData?.label || 'Data Sender',
+      endpoint: initialData?.endpoint_url || initialData?.endpoint || '',
+      payload: payloadFromInitialData(initialData),
+      onFailure: (initialData?.on_failure === 'stop' ? 'stop' : 'continue') as 'continue' | 'stop',
+    };
+    initialRef.current = initial;
+    setLabel(initial.label);
+    setEndpoint(initial.endpoint);
+    setPayload(initial.payload);
+    setOnFailure(initial.onFailure);
+  }, [visible, initialData]);
+
+  const isDirty =
+    initialRef.current === null
+      ? false
+      : label !== initialRef.current.label ||
+        endpoint !== initialRef.current.endpoint ||
+        payload !== initialRef.current.payload ||
+        onFailure !== initialRef.current.onFailure;
+
+  const handleClose = useConfirmClose(isDirty, onClose);
 
   const leadVariables = useMemo(
     () =>
@@ -95,7 +133,7 @@ function DataSenderNodeModal({
 
   const footer = (
     <ModalFooter>
-      <Button variant="secondary" onPress={onClose}>
+      <Button variant="secondary" onPress={handleClose}>
         Cancel
       </Button>
       <Button onPress={handleSave} disabled={!!payloadError}>
@@ -115,7 +153,7 @@ function DataSenderNodeModal({
   return (
     <BaseModal
       visible={visible}
-      onClose={onClose}
+      onClose={handleClose}
       title="Configure Data Sender Node"
       maxWidth={isWide ? '2xl' : 'md'}
       footer={footer}

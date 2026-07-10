@@ -164,8 +164,9 @@ test('classifyFlowChange distinguishes content and structural edits', () => {
   assert.equal(classifyFlowChange(original, structuralEdit).kind, 'structural');
 });
 
-test('assertFlowEditAllowed blocks structural edits once live', () => {
+test('assertFlowEditAllowed blocks structural edits while running', () => {
   assert.equal(assertFlowEditAllowed('draft', 'structural').allowed, true);
+  assert.equal(assertFlowEditAllowed('paused', 'structural').allowed, true);
   assert.equal(assertFlowEditAllowed('running', 'content').allowed, true);
 
   const policy = assertFlowEditAllowed('running', 'structural');

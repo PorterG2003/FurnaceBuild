@@ -17,6 +17,7 @@ import {
   parseMetaAdLibraryHtml,
   pickMatchedAdsForSignals,
   scorePageNameMatch,
+  shouldTryCompanyNameFallback,
 } from './metaAdLibraryParse.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -240,4 +241,21 @@ test('extractStructuredAdContentFromBlock parses primary text, URL, headline, an
   assert.match(structured.landing_url ?? '', /nike\.com/i);
   assert.equal(structured.headline, 'Nike Air Monarch IV');
   assert.equal(structured.cta, 'Shop Now');
+});
+
+test('shouldTryCompanyNameFallback includes no_results when company name is set', () => {
+  assert.equal(
+    shouldTryCompanyNameFallback(
+      { result: 'no', matched_via: null, matched_card: null, ambiguous: false, reason: 'no_results' },
+      'Xtalks',
+    ),
+    true,
+  );
+  assert.equal(
+    shouldTryCompanyNameFallback(
+      { result: 'no', matched_via: null, matched_card: null, ambiguous: false, reason: 'no_results' },
+      '',
+    ),
+    false,
+  );
 });

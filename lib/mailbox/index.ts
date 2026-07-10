@@ -1,5 +1,6 @@
 export {
   applyMailboxImapFailureUpdate,
+  applyMailboxImapSuccessUpdate,
   applyMailboxSmtpFailureUpdate,
   classifyImapError,
   classifySmtpError,
@@ -22,6 +23,12 @@ export {
   buildImapFlowOptions,
   type ImapConnectionConfig,
 } from './imapClientOptions.js';
+
+export {
+  createImapFlowErrorGuard,
+  type ImapFlowErrorEmitter,
+  type ImapFlowErrorGuard,
+} from './imapFlowGuard.js';
 
 export {
   inferImapInfraFailureCode,

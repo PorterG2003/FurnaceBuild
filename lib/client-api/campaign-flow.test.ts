@@ -102,8 +102,10 @@ test('buildFlowSaveResponse includes documented save keys', () => {
     'flow',
     'flow_revision',
     'lifecycle',
+    'reactivated_count',
     'validation',
   ]);
+  assert.equal(response.reactivated_count, 0);
   assert.equal(response.flow_revision, prepared.flow_revision);
   assert.deepEqual(response.validation.blocking_issues, []);
 });

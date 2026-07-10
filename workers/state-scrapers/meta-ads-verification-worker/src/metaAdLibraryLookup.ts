@@ -9,13 +9,28 @@ import {
 } from './metaAdLibraryUrl.js';
 import {
   classifyMetaAdResults,
-  isInconclusiveClassification,
   latestAdStartedRunningFromCards,
   parseMetaAdLibraryBodyText,
   pickMatchedAdsForSignals,
+  shouldTryCompanyNameFallback,
   type MetaAdLibraryPageSnapshot,
   type MetaAdsVerificationResult,
 } from './metaAdLibraryParse.js';
+import {
+  buildWebinarScanSignals,
+  dedupeCardsByLibraryId,
+  META_ADS_MAX_SCROLL_ATTEMPTS,
+  META_ADS_WEBINAR_SCAN_DAYS_DEFAULT,
+  type MetaAdLibraryWebinarScanResult,
+} from './metaAdLibraryWebinarScan.js';
+import {
+  buildScrollPaginationStats,
+  finalizeScrolledSnapshot,
+  mergeScrollSnapshotStep,
+  SCROLL_SETTLE_MS,
+  SCROLL_STALE_LIMIT,
+  type ScrollPaginationStats,
+} from './metaAdLibraryPagination.js';
 
 const NAV_TIMEOUT_MS = 45_000;
 const SETTLE_TIMEOUT_MS = 15_000;
@@ -33,6 +48,8 @@ export interface MetaAdLibraryLookupOptions {
   browser?: Browser;
   context?: BrowserContext;
   signal?: AbortSignal;
+  scanWebinars?: boolean;
+  webinarScanDays?: number;
 }
 
 export interface MetaAdLibraryLookupResult {
@@ -110,6 +127,48 @@ async function extractPageSnapshot(page: Page, searchDomain: string | null = nul
   };
 }
 
+async function scrollAndCollectSnapshot(
+  page: Page,
+  searchDomain: string,
+  initialSnapshot: MetaAdLibraryPageSnapshot,
+  webinarScanDays: number,
+): Promise<{ snapshot: MetaAdLibraryPageSnapshot; pagination: ScrollPaginationStats }> {
+  const initialCardCount = initialSnapshot.cards.length;
+  let mergedCards = dedupeCardsByLibraryId([...initialSnapshot.cards]);
+  let staleScrolls = 0;
+  let scrollAttempts = 0;
+  let stopReason: ScrollPaginationStats['stopped_reason'] = 'max_attempts';
+
+  for (let attempt = 0; attempt < META_ADS_MAX_SCROLL_ATTEMPTS; attempt += 1) {
+    await page.evaluate(() => window.scrollBy(0, window.innerHeight * 0.9));
+    await page.waitForTimeout(SCROLL_SETTLE_MS);
+
+    const snapshot = await extractPageSnapshot(page, searchDomain);
+    scrollAttempts += 1;
+    const step = mergeScrollSnapshotStep(mergedCards, snapshot.cards, attempt, staleScrolls, {
+      webinarScanDays,
+    });
+    mergedCards = step.mergedCards;
+    staleScrolls = step.staleScrolls;
+    if (step.stopReason) {
+      stopReason = step.stopReason;
+      break;
+    }
+  }
+
+  const pagination = buildScrollPaginationStats(
+    initialCardCount,
+    mergedCards.length,
+    scrollAttempts,
+    stopReason,
+  );
+
+  return {
+    snapshot: finalizeScrolledSnapshot(initialSnapshot, mergedCards),
+    pagination,
+  };
+}
+
 async function waitForResultsHydration(page: Page, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -134,8 +193,17 @@ async function runSingleSearch(
     companyName?: string | null;
     outputDir: string | null;
     screenshotPrefix: string;
+    scanWebinars?: boolean;
+    webinarScanDays?: number;
   },
-): Promise<{ classification: ReturnType<typeof classifyMetaAdResults>; snapshot: MetaAdLibraryPageSnapshot; searchUrl: string; screenshot: string | null }> {
+): Promise<{
+  classification: ReturnType<typeof classifyMetaAdResults>;
+  snapshot: MetaAdLibraryPageSnapshot;
+  expandedSnapshot: MetaAdLibraryPageSnapshot | null;
+  scrollPagination: ScrollPaginationStats | null;
+  searchUrl: string;
+  screenshot: string | null;
+}> {
   const searchUrl = buildMetaAdLibrarySearchUrl({
     q: args.searchTerm,
     country: args.country,
@@ -146,13 +214,25 @@ async function runSingleSearch(
   await page.waitForLoadState('networkidle', { timeout: SETTLE_TIMEOUT_MS }).catch(() => undefined);
   await waitForResultsHydration(page, SETTLE_TIMEOUT_MS);
   const snapshot = await extractPageSnapshot(page, args.searchDomain);
+  let expandedSnapshot: MetaAdLibraryPageSnapshot | null = null;
+  let scrollPagination: ScrollPaginationStats | null = null;
+  if (args.scanWebinars && !snapshot.no_results && snapshot.cards.length > 0) {
+    const scrolled = await scrollAndCollectSnapshot(
+      page,
+      args.searchDomain,
+      snapshot,
+      args.webinarScanDays ?? META_ADS_WEBINAR_SCAN_DAYS_DEFAULT,
+    );
+    expandedSnapshot = scrolled.snapshot;
+    scrollPagination = scrolled.pagination;
+  }
   const screenshot = await maybeSaveScreenshot(page, args.outputDir, `${args.screenshotPrefix}.png`);
   const classification = classifyMetaAdResults({
     searchDomain: args.searchDomain,
     companyName: args.companyName,
     snapshot,
   });
-  return { classification, snapshot, searchUrl, screenshot };
+  return { classification, snapshot, expandedSnapshot, scrollPagination, searchUrl, screenshot };
 }
 
 function buildEmptyResult(
@@ -201,6 +281,7 @@ function enrichResult(
   startedAt: number,
   attempts: SearchAttemptRecord[],
   companyName?: string | null,
+  webinarScan?: MetaAdLibraryWebinarScanResult | null,
 ): MetaAdLibraryLookupResult {
   const matched = winningClassification.matched_card;
   const matchedAds = pickMatchedAdsForSignals(
@@ -209,6 +290,21 @@ function enrichResult(
     winningClassification,
     companyName,
   );
+  const signals: Record<string, unknown> = {
+    ...base.signals,
+    search_attempts: attempts,
+    result_card_count: snapshot.cards.length,
+    matched_via: winningClassification.matched_via,
+    raw_page_title: trimText(snapshot.page_title, 120),
+    classification_reason: winningClassification.reason,
+    ambiguous: winningClassification.ambiguous,
+    matched_ads: matchedAds,
+    top_ad: matchedAds[0] ?? null,
+    matched_ad_count: matchedAds.length,
+  };
+  if (webinarScan) {
+    signals.webinar_scan = webinarScan;
+  }
   return {
     ...base,
     result: winningClassification.result,
@@ -216,18 +312,7 @@ function enrichResult(
     matched_page_name: matched?.page_name ?? null,
     page_url: matched?.page_url ?? null,
     latest_ad_last_shown_at: latestAdStartedRunningFromCards(snapshot.cards),
-    signals: {
-      ...base.signals,
-      search_attempts: attempts,
-      result_card_count: snapshot.cards.length,
-      matched_via: winningClassification.matched_via,
-      raw_page_title: trimText(snapshot.page_title, 120),
-      classification_reason: winningClassification.reason,
-      ambiguous: winningClassification.ambiguous,
-      matched_ads: matchedAds,
-      top_ad: matchedAds[0] ?? null,
-      matched_ad_count: matchedAds.length,
-    },
+    signals,
     lookup_stats: {
       ...base.lookup_stats,
       elapsed_ms: Date.now() - startedAt,
@@ -266,6 +351,8 @@ export async function runMetaAdLibraryLookup(
   const timeoutMs = options.timeoutMs ?? 20_000;
   const slowMoMs = options.slowMoMs ?? 0;
   const outputDir = options.outputDir ?? null;
+  const scanWebinars = options.scanWebinars ?? false;
+  const webinarScanDays = options.webinarScanDays ?? META_ADS_WEBINAR_SCAN_DAYS_DEFAULT;
   const startedAt = Date.now();
 
   let createdBrowser = false;
@@ -274,7 +361,7 @@ export async function runMetaAdLibraryLookup(
     options.browser ??
     (await chromium.launch({
       headless,
-      channel: options.channel ?? 'chrome',
+      ...(headless ? {} : { channel: options.channel ?? 'chrome' }),
       slowMo: slowMoMs || undefined,
       args: ['--disable-blink-features=AutomationControlled'],
     }));
@@ -303,6 +390,8 @@ export async function runMetaAdLibraryLookup(
       companyName: options.companyName,
       outputDir,
       screenshotPrefix: `domain-${searchDomain}`,
+      scanWebinars,
+      webinarScanDays,
     });
 
     attempts.push({
@@ -319,9 +408,11 @@ export async function runMetaAdLibraryLookup(
 
     let winningClassification = domainAttempt.classification;
     let winningSnapshot = domainAttempt.snapshot;
+    let winningExpandedSnapshot = domainAttempt.expandedSnapshot;
+    let winningScrollPagination = domainAttempt.scrollPagination;
 
     const companyName = options.companyName?.trim() ?? '';
-    if (companyName && isInconclusiveClassification(domainAttempt.classification)) {
+    if (companyName && shouldTryCompanyNameFallback(domainAttempt.classification, companyName)) {
       const nameSearchType = pickSearchTypeForTerm(companyName);
       const nameAttempt = await runSingleSearch(page, {
         searchTerm: companyName,
@@ -331,6 +422,8 @@ export async function runMetaAdLibraryLookup(
         companyName,
         outputDir,
         screenshotPrefix: `name-${searchDomain.replace(/\./g, '-')}`,
+        scanWebinars,
+        webinarScanDays,
       });
       attempts.push({
         search_term: companyName,
@@ -349,8 +442,23 @@ export async function runMetaAdLibraryLookup(
       ) {
         winningClassification = nameAttempt.classification;
         winningSnapshot = nameAttempt.snapshot;
+        winningExpandedSnapshot = nameAttempt.expandedSnapshot;
+        winningScrollPagination = nameAttempt.scrollPagination;
       }
     }
+
+    const webinarScan =
+      scanWebinars && winningExpandedSnapshot
+        ? buildWebinarScanSignals(
+            winningExpandedSnapshot,
+            searchDomain,
+            webinarScanDays,
+            undefined,
+            winningScrollPagination ?? undefined,
+          )
+        : scanWebinars
+          ? buildWebinarScanSignals(winningSnapshot, searchDomain, webinarScanDays)
+          : null;
 
     const base = buildEmptyResult(options, searchDomain, attempts, startedAt);
     return enrichResult(
@@ -361,6 +469,7 @@ export async function runMetaAdLibraryLookup(
       startedAt,
       attempts,
       options.companyName,
+      webinarScan,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

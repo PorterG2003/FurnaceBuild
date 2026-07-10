@@ -19,6 +19,8 @@ interface AICategorizerNodeData {
   label?: string;
   use_ai?: boolean;
   readOnly?: boolean;
+  canDelete?: boolean;
+  structuralBlocked?: boolean;
 }
 
 interface AICategorizerNodeProps {
@@ -77,8 +79,8 @@ export function AICategorizerNode({ data, selected, id }: AICategorizerNodeProps
         >
           <FlowNodeActionsMenu
             onEdit={handleEdit}
-            onDelete={handleDelete}
-            label={displayLabel}
+            onDelete={data.canDelete !== false ? handleDelete : undefined}
+            deleteMuted={!!data.structuralBlocked}
           />
         </div>
       ) : null}

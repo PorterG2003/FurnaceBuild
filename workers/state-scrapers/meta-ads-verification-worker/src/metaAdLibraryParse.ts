@@ -8,6 +8,7 @@ export interface MetaAdLibraryMatchedAd {
   landing_url: string | null;
   cta: string | null;
   started_running: string | null;
+  link_urls?: string[];
 }
 
 export interface MetaAdLibraryResultCard {
@@ -114,6 +115,7 @@ export function scorePageNameMatch(companyName: string, pageName: string): numbe
 
 const PAGE_NAME_MATCH_THRESHOLD = 0.85;
 const HTTP_URL_IN_TEXT_RE = /https?:\/\/[^\s<>"'`()[\]{}|\\^]+/gi;
+const WEBINAR_PATH_IN_URL_RE = /\/(webinars?|masterclass|virtual-event|live-event|online-workshop)(\/|$|\?)/i;
 const CTA_LINE_RE =
   /^(sign up|shop now|learn more|install now|download|book now|get offer|apply now|subscribe|install|register free)$/i;
 
@@ -128,12 +130,22 @@ function isUiNoiseAfterSponsored(line: string): boolean {
 }
 
 function pickLandingUrl(linkUrls: string[], searchDomain: string | null): string | null {
-  if (searchDomain) {
-    const domainMatch = linkUrls.find((url) => domainMatchesResult(searchDomain, url));
-    if (domainMatch) return domainMatch;
+  const candidates = searchDomain
+    ? linkUrls.filter((url) => domainMatchesResult(searchDomain, url))
+    : linkUrls.filter((url) => !/facebook\.com/i.test(url));
+  if (candidates.length === 0) {
+    const external = linkUrls.find((url) => !/facebook\.com/i.test(url));
+    return external ?? linkUrls[0] ?? null;
   }
-  const external = linkUrls.find((url) => !/facebook\.com/i.test(url));
-  return external ?? linkUrls[0] ?? null;
+  const webinarUrl = candidates.find((url) => WEBINAR_PATH_IN_URL_RE.test(url));
+  if (webinarUrl) return webinarUrl;
+  return candidates.sort((a, b) => {
+    try {
+      return new URL(b).pathname.length - new URL(a).pathname.length;
+    } catch {
+      return b.length - a.length;
+    }
+  })[0]!;
 }
 
 export function extractStructuredAdContentFromBlock(
@@ -189,9 +201,10 @@ export function toMatchedAdPayload(card: MetaAdLibraryResultCard): MetaAdLibrary
     page_name: card.page_name,
     primary_text: card.primary_text,
     headline: card.headline,
-    landing_url: card.landing_url ?? card.link_urls[0] ?? null,
+    landing_url: card.landing_url ?? pickLandingUrl(card.link_urls, null),
     cta: card.cta,
     started_running: card.started_running,
+    link_urls: card.link_urls,
   };
 }
 
@@ -366,7 +379,7 @@ export function parseMetaAdLibraryHtml(html: string, pageTitle = ''): MetaAdLibr
   };
 }
 
-function cardDomainMatch(card: MetaAdLibraryResultCard, searchDomain: string): boolean {
+export function cardDomainMatch(card: MetaAdLibraryResultCard, searchDomain: string): boolean {
   if (card.landing_url && domainMatchesResult(searchDomain, card.landing_url)) return true;
   if (card.link_urls.some((url) => domainMatchesResult(searchDomain, url))) return true;
   if (!card.body_text) return false;
@@ -494,6 +507,16 @@ export function isInconclusiveClassification(output: ClassifyMetaAdResultsOutput
     return true;
   }
   return false;
+}
+
+/** When domain search returns no ads, company-name search may still find the advertiser. */
+export function shouldTryCompanyNameFallback(
+  output: ClassifyMetaAdResultsOutput,
+  companyName?: string | null,
+): boolean {
+  if (!companyName?.trim()) return false;
+  if (isInconclusiveClassification(output)) return true;
+  return output.result === 'no' && output.reason === 'no_results';
 }
 
 export function latestAdStartedRunningFromCards(cards: MetaAdLibraryResultCard[]): string | null {

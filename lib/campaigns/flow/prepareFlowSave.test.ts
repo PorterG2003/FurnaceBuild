@@ -44,6 +44,39 @@ test('prepareFlowSave throws on stale ifMatch', async () => {
   );
 });
 
+test('prepareFlowSave allows structural edits on paused campaigns', async () => {
+  const existing = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const structural = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  structural.edges.pop();
+  const result = await prepareFlowSave({
+    incomingFlow: structural,
+    existingFlow: existing,
+    campaignStatus: 'paused',
+    phase: 'draft',
+  });
+  assert.equal(result.changeKind, 'structural');
+});
+
+test('prepareFlowSave blocks all edits on stopped campaigns', async () => {
+  const existing = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const content = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const emailNode = content.nodes.find((node) => node.id === 'email-1');
+  assert.ok(emailNode && emailNode.type === 'email');
+  if (!emailNode || emailNode.type !== 'email') {
+    throw new Error('email node missing from example flow');
+  }
+  emailNode.data.variants[0]!.subject = 'Stopped edit';
+  await assert.rejects(
+    () => prepareFlowSave({
+      incomingFlow: content,
+      existingFlow: existing,
+      campaignStatus: 'stopped',
+      phase: 'draft',
+    }),
+    FlowEditForbiddenError,
+  );
+});
+
 test('prepareFlowSave blocks structural edits on running campaigns', async () => {
   const existing = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
   const structural = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);

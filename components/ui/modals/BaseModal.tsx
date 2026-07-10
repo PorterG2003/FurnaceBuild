@@ -37,6 +37,8 @@ interface BaseModalProps {
   hideCloseButton?: boolean;
   /** Remove the p-6 content padding on desktop (e.g. announcement modals where the visual is edge-to-edge). */
   noPadding?: boolean;
+  /** Mobile sheet: max lines for the description. Pass `null` for no limit. */
+  descriptionNumberOfLines?: number | null;
 }
 
 const maxWidthClasses = {
@@ -70,7 +72,9 @@ export function BaseModal({
   fitContent = false,
   hideCloseButton = false,
   noPadding = false,
+  descriptionNumberOfLines,
 }: BaseModalProps) {
+  const mobileDescriptionLines = descriptionNumberOfLines === null ? undefined : (descriptionNumberOfLines ?? 3);
   const { width, height: screenHeight } = useWindowDimensions();
   const isMobile = width < LAYOUT_BREAKPOINT;
   useRegisterBlockingOverlay(visible);
@@ -134,7 +138,10 @@ export function BaseModal({
               ) : null}
               {description ? (
                 <View className="flex-row items-start gap-1.5 mt-1">
-                  <Text className="text-gray-400 font-instrument text-sm flex-1" numberOfLines={3}>
+                  <Text
+                    className="text-gray-400 font-instrument text-sm flex-1"
+                    numberOfLines={mobileDescriptionLines}
+                  >
                     {description}
                   </Text>
                   {descriptionHelp ? (

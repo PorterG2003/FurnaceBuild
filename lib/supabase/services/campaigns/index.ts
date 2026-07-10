@@ -9,6 +9,7 @@ export {
   deleteCampaign,
   type CampaignFlowVersion,
   type CampaignFilters,
+  type CampaignFlowSaveResult,
   type DuplicateCampaignOptions,
 } from './campaigns';
 export {

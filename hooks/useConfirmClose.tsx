@@ -30,10 +30,11 @@ export function useConfirmClose(
     showConfirm({
       title,
       message,
-      cancelLabel: keepLabel,
-      confirmLabel: discardLabel,
-      confirmVariant: 'destructive',
-      onConfirm: onClose,
+      cancelLabel: discardLabel,
+      confirmLabel: keepLabel,
+      confirmVariant: 'default',
+      onCancel: onClose,
+      onConfirm: () => {},
     });
   }, [isDirty, onClose, showConfirm, title, message, discardLabel, keepLabel]);
 }

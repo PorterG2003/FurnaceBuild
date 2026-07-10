@@ -36,6 +36,8 @@ npm run local -- --domain acmeplumbing.com --company-name "Acme Plumbing LLC"
 | `--timeout-ms` | `20000` | Playwright default timeout |
 | `--slow-mo-ms` | `150` | Slow motion between actions |
 | `--output-dir` | — | Save full-page PNG screenshots per search attempt |
+| `--scan-webinars` | off | Scroll results, filter last N days, classify webinar ads (slower) |
+| `--webinar-days` | `30` | Rolling window when `--scan-webinars` is enabled |
 
 ## Search strategy
 
@@ -80,6 +82,99 @@ When ads are found and matched, `signals` also includes structured list-page con
 | `cta` | Button label (e.g. Sign Up, Shop Now) |
 
 When `result` is `no`, `matched_ads` is `[]`.
+
+### Optional webinar scan (`--scan-webinars`)
+
+Off by default. When enabled, the lookup scrolls through more Ad Library result cards (up to 100), filters domain-matched ads to the last `--webinar-days` (default 30) using parsed `started_running` dates, and classifies webinar-related ads into `signals.webinar_scan`.
+
+```bash
+npm run verify:meta-ads -- --domain xtalks.com --company-name Xtalks --headless --scan-webinars --webinar-days 30
+```
+
+```json
+{
+  "signals": {
+    "webinar_scan": {
+      "enabled": true,
+      "days": 30,
+      "scanned_card_count": 38,
+      "recent_ad_count": 31,
+      "webinar_ad_count": 0,
+      "webinar_ads": [],
+      "pagination": {
+        "initial_card_count": 30,
+        "scanned_card_count": 38,
+        "scroll_attempts": 6,
+        "cards_added_by_scroll": 8,
+        "scroll_helped": true,
+        "stopped_reason": "stale_scrolls"
+      }
+    }
+  }
+}
+```
+
+Validate live pagination (hits Meta; expects `nike.com` to grow by at least 5 cards):
+
+```bash
+npm run validate-pagination
+```
+
+### Batch checkpoint / resume
+
+The webinar batch runner writes a checkpoint after each company and can resume after interruption.
+
+**8-company validation sample** (default):
+
+```bash
+node --import tsx src/batchWebinarSample.ts --scan-webinars
+```
+
+**Full stage 3 CSV** (~2,500 entities with `enrichment_status=ok`):
+
+```bash
+node --import tsx src/batchWebinarSample.ts --all --scan-webinars
+```
+
+Output goes to `tmp/meta-ads-webinar-batch-full/` (separate from the 8-company sample in `tmp/meta-ads-webinar-batch/`).
+
+| Flag | Description |
+|------|-------------|
+| `--all` | Process every eligible row in the CSV (not just the 8-name sample) |
+| `--max-rows N` | Cap rows processed (useful for smoke tests) |
+| `--delay-ms` | Pause between companies (default `2000`) |
+| `--headless` | Run Chrome headless — **use this for long batches** so windows don't pop up |
+| `--scan-webinars` | Enable 30-day webinar scroll scan |
+| `--resume` | Continue from checkpoint |
+| `--fresh` | Ignore existing checkpoint and start over |
+| `--out-dir` | Override output directory |
+| `--checkpoint` | Override checkpoint file path |
+
+```bash
+# Resume full batch
+node --import tsx src/batchWebinarSample.ts --all --scan-webinars --resume
+
+# Custom checkpoint path
+node --import tsx src/batchWebinarSample.ts --all --scan-webinars --checkpoint /tmp/my-checkpoint.json --resume
+```
+
+Checkpoint stores completed domains, per-company results, and errors. Resume validates CSV path, batch mode, and scan flags match the original run.
+
+Default verify output (`matched_ads`, `result`) is unchanged when `--scan-webinars` is omitted. Webinar scan uses a separate expanded snapshot; classification still uses the initial viewport parse.
+
+**Limitations:** date filtering is client-side on list-page `started_running` text; very large libraries may hit scroll/card caps before all recent ads load.
+
+Batch sample with webinar scan:
+
+```bash
+node --import tsx src/batchWebinarSample.ts --scan-webinars
+```
+
+Full batch:
+
+```bash
+node --import tsx src/batchWebinarSample.ts --all --scan-webinars
+```
 
 ## Tests
 

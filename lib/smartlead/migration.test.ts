@@ -8,6 +8,7 @@ import {
   fetchSmartleadCampaignStatsByDay,
   mapSmartleadCategoryToFurnace,
   parseSmartleadInboxReplyLead,
+  replaceSmartleadConversationMessages,
   upsertSmartleadConversationThread,
   upsertCampaignFromSmartlead,
   upsertLeadsFromSmartlead,
@@ -261,4 +262,70 @@ test('mapSmartleadCategoryToFurnace maps negative sentiment to Not Interested', 
     [{ id: 3, name: 'Not Interested', sentiment_type: 'negative' }],
   );
   assert.equal(category, 'Not Interested');
+});
+
+test('replaceSmartleadConversationMessages skips duplicate account message_ids', async () => {
+  const seenMessageIds = new Set<string>(['dup-message-id']);
+  const insertedRows: Record<string, unknown>[] = [];
+  const db = {
+    from(table: string) {
+      if (table === 'email_messages') {
+        const messageTable = {
+          delete() {
+            return {
+              eq() {
+                return Promise.resolve({ error: null });
+              },
+            };
+          },
+          insert(row: Record<string, unknown>) {
+            insertedRows.push(row);
+            const messageId = row.message_id as string | null | undefined;
+            if (messageId === 'dup-message-id') {
+              return Promise.resolve({
+                error: {
+                  message: 'duplicate key value violates unique constraint "idx_email_messages_account_message_id_unique"',
+                },
+              });
+            }
+            return Promise.resolve({ error: null });
+          },
+        };
+        return messageTable;
+      }
+      throw new Error(`Unexpected table ${table}`);
+    },
+  };
+
+  const insertedCount = await replaceSmartleadConversationMessages({
+    threadId: 'thread-id',
+    accountId: 'account-id',
+    threadSubject: 'Subject',
+    seenMessageIds,
+    messages: [
+      {
+        from: 'sender@example.com',
+        to: 'lead@example.com',
+        type: 'SENT',
+        time: '2026-07-10T12:00:00.000Z',
+        message_id: 'dup-message-id',
+        raw: {},
+      },
+      {
+        from: 'lead@example.com',
+        to: 'sender@example.com',
+        type: 'REPLY',
+        time: '2026-07-10T13:00:00.000Z',
+        message_id: 'unique-message-id',
+        raw: {},
+      },
+    ],
+    db: db as any,
+  });
+
+  assert.equal(insertedCount, 1);
+  assert.equal(insertedRows.length, 1);
+  assert.equal(insertedRows[0].message_id, 'unique-message-id');
+  assert.equal(seenMessageIds.has('dup-message-id'), true);
+  assert.equal(seenMessageIds.has('unique-message-id'), true);
 });

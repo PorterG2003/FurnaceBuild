@@ -2514,7 +2514,7 @@ export interface Database {
           p_flow_data: Json;
           p_change_source?: string;
         };
-        Returns: Database['public']['Tables']['campaigns']['Row'];
+        Returns: Json;
       };
       update_campaign_flow_data_as_service: {
         Args: {
@@ -2523,7 +2523,7 @@ export interface Database {
           p_flow_data: Json;
           p_change_source?: string;
         };
-        Returns: Database['public']['Tables']['campaigns']['Row'];
+        Returns: Json;
       };
       create_inbox_reply_job: {
         Args: {

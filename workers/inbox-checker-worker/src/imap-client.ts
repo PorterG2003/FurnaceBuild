@@ -1,5 +1,8 @@
 import { reportErrorToSlack } from '@furnace/slack-lib';
-import { buildImapFlowOptions } from '@furnace/mailbox-lib';
+import {
+  buildImapFlowOptions,
+  createImapFlowErrorGuard,
+} from '@furnace/mailbox-lib';
 import { openImapInbox } from '@furnace/mailbox-lib';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
@@ -26,10 +29,13 @@ export class ImapClient {
         useSSL: mailbox.imap_use_ssl,
       }),
     );
+    const guard = createImapFlowErrorGuard(client);
 
     try {
       await client.connect();
+      guard.throwIfError();
       await openImapInbox(client);
+      guard.throwIfError();
 
       // Build search criteria: messages since last_synced_at (or last 7 days if never synced)
       let searchCriteria: any;
@@ -43,6 +49,7 @@ export class ImapClient {
       }
 
       const messages = await client.search(searchCriteria, { uid: true });
+      guard.throwIfError();
 
       // Handle search result (can be false or number[])
       if (!messages || (Array.isArray(messages) && messages.length === 0)) {
@@ -69,10 +76,12 @@ export class ImapClient {
             bodyStructure: true,
           }, { uid: true });
 
+          guard.throwIfError();
           if (!message) continue;
 
           // Parse message
           const parsed = await this.parseMessage(uid, message, client, mailbox);
+          guard.throwIfError();
           processedMessages.push(parsed);
         } catch (error) {
           console.error(`Error processing message ${uid} in mailbox ${mailbox.id}:`, error);
@@ -90,6 +99,7 @@ export class ImapClient {
 
       return processedMessages;
     } finally {
+      guard.dispose();
       try {
         await client.logout();
       } catch (e) {

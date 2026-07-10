@@ -15,6 +15,8 @@ interface EmailNodeData {
   template?: string;
   mailboxId?: string;
   readOnly?: boolean;
+  canDelete?: boolean;
+  structuralBlocked?: boolean;
   variants?: EmailVariant[];
 }
 
@@ -52,6 +54,8 @@ function EmailNode({ data, selected, id }: EmailNodeProps) {
       onDelete={handleDelete}
       icon={IconComponent && <IconComponent size={16} color="#f85102" />}
       showActions={!data.readOnly}
+      canDelete={data.canDelete !== false}
+      deleteMuted={!!data.structuralBlocked}
       nodeLabel={displayLabel}
     >
       {previewSubject ? (

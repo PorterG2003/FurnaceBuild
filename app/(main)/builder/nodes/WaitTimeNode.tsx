@@ -6,6 +6,8 @@ interface WaitTimeNodeData {
   duration?: string;
   unit?: 'minutes' | 'hours' | 'days';
   readOnly?: boolean;
+  canDelete?: boolean;
+  structuralBlocked?: boolean;
 }
 
 interface WaitTimeNodeProps {
@@ -41,6 +43,8 @@ function WaitTimeNode({ data, selected, id }: WaitTimeNodeProps) {
       onDelete={handleDelete}
       icon={IconComponent && <IconComponent size={16} color="#f85102" />}
       showActions={!data.readOnly}
+      canDelete={data.canDelete !== false}
+      deleteMuted={!!data.structuralBlocked}
       nodeLabel={displayLabel}
     >
       {displayDuration && (

@@ -13,6 +13,7 @@ import {
 import {
   assertFlowDryRunShape,
   assertFlowSaveShape,
+  appendEmailAfterLeaf,
   cleanupCreatedCampaign,
   cloneFlow,
   countFlowVersions,
@@ -28,6 +29,11 @@ import {
   saveFlow,
   validateFlow,
 } from './flowApiHelpers.js';
+import {
+  buildCampaignEnrollment,
+  buildCampaignJob,
+  buildCampaignLead,
+} from '../campaign/fixtures.js';
 
 async function setupDraftCampaign(harness: ClientApiDbHarness): Promise<{
   campaignId: string;
@@ -62,6 +68,22 @@ async function setupRunningCampaign(harness: ClientApiDbHarness): Promise<{
     custom_lead_data: { company: 'Furnace' },
   });
   return { campaignId, apiKey };
+}
+
+async function setupStoppedCampaign(harness: ClientApiDbHarness): Promise<{
+  campaignId: string;
+  apiKey: string;
+}> {
+  const setup = await setupRunningCampaign(harness);
+  const stopped = await harness.request(`/v1/campaigns/${setup.campaignId}/status`, {
+    method: 'PATCH',
+    apiKey: setup.apiKey,
+    body: { status: 'stopped' },
+  });
+  assert.equal(stopped.status, 200);
+  const stoppedBody = await stopped.json() as { data: { status: string } };
+  assert.equal(stoppedBody.data.status, 'stopped');
+  return setup;
 }
 
 test('client api GET /v1/flow-templates returns template list', async () => {
@@ -576,7 +598,7 @@ test('client api PATCH /flow/nodes/{nodeId} updates running email content', asyn
   }
 });
 
-test('client api PATCH node on leadSource returns 403 flow_locked', async () => {
+test('client api PATCH node on leadSource returns 200 while running', async () => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('flow-patch-lead-source'),
   });
@@ -587,9 +609,9 @@ test('client api PATCH node on leadSource returns 403 flow_locked', async () => 
     const patched = await patchFlowNode(harness, campaignId, 'leadSource-1', {
       customFieldKeys: ['company', 'title'],
     }, setup.apiKey);
-    assert.equal(patched.status, 403);
-    const body = await patched.json() as { error: { code: string } };
-    assert.equal(body.error.code, 'flow_locked');
+    assert.equal(patched.status, 200);
+    const body = await patched.json() as { data: { flow_revision: string } };
+    assert.ok(body.data.flow_revision);
   } finally {
     await cleanupCreatedCampaign(harness, campaignId);
     await harness.cleanup();
@@ -783,7 +805,7 @@ test('client api dataSender flow validates and saves', async () => {
   }
 });
 
-test('client api categorizer flow validates and blocks live categorizer patch', async () => {
+test('client api categorizer flow validates and allows live categorizer patch', async () => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('flow-categorizer'),
   });
@@ -811,9 +833,127 @@ test('client api categorizer flow validates and blocks live categorizer patch', 
     const patched = await patchFlowNode(harness, campaignId, 'aiCategorizer-1', {
       use_ai: false,
     }, setup.apiKey);
+    assert.equal(patched.status, 200);
+    const body = await patched.json() as { data: { flow_revision: string } };
+    assertFlowSaveShape(body.data);
+    assert.ok(body.data.flow_revision);
+
+    const dbFlow = await loadCampaignFlowFromDb(harness, campaignId);
+    const categorizer = dbFlow?.nodes.find((node) => node.id === 'aiCategorizer-1');
+    assert.ok(categorizer && categorizer.type === 'aiCategorizer');
+    assert.equal(categorizer.data.use_ai, false);
+  } finally {
+    await cleanupCreatedCampaign(harness, campaignId);
+    await harness.cleanup();
+  }
+});
+
+test('client api PUT /flow append on paused returns 200 and reactivated_count', async () => {
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('flow-paused-append'),
+  });
+  let campaignId: string | null = null;
+  try {
+    const graph = await harness.campaignHarness.createCampaignGraph({
+      name: 'Paused Append Reactivation',
+      status: 'paused',
+      flowKind: 'emailWaitEmail',
+      leads: [
+        buildCampaignLead({
+          key: 'completed-leaf',
+          email: `completed-${harness.namespace}@furnace.test`,
+          enrollment: buildCampaignEnrollment({
+            state: 'completed',
+            currentFlowNodeId: 'email-2',
+            nextRunAt: null,
+          }),
+          jobs: [
+            buildCampaignJob({
+              key: 'email-2-sent',
+              nodeFlowNodeId: 'email-2',
+              status: 'sent',
+              sentAt: new Date(Date.now() - 60_000).toISOString(),
+            }),
+          ],
+        }),
+      ],
+      mailboxes: [{
+        key: 'mailbox-1',
+        emailAddress: `seed-${harness.namespace}@example.com`,
+        displayName: 'Seed Sender',
+      }],
+    });
+    campaignId = graph.campaignId;
+    const apiKey = await harness.createApiKey();
+
+    const currentFlow = await loadCampaignFlowFromDb(harness, campaignId);
+    assert.ok(currentFlow);
+    const outgoingFromLeaf = currentFlow.edges.filter((edge) => edge.source === 'email-2');
+    assert.equal(outgoingFromLeaf.length, 0, 'precondition: email-2 must be a former leaf');
+
+    const appendedFlow = appendEmailAfterLeaf(currentFlow, 'email-2', 'email-append-1');
+    const response = await saveFlow(harness, campaignId, appendedFlow, {
+      method: 'PUT',
+      apiKey: apiKey.secret,
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { data: { reactivated_count: number } };
+    assertFlowSaveShape(body.data);
+    assert.equal(body.data.reactivated_count, 1);
+
+    const completedEnrollmentId = graph.leadsByKey.get('completed-leaf')!.enrollmentId!;
+    const { data: enrollment, error } = await harness.supabase
+      .from('enrollments')
+      .select('state, current_node_id')
+      .eq('id', completedEnrollmentId)
+      .single();
+    assert.equal(error, null);
+    assert.equal(enrollment?.state, 'active');
+    assert.equal(
+      enrollment?.current_node_id,
+      graph.nodeIdsByFlowNodeId.get('email-2'),
+    );
+  } finally {
+    await cleanupCreatedCampaign(harness, campaignId);
+    await harness.cleanup();
+  }
+});
+
+test('client api stopped campaign blocks POST, PUT, and PATCH flow writes', async () => {
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('flow-stopped-locked'),
+  });
+  let campaignId: string | null = null;
+  try {
+    const setup = await setupStoppedCampaign(harness);
+    campaignId = setup.campaignId;
+    const flow = cloneFlow(linearFlowForApi());
+    const emailNode = flow.nodes.find((node) => node.id === 'email-1');
+    assert.ok(emailNode && emailNode.type === 'email');
+    emailNode.data.variants[0]!.subject = 'Stopped content edit';
+
+    const post = await saveFlow(harness, campaignId, flow, {
+      method: 'POST',
+      apiKey: setup.apiKey,
+    });
+    assert.equal(post.status, 403);
+    const postBody = await post.json() as { error: { code: string } };
+    assert.equal(postBody.error.code, 'flow_locked');
+
+    const put = await saveFlow(harness, campaignId, flow, {
+      method: 'PUT',
+      apiKey: setup.apiKey,
+    });
+    assert.equal(put.status, 403);
+    const putBody = await put.json() as { error: { code: string } };
+    assert.equal(putBody.error.code, 'flow_locked');
+
+    const patched = await patchFlowNode(harness, campaignId, 'email-1', {
+      variants: emailNode.data.variants,
+    }, setup.apiKey);
     assert.equal(patched.status, 403);
-    const body = await patched.json() as { error: { code: string } };
-    assert.equal(body.error.code, 'flow_locked');
+    const patchBody = await patched.json() as { error: { code: string } };
+    assert.equal(patchBody.error.code, 'flow_locked');
   } finally {
     await cleanupCreatedCampaign(harness, campaignId);
     await harness.cleanup();

@@ -1,15 +1,14 @@
 import { defineFunction, secret } from '@aws-amplify/backend';
 
 /**
- * Fetch Email Attachment Lambda
+ * Inbox attachment Lambda (Function URL).
  *
- * Fetches attachment binary from IMAP for a given email_message_id and part.
- * Invoked via Function URL (not API Gateway) — 15 min timeout for large attachments.
+ * Actions: prepare_upload, delete_upload, fetch (IMAP or Storage signed GET), drain_gc.
  *
  * Environment:
  * - SUPABASE_URL: from .env.local at deploy time (plain env var)
  * - SUPABASE_SECRET_KEY: secret (Supabase service role key)
- * - SUPABASE_JWT_SECRET: Supabase project JWT secret (Project Settings > API > JWT Secret) for verifying access tokens
+ * - INBOX_ATTACHMENT_GC_SECRET: plain env (optional; required for drain_gc)
  */
 export const fetchEmailAttachment = defineFunction({
   name: 'fetchEmailAttachment',

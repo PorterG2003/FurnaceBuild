@@ -475,6 +475,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     cancelPendingOutbound,
     retryFailedReply,
     handleComposerFilesSelected,
+    handleRemoveComposerAttachment,
   } = composer;
 
   const messagesScrollViewRef = useRef<ScrollView>(null);
@@ -950,12 +951,12 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
   }, [messages.length, selectedThreadId, pendingReplies.length, composerMode]);
 
   const handleFetchAttachmentBlob = useCallback(
-    async (emailMessageId: string, part: string): Promise<Blob | null> => {
+    async (emailMessageId: string, attachmentIndex: number): Promise<Blob | null> => {
       if (!FETCH_ATTACHMENT_URL) return null;
       try {
         const token = await getAccessToken();
         if (!token) return null;
-        return await fetchAttachment(FETCH_ATTACHMENT_URL, token, emailMessageId, part);
+        return await fetchAttachment(FETCH_ATTACHMENT_URL, token, emailMessageId, attachmentIndex);
       } catch {
         return null;
       }
@@ -964,8 +965,8 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
   );
 
   const handleDownloadAttachment = useCallback(
-    async (emailMessageId: string, part: string, filename: string) => {
-      const blob = await handleFetchAttachmentBlob(emailMessageId, part);
+    async (emailMessageId: string, attachmentIndex: number, filename: string) => {
+      const blob = await handleFetchAttachmentBlob(emailMessageId, attachmentIndex);
       if (!blob) return;
       try {
         if (Platform.OS === 'web') {
@@ -1182,6 +1183,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       composerAttachments,
       setComposerAttachments,
       onFilesSelected: handleComposerFilesSelected,
+      onRemoveAttachment: handleRemoveComposerAttachment,
       composerAttachmentsLoading,
       composerAttachmentsSkipMessage,
       includeSignature,
@@ -1224,6 +1226,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       composerAttachments,
       setComposerAttachments,
       handleComposerFilesSelected,
+      handleRemoveComposerAttachment,
       composerAttachmentsLoading,
       composerAttachmentsSkipMessage,
       includeSignature,

@@ -42,8 +42,8 @@ export interface InboxMobileMessagePaneProps {
   onContentSizeChange: (width: number, height: number) => void;
   onReply: (message: EmailMessage) => void;
   onForward: (message: EmailMessage) => void;
-  onDownloadAttachment: ((emailMessageId: string, part: string, filename: string) => Promise<void>) | undefined;
-  onFetchAttachmentPreview: ((emailMessageId: string, part: string) => Promise<Blob | null>) | undefined;
+  onDownloadAttachment: ((emailMessageId: string, attachmentIndex: number, filename: string) => Promise<void>) | undefined;
+  onFetchAttachmentPreview: ((emailMessageId: string, attachmentIndex: number) => Promise<Blob | null>) | undefined;
   pendingReplies: PendingReplyInfo[];
   onRetryFailedReply: (jobId: string) => void;
   onSendImmediately: (jobId: string) => void;

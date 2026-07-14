@@ -68,8 +68,8 @@ export function MessageBubble({
   message: EmailMessage;
   onReply?: (message: EmailMessage) => void;
   onForward?: (message: EmailMessage) => void;
-  onDownloadAttachment?: (emailMessageId: string, part: string, filename: string) => Promise<void>;
-  onFetchAttachmentPreview?: (emailMessageId: string, part: string) => Promise<Blob | null>;
+  onDownloadAttachment?: (emailMessageId: string, attachmentIndex: number, filename: string) => Promise<void>;
+  onFetchAttachmentPreview?: (emailMessageId: string, attachmentIndex: number) => Promise<Blob | null>;
   isPending?: boolean;
   isFailed?: boolean;
   errorMessage?: string | null;

@@ -18,6 +18,12 @@ import type { MessageJob, Mailbox, Lead } from './types.js';
 import { isCampaignMessageJob } from './types.js';
 import { calculateNextRunAt } from '@furnace/campaign-lib/schedule.js';
 import type { CampaignSchedule } from '@furnace/campaign-lib/schedule.js';
+import {
+  buildSentAttachmentMetadata,
+  markAttachmentUploadsSent,
+  resolveSendAttachments,
+  drainInboxAttachmentGcQueue,
+} from './sentAttachments.js';
 
 class CampaignAttemptError extends Error {
   constructor(
@@ -47,40 +53,6 @@ type SentThreadMessageRecord = {
   attachments?: unknown[] | null;
 };
 
-type NormalizedSendAttachment = {
-  filename: string;
-  contentType: string;
-  content: string;
-};
-
-function normalizeSendAttachments(rawAttachments: unknown[]): NormalizedSendAttachment[] {
-  return rawAttachments
-    .map((att) => {
-      const a = att as {
-        filename?: string;
-        contentType?: string;
-        content_type?: string;
-        content?: string;
-      };
-      return {
-        filename: a.filename ?? 'attachment',
-        contentType: a.contentType ?? a.content_type ?? 'application/octet-stream',
-        content: a.content ?? '',
-      };
-    })
-    .filter((att) => typeof att.content === 'string' && att.content.length > 0);
-}
-
-function buildSentAttachmentMetadata(
-  attachments: Array<{ filename: string; contentType?: string; content: string }>
-): Array<{ filename: string; contentType: string; size: number }> {
-  return attachments.map((att) => ({
-    filename: att.filename,
-    contentType: att.contentType ?? 'application/octet-stream',
-    size: Buffer.from(att.content, 'base64').length,
-  }));
-}
-
 export interface WorkerConfig {
   supabase: SupabaseClient;
   databaseClient: DatabaseClient;
@@ -94,6 +66,7 @@ export class SendWorker {
   private campaignEmailSender: typeof sendEmail;
   private running: boolean = false;
   private consecutiveEmptyPolls: number = 0;
+  private lastAttachmentGcAt = 0;
   private readonly maxEmptyPolls: number = 10;
 
   constructor(config: WorkerConfig) {
@@ -149,6 +122,18 @@ export class SendWorker {
           });
         } else {
           this.consecutiveEmptyPolls++;
+          // Periodic attachment GC while idle (every ~5 minutes)
+          if (Date.now() - this.lastAttachmentGcAt > 5 * 60 * 1000) {
+            this.lastAttachmentGcAt = Date.now();
+            try {
+              const removed = await drainInboxAttachmentGcQueue(this.supabase);
+              if (removed > 0) {
+                console.log(`[SEND WORKER] Drained ${removed} inbox attachment GC path(s)`);
+              }
+            } catch (gcErr) {
+              console.warn('[SEND WORKER] Attachment GC drain failed:', gcErr);
+            }
+          }
           const pollInterval = this.calculatePollInterval();
           await this.sleep(pollInterval);
         }
@@ -1537,8 +1522,7 @@ export class SendWorker {
     // 3. Send reply via SMTP
     const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
     const rawAttachments = Array.isArray(md.attachments) ? md.attachments : [];
-    // Normalize: support both camelCase (from client) and snake_case (if DB/PostgREST ever returns it)
-    const fileAttachments = normalizeSendAttachments(rawAttachments);
+    const fileAttachments = await resolveSendAttachments(this.supabase, rawAttachments);
     console.log(`[SEND WORKER] Reply job ${message_job_id} attachments: ${fileAttachments.length} (raw: ${rawAttachments.length})`);
     const replyOptions: ReplyEmailOptions = {
       toEmail: md.to_email || '',
@@ -1590,7 +1574,7 @@ export class SendWorker {
     const toAdd = [replyOptions.toEmail, ...(replyOptions.cc || [])].filter(Boolean);
     const newParticipants = [...new Set([...participants, ...toAdd])];
 
-    // Build attachment metadata for email_messages (filename, contentType, size; no base64)
+    // Build attachment metadata for email_messages (filename, contentType, size, storagePath)
     const replyAttachmentMeta =
       fileAttachments.length > 0
         ? buildSentAttachmentMetadata(fileAttachments)
@@ -1622,6 +1606,8 @@ export class SendWorker {
     if (insertError) {
       throw new Error(`Failed to insert email_messages for reply: ${insertError.message}`);
     }
+
+    await markAttachmentUploadsSent(this.supabase, fileAttachments);
 
     // 6. Update email_threads (last_message_at, message_count, participants)
     const { error: updateThreadError } = await this.supabase
@@ -1713,7 +1699,7 @@ export class SendWorker {
     // 3. Send forward via SMTP (no In-Reply-To/References)
     const transporter = await this.smtpPool.getTransporter(mailbox as Mailbox);
     const rawForwardAttachments = Array.isArray(md.attachments) ? md.attachments : [];
-    const forwardFileAttachments = normalizeSendAttachments(rawForwardAttachments);
+    const forwardFileAttachments = await resolveSendAttachments(this.supabase, rawForwardAttachments);
     console.log(`[SEND WORKER] Forward job ${message_job_id} attachments: ${forwardFileAttachments.length} (raw: ${rawForwardAttachments.length})`);
     const forwardOptions: ReplyEmailOptions = {
       toEmail: md.to_email || '',
@@ -1774,6 +1760,8 @@ export class SendWorker {
       receivedAt: now,
       attachments: forwardAttachmentMeta,
     });
+
+    await markAttachmentUploadsSent(this.supabase, forwardFileAttachments);
 
     // 4. Mark message_job sent after thread persistence succeeds
     await this.supabase

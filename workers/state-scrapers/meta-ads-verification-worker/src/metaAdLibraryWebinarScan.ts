@@ -8,22 +8,22 @@ import {
 
 import type { ScrollPaginationStats } from './metaAdLibraryPagination.js';
 
-export const META_ADS_WEBINAR_SCAN_DAYS_DEFAULT = 30;
+export const META_ADS_WEBINAR_SCAN_DAYS_DEFAULT = 90;
 export const META_ADS_MAX_SCROLL_ATTEMPTS = 15;
 export const META_ADS_MAX_SCANNED_CARDS = 100;
 
 const WEBINAR_URL_RE = /\/(webinars?|masterclass|virtual-event|live-event|online-workshop)(\/|$|\?)/i;
 const WEBINAR_COPY_PATTERNS: Array<{ id: string; re: RegExp; weight: number }> = [
-  { id: 'copy_webinar', re: /\bwebinar\b/i, weight: 0.35 },
-  { id: 'copy_free_webinar', re: /\bfree webinar\b/i, weight: 0.45 },
-  { id: 'copy_register_for', re: /\bregister for\b.*\bwebinar\b/i, weight: 0.5 },
+  { id: 'copy_webinar', re: /\bwebinars?\b/i, weight: 0.5 },
+  { id: 'copy_free_webinar', re: /\bfree webinars?\b/i, weight: 0.55 },
+  { id: 'copy_register_for', re: /\bregister for\b.*\bwebinars?\b/i, weight: 0.5 },
   { id: 'copy_save_your_seat', re: /\bsave your seat\b/i, weight: 0.4 },
-  { id: 'copy_rsvp', re: /\brsvp\b.*\bwebinar\b/i, weight: 0.4 },
-  { id: 'copy_join_us_live', re: /\bjoin us\b.*\b(live|webinar)\b/i, weight: 0.4 },
+  { id: 'copy_rsvp', re: /\brsvp\b.*\bwebinars?\b/i, weight: 0.4 },
+  { id: 'copy_join_us_live', re: /\bjoin us\b.*\b(live|webinars?)\b/i, weight: 0.4 },
   { id: 'copy_online_workshop', re: /\bonline workshop\b/i, weight: 0.35 },
   { id: 'copy_masterclass', re: /\bmasterclass\b/i, weight: 0.35 },
 ];
-const WEBINAR_PAGE_NAME_RE = /\bwebinar/i;
+const WEBINAR_PAGE_NAME_RE = /\bwebinars?\b/i;
 const WEBINAR_CTA_RE = /^(sign up|register|register free)$/i;
 
 export interface MetaAdLibraryWebinarAd extends MetaAdLibraryMatchedAd {
@@ -104,7 +104,7 @@ export function scoreWebinarAd(ad: MetaAdLibraryMatchedAd | MetaAdLibraryResultC
     score += 0.25;
   }
 
-  if (ad.cta && WEBINAR_CTA_RE.test(ad.cta) && /\bwebinar\b/i.test(blob)) {
+  if (ad.cta && WEBINAR_CTA_RE.test(ad.cta) && /\bwebinars?\b/i.test(blob)) {
     signals.push('cta_register_webinar');
     score += 0.15;
   }
@@ -115,6 +115,7 @@ export function scoreWebinarAd(ad: MetaAdLibraryMatchedAd | MetaAdLibraryResultC
 export function isWebinarAd(ad: MetaAdLibraryMatchedAd | MetaAdLibraryResultCard): boolean {
   const { score, signals } = scoreWebinarAd(ad);
   if (signals.includes('url_webinar_path')) return true;
+  if (signals.includes('copy_webinar') || signals.includes('copy_free_webinar')) return true;
   return score >= 0.5;
 }
 

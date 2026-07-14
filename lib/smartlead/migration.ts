@@ -293,8 +293,10 @@ const LEADS_PAGE_LIMIT = 100; // Smartlead API max is 100
 export async function fetchSmartleadLeads(
   apiKey: string,
   smartleadCampaignId: number,
+  options?: { status?: string },
 ): Promise<SmartleadLead[]> {
   const enc = (s: string) => encodeURIComponent(s);
+  const statusFilter = options?.status?.trim();
   const all: SmartleadLead[] = [];
   let offset = 0;
 
@@ -327,7 +329,8 @@ export async function fetchSmartleadLeads(
   while (true) {
     const url =
       `${SMARTLEAD_BASE}/campaigns/${smartleadCampaignId}/leads` +
-      `?api_key=${enc(apiKey)}&offset=${offset}&limit=${LEADS_PAGE_LIMIT}`;
+      `?api_key=${enc(apiKey)}&offset=${offset}&limit=${LEADS_PAGE_LIMIT}` +
+      (statusFilter ? `&status=${enc(statusFilter)}` : '');
     const res = await smartleadRequest({ url });
     if (!res.ok) {
       throw new Error(`Smartlead leads API error (${res.status}) for campaign ${smartleadCampaignId}.`);

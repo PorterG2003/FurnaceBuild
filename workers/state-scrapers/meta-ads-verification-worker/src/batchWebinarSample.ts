@@ -2,7 +2,14 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync, mkdirSync } from '
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type BrowserContext } from 'playwright';
-import { runMetaAdLibraryLookup } from './metaAdLibraryLookup.js';
+import { runMetaAdLibraryLookup, type MetaAdLibraryLookupResult } from './metaAdLibraryLookup.js';
+import {
+  isEmptyNoResult,
+  pickSessionRotationInterval,
+  pickSlowMoMs,
+  shouldRetryEmptyNoResult,
+  sleepRandom,
+} from './metaAdsAntiBot.js';
 import {
   checkpointArgsMatch,
   createEmptyCheckpoint,
@@ -13,76 +20,21 @@ import {
   type MetaAdsBatchCheckpoint,
   type MetaAdsBatchCheckpointArgs,
 } from './metaAdLibraryBatchCheckpoint.js';
+import { loadCsv, pickRows, SAMPLE_NAMES, type CsvRow } from './pilotBatchRows.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CSV =
   '../../../../scripts/lead-sourcing/webinar-hosts/output/runs/stage1-live/stage3_webinar_host_entities.csv';
 
-type CsvRow = Record<string, string>;
-
-function parseCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          cur += '"';
-          i += 1;
-        } else inQuotes = false;
-      } else cur += ch;
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = true;
-      continue;
-    }
-    if (ch === ',') {
-      out.push(cur);
-      cur = '';
-      continue;
-    }
-    cur += ch;
-  }
-  out.push(cur);
-  return out;
-}
-
-function loadCsv(path: string): CsvRow[] {
-  const raw = readFileSync(path, 'utf8').trim();
-  const lines = raw.split(/\r?\n/);
-  const headers = parseCsvLine(lines[0]);
-  return lines.slice(1).map((line) => {
-    const vals = parseCsvLine(line);
-    const row: CsvRow = {};
-    headers.forEach((h, i) => {
-      row[h] = vals[i] ?? '';
-    });
-    return row;
-  });
-}
-
-function pickSample(rows: CsvRow[], names: string[]): CsvRow[] {
-  const byName = new Map(rows.map((r) => [r.company_name, r]));
-  return names.map((name) => byName.get(name)).filter((r): r is CsvRow => Boolean(r));
-}
-
-const SAMPLE_NAMES = [
-  'Supermetrics',
-  'Xtalks',
-  'Commvault',
-  'GWC Data.AI',
-  'Instinct Science',
-  'Behavioral Health Business',
-  'CurvUp',
-  'Henry Smith Foundation',
-];
-
 const DEFAULT_SAMPLE_OUT_DIR = '../../../../tmp/meta-ads-webinar-batch';
 const DEFAULT_FULL_OUT_DIR = '../../../../tmp/meta-ads-webinar-batch-full';
-const DEFAULT_INTER_COMPANY_DELAY_MS = 2000;
+const DEFAULT_PILOT_OUT_DIR = '../../../../tmp/meta-ads-webinar-batch-pilot-150';
+const DEFAULT_DELAY_MIN_MS = 8_000;
+const DEFAULT_DELAY_MAX_MS = 18_000;
+const DEFAULT_RETRY_MIN_MS = 20_000;
+const DEFAULT_RETRY_MAX_MS = 45_000;
+const DEFAULT_MAX_NO_RESULT_RETRIES = 2;
+const DEFAULT_ROTATE_SESSION_EVERY = 20;
 
 function hasFlag(argv: string[], name: string): boolean {
   return argv.includes(name);
@@ -94,23 +46,84 @@ function readFlag(argv: string[], name: string): string | null {
   return argv[index + 1] ?? null;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+type AntiBotConfig = {
+  delayMinMs: number;
+  delayMaxMs: number;
+  retryNoResults: boolean;
+  maxNoResultRetries: number;
+  retryMinMs: number;
+  retryMaxMs: number;
+  rotateSessionEvery: number;
+};
 
-function eligibleRows(rows: CsvRow[]): CsvRow[] {
-  return rows.filter((r) => r.enrichment_status === 'ok' && r.company_domain?.trim());
-}
-
-function pickRows(rows: CsvRow[], batchMode: 'sample' | 'all', maxRows: number | null): CsvRow[] {
-  const base = batchMode === 'all' ? eligibleRows(rows) : pickSample(rows, SAMPLE_NAMES);
-  if (maxRows != null && maxRows > 0) return base.slice(0, maxRows);
-  return base;
-}
-
-function formatBatchResult(
+async function lookupWithRetry(
   row: CsvRow,
-  result: Awaited<ReturnType<typeof runMetaAdLibraryLookup>>,
+  options: {
+    headless: boolean;
+    outDir: string;
+    scanWebinars: boolean;
+    webinarScanDays: number;
+    browser: Browser;
+    context: BrowserContext;
+    antiBot: AntiBotConfig;
+    rotateSession: () => Promise<BrowserContext>;
+  },
+): Promise<{ result: MetaAdLibraryLookupResult; lookupAttempts: number; context: BrowserContext }> {
+  const domain = row.company_domain.trim();
+  const companyName = row.company_name.trim();
+  let context = options.context;
+  let lookupAttempts = 0;
+  let result: MetaAdLibraryLookupResult | null = null;
+
+  const maxAttempts = options.antiBot.retryNoResults ? options.antiBot.maxNoResultRetries + 1 : 1;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    lookupAttempts += 1;
+    if (attempt > 0) {
+      process.stderr.write(
+        `  retry ${attempt}/${options.antiBot.maxNoResultRetries} for ${companyName} (empty no_results) — rotating session\n`,
+      );
+      context = await options.rotateSession();
+      await sleepRandom(options.antiBot.retryMinMs, options.antiBot.retryMaxMs);
+    }
+
+    result = await runMetaAdLibraryLookup({
+      domain,
+      companyName,
+      headless: options.headless,
+      timeoutMs: 45_000,
+      outputDir: options.outDir,
+      scanWebinars: options.scanWebinars,
+      webinarScanDays: options.webinarScanDays,
+      browser: options.browser,
+      context,
+    });
+
+    if (!shouldRetryEmptyNoResult(result, attempt, options.antiBot.maxNoResultRetries)) {
+      break;
+    }
+  }
+
+  return { result: result!, lookupAttempts, context };
+}
+
+async function rotateBrowserContext(
+  browser: Browser,
+  context: BrowserContext | null,
+): Promise<BrowserContext> {
+  if (context) {
+    await context.close().catch(() => undefined);
+  }
+  await sleepRandom(3_000, 8_000);
+  return browser.newContext({
+    viewport: BATCH_VIEWPORT,
+    ignoreHTTPSErrors: true,
+  });
+}
+
+  row: CsvRow,
+  result: MetaAdLibraryLookupResult,
+  extra?: { lookup_attempts?: number; empty_no_result?: boolean },
 ): Record<string, unknown> {
   const webinarScan = result.signals.webinar_scan as
     | {
@@ -155,31 +168,73 @@ function formatBatchResult(
     search_attempts: result.signals.search_attempts,
     error: result.error ?? null,
     elapsed_ms: result.lookup_stats.elapsed_ms,
+    lookup_attempts: extra?.lookup_attempts ?? 1,
+    empty_no_result: extra?.empty_no_result ?? isEmptyNoResult(result),
   };
+}
+
+const FLAGS_WITH_VALUE = new Set([
+  '--out-dir',
+  '--checkpoint',
+  '--max-rows',
+  '--delay-min-ms',
+  '--delay-max-ms',
+  '--retry-min-ms',
+  '--retry-max-ms',
+  '--max-no-result-retries',
+  '--rotate-session-every',
+  '--webinar-days',
+]);
+
+function positionalArgs(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]!;
+    if (arg.startsWith('--')) {
+      if (FLAGS_WITH_VALUE.has(arg)) i += 1;
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
 }
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  const positional = argv.filter((a) => !a.startsWith('--'));
+  const positional = positionalArgs(argv);
   const headless = hasFlag(argv, '--headless');
   const scanWebinars = hasFlag(argv, '--scan-webinars');
   const resume = hasFlag(argv, '--resume');
   const fresh = hasFlag(argv, '--fresh');
   const batchAll = hasFlag(argv, '--all');
+  const pilot = hasFlag(argv, '--pilot');
+  const retryNoResults = hasFlag(argv, '--retry-no-results');
   const webinarDaysFlag = argv.indexOf('--webinar-days');
   const webinarScanDays =
     webinarDaysFlag >= 0 ? Number(argv[webinarDaysFlag + 1] ?? 30) : 30;
   const maxRowsFlag = readFlag(argv, '--max-rows');
-  const maxRows = maxRowsFlag ? Number(maxRowsFlag) : null;
-  const delayMs = Number(readFlag(argv, '--delay-ms') ?? DEFAULT_INTER_COMPANY_DELAY_MS);
+  const maxRows = maxRowsFlag ? Number(maxRowsFlag) : pilot ? 150 : null;
+  const antiBot: AntiBotConfig = {
+    delayMinMs: Number(readFlag(argv, '--delay-min-ms') ?? DEFAULT_DELAY_MIN_MS),
+    delayMaxMs: Number(readFlag(argv, '--delay-max-ms') ?? DEFAULT_DELAY_MAX_MS),
+    retryNoResults,
+    maxNoResultRetries: Number(readFlag(argv, '--max-no-result-retries') ?? DEFAULT_MAX_NO_RESULT_RETRIES),
+    retryMinMs: Number(readFlag(argv, '--retry-min-ms') ?? DEFAULT_RETRY_MIN_MS),
+    retryMaxMs: Number(readFlag(argv, '--retry-max-ms') ?? DEFAULT_RETRY_MAX_MS),
+    rotateSessionEvery: Number(readFlag(argv, '--rotate-session-every') ?? DEFAULT_ROTATE_SESSION_EVERY),
+  };
   const csvPath = resolve(__dirname, positional[0] ?? DEFAULT_CSV);
   const batchMode = batchAll ? 'all' : 'sample';
 
   const rows = loadCsv(csvPath);
-  const batchRows = pickRows(rows, batchMode, maxRows);
+  const batchRows = pickRows(rows, batchMode, maxRows, pilot);
   if (batchRows.length === 0) throw new Error('No rows to process');
 
-  const defaultOutDir = batchMode === 'all' ? DEFAULT_FULL_OUT_DIR : DEFAULT_SAMPLE_OUT_DIR;
+  const defaultOutDir = pilot
+    ? DEFAULT_PILOT_OUT_DIR
+    : batchMode === 'all'
+      ? DEFAULT_FULL_OUT_DIR
+      : DEFAULT_SAMPLE_OUT_DIR;
   const outDir = resolve(__dirname, readFlag(argv, '--out-dir') ?? defaultOutDir);
   mkdirSync(outDir, { recursive: true });
   const outPath = resolve(outDir, 'webinar-batch-results.json');
@@ -194,6 +249,8 @@ async function main(): Promise<void> {
     batchMode,
     maxRows,
     sampleNames: batchMode === 'sample' ? SAMPLE_NAMES : [],
+    pilot,
+    antiBot,
   };
 
   let checkpoint: MetaAdsBatchCheckpoint;
@@ -215,22 +272,35 @@ async function main(): Promise<void> {
   const completed = new Set(checkpoint.completedDomains);
   const startedAt = Date.now();
   let processedThisRun = 0;
+  let consecutiveEmptyNoResults = 0;
+  let lookupsSinceRotation = 0;
+  let nextRotationAt = pickSessionRotationInterval(antiBot.rotateSessionEvery);
 
   process.stderr.write(
     [
       '[meta-ads-batch] starting',
-      `  mode: ${batchMode}`,
+      `  mode: ${batchMode}${pilot ? ' (pilot)' : ''}`,
       `  rows: ${batchRows.length}`,
       `  headed: ${!headless}`,
       `  scan_webinars: ${scanWebinars}`,
-      `  delay_ms: ${delayMs}`,
+      `  delay_ms: ${antiBot.delayMinMs}-${antiBot.delayMaxMs}`,
+      `  retry_no_results: ${retryNoResults}`,
+      `  rotate_session_every: ~${antiBot.rotateSessionEvery}`,
       `  out_dir: ${outDir}`,
       `  checkpoint: ${checkpointPath}`,
     ].join('\n') + '\n',
   );
 
   acquireBatchLock(outDir);
-  const { browser, context } = await launchBatchBrowser(headless);
+  const { browser, context: initialContext } = await launchBatchBrowser(headless);
+  let context = initialContext;
+
+  const rotateSession = async (): Promise<BrowserContext> => {
+    context = await rotateBrowserContext(browser, context);
+    lookupsSinceRotation = 0;
+    nextRotationAt = pickSessionRotationInterval(antiBot.rotateSessionEvery);
+    return context;
+  };
 
   try {
     for (const row of batchRows) {
@@ -241,32 +311,59 @@ async function main(): Promise<void> {
         continue;
       }
 
-      if (processedThisRun > 0 && delayMs > 0) {
-        await sleep(delayMs);
+      if (processedThisRun > 0) {
+        await sleepRandom(antiBot.delayMinMs, antiBot.delayMaxMs);
+      }
+
+      if (lookupsSinceRotation >= nextRotationAt) {
+        process.stderr.write(`Rotating browser session after ${lookupsSinceRotation} lookups\n`);
+        context = await rotateSession();
       }
 
       process.stderr.write(`Looking up ${companyName} (${domain})...\n`);
       try {
-        const result = await runMetaAdLibraryLookup({
-          domain,
-          companyName,
+        const { result, lookupAttempts, context: updatedContext } = await lookupWithRetry(row, {
           headless,
-          timeoutMs: 45_000,
-          outputDir: outDir,
+          outDir,
           scanWebinars,
           webinarScanDays,
           browser,
           context,
+          antiBot,
+          rotateSession,
         });
-        const formatted = formatBatchResult(row, result);
+        context = updatedContext;
+
+        const emptyNoResult = isEmptyNoResult(result);
+        if (emptyNoResult) {
+          consecutiveEmptyNoResults += 1;
+        } else {
+          consecutiveEmptyNoResults = 0;
+        }
+
+        if (consecutiveEmptyNoResults >= 10 && processedThisRun >= 9) {
+          process.stderr.write(
+            `[meta-ads-batch] ${consecutiveEmptyNoResults} consecutive empty no_results — backing off 90-120s and rotating session\n`,
+          );
+          await sleepRandom(90_000, 120_000);
+          context = await rotateSession();
+          consecutiveEmptyNoResults = 0;
+        }
+
+        const formatted = formatBatchResult(row, result, {
+          lookup_attempts: lookupAttempts,
+          empty_no_result: emptyNoResult,
+        });
         markCheckpointCompleted(checkpoint, domain, formatted);
         saveCheckpoint(checkpointPath, checkpoint);
         processedThisRun += 1;
+        lookupsSinceRotation += 1;
+
         const done = checkpoint.completedDomains.length;
-        if (done === 1 || done === batchRows.length || done % 25 === 0) {
+        if (done === 1 || done === batchRows.length || done % 10 === 0) {
           const stats = summarizeResults(checkpoint.results);
           process.stderr.write(
-            `[meta-ads-batch] ${done}/${batchRows.length} | yes ${stats.yes} | no ${stats.no} | unknown ${stats.unknown} | errors ${checkpoint.errors.length} | last: ${domain}\n`,
+            `[meta-ads-batch] ${done}/${batchRows.length} | yes ${stats.yes} | no ${stats.no} | unknown ${stats.unknown} | empty_no ${stats.emptyNoResult} | errors ${checkpoint.errors.length} | last: ${domain}\n`,
           );
         }
       } catch (error) {
@@ -275,6 +372,8 @@ async function main(): Promise<void> {
         saveCheckpoint(checkpointPath, checkpoint);
         process.stderr.write(`Error on ${companyName}: ${message}\n`);
         processedThisRun += 1;
+        lookupsSinceRotation += 1;
+        consecutiveEmptyNoResults = 0;
       }
     }
   } finally {
@@ -291,6 +390,7 @@ async function main(): Promise<void> {
         checkpoint: checkpointPath,
         resumed: resume && !fresh,
         batch_mode: batchMode,
+        pilot,
         total_rows: batchRows.length,
         completed_domains: checkpoint.completedDomains.length,
         stats,
@@ -308,11 +408,13 @@ function summarizeResults(results: Record<string, unknown>[]): {
   yes: number;
   no: number;
   unknown: number;
+  emptyNoResult: number;
 } {
   return {
     yes: results.filter((r) => r.meta_ads_result === 'yes').length,
     no: results.filter((r) => r.meta_ads_result === 'no').length,
     unknown: results.filter((r) => r.meta_ads_result === 'unknown').length,
+    emptyNoResult: results.filter((r) => r.empty_no_result === true).length,
   };
 }
 
@@ -360,9 +462,11 @@ function acquireBatchLock(outDir: string): void {
 }
 
 async function launchBatchBrowser(headless: boolean): Promise<{ browser: Browser; context: BrowserContext }> {
+  const slowMoMs = headless ? 0 : pickSlowMoMs(40, 120);
   const browser = await chromium.launch({
     headless,
     ...(headless ? {} : { channel: 'chrome' as const }),
+    slowMo: slowMoMs,
     args: ['--disable-blink-features=AutomationControlled'],
   });
   const context = await browser.newContext({

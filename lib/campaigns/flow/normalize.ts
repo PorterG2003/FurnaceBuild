@@ -90,6 +90,16 @@ function normalizeStringArray(values: unknown): string[] {
   return normalized;
 }
 
+/**
+ * Like normalizeStringArray but preserves an unset field as `undefined` instead of
+ * coercing to `[]`. This keeps "no explicit mapping" distinct from "explicitly empty",
+ * so downstream sync logic does not treat an unset lead source as an empty allowlist.
+ */
+function normalizeOptionalStringArray(values: unknown): string[] | undefined {
+  if (!Array.isArray(values)) return undefined;
+  return normalizeStringArray(values);
+}
+
 function inferDurationUnit(waitDurationSeconds: number): 'minutes' | 'hours' | 'days' {
   if (waitDurationSeconds % UNIT_TO_SECONDS.days === 0) return 'days';
   if (waitDurationSeconds % UNIT_TO_SECONDS.hours === 0) return 'hours';
@@ -101,13 +111,15 @@ function inferDurationValue(waitDurationSeconds: number, unit: 'minutes' | 'hour
 }
 
 function normalizeLeadSourceNodeData(rawData: Record<string, unknown>): LeadSourceNodeData {
+  const mappedStandardFieldKeys = normalizeOptionalStringArray(rawData.mappedStandardFieldKeys);
+  const { mappedStandardFieldKeys: _rawMapped, ...rest } = rawData;
   return {
-    ...rawData,
+    ...rest,
     label: asString(rawData.label, 'Lead Bucket'),
     source: asString(rawData.source, ''),
     bucketId: asString(rawData.bucketId),
     customFieldKeys: normalizeStringArray(rawData.customFieldKeys),
-    mappedStandardFieldKeys: normalizeStringArray(rawData.mappedStandardFieldKeys),
+    ...(mappedStandardFieldKeys !== undefined ? { mappedStandardFieldKeys } : {}),
     isRequired: asBoolean(rawData.isRequired, false),
   };
 }

@@ -56,6 +56,16 @@ export async function computeFlowRevision(flowData: CampaignFlowData): Promise<s
   return sha256Hex(payload);
 }
 
+/**
+ * Deterministic serialization for local dirty-checking. Deep-sorts object keys so
+ * the string is stable across a Postgres jsonb round-trip (which reorders keys),
+ * while keeping every normalized field (including `position`) so genuine edits
+ * still register as changes.
+ */
+export function stableSerializeFlow(flowData: CampaignFlowData): string {
+  return JSON.stringify(sortKeys(flowData));
+}
+
 export class FlowRevisionConflictError extends Error {
   readonly code = 'flow_revision_conflict' as const;
   readonly currentFlowRevision: string;

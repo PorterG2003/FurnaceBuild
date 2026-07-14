@@ -58,7 +58,13 @@ amplifyconfiguration*
 
 # Client audit artifacts — never commit
 docs/audit/
-tmp/audit/
+tmp/*
+
+# lib/client-api/webhooks build artifacts
+lib/client-api/webhooks/*.js
+lib/client-api/webhooks/*.js.map
+lib/client-api/webhooks/*.d.ts
+lib/client-api/webhooks/*.d.ts.map
 
 # scripts
 scripts/lead-sourcing/

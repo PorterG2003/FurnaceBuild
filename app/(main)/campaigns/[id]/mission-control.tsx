@@ -342,10 +342,9 @@ export default function MissionControlPage() {
             </View>
           </View>
 
-          {/* Launch / status section */}
-          <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6">
+          {/* Launch card (drafts only) */}
           {isDraft ? (
-            <>
+            <View className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6">
               <Text className="text-lg font-instrument-semibold text-white mb-4">Ready to launch</Text>
               <View style={{ gap: 12, marginBottom: 20 }}>
                 {checklist.map((item) => (
@@ -379,21 +378,8 @@ export default function MissionControlPage() {
               <Button onPress={handleStartCampaign} disabled={!canStart || isStarting}>
                 {isStarting ? 'Launching...' : 'Launch campaign'}
               </Button>
-            </>
-          ) : (
-            <>
-              <Text className="text-lg font-instrument-semibold text-white mb-2">Campaign status</Text>
-              <Text className="text-gray-400 font-instrument text-sm mb-4">
-                {isRunning
-                  ? 'This campaign is live — replies route to Master Inbox automatically.'
-                  : isPaused
-                    ? 'Sending is paused. Resume from the status menu when you are ready.'
-                    : 'This campaign has stopped. Review stats on the campaigns list or duplicate to iterate.'}
-              </Text>
-              {showStatusMenu ? <CampaignStatusMenu {...statusMenuProps} /> : null}
-            </>
-          )}
-          </View>
+            </View>
+          ) : null}
         </ScrollView>
       )}
 

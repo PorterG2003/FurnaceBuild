@@ -29,13 +29,17 @@ export async function prepareCampaignFlowForApi(input: PrepareFlowSaveInput): Pr
   }
 }
 
-export function buildFlowSaveResponse(prepared: PrepareFlowSaveResult) {
+export function buildFlowSaveResponse(
+  prepared: PrepareFlowSaveResult,
+  reactivatedCount = 0,
+) {
   return {
     flow: prepared.flow,
     field_sync: prepared.field_sync,
     flow_revision: prepared.flow_revision,
     change_kind: prepared.changeKind,
     change_reasons: prepared.changeReasons,
+    reactivated_count: reactivatedCount,
     validation: {
       issues: prepared.validation.issues,
       warnings: prepared.validation.warnings,

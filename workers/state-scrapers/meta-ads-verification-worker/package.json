@@ -1,0 +1,21 @@
+{
+  "name": "@furnace/meta-ads-verification-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "local": "tsx src/local.ts",
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "validate-pagination": "tsx src/validatePagination.ts"
+  },
+  "dependencies": {
+    "@furnace/registry-server": "file:../../../lib/foundry/registry-server",
+    "apify-client": "^2.23.4",
+    "playwright": "1.58.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}

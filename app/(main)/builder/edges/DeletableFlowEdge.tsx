@@ -44,7 +44,7 @@ interface DeletableFlowEdgeProps {
   sourcePosition: any;
   targetPosition: any;
   sourceHandle?: string | null;
-  data?: { readOnly?: boolean };
+  data?: { readOnly?: boolean; structuralBlocked?: boolean };
   selected?: boolean;
 }
 
@@ -63,6 +63,7 @@ export function DeletableFlowEdge({
 }: DeletableFlowEdgeProps) {
   const [isHovered, setIsHovered] = useState(false);
   const readOnly = !!data?.readOnly;
+  const deleteMuted = !!data?.structuralBlocked;
   const resolvedSourceHandle = resolveCategorizerSourceHandle(sourceHandle, id, source);
   const categoryColor = getCategorizerSourceHandleColor(resolvedSourceHandle);
   const [edgePath, labelX, labelY] = getBezierPath({
@@ -130,15 +131,16 @@ export function DeletableFlowEdge({
               style={btnStyle}
               onClick={handleDelete}
               onMouseEnter={(event) => {
-                (event.currentTarget as HTMLButtonElement).style.background =
-                  'rgba(248,113,113,0.18)';
+                (event.currentTarget as HTMLButtonElement).style.background = deleteMuted
+                  ? 'rgba(255,255,255,0.12)'
+                  : 'rgba(248,113,113,0.18)';
               }}
               onMouseLeave={(event) => {
                 (event.currentTarget as HTMLButtonElement).style.background = 'none';
               }}
               title="Delete connection"
             >
-              <TrashIcon size={10} color="#F87171" />
+              <TrashIcon size={10} color={deleteMuted ? '#9CA3AF' : '#F87171'} />
             </button>
           </div>
         </div>

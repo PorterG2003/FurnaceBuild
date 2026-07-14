@@ -168,6 +168,7 @@ type SmartleadLeadEnrollmentMapValue = {
 };
 
 const SMARTLEAD_INBOX_REPLIES_PAGE_LIMIT = 20;
+const DUPLICATE_ACCOUNT_MESSAGE_ID_CONSTRAINT = 'idx_email_messages_account_message_id_unique';
 
 /** Max lead_id count per enrollments request to avoid URL length 400 (Supabase/PostgREST). */
 const ENROLLMENTS_IN_QUERY_BATCH_SIZE = 25;
@@ -292,8 +293,10 @@ const LEADS_PAGE_LIMIT = 100; // Smartlead API max is 100
 export async function fetchSmartleadLeads(
   apiKey: string,
   smartleadCampaignId: number,
+  options?: { status?: string },
 ): Promise<SmartleadLead[]> {
   const enc = (s: string) => encodeURIComponent(s);
+  const statusFilter = options?.status?.trim();
   const all: SmartleadLead[] = [];
   let offset = 0;
 
@@ -326,7 +329,8 @@ export async function fetchSmartleadLeads(
   while (true) {
     const url =
       `${SMARTLEAD_BASE}/campaigns/${smartleadCampaignId}/leads` +
-      `?api_key=${enc(apiKey)}&offset=${offset}&limit=${LEADS_PAGE_LIMIT}`;
+      `?api_key=${enc(apiKey)}&offset=${offset}&limit=${LEADS_PAGE_LIMIT}` +
+      (statusFilter ? `&status=${enc(statusFilter)}` : '');
     const res = await smartleadRequest({ url });
     if (!res.ok) {
       throw new Error(`Smartlead leads API error (${res.status}) for campaign ${smartleadCampaignId}.`);
@@ -1509,7 +1513,7 @@ export async function upsertSmartleadConversationThread(params: {
   return data.id;
 }
 
-async function replaceSmartleadConversationMessages(params: {
+export async function replaceSmartleadConversationMessages(params: {
   threadId: string;
   accountId: string;
   leadEmail?: string;
@@ -1517,9 +1521,20 @@ async function replaceSmartleadConversationMessages(params: {
   leadLastName?: string;
   threadSubject: string;
   messages: SmartleadMessageHistoryItem[];
+  seenMessageIds?: Set<string>;
   db?: MigrationDatabaseClient;
-}): Promise<void> {
-  const { threadId, accountId, leadEmail, leadFirstName, leadLastName, threadSubject, messages, db } = params;
+}): Promise<number> {
+  const {
+    threadId,
+    accountId,
+    leadEmail,
+    leadFirstName,
+    leadLastName,
+    threadSubject,
+    messages,
+    seenMessageIds,
+    db,
+  } = params;
   const database = await resolveMigrationDb(db);
   const leadName = buildSmartleadLeadName(leadFirstName, leadLastName);
 
@@ -1531,7 +1546,7 @@ async function replaceSmartleadConversationMessages(params: {
     throw new Error(`Failed to replace Smartlead thread messages: ${deleteError.message}`);
   }
 
-  if (messages.length === 0) return;
+  if (messages.length === 0) return 0;
 
   const now = new Date().toISOString();
   const rows = messages.map((message) => ({
@@ -1561,12 +1576,31 @@ async function replaceSmartleadConversationMessages(params: {
     updated_at: now,
   }));
 
-  const { error: insertError } = await (database
-    .from('email_messages')
-    .insert(rows as any) as any);
-  if (insertError) {
-    throw new Error(`Failed to insert Smartlead thread messages: ${insertError.message}`);
+  let insertedCount = 0;
+  for (const row of rows) {
+    const messageId = row.message_id as string | null | undefined;
+    if (messageId && seenMessageIds?.has(messageId)) {
+      continue;
+    }
+
+    const { error: insertError } = await (database
+      .from('email_messages')
+      .insert(row as any) as any);
+    if (insertError) {
+      if (messageId && insertError.message.includes(DUPLICATE_ACCOUNT_MESSAGE_ID_CONSTRAINT)) {
+        seenMessageIds?.add(messageId);
+        continue;
+      }
+      throw new Error(`Failed to insert Smartlead thread messages: ${insertError.message}`);
+    }
+
+    insertedCount += 1;
+    if (messageId) {
+      seenMessageIds?.add(messageId);
+    }
   }
+
+  return insertedCount;
 }
 
 // ---------------------------------------------------------------------------
@@ -1615,6 +1649,8 @@ export interface SingleCampaignMigrationParams {
   campaignCount: number;
   onProgress?: (p: MigrationProgress) => void,
   db?: MigrationDatabaseClient;
+  /** Tracks message_ids inserted during a multi-campaign run (account-wide uniqueness). */
+  seenMessageIds?: Set<string>;
 }
 
 export async function migrateSingleSmartleadCampaign(
@@ -1629,8 +1665,10 @@ export async function migrateSingleSmartleadCampaign(
     campaignCount,
     onProgress,
     db,
+    seenMessageIds: sharedSeenMessageIds,
   } = params;
   const database = await resolveMigrationDb(db);
+  const seenMessageIds = sharedSeenMessageIds ?? new Set<string>();
 
   const campaignResult: CampaignMigrationResult = {
     campaignName: sl.name,
@@ -1748,28 +1786,42 @@ export async function migrateSingleSmartleadCampaign(
         detail: `fetching message history for lead ${leadIndex + 1} of ${repliedLeads.length}...`,
       });
 
-      const { items: messageHistory, rawJson } = await fetchSmartleadMessageHistoryWithRaw(
-        apiKey,
-        sl.id,
-        repliedLead.email_lead_id,
-      );
-
-      if (messageHistory.length === 0) {
-        conversationDiagnostics.skippedEmptyHistory += 1;
-        console.warn('[Smartlead migration] skipping conversation: empty message history', {
-          campaignName: sl.name,
-          smartleadLeadId: repliedLead.email_lead_id,
-        });
-
-        if (conversationDiagnostics.skippedEmptyHistory === 1) {
-          console.warn('[Smartlead migration] first empty message-history raw response (for parsing debug)', {
+      const { items: messageHistory, rawJson } = await (async () => {
+        try {
+          return await fetchSmartleadMessageHistoryWithRaw(
+            apiKey,
+            sl.id,
+            repliedLead.email_lead_id,
+          );
+        } catch (historyError) {
+          conversationDiagnostics.skippedEmptyHistory += 1;
+          console.warn('[Smartlead migration] skipping conversation: message history fetch failed', {
             campaignName: sl.name,
             smartleadLeadId: repliedLead.email_lead_id,
-            topLevelKeys: typeof rawJson === 'object' && rawJson !== null ? Object.keys(rawJson) : [],
-            rawResponseSample: typeof rawJson === 'object'
-              ? JSON.stringify(rawJson).slice(0, 1200)
-              : String(rawJson),
+            error: historyError instanceof Error ? historyError.message : String(historyError),
           });
+          return { items: [] as SmartleadMessageHistoryItem[], rawJson: null };
+        }
+      })();
+
+      if (messageHistory.length === 0) {
+        if (rawJson != null) {
+          conversationDiagnostics.skippedEmptyHistory += 1;
+          console.warn('[Smartlead migration] skipping conversation: empty message history', {
+            campaignName: sl.name,
+            smartleadLeadId: repliedLead.email_lead_id,
+          });
+
+          if (conversationDiagnostics.skippedEmptyHistory === 1) {
+            console.warn('[Smartlead migration] first empty message-history raw response (for parsing debug)', {
+              campaignName: sl.name,
+              smartleadLeadId: repliedLead.email_lead_id,
+              topLevelKeys: typeof rawJson === 'object' && rawJson !== null ? Object.keys(rawJson) : [],
+              rawResponseSample: typeof rawJson === 'object'
+                ? JSON.stringify(rawJson).slice(0, 1200)
+                : String(rawJson),
+            });
+          }
         }
         continue;
       }
@@ -1789,7 +1841,7 @@ export async function migrateSingleSmartleadCampaign(
         db: database,
       });
       const threadSubject = getSmartleadThreadSubject(messageHistory);
-      await replaceSmartleadConversationMessages({
+      const insertedMessageCount = await replaceSmartleadConversationMessages({
         threadId,
         accountId,
         leadEmail: repliedLead.lead_email,
@@ -1797,8 +1849,38 @@ export async function migrateSingleSmartleadCampaign(
         leadLastName: repliedLead.lead_last_name,
         threadSubject,
         messages: messageHistory,
+        seenMessageIds,
         db: database,
       });
+
+      if (insertedMessageCount === 0) {
+        const { error: deleteThreadError } = await database
+          .from('email_threads')
+          .delete()
+          .eq('id', threadId);
+        if (deleteThreadError) {
+          throw new Error(`Failed to remove empty Smartlead thread: ${deleteThreadError.message}`);
+        }
+        conversationDiagnostics.skippedEmptyHistory += 1;
+        console.warn('[Smartlead migration] skipping conversation: no messages inserted (duplicates or empty)', {
+          campaignName: sl.name,
+          smartleadLeadId: repliedLead.email_lead_id,
+        });
+        continue;
+      }
+
+      if (insertedMessageCount !== messageHistory.length) {
+        const { error: updateThreadError } = await (database
+          .from('email_threads')
+          .update({
+            message_count: insertedMessageCount,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', threadId) as any);
+        if (updateThreadError) {
+          throw new Error(`Failed to update Smartlead thread message count: ${updateThreadError.message}`);
+        }
+      }
       conversationDiagnostics.imported += 1;
       campaignResult.conversationsImported = (campaignResult.conversationsImported ?? 0) + 1;
     }
@@ -1885,6 +1967,7 @@ export async function migrateSmartleadCampaigns(
   const campaignResults: CampaignMigrationResult[] = [];
   let totalLeadsImported = 0;
   let statsImported = false;
+  const seenMessageIds = new Set<string>();
 
   for (let i = 0; i < selectedCampaigns.length; i++) {
     const campaignResult = await migrateSingleSmartleadCampaign({
@@ -1896,6 +1979,7 @@ export async function migrateSmartleadCampaigns(
       campaignCount: selectedCampaigns.length,
       onProgress,
       db: database,
+      seenMessageIds,
     });
 
     campaignResults.push(campaignResult);

@@ -6,6 +6,7 @@ import { updateCampaignFlowDataWithClient } from './update-campaign-flow-with-cl
 type DbClient = SupabaseClient<Database>;
 
 const LEAD_COPY_CHUNK_SIZE = 200;
+const LEAD_QUERY_CHUNK_SIZE = 100;
 
 export interface DuplicateCampaignOptions {
   name: string;
@@ -13,6 +14,10 @@ export interface DuplicateCampaignOptions {
   accountId: string;
   copySettings?: boolean;
   copyLeads?: boolean;
+  /** Allow duplicating imported Smartlead campaigns into a native Furnace campaign. */
+  allowSmartleadSource?: boolean;
+  /** When set, only these source lead ids are copied (requires copyLeads). */
+  sourceLeadIds?: string[];
 }
 
 type SourceLeadRow = {
@@ -181,26 +186,51 @@ async function copyCampaignLeadsWithClient(
   sourceCampaignId: string,
   targetCampaign: Campaign,
   copiedMailboxIds: Set<string>,
+  sourceLeadIds?: string[],
 ): Promise<void> {
-  const { data, error } = await db
-    .from('leads')
-    .select(
-      'email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, mobile_phone_number, source, custom_lead_data, global_lead_id, mailbox_id',
-    )
-    .eq('campaign_id', sourceCampaignId)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true });
-
-  if (error) {
-    throw new Error(`Failed to fetch source campaign leads: ${error.message}`);
-  }
-
   const targetAccountId = targetCampaign.account_id;
   if (!targetAccountId) {
     throw new Error('Duplicated campaign is missing an account_id.');
   }
 
-  const leadRows = (data ?? []) as SourceLeadRow[];
+  const leadIdFilter = sourceLeadIds?.length ? sourceLeadIds : null;
+  const leadRows: SourceLeadRow[] = [];
+
+  if (leadIdFilter) {
+    for (const leadIdBatch of chunk(leadIdFilter, LEAD_QUERY_CHUNK_SIZE)) {
+      const { data, error } = await db
+        .from('leads')
+        .select(
+          'email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, mobile_phone_number, source, custom_lead_data, global_lead_id, mailbox_id',
+        )
+        .eq('campaign_id', sourceCampaignId)
+        .in('id', leadIdBatch)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        throw new Error(`Failed to fetch source campaign leads: ${error.message}`);
+      }
+
+      leadRows.push(...((data ?? []) as SourceLeadRow[]));
+    }
+  } else {
+    const { data, error } = await db
+      .from('leads')
+      .select(
+        'email, name, first_name, last_name, company_name, website, linkedin_url, company_linkedin_url, phone_number, mobile_phone_number, source, custom_lead_data, global_lead_id, mailbox_id',
+      )
+      .eq('campaign_id', sourceCampaignId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      throw new Error(`Failed to fetch source campaign leads: ${error.message}`);
+    }
+
+    leadRows.push(...((data ?? []) as SourceLeadRow[]));
+  }
+
   if (leadRows.length === 0) {
     return;
   }
@@ -246,12 +276,20 @@ export async function duplicateCampaignWithClient(
   if (!sourceCampaign.account_id || sourceCampaign.account_id !== options.accountId) {
     throw new Error('Campaign not found for this account.');
   }
-  if (sourceCampaign.source === 'smartlead' || sourceCampaign.smartlead_campaign_id != null) {
+  if (
+    (sourceCampaign.source === 'smartlead' || sourceCampaign.smartlead_campaign_id != null)
+    && !options.allowSmartleadSource
+  ) {
     throw new Error('Smartlead campaigns are read-only.');
   }
 
   const copySettings = options.copySettings ?? true;
   const copyLeads = options.copyLeads ?? false;
+  const sourceLeadIds = options.sourceLeadIds?.length ? options.sourceLeadIds : undefined;
+
+  if (sourceLeadIds && !copyLeads) {
+    throw new Error('sourceLeadIds requires copyLeads to be enabled.');
+  }
 
   const duplicatedCampaign = await createCampaignWithClient(db, {
     name: options.name,
@@ -269,7 +307,7 @@ export async function duplicateCampaignWithClient(
     if (sourceCampaign.flow_data) {
       await updateCampaignFlowDataWithClient(db, {
         campaignId: duplicatedCampaign.id,
-        accountId: targetAccountId,
+        accountId: options.accountId,
         flowData: sourceCampaign.flow_data,
         changeSource: 'duplicate_campaign',
       });
@@ -281,7 +319,13 @@ export async function duplicateCampaignWithClient(
   }
 
   if (copyLeads) {
-    await copyCampaignLeadsWithClient(db, sourceCampaign.id, duplicatedCampaign, new Set(copiedMailboxIds));
+    await copyCampaignLeadsWithClient(
+      db,
+      sourceCampaign.id,
+      duplicatedCampaign,
+      new Set(copiedMailboxIds),
+      sourceLeadIds,
+    );
   }
 
   const reloadedCampaign = await getCampaignByIdWithClient(db, duplicatedCampaign.id);

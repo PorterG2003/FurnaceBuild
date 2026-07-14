@@ -14,7 +14,7 @@ export const FLOW_NODE_REGISTRY: Record<FlowNodeType, FlowNodeRegistryEntry> = {
     label: 'Lead Source',
     description: 'Entry point for leads entering the campaign flow.',
     maxPerFlow: 1,
-    liveContentPatchAllowed: false,
+    liveContentPatchAllowed: true,
   },
   email: {
     type: 'email',
@@ -33,7 +33,7 @@ export const FLOW_NODE_REGISTRY: Record<FlowNodeType, FlowNodeRegistryEntry> = {
     label: 'AI Categorizer',
     description: 'Route replies by AI category.',
     maxPerFlow: 1,
-    liveContentPatchAllowed: false,
+    liveContentPatchAllowed: true,
   },
   dataSender: {
     type: 'dataSender',

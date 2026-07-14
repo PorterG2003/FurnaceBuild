@@ -1,7 +1,9 @@
 import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
-import { View, Platform, Text, Pressable } from 'react-native';
+import { View, Platform, Text } from 'react-native';
 import { ConfirmModal } from '@/components/ui/modals';
+import { AccessIssueDialog } from '@/components/ui/modals/AccessIssueDialog';
 import { useToast } from '@/components/ui/feedback';
+import { Button } from '@/components/ui/button';
 import { Breadcrumb, PageLayout } from '@/components/ui/layout';
 import { NavBar } from '@/components/ui/layout/NavBar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -10,16 +12,36 @@ import type { Campaign } from '@/lib/supabase/types';
 import { debounce } from '@/lib/utils/debounce';
 import { isSmartleadCampaign } from '@/lib/campaigns/utils';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
+import { CampaignStatusMenu } from '@/components/campaigns';
+import { useCampaignStatusActions } from '@/lib/campaigns/useCampaignStatusActions';
 import {
+  classifyFlowChange,
   computeFlowRevision,
   FlowEditForbiddenError,
   FlowPrepareValidationError,
   FlowRevisionConflictError,
+  FLOW_MODAL_DELETE_BODY_DRAFT,
+  FLOW_MODAL_DELETE_BODY_PAUSED,
+  FLOW_MODAL_DELETE_EDGE_BODY,
+  FLOW_MODAL_DELETE_EDGE_TITLE,
+  FLOW_MODAL_PAUSE_BODY,
+  FLOW_MODAL_PAUSE_CONFIRM,
+  FLOW_MODAL_PAUSE_TITLE,
+  FLOW_MODAL_STOPPED_BODY,
+  FLOW_MODAL_STOPPED_CONFIRM,
+  FLOW_MODAL_STOPPED_TITLE,
+  FLOW_TOAST_STOPPED,
+  formatFlowAppendReactivatedToast,
+  formatFlowModalDeleteTitle,
+  isFlowReadOnly,
+  isStructuralEditAllowed,
   normalizeFlowData,
   prepareFlowSave,
+  stableSerializeFlow,
   type CampaignFlowData,
 } from '@/lib/campaigns/flow';
 import { FlowConflictModal } from './components/FlowConflictModal';
+import { FlowStructureLockedBadge } from './components/FlowStructureLockedBadge';
 import { nodeTypes } from './nodes/nodeTypes';
 import { edgeTypes } from './edges/edgeTypes';
 import { NodeSidebar } from './components/NodeSidebar';
@@ -93,6 +115,8 @@ interface FlowEditorProps {
   initialEdges?: any[];
   onFlowChange?: (nodes: any[], edges: any[]) => void;
   campaignStatus?: Campaign['status'] | null;
+  onStructuralBlocked?: () => void;
+  onStoppedInteraction?: () => void;
 }
 
 function FlowEditor({
@@ -101,10 +125,15 @@ function FlowEditor({
   initialEdges = EMPTY_INITIAL_EDGES,
   onFlowChange,
   campaignStatus,
+  onStructuralBlocked,
+  onStoppedInteraction,
 }: FlowEditorProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState!(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState!(initialEdges);
-  const topologyLocked = !!campaignStatus && campaignStatus !== 'draft';
+  const structuralAllowed = isStructuralEditAllowed(campaignStatus);
+  const flowReadOnly = isFlowReadOnly(campaignStatus);
+  const isRunning = campaignStatus === 'running';
+  const isPaused = campaignStatus === 'paused';
   
   // Track if initial load is complete to avoid saving during initialization
   const isInitialLoadRef = useRef(true);
@@ -136,12 +165,13 @@ function FlowEditor({
     };
   }, [initialNodes, initialEdges, setNodes, setEdges]);
   
-  // Notify parent of changes (for saving)
+  // Notify parent of changes (for saving). Stopped campaigns are read-only — skip
+  // so metadata sync effects (readOnly/canDelete flags) don't trigger revert loops.
   useEffect(() => {
-    if (!isInitialLoadRef.current && onFlowChange) {
+    if (!isInitialLoadRef.current && onFlowChange && !flowReadOnly) {
       onFlowChange(nodes, edges);
     }
-  }, [nodes, edges, onFlowChange]);
+  }, [nodes, edges, onFlowChange, flowReadOnly]);
 
   // Ensure Lead Bucket node exists (only one per campaign) - run once on mount
   useEffect(() => {
@@ -168,14 +198,62 @@ function FlowEditor({
   const [pendingDelete, setPendingDelete] = useState<{
     removeChanges: any[];
     labels: string[];
-    isLive: boolean;
+    deleteMode: 'draft' | 'paused';
   } | null>(null);
+  const [pendingEdgeDelete, setPendingEdgeDelete] = useState<{ edgeId: string } | null>(null);
+
+  useEffect(() => {
+    setEdges((currentEdges: any[]) => {
+      const nextReadOnly = flowReadOnly;
+      const nextStructuralBlocked = isRunning;
+      const needsUpdate = currentEdges.some(
+        (edge: any) =>
+          edge.data?.readOnly !== nextReadOnly ||
+          edge.data?.structuralBlocked !== nextStructuralBlocked,
+      );
+      if (!needsUpdate) return currentEdges;
+      return currentEdges.map((edge: any) => ({
+        ...edge,
+        data: {
+          ...edge.data,
+          readOnly: nextReadOnly,
+          structuralBlocked: nextStructuralBlocked,
+        },
+      }));
+    });
+  }, [flowReadOnly, isRunning, setEdges]);
+
+  useEffect(() => {
+    const canDelete = !flowReadOnly;
+    setNodes((currentNodes: any[]) =>
+      currentNodes.map((node: any) => {
+        const nextCanDelete = canDelete;
+        const nextStructuralBlocked = isRunning;
+        if (
+          node.data?.canDelete === nextCanDelete &&
+          node.data?.structuralBlocked === nextStructuralBlocked
+        ) {
+          return node;
+        }
+        return {
+          ...node,
+          data: { ...node.data, canDelete: nextCanDelete, structuralBlocked: nextStructuralBlocked },
+        };
+      }),
+    );
+  }, [flowReadOnly, isRunning, setNodes]);
 
   const applyPendingDelete = useCallback(() => {
     if (!pendingDelete) return;
     onNodesChange(pendingDelete.removeChanges);
     setPendingDelete(null);
   }, [onNodesChange, pendingDelete]);
+
+  const applyPendingEdgeDelete = useCallback(() => {
+    if (!pendingEdgeDelete) return;
+    onEdgesChange([{ type: 'remove', id: pendingEdgeDelete.edgeId }]);
+    setPendingEdgeDelete(null);
+  }, [onEdgesChange, pendingEdgeDelete]);
 
   const cancelPendingDelete = useCallback(() => {
     setPendingDelete(null);
@@ -200,19 +278,33 @@ function FlowEditor({
 
   const onConnect = useCallback(
     (params: any) => {
-      if (topologyLocked) return;
+      if (flowReadOnly) {
+        onStoppedInteraction?.();
+        return;
+      }
+      if (isRunning) {
+        onStructuralBlocked?.();
+        return;
+      }
+      if (!structuralAllowed) return;
       setEdges((eds: any) => addEdge(params, eds));
     },
-    [setEdges, topologyLocked]
+    [flowReadOnly, isRunning, onStoppedInteraction, onStructuralBlocked, setEdges, structuralAllowed]
   );
 
   // Expose addNode function to parent via callback
   useEffect(() => {
     // Store the addNode function that can be called from sidebar
     (window as any).__reactFlowAddNode = (nodeType: string) => {
-      if (topologyLocked) {
+      if (flowReadOnly) {
+        onStoppedInteraction?.();
         return;
       }
+      if (isRunning) {
+        onStructuralBlocked?.();
+        return;
+      }
+      if (!structuralAllowed) return;
       // Prevent adding Lead Bucket nodes (they're automatic)
       if (nodeType === 'leadSource') {
         return;
@@ -267,30 +359,48 @@ function FlowEditor({
     };
 
     (window as any).__reactFlowDeleteNode = (nodeId: string) => {
-      if (topologyLocked) {
+      if (flowReadOnly) {
+        onStoppedInteraction?.();
+        return;
+      }
+      if (isRunning) {
+        onStructuralBlocked?.();
         return;
       }
       const currentNodes: any[] = (window as any).__reactFlowGetNodes?.() ?? [];
       const node = currentNodes.find((n: any) => n.id === nodeId);
       if (!node || node.type === 'leadSource' || node.data?.isRequired) return;
       const label = node.data?.label || node.type || 'Node';
-      const isLive = !!(campaignStatus && campaignStatus !== 'draft');
-      setPendingDelete({ removeChanges: [{ type: 'remove', id: nodeId }], labels: [label], isLive });
+      const deleteMode = isPaused ? 'paused' : 'draft';
+      setPendingDelete({ removeChanges: [{ type: 'remove', id: nodeId }], labels: [label], deleteMode });
     };
 
     (window as any).__reactFlowDeleteEdge = (edgeId: string) => {
-      if (topologyLocked) {
+      if (flowReadOnly) {
+        onStoppedInteraction?.();
+        return;
+      }
+      if (isRunning) {
+        onStructuralBlocked?.();
+        return;
+      }
+      if (isPaused) {
+        setPendingEdgeDelete({ edgeId });
         return;
       }
       onEdgesChange([{ type: 'remove', id: edgeId }]);
     };
-  }, [campaignStatus, onEditNode, onEdgesChange, setNodes, topologyLocked]);
+  }, [campaignStatus, flowReadOnly, isPaused, isRunning, onEditNode, onEdgesChange, onStoppedInteraction, onStructuralBlocked, setNodes, structuralAllowed]);
 
   // Expose setNodes and getNodes for updating node data
   useEffect(() => {
     (window as any).__reactFlowSetNodes = setNodes;
     (window as any).__reactFlowSetEdges = setEdges;
     (window as any).__reactFlowGetNodes = () => nodes;
+    (window as any).__reactFlowSetFlow = (nextNodes: any[], nextEdges: any[]) => {
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+    };
     (window as any).__reactFlowClearSelection = () => {
       setNodes((currentNodes: any[]) =>
         currentNodes.map((node: any) =>
@@ -303,35 +413,35 @@ function FlowEditor({
         )
       );
     };
+    return () => {
+      delete (window as any).__reactFlowSetFlow;
+    };
   }, [setEdges, setNodes, nodes]);
 
   // Handle node clicks to open edit modal
   const handleNodeClick = useCallback((event: any, node: any) => {
-    // Only trigger edit on click (not drag)
-    // React Flow will handle dragging separately
+    if (flowReadOnly) {
+      onStoppedInteraction?.();
+      return;
+    }
     if (node && node.type) {
       onEditNode(node.id, node.type);
       setTimeout(() => {
         (window as any).__reactFlowClearSelection?.();
       }, 0);
     }
-  }, [onEditNode]);
+  }, [flowReadOnly, onEditNode, onStoppedInteraction]);
 
   const deleteConfirmTitle = pendingDelete
     ? pendingDelete.labels.length === 1
-      ? `Delete "${pendingDelete.labels[0]}"?`
+      ? formatFlowModalDeleteTitle(pendingDelete.labels[0]!)
       : `Delete ${pendingDelete.labels.length} nodes?`
     : '';
 
   const deleteConfirmMessage = pendingDelete
-    ? [
-        pendingDelete.isLive
-          ? 'This campaign is already live. Deleting nodes can affect active enrollments and future sends.'
-          : null,
-        'This action cannot be undone.',
-      ]
-        .filter(Boolean)
-        .join(' ')
+    ? pendingDelete.deleteMode === 'paused'
+      ? FLOW_MODAL_DELETE_BODY_PAUSED
+      : FLOW_MODAL_DELETE_BODY_DRAFT
     : '';
 
   return (
@@ -353,6 +463,7 @@ function FlowEditor({
           // Store React Flow instance for accessing viewport
           (window as any).__reactFlowInstance = instance;
         }}
+        nodesConnectable={structuralAllowed}
       >
         <Controls />
       </FlowCanvas>
@@ -362,6 +473,15 @@ function FlowEditor({
         onConfirm={applyPendingDelete}
         title={deleteConfirmTitle}
         message={deleteConfirmMessage}
+        confirmLabel="Delete"
+        confirmVariant="destructive"
+      />
+      <ConfirmModal
+        visible={pendingEdgeDelete !== null}
+        onClose={() => setPendingEdgeDelete(null)}
+        onConfirm={applyPendingEdgeDelete}
+        title={FLOW_MODAL_DELETE_EDGE_TITLE}
+        message={FLOW_MODAL_DELETE_EDGE_BODY}
         confirmLabel="Delete"
         confirmVariant="destructive"
       />
@@ -387,6 +507,14 @@ export default function BuilderPage() {
   const lastSavedFlowRef = useRef<string | null>(null);
   const flowRevisionRef = useRef<string | null>(null);
   const pendingSaveRef = useRef<{ nodes: any[]; edges: any[] } | null>(null);
+  const lastSaveFailureRef = useRef<{ flowHash: string; message: string } | null>(null);
+  const isSavingRef = useRef(false);
+  const queuedSaveRef = useRef<{ nodes: any[]; edges: any[] } | null>(null);
+  const lastSavedFlowDataRef = useRef<CampaignFlowData | null>(null);
+  const lastAppendToastRevisionRef = useRef<string | null>(null);
+  const [pauseModalVisible, setPauseModalVisible] = useState(false);
+  const [stoppedInfoModalVisible, setStoppedInfoModalVisible] = useState(false);
+  const stoppedInfoShownRef = useRef(false);
 
   useEffect(() => {
     if (!campaignId) {
@@ -421,7 +549,8 @@ export default function BuilderPage() {
                 Array.isArray(flowData.edges) ? flowData.edges : []
               );
               setInitialFlowData(sanitizedFlowData);
-              lastSavedFlowRef.current = JSON.stringify(sanitizedFlowData);
+              lastSavedFlowRef.current = stableSerializeFlow(sanitizedFlowData);
+              lastSavedFlowDataRef.current = sanitizedFlowData;
               flowRevisionRef.current = await computeFlowRevision(sanitizedFlowData);
               hasLoadedFlowRef.current = true;
             }
@@ -430,7 +559,8 @@ export default function BuilderPage() {
             // Fallback to empty flow
             const emptyFlow = { nodes: [], edges: [] };
             setInitialFlowData(emptyFlow);
-            lastSavedFlowRef.current = JSON.stringify(emptyFlow);
+            lastSavedFlowRef.current = stableSerializeFlow(emptyFlow);
+            lastSavedFlowDataRef.current = emptyFlow;
             flowRevisionRef.current = await computeFlowRevision(emptyFlow);
             hasLoadedFlowRef.current = true;
           }
@@ -438,7 +568,8 @@ export default function BuilderPage() {
           // No flow_data exists, start with empty
           const emptyFlow = { nodes: [], edges: [] };
           setInitialFlowData(emptyFlow);
-          lastSavedFlowRef.current = JSON.stringify(emptyFlow);
+          lastSavedFlowRef.current = stableSerializeFlow(emptyFlow);
+          lastSavedFlowDataRef.current = emptyFlow;
           flowRevisionRef.current = await computeFlowRevision(emptyFlow);
           hasLoadedFlowRef.current = true;
         }
@@ -453,23 +584,114 @@ export default function BuilderPage() {
     loadCampaign();
   }, [campaignId, router]);
 
-  const topologyLocked = !!campaign?.status && campaign.status !== 'draft';
+  useEffect(() => {
+    if (isLoading || campaign?.status !== 'stopped' || stoppedInfoShownRef.current) return;
+    stoppedInfoShownRef.current = true;
+    setStoppedInfoModalVisible(true);
+  }, [campaign?.status, isLoading]);
+
+  const reloadCampaign = useCallback(async (silent = false) => {
+    if (!campaignId) return;
+    if (!silent) setIsLoading(true);
+    try {
+      const data = await getCampaignById(campaignId);
+      if (data?.deleted_at) {
+        router.replace('/campaigns');
+        return;
+      }
+      setCampaign(data);
+    } catch (error) {
+      console.error('Failed to reload campaign:', error);
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
+  }, [campaignId, router]);
+
+  const {
+    isPausing,
+    isStarting,
+    isStopping,
+    handlePause,
+    handleResume,
+    handleStop,
+  } = useCampaignStatusActions(campaignId, reloadCampaign);
+
+  const revertCanvasToLastSaved = useCallback(() => {
+    const saved = lastSavedFlowDataRef.current;
+    if (saved && typeof window !== 'undefined' && (window as any).__reactFlowSetFlow) {
+      (window as any).__reactFlowSetFlow(saved.nodes, saved.edges);
+    }
+  }, []);
+
+  const showStoppedToast = useCallback(() => {
+    toast.error(FLOW_TOAST_STOPPED);
+  }, [toast]);
+
+  const showStructuralBlocked = useCallback(() => {
+    setPauseModalVisible(true);
+  }, []);
+
+  const handleConfirmPause = useCallback(async () => {
+    await handlePause();
+    setPauseModalVisible(false);
+  }, [handlePause]);
 
   const persistPreparedFlow = useCallback(async (preparedFlow: CampaignFlowData) => {
     if (!campaignId) return;
-    await updateCampaignFlowData(campaignId, preparedFlow as any, 'builder');
-    lastSavedFlowRef.current = JSON.stringify(preparedFlow);
-    flowRevisionRef.current = await computeFlowRevision(preparedFlow);
-    setCampaign((prev) => (prev ? { ...prev, flow_data: preparedFlow as any } : prev));
+    const saveResult = await updateCampaignFlowData(campaignId, preparedFlow as any, 'builder');
+    const sanitizedPrepared = sanitizeFlowData(preparedFlow.nodes as any[], preparedFlow.edges as any[]);
+    lastSavedFlowRef.current = stableSerializeFlow(sanitizedPrepared);
+    lastSavedFlowDataRef.current = sanitizedPrepared;
+    const nextRevision = await computeFlowRevision(preparedFlow);
+    flowRevisionRef.current = nextRevision;
+    lastSaveFailureRef.current = null;
+    setCampaign((prev) => (prev ? { ...prev, flow_data: preparedFlow as any, status: saveResult.campaign.status } : prev));
+
+    const preparedLeadSource = preparedFlow.nodes.find((node) => node.type === 'leadSource');
+    const setNodes = (window as any).__reactFlowSetNodes;
+    if (preparedLeadSource && typeof setNodes === 'function') {
+      setNodes((currentNodes: any[]) =>
+        currentNodes.map((node: any) =>
+          node.type === 'leadSource'
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  customFieldKeys: preparedLeadSource.data?.customFieldKeys,
+                  mappedStandardFieldKeys: preparedLeadSource.data?.mappedStandardFieldKeys,
+                },
+              }
+            : node
+        )
+      );
+    }
+
+    if (
+      saveResult.reactivated_count > 0
+      && lastAppendToastRevisionRef.current !== nextRevision
+    ) {
+      lastAppendToastRevisionRef.current = nextRevision;
+      toast.info(formatFlowAppendReactivatedToast(saveResult.reactivated_count));
+    }
+
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 2000);
-  }, [campaignId]);
+  }, [campaignId, toast]);
 
-  const attemptFlowSave = useCallback(async (nodes: any[], edges: any[], ifMatch?: string | null) => {
+  const showSaveFailureToast = useCallback((flowHash: string, message: string) => {
+    const previous = lastSaveFailureRef.current;
+    if (previous?.flowHash === flowHash && previous.message === message) {
+      return;
+    }
+    lastSaveFailureRef.current = { flowHash, message };
+    toast.error(message);
+  }, [toast]);
+
+  const attemptFlowSave = useCallback(async (nodes: any[], edges: any[], forceOverwrite = false) => {
     if (!campaignId) return;
     const sanitizedFlowData = sanitizeFlowData(nodes, edges);
-    const serializedFlow = JSON.stringify(sanitizedFlowData);
-    if (serializedFlow === lastSavedFlowRef.current) {
+    const serializedFlow = stableSerializeFlow(sanitizedFlowData);
+    if (!forceOverwrite && serializedFlow === lastSavedFlowRef.current) {
       return;
     }
 
@@ -484,7 +706,24 @@ export default function BuilderPage() {
         (latestCampaign.flow_data as CampaignFlowData | null)?.edges ?? [],
       );
       const serverRevision = await computeFlowRevision(serverFlow);
-      const matchRevision = ifMatch ?? flowRevisionRef.current;
+
+      // Detect a genuine external edit by comparing canonical revision hashes: the
+      // server holds content that differs from what this tab last persisted. Hashes
+      // are key-order- and position-insensitive, so a Postgres jsonb round-trip never
+      // trips this. `forceOverwrite` (Keep my version) bypasses the check.
+      const isFirstSave = flowRevisionRef.current === null;
+      const externallyChanged =
+        !forceOverwrite && !isFirstSave && serverRevision !== flowRevisionRef.current;
+      if (externallyChanged) {
+        setFlowConflict({
+          localFlow: sanitizedFlowData,
+          serverFlow,
+          serverRevision,
+        });
+        pendingSaveRef.current = { nodes, edges };
+        setSaveStatus('idle');
+        return;
+      }
 
       let prepared;
       try {
@@ -493,7 +732,9 @@ export default function BuilderPage() {
           existingFlow: serverFlow,
           campaignStatus: latestCampaign.status,
           phase: 'draft',
-          ifMatch: matchRevision,
+          // Rebase on the exact revision we just fetched so the advisory revision
+          // gate is always satisfied for our own writes and never throws spuriously.
+          ifMatch: serverRevision,
         });
       } catch (error) {
         if (error instanceof FlowRevisionConflictError) {
@@ -507,12 +748,18 @@ export default function BuilderPage() {
           return;
         }
         if (error instanceof FlowPrepareValidationError) {
-          toast.error(error.issues[0]?.message || error.message);
+          showSaveFailureToast(serializedFlow, error.issues[0]?.message || error.message);
+          revertCanvasToLastSaved();
         } else if (error instanceof FlowEditForbiddenError) {
-          toast.error(error.message);
+          showSaveFailureToast(serializedFlow, error.message);
+          revertCanvasToLastSaved();
         } else {
           console.error('Failed to save flow:', error);
-          toast.error(error instanceof Error ? error.message : 'Flow validation failed');
+          showSaveFailureToast(
+            serializedFlow,
+            error instanceof Error ? error.message : 'Flow validation failed',
+          );
+          revertCanvasToLastSaved();
         }
         setSaveStatus('error');
         setTimeout(() => setSaveStatus('idle'), 3000);
@@ -522,24 +769,64 @@ export default function BuilderPage() {
       await persistPreparedFlow(prepared.flow);
     } catch (error) {
       console.error('Failed to save flow:', error);
-      toast.error(error instanceof Error ? error.message : 'Flow save failed');
+      showSaveFailureToast(
+        serializedFlow,
+        error instanceof Error ? error.message : 'Flow save failed',
+      );
+      revertCanvasToLastSaved();
       setSaveStatus('error');
       setTimeout(() => setSaveStatus('idle'), 3000);
     }
-  }, [campaignId, persistPreparedFlow, toast]);
+  }, [campaignId, persistPreparedFlow, revertCanvasToLastSaved, showSaveFailureToast]);
 
-  // Debounced save function
-  const saveFlowData = useMemo(
-    () => debounce(async (nodes: any[], edges: any[]) => {
-      await attemptFlowSave(nodes, edges);
-    }, 1000),
-    [attemptFlowSave]
+  // Single-flight save loop: only one save runs at a time; edits during a save
+  // coalesce into one trailing save that reads the fresh post-save revision refs.
+  const drainSaves = useCallback(async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    try {
+      while (queuedSaveRef.current) {
+        const next = queuedSaveRef.current;
+        queuedSaveRef.current = null;
+        await attemptFlowSave(next.nodes, next.edges);
+      }
+    } finally {
+      isSavingRef.current = false;
+    }
+  }, [attemptFlowSave]);
+
+  const debouncedDrainSaves = useMemo(
+    () => debounce(() => { void drainSaves(); }, 1000),
+    [drainSaves]
   );
 
   // Handle flow changes
   const handleFlowChange = useCallback((nodes: any[], edges: any[]) => {
-    saveFlowData(nodes, edges);
-  }, [saveFlowData]);
+    const status = campaign?.status;
+    if (isFlowReadOnly(status)) {
+      const sanitizedIncoming = sanitizeFlowData(nodes, edges);
+      if (stableSerializeFlow(sanitizedIncoming) === lastSavedFlowRef.current) {
+        return;
+      }
+      showStoppedToast();
+      revertCanvasToLastSaved();
+      return;
+    }
+
+    const sanitizedIncoming = sanitizeFlowData(nodes, edges);
+    const lastSaved = lastSavedFlowDataRef.current;
+    if (status === 'running' && lastSaved) {
+      const change = classifyFlowChange(lastSaved, sanitizedIncoming);
+      if (change.kind === 'structural') {
+        showStructuralBlocked();
+        revertCanvasToLastSaved();
+        return;
+      }
+    }
+
+    queuedSaveRef.current = { nodes, edges };
+    debouncedDrainSaves();
+  }, [campaign?.status, debouncedDrainSaves, revertCanvasToLastSaved, showStoppedToast, showStructuralBlocked]);
 
   if (!campaignId) {
     return (
@@ -570,8 +857,12 @@ export default function BuilderPage() {
   }
 
   const handleAddNode = (nodeType: string) => {
-    if (topologyLocked) {
-      toast.error('Flow topology is locked after launch.');
+    if (isFlowReadOnly(campaign?.status)) {
+      showStoppedToast();
+      return;
+    }
+    if (campaign?.status === 'running') {
+      showStructuralBlocked();
       return;
     }
     if (nodeType === 'aiCategorizer') {
@@ -588,6 +879,10 @@ export default function BuilderPage() {
   };
 
   const handleEditNode = (nodeId: string, nodeType: string) => {
+    if (isFlowReadOnly(campaign?.status)) {
+      showStoppedToast();
+      return;
+    }
     (window as any).__reactFlowClearSelection?.();
     // Find the node in React Flow state
     if ((window as any).__reactFlowGetNodes) {
@@ -634,6 +929,16 @@ export default function BuilderPage() {
     (window as any).__reactFlowClearSelection?.();
     setEditingNode(null);
   };
+
+  const campaignStatus = campaign?.status;
+  const showStatusMenu =
+    (campaignStatus === 'running' || campaignStatus === 'paused' || campaignStatus === 'stopped') &&
+    !isLoading;
+  const showFlowEditBadge = campaignStatus === 'running' || campaignStatus === 'paused';
+  const statusMenuStatus =
+    campaignStatus === 'running' || campaignStatus === 'paused' || campaignStatus === 'stopped'
+      ? campaignStatus
+      : 'running';
 
   return (
     <View className="flex-1 bg-[#121212] flex-row">
@@ -693,20 +998,34 @@ export default function BuilderPage() {
                   )}
                 </View>
               )}
-              {topologyLocked && (
-                <Text className="text-amber-300 font-instrument text-sm">
-                  Flow topology is locked after launch. You can still edit copy, variants, timing, and node configuration.
-                </Text>
+              {showFlowEditBadge && campaign?.status && (
+                <FlowStructureLockedBadge status={campaign.status} />
               )}
+              {showStatusMenu ? (
+                <CampaignStatusMenu
+                  status={statusMenuStatus}
+                  campaignName={campaign?.name ?? undefined}
+                  isPausing={isPausing}
+                  isStarting={isStarting}
+                  isStopping={isStopping}
+                  onPause={handlePause}
+                  onResume={handleResume}
+                  onStop={handleStop}
+                />
+              ) : null}
               {campaignId && (
-                <View>
-                  <Pressable
-                    onPress={() => router.push({ pathname: '/campaigns/[id]/mission-control', params: { id: campaignId } })}
-                    className="px-4 py-2 rounded-lg border border-[#3A3A3A] bg-[#2A2A2A]"
-                  >
-                    <Text className="text-white font-instrument-medium text-sm">Mission Control</Text>
-                  </Pressable>
-                </View>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onPress={() =>
+                    router.push({
+                      pathname: '/campaigns/[id]/mission-control',
+                      params: { id: campaignId },
+                    })
+                  }
+                >
+                  Mission Control
+                </Button>
               )}
             </View>
           </View>
@@ -727,6 +1046,8 @@ export default function BuilderPage() {
               initialEdges={initialFlowData.edges}
               onFlowChange={handleFlowChange}
               campaignStatus={campaign?.status}
+              onStructuralBlocked={showStructuralBlocked}
+              onStoppedInteraction={showStoppedToast}
             />
           ) : initialFlowData !== null ? (
             <View className="flex-1 items-center justify-center">
@@ -737,34 +1058,11 @@ export default function BuilderPage() {
               <Text className="text-gray-400 font-instrument">Loading flow...</Text>
             </View>
           )}
-          {/* Floating Mission Control button - bottom right */}
-          {campaignId && (
-            <Pressable
-              onPress={() => router.push({ pathname: '/campaigns/[id]/mission-control', params: { id: campaignId } })}
-              style={{
-                position: 'absolute',
-                right: 24,
-                bottom: 24,
-                backgroundColor: '#f85102',
-                paddingHorizontal: 20,
-                paddingVertical: 14,
-                borderRadius: 12,
-                zIndex: 10,
-                ...(typeof window !== 'undefined'
-                  ? { boxShadow: '0px 2px 4px rgba(0,0,0,0.25)' }
-                  : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 4 }),
-              }}
-            >
-              <Text className="text-white font-instrument-semibold text-sm">
-                Mission Control
-              </Text>
-            </Pressable>
-          )}
         </View>
       </View>
       
       {/* Node Sidebar - Right side */}
-      <NodeSidebar onAddNode={handleAddNode} disabled={topologyLocked} />
+      <NodeSidebar onAddNode={handleAddNode} />
 
       {/* Node Modal */}
       {editingNode && (() => {
@@ -834,7 +1132,7 @@ export default function BuilderPage() {
             const pending = pendingSaveRef.current;
             pendingSaveRef.current = null;
             if (pending) {
-              await attemptFlowSave(pending.nodes, pending.edges, flowConflict.serverRevision);
+              await attemptFlowSave(pending.nodes, pending.edges, true);
             }
           }}
           onUseServer={async () => {
@@ -842,7 +1140,8 @@ export default function BuilderPage() {
             setFlowConflict(null);
             pendingSaveRef.current = null;
             setInitialFlowData({ nodes: serverFlow.nodes as any[], edges: serverFlow.edges as any[] });
-            lastSavedFlowRef.current = JSON.stringify(serverFlow);
+            lastSavedFlowRef.current = stableSerializeFlow(serverFlow);
+            lastSavedFlowDataRef.current = serverFlow;
             flowRevisionRef.current = await computeFlowRevision(serverFlow);
             setCampaign((prev) => (prev ? { ...prev, flow_data: serverFlow as any } : prev));
             if (typeof window !== 'undefined' && (window as any).__reactFlowSetFlow) {
@@ -851,6 +1150,27 @@ export default function BuilderPage() {
           }}
         />
       )}
+      <ConfirmModal
+        visible={pauseModalVisible}
+        onClose={() => !isPausing && setPauseModalVisible(false)}
+        onConfirm={() => {
+          if (!isPausing) void handleConfirmPause();
+        }}
+        title={FLOW_MODAL_PAUSE_TITLE}
+        message={FLOW_MODAL_PAUSE_BODY}
+        confirmLabel={isPausing ? 'Pausing…' : FLOW_MODAL_PAUSE_CONFIRM}
+        maxWidth="lg"
+        descriptionNumberOfLines={null}
+      />
+      <AccessIssueDialog
+        visible={stoppedInfoModalVisible}
+        onClose={() => setStoppedInfoModalVisible(false)}
+        title={FLOW_MODAL_STOPPED_TITLE}
+        message={FLOW_MODAL_STOPPED_BODY}
+        primaryLabel={FLOW_MODAL_STOPPED_CONFIRM}
+        onPrimary={() => setStoppedInfoModalVisible(false)}
+        wide
+      />
     </View>
   );
 }

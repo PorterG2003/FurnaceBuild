@@ -3,7 +3,6 @@ import test from 'node:test';
 import { CAMPAIGN_FLOW_EXAMPLE_LINEAR } from './examples.js';
 import {
   FlowEditForbiddenError,
-  FlowPrepareValidationError,
   FlowRevisionConflictError,
   prepareFlowSave,
 } from './prepareFlowSave.js';
@@ -45,6 +44,39 @@ test('prepareFlowSave throws on stale ifMatch', async () => {
   );
 });
 
+test('prepareFlowSave allows structural edits on paused campaigns', async () => {
+  const existing = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const structural = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  structural.edges.pop();
+  const result = await prepareFlowSave({
+    incomingFlow: structural,
+    existingFlow: existing,
+    campaignStatus: 'paused',
+    phase: 'draft',
+  });
+  assert.equal(result.changeKind, 'structural');
+});
+
+test('prepareFlowSave blocks all edits on stopped campaigns', async () => {
+  const existing = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const content = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const emailNode = content.nodes.find((node) => node.id === 'email-1');
+  assert.ok(emailNode && emailNode.type === 'email');
+  if (!emailNode || emailNode.type !== 'email') {
+    throw new Error('email node missing from example flow');
+  }
+  emailNode.data.variants[0]!.subject = 'Stopped edit';
+  await assert.rejects(
+    () => prepareFlowSave({
+      incomingFlow: content,
+      existingFlow: existing,
+      campaignStatus: 'stopped',
+      phase: 'draft',
+    }),
+    FlowEditForbiddenError,
+  );
+});
+
 test('prepareFlowSave blocks structural edits on running campaigns', async () => {
   const existing = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
   const structural = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
@@ -60,14 +92,14 @@ test('prepareFlowSave blocks structural edits on running campaigns', async () =>
   );
 });
 
-test('prepareFlowSave blocks invalid flow data', async () => {
+test('prepareFlowSave allows invalid flow data in draft with warnings', async () => {
   const invalid = { nodes: [], edges: [] };
-  await assert.rejects(
-    () => prepareFlowSave({
-      incomingFlow: invalid,
-      existingFlow: { nodes: [], edges: [] },
-      campaignStatus: 'draft',
-    }),
-    FlowPrepareValidationError,
-  );
+  const result = await prepareFlowSave({
+    incomingFlow: invalid,
+    existingFlow: { nodes: [], edges: [] },
+    campaignStatus: 'draft',
+  });
+
+  assert.ok(result.validation.warnings.length > 0);
+  assert.equal(result.validation.blockingIssues.length, 0);
 });

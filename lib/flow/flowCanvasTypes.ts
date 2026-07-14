@@ -17,6 +17,7 @@ export interface FlowCanvasProps {
   fitView?: boolean;
   fitViewOptions?: { padding?: number; maxZoom?: number };
   deleteKeyCode?: string | null;
+  nodesConnectable?: boolean;
   style?: CSSProperties;
   children?: ReactNode;
 }

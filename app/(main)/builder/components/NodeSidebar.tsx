@@ -6,7 +6,6 @@ import { nodeTypeMetadata, nodeIcons } from '../nodes/nodeMetadata';
 
 interface NodeSidebarProps {
   onAddNode: (nodeType: string) => void;
-  disabled?: boolean;
 }
 
 // Group nodes by category
@@ -25,7 +24,7 @@ const categories = {
 // Module-level variable to persist expanded state
 let persistedExpandedState = false; // Start collapsed by default
 
-function NodeSidebar({ onAddNode, disabled = false }: NodeSidebarProps) {
+function NodeSidebar({ onAddNode }: NodeSidebarProps) {
   const [isExpanded, setIsExpanded] = useState(persistedExpandedState);
 
   // Animated width values: collapsed = 56px (same as NavBar), expanded = 280px
@@ -131,7 +130,7 @@ function NodeSidebar({ onAddNode, disabled = false }: NodeSidebarProps) {
               fontFamily: 'Instrument Sans, system-ui, sans-serif',
             }}
           >
-            {disabled ? 'Flow topology is locked after launch' : 'Click to add nodes'}
+            Click to add nodes
           </Text>
         </View>
 
@@ -164,21 +163,17 @@ function NodeSidebar({ onAddNode, disabled = false }: NodeSidebarProps) {
                 return (
                   <Pressable
                     key={nodeType}
-                    onPress={() => {
-                      if (!disabled) onAddNode(nodeType);
-                    }}
-                    disabled={disabled}
+                    onPress={() => onAddNode(nodeType)}
                     style={({ pressed }) => ({
-                      backgroundColor: disabled ? '#1A1A1A' : pressed ? '#2A2A2A' : '#232323',
+                      backgroundColor: pressed ? '#2A2A2A' : '#232323',
                       borderWidth: 1,
                       borderColor: '#2A2A2A',
                       borderRadius: 12,
                       padding: 14,
                       marginBottom: 8,
-                      opacity: disabled ? 0.5 : 1,
                       ...(Platform.OS === 'web' && {
                         transition: 'all 0.15s ease',
-                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        cursor: 'pointer',
                       }),
                     })}
                   >
@@ -255,4 +250,3 @@ function NodeSidebar({ onAddNode, disabled = false }: NodeSidebarProps) {
 
 export { NodeSidebar };
 export default NodeSidebar;
-

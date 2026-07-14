@@ -100,11 +100,31 @@ export async function updateCampaign(id: string, updates: CampaignUpdate): Promi
   return data;
 }
 
+export type CampaignFlowSaveResult = {
+  campaign: Campaign;
+  reactivated_count: number;
+};
+
+function parseCampaignFlowSaveRpcResult(data: unknown): CampaignFlowSaveResult {
+  if (data && typeof data === 'object' && 'campaign' in data) {
+    const record = data as { campaign: Campaign; reactivated_count?: number };
+    return {
+      campaign: record.campaign,
+      reactivated_count: record.reactivated_count ?? 0,
+    };
+  }
+  const campaign = (Array.isArray(data) ? data[0] : data) as Campaign | null;
+  if (!campaign) {
+    throw new Error('Failed to update campaign flow: No data returned');
+  }
+  return { campaign, reactivated_count: 0 };
+}
+
 export async function updateCampaignFlowData(
   id: string,
   flowData: Campaign['flow_data'],
   changeSource: string = 'builder'
-): Promise<Campaign> {
+): Promise<CampaignFlowSaveResult> {
   const { data, error } = await supabase.rpc('update_campaign_flow_data', {
     p_campaign_id: id,
     p_flow_data: flowData,
@@ -112,9 +132,7 @@ export async function updateCampaignFlowData(
   });
 
   if (error) throw new Error(`Failed to update campaign flow: ${error.message}`);
-  const campaign = Array.isArray(data) ? data[0] : data;
-  if (!campaign) throw new Error('Failed to update campaign flow: No data returned');
-  return campaign as Campaign;
+  return parseCampaignFlowSaveRpcResult(data);
 }
 
 export async function getCampaignFlowVersions(campaignId: string): Promise<CampaignFlowVersion[]> {

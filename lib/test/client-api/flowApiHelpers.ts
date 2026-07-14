@@ -26,6 +26,7 @@ export type FlowSaveResponseData = {
     code?: string;
     message?: string;
   };
+  reactivated_count: number;
 };
 
 export type FlowDryRunResponseData = {
@@ -43,6 +44,45 @@ export type FlowDryRunResponseData = {
 
 export function cloneFlow<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+export function appendEmailAfterLeaf(
+  flowData: CampaignFlowData,
+  leafFlowNodeId: string,
+  newNodeId: string,
+): CampaignFlowData {
+  return {
+    nodes: [
+      ...flowData.nodes,
+      {
+        id: newNodeId,
+        type: 'email',
+        position: { x: 940, y: 0 },
+        data: {
+          label: 'Appended Follow-up',
+          send_mode: 'new',
+          variants: [
+            {
+              id: crypto.randomUUID(),
+              label: 'A',
+              subject: 'Appended step for {{name}}',
+              template: 'Hi {{name}} - appended follow-up after completed leaf.',
+              isActive: true,
+              order: 0,
+            },
+          ],
+        },
+      },
+    ],
+    edges: [
+      ...flowData.edges,
+      {
+        id: `e-append-${newNodeId}`,
+        source: leafFlowNodeId,
+        target: newNodeId,
+      },
+    ],
+  };
 }
 
 export function linearFlowForApi(customFieldKeys: string[] = ['company']): CampaignFlowData {
@@ -153,6 +193,7 @@ export function assertFlowSaveShape(data: unknown): asserts data is FlowSaveResp
   assert.ok(record.validation && typeof record.validation === 'object');
   assert.ok(record.lifecycle && typeof record.lifecycle === 'object');
   assert.equal(typeof (record.lifecycle as { allowed: boolean }).allowed, 'boolean');
+  assert.equal(typeof record.reactivated_count, 'number');
 }
 
 export function assertFlowDryRunShape(data: unknown): asserts data is FlowDryRunResponseData {

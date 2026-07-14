@@ -8,6 +8,8 @@ interface DataSenderNodeData {
   payload?: string;
   on_failure?: 'continue' | 'stop';
   readOnly?: boolean;
+  canDelete?: boolean;
+  structuralBlocked?: boolean;
 }
 
 interface DataSenderNodeProps {
@@ -40,6 +42,8 @@ function DataSenderNode({ data, selected, id }: DataSenderNodeProps) {
       onDelete={handleDelete}
       icon={IconComponent && <IconComponent size={16} color="#f85102" />}
       showActions={!data.readOnly}
+      canDelete={data.canDelete !== false}
+      deleteMuted={!!data.structuralBlocked}
       nodeLabel={displayLabel}
     >
       {endpoint && (

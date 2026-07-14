@@ -6,6 +6,16 @@ export const BATCH_CHECKPOINT_VERSION = 1 as const;
 
 export type MetaAdsBatchMode = 'sample' | 'all';
 
+export interface MetaAdsBatchAntiBotConfig {
+  delayMinMs: number;
+  delayMaxMs: number;
+  retryNoResults: boolean;
+  maxNoResultRetries: number;
+  retryMinMs: number;
+  retryMaxMs: number;
+  rotateSessionEvery: number;
+}
+
 export interface MetaAdsBatchCheckpointArgs {
   csvPath: string;
   outDir: string;
@@ -15,6 +25,8 @@ export interface MetaAdsBatchCheckpointArgs {
   batchMode: MetaAdsBatchMode;
   maxRows: number | null;
   sampleNames: string[];
+  pilot?: boolean;
+  antiBot?: MetaAdsBatchAntiBotConfig;
 }
 
 export interface MetaAdsBatchCheckpointError {
@@ -68,6 +80,12 @@ export function checkpointArgsMatch(
   if (checkpoint.args.webinarScanDays !== args.webinarScanDays) mismatches.push('webinarScanDays');
   if ((checkpoint.args.batchMode ?? 'sample') !== args.batchMode) mismatches.push('batchMode');
   if ((checkpoint.args.maxRows ?? null) !== args.maxRows) mismatches.push('maxRows');
+  if ((checkpoint.args.pilot ?? false) !== (args.pilot ?? false)) mismatches.push('pilot');
+  if (args.antiBot && checkpoint.args.antiBot) {
+    if (JSON.stringify(checkpoint.args.antiBot) !== JSON.stringify(args.antiBot)) {
+      mismatches.push('antiBot');
+    }
+  }
   if (args.batchMode === 'sample') {
     const a = sortedSampleNames(checkpoint.args.sampleNames);
     const b = sortedSampleNames(args.sampleNames);

@@ -58,9 +58,7 @@ amplifyconfiguration*
 
 # Client audit artifacts — never commit
 docs/audit/
-tmp/audit/
-tmp/meta-ads-webinar-batch/
-tmp/meta-ads-webinar-batch-full/
+tmp/*
 
 # lib/client-api/webhooks build artifacts
 lib/client-api/webhooks/*.js

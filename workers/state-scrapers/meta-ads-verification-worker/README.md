@@ -141,14 +141,26 @@ Output goes to `tmp/meta-ads-webinar-batch-full/` (separate from the 8-company s
 | Flag | Description |
 |------|-------------|
 | `--all` | Process every eligible row in the CSV (not just the 8-name sample) |
+| `--pilot` | Pilot mode: seed validation domains first, default 150 rows, anti-bot defaults |
 | `--max-rows N` | Cap rows processed (useful for smoke tests) |
-| `--delay-ms` | Pause between companies (default `2000`) |
+| `--delay-min-ms` / `--delay-max-ms` | Random pause between companies (default 8–18s) |
+| `--retry-no-results` | Retry empty Meta `no_results` responses with backoff |
+| `--max-no-result-retries` | Retries per company when `--retry-no-results` (default `2`) |
+| `--retry-min-ms` / `--retry-max-ms` | Backoff between retries (default 20–45s) |
+| `--rotate-session-every` | New browser context every ~N lookups (default `20`, jittered) |
 | `--headless` | Run Chrome headless — **use this for long batches** so windows don't pop up |
 | `--scan-webinars` | Enable 30-day webinar scroll scan |
 | `--resume` | Continue from checkpoint |
 | `--fresh` | Ignore existing checkpoint and start over |
 | `--out-dir` | Override output directory |
 | `--checkpoint` | Override checkpoint file path |
+
+**Pilot batch** (150 companies, validation domains first, anti-bot pacing):
+
+```bash
+node --import tsx src/batchWebinarSample.ts --all --pilot --max-rows 150 --scan-webinars --headless --fresh \
+  --retry-no-results --out-dir ../../../../tmp/meta-ads-webinar-batch-pilot-150
+```
 
 ```bash
 # Resume full batch
@@ -163,6 +175,64 @@ Checkpoint stores completed domains, per-company results, and errors. Resume val
 Default verify output (`matched_ads`, `result`) is unchanged when `--scan-webinars` is omitted. Webinar scan uses a separate expanded snapshot; classification still uses the initial viewport parse.
 
 **Limitations:** date filtering is client-side on list-page `started_running` text; very large libraries may hit scroll/card caps before all recent ads load.
+
+### Apify pilot (150-company sample)
+
+Alternative to Playwright when Meta blocks local browser sessions. Uses [`leadsbrary/meta-ads-library-scraper`](https://apify.com/leadsbrary/meta-ads-library-scraper) on Apify with a two-pass workflow: cheap count check first, full ad pull only when count > 0.
+
+**Prerequisite:** export your Apify token:
+
+```bash
+export APIFY_TOKEN=apify_api_...
+```
+
+**Sanity check** (8 known companies, Leadsbrary + official actor):
+
+```bash
+node --import tsx src/apifyMetaAdsSanity.ts
+```
+
+Gate: nike.com and supermetrics.com must return count > 0 on Leadsbrary before running the full pilot.
+
+**150-company pilot:**
+
+```bash
+node --import tsx src/batchApifyPilot.ts --max-rows 150 --fresh \
+  --out-dir ../../../../tmp/meta-ads-webinar-batch-pilot-150-apify
+```
+
+| Flag | Description |
+|------|-------------|
+| `--actor leadsbrary\|official` | Enrich actor for full ad pull (default `leadsbrary`) |
+| `--screen-actor official` | Optional hybrid: screen with this actor first (cap 1); only enrich when ads exist. Keeps empties off leadsbrary so Meta `#613` page-ID enrichment never fires. Not stored in checkpoint args — safe with `--resume` on an existing leadsbrary run. |
+| `--max-rows N` | Pilot row cap (default `150`) |
+| `--webinar-days` | Webinar classification window (default `90`) |
+| `--resume` / `--fresh` | Checkpoint control |
+| `--out-dir` | Output directory |
+
+**Hybrid resume (full batch after #613 jam):**
+
+```bash
+node --import tsx src/batchApifyPilot.ts --all --resume \
+  --screen-actor official \
+  --delay-ms 4000 \
+  --rate-limit-backoff-ms 360000 \
+  --rate-limit-max-retries 2
+```
+
+Or via the recovery loop (passes `--screen-actor official` by default now):
+
+```bash
+./run-recovery-loop.sh
+```
+
+**Compare Apify vs Playwright pilot:**
+
+```bash
+node --import tsx src/compareApifyPlaywright.ts
+```
+
+Estimated cost: under ~$5 for the 150-company pilot (count passes are cheap; full pulls only when ads exist).
 
 Batch sample with webinar scan:
 

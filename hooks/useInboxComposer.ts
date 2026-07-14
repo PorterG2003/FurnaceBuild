@@ -40,6 +40,16 @@ import type { EditorBridge } from '@10play/tentap-editor';
 import type { ComposerAttachmentItem } from '@/components/inbox';
 import { MAX_ATTACHMENTS, MAX_TOTAL_BYTES, MAX_FILE_BYTES } from '@/components/inbox/inboxConstants';
 import { useInboxInteractionSession } from '@/contexts/InboxInteractionContext';
+import {
+  deleteAttachmentUpload,
+  prepareAttachmentUpload,
+  uploadToSignedUrl,
+} from '@/lib/services/attachments';
+import { getAccessToken } from '@/lib/services/auth-token';
+import outputs from '@/amplify_outputs.json';
+
+const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: string } }).custom
+  ?.fetchEmailAttachmentUrl;
 
 export type PendingReply = {
   kind: 'reply' | 'forward' | 'campaign_reply';
@@ -63,7 +73,7 @@ export type PendingReply = {
   campaignId?: string;
   inReplyToMessageId?: string;
   forwardedMessageId?: string;
-  attachments?: Array<{ filename: string; contentType: string; content: string }>;
+  attachments?: Array<{ filename: string; contentType: string; size: number; storagePath: string }>;
 };
 
 export type ReplyDuplicateConfirmState = {
@@ -578,10 +588,11 @@ export function useInboxComposer({
       setSendingReply(true);
       try {
         const replyAttachments = pendingReply.attachments?.length
-          ? pendingReply.attachments.map(({ filename, contentType, content }) => ({
+          ? pendingReply.attachments.map(({ filename, contentType, size, storagePath }) => ({
               filename,
               contentType,
-              content,
+              size,
+              storagePath,
             }))
           : undefined;
         const newJobId = await createReplyJob({
@@ -630,6 +641,10 @@ export function useInboxComposer({
   const sendReply = useCallback(
     async (skipBlockCheck?: boolean) => {
       if (!accountId || !selectedThreadId || !selectedThread || !inReplyToMessageId) return;
+      if (composerAttachmentsLoading) {
+        toast.error('Wait for attachments to finish uploading.');
+        return;
+      }
       if (!replyToEmail.trim()) {
         toast.error('To is required');
         return;
@@ -692,7 +707,12 @@ export function useInboxComposer({
         }
         const replyAttachments =
           composerAttachments.length > 0
-            ? composerAttachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
+            ? composerAttachments.map(({ filename, contentType, size, storagePath }) => ({
+                filename,
+                contentType,
+                size,
+                storagePath,
+              }))
             : undefined;
         const jobId = await createReplyJob({
           accountId,
@@ -778,6 +798,10 @@ export function useInboxComposer({
   const sendForward = useCallback(
     async (skipBlockCheck?: boolean) => {
       if (!accountId || !selectedThreadId || !selectedThread || !forwardedMessageId) return;
+      if (composerAttachmentsLoading) {
+        toast.error('Wait for attachments to finish uploading.');
+        return;
+      }
       if (!forwardToEmail.trim()) {
         toast.error('To is required');
         return;
@@ -839,7 +863,12 @@ export function useInboxComposer({
         }
         const forwardAttachments =
           composerAttachments.length > 0
-            ? composerAttachments.map(({ filename, contentType, content }) => ({ filename, contentType, content }))
+            ? composerAttachments.map(({ filename, contentType, size, storagePath }) => ({
+                filename,
+                contentType,
+                size,
+                storagePath,
+              }))
             : undefined;
         const jobId = await createForwardJob({
           accountId,
@@ -984,6 +1013,14 @@ export function useInboxComposer({
   const handleComposerFilesSelected = useCallback(
     async (files: FileList) => {
       if (!files?.length) return;
+      if (!accountId || !selectedThreadId) {
+        toast.error('Select a thread before attaching files.');
+        return;
+      }
+      if (!FETCH_ATTACHMENT_URL) {
+        toast.error('Attachment upload is not configured.');
+        return;
+      }
       setComposerAttachmentsLoading(true);
       setComposerAttachmentsSkipMessage(null);
       const toAdd: ComposerAttachmentItem[] = [];
@@ -992,44 +1029,50 @@ export function useInboxComposer({
       let skippedCount = 0;
       let skippedOther = 0;
       const currentTotal = composerAttachments.reduce((s, a) => s + (a.size ?? 0), 0);
-      for (let i = 0; i < files.length; i++) {
-        if (composerAttachments.length + toAdd.length >= MAX_ATTACHMENTS) {
-          skippedCount += files.length - i;
-          break;
+      try {
+        const token = await getAccessToken();
+        if (!token) {
+          toast.error('Not authenticated');
+          return;
         }
-        const file = files[i];
-        if (file.size > MAX_FILE_BYTES) {
-          skippedTooBig += 1;
-          continue;
+        for (let i = 0; i < files.length; i++) {
+          if (composerAttachments.length + toAdd.length >= MAX_ATTACHMENTS) {
+            skippedCount += files.length - i;
+            break;
+          }
+          const file = files[i];
+          if (file.size > MAX_FILE_BYTES) {
+            skippedTooBig += 1;
+            continue;
+          }
+          const runningTotal = currentTotal + toAdd.reduce((s, a) => s + (a.size ?? 0), 0);
+          if (runningTotal + file.size > MAX_TOTAL_BYTES) {
+            skippedTotal += 1;
+            continue;
+          }
+          try {
+            const prepared = await prepareAttachmentUpload(FETCH_ATTACHMENT_URL, token, {
+              accountId,
+              threadId: selectedThreadId,
+              filename: file.name,
+              contentType: file.type || 'application/octet-stream',
+              size: file.size,
+            });
+            await uploadToSignedUrl(prepared.uploadUrl, file, file.type || 'application/octet-stream', prepared.token);
+            toAdd.push({
+              filename: file.name,
+              contentType: file.type || 'application/octet-stream',
+              size: file.size,
+              storagePath: prepared.storagePath,
+            });
+          } catch (err) {
+            console.error('Attachment upload failed:', err);
+            skippedOther += 1;
+          }
         }
-        const runningTotal = currentTotal + toAdd.reduce((s, a) => s + (a.size ?? 0), 0);
-        if (runningTotal + file.size > MAX_TOTAL_BYTES) {
-          skippedTotal += 1;
-          continue;
-        }
-        try {
-          const base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const result = reader.result as string;
-              const match = result?.match(/^data:([^;]+);base64,(.+)$/);
-              if (match) resolve(match[2]);
-              else reject(new Error('Invalid data URL'));
-            };
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(file);
-          });
-          toAdd.push({
-            filename: file.name,
-            contentType: file.type || 'application/octet-stream',
-            content: base64,
-            size: file.size,
-          });
-        } catch {
-          skippedOther += 1;
-        }
+      } finally {
+        setComposerAttachmentsLoading(false);
       }
-      setComposerAttachmentsLoading(false);
       if (toAdd.length > 0) {
         setComposerAttachments((prev) => [...prev, ...toAdd]);
       }
@@ -1039,7 +1082,7 @@ export function useInboxComposer({
         if (skippedTooBig > 0) parts.push(`${skippedTooBig} over 2 MB`);
         if (skippedTotal > 0) parts.push(`${skippedTotal} would exceed 5 MB total`);
         if (skippedCount > 0) parts.push(`${skippedCount} over 10 file limit`);
-        if (skippedOther > 0) parts.push(`${skippedOther} could not be read`);
+        if (skippedOther > 0) parts.push(`${skippedOther} could not be uploaded`);
         setComposerAttachmentsSkipMessage(
           toAdd.length > 0
             ? `${skippedTotalCount} file${skippedTotalCount !== 1 ? 's' : ''} skipped (${parts.join(', ')})`
@@ -1047,7 +1090,21 @@ export function useInboxComposer({
         );
       }
     },
-    [composerAttachments]
+    [accountId, selectedThreadId, composerAttachments, toast]
+  );
+
+  const handleRemoveComposerAttachment = useCallback(
+    async (attachment: ComposerAttachmentItem) => {
+      if (!FETCH_ATTACHMENT_URL || !attachment.storagePath) return;
+      try {
+        const token = await getAccessToken();
+        if (!token) return;
+        await deleteAttachmentUpload(FETCH_ATTACHMENT_URL, token, attachment.storagePath);
+      } catch (err) {
+        console.error('Failed to delete pending attachment:', err);
+      }
+    },
+    []
   );
 
   return {
@@ -1111,5 +1168,6 @@ export function useInboxComposer({
     cancelPendingOutbound,
     retryFailedReply,
     handleComposerFilesSelected,
+    handleRemoveComposerAttachment,
   };
 }

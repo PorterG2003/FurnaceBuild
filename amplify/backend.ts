@@ -106,6 +106,10 @@ function resolveWorkerEnvironment(): 'dev' | 'prod' {
 // Fetch email attachment: Function URL + Supabase auth.getUser() for token verification
 const fetchAttachmentLambda = backend.fetchEmailAttachment.resources.lambda as lambda.Function;
 fetchAttachmentLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+fetchAttachmentLambda.addEnvironment(
+  'INBOX_ATTACHMENT_GC_SECRET',
+  process.env.INBOX_ATTACHMENT_GC_SECRET ?? ''
+);
 
 const fetchAttachmentUrl = fetchAttachmentLambda.addFunctionUrl({
   authType: lambda.FunctionUrlAuthType.NONE, // We validate JWT inside the handler

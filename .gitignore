@@ -60,6 +60,12 @@ amplifyconfiguration*
 docs/audit/
 tmp/*
 
+# Client API docs site build artifacts (fumadocs / Next)
+docs/client-api/.next/
+docs/client-api/.source/
+docs/client-api/out/
+docs/client-api/node_modules/
+
 # lib/client-api/webhooks build artifacts
 lib/client-api/webhooks/*.js
 lib/client-api/webhooks/*.js.map

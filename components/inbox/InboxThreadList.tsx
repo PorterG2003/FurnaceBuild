@@ -1,12 +1,12 @@
 import React, { useMemo, type RefObject } from 'react';
 import { View, Text, TextInput, ScrollView, Pressable, RefreshControl } from 'react-native';
-import { MagnifyingGlassIcon, FunnelIcon } from 'react-native-heroicons/outline';
+import { MagnifyingGlassIcon, FunnelIcon, XMarkIcon } from 'react-native-heroicons/outline';
 import { Alert, EmptyState } from '@/components/ui/feedback';
 import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
 import { TARGETS } from '@/lib/onboarding/types';
 import { ThreadItem } from './ThreadItem';
 import { ThreadListSkeleton } from './MessageListSkeleton';
-import { resolveThreadCardTitle } from '@/lib/inbox';
+import { normalizeInboxSearchQuery, resolveThreadCardTitle } from '@/lib/inbox';
 import type { EmailThread } from '@/lib/supabase/types';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
@@ -21,6 +21,7 @@ export interface InboxThreadListProps {
   threadsLoading: boolean;
   threadSearchQuery: string;
   setThreadSearchQuery: (q: string) => void;
+  threadsTotalCount: number;
   filterButtonRef: RefObject<View | null>;
   onFilterPress: () => void;
   hasActiveFilters: boolean;
@@ -52,6 +53,7 @@ export function InboxThreadList({
   threadsLoading,
   threadSearchQuery,
   setThreadSearchQuery,
+  threadsTotalCount,
   filterButtonRef,
   onFilterPress,
   hasActiveFilters,
@@ -75,6 +77,7 @@ export function InboxThreadList({
   const threadListRef = useOnboardingTarget(TARGETS.inboxThreadList);
   const openThreadRef = useOnboardingTarget(TARGETS.inboxOpenThread);
   const openIndicatorRef = useOnboardingTarget(TARGETS.inboxOpenIndicator);
+  const activeSearch = normalizeInboxSearchQuery(threadSearchQuery);
   const showListContent =
     keepPreviousThreadList || (!threadsLoading && threads.length > 0);
   const showEmptyInbox =
@@ -83,12 +86,19 @@ export function InboxThreadList({
     threads.length === 0 &&
     !threadsError &&
     !hasActiveFilters;
+  const showEmptySearch =
+    !threadsLoading &&
+    !suppressEmptyStates &&
+    displayThreads.length === 0 &&
+    !threadsError &&
+    !!activeSearch;
   const showEmptyFiltered =
     !threadsLoading &&
     !suppressEmptyStates &&
     displayThreads.length === 0 &&
     !threadsError &&
-    hasActiveFilters;
+    hasActiveFilters &&
+    !activeSearch;
   const spotlightThreadId = useMemo(() => {
     const openThread = displayThreads.find((thread) => thread.conversation_status === 'open');
     return openThread?.id ?? null;
@@ -106,11 +116,21 @@ export function InboxThreadList({
             <TextInput
               value={threadSearchQuery}
               onChangeText={setThreadSearchQuery}
-              placeholder="Search conversations…"
+              placeholder="Search…"
               placeholderTextColor="#6B7280"
               className="flex-1 text-white font-instrument text-base py-0"
               style={{ minHeight: 24 }}
             />
+            {threadSearchQuery.trim().length > 0 ? (
+              <Pressable
+                onPress={() => setThreadSearchQuery('')}
+                hitSlop={8}
+                accessibilityLabel="Clear search"
+                style={{ marginLeft: 8 }}
+              >
+                <XMarkIcon size={18} color="#9CA3AF" />
+              </Pressable>
+            ) : null}
           </View>
           <View
             ref={(node) => {
@@ -138,6 +158,11 @@ export function InboxThreadList({
             </Pressable>
           </View>
         </View>
+        {activeSearch && !threadsLoading && threadsTotalCount > 0 ? (
+          <Text className="text-gray-500 font-instrument text-xs mt-2">
+            {threadsTotalCount} conversation{threadsTotalCount === 1 ? '' : 's'}
+          </Text>
+        ) : null}
       </View>
       {threadsError && (
         <View className="px-4 py-3">
@@ -155,10 +180,16 @@ export function InboxThreadList({
           description="Replies to your campaign emails will appear here."
           className="flex-1 px-5"
         />
+      ) : showEmptySearch ? (
+        <EmptyState
+          title={`No matches for “${activeSearch}”`}
+          description="Try a name, email, subject, tag, campaign, or message phrase."
+          className="flex-1 px-5"
+        />
       ) : showEmptyFiltered ? (
         <EmptyState
           title="No matching conversations"
-          description="Try a different search term."
+          description="Try clearing some filters."
           className="flex-1 px-5"
         />
       ) : showListContent ? (

@@ -1,4 +1,5 @@
 export * from './formatters';
+export * from './normalizeInboxSearchQuery';
 export * from './quote-utils';
 export * from './renderPendingCampaignReplyContent';
 export * from './tag-colors';

@@ -112,8 +112,8 @@ The master inbox shows campaign reply threads and messages. This plan is ordered
 
 ### Accomplished
 
-- **Backend** (`lib/supabase/services/inbox.ts`): `getThreadsByAccount` options: `mailboxId`, `campaignId`, `unreadOnly` (subquery for threads with unread received messages), `dateFrom`/`dateTo`, `searchQuery` (ilike on subject), `tagIds`, `category` (including `NO_CATEGORY_FILTER` for no category), `limit`/`offset` (pagination), `includeUnreadCount`. `markThreadMessagesRead(threadId)` for mark-as-read.
-- **UI**: `InboxFilterDropdown` with Unread only toggle; Date (All / Last 7 days / Last 30 days); Mailbox, Campaign, Category, Tag (multi-select) with search; Clear all. Search bar with debounced server-side subject search. Thread list loads with filter params; pagination (e.g. load more). Client-side thread search also filters by subject/participants with "X of Y" result count.
+- **Backend** (`lib/supabase/services/inbox/threads.ts` + `list_account_inbox_threads` RPC): filters for mailbox, campaign (incl. campaign tags), unread, date range, thread tags, category (`NO_CATEGORY_FILTER`), conversation status, pagination; **FTS search** across subject, participants, lead name/email/company, campaign name, thread tags, and message bodies (prefix matching, min 2 chars). Client API `GET /v1/threads?q=` shares the same RPC. `markThreadMessagesRead(threadId)` for mark-as-read.
+- **UI**: `InboxFilterDropdown` with Unread only toggle; Date (All / Last 7 days / Last 30 days); Mailbox, Campaign, Category, Tag (multi-select) with search; Clear all. Search bar with debounced server-side FTS; clear control; total count when searching; load more via `totalCount`.
 
 ---
 

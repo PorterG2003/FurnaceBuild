@@ -25,6 +25,7 @@ export interface InboxDesktopThreadListProps {
   threadsLoading: boolean;
   threadSearchQuery: string;
   setThreadSearchQuery: (q: string) => void;
+  threadsTotalCount: number;
   filterButtonRef: RefObject<View | null>;
   onFilterPress: () => void;
   hasActiveFilters: boolean;
@@ -111,6 +112,7 @@ export function InboxDesktopLayout({
     threadsLoading,
     threadSearchQuery,
     setThreadSearchQuery,
+    threadsTotalCount,
     filterButtonRef,
     onFilterPress,
     hasActiveFilters,
@@ -187,6 +189,7 @@ export function InboxDesktopLayout({
             threadsLoading={threadsLoading}
             threadSearchQuery={threadSearchQuery}
             setThreadSearchQuery={setThreadSearchQuery}
+            threadsTotalCount={threadsTotalCount}
             filterButtonRef={filterButtonRef}
             onFilterPress={onFilterPress}
             hasActiveFilters={hasActiveFilters}

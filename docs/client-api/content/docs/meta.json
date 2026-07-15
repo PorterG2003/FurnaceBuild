@@ -1,0 +1,19 @@
+{
+  "title": "Client API",
+  "pages": [
+    "index",
+    "---Getting started---",
+    "guides/campaign-quickstart",
+    "guides/campaign-flow",
+    "guides/campaign-launch",
+    "guides/flow-schemas",
+    "---Guides---",
+    "webhooks/index",
+    "webhooks/lead-added-updated",
+    "webhooks/lead-removed",
+    "webhooks/enrollment-pause-resume",
+    "webhooks/campaign-status",
+    "webhooks/email-activity",
+    "changelog"
+  ]
+}

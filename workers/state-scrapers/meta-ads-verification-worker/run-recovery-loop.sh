@@ -6,7 +6,7 @@ set -u
 
 cd "$(dirname "$0")"
 
-OUT_DIR="../../../../tmp/meta-ads-webinar-batch-full-apify"
+OUT_DIR="../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-07-15-meta-ads-webinar-hosts"
 CHECKPOINT="${OUT_DIR}/apify-batch-checkpoint.json"
 LOG="${OUT_DIR}/recovery.log"
 TARGET_DOMAINS=2187
@@ -42,6 +42,7 @@ while [ "$cycle" -lt "$MAX_CYCLES" ]; do
   fi
 
   node --import tsx src/batchApifyPilot.ts --all --resume \
+    --out-dir "$OUT_DIR" \
     --delay-ms "$DELAY_MS" \
     --rate-limit-backoff-ms "$RATE_LIMIT_BACKOFF_MS" \
     --rate-limit-max-retries "$RATE_LIMIT_MAX_RETRIES" \

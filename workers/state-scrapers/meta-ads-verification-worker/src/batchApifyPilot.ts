@@ -47,8 +47,10 @@ import {
 import { META_ADS_WEBINAR_SCAN_DAYS_DEFAULT } from './metaAdLibraryWebinarScan.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_PILOT_OUT_DIR = '../../../../tmp/meta-ads-webinar-batch-pilot-150-apify';
-const DEFAULT_FULL_OUT_DIR = '../../../../tmp/meta-ads-webinar-batch-full-apify';
+const DEFAULT_RUNS_ROOT =
+  '../../../../scripts/lead-sourcing/webinar-hosts/output/runs';
+const DEFAULT_PILOT_OUT_DIR = `${DEFAULT_RUNS_ROOT}/2026-07-15-meta-ads-webinar-hosts-pilot`;
+const DEFAULT_FULL_OUT_DIR = `${DEFAULT_RUNS_ROOT}/2026-07-15-meta-ads-webinar-hosts`;
 const DEFAULT_MAX_RESULTS = 25;
 
 const FLAGS_WITH_VALUE = new Set([

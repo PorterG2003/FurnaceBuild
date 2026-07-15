@@ -193,7 +193,17 @@ export async function runActorDataset(
   actorId: string,
   input: Record<string, unknown>,
 ): Promise<{ items: Record<string, unknown>[]; summary: ApifyRunSummary }> {
-  const run = await client.actor(actorId).call(input);
+  // Leadsbrary pay-per-result requires maxItems > 0. Official facebook-ads-scraper
+  // rejects low maxItems ("Maximum cost per run is less than the allowed minimum").
+  const callOptions: { maxItems?: number } = {};
+  if (actorId === LEADSBRARY_ACTOR) {
+    const fromInput =
+      (typeof input.maxResults === 'number' && input.maxResults > 0 && input.maxResults) ||
+      (typeof input.resultsLimit === 'number' && input.resultsLimit > 0 && input.resultsLimit) ||
+      1;
+    callOptions.maxItems = fromInput;
+  }
+  const run = await client.actor(actorId).call(input, callOptions);
   const datasetId = run.defaultDatasetId;
   if (!datasetId) {
     throw new Error(`Actor ${actorId} run ${run.id} did not produce a default dataset`);

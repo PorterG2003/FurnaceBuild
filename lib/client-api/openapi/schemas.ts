@@ -143,7 +143,8 @@ export function buildClientApiComponents() {
       Search: {
         name: 'q',
         in: 'query',
-        description: 'Case-insensitive search term.',
+        description:
+          'Case-insensitive prefix search across thread subject, participants, lead name/email/company, campaign name, thread tags, and message bodies (min 2 characters).',
         schema: { type: 'string' },
       },
       CampaignStatus: {

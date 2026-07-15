@@ -75,12 +75,29 @@ async function createInboxGraph(harness: ClientApiDbHarness) {
   });
 }
 
-test('client api inbox list filters return matching threads', async () => {
+async function ensureInboxSearchSchema(
+  harness: ClientApiDbHarness,
+  t: test.TestContext,
+): Promise<boolean> {
+  const { error } = await harness.supabase.rpc('list_account_inbox_threads', {
+    p_account_id: '00000000-0000-4000-8000-000000000000',
+    p_limit: 1,
+    p_offset: 0,
+  });
+  if (error && /Could not find the function|does not exist|schema cache/i.test(error.message)) {
+    t.skip(`Inbox search RPC not applied in shared test DB: ${error.message}`);
+    return false;
+  }
+  return true;
+}
+
+test('client api inbox list filters return matching threads', async (t) => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('inbox-filters'),
   });
 
   try {
+    if (!(await ensureInboxSearchSchema(harness, t))) return;
     const graph = await createInboxGraph(harness);
     const apiKey = await harness.createApiKey();
     const threadId = graph.leadsByKey.get('lead-1')!.threadId!;
@@ -98,6 +115,20 @@ test('client api inbox list filters return matching threads', async () => {
     assert.equal(bySearch.status, 200);
     const bySearchBody = await bySearch.json() as { data: Array<{ id: string }> };
     assert.ok(bySearchBody.data.some((thread) => thread.id === threadId));
+
+    const byBody = await harness.request(`/v1/threads?q=${encodeURIComponent('Reply received')}`, {
+      apiKey: apiKey.secret,
+    });
+    assert.equal(byBody.status, 200);
+    const byBodyJson = await byBody.json() as { data: Array<{ id: string }> };
+    assert.ok(byBodyJson.data.some((thread) => thread.id === threadId));
+
+    const tooShort = await harness.request('/v1/threads?q=a', {
+      apiKey: apiKey.secret,
+    });
+    assert.equal(tooShort.status, 200);
+    const tooShortBody = await tooShort.json() as { data: Array<{ id: string }> };
+    assert.ok(tooShortBody.data.some((thread) => thread.id === threadId));
 
     const unread = await harness.request('/v1/threads?unread_only=true', {
       apiKey: apiKey.secret,

@@ -18,6 +18,7 @@ import {
 } from '@/lib/supabase/services';
 import { resolveSelectedThread } from '@/lib/inbox/resolveSelectedThread';
 import { getLeadDisplayName } from '@/lib/leads';
+import { normalizeInboxSearchQuery } from '@/lib/inbox';
 import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
@@ -57,6 +58,7 @@ export function useInboxData({
   const [conversationStatusFilter, setConversationStatusFilterState] = useState<'open' | 'closed' | 'all'>('all');
   const [threadOffset, setThreadOffset] = useState(0);
   const [hasMoreThreads, setHasMoreThreads] = useState(false);
+  const [threadsTotalCount, setThreadsTotalCount] = useState(0);
   const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
   const [initialThreadsLoadSettled, setInitialThreadsLoadSettled] = useState(false);
   const [fetchedSelectedThread, setFetchedSelectedThread] = useState<EmailThread | null>(null);
@@ -146,7 +148,7 @@ export function useInboxData({
     campaignTagFilterIds.length > 0 ||
     !!categoryFilter ||
     conversationStatusFilter !== 'all' ||
-    threadSearchQuery.trim().length > 0;
+    !!normalizeInboxSearchQuery(threadSearchQuery);
 
   const clearAllFilters = useCallback(() => {
     setThreadSearchQueryState('');
@@ -167,6 +169,7 @@ export function useInboxData({
     setMessagesLoadedForThreadId(null);
     setThreadOffset(0);
     setHasMoreThreads(false);
+    setThreadsTotalCount(0);
     setThreadsError(null);
     setMessagesError(null);
     filtersEffectRanRef.current = false;
@@ -225,7 +228,7 @@ export function useInboxData({
       unreadOnly: unreadOnlyFilter || undefined,
       dateFrom,
       dateTo: undefined,
-      searchQuery: threadSearchQuery.trim() || undefined,
+      searchQuery: normalizeInboxSearchQuery(threadSearchQuery) ?? undefined,
       tagIds: tagFilterIds.length > 0 ? tagFilterIds : undefined,
       campaignTagIds: campaignTagFilterIds.length > 0 ? campaignTagFilterIds : undefined,
       category: categoryFilter ?? undefined,
@@ -293,19 +296,21 @@ export function useInboxData({
           offset,
           limit: THREAD_PAGE_SIZE,
         };
-        const list = await getThreadsByAccount(accountId, opts);
+        const { threads: list, totalCount } = await getThreadsByAccount(accountId, opts);
+        setThreadsTotalCount(totalCount);
         if (append) {
           setThreads((prev) => {
             const existingIds = new Set(prev.map((t) => t.id));
             const newThreads = list.filter((t) => !existingIds.has(t.id));
             return [...prev, ...newThreads];
           });
-          setThreadOffset((o) => o + list.length);
-          setHasMoreThreads(list.length >= THREAD_PAGE_SIZE);
+          const nextOffset = offset + list.length;
+          setThreadOffset(nextOffset);
+          setHasMoreThreads(nextOffset < totalCount);
         } else {
           setThreads(list);
           setThreadOffset(list.length);
-          setHasMoreThreads(list.length >= THREAD_PAGE_SIZE);
+          setHasMoreThreads(list.length < totalCount);
         }
       } catch (err) {
         if (!append) {
@@ -351,12 +356,14 @@ export function useInboxData({
     setThreadOffset(0);
     try {
       const opts = buildThreadFilters();
-      const [list] = await Promise.all([
+      const [{ threads: list, totalCount }] = await Promise.all([
         getThreadsByAccount(accountId, opts),
         loadBlockList(),
       ]);
       setThreads(list);
-      setHasMoreThreads(list.length >= THREAD_PAGE_SIZE);
+      setThreadOffset(list.length);
+      setThreadsTotalCount(totalCount);
+      setHasMoreThreads(list.length < totalCount);
     } finally {
       setRefreshing(false);
     }
@@ -535,6 +542,7 @@ export function useInboxData({
     setConversationStatusFilter: setConversationStatusFilterState,
     threadOffset,
     hasMoreThreads,
+    threadsTotalCount,
     loadingMoreThreads,
     mailboxes,
     campaigns,

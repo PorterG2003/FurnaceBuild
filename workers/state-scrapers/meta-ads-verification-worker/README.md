@@ -122,6 +122,10 @@ npm run validate-pagination
 
 ### Batch checkpoint / resume
 
+Completed Apify enrichment for the June webinar-hosts list lives at:
+
+`scripts/lead-sourcing/webinar-hosts/output/runs/2026-07-15-meta-ads-webinar-hosts/`
+
 The webinar batch runner writes a checkpoint after each company and can resume after interruption.
 
 **8-company validation sample** (default):
@@ -136,7 +140,7 @@ node --import tsx src/batchWebinarSample.ts --scan-webinars
 node --import tsx src/batchWebinarSample.ts --all --scan-webinars
 ```
 
-Output goes to `tmp/meta-ads-webinar-batch-full/` (separate from the 8-company sample in `tmp/meta-ads-webinar-batch/`).
+Output goes under `scripts/lead-sourcing/webinar-hosts/output/runs/2026-06-webinar-hosts/` (`meta-ads-playwright/` for full `--all`, `meta-ads-sample/` for the 8-company sample). Do not write Meta Ads batch outputs to `tmp/` — treat that as disposable scratch.
 
 | Flag | Description |
 |------|-------------|
@@ -159,7 +163,8 @@ Output goes to `tmp/meta-ads-webinar-batch-full/` (separate from the 8-company s
 
 ```bash
 node --import tsx src/batchWebinarSample.ts --all --pilot --max-rows 150 --scan-webinars --headless --fresh \
-  --retry-no-results --out-dir ../../../../tmp/meta-ads-webinar-batch-pilot-150
+  --retry-no-results \
+  --out-dir ../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-06-webinar-hosts/meta-ads-pilot-playwright
 ```
 
 ```bash
@@ -198,7 +203,7 @@ Gate: nike.com and supermetrics.com must return count > 0 on Leadsbrary before r
 
 ```bash
 node --import tsx src/batchApifyPilot.ts --max-rows 150 --fresh \
-  --out-dir ../../../../tmp/meta-ads-webinar-batch-pilot-150-apify
+  --out-dir ../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-07-15-meta-ads-webinar-hosts-pilot
 ```
 
 | Flag | Description |

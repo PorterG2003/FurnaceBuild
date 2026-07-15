@@ -21,11 +21,14 @@ function loadResults(path: string): Map<string, CompareRow> {
 }
 
 const apifyPath = resolve(
-  process.argv[2] ?? __dirname + '/../../../../tmp/meta-ads-webinar-batch-pilot-150-apify/apify-pilot-checkpoint.json',
+  process.argv[2] ??
+    __dirname +
+      '/../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-07-15-meta-ads-webinar-hosts/apify-batch-checkpoint.json',
 );
 const playwrightPath = resolve(
   process.argv[3] ??
-    __dirname + '/../../../../tmp/meta-ads-webinar-batch-pilot-150-headed/webinar-batch-checkpoint.json',
+    __dirname +
+      '/../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-06-webinar-hosts/meta-ads-pilot-playwright/webinar-batch-checkpoint.json',
 );
 
 const apify = loadResults(apifyPath);

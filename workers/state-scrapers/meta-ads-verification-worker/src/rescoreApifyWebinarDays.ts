@@ -11,7 +11,8 @@ import { loadApifyCheckpoint, saveApifyCheckpoint } from './metaAdLibraryApifyCh
 import type { MetaAdLibraryMatchedAd } from './metaAdLibraryParse.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_OUT_DIR = '../../../../tmp/meta-ads-webinar-batch-full-apify';
+const DEFAULT_OUT_DIR =
+  '../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-07-15-meta-ads-webinar-hosts';
 
 function readFlag(argv: string[], name: string): string | null {
   const index = argv.indexOf(name);

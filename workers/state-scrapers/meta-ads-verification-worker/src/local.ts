@@ -14,7 +14,7 @@ async function main(): Promise<void> {
   const domain = readFlag('--domain') ?? process.argv[2] ?? '';
   if (!domain.trim()) {
     throw new Error(
-      'Usage: node --import tsx workers/state-scrapers/meta-ads-verification-worker/src/local.ts --domain <domain> [--company-name <name>] [--headless] [--country US] [--output-dir tmp/meta-ads] [--scan-webinars] [--webinar-days 30]',
+      'Usage: node --import tsx workers/state-scrapers/meta-ads-verification-worker/src/local.ts --domain <domain> [--company-name <name>] [--headless] [--country US] [--output-dir scripts/lead-sourcing/webinar-hosts/output/runs/local-meta-ads] [--scan-webinars] [--webinar-days 30]',
     );
   }
 

@@ -186,10 +186,10 @@ curl -sS -X POST '{base_url}/v1/campaigns/1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb/l
 | --- | --- | --- |
 | `draft` | Fully editable (add/remove nodes, rewire edges, delete variants) | Allowed |
 | `running` | Structural edits return `flow_locked` — pause in the builder first | Allowed (subject, body, wait duration, add variant, toggle active, positions, lead source fields, categorizer config) |
-| `paused` | Fully editable (append reactivates completed leads at former leaf nodes) | Allowed |
+| `paused` | Fully editable (flow saves reactivate completed leads parked on non-leaf nodes) | Allowed |
 | `stopped` | Locked — all flow edits return `flow_locked` | Blocked |
 
-Flow saves return `reactivated_count` when a paused append extends a former leaf: completed enrollments at that node are set back to `active` so they receive the new follow-up after resume.
+Flow saves return `reactivated_count` when completed enrollments are parked on any non-leaf node (a node with an outgoing edge): those enrollments are set back to `active` so they continue into the next steps after resume.
 
 ## Draft vs live lock
 

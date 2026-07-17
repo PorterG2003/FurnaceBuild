@@ -1,6 +1,7 @@
 import React from 'react';
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
+import type { InboxThreadSortBy } from '@/lib/supabase/services/inbox';
 import type { EmailThread } from '@/lib/supabase/types';
 import type { Mailbox, Campaign } from '@/lib/supabase/types';
 import { ConfirmDeleteModal, ConfirmModal } from '@/components/ui/modals';
@@ -18,6 +19,8 @@ export interface InboxModalsFiltersProps {
   filterAnchorLayout: { x: number; y: number; w: number; h: number } | null;
   unreadOnlyFilter: boolean;
   setUnreadOnlyFilter: (v: boolean) => void;
+  sortBy: InboxThreadSortBy;
+  setSortBy: (v: InboxThreadSortBy) => void;
   datePreset: '7d' | '30d' | null;
   setDatePreset: (v: '7d' | '30d' | null) => void;
   mailboxFilterId: string | null;
@@ -91,6 +94,8 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
     filterAnchorLayout,
     unreadOnlyFilter,
     setUnreadOnlyFilter,
+    sortBy,
+    setSortBy,
     datePreset,
     setDatePreset,
     mailboxFilterId,
@@ -161,6 +166,8 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
         anchorLayout={filterAnchorLayout}
         unreadOnlyFilter={unreadOnlyFilter}
         onUnreadOnlyFilterChange={setUnreadOnlyFilter}
+        sortBy={sortBy}
+        onSortByChange={setSortBy}
         datePreset={datePreset}
         onDatePresetChange={setDatePreset}
         mailboxFilterId={mailboxFilterId}

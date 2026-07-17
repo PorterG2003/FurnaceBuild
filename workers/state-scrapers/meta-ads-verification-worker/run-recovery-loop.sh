@@ -6,10 +6,11 @@ set -u
 
 cd "$(dirname "$0")"
 
-OUT_DIR="../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-07-15-meta-ads-webinar-hosts"
+OUT_DIR="${OUT_DIR:-../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-07-15-meta-ads-linkedin-jul08-new}"
 CHECKPOINT="${OUT_DIR}/apify-batch-checkpoint.json"
 LOG="${OUT_DIR}/recovery.log"
-TARGET_DOMAINS=2187
+INPUT_CSV="${INPUT_CSV:-${OUT_DIR}/input.csv}"
+TARGET_DOMAINS="${TARGET_DOMAINS:-1414}"
 
 # Tunables
 COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-2700}"      # 45 min after a hard #613 halt
@@ -41,12 +42,23 @@ while [ "$cycle" -lt "$MAX_CYCLES" ]; do
     SCREEN_ARGS=(--screen-actor "$SCREEN_ACTOR")
   fi
 
-  node --import tsx src/batchApifyPilot.ts --all --resume \
+  # Fresh start when no checkpoint exists yet; otherwise resume.
+  if [ -f "$CHECKPOINT" ]; then
+    MODE_FLAG=(--resume)
+    MODE_LABEL=resume
+  else
+    MODE_FLAG=(--fresh)
+    MODE_LABEL=fresh
+  fi
+  echo "[loop] mode=${MODE_LABEL}" | tee -a "$LOG"
+
+  node --import tsx src/batchApifyPilot.ts --all "${MODE_FLAG[@]}" \
     --out-dir "$OUT_DIR" \
     --delay-ms "$DELAY_MS" \
     --rate-limit-backoff-ms "$RATE_LIMIT_BACKOFF_MS" \
     --rate-limit-max-retries "$RATE_LIMIT_MAX_RETRIES" \
     "${SCREEN_ARGS[@]}" \
+    "$INPUT_CSV" \
     2>&1 | tee -a "$LOG"
   ec="${PIPESTATUS[0]}"
 

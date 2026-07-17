@@ -3,7 +3,7 @@ import { TARGETS, type OnboardingFlowDef } from '../types';
 /** Inbox basics — desktop. Short mandatory intro to the open-thread queue. */
 export const inboxFlow: OnboardingFlowDef = {
   id: 'inbox',
-  version: 5,
+  version: 6,
   reshowOnVersionBump: true,
   mandatory: true,
   mandatoryUnlessSeen: 'inbox-mobile',
@@ -12,7 +12,7 @@ export const inboxFlow: OnboardingFlowDef = {
       kind: 'spotlight',
       targetId: TARGETS.inboxCategories,
       title: 'Filter your inbox',
-      body: 'Filter by campaign, category, unread, and open vs. closed so you can work your open queue one pile at a time.',
+      body: 'Filter by campaign, category, unread, and open vs. closed so you can work your open queue one pile at a time. Use Sort to prioritize open or unread threads.',
       placement: 'bottom',
       advance: 'manual',
       nextGate: { dwellMs: 3000 },
@@ -21,7 +21,7 @@ export const inboxFlow: OnboardingFlowDef = {
       kind: 'spotlight',
       targetId: TARGETS.inboxThreadList,
       title: 'Your triage queue',
-      body: 'Open conversations float to the top so the threads needing you stay first.',
+      body: 'Threads show newest activity first. Open ones are marked with a dot so you can spot what still needs you.',
       placement: 'right',
       advance: 'manual',
       nextGate: { dwellMs: 2500 },

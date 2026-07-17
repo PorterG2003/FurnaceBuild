@@ -2960,6 +2960,7 @@ export interface Database {
           p_has_reply_only?: boolean | null;
           p_limit?: number | null;
           p_offset?: number | null;
+          p_sort?: string | null;
         };
         Returns: {
           id: string;

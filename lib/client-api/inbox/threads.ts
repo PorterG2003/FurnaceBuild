@@ -18,6 +18,7 @@ export interface ListAccountThreadsOptions {
   dateTo?: string;
   searchQuery?: string;
   hasReplyOnly?: boolean;
+  sortBy?: 'open_first' | 'newest' | 'oldest' | 'unread_first';
 }
 
 export interface PatchThreadInput {
@@ -54,6 +55,7 @@ export async function listAccountThreads(
     p_has_reply_only: options.hasReplyOnly !== false,
     p_limit: options.limit,
     p_offset: options.offset,
+    p_sort: options.sortBy ?? 'newest',
   });
 
   if (error) {

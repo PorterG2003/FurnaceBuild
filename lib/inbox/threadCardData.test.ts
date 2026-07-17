@@ -50,7 +50,7 @@ test('resolveThreadCardTitle falls back to the prospect email when no lead name 
   assert.equal(result, 'lead@example.com');
 });
 
-test('buildThreadSnippetMap prefers the latest received message over a newer sent message', () => {
+test('buildThreadSnippetMap uses the latest received message and ignores newer sent messages', () => {
   const result = buildThreadSnippetMap([
     {
       thread_id: 'thread-1',
@@ -69,7 +69,7 @@ test('buildThreadSnippetMap prefers the latest received message over a newer sen
   assert.equal(result['thread-1'], 'Prospect reply that should show in preview');
 });
 
-test('buildThreadSnippetMap falls back to the latest sent message when there is no received reply', () => {
+test('buildThreadSnippetMap omits preview when there is no received reply', () => {
   const result = buildThreadSnippetMap([
     {
       thread_id: 'thread-1',
@@ -79,10 +79,10 @@ test('buildThreadSnippetMap falls back to the latest sent message when there is 
     },
   ]);
 
-  assert.equal(result['thread-1'], 'Latest outbound follow-up');
+  assert.equal(result['thread-1'], undefined);
 });
 
-test('buildThreadSnippetMap skips blank snippets and keeps the first non-empty preview', () => {
+test('buildThreadSnippetMap skips blank inbound snippets and keeps the first non-empty preview', () => {
   const result = buildThreadSnippetMap([
     {
       thread_id: 'thread-1',

@@ -19,8 +19,17 @@ async function ensureInboxSortSchema(
     p_offset: 0,
     p_sort: 'newest',
   });
-  if (error && /Could not find the function|does not exist|schema cache|p_sort/i.test(error.message)) {
+  if (error && /Could not find the function|does not exist|schema cache|p_sort|last_inbound_at/i.test(error.message)) {
     t.skip(`Inbox list sort RPC not applied in shared test DB: ${error.message}`);
+    return false;
+  }
+
+  const { error: columnError } = await harness.supabase
+    .from('email_threads')
+    .select('last_inbound_at')
+    .limit(1);
+  if (columnError && /last_inbound_at|column/i.test(columnError.message)) {
+    t.skip(`last_inbound_at column not applied in shared test DB: ${columnError.message}`);
     return false;
   }
   return true;
@@ -160,6 +169,77 @@ test('list_account_inbox_threads honors open_first, newest, oldest, and unread_f
       'Open unread mid',
       'Closed newest',
       'Open older',
+    ]);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('list_account_inbox_threads newest sort ignores outbound last_message_at bumps', async (t) => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('thread-list-inbound-sort'),
+  });
+  const now = Date.now();
+
+  try {
+    if (!(await ensureInboxSortSchema(harness, t))) return;
+
+    const olderInbound = new Date(now - 60 * 60_000).toISOString();
+    const newerInbound = new Date(now - 10 * 60_000).toISOString();
+    const outboundBump = new Date(now - 1 * 60_000).toISOString();
+
+    const graph = await harness.createCampaignGraph({
+      name: 'Thread List Inbound Sort',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'older-inbound',
+          email: `older-inbound-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment(),
+          thread: buildCampaignThread({
+            subject: 'Older inbound',
+            lastMessageAt: olderInbound,
+            messages: [
+              buildThreadMessage({
+                direction: 'received',
+                receivedAt: olderInbound,
+                readAt: olderInbound,
+              }),
+            ],
+          }),
+        }),
+        buildCampaignLead({
+          key: 'newer-inbound',
+          email: `newer-inbound-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment(),
+          thread: buildCampaignThread({
+            subject: 'Newer inbound',
+            lastMessageAt: newerInbound,
+            messages: [
+              buildThreadMessage({
+                direction: 'received',
+                receivedAt: newerInbound,
+                readAt: newerInbound,
+              }),
+            ],
+          }),
+        }),
+      ],
+    });
+
+    const olderThreadId = graph.leadsByKey.get('older-inbound')!.threadId!;
+    const { error: bumpErr } = await harness.supabase
+      .from('email_threads')
+      .update({ last_message_at: outboundBump })
+      .eq('id', olderThreadId);
+    assert.equal(bumpErr, null);
+
+    assert.deepEqual(await listSubjects(harness, graph.accountId, 'newest'), [
+      'Newer inbound',
+      'Older inbound',
     ]);
   } finally {
     await harness.cleanup();

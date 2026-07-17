@@ -336,6 +336,7 @@ export async function injectSyntheticReplyAndBounce(fixture: EmailVariantsHarnes
     subject: 'Re: test',
     participants: ['a@b.com', 'c@d.com'],
     last_message_at: new Date().toISOString(),
+    last_inbound_at: new Date().toISOString(),
     message_count: 2,
     has_reply: true,
     category: 'Interested',

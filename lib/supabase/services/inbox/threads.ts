@@ -136,6 +136,7 @@ export async function getThreadSnippets(
     .from('email_messages')
     .select('thread_id, direction, body_text, body_html, received_at')
     .in('thread_id', threadIds)
+    .eq('direction', 'received')
     .order('received_at', { ascending: false })
     .limit(1000);
   if (error) throw new Error(`Failed to fetch thread snippets: ${error.message}`);

@@ -737,6 +737,12 @@ test('SendWorker records sent campaign_reply messages in the replied thread', as
     (call) => call.table === 'email_threads' && call.updates?.message_count === 3,
   );
   assert.ok(updateThreadCall, 'thread counters should be repaired from the observed message rows');
+  assert.equal(
+    updateThreadCall?.updates?.last_inbound_at,
+    undefined,
+    'outbound campaign_reply must not bump last_inbound_at',
+  );
+  assert.ok(updateThreadCall?.updates?.last_message_at, 'outbound still updates last_message_at');
 });
 
 test('SendWorker surfaces campaign_reply thread persistence failures to Slack', async () => {
@@ -846,6 +852,12 @@ test('SendWorker persists successful inbox_forward jobs into thread history', as
     (call) => call.table === 'email_threads' && call.updates?.message_count === 3,
   );
   assert.ok(threadUpdate, 'thread metadata should be recomputed after persisting the forward');
+  assert.equal(
+    threadUpdate?.updates?.last_inbound_at,
+    undefined,
+    'outbound inbox_forward must not bump last_inbound_at',
+  );
+  assert.ok(threadUpdate?.updates?.last_message_at, 'outbound still updates last_message_at');
 });
 
 test('SendWorker marks mailbox smtp_status=error for permanent SMTP auth failures', async () => {

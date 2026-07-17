@@ -17,6 +17,7 @@ function makeThread(overrides: Partial<EmailThread> = {}): EmailThread {
     subject: 'Re: Intro',
     participants: ['team@example.com', 'lead@example.com'],
     last_message_at: '2026-06-22T18:00:00.000Z',
+    last_inbound_at: '2026-06-22T18:00:00.000Z',
     message_count: 2,
     has_reply: true,
     category: 'Interested',

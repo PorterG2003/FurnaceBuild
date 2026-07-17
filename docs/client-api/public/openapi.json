@@ -2206,7 +2206,7 @@
           },
           "reactivated_count": {
             "type": "integer",
-            "description": "Completed enrollments reactivated at former leaf nodes after an append save."
+            "description": "Completed enrollments reactivated when parked on non-leaf nodes after a flow save."
           }
         },
         "required": [

@@ -1,22 +1,26 @@
 /**
- * Reactivate completed enrollments stranded on older leaves after a later
- * flow append (Email 3 / Email 4) that product append-reactivation missed.
+ * Audit / repair completed enrollments stranded on non-leaf nodes after flow
+ * appends (older leaves that tip-only reactivation missed).
  *
- * Matches product append behavior:
- *   - state → active
- *   - next_run_at / updated_at → NOW()
+ * Matches product behavior after 20260717150000_reactivate_completed_on_non_leaf_nodes:
+ *   - Candidate: state=completed AND current node's flow_node_id is an edge source
+ *   - APPLY: state → active, next_run_at / updated_at → NOW()
  *   - current_node_id unchanged (do not skip waits)
- *
- * Scheduler then:
- *   - Email-leaf cohort: sees prior send → enters the next wait (full duration)
- *   - Wait-leaf cohort: advances to the next email (wait already current)
+ *   - stopped enrollments are never touched
  *
  * Usage:
- *   CAMPAIGN_ID=<uuid> npx tsx scripts/repair-missed-append-reactivation.ts
- *   CAMPAIGN_ID=<uuid> FLOW_NODE_IDS=id1,id2 npx tsx scripts/repair-missed-append-reactivation.ts
- *   CAMPAIGN_ID=<uuid> APPLY=true npx tsx scripts/repair-missed-append-reactivation.ts
+ *   # Audit all non-deleted campaigns (dry run)
+ *   npx tsx scripts/repair-missed-append-reactivation.ts
  *
- * Defaults FLOW_NODE_IDS for campaign 1c531fe8-… to Email 2 + wait-after-Email 2.
+ *   # Single campaign
+ *   CAMPAIGN_ID=<uuid> npx tsx scripts/repair-missed-append-reactivation.ts
+ *
+ *   # Optional: restrict to explicit flow_node_ids (comma-separated)
+ *   CAMPAIGN_ID=<uuid> FLOW_NODE_IDS=id1,id2 npx tsx scripts/repair-missed-append-reactivation.ts
+ *
+ *   # Apply repairs
+ *   APPLY=true npx tsx scripts/repair-missed-append-reactivation.ts
+ *   CAMPAIGN_ID=<uuid> APPLY=true npx tsx scripts/repair-missed-append-reactivation.ts
  *
  * Resolution order:
  *   1. Load repo `.env.local` / `.env` plus `infra/workers/.env.local` / `.env`
@@ -35,20 +39,22 @@ import {
 
 loadSelfRecoveryEnv();
 
-/** C Suite (5+ years): Email 2 + wait after Email 2 */
-const DEFAULT_CAMPAIGN_ID = '1c531fe8-5832-4ba0-90be-dfae79cd904b';
-const DEFAULT_FLOW_NODE_IDS_BY_CAMPAIGN: Record<string, string[]> = {
-  [DEFAULT_CAMPAIGN_ID]: [
-    '1781624141082-7ev6wlug6', // Email 2
-    '1782171174278-qxwocoro6', // Wait after Email 2
-  ],
-};
-
 const PAGE_SIZE = 1000;
 const UPDATE_CHUNK = 200;
+const CAMPAIGN_PAGE_SIZE = 200;
+
+type CampaignRow = {
+  id: string;
+  name: string | null;
+  status: string | null;
+  flow_data: {
+    edges?: Array<{ source?: string }>;
+  } | null;
+};
 
 type NodeRow = {
   id: string;
+  campaign_id: string;
   flow_node_id: string;
   node_type: string;
   node_data: { label?: string } | null;
@@ -64,25 +70,101 @@ type EnrollmentRow = {
   updated_at: string;
 };
 
-function parseFlowNodeIds(campaignId: string): string[] {
+type SupabaseClient = Awaited<ReturnType<typeof import('@supabase/supabase-js').createClient>>;
+
+function parseOptionalFlowNodeIds(): string[] | null {
   const fromEnv = process.env.FLOW_NODE_IDS?.trim();
-  if (fromEnv) {
-    return [...new Set(fromEnv.split(',').map((id) => id.trim()).filter(Boolean))];
-  }
-  const defaults = DEFAULT_FLOW_NODE_IDS_BY_CAMPAIGN[campaignId];
-  if (defaults?.length) {
-    return defaults;
-  }
-  throw new Error(
-    'FLOW_NODE_IDS is required when CAMPAIGN_ID has no built-in defaults (comma-separated flow_node_id values).',
-  );
+  if (!fromEnv) return null;
+  return [...new Set(fromEnv.split(',').map((id) => id.trim()).filter(Boolean))];
 }
 
-async function fetchAllCompletedOnNodes(
-  supabase: Awaited<ReturnType<typeof import('@supabase/supabase-js').createClient>>,
+function nonLeafFlowNodeIdsFromFlow(
+  flowData: CampaignRow['flow_data'],
+  restrictTo: string[] | null,
+): Set<string> {
+  const sources = new Set<string>();
+  for (const edge of flowData?.edges ?? []) {
+    const source = edge.source?.trim();
+    if (source) sources.add(source);
+  }
+  if (!restrictTo) return sources;
+  const allowed = new Set(restrictTo);
+  return new Set([...sources].filter((id) => allowed.has(id)));
+}
+
+async function fetchCampaigns(
+  supabase: SupabaseClient,
+  campaignId: string | null,
+): Promise<CampaignRow[]> {
+  if (campaignId) {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('id, name, status, flow_data, deleted_at')
+      .eq('id', campaignId)
+      .maybeSingle();
+    if (error) {
+      throw new Error(`Failed to load campaign: ${error.message}`);
+    }
+    if (!data || data.deleted_at) {
+      throw new Error('Campaign not found or soft-deleted.');
+    }
+    return [
+      {
+        id: data.id as string,
+        name: (data.name as string | null) ?? null,
+        status: (data.status as string | null) ?? null,
+        flow_data: (data.flow_data as CampaignRow['flow_data']) ?? null,
+      },
+    ];
+  }
+
+  const rows: CampaignRow[] = [];
+  for (let offset = 0; ; offset += CAMPAIGN_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('id, name, status, flow_data')
+      .is('deleted_at', null)
+      .order('id', { ascending: true })
+      .range(offset, offset + CAMPAIGN_PAGE_SIZE - 1);
+
+    if (error) {
+      throw new Error(`Failed to load campaigns: ${error.message}`);
+    }
+
+    const page = (data ?? []) as CampaignRow[];
+    rows.push(...page);
+    if (page.length < CAMPAIGN_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+async function fetchNodesForCampaign(
+  supabase: SupabaseClient,
+  campaignId: string,
+  flowNodeIds: string[],
+): Promise<NodeRow[]> {
+  if (flowNodeIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('nodes')
+    .select('id, campaign_id, flow_node_id, node_type, node_data')
+    .eq('campaign_id', campaignId)
+    .in('flow_node_id', flowNodeIds)
+    .is('deleted_at', null);
+
+  if (error) {
+    throw new Error(`Failed to load nodes for ${campaignId}: ${error.message}`);
+  }
+  return (data ?? []) as NodeRow[];
+}
+
+async function fetchCompletedOnNodes(
+  supabase: SupabaseClient,
   campaignId: string,
   nodeIds: string[],
 ): Promise<EnrollmentRow[]> {
+  if (nodeIds.length === 0) return [];
+
   const rows: EnrollmentRow[] = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data, error } = await supabase
@@ -96,7 +178,7 @@ async function fetchAllCompletedOnNodes(
       .range(offset, offset + PAGE_SIZE - 1);
 
     if (error) {
-      throw new Error(`Failed to load enrollments: ${error.message}`);
+      throw new Error(`Failed to load enrollments for ${campaignId}: ${error.message}`);
     }
 
     const page = (data ?? []) as EnrollmentRow[];
@@ -106,12 +188,47 @@ async function fetchAllCompletedOnNodes(
   return rows;
 }
 
+async function reactivateEnrollments(
+  supabase: SupabaseClient,
+  campaignId: string,
+  enrollmentIds: string[],
+): Promise<number> {
+  const now = new Date().toISOString();
+  let repaired = 0;
+
+  for (let i = 0; i < enrollmentIds.length; i += UPDATE_CHUNK) {
+    const chunkIds = enrollmentIds.slice(i, i + UPDATE_CHUNK);
+    const { data: updatedRows, error: updateError } = await supabase
+      .from('enrollments')
+      .update({
+        state: 'active',
+        next_run_at: now,
+        updated_at: now,
+      })
+      .in('id', chunkIds)
+      .eq('campaign_id', campaignId)
+      .eq('state', 'completed')
+      .is('deleted_at', null)
+      .select('id');
+
+    if (updateError) {
+      throw new Error(
+        `Failed to reactivate chunk for ${campaignId} starting at ${i}: ${updateError.message}`,
+      );
+    }
+
+    repaired += updatedRows?.length ?? 0;
+  }
+
+  return repaired;
+}
+
 async function main() {
   const targetEnv = resolveSelfRecoveryTargetEnv();
   const { url, source: urlSource } = resolveSupabaseUrlForTarget(targetEnv);
-  const campaignId = process.env.CAMPAIGN_ID?.trim() || DEFAULT_CAMPAIGN_ID;
+  const campaignIdFilter = process.env.CAMPAIGN_ID?.trim() || null;
   const apply = process.env.APPLY === 'true';
-  const flowNodeIds = parseFlowNodeIds(campaignId);
+  const restrictFlowNodeIds = parseOptionalFlowNodeIds();
   const awsRegion =
     process.env.AWS_REGION?.trim() ||
     process.env.CDK_DEFAULT_REGION?.trim() ||
@@ -153,93 +270,94 @@ async function main() {
     console.log('Resolved SUPABASE secret from environment variable.');
   }
   console.log(`Mode: ${apply ? 'APPLY' : 'DRY RUN'}`);
-  console.log(`Campaign id: ${campaignId}`);
-  console.log(`Target flow_node_ids: ${flowNodeIds.join(', ')}`);
+  console.log(
+    campaignIdFilter
+      ? `Campaign filter: ${campaignIdFilter}`
+      : 'Campaign filter: all non-deleted campaigns',
+  );
+  if (restrictFlowNodeIds) {
+    console.log(`FLOW_NODE_IDS restrict: ${restrictFlowNodeIds.join(', ')}`);
+  }
 
   const { createClient } = await import('@supabase/supabase-js');
   const supabase = createClient(url, key);
 
-  const { data: campaign, error: campaignError } = await supabase
-    .from('campaigns')
-    .select('id, name, status, deleted_at')
-    .eq('id', campaignId)
-    .maybeSingle();
-
-  if (campaignError) {
-    console.error('Failed to load campaign:', campaignError.message);
-    process.exit(1);
-  }
-  if (!campaign || campaign.deleted_at) {
-    console.error('Campaign not found or soft-deleted.');
-    process.exit(1);
-  }
-
-  console.log(`Campaign name: ${campaign.name ?? '<unknown>'}`);
-  console.log(`Campaign status: ${campaign.status ?? '<missing>'}`);
-
-  const { data: nodes, error: nodesError } = await supabase
-    .from('nodes')
-    .select('id, flow_node_id, node_type, node_data')
-    .eq('campaign_id', campaignId)
-    .in('flow_node_id', flowNodeIds)
-    .is('deleted_at', null);
-
-  if (nodesError) {
-    console.error('Failed to load nodes:', nodesError.message);
-    process.exit(1);
-  }
-
-  const nodeRows = (nodes ?? []) as NodeRow[];
-  const missingFlowNodeIds = flowNodeIds.filter(
-    (id) => !nodeRows.some((node) => node.flow_node_id === id),
-  );
-  if (missingFlowNodeIds.length > 0) {
-    console.error(`Missing active nodes for flow_node_ids: ${missingFlowNodeIds.join(', ')}`);
-    process.exit(1);
-  }
-
-  const nodeById = new Map(nodeRows.map((node) => [node.id, node]));
-  const nodeIds = nodeRows.map((node) => node.id);
-
-  console.log('Target nodes:');
-  for (const node of nodeRows) {
-    console.log(
-      `- flow_node_id=${node.flow_node_id} type=${node.node_type} label=${node.node_data?.label ?? '<none>'} db_id=${node.id}`,
-    );
-  }
-
-  let candidates: EnrollmentRow[];
+  let campaigns: CampaignRow[];
   try {
-    candidates = await fetchAllCompletedOnNodes(supabase, campaignId, nodeIds);
+    campaigns = await fetchCampaigns(supabase, campaignIdFilter);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 
-  const byFlowNode = new Map<string, number>();
-  for (const enrollment of candidates) {
-    const node = enrollment.current_node_id
-      ? nodeById.get(enrollment.current_node_id)
-      : undefined;
-    const key = node
-      ? `${node.node_type}:${node.node_data?.label ?? node.flow_node_id}`
-      : '<unknown>';
-    byFlowNode.set(key, (byFlowNode.get(key) ?? 0) + 1);
+  console.log(`Campaigns to scan: ${campaigns.length}`);
+
+  type CampaignHit = {
+    campaign: CampaignRow;
+    candidates: EnrollmentRow[];
+    nodeById: Map<string, NodeRow>;
+  };
+
+  const hits: CampaignHit[] = [];
+  let totalCandidates = 0;
+
+  for (const campaign of campaigns) {
+    const nonLeafIds = nonLeafFlowNodeIdsFromFlow(campaign.flow_data, restrictFlowNodeIds);
+    if (nonLeafIds.size === 0) continue;
+
+    let nodeRows: NodeRow[];
+    try {
+      nodeRows = await fetchNodesForCampaign(supabase, campaign.id, [...nonLeafIds]);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+
+    const nodeById = new Map(nodeRows.map((node) => [node.id, node]));
+    const nodeIds = nodeRows.map((node) => node.id);
+
+    let candidates: EnrollmentRow[];
+    try {
+      candidates = await fetchCompletedOnNodes(supabase, campaign.id, nodeIds);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+
+    if (candidates.length === 0) continue;
+
+    hits.push({ campaign, candidates, nodeById });
+    totalCandidates += candidates.length;
   }
 
-  console.log(`Repair candidates: ${candidates.length}`);
-  console.log('Breakdown by parked node:');
-  for (const [label, count] of [...byFlowNode.entries()].sort((a, b) => b[1] - a[1])) {
-    console.log(`- ${label}: ${count}`);
-  }
+  console.log(`Campaigns with stranded completed: ${hits.length}`);
+  console.log(`Total repair candidates: ${totalCandidates}`);
 
-  if (candidates.length > 0) {
-    console.log('Preview (first 25):');
+  for (const hit of hits) {
+    const byParked = new Map<string, number>();
+    for (const enrollment of hit.candidates) {
+      const node = enrollment.current_node_id
+        ? hit.nodeById.get(enrollment.current_node_id)
+        : undefined;
+      const key = node
+        ? `${node.node_type}:${node.node_data?.label ?? node.flow_node_id}`
+        : '<unknown>';
+      byParked.set(key, (byParked.get(key) ?? 0) + 1);
+    }
+
+    console.log(
+      `\nCampaign ${hit.campaign.id} (${hit.campaign.name ?? '<unknown>'}) status=${hit.campaign.status ?? '<missing>'} candidates=${hit.candidates.length}`,
+    );
+    for (const [label, count] of [...byParked.entries()].sort((a, b) => b[1] - a[1])) {
+      console.log(`  - ${label}: ${count}`);
+    }
+
+    console.log('  Preview (first 10):');
     console.log(
       JSON.stringify(
-        candidates.slice(0, 25).map((enrollment) => {
+        hit.candidates.slice(0, 10).map((enrollment) => {
           const node = enrollment.current_node_id
-            ? nodeById.get(enrollment.current_node_id)
+            ? hit.nodeById.get(enrollment.current_node_id)
             : undefined;
           return {
             enrollment_id: enrollment.id,
@@ -258,7 +376,7 @@ async function main() {
   }
 
   console.log(
-    'Behavior on APPLY: set state=active, next_run_at=NOW(), updated_at=NOW(); leave current_node_id unchanged (waits are not skipped).',
+    '\nBehavior on APPLY: set state=active, next_run_at=NOW(), updated_at=NOW(); leave current_node_id unchanged (waits are not skipped).',
   );
 
   if (!apply) {
@@ -266,40 +384,24 @@ async function main() {
     return;
   }
 
-  if (candidates.length === 0) {
+  if (totalCandidates === 0) {
     console.log('Nothing to repair.');
     return;
   }
 
-  const now = new Date().toISOString();
-  let repaired = 0;
-
-  for (let i = 0; i < candidates.length; i += UPDATE_CHUNK) {
-    const chunkIds = candidates.slice(i, i + UPDATE_CHUNK).map((row) => row.id);
-    const { data: updatedRows, error: updateError } = await supabase
-      .from('enrollments')
-      .update({
-        state: 'active',
-        next_run_at: now,
-        updated_at: now,
-      })
-      .in('id', chunkIds)
-      .eq('campaign_id', campaignId)
-      .eq('state', 'completed')
-      .is('deleted_at', null)
-      .select('id');
-
-    if (updateError) {
-      console.error(`Failed to reactivate chunk starting at ${i}: ${updateError.message}`);
-      process.exit(1);
-    }
-
-    repaired += updatedRows?.length ?? 0;
-    console.log(`Updated chunk ${i / UPDATE_CHUNK + 1}: ${updatedRows?.length ?? 0} rows`);
+  let repairedTotal = 0;
+  for (const hit of hits) {
+    const repaired = await reactivateEnrollments(
+      supabase,
+      hit.campaign.id,
+      hit.candidates.map((row) => row.id),
+    );
+    repairedTotal += repaired;
+    console.log(`Reactivated ${repaired} on campaign ${hit.campaign.id}`);
   }
 
   console.log(
-    `Reactivated ${repaired} completed enrollments. Scheduler will resume from parked nodes without skipping waits.`,
+    `Reactivated ${repairedTotal} completed enrollments across ${hits.length} campaigns. Scheduler will resume from parked nodes without skipping waits.`,
   );
 }
 

@@ -870,6 +870,7 @@ export const oooInboxThreadsModule: SeedModule = {
       subject: caseCopy(thread.key).subject,
       participants: [thread.mailboxEmail, thread.leadEmail],
       last_message_at: thread.lastMessageAt,
+      last_inbound_at: thread.lastMessageAt,
       message_count: thread.messageCount,
       has_reply: true,
       out_of_office: false,

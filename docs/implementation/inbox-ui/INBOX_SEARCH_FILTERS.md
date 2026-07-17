@@ -43,6 +43,7 @@ Migration: `supabase/migrations/20260715180000_inbox_thread_search.sql`
 - `p_category` (`__no_category__` or `no_category` → uncategorized). When omitted, all categories are included (null-safe; does not collapse to “uncategorized only”).
 - `p_conversation_status`, `p_has_reply_only`, `p_limit` / `p_offset`
 - `p_search` — min 2 chars after trim ([`normalizeInboxSearchQuery`](../../../lib/inbox/normalizeInboxSearchQuery.ts))
+- `p_sort` — `newest` (default), `open_first`, `oldest`, `unread_first`. When `p_search` is set, search rank stays the primary `ORDER BY` key and sort applies after. Unknown values coerce to `newest`. Added in `supabase/migrations/20260716160000_inbox_thread_list_sort.sql`.
 
 ### Mark as read
 
@@ -52,8 +53,10 @@ Migration: `supabase/migrations/20260715180000_inbox_thread_search.sql`
 
 ## UI
 
-- Filter chips via `InboxFilterDropdown` (Unread, date, mailbox, campaign, category, tags)
+- Filter popup via `InboxFilterDropdown` (Unread, Sort, date, conversation status, mailbox, campaign, category, thread tags, campaign tags)
+- Sort control (does not affect funnel badge): Newest / Open first / Oldest / Unread first; Clear all resets to Newest
 - Search bar: debounced 400ms; placeholder “Search…”; clear (X) control
 - Empty states distinguish “no conversations”, search miss, and filter miss
 - When searching, shows total conversation count from RPC; load more uses `offset + len < totalCount`
 - Page size: `THREAD_PAGE_SIZE` (50)
+- Client API: `GET /v1/threads?sort=` accepts the same sort values

@@ -850,6 +850,7 @@ export const categorizerFlowRepliesModule: SeedModule = {
           subject,
           participants: [store.mailboxEmail, seedCase.leadEmail],
           last_message_at: seedCase.replyAt,
+          last_inbound_at: seedCase.replyAt,
           message_count: 2,
           has_reply: true,
           category: seedCase.prestampCategory ?? null,

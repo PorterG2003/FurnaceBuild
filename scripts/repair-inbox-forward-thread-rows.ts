@@ -34,6 +34,7 @@ type EmailMessageRow = {
   thread_id: string;
   message_job_id: string | null;
   message_id: string | null;
+  direction?: string | null;
   received_at?: string | null;
   from_email?: string | null;
   to_email?: string | null;
@@ -367,7 +368,7 @@ async function main() {
       await Promise.all([
         supabase
           .from('email_messages')
-          .select('id, thread_id, received_at, from_email, to_email, cc')
+          .select('id, thread_id, direction, received_at, from_email, to_email, cc')
           .in('thread_id', touchedThreads),
         supabase
           .from('email_threads')
@@ -398,6 +399,7 @@ async function main() {
       const messages = messagesByThread.get(threadId) ?? [];
       const participants = new Set<string>(threadRowsById.get(threadId)?.participants ?? []);
       let lastMessageAt: string | null = null;
+      let lastInboundAt: string | null = null;
 
       for (const message of messages) {
         if (message.from_email) {
@@ -414,6 +416,13 @@ async function main() {
         if (message.received_at && (!lastMessageAt || Date.parse(message.received_at) > Date.parse(lastMessageAt))) {
           lastMessageAt = message.received_at;
         }
+        if (
+          message.direction === 'received' &&
+          message.received_at &&
+          (!lastInboundAt || Date.parse(message.received_at) > Date.parse(lastInboundAt))
+        ) {
+          lastInboundAt = message.received_at;
+        }
       }
 
       const { error } = await supabase
@@ -421,6 +430,7 @@ async function main() {
         .update({
           message_count: messages.length,
           last_message_at: lastMessageAt,
+          last_inbound_at: lastInboundAt,
           participants: [...participants],
           updated_at: new Date().toISOString(),
         })

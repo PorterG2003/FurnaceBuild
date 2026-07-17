@@ -200,6 +200,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
     campaignTagFilterIds,
     categoryFilter,
     conversationStatusFilter,
+    sortBy,
     hasMoreThreads,
     threadsTotalCount,
     loadingMoreThreads,
@@ -367,6 +368,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
   const setCampaignTagFilterIds = wrapFilterChange(inboxData.setCampaignTagFilterIds);
   const setCategoryFilter = wrapFilterChange(inboxData.setCategoryFilter);
   const setConversationStatusFilter = wrapFilterChange(inboxData.setConversationStatusFilter);
+  const setSortBy = wrapFilterChange(inboxData.setSortBy);
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
@@ -1262,6 +1264,8 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
         filterAnchorLayout,
         unreadOnlyFilter,
         setUnreadOnlyFilter,
+        sortBy,
+        setSortBy,
         datePreset,
         setDatePreset,
         mailboxFilterId,
@@ -1344,6 +1348,8 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       filterAnchorLayout,
       unreadOnlyFilter,
       setUnreadOnlyFilter,
+      sortBy,
+      setSortBy,
       datePreset,
       setDatePreset,
       mailboxFilterId,

@@ -89,6 +89,7 @@ async function createForeignSourceMessage(harness: CampaignDbHarness): Promise<{
     subject: 'Foreign source message',
     participants: ['foreign@example.com', 'mailbox@example.com'],
     last_message_at: timestamp,
+    last_inbound_at: timestamp,
     message_count: 1,
     has_reply: true,
     category: null,

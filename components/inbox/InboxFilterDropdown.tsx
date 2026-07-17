@@ -14,10 +14,11 @@ import { Toggle } from '@/components/ui/Toggle';
 import type { Mailbox, Campaign } from '@/lib/supabase/types';
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
+import { NO_CATEGORY_FILTER, type InboxThreadSortBy } from '@/lib/supabase/services/inbox';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import { resolveTagColor } from '@/lib/tags/tag-colors';
-import { NO_CATEGORY_FILTER } from '@/lib/supabase/services/inbox';
 import { THREAD_CATEGORIES } from './inboxConstants';
+
 const DATE_OPTIONS = [
   { id: 'all', name: 'All' },
   { id: '7d', name: 'Last 7 days' },
@@ -30,7 +31,16 @@ const CONVERSATION_STATUS_OPTIONS = [
   { id: 'closed', name: 'Closed only' },
 ] as const;
 
-const DROPDOWN_SCROLL_MAX = 560;
+const SORT_OPTIONS: { id: InboxThreadSortBy; name: string }[] = [
+  { id: 'newest', name: 'Newest' },
+  { id: 'open_first', name: 'Open first' },
+  { id: 'oldest', name: 'Oldest' },
+  { id: 'unread_first', name: 'Unread first' },
+];
+
+const DROPDOWN_SCROLL_MAX = 640;
+const DROPDOWN_MIN_WIDTH = 520;
+const SELECT_LIST_MAX = 150;
 
 export interface InboxFilterDropdownProps {
   visible: boolean;
@@ -41,6 +51,8 @@ export interface InboxFilterDropdownProps {
   anchorLayout: { x: number; y: number; w: number; h: number } | null;
   unreadOnlyFilter: boolean;
   onUnreadOnlyFilterChange: (v: boolean) => void;
+  sortBy: InboxThreadSortBy;
+  onSortByChange: (v: InboxThreadSortBy) => void;
   datePreset: '7d' | '30d' | null;
   onDatePresetChange: (v: '7d' | '30d' | null) => void;
   mailboxFilterId: string | null;
@@ -70,6 +82,8 @@ export function InboxFilterDropdown({
   anchorLayout,
   unreadOnlyFilter,
   onUnreadOnlyFilterChange,
+  sortBy,
+  onSortByChange,
   datePreset,
   onDatePresetChange,
   mailboxFilterId,
@@ -90,11 +104,10 @@ export function InboxFilterDropdown({
   accountCampaignTags,
   onClearAll,
 }: InboxFilterDropdownProps) {
-  const [dateSearch, setDateSearch] = useState('');
   const [mailboxSearch, setMailboxSearch] = useState('');
   const [campaignSearch, setCampaignSearch] = useState('');
-  const [categorySearch, setCategorySearch] = useState('');
-  const [conversationStatusSearch, setConversationStatusSearch] = useState('');
+
+  const useTwoColumn = presentation === 'dropdown';
 
   const mailboxItems = useMemo(
     () => [{ id: 'all', email_address: 'All' } as { id: string; email_address: string }, ...mailboxes],
@@ -114,11 +127,7 @@ export function InboxFilterDropdown({
   );
   const dateItems = useMemo(() => DATE_OPTIONS, []);
   const conversationStatusItems = useMemo(() => [...CONVERSATION_STATUS_OPTIONS], []);
-  const filteredDateItems = useMemo(() => {
-    if (!dateSearch.trim()) return dateItems;
-    const q = dateSearch.trim().toLowerCase();
-    return dateItems.filter((i) => i.name.toLowerCase().includes(q));
-  }, [dateItems, dateSearch]);
+  const sortItems = useMemo(() => SORT_OPTIONS, []);
   const filteredMailboxItems = useMemo(() => {
     if (!mailboxSearch.trim()) return mailboxItems;
     const q = mailboxSearch.trim().toLowerCase();
@@ -129,88 +138,124 @@ export function InboxFilterDropdown({
     const q = campaignSearch.trim().toLowerCase();
     return campaignItems.filter((c) => (c.name ?? '').toLowerCase().includes(q));
   }, [campaignItems, campaignSearch]);
-  const filteredCategoryItems = useMemo(() => {
-    if (!categorySearch.trim()) return categoryItems;
-    const q = categorySearch.trim().toLowerCase();
-    return categoryItems.filter((i) => i.name.toLowerCase().includes(q));
-  }, [categoryItems, categorySearch]);
-  const filteredConversationStatusItems = useMemo(() => {
-    if (!conversationStatusSearch.trim()) return conversationStatusItems;
-    const q = conversationStatusSearch.trim().toLowerCase();
-    return conversationStatusItems.filter((item) => item.name.toLowerCase().includes(q));
-  }, [conversationStatusItems, conversationStatusSearch]);
 
   const dateValue = datePreset ?? 'all';
 
   const scrollMaxHeight = presentation === 'sheet' ? sheetMaxHeight : DROPDOWN_SCROLL_MAX;
 
+  const dateSelect = (
+    <Select
+      label="Date"
+      items={dateItems}
+      getItemId={(i) => i.id}
+      getItemLabel={(i) => ({ primary: i.name })}
+      value={dateValue}
+      onChange={(id) => onDatePresetChange(id === 'all' ? null : (id as '7d' | '30d'))}
+      searchable={false}
+      placeholder="All"
+      listMaxHeight={SELECT_LIST_MAX}
+      noMargin={useTwoColumn}
+    />
+  );
+
+  const conversationStatusSelect = (
+    <Select
+      label="Conversation status"
+      items={conversationStatusItems}
+      getItemId={(i) => i.id}
+      getItemLabel={(i) => ({ primary: i.name })}
+      value={conversationStatusFilter}
+      onChange={(id) => onConversationStatusFilterChange(id as 'open' | 'closed' | 'all')}
+      searchable={false}
+      placeholder="All conversations"
+      listMaxHeight={SELECT_LIST_MAX}
+      noMargin={useTwoColumn}
+    />
+  );
+
+  const mailboxSelect = (
+    <Select
+      label="Mailbox"
+      items={filteredMailboxItems}
+      getItemId={(m) => m.id}
+      getItemLabel={(m) => ({ primary: m.email_address ?? 'All' })}
+      value={mailboxFilterId || 'all'}
+      onChange={(id) => onMailboxFilterIdChange(id === 'all' ? null : id)}
+      onSearchChange={setMailboxSearch}
+      searchPlaceholder="Search mailboxes…"
+      placeholder="All"
+      listMaxHeight={SELECT_LIST_MAX}
+      noMargin={useTwoColumn}
+    />
+  );
+
+  const campaignSelect = (
+    <Select
+      label="Campaign"
+      items={filteredCampaignItems}
+      getItemId={(c) => c.id}
+      getItemLabel={(c) => ({ primary: c.name ?? 'All' })}
+      value={campaignFilterId || 'all'}
+      onChange={(id) => onCampaignFilterIdChange(id === 'all' ? null : id)}
+      onSearchChange={setCampaignSearch}
+      searchPlaceholder="Search campaigns…"
+      placeholder="All"
+      listMaxHeight={SELECT_LIST_MAX}
+      noMargin={useTwoColumn}
+    />
+  );
+
   const filterFormScroll = (
     <ScrollView
       style={{ maxHeight: scrollMaxHeight }}
-      contentContainerStyle={{ padding: 16 }}
+      contentContainerStyle={{ padding: 12 }}
       showsVerticalScrollIndicator
       keyboardShouldPersistTaps="handled"
     >
-      <View className="flex-row items-center justify-between mb-4">
+      <View className="flex-row items-center justify-between mb-3">
         <Text className="text-xs font-instrument-medium text-gray-400">Unread only</Text>
         <Toggle value={unreadOnlyFilter} onValueChange={onUnreadOnlyFilterChange} />
       </View>
 
       <Select
-        label="Date"
-        items={filteredDateItems}
+        label="Sort"
+        items={sortItems}
         getItemId={(i) => i.id}
         getItemLabel={(i) => ({ primary: i.name })}
-        value={dateValue}
-        onChange={(id) => onDatePresetChange(id === 'all' ? null : (id as '7d' | '30d'))}
-        onSearchChange={setDateSearch}
-        searchPlaceholder="Search…"
-        placeholder="All"
-        listMaxHeight={180}
+        value={sortBy}
+        onChange={(id) => onSortByChange(id as InboxThreadSortBy)}
+        searchable={false}
+        placeholder="Newest"
+        listMaxHeight={SELECT_LIST_MAX}
       />
 
-      <Select
-        label="Conversation status"
-        items={filteredConversationStatusItems}
-        getItemId={(i) => i.id}
-        getItemLabel={(i) => ({ primary: i.name })}
-        value={conversationStatusFilter}
-        onChange={(id) => onConversationStatusFilterChange(id as 'open' | 'closed' | 'all')}
-        onSearchChange={setConversationStatusSearch}
-        searchPlaceholder="Search…"
-        placeholder="All conversations"
-        listMaxHeight={180}
-      />
+      {useTwoColumn ? (
+        <View className="flex-row gap-3 mb-3">
+          <View className="flex-1">{dateSelect}</View>
+          <View className="flex-1">{conversationStatusSelect}</View>
+        </View>
+      ) : (
+        <>
+          {dateSelect}
+          {conversationStatusSelect}
+        </>
+      )}
 
-      <Select
-        label="Mailbox"
-        items={filteredMailboxItems}
-        getItemId={(m) => m.id}
-        getItemLabel={(m) => ({ primary: m.email_address ?? 'All' })}
-        value={mailboxFilterId || 'all'}
-        onChange={(id) => onMailboxFilterIdChange(id === 'all' ? null : id)}
-        onSearchChange={setMailboxSearch}
-        searchPlaceholder="Search mailboxes…"
-        placeholder="All"
-        listMaxHeight={200}
-      />
-
-      <Select
-        label="Campaign"
-        items={filteredCampaignItems}
-        getItemId={(c) => c.id}
-        getItemLabel={(c) => ({ primary: c.name ?? 'All' })}
-        value={campaignFilterId || 'all'}
-        onChange={(id) => onCampaignFilterIdChange(id === 'all' ? null : id)}
-        onSearchChange={setCampaignSearch}
-        searchPlaceholder="Search campaigns…"
-        placeholder="All"
-        listMaxHeight={200}
-      />
+      {useTwoColumn ? (
+        <View className="flex-row gap-3 mb-3">
+          <View className="flex-1">{mailboxSelect}</View>
+          <View className="flex-1">{campaignSelect}</View>
+        </View>
+      ) : (
+        <>
+          {mailboxSelect}
+          {campaignSelect}
+        </>
+      )}
 
       <Select
         label="Category"
-        items={filteredCategoryItems}
+        items={categoryItems}
         getItemId={(i) => i.id}
         getItemLabel={(i) => ({ primary: i.name })}
         getItemColor={(item) =>
@@ -219,10 +264,9 @@ export function InboxFilterDropdown({
         itemColorVariant="tint"
         value={categoryFilter || 'all'}
         onChange={(id) => onCategoryFilterChange(id === 'all' ? null : id)}
-        onSearchChange={setCategorySearch}
-        searchPlaceholder="Search…"
+        searchable={false}
         placeholder="All"
-        listMaxHeight={180}
+        listMaxHeight={SELECT_LIST_MAX}
       />
 
       <SearchAndSelectMulti
@@ -235,7 +279,7 @@ export function InboxFilterDropdown({
         onChange={onTagFilterIdsChange}
         searchPlaceholder="Search thread tags…"
         placeholder="All thread tags"
-        listMaxHeight={200}
+        listMaxHeight={SELECT_LIST_MAX}
         emptyMessage={(hasSearch) => (hasSearch ? 'No matching thread tags.' : 'No thread tags yet.')}
       />
 
@@ -249,13 +293,13 @@ export function InboxFilterDropdown({
         onChange={onCampaignTagFilterIdsChange}
         searchPlaceholder="Search campaign tags…"
         placeholder="All campaign tags"
-        listMaxHeight={200}
+        listMaxHeight={SELECT_LIST_MAX}
         emptyMessage={(hasSearch) =>
           hasSearch ? 'No matching campaign tags.' : 'No campaign tags yet.'
         }
       />
 
-      <Pressable onPress={onClearAll} className="py-2 mt-2">
+      <Pressable onPress={onClearAll} className="py-2 mt-1">
         <Text className="text-gray-400 font-instrument text-sm text-center">Clear all</Text>
       </Pressable>
     </ScrollView>
@@ -286,7 +330,7 @@ export function InboxFilterDropdown({
             position: 'absolute',
             left: anchorLayout.x,
             top: anchorLayout.y + anchorLayout.h + 4,
-            width: Math.max(anchorLayout.w, 440),
+            width: Math.max(anchorLayout.w, DROPDOWN_MIN_WIDTH),
             maxHeight: DROPDOWN_SCROLL_MAX,
             backgroundColor: '#1A1A1A',
             borderRadius: 12,

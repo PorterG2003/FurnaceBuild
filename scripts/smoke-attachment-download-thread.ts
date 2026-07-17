@@ -92,6 +92,7 @@ async function main() {
     participants: [mailbox.email_address, leadEmail],
     message_count: 2,
     last_message_at: replyAt,
+    last_inbound_at: replyAt,
     conversation_status: 'open',
     has_reply: false,
   });

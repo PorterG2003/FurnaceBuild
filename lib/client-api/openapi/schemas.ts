@@ -281,13 +281,13 @@ export function buildClientApiComponents() {
       DateFrom: {
         name: 'date_from',
         in: 'query',
-        description: 'Inclusive ISO-8601 timestamp filter on `last_message_at`.',
+        description: 'Inclusive ISO-8601 timestamp filter on `last_inbound_at` (latest lead reply).',
         schema: { type: 'string', format: 'date-time' },
       },
       DateTo: {
         name: 'date_to',
         in: 'query',
-        description: 'Inclusive ISO-8601 timestamp filter on `last_message_at`.',
+        description: 'Inclusive ISO-8601 timestamp filter on `last_inbound_at` (latest lead reply).',
         schema: { type: 'string', format: 'date-time' },
       },
       HasReplyOnly: {
@@ -1292,7 +1292,18 @@ export function buildClientApiComponents() {
           campaign_id: { type: 'string', format: 'uuid', nullable: true },
           mailbox_id: { type: 'string', format: 'uuid', nullable: true },
           subject: { type: 'string', nullable: true },
-          last_message_at: { type: 'string', format: 'date-time', nullable: true },
+          last_message_at: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'Latest activity in either direction (sent or received).',
+          },
+          last_inbound_at: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'Latest inbound lead reply. Used for inbox Newest/Oldest sort and date filters.',
+          },
         },
         required: ['id', 'account_id'],
         additionalProperties: true,

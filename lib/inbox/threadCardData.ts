@@ -85,20 +85,15 @@ export function buildThreadSnippetMap(
   rows: ThreadSnippetRow[],
   maxLength = DEFAULT_SNIPPET_MAX_LENGTH
 ): Record<string, string> {
-  const fallbackSnippets: Record<string, string> = {};
   const receivedSnippets: Record<string, string> = {};
 
   for (const row of rows) {
+    if (row.direction !== 'received') continue;
+    if (row.thread_id in receivedSnippets) continue;
     const snippet = toThreadSnippetText(row, maxLength);
     if (!snippet) continue;
-
-    if (!(row.thread_id in fallbackSnippets)) {
-      fallbackSnippets[row.thread_id] = snippet;
-    }
-    if (row.direction === 'received' && !(row.thread_id in receivedSnippets)) {
-      receivedSnippets[row.thread_id] = snippet;
-    }
+    receivedSnippets[row.thread_id] = snippet;
   }
 
-  return { ...fallbackSnippets, ...receivedSnippets };
+  return receivedSnippets;
 }

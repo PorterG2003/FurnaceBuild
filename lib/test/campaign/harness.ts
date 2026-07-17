@@ -1150,6 +1150,14 @@ export async function materializeCampaignGraph(
         ? messageJobIdsByKey.get(leadSpec.thread.messageJobKey) ?? null
         : messageJobIdsByKey.values().next().value ?? null;
 
+      const threadMessagesForInbound = leadSpec.thread.messages ?? [];
+      const lastInboundAt =
+        threadMessagesForInbound
+          .filter((message) => message.direction === 'received' && message.receivedAt)
+          .map((message) => message.receivedAt!)
+          .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ??
+        (leadSpec.thread.hasReply === false ? null : leadSpec.thread.lastMessageAt);
+
       threadRows.push({
         id: threadId,
         account_id: accountId,
@@ -1161,6 +1169,7 @@ export async function materializeCampaignGraph(
         subject: leadSpec.thread.subject,
         participants: [threadMailboxEmail, leadSpec.email],
         last_message_at: leadSpec.thread.lastMessageAt,
+        last_inbound_at: lastInboundAt,
         message_count: leadSpec.thread.messageCount ?? (leadSpec.thread.messages?.length ?? 2),
         has_reply: leadSpec.thread.hasReply ?? true,
         category: leadSpec.thread.category ?? null,

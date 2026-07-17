@@ -23,6 +23,7 @@ import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { EmailThread, EmailMessage, BlockListEntry, Mailbox, Campaign, Lead } from '@/lib/supabase/types';
+import type { InboxThreadSortBy } from '@/lib/supabase/services/inbox';
 import { THREAD_PAGE_SIZE, SEARCH_DEBOUNCE_MS } from '@/components/inbox/inboxConstants';
 
 export interface UseInboxDataOptions {
@@ -56,6 +57,7 @@ export function useInboxData({
   const [campaignTagFilterIds, setCampaignTagFilterIdsState] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilterState] = useState<string | null>(null);
   const [conversationStatusFilter, setConversationStatusFilterState] = useState<'open' | 'closed' | 'all'>('all');
+  const [sortBy, setSortByState] = useState<InboxThreadSortBy>('newest');
   const [threadOffset, setThreadOffset] = useState(0);
   const [hasMoreThreads, setHasMoreThreads] = useState(false);
   const [threadsTotalCount, setThreadsTotalCount] = useState(0);
@@ -160,6 +162,7 @@ export function useInboxData({
     setCampaignTagFilterIdsState([]);
     setCategoryFilterState(null);
     setConversationStatusFilterState('all');
+    setSortByState('newest');
   }, []);
 
   const resetForAccountChange = useCallback(() => {
@@ -233,6 +236,7 @@ export function useInboxData({
       campaignTagIds: campaignTagFilterIds.length > 0 ? campaignTagFilterIds : undefined,
       category: categoryFilter ?? undefined,
       conversationStatus: conversationStatusFilter,
+      sortBy,
     };
   }, [
     mailboxFilterId,
@@ -244,6 +248,7 @@ export function useInboxData({
     campaignTagFilterIds,
     categoryFilter,
     conversationStatusFilter,
+    sortBy,
   ]);
 
   const loadBlockList = useCallback(async () => {
@@ -452,6 +457,7 @@ export function useInboxData({
     campaignTagFilterIds,
     categoryFilter,
     conversationStatusFilter,
+    sortBy,
   ]);
 
   useEffect(() => {
@@ -540,6 +546,8 @@ export function useInboxData({
     setCategoryFilter: setCategoryFilterState,
     conversationStatusFilter,
     setConversationStatusFilter: setConversationStatusFilterState,
+    sortBy,
+    setSortBy: setSortByState,
     threadOffset,
     hasMoreThreads,
     threadsTotalCount,

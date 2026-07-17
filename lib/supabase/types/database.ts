@@ -1576,6 +1576,7 @@ export interface Database {
           subject: string;
           participants: string[];
           last_message_at: string;
+          last_inbound_at: string | null;
           message_count: number;
           has_reply: boolean;
           category: string | null;
@@ -1606,6 +1607,7 @@ export interface Database {
           subject: string;
           participants?: string[];
           last_message_at: string;
+          last_inbound_at?: string | null;
           message_count?: number;
           has_reply?: boolean;
           category?: string | null;
@@ -1636,6 +1638,7 @@ export interface Database {
           subject?: string;
           participants?: string[];
           last_message_at?: string;
+          last_inbound_at?: string | null;
           message_count?: number;
           has_reply?: boolean;
           category?: string | null;
@@ -2960,6 +2963,7 @@ export interface Database {
           p_has_reply_only?: boolean | null;
           p_limit?: number | null;
           p_offset?: number | null;
+          p_sort?: string | null;
         };
         Returns: {
           id: string;
@@ -2973,6 +2977,7 @@ export interface Database {
           subject: string;
           participants: string[];
           last_message_at: string;
+          last_inbound_at: string | null;
           message_count: number;
           has_reply: boolean;
           category: string | null;

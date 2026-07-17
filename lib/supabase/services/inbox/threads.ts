@@ -3,6 +3,8 @@ import type { EmailThread } from '../../types';
 import { buildThreadSnippetMap, normalizeInboxSearchQuery } from '@/lib/inbox';
 import { getCampaignIdsForTags } from '../campaign-tags';
 
+export type InboxThreadSortBy = 'open_first' | 'newest' | 'oldest' | 'unread_first';
+
 export interface GetThreadsByAccountOptions {
   hasReplyOnly?: boolean;
   limit?: number;
@@ -19,6 +21,7 @@ export interface GetThreadsByAccountOptions {
   category?: string;
   includeUnreadCount?: boolean;
   conversationStatus?: 'open' | 'closed' | 'all';
+  sortBy?: InboxThreadSortBy;
 }
 
 export const NO_CATEGORY_FILTER = '__no_category__';
@@ -90,6 +93,7 @@ export async function getThreadsByAccount(
     p_has_reply_only: options?.hasReplyOnly === true,
     p_limit: options?.limit ?? 50,
     p_offset: options?.offset ?? 0,
+    p_sort: options?.sortBy ?? 'newest',
   });
 
   if (error) throw new Error(`Failed to fetch threads: ${error.message}`);
@@ -132,6 +136,7 @@ export async function getThreadSnippets(
     .from('email_messages')
     .select('thread_id, direction, body_text, body_html, received_at')
     .in('thread_id', threadIds)
+    .eq('direction', 'received')
     .order('received_at', { ascending: false })
     .limit(1000);
   if (error) throw new Error(`Failed to fetch thread snippets: ${error.message}`);

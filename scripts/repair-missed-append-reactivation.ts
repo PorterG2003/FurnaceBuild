@@ -2,11 +2,12 @@
  * Audit / repair completed enrollments stranded on non-leaf nodes after flow
  * appends (older leaves that tip-only reactivation missed).
  *
- * Matches product behavior after 20260717150000_reactivate_completed_on_non_leaf_nodes:
- *   - Candidate: state=completed AND current node's flow_node_id is an edge source
+ * Matches product heal after 20260719120000_flow_edit_orphan_edge_integrity:
+ *   - Candidate: state=completed on a non-categorizer node whose flow_node_id is
+ *     the source of an edge whose target exists in flow_data.nodes
  *   - APPLY: state → active, next_run_at / updated_at → NOW()
  *   - current_node_id unchanged (do not skip waits)
- *   - stopped enrollments are never touched
+ *   - stopped enrollments and aiCategorizer category-exits are never touched
  *
  * Usage:
  *   # Audit all non-deleted campaigns (dry run)
@@ -48,7 +49,8 @@ type CampaignRow = {
   name: string | null;
   status: string | null;
   flow_data: {
-    edges?: Array<{ source?: string }>;
+    nodes?: Array<{ id?: string }>;
+    edges?: Array<{ source?: string; target?: string }>;
   } | null;
 };
 
@@ -82,10 +84,18 @@ function nonLeafFlowNodeIdsFromFlow(
   flowData: CampaignRow['flow_data'],
   restrictTo: string[] | null,
 ): Set<string> {
+  const nodeIds = new Set(
+    (flowData?.nodes ?? [])
+      .map((node) => node.id?.trim())
+      .filter((id): id is string => Boolean(id)),
+  );
   const sources = new Set<string>();
   for (const edge of flowData?.edges ?? []) {
     const source = edge.source?.trim();
-    if (source) sources.add(source);
+    const target = edge.target?.trim();
+    if (!source || !target) continue;
+    if (!nodeIds.has(source) || !nodeIds.has(target)) continue;
+    sources.add(source);
   }
   if (!restrictTo) return sources;
   const allowed = new Set(restrictTo);
@@ -312,6 +322,10 @@ async function main() {
       console.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
+
+    // Category-exit completions on aiCategorizer are intentional — never reactivate.
+    nodeRows = nodeRows.filter((node) => node.node_type !== 'aiCategorizer');
+    if (nodeRows.length === 0) continue;
 
     const nodeById = new Map(nodeRows.map((node) => [node.id, node]));
     const nodeIds = nodeRows.map((node) => node.id);

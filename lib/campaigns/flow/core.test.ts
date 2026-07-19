@@ -98,6 +98,51 @@ test('normalizeFlowData preserves an explicit mappedStandardFieldKeys array', ()
   assert.deepEqual(leadSource?.data.mappedStandardFieldKeys, ['email', 'first_name']);
 });
 
+test('normalizeFlowData strips builder lock/UX flags from node and edge data', () => {
+  const normalized = normalizeFlowData({
+    nodes: [
+      {
+        id: 'leadSource-1',
+        type: 'leadSource',
+        position: { x: 0, y: 0 },
+        data: {
+          structuralBlocked: true,
+          canDelete: true,
+          readOnly: false,
+          customFieldKeys: ['company'],
+        },
+      },
+      {
+        id: 'dataSender-1',
+        type: 'dataSender',
+        position: { x: 100, y: 0 },
+        data: {
+          structuralBlocked: true,
+          canDelete: false,
+          endpoint_url: 'https://example.com/hook',
+        },
+      },
+    ],
+    edges: [
+      {
+        id: 'e1',
+        source: 'leadSource-1',
+        target: 'dataSender-1',
+        data: { readOnly: true, structuralBlocked: true },
+      },
+    ],
+  });
+
+  const leadSource = normalized.nodes.find((node) => node.id === 'leadSource-1');
+  const dataSender = normalized.nodes.find((node) => node.id === 'dataSender-1');
+  assert.equal('structuralBlocked' in (leadSource?.data ?? {}), false);
+  assert.equal('canDelete' in (leadSource?.data ?? {}), false);
+  assert.equal('readOnly' in (leadSource?.data ?? {}), false);
+  assert.deepEqual(leadSource?.data.customFieldKeys, ['company']);
+  assert.equal('structuralBlocked' in (dataSender?.data ?? {}), false);
+  assert.equal(normalized.edges[0]?.data, undefined);
+});
+
 test('validateFlowData reports merge-variable and variant issues', () => {
   const invalidFlow = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
   const emailNode = invalidFlow.nodes.find((node) => node.id === 'email-1');

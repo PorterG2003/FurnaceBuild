@@ -17,6 +17,7 @@ import { useCampaignStatusActions } from '@/lib/campaigns/useCampaignStatusActio
 import {
   classifyFlowChange,
   computeFlowRevision,
+  edgesToRemoveForDeletedNodeIds,
   FlowEditForbiddenError,
   FlowPrepareValidationError,
   FlowRevisionConflictError,
@@ -31,6 +32,7 @@ import {
   FLOW_MODAL_STOPPED_CONFIRM,
   FLOW_MODAL_STOPPED_TITLE,
   FLOW_TOAST_STOPPED,
+  flowNeedsOrphanEdgeHeal,
   formatFlowAppendReactivatedToast,
   formatFlowModalDeleteTitle,
   isFlowReadOnly,
@@ -245,9 +247,16 @@ function FlowEditor({
 
   const applyPendingDelete = useCallback(() => {
     if (!pendingDelete) return;
+    const deletedNodeIds = pendingDelete.removeChanges
+      .filter((change: any) => change?.type === 'remove' && typeof change.id === 'string')
+      .map((change: any) => change.id as string);
+    const edgeIdsToRemove = edgesToRemoveForDeletedNodeIds(edges, deletedNodeIds);
+    if (edgeIdsToRemove.length > 0) {
+      onEdgesChange(edgeIdsToRemove.map((id) => ({ type: 'remove', id })));
+    }
     onNodesChange(pendingDelete.removeChanges);
     setPendingDelete(null);
-  }, [onNodesChange, pendingDelete]);
+  }, [edges, onEdgesChange, onNodesChange, pendingDelete]);
 
   const applyPendingEdgeDelete = useCallback(() => {
     if (!pendingEdgeDelete) return;
@@ -512,6 +521,8 @@ export default function BuilderPage() {
   const queuedSaveRef = useRef<{ nodes: any[]; edges: any[] } | null>(null);
   const lastSavedFlowDataRef = useRef<CampaignFlowData | null>(null);
   const lastAppendToastRevisionRef = useRef<string | null>(null);
+  const orphanHealPendingRef = useRef<CampaignFlowData | null>(null);
+  const orphanHealAttemptedRef = useRef(false);
   const [pauseModalVisible, setPauseModalVisible] = useState(false);
   const [stoppedInfoModalVisible, setStoppedInfoModalVisible] = useState(false);
   const stoppedInfoShownRef = useRef(false);
@@ -553,6 +564,9 @@ export default function BuilderPage() {
               lastSavedFlowDataRef.current = sanitizedFlowData;
               flowRevisionRef.current = await computeFlowRevision(sanitizedFlowData);
               hasLoadedFlowRef.current = true;
+              if (flowNeedsOrphanEdgeHeal(flowData, sanitizedFlowData)) {
+                orphanHealPendingRef.current = sanitizedFlowData;
+              }
             }
           } catch (error) {
             console.error('Failed to parse flow_data:', error);
@@ -647,23 +661,38 @@ export default function BuilderPage() {
     lastSaveFailureRef.current = null;
     setCampaign((prev) => (prev ? { ...prev, flow_data: preparedFlow as any, status: saveResult.campaign.status } : prev));
 
+    // Sync lead-source field keys only — do not rehydrate the whole graph. Full
+    // __reactFlowSetFlow after every save snaps node positions back to the save
+    // snapshot and re-fires onFlowChange, which loops save ↔ position bounce.
     const preparedLeadSource = preparedFlow.nodes.find((node) => node.type === 'leadSource');
     const setNodes = (window as any).__reactFlowSetNodes;
     if (preparedLeadSource && typeof setNodes === 'function') {
-      setNodes((currentNodes: any[]) =>
-        currentNodes.map((node: any) =>
-          node.type === 'leadSource'
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  customFieldKeys: preparedLeadSource.data?.customFieldKeys,
-                  mappedStandardFieldKeys: preparedLeadSource.data?.mappedStandardFieldKeys,
-                },
-              }
-            : node
-        )
-      );
+      const nextCustom = preparedLeadSource.data?.customFieldKeys ?? [];
+      const nextMapped = preparedLeadSource.data?.mappedStandardFieldKeys;
+      setNodes((currentNodes: any[]) => {
+        let changed = false;
+        const nextNodes = currentNodes.map((node: any) => {
+          if (node.type !== 'leadSource') return node;
+          const prevCustom = node.data?.customFieldKeys ?? [];
+          const prevMapped = node.data?.mappedStandardFieldKeys;
+          const sameCustom =
+            prevCustom.length === nextCustom.length
+            && prevCustom.every((key: string, i: number) => key === nextCustom[i]);
+          const sameMapped =
+            JSON.stringify(prevMapped ?? null) === JSON.stringify(nextMapped ?? null);
+          if (sameCustom && sameMapped) return node;
+          changed = true;
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              customFieldKeys: nextCustom,
+              mappedStandardFieldKeys: nextMapped,
+            },
+          };
+        });
+        return changed ? nextNodes : currentNodes;
+      });
     }
 
     if (
@@ -677,6 +706,24 @@ export default function BuilderPage() {
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 2000);
   }, [campaignId, toast]);
+
+  // Persist orphan-edge cleanup so DB matches the sanitized canvas (running OK once SQL
+  // classifies on orphan-pruned graphs).
+  useEffect(() => {
+    if (isLoading || !campaign || !campaignId || orphanHealAttemptedRef.current) return;
+    const pending = orphanHealPendingRef.current;
+    if (!pending) return;
+    if (campaign.status === 'stopped') {
+      orphanHealPendingRef.current = null;
+      return;
+    }
+    orphanHealAttemptedRef.current = true;
+    orphanHealPendingRef.current = null;
+    void persistPreparedFlow(pending).catch((error) => {
+      console.error('Failed to persist orphan-edge heal on open:', error);
+      orphanHealAttemptedRef.current = false;
+    });
+  }, [campaign, campaignId, isLoading, persistPreparedFlow]);
 
   const showSaveFailureToast = useCallback((flowHash: string, message: string) => {
     const previous = lastSaveFailureRef.current;
@@ -803,17 +850,19 @@ export default function BuilderPage() {
   // Handle flow changes
   const handleFlowChange = useCallback((nodes: any[], edges: any[]) => {
     const status = campaign?.status;
+    const sanitizedIncoming = sanitizeFlowData(nodes, edges);
+    // Skip no-op echoes (programmatic setFlow, metadata flag sync, post-save
+    // lead-source patch) so we don't queue a save loop.
+    if (stableSerializeFlow(sanitizedIncoming) === lastSavedFlowRef.current) {
+      return;
+    }
+
     if (isFlowReadOnly(status)) {
-      const sanitizedIncoming = sanitizeFlowData(nodes, edges);
-      if (stableSerializeFlow(sanitizedIncoming) === lastSavedFlowRef.current) {
-        return;
-      }
       showStoppedToast();
       revertCanvasToLastSaved();
       return;
     }
 
-    const sanitizedIncoming = sanitizeFlowData(nodes, edges);
     const lastSaved = lastSavedFlowDataRef.current;
     if (status === 'running' && lastSaved) {
       const change = classifyFlowChange(lastSaved, sanitizedIncoming);

@@ -533,3 +533,173 @@ test('content-only flow save reactivates completed enrollments stranded on non-l
     await harness.cleanup();
   }
 });
+
+test('orphan outgoing edge to missing node does not reactivate tip completed enrollments', async () => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('append-orphan-edge'),
+  });
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Orphan Edge Non Reactivation',
+      status: 'paused',
+      flowKind: 'emailWaitEmail',
+      schedule: {
+        timezone: 'UTC',
+        start_hour: 0,
+        start_minute: 0,
+        end_hour: 23,
+        end_minute: 59,
+        days_of_week: [0, 1, 2, 3, 4, 5, 6],
+      } as unknown as Json,
+      leads: [
+        buildCampaignLead({
+          key: 'tip-completed',
+          email: `orphan-tip-${harness.namespace}@furnace.test`,
+          enrollment: buildCampaignEnrollment({
+            state: 'completed',
+            currentFlowNodeId: 'email-2',
+            nextRunAt: null,
+          }),
+          jobs: [
+            buildCampaignJob({
+              key: 'email-2-sent',
+              nodeFlowNodeId: 'email-2',
+              status: 'sent',
+              sentAt: new Date(Date.now() - 60_000).toISOString(),
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const enrollmentId = graph.leadsByKey.get('tip-completed')!.enrollmentId!;
+    const tipNodeId = graph.nodeIdsByFlowNodeId.get('email-2')!;
+
+    const { data: campaignBefore, error: campaignBeforeError } = await harness.supabase
+      .from('campaigns')
+      .select('flow_data')
+      .eq('id', graph.campaignId)
+      .single();
+    assert.equal(campaignBeforeError, null);
+
+    const rawFlow = structuredClone(campaignBefore!.flow_data) as CampaignFlowData;
+    rawFlow.edges = [
+      ...rawFlow.edges,
+      {
+        id: 'e-orphan-missing-target',
+        source: 'email-2',
+        target: 'missing-appended-node',
+      },
+    ];
+
+    // Bypass client normalize so we can seed orphan edges into flow_data the way
+    // a buggy delete historically did; the RPC must prune + not reactivate.
+    const { error: seedError } = await harness.supabase
+      .from('campaigns')
+      .update({
+        flow_data: rawFlow as unknown as Json,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', graph.campaignId);
+    assert.equal(seedError, null);
+
+    const contentOnly = structuredClone(rawFlow);
+    const email2 = contentOnly.nodes.find((node) => node.id === 'email-2');
+    assert.ok(email2);
+    const email2Data = email2.data as { variants?: Array<{ subject?: string }> };
+    assert.ok(email2Data.variants?.[0]);
+    email2Data.variants[0].subject = 'Orphan edge content save';
+
+    const saveResult = await updateCampaignFlowDataWithClient(harness.supabase, {
+      campaignId: graph.campaignId,
+      accountId: harness.env.accountId,
+      flowData: contentOnly as unknown as Json,
+      changeSource: 'orphan_edge_test',
+    });
+
+    assert.equal(saveResult.reactivated_count, 0);
+
+    const { data: campaignAfter, error: campaignAfterError } = await harness.supabase
+      .from('campaigns')
+      .select('flow_data')
+      .eq('id', graph.campaignId)
+      .single();
+    assert.equal(campaignAfterError, null);
+    const persisted = campaignAfter!.flow_data as CampaignFlowData;
+    assert.equal(
+      persisted.edges.some((edge) => edge.target === 'missing-appended-node'),
+      false,
+      'persisted flow_data must not keep orphan edges',
+    );
+
+    const after = await loadEnrollment(harness, enrollmentId);
+    assert.equal(after.state, 'completed');
+    assert.equal(after.current_node_id, tipNodeId);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('content-only flow save does not reactivate completed enrollments on aiCategorizer', async () => {
+  const harness = new CampaignDbHarness({
+    namespace: createCampaignTestNamespace('append-cat-exit'),
+  });
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Categorizer Exit Non Reactivation',
+      status: 'paused',
+      flowKind: 'emailWaitEmailCategorizer',
+      schedule: {
+        timezone: 'UTC',
+        start_hour: 0,
+        start_minute: 0,
+        end_hour: 23,
+        end_minute: 59,
+        days_of_week: [0, 1, 2, 3, 4, 5, 6],
+      } as unknown as Json,
+      leads: [
+        buildCampaignLead({
+          key: 'cat-completed',
+          email: `cat-exit-${harness.namespace}@furnace.test`,
+          enrollment: buildCampaignEnrollment({
+            state: 'completed',
+            currentFlowNodeId: 'aiCategorizer-1',
+            nextRunAt: null,
+          }),
+        }),
+      ],
+    });
+
+    const enrollmentId = graph.leadsByKey.get('cat-completed')!.enrollmentId!;
+    const categorizerNodeId = graph.nodeIdsByFlowNodeId.get('aiCategorizer-1')!;
+
+    const { data: campaignBefore, error: campaignBeforeError } = await harness.supabase
+      .from('campaigns')
+      .select('flow_data')
+      .eq('id', graph.campaignId)
+      .single();
+    assert.equal(campaignBeforeError, null);
+
+    const contentOnly = structuredClone(campaignBefore!.flow_data) as CampaignFlowData;
+    const categorizer = contentOnly.nodes.find((node) => node.id === 'aiCategorizer-1');
+    assert.ok(categorizer);
+    (categorizer.data as { label?: string }).label = 'Categorizer content edit';
+
+    const saveResult = await updateCampaignFlowDataWithClient(harness.supabase, {
+      campaignId: graph.campaignId,
+      accountId: harness.env.accountId,
+      flowData: contentOnly as unknown as Json,
+      changeSource: 'categorizer_exit_test',
+    });
+
+    assert.equal(saveResult.reactivated_count, 0);
+
+    const after = await loadEnrollment(harness, enrollmentId);
+    assert.equal(after.state, 'completed');
+    assert.equal(after.current_node_id, categorizerNodeId);
+  } finally {
+    await harness.cleanup();
+  }
+});

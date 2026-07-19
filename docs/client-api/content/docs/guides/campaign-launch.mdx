@@ -186,10 +186,10 @@ curl -sS -X POST '{base_url}/v1/campaigns/1d8dc901-3d2d-4d9f-9dcc-4f8b3aa1a1fb/l
 | --- | --- | --- |
 | `draft` | Fully editable (add/remove nodes, rewire edges, delete variants) | Allowed |
 | `running` | Structural edits return `flow_locked` — pause in the builder first | Allowed (subject, body, wait duration, add variant, toggle active, positions, lead source fields, categorizer config) |
-| `paused` | Fully editable (flow saves reactivate completed leads parked on non-leaf nodes) | Allowed |
+| `paused` | Fully editable (flow saves reactivate completed leads on non-categorizer nodes with a live next step) | Allowed |
 | `stopped` | Locked — all flow edits return `flow_locked` | Blocked |
 
-Flow saves return `reactivated_count` when completed enrollments are parked on any non-leaf node (a node with an outgoing edge): those enrollments are set back to `active` so they continue into the next steps after resume.
+Flow saves return `reactivated_count` when completed enrollments are parked on a non-categorizer node that still has an outgoing edge to a node present in the flow: those enrollments are set back to `active` so they continue into the next steps after resume. Categorizer category-exit completions are not reactivated.
 
 ## Draft vs live lock
 

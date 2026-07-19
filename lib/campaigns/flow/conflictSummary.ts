@@ -48,6 +48,8 @@ const UI_NODE_DATA_FIELDS = new Set([
   'positionAbsolute',
   'resizing',
   'readOnly',
+  'canDelete',
+  'structuralBlocked',
 ]);
 
 const DERIVED_NODE_DATA_FIELDS = new Set([

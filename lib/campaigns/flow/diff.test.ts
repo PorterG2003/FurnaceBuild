@@ -7,7 +7,7 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-test('detectFlowAppend finds former leaves that gained an outgoing edge', () => {
+test('legacy detectFlowAppend finds former leaves that gained an outgoing edge', () => {
   const original = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
   const appended = clone(original);
   appended.nodes.push({
@@ -35,7 +35,7 @@ test('detectFlowAppend finds former leaves that gained an outgoing edge', () => 
   assert.deepEqual(detectFlowAppend(original, appended).extendedFlowNodeIds, ['email-2']);
 });
 
-test('detectFlowAppend ignores insert-in-middle and rewire-only changes', () => {
+test('legacy detectFlowAppend ignores insert-in-middle and rewire-only changes', () => {
   const original = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
   const middleInsert = clone(original);
   middleInsert.nodes.push({
@@ -61,7 +61,7 @@ test('detectFlowAppend ignores insert-in-middle and rewire-only changes', () => 
   assert.deepEqual(detectFlowAppend(original, rewire).extendedFlowNodeIds, []);
 });
 
-test('classifyFlowChange and detectFlowAppend share append semantics', () => {
+test('legacy detectFlowAppend shares tip-append geometry with classifyFlowChange', () => {
   const original = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
   const appended = clone(original);
   appended.nodes.push({

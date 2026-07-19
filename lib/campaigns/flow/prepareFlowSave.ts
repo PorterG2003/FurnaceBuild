@@ -1,3 +1,11 @@
+/**
+ * Flow mutation contract (client + API):
+ * 1. prepareFlowSave — normalize (incl. orphan-edge prune), syncFields, classify, lifecycle, validate, revision
+ * 2. SQL assert_flow_edit_allowed — authoritative stopped / running-structural policy
+ * 3. SQL reactivate_completed_enrollments_on_non_leaves — enrollment side effect on write
+ *
+ * Do not add a parallel heal/classifier outside these layers.
+ */
 import { classifyFlowChange } from './diff.js';
 import { assertFlowEditAllowed } from './lifecycle.js';
 import { normalizeFlowData } from './normalize.js';
@@ -9,7 +17,6 @@ import {
 import { syncFields, type FieldSyncResult } from './syncFields.js';
 import type {
   CampaignFlowData,
-  CampaignFlowNode,
   CampaignStatus,
   FlowChangeKind,
   FlowValidationIssue,

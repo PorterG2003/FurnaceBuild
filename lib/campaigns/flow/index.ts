@@ -5,6 +5,11 @@ export {
 } from './examples';
 export { classifyFlowChange, detectFlowAppend, type FlowAppendDetection, type FlowChangeSummary } from './diff';
 export {
+  edgesToRemoveForDeletedNodeIds,
+  flowNeedsOrphanEdgeHeal,
+  pruneOrphanEdges,
+} from './graphIntegrity';
+export {
   buildFlowConflictSummary,
   buildFlowPreviewSteps,
   type FlowConflictFieldChange,

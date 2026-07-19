@@ -946,7 +946,7 @@ export function buildClientApiComponents() {
           change_reasons: { type: 'array', items: { type: 'string' } },
           reactivated_count: {
             type: 'integer',
-            description: 'Completed enrollments reactivated when parked on non-leaf nodes after a flow save.',
+            description: 'Completed enrollments reactivated on non-categorizer nodes with a live outgoing edge after a flow save.',
           },
         },
         required: ['flow', 'flow_revision', 'field_sync', 'reactivated_count'],

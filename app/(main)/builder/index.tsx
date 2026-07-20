@@ -656,7 +656,7 @@ export default function BuilderPage() {
     const sanitizedPrepared = sanitizeFlowData(preparedFlow.nodes as any[], preparedFlow.edges as any[]);
     lastSavedFlowRef.current = stableSerializeFlow(sanitizedPrepared);
     lastSavedFlowDataRef.current = sanitizedPrepared;
-    const nextRevision = await computeFlowRevision(preparedFlow);
+    const nextRevision = await computeFlowRevision(sanitizedPrepared);
     flowRevisionRef.current = nextRevision;
     lastSaveFailureRef.current = null;
     setCampaign((prev) => (prev ? { ...prev, flow_data: preparedFlow as any, status: saveResult.campaign.status } : prev));

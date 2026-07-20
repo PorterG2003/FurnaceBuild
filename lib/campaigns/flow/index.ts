@@ -12,7 +12,6 @@ export {
 export {
   buildFlowConflictSummary,
   buildFlowPreviewSteps,
-  isSpuriousFlowConflict,
   type FlowConflictFieldChange,
   type FlowConflictNodeDiff,
   type FlowConflictSummary,

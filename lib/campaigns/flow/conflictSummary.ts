@@ -846,12 +846,3 @@ export function buildFlowConflictSummary(
     sequenceSummary,
   };
 }
-
-/** True when revision hashes differ but the conflict UI would show no meaningful delta. */
-export function isSpuriousFlowConflict(
-  localFlow: CampaignFlowData,
-  savedFlow: CampaignFlowData,
-): boolean {
-  const summary = buildFlowConflictSummary(localFlow, savedFlow);
-  return summary.nodeDiffs.length === 0 && !summary.sequenceSummary;
-}

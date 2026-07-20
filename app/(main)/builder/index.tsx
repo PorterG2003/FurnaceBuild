@@ -36,7 +36,6 @@ import {
   formatFlowAppendReactivatedToast,
   formatFlowModalDeleteTitle,
   isFlowReadOnly,
-  isSpuriousFlowConflict,
   isStructuralEditAllowed,
   normalizeFlowData,
   prepareFlowSave,
@@ -763,20 +762,14 @@ export default function BuilderPage() {
       const externallyChanged =
         !forceOverwrite && !isFirstSave && serverRevision !== flowRevisionRef.current;
       if (externallyChanged) {
-        // Revision noise (lock flags, edge UI data, etc.) can diverge the hash while
-        // the conflict UI would show "No step changes". Rebase and continue saving.
-        if (isSpuriousFlowConflict(sanitizedFlowData, serverFlow)) {
-          flowRevisionRef.current = serverRevision;
-        } else {
-          setFlowConflict({
-            localFlow: sanitizedFlowData,
-            serverFlow,
-            serverRevision,
-          });
-          pendingSaveRef.current = { nodes, edges };
-          setSaveStatus('idle');
-          return;
-        }
+        setFlowConflict({
+          localFlow: sanitizedFlowData,
+          serverFlow,
+          serverRevision,
+        });
+        pendingSaveRef.current = { nodes, edges };
+        setSaveStatus('idle');
+        return;
       }
 
       let prepared;
@@ -792,39 +785,21 @@ export default function BuilderPage() {
         });
       } catch (error) {
         if (error instanceof FlowRevisionConflictError) {
-          // Should be rare (same-tab hash of already-normalized server flow). If the
-          // visible conflict is empty, skip the advisory gate and continue.
-          if (isSpuriousFlowConflict(sanitizedFlowData, serverFlow)) {
-            flowRevisionRef.current = error.currentFlowRevision;
-            prepared = await prepareFlowSave({
-              incomingFlow: sanitizedFlowData,
-              existingFlow: serverFlow,
-              campaignStatus: latestCampaign.status,
-              phase: 'draft',
-              ifMatch: null,
-            });
-          } else {
-            setFlowConflict({
-              localFlow: sanitizedFlowData,
-              serverFlow,
-              serverRevision: error.currentFlowRevision,
-            });
-            pendingSaveRef.current = { nodes, edges };
-            setSaveStatus('idle');
-            return;
-          }
-        } else if (error instanceof FlowPrepareValidationError) {
+          setFlowConflict({
+            localFlow: sanitizedFlowData,
+            serverFlow,
+            serverRevision,
+          });
+          pendingSaveRef.current = { nodes, edges };
+          setSaveStatus('idle');
+          return;
+        }
+        if (error instanceof FlowPrepareValidationError) {
           showSaveFailureToast(serializedFlow, error.issues[0]?.message || error.message);
           revertCanvasToLastSaved();
-          setSaveStatus('error');
-          setTimeout(() => setSaveStatus('idle'), 3000);
-          return;
         } else if (error instanceof FlowEditForbiddenError) {
           showSaveFailureToast(serializedFlow, error.message);
           revertCanvasToLastSaved();
-          setSaveStatus('error');
-          setTimeout(() => setSaveStatus('idle'), 3000);
-          return;
         } else {
           console.error('Failed to save flow:', error);
           showSaveFailureToast(
@@ -832,10 +807,10 @@ export default function BuilderPage() {
             error instanceof Error ? error.message : 'Flow validation failed',
           );
           revertCanvasToLastSaved();
-          setSaveStatus('error');
-          setTimeout(() => setSaveStatus('idle'), 3000);
-          return;
         }
+        setSaveStatus('error');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+        return;
       }
 
       await persistPreparedFlow(prepared.flow);

@@ -42,7 +42,7 @@ async function createOwnerClient(harness: ClientApiDbHarness) {
   });
 }
 
-async function seedCampaignReplyJob(harness: ClientApiDbHarness, status: 'queued' | 'failed' = 'queued') {
+async function seedCampaignPriorityJob(harness: ClientApiDbHarness, status: 'queued' | 'failed' = 'queued') {
   const graph = await harness.campaignHarness.createCampaignGraph({
     name: 'Pending Campaign Reply RPC',
     status: 'running',
@@ -60,11 +60,11 @@ async function seedCampaignReplyJob(harness: ClientApiDbHarness, status: 'queued
         }),
         jobs: [
           buildCampaignJob({
-            key: 'campaign-reply',
+            key: 'campaign-priority',
             nodeFlowNodeId: 'email-3',
             status,
             scheduledAt: new Date(Date.now() + 60_000).toISOString(),
-            messageType: 'campaign_reply',
+            messageType: 'campaign_priority',
             sendWaitReason: 'Hourly send limit reached for this mailbox',
           }),
         ],
@@ -91,7 +91,7 @@ async function seedCampaignReplyJob(harness: ClientApiDbHarness, status: 'queued
   });
 
   const lead = graph.leadsByKey.get('campaign-reply')!;
-  const jobId = lead.messageJobIdsByKey.get('campaign-reply')!;
+  const jobId = lead.messageJobIdsByKey.get('campaign-priority')!;
   const threadId = lead.threadId!;
   const enrollmentId = lead.enrollmentId!;
 
@@ -99,7 +99,7 @@ async function seedCampaignReplyJob(harness: ClientApiDbHarness, status: 'queued
     .from('message_jobs')
     .update({
       message_data: {
-        source: 'campaign_reply',
+        source: 'campaign_priority',
         thread_id: threadId,
         subject: 'Re: Interested in details',
         to_email: `campaign-reply-${harness.namespace}@furnace.test`,
@@ -177,7 +177,7 @@ async function seedManualReplyJob(harness: ClientApiDbHarness, status: 'queued' 
 }
 
 test(
-  'request_immediate_manual_send accepts queued campaign_reply jobs',
+  'request_immediate_manual_send accepts queued campaign_priority jobs',
   { skip: !publishableKey },
   async (t) => {
     const harness = new ClientApiDbHarness({
@@ -185,7 +185,7 @@ test(
     });
 
     try {
-      const { jobId } = await seedCampaignReplyJob(harness, 'queued');
+      const { jobId } = await seedCampaignPriorityJob(harness, 'queued');
       const ownerClient = await createOwnerClient(harness);
 
       const rpcResult = await ownerClient.rpc('request_immediate_manual_send', {
@@ -213,7 +213,7 @@ test(
 );
 
 test(
-  'cancel_pending_outbound_job marks campaign_reply as inbox_manual_override and wakes the enrollment',
+  'cancel_pending_outbound_job marks campaign_priority as inbox_manual_override and wakes the enrollment',
   { skip: !publishableKey },
   async (t) => {
     const harness = new ClientApiDbHarness({
@@ -221,7 +221,7 @@ test(
     });
 
     try {
-      const { jobId, enrollmentId } = await seedCampaignReplyJob(harness, 'queued');
+      const { jobId, enrollmentId } = await seedCampaignPriorityJob(harness, 'queued');
       const ownerClient = await createOwnerClient(harness);
 
       const rpcResult = await ownerClient.rpc('cancel_pending_outbound_job', {

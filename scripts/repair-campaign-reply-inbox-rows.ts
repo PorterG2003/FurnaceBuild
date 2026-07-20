@@ -1,5 +1,6 @@
 /**
- * Preview or repair sent `campaign_reply` jobs that never produced the
+ * Preview or repair sent `campaign_priority` jobs (plus legacy `campaign_reply`
+ * rows during the compatibility window) that never produced the
  * corresponding `email_messages` row used by Master Inbox.
  *
  * Usage:
@@ -238,7 +239,7 @@ async function main() {
   let jobsQuery = supabase
     .from('message_jobs')
     .select('id, campaign_id, enrollment_id, lead_id, mailbox_id, provider_message_id, sent_at, created_at, message_data')
-    .eq('message_type', 'campaign_reply')
+    .in('message_type', ['campaign_priority', 'campaign_reply'])
     .eq('status', 'sent')
     .order('sent_at', { ascending: false })
     .limit(limit);
@@ -249,13 +250,13 @@ async function main() {
 
   const { data: jobs, error: jobsError } = await jobsQuery;
   if (jobsError) {
-    console.error('Failed to load sent campaign_reply jobs:', jobsError.message);
+    console.error('Failed to load sent campaign_priority/campaign_reply jobs:', jobsError.message);
     process.exit(1);
   }
 
   const replyJobs = (jobs ?? []) as ReplyJobRow[];
   if (replyJobs.length === 0) {
-    console.log('No sent campaign_reply jobs found.');
+    console.log('No sent campaign_priority or legacy campaign_reply jobs found.');
     return;
   }
 
@@ -342,7 +343,7 @@ async function main() {
     );
 
   if (candidates.length === 0) {
-    console.log(`Checked ${replyJobs.length} sent campaign_reply jobs. No missing or empty inbox rows found.`);
+    console.log(`Checked ${replyJobs.length} sent campaign_priority/campaign_reply jobs. No missing or empty inbox rows found.`);
     return;
   }
 
@@ -385,7 +386,7 @@ async function main() {
 
   const skipped = candidates.filter((candidate) => !repairable.includes(candidate));
 
-  console.log(`Scanned sent campaign_reply jobs: ${replyJobs.length}`);
+  console.log(`Scanned sent campaign_priority/campaign_reply jobs: ${replyJobs.length}`);
   console.log(`Missing, relink, or empty-content inbox rows: ${candidates.length}`);
   console.log(`Repairable candidates: ${repairable.length}`);
   console.log(`Skipped candidates: ${skipped.length}`);

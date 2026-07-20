@@ -138,7 +138,7 @@ function buildCategorizerFlowData(): Json {
         position: { x: 220, y: 0 },
         data: {
           label: 'Initial Touch',
-          send_mode: 'new',
+          priority: false,
           variants: [
             {
               id: VARIANT_IDS.email1,
@@ -164,7 +164,7 @@ function buildCategorizerFlowData(): Json {
         position: { x: 700, y: 0 },
         data: {
           label: 'Follow-up',
-          send_mode: 'new',
+          priority: false,
           variants: [
             {
               id: VARIANT_IDS.email2,
@@ -193,7 +193,7 @@ function buildCategorizerFlowData(): Json {
         position: { x: 1180, y: -160 },
         data: {
           label: 'Interested Reply',
-          send_mode: 'reply',
+          priority: true,
           variants: [
             {
               id: VARIANT_IDS.interestedReply,
@@ -213,7 +213,7 @@ function buildCategorizerFlowData(): Json {
         position: { x: 1180, y: 0 },
         data: {
           label: 'Neutral Nudge',
-          send_mode: 'reply',
+          priority: true,
           variants: [
             {
               id: VARIANT_IDS.neutralReply,
@@ -233,7 +233,7 @@ function buildCategorizerFlowData(): Json {
         position: { x: 1180, y: 160 },
         data: {
           label: 'Breakup',
-          send_mode: 'new',
+          priority: true,
           variants: [
             {
               id: VARIANT_IDS.breakup,
@@ -510,7 +510,7 @@ async function wakeDeferredReplyModeEnrollments(ctx: SeedContext) {
     .select('id')
     .eq('campaign_id', store.campaignId)
     .eq('node_type', 'email')
-    .contains('node_data', { send_mode: 'reply' });
+    .contains('node_data', { priority: true });
   if (nodeErr) {
     throw new Error(`categorizer-flow: reply node lookup failed: ${nodeErr.message}`);
   }

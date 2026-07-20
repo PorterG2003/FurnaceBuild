@@ -268,7 +268,7 @@ function buildFlowFromSmartleadSequences(
       position: { x, y: 0 },
       data: {
         label: `Email ${seqNumber}`,
-        send_mode: 'new',
+        priority: false,
         variants: emailVariants,
       },
     });

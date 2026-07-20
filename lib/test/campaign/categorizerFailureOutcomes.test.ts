@@ -9,15 +9,15 @@ import {
 } from './fixtures';
 import { ThreadManager } from '../../../workers/inbox-checker-worker/src/thread-manager';
 import { resetCategorizerLlmFailureTracking } from '../../../workers/scheduler-worker/src/node-handlers/ai-categorizer-handler';
-import { resetReplyEmailWarningTracking } from '../../../workers/scheduler-worker/src/node-handlers/reply-email-handler';
+import { resetPriorityEmailWarningTracking } from '../../../workers/scheduler-worker/src/node-handlers/priority-email-handler';
 import {
   buildProcessedReply,
-  createScriptedCategorizerTransport,
   createTestSchedulerWorker,
   getEnrollmentRow,
   getMailboxRow,
   getThreadRow,
   processEnrollmentIds,
+  simulateClassifyLambda,
 } from './categorizer-helpers';
 
 /**
@@ -137,7 +137,7 @@ async function latestThreadId(harness: CampaignDbHarness, enrollmentId: string):
   return id;
 }
 
-test('LLM failures (5xx, garbage JSON, transport throw) defer +15min with no branch and no category write; recovery works', async () => {
+test('LLM classify failures (5xx, garbage JSON, transport throw) mark the thread failed and keep the enrollment parked with the hold intact; a later successful classify branches', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-fail-llm') });
   resetCategorizerLlmFailureTracking();
 
@@ -146,34 +146,41 @@ test('LLM failures (5xx, garbage JSON, transport throw) defer +15min with no bra
     await deliverReply(harness, seeded, { bodyText: 'Yes, very interested!' });
     const threadId = await latestThreadId(harness, seeded.enrollmentId);
 
-    const scripted = createScriptedCategorizerTransport([
+    const scheduler = createTestSchedulerWorker(harness);
+
+    // Classification is consumer-only in the scheduler now: every classify
+    // failure mode happens in the classify Lambda, which marks the thread
+    // classification_status='failed' and writes no category. The scheduler then
+    // parks (no branch), keeping the outbound hold intact until a successful
+    // classify wakes it.
+    const failureModes = [
       { kind: 'fail', details: 'upstream 500', httpStatus: 500 },
       { kind: 'garbage', text: 'I think this reply is interested, hope that helps!' },
       { kind: 'throw', message: 'socket timeout' },
-      { kind: 'classify', category: 'Interested' },
-    ]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
+    ] as const;
 
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      const before = Date.now();
+    for (const step of failureModes) {
+      const classify = await simulateClassifyLambda(harness, { threadId }, [step]);
+      assert.equal(classify.ok, false, `${step.kind}: classify Lambda reports failure`);
+
+      const failedThread = await getThreadRow(harness, threadId);
+      assert.equal(failedThread.category, null, `${step.kind}: no category write on failure`);
+      assert.equal(failedThread.classification_status, 'failed', `${step.kind}: thread marked failed`);
+
       await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
-
       const enrollment = await getEnrollmentRow(harness, seeded.enrollmentId);
-      assert.equal(enrollment.state, 'active', `attempt ${attempt}: still active`);
-      assert.equal(enrollment.reply_thread_id, null, `attempt ${attempt}: no branch on failure`);
+      assert.equal(enrollment.state, 'active', `${step.kind}: still active`);
+      assert.equal(enrollment.reply_thread_id, null, `${step.kind}: no branch on failure`);
       assert.equal(
         enrollment.current_node_id,
         seeded.graph.nodeIdsByFlowNodeId.get('aiCategorizer-1'),
-        `attempt ${attempt}: stays at the categorizer`,
+        `${step.kind}: stays at the categorizer`,
       );
-      const nextRunMs = Date.parse(enrollment.next_run_at);
-      assert.ok(
-        nextRunMs >= before + 10 * 60_000 && nextRunMs <= before + 20 * 60_000,
-        `attempt ${attempt}: retry deferred ~15min (got ${enrollment.next_run_at})`,
+      assert.equal(
+        enrollment.next_run_at,
+        null,
+        `${step.kind}: parked, waiting for the classifier (zero polling cost)`,
       );
-
-      const thread = await getThreadRow(harness, threadId);
-      assert.equal(thread.category, null, `attempt ${attempt}: no category write on failure`);
 
       // Hold stays intact through failures - the outbound sequence must not leak.
       const { data: heldJob } = await harness.supabase
@@ -181,17 +188,22 @@ test('LLM failures (5xx, garbage JSON, transport throw) defer +15min with no bra
         .select('status')
         .eq('id', seeded.queuedJobId)
         .single();
-      assert.equal(heldJob?.status, 'held', `attempt ${attempt}: hold intact`);
+      assert.equal(heldJob?.status, 'held', `${step.kind}: hold intact`);
     }
 
-    // 4th attempt recovers and branches normally.
-    await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
-    assert.equal(scripted.calls.length, 4);
-    const recovered = await getEnrollmentRow(harness, seeded.enrollmentId);
-    assert.equal(recovered.reply_thread_id, threadId);
-    assert.equal(recovered.current_node_id, seeded.graph.nodeIdsByFlowNodeId.get('email-3'));
+    // A later successful classify writes the category, wakes, and branches.
+    const recovered = await simulateClassifyLambda(harness, { threadId }, [
+      { kind: 'classify', category: 'Interested' },
+    ]);
+    assert.equal(recovered.ok, true);
     const thread = await getThreadRow(harness, threadId);
     assert.equal(thread.category, 'Interested');
+    assert.equal(thread.classification_status, 'complete');
+
+    await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
+    const branched = await getEnrollmentRow(harness, seeded.enrollmentId);
+    assert.equal(branched.reply_thread_id, threadId);
+    assert.equal(branched.current_node_id, seeded.graph.nodeIdsByFlowNodeId.get('email-3'));
   } finally {
     await harness.cleanup();
   }
@@ -206,13 +218,14 @@ test('absurd model return date (in the past) is discarded end-to-end: Auto Reply
     await deliverReply(harness, seeded, {
       bodyText: 'Out of office. Back on January 1st 2020.',
     });
+    const threadId = await latestThreadId(harness, seeded.enrollmentId);
 
     const before = Date.now();
-    const scripted = createScriptedCategorizerTransport([
-      // Past date: the parse-time sanitizer must discard it.
+    // Past date: the parse-time sanitizer in the classify Lambda must discard it.
+    await simulateClassifyLambda(harness, { threadId }, [
       { kind: 'classify', category: 'Auto Reply', returnDate: '2020-01-01' },
     ]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
+    const scheduler = createTestSchedulerWorker(harness);
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
 
     const restored = await getEnrollmentRow(harness, seeded.enrollmentId);
@@ -292,8 +305,8 @@ test('park RPC is idempotent: double delivery never re-snapshots, replies after 
     assert.equal(afterSecond.held_next_run_at, snapshotNextRun);
 
     // Branch.
-    const scripted = createScriptedCategorizerTransport([{ kind: 'classify', category: 'Interested' }]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
+    await simulateClassifyLambda(harness, { threadId }, [{ kind: 'classify', category: 'Interested' }]);
+    const scheduler = createTestSchedulerWorker(harness);
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
     const branched = await getEnrollmentRow(harness, seeded.enrollmentId);
     assert.equal(branched.reply_thread_id, threadId);
@@ -308,28 +321,28 @@ test('park RPC is idempotent: double delivery never re-snapshots, replies after 
     assert.equal(afterLateReply.current_node_id, branchedNode, 'post-branch reply must not re-route');
 
     // The next tick processes the branch target (email-3), not the
-    // categorizer - the branch decision is final and no LLM is consulted.
+    // categorizer - the branch decision is final and re-classification is moot.
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
     const stable = await getEnrollmentRow(harness, seeded.enrollmentId);
     assert.equal(stable.reply_thread_id, threadId);
-    assert.equal(scripted.calls.length, 1, 'no further LLM calls after the branch');
+    assert.equal(stable.current_node_id, branchedNode, 'stays on the branch target');
   } finally {
     await harness.cleanup();
   }
 });
 
-test('thread mailbox unavailable: campaign_reply job is NOT created (no fallback mailbox), retries in 6h, recovers when the mailbox returns', async () => {
+test('thread mailbox unavailable: campaign_priority job is NOT created (no fallback mailbox), retries in 6h, recovers when the mailbox returns', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-fail-mailbox') });
   resetCategorizerLlmFailureTracking();
-  resetReplyEmailWarningTracking();
+  resetPriorityEmailWarningTracking();
 
   try {
     const seeded = await seedMidSequence(harness, { name: 'Categorizer Mailbox Unavailable', useAi: true });
     await deliverReply(harness, seeded, { bodyText: 'Very interested!' });
     const threadId = await latestThreadId(harness, seeded.enrollmentId);
 
-    const scripted = createScriptedCategorizerTransport([{ kind: 'classify', category: 'Interested' }]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
+    await simulateClassifyLambda(harness, { threadId }, [{ kind: 'classify', category: 'Interested' }]);
+    const scheduler = createTestSchedulerWorker(harness);
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
 
     // Knock out the thread mailbox before the reply email is armed.
@@ -346,7 +359,7 @@ test('thread mailbox unavailable: campaign_reply job is NOT created (no fallback
       .from('message_jobs')
       .select('id')
       .eq('enrollment_id', seeded.enrollmentId)
-      .eq('message_type', 'campaign_reply');
+      .in('message_type', ['campaign_priority', 'campaign_reply']);
     assert.equal(replyJobs?.length, 0, 'no job may be created against an unavailable mailbox');
 
     const deferred = await getEnrollmentRow(harness, seeded.enrollmentId);
@@ -368,15 +381,16 @@ test('thread mailbox unavailable: campaign_reply job is NOT created (no fallback
       .from('message_jobs')
       .select('id, mailbox_id, message_type')
       .eq('enrollment_id', seeded.enrollmentId)
-      .eq('message_type', 'campaign_reply');
+      .in('message_type', ['campaign_priority', 'campaign_reply']);
     assert.equal(createdJobs?.length, 1);
     assert.equal(createdJobs?.[0]?.mailbox_id, thread.mailbox_id, 'always the thread mailbox, never a fallback');
+    assert.equal(createdJobs?.[0]?.message_type, 'campaign_priority');
   } finally {
     await harness.cleanup();
   }
 });
 
-test('campaign_reply scheduling respects the campaign schedule window', async () => {
+test('campaign_priority scheduling respects the campaign schedule window', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-fail-window') });
   resetCategorizerLlmFailureTracking();
 
@@ -387,9 +401,10 @@ test('campaign_reply scheduling respects the campaign schedule window', async ()
       schedule: CHICAGO_SCHEDULE,
     });
     await deliverReply(harness, seeded, { bodyText: 'Interested!' });
+    const threadId = await latestThreadId(harness, seeded.enrollmentId);
 
-    const scripted = createScriptedCategorizerTransport([{ kind: 'classify', category: 'Interested' }]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
+    await simulateClassifyLambda(harness, { threadId }, [{ kind: 'classify', category: 'Interested' }]);
+    const scheduler = createTestSchedulerWorker(harness);
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]); // branch
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]); // arm reply email
 
@@ -397,7 +412,7 @@ test('campaign_reply scheduling respects the campaign schedule window', async ()
       .from('message_jobs')
       .select('scheduled_at')
       .eq('enrollment_id', seeded.enrollmentId)
-      .eq('message_type', 'campaign_reply');
+      .in('message_type', ['campaign_priority', 'campaign_reply']);
     assert.equal(replyJobs?.length, 1);
 
     const formatter = new Intl.DateTimeFormat('en-US', {
@@ -420,24 +435,25 @@ test('campaign_reply scheduling respects the campaign schedule window', async ()
   }
 });
 
-test('reply-mode node with no reply_thread_id stops the enrollment with an error (never a cold send)', async () => {
+test('priority node with no reply_thread_id still arms a campaign_priority job from the lead mailbox', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-fail-nothread') });
-  resetReplyEmailWarningTracking();
+  resetPriorityEmailWarningTracking();
   const now = Date.now();
 
   try {
     const graph = await harness.createCampaignGraph({
-      name: 'Categorizer Reply Node No Thread',
+      name: 'Categorizer Priority Node No Thread',
       status: 'running',
       flowKind: 'emailWaitEmailCategorizer',
       categorizerUseAi: true,
       leads: [
         buildCampaignLead({
-          key: 'misconfigured',
-          email: `misconfigured-${harness.namespace}@furnace.test`,
+          key: 'no-thread',
+          email: `no-thread-${harness.namespace}@furnace.test`,
           mailboxKey: 'mailbox-1',
           enrollment: buildCampaignEnrollment({
-            // Directly at the reply-mode email with no upstream branch.
+            // Directly at the priority email with no upstream branch /
+            // reply_thread_id. Priority no longer requires a reply thread.
             state: 'active',
             currentFlowNodeId: 'email-3',
             nextRunAt: new Date(now - 60_000).toISOString(),
@@ -446,20 +462,24 @@ test('reply-mode node with no reply_thread_id stops the enrollment with an error
       ],
     });
 
-    const lead = graph.leadsByKey.get('misconfigured')!;
+    const lead = graph.leadsByKey.get('no-thread')!;
+    const mailboxId = graph.mailboxIdsByKey.get('mailbox-1')!;
     const scheduler = createTestSchedulerWorker(harness);
     await processEnrollmentIds(harness, scheduler, [lead.enrollmentId!]);
 
     const enrollment = await getEnrollmentRow(harness, lead.enrollmentId!);
-    assert.equal(enrollment.state, 'stopped');
-    assert.equal(enrollment.stopped_reason, 'error');
-    assert.match(String(enrollment.stopped_error_message), /reply thread/i);
+    assert.equal(enrollment.state, 'active');
+    assert.equal(enrollment.stopped_reason, null);
 
     const { data: jobs } = await harness.supabase
       .from('message_jobs')
-      .select('id')
+      .select('id, message_type, mailbox_id, interval_id, status')
       .eq('enrollment_id', lead.enrollmentId!);
-    assert.equal(jobs?.length, 0, 'no job of any kind may be created');
+    assert.equal(jobs?.length, 1, 'priority handler must create exactly one job');
+    assert.equal(jobs?.[0]?.message_type, 'campaign_priority');
+    assert.equal(jobs?.[0]?.mailbox_id, mailboxId);
+    assert.equal(jobs?.[0]?.interval_id, null);
+    assert.equal(jobs?.[0]?.status, 'queued');
   } finally {
     await harness.cleanup();
   }

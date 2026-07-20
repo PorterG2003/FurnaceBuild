@@ -17,7 +17,7 @@ import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { Campaign } from '@/lib/supabase/types';
 
 export type PendingReplyInfo = {
-  kind: 'reply' | 'forward' | 'campaign_reply';
+  kind: 'reply' | 'forward' | 'campaign_priority';
   threadId: string;
   jobId: string;
   isFailed?: boolean;
@@ -271,31 +271,31 @@ export function InboxMessageList({
                           : undefined
                       }
                       pendingDisplayLabel={
-                        pendingInfo?.kind === 'campaign_reply'
+                        pendingInfo?.kind === 'campaign_priority'
                           ? 'Campaign reply'
                           : pendingInfo?.kind === 'forward'
                             ? 'Forward'
                             : undefined
                       }
                       pendingSecondaryLabel={
-                        pendingInfo?.kind === 'campaign_reply'
+                        pendingInfo?.kind === 'campaign_priority'
                           ? pendingInfo.campaignName ?? null
                           : pendingInfo?.kind === 'forward'
                             ? message.to_email
                             : undefined
                       }
                       cancelLabel={
-                        pendingInfo?.kind === 'campaign_reply'
+                        pendingInfo?.kind === 'campaign_priority'
                           ? 'Cancel scheduled reply'
                           : 'Cancel send'
                       }
                       cancelConfirmTitle={
-                        pendingInfo?.kind === 'campaign_reply'
+                        pendingInfo?.kind === 'campaign_priority'
                           ? 'Cancel automated reply?'
                           : 'Discard this message?'
                       }
                       cancelConfirmMessage={
-                        pendingInfo?.kind === 'campaign_reply'
+                        pendingInfo?.kind === 'campaign_priority'
                           ? 'This will stop the automated reply from sending and let you take over manually.'
                           : 'This will cancel the pending manual message before it sends.'
                       }

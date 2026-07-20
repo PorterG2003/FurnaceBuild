@@ -49,7 +49,7 @@ async function createReservedJobGraph(
     jobKey: string;
     leadKey: string;
     emailLocal: string;
-    messageType: 'campaign' | 'campaign_reply' | 'inbox_reply';
+    messageType: 'campaign' | 'campaign_priority' | 'campaign_reply' | 'inbox_reply';
   },
 ) {
   const now = Date.now();
@@ -128,7 +128,7 @@ test('inbox_reply skips the daily throttle wait', async () => {
   }
 });
 
-test('campaign_reply also skips the daily throttle wait', async () => {
+test('campaign_priority also skips the daily throttle wait', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('reply-lane-daily') });
 
   try {
@@ -137,7 +137,7 @@ test('campaign_reply also skips the daily throttle wait', async () => {
       jobKey: 'campaign-reply',
       leadKey: 'campaign-reply',
       emailLocal: 'campaign-reply',
-      messageType: 'campaign_reply',
+      messageType: 'campaign_priority',
     });
 
     const lead = graph.leadsByKey.get('campaign-reply')!;

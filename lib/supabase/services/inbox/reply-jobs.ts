@@ -44,7 +44,7 @@ export interface ThreadAutoReplyPipelineState {
 
 export type PendingInboxManualSource = 'inbox_reply' | 'inbox_forward';
 
-export type PendingCampaignReplySource = 'campaign_reply';
+export type PendingCampaignReplySource = 'campaign_priority';
 
 export interface PendingInboxManualJob {
   id: string;
@@ -247,7 +247,7 @@ export async function getPendingCampaignReplyJobs(
     .from('message_jobs')
     .select('id, campaign_id, mailbox_id, node_id, status, error_message, scheduled_at, send_wait_reason, throttle_bypass_next_attempt, message_data, created_at')
     .eq('account_id', accountId)
-    .eq('message_type', 'campaign_reply')
+    .in('message_type', ['campaign_priority', 'campaign_reply'])
     .in('status', ['queued', 'reserved', 'sending', 'failed']);
   if (jobsError) throw new Error(`Failed to fetch pending campaign reply jobs: ${jobsError.message}`);
   if (!jobs) return [];
@@ -255,7 +255,12 @@ export async function getPendingCampaignReplyJobs(
   const pendingJobs: PendingCampaignReplyJob[] = [];
   for (const job of jobs) {
     const md = job.message_data as Record<string, unknown>;
-    if (md?.source !== 'campaign_reply' || typeof md.thread_id !== 'string') continue;
+    if (
+      (md?.source !== 'campaign_priority' && md?.source !== 'campaign_reply') ||
+      typeof md.thread_id !== 'string'
+    ) {
+      continue;
+    }
 
     pendingJobs.push({
       id: job.id,
@@ -270,7 +275,7 @@ export async function getPendingCampaignReplyJobs(
       send_wait_reason: job.send_wait_reason as string | null,
       throttle_bypass_next_attempt: job.throttle_bypass_next_attempt ?? false,
       message_data: {
-        source: 'campaign_reply',
+        source: 'campaign_priority',
         thread_id: md.thread_id,
         subject: (md.subject as string) ?? '',
         to_email: (md.to_email as string) ?? '',

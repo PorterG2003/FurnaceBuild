@@ -57,9 +57,9 @@ So: campaign sends are **message_job → send worker → SMTP → message_job + 
 ### 2. Throttle (mailbox limits)
 
 - Campaign sends and replies share the same mailbox, and all successful sends still update **mailbox_throttles** (daily, hourly, min gap).
-- **Reply-lane daily exemption**: `inbox_reply`, `inbox_forward`, and `campaign_reply` never wait for the daily mailbox cap. Only dedicated `campaign` sends defer until tomorrow.
+- **Reply-lane daily exemption**: `inbox_reply`, `inbox_forward`, `campaign_priority`, and legacy `campaign_reply` never wait for the daily mailbox cap. Only dedicated `campaign` sends defer until tomorrow.
 - **Hourly + min-gap still apply**: reply-lane sends can still be delayed by hourly throttles, an existing in-flight mailbox send, or the minimum-gap floor.
-- **Manual sends take priority over campaign sends**: when capacity is constrained, manual inbox sends are claimed first. `campaign_reply` also rides the reply lane, so it is processed before dedicated campaign sends.
+- **Manual sends take priority over campaign sends**: when capacity is constrained, manual inbox sends are claimed first. `campaign_priority` also rides the reply lane, so it is processed before dedicated campaign sends.
 - **Send now**: the manual inbox UI can set `throttle_bypass_next_attempt` on queued `inbox_reply` / `inbox_forward` jobs. That bypass skips hourly/min-gap waiting once, but it does not bypass accounting: the successful send still increments the mailbox's daily and hourly counters in `finalize_message_job_sent`.
 
 ### 3. Enrollment / campaign flow
@@ -106,7 +106,7 @@ Answer these so the implementation can be specified precisely.
 ### Throttle
 
 1. **Should inbox replies share the same mailbox throttle (daily/hourly/min gap) as campaign sends?**  
-   - **Decided**: yes for accounting, but reply-lane sends (`inbox_reply`, `inbox_forward`, `campaign_reply`) skip the daily wait. Dedicated `campaign` sends still defer on the daily cap.
+   - **Decided**: yes for accounting, but reply-lane sends (`inbox_reply`, `inbox_forward`, `campaign_priority`, and legacy `campaign_reply`) skip the daily wait. Dedicated `campaign` sends still defer on the daily cap.
 
 2. ~~If direct API: how to reserve throttle~~ → **N/A**: Using worker; throttle is `check_mailbox_throttle_and_reserve` for both; priority is via claim order (manual jobs claimed first).
 

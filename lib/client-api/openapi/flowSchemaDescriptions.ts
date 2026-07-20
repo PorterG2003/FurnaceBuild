@@ -167,7 +167,7 @@ export function buildEmailVariantDescription(): string {
   return [
     'One A/B variant of an email node. Variant ids must be stable UUIDs — they tie stats and message jobs to copy. Never remove or replace ids on live campaigns.',
     '',
-    'Supports merge variables in `subject`, `template`, and `body_html`. Empty `subject` is allowed for reply-mode emails (`send_mode: reply`).',
+    'Supports merge variables in `subject`, `template`, and `body_html`. Empty `subject` reuses the first outbound subject and continues the thread.',
   ].join('\n');
 }
 
@@ -175,7 +175,7 @@ export function buildEmailNodeDataDescription(): string {
   return [
     'Outbound email node with one or more A/B variants.',
     '',
-    `\`send_mode\`: \`new\` for sequence emails; \`reply\` for in-thread follow-ups after categorizer. See ${modelLink('EmailVariant')} for copy fields.`,
+    `\`priority\`: derived boolean (not user-set). True when the email is downstream of a categorizer and sends on the immediate/priority lane. See ${modelLink('EmailVariant')} for copy fields.`,
   ].join('\n');
 }
 

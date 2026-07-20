@@ -15,7 +15,7 @@ import type { ReplyEmailOptions } from './email.js';
 import { SmtpPool } from './smtp-pool.js';
 import { emitWebhookEvent } from './emit-webhook-event.js';
 import type { MessageJob, Mailbox, Lead } from './types.js';
-import { isCampaignMessageJob } from './types.js';
+import { isCampaignMessageJob, isPriorityCampaignJob } from './types.js';
 import { calculateNextRunAt } from '@furnace/campaign-lib/schedule.js';
 import type { CampaignSchedule } from '@furnace/campaign-lib/schedule.js';
 import {
@@ -801,10 +801,10 @@ export class SendWorker {
       return this.processInboxForwardJob(messageJob);
     }
     // Campaign (or null/legacy): continue with campaign send flow.
-    // campaign_reply jobs (scheduler-created in-thread replies after a
-    // categorizer branch) ride the same pipeline with reply threading
-    // overrides: subject/In-Reply-To/References come from message_data.
-    const isReplyMode = messageJob.message_type === 'campaign_reply';
+    // Priority jobs (campaign_priority / legacy campaign_reply) ride the same
+    // subject/threading path as paced campaign sends; they only differ in
+    // claim lane, throttle retry, and immediate Master Inbox recording.
+    const isPriorityJob = isPriorityCampaignJob(messageJob);
 
     let enteredSending = false;
     let campaignSchedule: CampaignSchedule | null = null;
@@ -943,7 +943,7 @@ export class SendWorker {
       const result = throttleResult as { success: boolean; failure_reason: string | null } | null;
 
       if (!result?.success) {
-        if (isReplyMode) {
+        if (isPriorityJob) {
           const requeued = await this.promoteCampaignReplyThrottleRetry(
             messageJob,
             campaignSchedule,
@@ -951,10 +951,10 @@ export class SendWorker {
           );
           if (requeued) {
             console.log(
-              `[SEND WORKER] Re-queued campaign_reply ${message_job_id} on the reply lane after throttle deferral: ${result?.failure_reason ?? 'unknown reason'}.`
+              `[SEND WORKER] Re-queued priority job ${message_job_id} on the priority lane after throttle deferral: ${result?.failure_reason ?? 'unknown reason'}.`
             );
           } else {
-            this.logThrottleCheckOutcome('campaign_reply job', message_job_id, result?.failure_reason);
+            this.logThrottleCheckOutcome('priority campaign job', message_job_id, result?.failure_reason);
           }
           return;
         }
@@ -995,10 +995,10 @@ export class SendWorker {
       // Throttle check passed - proceed with sending
 
       // 2b. Get first sent message for this campaign+lead (for thread continuation)
-      // Reply-mode jobs carry explicit threading from the replied thread instead.
-      const threadFirst = isReplyMode
-        ? null
-        : await this.getFirstSentMessageForCampaignLead(messageJob.campaign_id, messageJob.lead_id);
+      const threadFirst = await this.getFirstSentMessageForCampaignLead(
+        messageJob.campaign_id,
+        messageJob.lead_id,
+      );
 
       // 3. Generate email content from template (shared pipeline with preview)
       let content;
@@ -1040,27 +1040,7 @@ export class SendWorker {
       let subject: string;
       let inReplyTo: string | null = null;
       let references: string | null = null;
-      if (isReplyMode) {
-        // In-thread reply: "Re: <thread subject>" + headers from the replied
-        // thread (stamped by the scheduler's reply-email handler).
-        const md = messageJob.message_data || {};
-        subject = (md.subject || '').trim() || (currentSubject.trim() || '(No subject)');
-        inReplyTo = md.in_reply_to ?? null;
-        references = md.message_references ?? md.in_reply_to ?? null;
-        if (!inReplyTo) {
-          reportErrorToSlack('Send-worker: campaign_reply job missing In-Reply-To header (sending without threading)', {
-            severity: 'warning',
-            message_job_id: message_job_id,
-            campaign_id: messageJob.campaign_id,
-            enrollment_id: messageJob.enrollment_id,
-            alertPolicy: 'persistent_config_warning',
-            aggregationKey: `send-worker-campaign-reply-headers:${messageJob.campaign_id}`,
-            summaryFields: {
-              campaign_id: messageJob.campaign_id,
-            },
-          });
-        }
-      } else if (threadFirst) {
+      if (threadFirst) {
         if (threadFirst.provider_message_id) {
           inReplyTo = threadFirst.provider_message_id;
           references = threadFirst.provider_message_id;
@@ -1155,10 +1135,9 @@ export class SendWorker {
 
       // 6a. Throttle counters were committed atomically with final sent status.
 
-      // 6a-bis. Reply-mode: record the sent reply in the replied thread so the
-      // master inbox shows it and future References chains include it.
-      // Best-effort: the email is already sent.
-      if (isReplyMode) {
+      // 6a-bis. Priority jobs: record the sent email in the thread so the
+      // master inbox shows it immediately. Best-effort: the email is already sent.
+      if (isPriorityJob) {
         await this.recordCampaignReplyInThread(
           messageJob,
           mailbox,
@@ -1315,7 +1294,7 @@ export class SendWorker {
 
       if (retryableJobError && isCampaignMessageJob(messageJob) && !enteredSending) {
         try {
-          const deferred = isReplyMode
+          const deferred = isPriorityJob
             ? await this.requeueCampaignReplyJob(messageJob, campaignSchedule, {
                 retryFloor: new Date(Date.now() + 60_000),
                 sendWaitReason: null,
@@ -1324,8 +1303,8 @@ export class SendWorker {
             : await this.deferCampaignMessageJobForRetryableError(messageJob, errorMessage);
           if (deferred) {
             console.log(
-              isReplyMode
-                ? `[SEND WORKER] Re-queued retryable pre-send failure for campaign_reply ${messageJob.id}`
+              isPriorityJob
+                ? `[SEND WORKER] Re-queued retryable pre-send failure for priority job ${messageJob.id}`
                 : `[SEND WORKER] Deferred retryable pre-send failure for message job ${messageJob.id}`
             );
           } else {

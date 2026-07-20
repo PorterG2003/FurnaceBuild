@@ -351,14 +351,9 @@ function FlowEditor({
       }
 
       const newNode = factory(position);
-      // Emails added after a Categorizer default to reply mode (sent in the
-      // replied thread) - the common post-categorization action.
-      if (
-        nodeType === 'email' &&
-        currentNodes.some((n: any) => n.type === 'aiCategorizer')
-      ) {
-        newNode.data = { ...newNode.data, send_mode: 'reply' };
-      }
+      // priority is derived from graph position at normalize time (emails
+      // downstream of a categorizer send on the priority lane), so nothing is
+      // stamped here.
       setNodes((nds: any) => [...nds, newNode]);
     };
 
@@ -406,6 +401,7 @@ function FlowEditor({
     (window as any).__reactFlowSetNodes = setNodes;
     (window as any).__reactFlowSetEdges = setEdges;
     (window as any).__reactFlowGetNodes = () => nodes;
+    (window as any).__reactFlowGetEdges = () => edges;
     (window as any).__reactFlowSetFlow = (nextNodes: any[], nextEdges: any[]) => {
       setNodes(nextNodes);
       setEdges(nextEdges);
@@ -425,7 +421,7 @@ function FlowEditor({
     return () => {
       delete (window as any).__reactFlowSetFlow;
     };
-  }, [setEdges, setNodes, nodes]);
+  }, [setEdges, setNodes, nodes, edges]);
 
   // Handle node clicks to open edit modal
   const handleNodeClick = useCallback((event: any, node: any) => {
@@ -1128,14 +1124,12 @@ export default function BuilderPage() {
           };
         } else if (editingNode.type === 'email') {
           const { customFieldKeys, mappedStandardFieldKeys } = getLeadSourceFieldKeysFromFlow();
-          const flowNodes: any[] = (window as any).__reactFlowGetNodes?.() ?? [];
           modalData = {
             ...editingNode.data,
             campaignId: campaignId,
             campaignStatus: campaign?.status,
             customFieldKeys,
             mappedStandardFieldKeys,
-            flowHasCategorizer: flowNodes.some((n: any) => n.type === 'aiCategorizer'),
           };
         } else if (editingNode.type === 'aiCategorizer') {
           modalData = {

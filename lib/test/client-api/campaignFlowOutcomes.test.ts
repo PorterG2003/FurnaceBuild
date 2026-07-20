@@ -695,7 +695,7 @@ test('client api POST /flow node add on running returns 403 flow_locked', async 
       position: { x: 900, y: 0 },
       data: {
         label: 'Extra',
-        send_mode: 'new',
+        priority: false,
         variants: [{
           id: crypto.randomUUID(),
           label: 'A',

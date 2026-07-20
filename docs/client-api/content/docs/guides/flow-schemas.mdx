@@ -80,7 +80,7 @@ During **launch** (or validate with `phase: launch`), the same codes appear in `
 | `invalid_variant_template` | Variant `template` is not a string. | Set `template` to a string body. |
 | `variant_content_too_large` | Subject or template exceeds 100,000 characters. | Shorten copy. |
 | `no_active_variants` | All variants have `isActive: false`. | Keep at least one active variant per email node. |
-| `invalid_send_mode` | `send_mode` is not `new` or `reply`. | Use `new` for sequence emails; `reply` for categorizer follow-ups in the same thread. |
+| `invalid_priority` | `priority` is not a boolean. | Use `true` for emails downstream of a categorizer and `false` otherwise. |
 | `malformed_merge_variable` | Unclosed or invalid `{{...}}` syntax in copy. | Fix merge-token syntax; use `{{first_name}}` or `{{custom.company}}`. |
 | `unknown_merge_variable` | Merge variable not declared on the lead source. | Add the key to `customFieldKeys` or `mappedStandardFieldKeys`, or remove the token from copy. |
 | `invalid_wait_duration` | `wait_duration_seconds` is missing, zero, or not a positive number. | Set a positive integer in seconds (e.g. `86400` for one day). |

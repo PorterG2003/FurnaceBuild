@@ -181,7 +181,10 @@ export async function cancelAccountMessageJob(
   supabase: InboxSupabase,
   job: MessageJobRow,
 ): Promise<void> {
-  if (!job.message_type || !['inbox_reply', 'inbox_forward', 'campaign_reply'].includes(job.message_type)) {
+  if (
+    !job.message_type ||
+    !['inbox_reply', 'inbox_forward', 'campaign_reply', 'campaign_priority'].includes(job.message_type)
+  ) {
     throw new Error('Only reply-lane jobs can be cancelled from the inbox');
   }
   if (!['queued', 'reserved', 'failed'].includes(job.status)) {
@@ -205,7 +208,9 @@ export async function cancelAccountMessageJob(
     .update({
       status: 'cancelled',
       status_reason:
-        fullJob.message_type === 'campaign_reply' ? 'inbox_manual_override' : 'inbox_user_cancelled',
+        fullJob.message_type === 'campaign_reply' || fullJob.message_type === 'campaign_priority'
+          ? 'inbox_manual_override'
+          : 'inbox_user_cancelled',
       error_message: 'Cancelled from inbox',
       reserved_at: null,
       lease_expires_at: null,
@@ -220,7 +225,10 @@ export async function cancelAccountMessageJob(
     throw new Error(`Failed to cancel message job: ${error.message}`);
   }
 
-  if (fullJob.message_type === 'campaign_reply' && fullJob.enrollment_id) {
+  if (
+    (fullJob.message_type === 'campaign_reply' || fullJob.message_type === 'campaign_priority') &&
+    fullJob.enrollment_id
+  ) {
     await supabase
       .from('enrollments')
       .update({
@@ -237,7 +245,10 @@ export async function sendAccountMessageJobNow(
   supabase: InboxSupabase,
   job: MessageJobRow,
 ): Promise<void> {
-  if (!job.message_type || !['inbox_reply', 'inbox_forward', 'campaign_reply'].includes(job.message_type)) {
+  if (
+    !job.message_type ||
+    !['inbox_reply', 'inbox_forward', 'campaign_reply', 'campaign_priority'].includes(job.message_type)
+  ) {
     throw new Error('Only reply-lane jobs can be sent immediately');
   }
   if (job.status !== 'queued') {

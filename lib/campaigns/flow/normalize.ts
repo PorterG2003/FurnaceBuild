@@ -7,7 +7,11 @@ import {
 } from '../../email/index.js';
 import { backfillCategorizerEdgeHandles } from '../../categorizer/index.js';
 import { normalizeCustomFieldKey } from '../../leads/csv-dedupe.js';
-import { pruneOrphanEdges } from './graphIntegrity.js';
+import {
+  deriveEmailPriority,
+  nodeIdsDownstreamOfCategorizer,
+  pruneOrphanEdges,
+} from './graphIntegrity.js';
 import type {
   AICategorizerNodeData,
   CampaignFlowData,
@@ -186,15 +190,24 @@ function normalizeEmailNodeData(rawData: Record<string, unknown>): EmailNodeData
   }));
 
   const mailboxId = asString(rawData.mailboxId || legacyFields.mailboxId, '');
-  const sendMode = rawData.send_mode === 'reply' || legacyFields.send_mode === 'reply'
-    ? 'reply'
-    : 'new';
+  // Seed from explicit priority or legacy send_mode; final value is recomputed
+  // positionally in applyDerivedEmailPriority.
+  const prioritySeed =
+    rawData.priority === true
+    || legacyFields.priority === true
+    || rawData.send_mode === 'reply'
+    || legacyFields.send_mode === 'reply';
+
+  const { send_mode: _legacySendMode, ...restLegacy } = legacyFields as Record<string, unknown> & {
+    send_mode?: unknown;
+  };
+  void _legacySendMode;
 
   return {
-    ...legacyFields,
+    ...restLegacy,
     label: asString(rawData.label || legacyFields.label, 'Send Email'),
     mailboxId,
-    send_mode: sendMode,
+    priority: prioritySeed,
     variants: canonicalVariants,
   };
 }
@@ -316,15 +329,37 @@ export function normalizeFlowEdge(rawEdge: unknown): CampaignFlowEdge {
   } as CampaignFlowEdge;
 }
 
+/**
+ * Apply the derived priority marker (see deriveEmailPriority) to every email
+ * node. Priority is positional — downstream of a categorizer — so a priority
+ * email can never be stranded before a categorizer. Also strips legacy
+ * send_mode from persisted node data.
+ */
+function applyDerivedEmailPriority(
+  nodes: CampaignFlowNode[],
+  edges: CampaignFlowEdge[],
+): CampaignFlowNode[] {
+  const downstream = nodeIdsDownstreamOfCategorizer(nodes, edges);
+  return nodes.map((node) => {
+    if (node.type !== 'email') return node;
+    const desired = deriveEmailPriority(node, downstream);
+    const data = node.data as EmailNodeData & { send_mode?: unknown };
+    const { send_mode: _legacy, ...rest } = data;
+    void _legacy;
+    if (data.priority === desired && !('send_mode' in data)) return node;
+    return { ...node, data: { ...rest, priority: desired } } as CampaignFlowNode;
+  });
+}
+
 export function normalizeFlowData(rawFlowData: unknown): CampaignFlowData {
   const flow = asRecord(rawFlowData);
   const nodes = Array.isArray(flow.nodes) ? flow.nodes.map(normalizeFlowNode) : [];
   const mappedEdges = Array.isArray(flow.edges) ? flow.edges.map(normalizeFlowEdge) : [];
   const nodeIds = new Set(nodes.map((node) => node.id).filter(Boolean));
-  const edges = pruneOrphanEdges(mappedEdges, nodeIds);
+  const edges = backfillCategorizerEdgeHandles(pruneOrphanEdges(mappedEdges, nodeIds), nodes);
 
   return {
-    nodes,
-    edges: backfillCategorizerEdgeHandles(edges, nodes),
+    nodes: applyDerivedEmailPriority(nodes, edges),
+    edges,
   };
 }

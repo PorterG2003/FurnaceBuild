@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  deriveEmailPriority,
   edgesToRemoveForDeletedNodeIds,
   flowNeedsOrphanEdgeHeal,
+  nodeIdsDownstreamOfCategorizer,
   pruneOrphanEdges,
 } from './graphIntegrity.js';
 import { normalizeFlowData } from './normalize.js';
@@ -45,6 +47,24 @@ test('flowNeedsOrphanEdgeHeal detects raw orphans vs sanitized', () => {
   assert.equal(sanitized.edges.length, 1);
   assert.equal(flowNeedsOrphanEdgeHeal(raw, sanitized), true);
   assert.equal(flowNeedsOrphanEdgeHeal(sanitized, sanitized), false);
+});
+
+test('deriveEmailPriority marks only downstream emails as priority', () => {
+  const nodes = [
+    { id: 'leadSource-1', type: 'leadSource' },
+    { id: 'email-1', type: 'email' },
+    { id: 'aiCategorizer-1', type: 'aiCategorizer' },
+    { id: 'email-2', type: 'email' },
+  ];
+  const edges = [
+    { source: 'leadSource-1', target: 'email-1' },
+    { source: 'email-1', target: 'aiCategorizer-1' },
+    { source: 'aiCategorizer-1', target: 'email-2' },
+  ];
+  const downstream = nodeIdsDownstreamOfCategorizer(nodes, edges);
+
+  assert.equal(deriveEmailPriority(nodes[1]!, downstream), false);
+  assert.equal(deriveEmailPriority(nodes[3]!, downstream), true);
 });
 
 test('normalizeFlowData drops orphan edges and keeps categorizer handle backfill', () => {

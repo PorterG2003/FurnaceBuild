@@ -30,6 +30,12 @@ COPY lib/campaign/*.d.ts ./lib/campaign/
 WORKDIR /app/lib/campaign
 RUN npm install
 
+# Copy and build @furnace/webhooks-lib (worker depends on file:../../lib/webhooks)
+WORKDIR /app
+COPY lib/webhooks/package*.json lib/webhooks/tsconfig.build.json lib/webhooks/*.ts ./lib/webhooks/
+WORKDIR /app/lib/webhooks
+RUN npm install && npm run build
+
 # Worker: copy package files and install (file:../../lib/* resolve)
 WORKDIR /app/workers/send-worker
 COPY workers/send-worker/package*.json ./
@@ -59,6 +65,8 @@ COPY --from=builder /app/lib/campaign/schedule.d.ts ./lib/campaign/
 COPY --from=builder /app/lib/campaign/mailbox-send-time.js ./lib/campaign/
 COPY --from=builder /app/lib/campaign/mailbox-send-time.d.ts ./lib/campaign/
 COPY --from=builder /app/lib/campaign/node_modules ./lib/campaign/node_modules
+COPY --from=builder /app/lib/webhooks/package.json ./lib/webhooks/
+COPY --from=builder /app/lib/webhooks/dist ./lib/webhooks/dist
 
 # Copy worker package and built output into workers/send-worker
 COPY workers/send-worker/package*.json ./workers/send-worker/

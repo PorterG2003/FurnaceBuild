@@ -461,7 +461,7 @@ test('evaluateFlow returns ONLY the categorizer node itself, never its branch ta
     campaign_id: enrollment.campaign_id,
     flow_node_id: 'email-3',
     node_type: 'email',
-    node_data: { send_mode: 'reply' },
+    node_data: { priority: true },
     deleted_at: null,
   };
   const notInterestedTarget = {

@@ -1,15 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CAMPAIGN_FLOW_EXAMPLE_LINEAR } from './examples.js';
+import { CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER, CAMPAIGN_FLOW_EXAMPLE_LINEAR } from './examples.js';
 import {
   FlowEditForbiddenError,
   FlowRevisionConflictError,
   prepareFlowSave,
 } from './prepareFlowSave.js';
 import { computeFlowRevision } from './revision.js';
+import type { CampaignFlowData, EmailNodeData } from './types.js';
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function emailPriority(flow: CampaignFlowData, nodeId: string): boolean | undefined {
+  const node = flow.nodes.find((n) => n.id === nodeId);
+  return node && node.type === 'email' ? (node.data as EmailNodeData).priority : undefined;
+}
+
+function setEmailSubject(flow: CampaignFlowData, nodeId: string, subject: string): void {
+  const node = flow.nodes.find((n) => n.id === nodeId);
+  assert.ok(node && node.type === 'email');
+  (node.data as EmailNodeData).variants[0]!.subject = subject;
+}
+
+function setEmailPriority(flow: CampaignFlowData, nodeId: string, priority: boolean): void {
+  const node = flow.nodes.find((n) => n.id === nodeId);
+  assert.ok(node && node.type === 'email');
+  (node.data as EmailNodeData).priority = priority;
 }
 
 test('prepareFlowSave returns field_sync and flow_revision', async () => {
@@ -90,6 +108,74 @@ test('prepareFlowSave blocks structural edits on running campaigns', async () =>
     }),
     FlowEditForbiddenError,
   );
+});
+
+test('prepareFlowSave: canonical categorizer flow derives priority by position', async () => {
+  // Downstream emails are priority regardless of subject; upstream emails are not.
+  const flow = clone(CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER);
+  const result = await prepareFlowSave({
+    incomingFlow: flow,
+    existingFlow: { nodes: [], edges: [] },
+    campaignStatus: 'draft',
+    phase: 'draft',
+  });
+
+  assert.equal(emailPriority(result.flow, 'email-1'), false);
+  assert.equal(emailPriority(result.flow, 'email-2'), false);
+  assert.equal(emailPriority(result.flow, 'email-3'), true);
+  assert.equal(emailPriority(result.flow, 'email-4'), true);
+});
+
+test('prepareFlowSave: priority email stored BEFORE the categorizer heals to false', async () => {
+  // Reproduces the mass-stop bug: a pre-categorizer email marked priority.
+  const flow = clone(CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER);
+  setEmailPriority(flow, 'email-2', true); // email-2 is upstream of the categorizer
+  setEmailSubject(flow, 'email-2', ''); // even with no subject, upstream is always non-priority
+
+  const result = await prepareFlowSave({
+    incomingFlow: flow,
+    existingFlow: { nodes: [], edges: [] },
+    campaignStatus: 'draft',
+    phase: 'draft',
+  });
+
+  assert.equal(emailPriority(result.flow, 'email-2'), false);
+});
+
+test('prepareFlowSave: giving a post-categorizer email a subject keeps it priority', async () => {
+  const flow = clone(CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER);
+  setEmailSubject(flow, 'email-3', 'A brand new pitch, {{first_name}}');
+
+  const result = await prepareFlowSave({
+    incomingFlow: flow,
+    existingFlow: { nodes: [], edges: [] },
+    campaignStatus: 'draft',
+    phase: 'draft',
+  });
+
+  assert.equal(emailPriority(result.flow, 'email-3'), true);
+});
+
+test('prepareFlowSave: priority heal rides along as a CONTENT edit on a running campaign', async () => {
+  // Existing DB flow carries the legacy misconfiguration (email-2 = priority before
+  // the categorizer). A normal content edit while running must be allowed AND
+  // must persist the healed priority value.
+  const existing = clone(CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER);
+  setEmailPriority(existing, 'email-2', true);
+
+  const incoming = clone(existing);
+  setEmailSubject(incoming, 'email-1', 'Edited subject while running');
+
+  const result = await prepareFlowSave({
+    incomingFlow: incoming,
+    existingFlow: existing,
+    campaignStatus: 'running',
+    phase: 'draft',
+  });
+
+  assert.equal(result.lifecycle.allowed, true);
+  assert.equal(result.changeKind, 'content');
+  assert.equal(emailPriority(result.flow, 'email-2'), false);
 });
 
 test('prepareFlowSave allows invalid flow data in draft with warnings', async () => {

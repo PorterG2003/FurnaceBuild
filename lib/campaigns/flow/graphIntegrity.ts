@@ -1,5 +1,60 @@
 import type { CampaignFlowData, CampaignFlowEdge } from './types';
 
+/**
+ * Node ids strictly reachable from any aiCategorizer via forward edges.
+ * Email nodes here send on the priority lane (immediate, skip pacing).
+ */
+export function nodeIdsDownstreamOfCategorizer(
+  nodes: ReadonlyArray<{ id?: string; type?: string }>,
+  edges: ReadonlyArray<Pick<CampaignFlowEdge, 'source' | 'target'>>,
+): Set<string> {
+  const categorizerIds = nodes
+    .filter((node) => node?.type === 'aiCategorizer' && typeof node.id === 'string')
+    .map((node) => node.id as string);
+  const downstream = new Set<string>();
+  if (categorizerIds.length === 0) return downstream;
+
+  const adjacency = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (!edge.source || !edge.target) continue;
+    const next = adjacency.get(edge.source) ?? [];
+    next.push(edge.target);
+    adjacency.set(edge.source, next);
+  }
+
+  const queue = [...categorizerIds];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const next of adjacency.get(current) ?? []) {
+      if (!downstream.has(next)) {
+        downstream.add(next);
+        queue.push(next);
+      }
+    }
+  }
+  return downstream;
+}
+
+type PriorityNode = {
+  id?: string;
+  type?: string;
+};
+
+/**
+ * Priority = positional (downstream of categorizer). Sends on the immediate
+ * lane regardless of subject. Threading/subject are handled uniformly by the
+ * normal send path. `downstreamNodeIds` comes from
+ * nodeIdsDownstreamOfCategorizer. Tolerant of raw/loosely-typed flow data so it
+ * can run in normalization, the builder, and repair scripts alike.
+ */
+export function deriveEmailPriority(
+  node: PriorityNode,
+  downstreamNodeIds: ReadonlySet<string>,
+): boolean {
+  if (node.type !== 'email' || typeof node.id !== 'string') return false;
+  return downstreamNodeIds.has(node.id);
+}
+
 /** Edges incident to any of the given node ids (source or target). */
 export function edgesToRemoveForDeletedNodeIds(
   edges: ReadonlyArray<Pick<CampaignFlowEdge, 'id' | 'source' | 'target'>>,

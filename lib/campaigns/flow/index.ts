@@ -5,8 +5,10 @@ export {
 } from './examples';
 export { classifyFlowChange, detectFlowAppend, type FlowAppendDetection, type FlowChangeSummary } from './diff';
 export {
+  deriveEmailPriority,
   edgesToRemoveForDeletedNodeIds,
   flowNeedsOrphanEdgeHeal,
+  nodeIdsDownstreamOfCategorizer,
   pruneOrphanEdges,
 } from './graphIntegrity';
 export {

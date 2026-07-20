@@ -4,7 +4,7 @@ import {
   CAMPAIGN_FLOW_EXAMPLE_DATASENDER,
   CAMPAIGN_FLOW_EXAMPLE_LINEAR,
 } from './examples.js';
-import { buildFlowConflictSummary, buildFlowPreviewSteps } from './conflictSummary.js';
+import { buildFlowConflictSummary, buildFlowPreviewSteps, isSpuriousFlowConflict } from './conflictSummary.js';
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -62,6 +62,28 @@ test('buildFlowConflictSummary ignores structuralBlocked lock flags', () => {
     ),
     false,
   );
+});
+
+test('isSpuriousFlowConflict is true when only edge lock flags differ', () => {
+  const saved = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const local = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  local.edges = local.edges.map((edge) => ({
+    ...edge,
+    data: { ...(edge.data as object), readOnly: true, structuralBlocked: true },
+  }));
+  saved.edges = saved.edges.map((edge) => ({
+    ...edge,
+    data: { ...(edge.data as object), readOnly: false, structuralBlocked: false },
+  }));
+
+  assert.equal(isSpuriousFlowConflict(local, saved), true);
+});
+
+test('isSpuriousFlowConflict is false when email subject differs', () => {
+  const saved = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const local = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  getEmailNode(local, 'email-1').data.variants[0]!.subject = 'Changed';
+  assert.equal(isSpuriousFlowConflict(local, saved), false);
 });
 
 test('buildFlowConflictSummary describes multi-variant subject changes per variant', () => {

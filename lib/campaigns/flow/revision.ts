@@ -69,10 +69,30 @@ function stripUiFieldsFromEdge(edge: CampaignFlowEdge): Record<string, unknown> 
   return copy;
 }
 
+function compareById(a: { id?: unknown }, b: { id?: unknown }): number {
+  const idA = typeof a.id === 'string' ? a.id : String(a.id ?? '');
+  const idB = typeof b.id === 'string' ? b.id : String(b.id ?? '');
+  if (idA < idB) return -1;
+  if (idA > idB) return 1;
+  return 0;
+}
+
+/**
+ * Produce the canonical flow used for revision hashing. UI-only fields are
+ * stripped and nodes/edges are sorted by `id` so the revision depends only on
+ * graph content, never on array ordering. This matches the server, which
+ * persists edges reordered by id (jsonb_agg ... ORDER BY edge->>'id'); without
+ * matching sort the client revision would diverge from the persisted revision
+ * after every save and trip a spurious "another tab" conflict.
+ */
 export function canonicalizeFlowForRevision(flowData: CampaignFlowData): CampaignFlowData {
   return {
-    nodes: flowData.nodes.map((node) => stripUiFieldsFromNode(node) as CampaignFlowNode),
-    edges: flowData.edges.map((edge) => stripUiFieldsFromEdge(edge) as CampaignFlowEdge),
+    nodes: flowData.nodes
+      .map((node) => stripUiFieldsFromNode(node) as CampaignFlowNode)
+      .sort(compareById),
+    edges: flowData.edges
+      .map((edge) => stripUiFieldsFromEdge(edge) as CampaignFlowEdge)
+      .sort(compareById),
   };
 }
 

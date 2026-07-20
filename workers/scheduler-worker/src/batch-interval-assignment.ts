@@ -282,10 +282,11 @@ export async function batchAssignIntervalJobs(
         continue;
       }
       
-      // Reply-mode email nodes (send_mode='reply') are handled by the
-      // scheduler directly as campaign_reply jobs - never interval-assigned.
+      // Priority email nodes (priority === true, or legacy send_mode='reply')
+      // are handled by the scheduler directly as campaign_priority jobs —
+      // never interval-assigned.
       const intervalEmailNodes = emailNodes.filter(
-        (n: any) => n.node_data?.send_mode !== 'reply',
+        (n: any) => n.node_data?.priority !== true && n.node_data?.send_mode !== 'reply',
       );
 
       if (intervalEmailNodes.length === 0) {

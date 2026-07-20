@@ -1,7 +1,10 @@
 import type { SQSEvent, SQSBatchResponse } from 'aws-lambda';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { type CategorizerCategory } from '../../../lib/categorizer/index';
-import { classifyReply as runCategorizer } from '../../../workers/scheduler-worker/src/categorizer/classify';
+import {
+  classifyReply as runCategorizer,
+  type CategorizerLlmTransport,
+} from '../../../workers/scheduler-worker/src/categorizer/classify';
 import type { ClassifyReplyQueuePayload } from '../../../workers/inbox-checker-worker/src/emit-classify-reply-job';
 import { detectAutoReplyRedirectSignals } from '../../../lib/inbox/autoReplyRedirectDetection';
 import {
@@ -294,9 +297,20 @@ async function syncPositiveReplyStats(
   }
 }
 
+/**
+ * Injectable seams for tests (mirrors the worker factories in
+ * lib/test/campaign/categorizer-helpers). Production passes nothing and the
+ * real OpenRouter transport / wall clock are used.
+ */
+export type ClassifyReplyProcessOptions = {
+  transport?: CategorizerLlmTransport;
+  now?: Date;
+};
+
 export async function processClassifyReplyPayload(
   payload: ClassifyReplyQueuePayload,
   supabase: SupabaseClient,
+  options?: ClassifyReplyProcessOptions,
 ): Promise<void> {
   if (!payload.threadId || !payload.emailMessageId) {
     return;
@@ -340,11 +354,14 @@ export async function processClassifyReplyPayload(
     );
     returnDate = parsed ? parsed.toISOString().slice(0, 10) : null;
   } else {
-    const result = await runCategorizer({
-      subject: message.subject,
-      bodyText: message.body_text ?? message.body_html,
-      messageDate: message.received_at ? new Date(message.received_at) : new Date(),
-    });
+    const result = await runCategorizer(
+      {
+        subject: message.subject,
+        bodyText: message.body_text ?? message.body_html,
+        messageDate: message.received_at ? new Date(message.received_at) : new Date(),
+      },
+      { transport: options?.transport, now: options?.now },
+    );
     if (!result.ok) {
       throw new Error(result.error);
     }
@@ -416,9 +433,10 @@ async function markThreadClassificationFailed(
 export async function processClassifyReplyPayloadSafely(
   payload: ClassifyReplyQueuePayload,
   supabase: SupabaseClient,
+  options?: ClassifyReplyProcessOptions,
 ): Promise<{ ok: true } | { ok: false; error: unknown }> {
   try {
-    await processClassifyReplyPayload(payload, supabase);
+    await processClassifyReplyPayload(payload, supabase, options);
     return { ok: true };
   } catch (error) {
     console.error('[classifyReply] failed to process payload', payload.threadId, payload.emailMessageId, error);

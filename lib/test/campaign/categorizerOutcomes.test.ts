@@ -19,6 +19,7 @@ import {
   getMailboxRow,
   getThreadRow,
   processEnrollmentIds,
+  simulateClassifyLambda,
 } from './categorizer-helpers';
 
 /**
@@ -28,8 +29,8 @@ import {
  *
  * Flow under test (emailWaitEmailCategorizer):
  *   email-1 -> waitTime-1 -> email-2 -> categorizer
- *     interested      -> email-3 (send_mode 'reply')
- *     not-interested  -> email-4 (send_mode 'new')
+ *     interested      -> email-3 (priority true)
+ *     not-interested  -> email-4 (priority true)
  *     neutral         -> (no edge)
  */
 
@@ -184,7 +185,7 @@ function assertHeldState(params: {
   assert.ok(params.enrollment.next_run_at, 'park RPC wakes the enrollment for the scheduler');
 }
 
-test('happy path AI: reply mid-sequence holds outbound, classifies Interested, branches into an in-thread reply email', async () => {
+test('happy path AI: reply mid-sequence holds outbound, classifies Interested, branches into a priority email', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-ai-happy') });
   resetCategorizerLlmFailureTracking();
 
@@ -207,17 +208,20 @@ test('happy path AI: reply mid-sequence holds outbound, classifies Interested, b
       .single();
     assert.equal(heldJob?.status, 'held');
 
-    // --- Scheduler tick: classify + branch ---
-    const scripted = createScriptedCategorizerTransport([
+    // --- Classify Lambda: write the durable category + wake the enrollment ---
+    const classify = await simulateClassifyLambda(harness, { threadId }, [
       { kind: 'classify', category: 'Interested' },
     ]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
-    await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
-    assert.equal(scripted.calls.length, 1, 'exactly one LLM call for the classification');
+    assert.equal(classify.ok, true);
+    assert.equal(classify.calls.length, 1, 'exactly one LLM call for the classification');
 
     const thread = await getThreadRow(harness, threadId);
     assert.equal(thread.category, 'Interested');
     assert.equal(thread.category_source, 'ai');
+
+    // --- Scheduler tick: branch on the durable category ---
+    const scheduler = createTestSchedulerWorker(harness);
+    await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
 
     const branched = await getEnrollmentRow(harness, seeded.enrollmentId);
     assert.equal(branched.reply_thread_id, threadId);
@@ -239,20 +243,20 @@ test('happy path AI: reply mid-sequence holds outbound, classifies Interested, b
       .maybeSingle();
     assert.equal(stats?.positive_reply_count, 1);
 
-    // --- Scheduler tick: arm the in-thread reply email ---
+    // --- Scheduler tick: arm the priority email ---
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
     const jobs = await getJobsForEnrollment(harness, seeded.enrollmentId);
-    const replyJob = jobs.find((j) => j.message_type === 'campaign_reply');
-    assert.ok(replyJob, 'reply-mode email must create a campaign_reply job');
+    const replyJob = jobs.find((j) => j.message_type === 'campaign_priority');
+    assert.ok(replyJob, 'priority email must create a campaign_priority job');
     assert.equal(replyJob.status, 'queued');
-    assert.equal(replyJob.interval_id, null, 'campaign_reply bypasses interval pacing');
+    assert.equal(replyJob.interval_id, null, 'campaign_priority bypasses interval pacing');
     assert.equal(replyJob.node_id, graph.nodeIdsByFlowNodeId.get('email-3'));
     assert.equal(replyJob.mailbox_id, thread.mailbox_id, 'reply must use the thread mailbox');
-    assert.match(String(replyJob.message_data?.subject), /^Re: /);
-    assert.ok(replyJob.message_data?.in_reply_to, 'In-Reply-To header stamped from the inbound reply');
+    assert.equal(replyJob.message_data?.subject ?? null, null);
+    assert.equal(replyJob.message_data?.in_reply_to ?? null, null);
     assert.equal(replyJob.message_data?.thread_id, threadId);
 
-    // campaign_reply jobs ride the priority claim lane.
+    // campaign_priority jobs ride the priority claim lane.
     const manualClaim = await harness.supabase.rpc('claim_manual_message_jobs_ready', {
       p_batch_size: 50,
       p_processing_timeout_minutes: 5,
@@ -260,7 +264,7 @@ test('happy path AI: reply mid-sequence holds outbound, classifies Interested, b
     assert.equal(manualClaim.error, null);
     const claimedRows = (manualClaim.data ?? []) as any[];
     const claimedReply = claimedRows.find((row) => row.id === replyJob.id);
-    assert.ok(claimedReply, 'claim_manual_message_jobs_ready must claim the campaign_reply job');
+    assert.ok(claimedReply, 'claim_manual_message_jobs_ready must claim the campaign_priority job');
     // Release collateral claims from other dev campaigns.
     const collateral = claimedRows.filter((row) => row.id !== replyJob.id).map((row) => row.id);
     if (collateral.length > 0) {
@@ -271,7 +275,7 @@ test('happy path AI: reply mid-sequence holds outbound, classifies Interested, b
         .eq('status', 'reserved');
     }
 
-    // --- Send worker: deliver the in-thread reply ---
+    // --- Send worker: deliver the priority email ---
     const messageCountBefore = thread.message_count;
     const sendWorker = createTestSendWorker(harness);
     const { data: reservedReplyJob } = await harness.supabase
@@ -374,24 +378,24 @@ test('manual mode: parks with holds kept until the user categorizes, then wakes 
   }
 });
 
-test('campaign_reply throttle retries stay on the same priority-lane job while respecting schedule windows', async () => {
+test('campaign_priority throttle retries stay on the same priority-lane job while respecting schedule windows', async () => {
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('cat-reply-throttle') });
   resetCategorizerLlmFailureTracking();
 
   try {
     const seeded = await seedMidSequenceLead(harness, { name: 'Categorizer Reply Retry Lane', useAi: true });
-    await deliverReply(harness, seeded, {
+    const { threadId } = await deliverReply(harness, seeded, {
       bodyText: 'Interested - send over pricing.',
     });
 
-    const scripted = createScriptedCategorizerTransport([{ kind: 'classify', category: 'Interested' }]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
+    await simulateClassifyLambda(harness, { threadId }, [{ kind: 'classify', category: 'Interested' }]);
+    const scheduler = createTestSchedulerWorker(harness);
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]); // branch
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]); // arm reply email
 
     const jobsBeforeClaim = await getJobsForEnrollment(harness, seeded.enrollmentId);
-    const replyJob = jobsBeforeClaim.find((row) => row.message_type === 'campaign_reply');
-    assert.ok(replyJob, 'reply-mode branch must create a campaign_reply job');
+    const replyJob = jobsBeforeClaim.find((row) => row.message_type === 'campaign_priority');
+    assert.ok(replyJob, 'priority branch must create a campaign_priority job');
 
     const claim = await harness.supabase.rpc('claim_manual_message_jobs_ready', {
       p_batch_size: 50,
@@ -430,12 +434,12 @@ test('campaign_reply throttle retries stay on the same priority-lane job while r
     assert.ok(Date.parse(retriedReplyJob!.scheduled_at) >= Date.parse(lastSentAt) + 3600_000);
 
     const jobsAfterRetry = await getJobsForEnrollment(harness, seeded.enrollmentId);
-    const replyJobs = jobsAfterRetry.filter((row) => row.message_type === 'campaign_reply');
-    assert.equal(replyJobs.length, 1, 'retry should stay on the existing campaign_reply job');
+    const replyJobs = jobsAfterRetry.filter((row) => row.message_type === 'campaign_priority');
+    assert.equal(replyJobs.length, 1, 'retry should stay on the existing campaign_priority job');
 
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
     const jobsAfterScheduler = await getJobsForEnrollment(harness, seeded.enrollmentId);
-    const replyJobsAfterScheduler = jobsAfterScheduler.filter((row) => row.message_type === 'campaign_reply');
+    const replyJobsAfterScheduler = jobsAfterScheduler.filter((row) => row.message_type === 'campaign_priority');
     assert.equal(replyJobsAfterScheduler.length, 1, 'scheduler must not recreate a deferred retry job');
   } finally {
     await harness.cleanup();
@@ -466,14 +470,13 @@ test('OOO round-trip: auto-reply holds then restores at the extracted return dat
     assertHeldState({ enrollment: heldEnrollment, graph, heldFlowNodeId: 'waitTime-1' });
     const heldNextRunAt = heldEnrollment.held_next_run_at as string;
 
-    // --- Scheduler tick: Auto Reply -> restore at extracted return date ---
-    // (system-stamped thread: one extraction call resolves the date)
-    const scripted = createScriptedCategorizerTransport([
-      { kind: 'classify', category: 'Auto Reply', returnDate },
-    ]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
+    // --- Classify Lambda: system-stamped Auto Reply parses the return date
+    // from the body (no LLM call), then the scheduler restores at that date. ---
+    const autoReplyClassify = await simulateClassifyLambda(harness, { threadId }, []);
+    assert.equal(autoReplyClassify.ok, true);
+    assert.equal(autoReplyClassify.calls.length, 0, 'system-stamped Auto Reply needs no LLM call');
+    const scheduler = createTestSchedulerWorker(harness);
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
-    assert.equal(scripted.calls.length, 1, 'one extraction call for the return date');
 
     const restored = await getEnrollmentRow(harness, seeded.enrollmentId);
     assert.equal(restored.state, 'active');
@@ -516,10 +519,9 @@ test('OOO round-trip: auto-reply holds then restores at the extracted return dat
       .single();
     assert.equal(reHeldJob?.status, 'held');
 
-    // --- Scheduler tick: classify the real reply and branch ---
-    scripted.push({ kind: 'classify', category: 'Interested' });
+    // --- Classify Lambda on the real reply, then the scheduler branches ---
+    await simulateClassifyLambda(harness, { threadId }, [{ kind: 'classify', category: 'Interested' }]);
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
-    assert.equal(scripted.calls.length, 2);
 
     const branched = await getEnrollmentRow(harness, seeded.enrollmentId);
     assert.equal(branched.reply_thread_id, threadId);
@@ -551,16 +553,18 @@ test('headerless OOO: AI classifies Auto Reply, writes the category, and restore
     const thread = await getThreadRow(harness, threadId);
     assert.equal(thread.category, null, 'headerless auto-reply is not stamped by the detector');
 
-    const scripted = createScriptedCategorizerTransport([
+    const classify = await simulateClassifyLambda(harness, { threadId }, [
       { kind: 'classify', category: 'Auto Reply', returnDate: null },
     ]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
-    await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
-    assert.equal(scripted.calls.length, 1);
+    assert.equal(classify.ok, true);
+    assert.equal(classify.calls.length, 1);
 
     const threadAfter = await getThreadRow(harness, threadId);
     assert.equal(threadAfter.category, 'Auto Reply');
     assert.equal(threadAfter.category_source, 'ai');
+
+    const scheduler = createTestSchedulerWorker(harness);
+    await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
 
     // No return date -> resume immediately at the held position.
     const restored = await getEnrollmentRow(harness, seeded.enrollmentId);
@@ -686,15 +690,13 @@ test('no reply ever: enrollment walks to the categorizer and parks; sweep never 
     });
 
     const lead = graph.leadsByKey.get('silent')!;
-    const scripted = createScriptedCategorizerTransport([]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
+    const scheduler = createTestSchedulerWorker(harness);
     await processEnrollmentIds(harness, scheduler, [lead.enrollmentId!]);
 
     const parked = await getEnrollmentRow(harness, lead.enrollmentId!);
     assert.equal(parked.state, 'active');
     assert.equal(parked.current_node_id, graph.nodeIdsByFlowNodeId.get('aiCategorizer-1'));
     assert.equal(parked.next_run_at, null, 'no reply -> parked, zero polling cost');
-    assert.equal(scripted.calls.length, 0, 'no reply -> no LLM call');
 
     // Sweep is a no-op for enrollments with no replied thread.
     const sweep = await harness.supabase.rpc('sweep_parked_categorizer_enrollments', {
@@ -722,7 +724,7 @@ test('no reply ever: enrollment walks to the categorizer and parks; sweep never 
     assert.ok(woken.next_run_at, 'late reply wakes the parked enrollment');
     assert.equal(woken.held_node_id, null, 'already at the categorizer: nothing re-held');
 
-    scripted.push({ kind: 'classify', category: 'Interested' });
+    await simulateClassifyLambda(harness, { threadId }, [{ kind: 'classify', category: 'Interested' }]);
     await processEnrollmentIds(harness, scheduler, [lead.enrollmentId!]);
     const branched = await getEnrollmentRow(harness, lead.enrollmentId!);
     assert.equal(branched.reply_thread_id, threadId);
@@ -745,10 +747,8 @@ test('no edge for the resolved category: enrollment completes with holds cancell
     });
 
     // 'Neutral' has no connected edge in the test flow.
-    const scripted = createScriptedCategorizerTransport([
-      { kind: 'classify', category: 'Neutral' },
-    ]);
-    const scheduler = createTestSchedulerWorker(harness, { classifyTransport: scripted.transport });
+    await simulateClassifyLambda(harness, { threadId }, [{ kind: 'classify', category: 'Neutral' }]);
+    const scheduler = createTestSchedulerWorker(harness);
     await processEnrollmentIds(harness, scheduler, [seeded.enrollmentId]);
 
     const completed = await getEnrollmentRow(harness, seeded.enrollmentId);

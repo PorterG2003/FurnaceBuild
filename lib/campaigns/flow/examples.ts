@@ -29,7 +29,7 @@ export const CAMPAIGN_FLOW_EXAMPLE_LINEAR: CampaignFlowData = {
       position: { x: 220, y: 0 },
       data: {
         label: 'Intro Email',
-        send_mode: 'new',
+        priority: false,
         variants: [
           {
             id: EXAMPLE_VARIANT_IDS.firstA,
@@ -67,7 +67,7 @@ export const CAMPAIGN_FLOW_EXAMPLE_LINEAR: CampaignFlowData = {
       position: { x: 700, y: 0 },
       data: {
         label: 'Follow-up',
-        send_mode: 'new',
+        priority: false,
         variants: [
           {
             id: EXAMPLE_VARIANT_IDS.secondA,
@@ -136,7 +136,7 @@ export const CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER: CampaignFlowData = {
       position: { x: 700, y: 0 },
       data: {
         label: 'Reply Trigger',
-        send_mode: 'new',
+        priority: false,
         variants: [
           {
             id: EXAMPLE_VARIANT_IDS.secondA,
@@ -164,7 +164,7 @@ export const CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER: CampaignFlowData = {
       position: { x: 1180, y: -120 },
       data: {
         label: 'Interested Reply',
-        send_mode: 'reply',
+        priority: true,
         variants: [
           {
             id: EXAMPLE_VARIANT_IDS.replyA,
@@ -183,7 +183,7 @@ export const CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER: CampaignFlowData = {
       position: { x: 1180, y: 120 },
       data: {
         label: 'Breakup',
-        send_mode: 'new',
+        priority: true,
         variants: [
           {
             id: EXAMPLE_VARIANT_IDS.breakupA,

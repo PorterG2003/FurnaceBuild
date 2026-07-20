@@ -60,7 +60,7 @@ export function appendEmailAfterLeaf(
         position: { x: 940, y: 0 },
         data: {
           label: 'Appended Follow-up',
-          send_mode: 'new',
+          priority: false,
           variants: [
             {
               id: crypto.randomUUID(),

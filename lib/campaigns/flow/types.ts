@@ -47,7 +47,8 @@ export type LeadSourceNodeData = {
 export type EmailNodeData = {
   label?: string;
   mailboxId?: string;
-  send_mode?: 'new' | 'reply';
+  /** Derived: true when the email is downstream of a categorizer (priority lane). */
+  priority?: boolean;
   variants: EmailNodeVariant[];
   subject?: string;
   template?: string;

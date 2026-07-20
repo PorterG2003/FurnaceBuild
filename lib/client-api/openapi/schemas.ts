@@ -735,12 +735,12 @@ export function buildClientApiComponents() {
             nullable: true,
             description: 'Sending mailbox. Falls back to campaign mailbox rotation when unset.',
           },
-          send_mode: {
-            type: 'string',
-            enum: ['new', 'reply'],
+          priority: {
+            type: 'boolean',
             nullable: true,
-            description: 'new for sequence emails; reply for in-thread follow-ups after categorizer.',
-            example: 'new',
+            description:
+              'Derived priority marker (not user-set). True when the email is downstream of a categorizer and sends on the immediate/priority lane.',
+            example: false,
           },
           variants: {
             type: 'array',

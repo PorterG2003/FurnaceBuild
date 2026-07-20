@@ -1025,7 +1025,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
             scheduledAt: p.scheduledAt,
             sendWaitReason: p.sendWaitReason,
             isSendingImmediately: p.isSendingImmediately,
-            campaignName: p.kind === 'campaign_reply' ? selectedThreadCampaignName : null,
+            campaignName: p.kind === 'campaign_priority' ? selectedThreadCampaignName : null,
           }));
 
   const threadListProps = useMemo(

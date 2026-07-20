@@ -52,7 +52,7 @@ const FETCH_ATTACHMENT_URL = (outputs as { custom?: { fetchEmailAttachmentUrl?: 
   ?.fetchEmailAttachmentUrl;
 
 export type PendingReply = {
-  kind: 'reply' | 'forward' | 'campaign_reply';
+  kind: 'reply' | 'forward' | 'campaign_priority';
   threadId: string;
   jobId: string;
   subject: string;
@@ -137,7 +137,7 @@ function jobToPendingCampaignReply(
     mailboxSignature: mailboxSignatureRaw,
   });
   return {
-    kind: 'campaign_reply',
+    kind: 'campaign_priority',
     threadId: job.thread_id,
     jobId: job.id,
     subject: job.message_data.subject,
@@ -499,7 +499,7 @@ export function useInboxComposer({
   const openReplyComposer = useCallback(
     (message: EmailMessage) => {
       const hasPendingCampaignReply = pendingReplies.some(
-        (p) => p.threadId === selectedThreadId && p.kind === 'campaign_reply'
+        (p) => p.threadId === selectedThreadId && p.kind === 'campaign_priority'
       );
       if (autoReplyPipelineState || hasPendingCampaignReply) {
         const stateLabel =

@@ -14,7 +14,7 @@ import {
 } from './flow-evaluation.js';
 import { handleWaitTimeNode } from './node-handlers/wait-time-handler.js';
 import { handleAICategorizerNode } from './node-handlers/ai-categorizer-handler.js';
-import { handleReplyEmailNode } from './node-handlers/reply-email-handler.js';
+import { handlePriorityEmailNode } from './node-handlers/priority-email-handler.js';
 import { handleDataSenderNode } from './node-handlers/data-sender-handler.js';
 import { maintainCampaignIntervals } from './interval-management.js';
 import { batchAssignIntervalJobs } from './batch-interval-assignment.js';
@@ -1092,15 +1092,18 @@ export class SchedulerWorker {
       for (const node of nextNodes) {
         console.log(`[ENROLLMENT ${enrollmentId}] Processing node: ${node.node_type} (${node.id.substring(0, 8)})`);
         
-        if (node.node_type === 'email' && node.node_data?.send_mode === 'reply') {
-          console.log(`[ENROLLMENT ${enrollmentId}] Handling reply-mode email node...`);
-          // Reply-mode email: scheduler creates a campaign_reply job directly
-          // (thread mailbox + threading headers); bypasses interval pacing.
-          await handleReplyEmailNode(enrollment, node, this.supabase, {
+        const isPriorityEmail =
+          node.node_type === 'email' &&
+          (node.node_data?.priority === true || node.node_data?.send_mode === 'reply');
+        if (isPriorityEmail) {
+          console.log(`[ENROLLMENT ${enrollmentId}] Handling priority email node...`);
+          // Priority email (downstream of categorizer): scheduler creates a
+          // campaign_priority job directly; bypasses interval pacing.
+          await handlePriorityEmailNode(enrollment, node, this.supabase, {
             schedule: campaign.schedule,
             activeFlowVersionNumber,
           });
-          console.log(`[ENROLLMENT ${enrollmentId}] Reply-mode email node processed.`);
+          console.log(`[ENROLLMENT ${enrollmentId}] Priority email node processed.`);
         } else if (node.node_type === 'email') {
           console.log(`[ENROLLMENT ${enrollmentId}] Handling email node...`);
           // Email node: just set current_node_id and stop

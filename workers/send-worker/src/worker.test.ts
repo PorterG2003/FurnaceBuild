@@ -637,128 +637,76 @@ test('SendWorker still fails and stops enrollment for non-retryable pre-send cam
   }
 });
 
-test('SendWorker keeps throttled campaign_reply retries on the reply lane', async () => {
-  const supabase = new ReplyRetrySupabase();
-  const worker = new SendWorker({
-    supabase: supabase as any,
-    databaseClient: {} as any,
-  });
-  const messageJob = createCampaignMessageJob({
-    message_type: 'campaign_reply',
-    message_data: { thread_id: 'thread-1' },
-  });
-
-  (worker as any).loadJobData = async () => ({
-    lead: {
-      id: 'lead-1',
-      email: 'lead@example.com',
-      deleted_at: null,
-      mailbox_id: 'mailbox-1',
-    },
-    mailbox: {
-      id: 'mailbox-1',
-      email_address: 'owner@example.com',
-      display_name: 'Owner',
-      deleted_at: null,
-    },
-    nodeConfig: {
-      subject: 'Subject',
-      body_html: '<p>Hello</p>',
-      body_text: 'Hello',
-      template: null,
-      body: null,
-      editor_mode: 'rich',
-    },
-  });
-
-  await (worker as any).processMessageJob(messageJob);
-
-  const replyRetryUpdate = supabase.calls.find(
-    (call) => call.table === 'message_jobs' && call.updates?.status === 'queued',
-  );
-  assert.ok(replyRetryUpdate, 'campaign_reply retry should be re-queued, not left deferred');
-  assert.equal(replyRetryUpdate?.updates?.status_reason, null);
-  assert.equal(
-    replyRetryUpdate?.updates?.send_wait_reason,
-    'Waiting for minimum time between sends',
-  );
-  assert.equal(typeof replyRetryUpdate?.updates?.scheduled_at, 'string');
-  assert.ok(
-    Date.parse(String(replyRetryUpdate?.updates?.scheduled_at)) >= Date.parse(supabase.retryFloor),
-  );
-
-  const enrollmentUpdate = supabase.calls.find(
-    (call) => call.table === 'enrollments' && call.updates?.next_run_at,
-  );
-  assert.ok(enrollmentUpdate, 'enrollment should stay aligned to the re-queued retry time');
-  assert.equal(enrollmentUpdate?.updates?.next_run_at, replyRetryUpdate?.updates?.scheduled_at);
-});
-
-test('SendWorker records sent campaign_reply messages in the replied thread', async () => {
-  const supabase = new ThreadRecordingSupabase();
-  const worker = new SendWorker({
-    supabase: supabase as any,
-    databaseClient: {} as any,
-  });
-
-  await (worker as any).recordCampaignReplyInThread(
-    createCampaignMessageJob({
-      id: 'reply-job-1',
-      message_type: 'campaign_reply',
+for (const messageType of ['campaign_priority', 'campaign_reply'] as const) {
+  test(`SendWorker keeps throttled ${messageType} retries on the priority lane`, async () => {
+    const supabase = new ReplyRetrySupabase();
+    const worker = new SendWorker({
+      supabase: supabase as any,
+      databaseClient: {} as any,
+    });
+    const messageJob = createCampaignMessageJob({
+      message_type: messageType,
       message_data: { thread_id: 'thread-1' },
-    }),
-    {
-      id: 'mailbox-1',
-      email_address: 'owner@example.com',
-      display_name: 'Owner',
-    },
-    {
-      id: 'lead-1',
-      email: 'lead@example.com',
-      first_name: 'Test',
-      last_name: 'Lead',
-    },
-    'Re: Hello',
-    '<p>Hello</p>',
-    'Hello',
-    '<provider@furnace.test>',
-    '<reply@furnace.test>',
-    '<reply@furnace.test> <provider@furnace.test>',
-  );
+    });
 
-  const insertCall = supabase.calls.find(
-    (call) => call.table === 'email_messages' && call.updates?.message_job_id === 'reply-job-1',
-  );
-  assert.ok(insertCall, 'campaign_reply should create an email_messages row');
-  assert.equal(insertCall?.updates?.message_id, '<provider@furnace.test>');
-  assert.equal(insertCall?.updates?.thread_id, 'thread-1');
+    (worker as any).loadJobData = async () => ({
+      lead: {
+        id: 'lead-1',
+        email: 'lead@example.com',
+        deleted_at: null,
+        mailbox_id: 'mailbox-1',
+      },
+      mailbox: {
+        id: 'mailbox-1',
+        email_address: 'owner@example.com',
+        display_name: 'Owner',
+        deleted_at: null,
+      },
+      nodeConfig: {
+        subject: 'Subject',
+        body_html: '<p>Hello</p>',
+        body_text: 'Hello',
+        template: null,
+        body: null,
+        editor_mode: 'rich',
+      },
+    });
 
-  const updateThreadCall = supabase.calls.find(
-    (call) => call.table === 'email_threads' && call.updates?.message_count === 3,
-  );
-  assert.ok(updateThreadCall, 'thread counters should be repaired from the observed message rows');
-  assert.equal(
-    updateThreadCall?.updates?.last_inbound_at,
-    undefined,
-    'outbound campaign_reply must not bump last_inbound_at',
-  );
-  assert.ok(updateThreadCall?.updates?.last_message_at, 'outbound still updates last_message_at');
-});
+    await (worker as any).processMessageJob(messageJob);
 
-test('SendWorker surfaces campaign_reply thread persistence failures to Slack', async () => {
-  const slack = setupSlackCapture();
-  const supabase = new ThreadRecordingSupabase('insert blocked');
-  const worker = new SendWorker({
-    supabase: supabase as any,
-    databaseClient: {} as any,
+    const replyRetryUpdate = supabase.calls.find(
+      (call) => call.table === 'message_jobs' && call.updates?.status === 'queued',
+    );
+    assert.ok(replyRetryUpdate, `${messageType} retry should be re-queued, not left deferred`);
+    assert.equal(replyRetryUpdate?.updates?.status_reason, null);
+    assert.equal(
+      replyRetryUpdate?.updates?.send_wait_reason,
+      'Waiting for minimum time between sends',
+    );
+    assert.equal(typeof replyRetryUpdate?.updates?.scheduled_at, 'string');
+    assert.ok(
+      Date.parse(String(replyRetryUpdate?.updates?.scheduled_at)) >= Date.parse(supabase.retryFloor),
+    );
+
+    const enrollmentUpdate = supabase.calls.find(
+      (call) => call.table === 'enrollments' && call.updates?.next_run_at,
+    );
+    assert.ok(enrollmentUpdate, 'enrollment should stay aligned to the re-queued retry time');
+    assert.equal(enrollmentUpdate?.updates?.next_run_at, replyRetryUpdate?.updates?.scheduled_at);
   });
 
-  try {
+  test(`SendWorker records sent ${messageType} messages in the replied thread`, async () => {
+    const supabase = new ThreadRecordingSupabase();
+    const worker = new SendWorker({
+      supabase: supabase as any,
+      databaseClient: {} as any,
+    });
+
     await (worker as any).recordCampaignReplyInThread(
       createCampaignMessageJob({
-        id: 'reply-job-2',
-        message_type: 'campaign_reply',
-        message_data: { thread_id: 'thread-2' },
+        id: 'reply-job-1',
+        message_type: messageType,
+        message_data: { thread_id: 'thread-1' },
       }),
       {
         id: 'mailbox-1',
@@ -771,22 +719,79 @@ test('SendWorker surfaces campaign_reply thread persistence failures to Slack', 
         first_name: 'Test',
         last_name: 'Lead',
       },
-      'Re: Hello',
+      'Hello',
       '<p>Hello</p>',
       'Hello',
       '<provider@furnace.test>',
-      '<reply@furnace.test>',
-      '<reply@furnace.test> <provider@furnace.test>',
+      null,
+      null,
     );
 
-    assert.equal(
-      slack.calls.some((body) => body.includes('failed to record sent campaign_reply in thread')),
-      true,
+    const insertCall = supabase.calls.find(
+      (call) => call.table === 'email_messages' && call.updates?.message_job_id === 'reply-job-1',
     );
-  } finally {
-    slack.restore();
-  }
-});
+    assert.ok(insertCall, `${messageType} should create an email_messages row`);
+    assert.equal(insertCall?.updates?.message_id, '<provider@furnace.test>');
+    assert.equal(insertCall?.updates?.thread_id, 'thread-1');
+    assert.equal(insertCall?.updates?.subject, 'Hello');
+    assert.equal(insertCall?.updates?.in_reply_to, null);
+    assert.equal(insertCall?.updates?.message_references, null);
+
+    const updateThreadCall = supabase.calls.find(
+      (call) => call.table === 'email_threads' && call.updates?.message_count === 3,
+    );
+    assert.ok(updateThreadCall, 'thread counters should be repaired from the observed message rows');
+    assert.equal(
+      updateThreadCall?.updates?.last_inbound_at,
+      undefined,
+      `outbound ${messageType} must not bump last_inbound_at`,
+    );
+    assert.ok(updateThreadCall?.updates?.last_message_at, 'outbound still updates last_message_at');
+  });
+
+  test(`SendWorker surfaces ${messageType} thread persistence failures to Slack`, async () => {
+    const slack = setupSlackCapture();
+    const supabase = new ThreadRecordingSupabase('insert blocked');
+    const worker = new SendWorker({
+      supabase: supabase as any,
+      databaseClient: {} as any,
+    });
+
+    try {
+      await (worker as any).recordCampaignReplyInThread(
+        createCampaignMessageJob({
+          id: 'reply-job-2',
+          message_type: messageType,
+          message_data: { thread_id: 'thread-2' },
+        }),
+        {
+          id: 'mailbox-1',
+          email_address: 'owner@example.com',
+          display_name: 'Owner',
+        },
+        {
+          id: 'lead-1',
+          email: 'lead@example.com',
+          first_name: 'Test',
+          last_name: 'Lead',
+        },
+        'Hello',
+        '<p>Hello</p>',
+        'Hello',
+        '<provider@furnace.test>',
+        null,
+        null,
+      );
+
+      assert.equal(
+        slack.calls.some((body) => body.includes('failed to record sent campaign_reply in thread')),
+        true,
+      );
+    } finally {
+      slack.restore();
+    }
+  });
+}
 
 test('SendWorker persists successful inbox_forward jobs into thread history', async () => {
   const supabase = new InboxForwardSupabase();

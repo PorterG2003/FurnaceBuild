@@ -2,7 +2,6 @@ import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Pressable, Platform, ScrollView, type ViewStyle } from 'react-native';
 import { BaseModal, ConfirmModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
-import { Toggle } from '@/components/ui/Toggle';
 import { Alert } from '@/components/ui/feedback/Alert';
 import { MergeTagVariablePicker } from '@/components/builder/MergeTagVariablePicker';
 import { useConfirmClose } from '@/hooks/useConfirmClose';
@@ -43,6 +42,7 @@ interface VariableInputProps {
   placeholder?: string;
   multiline?: boolean;
   minHeight?: number;
+  marginBottom?: number;
   variant?: 'subject' | 'body';
   variables: LeadVariable[];
 }
@@ -54,6 +54,7 @@ const VariableInput = ({
   placeholder,
   multiline = false,
   minHeight,
+  marginBottom = 24,
   variant = 'body',
   variables,
 }: VariableInputProps) => {
@@ -71,7 +72,7 @@ const VariableInput = ({
   };
 
   return (
-    <View style={{ marginBottom: 24 }}>
+    <View style={{ marginBottom }}>
       <Text className="text-sm font-instrument-medium mb-2 text-gray-300">{label}</Text>
       <View style={{ position: 'relative' }}>
         <TextInput
@@ -222,21 +223,16 @@ export interface EmailNodeModalProps {
     mappedStandardFieldKeys?: string[];
     /** Campaign lifecycle: draft = pre-start */
     campaignStatus?: 'draft' | 'running' | 'paused' | 'stopped';
-    /** 'reply' = send in the replied thread (after a Categorizer branch). */
-    send_mode?: 'new' | 'reply';
-    /** Reply mode requires a Categorizer in the flow (set by the builder). */
-    flowHasCategorizer?: boolean;
   };
 }
 
 type EmailNodeDraftSnapshot = {
   label: string;
-  sendMode: 'new' | 'reply';
   variants: EmailNodeVariant[];
 };
 
 function emailNodeDraftEquals(a: EmailNodeDraftSnapshot, b: EmailNodeDraftSnapshot): boolean {
-  if (a.label !== b.label || a.sendMode !== b.sendMode) return false;
+  if (a.label !== b.label) return false;
   const sortedA = sortVariantsForRoundRobin(a.variants);
   const sortedB = sortVariantsForRoundRobin(b.variants);
   if (sortedA.length !== sortedB.length) return false;
@@ -259,7 +255,6 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
   const isPostStart = initialData?.campaignStatus != null && initialData.campaignStatus !== 'draft';
 
   const [label, setLabel] = useState(initialData?.label || 'Send Email');
-  const [sendMode, setSendMode] = useState<'new' | 'reply'>(initialData?.send_mode === 'reply' ? 'reply' : 'new');
   const [variants, setVariants] = useState<EmailNodeVariant[]>([]);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const bodyEditorRef = useRef<{ getHTML: () => string; getText: () => string } | null>(null);
@@ -296,16 +291,13 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
   useEffect(() => {
     if (!visible || !initialData) return;
     const nextLabel = initialData.label ?? 'Send Email';
-    const nextSendMode = initialData.send_mode === 'reply' ? 'reply' : 'new';
     setLabel(nextLabel);
-    setSendMode(nextSendMode);
     const { variants: v, legacyFields } = normalizeLegacyEmailNodeData(
       initialData as Record<string, unknown>
     );
     const sorted = sortVariantsForRoundRobin(v);
     initialDraftRef.current = {
       label: nextLabel,
-      sendMode: nextSendMode,
       variants: sorted.map((variant) => ({ ...variant })),
     };
     setVariants(sorted);
@@ -330,10 +322,9 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
     });
     return {
       label,
-      sendMode,
       variants: mergedVariants,
     };
-  }, [label, sendMode, variants, selectedVariantId, selectedVariantMode]);
+  }, [label, variants, selectedVariantId, selectedVariantMode]);
 
   const isDirty =
     initialDraftRef.current === null
@@ -500,7 +491,6 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
     onSave({
       label,
       mailboxId: (initialData as { mailboxId?: string })?.mailboxId ?? '',
-      send_mode: initialData?.flowHasCategorizer ? sendMode : 'new',
       variants: withSystemLabels,
     });
     onClose();
@@ -601,30 +591,6 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
               selectionColor="#FF4D00"
             />
           </View>
-
-          {initialData?.flowHasCategorizer ? (
-            <View
-              style={{ flexShrink: 0 }}
-              className="flex-row items-center justify-between gap-3 py-0.5"
-            >
-              <View className="flex-1 shrink">
-                <Text className="text-sm font-instrument-medium text-gray-300">
-                  Send as reply in the lead&apos;s thread
-                </Text>
-                <Text className="text-xs font-instrument text-gray-500 mt-0.5">
-                  Sends from the mailbox the lead replied to with an automatic
-                  &quot;Re:&quot; subject (the subject below is ignored). Requires the
-                  Categorizer to have branched.
-                </Text>
-              </View>
-              <View className="shrink-0" style={{ paddingVertical: 2 }}>
-                <Toggle
-                  value={sendMode === 'reply'}
-                  onValueChange={(on) => setSendMode(on ? 'reply' : 'new')}
-                />
-              </View>
-            </View>
-          ) : null}
 
           <View
             style={{
@@ -791,19 +757,18 @@ function EmailNodeModal({ visible, onClose, onSave, initialData }: EmailNodeModa
 
             {selectedVariant && (
               <>
-                <View>
+                <View style={{ marginBottom: 24 }}>
                   <VariableInput
                     label="Subject"
                     value={subject}
                     onChange={(s) => updateSelectedVariant({ subject: s })}
                     placeholder="e.g. Quick idea for {{first_name}} (or leave empty to continue thread)"
                     variant="subject"
+                    marginBottom={4}
                     variables={leadVariables}
                   />
-                  <Text className="text-xs text-gray-500 mt-1.5">
-                    {sendMode === 'reply'
-                      ? 'Reply mode: the subject is ignored — the email uses "Re: <thread subject>" automatically.'
-                      : 'Leave empty on follow-ups to keep the same thread.'}
+                  <Text className="text-xs text-gray-500">
+                    Leave empty on follow-ups to keep the same thread.
                   </Text>
                 </View>
 

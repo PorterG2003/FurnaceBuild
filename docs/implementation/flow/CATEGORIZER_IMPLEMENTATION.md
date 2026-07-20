@@ -13,7 +13,7 @@ The "AI Categorizer" placeholder becomes the **Categorizer** node:
 - Two modes per node: **AI** (cheap LLM via OpenRouter) or **manual** (user categorizes the thread in the Master Inbox).
 - Triggered by **any reply** on any of the enrollment's threads. The remaining outbound sequence is put on **hold** (not cancelled) until the category resolves.
 - New first-class **Auto Reply** category (OOO/autoresponders). Auto Reply never branches — it **restores** the held outbound sequence, timed to a return date extracted from the OOO text when AI is on.
-- Post-categorizer email nodes can send **in-thread replies** (`send_mode: 'reply'`): the replied thread's mailbox, `In-Reply-To`/`References` headers, automatic `Re:` subject, no interval pacing, priority send lane.
+- Post-categorizer email nodes send on the **priority lane** (`priority: true`): the marker is positional (downstream of a categorizer), skips interval pacing, and no longer depends on subject content.
 
 ## Decisions of record
 
@@ -27,7 +27,7 @@ The "AI Categorizer" placeholder becomes the **Categorizer** node:
 | Reply mid-sequence | Hold pending jobs + snapshot position; fast-forward to categorizer |
 | Auto Reply | Restore held jobs/position; resume at extracted return date or now |
 | Manual mode | Park with holds kept; Master Inbox category decides (real → branch, Auto Reply → restore) |
-| Post-categorizer email | Per-node `send_mode` toggle, default `'reply'` when flow has a categorizer |
+| Post-categorizer email | Derived `priority: true` for any email downstream of a categorizer |
 | Reply-mode mailbox down | Park with 6h retry; never send from another mailbox |
 | AI gating | Info box in node modal (accuracy disclaimer); Preview modal against real replies |
 | Validation | Max one Categorizer per flow; reply-mode email requires a Categorizer |
@@ -65,8 +65,8 @@ sequenceDiagram
     end
     alt Real category
         Sched->>DB: cancel holds, reply_thread_id, branch edge
-        Sched->>DB: reply-email node -> campaign_reply job
-        Send->>Lead: sendReplyEmail in same thread
+        Sched->>DB: priority-email node -> campaign_priority job
+        Send->>Lead: send email on priority lane
     else Auto Reply
         Sched->>DB: restore_enrollment_outbound at return_date
     end
@@ -97,7 +97,7 @@ Migration `supabase/migrations/<ts>_categorizer_hold_restore.sql`:
 - `enrollments.held_node_id uuid NULL`, `enrollments.held_next_run_at timestamptz NULL` — outbound snapshot; `held_node_id IS NOT NULL` means restorable.
 - Partial index on parked enrollments (`state='active' AND next_run_at IS NULL AND deleted_at IS NULL`).
 - `message_jobs.status` CHECK gains `'held'`. Held jobs are invisible to all claim RPCs (`status='pending'` filters).
-- `message_jobs.message_type` CHECK gains `'campaign_reply'`; pending-manual partial index and `claim_manual_message_jobs_ready` include it.
+- `message_jobs.message_type` CHECK gains `'campaign_priority'` (with legacy `'campaign_reply'` still accepted during compatibility); pending-manual partial index and `claim_manual_message_jobs_ready` include both.
 - "Auto Reply" needs no schema change: `email_threads.category` is TEXT; `category_source` already allows `'system'`.
 
 ### RPCs
@@ -157,15 +157,15 @@ Operational analysis workflow:
 
 30-min `startSingleFlightInterval` in `worker.ts` (OOO-resume shape).
 
-## Reply-mode email node
+## Priority email node
 
-- Node data `send_mode: 'new' | 'reply'` (absent = `'new'`). Builder defaults to `'reply'` when the flow contains a Categorizer at node creation.
-- `handleReplyEmailNode` (scheduler): requires `reply_thread_id` (NULL -> stop with `stopped_reason='error'`). Builds a `campaign_reply` job like `create_inbox_reply_job`: thread's mailbox, `In-Reply-To` = latest inbound `message_id`, `References` = full chain, subject `Re: <thread subject>`, body from the node's variant pipeline, `node_id` set, `interval_id` NULL, `scheduled_at` = NOW clamped to campaign schedule (no jitter/interval).
+- Node data uses derived `priority: boolean` (`true` downstream of a categorizer, `false` otherwise). Subject content no longer changes the lane.
+- `handleReplyEmailNode` (scheduler): requires `reply_thread_id` (NULL -> stop with `stopped_reason='error'`). Builds a `campaign_priority` job with normal campaign-style `message_data`, `node_id` set, `interval_id` NULL, and `scheduled_at` = NOW clamped to campaign schedule (no jitter/interval).
 - Mailbox disconnected/paused/deleted → no job, `next_run_at +6h`, never another mailbox.
-- Send worker: `campaign_reply` is claimed in the manual-priority lane, routed through the campaign send pipeline with reply threading, and still honors mailbox throttles.
-- Daily mailbox cap does **not** delay `campaign_reply`; reply-mode sends share the same daily accounting as manual inbox replies, but only dedicated `campaign` sends wait until tomorrow when the daily limit is exhausted.
-- Throttle retries stay on the same `campaign_reply` row (reply-lane semantics) instead of falling back to campaign deferred/recreate behavior. Hourly and min-gap retries still clamp `scheduled_at` to the next allowed campaign send window, so reply-mode sends respect both the mailbox throttle floor and the campaign schedule.
-- After SMTP success, the send worker performs an idempotent thread write: it ensures an `email_messages` row exists for the sent `campaign_reply`, relinks an existing row by `message_id` if needed, and repairs `email_threads.message_count`, `last_message_at`, and `participants` from the observed thread rows before bumping the enrollment.
+- Send worker: `campaign_priority` (and legacy `campaign_reply`) is claimed in the manual-priority lane, routed through the normal first-outbound campaign send pipeline, and still honors mailbox throttles.
+- Daily mailbox cap does **not** delay `campaign_priority`; priority sends share the same daily accounting as manual inbox replies, but only dedicated `campaign` sends wait until tomorrow when the daily limit is exhausted.
+- Throttle retries stay on the same `campaign_priority` row (reply-lane semantics) instead of falling back to campaign deferred/recreate behavior. Hourly and min-gap retries still clamp `scheduled_at` to the next allowed campaign send window, so priority sends respect both the mailbox throttle floor and the campaign schedule.
+- After SMTP success, the send worker performs an idempotent thread write: it ensures an `email_messages` row exists for the sent `campaign_priority`, relinks an existing row by `message_id` if needed, and repairs `email_threads.message_count`, `last_message_at`, and `participants` from the observed thread rows before bumping the enrollment.
 
 ## Inbox / UI
 
@@ -178,14 +178,14 @@ Operational analysis workflow:
 
 - Metadata label "Categorizer"; node renders three fixed source handles (`interested`/`neutral`/`not-interested`).
 - Modal: label, `use_ai` toggle (default off), AI info box, Preview button. Node data `{ label, use_ai }`.
-- Save validation: max one Categorizer; reply-mode emails require a Categorizer.
+- Save validation: max one Categorizer; `priority: true` emails require a Categorizer.
 - `CategorizerPreviewModal`: campaign's replied threads + predicted (AI, via `categorizerPreview` Amplify function) or current (manual) categories. Read-only.
 
 ## Slack alerting
 
 - **Critical**: park RPC failure (reply failed to halt outbound), restore failure (stranded holds), branch-time failure (double-process/leak risk).
 - **Warning**: LLM failures after 3 consecutive (aggregated per campaign), stats-sync failure post-classification, reply-email mailbox unavailable (first occurrence, aggregated), `reply_thread_id NULL` at reply node, edge mismatch, sweep timer `onError`.
-- **Warning**: `campaign_reply` post-send thread persistence failure (email already sent, Master Inbox row may need repair).
+- **Warning**: `campaign_priority` post-send thread persistence failure (email already sent, Master Inbox row may need repair).
 - **Audit**: self-recovery additions — orphaned holds (held jobs on dead enrollments) and stale parks (branchable category unprocessed > 24h).
 
 Client-side failures stay console-only; the sweep covers a lost manual wake within 30 minutes.
@@ -200,7 +200,7 @@ Client-side failures stay console-only; the sweep covers a lost manual wake with
 - Recategorization after branch updates stats but never re-routes.
 - Old freeform-category draft nodes must be re-connected to the new fixed handles.
 - Auto-replies still count in `replied_count` (event recorded before classification).
-- Already-sent prod rows that predate the durable thread-write fix can be repaired with `scripts/repair-campaign-reply-inbox-rows.ts`.
+- Already-sent prod rows that predate the durable thread-write fix can be repaired with `scripts/repair-campaign-reply-inbox-rows.ts` (covers `campaign_priority` plus legacy `campaign_reply` rows).
 
 ## Test strategy
 

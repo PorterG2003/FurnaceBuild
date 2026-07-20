@@ -146,7 +146,7 @@ export class ThreadManager {
       return 0;
     }
 
-    if (messageType === 'campaign_reply') {
+    if (messageType === 'campaign_reply' || messageType === 'campaign_priority') {
       return 1;
     }
 

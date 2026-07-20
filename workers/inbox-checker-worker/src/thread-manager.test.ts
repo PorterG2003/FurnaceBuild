@@ -1173,7 +1173,7 @@ test('handleBounce records one bounced event for the same bounce across repeated
         campaign_id: 'campaign-1',
         enrollment_id: 'enrollment-dup',
         lead_id: 'lead-1',
-        message_type: 'campaign_reply',
+        message_type: 'campaign_priority',
         sent_at: '2026-04-05T01:30:00.000Z',
       },
       {

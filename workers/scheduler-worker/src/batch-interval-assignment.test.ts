@@ -167,56 +167,47 @@ function createCampaign(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function createEnrollment(id: string, overrides: Record<string, unknown> = {}) {
+/** Flat row shape returned by get_ready_interval_enrollments. */
+function createReadyEnrollment(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
     lead_id: `${id}-lead`,
     current_node_id: nodeId,
-    lead: {
-      id: `${id}-lead`,
-      mailbox_id: 'mailbox-1',
-      email: `${id}@example.com`,
-      name: `Lead ${id}`,
-      first_name: 'Lead',
-      last_name: id,
-      deleted_at: null,
-    },
+    next_run_at: '2026-04-19T13:00:00.000Z',
+    created_at: '2026-04-19T12:00:00.000Z',
+    lead_mailbox_id: 'mailbox-1',
+    lead_email: `${id}@example.com`,
+    lead_name: `Lead ${id}`,
+    lead_first_name: 'Lead',
+    lead_last_name: id,
     ...overrides,
   };
 }
 
-test('batchAssignIntervalJobs batches existing job lookup before interval RPC', async () => {
+test('batchAssignIntervalJobs uses ready-enrollments RPC before interval RPC', async () => {
   const supabase = new MockSupabase([
     { data: [createCampaign()] }, // campaigns
     { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] }, // earliest incomplete interval
-    { data: [{ id: nodeId }] }, // email nodes
+    { data: [{ id: nodeId, node_data: { subject: 'Hello' } }] }, // email nodes (includes node_data)
     {
+      // get_ready_interval_enrollments already excludes enrollment-existing
       data: [
-        createEnrollment('enrollment-existing'),
-        createEnrollment('enrollment-new', {
+        createReadyEnrollment('enrollment-new', {
           lead_id: 'lead-2',
-          lead: {
-            id: 'lead-2',
-            mailbox_id: 'mailbox-2',
-            email: 'new@example.com',
-            name: 'New Lead',
-            first_name: 'New',
-            last_name: 'Lead',
-            deleted_at: null,
-          },
+          lead_mailbox_id: 'mailbox-2',
+          lead_email: 'new@example.com',
+          lead_name: 'New Lead',
+          lead_first_name: 'New',
+          lead_last_name: 'Lead',
         }),
       ],
-    }, // enrollments
-    {
-      data: [{ enrollment_id: 'enrollment-existing', node_id: nodeId }],
-    }, // get_existing_message_job_pairs
+    },
     {
       data: [
         { mailbox_id: 'mailbox-1', mailbox: { id: 'mailbox-1', status: 'connected', smtp_status: 'active', deleted_at: null } },
         { mailbox_id: 'mailbox-2', mailbox: { id: 'mailbox-2', status: 'connected', smtp_status: 'active', deleted_at: null } },
       ],
     }, // campaign_mailboxes
-    { data: [{ id: nodeId, node_data: { subject: 'Hello' } }] }, // nodes data
     {
       data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
     }, // batch_assign_jobs_to_interval
@@ -226,14 +217,13 @@ test('batchAssignIntervalJobs batches existing job lookup before interval RPC', 
 
   const rpcCalls = supabase.calls.filter((call): call is RpcCall => call.kind === 'rpc');
   assert.deepEqual(rpcCalls.map((call) => call.fn), [
-    'get_existing_message_job_pairs',
+    'get_ready_interval_enrollments',
     'batch_assign_jobs_to_interval',
   ]);
 
-  assert.deepEqual(rpcCalls[0].args.p_pairs, [
-    { enrollment_id: 'enrollment-existing', node_id: nodeId },
-    { enrollment_id: 'enrollment-new', node_id: nodeId },
-  ]);
+  assert.deepEqual(rpcCalls[0].args.p_campaign_id, campaignId);
+  assert.deepEqual(rpcCalls[0].args.p_node_ids, [nodeId]);
+  assert.ok(typeof rpcCalls[0].args.p_now === 'string');
 
   const jobData = rpcCalls[1].args.p_job_data as Array<Record<string, unknown>>;
   assert.equal(jobData.length, 1);
@@ -243,46 +233,38 @@ test('batchAssignIntervalJobs batches existing job lookup before interval RPC', 
   assert.equal(rpcCalls[1].args.p_required_mailbox_count, 2);
 });
 
-test('batchAssignIntervalJobs skips batch RPC when all candidates already have jobs', async () => {
+test('batchAssignIntervalJobs skips batch RPC when ready-enrollments RPC returns none', async () => {
   const supabase = new MockSupabase([
     { data: [createCampaign()] },
     { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] },
-    { data: [{ id: nodeId }] },
-    { data: [createEnrollment('enrollment-existing')] },
-    {
-      data: [{ enrollment_id: 'enrollment-existing', node_id: nodeId }],
-    },
+    { data: [{ id: nodeId, node_data: { subject: 'Hello' } }] },
+    { data: [] }, // get_ready_interval_enrollments — all candidates already have jobs
   ]);
 
   await batchAssignIntervalJobs(supabase as any, 0);
 
   const rpcCalls = supabase.calls.filter((call): call is RpcCall => call.kind === 'rpc');
-  assert.deepEqual(rpcCalls.map((call) => call.fn), ['get_existing_message_job_pairs']);
+  assert.deepEqual(rpcCalls.map((call) => call.fn), ['get_ready_interval_enrollments']);
 });
 
 test('batchAssignIntervalJobs preserves round-robin mailbox selection for unassigned leads', async () => {
   const supabase = new MockSupabase([
     { data: [createCampaign()] }, // campaigns
     { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] }, // earliest incomplete interval
-    { data: [{ id: nodeId }, { id: otherNodeId }] }, // email nodes
+    { data: [{ id: nodeId, node_data: { subject: 'Hi' } }, { id: otherNodeId, node_data: { subject: 'Hi' } }] }, // email nodes
     {
       data: [
-        createEnrollment('enrollment-unassigned', {
+        createReadyEnrollment('enrollment-unassigned', {
           current_node_id: otherNodeId,
           lead_id: 'lead-unassigned',
-          lead: {
-            id: 'lead-unassigned',
-            mailbox_id: null,
-            email: 'unassigned@example.com',
-            name: 'Unassigned Lead',
-            first_name: 'Unassigned',
-            last_name: 'Lead',
-            deleted_at: null,
-          },
+          lead_mailbox_id: null,
+          lead_email: 'unassigned@example.com',
+          lead_name: 'Unassigned Lead',
+          lead_first_name: 'Unassigned',
+          lead_last_name: 'Lead',
         }),
       ],
-    }, // enrollments
-    { data: [] }, // get_existing_message_job_pairs
+    }, // get_ready_interval_enrollments
     { data: [] }, // live campaign jobs by lead
     {
       data: [
@@ -290,7 +272,6 @@ test('batchAssignIntervalJobs preserves round-robin mailbox selection for unassi
         { mailbox_id: 'mailbox-2', mailbox: { id: 'mailbox-2', status: 'connected', smtp_status: 'active', deleted_at: null } },
       ],
     }, // campaign_mailboxes for eligibility
-    { data: [{ id: otherNodeId, node_data: { subject: 'Hi' } }] }, // nodes data
     {
       data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
     }, // batch_assign_jobs_to_interval
@@ -318,31 +299,25 @@ test('batchAssignIntervalJobs only keeps one candidate per mailbox for the curre
   const supabase = new MockSupabase([
     { data: [createCampaign()] },
     { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] },
-    { data: [{ id: nodeId }] },
+    { data: [{ id: nodeId, node_data: { subject: 'Hello' } }] },
     {
       data: [
-        createEnrollment('enrollment-a'),
-        createEnrollment('enrollment-b', {
+        createReadyEnrollment('enrollment-a'),
+        createReadyEnrollment('enrollment-b', {
           lead_id: 'lead-b',
-          lead: {
-            id: 'lead-b',
-            mailbox_id: 'mailbox-1',
-            email: 'b@example.com',
-            name: 'Lead B',
-            first_name: 'Lead',
-            last_name: 'B',
-            deleted_at: null,
-          },
+          lead_mailbox_id: 'mailbox-1',
+          lead_email: 'b@example.com',
+          lead_name: 'Lead B',
+          lead_first_name: 'Lead',
+          lead_last_name: 'B',
         }),
       ],
     },
-    { data: [] },
     {
       data: [
         { mailbox_id: 'mailbox-1', mailbox: { id: 'mailbox-1', status: 'connected', smtp_status: 'active', deleted_at: null } },
       ],
     },
-    { data: [{ id: nodeId, node_data: { subject: 'Hello' } }] },
     {
       data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
     },
@@ -364,26 +339,21 @@ test('batchAssignIntervalJobs reuses live campaign job mailbox before first send
   const supabase = new MockSupabase([
     { data: [createCampaign()] },
     { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] },
-    { data: [{ id: otherNodeId }] },
+    { data: [{ id: otherNodeId, node_data: { subject: 'Hi' } }] },
     {
       data: [
-        createEnrollment('enrollment-live-mailbox', {
+        createReadyEnrollment('enrollment-live-mailbox', {
           current_node_id: otherNodeId,
           lead_id: 'lead-live',
           next_run_at: '2026-04-19T13:00:00.000Z',
-          lead: {
-            id: 'lead-live',
-            mailbox_id: null,
-            email: 'live@example.com',
-            name: 'Live Lead',
-            first_name: 'Live',
-            last_name: 'Lead',
-            deleted_at: null,
-          },
+          lead_mailbox_id: null,
+          lead_email: 'live@example.com',
+          lead_name: 'Live Lead',
+          lead_first_name: 'Live',
+          lead_last_name: 'Lead',
         }),
       ],
-    },
-    { data: [] }, // get_existing_message_job_pairs
+    }, // get_ready_interval_enrollments
     {
       data: [
         {
@@ -399,7 +369,6 @@ test('batchAssignIntervalJobs reuses live campaign job mailbox before first send
         { mailbox_id: 'mailbox-1', mailbox: { id: 'mailbox-1', status: 'connected', smtp_status: 'active', deleted_at: null } },
       ],
     }, // campaign_mailboxes for eligibility
-    { data: [{ id: otherNodeId, node_data: { subject: 'Hi' } }] }, // nodes data
     {
       data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
     },
@@ -418,26 +387,21 @@ test('batchAssignIntervalJobs reuses live campaign job mailbox before first send
 
 test('batchAssignIntervalJobs chunks live campaign job mailbox lookup by lead_id for large batches', async () => {
   const enrollmentRows = Array.from({ length: 150 }, (_, i) =>
-    createEnrollment(`enrollment-${i}`, {
+    createReadyEnrollment(`enrollment-${i}`, {
       lead_id: `lead-${i}`,
-      lead: {
-        id: `lead-${i}`,
-        mailbox_id: null,
-        email: `user-${i}@example.com`,
-        name: `Lead ${i}`,
-        first_name: 'Lead',
-        last_name: String(i),
-        deleted_at: null,
-      },
+      lead_mailbox_id: null,
+      lead_email: `user-${i}@example.com`,
+      lead_name: `Lead ${i}`,
+      lead_first_name: 'Lead',
+      lead_last_name: String(i),
     }),
   );
 
   const supabase = new MockSupabase([
     { data: [createCampaign()] },
     { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] },
-    { data: [{ id: nodeId }] },
+    { data: [{ id: nodeId, node_data: { subject: 'Hello' } }] },
     { data: enrollmentRows },
-    { data: [] },
     { data: [] },
     { data: [] },
     {
@@ -448,7 +412,6 @@ test('batchAssignIntervalJobs chunks live campaign job mailbox lookup by lead_id
         },
       ],
     },
-    { data: [{ id: nodeId, node_data: { subject: 'Hello' } }] },
     {
       data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
     },
@@ -465,4 +428,28 @@ test('batchAssignIntervalJobs chunks live campaign job mailbox lookup by lead_id
   );
   assert.equal((leadInFilters[0] as unknown[]).length, 100);
   assert.equal((leadInFilters[1] as unknown[]).length, 50);
+});
+
+test('batchAssignIntervalJobs does not issue a second nodes query', async () => {
+  const supabase = new MockSupabase([
+    { data: [createCampaign()] },
+    { data: [{ id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z', status: 'available' }] },
+    { data: [{ id: nodeId, node_data: { subject: 'Hello' } }] },
+    { data: [createReadyEnrollment('enrollment-new')] },
+    {
+      data: [
+        { mailbox_id: 'mailbox-1', mailbox: { id: 'mailbox-1', status: 'connected', smtp_status: 'active', deleted_at: null } },
+      ],
+    },
+    {
+      data: [{ jobs_created: 1, interval_id: 'interval-1', interval_time: '2026-04-19T14:00:00.000Z' }],
+    },
+  ]);
+
+  await batchAssignIntervalJobs(supabase as any, 0);
+
+  const nodesQueries = supabase.calls.filter(
+    (call): call is QueryCall => call.kind === 'query' && call.table === 'nodes',
+  );
+  assert.equal(nodesQueries.length, 1, 'node_data must be reused from the initial email-nodes load');
 });

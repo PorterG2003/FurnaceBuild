@@ -12,11 +12,15 @@ import type { RefObject } from 'react';
 import type { AccountMembership } from '@/lib/supabase/services/accounts';
 import { useOpenConversationCounts } from '@/contexts/OpenConversationCountsContext';
 import { CountBadge } from '@/components/ui/CountBadge';
+import { PopupPortal } from '@/components/ui/PopupPortal';
 
 const LIST_MAX_HEIGHT = 280;
-/** Reserve space for nav chrome above/below the panel (logo, nav items, trigger, Settings, Sign out). */
-const PANEL_VERTICAL_RESERVE = 280;
 const PANEL_BODY_MAX = 460;
+/** Match PopupPortal EDGE_PAD so the floating panel never overflows the viewport. */
+const POPUP_EDGE_PAD = 8;
+/** Approximate height of switcher chrome outside the list (title + search + paddings). */
+const SWITCHER_CHROME_HEIGHT = 120;
+const POPUP_MIN_WIDTH = 280;
 
 function roleLabel(role: string): string {
   if (role === 'owner') return 'Owner';
@@ -226,6 +230,16 @@ export interface WorkspaceSwitcherPopoverProps {
   isExpanded?: boolean;
   /** Current workspace name for trigger label when expanded. */
   currentWorkspaceName?: string | null;
+  /**
+   * When true, render the list in a floating PopupPortal instead of an inline
+   * panel (used when the navbar is too short to fit the inline panel).
+   */
+  renderAsPopup?: boolean;
+  /**
+   * Max height available for the inline panel body (nav spacer minus open margins).
+   * When provided, caps the inline panel so Settings/Sign Out stay visible.
+   */
+  availableInlineHeight?: number;
 }
 
 export function WorkspaceSwitcherPopover({
@@ -237,6 +251,8 @@ export function WorkspaceSwitcherPopover({
   containerRef,
   isExpanded = true,
   currentWorkspaceName,
+  renderAsPopup = false,
+  availableInlineHeight,
 }: WorkspaceSwitcherPopoverProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = controlledOpen !== undefined;
@@ -291,9 +307,34 @@ export function WorkspaceSwitcherPopover({
   }, [open, handleClose]);
 
   const { height: windowHeight } = useWindowDimensions();
-  const panelMaxHeight = useMemo(
-    () => Math.min(PANEL_BODY_MAX, Math.max(200, windowHeight - PANEL_VERTICAL_RESERVE)),
+  const panelMaxHeight = useMemo(() => {
+    if (availableInlineHeight != null && availableInlineHeight > 0) {
+      return Math.min(PANEL_BODY_MAX, availableInlineHeight);
+    }
+    // Fallback when parent has not measured spacer yet
+    return Math.min(PANEL_BODY_MAX, Math.max(200, windowHeight * 0.4));
+  }, [availableInlineHeight, windowHeight]);
+  const popupMaxHeight = useMemo(
+    () => Math.max(200, windowHeight - POPUP_EDGE_PAD * 2),
     [windowHeight],
+  );
+  const popupListMaxHeight = useMemo(
+    () => Math.max(120, popupMaxHeight - SWITCHER_CHROME_HEIGHT),
+    [popupMaxHeight],
+  );
+  const inlineListMaxHeight = useMemo(
+    () => Math.max(80, panelMaxHeight - SWITCHER_CHROME_HEIGHT),
+    [panelMaxHeight],
+  );
+
+  const switcherContent = (
+    <WorkspaceSwitcherContent
+      memberships={memberships}
+      currentAccountId={currentAccountId}
+      onChange={handleSelect}
+      listMaxHeight={renderAsPopup ? popupListMaxHeight : inlineListMaxHeight}
+      searchInputRef={searchInputRef}
+    />
   );
 
   return (
@@ -323,29 +364,54 @@ export function WorkspaceSwitcherPopover({
         )}
       </Pressable>
 
-      {open && (
-        <>
+      {renderAsPopup ? (
+        <PopupPortal
+          anchorRef={triggerRef}
+          open={open}
+          onClose={handleClose}
+          placement="right-start"
+          gap={8}
+          sameWidth={false}
+        >
           <View
             style={{
-              width: '100%',
-              maxHeight: panelMaxHeight,
-              marginTop: 12,
-              backgroundColor: 'transparent',
+              minWidth: POPUP_MIN_WIDTH,
+              maxHeight: popupMaxHeight,
+              backgroundColor: '#1A1A1A',
+              borderWidth: 1,
+              borderColor: '#2A2A2A',
+              borderRadius: 12,
               overflow: 'hidden',
+              // Web-friendly shadow; harmless on native View
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.35,
+              shadowRadius: 16,
+              elevation: 12,
             }}
           >
-            <WorkspaceSwitcherContent
-              memberships={memberships}
-              currentAccountId={currentAccountId}
-              onChange={handleSelect}
-              listMaxHeight={panelMaxHeight - 120}
-              searchInputRef={searchInputRef}
-            />
+            {switcherContent}
           </View>
-          <View style={{ marginTop: 12 }}>
-            <View className="h-px bg-[#2A2A2A]" />
-          </View>
-        </>
+        </PopupPortal>
+      ) : (
+        open && (
+          <>
+            <View
+              style={{
+                width: '100%',
+                maxHeight: panelMaxHeight,
+                marginTop: 12,
+                backgroundColor: 'transparent',
+                overflow: 'hidden',
+              }}
+            >
+              {switcherContent}
+            </View>
+            <View style={{ marginTop: 12 }}>
+              <View className="h-px bg-[#2A2A2A]" />
+            </View>
+          </>
+        )
       )}
     </View>
   );

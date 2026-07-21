@@ -106,6 +106,7 @@ export function resolveAmplifySecretParamPathForTarget(
     RESEND_API_KEY: process.env.RESEND_API_KEY_PARAM_PATH?.trim(),
     APOLLO_API_KEY: process.env.APOLLO_API_KEY_PARAM_PATH?.trim(),
     MILLION_VERIFIER_API_KEY: process.env.MILLION_VERIFIER_API_KEY_PARAM_PATH?.trim(),
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY_PARAM_PATH?.trim(),
   };
   const explicitPath = explicitPathBySegment[secretSegment];
   if (explicitPath) {
@@ -145,6 +146,12 @@ export function resolveMillionVerifierApiKeyParamPathForTarget(
   targetEnv: 'prod' | 'dev',
 ): string | null {
   return resolveAmplifySecretParamPathForTarget(targetEnv, 'MILLION_VERIFIER_API_KEY');
+}
+
+export function resolveOpenRouterApiKeyParamPathForTarget(
+  targetEnv: 'prod' | 'dev',
+): string | null {
+  return resolveAmplifySecretParamPathForTarget(targetEnv, 'OPENROUTER_API_KEY');
 }
 
 export async function resolveResendApiKey(options?: {
@@ -220,5 +227,32 @@ export async function resolveMillionVerifierApiKey(options?: {
 
   throw new Error(
     'Missing MILLION_VERIFIER_API_KEY. Set MILLION_VERIFIER_API_KEY_PARAM_PATH or DEV_SECRET_SSM_PREFIX / PROD_SECRET_SSM_PREFIX (same Amplify secrets folder as SUPABASE_SECRET_KEY).',
+  );
+}
+
+export async function resolveOpenRouterApiKey(options?: {
+  targetEnv?: 'prod' | 'dev';
+  awsRegion?: string;
+}): Promise<{ apiKey: string; source: string }> {
+  const targetEnv = options?.targetEnv ?? resolveSelfRecoveryTargetEnv();
+  const awsRegion =
+    options?.awsRegion?.trim() ||
+    process.env.AWS_REGION?.trim() ||
+    process.env.CDK_DEFAULT_REGION?.trim() ||
+    'us-west-2';
+
+  const fromEnv = process.env.OPENROUTER_API_KEY?.trim();
+  if (fromEnv) {
+    return { apiKey: fromEnv, source: 'OPENROUTER_API_KEY environment variable' };
+  }
+
+  const paramPath = resolveOpenRouterApiKeyParamPathForTarget(targetEnv);
+  if (paramPath) {
+    const apiKey = await fetchSecretFromParameterStore(paramPath, awsRegion);
+    return { apiKey, source: `Parameter Store ${paramPath}` };
+  }
+
+  throw new Error(
+    'Missing OPENROUTER_API_KEY. Set OPENROUTER_API_KEY, OPENROUTER_API_KEY_PARAM_PATH, or DEV_SECRET_SSM_PREFIX / PROD_SECRET_SSM_PREFIX (same Amplify secrets folder as SUPABASE_SECRET_KEY).',
   );
 }

@@ -2280,6 +2280,14 @@ app.get('/v1/threads', async (c) => {
   const conversationStatusRaw = c.req.query('conversation_status')?.trim();
   const categoryRaw = c.req.query('category')?.trim();
   const hasReplyOnlyRaw = c.req.query('has_reply_only')?.trim();
+  const sortRaw = c.req.query('sort')?.trim();
+  const sortBy =
+    sortRaw === 'open_first' ||
+    sortRaw === 'newest' ||
+    sortRaw === 'oldest' ||
+    sortRaw === 'unread_first'
+      ? sortRaw
+      : undefined;
   const { data, totalCount } = await listAccountThreads(supabase, {
     accountId: auth.accountId,
     limit,
@@ -2297,6 +2305,7 @@ app.get('/v1/threads', async (c) => {
     dateTo: c.req.query('date_to')?.trim() || undefined,
     searchQuery: c.req.query('q')?.trim() || undefined,
     hasReplyOnly: hasReplyOnlyRaw ? parseBoolQuery(hasReplyOnlyRaw) : true,
+    sortBy,
   });
   return jsonResponse(c, buildListPayload(data, limit, offset, totalCount), 200, c.get('rateLimitHeaders'));
 });

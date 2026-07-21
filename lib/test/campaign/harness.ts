@@ -19,7 +19,7 @@ export type MessageJobStatus =
   | 'cancelled'
   | 'blocked'
   | 'held';
-export type MessageJobType = 'campaign' | 'campaign_reply' | 'inbox_reply' | 'inbox_forward';
+export type MessageJobType = 'campaign' | 'campaign_priority' | 'campaign_reply' | 'inbox_reply' | 'inbox_forward';
 
 export type CampaignMailboxSpec = {
   key: string;
@@ -276,7 +276,7 @@ export function buildFlowData(
           position: { x: 220, y: 0 },
           data: {
             label: 'Initial Touch',
-            send_mode: 'new',
+            priority: false,
             variants: [
               {
                 id: DEFAULT_EMAIL_VARIANT_IDS[0],
@@ -312,7 +312,7 @@ export function buildFlowData(
           position: { x: 700, y: 0 },
           data: {
             label: 'Follow-up',
-            send_mode: 'new',
+            priority: false,
             variants: [
               {
                 id: DEFAULT_SECOND_EMAIL_VARIANT_IDS[0],
@@ -348,7 +348,7 @@ export function buildFlowData(
           position: { x: 1180, y: -120 },
           data: {
             label: 'Interested Reply',
-            send_mode: 'reply',
+            priority: true,
             variants: [
               {
                 id: DEFAULT_REPLY_EMAIL_VARIANT_ID,
@@ -367,7 +367,7 @@ export function buildFlowData(
           position: { x: 1180, y: 120 },
           data: {
             label: 'Not Interested Breakup',
-            send_mode: 'new',
+            priority: true,
             variants: [
               {
                 id: DEFAULT_BREAKUP_EMAIL_VARIANT_ID,
@@ -1108,7 +1108,7 @@ export async function materializeCampaignGraph(
         throw new Error(`campaign harness: missing mailbox for job ${key} on lead ${leadSpec.key}`);
       }
       const nodeId =
-        messageType === 'campaign' || messageType === 'campaign_reply'
+        messageType === 'campaign' || messageType === 'campaign_priority' || messageType === 'campaign_reply'
           ? nodeIdsByFlowNodeId.get(jobSpec.nodeFlowNodeId ?? 'email-1') ?? null
           : null;
       jobRows.push({
@@ -1150,6 +1150,14 @@ export async function materializeCampaignGraph(
         ? messageJobIdsByKey.get(leadSpec.thread.messageJobKey) ?? null
         : messageJobIdsByKey.values().next().value ?? null;
 
+      const threadMessagesForInbound = leadSpec.thread.messages ?? [];
+      const lastInboundAt =
+        threadMessagesForInbound
+          .filter((message) => message.direction === 'received' && message.receivedAt)
+          .map((message) => message.receivedAt!)
+          .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ??
+        (leadSpec.thread.hasReply === false ? null : leadSpec.thread.lastMessageAt);
+
       threadRows.push({
         id: threadId,
         account_id: accountId,
@@ -1161,6 +1169,7 @@ export async function materializeCampaignGraph(
         subject: leadSpec.thread.subject,
         participants: [threadMailboxEmail, leadSpec.email],
         last_message_at: leadSpec.thread.lastMessageAt,
+        last_inbound_at: lastInboundAt,
         message_count: leadSpec.thread.messageCount ?? (leadSpec.thread.messages?.length ?? 2),
         has_reply: leadSpec.thread.hasReply ?? true,
         category: leadSpec.thread.category ?? null,

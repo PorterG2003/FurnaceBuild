@@ -41,29 +41,12 @@ export async function updateCampaignFlowDataWithClient(
     const functionMissing =
       error.message.includes('Could not find the function public.update_campaign_flow_data_as_service')
       || error.message.includes('schema cache');
-    if (!functionMissing) {
-      throw new Error(`Failed to update campaign flow: ${error.message}`);
+    if (functionMissing) {
+      throw new Error(
+        'Failed to update campaign flow: update_campaign_flow_data_as_service RPC is missing. Refusing silent flow_data UPDATE that would skip lifecycle enforcement and enrollment reactivation.',
+      );
     }
-
-    const { data: fallbackCampaign, error: fallbackError } = await db
-      .from('campaigns')
-      .update({
-        flow_data: flowData,
-        updated_at: new Date().toISOString(),
-      } as never)
-      .eq('id', campaignId)
-      .eq('account_id', accountId)
-      .is('deleted_at', null)
-      .select('*')
-      .single();
-
-    if (fallbackError) {
-      throw new Error(`Failed to update campaign flow: ${fallbackError.message}`);
-    }
-    if (!fallbackCampaign) {
-      throw new Error('Failed to update campaign flow: No data returned');
-    }
-    return { campaign: fallbackCampaign as Campaign, reactivated_count: 0 };
+    throw new Error(`Failed to update campaign flow: ${error.message}`);
   }
 
   if (!data) {

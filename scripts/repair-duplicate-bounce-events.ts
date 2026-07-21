@@ -83,7 +83,7 @@ function parseTimestamp(value: string | null | undefined): number {
 
 function rankMessageType(messageType: string | null | undefined): number {
   if (messageType === null || messageType === undefined || messageType === 'campaign') return 0;
-  if (messageType === 'campaign_reply') return 1;
+  if (messageType === 'campaign_priority' || messageType === 'campaign_reply') return 1;
   if (messageType === 'inbox_reply' || messageType === 'inbox_forward') return 2;
   return 1;
 }

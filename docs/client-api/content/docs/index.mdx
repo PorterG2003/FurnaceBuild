@@ -1,0 +1,78 @@
+---
+title: "Introduction"
+description: "Furnace Client API authentication, rate limits, and core conventions."
+---
+
+<div className="doc-hero not-prose">
+
+<p className="doc-hero__tagline">
+Account-scoped REST API for campaigns, leads, people, saved lists, inbox, mailboxes, and more.
+</p>
+
+<div className="doc-hero__actions">
+<a className="primary" href="/docs/guides/campaign-quickstart/">Campaign quickstart</a>
+<a className="secondary" href="/docs/reference/">API Reference</a>
+</div>
+
+</div>
+
+New to the API? Start with [Campaign quickstart](/docs/guides/campaign-quickstart/). Flow schemas such as [CampaignFlow](/docs/reference/schemas/CampaignFlow/) and [FlowUpdate](/docs/reference/schemas/FlowUpdate/) are in the [API Reference](/docs/reference/).
+
+<CardGroup cols={2}>
+
+<Card title="Authentication" icon="gear">
+
+Send your account API key as `Authorization: Bearer f_...`. Keys are created in Furnace Account Settings. Revoked, expired, or unknown keys return `401 authentication_error`.
+
+</Card>
+
+<Card title="Rate limits" icon="plug">
+
+Responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`. Furnace allows 200 requests per account per minute.
+
+</Card>
+
+<Card title="Pagination" icon="book">
+
+List endpoints return `{ data, limit, offset, total_count }`. Default page size is 20; maximum is 100.
+
+</Card>
+
+<Card title="Errors" icon="terminal">
+
+Errors use `{ error: { type, code, message, param? } }`. See the table below for HTTP status codes and typical causes.
+
+</Card>
+
+</CardGroup>
+
+## Account scope
+Every `/v1/*` resource is limited to the account that owns the API key. Requests never cross account boundaries.
+
+## Idempotency
+Use the `Idempotency-Key` header on `POST /v1/campaigns/{id}/leads` and `POST /v1/campaigns/{id}/leads/bulk` to safely retry imports. Furnace replays the cached response for matching account, route, key, and request-body hash for 24 hours.
+
+## Error reference
+
+| HTTP | type | Typical causes |
+| --- | --- | --- |
+| 400 | `invalid_request_error` | Invalid JSON, missing parameters, bad status transitions, missing custom fields |
+| 401 | `authentication_error` | Missing, invalid, revoked, or expired API key |
+| 403 | `permission_error` | Smartlead campaign mutation, deleted campaign, admin-only operation |
+| 404 | `invalid_request_error` | Campaign, lead, mailbox, thread, message job, or import job not found in this account |
+| 429 | `rate_limit_error` | Too many requests or too many concurrent async import jobs |
+| 500 | `api_error` | Unhandled server-side error |
+
+## Business rules
+- Smartlead campaigns are read-only through this API.
+- Campaign flow topology is fully editable only while a campaign is in `draft` status.
+- Once a campaign is `running`, `paused`, or `stopped`, structural flow changes return `403 permission_error` with code `flow_locked`.
+- Sync bulk imports accept up to 100 leads per request.
+- Async bulk imports accept up to 1000 leads per request and allow at most 3 queued/running jobs per account.
+- When a campaign defines custom lead fields, every key must be present in `custom_lead_data` on create and bulk import requests.
+
+## Inbox message jobs
+- Reply and forward endpoints return `202` with a `message_job` id.
+- Poll outbound send status with `GET /v1/message-jobs/{id}`. Do not use `GET /v1/jobs/{id}` — that endpoint is for async import jobs only.
+- Cancel or expedite queued sends with `POST /v1/message-jobs/{id}/cancel` and `POST /v1/message-jobs/{id}/send-now`.
+- Update thread triage state with `PATCH /v1/threads/{id}` (`category`, `conversation_status`, `read`).

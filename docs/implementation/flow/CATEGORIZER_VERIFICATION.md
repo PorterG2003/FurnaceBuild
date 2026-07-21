@@ -28,7 +28,7 @@ three branch edges):
 
 | Case | Reply | Expected outcome |
 | ---- | ----- | ---------------- |
-| `interested` | "very relevant ... send pricing" | AI -> `Interested`, held `email-2` cancelled, branch to `email-3` (in-thread reply, `message_type='campaign_reply'`) |
+| `interested` | "very relevant ... send pricing" | AI -> `Interested`, held `email-2` cancelled, branch to `email-3` (priority send, `message_type='campaign_priority'`) |
 | `neutral` | "share more details ... next quarter" | AI -> `Neutral`, branch to `email-4` (in-thread reply) |
 | `not_interested` | "not interested, remove me" | AI -> `Not Interested`, branch to `email-5` (new-thread breakup) |
 | `ooo_dated` | headerless OOO with explicit return date (~10 days out) | AI -> `Auto Reply`, held `email-2` **restored** at the return date |
@@ -117,7 +117,7 @@ Expect:
 - `ooo_system`: `email-2` job `queued` with `scheduled_at` ≈ now (then `sent` once the send worker claims it).
 - **No `held` jobs remain.**
 
-### In-thread reply jobs (campaign_reply)
+### Priority jobs (`campaign_priority`)
 
 ```sql
 SELECT l.email, mj.status, mj.message_type,
@@ -127,12 +127,13 @@ SELECT l.email, mj.status, mj.message_type,
 FROM message_jobs mj
 JOIN leads l ON l.id = mj.lead_id
 WHERE mj.campaign_id = 'f0000000-0000-4000-8000-00000000c701'
-  AND mj.message_type = 'campaign_reply';
+  AND mj.message_type IN ('campaign_priority', 'campaign_reply');
 ```
 
-Expect: rows for `interested` and `neutral` with `Re:`-prefixed subject, `in_reply_to`
-pointing at the lead's reply Message-ID, and the correct `thread_id`. After the send worker
-runs, `status='sent'` and a new `sent` message appears **in the same thread**:
+Expect: rows for `interested` and `neutral` with the correct `thread_id`. Writers now emit
+`campaign_priority`; readers still accept legacy `campaign_reply` during the compatibility
+window. After the send worker runs, `status='sent'` and a new `sent` message appears in the
+thread history:
 
 ```sql
 SELECT em.direction, em.subject, em.in_reply_to, em.received_at
@@ -142,13 +143,13 @@ WHERE et.campaign_id = 'f0000000-0000-4000-8000-00000000c701'
 ORDER BY et.id, em.received_at;
 ```
 
-If a reply-mode send is throttle-limited, expect the same `campaign_reply` row to stay in
+If a priority send is throttle-limited, expect the same `campaign_priority` row to stay in
 `status='queued'` with a future `scheduled_at` inside campaign hours; the scheduler should
 not mint a replacement job for that retry.
 
 ## 3. Repairing already-sent missing thread rows
 
-Older sent `campaign_reply` jobs that predate the durable thread-write fix can be previewed or
+Older sent `campaign_priority` jobs (plus legacy `campaign_reply` rows) that predate the durable thread-write fix can be previewed or
 repaired with:
 
 ```bash

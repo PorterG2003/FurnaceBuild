@@ -1,0 +1,97 @@
+---
+title: "Flow schemas"
+description: "CampaignFlow node types, merge variables, normalization rules, and validation codes."
+---
+
+Directed acyclic graph (DAG) defining the campaign sequence. Consumed by flow save, validate, and optional `flow` on campaign create.
+
+**Structure:**
+
+- [FlowNode](/docs/reference/schemas/FlowNode/) — one step per node; `data` shape depends on `type`
+- [FlowEdge](/docs/reference/schemas/FlowEdge/) — directed connections between nodes
+
+**Node types:**
+
+- `leadSource` — [LeadSourceNodeData](/docs/reference/schemas/LeadSourceNodeData/) (exactly one per flow)
+- `email` — [EmailNodeData](/docs/reference/schemas/EmailNodeData/) with [EmailVariant](/docs/reference/schemas/EmailVariant/) variants
+- `waitTime` — [WaitTimeNodeData](/docs/reference/schemas/WaitTimeNodeData/)
+- `aiCategorizer` — [AICategorizerNodeData](/docs/reference/schemas/AICategorizerNodeData/) (at most one per flow)
+- `dataSender` — [DataSenderNodeData](/docs/reference/schemas/DataSenderNodeData/)
+
+**Validation rules:** exactly one `leadSource`; at most one `aiCategorizer`; max 100 nodes / 200 edges; no cycles; every node reachable from `leadSource`; unique node and edge ids.
+
+Full normalization, merge-variable rules, and error codes: [Flow schemas guide](/docs/guides/flow-schemas/).
+
+## Normalization on save
+
+Every flow save and validate runs normalization before validation:
+
+| What | Behavior |
+| --- | --- |
+| UI-only fields | Strips `selected`, `dragging`, `measured`, `positionAbsolute`, `resizing` from nodes; `selected` from edges. |
+| Lead source | Forces `deletable: false`. Trims and deduplicates `customFieldKeys`. |
+| Email variants | Assigns UUID `id` if missing; re-labels `A`/`B`/…; re-orders; canonicalizes HTML; migrates legacy single-variant shape. |
+| Wait nodes | Derives `wait_duration_seconds` from `duration` + `unit` when seconds absent; back-fills display `duration`/`unit` from seconds. |
+| Categorizer edges | Backfills `sourceHandle` on categorizer outgoing edges when missing. |
+| Data sender | Merges `endpoint`/`endpoint_url`; serializes `payload_template` to `payload` when needed. |
+
+API responses and `normalized_flow` in validate results always reflect the canonical stored shape.
+
+## Merge variables
+
+Use `{{token}}` syntax in email subjects, templates, `body_html`, and dataSender payloads.
+
+| Token pattern | Source | Example |
+| --- | --- | --- |
+| `{{email}}`, `{{first_name}}`, … | `mappedStandardFieldKeys` on lead source (all standard fields when unset) | `{{first_name}}` |
+| `{{custom.<key>}}` | `customFieldKeys` on lead source | `{{custom.company}}` |
+
+Rules:
+
+- Tokens must be well-formed `{{key}}` or `{{custom.key}}` — malformed syntax returns `malformed_merge_variable`.
+- Unknown tokens return `unknown_merge_variable`. Declare the key on the lead source, or remove the token from copy.
+- Draft flow saves persist with validation warnings; launch readiness uses `phase: launch` and blocks on these codes.
+- Custom field keys must not contain `{` or `}` characters.
+
+See [LeadSourceNodeData](/docs/reference/schemas/LeadSourceNodeData/) for field declarations and [EmailVariant](/docs/reference/schemas/EmailVariant/) for copy fields.
+
+## Validation error codes
+
+During **draft** flow saves, every code below is returned in `validation.warnings` and the save still persists.
+During **launch** (or validate with `phase: launch`), the same codes appear in `blocking_issues` and block go-live.
+
+| Code | Cause | Fix |
+| --- | --- | --- |
+| `invalid_nodes` | `nodes` is not an array. | Send `{ nodes: [], edges: [] }` with `nodes` as an array. |
+| `invalid_edges` | `edges` is not an array. | Send `edges` as an array (empty array is valid). |
+| `too_many_nodes` | More than 100 nodes. | Split into multiple campaigns or simplify the graph. |
+| `too_many_edges` | More than 200 edges. | Reduce edge count. |
+| `missing_node_id` | A node has no `id`. | Assign a stable string id to every node. |
+| `duplicate_node_id` | Two nodes share the same `id`. | Use unique ids across all nodes. |
+| `invalid_node_type` | Unsupported `type` value. | Use `leadSource`, `email`, `waitTime`, `aiCategorizer`, or `dataSender`. |
+| `invalid_lead_source_count` | Not exactly one `leadSource` node. | Include exactly one `leadSource` node. |
+| `too_many_categorizers` | More than one `aiCategorizer` node. | Use at most one categorizer per flow. |
+| `invalid_custom_field_key` | Custom field key is empty or contains `{`/`}`. | Trim keys; avoid braces (they break `{{custom.<key>}}` tokens). |
+| `invalid_standard_field_key` | `mappedStandardFieldKeys` entry is not a known standard field. | Use keys like `email`, `first_name`, `last_name`, `company_name`, `website`, `linkedin_url`, `company_linkedin_url`, `source`. |
+| `missing_variants` | Email node has no variants. | Add at least one variant to every email node. |
+| `too_many_variants` | Email node has more than 20 variants. | Reduce variant count to 20 or fewer. |
+| `invalid_variant_id` | Variant `id` is missing or not a UUID. | Assign a stable UUID to each variant before first save; never change ids on live campaigns. |
+| `invalid_variant_subject` | Variant `subject` is not a string. | Set `subject` to a string (empty string is allowed for reply-mode emails). |
+| `invalid_variant_template` | Variant `template` is not a string. | Set `template` to a string body. |
+| `variant_content_too_large` | Subject or template exceeds 100,000 characters. | Shorten copy. |
+| `no_active_variants` | All variants have `isActive: false`. | Keep at least one active variant per email node. |
+| `invalid_priority` | `priority` is not a boolean. | Use `true` for emails downstream of a categorizer and `false` otherwise. |
+| `malformed_merge_variable` | Unclosed or invalid `{{...}}` syntax in copy. | Fix merge-token syntax; use `{{first_name}}` or `{{custom.company}}`. |
+| `unknown_merge_variable` | Merge variable not declared on the lead source. | Add the key to `customFieldKeys` or `mappedStandardFieldKeys`, or remove the token from copy. |
+| `invalid_wait_duration` | `wait_duration_seconds` is missing, zero, or not a positive number. | Set a positive integer in seconds (e.g. `86400` for one day). |
+| `missing_edge_id` | An edge has no `id`. | Assign a stable string id to every edge. |
+| `duplicate_edge_id` | Two edges share the same `id`. | Use unique edge ids. |
+| `unknown_edge_source` | Edge `source` does not match a node id. | Point `source` at an existing node `id`. |
+| `unknown_edge_target` | Edge `target` does not match a node id. | Point `target` at an existing node `id`. |
+| `self_referential_edge` | Edge source and target are the same node. | Remove self-loops. |
+| `invalid_categorizer_source_handle` | Categorizer edge missing or invalid `sourceHandle`. | Use `interested`, `neutral`, or `not-interested`. |
+| `duplicate_categorizer_branch` | Same categorizer branch handle used twice. | Wire each branch handle at most once per categorizer node. |
+| `unreachable_node` | Node is not reachable from the lead source. | Connect every node into the graph starting from `leadSource`. |
+| `cycle_detected` | Graph contains a cycle. | Remove loops; flows must be directed acyclic graphs. |
+
+Related guides: [Campaign flow](/docs/guides/campaign-flow/), [Campaign launch](/docs/guides/campaign-launch/).

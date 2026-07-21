@@ -13,6 +13,7 @@ import type {
   Mailbox as InboxMailbox,
   ProcessedMessage,
 } from '../../../workers/inbox-checker-worker/src/types';
+import { processClassifyReplyPayloadSafely } from '../../../amplify/functions/classifyReply/handler';
 
 /**
  * Shared seams for categorizer integration tests: scripted LLM transport,
@@ -241,4 +242,62 @@ export async function getMailboxRow(
     .single();
   assert.equal(error, null);
   return data as InboxMailbox;
+}
+
+/**
+ * Runs the REAL classify Lambda core (amplify/functions/classifyReply) against
+ * the DB with a scripted LLM transport, exactly as production does when the
+ * async classifier consumes a reply. This is the seam that is not otherwise
+ * exercised locally: the scheduler is consumer-only and never classifies.
+ *
+ * - AI categorizer threads: scripts one `classify` step; the Lambda writes the
+ *   durable category/handling_metadata and wakes the parked enrollment.
+ * - System-stamped Auto Reply threads: pass `steps: []`; the Lambda parses the
+ *   OOO return date from the message body (no LLM call).
+ * - Failure kinds (`fail`/`garbage`/`throw`): the Lambda marks the thread
+ *   classification_status = 'failed' and writes no category.
+ */
+export async function simulateClassifyLambda(
+  harness: CampaignDbHarness,
+  params: {
+    threadId: string;
+    useAi?: boolean;
+    hasCategorizer?: boolean;
+    emailMessageId?: string;
+    now?: Date;
+  },
+  steps: ScriptedLlmStep[] = [],
+): Promise<{ ok: boolean; calls: ScriptedTransportCall[]; error?: unknown }> {
+  let emailMessageId = params.emailMessageId;
+  if (!emailMessageId) {
+    const { data } = await harness.supabase
+      .from('email_messages')
+      .select('id, received_at')
+      .eq('thread_id', params.threadId)
+      .eq('direction', 'received')
+      .order('received_at', { ascending: false })
+      .limit(1);
+    emailMessageId = data?.[0]?.id as string | undefined;
+    assert.ok(emailMessageId, 'simulateClassifyLambda: no inbound message found for thread');
+  }
+
+  const scripted = createScriptedCategorizerTransport(steps);
+  const result = await processClassifyReplyPayloadSafely(
+    {
+      threadId: params.threadId,
+      emailMessageId: emailMessageId!,
+      enrollmentId: null,
+      campaignId: null,
+      hasCategorizer: params.hasCategorizer ?? true,
+      useAi: params.useAi ?? true,
+    },
+    harness.supabase as any,
+    { transport: scripted.transport, now: params.now },
+  );
+
+  return {
+    ok: result.ok,
+    calls: scripted.calls,
+    error: result.ok ? undefined : (result as { error: unknown }).error,
+  };
 }

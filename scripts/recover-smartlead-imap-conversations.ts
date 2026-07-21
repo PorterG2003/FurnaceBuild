@@ -2961,6 +2961,7 @@ async function insertRecoveredThread(params: InsertRecoveredThreadParams): Promi
       subject,
       participants,
       last_message_at: lastMessageAt,
+      last_inbound_at: lastMessageAt,
       message_count: sentMessages.length + 1,
       has_reply: true,
     } as any)
@@ -3699,6 +3700,7 @@ async function importAuditOutput(
         subject,
         participants,
         last_message_at: lastMessageAt,
+        last_inbound_at: lastMessageAt,
         message_count: threadMessages.sentMessages.length + 1,
         has_reply: true,
       } as any)

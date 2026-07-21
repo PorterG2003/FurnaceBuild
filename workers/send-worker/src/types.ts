@@ -8,16 +8,30 @@
  * - Copy types from lib/supabase/types/
  */
 
-export type MessageType = 'campaign' | 'campaign_reply' | 'inbox_reply' | 'inbox_forward';
+export type MessageType =
+  | 'campaign'
+  | 'campaign_priority'
+  | 'campaign_reply' // legacy alias during compatibility window
+  | 'inbox_reply'
+  | 'inbox_forward';
 
 /**
  * True if this job is a campaign send (scheduler-created). False for inbox_reply/inbox_forward.
- * campaign_reply counts as a campaign job (enrollment-driven, campaign stats/events).
- * Use this instead of ad-hoc checks so campaign vs manual is defined in one place.
+ * campaign_priority (and legacy campaign_reply) count as campaign jobs
+ * (enrollment-driven, campaign stats/events).
  */
 export function isCampaignMessageJob(job: { message_type?: MessageType | null }): boolean {
   const t = job.message_type;
   return t !== 'inbox_reply' && t !== 'inbox_forward';
+}
+
+/**
+ * Priority-lane campaign jobs (immediate, skip pacing). Accepts both the new
+ * campaign_priority value and the legacy campaign_reply alias.
+ */
+export function isPriorityCampaignJob(job: { message_type?: MessageType | null }): boolean {
+  const t = job.message_type;
+  return t === 'campaign_priority' || t === 'campaign_reply';
 }
 
 export interface MessageJob {
@@ -44,7 +58,7 @@ export interface MessageJob {
     variant?: { id?: string; label_snapshot?: string };
     lead_data?: any;
     campaign_data?: any;
-    source?: 'inbox_reply' | 'inbox_forward' | 'campaign_reply';
+    source?: 'inbox_reply' | 'inbox_forward' | 'campaign_priority' | 'campaign_reply';
     thread_id?: string;
     in_reply_to_message_id?: string;
     forwarded_message_id?: string;

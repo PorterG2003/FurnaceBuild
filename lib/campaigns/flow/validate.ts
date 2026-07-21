@@ -187,12 +187,12 @@ function validateEmailNode(
     );
   }
 
-  if (node.data?.send_mode && node.data.send_mode !== 'new' && node.data.send_mode !== 'reply') {
+  if (node.data?.priority != null && typeof node.data.priority !== 'boolean') {
     pushIssue(
       issues,
-      `nodes[${nodeIndex}].data.send_mode`,
-      'invalid_send_mode',
-      `Invalid send mode "${String(node.data.send_mode)}".`,
+      `nodes[${nodeIndex}].data.priority`,
+      'invalid_priority',
+      `Invalid priority "${String(node.data.priority)}". Expected a boolean.`,
     );
   }
 }

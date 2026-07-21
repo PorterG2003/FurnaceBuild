@@ -1,5 +1,6 @@
 /**
- * Preview or repair sent `campaign_reply` jobs that never produced the
+ * Preview or repair sent `campaign_priority` jobs (plus legacy `campaign_reply`
+ * rows during the compatibility window) that never produced the
  * corresponding `email_messages` row used by Master Inbox.
  *
  * Usage:
@@ -43,6 +44,7 @@ type EmailMessageRow = {
   thread_id: string;
   message_job_id: string | null;
   message_id: string | null;
+  direction?: string | null;
   body_text?: string | null;
   body_html?: string | null;
   received_at?: string | null;
@@ -237,7 +239,7 @@ async function main() {
   let jobsQuery = supabase
     .from('message_jobs')
     .select('id, campaign_id, enrollment_id, lead_id, mailbox_id, provider_message_id, sent_at, created_at, message_data')
-    .eq('message_type', 'campaign_reply')
+    .in('message_type', ['campaign_priority', 'campaign_reply'])
     .eq('status', 'sent')
     .order('sent_at', { ascending: false })
     .limit(limit);
@@ -248,13 +250,13 @@ async function main() {
 
   const { data: jobs, error: jobsError } = await jobsQuery;
   if (jobsError) {
-    console.error('Failed to load sent campaign_reply jobs:', jobsError.message);
+    console.error('Failed to load sent campaign_priority/campaign_reply jobs:', jobsError.message);
     process.exit(1);
   }
 
   const replyJobs = (jobs ?? []) as ReplyJobRow[];
   if (replyJobs.length === 0) {
-    console.log('No sent campaign_reply jobs found.');
+    console.log('No sent campaign_priority or legacy campaign_reply jobs found.');
     return;
   }
 
@@ -341,7 +343,7 @@ async function main() {
     );
 
   if (candidates.length === 0) {
-    console.log(`Checked ${replyJobs.length} sent campaign_reply jobs. No missing or empty inbox rows found.`);
+    console.log(`Checked ${replyJobs.length} sent campaign_priority/campaign_reply jobs. No missing or empty inbox rows found.`);
     return;
   }
 
@@ -384,7 +386,7 @@ async function main() {
 
   const skipped = candidates.filter((candidate) => !repairable.includes(candidate));
 
-  console.log(`Scanned sent campaign_reply jobs: ${replyJobs.length}`);
+  console.log(`Scanned sent campaign_priority/campaign_reply jobs: ${replyJobs.length}`);
   console.log(`Missing, relink, or empty-content inbox rows: ${candidates.length}`);
   console.log(`Repairable candidates: ${repairable.length}`);
   console.log(`Skipped candidates: ${skipped.length}`);
@@ -519,7 +521,7 @@ async function main() {
       await Promise.all([
         supabase
           .from('email_messages')
-          .select('id, thread_id, received_at, from_email, to_email, cc')
+          .select('id, thread_id, direction, received_at, from_email, to_email, cc')
           .in('thread_id', touchedThreads),
         supabase
           .from('email_threads')
@@ -550,6 +552,7 @@ async function main() {
       const messages = messagesByThread.get(threadId) ?? [];
       const participants = new Set<string>(threadRowsById.get(threadId)?.participants ?? []);
       let lastMessageAt: string | null = null;
+      let lastInboundAt: string | null = null;
 
       for (const message of messages) {
         if (message.from_email) {
@@ -566,6 +569,13 @@ async function main() {
         if (message.received_at && (!lastMessageAt || Date.parse(message.received_at) > Date.parse(lastMessageAt))) {
           lastMessageAt = message.received_at;
         }
+        if (
+          message.direction === 'received' &&
+          message.received_at &&
+          (!lastInboundAt || Date.parse(message.received_at) > Date.parse(lastInboundAt))
+        ) {
+          lastInboundAt = message.received_at;
+        }
       }
 
       const { error } = await supabase
@@ -573,6 +583,7 @@ async function main() {
         .update({
           message_count: messages.length,
           last_message_at: lastMessageAt,
+          last_inbound_at: lastInboundAt,
           participants: [...participants],
           updated_at: new Date().toISOString(),
         })

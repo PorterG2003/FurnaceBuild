@@ -6,7 +6,10 @@ import { scoreWebinarAd, isWebinarAd } from './metaAdLibraryWebinarScan.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const checkpointPath = process.argv[2]
   ? resolve(process.argv[2])
-  : resolve(__dirname, '../../../../tmp/meta-ads-webinar-batch-full/webinar-batch-checkpoint.json');
+  : resolve(
+      __dirname,
+      '../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-07-15-meta-ads-webinar-hosts/apify-batch-checkpoint.json',
+    );
 
 type BatchRow = {
   company_name: string;

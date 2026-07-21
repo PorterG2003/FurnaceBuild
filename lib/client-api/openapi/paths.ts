@@ -1050,7 +1050,8 @@ export function buildClientApiPaths() {
         operationId: 'listThreads',
         tags: ['Inbox'],
         summary: 'List inbox threads',
-        description: 'Lists inbox threads in the authenticated account. By default only threads with at least one inbound reply are returned.',
+        description:
+          'Lists inbox threads in the authenticated account. By default only threads with at least one inbound reply are returned. Newest/Oldest sort and `date_from`/`date_to` use `last_inbound_at` (latest lead reply). The `q` parameter searches subject, participants, lead identity/company, campaign name, thread tags, and message bodies.',
         parameters: [
           parameterRef('Limit'),
           parameterRef('Offset'),

@@ -5,12 +5,47 @@
 
 ---
 
-## Overview
+## Current model (upload-first outbound)
+
+| Direction | Bytes live where | Metadata on `email_messages.attachments` | Download |
+|-----------|------------------|------------------------------------------|----------|
+| **Received** | IMAP mailbox | `{ filename, contentType, size, part, imapUid }` | `fetchEmailAttachment` action `fetch` → IMAP stream |
+| **Sent (outbound)** | Supabase Storage bucket `inbox-attachments` | `{ filename, contentType, size, storagePath }` | same Lambda → short-lived signed GET; client always returns `Blob` |
+
+### Bucket & tracking
+
+- Private bucket `inbox-attachments` (service_role only; no member Storage RLS).
+- Object key: `{account_id}/{thread_id}/{upload_id}/{safeFilename}`.
+- Table `inbox_attachment_uploads`: `pending` → `claimed` (job created) → `sent`.
+- Table `inbox_attachment_gc_queue` + DELETE triggers enqueue Storage paths on message/thread wipe; send-worker idle loop drains GC.
+
+### Composer / jobs / worker
+
+1. Composer calls Lambda `prepare_upload` → signed PUT → holds `{ filename, contentType, size, storagePath }` (no base64).
+2. Explicit remove → `delete_upload` (pending only).
+3. `create_inbox_reply_job` / `create_inbox_forward_job` accept thin refs only; reject `content`; claim uploads.
+4. Send-worker downloads from Storage for SMTP, persists same `storagePath` on `email_messages`, marks uploads `sent`. Legacy in-flight base64 still sends once.
+
+### Client download API
+
+```ts
+fetchAttachment(url, token, emailMessageId, attachmentIndex): Promise<Blob>
+```
+
+UI does not branch on IMAP vs Storage.
+
+### Backfill
+
+`scripts/backfill-sent-attachment-storage.ts` promotes historical job base64 → Storage. **Do not run on production threads until the new-send path is verified on dev.**
+
+---
+
+## Overview (original phases)
 
 | Phase | Scope | Status |
 |-------|--------|--------|
-| 3a | Receiving: view and download attachments | Todo |
-| 3b | Sending: attach files to reply/forward | Todo |
+| 3a | Receiving: view and download attachments | Done (IMAP) |
+| 3b | Sending: attach files to reply/forward | Done (base64 v1 → Storage upload-first) |
 
 ---
 

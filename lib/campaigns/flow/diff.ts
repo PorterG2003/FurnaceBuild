@@ -123,7 +123,13 @@ function outgoingCountBySource(flowData: CampaignFlowData): Map<string, number> 
   return counts;
 }
 
-/** Nodes that gained their first outgoing edge (former leaves that were extended). */
+/**
+ * Legacy tip-only append detect (former leaf that gained its first outgoing edge).
+ * Write-path enrollment heal uses SQL `reactivate_completed_enrollments_on_non_leaves`
+ * (live-target non-leaves, excluding aiCategorizer) — not this helper.
+ *
+ * @deprecated Prefer documenting/product copy around non-leaf heal; keep for geometry tests.
+ */
 export function detectFlowAppend(
   storedFlowData: CampaignFlowData,
   incomingFlowData: CampaignFlowData,

@@ -24,11 +24,13 @@ import { loadCsv, pickRows, SAMPLE_NAMES, type CsvRow } from './pilotBatchRows.j
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CSV =
-  '../../../../scripts/lead-sourcing/webinar-hosts/output/runs/stage1-live/stage3_webinar_host_entities.csv';
+  '../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-06-webinar-hosts/stage3_webinar_host_entities.csv';
 
-const DEFAULT_SAMPLE_OUT_DIR = '../../../../tmp/meta-ads-webinar-batch';
-const DEFAULT_FULL_OUT_DIR = '../../../../tmp/meta-ads-webinar-batch-full';
-const DEFAULT_PILOT_OUT_DIR = '../../../../tmp/meta-ads-webinar-batch-pilot-150';
+const DEFAULT_RUNS_ROOT =
+  '../../../../scripts/lead-sourcing/webinar-hosts/output/runs';
+const DEFAULT_SAMPLE_OUT_DIR = `${DEFAULT_RUNS_ROOT}/2026-06-webinar-hosts/meta-ads-sample`;
+const DEFAULT_FULL_OUT_DIR = `${DEFAULT_RUNS_ROOT}/2026-06-webinar-hosts/meta-ads-playwright`;
+const DEFAULT_PILOT_OUT_DIR = `${DEFAULT_RUNS_ROOT}/2026-06-webinar-hosts/meta-ads-pilot-playwright`;
 const DEFAULT_DELAY_MIN_MS = 8_000;
 const DEFAULT_DELAY_MAX_MS = 18_000;
 const DEFAULT_RETRY_MIN_MS = 20_000;

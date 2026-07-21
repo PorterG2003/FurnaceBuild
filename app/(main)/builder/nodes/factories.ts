@@ -19,8 +19,8 @@ export function createEmailNode(
     subject?: string;
     template?: string;
     mailboxId?: string;
-    /** 'reply' = send in the replied thread (requires an upstream Categorizer). */
-    send_mode?: 'new' | 'reply';
+    /** Derived on save: true when downstream of a categorizer (priority lane). */
+    priority?: boolean;
   }
 ): Node {
   const variantId = generateEmailVariantId();
@@ -30,7 +30,7 @@ export function createEmailNode(
     data: {
       label: data?.label || 'Send Email',
       mailboxId: data?.mailboxId || '',
-      send_mode: data?.send_mode || 'new',
+      priority: data?.priority === true,
       variants: [
         {
           id: variantId,

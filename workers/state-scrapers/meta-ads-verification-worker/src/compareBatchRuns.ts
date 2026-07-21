@@ -19,10 +19,14 @@ function loadResults(path: string): Map<string, Row> {
 }
 
 const baselinePath = resolve(
-  process.argv[2] ?? __dirname + '/../../../../tmp/meta-ads-webinar-batch-full/webinar-batch-checkpoint.json',
+  process.argv[2] ??
+    __dirname +
+      '/../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-07-15-meta-ads-webinar-hosts/apify-batch-checkpoint.json',
 );
 const headedPath = resolve(
-  process.argv[3] ?? __dirname + '/../../../../tmp/meta-ads-webinar-batch-full-headed/webinar-batch-checkpoint.json',
+  process.argv[3] ??
+    __dirname +
+      '/../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-06-webinar-hosts/meta-ads-playwright/webinar-batch-checkpoint.json',
 );
 
 const baseline = loadResults(baselinePath);

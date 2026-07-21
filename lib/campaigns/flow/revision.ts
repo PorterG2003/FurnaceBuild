@@ -12,6 +12,17 @@ const UI_NODE_FIELDS = new Set([
 
 const UI_EDGE_FIELDS = new Set(['selected']);
 
+const UI_NODE_DATA_FIELDS = new Set([
+  'readOnly',
+  'canDelete',
+  'structuralBlocked',
+]);
+
+const UI_EDGE_DATA_FIELDS = new Set([
+  'readOnly',
+  'structuralBlocked',
+]);
+
 function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(sortKeys);
@@ -32,6 +43,13 @@ function stripUiFieldsFromNode(node: CampaignFlowNode): Record<string, unknown> 
   for (const key of UI_NODE_FIELDS) {
     delete copy[key];
   }
+  if (copy.data && typeof copy.data === 'object' && !Array.isArray(copy.data)) {
+    const data = { ...(copy.data as Record<string, unknown>) };
+    for (const key of UI_NODE_DATA_FIELDS) {
+      delete data[key];
+    }
+    copy.data = data;
+  }
   return copy;
 }
 
@@ -40,13 +58,41 @@ function stripUiFieldsFromEdge(edge: CampaignFlowEdge): Record<string, unknown> 
   for (const key of UI_EDGE_FIELDS) {
     delete copy[key];
   }
+  if (copy.data && typeof copy.data === 'object' && !Array.isArray(copy.data)) {
+    const data = { ...(copy.data as Record<string, unknown>) };
+    for (const key of UI_EDGE_DATA_FIELDS) {
+      delete data[key];
+    }
+    copy.data = Object.keys(data).length > 0 ? data : undefined;
+    if (copy.data === undefined) delete copy.data;
+  }
   return copy;
 }
 
+function compareById(a: { id?: unknown }, b: { id?: unknown }): number {
+  const idA = typeof a.id === 'string' ? a.id : String(a.id ?? '');
+  const idB = typeof b.id === 'string' ? b.id : String(b.id ?? '');
+  if (idA < idB) return -1;
+  if (idA > idB) return 1;
+  return 0;
+}
+
+/**
+ * Produce the canonical flow used for revision hashing. UI-only fields are
+ * stripped and nodes/edges are sorted by `id` so the revision depends only on
+ * graph content, never on array ordering. This matches the server, which
+ * persists edges reordered by id (jsonb_agg ... ORDER BY edge->>'id'); without
+ * matching sort the client revision would diverge from the persisted revision
+ * after every save and trip a spurious "another tab" conflict.
+ */
 export function canonicalizeFlowForRevision(flowData: CampaignFlowData): CampaignFlowData {
   return {
-    nodes: flowData.nodes.map((node) => stripUiFieldsFromNode(node) as CampaignFlowNode),
-    edges: flowData.edges.map((edge) => stripUiFieldsFromEdge(edge) as CampaignFlowEdge),
+    nodes: flowData.nodes
+      .map((node) => stripUiFieldsFromNode(node) as CampaignFlowNode)
+      .sort(compareById),
+    edges: flowData.edges
+      .map((edge) => stripUiFieldsFromEdge(edge) as CampaignFlowEdge)
+      .sort(compareById),
   };
 }
 

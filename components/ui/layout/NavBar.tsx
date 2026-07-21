@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, Platform, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { View, Text, Platform, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from 'react-native-reanimated';
 import { useRouter, usePathname } from 'expo-router';
 import { signOut } from '@/lib/supabase/client';
@@ -69,6 +69,10 @@ let persistedExpandedState = false;
 
 /** Viewport width below which the workspace switcher auto-closes (nav would dominate). */
 const SWITCHER_CLOSE_VIEWPORT_WIDTH = 900;
+/** Minimum usable inline panel height (search + a few workspace rows). */
+const SWITCHER_PANEL_MIN = 240;
+/** Extra vertical space the inline panel adds outside its body (panel + divider margins). */
+const SWITCHER_PANEL_OPEN_MARGINS = 24;
 
 export function NavBar() {
   const { width: viewportWidth } = useWindowDimensions();
@@ -82,7 +86,30 @@ export function NavBar() {
   const [isExpanded, setIsExpanded] = useState(persistedExpandedState);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  /**
+   * Free space between top nav and bottom chrome while the switcher is closed.
+   * The inline panel grows into this spacer, so it is the real room available.
+   */
+  const [spacerH, setSpacerH] = useState(0);
   const hasMultipleAccounts = memberships.length > 1;
+
+  const availableInlineHeight = useMemo(
+    () => Math.max(0, spacerH - SWITCHER_PANEL_OPEN_MARGINS),
+    [spacerH],
+  );
+
+  const renderAsPopup = useMemo(() => {
+    if (spacerH <= 0) return false;
+    return availableInlineHeight < SWITCHER_PANEL_MIN;
+  }, [spacerH, availableInlineHeight]);
+
+  const handleSpacerLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      if (workspaceSwitcherOpen) return;
+      setSpacerH(e.nativeEvent.layout.height);
+    },
+    [workspaceSwitcherOpen],
+  );
 
   useEffect(() => {
     if (workspaceSwitcherOpen && viewportWidth < SWITCHER_CLOSE_VIEWPORT_WIDTH) {
@@ -107,10 +134,11 @@ export function NavBar() {
     }
   }, [pathname, isExpanded]);
 
-  // Animate based on isExpanded and workspaceSwitcherOpen: switcher open => 340px, else expanded => 224, collapsed => 56
+  // Widen to 340px only for the inline switcher panel; popup mode keeps normal nav width.
+  const widenForSwitcher = workspaceSwitcherOpen && !renderAsPopup;
   useEffect(() => {
-    const targetWidth = workspaceSwitcherOpen ? 340 : isExpanded ? 224 : 56;
-    const targetPadding = workspaceSwitcherOpen || isExpanded ? 16 : 8;
+    const targetWidth = widenForSwitcher ? 340 : isExpanded ? 224 : 56;
+    const targetPadding = widenForSwitcher || isExpanded ? 16 : 8;
 
     if (isRouteChangeRef.current) {
       width.value = targetWidth;
@@ -124,7 +152,7 @@ export function NavBar() {
       width.value = withTiming(targetWidth, animationConfig);
       paddingHorizontal.value = withTiming(targetPadding, animationConfig);
     }
-  }, [isExpanded, workspaceSwitcherOpen, width, paddingHorizontal]);
+  }, [isExpanded, widenForSwitcher, width, paddingHorizontal]);
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -170,6 +198,8 @@ export function NavBar() {
 
   const navRef = useRef<View>(null);
   const switcherContainerRef = useRef<View>(null);
+  /** Last pointer position — used to restore expand/collapse after the switcher unlocks. */
+  const lastPointerRef = useRef({ x: 0, y: 0 });
   const navTargets = useNavOnboardingTargets();
   const onboarding = useOnboardingOptional();
   const currentOnboardingStep = onboarding?.currentStep;
@@ -183,9 +213,38 @@ export function NavBar() {
     setIsExpanded(true);
   }, [navSpotlightActive, navSpotlightTargetId]);
 
-  // Close workspace switcher when clicking outside the switcher (or outside nav if ref not set). When click is outside nav, also collapse the nav.
+  // Track pointer while switcher is open so we can re-sync expand state on close.
   useEffect(() => {
     if (!workspaceSwitcherOpen || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const handler = (e: MouseEvent) => {
+      lastPointerRef.current = { x: e.clientX, y: e.clientY };
+    };
+    document.addEventListener('mousemove', handler);
+    document.addEventListener('mousedown', handler, true);
+    return () => {
+      document.removeEventListener('mousemove', handler);
+      document.removeEventListener('mousedown', handler, true);
+    };
+  }, [workspaceSwitcherOpen]);
+
+  const syncExpandedFromPointer = useCallback(() => {
+    if (navSpotlightActive) return;
+    if (Platform.OS !== 'web') return;
+    const el = navRef.current as unknown as HTMLElement | undefined;
+    const rect = el?.getBoundingClientRect?.();
+    if (!rect) return;
+    const { x, y } = lastPointerRef.current;
+    const inside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    persistedExpandedState = inside;
+    setIsExpanded(inside);
+  }, [navSpotlightActive]);
+
+  // Close workspace switcher when clicking outside (inline mode only).
+  // Popup mode uses PopupPortal's own outside-click (panel lives in a body portal).
+  useEffect(() => {
+    if (!workspaceSwitcherOpen || renderAsPopup || Platform.OS !== 'web' || typeof document === 'undefined') {
+      return;
+    }
     const handler = (e: MouseEvent) => {
       const target = e.target as Node | null;
       if (!target) return;
@@ -199,20 +258,25 @@ export function NavBar() {
         if (!navSpotlightActive && navEl && !contains(navEl, target)) {
           persistedExpandedState = false;
           setIsExpanded(false);
+        } else if (!navSpotlightActive) {
+          syncExpandedFromPointer();
         }
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [workspaceSwitcherOpen, navSpotlightActive]);
+  }, [workspaceSwitcherOpen, renderAsPopup, navSpotlightActive, syncExpandedFromPointer]);
 
   const mouseProps = Platform.OS === 'web' ? {
     onMouseEnter: () => {
+      // Lock expand/collapse while the switcher is open (inline or popup).
+      if (workspaceSwitcherOpen) return;
       persistedExpandedState = true;
       setIsExpanded(true);
     },
     onMouseLeave: (e: any) => {
       if (navSpotlightActive) return;
+      // Lock expand/collapse while the switcher is open (inline or popup).
       if (workspaceSwitcherOpen) return;
       const ne = e?.nativeEvent;
       const clientX = ne?.clientX ?? 0;
@@ -244,43 +308,46 @@ export function NavBar() {
       {...(mouseProps as any)}
     >
       <View className="flex-col h-full">
-        {/* Logo/Brand */}
-        <View className="mb-6">
-          <View className={isExpanded ? '' : 'items-center'}>
-            <View style={isExpanded 
-              ? { marginTop: -8, marginBottom: -5, marginLeft: -20 }
-              : { marginTop: -8, marginBottom: -5 }
-            }>
-              <SvgXml 
-                xml={isExpanded ? furnaceLogoFull : furnaceLogoIcon} 
-                width={isExpanded ? 180 : 40} 
-                height={isExpanded ? 45 : 45} 
-              />
+        {/* Logo + nav links */}
+        <View>
+          {/* Logo/Brand */}
+          <View className="mb-6">
+            <View className={isExpanded ? '' : 'items-center'}>
+              <View style={isExpanded 
+                ? { marginTop: -8, marginBottom: -5, marginLeft: -20 }
+                : { marginTop: -8, marginBottom: -5 }
+              }>
+                <SvgXml 
+                  xml={isExpanded ? furnaceLogoFull : furnaceLogoIcon} 
+                  width={isExpanded ? 180 : 40} 
+                  height={isExpanded ? 45 : 45} 
+                />
+              </View>
             </View>
+            {/* Divider */}
+            <View className="mt-4 h-px bg-[#2A2A2A]" />
           </View>
-          {/* Divider */}
-          <View className="mt-4 h-px bg-[#2A2A2A]" />
+
+          {/* Navigation Links */}
+          <View className="gap-2">
+            {navItems.map((item) => (
+              <NavBarButton
+                key={item.path}
+                ref={navTargetRefForPath(item.path, navTargets)}
+                icon={item.icon}
+                label={item.label}
+                onPress={() => router.push(item.path)}
+                isExpanded={isExpanded}
+                active={isActive(item.path)}
+                badgeCount={item.path === '/inbox' ? openConversationCount : undefined}
+                badgeLayout={item.path === '/inbox' ? (isExpanded ? 'trailing' : 'overlay') : undefined}
+              />
+            ))}
+          </View>
         </View>
 
-        {/* Navigation Links */}
-        <View className="gap-2">
-          {navItems.map((item) => (
-            <NavBarButton
-              key={item.path}
-              ref={navTargetRefForPath(item.path, navTargets)}
-              icon={item.icon}
-              label={item.label}
-              onPress={() => router.push(item.path)}
-              isExpanded={isExpanded}
-              active={isActive(item.path)}
-              badgeCount={item.path === '/inbox' ? openConversationCount : undefined}
-              badgeLayout={item.path === '/inbox' ? (isExpanded ? 'trailing' : 'overlay') : undefined}
-            />
-          ))}
-        </View>
-
-        {/* Spacer to push help + account section to bottom */}
-        <View className="flex-1" />
+        {/* Free space the inline switcher panel would grow into */}
+        <View className="flex-1" onLayout={handleSpacerLayout} />
 
         <View className="gap-2">
         <NavBarButton
@@ -305,11 +372,17 @@ export function NavBar() {
                     onChange={setCurrentAccountId}
                     open={workspaceSwitcherOpen}
                     containerRef={switcherContainerRef}
+                    renderAsPopup={renderAsPopup}
+                    availableInlineHeight={availableInlineHeight}
                     onOpenChange={(open) => {
                       setWorkspaceSwitcherOpen(open);
-                      if (open && !isExpanded) {
+                      // Inline panel needs the expanded width; popup locks whatever state it opened in.
+                      if (open && !renderAsPopup && !isExpanded) {
                         persistedExpandedState = true;
                         setIsExpanded(true);
+                      } else if (!open) {
+                        // Unlock: restore expand/collapse from where the pointer actually is.
+                        requestAnimationFrame(() => syncExpandedFromPointer());
                       }
                     }}
                     isExpanded={isExpanded}

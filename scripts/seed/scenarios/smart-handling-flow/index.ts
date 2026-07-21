@@ -265,7 +265,7 @@ function buildFlowData(useAi: boolean): Json {
         position: { x: 220, y: 0 },
         data: {
           label: 'Initial Touch',
-          send_mode: 'new',
+          priority: false,
           variants: [
             {
               id: VARIANT_IDS.email1,
@@ -291,7 +291,7 @@ function buildFlowData(useAi: boolean): Json {
         position: { x: 700, y: 0 },
         data: {
           label: 'Follow-up',
-          send_mode: 'new',
+          priority: false,
           variants: [
             {
               id: VARIANT_IDS.email2,
@@ -320,7 +320,7 @@ function buildFlowData(useAi: boolean): Json {
         position: { x: 1180, y: -160 },
         data: {
           label: 'Interested Reply',
-          send_mode: 'reply',
+          priority: true,
           variants: [
             {
               id: VARIANT_IDS.interestedReply,
@@ -340,7 +340,7 @@ function buildFlowData(useAi: boolean): Json {
         position: { x: 1180, y: 0 },
         data: {
           label: 'Neutral Nudge',
-          send_mode: 'reply',
+          priority: true,
           variants: [
             {
               id: VARIANT_IDS.neutralReply,
@@ -360,7 +360,7 @@ function buildFlowData(useAi: boolean): Json {
         position: { x: 1180, y: 160 },
         data: {
           label: 'Breakup',
-          send_mode: 'new',
+          priority: true,
           variants: [
             {
               id: VARIANT_IDS.breakup,
@@ -1039,6 +1039,7 @@ async function seedDeterministicThread(ctx: SeedContext, seedCase: SeedCaseState
       subject: caseSubject(seedCase),
       participants: [seedCase.mailboxEmail, payload.fromEmail],
       last_message_at: seedCase.replyAt,
+      last_inbound_at: seedCase.replyAt,
       message_count: 2,
       has_reply: true,
       category: payload.category,

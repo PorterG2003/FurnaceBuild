@@ -2,7 +2,7 @@ import type { RefObject } from 'react';
 import { View, Pressable, Text } from 'react-native';
 import { SmartleadBadge } from '@/components/campaigns';
 import type { EmailThread } from '@/lib/supabase/types';
-import { formatThreadDateWithTime, hexToPillBackground } from '@/lib/inbox';
+import { formatLeadLastRepliedAt, hexToPillBackground } from '@/lib/inbox';
 import { getCategoryColor } from '@/lib/inbox/category-colors';
 import { TagChipRow } from '@/components/tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
@@ -56,9 +56,11 @@ export function ThreadItem({
     >
       {/* Top: date (left) + category/tag pills (right) */}
       <View className="flex-row items-center justify-between gap-2 mb-1">
-        <Text className="text-gray-500 font-instrument text-xs">
-          {formatThreadDateWithTime(thread.last_message_at)}
-        </Text>
+        {thread.last_inbound_at ? (
+          <Text className="text-gray-500 font-instrument text-xs flex-1">
+            {formatLeadLastRepliedAt(thread.last_inbound_at)}
+          </Text>
+        ) : null}
         <View className="flex-row items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
           {hasCategory && (() => {
             const color = getCategoryColor(thread.category);

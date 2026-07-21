@@ -143,7 +143,8 @@ export function buildClientApiComponents() {
       Search: {
         name: 'q',
         in: 'query',
-        description: 'Case-insensitive search term.',
+        description:
+          'Case-insensitive prefix search across thread subject, participants, lead name/email/company, campaign name, thread tags, and message bodies (min 2 characters).',
         schema: { type: 'string' },
       },
       CampaignStatus: {
@@ -280,13 +281,13 @@ export function buildClientApiComponents() {
       DateFrom: {
         name: 'date_from',
         in: 'query',
-        description: 'Inclusive ISO-8601 timestamp filter on `last_message_at`.',
+        description: 'Inclusive ISO-8601 timestamp filter on `last_inbound_at` (latest lead reply).',
         schema: { type: 'string', format: 'date-time' },
       },
       DateTo: {
         name: 'date_to',
         in: 'query',
-        description: 'Inclusive ISO-8601 timestamp filter on `last_message_at`.',
+        description: 'Inclusive ISO-8601 timestamp filter on `last_inbound_at` (latest lead reply).',
         schema: { type: 'string', format: 'date-time' },
       },
       HasReplyOnly: {
@@ -753,12 +754,12 @@ export function buildClientApiComponents() {
             nullable: true,
             description: 'Sending mailbox. Falls back to campaign mailbox rotation when unset.',
           },
-          send_mode: {
-            type: 'string',
-            enum: ['new', 'reply'],
+          priority: {
+            type: 'boolean',
             nullable: true,
-            description: 'new for sequence emails; reply for in-thread follow-ups after categorizer.',
-            example: 'new',
+            description:
+              'Derived priority marker (not user-set). True when the email is downstream of a categorizer and sends on the immediate/priority lane.',
+            example: false,
           },
           variants: {
             type: 'array',
@@ -964,7 +965,7 @@ export function buildClientApiComponents() {
           change_reasons: { type: 'array', items: { type: 'string' } },
           reactivated_count: {
             type: 'integer',
-            description: 'Completed enrollments reactivated at former leaf nodes after an append save.',
+            description: 'Completed enrollments reactivated on non-categorizer nodes with a live outgoing edge after a flow save.',
           },
         },
         required: ['flow', 'flow_revision', 'field_sync', 'reactivated_count'],
@@ -1310,7 +1311,18 @@ export function buildClientApiComponents() {
           campaign_id: { type: 'string', format: 'uuid', nullable: true },
           mailbox_id: { type: 'string', format: 'uuid', nullable: true },
           subject: { type: 'string', nullable: true },
-          last_message_at: { type: 'string', format: 'date-time', nullable: true },
+          last_message_at: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'Latest activity in either direction (sent or received).',
+          },
+          last_inbound_at: {
+            type: 'string',
+            format: 'date-time',
+            nullable: true,
+            description: 'Latest inbound lead reply. Used for inbox Newest/Oldest sort and date filters.',
+          },
         },
         required: ['id', 'account_id'],
         additionalProperties: true,

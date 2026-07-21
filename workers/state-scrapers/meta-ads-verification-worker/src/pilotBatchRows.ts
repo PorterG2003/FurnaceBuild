@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export type CsvRow = Record<string, string>;
 
 export const DEFAULT_STAGE3_CSV =
-  '../../../../scripts/lead-sourcing/webinar-hosts/output/runs/stage1-live/stage3_webinar_host_entities.csv';
+  '../../../../scripts/lead-sourcing/webinar-hosts/output/runs/2026-06-webinar-hosts/stage3_webinar_host_entities.csv';
 
 export const SAMPLE_NAMES = [
   'Supermetrics',

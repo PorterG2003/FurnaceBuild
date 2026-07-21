@@ -146,7 +146,7 @@ export class ThreadManager {
       return 0;
     }
 
-    if (messageType === 'campaign_reply') {
+    if (messageType === 'campaign_reply' || messageType === 'campaign_priority') {
       return 1;
     }
 
@@ -466,9 +466,11 @@ export class ThreadManager {
       threadCategoryPatch = { category: null, category_source: null };
     }
 
+    const inboundAt = message.date.toISOString();
     const threadUpdateBase = {
       has_reply: true,
-      last_message_at: message.date.toISOString(),
+      last_message_at: inboundAt,
+      last_inbound_at: inboundAt,
       participants: Array.from(new Set([
         ...(thread.participants || []),
         message.from.address,
@@ -477,13 +479,13 @@ export class ThreadManager {
       conversation_status: inboundIsAutoReply ? 'closed' : 'open',
       conversation_status_source: 'system',
       classification_status: inboundIsAutoReply ? 'complete' : 'pending',
-      classification_requested_at: message.date.toISOString(),
-      classification_completed_at: inboundIsAutoReply ? message.date.toISOString() : null,
+      classification_requested_at: inboundAt,
+      classification_completed_at: inboundIsAutoReply ? inboundAt : null,
       ...OOO_CLEAR_FOR_NEW_INBOUND_REPLY,
       ...threadCategoryPatch,
     };
 
-    // Update thread: set has_reply = true, update last_message_at
+    // Update thread: set has_reply = true, update last_message_at / last_inbound_at
     // Recalculate message_count from actual count to avoid race conditions
     const { count: actualMessageCount, error: countError } = await this.supabase
       .from('email_messages')

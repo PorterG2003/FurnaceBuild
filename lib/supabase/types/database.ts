@@ -1576,6 +1576,7 @@ export interface Database {
           subject: string;
           participants: string[];
           last_message_at: string;
+          last_inbound_at: string | null;
           message_count: number;
           has_reply: boolean;
           category: string | null;
@@ -1590,6 +1591,7 @@ export interface Database {
           ooo_resume_requested: boolean;
           ooo_resume_at: string | null;
           ooo_resume_processed_at: string | null;
+          search_vector: unknown | null;
           created_at: string;
           updated_at: string;
         };
@@ -1605,6 +1607,7 @@ export interface Database {
           subject: string;
           participants?: string[];
           last_message_at: string;
+          last_inbound_at?: string | null;
           message_count?: number;
           has_reply?: boolean;
           category?: string | null;
@@ -1619,6 +1622,7 @@ export interface Database {
           ooo_resume_requested?: boolean;
           ooo_resume_at?: string | null;
           ooo_resume_processed_at?: string | null;
+          search_vector?: unknown | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1634,6 +1638,7 @@ export interface Database {
           subject?: string;
           participants?: string[];
           last_message_at?: string;
+          last_inbound_at?: string | null;
           message_count?: number;
           has_reply?: boolean;
           category?: string | null;
@@ -1644,6 +1649,7 @@ export interface Database {
           classification_requested_at?: string | null;
           classification_completed_at?: string | null;
           handling_metadata?: Json | null;
+          search_vector?: unknown | null;
           out_of_office?: boolean;
           ooo_resume_requested?: boolean;
           ooo_resume_at?: string | null;
@@ -1675,6 +1681,7 @@ export interface Database {
           headers: Json;
           attachments: Json;
           imap_uid: number | null;
+          search_vector: unknown | null;
           created_at: string;
           updated_at: string;
         };
@@ -2939,6 +2946,56 @@ export interface Database {
           latest_activity: string | null;
           newest_membership_created_at: string | null;
           total_count: number;
+        }[];
+      };
+      list_account_inbox_threads: {
+        Args: {
+          p_account_id: string;
+          p_search?: string | null;
+          p_mailbox_id?: string | null;
+          p_campaign_ids?: string[] | null;
+          p_unread_only?: boolean | null;
+          p_date_from?: string | null;
+          p_date_to?: string | null;
+          p_tag_ids?: string[] | null;
+          p_category?: string | null;
+          p_conversation_status?: string | null;
+          p_has_reply_only?: boolean | null;
+          p_limit?: number | null;
+          p_offset?: number | null;
+          p_sort?: string | null;
+        };
+        Returns: {
+          id: string;
+          account_id: string;
+          campaign_id: string | null;
+          lead_id: string | null;
+          enrollment_id: string | null;
+          message_job_id: string | null;
+          mailbox_id: string | null;
+          smartlead_lead_id: number | null;
+          subject: string;
+          participants: string[];
+          last_message_at: string;
+          last_inbound_at: string | null;
+          message_count: number;
+          has_reply: boolean;
+          category: string | null;
+          category_source: string | null;
+          conversation_status: string;
+          conversation_status_source: string;
+          classification_status: string;
+          classification_requested_at: string | null;
+          classification_completed_at: string | null;
+          handling_metadata: Json | null;
+          out_of_office: boolean;
+          ooo_resume_requested: boolean;
+          ooo_resume_at: string | null;
+          ooo_resume_processed_at: string | null;
+          created_at: string;
+          updated_at: string;
+          total_count: number;
+          search_rank: number;
         }[];
       };
       account_outreach_metrics: {

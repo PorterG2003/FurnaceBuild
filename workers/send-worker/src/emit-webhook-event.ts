@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { persistWebhookEvent } from '../../../lib/client-api/webhooks/persistWebhookEvent.js';
+import { persistWebhookEvent } from '@furnace/webhooks-lib';
 
 export async function emitWebhookEvent(
   supabase: SupabaseClient,

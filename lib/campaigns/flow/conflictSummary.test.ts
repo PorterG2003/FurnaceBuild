@@ -44,6 +44,26 @@ test('buildFlowConflictSummary describes single-variant email subject changes', 
   assert.equal(diff.fields.some((field) => field.label === 'Variants'), false);
 });
 
+test('buildFlowConflictSummary ignores structuralBlocked lock flags', () => {
+  const saved = clone(CAMPAIGN_FLOW_EXAMPLE_DATASENDER);
+  const local = clone(CAMPAIGN_FLOW_EXAMPLE_DATASENDER);
+  for (const node of local.nodes) {
+    node.data = { ...node.data, structuralBlocked: true, canDelete: true };
+  }
+  for (const node of saved.nodes) {
+    node.data = { ...node.data, structuralBlocked: false, canDelete: false };
+  }
+
+  const summary = buildFlowConflictSummary(local, saved);
+  assert.equal(summary.nodeDiffs.length, 0);
+  assert.equal(
+    summary.nodeDiffs.some((diff) =>
+      diff.fields.some((field) => field.label === 'structuralBlocked' || field.label === 'canDelete'),
+    ),
+    false,
+  );
+});
+
 test('buildFlowConflictSummary describes multi-variant subject changes per variant', () => {
   const saved = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
   const local = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);

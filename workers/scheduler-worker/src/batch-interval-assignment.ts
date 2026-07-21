@@ -9,16 +9,24 @@ import {
   type CampaignMailboxRow,
 } from './mailbox-selection.js';
 
-type ExistingMessageJobPair = {
-  enrollment_id: string;
-  node_id: string;
-};
-
 type LiveCampaignJobMailbox = {
   id: string;
   lead_id: string;
   mailbox_id: string;
   created_at: string;
+};
+
+type ReadyIntervalEnrollmentRow = {
+  id: string;
+  lead_id: string;
+  current_node_id: string | null;
+  next_run_at: string | null;
+  created_at?: string | null;
+  lead_mailbox_id: string | null;
+  lead_email: string;
+  lead_name: string;
+  lead_first_name?: string | null;
+  lead_last_name?: string | null;
 };
 
 type ReadyEnrollment = {
@@ -58,9 +66,6 @@ type CampaignAccountRelation =
 /** PostgREST returns 400 Bad Request when `.in()` lists make the request URL too large. */
 const POSTGREST_IN_CLAUSE_CHUNK_SIZE = 100;
 
-/** RPC JSON payload size for `get_existing_message_job_pairs`; chunk to avoid failures at scale. */
-const MESSAGE_JOB_PAIR_RPC_CHUNK_SIZE = 300;
-
 function chunkDistinctIds(ids: string[], chunkSize: number): string[][] {
   const deduped = [...new Set(ids.filter(Boolean))];
   if (deduped.length === 0) {
@@ -81,31 +86,23 @@ function getAccountJitter(accounts: CampaignAccountRelation): number | null {
   return accounts?.jitter_percentage ?? null;
 }
 
-async function loadExistingMessageJobPairSet(
-  supabase: SupabaseClient,
-  candidatePairs: ExistingMessageJobPair[],
-): Promise<Set<string>> {
-  if (candidatePairs.length === 0) {
-    return new Set();
-  }
-
-  const keys = new Set<string>();
-  for (let i = 0; i < candidatePairs.length; i += MESSAGE_JOB_PAIR_RPC_CHUNK_SIZE) {
-    const slice = candidatePairs.slice(i, i + MESSAGE_JOB_PAIR_RPC_CHUNK_SIZE);
-    const { data, error } = await supabase.rpc('get_existing_message_job_pairs', {
-      p_pairs: slice,
-    });
-
-    if (error) {
-      throw new Error(`Failed to load existing message job pairs: ${error.message}`);
-    }
-
-    const existingPairs = Array.isArray(data) ? (data as ExistingMessageJobPair[]) : [];
-    for (const pair of existingPairs) {
-      keys.add(`${pair.enrollment_id}:${pair.node_id}`);
-    }
-  }
-  return keys;
+function mapReadyIntervalEnrollmentRow(row: ReadyIntervalEnrollmentRow): ReadyEnrollment {
+  return {
+    id: row.id,
+    lead_id: row.lead_id,
+    current_node_id: row.current_node_id,
+    next_run_at: row.next_run_at,
+    created_at: row.created_at ?? undefined,
+    lead: {
+      id: row.lead_id,
+      mailbox_id: row.lead_mailbox_id,
+      email: row.lead_email,
+      name: row.lead_name,
+      first_name: row.lead_first_name,
+      last_name: row.lead_last_name,
+      deleted_at: null,
+    },
+  };
 }
 
 /**
@@ -282,10 +279,11 @@ export async function batchAssignIntervalJobs(
         continue;
       }
       
-      // Reply-mode email nodes (send_mode='reply') are handled by the
-      // scheduler directly as campaign_reply jobs - never interval-assigned.
+      // Priority email nodes (priority === true, or legacy send_mode='reply')
+      // are handled by the scheduler directly as campaign_priority jobs —
+      // never interval-assigned.
       const intervalEmailNodes = emailNodes.filter(
-        (n: any) => n.node_data?.send_mode !== 'reply',
+        (n: any) => n.node_data?.priority !== true && n.node_data?.send_mode !== 'reply',
       );
 
       if (intervalEmailNodes.length === 0) {
@@ -293,28 +291,18 @@ export async function batchAssignIntervalJobs(
       }
 
       const emailNodeIds = intervalEmailNodes.map(n => n.id);
-      
-      // Find enrollments with email node as current_node_id
-      const { data: enrollments, error: enrollmentsError } = await supabase
-        .from('enrollments')
-        .select(`
-          id,
-          lead_id,
-          current_node_id,
-          next_run_at,
-          created_at,
-          lead:leads!inner(id, mailbox_id, email, name, first_name, last_name, deleted_at)
-        `)
-        .eq('campaign_id', campaign.id)
-        .eq('state', 'active')
-        .is('deleted_at', null)
-        .not('next_run_at', 'is', null)
-        .lte('next_run_at', now)
-        .in('current_node_id', emailNodeIds)
-        .order('next_run_at', { ascending: true })
-        .order('created_at', { ascending: true })
-        .order('id', { ascending: true });
-      
+
+      // Eligibility + duplicate-job exclusion in one indexed RPC (replaces the prior
+      // enrollments SELECT + get_existing_message_job_pairs round-trip).
+      const { data: readyRows, error: enrollmentsError } = await supabase.rpc(
+        'get_ready_interval_enrollments',
+        {
+          p_campaign_id: campaign.id,
+          p_node_ids: emailNodeIds,
+          p_now: now,
+        },
+      );
+
       if (enrollmentsError) {
         console.error(`[BATCH INTERVAL] Error loading enrollments for campaign ${campaign.id.substring(0, 8)}:`, enrollmentsError);
         reportErrorToSlack('Scheduler: batch interval failed to load enrollments', {
@@ -331,32 +319,11 @@ export async function batchAssignIntervalJobs(
         });
         continue;
       }
-      
-      const activeEnrollments = ((enrollments || []) as ReadyEnrollment[]).filter((enrollment) => {
-        const lead = getEnrollmentLead(enrollment);
-        return !lead?.deleted_at;
-      });
 
-      if (activeEnrollments.length === 0) {
-        continue;
-      }
-      
-      // Filter enrollments that don't already have a message_job for this node.
-      // Include 'cancelled' and 'blocked': do not create another job if the only job was cancelled or blocked.
-      const candidatePairs = activeEnrollments
-        .filter((enrollment) => Boolean(enrollment.current_node_id))
-        .map((enrollment) => ({
-          enrollment_id: enrollment.id,
-          node_id: enrollment.current_node_id as string,
-        }));
-
-      const existingJobPairSet = await loadExistingMessageJobPairSet(supabase, candidatePairs);
-      const enrollmentsWithoutJobs = activeEnrollments.filter(
-        (enrollment) =>
-          !enrollment.current_node_id ||
-          !existingJobPairSet.has(`${enrollment.id}:${enrollment.current_node_id}`),
+      const enrollmentsWithoutJobs = ((readyRows || []) as ReadyIntervalEnrollmentRow[]).map(
+        mapReadyIntervalEnrollmentRow,
       );
-      
+
       if (enrollmentsWithoutJobs.length === 0) {
         continue;
       }
@@ -407,44 +374,10 @@ export async function batchAssignIntervalJobs(
         continue;
       }
       
-      // Get node data for message_data
-      const uniqueNodeIds = [...new Set(
-        enrollmentsWithoutJobs
-          .map((enrollment) => enrollment.current_node_id)
-          .filter((nodeId): nodeId is string => Boolean(nodeId))
-      )];
+      // Reuse node_data already loaded with intervalEmailNodes (avoids a second nodes query).
       const nodeIdToNodeData = new Map<string, any>();
-
-      if (uniqueNodeIds.length > 0) {
-        const { data: nodes, error: nodesLookupError } = await supabase
-          .from('nodes')
-          .select('id, node_data')
-          .in('id', uniqueNodeIds)
-          .is('deleted_at', null);
-
-        if (nodesLookupError) {
-          console.error(
-            `[BATCH INTERVAL] Error loading node data for campaign ${campaign.id.substring(0, 8)}:`,
-            nodesLookupError,
-          );
-          reportErrorToSlack('Scheduler: batch interval failed to load node data', {
-            severity: 'warning',
-            campaign_id: campaign.id,
-            error: nodesLookupError.message,
-            alertPolicy: isRetryableSupabaseReadError(nodesLookupError.message)
-              ? 'transient_retryable_warning'
-              : 'persistent_config_warning',
-            aggregationKey: `scheduler-batch-interval-load-node-data:${campaign.id}`,
-            summaryFields: {
-              campaign_id: campaign.id,
-            },
-          });
-          continue;
-        }
-
-        for (const node of nodes || []) {
-          nodeIdToNodeData.set(node.id, node);
-        }
+      for (const node of intervalEmailNodes) {
+        nodeIdToNodeData.set(node.id, node);
       }
       
       // Prepare one candidate per mailbox for the current earliest interval.

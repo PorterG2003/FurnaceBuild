@@ -48,6 +48,8 @@ const UI_NODE_DATA_FIELDS = new Set([
   'positionAbsolute',
   'resizing',
   'readOnly',
+  'canDelete',
+  'structuralBlocked',
 ]);
 
 const DERIVED_NODE_DATA_FIELDS = new Set([
@@ -87,10 +89,10 @@ function formatJsonPayload(payload: string | undefined): string {
   }
 }
 
-function formatSendMode(mode: string | undefined): string {
-  if (mode === 'reply') return 'Reply';
-  if (mode === 'new') return 'New thread';
-  return mode?.trim() || '(empty)';
+function formatPriority(priority: boolean | undefined): string {
+  if (priority === true) return 'Priority';
+  if (priority === false) return 'Normal';
+  return '(empty)';
 }
 
 function formatOnFailure(value: string | undefined): string {
@@ -292,9 +294,9 @@ function buildSharedEmailNodeFields(
   const fields: FlowConflictFieldChange[] = [...buildStepNameField(localNode, savedNode)];
   pushFieldIfDifferent(
     fields,
-    'Send mode',
-    formatSendMode(localNode.data.send_mode),
-    formatSendMode(savedNode.data.send_mode),
+    'Priority',
+    formatPriority(localNode.data.priority),
+    formatPriority(savedNode.data.priority),
   );
   pushFieldIfDifferent(
     fields,
@@ -380,7 +382,7 @@ function buildEmailSnapshotFields(node: EmailFlowNode, side: 'yours' | 'saved'):
   const other = (text: string) => (side === 'saved' ? text : null);
   const fields: FlowConflictFieldChange[] = [
     { label: 'Step name', yours: value(node.data.label?.trim() || '(empty)'), saved: other(node.data.label?.trim() || '(empty)') },
-    { label: 'Send mode', yours: value(formatSendMode(node.data.send_mode)), saved: other(formatSendMode(node.data.send_mode)) },
+    { label: 'Priority', yours: value(formatPriority(node.data.priority)), saved: other(formatPriority(node.data.priority)) },
     { label: 'Mailbox', yours: value(node.data.mailboxId?.trim() || '(none)'), saved: other(node.data.mailboxId?.trim() || '(none)') },
   ];
 

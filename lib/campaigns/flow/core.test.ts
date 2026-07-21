@@ -98,6 +98,146 @@ test('normalizeFlowData preserves an explicit mappedStandardFieldKeys array', ()
   assert.deepEqual(leadSource?.data.mappedStandardFieldKeys, ['email', 'first_name']);
 });
 
+test('normalizeFlowData strips builder lock/UX flags from node and edge data', () => {
+  const normalized = normalizeFlowData({
+    nodes: [
+      {
+        id: 'leadSource-1',
+        type: 'leadSource',
+        position: { x: 0, y: 0 },
+        data: {
+          structuralBlocked: true,
+          canDelete: true,
+          readOnly: false,
+          customFieldKeys: ['company'],
+        },
+      },
+      {
+        id: 'dataSender-1',
+        type: 'dataSender',
+        position: { x: 100, y: 0 },
+        data: {
+          structuralBlocked: true,
+          canDelete: false,
+          endpoint_url: 'https://example.com/hook',
+        },
+      },
+    ],
+    edges: [
+      {
+        id: 'e1',
+        source: 'leadSource-1',
+        target: 'dataSender-1',
+        data: { readOnly: true, structuralBlocked: true },
+      },
+    ],
+  });
+
+  const leadSource = normalized.nodes.find((node) => node.id === 'leadSource-1');
+  const dataSender = normalized.nodes.find((node) => node.id === 'dataSender-1');
+  assert.equal('structuralBlocked' in (leadSource?.data ?? {}), false);
+  assert.equal('canDelete' in (leadSource?.data ?? {}), false);
+  assert.equal('readOnly' in (leadSource?.data ?? {}), false);
+  assert.deepEqual(leadSource?.data.customFieldKeys, ['company']);
+  assert.equal('structuralBlocked' in (dataSender?.data ?? {}), false);
+  assert.equal(normalized.edges[0]?.data, undefined);
+});
+
+const emailVariant = (id: string, subject: string) => ({
+  id,
+  subject,
+  template: 'Hello',
+  isActive: true,
+  order: 0,
+});
+
+test('normalizeFlowData: downstream email becomes priority by position', () => {
+  const normalized = normalizeFlowData({
+    nodes: [
+      { id: 'leadSource-1', type: 'leadSource', position: { x: 0, y: 0 }, data: {} },
+      {
+        id: 'email-pre',
+        type: 'email',
+        position: { x: 100, y: 0 },
+        // Stored as priority but sits BEFORE the categorizer -> must heal to false.
+        data: {
+          label: 'Send Email',
+          priority: true,
+          variants: [emailVariant('11111111-1111-4111-8111-111111111111', '')],
+        },
+      },
+      { id: 'cat-1', type: 'aiCategorizer', position: { x: 200, y: 0 }, data: {} },
+      {
+        id: 'email-post',
+        type: 'email',
+        position: { x: 300, y: 0 },
+        // After the categorizer with NO subject -> still priority by position.
+        data: {
+          label: 'Send Email',
+          priority: false,
+          variants: [emailVariant('22222222-2222-4222-8222-222222222222', '')],
+        },
+      },
+    ],
+    edges: [
+      { id: 'e1', source: 'leadSource-1', target: 'email-pre' },
+      { id: 'e2', source: 'email-pre', target: 'cat-1' },
+      { id: 'e3', source: 'cat-1', target: 'email-post', sourceHandle: 'interested' },
+    ],
+  });
+
+  const pre = normalized.nodes.find((node) => node.id === 'email-pre');
+  const post = normalized.nodes.find((node) => node.id === 'email-post');
+  assert.equal((pre?.data as { priority?: boolean }).priority, false);
+  assert.equal((post?.data as { priority?: boolean }).priority, true);
+});
+
+test('normalizeFlowData: downstream email stays priority even with a subject', () => {
+  const normalized = normalizeFlowData({
+    nodes: [
+      { id: 'leadSource-1', type: 'leadSource', position: { x: 0, y: 0 }, data: {} },
+      { id: 'cat-1', type: 'aiCategorizer', position: { x: 100, y: 0 }, data: {} },
+      {
+        id: 'email-post',
+        type: 'email',
+        position: { x: 200, y: 0 },
+        // Stored as non-priority but lives after the categorizer -> must heal to true.
+        data: {
+          label: 'Send Email',
+          priority: false,
+          variants: [emailVariant('33333333-3333-4333-8333-333333333333', 'A fresh idea')],
+        },
+      },
+    ],
+    edges: [{ id: 'e1', source: 'cat-1', target: 'email-post', sourceHandle: 'not-interested' }],
+  });
+
+  const post = normalized.nodes.find((node) => node.id === 'email-post');
+  assert.equal((post?.data as { priority?: boolean }).priority, true);
+});
+
+test('normalizeFlowData keeps emails non-priority when no categorizer exists', () => {
+  const normalized = normalizeFlowData({
+    nodes: [
+      { id: 'leadSource-1', type: 'leadSource', position: { x: 0, y: 0 }, data: {} },
+      {
+        id: 'email-1',
+        type: 'email',
+        position: { x: 100, y: 0 },
+        data: {
+          label: 'Send Email',
+          priority: true,
+          variants: [emailVariant('44444444-4444-4444-8444-444444444444', '')],
+        },
+      },
+    ],
+    edges: [{ id: 'e1', source: 'leadSource-1', target: 'email-1' }],
+  });
+
+  const email = normalized.nodes.find((node) => node.id === 'email-1');
+  assert.equal((email?.data as { priority?: boolean }).priority, false);
+});
+
 test('validateFlowData reports merge-variable and variant issues', () => {
   const invalidFlow = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
   const emailNode = invalidFlow.nodes.find((node) => node.id === 'email-1');

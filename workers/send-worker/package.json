@@ -8,13 +8,14 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "test": "npm --prefix ../../lib/mailbox run build && npm --prefix ../../lib/email run build && node --import tsx --test src/email.test.ts src/worker.test.ts"
+    "test": "npm --prefix ../../lib/mailbox run build && npm --prefix ../../lib/email run build && npm --prefix ../../lib/webhooks run build && node --import tsx --test src/email.test.ts src/worker.test.ts src/sentAttachments.test.ts"
   },
   "dependencies": {
     "@furnace/campaign-lib": "file:../../lib/campaign",
     "@furnace/mailbox-lib": "file:../../lib/mailbox",
     "@furnace/slack-lib": "file:../../lib/slack",
     "@furnace/email-lib": "file:../../lib/email",
+    "@furnace/webhooks-lib": "file:../../lib/webhooks",
     "@aws-sdk/client-sqs": "^3.0.0",
     "@aws-sdk/client-ssm": "^3.0.0",
     "@supabase/supabase-js": "^2.77.0",

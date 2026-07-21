@@ -3,6 +3,10 @@ import { View, Text, Pressable, Image, Platform } from 'react-native';
 import { ArrowDownTrayIcon, DocumentIcon, PhotoIcon } from 'react-native-heroicons/outline';
 import type { EmailMessage } from '@/lib/supabase/types';
 import { formatBytes } from '@/lib/inbox';
+import {
+  canDownloadAttachment,
+  type AttachmentDownloadMeta,
+} from '@/lib/inbox/attachmentStoragePath';
 
 const BLOCK_SIZE = 140;
 
@@ -40,16 +44,16 @@ function AttachmentBlock({
   onDownload,
   onFetchPreview,
 }: {
-  att: { filename?: string; name?: string; contentType?: string; content_type?: string; size?: number; part?: string; imapUid?: number };
+  att: AttachmentDownloadMeta;
   message: EmailMessage;
   index: number;
   activeHoverId: string | null;
   setActiveHoverId: Dispatch<SetStateAction<string | null>>;
-  onDownload: (emailMessageId: string, part: string, filename: string) => Promise<void>;
-  onFetchPreview?: (emailMessageId: string, part: string) => Promise<Blob | null>;
+  onDownload: (emailMessageId: string, attachmentIndex: number, filename: string) => Promise<void>;
+  onFetchPreview?: (emailMessageId: string, attachmentIndex: number) => Promise<Blob | null>;
 }) {
   const part = att.part;
-  const canDownload = !!part && (att.imapUid != null || (message as { imap_uid?: number }).imap_uid != null);
+  const canDownload = canDownloadAttachment(att, (message as { imap_uid?: number }).imap_uid);
   const filename = att.filename ?? att.name ?? 'attachment';
   const contentType = att.contentType ?? att.content_type ?? '';
 
@@ -57,16 +61,16 @@ function AttachmentBlock({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
-  const attachmentDebugId = `${message.id}:${String(part ?? 'no-part')}:${index}`;
+  const attachmentDebugId = `${message.id}:${att.storagePath ?? String(part ?? 'no-part')}:${index}`;
   const webHovered = Platform.OS === 'web' && activeHoverId === attachmentDebugId;
   const showHoverContent = webHovered || Platform.OS !== 'web';
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!isImageType(contentType, filename) || !onFetchPreview || !part || !canDownload) return;
+    if (!isImageType(contentType, filename) || !onFetchPreview || !canDownload) return;
     let revoked = false;
     setPreviewLoading(true);
-    onFetchPreview(message.id, String(part))
+    onFetchPreview(message.id, index)
       .then((blob) => {
         if (!revoked && blob) {
           const url = URL.createObjectURL(blob);
@@ -86,7 +90,7 @@ function AttachmentBlock({
       }
       setPreviewUrl(null);
     };
-  }, [message.id, part, filename, contentType, canDownload, onFetchPreview]);
+  }, [message.id, index, filename, contentType, canDownload, onFetchPreview]);
 
   const isImage = isImageType(contentType, filename);
 
@@ -204,7 +208,7 @@ function AttachmentBlock({
                 setDownloadProgress(target);
               }, 120);
               try {
-                await onDownload(message.id, String(part), filename);
+                await onDownload(message.id, index, filename);
                 clearInterval(interval);
                 setDownloadProgress(100);
                 await new Promise((r) => setTimeout(r, 120)); // Brief 100% before closing
@@ -243,10 +247,11 @@ export function MessageAttachments({
   onFetchPreview,
 }: {
   message: EmailMessage;
-  onDownload: (emailMessageId: string, part: string, filename: string) => Promise<void>;
-  onFetchPreview?: (emailMessageId: string, part: string) => Promise<Blob | null>;
+  onDownload: (emailMessageId: string, attachmentIndex: number, filename: string) => Promise<void>;
+  onFetchPreview?: (emailMessageId: string, attachmentIndex: number) => Promise<Blob | null>;
 }) {
-  const attachments = (message.attachments as Array<{ filename?: string; name?: string; contentType?: string; content_type?: string; size?: number; part?: string; imapUid?: number }> | null) ?? [];
+  const attachments =
+    (message.attachments as AttachmentDownloadMeta[] | null) ?? [];
   const [activeHoverId, setActiveHoverId] = useState<string | null>(null);
   const activeHoverIdRef = useRef<string | null>(activeHoverId);
   const gridRef = useRef<any>(null);
@@ -309,7 +314,7 @@ export function MessageAttachments({
     >
       {attachments.map((att, i) => (
         <AttachmentBlock
-          key={`${message.id}:${att.part ?? i}:${att.filename ?? att.name ?? 'attachment'}`}
+          key={`${message.id}:${att.storagePath ?? att.part ?? i}:${att.filename ?? att.name ?? 'attachment'}`}
           att={att}
           message={message}
           index={i}

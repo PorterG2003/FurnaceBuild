@@ -264,6 +264,7 @@ test('sweep classifies by the LATEST replied thread, not stale older ones', asyn
         subject: 'Newest thread is OOO',
         participants: [],
         last_message_at: new Date(now).toISOString(),
+        last_inbound_at: new Date(now).toISOString(),
         message_count: 2,
         has_reply: true,
         category: 'Auto Reply',

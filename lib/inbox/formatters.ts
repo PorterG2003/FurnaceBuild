@@ -53,6 +53,11 @@ export function formatThreadDateWithTime(iso: string): string {
   return `${datePart} at ${timePart}`;
 }
 
+/** Thread card label for inbound reply. e.g. "Lead replied at Feb 14 at 10:52 PM" */
+export function formatLeadLastRepliedAt(iso: string): string {
+  return `Lead replied at ${formatThreadDateWithTime(iso)}`;
+}
+
 /** Date group label for dividers: Today, Yesterday, Mon Jan 27, or Jan 15, 2026 */
 export function getDateGroupLabel(iso: string): string {
   const d = new Date(iso);

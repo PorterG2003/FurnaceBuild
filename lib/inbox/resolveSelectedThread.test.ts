@@ -17,6 +17,7 @@ function thread(id: string): EmailThread {
     category_source: null,
     has_reply: true,
     last_message_at: '2026-01-01T00:00:00.000Z',
+    last_inbound_at: '2026-01-01T00:00:00.000Z',
     handling_metadata: null,
     out_of_office: false,
     ooo_resume_at: null,

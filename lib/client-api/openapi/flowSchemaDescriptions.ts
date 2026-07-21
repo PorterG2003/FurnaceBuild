@@ -102,6 +102,8 @@ export function buildEmailVariantDescription(linkMode: DocLinkMode = 'docs'): st
   return [
     'One A/B variant of an email node. Variant ids must be stable UUIDs. Supports merge variables in `subject`, `template`, and `body_html`.',
     '',
+    'Empty `subject` reuses the first outbound subject and continues the thread.',
+    '',
     `See ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)}.`,
   ].join('\n');
 }
@@ -110,7 +112,7 @@ export function buildEmailNodeDataDescription(linkMode: DocLinkMode = 'docs'): s
   return [
     'Outbound email node with one or more A/B variants.',
     '',
-    `\`send_mode\`: \`new\` for sequence emails; \`reply\` for in-thread follow-ups after categorizer. See ${modelLink('EmailVariant', linkMode)}.`,
+    `\`priority\`: derived boolean (not user-set). True when the email is downstream of a categorizer and sends on the immediate/priority lane. See ${modelLink('EmailVariant', linkMode)} for copy fields.`,
   ].join('\n');
 }
 

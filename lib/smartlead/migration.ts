@@ -1480,6 +1480,8 @@ export async function upsertSmartleadConversationThread(params: {
   const subject = getSmartleadThreadSubject(messages);
   const participants = getSmartleadThreadParticipants(messages);
   const lastMessageAt = messages[messages.length - 1]?.time ?? new Date().toISOString();
+  const lastInboundAt =
+    [...messages].reverse().find((message) => message.type === 'REPLY')?.time ?? null;
 
   const { data, error } = await (database
     .from('email_threads')
@@ -1494,6 +1496,7 @@ export async function upsertSmartleadConversationThread(params: {
       subject,
       participants,
       last_message_at: lastMessageAt,
+      last_inbound_at: lastInboundAt,
       message_count: messages.length,
       has_reply: true,
       conversation_status: 'closed',

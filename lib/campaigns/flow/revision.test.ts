@@ -55,6 +55,31 @@ test('computeFlowRevision ignores UI-only node fields', async () => {
   );
 });
 
+test('computeFlowRevision ignores builder lock/UX flags in node data', async () => {
+  const base = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const withFlags = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  withFlags.nodes = withFlags.nodes.map((node) => ({
+    ...node,
+    data: {
+      ...node.data,
+      structuralBlocked: true,
+      canDelete: false,
+      readOnly: true,
+    },
+  }));
+  assert.equal(await computeFlowRevision(base), await computeFlowRevision(withFlags));
+});
+
+test('computeFlowRevision is stable when node/edge array order changes', async () => {
+  const base = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  const reordered = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
+  // Server persists edges sorted by id via jsonb_agg(... ORDER BY edge->>'id');
+  // React Flow keeps insertion/interaction order. Both must hash identically.
+  reordered.nodes.reverse();
+  reordered.edges.reverse();
+  assert.equal(await computeFlowRevision(base), await computeFlowRevision(reordered));
+});
+
 test('computeFlowRevision changes when normalized content changes', async () => {
   const base = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);
   const edited = clone(CAMPAIGN_FLOW_EXAMPLE_LINEAR);

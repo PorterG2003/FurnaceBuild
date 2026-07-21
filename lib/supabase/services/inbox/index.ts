@@ -10,7 +10,9 @@ export {
   getThreadById,
   NO_CATEGORY_FILTER,
   type GetThreadsByAccountOptions,
+  type GetThreadsByAccountResult,
   type EmailThreadWithUnread,
+  type InboxThreadSortBy,
 } from './threads';
 export {
   getMessagesByThread,

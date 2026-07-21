@@ -19,7 +19,7 @@ export const FLOW_VALIDATION_ERROR_CATALOG: FlowValidationErrorEntry[] = [
   { code: 'invalid_variant_template', cause: 'Variant `template` is not a string.', fix: 'Set `template` to a string body.' },
   { code: 'variant_content_too_large', cause: 'Subject or template exceeds 100,000 characters.', fix: 'Shorten copy.' },
   { code: 'no_active_variants', cause: 'All variants have `isActive: false`.', fix: 'Keep at least one active variant per email node.' },
-  { code: 'invalid_send_mode', cause: '`send_mode` is not `new` or `reply`.', fix: 'Use `new` for sequence emails; `reply` for categorizer follow-ups in the same thread.' },
+  { code: 'invalid_priority', cause: '`priority` is not a boolean.', fix: 'Omit `priority` or set it to `true`/`false`. It is derived on save from graph position (downstream of categorizer => true).' },
   { code: 'malformed_merge_variable', cause: 'Unclosed or invalid `{{...}}` syntax in copy.', fix: 'Fix merge-token syntax; use `{{first_name}}` or `{{custom.company}}`.' },
   { code: 'unknown_merge_variable', cause: 'Merge variable not declared on the lead source.', fix: 'Add the key to `customFieldKeys` or `mappedStandardFieldKeys`, or remove the token from copy.' },
   { code: 'invalid_wait_duration', cause: '`wait_duration_seconds` is missing, zero, or not a positive number.', fix: 'Set a positive integer in seconds (e.g. `86400` for one day).' },

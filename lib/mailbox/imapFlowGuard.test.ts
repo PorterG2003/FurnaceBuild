@@ -26,3 +26,15 @@ test('createImapFlowErrorGuard keeps the most recent error until consumed', () =
 
   guard.dispose();
 });
+
+test('createImapFlowErrorGuard still has a listener after dispose (late socket timeout cannot crash)', () => {
+  const client = new EventEmitter();
+  const guard = createImapFlowErrorGuard(client);
+
+  guard.dispose();
+
+  // A socket timeout arriving after teardown must not surface as an unhandled 'error'
+  // event, which Node would otherwise throw and crash the worker process on.
+  assert.ok(client.listenerCount('error') >= 1, 'safety error listener must survive dispose');
+  assert.doesNotThrow(() => client.emit('error', new Error('Socket timeout')));
+});

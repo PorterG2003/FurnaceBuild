@@ -1,7 +1,9 @@
 import { supabase } from '../../client';
 import type { EmailThread } from '../../types';
-import { buildThreadSnippetMap } from '@/lib/inbox';
+import { buildThreadSnippetMap, normalizeInboxSearchQuery } from '@/lib/inbox';
 import { getCampaignIdsForTags } from '../campaign-tags';
+
+export type InboxThreadSortBy = 'open_first' | 'newest' | 'oldest' | 'unread_first';
 
 export interface GetThreadsByAccountOptions {
   hasReplyOnly?: boolean;
@@ -19,106 +21,93 @@ export interface GetThreadsByAccountOptions {
   category?: string;
   includeUnreadCount?: boolean;
   conversationStatus?: 'open' | 'closed' | 'all';
+  sortBy?: InboxThreadSortBy;
 }
 
 export const NO_CATEGORY_FILTER = '__no_category__';
 
 export type EmailThreadWithUnread = EmailThread & { unread_count: number };
 
-export async function getThreadsByAccount(
-  accountId: string,
-  options?: GetThreadsByAccountOptions
-): Promise<EmailThread[]> {
-  if (options?.unreadOnly === true) {
-    const { data: unreadThreadIds } = await supabase
-      .from('email_messages')
-      .select('thread_id')
-      .eq('direction', 'received')
-      .is('read_at', null);
-    const threadIds = [...new Set((unreadThreadIds ?? []).map((r) => r.thread_id))];
-    if (threadIds.length === 0) return [];
-    const { data: threadsWithUnread } = await supabase
-      .from('email_threads')
-      .select('id')
-      .eq('account_id', accountId)
-      .in('id', threadIds);
-    const ids = (threadsWithUnread ?? []).map((t) => t.id);
-    if (ids.length === 0) return [];
-    return getThreadsByAccountInternal(accountId, { ...options, restrictToThreadIds: ids });
-  }
-  return getThreadsByAccountInternal(accountId, options);
+export type GetThreadsByAccountResult = {
+  threads: EmailThread[];
+  totalCount: number;
+};
+
+type InboxThreadListRow = EmailThread & {
+  total_count: number;
+  search_rank: number;
+};
+
+function stripListMeta(row: InboxThreadListRow): EmailThread {
+  const { total_count: _total, search_rank: _rank, ...thread } = row;
+  return thread;
 }
 
-async function getThreadsByAccountInternal(
+async function resolveCampaignIdsForList(
   accountId: string,
-  options?: GetThreadsByAccountOptions & { restrictToThreadIds?: string[] }
-): Promise<EmailThread[]> {
-  let query = supabase
-    .from('email_threads')
-    .select('*')
-    .eq('account_id', accountId)
-    .order('conversation_status', { ascending: false })
-    .order('last_message_at', { ascending: false });
-
-  if (options?.hasReplyOnly === true) query = query.eq('has_reply', true);
-  if (options?.mailboxId) query = query.eq('mailbox_id', options.mailboxId);
-  if (options?.conversationStatus && options.conversationStatus !== 'all') {
-    query = query.eq('conversation_status', options.conversationStatus);
-  }
-
+  options?: Pick<GetThreadsByAccountOptions, 'campaignId' | 'campaignTagIds'>,
+): Promise<string[] | null> {
   let campaignIdsFromTags: string[] | undefined;
   if (options?.campaignTagIds?.length) {
     campaignIdsFromTags = await getCampaignIdsForTags(accountId, options.campaignTagIds);
     if (campaignIdsFromTags.length === 0) return [];
   }
+
   if (options?.campaignId) {
-    if (campaignIdsFromTags) {
-      if (!campaignIdsFromTags.includes(options.campaignId)) return [];
-      query = query.eq('campaign_id', options.campaignId);
-    } else {
-      query = query.eq('campaign_id', options.campaignId);
+    if (campaignIdsFromTags && !campaignIdsFromTags.includes(options.campaignId)) {
+      return [];
     }
-  } else if (campaignIdsFromTags?.length) {
-    query = query.in('campaign_id', campaignIdsFromTags);
+    return [options.campaignId];
   }
-  if (options?.dateFrom) query = query.gte('last_message_at', options.dateFrom);
-  if (options?.dateTo) query = query.lte('last_message_at', options.dateTo);
-  if (options?.searchQuery?.trim()) {
-    const q = options.searchQuery.trim();
-    const pattern = `%${q.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
-    query = query.ilike('subject', pattern);
-  }
-  if (options?.category === NO_CATEGORY_FILTER) query = query.is('category', null);
-  else if (options?.category) query = query.eq('category', options.category);
-  if (options?.tagIds?.length) {
-    const { data: assigned } = await supabase
-      .from('thread_tag_assignments')
-      .select('thread_id')
-      .in('tag_id', options.tagIds);
-    const tagThreadIds = [...new Set((assigned ?? []).map((r) => r.thread_id))];
-    if (tagThreadIds.length === 0) return [];
-    const idsToRestrict = options.restrictToThreadIds
-      ? tagThreadIds.filter((id) => options.restrictToThreadIds!.includes(id))
-      : tagThreadIds;
-    if (idsToRestrict.length === 0) return [];
-    query = query.in('id', idsToRestrict);
-  }
-  if (options?.restrictToThreadIds?.length && !options?.tagIds?.length) {
-    query = query.in('id', options.restrictToThreadIds);
-  }
-  const limit = options?.limit;
-  const offset = options?.offset ?? 0;
-  if (limit != null && limit > 0) query = query.range(offset, offset + limit - 1);
 
-  const { data, error } = await query;
+  if (campaignIdsFromTags?.length) {
+    return campaignIdsFromTags;
+  }
+
+  return null;
+}
+
+export async function getThreadsByAccount(
+  accountId: string,
+  options?: GetThreadsByAccountOptions
+): Promise<GetThreadsByAccountResult> {
+  const campaignIds = await resolveCampaignIdsForList(accountId, options);
+  if (campaignIds && campaignIds.length === 0) {
+    return { threads: [], totalCount: 0 };
+  }
+
+  const { data, error } = await supabase.rpc('list_account_inbox_threads', {
+    p_account_id: accountId,
+    p_search: normalizeInboxSearchQuery(options?.searchQuery),
+    p_mailbox_id: options?.mailboxId ?? null,
+    p_campaign_ids: campaignIds,
+    p_unread_only: options?.unreadOnly === true,
+    p_date_from: options?.dateFrom ?? null,
+    p_date_to: options?.dateTo ?? null,
+    p_tag_ids: options?.tagIds?.length ? options.tagIds : null,
+    p_category: options?.category ?? null,
+    p_conversation_status:
+      options?.conversationStatus && options.conversationStatus !== 'all'
+        ? options.conversationStatus
+        : null,
+    p_has_reply_only: options?.hasReplyOnly === true,
+    p_limit: options?.limit ?? 50,
+    p_offset: options?.offset ?? 0,
+    p_sort: options?.sortBy ?? 'newest',
+  });
+
   if (error) throw new Error(`Failed to fetch threads: ${error.message}`);
-  const list = (data ?? []) as EmailThread[];
 
-  if (options?.includeUnreadCount === true && list.length > 0) {
-    const counts = await getThreadUnreadCounts(list.map((t) => t.id));
-    return list.map((t) => ({ ...t, unread_count: counts[t.id] ?? 0 }));
+  const rows = (data ?? []) as InboxThreadListRow[];
+  const totalCount = rows[0]?.total_count ?? 0;
+  let threads = rows.map(stripListMeta);
+
+  if (options?.includeUnreadCount === true && threads.length > 0) {
+    const counts = await getThreadUnreadCounts(threads.map((t) => t.id));
+    threads = threads.map((t) => ({ ...t, unread_count: counts[t.id] ?? 0 }));
   }
-  return list;
+
+  return { threads, totalCount };
 }
 
 export async function getThreadUnreadCounts(
@@ -147,6 +136,7 @@ export async function getThreadSnippets(
     .from('email_messages')
     .select('thread_id, direction, body_text, body_html, received_at')
     .in('thread_id', threadIds)
+    .eq('direction', 'received')
     .order('received_at', { ascending: false })
     .limit(1000);
   if (error) throw new Error(`Failed to fetch thread snippets: ${error.message}`);

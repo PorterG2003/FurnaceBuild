@@ -385,8 +385,8 @@ export function SmartleadMigrationWizardModal({ visible, onClose, initialRunId =
       limit: REVIEW_PAGE_SIZE,
       offset: conversationPage * REVIEW_PAGE_SIZE,
     })
-      .then((rows) => {
-        if (!cancelled) setConversationRows(rows);
+      .then((result) => {
+        if (!cancelled) setConversationRows(result.threads);
       })
       .catch((err: unknown) => {
         if (!cancelled) {

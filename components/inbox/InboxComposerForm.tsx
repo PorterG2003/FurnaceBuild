@@ -36,6 +36,7 @@ export interface InboxComposerFormProps {
   composerAttachments: ComposerAttachmentItem[];
   setComposerAttachments: React.Dispatch<React.SetStateAction<ComposerAttachmentItem[]>>;
   onFilesSelected: (files: FileList) => void;
+  onRemoveAttachment?: (attachment: ComposerAttachmentItem, index: number) => void | Promise<void>;
   composerAttachmentsLoading: boolean;
   composerAttachmentsSkipMessage: string | null;
   includeSignature: boolean;
@@ -88,6 +89,7 @@ export function InboxComposerForm({
   composerAttachments,
   setComposerAttachments,
   onFilesSelected,
+  onRemoveAttachment,
   composerAttachmentsLoading,
   composerAttachmentsSkipMessage,
   includeSignature,
@@ -121,6 +123,8 @@ export function InboxComposerForm({
     <ComposerAttachments
       attachments={composerAttachments}
       onAttachmentsChange={setComposerAttachments}
+      onFilesSelected={onFilesSelected}
+      onRemoveAttachment={onRemoveAttachment}
       maxFiles={MAX_ATTACHMENTS}
       maxTotalBytes={MAX_TOTAL_BYTES}
       maxFileBytes={MAX_FILE_BYTES}

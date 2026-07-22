@@ -214,20 +214,153 @@ test('InboxCheckerWorker marks permanent IMAP failures as error', async () => {
       (worker as any).processMailbox(mailbox),
       (error: any) => error?.message === 'Command failed'
     );
-    await assert.rejects(
-      (worker as any).processMailbox(mailbox),
-      (error: any) => error?.message === 'Command failed'
-    );
 
-    assert.equal(supabase.calls.length, 2);
-    assert.deepEqual(supabase.calls[0].updates, {
-      status: 'error',
-      error_message: 'Command failed — NO Authentication failed',
-      imap_claimed_at: null,
-    });
+    assert.equal(supabase.calls.length, 1);
+    assert.equal(supabase.calls[0].updates?.status, 'error');
+    assert.match(String(supabase.calls[0].updates?.error_message), /Authentication failed/);
+    assert.equal(supabase.calls[0].updates?.imap_claimed_at, null);
+    assert.equal(supabase.calls[0].updates?.imap_next_check_at, null);
+    assert.equal(supabase.calls[0].updates?.imap_consecutive_failures, 1);
     assert.deepEqual(supabase.calls[0].filters, [
       { op: 'eq', column: 'id', value: 'mailbox-1' },
     ]);
+    assert.equal(slack.calls.length, 0);
+  } finally {
+    slack.restore();
+  }
+});
+
+test('InboxCheckerWorker backs off transient IMAP failures without demoting immediately', async () => {
+  const slack = setupSlackCapture();
+  const supabase = new TrackingSupabase();
+  const worker = new InboxCheckerWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+  });
+  const mailbox = createMailbox({ imap_consecutive_failures: 0 });
+
+  (worker as any).imapClient = {
+    async fetchNewMessages() {
+      throw {
+        message: 'connect ECONNREFUSED',
+        code: 'ECONNREFUSED',
+      };
+    },
+  };
+
+  try {
+    await assert.rejects((worker as any).processMailbox(mailbox));
+    assert.equal(supabase.calls.length, 1);
+    assert.equal(supabase.calls[0].updates?.status, undefined);
+    assert.equal(supabase.calls[0].updates?.imap_consecutive_failures, 1);
+    assert.equal(supabase.calls[0].updates?.imap_last_error_code, 'ECONNREFUSED');
+    assert.ok(typeof supabase.calls[0].updates?.imap_next_check_at === 'string');
+    assert.equal(slack.calls.length, 0);
+  } finally {
+    slack.restore();
+  }
+});
+
+test('InboxCheckerWorker advances schedule on successful empty sync', async () => {
+  const supabase = new TrackingSupabase();
+  const worker = new InboxCheckerWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+  });
+  const mailbox = createMailbox({ imap_consecutive_failures: 2 });
+
+  (worker as any).imapClient = {
+    async fetchNewMessages() {
+      return [];
+    },
+  };
+
+  await (worker as any).processMailbox(mailbox);
+
+  assert.equal(supabase.calls.length, 1);
+  assert.equal(supabase.calls[0].updates?.imap_consecutive_failures, 0);
+  assert.equal(supabase.calls[0].updates?.error_message, null);
+  assert.ok(typeof supabase.calls[0].updates?.last_synced_at === 'string');
+  assert.ok(typeof supabase.calls[0].updates?.imap_next_check_at === 'string');
+});
+
+test('InboxCheckerWorker alerts when a hot-path batch is all infra failures', async () => {
+  const slack = setupSlackCapture();
+  const supabase = new TrackingSupabase();
+  const mailboxes = [
+    createMailbox({ id: 'mailbox-a', email_address: 'a@example.com', imap_host: 'host-a.example.com' }),
+    createMailbox({ id: 'mailbox-b', email_address: 'b@example.com', imap_host: 'host-b.example.com' }),
+  ];
+  let claimed = false;
+
+  const worker = new InboxCheckerWorker({
+    supabase: supabase as any,
+    databaseClient: {
+      async claimMailboxesToCheck() {
+        if (claimed) return [];
+        claimed = true;
+        return mailboxes;
+      },
+    } as any,
+    recovery: { runOnStart: false },
+  });
+
+  (worker as any).imapClient = {
+    async fetchNewMessages() {
+      throw { message: 'connect ECONNREFUSED', code: 'ECONNREFUSED' };
+    },
+  };
+  (worker as any).sleep = async () => {
+    worker.stop();
+  };
+
+  try {
+    await worker.start();
+    assert.equal(slack.calls.length, 1);
+    assert.match(slack.calls[0], /hot-path systemic IMAP failure/i);
+    assert.match(slack.calls[0], /ECONNREFUSED/);
+  } finally {
+    slack.restore();
+  }
+});
+
+test('InboxCheckerWorker does not hot-path alert when any mailbox succeeds', async () => {
+  const slack = setupSlackCapture();
+  const supabase = new TrackingSupabase();
+  let fetchCalls = 0;
+  let claimed = false;
+  const mailboxes = [
+    createMailbox({ id: 'mailbox-a', email_address: 'a@example.com' }),
+    createMailbox({ id: 'mailbox-b', email_address: 'b@example.com' }),
+  ];
+
+  const worker = new InboxCheckerWorker({
+    supabase: supabase as any,
+    databaseClient: {
+      async claimMailboxesToCheck() {
+        if (claimed) return [];
+        claimed = true;
+        return mailboxes;
+      },
+    } as any,
+    recovery: { runOnStart: false },
+  });
+
+  (worker as any).imapClient = {
+    async fetchNewMessages() {
+      fetchCalls += 1;
+      if (fetchCalls === 1) {
+        return [];
+      }
+      throw { message: 'connect ECONNREFUSED', code: 'ECONNREFUSED' };
+    },
+  };
+  (worker as any).sleep = async () => {
+    worker.stop();
+  };
+
+  try {
+    await worker.start();
     assert.equal(slack.calls.length, 0);
   } finally {
     slack.restore();

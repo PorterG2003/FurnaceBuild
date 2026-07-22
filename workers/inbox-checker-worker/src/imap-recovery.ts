@@ -2,6 +2,7 @@ import { reportErrorToSlack } from '@furnace/slack-lib';
 import {
   applyMailboxImapFailureUpdate,
   buildImapFlowOptions,
+  buildMailboxImapRestoreUpdate,
   classifyImapError,
   createImapFlowErrorGuard,
   inferImapInfraFailureCode,
@@ -84,12 +85,7 @@ export async function runImapRecoveryTick(config: ImapRecoveryTickConfig): Promi
           await (config.verifyMailbox ?? verifyMailboxImap)(mailbox);
           const { error } = await config.supabase
             .from('mailboxes')
-            .update({
-              status: 'connected',
-              error_message: null,
-              imap_claimed_at: null,
-              imap_last_recovery_at: new Date().toISOString(),
-            })
+            .update(buildMailboxImapRestoreUpdate())
             .eq('id', mailbox.id);
           if (error) {
             throw error;
@@ -112,7 +108,12 @@ export async function runImapRecoveryTick(config: ImapRecoveryTickConfig): Promi
           const { error: updateError } = await config.supabase
             .from('mailboxes')
             .update({
-              ...applyMailboxImapFailureUpdate(classified.kind, classified.message),
+              ...applyMailboxImapFailureUpdate(classified.kind, classified.message, {
+                consecutiveFailures: mailbox.imap_consecutive_failures ?? 0,
+                errorCode: code,
+              }),
+              // Recovery attempts always stamp cooldown; stay on error lane.
+              status: 'error',
               imap_last_recovery_at: new Date().toISOString(),
             })
             .eq('id', mailbox.id);

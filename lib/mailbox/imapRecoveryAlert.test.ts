@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inferImapInfraFailureCode, isSystemicInfraFailure } from './imapRecoveryAlert.ts';
+import {
+  allFailuresAreInfraClass,
+  inferImapInfraFailureCode,
+  isSystemicInfraFailure,
+} from './imapRecoveryAlert.ts';
 
 test('inferImapInfraFailureCode ignores auth-style XOAUTH2 failures', () => {
   assert.equal(
@@ -39,6 +43,23 @@ test('isSystemicInfraFailure requires the same infra code on the same host', () 
     isSystemicInfraFailure([
       { host: 'proxy-a.example.com', code: 'ETIMEDOUT', message: 'timeout' },
       { host: 'proxy-b.example.com', code: 'ETIMEDOUT', message: 'timeout' },
+    ]),
+    false,
+  );
+});
+
+test('allFailuresAreInfraClass accepts mixed hosts with infra codes', () => {
+  assert.equal(
+    allFailuresAreInfraClass([
+      { host: 'proxy-a.example.com', code: 'ECONNREFUSED', message: 'refused' },
+      { host: 'proxy-b.example.com', code: 'ETIMEDOUT', message: 'timeout' },
+    ]),
+    true,
+  );
+  assert.equal(
+    allFailuresAreInfraClass([
+      { host: 'proxy-a.example.com', code: 'ECONNREFUSED', message: 'refused' },
+      { host: 'proxy-b.example.com', code: null, message: 'Authentication failed' },
     ]),
     false,
   );

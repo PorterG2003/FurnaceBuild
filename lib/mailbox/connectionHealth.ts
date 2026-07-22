@@ -37,6 +37,9 @@ export interface MailboxConnectionHealthUpdate {
   status: 'connected' | 'error';
   smtp_status: 'active' | 'error';
   error_message: string | null;
+  imap_consecutive_failures?: number;
+  imap_last_error_code?: string | null;
+  imap_next_check_at?: string;
 }
 
 export function mailboxToTestMailboxConnectionParams(
@@ -59,10 +62,27 @@ export function mailboxToTestMailboxConnectionParams(
 
 export function buildMailboxConnectionHealthUpdate(
   result: TestConnectionResult,
+  now: string = new Date().toISOString(),
 ): MailboxConnectionHealthUpdate {
+  const status = result.imap?.success === false ? 'error' : 'connected';
+  const smtp_status = result.smtp?.success === false ? 'error' : 'active';
+  const error_message = result.success ? null : result.message;
+
+  if (result.imap?.success === false) {
+    return {
+      status,
+      smtp_status,
+      error_message,
+    };
+  }
+
+  // IMAP healthy (or not tested as failed): re-enter hot path immediately.
   return {
-    status: result.imap?.success === false ? 'error' : 'connected',
-    smtp_status: result.smtp?.success === false ? 'error' : 'active',
-    error_message: result.success ? null : result.message,
+    status,
+    smtp_status,
+    error_message,
+    imap_consecutive_failures: 0,
+    imap_last_error_code: null,
+    imap_next_check_at: now,
   };
 }

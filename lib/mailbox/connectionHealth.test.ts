@@ -36,17 +36,21 @@ test('mailboxToTestMailboxConnectionParams maps stored mailbox credentials into 
 });
 
 test('buildMailboxConnectionHealthUpdate marks both protocols healthy when test fully passes', () => {
+  const now = '2026-07-22T15:00:00.000Z';
   assert.deepEqual(
     buildMailboxConnectionHealthUpdate({
       success: true,
       message: 'Both SMTP and IMAP connections successful',
       smtp: { success: true },
       imap: { success: true },
-    }),
+    }, now),
     {
       status: 'connected',
       smtp_status: 'active',
       error_message: null,
+      imap_consecutive_failures: 0,
+      imap_last_error_code: null,
+      imap_next_check_at: now,
     },
   );
 });
@@ -68,17 +72,21 @@ test('buildMailboxConnectionHealthUpdate marks IMAP failures as mailbox error', 
 });
 
 test('buildMailboxConnectionHealthUpdate marks SMTP failures without disconnecting IMAP', () => {
+  const now = '2026-07-22T15:00:00.000Z';
   assert.deepEqual(
     buildMailboxConnectionHealthUpdate({
       success: false,
       message: 'Connection test failed: SMTP: auth failed',
       smtp: { success: false, error: 'auth failed' },
       imap: { success: true },
-    }),
+    }, now),
     {
       status: 'connected',
       smtp_status: 'error',
       error_message: 'Connection test failed: SMTP: auth failed',
+      imap_consecutive_failures: 0,
+      imap_last_error_code: null,
+      imap_next_check_at: now,
     },
   );
 });

@@ -101,23 +101,38 @@ test('formatImapError includes response context in the message', () => {
 
 test('applyMailboxImapSuccessUpdate clears stale IMAP errors after a good check', () => {
   const syncedAt = '2026-07-09T23:00:00.000Z';
-  assert.deepEqual(applyMailboxImapSuccessUpdate(syncedAt), {
-    last_synced_at: syncedAt,
-    imap_claimed_at: null,
-    error_message: null,
-  });
+  const update = applyMailboxImapSuccessUpdate(syncedAt);
+  assert.equal(update.last_synced_at, syncedAt);
+  assert.equal(update.imap_claimed_at, null);
+  assert.equal(update.error_message, null);
+  assert.equal(update.imap_consecutive_failures, 0);
+  assert.equal(update.imap_last_error_code, null);
+  assert.equal(update.imap_last_attempt_at, syncedAt);
+  assert.ok(update.imap_next_check_at > syncedAt);
 });
 
-test('mailbox failure patch helpers only disable permanent failures', () => {
-  assert.deepEqual(applyMailboxImapFailureUpdate('permanent', 'bad creds'), {
-    status: 'error',
-    error_message: 'bad creds',
-    imap_claimed_at: null,
+test('mailbox failure patch helpers demote permanent and back off transient', () => {
+  const permanent = applyMailboxImapFailureUpdate('permanent', 'bad creds', {
+    consecutiveFailures: 0,
+    now: '2026-07-09T23:00:00.000Z',
   });
-  assert.deepEqual(applyMailboxImapFailureUpdate('transient', 'timeout'), {
-    error_message: 'timeout',
-    imap_claimed_at: null,
+  assert.equal(permanent.status, 'error');
+  assert.equal(permanent.error_message, 'bad creds');
+  assert.equal(permanent.imap_claimed_at, null);
+  assert.equal(permanent.imap_next_check_at, null);
+
+  const transient = applyMailboxImapFailureUpdate('transient', 'timeout', {
+    consecutiveFailures: 0,
+    errorCode: 'ETIMEDOUT',
+    now: '2026-07-09T23:00:00.000Z',
   });
+  assert.equal(transient.status, undefined);
+  assert.equal(transient.error_message, 'timeout');
+  assert.equal(transient.imap_claimed_at, null);
+  assert.equal(transient.imap_consecutive_failures, 1);
+  assert.equal(transient.imap_last_error_code, 'ETIMEDOUT');
+  assert.ok(transient.imap_next_check_at);
+
   assert.deepEqual(applyMailboxSmtpFailureUpdate('permanent', 'bad creds'), {
     smtp_status: 'error',
     error_message: 'bad creds',

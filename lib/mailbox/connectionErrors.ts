@@ -1,4 +1,10 @@
 import { isExchangeLsubError } from './imapInbox.js';
+import {
+  buildMailboxImapFailureUpdate,
+  buildMailboxImapSuccessUpdate,
+  type MailboxImapScheduleFailureUpdate,
+  type MailboxImapScheduleSuccessUpdate,
+} from './imapSchedule.js';
 
 export type ConnectionFailureKind = 'permanent' | 'transient' | 'unknown';
 
@@ -219,30 +225,28 @@ export function classifySmtpError(
 
 export function applyMailboxImapSuccessUpdate(
   syncedAt: string = new Date().toISOString(),
-): { last_synced_at: string; imap_claimed_at: null; error_message: null } {
-  return {
-    last_synced_at: syncedAt,
-    imap_claimed_at: null,
-    error_message: null,
-  };
+): MailboxImapScheduleSuccessUpdate {
+  return buildMailboxImapSuccessUpdate(syncedAt);
 }
 
 export function applyMailboxImapFailureUpdate(
   kind: ConnectionFailureKind,
   message: string,
-): { error_message: string; imap_claimed_at: null; status?: 'error' } {
-  if (kind === 'permanent') {
-    return {
-      status: 'error',
-      error_message: message,
-      imap_claimed_at: null,
-    };
-  }
-
-  return {
-    error_message: message,
-    imap_claimed_at: null,
-  };
+  options: {
+    consecutiveFailures?: number;
+    errorCode?: string | null;
+    now?: string;
+    promoteAfter?: number;
+  } = {},
+): MailboxImapScheduleFailureUpdate {
+  return buildMailboxImapFailureUpdate({
+    kind,
+    message,
+    consecutiveFailures: options.consecutiveFailures,
+    errorCode: options.errorCode,
+    now: options.now,
+    promoteAfter: options.promoteAfter,
+  });
 }
 
 export function applyMailboxSmtpFailureUpdate(

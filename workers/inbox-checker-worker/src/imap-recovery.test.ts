@@ -98,6 +98,9 @@ test('runImapRecoveryTick restores healthy mailboxes to connected', async () => 
   assert.equal(supabase.calls[0].updates?.status, 'connected');
   assert.equal(supabase.calls[0].updates?.error_message, null);
   assert.equal(supabase.calls[0].updates?.imap_claimed_at, null);
+  assert.equal(supabase.calls[0].updates?.imap_consecutive_failures, 0);
+  assert.equal(supabase.calls[0].updates?.imap_last_error_code, null);
+  assert.ok(typeof supabase.calls[0].updates?.imap_next_check_at === 'string');
   assert.ok(typeof supabase.calls[0].updates?.imap_last_recovery_at === 'string');
 });
 

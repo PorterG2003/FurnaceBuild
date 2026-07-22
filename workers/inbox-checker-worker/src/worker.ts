@@ -6,9 +6,11 @@ import {
 } from '@furnace/slack-lib';
 import pLimit from 'p-limit';
 import {
+  allFailuresAreInfraClass,
   applyMailboxImapFailureUpdate,
   applyMailboxImapSuccessUpdate,
   classifyImapError,
+  inferImapInfraFailureCode,
 } from '@furnace/mailbox-lib';
 import { DatabaseClient } from './database.js';
 import {
@@ -90,7 +92,7 @@ export class InboxCheckerWorker {
           // Process with concurrency limit
           const limit = pLimit(this.concurrencyLimit);
           const results = await Promise.allSettled(
-            mailboxes.map(mailbox => 
+            mailboxes.map(mailbox =>
               limit(() => this.processMailbox(mailbox))
             )
           );
@@ -106,6 +108,8 @@ export class InboxCheckerWorker {
               console.error(`[INBOX CHECKER] Failed to process mailbox ${mailboxes[index].id}:`, result.reason);
             }
           });
+
+          this.maybeAlertHotPathSystemicInfra(mailboxes, results);
         } else {
           // No mailboxes to check - adaptive polling
           this.consecutiveEmptyPolls++;
@@ -128,6 +132,52 @@ export class InboxCheckerWorker {
         await this.sleep(5000); // Wait before retrying
       }
     }
+  }
+
+  private maybeAlertHotPathSystemicInfra(
+    mailboxes: Mailbox[],
+    results: PromiseSettledResult<void>[],
+  ): void {
+    const successful = results.filter((result) => result.status === 'fulfilled').length;
+    const failedResults = results
+      .map((result, index) => ({ result, mailbox: mailboxes[index] }))
+      .filter((entry): entry is { result: PromiseRejectedResult; mailbox: Mailbox } =>
+        entry.result.status === 'rejected' && entry.mailbox != null,
+      );
+
+    if (successful > 0 || failedResults.length === 0) {
+      return;
+    }
+
+    const failures = failedResults.map(({ result, mailbox }) => {
+      const reason = result.reason;
+      const classified = classifyImapError(reason);
+      return {
+        host: mailbox.imap_host,
+        code: inferImapInfraFailureCode({
+          code: (reason as { code?: string | null })?.code ?? null,
+          message: classified.message,
+        }),
+        message: classified.message,
+      };
+    });
+
+    if (!allFailuresAreInfraClass(failures)) {
+      return;
+    }
+
+    const code = failures[0]?.code ?? 'unknown';
+    reportErrorToSlack('Inbox-checker hot-path systemic IMAP failure', {
+      severity: 'critical',
+      alertPolicy: 'critical_failure',
+      aggregationKey: 'inbox-checker-hot-path:systemic-infra',
+      error: `${failedResults.length} mailbox check(s) failed with infra errors (sample ${code})`,
+      summaryFields: {
+        worker: 'inbox-checker',
+        failure_code: code,
+        failed_count: String(failedResults.length),
+      },
+    });
   }
 
   private startSingleFlightInterval(options: {
@@ -287,10 +337,17 @@ export class InboxCheckerWorker {
       console.error(`[INBOX CHECKER] Error processing mailbox ${mailbox.id}:`, error);
 
       const classified = classifyImapError(error);
+      const errorCode = inferImapInfraFailureCode({
+        code: (error as { code?: string | null })?.code ?? null,
+        message: classified.message,
+      });
 
       await this.supabase
         .from('mailboxes')
-        .update(applyMailboxImapFailureUpdate(classified.kind, classified.message))
+        .update(applyMailboxImapFailureUpdate(classified.kind, classified.message, {
+          consecutiveFailures: mailbox.imap_consecutive_failures ?? 0,
+          errorCode,
+        }))
         .eq('id', mailbox.id);
 
       throw error;

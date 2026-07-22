@@ -32,6 +32,7 @@ export function inferImapInfraFailureCode(failure: {
   return null;
 }
 
+/** Recovery: same infra code against the same host across the whole batch. */
 export function isSystemicInfraFailure(failures: ImapRecoveryFailure[]): boolean {
   if (failures.length === 0) {
     return false;
@@ -49,4 +50,13 @@ export function isSystemicInfraFailure(failures: ImapRecoveryFailure[]): boolean
   }
 
   return inferred.every((failure) => failure.code === firstCode && failure.host === firstHost);
+}
+
+/** Hot path: every failure in the batch is an infra-class connect error (any host). */
+export function allFailuresAreInfraClass(failures: ImapRecoveryFailure[]): boolean {
+  if (failures.length === 0) {
+    return false;
+  }
+
+  return failures.every((failure) => inferImapInfraFailureCode(failure) != null);
 }

@@ -1450,6 +1450,12 @@ export interface Database {
           imap_use_ssl: boolean;
           status: 'connected' | 'disconnected' | 'error';
           last_synced_at: string | null;
+          imap_next_check_at: string | null;
+          imap_last_attempt_at: string | null;
+          imap_consecutive_failures: number;
+          imap_last_error_code: string | null;
+          imap_last_recovery_at: string | null;
+          imap_claimed_at: string | null;
           signature: string | null;
           error_message: string | null;
           min_gap_seconds: number | null;
@@ -1480,6 +1486,12 @@ export interface Database {
           imap_use_ssl?: boolean;
           status?: 'connected' | 'disconnected' | 'error';
           last_synced_at?: string | null;
+          imap_next_check_at?: string | null;
+          imap_last_attempt_at?: string | null;
+          imap_consecutive_failures?: number;
+          imap_last_error_code?: string | null;
+          imap_last_recovery_at?: string | null;
+          imap_claimed_at?: string | null;
           signature?: string | null;
           error_message?: string | null;
           min_gap_seconds?: number | null;
@@ -1510,6 +1522,12 @@ export interface Database {
           imap_use_ssl?: boolean;
           status?: 'connected' | 'disconnected' | 'error';
           last_synced_at?: string | null;
+          imap_next_check_at?: string | null;
+          imap_last_attempt_at?: string | null;
+          imap_consecutive_failures?: number;
+          imap_last_error_code?: string | null;
+          imap_last_recovery_at?: string | null;
+          imap_claimed_at?: string | null;
           signature?: string | null;
           error_message?: string | null;
           min_gap_seconds?: number | null;

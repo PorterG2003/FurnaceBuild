@@ -355,3 +355,80 @@ test('client api returns created async jobs from the jobs endpoint', async () =>
     await harness.cleanup();
   }
 });
+
+test('client api campaign PATCH clears schedule to null and strips unknown body keys', async () => {
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('campaign-patch'),
+  });
+
+  try {
+    const graph = await harness.campaignHarness.createCampaignGraph({
+      name: 'Client API Campaign Patch',
+      status: 'draft',
+      flowKind: 'emailOnly',
+      leads: [],
+    });
+    const apiKey = await harness.createApiKey();
+    const schedule = {
+      timezone: 'America/Chicago',
+      start_hour: 9,
+      end_hour: 17,
+      days_of_week: [1, 2, 3, 4, 5],
+    };
+
+    const setSchedule = await harness.request(`/v1/campaigns/${graph.campaignId}`, {
+      method: 'PATCH',
+      apiKey: apiKey.secret,
+      body: { schedule },
+    });
+    assert.equal(setSchedule.status, 200);
+    const setBody = await setSchedule.json() as { data: { schedule: unknown } };
+    assert.ok(setBody.data.schedule);
+
+    const clearSchedule = await harness.request(`/v1/campaigns/${graph.campaignId}`, {
+      method: 'PATCH',
+      apiKey: apiKey.secret,
+      body: { schedule: null },
+    });
+    assert.equal(clearSchedule.status, 200);
+    const clearBody = await clearSchedule.json() as { data: { schedule: unknown } };
+    assert.equal(clearBody.data.schedule, null);
+
+    const { data: clearedRow, error: clearedError } = await harness.supabase
+      .from('campaigns')
+      .select('schedule, status, name')
+      .eq('id', graph.campaignId)
+      .single();
+    assert.equal(clearedError, null);
+    assert.equal(clearedRow?.schedule, null);
+
+    const statusBefore = clearedRow?.status;
+    const stripUnknown = await harness.request(`/v1/campaigns/${graph.campaignId}`, {
+      method: 'PATCH',
+      apiKey: apiKey.secret,
+      body: {
+        name: 'Patched Without Extra Keys',
+        foo: 1,
+        status: 'paused',
+      },
+    });
+    assert.equal(stripUnknown.status, 200);
+    const stripBody = await stripUnknown.json() as {
+      data: { name: string; status: string; foo?: unknown };
+    };
+    assert.equal(stripBody.data.name, 'Patched Without Extra Keys');
+    assert.equal(stripBody.data.status, statusBefore);
+    assert.equal('foo' in stripBody.data, false);
+
+    const { data: patchedRow, error: patchedError } = await harness.supabase
+      .from('campaigns')
+      .select('name, status')
+      .eq('id', graph.campaignId)
+      .single();
+    assert.equal(patchedError, null);
+    assert.equal(patchedRow?.name, 'Patched Without Extra Keys');
+    assert.equal(patchedRow?.status, statusBefore);
+  } finally {
+    await harness.cleanup();
+  }
+});

@@ -37,7 +37,7 @@ Decision records documenting architectural choices and rationale.
 
 ### Client API (public REST docs)
 
-Live docs are served at `/docs` on the Client API host (Scalar UI). Source lives under `lib/client-api/openapi/`.
+Live docs are served at `/docs` on the Client API host (Starlight static site on CloudFront). Source lives under `lib/client-api/openapi/` and `docs/client-api/`.
 
 - **[infrastructure/CLIENT_API_BUILDING_CAMPAIGNS.md](./infrastructure/CLIENT_API_BUILDING_CAMPAIGNS.md)** - Campaign lifecycle guide + flow Models schemas
 - **[infrastructure/CLIENT_API_CHANGELOG.md](./infrastructure/CLIENT_API_CHANGELOG.md)** - Version history pointer

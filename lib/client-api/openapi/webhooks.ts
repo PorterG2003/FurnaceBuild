@@ -4,6 +4,8 @@ import {
   buildWebhookSamplePreview,
   WEBHOOK_DOC_SAMPLE_CONTEXT,
 } from '../webhooks/webhookTestSamples.js';
+import type { DocLinkMode } from './docLinks.js';
+import { guideLink } from './docLinks.js';
 
 const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
   'lead.created': 'A single lead was created via `POST /v1/campaigns/{id}/leads`.',
@@ -32,7 +34,7 @@ const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEventType, string> = {
   'bounce.detected': 'A hard or soft bounce was detected for a sent message.',
 };
 
-/** Maps webhook event group ids to documentation path segments under `/documentation/webhooks/`. */
+/** Maps webhook event group ids to documentation path segments under `/docs/webhooks/`. */
 export const WEBHOOK_GUIDE_GROUP_PATH_SEGMENTS: Record<string, string> = {
   lead_added_updated: 'lead-added-updated',
   lead_removed: 'lead-removed',
@@ -60,7 +62,7 @@ function buildEventsMarkdown(events: readonly WebhookEventType[]): string {
   return sections.join('\n');
 }
 
-export function buildWebhookEventGroupMarkdown(groupId: string): string {
+export function buildWebhookEventGroupMarkdown(groupId: string, linkMode: DocLinkMode = 'docs'): string {
   const group = WEBHOOK_EVENT_GROUPS.find((entry) => entry.id === groupId);
   if (!group) {
     throw new Error(`Unknown webhook event group: ${groupId}`);
@@ -69,15 +71,26 @@ export function buildWebhookEventGroupMarkdown(groupId: string): string {
   return [
     group.description,
     '',
+    `These pages are payload reference. For setup, verification, and retries, follow ${guideLink('Webhook integration', '/guides/webhook-integration/', linkMode)}.`,
+    '',
     'Examples use placeholder UUIDs. Live deliveries use real ids from your account.',
     '',
     buildEventsMarkdown(group.events),
   ].join('\n');
 }
 
-export function buildWebhooksOverviewMarkdown(): string {
+export function buildWebhooksOverviewMarkdown(linkMode: DocLinkMode = 'openapi'): string {
+  const eventLinks = WEBHOOK_EVENT_GROUPS.map((group) => {
+    const segment = WEBHOOK_GUIDE_GROUP_PATH_SEGMENTS[group.id];
+    return segment
+      ? `- ${guideLink(group.label, `/webhooks/${segment}/`, linkMode)} — ${group.description}`
+      : null;
+  }).filter(Boolean);
+
   return [
     'Outbound webhooks notify your systems when Furnace events occur. Furnace POSTs JSON to your HTTPS endpoint; your endpoint must return any **2xx** response.',
+    '',
+    `New to webhooks? Start with the short ${guideLink('Webhooks', '/concepts/webhooks/', linkMode)} concept page.`,
     '',
     '## Quick start',
     '',
@@ -114,7 +127,7 @@ export function buildWebhooksOverviewMarkdown(): string {
     '- `id` — unique event id (stable across delivery retries for that event).',
     '- `type` — event constant (matches `X-Furnace-Event`).',
     '- `occurred_at` — ISO-8601 timestamp.',
-    '- `data` — event-specific payload (see the event group pages in this **Webhooks** section).',
+    '- `data` — event-specific payload (see **Webhook events** in the sidebar).',
     '',
     '### Test webhooks',
     '',
@@ -143,18 +156,13 @@ export function buildWebhooksOverviewMarkdown(): string {
     '',
     'Most no-code tools (Zoho Flow, Zapier, Make) can ignore the signature and accept the POST directly.',
     '',
-    '## Atomic vs batch',
+    '## Single actions vs bulk',
     '',
-    '```text',
-    'IF async job OR more than one lead in one action',
-    '  → Batch tier: exactly ONE completion webhook for that operation',
-    'ELSE',
-    '  → Atomic tier: lead.created / lead.updated / lead.deleted (etc.)',
-    '```',
+    'A single action (adding one person, one send) fires its own event. A bulk action (an import, or anything touching more than one person at once) fires **one** completion event for the whole operation instead of one per person.',
     '',
     'Per-row `lead.created` / `lead.updated` / `lead.deleted` events are **never** emitted during bulk processing.',
     '',
-    '### Atomic tier',
+    '### Single actions',
     '',
     '| Action | Event |',
     '| --- | --- |',
@@ -165,7 +173,7 @@ export function buildWebhooksOverviewMarkdown(): string {
     '| Worker: email sent, reply, bounce | `email.sent` / `reply.received` / `bounce.detected` |',
     '| Thread category assign/change/clear | `reply.categorized` |',
     '',
-    '### Batch tier',
+    '### Bulk actions',
     '',
     '| Operation | Completion event |',
     '| --- | --- |',
@@ -197,9 +205,11 @@ export function buildWebhooksOverviewMarkdown(): string {
     '3. On the **Test** step, send `email.sent` or `reply.received` and map fields from the sample JSON.',
     '4. No echo-token or custom verification handler is required.',
     '',
-    '## Example payloads',
+    '## Event payloads',
     '',
-    'Open the event group pages in this **Webhooks** section for live JSON examples of every event type.',
+    'Live JSON examples for every event type:',
+    '',
+    ...eventLinks,
     '',
     '## Troubleshooting',
     '',

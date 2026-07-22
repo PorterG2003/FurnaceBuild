@@ -421,6 +421,25 @@ export function buildClientApiComponents() {
       },
     },
     schemas: {
+      ApiError: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: [
+              'invalid_request_error',
+              'authentication_error',
+              'permission_error',
+              'rate_limit_error',
+              'api_error',
+            ],
+          },
+          code: { type: 'string' },
+          message: { type: 'string' },
+          param: { type: 'string' },
+        },
+        required: ['type', 'code', 'message'],
+      },
       Error: {
         type: 'object',
         properties: {
@@ -522,7 +541,11 @@ export function buildClientApiComponents() {
             examples: ['manual'],
           },
           flow_data: { $ref: '#/components/schemas/CampaignFlow' },
-          schedule: { type: 'object', additionalProperties: true, nullable: true },
+          schedule: {
+            allOf: [schemaRef('CampaignSchedule')],
+            nullable: true,
+            description: 'Send window. `null` means send 24/7.',
+          },
           sending_interval_seconds: { type: 'number', nullable: true },
           created_at: { type: 'string', format: 'date-time' },
           updated_at: { type: 'string', format: 'date-time', nullable: true },
@@ -534,11 +557,11 @@ export function buildClientApiComponents() {
           },
         },
         required: ['id', 'status', 'created_at'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       CampaignFlow: {
         type: 'object',
-        description: buildCampaignFlowDescription(),
+        description: buildCampaignFlowDescription('openapi'),
         properties: {
           nodes: {
             type: 'array',
@@ -579,7 +602,7 @@ export function buildClientApiComponents() {
       },
       EmailVariant: {
         type: 'object',
-        description: buildEmailVariantDescription(),
+        description: buildEmailVariantDescription('openapi'),
         properties: {
           id: {
             type: 'string',
@@ -632,7 +655,7 @@ export function buildClientApiComponents() {
       FlowNode: {
         type: 'object',
         description:
-          `One node in the campaign flow graph. The data shape depends on type — see ${modelLink('LeadSourceNodeData')}, ${modelLink('EmailNodeData')}, ${modelLink('WaitTimeNodeData')}, ${modelLink('AICategorizerNodeData')}, and ${modelLink('DataSenderNodeData')}.`,
+          `One node in the campaign flow graph. The data shape depends on type — see ${modelLink('LeadSourceNodeData', 'openapi')}, ${modelLink('EmailNodeData', 'openapi')}, ${modelLink('WaitTimeNodeData', 'openapi')}, ${modelLink('AICategorizerNodeData', 'openapi')}, and ${modelLink('DataSenderNodeData', 'openapi')}.`,
         properties: {
           id: {
             type: 'string',
@@ -664,7 +687,7 @@ export function buildClientApiComponents() {
           },
         },
         required: ['id', 'type', 'position', 'data'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       FlowEdge: {
         type: 'object',
@@ -692,11 +715,11 @@ export function buildClientApiComponents() {
           },
         },
         required: ['id', 'source', 'target'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       LeadSourceNodeData: {
         type: 'object',
-        description: buildLeadSourceNodeDataDescription(),
+        description: buildLeadSourceNodeDataDescription('openapi'),
         properties: {
           label: { type: 'string', description: 'Display label.', example: 'Lead Bucket' },
           source: { type: 'string', nullable: true, description: 'Legacy source label.' },
@@ -722,11 +745,11 @@ export function buildClientApiComponents() {
             example: true,
           },
         },
-        additionalProperties: true,
+        additionalProperties: false,
       },
       EmailNodeData: {
         type: 'object',
-        description: buildEmailNodeDataDescription(),
+        description: buildEmailNodeDataDescription('openapi'),
         properties: {
           label: { type: 'string', description: 'Display label.', example: 'Intro Email' },
           mailboxId: {
@@ -751,7 +774,7 @@ export function buildClientApiComponents() {
           },
         },
         required: ['variants'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       WaitTimeNodeData: {
         type: 'object',
@@ -778,7 +801,7 @@ export function buildClientApiComponents() {
           },
         },
         required: ['wait_duration_seconds'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       AICategorizerNodeData: {
         type: 'object',
@@ -792,11 +815,11 @@ export function buildClientApiComponents() {
             example: true,
           },
         },
-        additionalProperties: true,
+        additionalProperties: false,
       },
       DataSenderNodeData: {
         type: 'object',
-        description: `Webhook node that POSTs lead data to an external URL when a lead reaches this step. Supports merge variables in \`payload\`. See ${modelLink('CampaignFlow')} examples for a full dataSender flow.`,
+        description: `Webhook node that POSTs lead data to an external URL when a lead reaches this step. Supports merge variables in \`payload\`. See ${modelLink('CampaignFlow', 'openapi')} examples for a full dataSender flow.`,
         properties: {
           label: { type: 'string', description: 'Display label.', example: 'Notify CRM' },
           endpoint: {
@@ -830,13 +853,66 @@ export function buildClientApiComponents() {
             example: 'continue',
           },
         },
-        additionalProperties: true,
+        additionalProperties: false,
+      },
+      CampaignSchedule: {
+        type: 'object',
+        description:
+          'Campaign send window. Omit or set the parent `schedule` field to `null` for 24/7 sending. `days_of_week` uses JS `Date.getDay()` (0=Sun … 6=Sat); null/empty means every day.',
+        properties: {
+          timezone: {
+            type: 'string',
+            description: 'IANA timezone, e.g. `America/Chicago`.',
+            example: 'America/Chicago',
+          },
+          start_hour: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 23,
+            description: 'Inclusive start hour in the campaign timezone.',
+            example: 9,
+          },
+          end_hour: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 23,
+            description: 'Exclusive end hour in the campaign timezone.',
+            example: 17,
+          },
+          days_of_week: {
+            type: 'array',
+            items: { type: 'integer', minimum: 0, maximum: 6 },
+            nullable: true,
+            description: 'Allowed weekdays. Null/empty = every day.',
+            example: [1, 2, 3, 4, 5],
+          },
+          start_minute: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 59,
+            description: 'Optional start minute. Defaults to 0 when omitted.',
+            example: 0,
+          },
+          end_minute: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 59,
+            description: 'Optional end minute. Defaults to 0 when omitted.',
+            example: 0,
+          },
+        },
+        required: ['timezone', 'start_hour', 'end_hour'],
+        additionalProperties: false,
       },
       CampaignCreate: {
         type: 'object',
         properties: {
           name: { type: 'string' },
-          schedule: { type: 'object', additionalProperties: true },
+          schedule: {
+            allOf: [schemaRef('CampaignSchedule')],
+            nullable: true,
+            description: 'Send window. `null` means send 24/7.',
+          },
           sending_interval_seconds: { type: 'number' },
           mailbox_ids: {
             type: 'array',
@@ -851,13 +927,13 @@ export function buildClientApiComponents() {
         additionalProperties: false,
       },
       FlowUpdate: {
-        description: buildFlowUpdateDescription(),
+        description: buildFlowUpdateDescription('openapi'),
         allOf: [schemaRef('CampaignFlow')],
         example: CAMPAIGN_FLOW_EXAMPLE_CATEGORIZER,
       },
       FlowValidationIssue: {
         type: 'object',
-        description: buildFlowValidationIssueDescription(),
+        description: buildFlowValidationIssueDescription('openapi'),
         properties: {
           path: { type: 'string' },
           code: { type: 'string' },
@@ -868,7 +944,7 @@ export function buildClientApiComponents() {
       },
       FlowValidateResult: {
         type: 'object',
-        description: buildFlowValidateResultDescription(),
+        description: buildFlowValidateResultDescription('openapi'),
         properties: {
           normalized_flow: schemaRef('CampaignFlow'),
           allowed: {
@@ -965,7 +1041,11 @@ export function buildClientApiComponents() {
         description: 'Mutable campaign fields. Mailbox ids can replace the full set or be incrementally added and removed.',
         properties: {
           name: { type: 'string' },
-          schedule: { type: 'object', additionalProperties: true },
+          schedule: {
+            allOf: [schemaRef('CampaignSchedule')],
+            nullable: true,
+            description: 'Send window. `null` means send 24/7.',
+          },
           sending_interval_seconds: { type: 'number' },
           mailbox_ids: {
             type: 'array',
@@ -1059,7 +1139,7 @@ export function buildClientApiComponents() {
           deleted_at: { type: 'string', format: 'date-time', nullable: true },
         },
         required: ['id', 'campaign_id', 'email', 'created_at'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       LeadCreate: {
         type: 'object',
@@ -1158,6 +1238,67 @@ export function buildClientApiComponents() {
         },
         required: ['imported', 'incomplete', 'failed', 'errors'],
       },
+      ImportJobError: {
+        type: 'object',
+        description: 'Per-item error recorded on an async import/membership job.',
+        properties: {
+          globalLeadId: {
+            type: 'string',
+            nullable: true,
+            description: 'Person id when the failure is scoped to a global lead (camelCase as emitted by RPCs).',
+          },
+          index: {
+            type: 'integer',
+            description: 'Optional array index for lead-import errors.',
+          },
+          message: { type: 'string' },
+        },
+        required: ['message'],
+        additionalProperties: false,
+      },
+      ImportJobResult: {
+        type: 'object',
+        description:
+          'Aggregated counts written when a job completes. Which fields are populated depends on `input.operation` (e.g. import/add use created/updated/enrolled; remove uses removed; pause/resume use paused/resumed).',
+        properties: {
+          created: { type: 'integer' },
+          updated: { type: 'integer' },
+          enrolled: { type: 'integer' },
+          skipped: { type: 'integer' },
+          incomplete: { type: 'integer' },
+          failed: { type: 'integer' },
+          paused: { type: 'integer' },
+          resumed: { type: 'integer' },
+          removed: { type: 'integer' },
+          imported: {
+            type: 'integer',
+            description: 'Convenience total (`created + updated`) set on lead-import completion.',
+          },
+          errors: {
+            type: 'array',
+            items: schemaRef('ImportJobError'),
+          },
+        },
+        additionalProperties: false,
+      },
+      ImportJobInput: {
+        type: 'object',
+        description:
+          'Stored job payload. Uses `saved_list_id` when scoped to a list (the create request field is `list_id`). Includes `operation` plus one scope: `global_lead_ids`, `saved_list_id`, or `leads`.',
+        properties: {
+          operation: { type: 'string', enum: [...IMPORT_JOB_OPERATIONS] },
+          global_lead_ids: { type: 'array', items: { type: 'string' } },
+          saved_list_id: { type: 'string', format: 'uuid' },
+          leads: {
+            type: 'array',
+            items: schemaRef('LeadCreate'),
+          },
+          total_count: { type: 'integer' },
+          source: { type: 'string' },
+        },
+        required: ['operation'],
+        additionalProperties: false,
+      },
       ImportJob: {
         type: 'object',
         properties: {
@@ -1168,15 +1309,11 @@ export function buildClientApiComponents() {
           status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
           progress: { type: 'integer', minimum: 0, maximum: 100 },
           cursor: { type: 'integer', minimum: 0 },
-          input: {
-            type: 'object',
-            additionalProperties: true,
-            description: 'Includes required `operation` and scope fields (`global_lead_ids`, `list_id`, or `leads`).',
-          },
-          result: { type: 'object', additionalProperties: true },
+          input: schemaRef('ImportJobInput'),
+          result: schemaRef('ImportJobResult'),
           errors: {
             type: 'array',
-            items: { type: 'object', additionalProperties: true },
+            items: schemaRef('ImportJobError'),
           },
           started_at: { type: 'string', format: 'date-time', nullable: true },
           completed_at: { type: 'string', format: 'date-time', nullable: true },
@@ -1184,7 +1321,7 @@ export function buildClientApiComponents() {
           updated_at: { type: 'string', format: 'date-time', nullable: true },
         },
         required: ['id', 'status', 'input', 'result', 'errors'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       ImportJobCreate: {
         type: 'object',
@@ -1221,7 +1358,7 @@ export function buildClientApiComponents() {
           },
         },
         required: ['id'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       MailboxTag: {
         type: 'object',
@@ -1306,7 +1443,7 @@ export function buildClientApiComponents() {
           },
         },
         required: ['id', 'account_id'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       Message: {
         type: 'object',
@@ -1323,7 +1460,7 @@ export function buildClientApiComponents() {
           received_at: { type: 'string', format: 'date-time', nullable: true },
         },
         required: ['id', 'thread_id'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       ReplyRequest: {
         type: 'object',
@@ -1458,7 +1595,7 @@ export function buildClientApiComponents() {
           created_at: { type: 'string', format: 'date-time', nullable: true },
         },
         required: ['id', 'account_id', 'name'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       ThreadTagAssignmentRequest: {
         type: 'object',
@@ -1495,7 +1632,7 @@ export function buildClientApiComponents() {
           created_at: { type: 'string', format: 'date-time', nullable: true },
         },
         required: ['id', 'account_id', 'value', 'type'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       BlockListCreate: {
         type: 'object',
@@ -1775,22 +1912,101 @@ export function buildClientApiComponents() {
         required: ['global_lead_ids'],
         additionalProperties: false,
       },
-      BulkMembershipActionResult: {
+      MembershipActionError: {
         type: 'object',
-        additionalProperties: true,
-        description: 'RPC result counts from sync membership operations.',
+        description: 'Per-item error from a sync membership RPC.',
+        properties: {
+          globalLeadId: {
+            type: 'string',
+            nullable: true,
+            description: 'Person id when the failure is scoped to a global lead (camelCase as emitted by RPCs).',
+          },
+          message: { type: 'string', nullable: true },
+        },
+        additionalProperties: false,
       },
-      BulkMembershipActionResponse: {
+      MembershipAddResult: {
+        type: 'object',
+        description: 'Counts from `add_global_leads_to_campaign`.',
+        properties: {
+          created: { type: 'integer' },
+          updated: { type: 'integer' },
+          enrolled: { type: 'integer' },
+          skipped: { type: 'integer' },
+          incomplete: { type: 'integer' },
+          failed: { type: 'integer' },
+          errors: {
+            type: 'array',
+            items: schemaRef('MembershipActionError'),
+          },
+        },
+        required: ['created', 'updated', 'enrolled', 'skipped', 'incomplete', 'failed', 'errors'],
+        additionalProperties: false,
+      },
+      MembershipRemoveResult: {
+        type: 'object',
+        description: 'Counts from remove-membership RPCs.',
+        properties: {
+          removed: { type: 'integer' },
+          skipped: { type: 'integer' },
+          errors: {
+            type: 'array',
+            items: schemaRef('MembershipActionError'),
+          },
+        },
+        required: ['removed', 'skipped', 'errors'],
+        additionalProperties: false,
+      },
+      MembershipAddResponse: {
         type: 'object',
         properties: {
-          data: schemaRef('BulkMembershipActionResult'),
+          data: schemaRef('MembershipAddResult'),
+        },
+        required: ['data'],
+      },
+      MembershipRemoveResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('MembershipRemoveResult'),
         },
         required: ['data'],
       },
       Person: {
         type: 'object',
-        description: 'Account-scoped person rollup row from the people explorer.',
-        additionalProperties: true,
+        description:
+          'Account-scoped person rollup. List and detail share one shape (`latest_activity_at`). Detail/PATCH responses may also include `account_id`, rollup counts, and `updated_at`.',
+        properties: {
+          global_lead_id: { type: 'string' },
+          email: { type: 'string', nullable: true },
+          display_name: { type: 'string', nullable: true },
+          first_name: { type: 'string', nullable: true },
+          last_name: { type: 'string', nullable: true },
+          campaign_count: { type: 'integer' },
+          company_list: { type: 'string', nullable: true },
+          has_reply: { type: 'boolean' },
+          latest_activity_at: { type: 'string', format: 'date-time', nullable: true },
+          newest_membership_created_at: { type: 'string', format: 'date-time', nullable: true },
+          account_id: { type: 'string', format: 'uuid' },
+          native_campaign_count: { type: 'integer' },
+          smartlead_campaign_count: { type: 'integer' },
+          updated_at: { type: 'string', format: 'date-time' },
+        },
+        required: ['global_lead_id', 'campaign_count', 'has_reply'],
+        additionalProperties: false,
+      },
+      PersonMembership: {
+        type: 'object',
+        description:
+          'Minimal campaign membership slice for a person (`leads` row). `deleted_at` null means the membership is active.',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          campaign_id: { type: 'string', format: 'uuid' },
+          email: { type: 'string', nullable: true },
+          deleted_at: { type: 'string', format: 'date-time', nullable: true },
+          created_at: { type: 'string', format: 'date-time' },
+        },
+        required: ['id', 'campaign_id', 'created_at'],
+        additionalProperties: false,
       },
       PersonUpdate: {
         type: 'object',
@@ -1818,10 +2034,11 @@ export function buildClientApiComponents() {
               person: schemaRef('Person'),
               memberships: {
                 type: 'array',
-                items: { type: 'object', additionalProperties: true },
+                items: schemaRef('PersonMembership'),
               },
             },
             required: ['person', 'memberships'],
+            additionalProperties: false,
           },
         },
         required: ['data'],
@@ -1848,7 +2065,7 @@ export function buildClientApiComponents() {
           updated_at: { type: 'string', format: 'date-time', nullable: true },
         },
         required: ['id', 'name'],
-        additionalProperties: true,
+        additionalProperties: false,
       },
       LeadSavedListCreate: {
         type: 'object',
@@ -1891,7 +2108,7 @@ export function buildClientApiComponents() {
           skippedAlreadyMember: { type: 'integer' },
           skippedNotMember: { type: 'integer' },
         },
-        additionalProperties: true,
+        additionalProperties: false,
       },
       LeadListMembersResultResponse: {
         type: 'object',
@@ -1994,10 +2211,6 @@ export function buildClientApiComponents() {
         type: 'object',
         description: 'The live OpenAPI document returned by `/openapi.json`.',
         additionalProperties: true,
-      },
-      DocsHtml: {
-        type: 'string',
-        description: 'Scalar HTML application.',
       },
       LimitsGuide: {
         type: 'object',

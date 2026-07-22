@@ -107,14 +107,45 @@ async function main() {
     const openapi = await requestJson<{
       info: { title: string; version: string };
       paths: Record<string, unknown>;
-      'x-tagGroups': Array<{ name: string; tags: string[] }>;
     }>(`${baseUrl}/openapi.json`);
     assert.equal(openapi.status, 200);
     assert.equal(openapi.body.info.title, 'Furnace Client API');
-    assert.ok('/documentation/changelog' in openapi.body.paths);
-    assert.ok('/documentation/webhooks/email-activity' in openapi.body.paths);
-    assert.ok(openapi.body['x-tagGroups'].some((group) => group.name === 'Guide'));
-    console.log('[live-client-api] openapi guide paths check passed');
+    assert.ok(!('/documentation/changelog' in openapi.body.paths));
+    assert.ok('/v1/campaigns' in openapi.body.paths);
+    console.log('[live-client-api] openapi contract check passed');
+
+    const docsHome = await fetch(`${baseUrl}/docs/`);
+    const docsHtml = await docsHome.text();
+    assert.equal(docsHome.status, 200);
+    assert.match(docsHtml, /Client API/i);
+    assert.doesNotMatch(docsHtml, /github\.com\/getfurnace\/furnace/i);
+    console.log('[live-client-api] docs site check passed');
+
+    const quickstartDoc = await fetch(`${baseUrl}/docs/guides/quickstart/`);
+    const quickstartHtml = await quickstartDoc.text();
+    assert.equal(quickstartDoc.status, 200);
+    assert.match(quickstartHtml, /\/v1\/mailboxes/);
+    console.log('[live-client-api] quickstart guide check passed');
+
+    const campaignSetupDoc = await fetch(`${baseUrl}/docs/guides/campaign-setup/`);
+    const campaignSetupHtml = await campaignSetupDoc.text();
+    assert.equal(campaignSetupDoc.status, 200);
+    assert.match(campaignSetupHtml, /\/v1\/campaigns\/\{id\}\/flow|\/v1\/campaigns\/[0-9a-f-]+\/flow/i);
+    console.log('[live-client-api] campaign setup guide check passed');
+
+    const referenceDoc = await fetch(`${baseUrl}/docs/reference/`);
+    const referenceHtml = await referenceDoc.text();
+    assert.equal(referenceDoc.status, 200);
+    assert.match(referenceHtml, /API Reference|Furnace Client API|OpenAPI/i);
+    console.log('[live-client-api] api reference check passed');
+
+    const llmsTxt = await fetch(`${baseUrl}/llms.txt`);
+    const llmsBody = await llmsTxt.text();
+    assert.equal(llmsTxt.status, 200);
+    assert.match(llmsBody, /LLM index/i);
+    assert.match(llmsBody, /guides\/quickstart/);
+    assert.match(llmsBody, /campaign-setup/);
+    console.log('[live-client-api] llms.txt check passed');
 
     const apiKey = await harness.createApiKey('live-smoke');
     console.log(`[live-client-api] created API key ${apiKey.id}`);

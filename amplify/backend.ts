@@ -1506,6 +1506,59 @@ const clientApiOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
   },
 );
 
+const clientApiDocsBucket = new s3.Bucket(clientApiStack, 'ClientApiDocsBucket', {
+  blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+  encryption: s3.BucketEncryption.S3_MANAGED,
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
+  autoDeleteObjects: true,
+});
+
+const clientApiDocsOrigin = origins.S3BucketOrigin.withOriginAccessControl(clientApiDocsBucket);
+
+const clientApiDocsCachePolicy = new cloudfront.CachePolicy(clientApiStack, 'ClientApiDocsCachePolicy', {
+  defaultTtl: cdk.Duration.days(1),
+  minTtl: cdk.Duration.seconds(0),
+  maxTtl: cdk.Duration.days(365),
+  cookieBehavior: cloudfront.CacheCookieBehavior.none(),
+  headerBehavior: cloudfront.CacheHeaderBehavior.none(),
+  queryStringBehavior: cloudfront.CacheQueryStringBehavior.none(),
+  enableAcceptEncodingBrotli: true,
+  enableAcceptEncodingGzip: true,
+});
+
+const clientApiDocsUriRewriteFn = new cloudfront.Function(clientApiStack, 'ClientApiDocsUriRewrite', {
+  code: cloudfront.FunctionCode.fromInline(`function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+  if (uri === '/docs' || uri === '/docs/') {
+    request.uri = '/index.html';
+    return request;
+  }
+  if (uri.indexOf('/docs/') === 0) {
+    request.uri = uri.substring(5);
+    if (request.uri.endsWith('/')) {
+      request.uri += 'index.html';
+    } else if (request.uri.indexOf('.') === -1) {
+      request.uri += '/index.html';
+    }
+  }
+  return request;
+}`),
+});
+
+const clientApiDocsBehavior: cloudfront.BehaviorOptions = {
+  origin: clientApiDocsOrigin,
+  viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+  cachePolicy: clientApiDocsCachePolicy,
+  allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+  functionAssociations: [
+    {
+      function: clientApiDocsUriRewriteFn,
+      eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+    },
+  ],
+};
+
 const clientApiDistribution = new cloudfront.Distribution(clientApiStack, 'ClientApiDistribution', {
   defaultBehavior: {
     origin: new origins.HttpOrigin(clientApiOriginHost, {
@@ -1525,6 +1578,10 @@ const clientApiDistribution = new cloudfront.Distribution(clientApiStack, 'Clien
       originRequestPolicy: clientApiOriginRequestPolicy,
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
     },
+    docs: clientApiDocsBehavior,
+    'docs/*': clientApiDocsBehavior,
+    'llms.txt': clientApiDocsBehavior,
+    'llms-full.txt': clientApiDocsBehavior,
   },
   ...(clientApiDomainName && clientApiCertificateArn
     ? {
@@ -1538,6 +1595,11 @@ const clientApiDistribution = new cloudfront.Distribution(clientApiStack, 'Clien
     : {}),
   webAclId: clientApiWafWebAclArn || undefined,
 });
+
+// Docs content is deployed out-of-band via `npm run deploy:client-api-docs` (incremental
+// `aws s3 sync` + CloudFront invalidation), not through CloudFormation. See
+// docs/infrastructure/CLIENT_API_DEV_RUNBOOK.md. The bucket/distribution below remain the
+// stable infra; only their contents change between docs deploys.
 
 const resolvedClientApiBaseUrl = clientApiDomainName
   ? `https://${clientApiDomainName}`

@@ -1,12 +1,10 @@
 import { source, getTreeForSection } from '@/lib/docs-source'
 import { notFound } from 'next/navigation'
-import { DocsTOC } from '../../components/docs/docs-toc'
-import { DocsPager } from '../../components/docs/docs-pager'
+import { DocsPageFrame } from '../../components/docs/docs-toc'
 import { getMDXComponents } from '../../components/docs/mdx'
-import { findNeighbour } from 'fumadocs-core/page-tree'
 import type { Metadata } from 'next'
 import type { Root, Node } from 'fumadocs-core/page-tree'
-import { getSiteUrl } from '@/lib/theme-config'
+import { getSiteUrl, siteConfig } from '@/lib/theme-config'
 import { OpenAPIPage } from '@/components/api-page'
 import { SchemaModelPage } from '@/components/schema-model-page'
 import { getSchemaDescription, getSchemaOperation } from '@/lib/schema-operations'
@@ -61,21 +59,9 @@ export default async function DocsPage({ params }: PageProps) {
 
   const section = getDocsSection(page.url)
   const tree = getTreeForSection(section)
-  const neighbours = findNeighbour(tree, page.url)
   const sectionName = section === 'reference'
     ? findReferenceSectionName(tree, page.url)
     : findSectionName(tree, page.url)
-
-  const pagerProps = {
-    previous: neighbours.previous ? {
-      name: typeof neighbours.previous.name === 'string' ? neighbours.previous.name : 'Previous',
-      url: neighbours.previous.url,
-    } : undefined,
-    next: neighbours.next ? {
-      name: typeof neighbours.next.name === 'string' ? neighbours.next.name : 'Next',
-      url: neighbours.next.url,
-    } : undefined,
-  }
 
   if (page.type === 'schemas') {
     const schemaName = (page.data as { schemaName?: string }).schemaName
@@ -86,8 +72,8 @@ export default async function DocsPage({ params }: PageProps) {
     if (!operation) notFound()
 
     return (
-      <div className="flex gap-8">
-        <article className="flex-1 min-w-0 max-w-3xl">
+      <DocsPageFrame>
+        <article className="w-full min-w-0 max-w-3xl">
           <header className="mb-8 pb-6 border-b border-border">
             <p className="text-sm text-[var(--accent)] font-medium mb-2">{sectionName}</p>
             <h1 className="text-3xl font-bold text-foreground">{page.data.title}</h1>
@@ -101,30 +87,22 @@ export default async function DocsPage({ params }: PageProps) {
             bundled={loaded.bundled}
             description={getSchemaDescription(schemaName)}
           />
-          <DocsPager {...pagerProps} />
         </article>
-      </div>
+      </DocsPageFrame>
     )
   }
 
   if (page.type === 'openapi') {
-    const toc = page.data.toc
-
+    // Same outer rails as guides (left nav + reserved right rail). Examples stay
+    // in the operation layout's middle column so chrome widths match docs pages.
     return (
-      <div className="flex gap-8">
-        <article className="flex-1 min-w-0 max-w-3xl">
-          <header className="mb-8 pb-6 border-b border-border">
-            <p className="text-sm text-[var(--accent)] font-medium mb-2">{sectionName}</p>
-            <h1 className="text-3xl font-bold text-foreground">{page.data.title}</h1>
-            {page.data.description ? (
-              <p className="mt-3 text-base text-muted-foreground">{page.data.description}</p>
-            ) : null}
-          </header>
+      <DocsPageFrame>
+        <article className="fd-openapi min-w-0 w-full">
+          {/* Title/section header is rendered inside OpenAPIPage's content column
+              (see renderOperationLayout in components/api-page.tsx). */}
           <OpenAPIPage {...page.data.getOpenAPIPageProps()} />
-          <DocsPager {...pagerProps} />
         </article>
-        <DocsTOC toc={toc} />
-      </div>
+      </DocsPageFrame>
     )
   }
 
@@ -132,8 +110,8 @@ export default async function DocsPage({ params }: PageProps) {
   const toc = page.data.toc
 
   return (
-    <div className="flex gap-8">
-      <article className="flex-1 min-w-0 max-w-3xl">
+    <DocsPageFrame toc={toc}>
+      <article className="w-full min-w-0 max-w-3xl">
         <header className="mb-8 pb-6 border-b border-border">
           <p className="text-sm text-[var(--accent)] font-medium mb-2">{sectionName}</p>
           <h1 className="text-3xl font-bold text-foreground">{page.data.title}</h1>
@@ -141,13 +119,11 @@ export default async function DocsPage({ params }: PageProps) {
             <p className="mt-3 text-base text-muted-foreground">{page.data.description}</p>
           )}
         </header>
-        <div className="prose prose-slate dark:prose-invert max-w-none">
+        <div className="prose prose-slate dark:prose-invert max-w-none min-w-0">
           <MDXContent components={getMDXComponents()} />
         </div>
-        <DocsPager {...pagerProps} />
       </article>
-      <DocsTOC toc={toc} />
-    </div>
+    </DocsPageFrame>
   )
 }
 
@@ -166,8 +142,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const sectionLabel = section === 'reference'
     ? findReferenceSectionName(tree, page.url)
     : findSectionName(tree, page.url)
-  const title = page.data.title ?? 'Client API'
+  const title = page.data.title ?? siteConfig.name
   const description = page.data.description
+  const fullTitle = `${title} · ${siteConfig.title}`
 
   const baseUrl = getSiteUrl()
   const ogImageUrl = new URL(`${baseUrl}/api/og`)
@@ -178,7 +155,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title,
     description,
     openGraph: {
-      title,
+      title: fullTitle,
       description,
       type: 'article',
       url: `${baseUrl}${page.url}`,
@@ -187,13 +164,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
           url: ogImageUrl.toString(),
           width: 1200,
           height: 630,
-          alt: title,
+          alt: fullTitle,
         },
       ],
     },
     twitter: {
       card: 'summary_large_image',
-      title,
+      title: fullTitle,
       description,
       images: [ogImageUrl.toString()],
     },

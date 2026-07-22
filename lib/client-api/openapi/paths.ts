@@ -136,7 +136,7 @@ export function buildClientApiPaths() {
         tags: ['Campaigns'],
         summary: 'Create draft campaign',
         description:
-          `Creates a draft native campaign. Optional \`flow\` is normalized and validated on write. See ${modelLink('CampaignFlow', 'openapi')} and [Campaign quickstart](/docs/guides/campaign-quickstart/).`,
+          `Creates a draft native campaign. Optional \`flow\` is normalized and validated on write. See ${modelLink('CampaignFlow', 'openapi')} and [Campaign setup](/docs/guides/campaign-setup/).`,
         requestBody: {
           required: true,
           content: {
@@ -480,7 +480,7 @@ export function buildClientApiPaths() {
         tags: ['Flow'],
         summary: 'Get campaign flow',
         description:
-          `Returns the normalized campaign flow graph. If a campaign has no saved flow, Furnace returns an empty \`{ nodes: [], edges: [] }\` payload. See ${modelLink('CampaignFlow', 'openapi')} and [Campaign quickstart](/docs/guides/campaign-quickstart/).`,
+          `Returns the normalized campaign flow graph. If a campaign has no saved flow, Furnace returns an empty \`{ nodes: [], edges: [] }\` payload. See ${modelLink('CampaignFlow', 'openapi')} and [Campaign setup](/docs/guides/campaign-setup/).`,
         parameters: [parameterRef('CampaignId')],
         responses: {
           200: jsonResponse('CampaignFlowResponse', 'Campaign flow.'),
@@ -545,7 +545,7 @@ export function buildClientApiPaths() {
         tags: ['Flow'],
         summary: 'Validate campaign flow',
         description:
-          `Dry-runs flow normalization, validation, and lifecycle gating without writing changes. See ${modelLink('FlowValidateResult', 'openapi')} and [Campaign quickstart](/docs/guides/campaign-quickstart/).`,
+          `Dry-runs flow normalization, validation, and lifecycle gating without writing changes. See ${modelLink('FlowValidateResult', 'openapi')} and [Campaign setup](/docs/guides/campaign-setup/).`,
         parameters: [parameterRef('CampaignId')],
         requestBody: jsonRequestBody('FlowUpdate'),
         responses: {
@@ -826,7 +826,7 @@ export function buildClientApiPaths() {
         parameters: [parameterRef('CampaignId')],
         requestBody: jsonRequestBody('GlobalLeadIdsRequest'),
         responses: {
-          200: jsonResponse('BulkMembershipActionResponse', 'Leads added to campaign.'),
+          200: jsonResponse('MembershipAddResponse', 'Leads added to campaign.'),
           ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
         },
       },
@@ -840,7 +840,7 @@ export function buildClientApiPaths() {
         parameters: [parameterRef('CampaignId')],
         requestBody: jsonRequestBody('GlobalLeadIdsRequest'),
         responses: {
-          200: jsonResponse('BulkMembershipActionResponse', 'Leads removed from campaign.'),
+          200: jsonResponse('MembershipRemoveResponse', 'Leads removed from campaign.'),
           ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError'),
         },
       },
@@ -853,7 +853,7 @@ export function buildClientApiPaths() {
         description: `Removes up to ${BULK_SYNC_LIMIT} people from every campaign in the account. Emits one \`lead.removed_from_all_campaigns.completed\` batch webhook.`,
         requestBody: jsonRequestBody('GlobalLeadIdsRequest'),
         responses: {
-          200: jsonResponse('BulkMembershipActionResponse', 'Leads removed from all campaigns.'),
+          200: jsonResponse('MembershipRemoveResponse', 'Leads removed from all campaigns.'),
           ...authenticatedErrors('ValidationError', 'NotFoundError'),
         },
       },

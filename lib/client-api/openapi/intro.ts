@@ -1,101 +1,123 @@
-import {
-  API_KEY_PREFIX,
-  BULK_ASYNC_LIMIT,
-  BULK_SYNC_LIMIT,
-  DEFAULT_PAGE_SIZE,
-  IDEMPOTENCY_TTL_HOURS,
-  MAX_ASYNC_JOBS_PER_ACCOUNT,
-  MAX_PAGE_SIZE,
-  RATE_LIMIT_REQUESTS_PER_MINUTE,
-} from './constants.js';
-import { docsPublicPath, guideLink, modelLink, type DocLinkMode } from './docLinks.js';
+import { API_KEY_PREFIX } from './constants.js';
+import { docsPublicPath, guideLink, referenceLink, type DocLinkMode } from './docLinks.js';
 
-/** Markdown body sections shared by intro MDX and contract tests. */
-export function buildClientApiIntroMarkdown(): string {
+/** Authentication guide: keys, header format, base URL, account scope. */
+export function buildAuthenticationMarkdown(linkMode: DocLinkMode = 'docs'): string {
   return [
-    '## Business rules',
-    '- Smartlead campaigns are read-only through this API.',
-    '- Campaign flow topology is fully editable only while a campaign is in `draft` status.',
-    '- Once a campaign is `running`, `paused`, or `stopped`, structural flow changes return `403 permission_error` with code `flow_locked`.',
-    `- Sync bulk imports accept up to ${BULK_SYNC_LIMIT} leads per request.`,
-    `- Async bulk imports accept up to ${BULK_ASYNC_LIMIT} leads per request and allow at most ${MAX_ASYNC_JOBS_PER_ACCOUNT} queued/running jobs per account.`,
-    '- When a campaign defines custom lead fields, every key must be present in `custom_lead_data` on create and bulk import requests.',
+    'Every request needs an API key. Keys are tied to a single Furnace account, so requests never touch another account\u2019s data.',
     '',
-    '## Inbox message jobs',
-    '- Reply and forward endpoints return `202` with a `message_job` id.',
-    '- Poll outbound send status with `GET /v1/message-jobs/{id}`. Do not use `GET /v1/jobs/{id}` — that endpoint is for async import jobs only.',
-    '- Cancel or expedite queued sends with `POST /v1/message-jobs/{id}/cancel` and `POST /v1/message-jobs/{id}/send-now`.',
-    '- Update thread triage state with `PATCH /v1/threads/{id}` (`category`, `conversation_status`, `read`).',
+    '## Get a key',
+    '',
+    'Create an API key in Furnace under **Account Settings \u2192 API keys**. Keys start with `' +
+      API_KEY_PREFIX +
+      '`. Copy it once and store it somewhere safe \u2014 you can revoke and recreate keys at any time.',
+    '',
+    '## Send it with every request',
+    '',
+    'Pass your key in the `Authorization` header:',
+    '',
+    '```http',
+    `Authorization: Bearer ${API_KEY_PREFIX}your_key_here`,
+    '```',
+    '',
+    'The base URL is your Furnace Client API host, for example `https://api.getfurnace.io`. All endpoints live under `/v1/`.',
+    '',
+    '```bash',
+    `curl -sS 'https://api.getfurnace.io/v1/mailboxes' \\`,
+    `  -H 'Authorization: Bearer ${API_KEY_PREFIX}your_key_here'`,
+    '```',
+    '',
+    '## If a key is wrong',
+    '',
+    'A missing, revoked, expired, or unknown key returns `401` with an `authentication_error`. Double-check the header format and that the key is still active.',
+    '',
+    `Next: ${guideLink('Quickstart', '/guides/quickstart/', linkMode)}.`,
   ].join('\n');
 }
 
-/** Fumadocs MDX home page (hero, cards, reference sections). */
+/**
+ * Plain-language product overview shared by the intro MDX and contract tests.
+ * No API conventions here — endpoint/field reference lives in the API Reference tab.
+ */
+export function buildClientApiIntroMarkdown(linkMode: DocLinkMode = 'docs'): string {
+  return [
+    'Furnace sends sequences of personalized emails to a list of people, from one or more of your inboxes. It waits between steps and can branch based on how people reply.',
+    '',
+    'This API does everything the app does, from your own code: create campaigns, add people, launch sending, read replies, and get notified through webhooks.',
+    '',
+    '## What you can build',
+    '',
+    '- **Campaigns** — create a campaign, add an email sequence, and launch it.',
+    '- **People** — add, import, and move the people a campaign emails.',
+    '- **Replies** — find replies, send responses, and track message jobs.',
+    '- **Webhooks** — get notified when emails send, replies arrive, and more.',
+    '',
+    '## Start here',
+    '',
+    `1. ${guideLink('Quickstart', '/guides/quickstart/', linkMode)} — get an API key and make your first request.`,
+    `2. ${guideLink('Campaign setup', '/guides/campaign-setup/', linkMode)} — build and launch a campaign end to end.`,
+    `3. ${guideLink('Lead management', '/guides/lead-management/', linkMode)} and ${guideLink('Handling replies', '/guides/handling-replies/', linkMode)} — day-two operations.`,
+    '',
+    `Need a specific endpoint or field? The ${referenceLink('API Reference', '/reference/', linkMode)} documents every route and object.`,
+  ].join('\n');
+}
+
+/** Fumadocs MDX home page: hero, "what you can build" cards, and where to go next. */
 export function buildClientApiIntroMdx(linkMode: DocLinkMode = 'docs'): string {
-  const details = buildClientApiIntroMarkdown();
-  // Raw <a> tags in MDX bypass the Next.js Link wrapper, so they need public /docs paths.
-  const quickstartHref = docsPublicPath('/guides/campaign-quickstart/');
+  const quickstartHref = docsPublicPath('/guides/quickstart/');
   const referenceHref = docsPublicPath('/reference/');
   return [
     '<div className="doc-hero not-prose">',
     '',
     '<p className="doc-hero__tagline">',
-    'Account-scoped REST API for campaigns, leads, people, saved lists, inbox, mailboxes, and more.',
+    'Furnace runs personalized cold email campaigns. Create campaigns, add people, launch sending, and handle replies — all from your own code.',
     '</p>',
     '',
     '<div className="doc-hero__actions">',
-    `<a className="primary" href="${quickstartHref}">Campaign quickstart</a>`,
+    `<a className="primary" href="${quickstartHref}">Quickstart</a>`,
     `<a className="secondary" href="${referenceHref}">API Reference</a>`,
     '</div>',
     '',
     '</div>',
     '',
-    `New to the API? Start with ${guideLink('Campaign quickstart', '/guides/campaign-quickstart/', linkMode)}. Flow schemas such as ${modelLink('CampaignFlow', linkMode)} and ${modelLink('FlowUpdate', linkMode)} are in the ${guideLink('API Reference', '/reference/', linkMode)}.`,
+    'Furnace sends sequences of personalized emails to a list of people, from one or more of your inboxes. It waits between steps and can branch based on how people reply.',
+    '',
+    '## What you can build',
     '',
     '<CardGroup cols={2}>',
     '',
-    `<Card title="Authentication" icon="gear">`,
+    `<Card title="Campaigns" icon="rocket" href="${docsPublicPath('/guides/campaign-setup/')}">`,
     '',
-    `Send your account API key as \`Authorization: Bearer ${API_KEY_PREFIX}...\`. Keys are created in Furnace Account Settings. Revoked, expired, or unknown keys return \`401 authentication_error\`.`,
-    '',
-    '</Card>',
-    '',
-    `<Card title="Rate limits" icon="plug">`,
-    '',
-    `Responses include \`X-RateLimit-Limit\`, \`X-RateLimit-Remaining\`, and \`X-RateLimit-Reset\`. Furnace allows ${RATE_LIMIT_REQUESTS_PER_MINUTE} requests per account per minute.`,
+    'Create a campaign, add an email sequence, and launch it.',
     '',
     '</Card>',
     '',
-    `<Card title="Pagination" icon="book">`,
+    `<Card title="People" icon="book" href="${docsPublicPath('/guides/lead-management/')}">`,
     '',
-    `List endpoints return \`{ data, limit, offset, total_count }\`. Default page size is ${DEFAULT_PAGE_SIZE}; maximum is ${MAX_PAGE_SIZE}.`,
+    'Add, import, and move the people a campaign emails.',
     '',
     '</Card>',
     '',
-    `<Card title="Errors" icon="terminal">`,
+    `<Card title="Replies" icon="terminal" href="${docsPublicPath('/guides/handling-replies/')}">`,
     '',
-    'Errors use `{ error: { type, code, message, param? } }`. See the table below for HTTP status codes and typical causes.',
+    'Find replies, send responses, and track message jobs.',
+    '',
+    '</Card>',
+    '',
+    `<Card title="Webhooks" icon="plug" href="${docsPublicPath('/guides/webhook-integration/')}">`,
+    '',
+    'Get notified when emails send, replies arrive, and more.',
     '',
     '</Card>',
     '',
     '</CardGroup>',
     '',
-    '## Account scope',
-    'Every `/v1/*` resource is limited to the account that owns the API key. Requests never cross account boundaries.',
+    '## Start here',
     '',
-    '## Idempotency',
-    `Use the \`Idempotency-Key\` header on \`POST /v1/campaigns/{id}/leads\` and \`POST /v1/campaigns/{id}/leads/bulk\` to safely retry imports. Furnace replays the cached response for matching account, route, key, and request-body hash for ${IDEMPOTENCY_TTL_HOURS} hours.`,
+    `1. ${guideLink('Quickstart', '/guides/quickstart/', linkMode)} — get an API key and make your first request.`,
+    `2. ${guideLink('Campaign setup', '/guides/campaign-setup/', linkMode)} — build and launch a campaign end to end.`,
+    `3. ${guideLink('Lead management', '/guides/lead-management/', linkMode)} and ${guideLink('Handling replies', '/guides/handling-replies/', linkMode)} — day-two operations.`,
     '',
-    '## Error reference',
-    '',
-    '| HTTP | type | Typical causes |',
-    '| --- | --- | --- |',
-    '| 400 | `invalid_request_error` | Invalid JSON, missing parameters, bad status transitions, missing custom fields |',
-    '| 401 | `authentication_error` | Missing, invalid, revoked, or expired API key |',
-    '| 403 | `permission_error` | Smartlead campaign mutation, deleted campaign, admin-only operation |',
-    '| 404 | `invalid_request_error` | Campaign, lead, mailbox, thread, message job, or import job not found in this account |',
-    '| 429 | `rate_limit_error` | Too many requests or too many concurrent async import jobs |',
-    '| 500 | `api_error` | Unhandled server-side error |',
-    '',
-    details,
+    `Every endpoint and object is documented in the ${referenceLink('API Reference', '/reference/', linkMode)}. New keys are created in Furnace Account Settings and sent as \`Authorization: Bearer ${API_KEY_PREFIX}...\` — see ${guideLink('Authentication', '/guides/authentication/', linkMode)}.`,
   ].join('\n');
 }

@@ -40,12 +40,13 @@ The import queue handles all `api_import_jobs` operation types (`api_lead_import
 4. Verify health and docs:
    - `GET https://<client-api-domain-or-cloudfront>/health`
    - `GET https://<client-api-domain-or-cloudfront>/openapi.json` — confirm no `/documentation/*` phantom paths
-   - `GET https://<client-api-domain-or-cloudfront>/docs` — Fumadocs/unmint guides home
-   - `GET https://<client-api-domain-or-cloudfront>/docs/guides/campaign-quickstart/` — campaign quickstart with POST /flow checklist
-   - `GET https://<client-api-domain-or-cloudfront>/docs/reference/` — read-only Scalar API reference
+   - `GET https://<client-api-domain-or-cloudfront>/docs/` — Fumadocs guides home
+   - `GET https://<client-api-domain-or-cloudfront>/docs/guides/quickstart/` — first request
+   - `GET https://<client-api-domain-or-cloudfront>/docs/guides/campaign-setup/` — end-to-end campaign walkthrough
+   - `GET https://<client-api-domain-or-cloudfront>/docs/reference/` — Fumadocs OpenAPI reference
    - `GET https://<client-api-domain-or-cloudfront>/llms.txt` — agent index
-   - `GET https://<client-api-domain-or-cloudfront>/docs/guides/campaign-quickstart.md` — plain markdown mirror
 
+**Docs content source of truth:** TypeScript builders under `lib/client-api/openapi/`. Do not edit `docs/client-api/content/docs/` by hand (it is generated and gitignored). Local preview and publish always run `npm run export:client-api-docs` first.
 ## Docs deployment
 
 The Fumadocs site under `docs/client-api/` is deployed **out-of-band** from the Amplify backend. The S3 bucket and CloudFront distribution are stable infrastructure defined in `amplify/backend.ts`; only their contents change between docs deploys. Content is published with an incremental `aws s3 sync` + CloudFront invalidation — no CloudFormation, no `ampx` deploy, and no worker export checks.

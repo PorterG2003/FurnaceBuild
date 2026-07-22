@@ -3,13 +3,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  buildCampaignFlowMarkdown,
-  buildCampaignLaunchMarkdown,
   buildCampaignQuickstartMarkdown,
-  buildFlowSchemasMarkdown,
+  buildCampaignSetupMarkdown,
+  buildHandlingRepliesMarkdown,
+  buildLeadManagementMarkdown,
 } from '../lib/client-api/openapi/buildingCampaigns.js';
 import { buildChangelogMarkdown } from '../lib/client-api/openapi/changelog.js';
-import { buildClientApiIntroMdx } from '../lib/client-api/openapi/intro.js';
+import {
+  buildCampaignsConceptMarkdown,
+  buildLeadsPeopleConceptMarkdown,
+  buildMailboxesConceptMarkdown,
+  buildSequencesConceptMarkdown,
+  buildWebhooksConceptMarkdown,
+} from '../lib/client-api/openapi/concepts.js';
+import { buildFaqMarkdown } from '../lib/client-api/openapi/faq.js';
+import { buildAuthenticationMarkdown, buildClientApiIntroMdx } from '../lib/client-api/openapi/intro.js';
 import { buildLlmsFullTxt, buildLlmsGuideEntries, buildLlmsTxt } from '../lib/client-api/openapi/llms.js';
 import { buildClientApiOpenApiSpec } from '../lib/client-api/openapi/spec.js';
 import {
@@ -90,8 +98,35 @@ function writeSearchManifest(entries: Array<{ title: string; url: string; descri
 }
 
 function syncDocBrandAssets(): void {
-  const logoSource = path.join(root, 'public', 'Logo_Color.svg');
-  fs.copyFileSync(logoSource, path.join(publicRoot, 'logo.svg'));
+  const appPublic = path.join(root, 'public');
+  // Same brand assets as the main app (public/index.html favicon links + logo).
+  const brandAssets: Array<[string, string]> = [
+    ['Logo_Color.svg', 'logo.svg'],
+    ['favicon.svg', 'favicon.svg'],
+    ['favicon-96x96.png', 'favicon-96x96.png'],
+    ['favicon.ico', 'favicon.ico'],
+    ['apple-touch-icon.png', 'apple-touch-icon.png'],
+  ];
+  for (const [sourceName, destName] of brandAssets) {
+    fs.copyFileSync(path.join(appPublic, sourceName), path.join(publicRoot, destName));
+  }
+}
+
+/** Remove generated public mirrors so stale paths cannot linger between exports. */
+function pruneGeneratedPublicArtifacts(): void {
+  for (const dir of ['guides', 'concepts', 'webhooks', 'reference']) {
+    fs.rmSync(path.join(publicRoot, dir), { recursive: true, force: true });
+  }
+  for (const file of [
+    'openapi.json',
+    'llms.txt',
+    'llms-full.txt',
+    'search-manifest.json',
+    'index.md',
+    'changelog.md',
+  ]) {
+    fs.rmSync(path.join(publicRoot, file), { force: true });
+  }
 }
 
 function main() {
@@ -100,44 +135,124 @@ function main() {
   fs.rmSync(contentRoot, { recursive: true, force: true });
   fs.mkdirSync(contentRoot, { recursive: true });
   fs.mkdirSync(publicRoot, { recursive: true });
+  pruneGeneratedPublicArtifacts();
 
   const exported: ExportedPage[] = [];
 
+  // --- Get Started ---
   exported.push(
     writeDoc('index.mdx', {
       title: 'Introduction',
-      description: 'Furnace Client API authentication, rate limits, and core conventions.',
+      description: 'What the Furnace Client API is and where to start.',
     }, buildClientApiIntroMdx('docs'), buildClientApiIntroMdx('openapi')),
   );
 
   exported.push(
-    writeDoc('guides/campaign-quickstart.mdx', {
-      title: 'Campaign quickstart',
-      description: 'Checklist and lifecycle overview for building campaigns through the Client API.',
+    writeDoc('guides/quickstart.mdx', {
+      title: 'Quickstart',
+      description: 'Get an API key and make your first request in minutes.',
     }, buildCampaignQuickstartMarkdown('docs'), buildCampaignQuickstartMarkdown('openapi')),
   );
 
   exported.push(
-    writeDoc('guides/campaign-flow.mdx', {
-      title: 'Campaign flow',
-      description: 'Save flow graphs, field_sync, If-Match concurrency, and validation dry-runs.',
-    }, buildCampaignFlowMarkdown('docs'), buildCampaignFlowMarkdown('openapi')),
+    writeDoc('guides/authentication.mdx', {
+      title: 'Authentication',
+      description: 'API keys, the Authorization header, and base URL.',
+    }, buildAuthenticationMarkdown('docs'), buildAuthenticationMarkdown('openapi')),
+  );
+
+  // --- Core Concepts ---
+  exported.push(
+    writeDoc('concepts/campaigns.mdx', {
+      title: 'Campaigns',
+      description: 'What a campaign is and how its lifecycle works.',
+    }, buildCampaignsConceptMarkdown('docs'), buildCampaignsConceptMarkdown('openapi')),
   );
 
   exported.push(
-    writeDoc('guides/campaign-launch.mdx', {
-      title: 'Campaign launch',
-      description: 'Launch campaigns, manage live status, and recover from flow validation errors.',
-    }, buildCampaignLaunchMarkdown('docs'), buildCampaignLaunchMarkdown('openapi')),
+    writeDoc('concepts/leads-people.mdx', {
+      title: 'Leads and people',
+      description: 'How people, leads, saved lists, and custom fields relate.',
+    }, buildLeadsPeopleConceptMarkdown('docs'), buildLeadsPeopleConceptMarkdown('openapi')),
   );
 
   exported.push(
-    writeDoc('guides/flow-schemas.mdx', {
-      title: 'Flow schemas',
-      description: 'CampaignFlow node types, merge variables, normalization rules, and validation codes.',
-    }, buildFlowSchemasMarkdown('docs'), buildFlowSchemasMarkdown('openapi')),
+    writeDoc('concepts/mailboxes.mdx', {
+      title: 'Mailboxes',
+      description: 'The inboxes a campaign sends from and receives replies in.',
+    }, buildMailboxesConceptMarkdown('docs'), buildMailboxesConceptMarkdown('openapi')),
   );
 
+  exported.push(
+    writeDoc('concepts/sequences.mdx', {
+      title: 'Email sequences',
+      description: 'Sequence steps and how to personalize emails.',
+    }, buildSequencesConceptMarkdown('docs'), buildSequencesConceptMarkdown('openapi')),
+  );
+
+  exported.push(
+    writeDoc('concepts/webhooks.mdx', {
+      title: 'Webhooks',
+      description: 'How Furnace notifies your systems when events happen.',
+    }, buildWebhooksConceptMarkdown('docs'), buildWebhooksConceptMarkdown('openapi')),
+  );
+
+  // --- Guides ---
+  exported.push(
+    writeDoc('guides/campaign-setup.mdx', {
+      title: 'Campaign setup',
+      description: 'Build and launch a campaign end to end.',
+    }, buildCampaignSetupMarkdown('docs'), buildCampaignSetupMarkdown('openapi')),
+  );
+
+  exported.push(
+    writeDoc('guides/lead-management.mdx', {
+      title: 'Lead management',
+      description: 'Add, import, fix, and move people in a campaign.',
+    }, buildLeadManagementMarkdown('docs'), buildLeadManagementMarkdown('openapi')),
+  );
+
+  exported.push(
+    writeDoc('guides/handling-replies.mdx', {
+      title: 'Handling replies',
+      description: 'Find replies, send responses, and track message jobs.',
+    }, buildHandlingRepliesMarkdown('docs'), buildHandlingRepliesMarkdown('openapi')),
+  );
+
+  exported.push(
+    writeDoc('guides/webhook-integration.mdx', {
+      title: 'Webhook integration',
+      description: 'Set up a webhook URL, verify messages, and see example payloads.',
+    }, buildWebhooksOverviewMarkdown('docs'), buildWebhooksOverviewMarkdown('openapi')),
+  );
+
+  // --- Webhook events (payload reference) ---
+  const webhookSegments: string[] = [];
+  for (const group of WEBHOOK_EVENT_GROUPS) {
+    const segment = WEBHOOK_GUIDE_GROUP_PATH_SEGMENTS[group.id];
+    if (!segment) {
+      throw new Error(`Missing webhook guide segment for group: ${group.id}`);
+    }
+    webhookSegments.push(`webhooks/${segment}`);
+    exported.push(
+      writeDoc(`webhooks/${segment}.mdx`, {
+        title: group.label,
+        description: group.description,
+      }, buildWebhookEventGroupMarkdown(group.id, 'docs'), buildWebhookEventGroupMarkdown(group.id, 'openapi')),
+    );
+  }
+
+  const webhookPageIds = webhookSegments.map((segment) => segment.replace(/\.mdx$/, ''));
+
+  // --- Help ---
+  exported.push(
+    writeDoc('guides/faq.mdx', {
+      title: 'FAQ',
+      description: 'Quick answers to common questions.',
+    }, buildFaqMarkdown('docs'), buildFaqMarkdown('openapi')),
+  );
+
+  // Reference tab landing (lives in the API Reference section, not the docs sidebar).
   exported.push(
     writeDoc('reference/index.mdx', {
       title: 'API Reference',
@@ -164,40 +279,26 @@ function main() {
     }, buildChangelogMarkdown()),
   );
 
-  exported.push(
-    writeDoc('webhooks/index.mdx', {
-      title: 'Webhooks',
-      description: 'Outbound webhook setup, verification, and example payloads.',
-    }, buildWebhooksOverviewMarkdown('docs'), buildWebhooksOverviewMarkdown('openapi')),
-  );
-
-  const webhookSegments: string[] = [];
-  for (const group of WEBHOOK_EVENT_GROUPS) {
-    const segment = WEBHOOK_GUIDE_GROUP_PATH_SEGMENTS[group.id];
-    if (!segment) {
-      throw new Error(`Missing webhook guide segment for group: ${group.id}`);
-    }
-    webhookSegments.push(`webhooks/${segment}`);
-    exported.push(
-      writeDoc(`webhooks/${segment}.mdx`, {
-        title: group.label,
-        description: group.description,
-      }, buildWebhookEventGroupMarkdown(group.id)),
-    );
-  }
-
-  const webhookPageIds = webhookSegments.map((segment) => segment.replace(/\.mdx$/, ''));
-
   writeMetaJson([
     'index',
-    '---Getting started---',
-    'guides/campaign-quickstart',
-    'guides/campaign-flow',
-    'guides/campaign-launch',
-    'guides/flow-schemas',
+    '---Get Started---',
+    'guides/quickstart',
+    'guides/authentication',
+    '---Core Concepts---',
+    'concepts/campaigns',
+    'concepts/leads-people',
+    'concepts/mailboxes',
+    'concepts/sequences',
+    'concepts/webhooks',
     '---Guides---',
-    'webhooks/index',
-    ...webhookPageIds.filter((id) => id !== 'webhooks/index'),
+    'guides/campaign-setup',
+    'guides/lead-management',
+    'guides/handling-replies',
+    'guides/webhook-integration',
+    '---Webhook events---',
+    ...webhookPageIds,
+    '---Help---',
+    'guides/faq',
     'changelog',
   ]);
 

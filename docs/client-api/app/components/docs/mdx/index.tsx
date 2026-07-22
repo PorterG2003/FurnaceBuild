@@ -47,26 +47,34 @@ export function getMDXComponents(): MDXComponents {
 
     // HTML element overrides
     h1: ({ children, id }) => (
-      <h1 id={id} className="scroll-m-20 text-4xl font-bold tracking-tight mt-8 mb-4 first:mt-0">
+      <h1 id={id} className="text-4xl font-bold tracking-tight mt-8 mb-4 first:mt-0">
         {children}
       </h1>
     ),
     h2: ({ children, id }) => (
-      <h2 id={id} className="scroll-m-20 text-2xl font-semibold tracking-tight mt-10 mb-4 pb-2 border-b border-border">
-        <a href={`#${id}`} className="hover:underline">
-          {children}
-        </a>
+      <h2 id={id} className="text-2xl font-semibold tracking-tight mt-10 mb-4 pb-2 border-b border-border">
+        {id ? (
+          <a href={`#${id}`} className="hover:underline">
+            {children}
+          </a>
+        ) : (
+          children
+        )}
       </h2>
     ),
     h3: ({ children, id }) => (
-      <h3 id={id} className="scroll-m-20 text-xl font-semibold tracking-tight mt-8 mb-4">
-        <a href={`#${id}`} className="hover:underline">
-          {children}
-        </a>
+      <h3 id={id} className="text-xl font-semibold tracking-tight mt-8 mb-4">
+        {id ? (
+          <a href={`#${id}`} className="hover:underline">
+            {children}
+          </a>
+        ) : (
+          children
+        )}
       </h3>
     ),
     h4: ({ children, id }) => (
-      <h4 id={id} className="scroll-m-20 text-lg font-semibold tracking-tight mt-6 mb-4">
+      <h4 id={id} className="text-lg font-semibold tracking-tight mt-6 mb-4">
         {children}
       </h4>
     ),
@@ -120,8 +128,8 @@ export function getMDXComponents(): MDXComponents {
     ),
     hr: () => <hr className="my-8 border-border" />,
     table: ({ children }) => (
-      <div className="my-6 w-full overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
+      <div className="my-6 w-full max-w-full min-w-0 overflow-x-auto">
+        <table className="w-full table-fixed border-collapse text-sm">
           {children}
         </table>
       </div>
@@ -134,12 +142,12 @@ export function getMDXComponents(): MDXComponents {
     ),
     tr: ({ children }) => <tr>{children}</tr>,
     th: ({ children }) => (
-      <th className="px-4 py-3 text-left font-semibold text-foreground border-b border-border">
+      <th className="px-4 py-3 text-left font-semibold text-foreground border-b border-border break-words align-top">
         {children}
       </th>
     ),
     td: ({ children }) => (
-      <td className="px-4 py-3 text-muted-foreground">{children}</td>
+      <td className="px-4 py-3 text-muted-foreground break-words align-top">{children}</td>
     ),
     pre: Pre,
     code: ({ children, className }) => {

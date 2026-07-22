@@ -22,6 +22,28 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* fumadocs OpenAPI/schema components use `*-fd-*` utilities (text-fd-muted-foreground,
+     bg-fd-card, border-fd-border, …). Those utilities only get generated when the
+     matching `--color-fd-*` theme colors exist. This app doesn't import fumadocs-ui/css,
+     so define them here, inlining the runtime `--fd-*` tokens set on :root below. */
+  --color-fd-background: var(--fd-background);
+  --color-fd-foreground: var(--fd-foreground);
+  --color-fd-muted: var(--fd-muted);
+  --color-fd-muted-foreground: var(--fd-muted-foreground);
+  --color-fd-border: var(--fd-border);
+  --color-fd-card: var(--fd-card);
+  --color-fd-card-foreground: var(--fd-card-foreground);
+  --color-fd-popover: var(--fd-popover);
+  --color-fd-popover-foreground: var(--fd-popover-foreground);
+  --color-fd-primary: var(--fd-primary);
+  --color-fd-primary-foreground: var(--fd-primary-foreground);
+  --color-fd-secondary: var(--fd-secondary);
+  --color-fd-secondary-foreground: var(--fd-secondary-foreground);
+  --color-fd-accent: var(--fd-accent);
+  --color-fd-accent-foreground: var(--fd-accent-foreground);
+  --color-fd-ring: var(--fd-ring);
+
   --font-sans: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-jetbrains), 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
   --radius-sm: calc(var(--radius) - 4px);
@@ -53,11 +75,30 @@
   --destructive: #dc2626;
   --border: #e5e5e5;
   --input: #e5e5e5;
-  --ring: #f14607;
+  --ring: #F3440D;
 
-  --accent: #f14607;
+  --accent: #F3440D;
   --accent-foreground: #ffffff;
-  --accent-muted: rgba(241, 70, 7, 0.12);
+  --accent-muted: rgba(243, 68, 13, 0.12);
+
+  /* fumadocs component tokens → Furnace theme (theme-aware via the vars above,
+     so light/dark both work). Used by the generated `*-fd-*` utilities. */
+  --fd-background: var(--background);
+  --fd-foreground: var(--foreground);
+  --fd-muted: var(--muted);
+  --fd-muted-foreground: var(--muted-foreground);
+  --fd-border: var(--furnace-border);
+  --fd-card: var(--furnace-bg-panel);
+  --fd-card-foreground: var(--foreground);
+  --fd-popover: var(--popover);
+  --fd-popover-foreground: var(--popover-foreground);
+  --fd-primary: var(--accent);
+  --fd-primary-foreground: var(--accent-foreground);
+  --fd-secondary: var(--furnace-bg-panel);
+  --fd-secondary-foreground: var(--foreground);
+  --fd-accent: var(--accent-muted);
+  --fd-accent-foreground: var(--foreground);
+  --fd-ring: var(--ring);
 }
 
 .dark {
@@ -82,11 +123,11 @@
   --destructive: #ef4444;
   --border: #2a2a2a;
   --input: #2a2a2a;
-  --ring: #ff6b35;
+  --ring: #F3440D;
 
-  --accent: #ff6b35;
-  --accent-foreground: #121212;
-  --accent-muted: rgba(255, 107, 53, 0.14);
+  --accent: #F3440D;
+  --accent-foreground: #ffffff;
+  --accent-muted: rgba(243, 68, 13, 0.16);
 }
 
 @layer base {
@@ -96,6 +137,10 @@
 
   html {
     color-scheme: dark;
+    /* Keep in-page anchors clear of sticky header + nav tabs (matches top-36) */
+    scroll-padding-top: 9rem;
+    /* Avoid nav/header horizontal jump when scrollbar appears on long pages */
+    scrollbar-gutter: stable;
   }
 
   html:not(.dark) {
@@ -254,6 +299,225 @@ pre code [data-highlighted-line] {
   --fd-muted-foreground: var(--muted-foreground);
   --fd-border: var(--border);
   --fd-card: var(--card);
+}
+
+/* ============================================================
+   API Reference (fumadocs-openapi) — Furnace theming & fixes
+   ============================================================ */
+
+/* Map fumadocs design tokens to Furnace tokens on reference pages so the
+   OpenAPI components (tabs, cards, schema tables) match the rest of the docs. */
+.fd-openapi {
+  --fd-background: var(--background);
+  --fd-foreground: var(--foreground);
+  --fd-muted: var(--muted);
+  --fd-muted-foreground: var(--muted-foreground);
+  --fd-border: var(--furnace-border);
+  --fd-card: var(--furnace-bg-panel);
+  --fd-card-foreground: var(--foreground);
+  --fd-popover: var(--popover);
+  --fd-popover-foreground: var(--popover-foreground);
+  --fd-primary: var(--accent);
+  --fd-primary-foreground: var(--accent-foreground);
+  --fd-secondary: var(--furnace-bg-panel);
+  --fd-secondary-foreground: var(--foreground);
+  --fd-accent: var(--accent-muted);
+  --fd-accent-foreground: var(--foreground);
+  --fd-ring: var(--ring);
+}
+
+/* Fix: fumadocs-ui tab panels rely on `data-[state=inactive]:hidden`, a utility
+   that only ships in fumadocs-ui's own CSS (which this app does not import).
+   Without it, every response/request example panel renders at once. Hide the
+   inactive Radix tab panels so the example tabs actually switch. */
+.fd-openapi [role='tabpanel'][data-state='inactive'] {
+  display: none !important;
+}
+
+/* Hide the fumadocs schema "Filter Properties" search bar. There is no
+   createOpenAPIPage option to disable ObjectSearch; the properties list still
+   renders below — we just drop the filter chrome. */
+div:has(> [data-object-search-input]) {
+  display: none !important;
+}
+
+/* Give the right-hand example column a little breathing room and a clean panel. */
+.fd-openapi pre {
+  margin: 0;
+}
+
+/* Style inline links inside reference content (operation + schema descriptions).
+   fumadocs renders these as plain, class-less `<a>` tags, so they were invisible.
+   Scope by `:not([data-card]):not([class])` to skip heading self-links (which
+   carry `data-card`) and the pager/nav links (which carry a class). */
+.fd-openapi a:not([data-card]):not([class]) {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 0.15s ease;
+}
+.fd-openapi a:not([data-card]):not([class]):hover {
+  text-decoration-color: var(--accent);
+}
+
+/* ---- Standardized example-column tabs (request + response) ----
+   The request examples use `CodeBlockTabs` (bg-fd-card, an h-px active bar) while
+   the response examples use `Tabs` (bg-fd-secondary, a border-b active state) with
+   different padding and gaps, so the two tab strips look mismatched. Normalize both
+   into a single "console" card: a tinted header strip with underline-on-active
+   triggers, sitting above an edge-to-edge code body. */
+.fd-example-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Each tab group (and the optional example selector) becomes one consistent card.
+   `position: relative` anchors the copy button into the header strip below. */
+.fd-example-column > * {
+  position: relative;
+  margin: 0 !important;
+  border: 1px solid var(--furnace-border) !important;
+  border-radius: 0.625rem !important;
+  background: var(--furnace-bg-panel) !important;
+  overflow: hidden;
+  box-shadow: none !important;
+}
+
+/* Shared tab strip: a tinted header with a single bottom rule. The trailing
+   padding reserves room so tabs never scroll under the pinned copy button. */
+.fd-example-column [role='tablist'] {
+  display: flex;
+  gap: 0.125rem;
+  align-items: stretch;
+  min-height: 2.375rem;
+  margin: 0;
+  padding: 0 2.5rem 0 0.375rem;
+  border-bottom: 1px solid var(--furnace-border);
+  background: var(--furnace-bg-nav);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fd-example-column [role='tablist']::-webkit-scrollbar {
+  display: none;
+}
+
+/* Shared triggers: muted → foreground on hover, accent + underline when active. */
+.fd-example-column [role='tab'] {
+  position: relative;
+  flex: 0 0 auto;
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
+  background: transparent;
+  padding: 0.5rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.fd-example-column [role='tab']:hover {
+  color: var(--foreground);
+}
+.fd-example-column [role='tab'][data-state='active'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+/* Hide CodeBlockTabs' built-in h-px underline bar; we draw our own border. */
+.fd-example-column [role='tab'] > .absolute {
+  display: none !important;
+}
+
+/* Shared panel: edge-to-edge code body, no nested cards/borders/margins. */
+.fd-example-column [role='tabpanel'] {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+.fd-example-column [role='tabpanel'] figure {
+  position: static !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+.fd-example-column [role='tabpanel'] pre {
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+/* Copy button: lift it out of the code body and pin it into the header strip,
+   vertically centered at the right. `figure` is `position: static` above, so this
+   absolute wrapper anchors to the card. One button shows (only the active panel). */
+.fd-example-column [role='tabpanel'] figure > .absolute {
+  position: absolute !important;
+  inset: 0 0.375rem auto auto !important;
+  height: 2.375rem;
+  display: flex;
+  align-items: center;
+  z-index: 3;
+  backdrop-filter: none !important;
+  border-radius: 0 !important;
+}
+.fd-example-column [role='tabpanel'] figure > .absolute button {
+  padding: 0.3125rem;
+  border-radius: 0.375rem;
+  color: var(--muted-foreground);
+  background: transparent;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.fd-example-column [role='tabpanel'] figure > .absolute button:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.fd-example-column [role='tabpanel'] figure > .absolute button[data-checked] {
+  color: var(--accent);
+}
+.fd-example-column [role='tabpanel'] figure > .absolute button svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* ---- API Reference sidebar: HTTP method badges ---- */
+/* The fumadocs OpenAPI plugin injects a `<MethodLabel>` (marked `ms-auto`) into
+   the nav item name. For endpoint links, lay them out as a fixed method column +
+   name column so every endpoint name lines up, while the pill itself stays sized
+   to its own text (GET is small, DELETE is wider). `:has()` scopes this to links
+   that actually carry a method badge, leaving folder/page links untouched. */
+.docs-nav-link {
+  min-width: 0;
+}
+
+.docs-nav-link:has(> .ms-auto) {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr;
+  align-items: center;
+  column-gap: 0.5rem;
+}
+
+.docs-nav-link > .ms-auto {
+  order: -1;
+  justify-self: start;
+  min-width: 0;
+  margin-inline: 0;
+  padding: 1px 6px;
+  border-radius: 0.375rem;
+  font-size: 0.625rem;
+  line-height: 1.4;
+  text-align: center;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .docs-nav-tabs {

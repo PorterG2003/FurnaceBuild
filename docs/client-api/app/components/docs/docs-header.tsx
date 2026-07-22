@@ -28,7 +28,7 @@ export function DocsHeader({ docsTree, referenceTree }: DocsHeaderProps) {
   return (
     <>
       <header className="docs-header sticky top-0 z-50 w-full border-b backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between gap-4 border-b border-border/60">
             <div className="flex items-center gap-2 min-w-0">
               <button
@@ -42,7 +42,11 @@ export function DocsHeader({ docsTree, referenceTree }: DocsHeaderProps) {
                 </svg>
               </button>
 
-              <a href={navHref('/docs/')} className="flex items-center gap-3 min-w-0">
+              <a
+                href={navHref('/docs/')}
+                className="flex items-center min-w-0 lg:-ml-[28px]"
+                aria-label={siteConfig.logo.alt}
+              >
                 {siteConfig.logo.src && (
                   <>
                     <Image
@@ -50,23 +54,20 @@ export function DocsHeader({ docsTree, referenceTree }: DocsHeaderProps) {
                       alt=""
                       width={siteConfig.logo.markWidth}
                       height={siteConfig.logo.markHeight}
-                      className="shrink-0 lg:hidden"
+                      className="shrink-0 lg:hidden h-11 w-11"
                       aria-hidden
                     />
                     <Image
                       src={siteConfig.logo.src}
-                      alt={siteConfig.logo.alt}
+                      alt=""
                       width={siteConfig.logo.width}
                       height={siteConfig.logo.height}
-                      className="hidden lg:block shrink-0 h-7 w-auto max-w-[9rem]"
+                      className="hidden lg:block shrink-0 h-11 w-auto max-w-[16rem]"
                       priority
+                      aria-hidden
                     />
                   </>
                 )}
-                <span className="flex flex-col min-w-0 leading-tight">
-                  <span className="font-semibold text-sm sm:text-base truncate">{siteConfig.name}</span>
-                  <span className="text-[11px] text-muted-foreground hidden sm:block">{siteConfig.productName}</span>
-                </span>
               </a>
             </div>
 

@@ -21,9 +21,6 @@ export function docsPath(path: string): string {
   return docsPublicPath(path);
 }
 
-/** @deprecated Use docsPublicPath */
-export const starlightDocPath = docsPublicPath;
-
 export function schemaDocPath(schemaName: string, mode: DocLinkMode = 'docs'): string {
   const path = `/reference/schemas/${schemaName}/`;
   if (mode === 'docs') {

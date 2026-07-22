@@ -15,42 +15,62 @@ export function buildLlmsGuideEntries(): LlmsGuideEntry[] {
     {
       title: 'Introduction',
       path: docsPath('/'),
-      description: 'Authentication, rate limits, and core conventions.',
+      description: 'What the Furnace Client API is and where to start.',
     },
     {
-      title: 'Campaign quickstart',
-      path: docsPath('/guides/campaign-quickstart/'),
-      description: 'Checklist and lifecycle overview for new integrations.',
+      title: 'Quickstart',
+      path: docsPath('/guides/quickstart/'),
+      description: 'Get an API key and make your first request.',
     },
     {
-      title: 'Campaign flow',
-      path: docsPath('/guides/campaign-flow/'),
-      description: 'Save flow, field_sync, If-Match, and validation dry-runs.',
+      title: 'Authentication',
+      path: docsPath('/guides/authentication/'),
+      description: 'API keys, the Authorization header, and base URL.',
     },
     {
-      title: 'Campaign launch',
-      path: docsPath('/guides/campaign-launch/'),
-      description: 'Launch, status changes, and draft vs live locking.',
+      title: 'Campaigns',
+      path: docsPath('/concepts/campaigns/'),
+      description: 'What a campaign is and how its lifecycle works.',
     },
     {
-      title: 'Flow schemas',
-      path: docsPath('/guides/flow-schemas/'),
-      description: 'CampaignFlow node types, merge variables, normalization, and validation codes.',
+      title: 'Leads and people',
+      path: docsPath('/concepts/leads-people/'),
+      description: 'How people, leads, saved lists, and custom fields relate.',
+    },
+    {
+      title: 'Mailboxes',
+      path: docsPath('/concepts/mailboxes/'),
+      description: 'The inboxes a campaign sends from and receives replies in.',
+    },
+    {
+      title: 'Email sequences',
+      path: docsPath('/concepts/sequences/'),
+      description: 'Sequence steps and how to personalize emails.',
     },
     {
       title: 'Webhooks',
-      path: docsPath('/webhooks/'),
-      description: 'Outbound webhook setup, verification, and payloads.',
+      path: docsPath('/concepts/webhooks/'),
+      description: 'How Furnace notifies your systems when events happen.',
     },
     {
-      title: 'Changelog',
-      path: docsPath('/changelog/'),
-      description: 'Client API version history.',
+      title: 'Campaign setup',
+      path: docsPath('/guides/campaign-setup/'),
+      description: 'Build and launch a campaign end to end.',
     },
     {
-      title: 'API Reference',
-      path: docsPath('/reference/'),
-      description: 'OpenAPI reference grouped by tag (read-only, Furnace-branded).',
+      title: 'Lead management',
+      path: docsPath('/guides/lead-management/'),
+      description: 'Add, import, fix, and move people in a campaign.',
+    },
+    {
+      title: 'Handling replies',
+      path: docsPath('/guides/handling-replies/'),
+      description: 'Find replies, send responses, and track message jobs.',
+    },
+    {
+      title: 'Webhook integration',
+      path: docsPath('/guides/webhook-integration/'),
+      description: 'Set up a webhook URL, verify messages, and see example payloads.',
     },
   ];
 
@@ -63,6 +83,24 @@ export function buildLlmsGuideEntries(): LlmsGuideEntry[] {
       description: group.description,
     });
   }
+
+  guides.push(
+    {
+      title: 'FAQ',
+      path: docsPath('/guides/faq/'),
+      description: 'Quick answers to common questions.',
+    },
+    {
+      title: 'Changelog',
+      path: docsPath('/changelog/'),
+      description: 'Client API version history.',
+    },
+    {
+      title: 'API Reference',
+      path: docsPath('/reference/'),
+      description: 'OpenAPI reference grouped by tag (read-only, Furnace-branded).',
+    },
+  );
 
   return guides;
 }
@@ -89,21 +127,20 @@ export function buildLlmsTxt(baseUrl = 'https://api.getfurnace.io'): string {
     `- FlowUpdate — ${docsPath('/reference/schemas/FlowUpdate/')}`,
     `- FlowValidationIssue — ${docsPath('/reference/schemas/FlowValidationIssue/')}`,
     '',
-    '## Campaign checklist',
-    '1. GET /v1/mailboxes',
-    '2. POST /v1/campaigns',
-    '3. POST /v1/campaigns/{id}/flow (+ optional If-Match)',
-    '4. POST /v1/campaigns/{id}/leads',
-    '5. GET /v1/campaigns/{id}?include=launch_state,lead_field_state',
-    '6. POST /v1/campaigns/{id}/launch',
+    '## Campaign setup checklist',
+    '1. GET /v1/mailboxes — pick a mailbox id to send from',
+    '2. POST /v1/campaigns — create a draft',
+    '3. POST /v1/campaigns/{id}/flow — add the email sequence',
+    '4. POST /v1/campaigns/{id}/leads — add people',
+    '5. POST /v1/campaigns/{id}/launch — start sending',
     '',
-    '## Key v1.4 behaviors',
-    '- POST /flow is the hero save; PUT /flow is a deprecated alias',
-    '- flow_revision + If-Match prevent lost updates (412 flow_revision_conflict)',
-    '- field_sync auto-declares merge-variable fields from copy',
-    '- PATCH /status for live pause/resume/stop; POST /launch is draft-only',
-    '- GET /v1/campaigns list omits flow_data — use GET /v1/campaigns/{id} for full flow',
-    '- GET /v1/flow-templates for starter graphs',
+    '## Good to know',
+    '- Campaigns move draft -> running -> paused/stopped',
+    '- Running allows email copy and timing edits; pause to add/remove/reorder steps',
+    '- Personalize with {{first_name}} and {{custom.company}} tokens',
+    '- Read replies via /v1/threads; sending a reply returns a message job to poll',
+    '- Use webhooks to be notified of sends, replies, and bounces',
+    '- Full field-level detail lives in the API Reference (openapi.json)',
     '',
   ];
 

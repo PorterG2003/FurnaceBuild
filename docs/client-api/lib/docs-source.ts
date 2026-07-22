@@ -83,6 +83,50 @@ function collectNodeUrls(node: Node): string[] {
   return [];
 }
 
+/** OperationIds marked `deprecated: true` in openapi.json (page slug uses operationId). */
+function getDeprecatedOperationIds(): Set<string> {
+  const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
+  const specPath = path.join(process.cwd(), 'public', 'openapi.json');
+  const raw = JSON.parse(fs.readFileSync(specPath, 'utf8')) as {
+    paths?: Record<string, Record<string, { deprecated?: boolean; operationId?: string }>>;
+  };
+  const ids = new Set<string>();
+  for (const pathItem of Object.values(raw.paths ?? {})) {
+    for (const [method, operation] of Object.entries(pathItem ?? {})) {
+      if (!methods.has(method.toLowerCase())) continue;
+      if (operation?.deprecated && operation.operationId) {
+        ids.add(operation.operationId);
+      }
+    }
+  }
+  return ids;
+}
+
+function pageSlug(url: string): string {
+  const segments = url.split('/').filter(Boolean);
+  return segments[segments.length - 1] ?? '';
+}
+
+/** Drop deprecated operations from the reference nav; pages remain addressable if linked. */
+function omitDeprecatedOperations(nodes: Node[], deprecatedIds: Set<string>): Node[] {
+  const output: Node[] = [];
+  for (const node of nodes) {
+    if (node.type === 'page') {
+      if (deprecatedIds.has(pageSlug(node.url))) continue;
+      output.push(node);
+      continue;
+    }
+    if (node.type === 'folder') {
+      const children = omitDeprecatedOperations(node.children ?? [], deprecatedIds);
+      if (children.length === 0) continue;
+      output.push({ ...node, children });
+      continue;
+    }
+    output.push(node);
+  }
+  return output;
+}
+
 function normalizeReferenceTree(nodes: Node[]): Node[] {
   // The OpenAPI content is nested under a single "API Reference" wrapper folder
   // (created because it lives under the `reference/` base dir). Promote the tag
@@ -91,6 +135,8 @@ function normalizeReferenceTree(nodes: Node[]): Node[] {
   if (working.length === 1 && working[0].type === 'folder') {
     working = working[0].children ?? [];
   }
+
+  working = omitDeprecatedOperations(working, getDeprecatedOperationIds());
 
   const output: Node[] = [];
   const schemaNodes: Node[] = [];

@@ -13,10 +13,13 @@ export default function DocsLayout({
       <DocsHeader docsTree={docsTree} referenceTree={referenceTree} />
 
       <div className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex gap-8">
-            <DocsSectionSidebar docsTree={docsTree} referenceTree={referenceTree} />
-            <main className="flex-1 min-w-0">
+        <div className="max-w-[90rem] mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+          {/* Fixed tracks so page content cannot widen the chrome. */}
+          <div className="grid w-full gap-8 grid-cols-1 lg:grid-cols-[18rem_minmax(0,1fr)]">
+            <div className="hidden lg:block min-w-0">
+              <DocsSectionSidebar docsTree={docsTree} referenceTree={referenceTree} />
+            </div>
+            <main className="min-w-0 w-full">
               {children}
             </main>
           </div>
@@ -24,7 +27,7 @@ export default function DocsLayout({
       </div>
 
       <footer className="border-t border-border py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <p className="text-sm text-muted-foreground">
               {siteConfig.footer.copyright}

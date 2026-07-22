@@ -16,6 +16,17 @@ import {
 } from '../../../lib/client-api/errors.js';
 import { getBearerToken, hashApiKey, isApiKeyExpired, type AuthenticatedApiKey } from '../../../lib/client-api/auth.js';
 import { toPublicMailbox } from '../../../lib/client-api/serializers/mailbox.js';
+import { toPersonResponse } from '../../../lib/client-api/serializers/person.js';
+import {
+  CAMPAIGN_CREATE_KEYS,
+  CAMPAIGN_UPDATE_KEYS,
+  FLOW_UPDATE_KEYS,
+  GLOBAL_LEAD_IDS_KEYS,
+  IMPORT_JOB_CREATE_KEYS,
+  LEAD_WRITE_KEYS,
+  PERSON_UPDATE_KEYS,
+  pickKnownKeys,
+} from '../../../lib/client-api/pickKnownKeys.js';
 import {
   appendCampaignCustomFieldKey,
   getCampaignCustomFieldKeys,
@@ -37,7 +48,7 @@ import {
   listAccountMailboxTags,
 } from '../../../lib/client-api/mailbox-tags.js';
 import { hashRequestBody } from '../../../lib/client-api/idempotency.js';
-import { startApiImportJob } from '../../../lib/client-api/jobs.js';
+import { startApiImportJob, type CreateJobBody } from '../../../lib/client-api/jobs.js';
 import {
   stableGlobalLeadIdsKey,
 } from '../../../lib/client-api/webhooks/batchCompletion.js';
@@ -787,7 +798,10 @@ app.get('/v1/campaigns', async (c) => {
 app.post('/v1/campaigns', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
-  const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    CAMPAIGN_CREATE_KEYS,
+  );
   const name = typeof body.name === 'string' && body.name.trim().length > 0
     ? body.name.trim()
     : 'Untitled Campaign';
@@ -966,7 +980,10 @@ async function handleCampaignFlowWrite(c: Context, method: 'POST' | 'PUT') {
   assertCampaignMutable(campaign);
   const dryRun = c.req.query('dry_run') === 'true';
   const ifMatch = c.req.header('If-Match') ?? c.req.header('if-match');
-  const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    FLOW_UPDATE_KEYS,
+  );
 
   const prepared = await prepareCampaignFlowForApi({
     incomingFlow: body,
@@ -1004,7 +1021,10 @@ app.post('/v1/campaigns/:id/flow:validate', async (c) => {
   const auth = c.get('apiKey');
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   assertCampaignMutable(campaign);
-  const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    FLOW_UPDATE_KEYS,
+  );
   const prepared = await prepareCampaignFlowForApi({
     incomingFlow: body,
     existingFlow: campaign.flow_data,
@@ -1126,10 +1146,13 @@ app.patch('/v1/campaigns/:id', async (c) => {
   const auth = c.get('apiKey');
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   assertCampaignMutable(campaign);
-  const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    CAMPAIGN_UPDATE_KEYS,
+  );
   const patch: Record<string, unknown> = {};
   if (typeof body.name === 'string') patch.name = body.name.trim();
-  if (body.schedule) patch.schedule = body.schedule;
+  if ('schedule' in body) patch.schedule = body.schedule ?? null;
   if (typeof body.sending_interval_seconds === 'number') {
     patch.sending_interval_seconds = body.sending_interval_seconds;
   }
@@ -1219,7 +1242,10 @@ app.post('/v1/campaigns/:id/enrollments/pause', async (c) => {
   const auth = c.get('apiKey');
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   assertCampaignMutable(campaign);
-  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    GLOBAL_LEAD_IDS_KEYS,
+  );
   const globalLeadIds = Array.isArray(body.global_lead_ids)
     ? [...new Set(body.global_lead_ids.filter((id): id is string => typeof id === 'string' && id.length > 0))]
     : [];
@@ -1259,7 +1285,10 @@ app.post('/v1/campaigns/:id/enrollments/resume', async (c) => {
   if (campaign.status !== 'running') {
     invalidRequest('campaign_not_running', 'Campaign must be running to resume enrollments');
   }
-  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    GLOBAL_LEAD_IDS_KEYS,
+  );
   const globalLeadIds = Array.isArray(body.global_lead_ids)
     ? [...new Set(body.global_lead_ids.filter((id): id is string => typeof id === 'string' && id.length > 0))]
     : [];
@@ -1432,7 +1461,10 @@ app.post('/v1/campaigns/:id/leads', async (c) => {
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   assertCampaignMutable(campaign);
   const rawBody = await c.req.text();
-  const body = parseJsonBody<Record<string, unknown>>(rawBody);
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(rawBody),
+    LEAD_WRITE_KEYS,
+  );
   const idempotencyKey = c.req.header('Idempotency-Key') ?? null;
   const bodyHash = hashRequestBody(rawBody);
   const cached = await getCachedIdempotencyResponse(supabase, auth.accountId, idempotencyKey, getRequestPath(c), bodyHash);
@@ -1489,7 +1521,10 @@ app.patch('/v1/campaigns/:id/leads/:leadId', async (c) => {
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   assertCampaignMutable(campaign);
   const lead = await loadLeadOrThrow(supabase, auth.accountId, campaign.id, c.req.param('leadId'));
-  const body = parseJsonBody<Record<string, unknown>>(await c.req.text());
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    LEAD_WRITE_KEYS,
+  );
   const patch: Record<string, unknown> = {};
   for (const key of [
     'name',
@@ -1669,13 +1704,10 @@ async function enqueueImportJobById(jobId: string): Promise<void> {
 app.post('/v1/jobs', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
-  const body = parseJsonBody<{
-    operation?: string;
-    campaign_id?: string | null;
-    global_lead_ids?: string[];
-    list_id?: string;
-    leads?: Record<string, unknown>[];
-  }>(await c.req.text());
+  const body = pickKnownKeys<CreateJobBody>(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    IMPORT_JOB_CREATE_KEYS,
+  );
   const job = await startApiImportJob(supabase, auth.accountId, auth.id, body);
   await enqueueImportJobById(job.id);
   return jsonResponse(c, { data: job }, 202, c.get('rateLimitHeaders'));
@@ -1686,8 +1718,14 @@ app.post('/v1/campaigns/:id/leads:add', async (c) => {
   const auth = c.get('apiKey');
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   assertCampaignMutable(campaign);
-  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
-  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    GLOBAL_LEAD_IDS_KEYS,
+  );
+  const globalLeadIds = [...new Set(
+    (Array.isArray(body.global_lead_ids) ? body.global_lead_ids : [])
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  )];
   if (globalLeadIds.length === 0) {
     invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
   }
@@ -1727,8 +1765,14 @@ app.post('/v1/campaigns/:id/leads:remove', async (c) => {
   const auth = c.get('apiKey');
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, c.req.param('id'));
   assertCampaignMutable(campaign);
-  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
-  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    GLOBAL_LEAD_IDS_KEYS,
+  );
+  const globalLeadIds = [...new Set(
+    (Array.isArray(body.global_lead_ids) ? body.global_lead_ids : [])
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  )];
   if (globalLeadIds.length === 0) {
     invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
   }
@@ -1762,8 +1806,14 @@ app.post('/v1/campaigns/:id/leads:remove', async (c) => {
 app.post('/v1/leads:remove-from-all-campaigns', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
-  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
-  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    GLOBAL_LEAD_IDS_KEYS,
+  );
+  const globalLeadIds = [...new Set(
+    (Array.isArray(body.global_lead_ids) ? body.global_lead_ids : [])
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  )];
   if (globalLeadIds.length === 0) {
     invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
   }
@@ -1843,7 +1893,8 @@ app.get('/v1/people', async (c) => {
   const rowsRaw = data ?? [];
   const totalCount =
     rowsRaw.length > 0 && rowsRaw[0].total_count != null ? Number(rowsRaw[0].total_count) : 0;
-  return jsonResponse(c, buildListPayload(rowsRaw, limit, offset, totalCount), 200, c.get('rateLimitHeaders'));
+  const people = rowsRaw.map((row) => toPersonResponse(row as Record<string, unknown>));
+  return jsonResponse(c, buildListPayload(people, limit, offset, totalCount), 200, c.get('rateLimitHeaders'));
 });
 
 app.get('/v1/people/:globalLeadId', async (c) => {
@@ -1865,19 +1916,27 @@ app.get('/v1/people/:globalLeadId', async (c) => {
     .eq('global_lead_id', globalLeadId)
     .order('created_at', { ascending: false });
   if (membershipError) throw new Error(`Failed to fetch memberships: ${membershipError.message}`);
-  return jsonResponse(c, { data: { person: data, memberships: memberships ?? [] } }, 200, c.get('rateLimitHeaders'));
+  return jsonResponse(
+    c,
+    {
+      data: {
+        person: toPersonResponse(data as Record<string, unknown>),
+        memberships: memberships ?? [],
+      },
+    },
+    200,
+    c.get('rateLimitHeaders'),
+  );
 });
 
 app.patch('/v1/people/:globalLeadId', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
   const globalLeadId = c.req.param('globalLeadId');
-  const body = parseJsonBody<{
-    name?: string | null;
-    first_name?: string | null;
-    last_name?: string | null;
-    company_name?: string | null;
-  }>(await c.req.text());
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    PERSON_UPDATE_KEYS,
+  );
   const { data: existing, error: existingError } = await supabase
     .from('account_lead_people')
     .select('global_lead_id')
@@ -1888,10 +1947,10 @@ app.patch('/v1/people/:globalLeadId', async (c) => {
   if (!existing) notFound('person_not_found', 'Person not found');
 
   const leadPatch = {
-    ...(body.name !== undefined ? { name: body.name } : {}),
-    ...(body.first_name !== undefined ? { first_name: body.first_name } : {}),
-    ...(body.last_name !== undefined ? { last_name: body.last_name } : {}),
-    ...(body.company_name !== undefined ? { company_name: body.company_name } : {}),
+    ...(body.name !== undefined ? { name: body.name as string | null } : {}),
+    ...(body.first_name !== undefined ? { first_name: body.first_name as string | null } : {}),
+    ...(body.last_name !== undefined ? { last_name: body.last_name as string | null } : {}),
+    ...(body.company_name !== undefined ? { company_name: body.company_name as string | null } : {}),
     updated_at: nowIso(),
   };
   if (Object.keys(leadPatch).length > 1) {
@@ -1904,10 +1963,10 @@ app.patch('/v1/people/:globalLeadId', async (c) => {
   }
 
   const peoplePatch = {
-    ...(body.name !== undefined ? { display_name: body.name } : {}),
-    ...(body.first_name !== undefined ? { first_name: body.first_name } : {}),
-    ...(body.last_name !== undefined ? { last_name: body.last_name } : {}),
-    ...(body.company_name !== undefined ? { company_list: body.company_name } : {}),
+    ...(body.name !== undefined ? { display_name: body.name as string | null } : {}),
+    ...(body.first_name !== undefined ? { first_name: body.first_name as string | null } : {}),
+    ...(body.last_name !== undefined ? { last_name: body.last_name as string | null } : {}),
+    ...(body.company_name !== undefined ? { company_list: body.company_name as string | null } : {}),
     updated_at: nowIso(),
   };
   if (Object.keys(peoplePatch).length > 1) {
@@ -1926,7 +1985,7 @@ app.patch('/v1/people/:globalLeadId', async (c) => {
     .eq('global_lead_id', globalLeadId)
     .single();
   if (error) throw new Error(`Failed to fetch updated person: ${error.message}`);
-  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+  return jsonResponse(c, { data: toPersonResponse(data as Record<string, unknown>) }, 200, c.get('rateLimitHeaders'));
 });
 
 app.get('/v1/lead-lists', async (c) => {
@@ -2049,15 +2108,22 @@ app.get('/v1/lead-lists/:id/people', async (c) => {
   const rowsRaw = data ?? [];
   const totalCount =
     rowsRaw.length > 0 && rowsRaw[0].total_count != null ? Number(rowsRaw[0].total_count) : 0;
-  return jsonResponse(c, buildListPayload(rowsRaw, limit, offset, totalCount), 200, c.get('rateLimitHeaders'));
+  const people = rowsRaw.map((row) => toPersonResponse(row as Record<string, unknown>));
+  return jsonResponse(c, buildListPayload(people, limit, offset, totalCount), 200, c.get('rateLimitHeaders'));
 });
 
 app.post('/v1/lead-lists/:id/members', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
   const listId = c.req.param('id');
-  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
-  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    GLOBAL_LEAD_IDS_KEYS,
+  );
+  const globalLeadIds = [...new Set(
+    (Array.isArray(body.global_lead_ids) ? body.global_lead_ids : [])
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  )];
   if (globalLeadIds.length === 0) {
     invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
   }
@@ -2107,8 +2173,14 @@ app.delete('/v1/lead-lists/:id/members', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
   const listId = c.req.param('id');
-  const body = parseJsonBody<{ global_lead_ids?: string[] }>(await c.req.text());
-  const globalLeadIds = [...new Set((body.global_lead_ids ?? []).filter(Boolean))];
+  const body = pickKnownKeys(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    GLOBAL_LEAD_IDS_KEYS,
+  );
+  const globalLeadIds = [...new Set(
+    (Array.isArray(body.global_lead_ids) ? body.global_lead_ids : [])
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  )];
   if (globalLeadIds.length === 0) {
     invalidRequest('missing_global_lead_ids', 'global_lead_ids must be a non-empty array', 'global_lead_ids');
   }

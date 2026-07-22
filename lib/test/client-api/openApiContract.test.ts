@@ -2,11 +2,22 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CLIENT_API_VERSION } from '../../client-api/openapi/constants.js';
 import {
-  buildBuildingCampaignsMarkdown,
   buildCampaignQuickstartMarkdown,
+  buildCampaignSetupMarkdown,
+  buildHandlingRepliesMarkdown,
+  buildLeadManagementMarkdown,
 } from '../../client-api/openapi/buildingCampaigns.js';
 import { buildChangelogMarkdown } from '../../client-api/openapi/changelog.js';
-import { buildClientApiIntroMarkdown, buildClientApiIntroMdx } from '../../client-api/openapi/intro.js';
+import {
+  buildCampaignsConceptMarkdown,
+  buildSequencesConceptMarkdown,
+} from '../../client-api/openapi/concepts.js';
+import { buildFaqMarkdown } from '../../client-api/openapi/faq.js';
+import {
+  buildAuthenticationMarkdown,
+  buildClientApiIntroMarkdown,
+  buildClientApiIntroMdx,
+} from '../../client-api/openapi/intro.js';
 import { buildLlmsFullTxt, buildLlmsTxt } from '../../client-api/openapi/llms.js';
 import { buildClientApiOpenApiSpec } from '../../client-api/openapi/spec.js';
 import {
@@ -64,11 +75,18 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
 
 test('client api guide markdown includes webhook examples', () => {
   const introMdx = buildClientApiIntroMdx();
-  assert.match(introMdx, /Authentication/);
+  assert.match(introMdx, /What you can build/);
   assert.match(introMdx, /CardGroup/);
   assert.doesNotMatch(introMdx, /@astrojs\/starlight/);
   assert.doesNotMatch(introMdx, /Scalar/);
-  assert.match(buildClientApiIntroMarkdown(), /flow_locked/);
+  assert.match(buildClientApiIntroMarkdown(), /What you can build/);
+  // Reference-heavy conventions must not leak into the Documentation intro.
+  assert.doesNotMatch(buildClientApiIntroMarkdown(), /flow_locked/);
+  assert.doesNotMatch(buildClientApiIntroMarkdown(), /Idempotency-Key/);
+
+  const auth = buildAuthenticationMarkdown('docs');
+  assert.match(auth, /Authorization: Bearer/);
+  assert.match(auth, /Account Settings/);
 
   const changelog = buildChangelogMarkdown();
   assert.match(changelog, /Breaking changes increment the major version/);
@@ -76,24 +94,53 @@ test('client api guide markdown includes webhook examples', () => {
   assert.match(changelog, /Fumadocs \+ OpenAPI reference/);
 
   const quickstart = buildCampaignQuickstartMarkdown('docs');
-  assert.match(quickstart, /TL;DR — checklist/i);
-  assert.match(quickstart, /POST \/v1\/campaigns\/\{id\}\/flow/);
+  assert.match(quickstart, /first (successful )?request/i);
+  assert.match(quickstart, /\/v1\/mailboxes/);
+  assert.match(quickstart, /POST '?https:\/\/api\.getfurnace\.io\/v1\/campaigns/);
+  // Quickstart stays minimal — no advanced/reference concepts.
+  assert.doesNotMatch(quickstart, /field_sync/);
+  assert.doesNotMatch(quickstart, /If-Match/);
 
-  const buildingCampaigns = buildBuildingCampaignsMarkdown('docs');
-  assert.match(buildingCampaigns, /field_sync/);
-  assert.match(buildingCampaigns, /If-Match/);
-  assert.match(buildingCampaigns, /Draft vs live lock/i);
-  assert.match(buildingCampaigns, /\[CampaignFlow\]\(\/docs\/reference\/schemas\/CampaignFlow\/\)/);
+  const campaignSetup = buildCampaignSetupMarkdown('docs');
+  assert.match(campaignSetup, /Build and launch/i);
+  assert.match(campaignSetup, /\/v1\/campaigns\/[0-9a-f-]+\/flow/);
+  assert.match(campaignSetup, /\/v1\/campaigns\/[0-9a-f-]+\/launch/);
+  assert.match(campaignSetup, /Editing after launch/i);
+  // Plain-language: no DAG/normalization/change_reasons jargon.
+  assert.doesNotMatch(campaignSetup, /flow_locked/);
+  assert.doesNotMatch(campaignSetup, /change_reasons/);
+
+  const leadManagement = buildLeadManagementMarkdown('docs');
+  assert.match(leadManagement, /By the end of this guide/);
+  assert.match(leadManagement, /Common mistakes/);
+  assert.match(leadManagement, /custom_lead_data/);
+  assert.match(leadManagement, /leads\/bulk/);
+  assert.match(leadManagement, /leads:add/);
+
+  const handlingReplies = buildHandlingRepliesMarkdown('docs');
+  assert.match(handlingReplies, /By the end of this guide/);
+  assert.match(handlingReplies, /Common mistakes/);
+  assert.match(handlingReplies, /\/v1\/threads/);
+  assert.match(handlingReplies, /message-jobs/);
+
+  const campaignsConcept = buildCampaignsConceptMarkdown('docs');
+  assert.match(campaignsConcept, /[Dd]raft/);
+  assert.doesNotMatch(campaignsConcept, /topology/i);
+
+  const sequencesConcept = buildSequencesConceptMarkdown('docs');
+  assert.match(sequencesConcept, /\{\{first_name\}\}/);
+  assert.doesNotMatch(sequencesConcept, /directed acyclic graph/i);
+
+  const faq = buildFaqMarkdown('docs');
+  assert.match(faq, /API key/);
 
   const spec = buildClientApiOpenApiSpec('https://api.example.com') as {
     components: { schemas: Record<string, { description?: string }> };
   };
 
+  // Schema descriptions (API Reference tab) must not link to deleted guide pages.
   const campaignFlow = spec.components.schemas.CampaignFlow?.description ?? '';
-  assert.match(campaignFlow, /Flow schemas guide/);
-
-  const flowValidationIssue = spec.components.schemas.FlowValidationIssue?.description ?? '';
-  assert.match(flowValidationIssue, /Flow schemas/);
+  assert.doesNotMatch(campaignFlow, /\/guides\/flow-schemas\//);
 
   const webhooksOverview = buildWebhooksOverviewMarkdown('docs');
   assert.match(webhooksOverview, /Quick start/);
@@ -116,8 +163,9 @@ test('client api guide markdown includes webhook examples', () => {
 
 test('client api llms exports include guides and version', () => {
   const llms = buildLlmsTxt('https://api.example.com');
-  assert.match(llms, /v1\.4\.3/);
-  assert.match(llms, /\/docs\/guides\/campaign-quickstart\//);
+  assert.match(llms, new RegExp(`v${CLIENT_API_VERSION.replace(/\./g, '\\.')}`));
+  assert.match(llms, /\/docs\/guides\/quickstart\//);
+  assert.match(llms, /\/docs\/concepts\/campaigns\//);
   assert.match(llms, /openapi\.json/);
 
   const full = buildLlmsFullTxt([{ title: 'Intro', body: 'Hello docs' }]);

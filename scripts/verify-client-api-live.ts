@@ -121,30 +121,31 @@ async function main() {
     assert.doesNotMatch(docsHtml, /github\.com\/getfurnace\/furnace/i);
     console.log('[live-client-api] docs site check passed');
 
-    const quickstartDoc = await fetch(`${baseUrl}/docs/guides/campaign-quickstart/`);
+    const quickstartDoc = await fetch(`${baseUrl}/docs/guides/quickstart/`);
     const quickstartHtml = await quickstartDoc.text();
     assert.equal(quickstartDoc.status, 200);
-    assert.match(quickstartHtml, /POST \/v1\/campaigns\/\{id\}\/flow/);
-    console.log('[live-client-api] campaign quickstart guide check passed');
+    assert.match(quickstartHtml, /\/v1\/mailboxes/);
+    console.log('[live-client-api] quickstart guide check passed');
+
+    const campaignSetupDoc = await fetch(`${baseUrl}/docs/guides/campaign-setup/`);
+    const campaignSetupHtml = await campaignSetupDoc.text();
+    assert.equal(campaignSetupDoc.status, 200);
+    assert.match(campaignSetupHtml, /\/v1\/campaigns\/\{id\}\/flow|\/v1\/campaigns\/[0-9a-f-]+\/flow/i);
+    console.log('[live-client-api] campaign setup guide check passed');
 
     const referenceDoc = await fetch(`${baseUrl}/docs/reference/`);
     const referenceHtml = await referenceDoc.text();
     assert.equal(referenceDoc.status, 200);
-    assert.match(referenceHtml, /scalar|openapi|Furnace Client API/i);
+    assert.match(referenceHtml, /API Reference|Furnace Client API|OpenAPI/i);
     console.log('[live-client-api] api reference check passed');
 
     const llmsTxt = await fetch(`${baseUrl}/llms.txt`);
     const llmsBody = await llmsTxt.text();
     assert.equal(llmsTxt.status, 200);
     assert.match(llmsBody, /LLM index/i);
-    assert.match(llmsBody, /campaign-quickstart/);
+    assert.match(llmsBody, /guides\/quickstart/);
+    assert.match(llmsBody, /campaign-setup/);
     console.log('[live-client-api] llms.txt check passed');
-
-    const mdMirror = await fetch(`${baseUrl}/docs/guides/campaign-quickstart.md`);
-    const mdBody = await mdMirror.text();
-    assert.equal(mdMirror.status, 200);
-    assert.match(mdBody, /TL;DR — checklist/);
-    console.log('[live-client-api] markdown mirror check passed');
 
     const apiKey = await harness.createApiKey('live-smoke');
     console.log(`[live-client-api] created API key ${apiKey.id}`);

@@ -70,9 +70,9 @@ export function Card({ title, icon, image, href, children }: CardProps) {
           {IconComponent}
         </div>
       )}
-      <h3 className="font-semibold text-foreground mb-2">
+      <p className="font-semibold text-foreground mb-2">
         {title}
-      </h3>
+      </p>
       {children && (
         <div className="text-sm text-muted-foreground leading-relaxed [&>p]:m-0">
           {children}
@@ -82,6 +82,12 @@ export function Card({ title, icon, image, href, children }: CardProps) {
   )
 
   if (href) {
+    // Absolute /docs paths and external links already include the basePath, so
+    // render them as plain anchors. next/link would otherwise re-prepend the
+    // /docs basePath and produce a broken /docs/docs/... URL.
+    if (href.startsWith('http') || href.startsWith('/docs')) {
+      return <a href={href} className="block h-full">{content}</a>
+    }
     return <Link href={href} className="block h-full">{content}</Link>
   }
 

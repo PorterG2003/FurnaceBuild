@@ -40,32 +40,16 @@ export function buildFlowMergeVariablesMarkdown(linkMode: DocLinkMode = 'docs'):
 
 export function buildCampaignFlowDescription(linkMode: DocLinkMode = 'docs'): string {
   return [
-    'Directed acyclic graph (DAG) defining the campaign sequence. Consumed by flow save, validate, and optional `flow` on campaign create.',
-    '',
-    '**Structure:**',
-    '',
-    `- ${modelLink('FlowNode', linkMode)} — one step per node; \`data\` shape depends on \`type\``,
-    `- ${modelLink('FlowEdge', linkMode)} — directed connections between nodes`,
-    '',
-    '**Node types:**',
-    '',
-    `- \`leadSource\` — ${modelLink('LeadSourceNodeData', linkMode)} (exactly one per flow)`,
-    `- \`email\` — ${modelLink('EmailNodeData', linkMode)} with ${modelLink('EmailVariant', linkMode)} variants`,
-    `- \`waitTime\` — ${modelLink('WaitTimeNodeData', linkMode)}`,
-    `- \`aiCategorizer\` — ${modelLink('AICategorizerNodeData', linkMode)} (at most one per flow)`,
-    `- \`dataSender\` — ${modelLink('DataSenderNodeData', linkMode)}`,
-    '',
-    '**Validation rules:** exactly one `leadSource`; at most one `aiCategorizer`; max 100 nodes / 200 edges; no cycles; every node reachable from `leadSource`; unique node and edge ids.',
-    '',
-    `Full normalization, merge-variable rules, and error codes: ${guideLink('Flow schemas guide', '/guides/flow-schemas/', linkMode)}.`,
-  ].join('\n');
+    'Directed acyclic graph of campaign steps (`nodes` + `edges`).',
+    `See ${guideLink('Email sequences', '/concepts/sequences/', linkMode)} for a plain-language overview, or expand the properties below.`,
+  ].join(' ');
 }
 
 export function buildFlowUpdateDescription(linkMode: DocLinkMode = 'docs'): string {
   return [
     'Canonical campaign flow payload for `POST /v1/campaigns/{id}/flow`, `PUT .../flow` (deprecated), and `POST .../flow:validate`.',
     '',
-    `Same shape as ${modelLink('CampaignFlow', linkMode)}. See ${guideLink('Campaign flow', '/guides/campaign-flow/', linkMode)} and ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)}.`,
+    `Same shape as ${modelLink('CampaignFlow', linkMode)}. See ${guideLink('Campaign setup', '/guides/campaign-setup/', linkMode)} and ${guideLink('Email sequences', '/concepts/sequences/', linkMode)}.`,
   ].join('\n');
 }
 
@@ -73,7 +57,7 @@ export function buildFlowValidationIssueDescription(linkMode: DocLinkMode = 'doc
   return [
     'One validation problem in `issues[]` from flow validate/save, or in `details[]` on `400 invalid_flow` errors.',
     '',
-    `See ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)} for the full error-code catalog.`,
+    'Each issue has a `path`, a `code`, and a human-readable `message` describing what to fix.',
   ].join('\n');
 }
 
@@ -81,7 +65,7 @@ export function buildFlowValidateResultDescription(linkMode: DocLinkMode = 'docs
   return [
     'Dry-run result from `POST /v1/campaigns/{id}/flow:validate`. Shows normalized flow, validation issues, change classification, and lifecycle gate outcome.',
     '',
-    `See ${modelLink('FlowValidationIssue', linkMode)} and ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)}.`,
+    `See ${modelLink('FlowValidationIssue', linkMode)}.`,
   ].join('\n');
 }
 
@@ -94,7 +78,7 @@ export function buildLeadSourceNodeDataDescription(linkMode: DocLinkMode = 'docs
     '',
     `Allowed standard keys for mappedStandardFieldKeys: ${LEAD_SOURCE_STANDARD_FIELD_KEYS}.`,
     '',
-    `Details: ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)}.`,
+    `Details: ${guideLink('Email sequences', '/concepts/sequences/', linkMode)}.`,
   ].join('\n');
 }
 
@@ -104,7 +88,7 @@ export function buildEmailVariantDescription(linkMode: DocLinkMode = 'docs'): st
     '',
     'Empty `subject` reuses the first outbound subject and continues the thread.',
     '',
-    `See ${guideLink('Flow schemas', '/guides/flow-schemas/', linkMode)}.`,
+    `See ${guideLink('Email sequences', '/concepts/sequences/', linkMode)}.`,
   ].join('\n');
 }
 

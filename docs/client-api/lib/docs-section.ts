@@ -39,3 +39,17 @@ export function navHref(url: string): string {
   }
   return `${DOCS_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
 }
+
+/**
+ * Href for `next/link`. Next applies `basePath` (`/docs`) automatically, so
+ * strip it from tree/search URLs that already include `/docs`.
+ */
+export function linkHref(url: string): string {
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
+    return url;
+  }
+  const href = navHref(url);
+  if (href === DOCS_BASE || href === `${DOCS_BASE}/`) return '/';
+  if (href.startsWith(`${DOCS_BASE}/`)) return href.slice(DOCS_BASE.length);
+  return href;
+}

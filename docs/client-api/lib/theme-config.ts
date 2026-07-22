@@ -2,12 +2,13 @@ import { docsAssetPath } from './docs-paths';
 
 /**
  * Furnace Client API docs theme.
+ * Brand oranges match `tailwind.config.js` (`brand.orange` / `orange-dark` / `orange-light`).
  */
 
 export const furnaceBrand = {
-  orange: '#f14607',
-  orangeBright: '#ff6b35',
-  orangeDeep: '#c73800',
+  orange: '#F3440D',
+  orangeLight: '#F3683D',
+  orangeDark: '#D63B0B',
   bg: '#121212',
   bgNav: '#0d0d0d',
   bgPanel: '#1a1a1a',
@@ -19,6 +20,8 @@ export const furnaceBrand = {
 export const siteConfig = {
   name: 'Client API',
   productName: 'Furnace',
+  /** Browser tab / document title suffix */
+  title: 'Furnace API Docs',
   description: 'Account-scoped REST API for campaigns, leads, inbox, and more.',
   url: 'https://api.getfurnace.io/docs',
 
@@ -27,17 +30,17 @@ export const siteConfig = {
     src: docsAssetPath('/logo.svg'),
     markSrc: docsAssetPath('/logo-mark.svg'),
     alt: 'Furnace',
-    width: 158,
-    height: 40,
-    markWidth: 28,
-    markHeight: 28,
+    width: 240,
+    height: 60,
+    markWidth: 44,
+    markHeight: 44,
   },
 
   links: {
     github: '',
     discord: '',
     twitter: '',
-    support: 'https://getfurnace.io',
+    support: 'https://calendar.app.google/96NY4CxuWx7CCLH66',
   },
 
   footer: {
@@ -51,12 +54,12 @@ export const themeConfig = {
     light: {
       accent: furnaceBrand.orange,
       accentForeground: '#ffffff',
-      accentMuted: 'rgba(241, 70, 7, 0.12)',
+      accentMuted: 'rgba(243, 68, 13, 0.12)',
     },
     dark: {
-      accent: furnaceBrand.orangeBright,
-      accentForeground: furnaceBrand.bg,
-      accentMuted: 'rgba(255, 107, 53, 0.14)',
+      accent: furnaceBrand.orange,
+      accentForeground: '#ffffff',
+      accentMuted: 'rgba(243, 68, 13, 0.16)',
     },
   },
 
@@ -74,7 +77,7 @@ export const themeConfig = {
   ogImage: {
     gradient: `linear-gradient(135deg, ${furnaceBrand.bg} 0%, #2a1214 50%, ${furnaceBrand.orange} 100%)`,
     titleColor: '#ffffff',
-    sectionColor: furnaceBrand.orangeBright,
+    sectionColor: furnaceBrand.orangeLight,
     logoUrl: 'https://api.getfurnace.io/docs/logo-mark.svg',
   },
 };

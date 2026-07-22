@@ -41,7 +41,7 @@ curl -sS -X POST "$CLIENT_API_BASE_URL/v1/campaigns" \
 
 ### 2. Save flow
 
-Use `GET /v1/flow-templates`, copy from **Guides → Campaign quickstart** at `/docs/guides/campaign-quickstart/`, or open **Flow schemas** and the **API Reference** for the full flow JSON schema.
+Use `GET /v1/flow-templates`, copy from **Guides → Campaign setup** at `/docs/guides/campaign-setup/`, or open the **API Reference** schemas (`CampaignFlow`, node data types) for the full flow JSON schema.
 
 Validate without writing:
 

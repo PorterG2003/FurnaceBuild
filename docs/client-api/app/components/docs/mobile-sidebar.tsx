@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useCallback, TouchEvent, useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { siteConfig } from '@/lib/theme-config'
-import { isNavActive, navHref } from '@/lib/docs-section'
+import { isNavActive, linkHref, navHref } from '@/lib/docs-section'
 import type { Root, Node } from 'fumadocs-core/page-tree'
 
 interface MobileSidebarProps {
@@ -112,16 +113,21 @@ export function MobileSidebar({ tree, isOpen, onClose }: MobileSidebarProps) {
         onTouchEnd={handleTouchEnd}
       >
         <div className="flex items-center justify-between h-16 px-4 border-b border-border">
-          <a href={navHref('/docs/')} className="flex items-center gap-2 min-w-0" onClick={onClose}>
+          <Link
+            href={linkHref('/')}
+            className="flex items-center min-w-0"
+            onClick={onClose}
+            aria-label={siteConfig.logo.alt}
+          >
             <Image
               src={siteConfig.logo.markSrc}
               alt=""
               width={siteConfig.logo.markWidth}
               height={siteConfig.logo.markHeight}
+              className="h-11 w-11"
               aria-hidden
             />
-            <span className="font-semibold text-base truncate">{siteConfig.productName} {siteConfig.name}</span>
-          </a>
+          </Link>
           <button
             onClick={onClose}
             className="p-2 -mr-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
@@ -211,18 +217,18 @@ function MobileSidebarNode({ node, pathname, onNavigate }: MobileSidebarNodeProp
 
   return (
     <li className="list-none">
-      <a
-        href={href}
+      <Link
+        href={linkHref(node.url)}
         onClick={onNavigate}
         className={cn(
-          'flex items-center gap-2 py-2 px-2 text-sm transition-colors rounded-md min-h-[44px]',
+          'docs-nav-link flex items-center py-2 px-2 text-sm transition-colors rounded-md min-h-[44px]',
           isActive
             ? 'text-[var(--accent)] font-medium bg-[var(--accent-muted)]'
             : 'text-muted-foreground hover:text-foreground hover:bg-muted'
         )}
       >
-        <span>{node.name}</span>
-      </a>
+        {node.name}
+      </Link>
     </li>
   )
 }

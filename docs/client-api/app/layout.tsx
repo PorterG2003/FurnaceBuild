@@ -17,15 +17,23 @@ const jetbrainsMono = JetBrains_Mono({
   display: 'swap',
 })
 
+// Same icon set as the main app (`public/index.html`). Paths must include /docs —
+// Next does not apply basePath to metadata icon URLs.
 export const metadata: Metadata = {
+  metadataBase: new URL('https://api.getfurnace.io'),
   title: {
-    default: `${siteConfig.productName} ${siteConfig.name}`,
-    template: `%s | ${siteConfig.productName} ${siteConfig.name}`,
+    default: siteConfig.title,
+    template: `%s · ${siteConfig.title}`,
   },
   description: siteConfig.description,
+  applicationName: siteConfig.title,
   icons: {
-    icon: [{ url: docsAssetPath('/favicon.svg'), type: 'image/svg+xml' }],
-    shortcut: docsAssetPath('/favicon.svg'),
+    icon: [
+      { url: docsAssetPath('/favicon-96x96.png'), type: 'image/png', sizes: '96x96' },
+      { url: docsAssetPath('/favicon.svg'), type: 'image/svg+xml' },
+    ],
+    shortcut: docsAssetPath('/favicon.ico'),
+    apple: docsAssetPath('/apple-touch-icon.png'),
   },
 }
 

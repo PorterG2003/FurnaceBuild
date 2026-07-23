@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { View, Text, Platform, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, Platform } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming, useSharedValue, Easing } from 'react-native-reanimated';
 import { useRouter, usePathname } from 'expo-router';
 import { signOut } from '@/lib/supabase/client';
@@ -14,8 +14,13 @@ import {
   UserGroupIcon,
   LifebuoyIcon,
   BuildingLibraryIcon,
+  ChevronDoubleLeftIcon,
+  ChevronDoubleRightIcon,
+  ArrowsRightLeftIcon,
 } from 'react-native-heroicons/outline';
 import { useAccount } from '@/contexts/AccountContext';
+import { useNavCollapseMode } from '@/hooks/useNavCollapseMode';
+import { getCachedNavCollapseMode, type NavCollapseMode } from '@/lib/navigation/navCollapseMode';
 import { useOpenConversationCounts } from '@/contexts/OpenConversationCountsContext';
 import { isInboxPath } from '@/lib/inbox/inboxRoutes';
 import { WorkspaceSwitcherPopover } from '@/components/ui/WorkspaceSwitcherPopover';
@@ -64,86 +69,62 @@ const furnaceLogoIcon = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 </g>
 </svg>`;
 
-// Module-level variable to persist expanded state across route changes and remounts
-let persistedExpandedState = false;
-
-/** Viewport width below which the workspace switcher auto-closes (nav would dominate). */
-const SWITCHER_CLOSE_VIEWPORT_WIDTH = 900;
-/** Minimum usable inline panel height (search + a few workspace rows). */
-const SWITCHER_PANEL_MIN = 240;
-/** Extra vertical space the inline panel adds outside its body (panel + divider margins). */
-const SWITCHER_PANEL_OPEN_MARGINS = 24;
+/** Icon + label shown by the in-nav collapse-mode toggle for each mode. */
+const NAV_MODE_META: Record<
+  NavCollapseMode,
+  { icon: React.ComponentType<{ size?: number; color?: string }>; label: string }
+> = {
+  auto: { icon: ArrowsRightLeftIcon, label: 'Sidebar: Auto' },
+  expanded: { icon: ChevronDoubleLeftIcon, label: 'Sidebar: Pinned open' },
+  collapsed: { icon: ChevronDoubleRightIcon, label: 'Sidebar: Collapsed' },
+};
 
 export function NavBar() {
-  const { width: viewportWidth } = useWindowDimensions();
   const { account, memberships, setCurrentAccountId, user } = useAccount();
   const { currentCount: openConversationCount } = useOpenConversationCounts();
   const platformAdminAccess = usePlatformAdminAccess();
   const handleSignOut = () => signOut();
   const router = useRouter();
   const pathname = usePathname();
-  // Use persisted state, but allow local state to control animations
-  const [isExpanded, setIsExpanded] = useState(persistedExpandedState);
+  // Persisted per-device sidebar behavior: auto (hover), expanded (pinned open),
+  // or collapsed (pinned to the icon rail). `hovered` only matters in auto mode.
+  const { mode: navMode, cycleMode } = useNavCollapseMode();
+  const [hovered, setHovered] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  /**
-   * Free space between top nav and bottom chrome while the switcher is closed.
-   * The inline panel grows into this spacer, so it is the real room available.
-   */
-  const [spacerH, setSpacerH] = useState(0);
   const hasMultipleAccounts = memberships.length > 1;
 
-  const availableInlineHeight = useMemo(
-    () => Math.max(0, spacerH - SWITCHER_PANEL_OPEN_MARGINS),
-    [spacerH],
-  );
+  const navTargets = useNavOnboardingTargets();
+  const onboarding = useOnboardingOptional();
+  const currentOnboardingStep = onboarding?.currentStep;
+  const navSpotlightTargetId =
+    currentOnboardingStep?.kind === 'spotlight' ? currentOnboardingStep.targetId : undefined;
+  const navSpotlightActive =
+    navSpotlightTargetId != null && isNavOnboardingTarget(navSpotlightTargetId);
 
-  const renderAsPopup = useMemo(() => {
-    if (spacerH <= 0) return false;
-    return availableInlineHeight < SWITCHER_PANEL_MIN;
-  }, [spacerH, availableInlineHeight]);
+  // The onboarding spotlight and an open (popup) switcher force the rail open
+  // regardless of the chosen mode. Otherwise: expanded = pinned open,
+  // collapsed = pinned icon rail, auto = follow hover.
+  const forceExpanded = navSpotlightActive || workspaceSwitcherOpen;
+  const isExpanded =
+    forceExpanded || navMode === 'expanded' || (navMode === 'auto' && hovered);
 
-  const handleSpacerLayout = useCallback(
-    (e: LayoutChangeEvent) => {
-      if (workspaceSwitcherOpen) return;
-      setSpacerH(e.nativeEvent.layout.height);
-    },
-    [workspaceSwitcherOpen],
-  );
+  // Animated width values: collapsed = 56px (square buttons), expanded = 224px.
+  // Seed from the cached mode so route-change remounts don't flash or animate.
+  const initialExpanded = getCachedNavCollapseMode() === 'expanded';
+  const width = useSharedValue(initialExpanded ? 224 : 56);
+  const paddingHorizontal = useSharedValue(initialExpanded ? 16 : 8);
 
+  // The first effect run (mount/remount) applies width instantly; later changes animate.
+  const isFirstRunRef = useRef(true);
   useEffect(() => {
-    if (workspaceSwitcherOpen && viewportWidth < SWITCHER_CLOSE_VIEWPORT_WIDTH) {
-      setWorkspaceSwitcherOpen(false);
-    }
-  }, [viewportWidth, workspaceSwitcherOpen]);
+    const targetWidth = isExpanded ? 224 : 56;
+    const targetPadding = isExpanded ? 16 : 8;
 
-  // Animated width values: collapsed = 56px (square buttons), expanded = 224px
-  // Padding values: px-2 = 8px, px-4 = 16px
-  // Initialize to match persisted expanded state
-  const width = useSharedValue(persistedExpandedState ? 224 : 56);
-  const paddingHorizontal = useSharedValue(persistedExpandedState ? 16 : 8);
-
-  // Track if this is a route change (no animation) vs user interaction (with animation)
-  const isRouteChangeRef = useRef(false);
-
-  // Ensure state and animated values stay in sync with persisted value on route changes
-  useEffect(() => {
-    if (isExpanded !== persistedExpandedState) {
-      isRouteChangeRef.current = true;
-      setIsExpanded(persistedExpandedState);
-    }
-  }, [pathname, isExpanded]);
-
-  // Widen to 340px only for the inline switcher panel; popup mode keeps normal nav width.
-  const widenForSwitcher = workspaceSwitcherOpen && !renderAsPopup;
-  useEffect(() => {
-    const targetWidth = widenForSwitcher ? 340 : isExpanded ? 224 : 56;
-    const targetPadding = widenForSwitcher || isExpanded ? 16 : 8;
-
-    if (isRouteChangeRef.current) {
+    if (isFirstRunRef.current) {
       width.value = targetWidth;
       paddingHorizontal.value = targetPadding;
-      isRouteChangeRef.current = false;
+      isFirstRunRef.current = false;
     } else {
       const animationConfig = {
         duration: 300,
@@ -152,7 +133,7 @@ export function NavBar() {
       width.value = withTiming(targetWidth, animationConfig);
       paddingHorizontal.value = withTiming(targetPadding, animationConfig);
     }
-  }, [isExpanded, widenForSwitcher, width, paddingHorizontal]);
+  }, [isExpanded, width, paddingHorizontal]);
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
@@ -197,21 +178,8 @@ export function NavBar() {
   };
 
   const navRef = useRef<View>(null);
-  const switcherContainerRef = useRef<View>(null);
   /** Last pointer position — used to restore expand/collapse after the switcher unlocks. */
   const lastPointerRef = useRef({ x: 0, y: 0 });
-  const navTargets = useNavOnboardingTargets();
-  const onboarding = useOnboardingOptional();
-  const currentOnboardingStep = onboarding?.currentStep;
-  const navSpotlightTargetId =
-    currentOnboardingStep?.kind === 'spotlight' ? currentOnboardingStep.targetId : undefined;
-  const navSpotlightActive = navSpotlightTargetId != null && isNavOnboardingTarget(navSpotlightTargetId);
-
-  useEffect(() => {
-    if (!navSpotlightActive) return;
-    persistedExpandedState = true;
-    setIsExpanded(true);
-  }, [navSpotlightActive, navSpotlightTargetId]);
 
   // Track pointer while switcher is open so we can re-sync expand state on close.
   useEffect(() => {
@@ -230,52 +198,27 @@ export function NavBar() {
   const syncExpandedFromPointer = useCallback(() => {
     if (navSpotlightActive) return;
     if (Platform.OS !== 'web') return;
+    // Hover only drives width in auto mode; pinned modes stay fixed.
+    if (navMode !== 'auto') return;
     const el = navRef.current as unknown as HTMLElement | undefined;
     const rect = el?.getBoundingClientRect?.();
     if (!rect) return;
     const { x, y } = lastPointerRef.current;
     const inside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-    persistedExpandedState = inside;
-    setIsExpanded(inside);
-  }, [navSpotlightActive]);
-
-  // Close workspace switcher when clicking outside (inline mode only).
-  // Popup mode uses PopupPortal's own outside-click (panel lives in a body portal).
-  useEffect(() => {
-    if (!workspaceSwitcherOpen || renderAsPopup || Platform.OS !== 'web' || typeof document === 'undefined') {
-      return;
-    }
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node | null;
-      if (!target) return;
-      const navEl = navRef.current as unknown as Node | null;
-      const switcherEl = switcherContainerRef.current as unknown as Node | null;
-      const contains = (el: Node | null, node: Node) =>
-        el && typeof (el as any).contains === 'function' && (el as any).contains(node);
-      const outsideSwitcher = switcherEl ? !contains(switcherEl, target) : !contains(navEl, target);
-      if (outsideSwitcher) {
-        setWorkspaceSwitcherOpen(false);
-        if (!navSpotlightActive && navEl && !contains(navEl, target)) {
-          persistedExpandedState = false;
-          setIsExpanded(false);
-        } else if (!navSpotlightActive) {
-          syncExpandedFromPointer();
-        }
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [workspaceSwitcherOpen, renderAsPopup, navSpotlightActive, syncExpandedFromPointer]);
+    setHovered(inside);
+  }, [navSpotlightActive, navMode]);
 
   const mouseProps = Platform.OS === 'web' ? {
     onMouseEnter: () => {
+      // Hover only expands in auto mode; pinned modes ignore it.
+      if (navMode !== 'auto') return;
       // Lock expand/collapse while the switcher is open (inline or popup).
       if (workspaceSwitcherOpen) return;
-      persistedExpandedState = true;
-      setIsExpanded(true);
+      setHovered(true);
     },
     onMouseLeave: (e: any) => {
       if (navSpotlightActive) return;
+      if (navMode !== 'auto') return;
       // Lock expand/collapse while the switcher is open (inline or popup).
       if (workspaceSwitcherOpen) return;
       const ne = e?.nativeEvent;
@@ -290,13 +233,11 @@ export function NavBar() {
       const nearRightEdge = rect ? clientX >= rightEdge - 2 : false;
       const leavingToOutside = relatedTarget && el && typeof el.contains === 'function' && !el.contains(relatedTarget);
       if (leavingToOutside) {
-        persistedExpandedState = false;
-        setIsExpanded(false);
+        setHovered(false);
         return;
       }
       if (movedToChild || (inside && !nearRightEdge)) return;
-      persistedExpandedState = false;
-      setIsExpanded(false);
+      setHovered(false);
     },
   } : {};
 
@@ -329,7 +270,7 @@ export function NavBar() {
           </View>
 
           {/* Navigation Links */}
-          <View className="gap-2">
+          <View className="gap-1.5">
             {navItems.map((item) => (
               <NavBarButton
                 key={item.path}
@@ -346,78 +287,80 @@ export function NavBar() {
           </View>
         </View>
 
-        {/* Free space the inline switcher panel would grow into */}
-        <View className="flex-1" onLayout={handleSpacerLayout} />
+        {/* Pushes the bottom chrome to the foot of the rail */}
+        <View className="flex-1" />
 
-        <View className="gap-2">
-        <NavBarButton
-          icon={LifebuoyIcon}
-          label="Need help?"
-          onPress={() => setHelpOpen(true)}
-          isExpanded={isExpanded}
-        />
+        <View className="gap-1.5">
+          <NavBarButton
+            icon={LifebuoyIcon}
+            label="Need help?"
+            onPress={() => setHelpOpen(true)}
+            isExpanded={isExpanded}
+          />
 
-        {/* Account Section */}
-        {user && (
-          <View className="gap-2">
-            <View className="h-px bg-[#2A2A2A]" />
+          {/* Sidebar collapse mode: auto (hover) → pinned open → collapsed */}
+          <NavBarButton
+            icon={NAV_MODE_META[navMode].icon}
+            label={NAV_MODE_META[navMode].label}
+            onPress={cycleMode}
+            isExpanded={isExpanded}
+          />
 
-            {/* Current workspace name + switcher (when multiple accounts) */}
-            {account && (
-              <View className="mb-3">
-                {hasMultipleAccounts ? (
-                  <WorkspaceSwitcherPopover
-                    memberships={memberships}
-                    currentAccountId={account.id}
-                    onChange={setCurrentAccountId}
-                    open={workspaceSwitcherOpen}
-                    containerRef={switcherContainerRef}
-                    renderAsPopup={renderAsPopup}
-                    availableInlineHeight={availableInlineHeight}
-                    onOpenChange={(open) => {
-                      setWorkspaceSwitcherOpen(open);
-                      // Inline panel needs the expanded width; popup locks whatever state it opened in.
-                      if (open && !renderAsPopup && !isExpanded) {
-                        persistedExpandedState = true;
-                        setIsExpanded(true);
-                      } else if (!open) {
-                        // Unlock: restore expand/collapse from where the pointer actually is.
-                        requestAnimationFrame(() => syncExpandedFromPointer());
-                      }
-                    }}
-                    isExpanded={isExpanded}
-                    currentWorkspaceName={account.name}
-                  />
-                ) : (
-                  isExpanded && (
-                    <View className="py-1 px-2">
-                      <Text className="text-gray-400 font-instrument text-xs" numberOfLines={1} ellipsizeMode="tail">
-                        {account.name}
-                      </Text>
-                    </View>
-                  )
-                )}
+          {user ? <View className="h-px bg-[#2A2A2A]" /> : null}
+
+          {/* Current workspace name + switcher (when multiple accounts) */}
+          {user && account ? (
+            hasMultipleAccounts ? (
+              <WorkspaceSwitcherPopover
+                memberships={memberships}
+                currentAccountId={account.id}
+                onChange={setCurrentAccountId}
+                open={workspaceSwitcherOpen}
+                renderAsPopup
+                onOpenChange={(open) => {
+                  setWorkspaceSwitcherOpen(open);
+                  // The switcher floats in a popup; on close, restore hover
+                  // state from where the pointer actually is (auto mode).
+                  if (!open) {
+                    requestAnimationFrame(() => syncExpandedFromPointer());
+                  }
+                }}
+                isExpanded={isExpanded}
+                currentWorkspaceName={account.name}
+              />
+            ) : isExpanded ? (
+              <View className="h-9 justify-center px-2">
+                <Text
+                  className="text-gray-400 font-instrument text-xs"
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {account.name}
+                </Text>
               </View>
-            )}
+            ) : null
+          ) : null}
 
-            <NavBarButton
-              ref={navTargets.settings}
-              icon={Cog6ToothIcon}
-              label="Settings"
-              onPress={() => router.push('/account')}
-              isExpanded={isExpanded}
-              active={pathname === '/account'}
-            />
+          {user ? (
+            <>
+              <NavBarButton
+                ref={navTargets.settings}
+                icon={Cog6ToothIcon}
+                label="Settings"
+                onPress={() => router.push('/account')}
+                isExpanded={isExpanded}
+                active={pathname === '/account'}
+              />
 
-            <NavBarButton
-              icon={ArrowRightOnRectangleIcon}
-              label="Sign Out"
-              onPress={handleSignOut}
-              isExpanded={isExpanded}
-              variant="primary"
-            />
-          </View>
-        )}
+              <NavBarButton
+                icon={ArrowRightOnRectangleIcon}
+                label="Sign Out"
+                onPress={handleSignOut}
+                isExpanded={isExpanded}
+                variant="primary"
+              />
+            </>
+          ) : null}
         </View>
       </View>
 

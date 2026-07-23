@@ -19,7 +19,15 @@ export {
   type CampaignStats,
   type CampaignStatsByDay,
 } from './campaign-stats';
-export { getCampaignsListSummary, type CampaignListSummary } from './campaign-list-summary';
+export {
+  getCampaignsListSummary,
+  buildCampaignsListSummaryRpcArgs,
+  mapCampaignsListSummaryRpcRow,
+  type CampaignListSummary,
+  type GetCampaignsListSummaryOpts,
+  type CampaignsListSummaryCursor,
+  type CampaignsListSummaryRpcArgs,
+} from './campaign-list-summary';
 export {
   getAccountOutreachMetrics,
   type AccountOutreachMetrics,

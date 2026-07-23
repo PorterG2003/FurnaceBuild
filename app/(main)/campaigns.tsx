@@ -1,6 +1,16 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, Platform, useWindowDimensions } from 'react-native';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  Platform,
+  useWindowDimensions,
+  FlatList,
+  ActivityIndicator,
+} from 'react-native';
 import { PageLayout, PageHeader, LAYOUT_BREAKPOINT } from '@/components/ui/layout';
+import { BOTTOM_NAV_SCROLL_PADDING } from '@/components/ui/layout/BottomNavBar';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/button';
 import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
@@ -17,6 +27,7 @@ import {
   deleteCampaign,
   getCampaignsListSummary,
   type CampaignListSummary,
+  type CampaignsListSummaryCursor,
 } from '@/lib/supabase/services/campaigns';
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import { useCampaignTags } from '@/lib/campaigns/useCampaignTags';
@@ -60,16 +71,18 @@ import { TagChipRow } from '@/components/tags';
 import {
   EMPTY_CAMPAIGN_LIST_FILTERS,
   countActiveCampaignListFilters,
-  filterCampaigns,
   type CampaignListFilters,
 } from '@/components/campaigns/CampaignListFilterBar';
 import { CampaignTagsManager } from '@/components/campaigns/CampaignTagsManager';
 import { openAppRoute } from '@/lib/navigation/openAppRoute';
+import { useDebouncedValue } from '@/components/foundry/dedupe/useDebouncedValue';
 
 const STAT_COLUMN_WIDTH = 72;
 const POSITIVE_COLUMN_WIDTH = 88;
 /** Below this width (mobile only), use extra-small stat variant and tighter layout */
 const EXTRA_NARROW_BREAKPOINT = 360;
+const CAMPAIGNS_PAGE_SIZE = 20;
+const CONTENT_PADDING = 16;
 
 interface DuplicateCampaignFormValues {
   name: string;
@@ -801,6 +814,9 @@ export default function CampaignsPage() {
   const { width: screenWidth } = useWindowDimensions();
   const [campaigns, setCampaigns] = useState<CampaignListSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [nextCursor, setNextCursor] = useState<CampaignsListSummaryCursor | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -814,6 +830,8 @@ export default function CampaignsPage() {
   const [managingTagsCampaignId, setManagingTagsCampaignId] = useState<string | null>(null);
   const showSkeleton = useSmoothLoading(isLoading);
   const isMobile = screenWidth < LAYOUT_BREAKPOINT;
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
+  const loadingMoreRef = useRef(false);
 
   const campaignIds = useMemo(() => campaigns.map((c) => c.id), [campaigns]);
   const {
@@ -827,31 +845,121 @@ export default function CampaignsPage() {
   } = useCampaignTags(account?.id ?? null, campaignIds);
 
   const activeFilterCount = countActiveCampaignListFilters(appliedFilters);
+  const hasActiveListQuery =
+    debouncedSearch.trim().length > 0 || countActiveCampaignListFilters(appliedFilters) > 0;
 
-  const filteredCampaigns = useMemo(
-    () => filterCampaigns(campaigns, searchQuery, appliedFilters, campaignTagsMap),
-    [campaigns, searchQuery, appliedFilters, campaignTagsMap],
+  const listQueryOpts = useMemo(
+    () => ({
+      search: debouncedSearch.trim() || null,
+      statuses: appliedFilters.statuses.length > 0 ? appliedFilters.statuses : null,
+      tagIds: appliedFilters.tagIds.length > 0 ? appliedFilters.tagIds : null,
+      limit: CAMPAIGNS_PAGE_SIZE,
+    }),
+    [appliedFilters.statuses, appliedFilters.tagIds, debouncedSearch],
   );
 
-  const loadCampaigns = useCallback(async (silent = false) => {
-    if (!account?.id) return;
+  const loadCampaignsPage = useCallback(
+    async (mode: 'reset' | 'append') => {
+      if (!account?.id) return;
+      if (mode === 'append') {
+        if (!hasMore || loadingMoreRef.current || !nextCursor) return;
+        loadingMoreRef.current = true;
+        setIsLoadingMore(true);
+      } else {
+        setIsLoading(true);
+        setError('');
+      }
 
-    if (!silent) setIsLoading(true);
-    setError('');
-    try {
-      const data = await getCampaignsListSummary(account.id);
-      setCampaigns(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load campaigns');
-      console.error('Error loading campaigns:', err);
-    } finally {
-      if (!silent) setIsLoading(false);
-    }
-  }, [account?.id]);
+      try {
+        const data = await getCampaignsListSummary(account.id, {
+          ...listQueryOpts,
+          cursor: mode === 'append' ? nextCursor : null,
+        });
+
+        setCampaigns((prev) => {
+          if (mode === 'reset') return data;
+          const seen = new Set(prev.map((c) => c.id));
+          const appended = data.filter((c) => !seen.has(c.id));
+          return appended.length > 0 ? [...prev, ...appended] : prev;
+        });
+
+        const last = data[data.length - 1];
+        if (data.length < CAMPAIGNS_PAGE_SIZE || !last) {
+          setHasMore(false);
+          setNextCursor(null);
+        } else {
+          setHasMore(true);
+          setNextCursor({ createdAt: last.createdAt, id: last.id });
+        }
+      } catch (err: any) {
+        if (mode === 'reset') {
+          setError(err.message || 'Failed to load campaigns');
+          setCampaigns([]);
+          setHasMore(false);
+          setNextCursor(null);
+        }
+        console.error('Error loading campaigns:', err);
+      } finally {
+        if (mode === 'append') {
+          loadingMoreRef.current = false;
+          setIsLoadingMore(false);
+        } else {
+          setIsLoading(false);
+        }
+      }
+    },
+    [account?.id, hasMore, listQueryOpts, nextCursor],
+  );
+
+  const reloadCampaigns = useCallback(async () => {
+    setHasMore(true);
+    setNextCursor(null);
+    await loadCampaignsPage('reset');
+  }, [loadCampaignsPage]);
 
   useEffect(() => {
-    loadCampaigns();
-  }, [loadCampaigns]);
+    if (!account?.id) return;
+
+    let cancelled = false;
+    setIsLoading(true);
+    setError('');
+    setCampaigns([]);
+    setHasMore(true);
+    setNextCursor(null);
+    loadingMoreRef.current = false;
+
+    void (async () => {
+      try {
+        const data = await getCampaignsListSummary(account.id, {
+          ...listQueryOpts,
+          cursor: null,
+        });
+        if (cancelled) return;
+        setCampaigns(data);
+        const last = data[data.length - 1];
+        if (data.length < CAMPAIGNS_PAGE_SIZE || !last) {
+          setHasMore(false);
+          setNextCursor(null);
+        } else {
+          setHasMore(true);
+          setNextCursor({ createdAt: last.createdAt, id: last.id });
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        setError(err.message || 'Failed to load campaigns');
+        setCampaigns([]);
+        setHasMore(false);
+        setNextCursor(null);
+        console.error('Error loading campaigns:', err);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [account?.id, listQueryOpts]);
 
   const handleCreateCampaign = async (name: string) => {
     if (!user?.id) {
@@ -870,7 +978,7 @@ export default function CampaignsPage() {
         organization_id: null,
         status: 'draft',
       });
-      await loadCampaigns();
+      await reloadCampaigns();
       router.push({
         pathname: '/campaigns/[id]/mission-control',
         params: { id: newCampaign.id },
@@ -884,7 +992,7 @@ export default function CampaignsPage() {
     setDeletingId(id);
     try {
       await deleteCampaign(id);
-      await loadCampaigns();
+      await reloadCampaigns();
     } catch (err: any) {
       toast.error(err.message || 'Failed to delete campaign');
       console.error('Error deleting campaign:', err);
@@ -913,7 +1021,7 @@ export default function CampaignsPage() {
         copySettings,
         copyLeads,
       });
-      await loadCampaigns();
+      await reloadCampaigns();
       toast.success('Campaign duplicated');
       setDuplicateSourceCampaign(null);
       router.push({
@@ -955,105 +1063,132 @@ export default function CampaignsPage() {
     </View>
   );
 
-  return (
-    <PageLayout>
-      <PageHeader
-        title="Campaigns"
-        subtitle="Manage your marketing campaigns"
-        primaryAction={headerActions}
-      />
-      {/* Error Message */}
-      {error ? (
-        <Alert
-          variant="error"
-          message={error}
-          actionText="Try again"
-          onAction={loadCampaigns}
-          className="mb-4"
+  const searchFiltersBar = (
+    <View className="flex-row items-center mb-4" style={{ minWidth: 0, gap: 10 }}>
+      <View
+        className="flex-1 flex-row items-center rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-3 py-2.5"
+        style={{ borderWidth: 1, minWidth: 0 }}
+      >
+        <MagnifyingGlassIcon size={20} color="#6B7280" style={{ marginRight: 10 }} />
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search by campaign name"
+          placeholderTextColor="#6B7280"
+          className="flex-1 text-white font-instrument text-base py-0"
+          style={{ minHeight: 24 }}
         />
-      ) : null}
-      {/* Loading State */}
-      {(isLoading || showSkeleton) ? (
-        <CampaignListSkeleton />
-      ) : campaigns.length === 0 ? (
-        /* Empty State */
-        <View>
-        <EmptyState
-          title="No campaigns yet"
-          description="Create your first campaign to get started with marketing automation"
-          action={
-            <Pressable
-              onPress={() => setShowCreateModal(true)}
-              className={`rounded-xl px-6 py-3 flex-row items-center justify-center gap-2 bg-[#f85102] ${isMobile ? 'w-full' : ''}`}
-            >
-              <PlusIcon size={20} color="#ffffff" />
-              <Text className="text-white font-instrument-medium text-base">
-                Create Campaign
-              </Text>
-            </Pressable>
-          }
+      </View>
+      <View className="relative" style={{ flexShrink: 0 }}>
+        <IconButton
+          icon={FunnelIcon}
+          variant="secondary"
+          size="sm"
+          matchButtonPadding="sm"
+          className="!h-11 !w-11 !bg-[#1A1A1A] !border-[#2A2A2A]"
+          accessibilityLabel="Campaign filters"
+          onPress={() => setFiltersOpen(true)}
         />
-        </View>
-      ) : (
-        /* Campaigns List */
-        <View>
-          <View className="flex-row items-center mb-4" style={{ minWidth: 0, gap: 10 }}>
-            <View
-              className="flex-1 flex-row items-center rounded-xl bg-[#1A1A1A] border border-[#2A2A2A] px-3 py-2.5"
-              style={{ borderWidth: 1, minWidth: 0 }}
-            >
-              <MagnifyingGlassIcon size={20} color="#6B7280" style={{ marginRight: 10 }} />
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Search by campaign name"
-                placeholderTextColor="#6B7280"
-                className="flex-1 text-white font-instrument text-base py-0"
-                style={{ minHeight: 24 }}
-              />
-            </View>
-            <View className="relative" style={{ flexShrink: 0 }}>
-              <IconButton
-                icon={FunnelIcon}
-                variant="secondary"
-                size="sm"
-                matchButtonPadding="sm"
-                className="!h-11 !w-11 !bg-[#1A1A1A] !border-[#2A2A2A]"
-                accessibilityLabel="Campaign filters"
-                onPress={() => setFiltersOpen(true)}
-              />
-              {activeFilterCount > 0 ? (
-                <View className="absolute -top-1 -right-1 min-w-[18px] min-h-[18px] px-1 items-center justify-center rounded-full bg-brand-orange border border-[#1A1A1A]">
-                  <Text className="text-white font-instrument-semibold text-[10px] leading-none">
-                    {activeFilterCount}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
+        {activeFilterCount > 0 ? (
+          <View className="absolute -top-1 -right-1 min-w-[18px] min-h-[18px] px-1 items-center justify-center rounded-full bg-brand-orange border border-[#1A1A1A]">
+            <Text className="text-white font-instrument-semibold text-[10px] leading-none">
+              {activeFilterCount}
+            </Text>
           </View>
+        ) : null}
+      </View>
+    </View>
+  );
 
-          {filteredCampaigns.length === 0 ? (
-            <EmptyState
-              title="No campaigns match"
-              description="Try adjusting your search or filters."
-            />
-          ) : (
-            filteredCampaigns.map((campaign, index) => (
+  const listFooter = isLoadingMore ? (
+    <View className="py-4 items-center">
+      <ActivityIndicator color="#f85102" />
+    </View>
+  ) : null;
+
+  const listBottomPadding = CONTENT_PADDING + (isMobile ? BOTTOM_NAV_SCROLL_PADDING : 0);
+
+  return (
+    <PageLayout scrollable={false} mobileLayout="fixed" contentPadding={0}>
+      <View className="flex-1" style={{ paddingHorizontal: CONTENT_PADDING, paddingTop: CONTENT_PADDING }}>
+        <PageHeader
+          title="Campaigns"
+          subtitle="Manage your marketing campaigns"
+          primaryAction={headerActions}
+        />
+        {error ? (
+          <Alert
+            variant="error"
+            message={error}
+            actionText="Try again"
+            onAction={() => {
+              void reloadCampaigns();
+            }}
+            className="mb-4"
+          />
+        ) : null}
+        {(isLoading || showSkeleton) ? (
+          <CampaignListSkeleton />
+        ) : (
+          <FlatList
+            className="flex-1"
+            data={campaigns}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item: campaign }) => (
               <CampaignCard
-                key={campaign.id}
                 campaign={campaign}
                 tags={campaignTagsMap[campaign.id] ?? []}
                 onDelete={handleDeleteCampaign}
                 onDuplicate={setDuplicateSourceCampaign}
                 onRename={setRenameCampaign}
                 onManageTags={setManagingTagsCampaignId}
-                onStatusChanged={loadCampaigns}
-                isDeleting={deletingId === campaign.id || (isDuplicating && duplicateSourceCampaign?.id === campaign.id)}
+                onStatusChanged={() => {
+                  void reloadCampaigns();
+                }}
+                isDeleting={
+                  deletingId === campaign.id ||
+                  (isDuplicating && duplicateSourceCampaign?.id === campaign.id)
+                }
               />
-            ))
-          )}
-        </View>
-      )}
+            )}
+            ListHeaderComponent={searchFiltersBar}
+            ListEmptyComponent={
+              hasActiveListQuery ? (
+                <EmptyState
+                  title="No campaigns match"
+                  description="Try adjusting your search or filters."
+                />
+              ) : (
+                <EmptyState
+                  title="No campaigns yet"
+                  description="Create your first campaign to get started with marketing automation"
+                  action={
+                    <Pressable
+                      onPress={() => setShowCreateModal(true)}
+                      className={`rounded-xl px-6 py-3 flex-row items-center justify-center gap-2 bg-[#f85102] ${isMobile ? 'w-full' : ''}`}
+                    >
+                      <PlusIcon size={20} color="#ffffff" />
+                      <Text className="text-white font-instrument-medium text-base">
+                        Create Campaign
+                      </Text>
+                    </Pressable>
+                  }
+                />
+              )
+            }
+            ListFooterComponent={listFooter}
+            onEndReached={() => {
+              void loadCampaignsPage('append');
+            }}
+            onEndReachedThreshold={0.4}
+            contentContainerStyle={{
+              paddingBottom: listBottomPadding,
+              flexGrow: 1,
+            }}
+            showsVerticalScrollIndicator={false}
+          />
+        )}
+      </View>
 
       {account?.id && managingTagsCampaignId ? (
         <CampaignTagsManager
@@ -1079,7 +1214,6 @@ export default function CampaignsPage() {
         onClose={() => setFiltersOpen(false)}
       />
 
-      {/* Create Campaign Modal */}
       <CreateCampaignModal
         visible={showCreateModal}
         onClose={() => setShowCreateModal(false)}

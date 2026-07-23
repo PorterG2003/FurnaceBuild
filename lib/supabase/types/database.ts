@@ -771,6 +771,7 @@ export interface Database {
           stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
           stopped_at: string | null;
           stopped_error_message: string | null;
+          has_been_contacted: boolean;
         };
         Insert: {
           id?: string;
@@ -788,6 +789,7 @@ export interface Database {
           stopped_reason?: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
           stopped_at?: string | null;
           stopped_error_message?: string | null;
+          has_been_contacted?: boolean;
         };
         Update: {
           id?: string;
@@ -804,6 +806,7 @@ export interface Database {
           stopped_reason?: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
           stopped_at?: string | null;
           stopped_error_message?: string | null;
+          has_been_contacted?: boolean;
         };
       };
       users: {
@@ -3063,7 +3066,15 @@ export interface Database {
         }[];
       };
       campaigns_list_summary: {
-        Args: { p_account_id: string };
+        Args: {
+          p_account_id: string;
+          p_search?: string | null;
+          p_statuses?: string[] | null;
+          p_tag_ids?: string[] | null;
+          p_limit?: number | null;
+          p_cursor_created_at?: string | null;
+          p_cursor_id?: string | null;
+        };
         Returns: {
           id: string;
           name: string;
@@ -3079,6 +3090,13 @@ export interface Database {
           terminal_enrollment_count: number;
           contacted_enrollment_count: number;
         }[];
+      };
+      backfill_enrollment_has_been_contacted_batch: {
+        Args: {
+          p_limit?: number;
+          p_campaign_id?: string | null;
+        };
+        Returns: number;
       };
     };
     Enums: {

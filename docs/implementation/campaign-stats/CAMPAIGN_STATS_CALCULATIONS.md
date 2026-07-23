@@ -60,15 +60,15 @@ Campaigns with `source = 'smartlead'` get totals from the Smartlead migration wo
 
 ### Enrollment count
 
-Total **enrollments** for the campaign. Not stored in `campaign_stats`; computed in the app from the `enrollments` table.
+Total **enrollments** for the campaign. Not stored in `campaign_stats`; computed live from non-deleted `enrollments` rows.
 
-- **Code:** For the **campaigns list**, [lib/supabase/services/campaigns/campaign-list-summary.ts](../../../lib/supabase/services/campaigns/campaign-list-summary.ts) — `getCampaignsListSummary` calls the `campaigns_list_summary` RPC (server-side aggregates; avoids PostgREST row caps on raw enrollment lists). For **campaign detail** and other callers, [lib/supabase/services/campaigns/campaign-stats.ts](../../../lib/supabase/services/campaigns/campaign-stats.ts) — `getCampaignStatsForCampaigns` queries `enrollments` and merges with `campaign_stats`.
+- **Code:** For the **campaigns list**, [lib/supabase/services/campaigns/campaign-list-summary.ts](../../../lib/supabase/services/campaigns/campaign-list-summary.ts) — `getCampaignsListSummary` calls the `campaigns_list_summary` RPC (server-side aggregates; supports search/status/tag filters and keyset pagination). For **campaign detail** and other callers, [lib/supabase/services/campaigns/campaign-stats.ts](../../../lib/supabase/services/campaigns/campaign-stats.ts) — `getCampaignStatsForCampaigns` queries `enrollments` and merges with `campaign_stats`.
 
 ### Campaign list completion percentage
 
 The completion dial on the campaign list uses a **blended formula** combining two independent signals:
 
-- **Contacted count** — distinct enrollments that have at least one sent campaign email (`message_jobs` with `status = 'sent'` and campaign type). Computed efficiently via the `get_campaign_contacted_counts` RPC (DB-side `COUNT(DISTINCT enrollment_id) … GROUP BY campaign_id`).
+- **Contacted count** — enrollments with `has_been_contacted = true`. That flag is set once on the first campaign send via `record_sent_event_and_increment`, and can be reconciled from sent campaign `message_jobs` with `backfill_enrollment_has_been_contacted_batch` / [scripts/backfill-enrollment-has-been-contacted.ts](../../../scripts/backfill-enrollment-has-been-contacted.ts). The legacy `get_campaign_contacted_counts` RPC (distinct sent jobs) remains the backfill source of truth and is still used by some non-list paths.
 - **Terminal count** — enrollments with `state` in (`stopped`, `completed`).
 
 **Formula:** `(reachedCount + terminalCount) / (enrollmentCount × 2)`, capped at 100%, where **reachedCount = max(contactedCount, terminalCount)**. So enrollments that are terminal but have no sent campaign email (e.g. stopped before first send) still count as "reached" for the first half, and "all terminal" always shows 100%.

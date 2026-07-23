@@ -40,3 +40,5 @@ export function FlowStructureLockedBadge({ status }: FlowStructureLockedBadgePro
     </Tooltip>
   );
 }
+
+export default FlowStructureLockedBadge;

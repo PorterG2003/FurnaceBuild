@@ -5,6 +5,7 @@ import {
   TextInput,
   Pressable,
   ScrollView,
+  Platform,
   useWindowDimensions,
 } from 'react-native';
 import { ChevronDownIcon, MagnifyingGlassIcon } from 'react-native-heroicons/outline';
@@ -266,6 +267,8 @@ export function WorkspaceSwitcherPopover({
   );
   const searchInputRef = useRef<TextInput>(null);
   const triggerRef = useRef<View>(null);
+  const isWeb = Platform.OS === 'web';
+  const [triggerHovered, setTriggerHovered] = useState(false);
 
   const handleClose = useCallback(() => {
     setOpen(false);
@@ -338,11 +341,17 @@ export function WorkspaceSwitcherPopover({
   );
 
   return (
-    <View ref={containerRef} style={{ width: '100%' }} collapsable={false}>
+    <View ref={containerRef} style={{ width: '100%' }} collapsable={isWeb ? undefined : false}>
       <Pressable
         ref={triggerRef}
         onPress={handleToggle}
-        className={`flex-row items-center rounded-lg border border-[#3A3A3A] py-2 ${isExpanded ? 'px-2' : 'px-0 justify-center'}`}
+        onHoverIn={isWeb ? () => setTriggerHovered(true) : undefined}
+        onHoverOut={isWeb ? () => setTriggerHovered(false) : undefined}
+        className={`flex-row items-center rounded-lg h-9 ${isExpanded ? 'px-2' : 'px-0 justify-center'}`}
+        style={{
+          backgroundColor:
+            isWeb && triggerHovered ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.04)',
+        }}
       >
         {isExpanded ? (
           <>
@@ -382,12 +391,15 @@ export function WorkspaceSwitcherPopover({
               borderColor: '#2A2A2A',
               borderRadius: 12,
               overflow: 'hidden',
-              // Web-friendly shadow; harmless on native View
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.35,
-              shadowRadius: 16,
-              elevation: 12,
+              ...(Platform.OS === 'web'
+                ? { boxShadow: '0px 8px 16px rgba(0,0,0,0.35)' }
+                : {
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 8 },
+                    shadowOpacity: 0.35,
+                    shadowRadius: 16,
+                    elevation: 12,
+                  }),
             }}
           >
             {switcherContent}

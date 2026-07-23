@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { ApolloError, enrichPerson } from '../../../lib/apollo/apolloClient';
-import { mapApolloToProfile, type ApolloProfileSuggestion } from '../../../lib/apollo/mapApolloToProfile';
+import { enrichPerson as enrichApolloPerson } from '../../../lib/apollo/apolloClient';
+import type { ApolloProfileSuggestion } from '../../../lib/apollo/mapApolloToProfile';
 import {
   APOLLO_ENRICHMENT_SESSION_EXPIRY_MINUTES,
   type ApolloEnrichmentSessionStatus,
@@ -14,6 +14,12 @@ import {
   resolveFunctionUrlBase,
   verifyApolloWebhookSignature,
 } from '../../../lib/apollo/apolloEnrichRoutes';
+import {
+  createDefaultProspeoEnricher,
+  runEnrichmentWaterfallSync,
+  runEnrichmentWaterfallWebhook,
+  type LeadContactKeys,
+} from '../../../lib/apollo/enrichmentWaterfall';
 
 const APOLLO_METER = 'apollo_enrichment';
 
@@ -47,6 +53,17 @@ interface BalanceRow {
   credit_limit: number;
 }
 
+interface LeadContactRow {
+  email: string | null;
+  linkedin_url: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  name: string | null;
+  company_name: string | null;
+  website: string | null;
+  company_linkedin_url: string | null;
+}
+
 async function assertAccountMember(
   supabase: SupabaseClient,
   accountId: string,
@@ -65,14 +82,39 @@ async function assertAccountMember(
   return Array.isArray(data) && data.length > 0;
 }
 
+function pickFirstNonEmpty(
+  rows: LeadContactRow[],
+  key: keyof LeadContactRow,
+): string | null {
+  for (const row of rows) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim() !== '') return value;
+  }
+  return null;
+}
+
 async function loadLeadContact(
   supabase: SupabaseClient,
   accountId: string,
   globalLeadId: string,
-): Promise<{ found: boolean; email: string | null; linkedinUrl: string | null }> {
+): Promise<{ found: boolean } & LeadContactKeys> {
+  const empty: { found: boolean } & LeadContactKeys = {
+    found: false,
+    email: null,
+    linkedinUrl: null,
+    firstName: null,
+    lastName: null,
+    fullName: null,
+    companyName: null,
+    companyWebsite: null,
+    companyLinkedinUrl: null,
+  };
+
   const { data, error } = await supabase
     .from('leads')
-    .select('email, linkedin_url, created_at')
+    .select(
+      'email, linkedin_url, first_name, last_name, name, company_name, website, company_linkedin_url, created_at',
+    )
     .eq('account_id', accountId)
     .eq('global_lead_id', globalLeadId)
     .is('deleted_at', null)
@@ -82,14 +124,22 @@ async function loadLeadContact(
   if (error) {
     throw new Error(`Failed to load lead: ${error.message}`);
   }
-  const rows = (data ?? []) as Array<{ email: string | null; linkedin_url: string | null }>;
+  const rows = (data ?? []) as LeadContactRow[];
   if (rows.length === 0) {
-    return { found: false, email: null, linkedinUrl: null };
+    return empty;
   }
-  const email = rows.find((r) => r.email && r.email.trim() !== '')?.email ?? null;
-  const linkedinUrl =
-    rows.find((r) => r.linkedin_url && r.linkedin_url.trim() !== '')?.linkedin_url ?? null;
-  return { found: true, email, linkedinUrl };
+
+  return {
+    found: true,
+    email: pickFirstNonEmpty(rows, 'email'),
+    linkedinUrl: pickFirstNonEmpty(rows, 'linkedin_url'),
+    firstName: pickFirstNonEmpty(rows, 'first_name'),
+    lastName: pickFirstNonEmpty(rows, 'last_name'),
+    fullName: pickFirstNonEmpty(rows, 'name'),
+    companyName: pickFirstNonEmpty(rows, 'company_name'),
+    companyWebsite: pickFirstNonEmpty(rows, 'website'),
+    companyLinkedinUrl: pickFirstNonEmpty(rows, 'company_linkedin_url'),
+  };
 }
 
 async function readBalance(
@@ -167,6 +217,37 @@ function sessionExpiresAt(): string {
   return new Date(Date.now() + APOLLO_ENRICHMENT_SESSION_EXPIRY_MINUTES * 60_000).toISOString();
 }
 
+async function consumeCredit(options: {
+  supabase: SupabaseClient;
+  accountId: string;
+  globalLeadId: string;
+  userId: string | null;
+  sessionId: string;
+  amount: 0 | 1;
+  reason: string;
+  metadata?: Record<string, unknown>;
+}): Promise<{ ok: true; balance: BalanceRow | null } | { ok: false; insufficient: boolean; message: string }> {
+  const { data, error } = await options.supabase.rpc('consume_credit', {
+    p_account_id: options.accountId,
+    p_meter: APOLLO_METER,
+    p_amount: options.amount,
+    p_reason: options.reason,
+    p_ref_type: 'global_lead',
+    p_ref_id: options.globalLeadId,
+    p_created_by: options.userId,
+    p_metadata: { session_id: options.sessionId, ...options.metadata },
+  });
+  if (error) {
+    return {
+      ok: false,
+      insufficient: Boolean(error.message?.includes('INSUFFICIENT_CREDITS')),
+      message: error.message,
+    };
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as BalanceRow | undefined;
+  return { ok: true, balance: row ?? null };
+}
+
 async function handleWebhook(
   event: {
     headers: Record<string, string | undefined>;
@@ -176,6 +257,7 @@ async function handleWebhook(
     requestContext?: { http?: { path?: string } };
   },
   supabase: SupabaseClient,
+  prospeoApiKey: string,
 ): Promise<{ statusCode: number; body: unknown }> {
   const rawPath = event.rawPath ?? event.requestContext?.http?.path ?? '';
   const sessionId = parseApolloWebhookSessionPath(rawPath);
@@ -212,7 +294,7 @@ async function handleWebhook(
 
   const { data: session, error: loadError } = await supabase
     .from('apollo_enrichment_sessions')
-    .select('id, status')
+    .select('id, status, account_id, global_lead_id, created_by, sync_suggestion')
     .eq('id', sessionId)
     .limit(1)
     .maybeSingle();
@@ -221,17 +303,43 @@ async function handleWebhook(
     return response(404, { ok: false, error: 'Session not found' });
   }
 
-  const phones = extractApolloWebhookPhones(payload);
-  const hasPhone = phones.some(
-    (p) => (p.sanitized_number && p.sanitized_number.trim() !== '') || (p.raw_number && p.raw_number.trim() !== ''),
+  const sessionRow = session as {
+    id: string;
+    status: string;
+    account_id: string;
+    global_lead_id: string;
+    created_by: string | null;
+    sync_suggestion: ApolloProfileSuggestion | null;
+  };
+
+  const apolloPhones = extractApolloWebhookPhones(payload);
+  const contact = await loadLeadContact(
+    supabase,
+    sessionRow.account_id,
+    sessionRow.global_lead_id,
   );
-  const nextStatus: ApolloEnrichmentSessionStatus = hasPhone ? 'complete' : 'no_phone';
+
+  const waterfall = await runEnrichmentWaterfallWebhook({
+    apolloPhones,
+    contact,
+    enrichProspeo: createDefaultProspeoEnricher(prospeoApiKey),
+  });
+
+  const nextSuggestion =
+    waterfall.mobilePhoneNumber && sessionRow.sync_suggestion
+      ? {
+          ...sessionRow.sync_suggestion,
+          mobile_phone_number: waterfall.mobilePhoneNumber,
+        }
+      : sessionRow.sync_suggestion;
 
   const { error: updateError } = await supabase
     .from('apollo_enrichment_sessions')
     .update({
-      status: nextStatus,
-      phone_numbers: phones,
+      status: waterfall.sessionStatus,
+      phone_numbers: waterfall.phoneNumbers,
+      phone_source: waterfall.phoneSource,
+      ...(nextSuggestion ? { sync_suggestion: nextSuggestion } : {}),
     })
     .eq('id', sessionId);
 
@@ -240,7 +348,29 @@ async function handleWebhook(
     return response(500, { ok: false, error: 'Failed to update session' });
   }
 
-  return response(200, { ok: true, sessionId, status: nextStatus });
+  // Phone-only Prospeo fallback is audit-only (Apollo already charged on match).
+  if (waterfall.prospeoCalled) {
+    await consumeCredit({
+      supabase,
+      accountId: sessionRow.account_id,
+      globalLeadId: sessionRow.global_lead_id,
+      userId: sessionRow.created_by,
+      sessionId,
+      amount: waterfall.credit.amount,
+      reason: waterfall.credit.reason,
+      metadata: {
+        phone_source: waterfall.phoneSource,
+        prospeo_called: true,
+      },
+    });
+  }
+
+  return response(200, {
+    ok: true,
+    sessionId,
+    status: waterfall.sessionStatus,
+    phoneSource: waterfall.phoneSource,
+  });
 }
 
 async function handleEnrich(
@@ -252,6 +382,7 @@ async function handleEnrich(
   },
   supabase: SupabaseClient,
   apolloApiKey: string,
+  prospeoApiKey: string,
   functionBaseUrl: string,
 ): Promise<{ statusCode: number; body: unknown }> {
   const authHeader = event.headers?.authorization || event.headers?.Authorization || '';
@@ -353,55 +484,44 @@ async function handleEnrich(
   const sessionId = (inserted as { id: string }).id;
   const webhookUrl = buildApolloWebhookUrl(functionBaseUrl, sessionId);
 
-  let person;
-  try {
-    person = await enrichPerson(
-      {
-        email: contact.email,
-        linkedinUrl: contact.linkedinUrl,
-        revealPhoneNumber: true,
-        webhookUrl,
-      },
-      { apiKey: apolloApiKey },
-    );
-  } catch (err) {
-    console.error('[apolloEnrich] Apollo call failed', err);
-    await updateSessionStatus(supabase, sessionId, 'failed');
-    await supabase.rpc('consume_credit', {
-      p_account_id: accountId,
-      p_meter: APOLLO_METER,
-      p_amount: 0,
-      p_reason: 'apollo_error',
-      p_ref_type: 'global_lead',
-      p_ref_id: globalLeadId,
-      p_created_by: user.id,
-      p_metadata: { session_id: sessionId },
+  const waterfall = await runEnrichmentWaterfallSync({
+    contact,
+    webhookUrl,
+    enrichApollo: (input) => enrichApolloPerson(input, { apiKey: apolloApiKey }),
+    enrichProspeo: createDefaultProspeoEnricher(prospeoApiKey),
+  });
+
+  if (waterfall.kind === 'failed') {
+    await updateSessionStatus(supabase, sessionId, waterfall.sessionStatus);
+    await consumeCredit({
+      supabase,
+      accountId,
+      globalLeadId,
+      userId: user.id,
+      sessionId,
+      amount: waterfall.credit.amount,
+      reason: waterfall.credit.reason,
     });
-    const apolloStatus = err instanceof ApolloError ? err.status : undefined;
-    const errorMessage =
-      apolloStatus === 401
-        ? 'Enrichment service authentication failed. Contact support.'
-        : 'Contact lookup failed';
     return response(502, {
       ok: false,
-      error: errorMessage,
-      code: 'APOLLO_UPSTREAM',
+      error: waterfall.errorMessage ?? 'Contact lookup failed',
+      code: waterfall.errorCode ?? 'ENRICH_UPSTREAM',
+      sessionId,
       creditsRemaining: balanceBefore.remaining,
       creditLimit: balanceBefore.credit_limit,
     });
   }
 
-  if (!person) {
+  if (waterfall.kind === 'no_match') {
     await updateSessionStatus(supabase, sessionId, 'no_match');
-    await supabase.rpc('consume_credit', {
-      p_account_id: accountId,
-      p_meter: APOLLO_METER,
-      p_amount: 0,
-      p_reason: 'apollo_no_match',
-      p_ref_type: 'global_lead',
-      p_ref_id: globalLeadId,
-      p_created_by: user.id,
-      p_metadata: { session_id: sessionId },
+    await consumeCredit({
+      supabase,
+      accountId,
+      globalLeadId,
+      userId: user.id,
+      sessionId,
+      amount: waterfall.credit.amount,
+      reason: waterfall.credit.reason,
     });
     return response(200, {
       ok: true,
@@ -412,22 +532,24 @@ async function handleEnrich(
     });
   }
 
-  const suggestion = mapApolloToProfile(person);
-
-  const { data: consumeData, error: consumeError } = await supabase.rpc('consume_credit', {
-    p_account_id: accountId,
-    p_meter: APOLLO_METER,
-    p_amount: 1,
-    p_reason: 'apollo_person_match',
-    p_ref_type: 'global_lead',
-    p_ref_id: globalLeadId,
-    p_created_by: user.id,
-    p_metadata: { matched: true, session_id: sessionId },
+  const consume = await consumeCredit({
+    supabase,
+    accountId,
+    globalLeadId,
+    userId: user.id,
+    sessionId,
+    amount: waterfall.credit.amount,
+    reason: waterfall.credit.reason,
+    metadata: {
+      matched: true,
+      profile_source: waterfall.profileSource,
+      phone_source: waterfall.phoneSource,
+    },
   });
 
-  if (consumeError) {
+  if (!consume.ok) {
     await updateSessionStatus(supabase, sessionId, 'failed');
-    if (consumeError.message?.includes('INSUFFICIENT_CREDITS')) {
+    if (consume.insufficient) {
       return response(402, {
         ok: false,
         error: 'No enrichment credits remaining this month.',
@@ -436,27 +558,29 @@ async function handleEnrich(
         creditLimit: balanceBefore.credit_limit,
       });
     }
-    console.error('[apolloEnrich] consume_credit failed', consumeError.message);
+    console.error('[apolloEnrich] consume_credit failed', consume.message);
     return response(500, { ok: false, error: 'Failed to record credit usage' });
   }
 
   await supabase
     .from('apollo_enrichment_sessions')
-    .update({ sync_suggestion: suggestion satisfies ApolloProfileSuggestion })
+    .update({
+      status: waterfall.sessionStatus,
+      sync_suggestion: waterfall.suggestion satisfies ApolloProfileSuggestion | null,
+      phone_numbers: waterfall.phoneNumbers,
+      profile_source: waterfall.profileSource,
+      phone_source: waterfall.phoneSource,
+    })
     .eq('id', sessionId);
-
-  const consumeRow = (Array.isArray(consumeData) ? consumeData[0] : consumeData) as
-    | BalanceRow
-    | undefined;
 
   return response(200, {
     ok: true,
     match: true,
     sessionId,
-    phonePending: true,
-    suggestion,
-    creditsRemaining: consumeRow?.remaining ?? balanceBefore.remaining - 1,
-    creditLimit: consumeRow?.credit_limit ?? balanceBefore.credit_limit,
+    phonePending: waterfall.phonePending,
+    suggestion: waterfall.suggestion,
+    creditsRemaining: consume.balance?.remaining ?? balanceBefore.remaining - waterfall.credit.amount,
+    creditLimit: consume.balance?.credit_limit ?? balanceBefore.credit_limit,
   });
 }
 
@@ -469,8 +593,9 @@ export const handler = async (event: unknown) => {
     const supabaseUrl = process.env.SUPABASE_URL ?? '';
     const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY ?? '';
     const apolloApiKey = process.env.APOLLO_API_KEY ?? '';
+    const prospeoApiKey = process.env.PROSPEO_API_KEY ?? '';
 
-    if (!supabaseUrl || !supabaseSecretKey || !apolloApiKey) {
+    if (!supabaseUrl || !supabaseSecretKey || !apolloApiKey || !prospeoApiKey) {
       return response(500, { ok: false, error: 'Missing server configuration' });
     }
 
@@ -484,7 +609,7 @@ export const handler = async (event: unknown) => {
     const webhookSessionId = parseApolloWebhookSessionPath(rawPath);
 
     if (webhookSessionId) {
-      return handleWebhook(event, supabase);
+      return handleWebhook(event, supabase, prospeoApiKey);
     }
 
     const functionBaseUrl = resolveFunctionUrlBase(event);
@@ -492,7 +617,7 @@ export const handler = async (event: unknown) => {
       return response(500, { ok: false, error: 'Could not resolve Function URL base' });
     }
 
-    return handleEnrich(event, supabase, apolloApiKey, functionBaseUrl);
+    return handleEnrich(event, supabase, apolloApiKey, prospeoApiKey, functionBaseUrl);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[apolloEnrich] unhandled', err);

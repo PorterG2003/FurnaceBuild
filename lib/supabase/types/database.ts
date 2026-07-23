@@ -2297,6 +2297,8 @@ export interface Database {
           status: string;
           sync_suggestion: Json | null;
           phone_numbers: Json | null;
+          profile_source: string | null;
+          phone_source: string | null;
           expires_at: string;
           created_at: string;
           updated_at: string;
@@ -2309,6 +2311,8 @@ export interface Database {
           status: string;
           sync_suggestion?: Json | null;
           phone_numbers?: Json | null;
+          profile_source?: string | null;
+          phone_source?: string | null;
           expires_at: string;
           created_at?: string;
           updated_at?: string;
@@ -2321,6 +2325,8 @@ export interface Database {
           status?: string;
           sync_suggestion?: Json | null;
           phone_numbers?: Json | null;
+          profile_source?: string | null;
+          phone_source?: string | null;
           expires_at?: string;
           created_at?: string;
           updated_at?: string;

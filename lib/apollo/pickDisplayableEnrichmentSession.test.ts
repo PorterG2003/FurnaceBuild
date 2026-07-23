@@ -18,6 +18,8 @@ function session(
     created_by: null,
     sync_suggestion: null,
     phone_numbers: null,
+    profile_source: null,
+    phone_source: null,
     expires_at: futureExpiry,
     created_at: '2026-06-01T12:00:00.000Z',
     updated_at: '2026-06-01T12:00:00.000Z',

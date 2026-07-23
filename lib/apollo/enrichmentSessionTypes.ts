@@ -13,6 +13,8 @@ export type ApolloEnrichmentSessionStatus =
 /** How long a pending_phone session blocks re-enrich (minutes). */
 export const APOLLO_ENRICHMENT_SESSION_EXPIRY_MINUTES = 15;
 
+export type EnrichmentProviderSource = 'apollo' | 'prospeo';
+
 export interface ApolloEnrichmentSessionRow {
   id: string;
   account_id: string;
@@ -21,6 +23,8 @@ export interface ApolloEnrichmentSessionRow {
   status: ApolloEnrichmentSessionStatus;
   sync_suggestion: ApolloProfileSuggestion | null;
   phone_numbers: ApolloPhoneNumber[] | null;
+  profile_source: EnrichmentProviderSource | null;
+  phone_source: EnrichmentProviderSource | null;
   expires_at: string;
   created_at: string;
   updated_at: string;

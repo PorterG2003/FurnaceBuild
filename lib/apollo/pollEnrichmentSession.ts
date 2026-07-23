@@ -16,6 +16,12 @@ function mapSessionRow(row: Record<string, unknown>): ApolloEnrichmentSessionRow
     status: row.status as ApolloEnrichmentSessionRow['status'],
     sync_suggestion: (row.sync_suggestion as ApolloProfileSuggestion | null) ?? null,
     phone_numbers: (row.phone_numbers as ApolloPhoneNumber[] | null) ?? null,
+    profile_source:
+      row.profile_source === 'apollo' || row.profile_source === 'prospeo'
+        ? row.profile_source
+        : null,
+    phone_source:
+      row.phone_source === 'apollo' || row.phone_source === 'prospeo' ? row.phone_source : null,
     expires_at: String(row.expires_at),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),

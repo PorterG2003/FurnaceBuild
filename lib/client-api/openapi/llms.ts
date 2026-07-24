@@ -72,6 +72,11 @@ export function buildLlmsGuideEntries(): LlmsGuideEntry[] {
       path: docsPath('/guides/webhook-integration/'),
       description: 'Set up a webhook URL, verify messages, and see example payloads.',
     },
+    {
+      title: 'MCP',
+      path: docsPath('/guides/mcp/'),
+      description: 'Connect Cursor, Claude, ChatGPT, and other MCP clients to Furnace.',
+    },
   ];
 
   for (const group of WEBHOOK_EVENT_GROUPS) {

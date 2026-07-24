@@ -30,7 +30,7 @@ export type CreateJobBody = {
 export async function startApiImportJob(
   supabase: Supabase,
   accountId: string,
-  apiKeyId: string,
+  apiKeyId: string | null,
   body: CreateJobBody,
 ): Promise<Database['public']['Tables']['api_import_jobs']['Row']> {
   const operation = body.operation?.trim();

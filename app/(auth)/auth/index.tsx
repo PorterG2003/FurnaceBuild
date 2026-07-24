@@ -20,6 +20,7 @@ import { Logo } from '@/components/ui/branding';
 import { HELP_SCHEDULE_URL } from '@/components/ui/help/HelpModal';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
 import { usePublicAccessDialog } from '@/hooks/usePublicAccessDialog';
+import { parseMcpConsentReturnTo } from '@/lib/mcp/consentReturn';
 
 type AuthState = 'signIn' | 'signUp' | 'confirmSignUp' | 'forgotPassword' | 'confirmResetPassword';
 
@@ -32,13 +33,21 @@ export default function AuthIndex() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const showBrandPanel = width >= LAYOUT_BREAKPOINT;
-  const { invitation_id, amendment_id, email: inviteEmail, mode } = useLocalSearchParams<{
+  const {
+    invitation_id,
+    amendment_id,
+    email: inviteEmail,
+    mode,
+    return_to,
+  } = useLocalSearchParams<{
     invitation_id?: string;
     amendment_id?: string;
     email?: string;
     mode?: string;
+    return_to?: string;
   }>();
   const allowInvitationSignUp = Boolean(invitation_id);
+  const mcpConsentReturn = parseMcpConsentReturnTo(return_to);
   const { user, isRecoverySession, clearRecoverySession } = useAuth();
   const [authState, setAuthState] = useState<AuthState>(
     isRecoverySession ? 'confirmResetPassword' : (allowInvitationSignUp && mode === 'signUp' ? 'signUp' : 'signIn'),
@@ -62,7 +71,9 @@ export default function AuthIndex() {
   };
 
   const handleVerificationSuccess = () => {
-    if (invitation_id) {
+    if (mcpConsentReturn) {
+      router.replace(mcpConsentReturn as never);
+    } else if (invitation_id) {
       router.replace(`/accept-invitation/${invitation_id}`);
     } else if (amendment_id) {
       router.replace(`/accept-account-amendment/${amendment_id}`);

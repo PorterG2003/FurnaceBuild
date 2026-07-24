@@ -18,12 +18,25 @@ describe('isInstallGateExemptRoute', () => {
     assert.strictEqual(isInstallGateExemptRoute('/accept-platform-invite/abc'), true);
     assert.strictEqual(isInstallGateExemptRoute('/accept-invitation/abc'), true);
     assert.strictEqual(isInstallGateExemptRoute('/accept-account-amendment/abc'), true);
+    assert.strictEqual(isInstallGateExemptRoute('/mcp/oauth/consent'), true);
+    assert.strictEqual(isInstallGateExemptRoute('/mcp/oauth/consent/'), true);
   });
 
   it('exempts invite-scoped auth routes', () => {
     assert.strictEqual(isInstallGateExemptRoute('/auth', '?invitation_id=abc'), true);
     assert.strictEqual(isInstallGateExemptRoute('/auth', 'invitation_id=abc'), true);
     assert.strictEqual(isInstallGateExemptRoute('/auth', '?amendment_id=abc'), true);
+    assert.strictEqual(
+      isInstallGateExemptRoute(
+        '/auth',
+        `?return_to=${encodeURIComponent('/mcp/oauth/consent?client_id=x')}`,
+      ),
+      true,
+    );
+    assert.strictEqual(
+      isInstallGateExemptRoute('/auth', `?return_to=${encodeURIComponent('/account')}`),
+      false,
+    );
   });
 
   it('exempts routes carrying valid public access dialog params', () => {

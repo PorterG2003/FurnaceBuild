@@ -48,6 +48,27 @@ export function invalidRequest(code: string, message: string, param?: string): n
   throw new ClientApiError(400, code, message, 'invalid_request_error', param);
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
+/** Throws invalid_request_error / invalid_id when value is not a UUID. */
+export function assertUuid(value: string, paramName = 'id'): asserts value is string {
+  if (!isUuid(value)) {
+    invalidRequest('invalid_id', `${paramName} must be a UUID`, paramName);
+  }
+}
+
+/** Reject strings that contain NUL (Postgres rejects these as unicode escapes). */
+export function assertNoNul(value: string, paramName: string): void {
+  if (value.includes('\0')) {
+    invalidRequest('invalid_string', `${paramName} contains invalid characters`, paramName);
+  }
+}
+
 export function invalidRequestWithDetails(
   code: string,
   message: string,

@@ -105,6 +105,20 @@ export function buildClientApiComponents() {
         description: 'Mailbox id.',
         schema: { type: 'string', format: 'uuid' },
       },
+      ApiKeyId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'API key id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
+      MailboxConnectSessionId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        description: 'Mailbox connect session id.',
+        schema: { type: 'string', format: 'uuid' },
+      },
       ThreadId: {
         name: 'id',
         in: 'path',
@@ -311,7 +325,8 @@ export function buildClientApiComponents() {
       IdempotencyKey: {
         name: 'Idempotency-Key',
         in: 'header',
-        description: 'Optional idempotency key for create and bulk lead imports.',
+        description:
+          'Optional idempotency key for campaign create, lead create, and bulk lead imports. Retries with the same key and body return the cached response.',
         schema: { type: 'string' },
       },
     },
@@ -2204,6 +2219,120 @@ export function buildClientApiComponents() {
         type: 'object',
         properties: {
           data: schemaRef('CampaignStats'),
+        },
+        required: ['data'],
+      },
+      WebhookSettings: {
+        type: 'object',
+        properties: {
+          webhook_url: { type: 'string', nullable: true },
+          webhook_signing_secret: { type: 'string', nullable: true },
+          webhook_enabled_events: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+        additionalProperties: false,
+      },
+      WebhookSettingsUpdate: {
+        type: 'object',
+        properties: {
+          webhook_url: { type: 'string', nullable: true },
+          webhook_signing_secret: { type: 'string', nullable: true },
+          webhook_enabled_events: {
+            type: 'array',
+            items: { type: 'string' },
+            nullable: true,
+          },
+        },
+        additionalProperties: false,
+      },
+      WebhookSettingsResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('WebhookSettings'),
+        },
+        required: ['data'],
+      },
+      ApiKey: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          account_id: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          secret_prefix: { type: 'string' },
+          expires_at: { type: 'string', format: 'date-time', nullable: true },
+          last_used_at: { type: 'string', format: 'date-time', nullable: true },
+          revoked_at: { type: 'string', format: 'date-time', nullable: true },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' },
+        },
+        additionalProperties: false,
+      },
+      ApiKeyCreate: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string' },
+          expires_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        additionalProperties: false,
+      },
+      ApiKeyWithSecret: {
+        allOf: [
+          schemaRef('ApiKey'),
+          {
+            type: 'object',
+            properties: {
+              secret: {
+                type: 'string',
+                description: 'Full API key secret. Returned only on create.',
+              },
+            },
+            required: ['secret'],
+          },
+        ],
+      },
+      ApiKeyListResponse: {
+        type: 'object',
+        properties: {
+          data: { type: 'array', items: schemaRef('ApiKey') },
+        },
+        required: ['data'],
+      },
+      ApiKeyResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('ApiKey'),
+        },
+        required: ['data'],
+      },
+      ApiKeyCreatedResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('ApiKeyWithSecret'),
+        },
+        required: ['data'],
+      },
+      MailboxConnectSession: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          status: {
+            type: 'string',
+            enum: ['pending', 'completed', 'expired', 'failed'],
+          },
+          expires_at: { type: 'string', format: 'date-time' },
+          mailbox_id: { type: 'string', format: 'uuid', nullable: true },
+          connect_url: { type: 'string', format: 'uri' },
+          error_message: { type: 'string', nullable: true },
+        },
+        additionalProperties: false,
+      },
+      MailboxConnectSessionResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('MailboxConnectSession'),
         },
         required: ['data'],
       },

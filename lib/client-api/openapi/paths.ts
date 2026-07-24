@@ -136,7 +136,8 @@ export function buildClientApiPaths() {
         tags: ['Campaigns'],
         summary: 'Create draft campaign',
         description:
-          `Creates a draft native campaign. Optional \`flow\` is normalized and validated on write. See ${modelLink('CampaignFlow', 'openapi')} and [Campaign setup](/docs/guides/campaign-setup/).`,
+          `Creates a draft native campaign. Optional \`flow\` is normalized and validated on write. Supports idempotent retries with \`Idempotency-Key\`. See ${modelLink('CampaignFlow', 'openapi')} and [Campaign setup](/docs/guides/campaign-setup/).`,
+        parameters: [parameterRef('IdempotencyKey')],
         requestBody: {
           required: true,
           content: {
@@ -1390,6 +1391,91 @@ export function buildClientApiPaths() {
               },
             },
           }),
+          ...authenticatedErrors('NotFoundError'),
+        },
+      },
+    },
+    '/v1/webhooks': {
+      get: {
+        operationId: 'getWebhookSettings',
+        tags: ['Webhooks'],
+        summary: 'Get webhook settings',
+        description: 'Returns account-level webhook URL, signing secret, and enabled event types.',
+        responses: {
+          200: jsonResponse('WebhookSettingsResponse', 'Webhook settings.'),
+          ...authenticatedErrors(),
+        },
+      },
+      put: {
+        operationId: 'updateWebhookSettings',
+        tags: ['Webhooks'],
+        summary: 'Update webhook settings',
+        description: 'Updates account-level webhook URL, signing secret, and/or enabled events.',
+        requestBody: jsonRequestBody('WebhookSettingsUpdate'),
+        responses: {
+          200: jsonResponse('WebhookSettingsResponse', 'Updated webhook settings.'),
+          ...authenticatedErrors('ValidationError'),
+        },
+      },
+    },
+    '/v1/api-keys': {
+      get: {
+        operationId: 'listApiKeys',
+        tags: ['API keys'],
+        summary: 'List API keys',
+        description: 'Lists account API keys. Secrets are never returned on list.',
+        responses: {
+          200: jsonResponse('ApiKeyListResponse', 'API key list.'),
+          ...authenticatedErrors(),
+        },
+      },
+      post: {
+        operationId: 'createApiKey',
+        tags: ['API keys'],
+        summary: 'Create API key',
+        description: 'Creates an API key. The full secret is returned once in this response.',
+        requestBody: jsonRequestBody('ApiKeyCreate'),
+        responses: {
+          201: jsonResponse('ApiKeyCreatedResponse', 'Created API key with secret.'),
+          ...authenticatedErrors('ValidationError'),
+        },
+      },
+    },
+    '/v1/api-keys/{id}': {
+      delete: {
+        operationId: 'revokeApiKey',
+        tags: ['API keys'],
+        summary: 'Revoke API key',
+        description: 'Revokes an API key. Subsequent requests with that secret return 401.',
+        parameters: [parameterRef('ApiKeyId')],
+        responses: {
+          200: jsonResponse('ApiKeyResponse', 'Revoked API key.'),
+          ...authenticatedErrors('NotFoundError'),
+        },
+      },
+    },
+    '/v1/mailboxes/connect-sessions': {
+      post: {
+        operationId: 'createMailboxConnectSession',
+        tags: ['Mailboxes'],
+        summary: 'Start mailbox connect',
+        description:
+          'Creates a mailbox connect session and returns a `connect_url` to complete mailbox provisioning in the Furnace app. Poll the session for status.',
+        responses: {
+          201: jsonResponse('MailboxConnectSessionResponse', 'Mailbox connect session.'),
+          ...authenticatedErrors(),
+        },
+      },
+    },
+    '/v1/mailboxes/connect-sessions/{id}': {
+      get: {
+        operationId: 'getMailboxConnectSession',
+        tags: ['Mailboxes'],
+        summary: 'Get mailbox connect session',
+        description: 'Returns mailbox connect session status (`pending`, `completed`, `expired`, or `failed`).',
+        parameters: [parameterRef('MailboxConnectSessionId')],
+        responses: {
+          200: jsonResponse('MailboxConnectSessionResponse', 'Mailbox connect session.'),
           ...authenticatedErrors('NotFoundError'),
         },
       },

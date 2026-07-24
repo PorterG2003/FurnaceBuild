@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { isValidHttpsWebhookUrl } from './webhookUrl.js';
 
 export type WebhookEnvelope = {
   id: string;
@@ -6,6 +7,8 @@ export type WebhookEnvelope = {
   occurred_at: string;
   data: Record<string, unknown>;
 };
+
+export { isValidHttpsWebhookUrl } from './webhookUrl.js';
 
 export function buildWebhookSignature(secret: string, body: string): string {
   return `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`;
@@ -24,14 +27,6 @@ export function buildWebhookEnvelope(
   };
 }
 
-export function isValidHttpsWebhookUrl(url: string): boolean {
-  try {
-    return new URL(url).protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
 export async function deliverWebhookPost(params: {
   endpointUrl: string;
   signingSecret?: string;
@@ -46,6 +41,16 @@ export async function deliverWebhookPost(params: {
   requestBody: string;
   envelope: WebhookEnvelope;
 }> {
+  if (!isValidHttpsWebhookUrl(params.endpointUrl)) {
+    return {
+      ok: false,
+      status: 0,
+      responseBody: 'Webhook URL is not a public HTTPS endpoint',
+      requestBody: '',
+      envelope: buildWebhookEnvelope(params.eventType, params.payload, params.eventId),
+    };
+  }
+
   const envelope = buildWebhookEnvelope(params.eventType, params.payload, params.eventId);
   const requestBody = JSON.stringify(envelope);
   const secret = params.signingSecret?.trim() ?? '';

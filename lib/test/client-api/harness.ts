@@ -2,6 +2,13 @@ import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { app } from '../../../amplify/functions/clientApi/app.js';
 import { hashApiKey } from '../../client-api/auth.js';
+import { hashToken } from '../../mcp/auth.js';
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  MCP_SCOPE,
+  MCP_USER_TOKEN_PREFIX,
+  REFRESH_TOKEN_TTL_SECONDS,
+} from '../../mcp/session.js';
 import {
   CampaignDbHarness,
   loadCampaignHarnessEnv,
@@ -50,6 +57,10 @@ export class ClientApiDbHarness {
   readonly trackedWebhookDeliveryIds = new Set<string>();
   readonly trackedImportJobIds = new Set<string>();
   readonly trackedMemberUserIds = new Set<string>();
+  readonly trackedSecondAccountIds = new Set<string>();
+  readonly trackedMcpSessionIds = new Set<string>();
+  readonly trackedMcpClientIds = new Set<string>();
+  readonly trackedMcpAuthCodeHashes = new Set<string>();
 
   private ownerAccessToken: string | null = null;
   private memberAccessTokens = new Map<string, string>();
@@ -203,6 +214,89 @@ export class ClientApiDbHarness {
     return { userId, accessToken: data.session.access_token };
   }
 
+  /** Second account + membership for the same owner (multi-account MCP tests). */
+  async createSecondAccount(name = `Second ${this.namespace}`): Promise<string> {
+    await this.ensureOwnerAuthUser();
+    const accountId = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    const { error: accountError } = await this.supabase.from('accounts').insert({
+      id: accountId,
+      name,
+      created_at: timestamp,
+      updated_at: timestamp,
+    } as never);
+    if (accountError) {
+      throw new Error(`client api harness: failed to create second account: ${accountError.message}`);
+    }
+    const { error: membershipError } = await this.supabase.from('account_users').insert({
+      id: crypto.randomUUID(),
+      account_id: accountId,
+      user_id: this.ownerUserId,
+      is_owner: true,
+      role: 'owner',
+      created_at: timestamp,
+      updated_at: timestamp,
+    } as never);
+    if (membershipError) {
+      throw new Error(
+        `client api harness: failed to create second membership: ${membershipError.message}`,
+      );
+    }
+    this.trackedSecondAccountIds.add(accountId);
+    return accountId;
+  }
+
+  async issueMcpSession(params: {
+    userId: string;
+    allowedAccountIds: string[];
+    clientId?: string | null;
+    scopes?: string[];
+    expiresAt?: Date;
+    refreshExpiresAt?: Date;
+  }): Promise<{ accessToken: string; refreshToken: string; sessionId: string }> {
+    const accessToken = `${MCP_USER_TOKEN_PREFIX}${crypto.randomBytes(24).toString('base64url')}`;
+    const refreshToken = `${MCP_USER_TOKEN_PREFIX}${crypto.randomBytes(24).toString('base64url')}`;
+    const now = Date.now();
+    const expiresAt =
+      params.expiresAt ?? new Date(now + ACCESS_TOKEN_TTL_SECONDS * 1000);
+    const refreshExpiresAt =
+      params.refreshExpiresAt ?? new Date(now + REFRESH_TOKEN_TTL_SECONDS * 1000);
+    const { data, error } = await this.supabase
+      .from('mcp_oauth_sessions')
+      .insert({
+        user_id: params.userId,
+        client_id: params.clientId ?? `test-client-${this.namespace}`,
+        allowed_account_ids: params.allowedAccountIds,
+        scopes: params.scopes ?? [MCP_SCOPE],
+        token_hash: hashToken(accessToken),
+        refresh_token_hash: hashToken(refreshToken),
+        expires_at: expiresAt.toISOString(),
+        refresh_expires_at: refreshExpiresAt.toISOString(),
+      } as never)
+      .select('id')
+      .single();
+    if (error || !data) {
+      throw new Error(`client api harness: failed to issue MCP session: ${error?.message}`);
+    }
+    this.trackedMcpSessionIds.add(data.id);
+    return { accessToken, refreshToken, sessionId: data.id };
+  }
+
+  async registerMcpClient(redirectUri: string): Promise<string> {
+    const clientId = `mcp_client_${crypto.randomBytes(8).toString('hex')}`;
+    const { error } = await this.supabase.from('mcp_oauth_clients').upsert({
+      client_id: clientId,
+      client_secret_hash: null,
+      redirect_uris: [redirectUri],
+      client_name: `test-${this.namespace}`,
+    } as never);
+    if (error) {
+      throw new Error(`client api harness: failed to register MCP client: ${error.message}`);
+    }
+    this.trackedMcpClientIds.add(clientId);
+    return clientId;
+  }
+
   async requestAsOwner(
     path: string,
     options: Omit<RequestOptions, 'apiKey'> = {},
@@ -214,6 +308,24 @@ export class ClientApiDbHarness {
         ...options.headers,
         Authorization: `Bearer ${token}`,
       },
+    });
+  }
+
+  async requestAsUser(
+    path: string,
+    options: RequestOptions & { token: string; accountId?: string },
+  ): Promise<Response> {
+    const headers: Record<string, string> = {
+      ...options.headers,
+      Authorization: `Bearer ${options.token}`,
+    };
+    if (options.accountId) {
+      headers['X-Furnace-Account-Id'] = options.accountId;
+    }
+    return this.request(path, {
+      ...options,
+      apiKey: undefined,
+      headers,
     });
   }
 
@@ -296,6 +408,31 @@ export class ClientApiDbHarness {
     this.trackedMemberUserIds.clear();
     this.memberAccessTokens.clear();
     this.ownerAccessToken = null;
+
+    await deleteRowsByIds(this.supabase, 'mcp_oauth_sessions', [...this.trackedMcpSessionIds]);
+    this.trackedMcpSessionIds.clear();
+
+    if (this.trackedMcpClientIds.size > 0) {
+      await this.supabase
+        .from('mcp_oauth_clients')
+        .delete()
+        .in('client_id', [...this.trackedMcpClientIds]);
+      this.trackedMcpClientIds.clear();
+    }
+
+    if (this.trackedMcpAuthCodeHashes.size > 0) {
+      await this.supabase
+        .from('mcp_oauth_auth_codes')
+        .delete()
+        .in('code_hash', [...this.trackedMcpAuthCodeHashes]);
+      this.trackedMcpAuthCodeHashes.clear();
+    }
+
+    for (const accountId of this.trackedSecondAccountIds) {
+      await this.supabase.from('account_users').delete().eq('account_id', accountId);
+      await this.supabase.from('accounts').delete().eq('id', accountId);
+    }
+    this.trackedSecondAccountIds.clear();
 
     await deleteRowsByIds(this.supabase, 'webhook_deliveries', [...this.trackedWebhookDeliveryIds]);
     await deleteRowsByIds(this.supabase, 'webhook_events', [...this.trackedWebhookEventIds]);

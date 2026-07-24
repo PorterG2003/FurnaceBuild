@@ -1,4 +1,5 @@
 import type { InboxSupabase } from './threads.js';
+import { assertUuid } from '../errors.js';
 
 export interface PublicMessageJob {
   id: string;
@@ -49,6 +50,7 @@ export async function loadAccountMessageJobOrThrow(
   accountId: string,
   jobId: string,
 ): Promise<MessageJobRow | null> {
+  assertUuid(jobId, 'id');
   const { data, error } = await supabase
     .from('message_jobs')
     .select('id, account_id, status, message_type, error_message, scheduled_at, send_wait_reason, status_reason, message_data')
@@ -66,6 +68,8 @@ export async function loadThreadMessageOrThrow(
   threadId: string,
   messageId: string,
 ) {
+  assertUuid(threadId, 'id');
+  assertUuid(messageId, 'forward_message_id');
   const { data, error } = await supabase
     .from('email_messages')
     .select('id, subject, from_email, from_name, to_email, thread_id')

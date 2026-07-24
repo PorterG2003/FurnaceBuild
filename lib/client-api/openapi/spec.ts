@@ -52,6 +52,14 @@ const apiTags = [
     description: 'Read daily and aggregate campaign performance statistics.',
   },
   {
+    name: 'Webhooks',
+    description: 'Read and update account webhook URL, signing secret, and enabled events.',
+  },
+  {
+    name: 'API keys',
+    description: 'List, create, and revoke account API keys. Create returns the secret once.',
+  },
+  {
     name: 'Meta',
     description: 'Service metadata endpoints.',
   },

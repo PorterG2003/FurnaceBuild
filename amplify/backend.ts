@@ -35,6 +35,7 @@ import { stripeWebhook } from './functions/stripeWebhook/resource';
 import { clientApi } from './functions/clientApi/resource';
 import { clientApiBulkImport } from './functions/clientApiBulkImport/resource';
 import { leadsExportJob } from './functions/leadsExportJob/resource';
+import { mcp } from './functions/mcp/resource';
 import { fluxGenerate } from './functions/fluxGenerate/resource';
 import { fluxEditorChat } from './functions/fluxEditorChat/resource';
 import { googlePlaces } from './functions/googlePlaces/resource';
@@ -81,6 +82,7 @@ const backend = defineBackend({
   clientApi,
   clientApiBulkImport,
   leadsExportJob,
+  mcp,
   fluxGenerate,
   fluxEditorChat,
   googlePlaces,
@@ -1962,6 +1964,150 @@ classifyReplyLambda.addEventSource(
   }),
 );
 
+const mcpLambda = backend.mcp.resources.lambda as lambda.Function;
+mcpLambda.addEnvironment('SUPABASE_URL', process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
+if (process.env.MCP_OAUTH_SIGNING_SECRET?.trim()) {
+  mcpLambda.addEnvironment('MCP_OAUTH_SIGNING_SECRET', process.env.MCP_OAUTH_SIGNING_SECRET.trim());
+}
+if (process.env.MCP_APP_ORIGIN?.trim()) {
+  mcpLambda.addEnvironment('MCP_APP_ORIGIN', process.env.MCP_APP_ORIGIN.trim().replace(/\/$/, ''));
+}
+// Point MCP at Client API. Prefer explicit env / custom domain — do not reference the
+// Client API CloudFront distribution domain on this Lambda (CF cycle risk).
+if (clientApiDomainName) {
+  mcpLambda.addEnvironment('CLIENT_API_BASE_URL', `https://${clientApiDomainName}`);
+} else if (process.env.CLIENT_API_BASE_URL?.trim()) {
+  mcpLambda.addEnvironment(
+    'CLIENT_API_BASE_URL',
+    process.env.CLIENT_API_BASE_URL.trim().replace(/\/$/, ''),
+  );
+} else {
+  // Sandbox fallback — operators should set CLIENT_API_BASE_URL for real dogfood.
+  mcpLambda.addEnvironment('CLIENT_API_BASE_URL', 'https://api-dev.getfurnace.io');
+}
+
+// CORS is handled only in the Hono app (amplify/functions/mcp/app.ts).
+// Function URL CORS + app CORS both set Access-Control-Allow-Origin, which
+// browsers reject (e.g. "*, http://localhost:8081"). AWS Function URL "*" also
+// reflects the request Origin rather than returning a literal "*".
+const mcpUrl = mcpLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+});
+new lambda.CfnPermission(mcpLambda.stack, 'AllowPublicMcpUrlInvoke', {
+  action: 'lambda:InvokeFunctionUrl',
+  functionName: mcpLambda.functionName,
+  principal: '*',
+  functionUrlAuthType: 'NONE',
+});
+const allowPublicMcpInvoke = new lambda.CfnPermission(mcpLambda.stack, 'AllowPublicMcpInvokeViaUrl', {
+  action: 'lambda:InvokeFunction',
+  functionName: mcpLambda.functionName,
+  principal: '*',
+});
+allowPublicMcpInvoke.addPropertyOverride('InvokedViaFunctionUrl', true);
+
+const mcpOriginHost = cdk.Fn.select(2, cdk.Fn.split('/', mcpUrl.url));
+const skipMcpCustomDomain = ['true', '1', 'yes'].includes(
+  (process.env.MCP_SKIP_CUSTOM_DOMAIN ?? '').toLowerCase(),
+);
+const mcpDomainName = skipMcpCustomDomain ? undefined : process.env.MCP_DOMAIN_NAME?.trim();
+const mcpCertificateArn = skipMcpCustomDomain ? undefined : process.env.MCP_CERTIFICATE_ARN?.trim();
+const mcpStack = mcpLambda.stack;
+
+const mcpCachePolicy = new cloudfront.CachePolicy(mcpStack, 'McpCachePolicy', {
+  defaultTtl: cdk.Duration.seconds(0),
+  minTtl: cdk.Duration.seconds(0),
+  maxTtl: cdk.Duration.seconds(1),
+  headerBehavior: cloudfront.CacheHeaderBehavior.allowList('Authorization', 'Mcp-Session-Id'),
+  queryStringBehavior: cloudfront.CacheQueryStringBehavior.all(),
+  cookieBehavior: cloudfront.CacheCookieBehavior.none(),
+  enableAcceptEncodingBrotli: true,
+  enableAcceptEncodingGzip: true,
+});
+const mcpOriginRequestPolicy = new cloudfront.OriginRequestPolicy(mcpStack, 'McpOriginRequestPolicy', {
+  headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList(
+    'Content-Type',
+    'Accept',
+    'Mcp-Session-Id',
+    'Last-Event-ID',
+    'MCP-Protocol-Version',
+  ),
+  queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.all(),
+  cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),
+});
+
+// Lambda Function URLs remap WWW-Authenticate → x-amzn-remapped-www-authenticate, and
+// viewer-response CloudFront Functions often never run on those origin 401s.
+// Challenge unauthenticated /mcp at viewer-request so Cursor gets a real WWW-Authenticate.
+const mcpOauthResourceMetadata = `${
+  mcpDomainName ? `https://${mcpDomainName}` : 'https://mcp.getfurnace.io'
+}/.well-known/oauth-protected-resource`;
+const mcpOauthChallengeFn = new cloudfront.Function(mcpStack, 'McpOauthChallenge', {
+  comment: 'Return WWW-Authenticate on unauthenticated MCP requests',
+  code: cloudfront.FunctionCode.fromInline(`function handler(event) {
+  var request = event.request;
+  var uri = request.uri || '';
+  var method = (request.method || 'GET').toUpperCase();
+  if (uri !== '/mcp') {
+    return request;
+  }
+  if (method === 'OPTIONS') {
+    return request;
+  }
+  var auth = request.headers && request.headers.authorization;
+  if (auth && auth.value) {
+    return request;
+  }
+  return {
+    statusCode: 401,
+    statusDescription: 'Unauthorized',
+    headers: {
+      'content-type': { value: 'application/json' },
+      'www-authenticate': {
+        value: 'Bearer realm="furnace-mcp", resource_metadata="${mcpOauthResourceMetadata}"'
+      },
+      'access-control-allow-origin': { value: '*' },
+      'access-control-expose-headers': { value: 'Mcp-Session-Id' },
+      'x-mcp-cf-oauth-challenge': { value: '1' }
+    },
+    body: '{"jsonrpc":"2.0","error":{"code":-32001,"message":"Unauthorized: Bearer token required"},"id":null}'
+  };
+}`),
+});
+
+const mcpDistribution = new cloudfront.Distribution(mcpStack, 'McpDistribution', {
+  defaultBehavior: {
+    origin: new origins.HttpOrigin(mcpOriginHost, {
+      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+    }),
+    cachePolicy: mcpCachePolicy,
+    originRequestPolicy: mcpOriginRequestPolicy,
+    viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+    allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+    functionAssociations: [
+      {
+        function: mcpOauthChallengeFn,
+        eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+      },
+    ],
+  },
+  ...(mcpDomainName && mcpCertificateArn
+    ? {
+        domainNames: [mcpDomainName],
+        certificate: acm.Certificate.fromCertificateArn(mcpStack, 'McpCertificate', mcpCertificateArn),
+      }
+    : {}),
+});
+
+const resolvedMcpBaseUrl = mcpDomainName
+  ? `https://${mcpDomainName}`
+  : `https://${mcpDistribution.distributionDomainName}`;
+mcpLambda.addEnvironment('MCP_BASE_URL', resolvedMcpBaseUrl);
+const mcpServerName =
+  process.env.MCP_SERVER_NAME?.trim() ||
+  (mcpDomainName && /mcp-dev/i.test(mcpDomainName) ? 'furnace-dev' : 'furnace');
+mcpLambda.addEnvironment('MCP_SERVER_NAME', mcpServerName);
+
 const customOutputs: Record<string, string> = {
   fetchEmailAttachmentUrl: fetchAttachmentUrl.url,
   sendTransactionalEmailUrl: sendTransactionalEmailUrl.url,
@@ -1977,6 +2123,9 @@ const customOutputs: Record<string, string> = {
   clientApiOpenApiUrl: `${resolvedClientApiBaseUrl}/openapi.json`,
   clientApiWebhookQueueUrl: webhookQueue.queueUrl,
   clientApiImportQueueUrl: importQueue.queueUrl,
+  mcpFunctionUrl: mcpUrl.url,
+  mcpCloudFrontUrl: `https://${mcpDistribution.distributionDomainName}`,
+  mcpUrl: resolvedMcpBaseUrl,
   foundryNormalizeStateMachineArn: foundryNormalizeStateMachineArn,
   foundryAutolinkStateMachineArn: foundryAutolinkStateMachineArn,
   foundryContactEnrichmentStateMachineArn: foundryContactEnrichmentStateMachineArn,

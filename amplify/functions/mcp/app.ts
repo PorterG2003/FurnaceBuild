@@ -213,7 +213,8 @@ function createConfiguredMcpServer(auth: McpAuthSuccess): McpServer {
       JSON.stringify({
         service: 'mcp',
         operationId: name,
-        account_id: auth.accountId ?? null,
+        // Prefer resolved tool account (from args); auth.accountId is only set for API-key sessions.
+        account_id: (args.account_id as string | undefined) ?? auth.accountId ?? null,
         user_id: auth.userId ?? null,
         auth_kind: auth.authKind,
         is_error: result.isError,

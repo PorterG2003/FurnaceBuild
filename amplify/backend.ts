@@ -1502,6 +1502,8 @@ const clientApiOriginRequestPolicy = new cloudfront.OriginRequestPolicy(
       'Content-Type',
       'Idempotency-Key',
       'X-Furnace-Internal-Secret',
+      // MCP user sessions: MCP Lambda proxies with this header; CF must forward it.
+      'X-Furnace-Account-Id',
     ),
     queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.all(),
     cookieBehavior: cloudfront.OriginRequestCookieBehavior.none(),

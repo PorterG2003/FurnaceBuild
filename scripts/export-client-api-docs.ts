@@ -18,6 +18,7 @@ import {
 } from '../lib/client-api/openapi/concepts.js';
 import { buildFaqMarkdown } from '../lib/client-api/openapi/faq.js';
 import { buildAuthenticationMarkdown, buildClientApiIntroMdx } from '../lib/client-api/openapi/intro.js';
+import { buildMcpGuideMarkdown } from '../lib/client-api/openapi/mcp.js';
 import { buildLlmsFullTxt, buildLlmsGuideEntries, buildLlmsTxt } from '../lib/client-api/openapi/llms.js';
 import { buildClientApiOpenApiSpec } from '../lib/client-api/openapi/spec.js';
 import {
@@ -226,6 +227,13 @@ function main() {
     }, buildWebhooksOverviewMarkdown('docs'), buildWebhooksOverviewMarkdown('openapi')),
   );
 
+  exported.push(
+    writeDoc('guides/mcp.mdx', {
+      title: 'MCP',
+      description: 'Connect Cursor, Claude, ChatGPT, and other MCP clients to Furnace.',
+    }, buildMcpGuideMarkdown('docs'), buildMcpGuideMarkdown('openapi')),
+  );
+
   // --- Webhook events (payload reference) ---
   const webhookSegments: string[] = [];
   for (const group of WEBHOOK_EVENT_GROUPS) {
@@ -295,6 +303,7 @@ function main() {
     'guides/lead-management',
     'guides/handling-replies',
     'guides/webhook-integration',
+    'guides/mcp',
     '---Webhook events---',
     ...webhookPageIds,
     '---Help---',

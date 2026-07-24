@@ -1,4 +1,5 @@
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout/constants';
+import { isMcpConsentPath, parseMcpConsentReturnTo } from '@/lib/mcp/consentReturn';
 import { hasPublicAccessParams } from '@/lib/publicAccessState';
 
 /**
@@ -57,16 +58,18 @@ export function isPublicAcceptRoute(pathname: string): boolean {
     path === '/accept-platform-invite' ||
     path.startsWith('/accept-platform-invite/') ||
     path === '/accept-account-amendment' ||
-    path.startsWith('/accept-account-amendment/')
+    path.startsWith('/accept-account-amendment/') ||
+    isMcpConsentPath(path)
   );
 }
 
-/** Invite-scoped auth routes should stay reachable until onboarding completes. */
+/** Invite-scoped (or MCP consent return) auth routes should stay reachable until onboarding completes. */
 export function isAuthInviteFlowRoute(pathname: string, search = ''): boolean {
   const path = normalizeInstallGatePathname(pathname);
   if (path !== '/auth') return false;
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-  return params.has('invitation_id') || params.has('amendment_id');
+  if (params.has('invitation_id') || params.has('amendment_id')) return true;
+  return parseMcpConsentReturnTo(params.get('return_to')) != null;
 }
 
 export function isPublicAccessDialogRoute(search = ''): boolean {

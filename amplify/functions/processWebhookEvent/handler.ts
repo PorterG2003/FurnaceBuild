@@ -1,6 +1,6 @@
 import type { SQSBatchResponse, SQSEvent } from 'aws-lambda';
 import { createServiceRoleClient } from '../../../lib/client-api/service-role.js';
-import { deliverWebhookPost } from '../../../lib/client-api/webhooks/deliverWebhookPost.js';
+import { deliverWebhookPost, isValidHttpsWebhookUrl } from '../../../lib/client-api/webhooks/deliverWebhookPost.js';
 
 export async function processWebhookEventById(eventId: string): Promise<void> {
   const supabase = createServiceRoleClient();
@@ -29,6 +29,10 @@ export async function processWebhookEventById(eventId: string): Promise<void> {
 
   const endpointUrl = (campaign?.webhook_url_override || account?.webhook_url || '').trim();
   if (!endpointUrl) return;
+  if (!isValidHttpsWebhookUrl(endpointUrl)) {
+    // Do not deliver to private/local HTTPS targets (SSRF guard for stored URLs).
+    return;
+  }
   const enabledEvents = Array.isArray(campaign?.webhook_enabled_events_override)
     ? campaign?.webhook_enabled_events_override
     : Array.isArray(account?.webhook_enabled_events)

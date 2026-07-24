@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeInboxSearchQuery } from '../../inbox/normalizeInboxSearchQuery.js';
+import { assertUuid } from '../errors.js';
 import { NO_CATEGORY_FILTER, THREAD_CATEGORIES, type ThreadCategory } from './constants.js';
 
 export type InboxSupabase = SupabaseClient;
@@ -74,6 +75,7 @@ export async function loadAccountThreadOrThrow(
   accountId: string,
   threadId: string,
 ) {
+  assertUuid(threadId, 'id');
   const { data, error } = await supabase
     .from('email_threads')
     .select('*')

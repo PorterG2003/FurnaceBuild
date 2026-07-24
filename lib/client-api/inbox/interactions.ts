@@ -82,6 +82,7 @@ export async function recordClientApiInboxInteraction(
   if (!context) return;
 
   const { suggestion_mode, suggestion_version } = extractSuggestionVersion(metadata);
+  const isUser = params.auth.authKind === 'user' && params.auth.actorUserId;
   const row: Database['public']['Tables']['inbox_interactions']['Insert'] = {
     account_id: params.auth.accountId,
     thread_id: params.thread.id,
@@ -90,9 +91,9 @@ export async function recordClientApiInboxInteraction(
     classification_completed_at: params.thread.classification_completed_at,
     suggestion_mode,
     suggestion_version,
-    actor_type: 'api',
-    actor_user_id: null,
-    actor_api_key_id: params.auth.id,
+    actor_type: isUser ? 'user' : 'api',
+    actor_user_id: isUser ? params.auth.actorUserId! : null,
+    actor_api_key_id: isUser ? null : params.auth.id,
     action: params.action,
     source: params.source,
     intent: (params.intent ?? null) as Json | null,

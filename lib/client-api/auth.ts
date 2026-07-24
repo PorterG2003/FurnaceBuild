@@ -1,12 +1,16 @@
 import crypto from 'node:crypto';
 
 export interface AuthenticatedApiKey {
-  id: string;
+  /** Null for user-session auth (no API key row). */
+  id: string | null;
   accountId: string;
   name: string;
   secretPrefix: string;
   expiresAt: string | null;
   revokedAt: string | null;
+  authKind?: 'api_key' | 'user';
+  actorUserId?: string;
+  actorRole?: string;
 }
 
 export function hashApiKey(secret: string): string {

@@ -7,6 +7,8 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { createServiceRoleClient } from '../../../lib/client-api/service-role.js';
 import {
   ClientApiError,
+  assertNoNul,
+  assertUuid,
   forbidden,
   invalidRequest,
   invalidRequestWithDetails,
@@ -14,7 +16,17 @@ import {
   rateLimited,
   unauthorized,
 } from '../../../lib/client-api/errors.js';
+import {
+  mapClientApiThrownError,
+  publicErrorMessageFromThrown,
+} from '../../../lib/client-api/mapThrownError.js';
 import { getBearerToken, hashApiKey, isApiKeyExpired, type AuthenticatedApiKey } from '../../../lib/client-api/auth.js';
+import { resolveUserRequest } from '../../../lib/client-api/user-auth.js';
+import {
+  isMcpUserToken,
+  listUserSessions,
+  revokeUserSession,
+} from '../../../lib/mcp/session.js';
 import { toPublicMailbox } from '../../../lib/client-api/serializers/mailbox.js';
 import { toPersonResponse } from '../../../lib/client-api/serializers/person.js';
 import {
@@ -69,7 +81,7 @@ import {
   isAllowedWebhookEventType,
 } from '../../../lib/client-api/webhooks/webhookTestSamples.js';
 import { buildClientApiOpenApiSpec } from '../../../lib/client-api/openapi/spec.js';
-import { THREAD_CATEGORIES } from '../../../lib/client-api/inbox/constants.js';
+import { THREAD_CATEGORIES, NO_CATEGORY_FILTER } from '../../../lib/client-api/inbox/constants.js';
 import { recordClientApiInboxInteraction } from '../../../lib/client-api/inbox/interactions.js';
 import {
   cancelAccountMessageJob,
@@ -103,6 +115,15 @@ import {
   buildFlowSaveResponse,
   prepareCampaignFlowForApi,
 } from '../../../lib/client-api/campaign-flow.js';
+import {
+  createApiKeyForAccount,
+  createMailboxConnectSession,
+  getAccountWebhookSettings,
+  getMailboxConnectSession,
+  listApiKeysForAccount,
+  revokeApiKeyForAccount,
+  updateAccountWebhookSettingsApi,
+} from '../../../lib/client-api/account-settings-api.js';
 import { FLOW_TEMPLATES } from '../../../lib/campaigns/flow/templates.js';
 import { isLiveContentPatchAllowed } from '../../../lib/campaigns/flow/registry.js';
 import {
@@ -222,6 +243,7 @@ function getOpenApiSpec(baseUrl: string) {
 }
 
 async function loadCampaignOrThrow(supabase: Supabase, accountId: string, campaignId: string) {
+  assertUuid(campaignId, 'id');
   const { data, error } = await supabase
     .from('campaigns')
     .select('*')
@@ -238,6 +260,7 @@ async function loadCampaignOrThrow(supabase: Supabase, accountId: string, campai
 }
 
 async function loadMailboxOrThrow(supabase: Supabase, accountId: string, mailboxId: string) {
+  assertUuid(mailboxId, 'id');
   const { data, error } = await supabase
     .from('mailboxes')
     .select('*')
@@ -269,6 +292,8 @@ async function loadLeadOrThrow(
   campaignId: string,
   leadId: string
 ) {
+  assertUuid(campaignId, 'id');
+  assertUuid(leadId, 'leadId');
   const { data, error } = await supabase
     .from('leads')
     .select('*')
@@ -615,42 +640,77 @@ async function saveIdempotencyResponse(
 async function authMiddleware(c: Context<{ Variables: Variables }>, next: Next) {
   const supabase = createServiceRoleClient();
   const token = getBearerToken(c.req.header('Authorization') ?? null);
-  if (!token || !token.startsWith('f_')) {
-    unauthorized('invalid_api_key', 'A valid Furnace API key is required');
+  if (!token) {
+    unauthorized('invalid_api_key', 'A valid Furnace API key or MCP user session is required');
   }
-  const keyHash = hashApiKey(token);
-  const { data, error } = await supabase
-    .from('account_api_keys')
-    .select('id, account_id, name, secret_prefix, expires_at, revoked_at')
-    .eq('key_hash', keyHash)
-    .maybeSingle();
-  if (error) {
-    throw new Error(`Failed to authenticate API key: ${error.message}`);
+
+  if (token.startsWith('f_')) {
+    // Account-pinned API key path. X-Furnace-Account-Id is intentionally ignored.
+    const keyHash = hashApiKey(token);
+    const { data, error } = await supabase
+      .from('account_api_keys')
+      .select('id, account_id, name, secret_prefix, expires_at, revoked_at')
+      .eq('key_hash', keyHash)
+      .maybeSingle();
+    if (error) {
+      throw new Error(`Failed to authenticate API key: ${error.message}`);
+    }
+    if (!data) {
+      unauthorized('invalid_api_key', 'API key not recognized');
+    }
+    if (data.revoked_at) {
+      unauthorized('revoked_api_key', 'API key has been revoked');
+    }
+    if (isApiKeyExpired(data.expires_at)) {
+      unauthorized('expired_api_key', 'API key has expired');
+    }
+    const rateLimitHeaders = await getRateLimitedHeadersOrThrow(supabase, data.account_id);
+    await supabase
+      .from('account_api_keys')
+      .update({ last_used_at: nowIso(), updated_at: nowIso() })
+      .eq('id', data.id);
+    c.set('apiKey', {
+      id: data.id,
+      accountId: data.account_id,
+      name: data.name,
+      secretPrefix: data.secret_prefix,
+      expiresAt: data.expires_at,
+      revokedAt: data.revoked_at,
+      authKind: 'api_key',
+    });
+    c.set('rateLimitHeaders', rateLimitHeaders);
+    await next();
+    return;
   }
-  if (!data) {
-    unauthorized('invalid_api_key', 'API key not recognized');
+
+  if (isMcpUserToken(token)) {
+    const accountHeader =
+      c.req.header('X-Furnace-Account-Id') ?? c.req.header('x-furnace-account-id');
+    const resolved = await resolveUserRequest({
+      token,
+      accountId: accountHeader,
+      supabase,
+    });
+    if (!resolved.ok) {
+      if (resolved.status === 400) {
+        invalidRequest(resolved.code, resolved.message);
+      }
+      if (resolved.status === 403) {
+        forbidden(resolved.code, resolved.message);
+      }
+      unauthorized(resolved.code, resolved.message);
+    }
+    const rateLimitHeaders = await getRateLimitedHeadersOrThrow(
+      supabase,
+      resolved.auth.accountId,
+    );
+    c.set('apiKey', resolved.auth);
+    c.set('rateLimitHeaders', rateLimitHeaders);
+    await next();
+    return;
   }
-  if (data.revoked_at) {
-    unauthorized('revoked_api_key', 'API key has been revoked');
-  }
-  if (isApiKeyExpired(data.expires_at)) {
-    unauthorized('expired_api_key', 'API key has expired');
-  }
-  const rateLimitHeaders = await getRateLimitedHeadersOrThrow(supabase, data.account_id);
-  await supabase
-    .from('account_api_keys')
-    .update({ last_used_at: nowIso(), updated_at: nowIso() })
-    .eq('id', data.id);
-  c.set('apiKey', {
-    id: data.id,
-    accountId: data.account_id,
-    name: data.name,
-    secretPrefix: data.secret_prefix,
-    expiresAt: data.expires_at,
-    revokedAt: data.revoked_at,
-  });
-  c.set('rateLimitHeaders', rateLimitHeaders);
-  await next();
+
+  unauthorized('invalid_api_key', 'A valid Furnace API key or MCP user session is required');
 }
 
 async function internalJwtAuth(c: Context, next: Next) {
@@ -694,6 +754,8 @@ app.use('*', async (c, next) => {
       duration_ms: Date.now() - startedAt,
       account_id: c.get('apiKey')?.accountId ?? null,
       api_key_id: c.get('apiKey')?.id ?? null,
+      actor_user_id: c.get('apiKey')?.actorUserId ?? null,
+      auth_kind: c.get('apiKey')?.authKind ?? null,
     });
   } catch (error) {
     logRequest({
@@ -704,6 +766,8 @@ app.use('*', async (c, next) => {
       duration_ms: Date.now() - startedAt,
       account_id: c.get('apiKey')?.accountId ?? null,
       api_key_id: c.get('apiKey')?.id ?? null,
+      actor_user_id: c.get('apiKey')?.actorUserId ?? null,
+      auth_kind: c.get('apiKey')?.authKind ?? null,
       error_message: error instanceof Error ? error.message : String(error),
     });
     throw error;
@@ -722,13 +786,28 @@ app.onError((err, c) => {
     stack: err instanceof Error ? err.stack : undefined,
     path: getRequestPath(c),
   }));
+  const mapped = mapClientApiThrownError(err);
+  if (mapped) {
+    return jsonResponse(
+      c,
+      {
+        error: {
+          type: mapped.type,
+          code: mapped.code,
+          message: mapped.message,
+        },
+      },
+      mapped.status as ContentfulStatusCode,
+      c.get('rateLimitHeaders'),
+    );
+  }
   return jsonResponse(
     c,
     {
       error: {
         type: 'api_error',
         code: 'internal_error',
-        message: err instanceof Error ? err.message : 'Internal server error',
+        message: publicErrorMessageFromThrown(err),
       },
     },
     500,
@@ -759,10 +838,14 @@ app.get('/v1/campaigns', async (c) => {
   const includeDeleted = c.req.query('include_deleted') === 'true';
   const q = c.req.query('q')?.trim();
   const status = c.req.query('status')?.trim();
-  const tagIdsParam = c.req.query('tag_ids')?.trim();
-  const tagFilterIds = tagIdsParam
-    ? tagIdsParam.split(',').map((s) => s.trim()).filter(Boolean)
-    : [];
+  if (status && !['draft', 'running', 'paused', 'stopped'].includes(status)) {
+    invalidRequest(
+      'invalid_status',
+      'status must be draft, running, paused, or stopped',
+      'status',
+    );
+  }
+  const tagFilterIds = parseCsvUuidQuery(c.req.query('tag_ids'), 'tag_ids') ?? [];
   let query = supabase
     .from('campaigns')
     .select('*', { count: 'exact' })
@@ -798,13 +881,27 @@ app.get('/v1/campaigns', async (c) => {
 app.post('/v1/campaigns', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
+  const rawBody = await c.req.text();
+  const idempotencyKey = c.req.header('Idempotency-Key') ?? null;
+  const bodyHash = hashRequestBody(rawBody);
+  const cached = await getCachedIdempotencyResponse(
+    supabase,
+    auth.accountId,
+    idempotencyKey,
+    getRequestPath(c),
+    bodyHash,
+  );
+  if (cached) {
+    return jsonResponse(c, cached, 200, c.get('rateLimitHeaders'));
+  }
   const body = pickKnownKeys(
-    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    parseJsonBody<Record<string, unknown>>(rawBody),
     CAMPAIGN_CREATE_KEYS,
   );
   const name = typeof body.name === 'string' && body.name.trim().length > 0
     ? body.name.trim()
     : 'Untitled Campaign';
+  assertNoNul(name, 'name');
   const mailboxIds = await validateMailboxIdsForAccount(
     supabase,
     auth.accountId,
@@ -859,7 +956,16 @@ app.post('/v1/campaigns', async (c) => {
   const campaign = await loadCampaignOrThrow(supabase, auth.accountId, created.id);
   const tagsMap = await getTagsForCampaignIds(supabase, [campaign.id]);
   const data = await attachFlowRevision(attachTagsToCampaignRow(campaign, tagsMap));
-  return jsonResponse(c, { data }, 201, c.get('rateLimitHeaders'));
+  const payload = { data };
+  await saveIdempotencyResponse(
+    supabase,
+    auth.accountId,
+    idempotencyKey,
+    getRequestPath(c),
+    bodyHash,
+    payload,
+  );
+  return jsonResponse(c, payload, 201, c.get('rateLimitHeaders'));
 });
 
 app.get('/v1/campaign-tags', async (c) => {
@@ -892,6 +998,7 @@ app.patch('/v1/campaign-tags/:id', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
   const tagId = c.req.param('id');
+  assertUuid(tagId, 'id');
   const body = parseJsonBody<{ name?: string; color?: string | null }>(await c.req.text());
   const updates: { name?: string; color?: string | null } = {};
   if (typeof body.name === 'string') updates.name = body.name.trim();
@@ -915,6 +1022,7 @@ app.delete('/v1/campaign-tags/:id', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
   const tagId = c.req.param('id');
+  assertUuid(tagId, 'id');
   const { data, error } = await supabase
     .from('campaign_tags')
     .delete()
@@ -1151,7 +1259,10 @@ app.patch('/v1/campaigns/:id', async (c) => {
     CAMPAIGN_UPDATE_KEYS,
   );
   const patch: Record<string, unknown> = {};
-  if (typeof body.name === 'string') patch.name = body.name.trim();
+  if (typeof body.name === 'string') {
+    assertNoNul(body.name, 'name');
+    patch.name = body.name.trim();
+  }
   if ('schedule' in body) patch.schedule = body.schedule ?? null;
   if (typeof body.sending_interval_seconds === 'number') {
     patch.sending_interval_seconds = body.sending_interval_seconds;
@@ -1862,6 +1973,30 @@ function parseCsvQueryIds(raw: string | undefined): string[] | null {
   return raw.split(',').map((value) => value.trim()).filter(Boolean);
 }
 
+/** Comma-separated UUID query param; invalid segment → 400 invalid_id. */
+function parseCsvUuidQuery(raw: string | undefined, paramName: string): string[] | null {
+  const parts = parseCsvQueryIds(raw);
+  if (!parts) return null;
+  for (const id of parts) {
+    assertUuid(id, paramName);
+  }
+  return parts;
+}
+
+function parseIsoDateTimeQuery(raw: string | undefined, paramName: string): string | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) {
+    invalidRequest(
+      'invalid_datetime',
+      `${paramName} must be a valid ISO-8601 datetime`,
+      paramName,
+    );
+  }
+  return value;
+}
+
 function parseBoolQuery(raw: string | undefined): boolean {
   if (!raw) return false;
   const normalized = raw.trim().toLowerCase();
@@ -1878,8 +2013,8 @@ app.get('/v1/people', async (c) => {
   const sortDirection = c.req.query('sort_dir')?.trim().toLowerCase() === 'asc' ? 'asc' : 'desc';
   const { data, error } = await supabase.rpc('account_lead_people_page', {
     p_account_id: auth.accountId,
-    p_global_lead_ids: parseCsvQueryIds(c.req.query('global_lead_ids')),
-    p_campaign_ids: parseCsvQueryIds(c.req.query('campaign_ids')) as string[] | null,
+    p_global_lead_ids: parseCsvUuidQuery(c.req.query('global_lead_ids'), 'global_lead_ids'),
+    p_campaign_ids: parseCsvUuidQuery(c.req.query('campaign_ids'), 'campaign_ids'),
     p_reply_statuses: parseCsvQueryIds(c.req.query('reply_statuses')),
     p_enrollment_states: parseCsvQueryIds(c.req.query('enrollment_states')),
     p_reply_categories: parseCsvQueryIds(c.req.query('reply_categories')),
@@ -2036,6 +2171,7 @@ app.post('/v1/lead-lists', async (c) => {
 app.get('/v1/lead-lists/:id', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
+  assertUuid(c.req.param('id'), 'id');
   const { data, error } = await supabase
     .from('lead_saved_lists')
     .select('*')
@@ -2050,6 +2186,7 @@ app.get('/v1/lead-lists/:id', async (c) => {
 app.patch('/v1/lead-lists/:id', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
+  assertUuid(c.req.param('id'), 'id');
   const body = parseJsonBody<{ name?: string; description?: string | null; column_layout?: unknown }>(
     await c.req.text(),
   );
@@ -2073,6 +2210,7 @@ app.delete('/v1/lead-lists/:id', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
   const listId = c.req.param('id');
+  assertUuid(listId, 'id');
   const { data, error } = await supabase
     .from('lead_saved_lists')
     .delete()
@@ -2271,10 +2409,7 @@ app.get('/v1/mailboxes', async (c) => {
   const auth = c.get('apiKey');
   const limit = parseIntQuery(c, 'limit', DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const offset = parseIntQuery(c, 'offset', 0);
-  const tagIdsParam = c.req.query('tag_ids')?.trim();
-  const tagFilterIds = tagIdsParam
-    ? tagIdsParam.split(',').map((value) => value.trim()).filter(Boolean)
-    : [];
+  const tagFilterIds = parseCsvUuidQuery(c.req.query('tag_ids'), 'tag_ids') ?? [];
   let query = supabase
     .from('mailboxes')
     .select('*', { count: 'exact' })
@@ -2351,6 +2486,17 @@ app.get('/v1/threads', async (c) => {
   const offset = parseIntQuery(c, 'offset', 0);
   const conversationStatusRaw = c.req.query('conversation_status')?.trim();
   const categoryRaw = c.req.query('category')?.trim();
+  if (
+    categoryRaw
+    && categoryRaw !== NO_CATEGORY_FILTER
+    && !isValidThreadCategory(categoryRaw)
+  ) {
+    invalidRequest(
+      'invalid_category',
+      `category must be one of: ${THREAD_CATEGORIES.join(', ')}, ${NO_CATEGORY_FILTER}`,
+      'category',
+    );
+  }
   const hasReplyOnlyRaw = c.req.query('has_reply_only')?.trim();
   const sortRaw = c.req.query('sort')?.trim();
   const sortBy =
@@ -2360,21 +2506,25 @@ app.get('/v1/threads', async (c) => {
     sortRaw === 'unread_first'
       ? sortRaw
       : undefined;
+  const campaignIdRaw = c.req.query('campaign_id')?.trim();
+  const mailboxIdRaw = c.req.query('mailbox_id')?.trim();
+  if (campaignIdRaw) assertUuid(campaignIdRaw, 'campaign_id');
+  if (mailboxIdRaw) assertUuid(mailboxIdRaw, 'mailbox_id');
   const { data, totalCount } = await listAccountThreads(supabase, {
     accountId: auth.accountId,
     limit,
     offset,
-    campaignId: c.req.query('campaign_id')?.trim() || undefined,
-    mailboxId: c.req.query('mailbox_id')?.trim() || undefined,
+    campaignId: campaignIdRaw || undefined,
+    mailboxId: mailboxIdRaw || undefined,
     unreadOnly: parseBoolQuery(c.req.query('unread_only')),
     conversationStatus:
       conversationStatusRaw === 'open' || conversationStatusRaw === 'closed'
         ? conversationStatusRaw
         : undefined,
     category: categoryRaw || undefined,
-    tagIds: parseCsvQueryIds(c.req.query('tag_ids')) ?? undefined,
-    dateFrom: c.req.query('date_from')?.trim() || undefined,
-    dateTo: c.req.query('date_to')?.trim() || undefined,
+    tagIds: parseCsvUuidQuery(c.req.query('tag_ids'), 'tag_ids') ?? undefined,
+    dateFrom: parseIsoDateTimeQuery(c.req.query('date_from'), 'date_from'),
+    dateTo: parseIsoDateTimeQuery(c.req.query('date_to'), 'date_to'),
     searchQuery: c.req.query('q')?.trim() || undefined,
     hasReplyOnly: hasReplyOnlyRaw ? parseBoolQuery(hasReplyOnlyRaw) : true,
     sortBy,
@@ -2802,7 +2952,19 @@ app.post('/v1/block-list', async (c) => {
   const value = normalizeEmail(body.value);
   const type = body.type;
   if (!value) invalidRequest('missing_value', 'Block list value is required', 'value');
+  assertNoNul(value, 'value');
   if (type !== 'email' && type !== 'domain') invalidRequest('invalid_type', 'Block list type must be email or domain', 'type');
+  if (type === 'domain') {
+    if (value === '*' || !value.includes('.')) {
+      invalidRequest('invalid_domain', 'Block list domain must be a concrete domain (e.g. example.com)', 'value');
+    }
+  } else {
+    const at = value.indexOf('@');
+    const domain = at >= 0 ? value.slice(at + 1) : '';
+    if (at <= 0 || !domain.includes('.')) {
+      invalidRequest('invalid_email', 'Block list email must be a valid email address', 'value');
+    }
+  }
   const { data: existing } = await supabase
     .from('block_list')
     .select('*')
@@ -3002,7 +3164,7 @@ app.post('/internal/webhook/test', async (c) => {
 
   if (!endpointUrl) invalidRequest('missing_webhook_url', 'Webhook URL is required');
   if (!isValidHttpsWebhookUrl(endpointUrl)) {
-    invalidRequest('invalid_webhook_url', 'Webhook URL must use HTTPS');
+    invalidRequest('invalid_webhook_url', 'Webhook URL must be a public HTTPS URL');
   }
 
   const testPayload = buildWebhookTestPayload(eventType, { accountId, campaignId });
@@ -3074,4 +3236,110 @@ app.post('/internal/import-jobs/:id/enqueue', async (c) => {
   }
 
   return jsonResponse(c, { data: { id: job.id, enqueued: Boolean(queueUrl) } }, 202);
+});
+
+app.get('/internal/mcp/sessions', async (c) => {
+  const supabase = createServiceRoleClient();
+  const userId = (c as any).get('userId') as string;
+  const data = await listUserSessions(userId, { supabase });
+  return jsonResponse(c, { data }, 200);
+});
+
+app.delete('/internal/mcp/sessions/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const userId = (c as any).get('userId') as string;
+  const sessionId = c.req.param('id');
+  assertUuid(sessionId, 'id');
+  const revoked = await revokeUserSession({ sessionId, userId, supabase });
+  if (!revoked) {
+    notFound('session_not_found', 'MCP session not found');
+  }
+  return jsonResponse(c, { data: { id: sessionId, revoked: true } }, 200);
+});
+
+function getAppOriginForConnect(): string {
+  return (
+    process.env.MCP_APP_ORIGIN?.trim() ||
+    process.env.CLIENT_API_APP_ORIGIN?.trim() ||
+    'https://build.getfurnace.io'
+  ).replace(/\/$/, '');
+}
+
+app.get('/v1/webhooks', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const data = await getAccountWebhookSettings(supabase, auth.accountId);
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.put('/v1/webhooks', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = (await c.req.json().catch(() => ({}))) as {
+    webhook_url?: string | null;
+    webhook_signing_secret?: string | null;
+    webhook_enabled_events?: string[] | null;
+  };
+  const data = await updateAccountWebhookSettingsApi(supabase, auth.accountId, body);
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.get('/v1/api-keys', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const data = await listApiKeysForAccount(supabase, auth.accountId);
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/api-keys', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const body = (await c.req.json().catch(() => ({}))) as {
+    name?: string;
+    expires_at?: string | null;
+  };
+  if (!body.name?.trim()) {
+    invalidRequest('invalid_name', 'API key name is required');
+  }
+  const created = await createApiKeyForAccount(supabase, {
+    accountId: auth.accountId,
+    name: body.name!,
+    createdByUserId: await loadAccountOwnerUserIdOrThrow(supabase, auth.accountId),
+    expiresAt: body.expires_at ?? null,
+  });
+  return jsonResponse(c, { data: created }, 201, c.get('rateLimitHeaders'));
+});
+
+app.delete('/v1/api-keys/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const keyId = c.req.param('id');
+  assertUuid(keyId, 'id');
+  const data = await revokeApiKeyForAccount(supabase, {
+    accountId: auth.accountId,
+    keyId,
+  });
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
+});
+
+app.post('/v1/mailboxes/connect-sessions', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const data = await createMailboxConnectSession(supabase, {
+    accountId: auth.accountId,
+    appOrigin: getAppOriginForConnect(),
+  });
+  return jsonResponse(c, { data }, 201, c.get('rateLimitHeaders'));
+});
+
+app.get('/v1/mailboxes/connect-sessions/:id', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  assertUuid(c.req.param('id'), 'id');
+  const data = await getMailboxConnectSession(supabase, {
+    accountId: auth.accountId,
+    sessionId: c.req.param('id'),
+    appOrigin: getAppOriginForConnect(),
+  });
+  return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
 });

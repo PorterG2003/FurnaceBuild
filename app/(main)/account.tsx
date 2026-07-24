@@ -9,7 +9,7 @@ import {
   MigrationHistoryModal,
   SmartleadMigrationWizardModal,
 } from '@/components/account/smartleadMigration';
-import { AccountApiKeysSection, AccountWebhooksSection } from '@/components/account/api';
+import { AccountApiKeysSection, AccountWebhooksSection, AccountMcpSection } from '@/components/account/api';
 import { AccountNotificationsSection } from '@/components/account/AccountNotificationsSection';
 import type { BalancedSection } from '@/components/ui/layout';
 import {
@@ -1010,6 +1010,26 @@ export default function AccountPage() {
             <Text className={sectionTitleClass}>API Keys</Text>
             <Text className="text-sm text-gray-400">
               Owners and admins can manage account API keys.
+            </Text>
+          </Card>
+        ),
+      });
+      base.push({
+        id: 'mcp',
+        groupLabel: 'Integrations',
+        content: canManageTeam ? (
+          <AccountMcpSection
+            account={membership.account}
+            cardVariant={sectionCardVariant}
+            cardClassName={sectionCardClassName}
+            titleClassName={sectionTitleClass}
+            headerTitleClassName={sectionNotificationsTitleClass}
+          />
+        ) : (
+          <Card variant={sectionCardVariant} className={sectionCardClassName ?? ''}>
+            <Text className={sectionTitleClass}>MCP</Text>
+            <Text className="text-sm text-gray-400">
+              Owners and admins can connect Furnace MCP.
             </Text>
           </Card>
         ),

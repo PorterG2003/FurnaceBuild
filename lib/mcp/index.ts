@@ -10,6 +10,13 @@ export {
 export { createToolIndex, invokeMcpTool } from './invoke.js';
 export { resolveJsonRefs } from './jsonSchema.js';
 export {
+  sanitizeToolInputSchema,
+  lintToolInputSchema,
+  assertToolInputSchemaCompatible,
+  TOOL_INPUT_SCHEMA_RULES,
+} from './sanitizeToolInputSchema.js';
+export type { ToolInputSchemaViolation, ToolInputSchemaRule } from './sanitizeToolInputSchema.js';
+export {
   resolveAccountSelection,
   injectAccountIdIntoInputSchema,
 } from './accountSelection.js';

@@ -1,5 +1,6 @@
 import { buildClientApiOpenApiSpec } from '../client-api/openapi/spec.js';
 import { asObjectSchema, resolveJsonRefs } from './jsonSchema.js';
+import { sanitizeToolInputSchema } from './sanitizeToolInputSchema.js';
 import type { HttpMethod, JsonSchema, McpToolDefinition } from './types.js';
 
 const HTTP_METHODS: HttpMethod[] = ['get', 'post', 'put', 'patch', 'delete'];
@@ -129,14 +130,12 @@ function buildInputSchema(op: OpenApiOperation): {
     };
   }
 
-  const inputSchema: JsonSchema = {
+  const inputSchema: JsonSchema = sanitizeToolInputSchema({
     type: 'object',
     properties,
     additionalProperties: false,
-  };
-  if (required.length > 0) {
-    inputSchema.required = required;
-  }
+    ...(required.length > 0 ? { required } : {}),
+  });
 
   return { inputSchema, pathParamNames, queryParamNames, hasRequestBody };
 }

@@ -6,8 +6,9 @@ import {
   fillPathTemplate,
   splitToolArgs,
 } from './registry.js';
-import { SYNTHETIC_MCP_TOOL_NAMES } from './accountsTools.js';
+import { LIST_ACCOUNTS_TOOL, GET_ACCOUNT_TOOL, SYNTHETIC_MCP_TOOL_NAMES } from './accountsTools.js';
 import { injectAccountIdIntoInputSchema } from './accountSelection.js';
+import { assertToolInputSchemaCompatible, lintToolInputSchema } from './sanitizeToolInputSchema.js';
 import { buildClientApiOpenApiSpec } from '../client-api/openapi/spec.js';
 import { resolveJsonRefs } from './jsonSchema.js';
 import type { HttpMethod } from './types.js';
@@ -32,6 +33,33 @@ function openApiOperationIdsWithIdempotencyKey(): Set<string> {
     }
   }
   return ids;
+}
+
+function schemaContainsForbiddenKeys(schema: unknown): string[] {
+  const found: string[] = [];
+  const forbidden = new Set([
+    'nullable',
+    'example',
+    'examples',
+    'oneOf',
+    'anyOf',
+    'allOf',
+    '$schema',
+    '$ref',
+  ]);
+  function walk(node: unknown, path: string) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach((item, i) => walk(item, `${path}[${i}]`));
+      return;
+    }
+    for (const [key, value] of Object.entries(node as object)) {
+      if (forbidden.has(key)) found.push(path ? `${path}.${key}` : key);
+      walk(value, path ? `${path}.${key}` : key);
+    }
+  }
+  walk(schema, '');
+  return found;
 }
 
 test('registry parity: every authenticated OpenAPI operationId has a tool', () => {
@@ -152,5 +180,59 @@ test('injectAccountIdIntoInputSchema adds account_id without clobbering existing
   assert.equal(
     (original.properties as Record<string, unknown>).account_id,
     undefined,
+  );
+});
+
+test('every registry and synthetic tool inputSchema is Anthropic-compatible', () => {
+  const tools = buildMcpToolRegistry();
+  for (const tool of tools) {
+    const injected = injectAccountIdIntoInputSchema(tool.inputSchema);
+    assertToolInputSchemaCompatible(injected, tool.operationId);
+    assert.equal(
+      schemaContainsForbiddenKeys(injected).length,
+      0,
+      `${tool.operationId} still has forbidden keys: ${schemaContainsForbiddenKeys(injected).join(', ')}`,
+    );
+  }
+
+  for (const tool of [LIST_ACCOUNTS_TOOL, GET_ACCOUNT_TOOL]) {
+    assertToolInputSchemaCompatible(tool.inputSchema, tool.name);
+    assert.equal(lintToolInputSchema(tool.inputSchema).length, 0);
+  }
+});
+
+test('createCampaign schema has no nullable/combinators/examples after sanitize', () => {
+  const create = buildMcpToolRegistry().find((t) => t.operationId === 'createCampaign');
+  assert.ok(create);
+  const forbidden = schemaContainsForbiddenKeys(create!.inputSchema);
+  assert.deepEqual(forbidden, []);
+
+  const props = create!.inputSchema.properties as Record<string, Record<string, unknown>>;
+  assert.equal(props.schedule?.type, 'object');
+  assert.equal('allOf' in (props.schedule ?? {}), false);
+  assert.equal('nullable' in (props.schedule ?? {}), false);
+  assert.ok((props.schedule?.properties as Record<string, unknown>)?.timezone);
+
+  const flow = props.flow;
+  assert.equal(flow?.type, 'object');
+  const nodes = (flow?.properties as Record<string, Record<string, unknown>>)?.nodes;
+  const nodeItems = nodes?.items as Record<string, unknown>;
+  const data = (nodeItems?.properties as Record<string, Record<string, unknown>>)?.data;
+  assert.equal(data?.type, 'object');
+  assert.equal('oneOf' in (data ?? {}), false);
+  assert.ok((data?.properties as Record<string, unknown>)?.variants);
+
+  // Path/body required integrity: createCampaign has no required name in OpenAPI,
+  // but idempotency_key must still be advertised as a property.
+  assert.ok(props.idempotency_key);
+});
+
+test('getCampaign required path param survives sanitize', () => {
+  const getCampaign = buildMcpToolRegistry().find((t) => t.operationId === 'getCampaign');
+  assert.ok(getCampaign);
+  assert.deepEqual(getCampaign!.inputSchema.required, ['id']);
+  assert.equal(
+    ((getCampaign!.inputSchema.properties as Record<string, Record<string, unknown>>).id)?.type,
+    'string',
   );
 });

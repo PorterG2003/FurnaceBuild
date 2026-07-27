@@ -1,0 +1,64 @@
+---
+description: Guardrails against unintentionally burning paid credits/quota when writing or running scripts against external services (Apollo, Hunter, SmartLead, OpenAI, etc.)
+globs: ['scripts/**']
+alwaysApply: false
+---
+
+# Script spend guardrails
+
+Any script that hits a paid/metered external service (Apollo, Hunter, SmartLead,
+OpenAI/Anthropic, SERP/scrapers, etc.) can burn real money or quota per call. Treat
+every external call as costing money and default to the cheapest safe path.
+
+## Decide *with* the user, not for them
+
+- **Never trigger real spend unilaterally.** Anything that consumes paid credits/quota
+  needs the user's explicit go-ahead — don't decide the sample size, budget, or
+  live-vs-dry-run yourself and run it.
+- **Do the homework first, then ask.** Gather limits and costs on your own so the user
+  doesn't have to: check the vendor's per-unit price and rate/plan limits from the code,
+  config, `.env`, existing run logs, or vendor docs (web search if needed). Then present a
+  concrete estimate and let the user confirm or adjust.
+
+## Before running (or telling the user to run) a script
+
+- **Estimate cost first.** Work out the max billable calls (`rows × calls-per-row`) and,
+  when you can find the vendor's unit price, the dollar cost. Surface it and get explicit
+  confirmation before a full run.
+- **Sample before full runs.** Add a `--limit`/`--sample`/quota flag and do a small
+  pilot (see `SAMPLE_QUOTAS` in `scripts/apollo-sample-decision-makers.ts`). Only scale
+  up after the pilot's hit-rate/output looks right.
+- **Default to a dry run.** New scripts should default to `--dry-run` (or `dev`/sandbox
+  keys) and require an explicit `--live`/`--target-env prod` to spend real prod credits.
+  Never hard-code prod keys or make prod the default.
+
+## Inside the script (required for any billable loop)
+
+- **Bound the work.** Never launch an unbounded loop over an entire input file without a
+  cap. Respect `--limit` and fail loudly if the input is unexpectedly huge.
+- **Rate-limit** with a fixed gap between calls (`REQUEST_GAP_MS`) so you don't blow
+  through per-minute quota or trip abuse limits.
+- **Bound retries.** Use capped exponential backoff (`MAX_ATTEMPTS`, retry only 429/5xx),
+  never infinite retries — a retry storm multiplies spend.
+- **Cache / checkpoint.** Write results incrementally and skip already-processed rows so
+  a re-run after a crash doesn't re-pay for the same rows.
+- **Log the tally.** Print calls made / credits consumed at the end so runs are auditable.
+
+## Examples
+
+```ts
+// ❌ BAD: unbounded, no cap, no confirmation — pays for every row in the file
+for (const row of allRows) {
+  await apolloEnrich(row); // 50k rows = 50k billable calls, silently
+}
+
+// ✅ GOOD: capped sample, dry-run default, rate-limited, checkpointed
+const limit = args.live ? args.limit ?? rows.length : Math.min(args.limit ?? 25, 25);
+console.log(`Will make up to ${limit} billable calls (live=${args.live})`);
+for (const row of rows.slice(0, limit)) {
+  if (done.has(row.id)) continue;          // resume, don't re-pay
+  if (!args.live) { previewOnly(row); continue; } // dry run: no spend
+  await apolloEnrich(row);
+  await sleep(REQUEST_GAP_MS);
+}
+```

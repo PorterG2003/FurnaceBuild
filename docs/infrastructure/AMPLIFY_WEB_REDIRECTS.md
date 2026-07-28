@@ -74,6 +74,10 @@ Avoid full-page slash normalization for `/p/*` in `public/index.html`; hard navi
 
 ## Production env and Supabase
 
-- Set **EXPO_PUBLIC_APP_URL** in Amplify (e.g. `https://build.getfurnace.io`) so forgot-password redirect is `https://build.getfurnace.io/auth` (no trailing slash).
-- In **Supabase Dashboard** → Authentication → URL configuration, add `https://build.getfurnace.io/auth` to **Redirect URLs**.
+- Set **EXPO_PUBLIC_APP_URL** in Amplify (e.g. `https://build.getfurnace.io`) so forgot-password redirect is `https://build.getfurnace.io/auth` (no trailing slash) and invite signup confirmation redirects to `https://build.getfurnace.io/accept-invitation/{id}`.
+- In **Supabase Dashboard** → Authentication → URL configuration, add both of these to **Redirect URLs**:
+  - `https://build.getfurnace.io/auth` (forgot-password / recovery)
+  - `https://build.getfurnace.io/accept-invitation/*` (team-invite signup confirmation; `*` matches one path segment / the invitation UUID)
+- Local `supabase/config.toml` mirrors the invite pattern as `http://localhost:8081/accept-invitation/*` in `additional_redirect_urls`.
+- Supabase globs the allow list against the **full URL**. A miss falls back to the Site URL with no error — so without the `accept-invitation/*` entry, confirmation links silently land on `/` and users hit `/no-workspace` until they recover via a pending invite.
 - **Auth emails (forgot password, confirmations, etc.):** Configure **SMTP** for the **production** Supabase project. Dashboard → **Project settings** → **Auth** → **SMTP**. Without this, auth emails are not sent (Supabase only queues them). Local dev can use Inbucket; production needs a real SMTP provider (e.g. SendGrid, Resend, SES).

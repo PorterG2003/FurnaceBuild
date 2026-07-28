@@ -21,10 +21,10 @@ Event insert and stats increment are **atomic**: a single RPC per stat type inse
 
 ### Sent
 
-A **campaign email was successfully sent**. Counted when the send-worker marks a **campaign** `message_job` as `sent`. Excludes `inbox_reply` and `inbox_forward` jobs.
+A **campaign outbound email was successfully sent**. Counted when the send-worker marks an outbound `message_job` as `sent`. Includes paced `campaign` jobs and post-categorizer priority jobs (`campaign_priority` / legacy `campaign_reply`). Excludes `inbox_reply` and `inbox_forward`.
 
-- **Source of truth for backfill:** `message_jobs` where `status = 'sent'` and `message_type = 'campaign'` (or null).
-- **Code:** Send worker calls `record_sent_event_and_increment` for campaign jobs only (`isCampaignMessageJob`); that RPC inserts the `sent` event and increments `sent_count` in one transaction. See [workers/send-worker/src/worker.ts](../../../workers/send-worker/src/worker.ts). Backfill logic: [supabase/migrations/20260216000002_backfill_campaign_stats.sql](../../../supabase/migrations/20260216000002_backfill_campaign_stats.sql).
+- **Source of truth for backfill / reconcile:** `message_jobs` where `status = 'sent'` and `is_campaign_outbound_message_type(message_type)` (SQL; mirrors TS `isCampaignMessageJob`).
+- **Code:** Send worker calls `record_sent_event_and_increment` for outbound jobs only (`isCampaignMessageJob`); that RPC inserts the `sent` event and increments `sent_count` in one transaction. See [workers/send-worker/src/worker.ts](../../../workers/send-worker/src/worker.ts). Backfill logic: [supabase/migrations/20260216000002_backfill_campaign_stats.sql](../../../supabase/migrations/20260216000002_backfill_campaign_stats.sql).
 
 ### Replied
 
@@ -154,10 +154,23 @@ flowchart LR
 
 ---
 
+## Message-type predicates
+
+Keep SQL and TypeScript in lockstep:
+
+| Concept | SQL | TypeScript |
+|---|---|---|
+| Outbound campaign send (paced + priority) | `is_campaign_outbound_message_type(t)` | `isCampaignMessageJob` |
+| Paced only (reply/interested variant attribution) | `is_paced_campaign_message_type(t)` | `isPacedCampaignMessageJob` |
+| Priority lane | `t IN ('campaign_priority','campaign_reply')` | `isPriorityCampaignJob` |
+
+**Variant performance (`get_campaign_variant_stats`):** `sent` and `bounce` use outbound; `replied` and `positive_reply` use paced only so post-categorizer priority nodes do not own reply/interested attribution (UI shows em dash for those columns on `node.data.priority === true`).
+
 ## Edge cases and consistency
 
-- **Excluded from sent:** `message_jobs` with `message_type` `inbox_reply` or `inbox_forward` (see `isCampaignMessageJob` in send-worker).
+- **Excluded from sent:** `message_jobs` with `message_type` `inbox_reply` or `inbox_forward` (see `isCampaignMessageJob` / `is_campaign_outbound_message_type`).
 - **Excluded from replied:** Replies to inbox_reply/inbox_forward (see `isCampaignReply` in thread-manager).
+- **Priority / auto-reply nodes:** Count in campaign-level and variant **sent** (and bounce); do **not** attribute replied/interested on those nodes — that stays on the pre-categorizer paced email.
 - **Positive reply is user-defined:** A reply counts as “positive” only when a user marks the thread as Interested. The per-day chart’s positive-reply count can lag until threads are categorized; that is expected, not a bug.
 - **Positive reply can change:** User sets/clears “Interested” → `update_campaign_stats_positive_reply` (delta) and `update_replied_event_is_positive` so events stay in sync for per-day charts.
 - **Bounce:** Each bounced event = one increment (one per matched lead/message_job). There is no attribution when the bounce cannot be matched to a Furnace send; those cases never create `bounced` events.

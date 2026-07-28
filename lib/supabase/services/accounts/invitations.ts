@@ -14,6 +14,14 @@ export interface AcceptInvitationResult {
   account_id?: string;
 }
 
+export interface PendingInvitationForCurrentUser {
+  invitation_id: string;
+  account_id: string;
+  account_name: string;
+  inviter_name: string | null;
+  created_at: string;
+}
+
 export interface InviteUserToAccountResult {
   status: string;
   invitation_id?: string;
@@ -84,6 +92,17 @@ export async function getInvitationInfo(invitationId: string): Promise<Invitatio
   });
   if (error) throw new Error(error.message);
   return data as InvitationInfo;
+}
+
+/**
+ * Pending invitations for the signed-in user's own email, excluding accounts they
+ * already belong to. Uses an RPC because `accounts` is hidden by RLS until the
+ * membership exists, which is exactly the state this is meant to recover from.
+ */
+export async function getMyPendingInvitations(): Promise<PendingInvitationForCurrentUser[]> {
+  const { data, error } = await supabase.rpc('get_my_pending_invitations');
+  if (error) throw new Error(error.message);
+  return (data ?? []) as PendingInvitationForCurrentUser[];
 }
 
 export async function acceptInvitationRpc(invitationId: string): Promise<AcceptInvitationResult> {

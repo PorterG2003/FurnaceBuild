@@ -16,13 +16,23 @@ export type MessageType =
   | 'inbox_forward';
 
 /**
- * True if this job is a campaign send (scheduler-created). False for inbox_reply/inbox_forward.
+ * True if this job is a campaign outbound send. False for inbox_reply/inbox_forward.
  * campaign_priority (and legacy campaign_reply) count as campaign jobs
  * (enrollment-driven, campaign stats/events).
+ * Must stay aligned with SQL public.is_campaign_outbound_message_type.
  */
 export function isCampaignMessageJob(job: { message_type?: MessageType | null }): boolean {
   const t = job.message_type;
   return t !== 'inbox_reply' && t !== 'inbox_forward';
+}
+
+/**
+ * Scheduler-paced campaign sends only (not priority lane).
+ * Must stay aligned with SQL public.is_paced_campaign_message_type.
+ */
+export function isPacedCampaignMessageJob(job: { message_type?: MessageType | null }): boolean {
+  const t = job.message_type;
+  return t == null || t === 'campaign';
 }
 
 /**

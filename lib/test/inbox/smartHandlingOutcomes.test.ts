@@ -78,6 +78,8 @@ test('manual-mode Auto Reply classification writes dated OOO smart-handling opti
   const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('smart-handling-ooo') });
   const originalFetch = global.fetch;
   const now = Date.now();
+  // Must stay inside sanitizeReturnDate horizon (not past, within ~90 days).
+  const futureReturnDate = new Date(now + 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   try {
     if (!(await ensureInboxRedesignSchema(harness, t))) return;
@@ -142,7 +144,7 @@ test('manual-mode Auto Reply classification writes dated OOO smart-handling opti
                 message: {
                   content: JSON.stringify({
                     category: 'Auto Reply',
-                    return_date: '2026-06-26',
+                    return_date: futureReturnDate,
                   }),
                 },
               },
@@ -183,7 +185,7 @@ test('manual-mode Auto Reply classification writes dated OOO smart-handling opti
     assert.equal(metadata.mode, 'manual');
     assert.equal(metadata.suggestion_version, resolveSuggestionVersion('manual'));
     assert.equal(metadata.primary.action, 'mark_ooo_dated');
-    assert.equal(metadata.return_date, '2026-06-26');
+    assert.equal(metadata.return_date, futureReturnDate);
     assert.ok(Array.isArray(metadata.alternatives));
     assert.ok(metadata.alternatives.some((option: any) => option.action === 'mark_ooo_instant'));
     assert.ok(metadata.alternatives.some((option: any) => option.action === 'mark_ooo_custom'));

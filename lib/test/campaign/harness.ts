@@ -82,6 +82,8 @@ export type CampaignMessageJobSpec = {
   mailboxKey?: string;
   sendWaitReason?: string | null;
   intervalId?: string | null;
+  /** Required for get_campaign_variant_stats attribution. */
+  variantId?: string | null;
 };
 
 export type CampaignEnrollmentSpec = {
@@ -1132,6 +1134,7 @@ export async function materializeCampaignGraph(
         message_type: messageType,
         send_wait_reason: jobSpec.sendWaitReason ?? null,
         interval_id: jobSpec.intervalId ?? null,
+        variant_id: jobSpec.variantId ?? null,
       } as any);
       manifest.messageJobIds.push(jobId);
     }

@@ -142,6 +142,7 @@ export default function AuthIndex() {
             onSignUpSuccess={handleSignUpSuccess}
             onBackToSignIn={handleBackToSignIn}
             initialEmail={inviteEmail}
+            invitationId={invitation_id}
           />
         );
       case 'forgotPassword':

@@ -2524,6 +2524,9 @@ export interface Database {
           replacement_id: string;
           new_lead_id: string;
           enrollment_id: string | null;
+          mode: string;
+          target_lead_id: string;
+          retired_sibling_count: number;
         }[];
       };
       resume_campaign_and_reschedule_jobs: {
@@ -2705,6 +2708,22 @@ export interface Database {
           p_account_id: string;
           p_campaign_ids: string[];
           p_emails: string[];
+        };
+        Returns: Json;
+      };
+      preview_replacement_target: {
+        Args: {
+          p_account_id: string;
+          p_campaign_id: string;
+          p_email: string;
+          p_old_lead_id?: string | null;
+        };
+        Returns: Json;
+      };
+      replace_lead_health_report: {
+        Args: {
+          p_account_id: string;
+          p_since?: string | null;
         };
         Returns: Json;
       };

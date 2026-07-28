@@ -17,6 +17,12 @@ import {
   unauthorized,
 } from '../../../lib/client-api/errors.js';
 import {
+  isReplacementReason,
+  throwIfReplaceLeadRpcError,
+  REPLACEMENT_REASON_VALUES,
+} from '../../../lib/client-api/replaceLeadErrors.js';
+import { buildReplaceLeadPreviewPayload } from '../../../lib/client-api/replaceLeadPreview.js';
+import {
   mapClientApiThrownError,
   publicErrorMessageFromThrown,
 } from '../../../lib/client-api/mapThrownError.js';
@@ -37,6 +43,7 @@ import {
   IMPORT_JOB_CREATE_KEYS,
   LEAD_WRITE_KEYS,
   PERSON_UPDATE_KEYS,
+  REPLACE_LEAD_KEYS,
   pickKnownKeys,
 } from '../../../lib/client-api/pickKnownKeys.js';
 import {
@@ -2759,6 +2766,42 @@ app.delete('/v1/threads/:id/out-of-office', async (c) => {
   return jsonResponse(c, { data }, 200, c.get('rateLimitHeaders'));
 });
 
+app.get('/v1/threads/:id/replace-lead/preview', async (c) => {
+  const supabase = createServiceRoleClient();
+  const auth = c.get('apiKey');
+  const threadId = c.req.param('id');
+  const thread = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
+  if (!thread) notFound('thread_not_found', 'Thread not found');
+  const leadId = typeof thread.lead_id === 'string' ? thread.lead_id : null;
+  if (!leadId) {
+    invalidRequest('thread_missing_lead', 'Thread has no lead to replace');
+  }
+  const campaignId = typeof thread.campaign_id === 'string' ? thread.campaign_id : null;
+  if (!campaignId) {
+    invalidRequest('thread_missing_campaign', 'Thread has no campaign to preview a replacement against');
+  }
+  const email = c.req.query('email')?.trim().toLowerCase() ?? '';
+  if (!email) {
+    invalidRequest('missing_email', 'email is required', 'email');
+  }
+  assertNoNul(email, 'email');
+
+  const { data, error } = await supabase.rpc('preview_replacement_target', {
+    p_account_id: auth.accountId,
+    p_campaign_id: campaignId,
+    p_email: email,
+    p_old_lead_id: leadId,
+  });
+  if (error) throw new Error(`Failed to preview replacement target: ${error.message}`);
+
+  return jsonResponse(
+    c,
+    { data: buildReplaceLeadPreviewPayload(data) },
+    200,
+    c.get('rateLimitHeaders'),
+  );
+});
+
 app.post('/v1/threads/:id/replace-lead', async (c) => {
   const supabase = createServiceRoleClient();
   const auth = c.get('apiKey');
@@ -2769,40 +2812,73 @@ app.post('/v1/threads/:id/replace-lead', async (c) => {
   if (!leadId) {
     invalidRequest('thread_missing_lead', 'Thread has no lead to replace');
   }
-  const body = parseJsonBody<{
+  const body = pickKnownKeys<{
     new_email?: string;
     new_name?: string | null;
     new_first_name?: string | null;
     new_last_name?: string | null;
     new_phone_number?: string | null;
+    new_mobile_phone_number?: string | null;
     reason?: string | null;
     reason_note?: string | null;
     source_message_id?: string | null;
     forward_message_id?: string | null;
-  }>(await c.req.text());
-  const newEmail = body.new_email?.trim().toLowerCase();
+  }>(
+    parseJsonBody<Record<string, unknown>>(await c.req.text()),
+    REPLACE_LEAD_KEYS,
+  );
+  const newEmail = typeof body.new_email === 'string' ? body.new_email.trim().toLowerCase() : '';
   if (!newEmail) {
     invalidRequest('missing_new_email', 'new_email is required', 'new_email');
   }
+  assertNoNul(newEmail, 'new_email');
+
+  const reasonRaw = typeof body.reason === 'string' ? body.reason.trim() : '';
+  const reason = reasonRaw || 'manual_referral';
+  if (!isReplacementReason(reason)) {
+    invalidRequest(
+      'invalid_reason',
+      `reason must be one of: ${REPLACEMENT_REASON_VALUES.join(', ')}`,
+      'reason',
+    );
+  }
+
+  const sourceMessageId =
+    typeof body.source_message_id === 'string' ? body.source_message_id.trim() || null : null;
+  if (sourceMessageId) assertUuid(sourceMessageId, 'source_message_id');
+
   const { data: replacementRows, error } = await supabase.rpc('replace_lead_with_new_contact', {
     p_old_lead_id: leadId,
     p_new_email: newEmail,
-    p_new_name: body.new_name?.trim() || null,
-    p_new_first_name: body.new_first_name?.trim() || null,
-    p_new_last_name: body.new_last_name?.trim() || null,
-    p_new_phone_number: body.new_phone_number?.trim() || null,
-    p_reason: (body.reason?.trim() || 'manual_referral') as Database['public']['Enums']['replacement_reason_enum'],
-    p_reason_note: body.reason_note?.trim() || null,
-    p_source_message_id: body.source_message_id?.trim() || null,
+    p_new_name: typeof body.new_name === 'string' ? body.new_name.trim() || null : null,
+    p_new_first_name:
+      typeof body.new_first_name === 'string' ? body.new_first_name.trim() || null : null,
+    p_new_last_name:
+      typeof body.new_last_name === 'string' ? body.new_last_name.trim() || null : null,
+    p_new_phone_number:
+      typeof body.new_phone_number === 'string' ? body.new_phone_number.trim() || null : null,
+    p_new_mobile_phone_number:
+      typeof body.new_mobile_phone_number === 'string'
+        ? body.new_mobile_phone_number.trim() || null
+        : null,
+    p_reason: reason,
+    p_reason_note:
+      typeof body.reason_note === 'string' ? body.reason_note.trim() || null : null,
+    p_source_message_id: sourceMessageId,
   });
-  if (error) throw new Error(`Failed to replace lead: ${error.message}`);
+  if (error) {
+    throwIfReplaceLeadRpcError(error.message);
+    throw new Error(`Failed to replace lead: ${error.message}`);
+  }
   const replacement = Array.isArray(replacementRows) ? replacementRows[0] : null;
   if (!replacement?.new_lead_id || !replacement?.replacement_id) {
     throw new Error('Failed to replace lead: no replacement result returned');
   }
   let forwardJobId: string | null = null;
-  const forwardMessageId = body.forward_message_id?.trim();
+  const forwardMessageId =
+    typeof body.forward_message_id === 'string' ? body.forward_message_id.trim() : '';
   if (forwardMessageId) {
+    assertUuid(forwardMessageId, 'forward_message_id');
     const refreshedThread = await loadAccountThreadOrThrow(supabase, auth.accountId, threadId);
     if (!refreshedThread) notFound('thread_not_found', 'Thread not found');
     const forwardedMessage = await loadThreadMessageOrThrow(supabase, threadId, forwardMessageId);
@@ -2815,7 +2891,8 @@ app.post('/v1/threads/:id/replace-lead', async (c) => {
       forwardedMessageId: forwardMessageId,
       body: {
         to_email: newEmail,
-        to_name: body.new_name?.trim() || undefined,
+        to_name:
+          typeof body.new_name === 'string' ? body.new_name.trim() || undefined : undefined,
         body_text: 'Forwarding the original message.',
         body_html: 'Forwarding the original message.',
       },
@@ -2827,6 +2904,12 @@ app.post('/v1/threads/:id/replace-lead', async (c) => {
       replacement_id: replacement.replacement_id,
       new_lead_id: replacement.new_lead_id,
       enrollment_id: replacement.enrollment_id ?? null,
+      mode: replacement.mode,
+      target_lead_id:
+        replacement.mode === 'attached'
+          ? (replacement.target_lead_id ?? replacement.new_lead_id)
+          : null,
+      retired_sibling_count: replacement.retired_sibling_count ?? 0,
       forward_job_id: forwardJobId,
     },
   }, 200, c.get('rateLimitHeaders'));

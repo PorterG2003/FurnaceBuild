@@ -9,6 +9,10 @@ import {
   smartHandlingMailboxLocalPart,
 } from './constants/smartHandlingFlow';
 import {
+  DEFAULT_SEED_REPLACE_LEAD_ATTACH_CAMPAIGN_ID,
+  replaceLeadAttachMailboxEmail,
+} from './constants/replaceLeadAttach';
+import {
   DEV_DEFAULT_CAMPAIGN_IDS,
   DEV_DEFAULT_MAILBOX_SPECS,
 } from '../../lib/test/campaign/productionLikeSeed';
@@ -23,7 +27,13 @@ import {
 } from './theme/falloutOooCopy';
 import type { SeedContext } from './types';
 
-export type ResetScope = 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default' | 'demo-hub' | 'smart-handling-flow';
+export type ResetScope =
+  | 'campaign-smoke'
+  | 'ooo-mixed-inbox'
+  | 'dev-default'
+  | 'demo-hub'
+  | 'smart-handling-flow'
+  | 'replace-lead-attach';
 
 export type ScopePlan = {
   scope: ResetScope;
@@ -45,7 +55,15 @@ export type ScopeCounts = {
 
 export function resolveScopePlans(
   accountId: string,
-  requestedScope: 'campaign-smoke' | 'ooo-mixed-inbox' | 'dev-default' | 'demo-hub' | 'smart-handling-flow' | 'all' | null
+  requestedScope:
+    | 'campaign-smoke'
+    | 'ooo-mixed-inbox'
+    | 'dev-default'
+    | 'demo-hub'
+    | 'smart-handling-flow'
+    | 'replace-lead-attach'
+    | 'all'
+    | null
 ): ScopePlan[] {
   const plans: ScopePlan[] = [];
   const wantCampaignSmoke =
@@ -61,10 +79,19 @@ export function resolveScopePlans(
   const wantDemoHub = requestedScope === 'demo-hub' || requestedScope === 'all';
   const wantSmartHandling =
     requestedScope === 'smart-handling-flow' || requestedScope === 'all';
+  const wantReplaceLeadAttach =
+    requestedScope === 'replace-lead-attach' || requestedScope === 'all';
 
-  if (!wantCampaignSmoke && !wantOoo && !wantDevDefault && !wantDemoHub && !wantSmartHandling) {
+  if (
+    !wantCampaignSmoke &&
+    !wantOoo &&
+    !wantDevDefault &&
+    !wantDemoHub &&
+    !wantSmartHandling &&
+    !wantReplaceLeadAttach
+  ) {
     throw new Error(
-      'seed:reset requires an explicit scope (--scope=campaign-smoke|ooo-mixed-inbox|dev-default|demo-hub|smart-handling-flow|all) or at least one scoped campaign env (SEED_CAMPAIGN_ID / SEED_OOO_CAMPAIGN_ID).'
+      'seed:reset requires an explicit scope (--scope=campaign-smoke|ooo-mixed-inbox|dev-default|demo-hub|smart-handling-flow|replace-lead-attach|all) or at least one scoped campaign env (SEED_CAMPAIGN_ID / SEED_OOO_CAMPAIGN_ID).'
     );
   }
 
@@ -141,6 +168,18 @@ export function resolveScopePlans(
       mailboxEmails: [
         `${smartHandlingMailboxLocalPart('ai', aiCampaignId)}@furnace.test`,
       ],
+    });
+  }
+
+  if (wantReplaceLeadAttach) {
+    const campaignId =
+      process.env.SEED_REPLACE_LEAD_ATTACH_CAMPAIGN_ID?.trim() ||
+      DEFAULT_SEED_REPLACE_LEAD_ATTACH_CAMPAIGN_ID;
+    plans.push({
+      scope: 'replace-lead-attach',
+      campaignId,
+      accountId,
+      mailboxEmails: [replaceLeadAttachMailboxEmail(campaignId)],
     });
   }
 

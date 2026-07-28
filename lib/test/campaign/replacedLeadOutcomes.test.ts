@@ -47,6 +47,71 @@ async function loadReplacementResult(
   });
 }
 
+type EnrollmentSnapshot = {
+  id: string;
+  lead_id: string;
+  state: string | null;
+  stopped_reason: string | null;
+  stopped_at: string | null;
+  next_run_at: string | null;
+  current_node_id: string | null;
+};
+
+async function loadEnrollment(
+  harness: CampaignDbHarness,
+  enrollmentId: string
+): Promise<EnrollmentSnapshot> {
+  const { data, error } = await harness.supabase
+    .from('enrollments')
+    .select('id, lead_id, state, stopped_reason, stopped_at, next_run_at, current_node_id')
+    .eq('id', enrollmentId)
+    .single();
+  assert.equal(error, null, error?.message);
+  return data as EnrollmentSnapshot;
+}
+
+async function loadJobStatuses(
+  harness: CampaignDbHarness,
+  jobIds: string[]
+): Promise<Map<string, { status: string; lead_id: string }>> {
+  const { data, error } = await harness.supabase
+    .from('message_jobs')
+    .select('id, status, lead_id')
+    .in('id', jobIds);
+  assert.equal(error, null, error?.message);
+  return new Map((data ?? []).map((row: any) => [row.id, { status: row.status, lead_id: row.lead_id }]));
+}
+
+async function loadDialTotals(
+  harness: CampaignDbHarness,
+  campaignId: string
+): Promise<{ listEnrollmentCount: number; bucketTotal: number }> {
+  const [listResult, bucketResult] = await Promise.all([
+    harness.supabase.rpc('campaigns_list_summary', {
+      p_account_id: harness.env.accountId,
+      p_search: null,
+      p_statuses: null,
+      p_tag_ids: null,
+      p_limit: null,
+      p_cursor_created_at: null,
+      p_cursor_id: null,
+    }),
+    harness.supabase.rpc('get_campaign_lead_progress_buckets', { p_campaign_id: campaignId }),
+  ]);
+  assert.equal(listResult.error, null, listResult.error?.message);
+  assert.equal(bucketResult.error, null, bucketResult.error?.message);
+
+  const listRow = ((listResult.data ?? []) as any[]).find((row) => row.id === campaignId);
+  assert.ok(listRow, 'campaign missing from campaigns_list_summary');
+  const bucketRow = (bucketResult.data ?? [])[0] as any;
+  assert.ok(bucketRow, 'campaign missing from get_campaign_lead_progress_buckets');
+
+  return {
+    listEnrollmentCount: Number(listRow.enrollment_count),
+    bucketTotal: Number(bucketRow.total_leads),
+  };
+}
+
 async function fetchReceivedMessageId(harness: CampaignDbHarness, threadId: string): Promise<string> {
   const { data, error } = await harness.supabase
     .from('email_messages')
@@ -822,6 +887,713 @@ test('DB-backed replacement summary queries return matching summaries for both o
     assert.equal(summaries[rpcRow!.new_lead_id]?.role, 'new');
     assert.equal(summaries[rpcRow!.new_lead_id]?.counterpartLeadId, oldLead.leadId);
     assert.equal(summaries[rpcRow!.new_lead_id]?.counterpartLabel, 'Old Contact');
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('replacing to an address already live in the campaign attaches to that contact instead of duplicating', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('replaced-lead-attach') });
+  const now = Date.now();
+  const targetEmail = `attach-target-${harness.namespace}@furnace.test`;
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Replaced Lead Attach',
+      status: 'running',
+      flowKind: 'emailWaitEmail',
+      leads: [
+        buildCampaignLead({
+          key: 'old',
+          email: `attach-old-${harness.namespace}@furnace.test`,
+          name: 'Referring Contact',
+          companyName: 'Acme Legacy',
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'waitTime-1',
+            nextRunAt: new Date(now + 15 * 60 * 1000).toISOString(),
+          }),
+          jobs: [
+            buildCampaignJob({ key: 'old-queued', nodeFlowNodeId: 'email-2', status: 'queued', scheduledAt: new Date(now + 10 * 60 * 1000).toISOString() }),
+            buildCampaignJob({ key: 'old-reserved', nodeFlowNodeId: 'email-2', status: 'reserved', scheduledAt: new Date(now + 20 * 60 * 1000).toISOString() }),
+            buildCampaignJob({ key: 'old-sent', nodeFlowNodeId: 'email-1', status: 'sent', scheduledAt: new Date(now - 60 * 60 * 1000).toISOString(), sentAt: new Date(now - 59 * 60 * 1000).toISOString() }),
+            buildCampaignJob({ key: 'old-failed', nodeFlowNodeId: 'email-2', status: 'failed', scheduledAt: new Date(now - 30 * 60 * 1000).toISOString() }),
+            buildCampaignJob({ key: 'old-blocked', nodeFlowNodeId: 'email-2', status: 'blocked', scheduledAt: new Date(now - 25 * 60 * 1000).toISOString() }),
+          ],
+          thread: buildCampaignThread({
+            subject: 'Referral thread',
+            lastMessageAt: new Date(now - 5 * 60 * 1000).toISOString(),
+            messageJobKey: 'old-sent',
+          }),
+        }),
+        buildCampaignLead({
+          key: 'target',
+          email: targetEmail,
+          name: 'Existing Contact',
+          firstName: 'Existing',
+          lastName: 'Contact',
+          companyName: 'Target Co',
+          phoneNumber: '555-9000',
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'waitTime-1',
+            nextRunAt: new Date(now + 45 * 60 * 1000).toISOString(),
+          }),
+          jobs: [
+            buildCampaignJob({ key: 'target-queued', nodeFlowNodeId: 'email-2', status: 'queued', scheduledAt: new Date(now + 45 * 60 * 1000).toISOString() }),
+          ],
+        }),
+      ],
+    });
+
+    const oldLead = graph.leadsByKey.get('old')!;
+    const target = graph.leadsByKey.get('target')!;
+    const dialsBefore = await loadDialTotals(harness, graph.campaignId);
+    const targetBefore = await loadEnrollment(harness, target.enrollmentId!);
+
+    // Mixed case on purpose: the match is lower(btrim(email)) on both sides.
+    const result = await loadReplacementResult(harness, {
+      p_old_lead_id: oldLead.leadId,
+      p_new_email: `  ${targetEmail.toUpperCase()}  `,
+      p_new_name: 'Referred Person',
+      p_new_phone_number: '555-1111',
+    });
+    assert.equal(result.error, null, result.error?.message);
+    const rpcRow = result.data?.[0];
+    assert.ok(rpcRow);
+    harness.recordReplacement({ replacementId: rpcRow!.replacement_id, newLeadId: rpcRow!.new_lead_id });
+
+    assert.equal(rpcRow?.mode, 'attached');
+    assert.equal(rpcRow?.new_lead_id, target.leadId);
+    assert.equal(rpcRow?.target_lead_id, target.leadId);
+    assert.equal(rpcRow?.enrollment_id, target.enrollmentId);
+    assert.equal(rpcRow?.retired_sibling_count, 0);
+
+    const { data: sameEmailLeads, error: sameEmailError } = await harness.supabase
+      .from('leads')
+      .select('id')
+      .eq('campaign_id', graph.campaignId)
+      .is('deleted_at', null)
+      .ilike('email', targetEmail);
+    assert.equal(sameEmailError, null, sameEmailError?.message);
+    assert.deepEqual((sameEmailLeads ?? []).map((row: any) => row.id), [target.leadId]);
+
+    const { data: threadRow, error: threadError } = await harness.supabase
+      .from('email_threads')
+      .select('lead_id, enrollment_id, participants')
+      .eq('id', oldLead.threadId!)
+      .single();
+    assert.equal(threadError, null, threadError?.message);
+    assert.equal(threadRow?.lead_id, target.leadId);
+    assert.equal(threadRow?.enrollment_id, target.enrollmentId);
+    assert.equal(
+      (threadRow?.participants ?? []).filter((email: string) => email === targetEmail).length,
+      1
+    );
+
+    const oldEnrollment = await loadEnrollment(harness, oldLead.enrollmentId!);
+    assert.equal(oldEnrollment.lead_id, oldLead.leadId);
+    assert.equal(oldEnrollment.state, 'stopped');
+    assert.equal(oldEnrollment.stopped_reason, 'replaced');
+    assert.equal(oldEnrollment.next_run_at, null);
+    assert.ok(oldEnrollment.stopped_at);
+
+    const targetAfter = await loadEnrollment(harness, target.enrollmentId!);
+    assert.deepEqual(targetAfter, targetBefore);
+
+    const { data: oldLeadRow, error: oldLeadError } = await harness.supabase
+      .from('leads')
+      .select('deleted_at')
+      .eq('id', oldLead.leadId)
+      .single();
+    assert.equal(oldLeadError, null, oldLeadError?.message);
+    assert.equal(oldLeadRow?.deleted_at, null);
+
+    const oldJobs = await loadJobStatuses(harness, Array.from(oldLead.messageJobIdsByKey.values()));
+    assert.equal(oldJobs.get(oldLead.messageJobIdsByKey.get('old-queued')!)?.status, 'cancelled');
+    assert.equal(oldJobs.get(oldLead.messageJobIdsByKey.get('old-reserved')!)?.status, 'cancelled');
+    assert.equal(oldJobs.get(oldLead.messageJobIdsByKey.get('old-sent')!)?.status, 'sent');
+    assert.equal(oldJobs.get(oldLead.messageJobIdsByKey.get('old-failed')!)?.status, 'failed');
+    assert.equal(oldJobs.get(oldLead.messageJobIdsByKey.get('old-blocked')!)?.status, 'blocked');
+    for (const job of oldJobs.values()) {
+      assert.equal(job.lead_id, oldLead.leadId, 'attach must not move jobs onto the target');
+    }
+
+    const targetJobs = await loadJobStatuses(harness, Array.from(target.messageJobIdsByKey.values()));
+    assert.equal(targetJobs.get(target.messageJobIdsByKey.get('target-queued')!)?.status, 'queued');
+
+    const { data: targetLeadRow, error: targetLeadError } = await harness.supabase
+      .from('leads')
+      .select('name, first_name, last_name, phone_number, company_name')
+      .eq('id', target.leadId)
+      .single();
+    assert.equal(targetLeadError, null, targetLeadError?.message);
+    assert.equal(targetLeadRow?.name, 'Existing Contact');
+    assert.equal(targetLeadRow?.first_name, 'Existing');
+    assert.equal(targetLeadRow?.last_name, 'Contact');
+    assert.equal(targetLeadRow?.phone_number, '555-9000');
+    assert.equal(targetLeadRow?.company_name, 'Target Co');
+
+    const { data: replacementRow, error: replacementError } = await harness.supabase
+      .from('lead_replacements')
+      .select('old_lead_id, new_lead_id, status')
+      .eq('id', rpcRow!.replacement_id)
+      .single();
+    assert.equal(replacementError, null, replacementError?.message);
+    assert.equal(replacementRow?.old_lead_id, oldLead.leadId);
+    assert.equal(replacementRow?.new_lead_id, target.leadId);
+
+    const dialsAfter = await loadDialTotals(harness, graph.campaignId);
+    assert.deepEqual(dialsAfter, dialsBefore);
+    assert.equal(dialsAfter.listEnrollmentCount, dialsAfter.bucketTotal);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('attach fills only blank fields on the existing contact', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('replaced-lead-attach-fill') });
+  const targetEmail = `fill-target-${harness.namespace}@furnace.test`;
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Replaced Lead Attach Fill',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'old',
+          email: `fill-old-${harness.namespace}@furnace.test`,
+          companyName: 'Referrer Co',
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'active', currentFlowNodeId: 'email-1' }),
+        }),
+        buildCampaignLead({
+          key: 'target',
+          email: targetEmail,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'active', currentFlowNodeId: 'email-1' }),
+        }),
+      ],
+    });
+
+    const oldLead = graph.leadsByKey.get('old')!;
+    const target = graph.leadsByKey.get('target')!;
+
+    const { error: blankError } = await harness.supabase
+      .from('leads')
+      .update({
+        name: null,
+        first_name: null,
+        last_name: '   ',
+        phone_number: null,
+        company_name: 'Keep This Company',
+        custom_lead_data: { region: 'east' },
+      } as any)
+      .eq('id', target.leadId);
+    assert.equal(blankError, null, blankError?.message);
+
+    const { error: oldCustomError } = await harness.supabase
+      .from('leads')
+      .update({ custom_lead_data: { region: 'west', team: 'sales' } } as any)
+      .eq('id', oldLead.leadId);
+    assert.equal(oldCustomError, null, oldCustomError?.message);
+
+    const preview = await harness.supabase.rpc('preview_replacement_target', {
+      p_account_id: graph.accountId,
+      p_campaign_id: graph.campaignId,
+      p_email: targetEmail,
+      p_old_lead_id: oldLead.leadId,
+    });
+    assert.equal(preview.error, null, preview.error?.message);
+    const previewLead = (preview.data as any)?.existingLead;
+    assert.ok(previewLead, 'preview should resolve the existing contact');
+    assert.equal(previewLead.id, target.leadId);
+    assert.equal(previewLead.companyName, 'Keep This Company');
+    assert.equal(previewLead.phoneNumber, null);
+    assert.equal(previewLead.lastName, '   ');
+    assert.deepEqual(previewLead.customLeadData, { region: 'east' });
+
+    const result = await loadReplacementResult(harness, {
+      p_old_lead_id: oldLead.leadId,
+      p_new_email: targetEmail,
+      p_new_name: 'Filled Name',
+      p_new_first_name: 'Filled',
+      p_new_last_name: 'Person',
+      p_new_phone_number: '555-2222',
+    });
+    assert.equal(result.error, null, result.error?.message);
+    const rpcRow = result.data?.[0];
+    assert.equal(rpcRow?.mode, 'attached');
+    harness.recordReplacement({ replacementId: rpcRow!.replacement_id, newLeadId: rpcRow!.new_lead_id });
+
+    const { data: targetRow, error: targetError } = await harness.supabase
+      .from('leads')
+      .select('name, first_name, last_name, phone_number, company_name, custom_lead_data')
+      .eq('id', target.leadId)
+      .single();
+    assert.equal(targetError, null, targetError?.message);
+    assert.equal(targetRow?.name, 'Filled Name');
+    assert.equal(targetRow?.first_name, 'Filled');
+    assert.equal(targetRow?.last_name, 'Person');
+    assert.equal(targetRow?.phone_number, '555-2222');
+    assert.equal(targetRow?.company_name, 'Keep This Company');
+    // The target's own keys win on merge; the referrer only contributes new ones.
+    assert.deepEqual(targetRow?.custom_lead_data, { region: 'east', team: 'sales' });
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('attach picks the primary deterministically and retires only siblings that can still send', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('replaced-lead-attach-siblings') });
+  const now = Date.now();
+  const sharedEmail = `sibling-${harness.namespace}@furnace.test`;
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Replaced Lead Attach Siblings',
+      status: 'running',
+      flowKind: 'emailWaitEmail',
+      leads: [
+        buildCampaignLead({
+          key: 'old',
+          email: `sibling-old-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'active', currentFlowNodeId: 'waitTime-1' }),
+          thread: buildCampaignThread({
+            subject: 'Sibling referral thread',
+            lastMessageAt: new Date(now - 5 * 60 * 1000).toISOString(),
+          }),
+        }),
+        // Completed but with the most recent thread activity: loses to the active row.
+        buildCampaignLead({
+          key: 'dupe-completed',
+          email: sharedEmail,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'completed', currentFlowNodeId: 'email-2', nextRunAt: null }),
+          jobs: [
+            buildCampaignJob({ key: 'completed-queued', nodeFlowNodeId: 'email-2', status: 'queued', scheduledAt: new Date(now + 60 * 60 * 1000).toISOString() }),
+          ],
+          thread: buildCampaignThread({
+            subject: 'Newest activity',
+            lastMessageAt: new Date(now - 60 * 1000).toISOString(),
+          }),
+        }),
+        // Active: wins the ranking regardless of activity or age.
+        buildCampaignLead({
+          key: 'dupe-active',
+          email: sharedEmail,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({
+            state: 'active',
+            currentFlowNodeId: 'waitTime-1',
+            nextRunAt: new Date(now + 30 * 60 * 1000).toISOString(),
+          }),
+        }),
+        buildCampaignLead({
+          key: 'dupe-paused',
+          email: sharedEmail,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'paused', currentFlowNodeId: 'waitTime-1', nextRunAt: null }),
+          jobs: [
+            buildCampaignJob({ key: 'paused-queued', nodeFlowNodeId: 'email-2', status: 'queued', scheduledAt: new Date(now + 90 * 60 * 1000).toISOString() }),
+            buildCampaignJob({ key: 'paused-sent', nodeFlowNodeId: 'email-1', status: 'sent', scheduledAt: new Date(now - 60 * 60 * 1000).toISOString(), sentAt: new Date(now - 59 * 60 * 1000).toISOString() }),
+          ],
+          thread: buildCampaignThread({
+            subject: 'Paused sibling thread',
+            lastMessageAt: new Date(now - 30 * 60 * 1000).toISOString(),
+          }),
+        }),
+        buildCampaignLead({
+          key: 'dupe-stopped',
+          email: sharedEmail,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({
+            state: 'stopped',
+            currentFlowNodeId: 'email-1',
+            nextRunAt: null,
+            stoppedReason: 'replied',
+            stoppedAt: new Date(now - 3 * 60 * 60 * 1000).toISOString(),
+          }),
+        }),
+      ],
+    });
+
+    const oldLead = graph.leadsByKey.get('old')!;
+    const active = graph.leadsByKey.get('dupe-active')!;
+    const completed = graph.leadsByKey.get('dupe-completed')!;
+    const paused = graph.leadsByKey.get('dupe-paused')!;
+    const stopped = graph.leadsByKey.get('dupe-stopped')!;
+
+    const previewBefore = await harness.supabase.rpc('preview_replacement_target', {
+      p_account_id: graph.accountId,
+      p_campaign_id: graph.campaignId,
+      p_email: sharedEmail,
+      p_old_lead_id: oldLead.leadId,
+    });
+    assert.equal(previewBefore.error, null, previewBefore.error?.message);
+    const previewPayload = previewBefore.data as any;
+    assert.equal(previewPayload.duplicateCount, 4);
+    assert.equal(previewPayload.existingLead.id, active.leadId);
+    assert.equal(previewPayload.existingLead.enrollmentId, active.enrollmentId);
+
+    const completedBefore = await loadEnrollment(harness, completed.enrollmentId!);
+    const stoppedBefore = await loadEnrollment(harness, stopped.enrollmentId!);
+
+    const result = await loadReplacementResult(harness, {
+      p_old_lead_id: oldLead.leadId,
+      p_new_email: sharedEmail,
+    });
+    assert.equal(result.error, null, result.error?.message);
+    const rpcRow = result.data?.[0];
+    assert.ok(rpcRow);
+    harness.recordReplacement({ replacementId: rpcRow!.replacement_id, newLeadId: rpcRow!.new_lead_id });
+
+    // The form and the write must never name different people.
+    assert.equal(rpcRow?.mode, 'attached');
+    assert.equal(rpcRow?.target_lead_id, active.leadId);
+    assert.equal(rpcRow?.target_lead_id, previewPayload.existingLead.id);
+    assert.equal(rpcRow?.retired_sibling_count, 1);
+
+    const activeAfter = await loadEnrollment(harness, active.enrollmentId!);
+    assert.equal(activeAfter.state, 'active');
+    assert.equal(activeAfter.stopped_reason, null);
+
+    const pausedAfter = await loadEnrollment(harness, paused.enrollmentId!);
+    assert.equal(pausedAfter.state, 'stopped');
+    assert.equal(pausedAfter.stopped_reason, 'replaced');
+    assert.equal(pausedAfter.next_run_at, null);
+
+    assert.deepEqual(await loadEnrollment(harness, completed.enrollmentId!), completedBefore);
+    assert.deepEqual(await loadEnrollment(harness, stopped.enrollmentId!), stoppedBefore);
+
+    const pausedJobs = await loadJobStatuses(harness, Array.from(paused.messageJobIdsByKey.values()));
+    assert.equal(pausedJobs.get(paused.messageJobIdsByKey.get('paused-queued')!)?.status, 'cancelled');
+    assert.equal(pausedJobs.get(paused.messageJobIdsByKey.get('paused-sent')!)?.status, 'sent');
+
+    // Exactly one live enrollment left for the referred address.
+    const { data: liveEnrollments, error: liveError } = await harness.supabase
+      .from('enrollments')
+      .select('lead_id, state')
+      .eq('campaign_id', graph.campaignId)
+      .is('deleted_at', null)
+      .in('lead_id', [active.leadId, completed.leadId, paused.leadId, stopped.leadId]);
+    assert.equal(liveError, null, liveError?.message);
+    const stillSending = (liveEnrollments ?? []).filter((row: any) =>
+      row.state === 'active' || row.state === 'paused'
+    );
+    assert.deepEqual(stillSending.map((row: any) => row.lead_id), [active.leadId]);
+
+    // Siblings keep their own conversations and get no replacement chip.
+    const { data: siblingThread, error: siblingThreadError } = await harness.supabase
+      .from('email_threads')
+      .select('lead_id')
+      .eq('id', paused.threadId!)
+      .single();
+    assert.equal(siblingThreadError, null, siblingThreadError?.message);
+    assert.equal(siblingThread?.lead_id, paused.leadId);
+
+    const { data: siblingReplacements, error: siblingReplacementError } = await harness.supabase
+      .from('lead_replacements')
+      .select('id')
+      .in('old_lead_id', [completed.leadId, paused.leadId, stopped.leadId]);
+    assert.equal(siblingReplacementError, null, siblingReplacementError?.message);
+    assert.deepEqual(siblingReplacements ?? [], []);
+
+    const { data: siblingLeads, error: siblingLeadError } = await harness.supabase
+      .from('leads')
+      .select('id, deleted_at')
+      .in('id', [completed.leadId, paused.leadId, stopped.leadId]);
+    assert.equal(siblingLeadError, null, siblingLeadError?.message);
+    for (const row of siblingLeads ?? []) {
+      assert.equal((row as any).deleted_at, null);
+    }
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('attach refuses a target without a live enrollment and leaves every row untouched', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('replaced-lead-attach-noenroll') });
+  const targetEmail = `noenroll-target-${harness.namespace}@furnace.test`;
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Replaced Lead Attach No Enrollment',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'old',
+          email: `noenroll-old-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'active', currentFlowNodeId: 'email-1' }),
+          jobs: [buildCampaignJob({ key: 'old-queued', status: 'queued' })],
+          thread: buildCampaignThread({ subject: 'No enrollment thread' }),
+        }),
+        buildCampaignLead({
+          key: 'target',
+          email: targetEmail,
+          mailboxKey: 'mailbox-1',
+          enrollment: null,
+        }),
+      ],
+    });
+
+    const oldLead = graph.leadsByKey.get('old')!;
+    const target = graph.leadsByKey.get('target')!;
+
+    const preview = await harness.supabase.rpc('preview_replacement_target', {
+      p_account_id: graph.accountId,
+      p_campaign_id: graph.campaignId,
+      p_email: targetEmail,
+      p_old_lead_id: oldLead.leadId,
+    });
+    assert.equal(preview.error, null, preview.error?.message);
+    assert.equal((preview.data as any).existingLead.id, target.leadId);
+    assert.equal((preview.data as any).existingLead.enrollmentId, null);
+
+    const result = await loadReplacementResult(harness, {
+      p_old_lead_id: oldLead.leadId,
+      p_new_email: targetEmail,
+    });
+    assert.match(result.error?.message ?? '', /has no active enrollment in this campaign/);
+
+    const threadAfter = await harness.supabase
+      .from('email_threads')
+      .select('lead_id, enrollment_id')
+      .eq('id', oldLead.threadId!)
+      .single();
+    assert.equal(threadAfter.error, null, threadAfter.error?.message);
+    assert.equal(threadAfter.data?.lead_id, oldLead.leadId);
+    assert.equal(threadAfter.data?.enrollment_id, oldLead.enrollmentId);
+
+    const oldEnrollment = await loadEnrollment(harness, oldLead.enrollmentId!);
+    assert.equal(oldEnrollment.state, 'active');
+    assert.equal(oldEnrollment.stopped_reason, null);
+
+    // Not an equality check on 'queued': a live worker on the shared test project
+    // can legitimately reserve the job mid-test. What matters is that the failed
+    // attach did not cancel it.
+    const oldJobs = await loadJobStatuses(harness, Array.from(oldLead.messageJobIdsByKey.values()));
+    assert.notEqual(oldJobs.get(oldLead.messageJobIdsByKey.get('old-queued')!)?.status, 'cancelled');
+
+    const { data: replacementRows, error: replacementError } = await harness.supabase
+      .from('lead_replacements')
+      .select('id')
+      .eq('old_lead_id', oldLead.leadId);
+    assert.equal(replacementError, null, replacementError?.message);
+    assert.deepEqual(replacementRows ?? [], []);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('attach raises when the existing contact was itself already replaced away', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('replaced-lead-attach-chain') });
+  const targetEmail = `chain-target-${harness.namespace}@furnace.test`;
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Replaced Lead Attach Chain',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'old',
+          email: `chain-old-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'active', currentFlowNodeId: 'email-1' }),
+        }),
+        buildCampaignLead({
+          key: 'target',
+          email: targetEmail,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'active', currentFlowNodeId: 'email-1' }),
+        }),
+      ],
+    });
+
+    const oldLead = graph.leadsByKey.get('old')!;
+    const target = graph.leadsByKey.get('target')!;
+
+    const firstReplacement = await loadReplacementResult(harness, {
+      p_old_lead_id: target.leadId,
+      p_new_email: `chain-onward-${harness.namespace}@furnace.test`,
+    });
+    assert.equal(firstReplacement.error, null, firstReplacement.error?.message);
+    const firstRow = firstReplacement.data?.[0];
+    assert.equal(firstRow?.mode, 'created');
+    harness.recordReplacement({ replacementId: firstRow!.replacement_id, newLeadId: firstRow!.new_lead_id });
+
+    // The create path soft-deletes the target, so revive it to reach the guard.
+    const { error: reviveError } = await harness.supabase
+      .from('leads')
+      .update({ deleted_at: null } as any)
+      .eq('id', target.leadId);
+    assert.equal(reviveError, null, reviveError?.message);
+
+    const attempt = await loadReplacementResult(harness, {
+      p_old_lead_id: oldLead.leadId,
+      p_new_email: targetEmail,
+    });
+    assert.match(attempt.error?.message ?? '', /has already been replaced by someone else/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('preview_replacement_target reports block-list hits by email and by domain', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('replaced-lead-preview-block') });
+  const blockedEmail = `blocked-${harness.namespace}@furnace.test`;
+  const blockedDomain = `blocked-${harness.namespace}.test`;
+  const blockedDomainEmail = `someone@${blockedDomain}`;
+  const createdBlockIds: string[] = [];
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Replaced Lead Preview Block',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'old',
+          email: `block-old-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'active', currentFlowNodeId: 'email-1' }),
+        }),
+      ],
+    });
+    const oldLead = graph.leadsByKey.get('old')!;
+
+    const { data: blockRows, error: blockError } = await harness.supabase
+      .from('block_list')
+      .insert([
+        { account_id: graph.accountId, type: 'email', value: blockedEmail, reason: 'unsubscribed' },
+        { account_id: graph.accountId, type: 'domain', value: blockedDomain, reason: 'bounced' },
+      ] as any)
+      .select('id');
+    assert.equal(blockError, null, blockError?.message);
+    createdBlockIds.push(...(blockRows ?? []).map((row: any) => row.id));
+
+    const previewEmail = await harness.supabase.rpc('preview_replacement_target', {
+      p_account_id: graph.accountId,
+      p_campaign_id: graph.campaignId,
+      p_email: blockedEmail.toUpperCase(),
+      p_old_lead_id: oldLead.leadId,
+    });
+    assert.equal(previewEmail.error, null, previewEmail.error?.message);
+    assert.equal((previewEmail.data as any).blocked, true);
+    assert.equal((previewEmail.data as any).blockReason, 'unsubscribed');
+    assert.equal((previewEmail.data as any).existingLead, null);
+
+    const previewDomain = await harness.supabase.rpc('preview_replacement_target', {
+      p_account_id: graph.accountId,
+      p_campaign_id: graph.campaignId,
+      p_email: blockedDomainEmail,
+      p_old_lead_id: oldLead.leadId,
+    });
+    assert.equal(previewDomain.error, null, previewDomain.error?.message);
+    assert.equal((previewDomain.data as any).blocked, true);
+    assert.equal((previewDomain.data as any).blockReason, 'bounced');
+
+    const previewClean = await harness.supabase.rpc('preview_replacement_target', {
+      p_account_id: graph.accountId,
+      p_campaign_id: graph.campaignId,
+      p_email: `clean-${harness.namespace}@furnace.test`,
+      p_old_lead_id: oldLead.leadId,
+    });
+    assert.equal(previewClean.error, null, previewClean.error?.message);
+    assert.equal((previewClean.data as any).blocked, false);
+    assert.equal((previewClean.data as any).duplicateCount, 0);
+  } finally {
+    if (createdBlockIds.length > 0) {
+      await harness.supabase.from('block_list').delete().in('id', createdBlockIds);
+    }
+    await harness.cleanup();
+  }
+});
+
+test('a forward built from the repointed thread carries the target lead and enrollment', async () => {
+  const harness = new CampaignDbHarness({ namespace: createCampaignTestNamespace('replaced-lead-attach-forward') });
+  const now = Date.now();
+  const targetEmail = `fwd-target-${harness.namespace}@furnace.test`;
+
+  try {
+    const graph = await harness.createCampaignGraph({
+      name: 'Replaced Lead Attach Forward',
+      status: 'running',
+      flowKind: 'emailOnly',
+      leads: [
+        buildCampaignLead({
+          key: 'old',
+          email: `fwd-old-${harness.namespace}@furnace.test`,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'active', currentFlowNodeId: 'email-1' }),
+          jobs: [
+            buildCampaignJob({ key: 'old-sent', status: 'sent', scheduledAt: new Date(now - 60 * 60 * 1000).toISOString(), sentAt: new Date(now - 59 * 60 * 1000).toISOString() }),
+          ],
+          thread: buildCampaignThread({
+            subject: 'Forward source thread',
+            lastMessageAt: new Date(now - 5 * 60 * 1000).toISOString(),
+            messageJobKey: 'old-sent',
+          }),
+        }),
+        buildCampaignLead({
+          key: 'target',
+          email: targetEmail,
+          mailboxKey: 'mailbox-1',
+          enrollment: buildCampaignEnrollment({ state: 'active', currentFlowNodeId: 'email-1' }),
+        }),
+      ],
+    });
+
+    const oldLead = graph.leadsByKey.get('old')!;
+    const target = graph.leadsByKey.get('target')!;
+    const forwardedMessageId = await fetchReceivedMessageId(harness, oldLead.threadId!);
+
+    const result = await loadReplacementResult(harness, {
+      p_old_lead_id: oldLead.leadId,
+      p_new_email: targetEmail,
+    });
+    assert.equal(result.error, null, result.error?.message);
+    const rpcRow = result.data?.[0];
+    assert.equal(rpcRow?.mode, 'attached');
+    harness.recordReplacement({ replacementId: rpcRow!.replacement_id, newLeadId: rpcRow!.new_lead_id });
+
+    const { data: forwardJobId, error: forwardError } = await harness.supabase.rpc(
+      'create_inbox_forward_job',
+      {
+        p_account_id: graph.accountId,
+        p_thread_id: oldLead.threadId!,
+        p_forwarded_message_id: forwardedMessageId,
+        p_subject: 'Fwd: intro',
+        p_body_text: 'Forwarding for you.',
+        p_body_html: '<p>Forwarding for you.</p>',
+        p_to_email: targetEmail,
+        p_to_name: null,
+        p_cc: null,
+        p_attachments: [],
+      }
+    );
+    assert.equal(forwardError, null, forwardError?.message);
+    assert.ok(forwardJobId);
+
+    const { data: forwardJob, error: forwardJobError } = await harness.supabase
+      .from('message_jobs')
+      .select('lead_id, enrollment_id, campaign_id, message_type')
+      .eq('id', forwardJobId as string)
+      .single();
+    assert.equal(forwardJobError, null, forwardJobError?.message);
+    assert.equal(forwardJob?.message_type, 'inbox_forward');
+    assert.equal(forwardJob?.lead_id, target.leadId);
+    assert.equal(forwardJob?.enrollment_id, target.enrollmentId);
+    assert.notEqual(forwardJob?.enrollment_id, oldLead.enrollmentId);
+
+    await harness.supabase.from('message_jobs').delete().eq('id', forwardJobId as string);
   } finally {
     await harness.cleanup();
   }

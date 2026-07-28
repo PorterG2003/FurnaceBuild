@@ -62,6 +62,7 @@ function normalizeScope(value: string): ResetScopeArg {
     v === 'dev-default' ||
     v === 'demo-hub' ||
     v === 'smart-handling-flow' ||
+    v === 'replace-lead-attach' ||
     v === 'all'
   ) {
     return v;
@@ -73,7 +74,7 @@ function printHelp() {
   console.log(`Usage: tsx scripts/seed/reset.ts [options]
 
 Options:
-  --scope=<name>    campaign-smoke | ooo-mixed-inbox | dev-default | demo-hub | smart-handling-flow | all
+  --scope=<name>    campaign-smoke | ooo-mixed-inbox | dev-default | demo-hub | smart-handling-flow | replace-lead-attach | all
   --scope <name>
   --dry-run         Preview what would be deleted
   --help, -h        Show this help

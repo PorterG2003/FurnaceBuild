@@ -31,6 +31,7 @@ import { platformInvitePreviewSeedModule } from './scenarios/platform-invite-pre
 import { campaignHtmlDemoSeedModule } from './scenarios/campaign-html-demo';
 import { clientApiCampaignWalkthroughModule } from './scenarios/client-api-campaign-walkthrough/index';
 import { bucketInsightsSmokeModule } from './scenarios/bucket-insights-smoke';
+import { replaceLeadAttachSeedModule } from './scenarios/replace-lead-attach/index';
 
 export const allModules: Record<string, SeedModule> = {
   minimal: minimalModule,
@@ -59,6 +60,7 @@ export const allModules: Record<string, SeedModule> = {
   campaignHtmlDemo_seed: campaignHtmlDemoSeedModule,
   bucketInsightsSmoke_seed: bucketInsightsSmokeModule,
   clientApiWalkthrough_seed: clientApiCampaignWalkthroughModule,
+  replaceLeadAttach_seed: replaceLeadAttachSeedModule,
 };
 
 /**
@@ -77,6 +79,7 @@ export const scenarioModuleIds: Record<string, string[]> = {
   'platform-invite-preview': ['platformInvitePreview_seed'],
   'bucket-insights-smoke': ['bucketInsightsSmoke_seed'],
   'client-api-campaign-walkthrough': ['clientApiWalkthrough_seed'],
+  'replace-lead-attach': ['replaceLeadAttach_seed'],
 };
 
 function collectModuleIdsWithDeps(seedIds: string[]): Set<string> {

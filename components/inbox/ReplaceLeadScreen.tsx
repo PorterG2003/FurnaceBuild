@@ -1,16 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert as NativeAlert,
   Platform,
+  Pressable,
   Text,
   TextInput,
   View,
   useWindowDimensions,
 } from 'react-native';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/forms';
+import { FormFieldHelpIcon, Select } from '@/components/ui/forms';
 import { Alert, useToast } from '@/components/ui/feedback';
 import { LAYOUT_BREAKPOINT } from '@/components/ui/layout';
+import { Tooltip } from '@/components/ui/Tooltip';
 import type {
   ReplaceLeadCompletionIntent,
   ReplaceLeadCompletionPayload,
@@ -19,8 +22,11 @@ import type { ReplaceLeadPrefill } from '@/lib/inbox/replaceLeadPrefill';
 import { splitPersonName } from '@/lib/inbox/referralContactExtraction';
 import { buildInteractionIntent } from '@/lib/inbox/buildInteractionIntent';
 import {
+  previewReplacementTarget,
   replaceLeadWithNewContact,
   updateLeadProfileFields,
+  type ReplacementTargetPreview,
+  type ReplacementTargetPreviewLead,
   type ReplaceLeadWithNewContactResult,
 } from '@/lib/supabase/services/leads';
 import type { Lead, ReplacementReason } from '@/lib/supabase/types';
@@ -48,6 +54,9 @@ const REPLACEMENT_REASON_OPTIONS: Array<{ id: ReplacementReason; name: string; d
     description: 'Another replacement reason.',
   },
 ];
+
+const ATTACH_PROFILE_FIELD_HELP =
+  "They're already in this campaign, so we're showing what's already on their record. Edit the email above if this isn't the right person.";
 
 export interface ReplaceLeadScreenProps {
   oldLead: Lead | null;
@@ -84,12 +93,20 @@ const EMPTY_STANDARD_FIELDS: StandardFieldsState = {
   companyLinkedinUrl: '',
 };
 
+const PREVIEW_DEBOUNCE_MS = 350;
+
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 function formatCustomValue(value: unknown): string {
   if (value === null || value === undefined) return '—';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function formatCustomFieldInput(value: unknown): string {
+  if (value === null || value === undefined) return '';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
@@ -103,14 +120,49 @@ function readCustomLeadEntries(lead: Lead | null): Array<[string, unknown]> {
 function buildInitialCustomFields(lead: Lead | null): Record<string, string> {
   const next: Record<string, string> = {};
   for (const [key, value] of readCustomLeadEntries(lead)) {
-    next[key] =
-      value === null || value === undefined
-        ? ''
-        : typeof value === 'object'
-          ? JSON.stringify(value)
-          : String(value);
+    next[key] = formatCustomFieldInput(value);
   }
   return next;
+}
+
+function buildCustomFieldsFromExisting(
+  customEntries: Array<[string, unknown]>,
+  customLeadData: Record<string, unknown>
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const [key] of customEntries) {
+    next[key] = formatCustomFieldInput(customLeadData[key]);
+  }
+  return next;
+}
+
+function fieldsFromExistingContact(
+  prev: StandardFieldsState,
+  contact: ReplacementTargetPreviewLead
+): StandardFieldsState {
+  return {
+    ...prev,
+    name: contact.name ?? '',
+    firstName: contact.firstName ?? '',
+    lastName: contact.lastName ?? '',
+    phoneNumber: contact.phoneNumber ?? '',
+    mobilePhoneNumber: contact.mobilePhoneNumber ?? '',
+    companyName: contact.companyName ?? '',
+    website: contact.website ?? '',
+    linkedinUrl: contact.linkedinUrl ?? '',
+    companyLinkedinUrl: contact.companyLinkedinUrl ?? '',
+  };
+}
+
+function clearAutofilledProfileFields(
+  email: string,
+  oldLead: Lead | null,
+  prefill: ReplaceLeadPrefill | null
+): StandardFieldsState {
+  return {
+    ...seedReplacementFields(oldLead, prefill),
+    email,
+  };
 }
 
 function seedReplacementFields(lead: Lead | null, prefill: ReplaceLeadPrefill | null): StandardFieldsState {
@@ -181,6 +233,9 @@ export function ReplaceLeadScreen({
   const [reason, setReason] = useState<ReplacementReason>('manual_referral');
   const [reasonNote, setReasonNote] = useState('');
   const [savingIntent, setSavingIntent] = useState<ReplaceLeadCompletionIntent | null>(null);
+  const [preview, setPreview] = useState<ReplacementTargetPreview | null>(null);
+
+  const lockedLeadIdRef = useRef<string | null>(null);
 
   const oldLeadId = oldLead?.id ?? null;
   const prefillReason = prefill?.reason ?? null;
@@ -188,6 +243,7 @@ export function ReplaceLeadScreen({
 
   useEffect(() => {
     if (!oldLead) return;
+    lockedLeadIdRef.current = null;
     setFields(seedReplacementFields(oldLead, prefill));
     const nextCustomFields = buildInitialCustomFields(oldLead);
     if (prefill?.customFields) {
@@ -200,7 +256,74 @@ export function ReplaceLeadScreen({
     setReasonNote(prefillReasonNote ?? '');
   }, [oldLeadId, oldLead, prefill, prefillReason, prefillReasonNote]);
 
+  const trimmedEmail = fields.email.trim().toLowerCase();
+  const oldLeadAccountId = oldLead?.account_id ?? null;
+  const oldLeadCampaignId = oldLead?.campaign_id ?? null;
+  const oldLeadEmail = oldLead?.email?.trim().toLowerCase() ?? null;
+  const previewableEmail =
+    isValidEmail(trimmedEmail) && trimmedEmail !== oldLeadEmail ? trimmedEmail : null;
+
+  // The preview drives what the CTAs promise, so it is re-fetched (debounced) for
+  // every address the user settles on and cleared the moment the field changes.
+  useEffect(() => {
+    setPreview(null);
+    if (!previewableEmail || !oldLeadAccountId || !oldLeadCampaignId || !oldLeadId) return;
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      previewReplacementTarget({
+        accountId: oldLeadAccountId,
+        campaignId: oldLeadCampaignId,
+        email: previewableEmail,
+        oldLeadId,
+      })
+        .then((result) => {
+          if (!cancelled) setPreview(result);
+        })
+        .catch((error) => {
+          console.error('Failed to preview replacement target:', error);
+        });
+    }, PREVIEW_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [previewableEmail, oldLeadAccountId, oldLeadCampaignId, oldLeadId]);
+
   const customEntries = useMemo(() => readCustomLeadEntries(oldLead), [oldLead]);
+
+  const existingContact = preview?.existingLead ?? null;
+  const willAttach = existingContact !== null;
+  const profileLocked = willAttach;
+  const attachBlockedReason =
+    existingContact && !existingContact.enrollmentId
+      ? `${describeContact(existingContact)} is already in this campaign but has no enrollment, so this conversation cannot be moved to them. Launch the campaign or re-add the contact first.`
+      : null;
+
+  // When preview resolves to an existing contact, lock and show their profile.
+  // When the match clears, clear those autofilled values (keep the typed email).
+  useEffect(() => {
+    if (existingContact) {
+      if (lockedLeadIdRef.current !== existingContact.id) {
+        lockedLeadIdRef.current = existingContact.id;
+        setFields((prev) => fieldsFromExistingContact(prev, existingContact));
+        setCustomFields(buildCustomFieldsFromExisting(customEntries, existingContact.customLeadData));
+      }
+      return;
+    }
+
+    if (lockedLeadIdRef.current === null) return;
+    lockedLeadIdRef.current = null;
+    setFields((prev) => clearAutofilledProfileFields(prev.email, oldLead, prefill));
+    const nextCustomFields = buildInitialCustomFields(oldLead);
+    if (prefill?.customFields) {
+      for (const [key, value] of Object.entries(prefill.customFields)) {
+        if (key in nextCustomFields) nextCustomFields[key] = value;
+      }
+    }
+    setCustomFields(nextCustomFields);
+  }, [existingContact, customEntries, oldLead, prefill]);
 
   const selectedReason = useMemo(
     () => REPLACEMENT_REASON_OPTIONS.find((option) => option.id === reason) ?? REPLACEMENT_REASON_OPTIONS[0],
@@ -214,8 +337,9 @@ export function ReplaceLeadScreen({
     if (oldEmail && fields.email.trim().toLowerCase() === oldEmail.trim().toLowerCase()) {
       return 'Replacement email must differ from the current lead email.';
     }
+    if (attachBlockedReason) return attachBlockedReason;
     return null;
-  }, [fields.email, oldLead?.email]);
+  }, [fields.email, oldLead?.email, attachBlockedReason]);
   const saving = savingIntent !== null;
 
   if (!oldLead) return null;
@@ -245,7 +369,13 @@ export function ReplaceLeadScreen({
         sourceMessageId: sourceMessageId ?? null,
       });
 
-      const profilePatch = buildProfilePatch(oldLead, fields, customFields, customEntries);
+      // On the attach path the RPC already filled only the blanks on a real
+      // contact's row. Patching the form values over the top would clobber their
+      // own data with the referrer's.
+      const profilePatch =
+        result.mode === 'attached'
+          ? null
+          : buildProfilePatch(oldLead, fields, customFields, customEntries);
       if (profilePatch) {
         try {
           await updateLeadProfileFields({ leadId: result.newLeadId, ...profilePatch });
@@ -272,6 +402,8 @@ export function ReplaceLeadScreen({
         console.error('Failed to record lead replacement interaction:', error);
       }
 
+      toast.success(buildReplaceSuccessMessage(result));
+
       onReplaced(result, {
         intent,
         preferredForwardMessageId: sourceMessageId ?? null,
@@ -295,7 +427,12 @@ export function ReplaceLeadScreen({
             <ColumnHeader label="Current lead" subtitle={oldLead.email ?? 'No email on file'} />
           </View>
           <View className="flex-1">
-            <ColumnHeader label="Replacement contact" subtitle="Pre-filled from reply where available" />
+            <ColumnHeader
+              label="Replacement contact"
+              subtitle={
+                profileLocked ? 'Using their existing profile' : 'Pre-filled from reply where available'
+              }
+            />
           </View>
         </View>
       )}
@@ -314,6 +451,31 @@ export function ReplaceLeadScreen({
           required
           highlightDifferent
         />
+
+        {attachBlockedReason ? (
+          <Alert variant="error" message={attachBlockedReason} className="mb-0" />
+        ) : existingContact ? (
+          <Alert
+            variant="warning"
+            message={buildAttachNotice(oldLead, existingContact)}
+            className="mb-0"
+          />
+        ) : (
+          <Alert
+            variant="info"
+            message="We’ll keep the campaign going with this new contact. Future emails move to them; earlier sends stay with the original lead so you still have the history. Same mailbox carries over."
+            className="mb-0"
+          />
+        )}
+
+        {preview?.blocked && (
+          <Alert
+            variant="warning"
+            message={buildBlockListNotice(preview.blockReason)}
+            className="mb-0"
+          />
+        )}
+
         <ComparisonRow
           label="Name"
           isNarrow={isNarrow}
@@ -321,6 +483,8 @@ export function ReplaceLeadScreen({
           newValue={fields.name}
           onNewValueChange={(value) => setField('name', value)}
           placeholder="Sarah Johnson"
+          disabled={profileLocked}
+          help={profileLocked ? ATTACH_PROFILE_FIELD_HELP : undefined}
         />
         <ComparisonRow
           label="First name"
@@ -329,6 +493,8 @@ export function ReplaceLeadScreen({
           newValue={fields.firstName}
           onNewValueChange={(value) => setField('firstName', value)}
           placeholder="Sarah"
+          disabled={profileLocked}
+          help={profileLocked ? ATTACH_PROFILE_FIELD_HELP : undefined}
         />
         <ComparisonRow
           label="Last name"
@@ -337,6 +503,8 @@ export function ReplaceLeadScreen({
           newValue={fields.lastName}
           onNewValueChange={(value) => setField('lastName', value)}
           placeholder="Johnson"
+          disabled={profileLocked}
+          help={profileLocked ? ATTACH_PROFILE_FIELD_HELP : undefined}
         />
         <ComparisonRow
           label="Mobile"
@@ -346,6 +514,8 @@ export function ReplaceLeadScreen({
           onNewValueChange={(value) => setField('mobilePhoneNumber', value)}
           placeholder="+1 555 987 6543"
           keyboardType="phone-pad"
+          disabled={profileLocked}
+          help={profileLocked ? ATTACH_PROFILE_FIELD_HELP : undefined}
         />
         <ComparisonRow
           label="LinkedIn"
@@ -355,6 +525,8 @@ export function ReplaceLeadScreen({
           onNewValueChange={(value) => setField('linkedinUrl', value)}
           placeholder="https://linkedin.com/in/..."
           autoCapitalize="none"
+          disabled={profileLocked}
+          help={profileLocked ? ATTACH_PROFILE_FIELD_HELP : undefined}
         />
       </View>
 
@@ -367,6 +539,8 @@ export function ReplaceLeadScreen({
           newValue={fields.companyName}
           onNewValueChange={(value) => setField('companyName', value)}
           placeholder="Acme Inc."
+          disabled={profileLocked}
+          help={profileLocked ? ATTACH_PROFILE_FIELD_HELP : undefined}
         />
         <ComparisonRow
           label="Company phone"
@@ -376,6 +550,8 @@ export function ReplaceLeadScreen({
           onNewValueChange={(value) => setField('phoneNumber', value)}
           placeholder="+1 555 123 4567"
           keyboardType="phone-pad"
+          disabled={profileLocked}
+          help={profileLocked ? ATTACH_PROFILE_FIELD_HELP : undefined}
         />
         <ComparisonRow
           label="Website"
@@ -385,6 +561,8 @@ export function ReplaceLeadScreen({
           onNewValueChange={(value) => setField('website', value)}
           placeholder="https://acme.com"
           autoCapitalize="none"
+          disabled={profileLocked}
+          help={profileLocked ? ATTACH_PROFILE_FIELD_HELP : undefined}
         />
         <ComparisonRow
           label="Company LinkedIn"
@@ -394,6 +572,8 @@ export function ReplaceLeadScreen({
           onNewValueChange={(value) => setField('companyLinkedinUrl', value)}
           placeholder="https://linkedin.com/company/..."
           autoCapitalize="none"
+          disabled={profileLocked}
+          help={profileLocked ? ATTACH_PROFILE_FIELD_HELP : undefined}
         />
       </View>
 
@@ -412,6 +592,8 @@ export function ReplaceLeadScreen({
                 newValue={customFields[key] ?? ''}
                 onNewValueChange={(next) => setCustomFields((prev) => ({ ...prev, [key]: next }))}
                 placeholder=""
+                disabled={profileLocked}
+                help={profileLocked ? ATTACH_PROFILE_FIELD_HELP : undefined}
               />
             ))}
           </View>
@@ -454,23 +636,19 @@ export function ReplaceLeadScreen({
         </View>
       </View>
 
-      <Alert
-        variant="info"
-        message="The new lead becomes the active campaign contact. The existing enrollment and future pending work move to that new lead, while past sends and events stay attributed to the original lead for audit history. The outbound mailbox and source attribution carry over automatically."
-        className="mb-0"
-      />
-
       <View className="gap-2">
         <Button
           variant="default"
           fullWidth
           onPress={() => void handleSave('replace_and_forward')}
-          disabled={saving}
+          disabled={saving || attachBlockedReason !== null}
         >
           {savingIntent === 'replace_and_forward' ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text className="text-white font-instrument-medium">Replace + forward with message</Text>
+            <Text className="text-white font-instrument-medium">
+              {willAttach ? 'Use existing contact + forward' : 'Replace + forward with message'}
+            </Text>
           )}
         </Button>
         <View className="flex-row gap-2 flex-wrap">
@@ -478,12 +656,14 @@ export function ReplaceLeadScreen({
             variant="secondary"
             className="flex-1 min-w-[120px]"
             onPress={() => void handleSave('replace_only')}
-            disabled={saving}
+            disabled={saving || attachBlockedReason !== null}
           >
             {savingIntent === 'replace_only' ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text className="text-gray-200 font-instrument-medium">Just replace</Text>
+              <Text className="text-gray-200 font-instrument-medium">
+                {willAttach ? 'Use existing contact' : 'Just replace'}
+              </Text>
             )}
           </Button>
           <Button
@@ -498,6 +678,44 @@ export function ReplaceLeadScreen({
       </View>
     </View>
   );
+}
+
+function describeContact(contact: ReplacementTargetPreviewLead): string {
+  const name = contact.name?.trim() || [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim();
+  return name ? `${name} (${contact.email ?? 'no email'})` : (contact.email ?? 'This contact');
+}
+
+function describeContactStatus(contact: ReplacementTargetPreviewLead): string {
+  switch (contact.enrollmentState) {
+    case 'completed':
+      return 'sequence completed';
+    case 'stopped':
+      return 'sequence stopped';
+    case 'paused':
+      return 'sequence paused';
+    default:
+      return contact.hasBeenContacted ? 'contacted, not replied' : 'not yet contacted';
+  }
+}
+
+function buildAttachNotice(oldLead: Lead, contact: ReplacementTargetPreviewLead): string {
+  const oldLeadLabel = oldLead.email ?? 'the current lead';
+  return `${describeContact(contact)} is already in this campaign (${describeContactStatus(contact)}). We’ll move this conversation to them and use their existing profile. Their sequence stays as it is. ${oldLeadLabel} will stop getting emails.`;
+}
+
+function buildBlockListNotice(reason: string | null): string {
+  const cause =
+    reason === 'unsubscribed'
+      ? 'unsubscribed'
+      : reason === 'bounced'
+        ? 'hard bounced'
+        : 'manually blocked';
+  return `This address is on your block list (${cause}). Sequence emails stay suppressed. A reply or forward from here can still go out.`;
+}
+
+function buildReplaceSuccessMessage(result: ReplaceLeadWithNewContactResult): string {
+  if (result.mode !== 'attached') return 'Lead replaced.';
+  return 'Attached to the existing contact.';
 }
 
 interface ColumnHeaderProps {
@@ -529,6 +747,8 @@ interface ComparisonRowProps {
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
   required?: boolean;
   highlightDifferent?: boolean;
+  disabled?: boolean;
+  help?: string;
 }
 
 function ComparisonRow({
@@ -542,42 +762,67 @@ function ComparisonRow({
   keyboardType,
   required,
   highlightDifferent,
+  disabled,
+  help,
 }: ComparisonRowProps) {
   const oldDisplay = oldValue && String(oldValue).trim() !== '' ? String(oldValue) : '—';
   const hasOldValue = oldDisplay !== '—';
+  const newDisplay = newValue.trim() !== '' ? newValue : '—';
   const inputClassName =
     'text-white font-instrument text-sm px-3 py-2.5 rounded-xl border border-[#3A3A3A] bg-[#111111]';
+  const lockedClassName =
+    'rounded-xl border border-[#2A2A2A] bg-[#0a0a0a] px-3 py-2.5 opacity-60';
   const inputScrollMarginWeb =
     Platform.OS === 'web' ? ({ scrollMarginBottom: 24 } as unknown as object) : undefined;
   const showDiffHint =
+    !disabled &&
     highlightDifferent &&
     newValue.trim() !== '' &&
     newValue.trim().toLowerCase() === (oldValue ?? '').trim().toLowerCase();
 
   const labelText = (
-    <Text className="text-xs font-instrument-medium text-gray-400 mb-1.5">
-      {label}
-      {required ? <Text className="text-red-400"> *</Text> : null}
-      {isNarrow && hasOldValue ? (
-        <Text className="font-instrument text-gray-500">{'  ·  was '}{oldDisplay}</Text>
+    <View className="flex-row items-center gap-1.5 mb-1.5">
+      <Text className="text-xs font-instrument-medium text-gray-400">
+        {label}
+        {required ? <Text className="text-red-400"> *</Text> : null}
+        {isNarrow && hasOldValue ? (
+          <Text className="font-instrument text-gray-500">{'  ·  was '}{oldDisplay}</Text>
+        ) : null}
+      </Text>
+      {/* Desktop: info icon beside the label. Narrow/touch: tap the locked value instead. */}
+      {help && !isNarrow ? (
+        <FormFieldHelpIcon content={help} accessibilityLabel={`Help for ${label}`} />
       ) : null}
-    </Text>
+    </View>
+  );
+
+  const lockedValue = (
+    <LockedComparisonValue
+      display={newDisplay}
+      help={help}
+      className={lockedClassName}
+      preferTapHelp={isNarrow}
+    />
   );
 
   if (isNarrow) {
     return (
       <View>
         {labelText}
-        <TextInput
-          value={newValue}
-          onChangeText={onNewValueChange}
-          placeholder={placeholder}
-          placeholderTextColor="#6b7280"
-          autoCapitalize={autoCapitalize}
-          keyboardType={keyboardType}
-          className={inputClassName}
-          style={inputScrollMarginWeb}
-        />
+        {disabled ? (
+          lockedValue
+        ) : (
+          <TextInput
+            value={newValue}
+            onChangeText={onNewValueChange}
+            placeholder={placeholder}
+            placeholderTextColor="#6b7280"
+            autoCapitalize={autoCapitalize}
+            keyboardType={keyboardType}
+            className={inputClassName}
+            style={inputScrollMarginWeb}
+          />
+        )}
         {showDiffHint && (
           <Text className="text-[10px] font-instrument text-yellow-500 mt-1">
             Same as current lead — enter a different value.
@@ -599,16 +844,20 @@ function ComparisonRow({
           </View>
         </View>
         <View className="flex-1">
-          <TextInput
-            value={newValue}
-            onChangeText={onNewValueChange}
-            placeholder={placeholder}
-            placeholderTextColor="#6b7280"
-            autoCapitalize={autoCapitalize}
-            keyboardType={keyboardType}
-            className={inputClassName}
-            style={inputScrollMarginWeb}
-          />
+          {disabled ? (
+            lockedValue
+          ) : (
+            <TextInput
+              value={newValue}
+              onChangeText={onNewValueChange}
+              placeholder={placeholder}
+              placeholderTextColor="#6b7280"
+              autoCapitalize={autoCapitalize}
+              keyboardType={keyboardType}
+              className={inputClassName}
+              style={inputScrollMarginWeb}
+            />
+          )}
           {showDiffHint && (
             <Text className="text-[10px] font-instrument text-yellow-500 mt-1">
               Same as current lead — enter a different value.
@@ -617,6 +866,54 @@ function ComparisonRow({
         </View>
       </View>
     </View>
+  );
+}
+
+function LockedComparisonValue({
+  display,
+  help,
+  className,
+  preferTapHelp = false,
+}: {
+  display: string;
+  help?: string;
+  className: string;
+  preferTapHelp?: boolean;
+}) {
+  const body = (
+    <View className={className} accessibilityState={{ disabled: true }}>
+      <Text className="text-gray-500 font-instrument text-sm break-all" selectable={false}>
+        {display}
+      </Text>
+    </View>
+  );
+
+  if (!help) return body;
+
+  // Narrow / touch: tap opens an explanation. Desktop web: hover tooltip.
+  if (preferTapHelp || Platform.OS !== 'web') {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Why this field is locked"
+        onPress={() => NativeAlert.alert('Existing contact', help)}
+      >
+        {body}
+      </Pressable>
+    );
+  }
+
+  return (
+    <Tooltip
+      content={
+        <Text className="text-gray-300 font-instrument text-xs leading-5" style={{ maxWidth: 280 }}>
+          {help}
+        </Text>
+      }
+      placement="top"
+    >
+      {body}
+    </Tooltip>
   );
 }
 

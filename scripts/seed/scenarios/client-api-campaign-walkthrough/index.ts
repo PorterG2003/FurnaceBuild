@@ -1,5 +1,5 @@
-import { materializeCampaignGraph } from '../../../lib/test/campaign/harness.js';
-import type { SeedModule } from '../types.js';
+import { materializeCampaignGraph } from '../../../../lib/test/campaign/harness';
+import type { SeedModule } from '../../types';
 
 export const clientApiCampaignWalkthroughModule: SeedModule = {
   id: 'clientApiWalkthrough_seed',

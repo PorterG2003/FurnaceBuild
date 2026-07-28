@@ -379,6 +379,23 @@ export function buildClientApiComponents() {
           },
         },
       },
+      ConflictError: {
+        description: 'The request conflicts with the current resource state.',
+        headers: rateLimitHeaders(),
+        content: {
+          'application/json': {
+            schema: schemaRef('Error'),
+            example: {
+              error: {
+                type: 'invalid_request_error',
+                code: 'target_missing_enrollment',
+                message:
+                  'The existing contact for this address has no active enrollment in this campaign; launch the campaign or re-add the contact before replacing. Call GET /v1/threads/{id}/replace-lead/preview to inspect the match first.',
+              },
+            },
+          },
+        },
+      },
       RateLimitError: {
         description: 'The account exceeded the current rate limit window.',
         headers: rateLimitHeaders(),
@@ -1582,7 +1599,13 @@ export function buildClientApiComponents() {
           new_first_name: { type: 'string', nullable: true },
           new_last_name: { type: 'string', nullable: true },
           new_phone_number: { type: 'string', nullable: true },
-          reason: { type: 'string', nullable: true },
+          new_mobile_phone_number: { type: 'string', nullable: true },
+          reason: {
+            type: 'string',
+            nullable: true,
+            enum: ['auto_reply_forward', 'manual_referral', 'wrong_contact', 'role_change', 'other'],
+            description: 'Defaults to manual_referral when omitted.',
+          },
           reason_note: { type: 'string', nullable: true },
           source_message_id: { type: 'string', format: 'uuid', nullable: true },
           forward_message_id: { type: 'string', format: 'uuid', nullable: true },
@@ -1596,9 +1619,109 @@ export function buildClientApiComponents() {
           replacement_id: { type: 'string', format: 'uuid' },
           new_lead_id: { type: 'string', format: 'uuid' },
           enrollment_id: { type: 'string', format: 'uuid', nullable: true },
+          mode: {
+            type: 'string',
+            enum: ['created', 'attached'],
+            description:
+              'created = a new lead was inserted and the original archived. attached = the address was already a live lead in this campaign, so that contact was reused, the conversation was moved to them, and the original lead was retired as stopped/replaced. new_lead_id is the pre-existing contact in that case.',
+          },
+          target_lead_id: {
+            type: 'string',
+            format: 'uuid',
+            nullable: true,
+            description:
+              'On mode = attached, the pre-existing campaign contact that was reused. Null on mode = created.',
+          },
+          retired_sibling_count: {
+            type: 'integer',
+            description:
+              'Only non-zero on mode = attached. How many duplicate lead rows for the same address had their sequence stopped.',
+          },
           forward_job_id: { type: 'string', format: 'uuid', nullable: true },
         },
         required: ['replacement_id', 'new_lead_id'],
+      },
+      ReplaceLeadPreviewLead: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          email: { type: 'string', nullable: true },
+          name: { type: 'string', nullable: true },
+          first_name: { type: 'string', nullable: true },
+          last_name: { type: 'string', nullable: true },
+          phone_number: { type: 'string', nullable: true },
+          mobile_phone_number: { type: 'string', nullable: true },
+          company_name: { type: 'string', nullable: true },
+          website: { type: 'string', nullable: true },
+          linkedin_url: { type: 'string', nullable: true },
+          company_linkedin_url: { type: 'string', nullable: true },
+          custom_lead_data: { type: 'object', additionalProperties: true },
+          enrollment_id: { type: 'string', format: 'uuid', nullable: true },
+          enrollment_state: {
+            type: 'string',
+            nullable: true,
+            enum: ['active', 'paused', 'completed', 'stopped'],
+          },
+          has_been_contacted: { type: 'boolean' },
+          last_activity_at: { type: 'string', format: 'date-time', nullable: true },
+        },
+        required: ['id', 'has_been_contacted', 'custom_lead_data'],
+        additionalProperties: false,
+      },
+      ReplaceLeadPreview: {
+        type: 'object',
+        properties: {
+          email: { type: 'string', nullable: true },
+          mode: {
+            type: 'string',
+            enum: ['created', 'attached'],
+            description:
+              'What POST /v1/threads/{id}/replace-lead would do: created when no live campaign match, attached when an existing contact would be reused.',
+          },
+          allowed: {
+            type: 'boolean',
+            description:
+              'False when the write path would refuse this email. See disallowed_reason.',
+          },
+          disallowed_reason: {
+            type: 'string',
+            nullable: true,
+            enum: ['same_as_current_lead', 'target_missing_enrollment'],
+            description:
+              'Same error codes the write path returns: same_as_current_lead (400) or target_missing_enrollment (409). Null when allowed.',
+          },
+          match_count: {
+            type: 'integer',
+            description: 'How many live campaign lead rows match this address (excluding the current thread lead).',
+          },
+          matches_current_lead: { type: 'boolean' },
+          blocked: {
+            type: 'boolean',
+            description:
+              'True when the address or its domain is on the account block list. Does not by itself block replace; it is a warning for the caller.',
+          },
+          block_reason: { type: 'string', nullable: true },
+          existing_lead: {
+            allOf: [schemaRef('ReplaceLeadPreviewLead')],
+            nullable: true,
+          },
+        },
+        required: [
+          'mode',
+          'allowed',
+          'match_count',
+          'matches_current_lead',
+          'blocked',
+          'existing_lead',
+        ],
+        additionalProperties: false,
+      },
+      ReplaceLeadPreviewResponse: {
+        type: 'object',
+        properties: {
+          data: schemaRef('ReplaceLeadPreview'),
+        },
+        required: ['data'],
       },
       ThreadTag: {
         type: 'object',

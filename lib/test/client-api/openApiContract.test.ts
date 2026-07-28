@@ -43,7 +43,7 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
       parameters: Record<string, unknown>;
       responses: Record<string, unknown>;
     };
-    paths: Record<string, Record<string, { operationId?: string; tags?: string[]; responses?: Record<string, unknown>; requestBody?: unknown }>>;
+    paths: Record<string, Record<string, { operationId?: string; tags?: string[]; description?: string; responses?: Record<string, unknown>; requestBody?: unknown }>>;
   };
 
   assert.match(spec.info.description, /\/docs/);
@@ -63,6 +63,20 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   assert.ok('MessageJob' in spec.components.schemas);
   assert.ok('ForwardRequest' in spec.components.schemas);
   assert.ok('ReplaceLeadRequest' in spec.components.schemas);
+  assert.ok('ReplaceLeadPreview' in spec.components.schemas);
+  assert.ok('ReplaceLeadPreviewLead' in spec.components.schemas);
+  assert.ok('ReplaceLeadPreviewResponse' in spec.components.schemas);
+  assert.ok('ConflictError' in spec.components.responses);
+
+  const previewReplace = spec.paths['/v1/threads/{id}/replace-lead/preview']?.get;
+  assert.ok(previewReplace);
+  assert.equal(previewReplace?.operationId, 'previewThreadLeadReplacement');
+  assert.deepEqual(previewReplace?.tags, ['Inbox']);
+
+  const replaceLead = spec.paths['/v1/threads/{id}/replace-lead']?.post;
+  assert.ok(replaceLead);
+  assert.match(replaceLead?.description ?? '', /previewThreadLeadReplacement/);
+  assert.ok(replaceLead?.responses?.['409']);
 
   const asyncImport = spec.paths['/v1/campaigns/{id}/leads/bulk/async']?.post;
   assert.ok(asyncImport);

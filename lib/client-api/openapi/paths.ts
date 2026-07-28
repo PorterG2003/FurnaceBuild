@@ -31,7 +31,18 @@ function jsonResponse(schemaName: string, description: string, example?: unknown
 function authenticatedErrors(...extraNames: string[]) {
   return {
     401: responseRef('UnauthorizedError'),
-    ...Object.fromEntries(extraNames.map((name) => [name === 'ValidationError' ? 400 : name === 'ForbiddenError' ? 403 : name === 'NotFoundError' ? 404 : 500, responseRef(name)])),
+    ...Object.fromEntries(extraNames.map((name) => [
+      name === 'ValidationError'
+        ? 400
+        : name === 'ForbiddenError'
+          ? 403
+          : name === 'NotFoundError'
+            ? 404
+            : name === 'ConflictError'
+              ? 409
+              : 500,
+      responseRef(name),
+    ])),
     429: responseRef('RateLimitError'),
     500: responseRef('InternalError'),
   };
@@ -1200,12 +1211,36 @@ export function buildClientApiPaths() {
         },
       },
     },
+    '/v1/threads/{id}/replace-lead/preview': {
+      get: {
+        operationId: 'previewThreadLeadReplacement',
+        tags: ['Inbox'],
+        summary: 'Preview replace lead',
+        description:
+          'Read-only preview of what `replaceThreadLead` would do for a candidate email on this thread. Call this before writing when you need to know whether the address will create a new contact or attach to an existing campaign lead, whether the address is on the block list, and whether the attach would be refused (same email as the current lead, or existing contact with no live enrollment). `mode`, `allowed`, and `disallowed_reason` use the same vocabulary as the write path errors.',
+        parameters: [
+          parameterRef('ThreadId'),
+          {
+            name: 'email',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'email' },
+            description: 'Candidate replacement email to preview.',
+          },
+        ],
+        responses: {
+          200: jsonResponse('ReplaceLeadPreviewResponse', 'Replacement preview.'),
+          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+        },
+      },
+    },
     '/v1/threads/{id}/replace-lead': {
       post: {
         operationId: 'replaceThreadLead',
         tags: ['Inbox'],
         summary: 'Replace lead',
-        description: 'Replaces the thread lead with a new contact and optionally queues a forward job.',
+        description:
+          'Replaces the thread lead with a new contact and optionally queues a forward job.\n\nTwo modes, reported in the response `mode` field:\n- `created` — the address is new to this campaign. A lead is inserted, the conversation moves to them, and the original lead is archived.\n- `attached` — the address is already a live lead in this campaign. That existing contact is reused (their profile and sequence stay as they are), the conversation moves to them, the original lead is retired as stopped/replaced, and any duplicate rows for the same address have their sequences stopped (`retired_sibling_count`). On attach, `new_lead_id` and `target_lead_id` are that pre-existing contact.\n\nAttach happens automatically when the address matches; there is no opt-in flag. The call fails with 409 `target_missing_enrollment` when the existing contact has no live enrollment (nothing to send against). Prefer calling `previewThreadLeadReplacement` first to inspect `mode`, `allowed`, block-list status, and `disallowed_reason` before writing.',
         parameters: [parameterRef('ThreadId')],
         requestBody: jsonRequestBody('ReplaceLeadRequest', {
           new_email: 'referral@example.com',
@@ -1213,7 +1248,7 @@ export function buildClientApiPaths() {
         }),
         responses: {
           200: jsonResponse('ReplaceLeadResponse', 'Lead replaced.'),
-          ...authenticatedErrors('ValidationError', 'NotFoundError'),
+          ...authenticatedErrors('ValidationError', 'ForbiddenError', 'NotFoundError', 'ConflictError'),
         },
       },
     },

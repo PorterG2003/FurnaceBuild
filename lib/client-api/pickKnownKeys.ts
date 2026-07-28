@@ -71,3 +71,16 @@ export const FLOW_UPDATE_KEYS = [
   'nodes',
   'edges',
 ] as const;
+
+export const REPLACE_LEAD_KEYS = [
+  'new_email',
+  'new_name',
+  'new_first_name',
+  'new_last_name',
+  'new_phone_number',
+  'new_mobile_phone_number',
+  'reason',
+  'reason_note',
+  'source_message_id',
+  'forward_message_id',
+] as const;

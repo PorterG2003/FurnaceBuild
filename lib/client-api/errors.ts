@@ -90,6 +90,10 @@ export function notFound(code: string, message: string): never {
   throw new ClientApiError(404, code, message, 'invalid_request_error');
 }
 
+export function conflict(code: string, message: string, param?: string): never {
+  throw new ClientApiError(409, code, message, 'invalid_request_error', param);
+}
+
 export function rateLimited(code: string, message: string): never {
   throw new ClientApiError(429, code, message, 'rate_limit_error');
 }

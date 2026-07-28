@@ -36,7 +36,7 @@ function formatLeadHeaderLabel(fieldKey: string): string {
     .join(' ');
 }
 
-export type EnrollmentStoppedReason = 'replied' | 'bounced' | 'unsubscribed' | 'error';
+export type EnrollmentStoppedReason = 'replied' | 'bounced' | 'unsubscribed' | 'error' | 'replaced';
 
 export type Lead = CampaignLeadTableRow;
 
@@ -163,6 +163,7 @@ export function LeadsTable({
     bounced: 'Bounced',
     unsubscribed: 'Unsubscribed',
     error: 'Error',
+    replaced: 'Replaced',
   };
 
   const getStateBadge = (

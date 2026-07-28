@@ -115,6 +115,31 @@ npx tsx scripts/seed/index.ts --scenario=bucket-insights-smoke
 
 Re-runs delete all leads for the seeded campaign id and import fresh rows.
 
+### `replace-lead-attach` scenario
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `SEED_ACCOUNT_ID` | Yes | Account UUID (`accounts.id`) for the seeded campaign |
+| `SEED_OWNER_USER_ID` | Yes | `users.id` for `campaigns.owner_id` and `mailboxes.user_id` |
+| `SEED_REPLACE_LEAD_ATTACH_CAMPAIGN_ID` | No | Fixed campaign UUID; defaults to [`constants/replaceLeadAttach.ts`](./constants/replaceLeadAttach.ts) |
+| `SEED_PREVIEW_ORIGIN` | No | Base origin for printed inbox deep links |
+
+Creates a **running** campaign with labeled inbox threads for replace-lead smoke testing:
+
+- create path (brand-new email)
+- attach to an existing contact
+- attach + forward
+- sibling retirement for a duplicated address
+- block-list warning on an existing contact
+- no-enrollment guard
+
+```bash
+npx tsx scripts/seed/index.ts --scenario=replace-lead-attach --dry-run
+npx tsx scripts/seed/index.ts --scenario=replace-lead-attach
+```
+
+Re-runs clean and replace only the dedicated campaign id. The seed prints inbox URLs and the exact emails to type.
+
 ### `ooo-mixed-inbox` scenario
 
 | Variable | Required | Description |

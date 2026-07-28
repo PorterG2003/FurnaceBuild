@@ -29,7 +29,7 @@ export function ReplaceLeadModal({
       visible={visible}
       onClose={onClose}
       title="Replace lead"
-      description="Create a new lead for the new contact and move the active campaign ownership there."
+      description="Move active campaign ownership to the new contact. If they are already in this campaign, the conversation attaches to them instead of creating a second lead."
       maxWidth="3xl"
       maxHeight={1200}
     >

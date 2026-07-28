@@ -125,7 +125,8 @@ export default function ReplaceLeadPage() {
       }
     >
       <Text className="text-sm font-instrument text-gray-400 mb-4">
-        Create a new lead for the new contact and move the active campaign ownership there.
+        Move active campaign ownership to the new contact. If they are already in this campaign, the
+        conversation attaches to them instead of creating a second lead.
       </Text>
 
       {loading ? (

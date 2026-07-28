@@ -71,7 +71,7 @@ export interface CampaignLeadTableRow {
   enrollment_state: 'active' | 'completed' | 'stopped' | 'paused' | null;
   enrollment_progress_state: EnrollmentProgressState;
   enrollment_current_node_id: string | null;
-  enrollment_stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | null;
+  enrollment_stopped_reason: 'replied' | 'bounced' | 'unsubscribed' | 'error' | 'replaced' | null;
   enrollment_stopped_error_message: string | null;
   reply_category: 'Interested' | 'Neutral' | 'Not Interested' | null;
   replacement_role: LeadReplacementRole | null;
@@ -154,11 +154,57 @@ export interface ReplaceLeadWithNewContactInput {
   sourceMessageId?: string | null;
 }
 
+/**
+ * `created` inserted a brand new lead and archived the old one. `attached`
+ * reused a contact that was already live in the campaign, so the caller must not
+ * blind-patch profile fields onto it — the RPC already filled only the blanks.
+ */
+export type ReplaceLeadMode = 'created' | 'attached';
+
 export interface ReplaceLeadWithNewContactResult {
   replacementId: string;
   newLeadId: string;
   enrollmentId: string | null;
+  mode: ReplaceLeadMode;
+  targetLeadId: string;
+  retiredSiblingCount: number;
   newLead: Lead;
+}
+
+export interface ReplacementTargetPreviewLead {
+  id: string;
+  email: string | null;
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phoneNumber: string | null;
+  mobilePhoneNumber: string | null;
+  companyName: string | null;
+  website: string | null;
+  linkedinUrl: string | null;
+  companyLinkedinUrl: string | null;
+  customLeadData: Record<string, unknown>;
+  enrollmentId: string | null;
+  enrollmentState: 'active' | 'paused' | 'completed' | 'stopped' | null;
+  hasBeenContacted: boolean;
+  lastActivityAt: string | null;
+}
+
+export interface ReplacementTargetPreview {
+  email: string | null;
+  /** How many live lead rows in this campaign share the address. */
+  duplicateCount: number;
+  existingLead: ReplacementTargetPreviewLead | null;
+  blocked: boolean;
+  blockReason: string | null;
+  matchesOldLead: boolean;
+}
+
+export interface PreviewReplacementTargetInput {
+  accountId: string;
+  campaignId: string;
+  email: string;
+  oldLeadId?: string | null;
 }
 
 export interface UpdateLeadProfileFieldsInput {
@@ -1196,7 +1242,83 @@ export async function replaceLeadWithNewContact(
     replacementId: result.replacement_id,
     newLeadId: result.new_lead_id,
     enrollmentId: result.enrollment_id ?? null,
+    mode: result.mode === 'attached' ? 'attached' : 'created',
+    targetLeadId: result.target_lead_id ?? result.new_lead_id,
+    retiredSiblingCount: result.retired_sibling_count ?? 0,
     newLead,
+  };
+}
+
+/**
+ * Answers everything the replace-lead form needs about a candidate replacement
+ * address in one round trip: whether it is already a live contact in this
+ * campaign (resolved by the same ranking the write path uses, so the form can
+ * never name a different person than the replace will attach to), how many rows
+ * it duplicates, and whether the account has it suppressed.
+ */
+export async function previewReplacementTarget(
+  input: PreviewReplacementTargetInput
+): Promise<ReplacementTargetPreview> {
+  const email = input.email.trim().toLowerCase();
+  const empty: ReplacementTargetPreview = {
+    email: null,
+    duplicateCount: 0,
+    existingLead: null,
+    blocked: false,
+    blockReason: null,
+    matchesOldLead: false,
+  };
+  if (!email) return empty;
+
+  const { data, error } = await supabase.rpc('preview_replacement_target', {
+    p_account_id: input.accountId,
+    p_campaign_id: input.campaignId,
+    p_email: email,
+    p_old_lead_id: input.oldLeadId ?? null,
+  });
+
+  if (error) {
+    throw new Error(`Failed to check replacement email: ${error.message}`);
+  }
+  if (!data || typeof data !== 'object') return empty;
+
+  const payload = data as Record<string, unknown>;
+  const rawLead = payload.existingLead;
+  const lead =
+    rawLead && typeof rawLead === 'object' ? (rawLead as Record<string, unknown>) : null;
+  const rawCustom = lead?.customLeadData;
+  const customLeadData =
+    rawCustom && typeof rawCustom === 'object' && !Array.isArray(rawCustom)
+      ? (rawCustom as Record<string, unknown>)
+      : {};
+
+  return {
+    email: (payload.email as string | null) ?? null,
+    duplicateCount: Number(payload.duplicateCount ?? 0),
+    existingLead: lead
+      ? {
+          id: String(lead.id),
+          email: (lead.email as string | null) ?? null,
+          name: (lead.name as string | null) ?? null,
+          firstName: (lead.firstName as string | null) ?? null,
+          lastName: (lead.lastName as string | null) ?? null,
+          phoneNumber: (lead.phoneNumber as string | null) ?? null,
+          mobilePhoneNumber: (lead.mobilePhoneNumber as string | null) ?? null,
+          companyName: (lead.companyName as string | null) ?? null,
+          website: (lead.website as string | null) ?? null,
+          linkedinUrl: (lead.linkedinUrl as string | null) ?? null,
+          companyLinkedinUrl: (lead.companyLinkedinUrl as string | null) ?? null,
+          customLeadData,
+          enrollmentId: (lead.enrollmentId as string | null) ?? null,
+          enrollmentState:
+            (lead.enrollmentState as ReplacementTargetPreviewLead['enrollmentState']) ?? null,
+          hasBeenContacted: Boolean(lead.hasBeenContacted),
+          lastActivityAt: (lead.lastActivityAt as string | null) ?? null,
+        }
+      : null,
+    blocked: Boolean(payload.blocked),
+    blockReason: (payload.blockReason as string | null) ?? null,
+    matchesOldLead: Boolean(payload.matchesOldLead),
   };
 }
 

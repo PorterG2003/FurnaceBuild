@@ -379,7 +379,7 @@ test('schedule_thread_ooo_resume unifies stopped and non-resumable legacy thread
         buildCampaignLead({
           key: 'mark-only',
           email: `facade-mark-only-${harness.namespace}@furnace.test`,
-          mailboxKey: 'mailbox-3',
+          mailboxKey: 'mailbox-1',
           enrollment: buildCampaignEnrollment({
             state: 'stopped',
             currentFlowNodeId: 'waitTime-1',
@@ -446,7 +446,10 @@ test('schedule_thread_ooo_resume unifies stopped and non-resumable legacy thread
     assert.equal(rowsById.get(resumable.threadId!)?.category, 'Auto Reply');
     assert.equal(rowsById.get(resumable.threadId!)?.out_of_office, true);
     assert.equal(rowsById.get(resumable.threadId!)?.ooo_resume_requested, true);
-    assert.equal(rowsById.get(resumable.threadId!)?.ooo_resume_at, resumeAt);
+    assert.equal(
+      Date.parse(rowsById.get(resumable.threadId!)?.ooo_resume_at),
+      Date.parse(resumeAt),
+    );
 
     assert.equal(rowsById.get(nonResumable.threadId!)?.category, 'Auto Reply');
     assert.equal(rowsById.get(nonResumable.threadId!)?.out_of_office, true);

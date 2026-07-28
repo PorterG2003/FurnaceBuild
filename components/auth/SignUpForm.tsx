@@ -10,14 +10,22 @@ import {
   authLabelClassName,
   authPlaceholderColor,
 } from '@/components/auth/authFormStyles';
+import { buildInviteSignupRedirectUrl } from '@/lib/account/inviteSignupRedirect';
+import { getAppBaseUrl } from '@/lib/web/appBaseUrl';
 
 interface SignUpFormProps {
   onSignUpSuccess: (email: string, password: string) => void;
   onBackToSignIn: () => void;
   initialEmail?: string;
+  invitationId?: string;
 }
 
-export function SignUpForm({ onSignUpSuccess, onBackToSignIn, initialEmail }: SignUpFormProps) {
+export function SignUpForm({
+  onSignUpSuccess,
+  onBackToSignIn,
+  initialEmail,
+  invitationId,
+}: SignUpFormProps) {
   const { toast } = useToast();
   const [email, setEmail] = useState(initialEmail ?? '');
   const [password, setPassword] = useState('');
@@ -57,9 +65,11 @@ export function SignUpForm({ onSignUpSuccess, onBackToSignIn, initialEmail }: Si
     setError('');
 
     try {
+      const emailRedirectTo = buildInviteSignupRedirectUrl(getAppBaseUrl(), invitationId);
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password,
+        ...(emailRedirectTo ? { options: { emailRedirectTo } } : {}),
       });
 
       if (signUpError) {

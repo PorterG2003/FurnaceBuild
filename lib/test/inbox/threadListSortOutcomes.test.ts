@@ -38,10 +38,12 @@ async function ensureInboxSortSchema(
 async function listSubjects(
   harness: CampaignDbHarness,
   accountId: string,
+  campaignId: string,
   sort: 'open_first' | 'newest' | 'oldest' | 'unread_first',
 ): Promise<string[]> {
   const { data, error } = await harness.supabase.rpc('list_account_inbox_threads', {
     p_account_id: accountId,
+    p_campaign_ids: [campaignId],
     p_has_reply_only: true,
     p_limit: 20,
     p_offset: 0,
@@ -147,25 +149,25 @@ test('list_account_inbox_threads honors open_first, newest, oldest, and unread_f
 
     const accountId = graph.accountId;
 
-    assert.deepEqual(await listSubjects(harness, accountId, 'open_first'), [
+    assert.deepEqual(await listSubjects(harness, accountId, graph.campaignId, 'open_first'), [
       'Open unread mid',
       'Open older',
       'Closed newest',
     ]);
 
-    assert.deepEqual(await listSubjects(harness, accountId, 'newest'), [
+    assert.deepEqual(await listSubjects(harness, accountId, graph.campaignId, 'newest'), [
       'Closed newest',
       'Open unread mid',
       'Open older',
     ]);
 
-    assert.deepEqual(await listSubjects(harness, accountId, 'oldest'), [
+    assert.deepEqual(await listSubjects(harness, accountId, graph.campaignId, 'oldest'), [
       'Open older',
       'Open unread mid',
       'Closed newest',
     ]);
 
-    assert.deepEqual(await listSubjects(harness, accountId, 'unread_first'), [
+    assert.deepEqual(await listSubjects(harness, accountId, graph.campaignId, 'unread_first'), [
       'Open unread mid',
       'Closed newest',
       'Open older',
@@ -237,7 +239,7 @@ test('list_account_inbox_threads newest sort ignores outbound last_message_at bu
       .eq('id', olderThreadId);
     assert.equal(bumpErr, null);
 
-    assert.deepEqual(await listSubjects(harness, graph.accountId, 'newest'), [
+    assert.deepEqual(await listSubjects(harness, graph.accountId, graph.campaignId, 'newest'), [
       'Newer inbound',
       'Older inbound',
     ]);

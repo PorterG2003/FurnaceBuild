@@ -185,7 +185,8 @@ test('imap fair schedule: claim order, backoff, promote, recovery, success caden
   const deadDue = new Date(epoch.getTime()).toISOString();
   const healthyADue = new Date(epoch.getTime() + 60_000).toISOString();
   const healthyBDue = new Date(epoch.getTime() + 120_000).toISOString();
-  const now = '2026-07-22T15:00:00.000Z';
+  // Wall-clock: claim_mailboxes_to_check compares imap_next_check_at to Postgres NOW().
+  const now = new Date().toISOString();
 
   let deadId = '';
   let healthyAId = '';
@@ -219,6 +220,10 @@ test('imap fair schedule: claim order, backoff, promote, recovery, success caden
     assert.equal(deadAfterTransient.imap_consecutive_failures, 1);
     assert.ok(deadAfterTransient.imap_next_check_at);
     assert.ok(new Date(deadAfterTransient.imap_next_check_at!).getTime() > Date.parse(now));
+    assert.ok(
+      Date.parse(deadAfterTransient.imap_next_check_at!) > Date.now(),
+      'backoff next_check must be after wall clock so claim RPC excludes it',
+    );
 
     // Release healthyA claim so later claims are not blocked by lock timeout semantics in assertions.
     await harness.releaseClaim(healthyAId);

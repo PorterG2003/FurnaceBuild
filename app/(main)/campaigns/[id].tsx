@@ -22,6 +22,7 @@ import {
 import { downloadCsvOnWeb, exportCampaignLeadsToCsv } from '@/components/campaigns/exportCampaignLeadsCsv';
 import { Tabs, type Tab } from '@/components/ui/tabs';
 import { isWithinSchedule, isSmartleadCampaign } from '@/lib/campaigns/utils';
+import { formatVariantPerfCells } from '@/lib/campaigns/formatVariantPerfCells';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 import { Tooltip } from '@/components/ui/Tooltip';
 import {
@@ -896,6 +897,7 @@ export default function CampaignPage() {
                                         },
                                       ];
                                 const nodeTitle = node.data?.label || 'Send Email';
+                                const isPriorityEmail = node.data?.priority === true;
                                 return (
                                   <View key={flowId} style={{ marginBottom: 20 }}>
                                     <Text className="text-white font-instrument-medium text-sm mb-2">{nodeTitle}</Text>
@@ -1058,7 +1060,12 @@ export default function CampaignPage() {
                                       </View>
                                       {variants.map((v, rowIndex) => {
                                         const counts = statLookup(variantStats, flowId, v.id);
+                                        const cells = formatVariantPerfCells({
+                                          priority: isPriorityEmail,
+                                          counts,
+                                        });
                                         const isLastRow = rowIndex === variants.length - 1;
+                                        const naColor = '#6b7280';
                                         return (
                                           <View
                                             key={v.id}
@@ -1099,31 +1106,37 @@ export default function CampaignPage() {
                                                   fontWeight: '600',
                                                 }}
                                               >
-                                                {counts.sent}
+                                                {cells.sent}
                                               </Text>
                                             </View>
                                             <View style={variantPerfCol}>
                                               <Text
                                                 style={{
-                                                  color: VARIANT_PERF_COLORS.reply.cell,
+                                                  color:
+                                                    cells.replied === '—'
+                                                      ? naColor
+                                                      : VARIANT_PERF_COLORS.reply.cell,
                                                   fontSize: 14,
                                                   textAlign: 'left',
                                                   fontWeight: '600',
                                                 }}
                                               >
-                                                {counts.replied}
+                                                {cells.replied}
                                               </Text>
                                             </View>
                                             <View style={variantPerfCol}>
                                               <Text
                                                 style={{
-                                                  color: VARIANT_PERF_COLORS.interested.cell,
+                                                  color:
+                                                    cells.interested === '—'
+                                                      ? naColor
+                                                      : VARIANT_PERF_COLORS.interested.cell,
                                                   fontSize: 14,
                                                   textAlign: 'left',
                                                   fontWeight: '600',
                                                 }}
                                               >
-                                                {counts.positiveReply}
+                                                {cells.interested}
                                               </Text>
                                             </View>
                                             <View style={{ ...variantPerfCol, paddingRight: 0 }}>
@@ -1135,7 +1148,7 @@ export default function CampaignPage() {
                                                   fontWeight: '600',
                                                 }}
                                               >
-                                                {counts.bounced}
+                                                {cells.bounced}
                                               </Text>
                                             </View>
                                           </View>

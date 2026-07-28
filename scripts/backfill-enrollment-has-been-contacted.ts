@@ -2,8 +2,8 @@
 /**
  * Backfill enrollments.has_been_contacted from sent campaign message_jobs.
  *
- * Matches get_campaign_contacted_counts: status = 'sent' AND
- * (message_type = 'campaign' OR message_type IS NULL).
+ * Matches get_campaign_contacted_counts via is_campaign_outbound_message_type
+ * (sent campaign / campaign_priority / campaign_reply; excludes inbox_*).
  *
  * Usage:
  *   npx tsx scripts/backfill-enrollment-has-been-contacted.ts

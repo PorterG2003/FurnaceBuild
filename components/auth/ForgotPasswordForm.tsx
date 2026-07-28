@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, Platform } from 'react-native';
-import Constants from 'expo-constants';
+import { View, Text, TextInput, Pressable } from 'react-native';
 import { supabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { FormCard } from '@/components/ui/forms';
@@ -11,15 +10,7 @@ import {
   authLabelClassName,
   authPlaceholderColor,
 } from '@/components/auth/authFormStyles';
-
-/** Base URL for password reset redirect. Set EXPO_PUBLIC_APP_URL in .env to match Supabase Redirect URLs (e.g. http://localhost:8081 or production URL). */
-function getAppBaseUrl(): string | undefined {
-  if (Platform.OS !== 'web') return undefined;
-  const fromEnv = process.env.EXPO_PUBLIC_APP_URL ?? Constants.expoConfig?.extra?.appUrl;
-  if (typeof fromEnv === 'string' && fromEnv) return fromEnv;
-  if (typeof window !== 'undefined') return window.location.origin;
-  return undefined;
-}
+import { getAppBaseUrl } from '@/lib/web/appBaseUrl';
 
 interface ForgotPasswordFormProps {
   onBackToSignIn: () => void;

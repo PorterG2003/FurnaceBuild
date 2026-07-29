@@ -14,6 +14,7 @@ import {
   TIMEZONES,
   HOURS,
   MINUTES,
+  DEFAULT_SENDING_INTERVAL_SECONDS,
   type ScheduleShape,
   type SchedulePreset,
   scheduleFromCampaign,
@@ -34,7 +35,7 @@ interface ScheduleModalProps {
 export function ScheduleModal({ visible, onClose, onSaved, campaign, campaignId }: ScheduleModalProps) {
   const [schedulePreset, setSchedulePreset] = useState<SchedulePreset>('business-hours');
   const [schedule, setSchedule] = useState<ScheduleShape | null>(null);
-  const [sendingIntervalSeconds, setSendingIntervalSeconds] = useState(300);
+  const [sendingIntervalSeconds, setSendingIntervalSeconds] = useState(DEFAULT_SENDING_INTERVAL_SECONDS);
   const [isSaving, setIsSaving] = useState(false);
   const initialRef = useRef<{ schedule: ScheduleShape | null; preset: SchedulePreset; interval: number } | null>(null);
 
@@ -56,7 +57,7 @@ export function ScheduleModal({ visible, onClose, onSaved, campaign, campaignId 
       setSchedule(initialSchedule);
       preset = '24/7';
     }
-    const interval = campaign.sending_interval_seconds ?? 300;
+    const interval = campaign.sending_interval_seconds ?? DEFAULT_SENDING_INTERVAL_SECONDS;
     setSendingIntervalSeconds(interval);
     initialRef.current = { schedule: initialSchedule, preset, interval };
   }, [visible, campaign]);

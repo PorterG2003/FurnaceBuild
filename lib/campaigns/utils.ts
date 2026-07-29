@@ -94,6 +94,12 @@ export function applyPreset(preset: SchedulePreset): ScheduleShape {
   }
 }
 
+/** Default send window for newly created campaigns (Central 9–5 Mon–Fri). */
+export const DEFAULT_CAMPAIGN_SCHEDULE: ScheduleShape = applyPreset('business-hours');
+
+/** 24 minutes — ~20 emails per mailbox per scheduled day on the default 9–5 window. */
+export const DEFAULT_SENDING_INTERVAL_SECONDS = 1440;
+
 export function formatHour12(hour: number, minute: number): string {
   const h = hour % 12 || 12;
   const ampm = hour < 12 ? 'AM' : 'PM';

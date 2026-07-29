@@ -650,6 +650,7 @@ test('handleReply routes campaign replies on categorizer flows through the park 
     { data: [] }, // email_messages dup check
     { data: [createMessageJob()] }, // message_jobs search (campaign send)
     { data: [existingThread] }, // getOrCreateThread by message_job_id
+    { data: [] }, // backfillSentMessages: no additional jobs
     { data: { id: 'email-message-1', received_at: '2026-04-06T02:58:50.000Z' }, error: null },
     { count: 2, error: null }, // email_messages count
     { data: null, error: null }, // email_threads update
@@ -690,6 +691,7 @@ test('handleReply falls back to the legacy hard stop (with held-job hygiene) whe
     { data: [] }, // email_messages dup check
     { data: [createMessageJob()] }, // message_jobs search (campaign send)
     { data: [existingThread] }, // getOrCreateThread by message_job_id
+    { data: [] }, // backfillSentMessages: no additional jobs
     { data: { id: 'email-message-1', received_at: '2026-04-06T02:58:50.000Z' }, error: null },
     { count: 2, error: null }, // email_messages count
     { data: null, error: null }, // email_threads update
@@ -734,12 +736,17 @@ test('getOrCreateThread reloads the canonical thread after a unique-violation ra
     { data: null, error: null },
     { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } },
     { data: [canonicalThread] },
+    { data: [] }, // backfillSentMessages: no sent jobs under cutoff
   ]);
   const manager = new ThreadManager(supabase as any);
   const mailbox = createMailbox();
   const messageJob = createMessageJob();
 
-  const thread = await (manager as any).getOrCreateThread(messageJob, mailbox);
+  const thread = await (manager as any).getOrCreateThread(
+    messageJob,
+    mailbox,
+    '2026-04-06T02:58:50.000Z'
+  );
 
   assert.deepEqual(thread, canonicalThread);
 
@@ -874,6 +881,433 @@ test('backfillSentMessages falls back to raw node config when no sent event exis
   assert.equal(inserted.subject, 'Fallback subject');
   assert.equal(inserted.body_text, '{Hey|Hi} {{first_name}}');
   assert.equal(inserted.body_html, '{Hey|Hi} {{first_name}}');
+});
+
+test('backfillSentMessages includes campaign sends after matched job sent_at when cutoff is reply time', async () => {
+  const jobs = [
+    {
+      id: 'job-1',
+      provider_message_id: '<msg1@furnace.build>',
+      sent_at: '2026-07-01T20:00:00.000Z',
+      created_at: '2026-07-01T20:00:00.000Z',
+      message_data: { subject: 'First' },
+      mailbox_id: 'mailbox-1',
+      lead_id: 'lead-1',
+    },
+    {
+      id: 'job-2',
+      provider_message_id: '<msg2@furnace.build>',
+      sent_at: '2026-07-08T18:00:00.000Z',
+      created_at: '2026-07-08T18:00:00.000Z',
+      message_data: { subject: 'Follow-up 2' },
+      mailbox_id: 'mailbox-1',
+      lead_id: 'lead-1',
+    },
+    {
+      id: 'job-3',
+      provider_message_id: '<msg3@furnace.build>',
+      sent_at: '2026-07-13T19:00:00.000Z',
+      created_at: '2026-07-13T19:00:00.000Z',
+      message_data: { subject: 'Follow-up 3' },
+      mailbox_id: 'mailbox-1',
+      lead_id: 'lead-1',
+    },
+  ];
+  const replyCutoff = '2026-07-15T09:38:24.000Z';
+  const supabase = new MockSupabase([
+    { data: jobs },
+    {
+      data: [
+        {
+          message_job_id: 'job-1',
+          event_data: { sent_subject: 'First', sent_body_html: 'a', sent_body_text: 'a' },
+        },
+        {
+          message_job_id: 'job-2',
+          event_data: { sent_subject: 'Follow-up 2', sent_body_html: 'b', sent_body_text: 'b' },
+        },
+        {
+          message_job_id: 'job-3',
+          event_data: { sent_subject: 'Follow-up 3', sent_body_html: 'c', sent_body_text: 'c' },
+        },
+      ],
+    },
+    { data: [{ message_job_id: 'job-1' }] }, // job-1 already on thread
+    { data: { email: 'lead@example.com', name: 'Lead' }, error: null },
+    { data: null, error: null }, // insert job-2
+    { data: null, error: null }, // insert job-3
+    { count: 3, error: null },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+
+  await (manager as any).backfillSentMessages(
+    { id: 'thread-1', account_id: 'account-1' },
+    'campaign-1',
+    'lead-1',
+    replyCutoff,
+    createMailbox()
+  );
+
+  const jobsQuery = supabase.calls[0] as QueryCall;
+  assert.deepEqual(
+    jobsQuery.filters.find((f) => f.column === 'sent_at' && f.op === 'lte'),
+    { op: 'lte', column: 'sent_at', value: replyCutoff }
+  );
+
+  const insertCalls = supabase.calls.filter(
+    (c): c is QueryCall =>
+      (c as QueryCall).kind === 'query' &&
+      (c as QueryCall).table === 'email_messages' &&
+      (c as QueryCall).insertPayloads.length > 0
+  );
+  assert.equal(insertCalls.length, 2);
+  assert.equal((insertCalls[0].insertPayloads[0] as any).message_job_id, 'job-2');
+  assert.equal((insertCalls[0].insertPayloads[0] as any).subject, 'Follow-up 2');
+  assert.equal((insertCalls[0].insertPayloads[0] as any).in_reply_to, 'msg1@furnace.build');
+  assert.equal((insertCalls[1].insertPayloads[0] as any).message_job_id, 'job-3');
+  assert.equal((insertCalls[1].insertPayloads[0] as any).subject, 'Follow-up 3');
+});
+
+test('backfillSentMessages with matched-job cutoff still excludes later sends', async () => {
+  const matchedJobCutoff = '2026-07-01T20:00:00.000Z';
+  const supabase = new MockSupabase([
+    {
+      data: [
+        {
+          id: 'job-1',
+          provider_message_id: '<msg1@furnace.build>',
+          sent_at: '2026-07-01T20:00:00.000Z',
+          created_at: '2026-07-01T20:00:00.000Z',
+          message_data: { subject: 'First' },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+      ],
+    },
+    {
+      data: [
+        {
+          message_job_id: 'job-1',
+          event_data: { sent_subject: 'First', sent_body_html: 'a', sent_body_text: 'a' },
+        },
+      ],
+    },
+    { data: [] },
+    { data: { email: 'lead@example.com', name: 'Lead' }, error: null },
+    { data: null, error: null },
+    { count: 1, error: null },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+
+  await (manager as any).backfillSentMessages(
+    { id: 'thread-1', account_id: 'account-1' },
+    'campaign-1',
+    'lead-1',
+    matchedJobCutoff,
+    createMailbox()
+  );
+
+  const jobsQuery = supabase.calls[0] as QueryCall;
+  assert.deepEqual(
+    jobsQuery.filters.find((f) => f.column === 'sent_at' && f.op === 'lte'),
+    { op: 'lte', column: 'sent_at', value: matchedJobCutoff }
+  );
+
+  const insertCalls = supabase.calls.filter(
+    (c): c is QueryCall =>
+      (c as QueryCall).kind === 'query' &&
+      (c as QueryCall).table === 'email_messages' &&
+      (c as QueryCall).insertPayloads.length > 0
+  );
+  assert.equal(insertCalls.length, 1);
+  assert.equal((insertCalls[0].insertPayloads[0] as any).message_job_id, 'job-1');
+});
+
+test('handleReply backfills later follow-ups when reply matches an older campaign send', async () => {
+  const existingThread = {
+    id: 'thread-1',
+    account_id: 'account-1',
+    mailbox_id: 'mailbox-1',
+    campaign_id: 'campaign-1',
+    lead_id: 'lead-1',
+    message_count: 1,
+    participants: ['porterg@furnaceoutbound.com', 'lead@example.com'],
+    category: null,
+    category_source: null,
+  };
+  const job1 = createMessageJob({
+    id: 'job-1',
+    provider_message_id: '<msg1@furnace.build>',
+    sent_at: '2026-07-01T20:00:00.000Z',
+  });
+  const supabase = new MockSupabase([
+    { data: [] }, // dup check
+    { data: [job1] }, // match job1 via In-Reply-To
+    { data: [existingThread] }, // getOrCreateThread by message_job_id
+    // backfill with reply cutoff:
+    {
+      data: [
+        {
+          id: 'job-1',
+          provider_message_id: '<msg1@furnace.build>',
+          sent_at: '2026-07-01T20:00:00.000Z',
+          created_at: '2026-07-01T20:00:00.000Z',
+          message_data: { subject: 'First' },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+        {
+          id: 'job-2',
+          provider_message_id: '<msg2@furnace.build>',
+          sent_at: '2026-07-08T18:00:00.000Z',
+          created_at: '2026-07-08T18:00:00.000Z',
+          message_data: { subject: 'Follow-up' },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+      ],
+    },
+    {
+      data: [
+        {
+          message_job_id: 'job-1',
+          event_data: { sent_subject: 'First', sent_body_html: 'a', sent_body_text: 'a' },
+        },
+        {
+          message_job_id: 'job-2',
+          event_data: { sent_subject: 'Follow-up', sent_body_html: 'b', sent_body_text: 'b' },
+        },
+      ],
+    },
+    { data: [{ message_job_id: 'job-1' }] }, // job-1 already present
+    { data: { email: 'lead@example.com', name: 'Lead' }, error: null },
+    { data: null, error: null }, // insert job-2
+    { count: 2, error: null },
+    { data: null, error: null }, // thread message_count update from backfill
+    { data: { id: 'email-message-reply', received_at: '2026-07-15T09:38:24.000Z' }, error: null },
+    { count: 3, error: null },
+    { data: null, error: null }, // thread update after reply
+    { data: [], error: null }, // nodes (no categorizer)
+    { data: null, error: null }, // enrollments stop
+    { data: 0, error: null }, // cancel_held_jobs
+    { data: true, error: null }, // record_replied
+    { data: { id: 'notification-event-1' }, error: null },
+    { data: { id: 'webhook-event-1' }, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const handled = await manager.handleReply(
+    createMailbox(),
+    createProcessedMessage({
+      messageId: '<reply@example.com>',
+      inReplyTo: '<msg1@furnace.build>',
+      date: new Date('2026-07-15T09:38:24.000Z'),
+    })
+  );
+
+  assert.equal(handled, true);
+
+  const backfillJobsQuery = supabase.calls.find(
+    (c): c is QueryCall =>
+      (c as QueryCall).kind === 'query' &&
+      (c as QueryCall).table === 'message_jobs' &&
+      (c as QueryCall).filters.some((f) => f.op === 'lte' && f.column === 'sent_at')
+  );
+  assert.ok(backfillJobsQuery);
+  assert.deepEqual(
+    backfillJobsQuery.filters.find((f) => f.op === 'lte' && f.column === 'sent_at'),
+    { op: 'lte', column: 'sent_at', value: '2026-07-15T09:38:24.000Z' }
+  );
+
+  const sentInserts = supabase.calls.filter(
+    (c): c is QueryCall =>
+      (c as QueryCall).kind === 'query' &&
+      (c as QueryCall).table === 'email_messages' &&
+      (c as QueryCall).insertPayloads.some(
+        (p) => (p as any)?.direction === 'sent' && (p as any)?.message_job_id === 'job-2'
+      )
+  );
+  assert.equal(sentInserts.length, 1);
+});
+
+test('handleReply external In-Reply-To still backfills later sends via reply cutoff', async () => {
+  const job1 = createMessageJob({
+    id: 'job-1',
+    provider_message_id: '<msg1@furnace.build>',
+    sent_at: '2026-07-01T20:00:00.000Z',
+  });
+  const supabase = new MockSupabase([
+    { data: [] }, // dup check
+    { data: [] }, // Outlook IRT — no job
+    { data: [job1] }, // References msg1 match
+    { data: [] }, // getOrCreateThread: no thread by message_job_id
+    { data: [] }, // getOrCreateThread: no campaign+lead thread
+    { data: null, error: null }, // firstSentEvent
+    {
+      data: {
+        id: 'thread-new',
+        account_id: 'account-1',
+        campaign_id: 'campaign-1',
+        lead_id: 'lead-1',
+        message_job_id: 'job-1',
+        participants: [],
+        message_count: 1,
+      },
+      error: null,
+    }, // create thread
+    // backfill all 3 under reply cutoff
+    {
+      data: [
+        {
+          id: 'job-1',
+          provider_message_id: '<msg1@furnace.build>',
+          sent_at: '2026-07-01T20:00:00.000Z',
+          created_at: '2026-07-01T20:00:00.000Z',
+          message_data: { subject: 'First' },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+        {
+          id: 'job-2',
+          provider_message_id: '<msg2@furnace.build>',
+          sent_at: '2026-07-08T18:00:00.000Z',
+          created_at: '2026-07-08T18:00:00.000Z',
+          message_data: { subject: 'Second' },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+        {
+          id: 'job-3',
+          provider_message_id: '<msg3@furnace.build>',
+          sent_at: '2026-07-13T19:00:00.000Z',
+          created_at: '2026-07-13T19:00:00.000Z',
+          message_data: { subject: 'Third' },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+      ],
+    },
+    {
+      data: [
+        {
+          message_job_id: 'job-1',
+          event_data: { sent_subject: 'First', sent_body_html: 'a', sent_body_text: 'a' },
+        },
+        {
+          message_job_id: 'job-2',
+          event_data: { sent_subject: 'Second', sent_body_html: 'b', sent_body_text: 'b' },
+        },
+        {
+          message_job_id: 'job-3',
+          event_data: { sent_subject: 'Third', sent_body_html: 'c', sent_body_text: 'c' },
+        },
+      ],
+    },
+    { data: [] },
+    { data: { email: 'lead@example.com', name: 'Lead' }, error: null },
+    { data: null, error: null },
+    { data: null, error: null },
+    { data: null, error: null },
+    { count: 3, error: null },
+    { data: null, error: null },
+    { data: { id: 'email-message-reply', received_at: '2026-07-15T09:38:24.000Z' }, error: null },
+    { count: 4, error: null },
+    { data: null, error: null },
+    { data: [], error: null },
+    { data: null, error: null },
+    { data: 0, error: null },
+    { data: true, error: null },
+    { data: { id: 'notification-event-1' }, error: null },
+    { data: { id: 'webhook-event-1' }, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const handled = await manager.handleReply(
+    createMailbox(),
+    createProcessedMessage({
+      messageId: '<paul-reply@outlook.com>',
+      inReplyTo: '<PASP264MB6875@outlook.com>',
+      references: '<msg1@furnace.build> <msg3@furnace.build> <PASP264MB6875@outlook.com>',
+      from: { address: 'p.cohen@imcas.com', name: 'Paul' },
+      date: new Date('2026-07-15T09:38:24.000Z'),
+    })
+  );
+
+  assert.equal(handled, true);
+
+  const sentJobIds = supabase.calls
+    .filter(
+      (c): c is QueryCall =>
+        (c as QueryCall).kind === 'query' &&
+        (c as QueryCall).table === 'email_messages' &&
+        (c as QueryCall).insertPayloads.some((p) => (p as any)?.direction === 'sent')
+    )
+    .flatMap((c) => c.insertPayloads.map((p) => (p as any).message_job_id));
+  assert.deepEqual(sentJobIds, ['job-1', 'job-2', 'job-3']);
+});
+
+test('getOrCreateThread re-backfills missing follow-ups on an existing sticky thread', async () => {
+  const existingThread = {
+    id: 'thread-1',
+    account_id: 'account-1',
+    campaign_id: 'campaign-1',
+    lead_id: 'lead-1',
+    message_job_id: 'job-1',
+  };
+  const supabase = new MockSupabase([
+    { data: [existingThread] },
+    {
+      data: [
+        {
+          id: 'job-1',
+          provider_message_id: '<msg1@furnace.build>',
+          sent_at: '2026-07-01T20:00:00.000Z',
+          created_at: '2026-07-01T20:00:00.000Z',
+          message_data: { subject: 'First' },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+        {
+          id: 'job-2',
+          provider_message_id: '<msg2@furnace.build>',
+          sent_at: '2026-07-08T18:00:00.000Z',
+          created_at: '2026-07-08T18:00:00.000Z',
+          message_data: { subject: 'Follow-up' },
+          mailbox_id: 'mailbox-1',
+          lead_id: 'lead-1',
+        },
+      ],
+    },
+    {
+      data: [
+        {
+          message_job_id: 'job-2',
+          event_data: { sent_subject: 'Follow-up', sent_body_html: 'b', sent_body_text: 'b' },
+        },
+      ],
+    },
+    { data: [{ message_job_id: 'job-1' }] },
+    { data: { email: 'lead@example.com', name: 'Lead' }, error: null },
+    { data: null, error: null },
+    { count: 2, error: null },
+    { data: null, error: null },
+  ]);
+  const manager = new ThreadManager(supabase as any);
+  const thread = await (manager as any).getOrCreateThread(
+    createMessageJob({ id: 'job-1', provider_message_id: '<msg1@furnace.build>' }),
+    createMailbox(),
+    '2026-07-15T09:38:24.000Z'
+  );
+
+  assert.equal(thread.id, 'thread-1');
+  const insertCall = supabase.calls.find(
+    (c): c is QueryCall =>
+      (c as QueryCall).kind === 'query' &&
+      (c as QueryCall).table === 'email_messages' &&
+      (c as QueryCall).insertPayloads.some((p) => (p as any)?.message_job_id === 'job-2')
+  );
+  assert.ok(insertCall);
+  assert.equal((insertCall.insertPayloads[0] as any).subject, 'Follow-up');
 });
 
 test('handleBounce returns early when bounce already processed (messageId idempotency)', async () => {

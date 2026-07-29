@@ -4,6 +4,7 @@ import { DetailPageHeader } from '@/components/ui/layout';
 import { MobileHeaderButton } from '@/components/ui/MobileHeaderButton';
 import { useOnboardingTarget } from '@/components/onboarding/useOnboardingTarget';
 import { TARGETS } from '@/lib/onboarding/types';
+import { BlockedBadge } from './BlockedBadge';
 import { MessageListSkeleton, type MessageListSkeletonProps } from './MessageListSkeleton';
 import { InboxMessageList } from './InboxMessageList';
 import { THREAD_CATEGORIES } from './inboxConstants';
@@ -108,12 +109,17 @@ export function InboxMobileMessageView({ messagePane, mobile }: InboxMobileMessa
 
   const mobileMessageListSkeletonProps = { variant: 'mobile' as const } satisfies MessageListSkeletonProps;
 
+  const subtitleEmail = selectedThreadProspectEmails[0] ?? selectedThreadRecipientEmail ?? null;
+  const subtitleBlocked =
+    !!subtitleEmail && blockedProspectEmails.has(subtitleEmail.trim().toLowerCase());
+
   const header = (
     <DetailPageHeader
       breadcrumbItems={[{ label: 'Inbox', href: '/inbox' }, { label: mobileMessageViewTitle ?? 'Conversation' }]}
       backHref="/inbox"
       title={mobileMessageViewTitle ?? 'Conversation'}
-      subtitle={selectedThreadProspectEmails[0] ?? selectedThreadRecipientEmail ?? null}
+      subtitle={subtitleEmail}
+      subtitleAddon={subtitleBlocked ? <BlockedBadge /> : null}
       onBack={onBack}
       onTitlePress={onOpenLeadDetail}
       titleRef={leadDetailRef}

@@ -3,7 +3,7 @@ import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import type { ThreadTag } from '@/lib/supabase/services/thread-tags';
 import type { InboxThreadSortBy } from '@/lib/supabase/services/inbox';
 import type { EmailThread } from '@/lib/supabase/types';
-import type { Mailbox, Campaign } from '@/lib/supabase/types';
+import type { Mailbox, Campaign, BlockListEntry } from '@/lib/supabase/types';
 import { ConfirmDeleteModal, ConfirmModal } from '@/components/ui/modals';
 import { BlockSenderModal } from './BlockSenderModal';
 import { InboxFilterDropdown } from './InboxFilterDropdown';
@@ -62,6 +62,7 @@ export interface InboxModalsVisibilityProps {
 export interface InboxModalsActionsProps {
   accountId: string | null;
   selectedThreadProspectEmails: string[];
+  blockList: BlockListEntry[];
   onBlocked: () => void;
   selectedThreadId: string | null;
   threadTagsMap: Record<string, ThreadTag[]>;
@@ -137,6 +138,7 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
   const {
     accountId,
     selectedThreadProspectEmails,
+    blockList,
     onBlocked,
     selectedThreadId,
     threadTagsMap,
@@ -195,6 +197,7 @@ export function InboxModals({ filters, visibility, actions }: InboxModalsProps) 
           onClose={() => setBlockModalVisible(false)}
           participantEmails={selectedThreadProspectEmails}
           accountId={accountId}
+          blockList={blockList}
           onBlocked={onBlocked}
         />
       )}

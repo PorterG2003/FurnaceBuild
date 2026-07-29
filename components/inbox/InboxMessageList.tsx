@@ -4,7 +4,6 @@ import { Alert } from '@/components/ui/feedback';
 import { buildInboxThreadToolbarActions } from '@/lib/inbox';
 import { DateDivider } from './DateDivider';
 import { MessageBubble, type MessageBubbleActionsLayout } from './MessageBubble';
-import { BlockedThreadCallout } from './BlockedThreadCallout';
 import { SmartHandlingCalloutSlot } from './SmartHandlingCalloutSlot';
 import { MessagePanelHeader } from './MessagePanelHeader';
 import { MessageListSkeleton } from './MessageListSkeleton';
@@ -129,10 +128,6 @@ export function InboxMessageList({
     return map;
   }, [pendingReplies]);
 
-  const hasBlocked = useMemo(
-    () => selectedThreadProspectEmails.some((e) => blockedProspectEmails.has(e.trim().toLowerCase())),
-    [selectedThreadProspectEmails, blockedProspectEmails]
-  );
   const toolbarActions = useMemo(
     () =>
       buildInboxThreadToolbarActions({
@@ -216,19 +211,6 @@ export function InboxMessageList({
         >
           {listHeaderComponent}
           <View className="w-full">
-            {hasBlocked ? (
-              messageColumnNarrow ? (
-                <View className="mb-4 flex-row w-full justify-center items-start">
-                  <View className="w-[92%] max-w-[92%]">
-                    <BlockedThreadCallout />
-                  </View>
-                </View>
-              ) : (
-                <View className="mb-4 w-full">
-                  <BlockedThreadCallout />
-                </View>
-              )
-            ) : null}
             {groupMessagesByDate(displayMessages).map((group) => (
               <View key={group.label}>
                 <DateDivider label={group.label} />

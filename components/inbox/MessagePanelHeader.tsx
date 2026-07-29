@@ -10,6 +10,7 @@ import type { LeadReplacementSummary } from '@/lib/supabase/services/leads';
 import {
   THREAD_CATEGORIES,
 } from './inboxConstants';
+import { BlockedBadge } from './BlockedBadge';
 import { MessagePanelToolbar } from './MessagePanelToolbar';
 
 const TITLE_BLOCK_MAX_WIDTH = 420;
@@ -20,8 +21,15 @@ const SOURCE_CHIP_MAX_WIDTH = 100;
 const COMPACT_CAMPAIGN_CHIP_MAX_WIDTH = 200;
 const ROOMY_CAMPAIGN_CHIP_MAX_WIDTH = 260;
 const ROOMY_RIGHT_CLUSTER_THRESHOLD = 720;
-const EMPTY_BLOCKED_EMAILS: string[] = [];
+const EMPTY_BLOCKED_EMAILS = new Set<string>();
 const DEFAULT_CATEGORY_OPTIONS = THREAD_CATEGORIES;
+
+function isEmailBlocked(email: string, blockedEmails: string[] | Set<string>): boolean {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return false;
+  if (blockedEmails instanceof Set) return blockedEmails.has(normalized);
+  return blockedEmails.some((e) => e.trim().toLowerCase() === normalized);
+}
 
 /** Sticky header: left = prospect name + email; right = toolbar (campaign chip, Block, tags, category) */
 export function MessagePanelHeader({
@@ -56,7 +64,7 @@ export function MessagePanelHeader({
   /** Opens the account lead detail page for this prospect. */
   onOpenLeadDetail?: () => void;
 }) {
-  const _blockedEmails = blockedEmails ?? EMPTY_BLOCKED_EMAILS;
+  const resolvedBlockedEmails = blockedEmails ?? EMPTY_BLOCKED_EMAILS;
   const leadDetailRef = useOnboardingTarget(TARGETS.inboxLeadDetail);
   const threadActionsRef = useOnboardingTarget(TARGETS.inboxThreadActions);
   const categoryActionRef = useOnboardingTarget(TARGETS.inboxActionCategory);
@@ -111,16 +119,25 @@ export function MessagePanelHeader({
       </View>
       {prospectEmails.length > 0 ? (
         <View className="gap-0.5 min-w-0" style={{ marginTop: 2 }}>
-          {prospectEmails.map((email, index) => (
-            <Text
-              key={`${email}-${index}`}
-              className="text-sm font-instrument text-gray-500 leading-tight"
-              numberOfLines={1}
-              style={{ maxWidth: '100%' }}
-            >
-              {email}
-            </Text>
-          ))}
+          {prospectEmails.map((email, index) => {
+            const blocked = isEmailBlocked(email, resolvedBlockedEmails);
+            return (
+              <View
+                key={`${email}-${index}`}
+                className="flex-row items-center gap-1.5 min-w-0"
+                style={{ maxWidth: '100%' }}
+              >
+                <Text
+                  className="text-sm font-instrument text-gray-500 leading-tight"
+                  numberOfLines={1}
+                  style={{ flexShrink: 1 }}
+                >
+                  {email}
+                </Text>
+                {blocked ? <BlockedBadge /> : null}
+              </View>
+            );
+          })}
         </View>
       ) : null}
     </View>

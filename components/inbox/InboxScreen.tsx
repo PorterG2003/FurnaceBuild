@@ -1305,6 +1305,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       actions: {
         accountId,
         selectedThreadProspectEmails,
+        blockList,
         onBlocked: loadBlockList,
         selectedThreadId,
         threadTagsMap,
@@ -1385,6 +1386,7 @@ export function InboxScreen({ routeThreadId }: InboxScreenProps) {
       setInfoSheetVisible,
       accountId,
       selectedThreadProspectEmails,
+      blockList,
       loadBlockList,
       selectedThreadId,
       threadTagsMap,

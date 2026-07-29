@@ -89,6 +89,20 @@ const STANDARD_BUCKET_FIELD_ORDER = [
   'source',
 ] as const;
 
+const BUCKET_SORTABLE_FIELDS = new Set([
+  'email',
+  'name',
+  'first_name',
+  'last_name',
+  'company_name',
+  'website',
+  'linkedin_url',
+  'company_linkedin_url',
+  'phone_number',
+  'mobile_phone_number',
+  'source',
+]);
+
 type BucketTableRow = Record<string, string> & { __rowKey: string };
 
 type BucketFieldCoverageMap = Record<string, { filled: number; empty: number }>;
@@ -285,6 +299,12 @@ function LeadSourceNodeModal({
   const [leadCount, setLeadCount] = useState<number | null>(null);
   const [fieldCoverage, setFieldCoverage] = useState<BucketFieldCoverageMap>({});
   const [tablePage, setTablePage] = useState(1);
+  const [tableSortColumn, setTableSortColumn] = useState<string>('created_at');
+  const [tableSortDirection, setTableSortDirection] = useState<'asc' | 'desc'>('desc');
+  const tableSortColumnRef = useRef(tableSortColumn);
+  const tableSortDirectionRef = useRef(tableSortDirection);
+  tableSortColumnRef.current = tableSortColumn;
+  tableSortDirectionRef.current = tableSortDirection;
   const [isLoadingBucket, setIsLoadingBucket] = useState(false);
   const [isTableLoading, setIsTableLoading] = useState(false);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -428,12 +448,19 @@ function LeadSourceNodeModal({
   }, [initialData?.campaignId, initialData?.bucketId]);
 
   const loadTablePage = useCallback(
-    async (page: number) => {
+    async (
+      page: number,
+      sortColumn?: string,
+      sortDirection?: 'asc' | 'desc',
+    ) => {
       if (!initialData?.campaignId) {
         setTableLeads([]);
         setTablePage(1);
         return;
       }
+
+      const resolvedSortColumn = sortColumn ?? tableSortColumnRef.current;
+      const resolvedSortDirection = sortDirection ?? tableSortDirectionRef.current;
 
       setIsTableLoading(true);
       try {
@@ -445,6 +472,8 @@ function LeadSourceNodeModal({
           ...filters,
           limit: BUCKET_TABLE_PAGE_SIZE,
           offset: (page - 1) * BUCKET_TABLE_PAGE_SIZE,
+          sortBy: resolvedSortColumn,
+          sortDirection: resolvedSortDirection,
         });
         setTableLeads(leads);
         setTablePage(page);
@@ -522,6 +551,7 @@ function LeadSourceNodeModal({
         INSIGHTS_COLUMN_MAX_WIDTH,
         Math.max(INSIGHTS_COLUMN_MIN_WIDTH, minFromLabel),
       );
+      const isSortable = BUCKET_SORTABLE_FIELDS.has(fieldKey);
 
       return {
         key: fieldKey,
@@ -530,6 +560,8 @@ function LeadSourceNodeModal({
         minWidth,
         maxWidth: INSIGHTS_COLUMN_MAX_WIDTH,
         headerStats: { filled: stats.filled, empty: stats.empty },
+        sortable: isSortable,
+        sortValue: isSortable ? (item) => (item[fieldKey] ?? '').toLowerCase() : undefined,
         render: (item) => (
           <Text className="text-white font-instrument text-sm" numberOfLines={1}>
             {item[fieldKey] ?? '—'}
@@ -542,6 +574,17 @@ function LeadSourceNodeModal({
   const handleTablePageChange = useCallback(
     (page: number) => {
       void loadTablePage(page);
+    },
+    [loadTablePage],
+  );
+
+  const handleTableSortChange = useCallback(
+    (column: string, direction: 'asc' | 'desc') => {
+      tableSortColumnRef.current = column;
+      tableSortDirectionRef.current = direction;
+      setTableSortColumn(column);
+      setTableSortDirection(direction);
+      void loadTablePage(1, column, direction);
     },
     [loadTablePage],
   );
@@ -1473,6 +1516,9 @@ function LeadSourceNodeModal({
           currentPage={tablePage}
           totalItems={leadTotal}
           onPageChange={handleTablePageChange}
+          sortColumn={tableSortColumn}
+          sortDirection={tableSortDirection}
+          onSortChange={handleTableSortChange}
           loading={isTableLoading}
           smoothLoading
           emptyMessage="No sample records"

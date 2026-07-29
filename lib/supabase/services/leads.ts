@@ -51,6 +51,10 @@ export interface LeadFilters {
   search?: string;
   /** Filter to leads where any of these fields is null or empty. Prefix custom fields with "custom." */
   missingFields?: string[];
+  /** Column to sort by (allowlisted standard lead fields). Defaults to created_at. */
+  sortBy?: string;
+  /** Sort direction. Defaults to desc. */
+  sortDirection?: 'asc' | 'desc';
 }
 
 export interface CampaignLeadTableRow {
@@ -635,11 +639,14 @@ async function fetchCampaignLeadsTablePageRpc(
  * Get all leads with optional filters
  */
 export async function getLeads(filters?: LeadFilters): Promise<Lead[]> {
+  const sortBy = getCampaignLeadTableSortBy(filters?.sortBy);
+  const ascending = filters?.sortDirection === 'asc';
+
   let query = supabase
     .from('leads')
     .select('*')
     .is('deleted_at', null)
-    .order('created_at', { ascending: false }) as any;
+    .order(sortBy, { ascending, nullsFirst: !ascending }) as any;
 
   if (filters?.campaignId) {
     query = query.eq('campaign_id', filters.campaignId);

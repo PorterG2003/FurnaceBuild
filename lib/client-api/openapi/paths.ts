@@ -156,7 +156,7 @@ export function buildClientApiPaths() {
               schema: schemaRef('CampaignCreate'),
               example: {
                 name: 'Q2 Pipeline',
-                sending_interval_seconds: 1800,
+                sending_interval_seconds: 1440,
                 mailbox_ids: ['c23da7b6-df4e-4d2f-b100-4bb07b7d38d7'],
                 flow: {
                   nodes: [

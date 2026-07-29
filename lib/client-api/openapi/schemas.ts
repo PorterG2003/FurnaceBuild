@@ -890,7 +890,7 @@ export function buildClientApiComponents() {
       CampaignSchedule: {
         type: 'object',
         description:
-          'Campaign send window. Omit or set the parent `schedule` field to `null` for 24/7 sending. `days_of_week` uses JS `Date.getDay()` (0=Sun … 6=Sat); null/empty means every day.',
+          'Campaign send window. Set the parent `schedule` field to `null` for 24/7 sending. On create, omitting `schedule` applies the product default (Central 9–5 Mon–Fri) rather than 24/7. `days_of_week` uses JS `Date.getDay()` (0=Sun … 6=Sat); null/empty means every day.',
         properties: {
           timezone: {
             type: 'string',
@@ -943,9 +943,14 @@ export function buildClientApiComponents() {
           schedule: {
             allOf: [schemaRef('CampaignSchedule')],
             nullable: true,
-            description: 'Send window. `null` means send 24/7.',
+            description:
+              'Send window. Omit to use Central 9–5 Mon–Fri. Pass `null` for 24/7.',
           },
-          sending_interval_seconds: { type: 'number' },
+          sending_interval_seconds: {
+            type: 'number',
+            description:
+              'Seconds between sends per mailbox. Omit to use `1440` (24 minutes; ~20 emails per mailbox per day on the default window).',
+          },
           mailbox_ids: {
             type: 'array',
             items: { type: 'string', format: 'uuid' },

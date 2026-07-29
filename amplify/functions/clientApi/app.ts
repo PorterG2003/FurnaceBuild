@@ -140,6 +140,10 @@ import {
   type CampaignFlowNode,
   type CampaignStatus,
 } from '../../../lib/campaigns/flow/index.js';
+import {
+  DEFAULT_CAMPAIGN_SCHEDULE,
+  DEFAULT_SENDING_INTERVAL_SECONDS,
+} from '../../../lib/campaigns/utils.js';
 import { updateCampaignFlowDataWithClient } from '../../../lib/supabase/services/campaigns/update-campaign-flow-with-client.js';
 import type { Database, Json } from '../../../lib/supabase/types/database.js';
 
@@ -935,11 +939,11 @@ app.post('/v1/campaigns', async (c) => {
       name,
       status: 'draft',
       source: 'manual',
-      schedule: body.schedule ?? null,
+      schedule: 'schedule' in body ? (body.schedule ?? null) : DEFAULT_CAMPAIGN_SCHEDULE,
       sending_interval_seconds:
         typeof body.sending_interval_seconds === 'number' && Number.isFinite(body.sending_interval_seconds)
           ? body.sending_interval_seconds
-          : 300,
+          : DEFAULT_SENDING_INTERVAL_SECONDS,
     } as never)
     .select('*')
     .single();

@@ -68,6 +68,19 @@ test('client api openapi spec documents auth, schemas, and request contracts', (
   assert.ok('ReplaceLeadPreviewResponse' in spec.components.schemas);
   assert.ok('ConflictError' in spec.components.responses);
 
+  const campaignCreate = spec.components.schemas.CampaignCreate as {
+    properties?: {
+      schedule?: { description?: string };
+      sending_interval_seconds?: { description?: string };
+    };
+  };
+  assert.match(campaignCreate.properties?.schedule?.description ?? '', /Omit to use Central 9–5/);
+  assert.match(campaignCreate.properties?.schedule?.description ?? '', /null.*24\/7/i);
+  assert.match(
+    campaignCreate.properties?.sending_interval_seconds?.description ?? '',
+    /1440/,
+  );
+
   const previewReplace = spec.paths['/v1/threads/{id}/replace-lead/preview']?.get;
   assert.ok(previewReplace);
   assert.equal(previewReplace?.operationId, 'previewThreadLeadReplacement');
@@ -104,6 +117,8 @@ test('client api guide markdown includes webhook examples', () => {
 
   const changelog = buildChangelogMarkdown();
   assert.match(changelog, /Breaking changes increment the major version/);
+  assert.match(changelog, /## 1\.10\.0/);
+  assert.match(changelog, /Central 9–5 Mon–Fri/);
   assert.match(changelog, /## 1\.4\.3/);
   assert.match(changelog, /Fumadocs \+ OpenAPI reference/);
 

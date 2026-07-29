@@ -32,6 +32,10 @@ import {
 import type { CampaignTag } from '@/lib/supabase/services/campaign-tags';
 import { useCampaignTags } from '@/lib/campaigns/useCampaignTags';
 import {
+  DEFAULT_CAMPAIGN_SCHEDULE,
+  DEFAULT_SENDING_INTERVAL_SECONDS,
+} from '@/lib/campaigns/utils';
+import {
   PlusIcon,
   TrashIcon,
   PencilIcon,
@@ -977,6 +981,8 @@ export default function CampaignsPage() {
         account_id: account.id,
         organization_id: null,
         status: 'draft',
+        schedule: DEFAULT_CAMPAIGN_SCHEDULE,
+        sending_interval_seconds: DEFAULT_SENDING_INTERVAL_SECONDS,
       });
       await reloadCampaigns();
       router.push({

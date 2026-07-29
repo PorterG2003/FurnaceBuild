@@ -25,6 +25,7 @@ import {
   calculateEmailsPerMailboxPerDay,
   scheduleFromCampaign,
   isSmartleadCampaign,
+  DEFAULT_SENDING_INTERVAL_SECONDS,
 } from '@/lib/campaigns/utils';
 import { SmartleadRestrictedModal } from '@/components/campaigns/SmartleadRestrictedModal';
 export default function MissionControlPage() {
@@ -90,7 +91,7 @@ export default function MissionControlPage() {
   const { showPlaceholder } = usePageSkeleton(isLoading);
 
   const schedule = campaign ? scheduleFromCampaign(campaign) : null;
-  const intervalMinutes = Math.floor((campaign?.sending_interval_seconds ?? 300) / 60);
+  const intervalMinutes = Math.floor((campaign?.sending_interval_seconds ?? DEFAULT_SENDING_INTERVAL_SECONDS) / 60);
   const throughputText = calculateEmailsPerMailboxPerDay(schedule, intervalMinutes);
 
   const flowData = useMemo(() => {

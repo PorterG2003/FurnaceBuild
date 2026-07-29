@@ -139,6 +139,163 @@ test('client api createCampaign is idempotent with Idempotency-Key', async () =>
   }
 });
 
+test('client api createCampaign omit schedule/interval applies Central 9-5 + 1440s defaults', async () => {
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('campaign-defaults'),
+  });
+  const createdIds: string[] = [];
+
+  try {
+    await ensureHarnessReady(harness);
+    const apiKey = await harness.createApiKey();
+    const created = await harness.request('/v1/campaigns', {
+      method: 'POST',
+      apiKey: apiKey.secret,
+      body: { name: `Defaults ${harness.namespace}` },
+    });
+    assert.equal(created.status, 201);
+    const body = await created.json() as {
+      data: {
+        id: string;
+        schedule: {
+          timezone: string;
+          start_hour: number;
+          end_hour: number;
+          days_of_week: number[];
+        };
+        sending_interval_seconds: number;
+      };
+    };
+    createdIds.push(body.data.id);
+    assert.equal(body.data.sending_interval_seconds, 1440);
+    assert.equal(body.data.schedule.timezone, 'America/Chicago');
+    assert.equal(body.data.schedule.start_hour, 9);
+    assert.equal(body.data.schedule.end_hour, 17);
+    assert.deepEqual(body.data.schedule.days_of_week, [1, 2, 3, 4, 5]);
+
+    const { data: row, error } = await harness.supabase
+      .from('campaigns')
+      .select('schedule, sending_interval_seconds')
+      .eq('id', body.data.id)
+      .single();
+    assert.equal(error, null);
+    assert.equal(row?.sending_interval_seconds, 1440);
+    const schedule = row?.schedule as {
+      timezone: string;
+      start_hour: number;
+      end_hour: number;
+      days_of_week: number[];
+    };
+    assert.equal(schedule.timezone, 'America/Chicago');
+    assert.equal(schedule.start_hour, 9);
+    assert.equal(schedule.end_hour, 17);
+    assert.deepEqual(schedule.days_of_week, [1, 2, 3, 4, 5]);
+  } finally {
+    if (createdIds.length > 0) {
+      await harness.supabase.from('campaigns').delete().in('id', createdIds);
+    }
+    await harness.cleanup();
+  }
+});
+
+test('client api createCampaign explicit null schedule is 24/7 with default interval', async () => {
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('campaign-null-sched'),
+  });
+  const createdIds: string[] = [];
+
+  try {
+    await ensureHarnessReady(harness);
+    const apiKey = await harness.createApiKey();
+    const created = await harness.request('/v1/campaigns', {
+      method: 'POST',
+      apiKey: apiKey.secret,
+      body: { name: `Null Sched ${harness.namespace}`, schedule: null },
+    });
+    assert.equal(created.status, 201);
+    const body = await created.json() as {
+      data: { id: string; schedule: unknown; sending_interval_seconds: number };
+    };
+    createdIds.push(body.data.id);
+    assert.equal(body.data.schedule, null);
+    assert.equal(body.data.sending_interval_seconds, 1440);
+
+    const { data: row, error } = await harness.supabase
+      .from('campaigns')
+      .select('schedule, sending_interval_seconds')
+      .eq('id', body.data.id)
+      .single();
+    assert.equal(error, null);
+    assert.equal(row?.schedule, null);
+    assert.equal(row?.sending_interval_seconds, 1440);
+  } finally {
+    if (createdIds.length > 0) {
+      await harness.supabase.from('campaigns').delete().in('id', createdIds);
+    }
+    await harness.cleanup();
+  }
+});
+
+test('client api createCampaign explicit schedule and interval override defaults', async () => {
+  const harness = new ClientApiDbHarness({
+    namespace: createClientApiTestNamespace('campaign-override'),
+  });
+  const createdIds: string[] = [];
+  const schedule = {
+    timezone: 'America/New_York',
+    start_hour: 10,
+    start_minute: 0,
+    end_hour: 16,
+    end_minute: 0,
+    days_of_week: [1, 2, 3],
+  };
+
+  try {
+    await ensureHarnessReady(harness);
+    const apiKey = await harness.createApiKey();
+    const created = await harness.request('/v1/campaigns', {
+      method: 'POST',
+      apiKey: apiKey.secret,
+      body: {
+        name: `Override ${harness.namespace}`,
+        schedule,
+        sending_interval_seconds: 300,
+      },
+    });
+    assert.equal(created.status, 201);
+    const body = await created.json() as {
+      data: {
+        id: string;
+        schedule: typeof schedule;
+        sending_interval_seconds: number;
+      };
+    };
+    createdIds.push(body.data.id);
+    assert.equal(body.data.sending_interval_seconds, 300);
+    assert.equal(body.data.schedule.timezone, 'America/New_York');
+    assert.equal(body.data.schedule.start_hour, 10);
+    assert.equal(body.data.schedule.end_hour, 16);
+    assert.deepEqual(body.data.schedule.days_of_week, [1, 2, 3]);
+
+    const { data: row, error } = await harness.supabase
+      .from('campaigns')
+      .select('schedule, sending_interval_seconds')
+      .eq('id', body.data.id)
+      .single();
+    assert.equal(error, null);
+    assert.equal(row?.sending_interval_seconds, 300);
+    const stored = row?.schedule as typeof schedule;
+    assert.equal(stored.timezone, 'America/New_York');
+    assert.equal(stored.start_hour, 10);
+    assert.deepEqual(stored.days_of_week, [1, 2, 3]);
+  } finally {
+    if (createdIds.length > 0) {
+      await harness.supabase.from('campaigns').delete().in('id', createdIds);
+    }
+    await harness.cleanup();
+  }
+});
+
 test('client api rejects private webhook URLs', async () => {
   const harness = new ClientApiDbHarness({
     namespace: createClientApiTestNamespace('webhook-ssrf'),

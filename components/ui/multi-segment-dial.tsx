@@ -1,5 +1,6 @@
 import { View, Text } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
+import { buildInterlockingSegmentPath } from '@/components/ui/dial-ring-path';
 
 export interface MultiSegmentDialSegment {
   value: number;
@@ -110,53 +111,55 @@ export function MultiSegmentDial({
   legend,
 }: MultiSegmentDialProps) {
   const strokeWidth = strokeWidthProp ?? 6;
+  const halfStroke = strokeWidth / 2;
   const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
   const center = size / 2;
   const effectiveTotal = total > 0 ? total : 0;
   const dialWidth = label ? size + 40 : size;
+  const twoPi = 2 * Math.PI;
 
   const showFraction =
     centerValue !== undefined &&
     centerTotal !== undefined;
 
-  let offset = 0;
-  const segmentLengths =
+  const segmentAngles =
     effectiveTotal > 0
       ? segments.map((segment) =>
-          Math.max(0, (Math.max(segment.value, 0) / effectiveTotal) * circumference)
+          Math.max(0, (Math.max(segment.value, 0) / effectiveTotal) * twoPi)
         )
       : [];
-  // Ensure segments fill the ring: assign any rounding remainder to the last non-zero segment
-  if (segmentLengths.length > 0) {
-    const sum = segmentLengths.reduce((a, b) => a + b, 0);
-    const diff = circumference - sum;
-    if (diff > 0.01) {
-      const lastIdx = segmentLengths.length - 1;
-      segmentLengths[lastIdx] = segmentLengths[lastIdx] + diff;
+  // Ensure segments fill the ring: assign any rounding remainder to the last segment
+  if (segmentAngles.length > 0) {
+    const sum = segmentAngles.reduce((a, b) => a + b, 0);
+    const diff = twoPi - sum;
+    if (Math.abs(diff) > 1e-6) {
+      const lastIdx = segmentAngles.length - 1;
+      segmentAngles[lastIdx] = segmentAngles[lastIdx] + diff;
     }
   }
-  const segmentCircles =
+
+  let angleOffset = 0;
+  const segmentPaths =
     effectiveTotal > 0
       ? segments.map((segment, index) => {
-          const segmentLength = segmentLengths[index] ?? 0;
-          const dashOffset = -offset;
-          offset += segmentLength;
+          const span = segmentAngles[index] ?? 0;
+          const startAngle = angleOffset;
+          angleOffset += span;
 
-          if (segmentLength <= 0) return null;
+          if (span <= 0) return null;
 
           return (
-            <Circle
+            <Path
               key={`${index}-${segment.color}`}
-              cx={center}
-              cy={center}
-              r={radius}
-              stroke={segment.color}
-              strokeWidth={strokeWidth}
-              fill="transparent"
-              strokeDasharray={`${segmentLength} ${circumference}`}
-              strokeDashoffset={dashOffset}
-              strokeLinecap="round"
+              d={buildInterlockingSegmentPath({
+                cx: center,
+                cy: center,
+                radius,
+                halfStroke,
+                startAngle,
+                endAngle: startAngle + span,
+              })}
+              fill={segment.color}
             />
           );
         })
@@ -174,7 +177,7 @@ export function MultiSegmentDial({
             strokeWidth={strokeWidth}
             fill="transparent"
           />
-          {segmentCircles}
+          {segmentPaths}
         </Svg>
 
         <View

@@ -18,6 +18,8 @@ interface DetailPageHeaderProps {
   title: string;
   /** Mobile only: optional subtitle (e.g. email) shown below the title */
   subtitle?: string | null;
+  /** Mobile only: inline accessory beside the subtitle (e.g. blocked badge) */
+  subtitleAddon?: ReactNode;
   /** Mobile only: inline accessory beside the title (e.g. credit pill) */
   titleAddon?: ReactNode;
   actions?: ReactNode;
@@ -36,6 +38,7 @@ export function DetailPageHeader({
   backHref,
   title,
   subtitle,
+  subtitleAddon,
   titleAddon,
   actions,
   mobileRightAction,
@@ -70,14 +73,22 @@ export function DetailPageHeader({
                     <View className="shrink-0 justify-center self-center">{titleAddon}</View>
                   ) : null}
                 </View>
-                {subtitle ? (
-                  <Text
-                    className="text-gray-500 font-instrument text-sm"
-                    numberOfLines={1}
-                    style={{ marginTop: 2 }}
+                {subtitle || subtitleAddon ? (
+                  <View
+                    className="flex-row items-center gap-1.5 min-w-0"
+                    style={{ marginTop: 2, maxWidth: '100%' }}
                   >
-                    {subtitle}
-                  </Text>
+                    {subtitle ? (
+                      <Text
+                        className="text-gray-500 font-instrument text-sm"
+                        numberOfLines={1}
+                        style={{ flexShrink: 1 }}
+                      >
+                        {subtitle}
+                      </Text>
+                    ) : null}
+                    {subtitleAddon ? <View className="shrink-0">{subtitleAddon}</View> : null}
+                  </View>
                 ) : null}
               </Pressable>
             ) : (
@@ -93,14 +104,22 @@ export function DetailPageHeader({
                     <View className="shrink-0 justify-center self-center">{titleAddon}</View>
                   ) : null}
                 </View>
-                {subtitle ? (
-                  <Text
-                    className="text-gray-500 font-instrument text-sm"
-                    numberOfLines={1}
-                    style={{ marginTop: 2 }}
+                {subtitle || subtitleAddon ? (
+                  <View
+                    className="flex-row items-center gap-1.5 min-w-0"
+                    style={{ marginTop: 2, maxWidth: '100%' }}
                   >
-                    {subtitle}
-                  </Text>
+                    {subtitle ? (
+                      <Text
+                        className="text-gray-500 font-instrument text-sm"
+                        numberOfLines={1}
+                        style={{ flexShrink: 1 }}
+                      >
+                        {subtitle}
+                      </Text>
+                    ) : null}
+                    {subtitleAddon ? <View className="shrink-0">{subtitleAddon}</View> : null}
+                  </View>
                 ) : null}
               </>
             )}

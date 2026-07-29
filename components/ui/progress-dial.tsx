@@ -1,5 +1,6 @@
 import { View, Text } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
+import { buildRoundEndedSegmentPath } from '@/components/ui/dial-ring-path';
 
 interface ProgressDialProps {
   value: number;
@@ -25,10 +26,10 @@ export function ProgressDial({
 }: ProgressDialProps) {
   const percentage = total && total > 0 ? Math.min((value / total) * 100, 100) : 0;
   const strokeWidth = 6;
+  const halfStroke = strokeWidth / 2;
   const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
   const center = size / 2;
+  const span = (percentage / 100) * 2 * Math.PI;
 
   const centerContent = showAsPercentage ? (
     <Text
@@ -69,18 +70,18 @@ export function ProgressDial({
             strokeWidth={strokeWidth}
             fill="transparent"
           />
-          {/* Progress circle */}
-          {percentage > 0 && (
-            <Circle
-              cx={center}
-              cy={center}
-              r={radius}
-              stroke={color}
-              strokeWidth={strokeWidth}
-              fill="transparent"
-              strokeDasharray={circumference}
-              strokeDashoffset={strokeDashoffset}
-              strokeLinecap="round"
+          {/* Progress arc: sausage caps when open; interlocking seam at 100% */}
+          {span > 0 && (
+            <Path
+              d={buildRoundEndedSegmentPath({
+                cx: center,
+                cy: center,
+                radius,
+                halfStroke,
+                startAngle: 0,
+                endAngle: span,
+              })}
+              fill={color}
             />
           )}
         </Svg>

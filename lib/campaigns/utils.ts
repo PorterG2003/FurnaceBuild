@@ -1,6 +1,6 @@
 import { reportErrorToSlack } from '../slack/reportErrorToSlack';
 import { utcToZonedTime } from 'date-fns-tz';
-import type { Campaign } from '@/lib/supabase/types';
+import type { Campaign } from '../supabase/types';
 
 export function isSmartleadCampaign(campaign: { source?: string | null } | null): boolean {
   return campaign?.source === 'smartlead';

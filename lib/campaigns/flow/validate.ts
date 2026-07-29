@@ -14,6 +14,7 @@ import type {
   FlowValidationIssue,
   FlowValidationResult,
 } from './types';
+import { MIN_WAIT_DURATION_SECONDS } from './waitTime.js';
 
 const ALLOWED_NODE_TYPES = new Set<FlowNodeType>([
   'leadSource',
@@ -199,12 +200,16 @@ function validateEmailNode(
 
 function validateWaitTimeNode(node: CampaignFlowNode, issues: FlowValidationIssue[], nodeIndex: number) {
   const seconds = node.data?.wait_duration_seconds;
-  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) {
+  if (
+    typeof seconds !== 'number'
+    || !Number.isFinite(seconds)
+    || seconds < MIN_WAIT_DURATION_SECONDS
+  ) {
     pushIssue(
       issues,
       `nodes[${nodeIndex}].data.wait_duration_seconds`,
       'invalid_wait_duration',
-      `Wait node "${node.id}" must define a positive wait_duration_seconds value.`,
+      `Wait node "${node.id}" must define wait_duration_seconds of at least ${MIN_WAIT_DURATION_SECONDS} (3 minutes).`,
     );
   }
 }

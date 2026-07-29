@@ -90,6 +90,18 @@ export {
   type FlowValidationPhase,
   type PhaseValidationResult,
 } from './validate';
+export {
+  DEFAULT_WAIT_DURATION,
+  DEFAULT_WAIT_DURATION_SECONDS,
+  DEFAULT_WAIT_UNIT,
+  MIN_WAIT_DURATION_SECONDS,
+  UNIT_TO_SECONDS,
+  inferDurationUnit,
+  inferDurationValue,
+  isWaitDurationUnit,
+  resolveWaitDurationSeconds,
+  type WaitDurationUnit,
+} from './waitTime';
 export type {
   AICategorizerFlowNode,
   CampaignFlowData,

@@ -22,7 +22,7 @@ export const FLOW_VALIDATION_ERROR_CATALOG: FlowValidationErrorEntry[] = [
   { code: 'invalid_priority', cause: '`priority` is not a boolean.', fix: 'Omit `priority` or set it to `true`/`false`. It is derived on save from graph position (downstream of categorizer => true).' },
   { code: 'malformed_merge_variable', cause: 'Unclosed or invalid `{{...}}` syntax in copy.', fix: 'Fix merge-token syntax; use `{{first_name}}` or `{{custom.company}}`.' },
   { code: 'unknown_merge_variable', cause: 'Merge variable not declared on the lead source.', fix: 'Add the key to `customFieldKeys` or `mappedStandardFieldKeys`, or remove the token from copy.' },
-  { code: 'invalid_wait_duration', cause: '`wait_duration_seconds` is missing, zero, or not a positive number.', fix: 'Set a positive integer in seconds (e.g. `86400` for one day).' },
+  { code: 'invalid_wait_duration', cause: '`wait_duration_seconds` is missing, below 180 (3 minutes), or not a finite number.', fix: 'Set an integer of at least `180` seconds. Empty/missing values normalize to `259200` (3 days).' },
   { code: 'missing_edge_id', cause: 'An edge has no `id`.', fix: 'Assign a stable string id to every edge.' },
   { code: 'duplicate_edge_id', cause: 'Two edges share the same `id`.', fix: 'Use unique edge ids.' },
   { code: 'unknown_edge_source', cause: 'Edge `source` does not match a node id.', fix: 'Point `source` at an existing node `id`.' },

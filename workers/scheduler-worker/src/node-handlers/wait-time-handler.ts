@@ -3,6 +3,34 @@ import { reportErrorToSlack } from '@furnace/slack-lib';
 import type { Enrollment, CampaignSchedule } from '../types.js';
 import { calculateNextRunAt } from '../scheduling.js';
 
+/** Keep in sync with lib/campaigns/flow/waitTime.ts */
+const MIN_WAIT_DURATION_SECONDS = 180;
+const DEFAULT_WAIT_DURATION_SECONDS = 259200;
+const UNIT_TO_SECONDS: Record<string, number> = {
+  minutes: 60,
+  hours: 3600,
+  days: 86400,
+};
+
+function resolveRuntimeWaitDurationSeconds(raw: Record<string, unknown>): number {
+  let waitDurationSeconds = Number(raw.wait_duration_seconds) || Number(raw.duration_seconds) || 0;
+  if (waitDurationSeconds <= 0 && raw.duration != null && String(raw.duration).trim() !== '') {
+    const n = parseInt(String(raw.duration), 10);
+    const unit = typeof raw.unit === 'string' ? raw.unit : 'hours';
+    if (!Number.isNaN(n) && n >= 0) {
+      waitDurationSeconds = n * (UNIT_TO_SECONDS[unit] ?? 3600);
+    }
+  }
+
+  if (waitDurationSeconds <= 0) {
+    return DEFAULT_WAIT_DURATION_SECONDS;
+  }
+  if (waitDurationSeconds < MIN_WAIT_DURATION_SECONDS) {
+    return MIN_WAIT_DURATION_SECONDS;
+  }
+  return Math.floor(waitDurationSeconds);
+}
+
 /**
  * Handle waitTime node: calculate next_run_at with schedule (NO JITTER)
  * 
@@ -24,31 +52,8 @@ export async function handleWaitTimeNode(
 ): Promise<void> {
   // 1. Extract wait duration from node.node_data (canonical: wait_duration_seconds set by builder)
   // Fallback: duration_seconds, or legacy duration+unit for nodes saved before we set wait_duration_seconds
-  const raw = node.node_data || {};
-  let waitDurationSeconds = Number(raw.wait_duration_seconds) || Number(raw.duration_seconds) || 0;
-  if (waitDurationSeconds <= 0 && raw.duration != null && String(raw.duration).trim() !== '') {
-    const n = parseInt(String(raw.duration), 10);
-    const unit = raw.unit || 'hours';
-    if (!Number.isNaN(n) && n >= 0) {
-      const multipliers: Record<string, number> = { minutes: 60, hours: 3600, days: 86400 };
-      waitDurationSeconds = n * (multipliers[unit] ?? 3600);
-    }
-  }
-
-  if (waitDurationSeconds <= 0) {
-    // No wait (or invalid): advance immediately so flow continues
-    const nextRunAt = new Date().toISOString();
-    const { error } = await supabase
-      .from('enrollments')
-      .update({
-        current_node_id: node.id,
-        current_flow_version_number: flowVersionNumber,
-        next_run_at: nextRunAt,
-      })
-      .eq('id', enrollment.id);
-    if (error) throw new Error(`Failed to update enrollment ${enrollment.id}: ${error.message}`);
-    return;
-  }
+  const raw = (node.node_data || {}) as Record<string, unknown>;
+  const waitDurationSeconds = resolveRuntimeWaitDurationSeconds(raw);
 
   // 2. Calculate base next_run_at from enrollment's updated_at (when enrollment was claimed/processed)
   // This ensures sequential wait nodes build on each other correctly
@@ -86,4 +91,3 @@ export async function handleWaitTimeNode(
     throw new Error(`Failed to update enrollment ${enrollment.id}: ${error.message}`);
   }
 }
-

@@ -1,21 +1,38 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import { ChevronDownIcon } from 'react-native-heroicons/outline';
 import { BaseModal, ModalFooter } from '@/components/ui/modals';
 import { Button } from '@/components/ui/button';
-import { SegmentControl } from '@/components/ui/segment-control';
+import { Select } from '@/components/ui/forms';
 import { useConfirmClose } from '@/hooks/useConfirmClose';
+import {
+  DEFAULT_WAIT_DURATION,
+  DEFAULT_WAIT_UNIT,
+  inferDurationUnit,
+  inferDurationValue,
+  isWaitDurationUnit,
+  resolveWaitDurationSeconds,
+  type WaitDurationUnit,
+} from '@/lib/campaigns/flow/waitTime';
 
-const UNIT_TO_SECONDS: Record<string, number> = {
-  minutes: 60,
-  hours: 3600,
-  days: 86400,
-};
+const WAIT_UNIT_OPTIONS: Array<{ id: WaitDurationUnit; label: string }> = [
+  { id: 'minutes', label: 'Minutes' },
+  { id: 'hours', label: 'Hours' },
+  { id: 'days', label: 'Days' },
+];
 
-function toWaitDurationSeconds(duration: string, unit: string): number {
-  const n = parseInt(duration.trim(), 10);
-  if (Number.isNaN(n) || n < 0) return 0;
-  return n * (UNIT_TO_SECONDS[unit] ?? 3600);
-}
+/** Keep Duration TextInput and Unit Select trigger on the same size. */
+const FIELD_CONTROL_HEIGHT = 48;
+const FIELD_CONTROL_STYLE = {
+  borderColor: '#FFFFFF4D',
+  backgroundColor: '#FFFFFF0D',
+  color: '#FFFFFF',
+  borderWidth: 1,
+  borderRadius: 12,
+  height: FIELD_CONTROL_HEIGHT,
+  paddingHorizontal: 16,
+  paddingVertical: 0,
+} as const;
 
 interface WaitTimeNodeModalProps {
   visible: boolean;
@@ -23,14 +40,42 @@ interface WaitTimeNodeModalProps {
   onSave: (data: {
     label?: string;
     duration?: string;
-    unit?: 'minutes' | 'hours' | 'days';
+    unit?: WaitDurationUnit;
     wait_duration_seconds?: number;
   }) => void;
   initialData?: {
     label?: string;
     duration?: string;
-    unit?: 'minutes' | 'hours' | 'days';
+    unit?: WaitDurationUnit;
     wait_duration_seconds?: number;
+  };
+}
+
+function resolveInitialDuration(initialData?: WaitTimeNodeModalProps['initialData']): {
+  label: string;
+  duration: string;
+  unit: WaitDurationUnit;
+} {
+  const hasDisplayDuration =
+    typeof initialData?.duration === 'string' && initialData.duration.trim().length > 0;
+  if (hasDisplayDuration && isWaitDurationUnit(initialData?.unit)) {
+    return {
+      label: initialData?.label || 'Wait Time',
+      duration: initialData!.duration!.trim(),
+      unit: initialData!.unit!,
+    };
+  }
+
+  const seconds = resolveWaitDurationSeconds({
+    wait_duration_seconds: initialData?.wait_duration_seconds,
+    duration: initialData?.duration,
+    unit: initialData?.unit,
+  });
+  const unit = inferDurationUnit(seconds);
+  return {
+    label: initialData?.label || 'Wait Time',
+    duration: inferDurationValue(seconds, unit),
+    unit,
   };
 }
 
@@ -41,21 +86,15 @@ function WaitTimeNodeModal({
   initialData,
 }: WaitTimeNodeModalProps) {
   const [label, setLabel] = useState(initialData?.label || 'Wait Time');
-  const [duration, setDuration] = useState(initialData?.duration || '');
-  const [unit, setUnit] = useState<'minutes' | 'hours' | 'days'>(
-    initialData?.unit || 'hours'
-  );
-  const initialRef = useRef<{ label: string; duration: string; unit: 'minutes' | 'hours' | 'days' } | null>(
+  const [duration, setDuration] = useState(DEFAULT_WAIT_DURATION);
+  const [unit, setUnit] = useState<WaitDurationUnit>(DEFAULT_WAIT_UNIT);
+  const initialRef = useRef<{ label: string; duration: string; unit: WaitDurationUnit } | null>(
     null
   );
 
   useEffect(() => {
     if (!visible) return;
-    const initial = {
-      label: initialData?.label || 'Wait Time',
-      duration: initialData?.duration || '',
-      unit: initialData?.unit || 'hours',
-    };
+    const initial = resolveInitialDuration(initialData);
     initialRef.current = initial;
     setLabel(initial.label);
     setDuration(initial.duration);
@@ -72,7 +111,7 @@ function WaitTimeNodeModal({
   const handleClose = useConfirmClose(isDirty, onClose);
 
   const handleSave = () => {
-    const wait_duration_seconds = toWaitDurationSeconds(duration, unit);
+    const wait_duration_seconds = resolveWaitDurationSeconds({ duration, unit });
     onSave({ label, duration, unit, wait_duration_seconds });
     onClose();
   };
@@ -96,6 +135,9 @@ function WaitTimeNodeModal({
     </ModalFooter>
   );
 
+  const unitLabel =
+    WAIT_UNIT_OPTIONS.find((option) => option.id === unit)?.label ?? 'Select unit…';
+
   return (
     <BaseModal
       visible={visible}
@@ -115,19 +157,14 @@ function WaitTimeNodeModal({
             onChangeText={setLabel}
             placeholder="Node label"
             placeholderTextColor="#666"
-            className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
-            style={{
-              borderColor: '#FFFFFF4D',
-              backgroundColor: '#FFFFFF0D',
-              color: '#FFFFFF',
-              borderWidth: 1,
-            }}
+            className="text-base text-white"
+            style={FIELD_CONTROL_STYLE}
             selectionColor="#FF4D00"
             underlineColorAndroid="transparent"
           />
         </View>
 
-        <View className="flex-row gap-3">
+        <View className="flex-row gap-3 items-end">
           <View className="flex-1">
             <Text className="text-sm font-instrument-medium mb-2 text-gray-300">
               Duration
@@ -135,16 +172,11 @@ function WaitTimeNodeModal({
             <TextInput
               value={duration}
               onChangeText={setDuration}
-              placeholder="24"
+              placeholder="3"
               placeholderTextColor="#666"
               keyboardType="numeric"
-              className="border border-white/30 rounded-xl px-4 py-3 bg-white/5 text-base text-white"
-              style={{
-                borderColor: '#FFFFFF4D',
-                backgroundColor: '#FFFFFF0D',
-                color: '#FFFFFF',
-                borderWidth: 1,
-              }}
+              className="text-base text-white"
+              style={FIELD_CONTROL_STYLE}
               selectionColor="#FF4D00"
               underlineColorAndroid="transparent"
             />
@@ -154,14 +186,39 @@ function WaitTimeNodeModal({
             <Text className="text-sm font-instrument-medium mb-2 text-gray-300">
               Unit
             </Text>
-            <SegmentControl
-              options={[
-                { value: 'minutes', label: 'Minutes' },
-                { value: 'hours', label: 'Hours' },
-                { value: 'days', label: 'Days' },
-              ]}
+            <Select
+              variant="glass"
+              items={WAIT_UNIT_OPTIONS}
+              getItemId={(item) => item.id}
+              getItemLabel={(item) => ({ primary: item.label })}
               value={unit}
-              onChange={(v) => setUnit(v as 'minutes' | 'hours' | 'days')}
+              onChange={(id) => {
+                if (isWaitDurationUnit(id)) setUnit(id);
+              }}
+              placeholder="Select unit…"
+              searchable={false}
+              noMargin
+              renderTrigger={({ onPress }) => (
+                <TouchableOpacity
+                  onPress={onPress}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Unit: ${unitLabel}`}
+                  style={[
+                    FIELD_CONTROL_STYLE,
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    },
+                  ]}
+                >
+                  <Text className="text-base text-white" numberOfLines={1}>
+                    {unitLabel}
+                  </Text>
+                  <ChevronDownIcon size={18} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
             />
           </View>
         </View>
@@ -172,4 +229,3 @@ function WaitTimeNodeModal({
 
 export { WaitTimeNodeModal };
 export default WaitTimeNodeModal;
-

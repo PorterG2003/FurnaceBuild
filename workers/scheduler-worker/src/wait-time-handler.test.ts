@@ -86,9 +86,8 @@ test('handleWaitTimeNode converts legacy duration + unit fields', async () => {
   });
 });
 
-test('handleWaitTimeNode falls back to immediate re-run for zero or invalid wait durations', async () => {
+test('handleWaitTimeNode applies default 3-day wait for zero or invalid durations', async () => {
   const supabase = new MockSupabase();
-  const before = Date.now();
 
   await handleWaitTimeNode(
     baseEnrollment,
@@ -101,13 +100,32 @@ test('handleWaitTimeNode falls back to immediate re-run for zero or invalid wait
     supabase as any,
   );
 
-  const payload = supabase.updates[0] as { next_run_at: string };
-  const nextRun = Date.parse(payload.next_run_at);
+  assert.deepEqual(supabase.updates[0], {
+    current_node_id: 'wait-node',
+    current_flow_version_number: 1,
+    next_run_at: '2026-05-04T10:00:00.000Z',
+  });
+});
 
-  assert.equal((supabase.updates[0] as any).current_node_id, 'wait-node');
-  assert.equal((supabase.updates[0] as any).current_flow_version_number, 1);
-  assert.ok(nextRun >= before);
-  assert.ok(nextRun <= Date.now() + 1_000);
+test('handleWaitTimeNode clamps under-min waits to 3 minutes', async () => {
+  const supabase = new MockSupabase();
+
+  await handleWaitTimeNode(
+    baseEnrollment,
+    {
+      id: 'wait-node',
+      node_data: { wait_duration_seconds: 60 },
+    },
+    null,
+    2,
+    supabase as any,
+  );
+
+  assert.deepEqual(supabase.updates[0], {
+    current_node_id: 'wait-node',
+    current_flow_version_number: 2,
+    next_run_at: '2026-05-01T10:03:00.000Z',
+  });
 });
 
 test('handleWaitTimeNode falls back to unscheduled base time when schedule calculation throws', async () => {

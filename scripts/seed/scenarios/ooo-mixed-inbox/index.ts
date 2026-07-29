@@ -75,7 +75,9 @@ function buildOooFlowData(): Json {
         position: { x: 460, y: 0 },
         data: {
           label: 'Hold For Return',
-          wait_duration_seconds: 0,
+          duration: '3',
+          unit: 'days',
+          wait_duration_seconds: 259200,
         },
       },
       {

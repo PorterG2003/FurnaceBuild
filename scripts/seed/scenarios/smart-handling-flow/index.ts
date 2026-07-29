@@ -280,12 +280,6 @@ function buildFlowData(useAi: boolean): Json {
         },
       },
       {
-        id: 'waitTime-1',
-        type: 'waitTime',
-        position: { x: 460, y: 0 },
-        data: { label: 'Brief Wait', wait_duration_seconds: 0 },
-      },
-      {
         id: 'email-2',
         type: 'email',
         position: { x: 700, y: 0 },
@@ -377,12 +371,11 @@ function buildFlowData(useAi: boolean): Json {
     ],
     edges: [
       { id: 'e1', source: 'leadSource-1', target: 'email-1' },
-      { id: 'e2', source: 'email-1', target: 'waitTime-1' },
-      { id: 'e3', source: 'waitTime-1', target: 'email-2' },
-      { id: 'e4', source: 'email-2', target: CATEGORIZER_FLOW_NODE_ID },
-      { id: 'e5', source: CATEGORIZER_FLOW_NODE_ID, sourceHandle: 'interested', target: 'email-3' },
-      { id: 'e6', source: CATEGORIZER_FLOW_NODE_ID, sourceHandle: 'neutral', target: 'email-4' },
-      { id: 'e7', source: CATEGORIZER_FLOW_NODE_ID, sourceHandle: 'not-interested', target: 'email-5' },
+      { id: 'e2', source: 'email-1', target: 'email-2' },
+      { id: 'e3', source: 'email-2', target: CATEGORIZER_FLOW_NODE_ID },
+      { id: 'e4', source: CATEGORIZER_FLOW_NODE_ID, sourceHandle: 'interested', target: 'email-3' },
+      { id: 'e5', source: CATEGORIZER_FLOW_NODE_ID, sourceHandle: 'neutral', target: 'email-4' },
+      { id: 'e6', source: CATEGORIZER_FLOW_NODE_ID, sourceHandle: 'not-interested', target: 'email-5' },
     ],
   } as unknown as Json;
 }
@@ -638,7 +631,6 @@ async function ensureCampaign(ctx: SeedContext, kind: CampaignKind): Promise<Cam
   const nodeIdsByFlowNodeId = new Map<string, string>();
   for (const flowNodeId of [
     'email-1',
-    'waitTime-1',
     'email-2',
     CATEGORIZER_FLOW_NODE_ID,
     'email-3',

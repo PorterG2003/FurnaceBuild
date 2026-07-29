@@ -52,7 +52,7 @@ export const STATUS_TRIGGER_THEME: Record<
 };
 
 export function getCampaignStatusDialColor(status: CampaignStatusMenuStatus): string {
-  if (status === 'stopped') return '#E04A35';
+  if (status === 'stopped') return '#555555';
   return STATUS_TRIGGER_THEME[status].textColor;
 }
 

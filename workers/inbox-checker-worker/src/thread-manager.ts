@@ -17,6 +17,10 @@ import { isAutoReplyMessage } from './message-processor.js';
 import { emitClassifyReplyJob } from './emit-classify-reply-job.js';
 import { emitEmailReceivedNotification } from './emit-notification-event.js';
 import { emitWebhookEvent } from './emit-webhook-event.js';
+import {
+  backfillSentMessages as backfillCampaignSentMessages,
+  normalizeMessageId,
+} from './backfill-sent-messages.js';
 
 type EmailThreadRow = {
   id: string;
@@ -79,9 +83,7 @@ export class ThreadManager {
    * - Returns null if input is null/empty
    */
   private normalizeMessageId(messageId: string | null | undefined): string | null {
-    if (!messageId) return null;
-    // Remove brackets and convert to lowercase
-    return messageId.trim().replace(/^<|>$/g, '').toLowerCase() || null;
+    return normalizeMessageId(messageId);
   }
 
   private normalizeEmail(email: string | null | undefined): string | null {
@@ -278,6 +280,8 @@ export class ThreadManager {
     let thread: any;
     let originalJob: MessageJob | null = null;
     let isReplyToOriginal = false;
+    // Backfill ceiling: all campaign sends that existed by the time of this reply
+    const replyCutoffTime = message.date.toISOString();
 
     // First, try to find if this is a reply to an original sent message
     // Check all Message-IDs from In-Reply-To and References against message_jobs
@@ -331,9 +335,22 @@ export class ThreadManager {
           return false;
         }
         thread = existingThread;
+        if (existingThread.campaign_id && existingThread.lead_id) {
+          await this.backfillSentMessages(
+            existingThread,
+            existingThread.campaign_id,
+            existingThread.lead_id,
+            replyCutoffTime,
+            mailbox
+          );
+        }
       } else {
         // Campaign send: get or create thread by message_job_id
-        thread = await this.getOrCreateThread(originalJob as MessageJob, mailbox);
+        thread = await this.getOrCreateThread(
+          originalJob as MessageJob,
+          mailbox,
+          replyCutoffTime
+        );
       }
     } else {
       // Not a reply to original sent message - check if it's a reply to a received message
@@ -392,6 +409,16 @@ export class ThreadManager {
       }
 
       thread = existingThread;
+      // Heal sticky incomplete backfills when a later reply lands on an existing campaign thread
+      if (existingThread.campaign_id && existingThread.lead_id) {
+        await this.backfillSentMessages(
+          existingThread,
+          existingThread.campaign_id,
+          existingThread.lead_id,
+          replyCutoffTime,
+          mailbox
+        );
+      }
     }
 
     // Create email_message for the reply
@@ -681,11 +708,14 @@ export class ThreadManager {
   }
 
   /**
-   * Get or create email thread for a message_job
+   * Get or create email thread for a message_job.
+   * @param cutoffTime ISO timestamp of the inbound reply; backfill includes all
+   *   campaign sends for this campaign+lead with sent_at <= cutoffTime.
    */
   private async getOrCreateThread(
     messageJob: MessageJob,
-    mailbox: Mailbox
+    mailbox: Mailbox,
+    cutoffTime: string
   ): Promise<any> {
     const accountId = messageJob.mailboxes?.account_id || mailbox.account_id;
 
@@ -701,6 +731,13 @@ export class ThreadManager {
     const existingThread = existingThreads?.[0];
 
     if (existingThread) {
+      await this.backfillSentMessages(
+        existingThread,
+        messageJob.campaign_id,
+        messageJob.lead_id,
+        cutoffTime,
+        mailbox
+      );
       return existingThread;
     }
 
@@ -722,7 +759,7 @@ export class ThreadManager {
         existingCampaignThread,
         messageJob.campaign_id,
         messageJob.lead_id,
-        messageJob.sent_at || messageJob.created_at,
+        cutoffTime,
         mailbox
       );
       return existingCampaignThread;
@@ -779,6 +816,13 @@ export class ThreadManager {
 
         const racedThread = racedThreads?.[0];
         if (!reloadError && racedThread) {
+          await this.backfillSentMessages(
+            racedThread,
+            messageJob.campaign_id,
+            messageJob.lead_id,
+            cutoffTime,
+            mailbox
+          );
           return racedThread;
         }
       }
@@ -801,12 +845,12 @@ export class ThreadManager {
       throw threadError;
     }
 
-    // Backfill all prior sent messages for this campaign+lead into email_messages
+    // Backfill all campaign sends for this campaign+lead up through reply time
     await this.backfillSentMessages(
       newThread,
       messageJob.campaign_id,
       messageJob.lead_id,
-      messageJob.sent_at || messageJob.created_at,
+      cutoffTime,
       mailbox
     );
 
@@ -815,9 +859,8 @@ export class ThreadManager {
 
   /**
    * Backfill sent campaign messages into email_messages for a thread.
-   * Queries all sent message_jobs for campaign+lead up to cutoffTime, loads merged
-   * content from the sent event's event_data when available, and inserts any missing
-   * email_messages (direction = 'sent').
+   * cutoffTime should be the inbound reply received_at so later follow-ups
+   * that already sent before the reply are included (not matched-job sent_at).
    */
   private async backfillSentMessages(
     thread: any,
@@ -826,146 +869,18 @@ export class ThreadManager {
     cutoffTime: string,
     mailbox: Mailbox
   ): Promise<void> {
-    // Get all sent campaign message_jobs for this campaign+lead, ordered by sent_at
-    const { data: sentJobs, error: jobsError } = await this.supabase
-      .from('message_jobs')
-      .select('id, provider_message_id, sent_at, created_at, message_data, mailbox_id, lead_id')
-      .eq('campaign_id', campaignId)
-      .eq('lead_id', leadId)
-      .eq('status', 'sent')
-      .or('message_type.is.null,message_type.eq.campaign')
-      .lte('sent_at', cutoffTime)
-      .order('sent_at', { ascending: true });
-
-    if (jobsError || !sentJobs || sentJobs.length === 0) {
-      return;
-    }
-
-    const accountId = thread.account_id || mailbox.account_id;
-
-    // Get all sent events for these jobs in one query (for merged content)
-    const jobIds = sentJobs.map(j => j.id);
-    const { data: sentEvents } = await this.supabase
-      .from('events')
-      .select('message_job_id, event_data')
-      .eq('event_type', 'sent')
-      .in('message_job_id', jobIds);
-
-    const eventByJobId = new Map<string, any>();
-    if (sentEvents) {
-      for (const evt of sentEvents) {
-        eventByJobId.set(evt.message_job_id, evt.event_data);
+    await backfillCampaignSentMessages(
+      this.supabase,
+      { id: thread.id, account_id: thread.account_id },
+      campaignId,
+      leadId,
+      cutoffTime,
+      {
+        account_id: mailbox.account_id,
+        email_address: mailbox.email_address,
+        display_name: mailbox.display_name,
       }
-    }
-
-    // Check which jobs already have an email_message
-    const { data: existingMessages } = await this.supabase
-      .from('email_messages')
-      .select('message_job_id')
-      .eq('account_id', accountId)
-      .eq('thread_id', thread.id)
-      .eq('direction', 'sent')
-      .in('message_job_id', jobIds);
-
-    const existingJobIds = new Set((existingMessages || []).map(m => m.message_job_id));
-
-    const mailboxEmail = mailbox.email_address;
-    const mailboxDisplayName = mailbox.display_name || null;
-
-    // Load lead name once
-    const { data: leadRow } = await this.supabase
-      .from('leads')
-      .select('email, name')
-      .eq('id', leadId)
-      .maybeSingle();
-
-    const leadEmail = leadRow?.email || '';
-    const leadName = leadRow?.name || null;
-
-    let insertedCount = 0;
-    for (const job of sentJobs) {
-      if (existingJobIds.has(job.id)) continue;
-
-      const evtData = eventByJobId.get(job.id);
-      const md = job.message_data || {};
-      const nc = md.node_config || {};
-
-      // Use merged content from event when available, else fall back to template
-      const jobSubject = evtData?.sent_subject || md.subject || nc.subject || '(No Subject)';
-      const jobBodyHtml = evtData?.sent_body_html || nc.body || nc.template || '';
-      const jobBodyText = evtData?.sent_body_text || nc.body || nc.template || '';
-
-      const normalizedProviderId = this.normalizeMessageId(job.provider_message_id);
-
-      // Determine in_reply_to / references for follow-ups (not the first send)
-      let inReplyTo: string | null = null;
-      let msgReferences: string | null = null;
-      if (insertedCount > 0 && sentJobs[0]?.provider_message_id) {
-        const firstNormalized = this.normalizeMessageId(sentJobs[0].provider_message_id);
-        inReplyTo = firstNormalized;
-        msgReferences = firstNormalized;
-      }
-
-      const { error: insertError } = await this.supabase
-        .from('email_messages')
-        .insert({
-          thread_id: thread.id,
-          account_id: thread.account_id,
-          message_job_id: job.id,
-          direction: 'sent',
-          from_email: mailboxEmail,
-          from_name: mailboxDisplayName,
-          to_email: leadEmail,
-          to_name: leadName,
-          subject: jobSubject,
-          body_text: jobBodyText,
-          body_html: jobBodyHtml,
-          message_id: normalizedProviderId,
-          in_reply_to: inReplyTo,
-          message_references: msgReferences,
-          received_at: job.sent_at || job.created_at,
-          headers: {},
-          attachments: [],
-        });
-
-      if (insertError) {
-        if (insertError.code === '23505' || insertError.message?.includes('duplicate')) {
-          continue; // Race condition, skip
-        }
-        console.error(`Error backfilling sent message for job ${job.id}:`, insertError);
-        const errorMessage = formatUnknownError(insertError);
-        reportErrorToSlack('Inbox-checker: backfill sent message failed', {
-          severity: 'warning',
-          message_job_id: job.id,
-          thread_id: thread.id,
-          error: errorMessage,
-          alertPolicy: isRetryableSupabaseReadError(errorMessage)
-            ? 'transient_retryable_warning'
-            : 'persistent_config_warning',
-          aggregationKey: `inbox-backfill-sent-message:${thread.id}`,
-          summaryFields: {
-            thread_id: thread.id,
-          },
-        });
-      } else {
-        insertedCount++;
-      }
-    }
-
-    // Update thread message_count to reflect backfilled messages
-    if (insertedCount > 0) {
-      const { count: totalCount } = await this.supabase
-        .from('email_messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('thread_id', thread.id);
-
-      if (totalCount != null) {
-        await this.supabase
-          .from('email_threads')
-          .update({ message_count: totalCount })
-          .eq('id', thread.id);
-      }
-    }
+    );
   }
 
   /**

@@ -1,5 +1,9 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { buildCampaignEmailContent, type LeadLike } from '../../../lib/email/dist/index.js';
+import {
+  buildCampaignEmailContent,
+  resolveCampaignFollowUpSubject,
+  type LeadLike,
+} from '../../../lib/email/dist/index.js';
 import {
   formatUnknownError,
   isRetryableSupabaseReadError,
@@ -1036,7 +1040,8 @@ export class SendWorker {
       const isHtmlBody = content.isHtmlBody;
       const emailBodyText = content.bodyText;
 
-      // Subject: use current node's subject; if follow-up and empty, use first email's subject
+      // Subject: use current node's subject; if follow-up and continuing (empty /
+      // mistaken "(No subject)"), reuse the exact first sent subject.
       let subject: string;
       let inReplyTo: string | null = null;
       let references: string | null = null;
@@ -1045,36 +1050,47 @@ export class SendWorker {
           inReplyTo = threadFirst.provider_message_id;
           references = threadFirst.provider_message_id;
         }
-        if (currentSubject.trim() === '') {
-          const nc = threadFirst.message_data?.node_config;
-          const firstConfig = {
-            subject: (nc?.subject ?? nc?.template ?? '') as string,
-          };
-          let firstContent;
-          try {
-            firstContent = buildCampaignEmailContent(
-              firstConfig,
-              lead as unknown as LeadLike,
-              { deterministic: false }
-            );
-          } catch (err) {
-            const msg = formatUnknownError(err);
-            reportErrorToSlack('Send-worker: first-email subject/content parse failed (thread follow-up)', {
-              severity: 'warning',
-              message_job_id: message_job_id,
-              campaign_id: messageJob.campaign_id,
-              error: msg,
-          alertPolicy: 'persistent_config_warning',
-          aggregationKey: `send-worker-thread-followup-parse:${messageJob.campaign_id}`,
-          summaryFields: {
+        const nc = threadFirst.message_data?.node_config;
+        const firstSubjectTemplate = (nc?.subject ?? nc?.template ?? '') as string;
+        let firstSentSubject: string | null = null;
+        try {
+          firstSentSubject = await this.resolveFirstSentSubjectForFollowUp(threadFirst);
+        } catch (err) {
+          const msg = formatUnknownError(err);
+          reportErrorToSlack('Send-worker: failed to load first sent subject for thread follow-up', {
+            severity: 'warning',
+            message_job_id: message_job_id,
             campaign_id: messageJob.campaign_id,
-          },
-            });
-            throw err;
-          }
-          subject = firstContent.subject;
-        } else {
-          subject = currentSubject;
+            error: msg,
+            alertPolicy: 'persistent_config_warning',
+            aggregationKey: `send-worker-thread-followup-subject:${messageJob.campaign_id}`,
+            summaryFields: {
+              campaign_id: messageJob.campaign_id,
+            },
+          });
+          throw err;
+        }
+        try {
+          subject = resolveCampaignFollowUpSubject({
+            currentSubject,
+            firstSentSubject,
+            firstSubjectTemplate,
+            lead: lead as unknown as LeadLike,
+          });
+        } catch (err) {
+          const msg = formatUnknownError(err);
+          reportErrorToSlack('Send-worker: first-email subject/content parse failed (thread follow-up)', {
+            severity: 'warning',
+            message_job_id: message_job_id,
+            campaign_id: messageJob.campaign_id,
+            error: msg,
+            alertPolicy: 'persistent_config_warning',
+            aggregationKey: `send-worker-thread-followup-parse:${messageJob.campaign_id}`,
+            summaryFields: {
+              campaign_id: messageJob.campaign_id,
+            },
+          });
+          throw err;
         }
       } else {
         subject = currentSubject;
@@ -1130,6 +1146,7 @@ export class SendWorker {
 
       // 6. Atomically finalize sent state and mailbox throttle accounting.
       await this.finalizeCampaignMessageJobSent(message_job_id, providerMessageId);
+      await this.persistSentSubjectOnMessageJob(messageJob, subject);
 
       await this.reconcileLeadMailboxAfterSuccessfulSend(messageJob, lead.mailbox_id);
 
@@ -1778,6 +1795,78 @@ export class SendWorker {
 
     if (error || !data) return null;
     return data as { id: string; provider_message_id: string | null; message_data: any };
+  }
+
+  /**
+   * Prefer message_jobs.message_data.sent_subject; fall back to the sent event payload
+   * for jobs finalized before sent_subject was persisted on the job row.
+   */
+  private async resolveFirstSentSubjectForFollowUp(
+    threadFirst: { id: string; message_data: any },
+  ): Promise<string | null> {
+    const fromJob =
+      typeof threadFirst.message_data?.sent_subject === 'string'
+        ? threadFirst.message_data.sent_subject.trim()
+        : '';
+    if (fromJob) return fromJob;
+
+    const { data, error } = await this.supabase
+      .from('events')
+      .select('event_data')
+      .eq('message_job_id', threadFirst.id)
+      .eq('event_type', 'sent')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(
+        `Failed to load sent event for message job ${threadFirst.id}: ${error.message}`,
+      );
+    }
+
+    const eventData = (data as { event_data?: Record<string, unknown> } | null)?.event_data;
+    const fromEvent =
+      typeof eventData?.sent_subject === 'string' ? eventData.sent_subject.trim() : '';
+    return fromEvent || null;
+  }
+
+  private async persistSentSubjectOnMessageJob(
+    messageJob: MessageJob,
+    sentSubject: string,
+  ): Promise<void> {
+    const existing =
+      messageJob.message_data && typeof messageJob.message_data === 'object'
+        ? (messageJob.message_data as Record<string, unknown>)
+        : {};
+    const nextMessageData = {
+      ...existing,
+      sent_subject: sentSubject,
+    };
+    const { error } = await this.supabase
+      .from('message_jobs')
+      .update({ message_data: nextMessageData })
+      .eq('id', messageJob.id);
+
+    if (error) {
+      console.error(
+        `[SEND WORKER] Failed to persist sent_subject on message job ${messageJob.id}:`,
+        error,
+      );
+      reportErrorToSlack('Send-worker: failed to persist sent_subject on message_jobs.message_data', {
+        severity: 'warning',
+        message_job_id: messageJob.id,
+        campaign_id: messageJob.campaign_id,
+        error: error.message,
+        alertPolicy: 'persistent_config_warning',
+        aggregationKey: `send-worker-persist-sent-subject:${messageJob.campaign_id}`,
+        summaryFields: {
+          campaign_id: messageJob.campaign_id,
+        },
+      });
+    } else {
+      messageJob.message_data = nextMessageData;
+    }
   }
 
   /**

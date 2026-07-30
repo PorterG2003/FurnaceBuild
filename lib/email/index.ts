@@ -59,6 +59,13 @@ export {
 } from './buildCampaignEmailContent.js';
 
 export {
+  isThreadContinuingSubject,
+  normalizeStoredEmailSubject,
+  resolveCampaignFollowUpSubject,
+  type ResolveCampaignFollowUpSubjectParams,
+} from './followUpSubject.js';
+
+export {
   generateEmailVariantId,
   labelForVariantIndex,
   normalizeLegacyEmailNodeData,

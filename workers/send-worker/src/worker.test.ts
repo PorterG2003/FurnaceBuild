@@ -174,6 +174,7 @@ class ProcessMessageRpcStub {
 
 class ProcessMessageSupabase {
   readonly rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+  readonly tableUpdates: Array<{ table: string; updates: Record<string, unknown> }> = [];
 
   from(table: string) {
     return new ProcessMessageMutationStub(table, this);
@@ -188,6 +189,9 @@ class ProcessMessageSupabase {
   }
 
   resolveTableResult(table: string, updates: Record<string, unknown> | null) {
+    if (updates != null) {
+      this.tableUpdates.push({ table, updates });
+    }
     if (table === 'campaigns') {
       return {
         data: {
@@ -1056,4 +1060,237 @@ test('SendWorker preserves html-mode full-document payloads', async () => {
   const eventData = sentEventCall.args.p_event_data as Record<string, unknown>;
   assert.match(String(eventData.sent_body_html), /<html>/i);
   assert.equal(eventData.sent_body_text, 'Hello Casey');
+});
+
+function stubCampaignSendWorker(
+  worker: SendWorker,
+  messageJob: MessageJob,
+  options?: {
+    firstSent?: {
+      provider_message_id: string;
+      sent_subject: string;
+      subjectTemplate?: string;
+    } | null;
+  },
+) {
+  (worker as any).loadJobData = async () => ({
+    lead: {
+      id: 'lead-1',
+      email: 'lead@example.com',
+      first_name: 'Casey',
+      mailbox_id: 'mailbox-1',
+    },
+    mailbox: {
+      id: 'mailbox-1',
+      email_address: 'sender@example.com',
+      display_name: 'Sender',
+      signature: null,
+    },
+    nodeConfig: (messageJob.message_data as any).node_config,
+  });
+  (worker as any).isEmailBlocked = async () => false;
+  (worker as any).getFirstSentMessageForCampaignLead = async () => {
+    if (!options?.firstSent) return null;
+    return {
+      id: 'first-job-1',
+      provider_message_id: options.firstSent.provider_message_id,
+      message_data: {
+        sent_subject: options.firstSent.sent_subject,
+        node_config: {
+          subject:
+            options.firstSent.subjectTemplate ??
+            '{Alpha {{first_name}}|Beta {{first_name}}|Gamma {{first_name}}}',
+        },
+      },
+    };
+  };
+  (worker as any).finalizeCampaignMessageJobSent = async () => {};
+  (worker as any).reconcileLeadMailboxAfterSuccessfulSend = async () => {};
+  (worker as any).smtpPool = {
+    getTransporter: async () => ({}),
+    markMessageSent: () => {},
+  };
+}
+
+test('SendWorker follow-up with empty subject reuses exact first sent_subject and headers', async () => {
+  const supabase = new ProcessMessageSupabase();
+  let captured: {
+    subject?: string;
+    inReplyTo?: string | null;
+    references?: string | null;
+  } = {};
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async (
+      _transporter,
+      _mailbox,
+      _job,
+      _lead,
+      subject,
+      _body,
+      inReplyTo,
+      references,
+    ) => {
+      captured = { subject, inReplyTo, references };
+      return '<followup@example.com>';
+    },
+  });
+  const messageJob = createCampaignMessageJob({
+    message_data: {
+      node_config: {
+        subject: '',
+        body_html: '<p>Just let me know!</p>',
+        body_text: 'Just let me know!',
+      },
+    },
+  });
+  stubCampaignSendWorker(worker, messageJob, {
+    firstSent: {
+      provider_message_id: '<first@furnace.build>',
+      sent_subject: 'Quick Eval and Draft Question',
+      subjectTemplate: '{Alpha {{first_name}}|Beta {{first_name}}|Gamma {{first_name}}}',
+    },
+  });
+
+  const originalRandom = Math.random;
+  Math.random = () => 0.99;
+  try {
+    await (worker as any).processMessageJob(messageJob);
+  } finally {
+    Math.random = originalRandom;
+  }
+
+  assert.equal(captured.subject, 'Quick Eval and Draft Question');
+  assert.equal(captured.inReplyTo, '<first@furnace.build>');
+  assert.equal(captured.references, '<first@furnace.build>');
+});
+
+test('SendWorker follow-up with (No subject) reuses exact first sent_subject', async () => {
+  const supabase = new ProcessMessageSupabase();
+  let capturedSubject = '';
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async (
+      _transporter,
+      _mailbox,
+      _job,
+      _lead,
+      subject,
+    ) => {
+      capturedSubject = subject;
+      return '<followup@example.com>';
+    },
+  });
+  const messageJob = createCampaignMessageJob({
+    message_data: {
+      node_config: {
+        subject: '(No subject)',
+        body_html: '<p>Just let me know!</p>',
+        body_text: 'Just let me know!',
+      },
+    },
+  });
+  stubCampaignSendWorker(worker, messageJob, {
+    firstSent: {
+      provider_message_id: '<first@furnace.build>',
+      sent_subject: 'Quick question',
+    },
+  });
+
+  const originalRandom = Math.random;
+  Math.random = () => 0.99;
+  try {
+    await (worker as any).processMessageJob(messageJob);
+  } finally {
+    Math.random = originalRandom;
+  }
+
+  assert.equal(capturedSubject, 'Quick question');
+});
+
+test('SendWorker follow-up with intentional subject keeps it and still sets thread headers', async () => {
+  const supabase = new ProcessMessageSupabase();
+  let captured: {
+    subject?: string;
+    inReplyTo?: string | null;
+    references?: string | null;
+  } = {};
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async (
+      _transporter,
+      _mailbox,
+      _job,
+      _lead,
+      subject,
+      _body,
+      inReplyTo,
+      references,
+    ) => {
+      captured = { subject, inReplyTo, references };
+      return '<followup@example.com>';
+    },
+  });
+  const messageJob = createCampaignMessageJob({
+    message_data: {
+      node_config: {
+        subject: 'Brand new subject',
+        body_html: '<p>Different angle</p>',
+        body_text: 'Different angle',
+      },
+    },
+  });
+  stubCampaignSendWorker(worker, messageJob, {
+    firstSent: {
+      provider_message_id: '<first@furnace.build>',
+      sent_subject: 'Quick question',
+    },
+  });
+
+  await (worker as any).processMessageJob(messageJob);
+
+  assert.equal(captured.subject, 'Brand new subject');
+  assert.equal(captured.inReplyTo, '<first@furnace.build>');
+  assert.equal(captured.references, '<first@furnace.build>');
+});
+
+test('SendWorker persists sent_subject onto message_jobs.message_data', async () => {
+  const supabase = new ProcessMessageSupabase();
+  const worker = new SendWorker({
+    supabase: supabase as any,
+    databaseClient: {} as any,
+    campaignEmailSender: async () => '<provider@example.com>',
+  });
+  const messageJob = createCampaignMessageJob({
+    message_data: {
+      node_config: {
+        subject: '{Hi {{first_name}}|Hello {{first_name}}}',
+        body_html: '<p>Hey {{first_name}}</p>',
+        body_text: 'Hey {{first_name}}',
+      },
+      skip_smtp: true,
+    },
+  });
+  stubCampaignSendWorker(worker, messageJob, { firstSent: null });
+
+  const originalRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    await (worker as any).processMessageJob(messageJob);
+  } finally {
+    Math.random = originalRandom;
+  }
+
+  const persistCall = supabase.tableUpdates.find(
+    (call) =>
+      call.table === 'message_jobs' &&
+      call.updates &&
+      typeof (call.updates.message_data as any)?.sent_subject === 'string',
+  );
+  assert.ok(persistCall, 'expected message_data.sent_subject persistence');
+  assert.equal((persistCall.updates.message_data as any).sent_subject, 'Hi Casey');
+  assert.equal((messageJob.message_data as any).sent_subject, 'Hi Casey');
 });

@@ -13,6 +13,7 @@ import { buildLaunchState } from '../lib/client-api/campaign-document.js';
 import { prepareFlowSave } from '../lib/campaigns/flow/prepareFlowSave.js';
 import type { CampaignFlowData } from '../lib/campaigns/flow/types.js';
 import { canonicalizeEmailContentForSave } from '../lib/email/emailHtmlMode.js';
+import { normalizeStoredEmailSubject } from '../lib/email/followUpSubject.js';
 import { labelForVariantIndex } from '../lib/email/emailNodeVariants.js';
 import { SMARTLEAD_BASE, smartleadRequest } from '../lib/smartlead/api.js';
 import type { Database } from '../lib/supabase/types/database.js';
@@ -154,7 +155,7 @@ function canonicalizeVariantContent(subject: string, htmlBody: string) {
     bodyHtml: htmlBody,
   });
   return {
-    subject: subject.trim() || '(No subject)',
+    subject: normalizeStoredEmailSubject(subject),
     template: canonical.template,
     body_html: canonical.bodyHtml,
     body_text: canonical.bodyText,

@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  DEFAULT_CAMPAIGN_SCHEDULE,
+  DEFAULT_SENDING_INTERVAL_SECONDS,
+} from '../../campaigns/utils';
 import type { Database } from '../../supabase/types/database';
 import { duplicateCampaignWithClient } from '../../supabase/services/campaigns/duplicate-campaign-with-client';
 import { CampaignDbHarness } from './harness';
@@ -293,7 +297,10 @@ test('duplicateCampaign leaves settings and leads behind when toggles are off', 
     assert.equal(duplicatedCampaign.name, 'Blank Copy');
     assert.equal(duplicatedCampaign.status, 'draft');
     assert.equal(duplicatedCampaign.flow_data, null);
-    assert.equal(duplicatedCampaign.schedule, null);
+    // copySettings=false still creates a new campaign row, so DB create defaults apply
+    // (Central 9–5 / 24-minute interval from #215). Explicit null remains 24/7.
+    assert.deepEqual(duplicatedCampaign.schedule, DEFAULT_CAMPAIGN_SCHEDULE);
+    assert.equal(duplicatedCampaign.sending_interval_seconds, DEFAULT_SENDING_INTERVAL_SECONDS);
 
     assert.deepEqual(await loadCampaignMailboxIds(harness, duplicatedCampaign.id), []);
     assert.deepEqual(await loadCampaignTagIds(harness, duplicatedCampaign.id), []);

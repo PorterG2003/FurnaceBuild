@@ -10,7 +10,7 @@ export function buildFlowNormalizationMarkdown(): string {
     '| UI-only fields | Strips `selected`, `dragging`, `measured`, `positionAbsolute`, `resizing` from nodes; `selected` from edges. |',
     '| Lead source | Forces `deletable: false`. Trims and deduplicates `customFieldKeys`. |',
     '| Email variants | Assigns UUID `id` if missing; re-labels `A`/`B`/…; re-orders; canonicalizes HTML; migrates legacy single-variant shape. |',
-    '| Wait nodes | Derives `wait_duration_seconds` from `duration` + `unit` when seconds absent; back-fills display `duration`/`unit` from seconds. |',
+    '| Wait nodes | Derives `wait_duration_seconds` from `duration` + `unit` when seconds absent; empty/invalid → `259200` (3 days); values under `180` → clamp to 3 minutes; back-fills display `duration`/`unit` from seconds. |',
     '| Categorizer edges | Backfills `sourceHandle` on categorizer outgoing edges when missing. |',
     '| Data sender | Merges `endpoint`/`endpoint_url`; serializes `payload_template` to `payload` when needed. |',
     '',
@@ -103,5 +103,6 @@ export function buildEmailNodeDataDescription(linkMode: DocLinkMode = 'docs'): s
 export function buildWaitTimeNodeDataDescription(): string {
   return [
     'Delay node. `wait_duration_seconds` is the runtime source of truth; `duration` and `unit` are display fields derived on save.',
+    'Minimum is `180` seconds (3 minutes). Empty, missing, or non-positive values normalize to `259200` (3 days).',
   ].join('\n');
 }

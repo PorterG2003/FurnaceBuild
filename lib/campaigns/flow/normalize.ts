@@ -24,6 +24,11 @@ import type {
   LeadSourceNodeData,
   WaitTimeNodeData,
 } from './types';
+import {
+  inferDurationUnit,
+  inferDurationValue,
+  resolveWaitDurationSeconds,
+} from './waitTime.js';
 
 const UI_NODE_FIELDS = new Set([
   'selected',
@@ -46,12 +51,6 @@ const UI_EDGE_DATA_FIELDS = new Set([
   'readOnly',
   'structuralBlocked',
 ]);
-
-const UNIT_TO_SECONDS: Record<string, number> = {
-  minutes: 60,
-  hours: 3600,
-  days: 86400,
-};
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -136,16 +135,6 @@ function normalizeOptionalStringArray(values: unknown): string[] | undefined {
   return normalizeStringArray(values);
 }
 
-function inferDurationUnit(waitDurationSeconds: number): 'minutes' | 'hours' | 'days' {
-  if (waitDurationSeconds % UNIT_TO_SECONDS.days === 0) return 'days';
-  if (waitDurationSeconds % UNIT_TO_SECONDS.hours === 0) return 'hours';
-  return 'minutes';
-}
-
-function inferDurationValue(waitDurationSeconds: number, unit: 'minutes' | 'hours' | 'days'): string {
-  return String(Math.max(1, Math.floor(waitDurationSeconds / UNIT_TO_SECONDS[unit])));
-}
-
 function normalizeLeadSourceNodeData(rawData: Record<string, unknown>): LeadSourceNodeData {
   const mappedStandardFieldKeys = normalizeOptionalStringArray(rawData.mappedStandardFieldKeys);
   const { mappedStandardFieldKeys: _rawMapped, ...rest } = rawData;
@@ -213,23 +202,13 @@ function normalizeEmailNodeData(rawData: Record<string, unknown>): EmailNodeData
 }
 
 function normalizeWaitTimeNodeData(rawData: Record<string, unknown>): WaitTimeNodeData {
-  const unit = rawData.unit === 'minutes' || rawData.unit === 'hours' || rawData.unit === 'days'
-    ? rawData.unit
-    : 'hours';
-  const duration = asString(rawData.duration);
-  const explicitSeconds =
-    typeof rawData.wait_duration_seconds === 'number' && Number.isFinite(rawData.wait_duration_seconds)
-      ? Math.max(0, Math.floor(rawData.wait_duration_seconds))
-      : 0;
-  const computedSeconds =
-    duration.trim().length > 0
-      ? Math.max(0, Math.floor(Number.parseInt(duration.trim(), 10) || 0) * UNIT_TO_SECONDS[unit])
-      : 0;
-  const waitDurationSeconds = explicitSeconds > 0 ? explicitSeconds : computedSeconds;
-  const displayUnit = waitDurationSeconds > 0 ? inferDurationUnit(waitDurationSeconds) : unit;
-  const displayDuration = waitDurationSeconds > 0
-    ? inferDurationValue(waitDurationSeconds, displayUnit)
-    : duration;
+  const waitDurationSeconds = resolveWaitDurationSeconds({
+    wait_duration_seconds: rawData.wait_duration_seconds,
+    duration: rawData.duration,
+    unit: rawData.unit,
+  });
+  const displayUnit = inferDurationUnit(waitDurationSeconds);
+  const displayDuration = inferDurationValue(waitDurationSeconds, displayUnit);
 
   return {
     ...rawData,

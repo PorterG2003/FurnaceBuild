@@ -1,5 +1,10 @@
 import { Node } from '@xyflow/react';
 import { generateEmailVariantId, labelForVariantIndex } from '@/lib/email/emailNodeVariants';
+import {
+  DEFAULT_WAIT_DURATION,
+  DEFAULT_WAIT_DURATION_SECONDS,
+  DEFAULT_WAIT_UNIT,
+} from '@/lib/campaigns/flow/waitTime';
 
 /**
  * Generate a unique ID for nodes
@@ -76,6 +81,7 @@ export function createWaitTimeNode(
     label?: string;
     duration?: string;
     unit?: 'minutes' | 'hours' | 'days';
+    wait_duration_seconds?: number;
   }
 ): Node {
   return {
@@ -83,8 +89,9 @@ export function createWaitTimeNode(
     type: 'waitTime',
     data: {
       label: data?.label || 'Wait Time',
-      duration: data?.duration || '',
-      unit: data?.unit || 'hours',
+      duration: data?.duration || DEFAULT_WAIT_DURATION,
+      unit: data?.unit || DEFAULT_WAIT_UNIT,
+      wait_duration_seconds: data?.wait_duration_seconds ?? DEFAULT_WAIT_DURATION_SECONDS,
     },
     position,
   };

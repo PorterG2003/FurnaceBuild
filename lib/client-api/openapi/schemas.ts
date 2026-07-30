@@ -812,12 +812,12 @@ export function buildClientApiComponents() {
         type: 'object',
         description: buildWaitTimeNodeDataDescription(),
         properties: {
-          label: { type: 'string', description: 'Display label.', example: 'Wait 1 day' },
+          label: { type: 'string', description: 'Display label.', example: 'Wait 3 days' },
           duration: {
             type: 'string',
             nullable: true,
             description: 'Display duration value. Furnace derives this from wait_duration_seconds on save.',
-            example: '1',
+            example: '3',
           },
           unit: {
             type: 'string',
@@ -828,8 +828,10 @@ export function buildClientApiComponents() {
           },
           wait_duration_seconds: {
             type: 'integer',
-            description: 'Positive delay in seconds. Required for runtime scheduling.',
-            example: 86400,
+            description:
+              'Delay in seconds (runtime source of truth). Minimum 180 (3 minutes). Empty/missing values normalize to 259200 (3 days).',
+            example: 259200,
+            minimum: 180,
           },
         },
         required: ['wait_duration_seconds'],

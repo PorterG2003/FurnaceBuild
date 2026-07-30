@@ -73,6 +73,8 @@ export interface MessageJob {
     in_reply_to_message_id?: string;
     forwarded_message_id?: string;
     subject?: string;
+    /** Exact subject line used on a successful send (for follow-up thread continuity). */
+    sent_subject?: string;
     body_text?: string;
     body_html?: string;
     to_email?: string;
@@ -81,6 +83,8 @@ export interface MessageJob {
     in_reply_to?: string;
     message_references?: string;
     attachments?: Array<{ filename: string; contentType?: string; content: string }>;
+    /** Test harness flag: skip SMTP and still finalize as sent. */
+    skip_smtp?: boolean;
   };
   sqs_message_id: string | null;
   created_at: string;

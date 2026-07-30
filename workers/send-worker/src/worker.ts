@@ -1837,9 +1837,9 @@ export class SendWorker {
   ): Promise<void> {
     const existing =
       messageJob.message_data && typeof messageJob.message_data === 'object'
-        ? (messageJob.message_data as Record<string, unknown>)
+        ? messageJob.message_data
         : {};
-    const nextMessageData = {
+    const nextMessageData: MessageJob['message_data'] = {
       ...existing,
       sent_subject: sentSubject,
     };
